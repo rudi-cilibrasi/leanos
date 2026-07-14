@@ -129,7 +129,7 @@ CI will grow in layers:
 | Host tests | Run pure state-machine and property tests | Planned |
 | Emulator | Build and boot headlessly with timeout and serial assertions | Active |
 | Artifacts | Preserve image, ELF, map, checksums, versions, and serial log | Active |
-| Release | Publish versioned, reproducible images with provenance | Future |
+| Release | Publish tagged reproducible images with provenance | Active |
 
 Emulator CI should invoke one repository-owned script, use an explicit timeout,
 capture the serial console, and require a guest success signal. A process that
@@ -176,6 +176,12 @@ image without KVM. It retains the ISO, debug ELF, symbol map, checksums, pinned
 tool versions, and serial log for 14 days, including available diagnostics from
 failed runs. Controlled negative fixtures ensure theorem, compiler, serial
 protocol, guest-signal, and timeout failures cannot pass.
+
+Tags matching `vMAJOR.MINOR.PATCH` additionally run the exact proof, build, and
+QEMU gates, require a byte-identical double build, and publish experimental
+release artifacts with checksums and GitHub provenance. The version policy,
+artifact inventory, trusted-boundary warning, and download verification
+commands are in [the boot-image guide](docs/boot-image.md).
 
 ## Roadmap
 
