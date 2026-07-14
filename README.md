@@ -94,7 +94,7 @@ CI will grow in layers:
 | Layer | Gate | Status |
 | --- | --- | --- |
 | Repository | Markdown and repository hygiene | Active |
-| Lean | Build all modules and check proofs with a pinned toolchain | Planned |
+| Lean | Build all modules and check proofs with a pinned toolchain | Active |
 | Host tests | Run pure state-machine and property tests | Planned |
 | Emulator | Boot headlessly in QEMU with a timeout and serial assertions | Planned |
 | Artifacts | Upload the image, symbol map, serial log, and checksums | Planned |
@@ -107,6 +107,20 @@ merely stays alive or prints part of a boot log is not a passing test.
 There is no deployment target yet, so continuous deployment would be premature.
 Once a bootable artifact exists, tagged releases can publish images and build
 provenance; real-hardware deployment should remain a separate, opt-in test lane.
+
+### Lean development
+
+Install [Elan](https://github.com/leanprover/elan), then run the repository-owned
+check from the repository root:
+
+```sh
+./scripts/check.sh
+```
+
+Elan reads `lean-toolchain` and installs the exact Lean release automatically.
+The check builds every default Lake target and verifies that the deliberately
+invalid proof fixture remains rejected. GitHub Actions invokes the same script;
+generated Lake output is kept under the ignored `.lake/` directory.
 
 ## Roadmap
 
@@ -158,7 +172,7 @@ or deliberately revise the associated specification in the same pull request.
 ## Current repository status
 
 Today the repository contains its project charter, the Phase 1 architecture
-boundary, and the first CI hygiene check. The issue tracker defines the bootstrap
-work. Until a milestone is linked here with passing proof and emulator evidence,
-LeanOS should be described as an experimental research project rather than a
-verified operating system.
+boundary, a pinned Lean project, and repository hygiene and proof-build checks.
+The issue tracker defines the bootstrap work. Until a milestone is linked here
+with passing proof and emulator evidence, LeanOS should be described as an
+experimental research project rather than a verified operating system.
