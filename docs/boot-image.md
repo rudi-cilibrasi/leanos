@@ -55,10 +55,11 @@ The reference environment is Ubuntu 24.04 with Lean 4.32.0 from
 (`binutils=2.42-4ubuntu2.10`), GRUB
 (`grub-common=2.12-1ubuntu7.3`, `grub-pc-bin=2.12-1ubuntu7.3`), mtools
 (`mtools=4.0.43-1build1`), xorriso (`xorriso=1:1.5.6-1.1ubuntu3`), QEMU 8.2.2
-(`qemu-system-x86=1:8.2.2+ds-0ubuntu1.17`), and its distributed SeaBIOS 1.16.3
-firmware. The scripts name the Ubuntu package pins in actionable missing-tool
-diagnostics. These pins identify build inputs; this issue does not claim
-byte-for-byte reproducibility.
+(`qemu-system-x86=1:8.2.2+ds-0ubuntu1.17`), coreutils
+(`coreutils=9.4-3ubuntu6.2`), and QEMU's distributed SeaBIOS 1.16.3 firmware.
+The scripts name the Ubuntu package pins in actionable missing-tool diagnostics.
+These pins identify build inputs; this issue does not claim byte-for-byte
+reproducibility.
 
 ## Trusted boundary
 

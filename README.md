@@ -122,8 +122,8 @@ CI will grow in layers:
 | Repository | Markdown and repository hygiene | Active |
 | Lean | Build all modules and check proofs with a pinned toolchain | Active |
 | Host tests | Run pure state-machine and property tests | Planned |
-| Emulator | Boot headlessly in QEMU with a timeout and serial assertions | Planned |
-| Artifacts | Upload the image, symbol map, serial log, and checksums | Planned |
+| Emulator | Build and boot headlessly with timeout and serial assertions | Active |
+| Artifacts | Preserve image, ELF, map, checksums, versions, and serial log | Active |
 | Release | Publish versioned, reproducible images with provenance | Future |
 
 Emulator CI should invoke one repository-owned script, use an explicit timeout,
@@ -151,6 +151,26 @@ check also rejects unapproved `axiom`, `constant`, `unsafe`, and `extern`
 declarations; required trusted-code boundaries must be documented and explicitly
 allowlisted when they are introduced. GitHub Actions invokes the same script;
 generated Lake output is kept under the ignored `.lake/` directory.
+
+### Local CI commands
+
+The pull-request workflow uses only these repository-owned entry points:
+
+```sh
+./scripts/check-markdown.sh
+./scripts/check.sh
+./scripts/build-image.sh
+./scripts/run-image.sh
+```
+
+The first command requires Node.js/npm. Image building and QEMU prerequisites,
+the exact Ubuntu 24.04 package versions used in CI, and emulator resource bounds
+are listed in [the boot-image guide](docs/boot-image.md). CI first runs the
+Markdown and complete Lean proof-integrity gates, then builds and boots the
+image without KVM. It retains the ISO, debug ELF, symbol map, checksums, pinned
+tool versions, and serial log for 14 days, including available diagnostics from
+failed runs. Controlled negative fixtures ensure theorem, compiler, serial
+protocol, guest-signal, and timeout failures cannot pass.
 
 ## Roadmap
 

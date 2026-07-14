@@ -21,10 +21,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Lint Markdown
-        run: npx --yes markdownlint-cli2@0.23.0 "**/*.md"
+        run: ./scripts/check-markdown.sh
 
   lean:
     name: Lean build and proof checks
@@ -48,6 +48,9 @@ jobs:
 
   emulator:
     name: Deterministic QEMU smoke test
+    needs:
+      - repository-hygiene
+      - lean
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -66,17 +69,40 @@ jobs:
       - name: Install image and emulator tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc binutils grub-common grub-pc-bin mtools xorriso qemu-system-x86
+          sudo apt-get install -y --no-install-recommends \
+            gcc=4:13.2.0-7ubuntu1 \
+            binutils=2.42-4ubuntu2.10 \
+            grub-common=2.12-1ubuntu7.3 \
+            grub-pc-bin=2.12-1ubuntu7.3 \
+            mtools=4.0.43-1build1 \
+            xorriso=1:1.5.6-1.1ubuntu3 \
+            qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 \
+            coreutils=9.4-3ubuntu6.2
+
+      - name: Record tool versions
+        run: ./scripts/record-tool-versions.sh
+
+      - name: Verify image-build failures propagate
+        run: ./scripts/test-build-image.sh
 
       - name: Build and boot image
         run: |
-          ./scripts/build-image.sh
-          ./scripts/run-image.sh
+          mkdir -p build/ci
+          ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
+          ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-smoke.log
 
-      - name: Preserve serial log
+      - name: Preserve reproducibility artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: qemu-serial-log
-          path: build/boot/serial.log
-          if-no-files-found: error
+          name: leanos-boot-${{ github.sha }}
+          path: |
+            build/boot/leanos-0.1.0-x86_64.iso
+            build/boot/leanos.elf
+            build/boot/leanos.map
+            build/boot/SHA256SUMS
+            build/boot/serial.log
+            build/ci/*.log
+            build/ci/tool-versions.txt
+          if-no-files-found: warn
+          retention-days: 14

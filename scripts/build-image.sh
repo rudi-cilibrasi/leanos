@@ -12,7 +12,8 @@ require_tool() {
 }
 
 require_tool lake "install Elan from https://elan.lean-lang.org/"
-require_tool gcc "install Ubuntu package gcc=4:13.2.0-7ubuntu1"
+cc="${LEANOS_CC:-gcc}"
+require_tool "$cc" "install Ubuntu package gcc=4:13.2.0-7ubuntu1"
 require_tool ld "install Ubuntu package binutils=2.42-4ubuntu2.10"
 require_tool nm "install Ubuntu package binutils=2.42-4ubuntu2.10"
 require_tool grub-file "install Ubuntu package grub-common=2.12-1ubuntu7.3"
@@ -34,11 +35,11 @@ lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
   -g3 -O2)
-gcc "${cflags[@]}" -I"$lean_prefix/include" -c "$build/KernelTransition.c" \
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/KernelTransition.c" \
   -o "$build/KernelTransition.o"
-gcc "${cflags[@]}" -Wall -Wextra -Werror -c boot/kernel.c \
+"$cc" "${cflags[@]}" -Wall -Wextra -Werror -c boot/kernel.c \
   -o "$build/kernel.o"
-gcc -m64 -ffreestanding -g3 -c boot/boot.S -o "$build/boot.o"
+"$cc" -m64 -ffreestanding -g3 -c boot/boot.S -o "$build/boot.o"
 
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos.map" \
