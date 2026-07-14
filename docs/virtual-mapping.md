@@ -8,7 +8,9 @@ subject.
 
 Mapping takes a capability slot and a nonempty read/write permission set. It
 rejects permissions outside that capability, occupied pages, invalid ownership,
-and stale lifetime or allocator state. Translation selects exactly one address
+kind mismatches, and stale lifetime or allocator state. Only live memory
+objects can supply mappings; address-space objects share the registry without
+a frame obligation. Translation selects exactly one address
 space and virtual page, checks its permission, then revalidates the object's
 current binding and physical-frame owner. Rejection is typed and leaves the
 complete composite state unchanged.

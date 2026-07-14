@@ -3,7 +3,8 @@
 `LeanOS.MemoryLifecycle` is a finite, sequential executable composition of the
 capability and physical-frame allocator models. A live memory object has one
 bound frame; that frame is allocator-owned by the same object identifier; and
-every installed capability names such a live binding.
+every installed memory capability names such a live binding. Non-memory objects
+share the capability registry but are not forced to own frames.
 
 Object identifiers use a monotonic lifetime rule. The `issued` history is set
 on first allocation and is never cleared, so an identifier can never designate
@@ -12,7 +13,7 @@ releases its frame, and removes every installed capability naming it. Access
 also revalidates the live binding and allocator owner. Permanently consuming
 identifiers is simple and makes stale-capability safety explicit, at the cost of
 requiring a sufficiently wide identifier space in a future bounded
-implementation.
+implementation. Access rejects non-memory kinds before checking frame state.
 
 ## Evidence and scope
 

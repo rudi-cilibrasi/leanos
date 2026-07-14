@@ -15,6 +15,9 @@ abbrev SubjectId := Nat
 abbrev ObjectId := Nat
 abbrev SlotId := Nat
 
+inductive ObjectKind where | memory | addressSpace
+  deriving DecidableEq, Repr
+
 inductive Right where | read | write | grant | revoke
   deriving DecidableEq, Repr
 
@@ -45,13 +48,20 @@ def rightsSubset (requested source : Rights) : Bool :=
 
 structure Capability where
   object : ObjectId
+  kind : ObjectKind
   rights : Rights
   deriving DecidableEq, Repr
 
 structure State where
   subjects : SubjectId → Bool
   objects : ObjectId → Bool
+  kinds : ObjectId → Option ObjectKind
   slots : SubjectId → SlotId → Option Capability
+
+def rightsValid : ObjectKind → Rights → Bool
+  | .memory, rights => nonemptyRights rights
+  | .addressSpace, rights => (!rights.read && !rights.write) &&
+      (rights.grant || rights.revoke)
 
 inductive LookupOutcome where
   | invalidSubject | staleSlot | found (capability : Capability)
@@ -67,7 +77,8 @@ def lookup (state : State) (subject : SubjectId) (slot : SlotId) : LookupOutcome
 def WellFormed (state : State) : Prop :=
   ∀ subject slot capability, state.slots subject slot = some capability →
     state.subjects subject = true ∧ state.objects capability.object = true ∧
-      nonemptyRights capability.rights = true
+      state.kinds capability.object = some capability.kind ∧
+      rightsValid capability.kind capability.rights = true
 
 /-- A subject has authority exactly when a slot grants the object/right pair. -/
 def HasAuthority (state : State) (subject : SubjectId) (object : ObjectId)
@@ -77,7 +88,8 @@ def HasAuthority (state : State) (subject : SubjectId) (object : ObjectId)
 
 inductive Denial where
   | invalidSubject | staleSlot | occupiedSlot | emptyRights
-  | missingGrant | rightsNotSubset | missingRevoke | objectMismatch
+  | missingGrant | rightsNotSubset | missingRevoke | objectMismatch | kindMismatch
+  | invalidRights
   deriving DecidableEq, Repr
 
 inductive Result where
@@ -87,6 +99,19 @@ inductive Result where
 structure Outcome where
   state : State
   result : Result
+
+/-- Resolve a capability only when its recorded kind and the live registry agree
+with the operation's expected kind. This is the common typed-dispatch boundary. -/
+def authorizeKind (state : State) (subject : SubjectId) (slot : SlotId)
+    (expected : ObjectKind) : Except Denial Capability :=
+  match lookup state subject slot with
+  | .invalidSubject => .error .invalidSubject
+  | .staleSlot => .error .staleSlot
+  | .found capability =>
+      if capability.kind != expected then .error .kindMismatch
+      else if state.objects capability.object != true then .error .staleSlot
+      else if state.kinds capability.object != some expected then .error .kindMismatch
+      else .ok capability
 
 def install (state : State) (subject : SubjectId) (slot : SlotId)
     (capability : Capability) : State :=
@@ -121,11 +146,11 @@ def copy (state : State) (actor : SubjectId) (source : SlotId)
       if state.subjects destination != true then reject state .invalidSubject
       else if (state.slots destination destinationSlot).isSome then
         reject state .occupiedSlot
-      else if nonemptyRights requested then
+      else if rightsValid capability.kind requested then
         if capability.rights.grant then
           if rightsSubset requested capability.rights then
             { state := install state destination destinationSlot
-                { object := capability.object, rights := requested },
+                { object := capability.object, kind := capability.kind, rights := requested },
               result := .accepted }
           else reject state .rightsNotSubset
         else reject state .missingGrant
@@ -143,7 +168,7 @@ def revoke (state : State) (actor : SubjectId) (authoritySlot : SlotId)
         | .invalidSubject => reject state .invalidSubject
         | .staleSlot => reject state .staleSlot
         | .found target =>
-            if authority.object = target.object then
+            if authority.object = target.object && authority.kind = target.kind then
               { state := clear state victim victimSlot, result := .accepted }
             else reject state .objectMismatch
       else reject state .missingRevoke
@@ -198,14 +223,15 @@ theorem copy_preserves_wellFormed (state : State) (actor : SubjectId)
         by_cases htarget : subject = destination ∧ slot = destinationSlot
         · have hdestination : state.subjects destination = true := by simp_all
           rcases htarget with ⟨rfl, rfl⟩
-          have hfound : found = { object := capability.object, rights := requested } := by
+          have hfound : found =
+              ({ object := capability.object, kind := capability.kind, rights := requested } : Capability) := by
             symm
             simpa [install] using hslot
           subst found
           have hsource := lookup_found_slot state actor source capability hlookup
           have hvalid := hstate actor source capability hsource
           exact ⟨by simpa [install] using hdestination,
-            hvalid.2.1, by simpa using hnonempty⟩
+            hvalid.2.1, hvalid.2.2.1, by simpa using hnonempty⟩
         · exact hstate subject slot found (by simpa [install, htarget] using hslot)
       · try simp_all
 
@@ -243,7 +269,8 @@ theorem copy_no_authority_amplification (state : State) (actor : SubjectId)
     split at hauthority <;> try simp_all
     split at hauthority
     · apply install_no_authority_amplification state actor destination destinationSlot
-        { object := capability.object, rights := requested } capability.rights
+        { object := capability.object, kind := capability.kind, rights := requested }
+        capability.rights
         (by simpa using ‹rightsSubset requested capability.rights = true›)
       · intro granted hgranted
         have hslot := lookup_found_slot state actor source capability hlookup
@@ -297,12 +324,14 @@ theorem revoke_rejected_unchanged (state : State) (actor : SubjectId)
 
 private def exampleSubjects : SubjectId → Bool := fun subject => subject < 2
 private def exampleObjects : ObjectId → Bool := fun object => object = 7
+private def exampleKinds : ObjectId → Option ObjectKind := fun object =>
+  if object = 7 then some .memory else none
 private def ownerRights : Rights := allRights
 private def readOnly : Rights := oneRight .read
 private def exampleState : State :=
-  { subjects := exampleSubjects, objects := exampleObjects
+  { subjects := exampleSubjects, objects := exampleObjects, kinds := exampleKinds
     slots := fun subject slot =>
-      if subject = 0 ∧ slot = 0 then some { object := 7, rights := ownerRights }
+      if subject = 0 ∧ slot = 0 then some { object := 7, kind := .memory, rights := ownerRights }
       else none }
 
 example : lookup exampleState 9 0 = .invalidSubject := by decide
@@ -319,7 +348,7 @@ example : (copy exampleState 0 0 1 0
 
 private def withoutGrant : State :=
   { exampleState with slots := fun subject slot =>
-      if subject = 0 ∧ slot = 0 then some { object := 7, rights := readOnly }
+      if subject = 0 ∧ slot = 0 then some { object := 7, kind := .memory, rights := readOnly }
       else none }
 
 private def grantReadRights : Rights := { read := true, grant := true }
@@ -329,9 +358,9 @@ example : (copy withoutGrant 0 0 1 0 (oneRight .write)).result =
     .rejected .missingGrant := by decide
 
 private def grantReadOnly : State :=
-  { exampleState with slots := fun subject slot =>
-      if subject = 0 ∧ slot = 0 then some { object := 7, rights := grantReadRights }
-      else none }
+  { exampleState with slots := fun subject slot => (if subject = 0 ∧ slot = 0 then
+      some ({ object := 7, kind := .memory, rights := grantReadRights } : Capability)
+    else none) }
 
 example : (copy grantReadOnly 0 0 1 0 (oneRight .write)).result =
     .rejected .rightsNotSubset := by decide
@@ -344,14 +373,35 @@ example : (revoke (copy exampleState 0 0 1 0 readOnly).state 0 0 1 0).result =
 
 private def secondObjectState : State :=
   { subjects := exampleSubjects, objects := fun object => object = 7 ∨ object = 8
-    slots := fun subject slot =>
-      if subject = 0 ∧ slot = 0 then some { object := 7, rights := ownerRights }
-      else if subject = 1 ∧ slot = 0 then some { object := 8, rights := readOnly }
-      else none }
+    kinds := fun object => if object = 7 ∨ object = 8 then some .memory else none
+    slots := fun subject slot => (if subject = 0 ∧ slot = 0 then
+      some { object := 7, kind := .memory, rights := ownerRights }
+    else if subject = 1 ∧ slot = 0 then
+      some ({ object := 8, kind := .memory, rights := readOnly } : Capability)
+    else none) }
 
 example : (revoke secondObjectState 0 0 1 0).result = .rejected .objectMismatch := by decide
 example : lookup
     (revoke (copy exampleState 0 0 1 0 readOnly).state 0 0 1 0).state 1 0 =
     .staleSlot := by decide
+
+private def addressRights : Rights := { grant := true, revoke := true }
+private def addressCapability : Capability := Capability.mk 9 .addressSpace addressRights
+private def addressState : State :=
+  { subjects := exampleSubjects
+    objects := fun object => object = 9
+    kinds := fun object => if object = 9 then some .addressSpace else none
+    slots := fun subject slot =>
+      if subject = 0 ∧ slot = 0 then some addressCapability else none }
+private def staleAddressState : State :=
+  { addressState with objects := fun _ => false, kinds := fun _ => none }
+
+/-- Adversarial typed-dispatch examples: neither object kind can stand in for the other. -/
+example : authorizeKind exampleState 0 0 .addressSpace = .error .kindMismatch := by rfl
+example : authorizeKind addressState 0 0 .memory = .error .kindMismatch := by rfl
+example : authorizeKind staleAddressState 0 0 .addressSpace = .error .staleSlot := by rfl
+example : (copy addressState 0 0 1 0 { grant := true }).result = .accepted := by decide
+example : (revoke (copy addressState 0 0 1 0 { grant := true }).state 0 0 1 0).result =
+    .accepted := by decide
 
 end LeanOS.Capability
