@@ -1,0 +1,84 @@
+name: Release experimental image
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Prove, reproduce, boot, and release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Install pinned Lean toolchain
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
+        with:
+          auto-config: false
+          build: false
+          test: false
+          lint: false
+          use-github-cache: true
+
+      - name: Install pinned image and emulator tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc=4:13.2.0-7ubuntu1 \
+            binutils=2.42-4ubuntu2.10 \
+            grub-common=2.12-1ubuntu7.3 \
+            grub-pc-bin=2.12-1ubuntu7.3 \
+            mtools=4.0.43-1build1 \
+            xorriso=1:1.5.6-1.1ubuntu3 \
+            qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 \
+            coreutils=9.4-3ubuntu6.2
+
+      - name: Validate tag and set version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "LEANOS_VERSION=$version" >> "$GITHUB_ENV"
+          echo "LEANOS_SOURCE_REVISION=$GITHUB_SHA" >> "$GITHUB_ENV"
+
+      - name: Lint repository documentation
+        run: ./scripts/check-markdown.sh
+
+      - name: Build and check every Lean proof
+        run: ./scripts/check.sh
+
+      - name: Verify deterministic image rebuild
+        run: ./scripts/test-reproducible-build.sh
+
+      - name: Run exact image build and QEMU smoke gates
+        run: |
+          ./scripts/build-image.sh
+          ./scripts/run-image.sh
+
+      - name: Package release evidence
+        run: ./scripts/package-release.sh "$GITHUB_REF_NAME"
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: build/release/*
+
+      - name: Publish prerelease with ephemeral GitHub token
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" build/release/*
+          --repo "$GITHUB_REPOSITORY"
+          --title "LeanOS $GITHUB_REF_NAME (experimental)"
+          --notes-file build/release/RELEASE_NOTES.md
+          --prerelease
+          --verify-tag

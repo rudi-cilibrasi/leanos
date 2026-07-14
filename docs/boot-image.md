@@ -50,7 +50,7 @@ These fixtures test the host harness only and are not boot evidence.
 
 ## Pinned reference tools
 
-The reference environment is Ubuntu 24.04 with Lean 4.32.0 from
+The reference environment is Ubuntu 24.04 (x86-64) with Lean 4.32.0 from
 `lean-toolchain`, GCC 13.3.0 (`gcc=4:13.2.0-7ubuntu1`), GNU binutils 2.42
 (`binutils=2.42-4ubuntu2.10`), GRUB
 (`grub-common=2.12-1ubuntu7.3`, `grub-pc-bin=2.12-1ubuntu7.3`), mtools
@@ -58,8 +58,47 @@ The reference environment is Ubuntu 24.04 with Lean 4.32.0 from
 (`qemu-system-x86=1:8.2.2+ds-0ubuntu1.17`), coreutils
 (`coreutils=9.4-3ubuntu6.2`), and QEMU's distributed SeaBIOS 1.16.3 firmware.
 The scripts name the Ubuntu package pins in actionable missing-tool diagnostics.
-These pins identify build inputs; this issue does not claim byte-for-byte
-reproducibility.
+These pins identify the build inputs. `build-image.sh` uses BIOS-only GRUB
+output, a fixed ISO UUID and file dates, no linker build ID, and normalized
+debug paths. `./scripts/test-reproducible-build.sh` performs two clean builds
+and requires byte-identical ISO, ELF, symbol map, and source-revision files.
+The experiment is run by both release CI and local validation. It measures
+same-revision rebuilding in the pinned reference environment; it does not claim
+that arbitrary host distributions or tool versions produce identical bytes.
+
+## Experimental releases
+
+Tags and images use `vMAJOR.MINOR.PATCH` and `MAJOR.MINOR.PATCH`, respectively.
+While LeanOS remains experimental, every GitHub release is a prerelease. A tag
+is immutable release input: move neither a published tag nor its assets. Patch
+increments are compatible experiment fixes, minor increments may change the
+boot protocol or model, and major increments may change the target or research
+scope. This policy is not a stability or support guarantee.
+
+The tag workflow runs the repository-owned Markdown, complete Lean
+proof-integrity, deterministic-build, image-build, and QEMU scripts before it
+can publish. It releases the ISO, debug ELF, symbol map, exact serial log,
+source revision, deterministic toolchain manifest, experimental notes, and
+SHA-256 manifest. The full Git commit is also stored as `/boot/SOURCE_REVISION`
+inside the ISO; no wall-clock build timestamp is embedded. GitHub's ephemeral
+workflow token publishes the release, and OIDC-backed GitHub artifact
+attestations provide provenance without a long-lived secret.
+
+After downloading every release asset into one directory, verify it with:
+
+```sh
+sha256sum --check SHA256SUMS
+gh attestation verify --repo rudi-cilibrasi/leanos \
+  leanos-0.1.0-x86_64.iso
+cat SOURCE_REVISION
+```
+
+Repeat `gh attestation verify` for the ELF, map, log, revision, toolchain, notes,
+and checksum manifest. Compare `SOURCE_REVISION` with the tag using
+`git rev-list -n 1 v0.1.0`. The attestation establishes where GitHub Actions
+built an artifact and the checksums detect changed bytes; neither proves the
+binary implements the Lean model. The release's `RELEASE_NOTES.md` explicitly
+enumerates the experimental status, TCB, and unproved model-to-binary boundary.
 
 ## Trusted boundary
 
