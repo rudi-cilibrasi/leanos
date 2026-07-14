@@ -68,6 +68,16 @@ the generated binary or boot chain.
 allocation-free generated-C export for the first Lean/boot boundary and records
 the reproducible experiments and trusted assumptions behind that decision.
 
+The first executable model is `LeanOS.KernelTransition.transition`, with
+machine-checked determinism, invariant-preservation, and rejection-stability
+theorems in
+[`LeanOS/KernelTransition.lean`](LeanOS/KernelTransition.lean). The boot-slice
+[issue #6](https://github.com/rudi-cilibrasi/leanos/issues/6) must invoke the
+exact fixed-width export `LeanOS.KernelTransition.bootTransition` (C symbol
+`leanos_boot_transition`) and test its encoded accepted and rejected results.
+That adapter is proved to agree with the model for well-formed encoded states;
+the generated code and boot boundary remain trusted rather than proved.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
