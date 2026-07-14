@@ -83,6 +83,13 @@ exact fixed-width export `LeanOS.KernelTransition.bootTransition` (C symbol
 That adapter is proved to agree with the model for well-formed encoded states;
 the generated code and boot boundary remain trusted rather than proved.
 
+The first capability-security reference model is documented in
+[`docs/capability-model.md`](docs/capability-model.md). Its Lean theorems prove
+well-formedness preservation, state-preserving rejection, and authority
+provenance for a minimal copy/revoke operation set. These are model-level
+properties, not claims about information flow, covert channels, concurrency,
+object lifetimes, generated code, or a kernel binary.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
