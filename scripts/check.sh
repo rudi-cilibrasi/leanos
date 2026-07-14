@@ -6,9 +6,14 @@ cd "$repo_root"
 
 lake build
 
+lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
+  experiments/freestanding-boundary/Boundary.lean
+lake env lean -DwarningAsError=true -R experiments/hosted-boundary \
+  experiments/hosted-boundary/Hosted.lean
+
 if rg -n \
   '^[[:space:]]*(axiom|constant|unsafe[[:space:]]+(def|abbrev)|extern)[[:space:]]' \
-  LeanOS.lean LeanOS; then
+  LeanOS.lean LeanOS experiments; then
   echo "error: unapproved axiom or trusted-code declaration in Lean sources" >&2
   echo "document and explicitly allowlist required TCB declarations" >&2
   exit 1

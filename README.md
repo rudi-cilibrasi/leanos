@@ -64,6 +64,10 @@ claims, and initial trusted computing base are fixed in
 successful compilation or QEMU execution is integration evidence, not proof of
 the generated binary or boot chain.
 
+[ADR 0002](docs/adr/0002-freestanding-lean-boundary.md) selects a restricted,
+allocation-free generated-C export for the first Lean/boot boundary and records
+the reproducible experiments and trusted assumptions behind that decision.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
