@@ -31,12 +31,14 @@ structure State where
 def WellFormed (state : State) : Prop :=
   Capability.WellFormed state.capabilities ∧
   (∀ subject slot cap, state.capabilities.slots subject slot = some cap →
+    cap.kind = .memory →
     ∃ frame, state.binding cap.object = some frame ∧
       FrameAllocator.IsOwnedBy state.allocator frame cap.object) ∧
   (∀ object frame, state.binding object = some frame →
     state.capabilities.objects object = true ∧
       FrameAllocator.IsOwnedBy state.allocator frame object ∧ state.issued object = true) ∧
-  (∀ object, state.capabilities.objects object = true → ∃ frame,
+  (∀ object, state.capabilities.objects object = true →
+    state.capabilities.kinds object = some .memory → ∃ frame,
     state.binding object = some frame)
 
 inductive AllocationError where
@@ -44,11 +46,11 @@ inductive AllocationError where
   deriving BEq, DecidableEq, Repr
 
 inductive ReleaseError where
-  | invalidSubject | staleSlot | missingRevoke | retiredObject | allocatorMismatch
+  | invalidSubject | staleSlot | missingRevoke | kindMismatch | retiredObject | allocatorMismatch
   deriving BEq, DecidableEq, Repr
 
 inductive AccessError where
-  | invalidSubject | staleSlot | missingRight | retiredObject | allocatorMismatch
+  | invalidSubject | staleSlot | missingRight | kindMismatch | retiredObject | allocatorMismatch
   deriving BEq, DecidableEq, Repr
 
 inductive Result (ε : Type) where | accepted | rejected (reason : ε)
@@ -74,13 +76,16 @@ def setIssued (issued : ObjectId → Bool) (object : ObjectId) :=
 def retireCapabilities (state : Capability.State) (object : ObjectId) : Capability.State :=
   { state with
     objects := setObject state.objects object false
+    kinds := fun candidate => if candidate = object then none else state.kinds candidate
     slots := fun subject slot =>
       match state.slots subject slot with
       | some cap => if cap.object = object then none else some cap
       | none => none }
 
 def activateObject (state : Capability.State) (object : ObjectId) : Capability.State :=
-  { state with objects := setObject state.objects object true }
+  { state with
+    objects := setObject state.objects object true
+    kinds := fun candidate => if candidate = object then some .memory else state.kinds candidate }
 
 /-- Allocate a free frame to a never-before-issued object and install its root cap. -/
 def allocate (state : State) (object : ObjectId) (subject : SubjectId)
@@ -93,7 +98,7 @@ def allocate (state : State) (object : ObjectId) (subject : SubjectId)
     | .ok allocation =>
       { state :=
           { capabilities := Capability.install (activateObject state.capabilities object)
-              subject slot { object, rights := Capability.allRights }
+              subject slot { object, kind := .memory, rights := Capability.allRights }
             allocator := allocation.state
             binding := setBinding state.binding object (some allocation.frame)
             issued := setIssued state.issued object }
@@ -106,7 +111,8 @@ def release (state : State) (subject : SubjectId) (slot : SlotId) :
   | .invalidSubject => reject state .invalidSubject
   | .staleSlot => reject state .staleSlot
   | .found cap =>
-      if !cap.rights.revoke then reject state .missingRevoke
+      if cap.kind != .memory then reject state .kindMismatch
+      else if !cap.rights.revoke then reject state .missingRevoke
       else match state.binding cap.object with
         | none => reject state .retiredObject
         | some frame => match FrameAllocator.release state.allocator cap.object frame with
@@ -126,7 +132,8 @@ def authorize (state : State) (subject : SubjectId) (slot : SlotId)
   | .invalidSubject => .error .invalidSubject
   | .staleSlot => .error .staleSlot
   | .found cap =>
-      if !Capability.permits cap.rights right then .error .missingRight
+      if cap.kind != .memory then .error .kindMismatch
+      else if !Capability.permits cap.rights right then .error .missingRight
       else match state.binding cap.object with
         | none => .error .retiredObject
         | some frame =>
@@ -148,6 +155,7 @@ theorem release_rejected_unchanged (state : State) (subject slot) (reason)
   simp only [release] at h ⊢
   split <;> try simp_all [reject]
   next cap =>
+    split <;> try simp_all [reject]
     split <;> try simp_all [reject]
     split <;> try simp_all [reject]
     next frame => split <;> simp_all [reject]
@@ -198,7 +206,7 @@ theorem issued_identifier_never_reallocated (state : State) (object subject slot
 theorem allocated_root_capability (state : State) (object subject slot)
     (ha : (allocate state object subject slot).result = .accepted) :
     (allocate state object subject slot).state.capabilities.slots subject slot =
-      some { object, rights := Capability.allRights } := by
+      some { object, kind := .memory, rights := Capability.allRights } := by
   simp only [allocate] at ha ⊢
   split <;> simp_all [reject]
   split <;> simp_all [reject]
@@ -226,6 +234,7 @@ theorem release_preserves_issued (state : State) (subject slot) :
   next cap =>
     split <;> try rfl
     split <;> try rfl
+    split <;> try rfl
     next frame => split <;> rfl
 
 /-- Release removes every installed capability for the retired object. -/
@@ -239,6 +248,7 @@ theorem release_invalidates (state : State) (subject slot)
   simp only [release] at ha ⊢
   split <;> simp_all [reject]
   next cap hlookup =>
+    split <;> simp_all [reject]
     split <;> simp_all [reject]
     split <;> simp_all [reject]
     next frame =>
@@ -267,6 +277,7 @@ theorem authorized_current_binding (state : State) (subject slot right frame)
   next cap hlookup =>
     split at h <;> try contradiction
     split at h <;> try contradiction
+    split at h <;> try contradiction
     next bound hbinding =>
       split at h <;> try contradiction
       injection h with hframe
@@ -276,7 +287,7 @@ theorem authorized_current_binding (state : State) (subject slot right frame)
 
 private def subjects : SubjectId → Bool := fun subject => subject < 3
 private def emptyCaps : Capability.State :=
-  { subjects, objects := fun _ => false, slots := fun _ _ => none }
+  { subjects, objects := fun _ => false, kinds := fun _ => none, slots := fun _ _ => none }
 private def oneFrame : FrameAllocator.State :=
   { frames := [4], status := fun frame => if frame = 4 then .free else .reserved }
 private def initial : State :=

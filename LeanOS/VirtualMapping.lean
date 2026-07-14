@@ -68,7 +68,7 @@ def WellFormed (state : State) : Prop :=
 
 inductive MapError where
   | invalidAddressSpace | notOwner | staleSlot | occupiedPage | emptyPermissions
-  | rightsNotSubset | retiredObject | allocatorMismatch
+  | rightsNotSubset | kindMismatch | retiredObject | allocatorMismatch
   deriving BEq, DecidableEq, Repr
 
 inductive UnmapError where | invalidAddressSpace | notOwner | unmappedPage
@@ -76,7 +76,7 @@ inductive UnmapError where | invalidAddressSpace | notOwner | unmappedPage
 
 inductive TranslationError where
   | invalidAddressSpace | notOwner | unmappedPage | missingPermission
-  | retiredObject | allocatorMismatch
+  | kindMismatch | retiredObject | allocatorMismatch
   deriving BEq, DecidableEq, Repr
 
 inductive Result (ε : Type) where | accepted | rejected (reason : ε)
@@ -112,7 +112,8 @@ def map (state : State) (actor : SubjectId) (slot : SlotId)
     | .invalidSubject => reject state .notOwner
     | .staleSlot => reject state .staleSlot
     | .found cap =>
-      if (state.mappings addressSpace page).isSome then reject state .occupiedPage
+      if cap.kind != .memory then reject state .kindMismatch
+      else if (state.mappings addressSpace page).isSome then reject state .occupiedPage
       else if !permissions.nonempty then reject state .emptyPermissions
       else if !permissionsSubset permissions cap.rights then reject state .rightsNotSubset
       else match state.memory.binding cap.object with
@@ -141,6 +142,8 @@ def translate (state : State) (actor : SubjectId) (addressSpace : AddressSpaceId
     match state.mappings addressSpace page with
     | none => .error .unmappedPage
     | some mapping => if !mapping.permissions.permits access then .error .missingPermission
+      else if state.memory.capabilities.kinds mapping.object != some .memory then
+        .error .kindMismatch
       else match state.memory.binding mapping.object with
       | none => .error .retiredObject
       | some frame => if state.memory.allocator.status frame = .owned mapping.object
@@ -164,6 +167,7 @@ theorem map_rejected_unchanged (state : State) actor slot addressSpace page perm
     split <;> try simp_all [reject]
     split <;> try simp_all [reject]
     next cap => split <;> try simp_all [reject]
+                split <;> try simp_all [reject]
                 split <;> try simp_all [reject]
                 split <;> try simp_all [reject]
                 split <;> try simp_all [reject]
@@ -194,6 +198,7 @@ theorem translated_current_frame (state : State) actor addressSpace page access 
   next owner => split at h <;> try contradiction
                 split at h <;> try contradiction
                 next mapping hmapping =>
+                  split at h <;> try contradiction
                   split at h <;> try contradiction
                   split at h <;> try contradiction
                   next bound hbinding =>
@@ -261,6 +266,7 @@ theorem map_permission_authority (state : State) actor slot addressSpace page pe
                   split at h <;> try contradiction
                   split at h <;> try contradiction
                   split at h <;> try contradiction
+                  split at h <;> try contradiction
                   next hsubset =>
                     split at h <;> try contradiction
                     next frame =>
@@ -285,6 +291,7 @@ theorem map_preserves_wellFormed (state : State) actor slot addressSpace page pe
     next hactor =>
       split <;> try simpa [reject] using hstate
       next cap hlookup =>
+        split <;> try simpa [reject] using hstate
         split <;> try simpa [reject] using hstate
         split <;> try simpa [reject] using hstate
         next hnonempty =>
@@ -355,6 +362,7 @@ theorem memory_release_preserves_subjects (memory : MemoryLifecycle.State) subje
   next cap =>
     split <;> try rfl
     split <;> try rfl
+    split <;> try rfl
     next frame => split <;> rfl
 
 theorem release_preserves_wellFormed (state : State) subject slot
@@ -374,8 +382,10 @@ theorem release_preserves_wellFormed (state : State) subject slot
 private def subjects : SubjectId → Bool := fun subject => subject < 3
 private def caps : Capability.State :=
   { subjects, objects := fun object => object = 10
+    kinds := fun object => if object = 10 then some .memory else none
     slots := fun subject slot =>
-      if subject = 0 ∧ slot = 0 then some { object := 10, rights := Capability.allRights }
+      if subject = 0 ∧ slot = 0 then
+        some (Capability.Capability.mk 10 .memory Capability.allRights)
       else none }
 private def allocator : FrameAllocator.State :=
   { frames := [4], status := fun frame => if frame = 4 then .owned 10 else .reserved }
@@ -388,7 +398,9 @@ private def initial : State :=
 private def readOnly := (map initial 0 0 5 7 { read := true }).state
 private def readRights : Capability.Rights := { read := true }
 private def readSlots (subject : SubjectId) (slot : SlotId) : Option Capability.Capability :=
-  if subject = 0 ∧ slot = 0 then some { object := 10, rights := readRights } else none
+  if subject = 0 ∧ slot = 0 then
+    some (Capability.Capability.mk 10 .memory readRights)
+  else none
 private def readCapMemory : MemoryLifecycle.State :=
   { memory with capabilities :=
       { caps with slots := readSlots } }
