@@ -68,6 +68,11 @@ the generated binary or boot chain.
 allocation-free generated-C export for the first Lean/boot boundary and records
 the reproducible experiments and trusted assumptions behind that decision.
 
+The Phase 1 image can be built with `./scripts/build-image.sh` and exercised
+headlessly with `./scripts/run-image.sh`; the stable protocol, pinned reference
+tools, debug artifacts, and added trusted boundary are documented in
+[the boot-image guide](docs/boot-image.md).
+
 The first executable model is `LeanOS.KernelTransition.transition`, with
 machine-checked determinism, invariant-preservation, and rejection-stability
 theorems in
