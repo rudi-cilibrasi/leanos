@@ -6,9 +6,18 @@ cd "$repo_root"
 
 lake build
 
-if rg -n \
-  '^[[:space:]]*(axiom|constant|unsafe[[:space:]]+(def|abbrev)|extern)[[:space:]]' \
-  LeanOS.lean LeanOS; then
+lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
+  experiments/freestanding-boundary/Boundary.lean
+lake env lean -DwarningAsError=true -R experiments/hosted-boundary \
+  experiments/hosted-boundary/Hosted.lean
+
+declaration_escape_pattern='^[[:space:]]*((private|protected|local|noncomputable)[[:space:]]+)*(axiom|constant|unsafe|extern)[[:space:]]'
+ffi_attribute_pattern='^[[:space:]]*@\[[^]]*(extern|implemented_by)([[:space:],(]|\])'
+
+if rg -n --glob '*.lean' \
+  -e "$declaration_escape_pattern" \
+  -e "$ffi_attribute_pattern" \
+  LeanOS.lean LeanOS experiments; then
   echo "error: unapproved axiom or trusted-code declaration in Lean sources" >&2
   echo "document and explicitly allowlist required TCB declarations" >&2
   exit 1
