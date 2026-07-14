@@ -6,6 +6,8 @@ cd "$repo_root"
 
 lake build
 
+./scripts/test-run-image.sh
+
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
   experiments/freestanding-boundary/Boundary.lean
 lake env lean -DwarningAsError=true -R experiments/hosted-boundary \

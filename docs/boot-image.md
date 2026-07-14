@@ -36,6 +36,18 @@ guest writes `0x10` to QEMU's `isa-debug-exit` device for success (`qemu` status
 timeout, rejects any missing/reordered/trailing serial data, disables networking,
 and uses one `q35` CPU under TCG.
 
+The runner fixes the machine (`q35`), CPU (`max`), memory (128 MiB), one vCPU,
+ISO image, file-backed serial console, and software-only TCG acceleration, so it
+does not require KVM. Allow roughly 256 MiB of host memory, 100 MiB of disk for
+build artifacts, and at most 30 seconds of wall time. It always creates and
+preserves `build/boot/serial.log`, and prints the QEMU version, exact escaped
+command, and a `timeout`, `guest-error`, `qemu-error`, or `serial-protocol`
+failure class. Success requires both debug-exit status 33 and the exact protocol.
+
+Run `./scripts/test-run-image.sh` to exercise controlled success, missing and
+partial protocol, guest-error, and hang/timeout fixtures without booting QEMU.
+These fixtures test the host harness only and are not boot evidence.
+
 ## Pinned reference tools
 
 The reference environment is Ubuntu 24.04 with Lean 4.32.0 from
