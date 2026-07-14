@@ -58,6 +58,12 @@ freestanding with a suitably small runtime or whether the first slice needs a
 minimal assembly/C/Rust loader around a Lean model. The decision and its TCB
 impact will be recorded before the kernel architecture hardens.
 
+The target platform, Phase 1 threat model, proof vocabulary, allowed milestone
+claims, and initial trusted computing base are fixed in
+[ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md). In particular,
+successful compilation or QEMU execution is integration evidence, not proof of
+the generated binary or boot chain.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
@@ -151,7 +157,8 @@ or deliberately revise the associated specification in the same pull request.
 
 ## Current repository status
 
-Today the repository contains its project charter and the first CI hygiene
-check. The issue tracker defines the bootstrap work. Until a milestone is linked
-here with passing proof and emulator evidence, LeanOS should be described as an
-experimental research project rather than a verified operating system.
+Today the repository contains its project charter, the Phase 1 architecture
+boundary, and the first CI hygiene check. The issue tracker defines the bootstrap
+work. Until a milestone is linked here with passing proof and emulator evidence,
+LeanOS should be described as an experimental research project rather than a
+verified operating system.
