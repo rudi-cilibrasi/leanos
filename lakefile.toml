@@ -1,0 +1,7 @@
+name = "leanos"
+version = "0.1.0"
+defaultTargets = ["LeanOS"]
+
+[[lean_lib]]
+name = "LeanOS"
+moreLeanArgs = ["-DwarningAsError=true"]
