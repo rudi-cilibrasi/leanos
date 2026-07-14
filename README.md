@@ -119,7 +119,11 @@ check from the repository root:
 
 Elan reads `lean-toolchain` and installs the exact Lean release automatically.
 The check builds every default Lake target and verifies that the deliberately
-invalid proof fixture remains rejected. GitHub Actions invokes the same script;
+invalid proof fixtures remain rejected. Lean warnings are errors for project
+modules, so declarations containing `sorry` or `admit` fail the build. The
+check also rejects unapproved `axiom`, `constant`, `unsafe`, and `extern`
+declarations; required trusted-code boundaries must be documented and explicitly
+allowlisted when they are introduced. GitHub Actions invokes the same script;
 generated Lake output is kept under the ignored `.lake/` directory.
 
 ## Roadmap

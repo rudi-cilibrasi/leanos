@@ -4,3 +4,4 @@ defaultTargets = ["LeanOS"]
 
 [[lean_lib]]
 name = "LeanOS"
+moreLeanArgs = ["-DwarningAsError=true"]
