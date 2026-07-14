@@ -100,6 +100,11 @@ never-reused object identifiers to prove safe release and reuse; its lifetime
 rule, machine-checked guarantees, executable attacks, and limits are documented
 in [`docs/memory-lifecycle.md`](docs/memory-lifecycle.md).
 
+The executable virtual-mapping model adds subject-owned address spaces,
+capability-bounded read/write mappings, live translation checks, and stale
+mapping invalidation. Its policy, proved scope, examples, and limitations are
+documented in [`docs/virtual-mapping.md`](docs/virtual-mapping.md).
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
