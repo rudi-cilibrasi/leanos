@@ -95,6 +95,11 @@ complexity, initialization assumptions, proved invariants, and capability
 ownership boundary are documented in
 [`docs/frame-allocator.md`](docs/frame-allocator.md).
 
+The first composition of capability authority with frame ownership uses
+never-reused object identifiers to prove safe release and reuse; its lifetime
+rule, machine-checked guarantees, executable attacks, and limits are documented
+in [`docs/memory-lifecycle.md`](docs/memory-lifecycle.md).
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
