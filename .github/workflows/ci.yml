@@ -45,3 +45,38 @@ jobs:
 
       - name: Build and check proofs
         run: ./scripts/check.sh
+
+  emulator:
+    name: Deterministic QEMU smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Install pinned Lean toolchain
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
+        with:
+          auto-config: false
+          build: false
+          test: false
+          lint: false
+          use-github-cache: true
+
+      - name: Install image and emulator tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc binutils grub-common grub-pc-bin mtools xorriso qemu-system-x86
+
+      - name: Build and boot image
+        run: |
+          ./scripts/build-image.sh
+          ./scripts/run-image.sh
+
+      - name: Preserve serial log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qemu-serial-log
+          path: build/boot/serial.log
+          if-no-files-found: error
