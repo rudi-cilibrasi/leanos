@@ -68,6 +68,20 @@ def WellFormed (state : State) : Prop :=
       (mapping.permissions.write = true →
         Capability.HasAuthority state.memory.capabilities subject mapping.object .write)
 
+/-- The lifecycle composition adds registry type safety, monotonic identity,
+and an exact correspondence between live address-space objects and owners. -/
+def LifecycleWellFormed (state : State) : Prop :=
+  WellFormed state ∧ Capability.WellFormed state.memory.capabilities ∧
+  (∀ addressSpace subject, state.owner addressSpace = some subject →
+    state.memory.capabilities.objects addressSpace = true ∧
+    state.memory.capabilities.kinds addressSpace = some .addressSpace ∧
+    state.issuedAddressSpace addressSpace = true ∧
+    state.memory.issued addressSpace = true ∧
+    Capability.HasAuthority state.memory.capabilities subject addressSpace .revoke) ∧
+  (∀ addressSpace, state.memory.capabilities.objects addressSpace = true →
+    state.memory.capabilities.kinds addressSpace = some .addressSpace →
+    ∃ subject, state.owner addressSpace = some subject)
+
 inductive MapError where
   | invalidAddressSpace | notOwner | staleSlot | occupiedPage | emptyPermissions
   | rightsNotSubset | kindMismatch | retiredObject | allocatorMismatch
@@ -438,6 +452,75 @@ theorem unmap_preserves_wellFormed (state : State) actor addressSpace page
   · simp [setMapping, htarget] at hmapped
   · exact hmappings candidate candidatePage mapping
       (by simpa [setMapping, htarget] using hmapped)
+
+theorem map_preserves_lifecycleWellFormed (state : State) actor slot addressSpace page permissions
+    (hstate : LifecycleWellFormed state) :
+    LifecycleWellFormed (map state actor slot addressSpace page permissions).state := by
+  rcases hstate with ⟨hmap, hcaps, howners, hlive⟩
+  have hmemory : (map state actor slot addressSpace page permissions).state.memory =
+      state.memory := by
+    simp only [map]
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    next cap =>
+      split <;> try rfl
+      split <;> try rfl
+      split <;> try rfl
+      split <;> try rfl
+      split <;> try rfl
+      next frame => split <;> rfl
+  have howner : (map state actor slot addressSpace page permissions).state.owner =
+      state.owner := by
+    simp only [map]
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    next cap =>
+      split <;> try rfl
+      split <;> try rfl
+      split <;> try rfl
+      split <;> try rfl
+      split <;> try rfl
+      next frame => split <;> rfl
+  have hissued : (map state actor slot addressSpace page permissions).state.issuedAddressSpace =
+      state.issuedAddressSpace := by
+    simp only [map]
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    next cap =>
+      split <;> try rfl
+      split <;> try rfl
+      split <;> try rfl
+      split <;> try rfl
+      split <;> try rfl
+      next frame => split <;> rfl
+  refine ⟨map_preserves_wellFormed state actor slot addressSpace page permissions hmap, ?_⟩
+  simpa [hmemory, howner, hissued] using And.intro hcaps (And.intro howners hlive)
+
+theorem unmap_preserves_lifecycleWellFormed (state : State) actor addressSpace page
+    (hstate : LifecycleWellFormed state) :
+    LifecycleWellFormed (unmap state actor addressSpace page).state := by
+  rcases hstate with ⟨hmap, hcaps, howners, hlive⟩
+  have hmemory : (unmap state actor addressSpace page).state.memory = state.memory := by
+    simp only [unmap]
+    split <;> try rfl
+    split <;> try rfl
+    split <;> rfl
+  have howner : (unmap state actor addressSpace page).state.owner = state.owner := by
+    simp only [unmap]
+    split <;> try rfl
+    split <;> try rfl
+    split <;> rfl
+  have hissued : (unmap state actor addressSpace page).state.issuedAddressSpace =
+      state.issuedAddressSpace := by
+    simp only [unmap]
+    split <;> try rfl
+    split <;> try rfl
+    split <;> rfl
+  refine ⟨unmap_preserves_wellFormed state actor addressSpace page hmap, ?_⟩
+  simpa [hmemory, howner, hissued] using And.intro hcaps (And.intro howners hlive)
 
 theorem memory_release_preserves_subjects (memory : MemoryLifecycle.State) subject slot :
     (MemoryLifecycle.release memory subject slot).state.capabilities.subjects =
