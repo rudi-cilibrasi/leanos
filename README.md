@@ -90,6 +90,11 @@ provenance for a minimal copy/revoke operation set. These are model-level
 properties, not claims about information flow, covert channels, concurrency,
 object lifetimes, generated code, or a kernel binary.
 
+The physical-frame allocator reference model and its representation,
+complexity, initialization assumptions, proved invariants, and capability
+ownership boundary are documented in
+[`docs/frame-allocator.md`](docs/frame-allocator.md).
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
