@@ -158,7 +158,9 @@ def CompositeState.Coherent (state : CompositeState) : Prop :=
   state.capabilities = state.lifecycle.capabilities ∧
   state.virtualMemory.memory.capabilities = state.lifecycle.capabilities ∧
   state.ipc.virtualMemory.memory.capabilities = state.lifecycle.capabilities ∧
-  state.ipc.endpoints.capabilities = state.lifecycle.capabilities
+  state.ipc.endpoints.capabilities = state.lifecycle.capabilities ∧
+  (∀ object, state.lifecycle.capabilities.objects object ≠ true →
+    state.ipc.endpoints.mailbox object = none)
 
 private def restrictMappings (lifecycle : SubjectLifecycle.State)
     (mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
@@ -167,6 +169,10 @@ private def restrictMappings (lifecycle : SubjectLifecycle.State)
     | some mapping =>
         if lifecycle.mapping space page = some mapping.object then some mapping else none
     | none => none
+
+private def restrictMailboxes (lifecycle : SubjectLifecycle.State)
+    (mailbox : EndpointIPC.ObjectId → Option EndpointIPC.Envelope) :=
+  fun object => if lifecycle.capabilities.objects object = true then mailbox object else none
 
 /-- Atomically publish a lifecycle change to every overlapping subsystem
 projection.  Rich subsystem-only data is retained only while the authoritative
@@ -189,7 +195,9 @@ private def installLifecycle (state : CompositeState)
     virtualMemory
     ipc := { state.ipc with
       virtualMemory := ipcVirtualMemory
-      endpoints := { state.ipc.endpoints with capabilities := lifecycle.capabilities } }
+      endpoints := { state.ipc.endpoints with
+        capabilities := lifecycle.capabilities
+        mailbox := restrictMailboxes lifecycle state.ipc.endpoints.mailbox } }
     capabilities := lifecycle.capabilities
     lifecycle }
 
@@ -211,7 +219,14 @@ private def lifecycleFromVirtualMemory (lifecycle : SubjectLifecycle.State)
 
 theorem installLifecycle_coherent state lifecycle :
     (installLifecycle state lifecycle).Coherent := by
-  simp [installLifecycle, CompositeState.Coherent]
+  simp [installLifecycle, CompositeState.Coherent, restrictMailboxes]
+  intro object hdead halive
+  simp_all
+
+theorem installLifecycle_clears_retired_mailbox state lifecycle object
+    (hdead : lifecycle.capabilities.objects object ≠ true) :
+    (installLifecycle state lifecycle).ipc.endpoints.mailbox object = none := by
+  simp [installLifecycle, restrictMailboxes, hdead]
 
 /-- Typed inputs to the actual subsystem transitions.  This is deliberately not
 a tag paired with a caller-supplied post-state. -/
@@ -249,9 +264,15 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
       installLifecycle { state with virtualMemory }
         (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
   | .preempt frame =>
-      let preemption :=
-        (Preemption.oneShotTick state.preemption state.execution.core frame).state
-      installScheduler { state with preemption } preemption.scheduler
+      let entry := dispatchHardware state.execution frame
+      let entered := installLifecycle { state with execution := entry.state }
+        entry.state.core.lifecycle
+      match entry.action with
+      | .timer =>
+          let preemption :=
+            (Preemption.oneShotTick entered.preemption entered.execution.core frame).state
+          installScheduler { entered with preemption } preemption.scheduler
+      | _ => entered
   | .ipc context call => { state with ipc := (IPCSyscall.dispatch state.ipc context call).state }
   | .capabilityCopy actor source destination destinationSlot rights =>
       installCapabilities state
@@ -294,6 +315,14 @@ theorem interrupt_synchronizes_lifecycle state frame :
     next.scheduler.lifecycle = next.execution.core.lifecycle ∧
       next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
   simp [applyOperation, installLifecycle]
+
+/-- Preemption cannot reinterpret a fatal hardware frame as an accepted
+scheduler no-op: the authoritative entry path latches the same terminal mode. -/
+theorem preempt_fatal_latches state frame reason
+    (hfatal : (dispatchHardware state.execution frame).action = .fatal reason) :
+    (applyOperation state (.preempt frame)).execution.mode =
+      (dispatchHardware state.execution frame).state.mode := by
+  simp [applyOperation, hfatal, installLifecycle]
 
 /-- The sole composite step computes the post-state by invoking the typed
 subsystem transition internally. -/
