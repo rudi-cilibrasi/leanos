@@ -13,7 +13,7 @@ for section in .user_a_bss .user_b_bss; do
   [[ "$(flags "$section")" == *A* && "$(flags "$section")" == *W* && "$(flags "$section")" != *X* ]]
 done
 
-for symbol in __kernel_text_start __kernel_text_end __user_a_text_start \
+for symbol in __boot_image_start __boot_image_end __kernel_text_start __kernel_text_end __user_a_text_start \
   __user_a_text_end __user_a_stack_start __user_a_stack_end \
   __user_b_text_start __user_b_text_end __user_b_stack_start \
   __user_b_stack_end entry_stack page_table_a page_table_b \
@@ -22,6 +22,38 @@ for symbol in __kernel_text_start __kernel_text_end __user_a_text_start \
     echo "error: image policy symbol missing: $symbol" >&2; exit 1;
   }
 done
+
+symbol_address() { nm -n "$elf" | awk -v name="$1" '$3 == name { print "0x" $1 }'; }
+image_start="$(symbol_address __boot_image_start)"
+image_end="$(symbol_address __boot_image_end)"
+[[ -n "$image_start" && -n "$image_end" && $((image_start)) -lt $((image_end)) ]] || {
+  echo "error: invalid half-open boot image boundaries" >&2; exit 1;
+}
+[[ $((image_start % 4096)) -eq 0 && $((image_end % 4096)) -eq 0 ]] || {
+  echo "error: boot image boundaries must be page aligned" >&2; exit 1;
+}
+
+check_range() {
+  local start_name="$1" end_name="$2" start end
+  start="$(symbol_address "$start_name")"
+  end="$(symbol_address "$end_name")"
+  [[ -n "$start" && -n "$end" && $((image_start)) -le $((start)) &&
+      $((start)) -lt $((end)) && $((end)) -le $((image_end)) ]] || {
+    echo "error: invalid or out-of-image range: $start_name..$end_name" >&2
+    exit 1
+  }
+}
+check_range __kernel_text_start __kernel_text_end
+check_range __user_a_text_start __user_a_text_end
+check_range __user_a_stack_start __user_a_stack_end
+check_range __user_b_text_start __user_b_text_end
+check_range __user_b_stack_start __user_b_stack_end
+
+while read -r address _ symbol; do
+  [[ $((16#$address)) -ge $((image_start)) && $((16#$address)) -lt $((image_end)) ]] || {
+    echo "error: boot artifact $symbol lies outside boot image manifest" >&2; exit 1;
+  }
+done < <(nm -n "$elf" | awk '$3 ~ /^(page_map_level_4_[ab]|page_table_[ab]|gdt64|idt|tss|entry_stack|user_[ab]_stack)$/ { print }')
 
 # These named instructions make ordering reviewable in both the ELF symbol table
 # and disassembly: WP is set in the final CR0 paging write, while SMEP is enabled

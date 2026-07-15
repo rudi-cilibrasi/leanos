@@ -118,6 +118,10 @@ The bounded [Multiboot2 memory-map model](docs/boot-memory-map.md) validates a
 typed handoff, conservatively normalizes page intervals, proves usable-frame
 soundness, and refines its output into the physical-frame allocator.
 
+The [boot-reservation overlay](docs/boot-reservations.md) checks a finite
+boot-artifact manifest and gives its frames unconditional precedence before
+allocator initialization.
+
 The first composition of capability authority with frame ownership uses
 never-reused object identifiers to prove safe release and reuse; its lifetime
 rule, machine-checked guarantees, executable attacks, and limits are documented
