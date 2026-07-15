@@ -74,3 +74,9 @@ SMP, covert-channel elimination, full trace equivalence, and liveness. Lean
 compilation proves the model theorem only. The compiler, generated code, boot
 assembly, QEMU, hardware, trusted entry context, and correspondence between this
 unwinding model and the booted artifact remain trusted or unproved boundaries.
+
+The follow-on [finite scheduled observer model](scheduled-observation.md)
+composes this vocabulary with `LeanOS.Scheduler`, derives accepted actor
+context from its authoritative current subject/address space, and lifts the
+scoped result to paired finite prefixes with matching declared public-event
+projections and silent-step stuttering.
