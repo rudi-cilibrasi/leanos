@@ -19,16 +19,19 @@ virtual pages resolving to the same physical frame is rejected. This conservativ
 policy makes accepted copy-to writes independent of aliasing. Zero-length
 copies dereference no address and accept any start value.
 
-Lean proves that successful validation returns exactly the requested number of
-locations and that each came from the selected caller-owned address space with
-the requested permission. Rejection preserves the complete state. Copy-from
-never changes user bytes, copy-to never changes kernel bytes, and a copy-to
-helper theorem proves every physical byte outside the validated locations is
-unchanged. Together with `VirtualMapping`'s current-frame, authority, stale
-lifetime, and cross-subject theorems, these establish the modeled confinement
-boundary. Executable traces cover zero and maximum bounds, overflow,
-non-canonical input, a page crossing, an unmapped second page, a read-only
-destination, alias rejection, stale reuse, and a round trip.
+Lean proves that successful validation cannot wrap its range, remains within
+the modeled canonical bound, returns exactly the requested number of locations,
+and resolves each location through the selected caller-owned address space with
+the requested permission. Rejection preserves the complete state. Accepted
+copies install exactly the prevalidated source values; operation-level footprint
+theorems show that copy-from changes no other buffer or out-of-range offset and
+copy-to changes no physical byte outside its validated locations. Copy-from
+never changes user bytes and copy-to never changes kernel bytes. Explicit
+cross-subject rejection theorems connect complete prevalidation to
+`VirtualMapping`'s owner confinement. Executable traces cover zero and maximum
+bounds, overflow, non-canonical input, exact first and last bytes across a page
+boundary, atomic failure on an unmapped second page, a read-only destination,
+alias rejection, stale reuse, and a round trip.
 
 These are model-level proofs, not proofs of assembly loops, page-table hardware,
 concurrent mutation, generated code, QEMU, or a kernel binary. The trusted

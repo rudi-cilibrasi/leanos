@@ -132,6 +132,21 @@ theorem validate_zero (state : State) context start access :
     validate state context start 0 access = .ok [] := by
   simp [validate, maxCopyBytes]
 
+/-- Successful nonempty validation proves that the mathematical half-open
+range fits both the fixed-width address space and the modeled canonical area. -/
+theorem validate_bounds (state : State) context start length access locations
+    (h : validate state context start length access = .ok locations) :
+    length = 0 ∨ (start.toNat + length <= addressLimit ∧
+      start.toNat + length <= canonicalByteLimit) := by
+  simp only [validate] at h
+  split at h <;> try contradiction
+  split at h
+  · simp_all
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  right
+  omega
+
 theorem validateLoop_length (state : State) context start access length locations
     (h : validateLoop state context start access length = .ok locations) :
     locations.length = length := by
@@ -149,6 +164,17 @@ theorem validateLoop_length (state : State) context start access length location
               · simp [validateLoop, hp, hl, hc] at h
                 cases h
                 simp [ih previous hp]
+
+theorem validate_length (state : State) context start access length locations
+    (h : validate state context start length access = .ok locations) :
+    locations.length = length := by
+  simp only [validate] at h
+  split at h <;> try contradiction
+  split at h
+  · simp_all
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  exact validateLoop_length state context start.toNat access length locations h
 
 /-- Every location accepted by whole-range validation came from the current
 caller-owned address space with the requested permission. -/
@@ -203,6 +229,40 @@ theorem copyTo_preserves_kernel (state : State) context start length buffer :
   simp only [copyToUser]
   split <;> rfl
 
+/-- Updating one typed kernel buffer leaves every other buffer and every byte
+beyond the supplied value list unchanged. -/
+theorem setKernelRange_outside bytes buffer values candidate offset
+    (h : candidate ≠ buffer ∨ values.length <= offset) :
+    setKernelRange bytes buffer values candidate offset = bytes candidate offset := by
+  rcases h with hbuffer | hoffset
+  · simp [setKernelRange, hbuffer]
+  · simp [setKernelRange, List.getD_eq_getElem?_getD, hoffset]
+
+/-- An accepted copy-from installs exactly the bytes read from its validated
+locations in the selected typed buffer. -/
+theorem copyFrom_validated_exact state context start length buffer locations
+    (h : validate state context start length .read = .ok locations) :
+    (copyFromUser state context start length buffer).state.kernelBytes =
+      setKernelRange state.kernelBytes buffer
+        (locations.map fun location => state.userBytes location.frame location.offset) := by
+  simp [copyFromUser, h]
+
+/-- Copy-from cannot change another typed buffer or an offset outside the
+requested length. -/
+theorem copyFrom_outside state context start length buffer candidate offset
+    (h : candidate ≠ buffer ∨ length <= offset) :
+    (copyFromUser state context start length buffer).state.kernelBytes candidate offset =
+      state.kernelBytes candidate offset := by
+  simp only [copyFromUser]
+  split
+  · rfl
+  next locations hvalidate =>
+    apply setKernelRange_outside
+    rcases h with hbuffer | hoffset
+    · exact Or.inl hbuffer
+    · right
+      simpa [validate_length state context start .read length locations hvalidate] using hoffset
+
 /-- A physical byte outside the prevalidated destination set is unchanged. -/
 theorem setUserLocations_outside bytes locations values frame offset
     (h : forall location, location ∈ locations ->
@@ -222,6 +282,90 @@ theorem setUserLocations_outside bytes locations values frame offset
             · simp [Ne.symm hoffset]
           · intro candidate hin
             exact h candidate (by simp [hin])
+
+/-- An accepted copy-to installs exactly the selected kernel-buffer values at
+the complete prevalidated destination list. -/
+theorem copyTo_validated_exact state context start length buffer locations
+    (h : validate state context start length .write = .ok locations) :
+    (copyToUser state context start length buffer).state.userBytes =
+      setUserLocations state.userBytes locations
+        (List.range length |>.map (state.kernelBytes buffer)) := by
+  simp [copyToUser, h]
+
+/-- Copy-to leaves every physical byte outside its validated destination list
+unchanged at the operation level. -/
+theorem copyTo_outside state context start length buffer locations frame offset
+    (hvalidate : validate state context start length .write = .ok locations)
+    (houtside : forall location, location ∈ locations ->
+      location.frame ≠ frame ∨ location.offset ≠ offset) :
+    (copyToUser state context start length buffer).state.userBytes frame offset =
+      state.userBytes frame offset := by
+  simp [copyToUser, hvalidate, setUserLocations_outside _ _ _ _ _ houtside]
+
+/-- A different subject cannot even resolve the first byte of an address space
+owned by another subject. This is the operation's confinement root: complete
+prevalidation means neither copy direction can accept such a nonempty range. -/
+theorem byteLocation_other_subject_rejected state owner context address access
+    (howner : state.virtual.owner context.activeAddressSpace = some owner)
+    (hne : context.caller ≠ owner) :
+    byteLocation state context address access = .error (.translation .notOwner) := by
+  have htranslate : translate state.virtual context.caller context.activeAddressSpace
+      (address / X86PageTable.pageBytes) access = .error .notOwner := by
+    simp [VirtualMapping.translate, howner, Ne.symm hne]
+  simp only [byteLocation]
+  rw [htranslate]
+  rfl
+
+theorem validateLoop_other_subject_rejected state owner context start access length
+    (howner : state.virtual.owner context.activeAddressSpace = some owner)
+    (hne : context.caller ≠ owner) (hpositive : 0 < length) :
+    validateLoop state context start access length =
+      .error (.translation .notOwner) := by
+  induction length with
+  | zero => omega
+  | succ n ih =>
+      cases n with
+      | zero =>
+          simp [validateLoop,
+            byteLocation_other_subject_rejected state owner context start access howner hne]
+      | succ n =>
+          rw [validateLoop, ih (Nat.zero_lt_succ n)]
+
+theorem copyFrom_other_subject_rejected state owner context start length buffer
+    (howner : state.virtual.owner context.activeAddressSpace = some owner)
+    (hne : context.caller ≠ owner)
+    (hpositive : 0 < length) (hbound : length <= maxCopyBytes)
+    (hcanonical : start.toNat + length <= canonicalByteLimit) :
+    (copyFromUser state context start length buffer).result =
+      .rejected (.translation .notOwner) := by
+  have hlimit : canonicalByteLimit <= addressLimit := by
+    native_decide
+  have haddress : start.toNat + length <= addressLimit := Nat.le_trans hcanonical hlimit
+  have hloop := validateLoop_other_subject_rejected state owner context start.toNat .read
+    length howner hne hpositive
+  have hvalidate : validate state context start length .read =
+      .error (.translation .notOwner) := by
+    simp [validate, Nat.not_lt.mpr hbound, Nat.ne_of_gt hpositive,
+      Nat.not_lt.mpr haddress, Nat.not_lt.mpr hcanonical, hloop]
+  simp [copyFromUser, hvalidate, reject]
+
+theorem copyTo_other_subject_rejected state owner context start length buffer
+    (howner : state.virtual.owner context.activeAddressSpace = some owner)
+    (hne : context.caller ≠ owner)
+    (hpositive : 0 < length) (hbound : length <= maxCopyBytes)
+    (hcanonical : start.toNat + length <= canonicalByteLimit) :
+    (copyToUser state context start length buffer).result =
+      .rejected (.translation .notOwner) := by
+  have hlimit : canonicalByteLimit <= addressLimit := by
+    native_decide
+  have haddress : start.toNat + length <= addressLimit := Nat.le_trans hcanonical hlimit
+  have hloop := validateLoop_other_subject_rejected state owner context start.toNat .write
+    length howner hne hpositive
+  have hvalidate : validate state context start length .write =
+      .error (.translation .notOwner) := by
+    simp [validate, Nat.not_lt.mpr hbound, Nat.ne_of_gt hpositive,
+      Nat.not_lt.mpr haddress, Nat.not_lt.mpr hcanonical, hloop]
+  simp [copyToUser, hvalidate, reject]
 
 /- Executable traces exercise both pages and every rejection class. -/
 private def demoVirtual : VirtualMapping.State :=
@@ -276,7 +420,18 @@ example : (copyFromUser demo ctx (UInt64.ofNat (addressLimit - 1)) 2 0).result =
 example : (copyFromUser demo ctx (UInt64.ofNat canonicalByteLimit) 1 0).result =
     .rejected .nonCanonical := by native_decide
 example : (copyFromUser demo ctx 4095 2 0).result = .accepted := by native_decide
+example : (copyFromUser demo ctx 4095 2 8).state.kernelBytes 8 0 =
+    demo.userBytes 4 4095 := by native_decide
+example : (copyFromUser demo ctx 4095 2 8).state.kernelBytes 8 1 =
+    demo.userBytes 5 0 := by native_decide
+example : (copyToUser demo ctx 4095 2 8).state.userBytes 4 4095 =
+    demo.kernelBytes 8 0 := by native_decide
+example : (copyToUser demo ctx 4095 2 8).state.userBytes 5 0 =
+    demo.kernelBytes 8 1 := by native_decide
 example : (copyFromUser demo ctx 8191 2 0).result = .rejected (.translation .unmappedPage) := by native_decide
+example : (copyFromUser demo ctx 8191 2 0).state = demo := by
+  apply copyFrom_rejected_unchanged (reason := .translation .unmappedPage)
+  native_decide
 example : (copyToUser readOnly ctx 0 1 0).result = .rejected (.translation .missingPermission) := by native_decide
 example : (copyFromUser aliased ctx 4095 2 0).result = .rejected .aliased := by native_decide
 example : (copyFromUser stale ctx 0 1 0).result = .rejected (.translation .retiredObject) := by native_decide
