@@ -23,6 +23,7 @@ cp "build/boot/leanos-${version}-x86_64.iso" \
 cp build/boot/leanos.elf "$release/leanos-${version}-x86_64.elf"
 cp build/boot/leanos.map "$release/leanos-${version}-x86_64.map"
 cp build/boot/serial.log "$release/leanos-${version}-serial.log"
+cp build/boot/corpus.tsv "$release/leanos-${version}-oracle.tsv"
 cp build/boot/SOURCE_REVISION "$release/SOURCE_REVISION"
 cp docs/release-notes.md "$release/RELEASE_NOTES.md"
 LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
@@ -30,6 +31,7 @@ LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
 (cd "$release" && sha256sum \
   "leanos-${version}-x86_64.iso" "leanos-${version}-x86_64.elf" \
   "leanos-${version}-x86_64.map" "leanos-${version}-serial.log" \
+  "leanos-${version}-oracle.tsv" \
   SOURCE_REVISION TOOLCHAIN.txt RELEASE_NOTES.md > SHA256SUMS)
 
 echo "packaged $tag release assets in build/release"

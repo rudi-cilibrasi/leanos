@@ -5,3 +5,7 @@ defaultTargets = ["LeanOS"]
 [[lean_lib]]
 name = "LeanOS"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-oracle"
+root = "LeanOS.Oracle"

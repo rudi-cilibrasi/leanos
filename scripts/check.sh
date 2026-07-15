@@ -6,6 +6,8 @@ cd "$repo_root"
 
 lake build
 
+./scripts/check-oracle-host.sh
+
 ./scripts/test-run-image.sh
 
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
