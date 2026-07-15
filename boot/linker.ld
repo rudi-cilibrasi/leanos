@@ -11,12 +11,20 @@ SECTIONS
   .data : ALIGN(4K) { *(.data .data.*) }
   .bss : ALIGN(4K) { *(COMMON) *(.bss .bss.*) }
   . = ALIGN(4K);
-  __user_text_start = .;
-  .user_text : { *(.user.text) }
-  __user_text_end = .;
+  __user_a_text_start = .;
+  .user_a_text : { *(.user.a.text) }
+  __user_a_text_end = .;
   . = ALIGN(4K);
-  __user_stack_start = .;
-  .user_bss : { *(.user.bss) }
-  __user_stack_end = .;
+  __user_a_stack_start = .;
+  .user_a_bss : { *(.user.a.bss) }
+  __user_a_stack_end = .;
+  . = ALIGN(4K);
+  __user_b_text_start = .;
+  .user_b_text : { *(.user.b.text) }
+  __user_b_text_end = .;
+  . = ALIGN(4K);
+  __user_b_stack_start = .;
+  .user_b_bss : { *(.user.b.bss) }
+  __user_b_stack_end = .;
   /DISCARD/ : { *(.comment) *(.eh_frame) *(.note*) }
 }

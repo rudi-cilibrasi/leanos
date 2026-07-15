@@ -1,5 +1,6 @@
 import LeanOS.Capability
 import LeanOS.EndpointIPC
+import LeanOS.IPCSyscall
 import LeanOS.Example
 import LeanOS.FrameAllocator
 import LeanOS.KernelTransition

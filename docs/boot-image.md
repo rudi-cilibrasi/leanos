@@ -20,7 +20,12 @@ from the documented toolchain. There are no repository-supplied binary blobs.
 
 ## Stable protocol and termination
 
-Version 2 extends the boot evidence with the ring-3 boundary described in
+Version 3 extends the boot evidence with the two-subject IPC boundary described
+in [ADR 0004](adr/0004-two-subject-ipc-slice.md). It requires exact records for
+both CPL3 subjects and address spaces, both directional denials, accepted send,
+fixed handoff, delivered payload and kernel-derived provenance, non-transfer of
+payload authority, contained fault, kernel resumption, and success. Version 2
+extends the boot evidence with the ring-3 boundary described in
 [ADR 0003](adr/0003-ring3-syscall-fault-slice.md). It requires, in order, a
 CPL3 record, accepted and rejected syscall records, the expected vector-14
 classification, kernel resumption, and final success. The complete exact trace
