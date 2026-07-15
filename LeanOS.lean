@@ -12,6 +12,7 @@ import LeanOS.Observation
 import LeanOS.Preemption
 import LeanOS.Syscall
 import LeanOS.UserCopy
+import LeanOS.UserCopyWindow
 import LeanOS.SubjectLifecycle
 import LeanOS.Oracle
 import LeanOS.Scheduler
