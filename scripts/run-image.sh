@@ -26,8 +26,8 @@ printf '%s\n' \
   'LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS' \
   'LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS' \
   'LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS' \
-  'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 ac=cleared result=PASS' \
-  'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 ac=cleared result=PASS' \
+  'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
+  'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' \
   'LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0' \
   'LEANOS/5 TIMER vector=32 source=pit mode=one-shot origin=cpl3 accepted=1' \
   'LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin' \

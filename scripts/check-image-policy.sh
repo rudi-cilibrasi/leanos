@@ -37,9 +37,12 @@ grep -Fq 'bts $20, %rax' boot/boot.S
 grep -Fq 'bts $21, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]
 [[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 6 ]]
-for symbol in smap_copy_from_stac smap_copy_from_clac smap_copy_to_stac \
+[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 7 ]]
+for symbol in smap_copy_from_cld smap_copy_from_stac smap_copy_from_clac \
+  smap_copy_to_cld smap_copy_to_stac \
   smap_copy_to_clac smap_omit_cleanup_probe_stac smap_force_clac \
-  isr80_clac isr14_clac isr32_clac run_smap_probe; do
+  isr80_clac isr80_cld isr14_clac isr14_cld isr32_clac isr32_cld \
+  run_smap_probe; do
   nm "$elf" | grep -Eq "[[:space:]]${symbol}$" || { echo "error: SMAP evidence symbol missing: $symbol" >&2; exit 1; }
 done
 grep -Fq 'fault_address == (uint64_t)wp_probe_target' boot/kernel.c

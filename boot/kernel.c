@@ -191,11 +191,13 @@ static void privilege_init(void) {
 }
 
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
-                         uint64_t arg2, uint64_t saved_cs) {
+                         uint64_t arg2, uint64_t saved_cs,
+                         uint64_t saved_flags) {
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
     if (current_subject == 1 && number == 4) {
+        if ((saved_flags & (1u << 10)) == 0) fail("copy-df-not-set");
         uint64_t start = arg1;
         if (validate_copy(current_subject, 1, start, arg2, arg0 == 1) != COPY_ALLOWED)
             fail("copy-policy");
@@ -205,14 +207,14 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             if (arg2 != 4 || copy_buffer[0] != 0x5a || copy_buffer[1] != 0xa5 ||
                 copy_buffer[2] != 0x3c || copy_buffer[3] != 0xc3) fail("copy-in-data");
             copy_step = 1;
-            serial_puts("LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 ac=cleared result=PASS\n");
+            serial_puts("LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS\n");
             return 0;
         }
         if (arg0 == 1 && copy_step == 1) {
             smap_copy_to((void *)start, copy_buffer, arg2);
             if (ac_is_set()) fail("copy-out-ac-set");
             copy_step = 2;
-            serial_puts("LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 ac=cleared result=PASS\n");
+            serial_puts("LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS\n");
             return 0;
         }
         fail("copy-sequence");
