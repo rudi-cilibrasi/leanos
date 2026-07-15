@@ -15,13 +15,15 @@ afterwards, and restore the prior interrupt state. All interrupt entries clear
 AC before dispatch. The image-policy check inventories both sites and fails if
 another `stac` is introduced.
 
-The QEMU path performs a cross-page copy-in and copy-out and observes AC clear
-on return. A direct CPL0 read of a user page with AC clear must page fault. The
-serial protocol also records bounded policy vectors for zero/maximal lengths,
-unmapped and read-only ranges, overflow, noncanonical addresses, wrong-subject
-context, and stale lifetime state; the Lean model is the policy evidence for
-those vectors, while QEMU tests only the concrete accepted path and direct
-denial probe.
+The QEMU path performs a cross-page copy-in and copy-out and reads EFLAGS to
+confirm AC is clear on return. A direct CPL0 read of a user page with AC clear
+must page fault. Booted C executes bounded policy vectors for zero/maximal
+lengths, unmapped and read-only ranges, overflow, noncanonical addresses,
+wrong-subject context, and stale lifetime state, and checks rejection canaries.
+A controlled assembly probe deliberately returns with AC set; the booted
+detector must observe the policy violation before explicitly recovering with
+CLAC. These are integration tests of the hand-written adapter. The Lean model,
+not these tests, is the policy evidence.
 
 `LeanOS.UserCopyWindow` composes complete-range `UserCopy.validate` with the
 x86 page-table classifier. Its theorems prove that closed encoded user leaves

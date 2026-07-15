@@ -24,7 +24,8 @@ printf '%s\n' \
   'LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS' \
   'LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS' \
   'LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS' \
-  'LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS cleanup=PASS' \
+  'LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS' \
+  'LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 ac=cleared result=PASS' \
   'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 ac=cleared result=PASS' \
   'LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0' \

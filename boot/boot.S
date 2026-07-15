@@ -245,6 +245,16 @@ smap_copy_to_clac:
     clac
     popfq
     ret
+.global smap_omit_cleanup_probe
+smap_omit_cleanup_probe:
+.global smap_omit_cleanup_probe_stac
+smap_omit_cleanup_probe_stac:
+    stac
+    ret
+.global smap_force_clac
+smap_force_clac:
+    clac
+    ret
 .global run_smap_probe
 run_smap_probe:
 .global smap_probe_instruction
@@ -294,6 +304,8 @@ enter_user:
 .endm
 .global isr80
 isr80:
+.global isr80_clac
+isr80_clac:
     clac
     SAVE
     mov 112(%rsp), %rdi
@@ -315,6 +327,8 @@ isr80:
     iretq
 .global isr14
 isr14:
+.global isr14_clac
+isr14_clac:
     clac
     SAVE
     sub $8, %rsp
@@ -330,6 +344,8 @@ isr14:
     iretq
 .global isr32
 isr32:
+.global isr32_clac
+isr32_clac:
     clac
     SAVE
     mov 128(%rsp), %rdi
