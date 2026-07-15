@@ -295,6 +295,87 @@ def mkHandoff (entries : List RawEntry) (entrySize := memoryMapEntrySize)
 def normalizedRegions (handoff : Handoff) : Option (List Region) :=
   (normalize handoff).toOption.map (·.regions)
 
+def buildRegionOption (entries : List RawEntry) : Option (List Region) :=
+  let singletons := singletonRegions entries
+  if singletons.length > maxExpandedFrames then none
+  else
+    let regions := normalizedEntryRegions entries
+    if regions.length > maxRegions then none
+    else if regionShape regions then
+      if pairwiseDisjoint regions then
+        if usableSound entries regions then
+          if (FrameAllocator.init regions).isOk then some regions else none
+        else none
+      else none
+    else none
+
+set_option maxRecDepth 10000 in
+theorem buildNormalized_region_projection (entries : List RawEntry) :
+    (buildNormalized entries).toOption.map (·.regions) = buildRegionOption entries := by
+  unfold buildNormalized buildRegionOption
+  dsimp only
+  split
+  case isTrue => rfl
+  case isFalse =>
+    split
+    case isTrue => rfl
+    case isFalse =>
+      split
+      case isFalse => rfl
+      case isTrue =>
+        split
+        case isFalse => rfl
+        case isTrue =>
+          split
+          case isFalse => rfl
+          case isTrue =>
+            split <;> simp_all only [Except.isOk, Except.toOption, Option.map] <;> rfl
+
+/-- Building allocator regions has the same success status and region output
+for permuted entry lists. The successful `Normalized` witnesses retain their
+respective raw-entry orders, so the theorem projects only allocation policy. -/
+theorem normalizeEntries_regions_eq_of_perm {entries₁ entries₂ : List RawEntry}
+    (hperm : entries₁.Perm entries₂) :
+    (normalizeEntries entries₁).toOption.map (·.regions) =
+      (normalizeEntries entries₂).toOption.map (·.regions) := by
+  have hvalid := validateEntries_isOk_eq_of_perm hperm
+  cases h₁ : validateEntries entries₁ with
+  | error reason₁ =>
+      cases h₂ : validateEntries entries₂ with
+      | error reason₂ =>
+          simp only [normalizeEntries, h₁, h₂]
+          rfl
+      | ok value₂ =>
+          simp only [h₁, h₂] at hvalid
+          change false = true at hvalid
+          contradiction
+  | ok value₁ =>
+      cases h₂ : validateEntries entries₂ with
+      | error reason₂ =>
+          simp only [h₁, h₂] at hvalid
+          change true = false at hvalid
+          contradiction
+      | ok value₂ =>
+          simp only [normalizeEntries, h₁, h₂]
+          rw [buildNormalized_region_projection, buildNormalized_region_projection]
+          unfold buildRegionOption
+          simp only [singletonRegions_eq_of_perm hperm,
+            normalizedEntryRegions_eq_of_perm hperm, usableSound_eq_of_perm hperm]
+
+/-- For structurally accepted handoffs whose sole memory-map entries are
+permutations, normalization exposes exactly the same allocator regions. This
+also proves equivalent acceptance versus rejection because `none` denotes
+rejection and every successful normalization supplies `some regions`. -/
+theorem normalizedRegions_eq_of_valid_handoff_perm {handoff₁ handoff₂ : Handoff}
+    {entries₁ entries₂ : List RawEntry}
+    (h₁ : validateHandoff handoff₁ = .ok entries₁)
+    (h₂ : validateHandoff handoff₂ = .ok entries₂)
+    (hperm : entries₁.Perm entries₂) :
+    normalizedRegions handoff₁ = normalizedRegions handoff₂ := by
+  unfold normalizedRegions normalize
+  simp only [h₁, h₂]
+  exact normalizeEntries_regions_eq_of_perm hperm
+
 theorem rejected_has_no_regions (handoff : Handoff) (reason : Error)
     (h : normalize handoff = .error reason) : normalizedRegions handoff = none := by
   unfold normalizedRegions

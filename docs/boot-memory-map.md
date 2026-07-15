@@ -37,10 +37,14 @@ nonzero, page-aligned, sorted, disjoint `FrameAllocator.Region` values.
 `normalizedEntryRegions_eq_of_perm` prove that every normalization stage
 exposed to later reservation work is invariant under `List.Perm`.
 `validateEntries_isOk_eq_of_perm` proves equal entry-validation acceptance
-versus rejection. Permutation preserves length and multiplicity, so tag sizing,
-entry-count, and resource bounds are not weakened. The raw witness list remains
-available in `Normalized`, but its order is not observable through allocation
-policy.
+versus rejection. `normalizeEntries_regions_eq_of_perm` lifts those facts
+through every normalization and allocator-acceptance gate, while
+`normalizedRegions_eq_of_valid_handoff_perm` states the final result for two
+structurally accepted handoffs: they either both reject or both return exactly
+the same allocator regions. Permutation preserves length and multiplicity, so
+tag sizing, entry-count, and resource bounds are not weakened. The raw witness
+list remains available in `Normalized`, but its order is not observable through
+allocation policy.
 
 Malformed permutations can report different error constructors because entry
 validation reports the first bad descriptor. The theorem intentionally claims
