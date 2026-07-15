@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "corpus.h"
 
 #define COM1 0x3f8u
 #define DEBUG_EXIT 0xf4u
@@ -25,6 +26,7 @@ static struct idt_entry idt[256] __attribute__((aligned(16)));
 static struct tss64 tss;
 static uint8_t entry_stack[16384] __attribute__((aligned(16)));
 static unsigned syscall_count;
+static void finish(uint8_t value);
 
 static inline void out8(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -55,6 +57,21 @@ static void serial_putc(char value) {
 static void serial_puts(const char *text) {
     while (*text != '\0') {
         serial_putc(*text++);
+    }
+}
+
+static void replay_oracle(void) {
+    for (unsigned i = 0; i < ORACLE_VECTOR_COUNT; ++i) {
+        const struct oracle_vector *v = &oracle_vectors[i];
+        uint64_t got = v->adapter == 0
+            ? leanos_boot_transition(v->words[0], v->words[1])
+            : leanos_syscall_demo(v->words[0], v->words[1], v->words[2], v->words[3]);
+        serial_puts("LEANOS/2 ORACLE id="); serial_puts(v->id);
+        if (got != v->expected) {
+            serial_puts(" result=FAIL\nLEANOS/2 FINAL status=FAIL reason=oracle\n");
+            finish(0x11);
+        }
+        serial_puts(" result=PASS\n");
     }
 }
 
@@ -127,20 +144,7 @@ void kernel_main(void) {
     serial_init();
     serial_puts("LEANOS/2 BOOT target=x86_64-q35 entry=int80\n");
 
-    uint64_t accepted = leanos_boot_transition(0, 1);
-    serial_puts("LEANOS/2 TRANSITION state=0 command=1 result=");
-    serial_putc(accepted == 1 ? '1' : '0');
-    serial_putc('\n');
-
-    uint64_t rejected = leanos_boot_transition(0, 7);
-    serial_puts("LEANOS/2 TRANSITION state=0 command=7 result=");
-    serial_putc(rejected == 0 ? '0' : '1');
-    serial_putc('\n');
-
-    if (accepted != 1 || rejected != 0) {
-        serial_puts("LEANOS/2 FINAL status=FAIL reason=transition\n");
-        finish(0x11);
-    }
+    replay_oracle();
 
     privilege_init();
     enter_user(user_entry, user_stack_top);

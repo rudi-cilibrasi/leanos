@@ -102,6 +102,8 @@ jobs:
             build/boot/leanos.map
             build/boot/SHA256SUMS
             build/boot/serial.log
+            build/boot/corpus.tsv
+            build/oracle/host-results.txt
             build/ci/*.log
             build/ci/tool-versions.txt
           if-no-files-found: warn

@@ -4,5 +4,6 @@ import LeanOS.FrameAllocator
 import LeanOS.KernelTransition
 import LeanOS.MemoryLifecycle
 import LeanOS.Syscall
+import LeanOS.Oracle
 import LeanOS.VirtualMapping
 import LeanOS.X86PageTable
