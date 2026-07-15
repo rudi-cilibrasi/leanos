@@ -14,16 +14,20 @@ only its local capability handle and the permissions relevant to its own view.
 
 Two states are **low-equivalent** for a subject exactly when these complete
 views are equal. A step is **silent** for that subject when its footprint cannot
-change any component of the view. `silent_step_lowEquiv` proves that applying
-the same silent step to two low-equivalent states preserves low equivalence;
-`silent_step_equal_reply` additionally states equality of the next visible
-reply.
+change any component of the view. `silent_steps_lowEquiv` proves that two
+independently chosen silent steps applied to low-equivalent states preserve low
+equivalence; `silent_steps_equal_reply` additionally states equality of the
+next visible reply. Thus secret-dependent high behavior need not choose the
+same operation or arguments in both runs.
 
 The supported operation classes mirror the deterministic sequential models:
 map, unmap, access check, bounded copy, capability delegation and revocation,
 typed rejection, endpoint send/receive, allocation, and scheduler selection.
 The theorem covers unrelated private memory, mapping, access, copy, rejection,
-receive, delegation, revocation, and non-delivering send footprints. It assumes
+receive, delegation, revocation, and sends whose sender and recipient are both
+unrelated to the observer. The endpoint abstraction is capacity one: send
+reports full without changing the queued delivery, and receive reports empty
+or removes the unique delivery. It assumes
 the trusted caller and active address space were selected by the kernel, as in
 the syscall and user-copy models.
 
@@ -37,8 +41,8 @@ channels:
 - endpoint delivery to the observer is intentional declassification, including
   sender provenance and the two payload words;
 - global allocation exhaustion can change a reply and is a resource channel;
-- queue fullness has the same resource-channel status in the capacity-one IPC
-  model; and
+- queue fullness changes the sender reply between `accepted` and `ipcFull` in
+  the capacity-one abstraction and is demonstrated as a resource channel; and
 - scheduler selection is explicitly visible, so scheduling differences are not
   silently abstracted away.
 

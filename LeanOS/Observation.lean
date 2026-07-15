@@ -27,7 +27,7 @@ abbrev Address := Nat
 
 inductive Reply where
   | none | accepted | rejected (code : Nat) | access (allowed : Bool)
-  | allocated (token : Nat) | exhausted
+  | allocated (token : Nat) | exhausted | ipcFull | ipcEmpty
   deriving BEq, DecidableEq, Repr
 
 structure Delivery where
@@ -147,10 +147,16 @@ def transition (state : State) : Step -> State
           sender := actor
           word0 := word0
           word1 := word1 }
-      let queued := state.deliveries recipient ++ [delivery]
-      { state with deliveries := set1 state.deliveries recipient queued }
+      let empty := (state.deliveries recipient).isEmpty
+      { state with
+        deliveries := if empty then set1 state.deliveries recipient [delivery]
+          else state.deliveries
+        reply := set1 state.reply actor (if empty then .accepted else .ipcFull) }
   | .receive actor =>
-      { state with reply := set1 state.reply actor .accepted }
+      let queued := state.deliveries actor
+      { state with
+        deliveries := set1 state.deliveries actor queued.tail
+        reply := set1 state.reply actor (if queued.isEmpty then .ipcEmpty else .accepted) }
   | .allocate actor =>
       if state.resourcesRemaining = 0 then
         { state with reply := set1 state.reply actor .exhausted }
@@ -168,31 +174,34 @@ def SilentFor (observer : SubjectId) : Step -> Prop
       .receive actor => observer != actor
   | .delegate _ recipient _ _ => observer != recipient
   | .revoke _ victim _ => observer != victim
-  | .send _ recipient _ _ _ => observer != recipient
+  | .send actor recipient _ _ _ => observer != actor ∧ observer != recipient
   | .allocate _ | .schedule _ => False
 
 theorem silent_observe_unchanged (observer : SubjectId) (state : State) (step : Step)
     (hsilent : SilentFor observer step) :
     observe observer (transition state step) = observe observer state := by
   cases step <;> apply View.ext <;>
-    simp_all [observe, transition, SilentFor, set1, set2]
+    simp_all [observe, transition, SilentFor, set1, set2] <;>
+    (try split <;> simp_all [set1])
   all_goals funext key
   all_goals simp_all [observe, transition, SilentFor, set1, set2]
 
-/-- Scoped one-step noninterference: low-equivalent states remain
-low-equivalent after the same unrelated, non-channel operation. -/
-theorem silent_step_lowEquiv (observer : SubjectId) (left right : State) (step : Step)
-    (hlow : LowEquiv observer left right) (hsilent : SilentFor observer step) :
-    LowEquiv observer (transition left step) (transition right step) := by
-  rw [LowEquiv, silent_observe_unchanged observer left step hsilent,
-    silent_observe_unchanged observer right step hsilent]
+/-- Scoped one-step unwinding: independently chosen high steps preserve an
+observer's low equivalence when each step is silent for that observer. -/
+theorem silent_steps_lowEquiv (observer : SubjectId) (left right : State)
+    (leftStep rightStep : Step) (hlow : LowEquiv observer left right)
+    (hleft : SilentFor observer leftStep) (hright : SilentFor observer rightStep) :
+    LowEquiv observer (transition left leftStep) (transition right rightStep) := by
+  rw [LowEquiv, silent_observe_unchanged observer left leftStep hleft,
+    silent_observe_unchanged observer right rightStep hright]
   exact hlow
 
 /-- The observer-visible reply is consequently equal after every scoped step. -/
-theorem silent_step_equal_reply (observer : SubjectId) (left right : State) (step : Step)
-    (hlow : LowEquiv observer left right) (hsilent : SilentFor observer step) :
-    (transition left step).reply observer = (transition right step).reply observer := by
-  have h := silent_step_lowEquiv observer left right step hlow hsilent
+theorem silent_steps_equal_reply (observer : SubjectId) (left right : State)
+    (leftStep rightStep : Step) (hlow : LowEquiv observer left right)
+    (hleft : SilentFor observer leftStep) (hright : SilentFor observer rightStep) :
+    (transition left leftStep).reply observer = (transition right rightStep).reply observer := by
+  have h := silent_steps_lowEquiv observer left right leftStep rightStep hlow hleft hright
   simpa [LowEquiv, observe] using congrArg View.reply h
 
 private def emptyState (secret : SubjectId -> Nat) (resources : Nat) : State :=
@@ -213,6 +222,10 @@ private def rightSecret := emptyState (fun subject => if subject = 1 then 99 els
 example : LowEquiv 0 leftSecret rightSecret := by rfl
 example : LowEquiv 0 (transition leftSecret (.privateWrite 1 4 0xaa))
     (transition rightSecret (.privateWrite 1 4 0xbb)) := by rfl
+example : LowEquiv 0 (transition leftSecret (.privateWrite 1 4 0xaa))
+    (transition rightSecret (.map 1 8 { read := true })) := by
+  exact silent_steps_lowEquiv 0 leftSecret rightSecret _ _ (by rfl)
+    (by simp [SilentFor]) (by simp [SilentFor])
 example : LowEquiv 0 (transition leftSecret (.map 1 8 { read := true }))
     (transition rightSecret (.map 1 8 { read := true })) := by rfl
 example : LowEquiv 0 (transition leftSecret (.unmap 1 8))
@@ -243,6 +256,18 @@ example : ¬ LowEquiv 0 leftSecret
   intro h
   have hdeliveries := congrArg View.deliveries h
   simp [LowEquiv, observe, transition, set1, leftSecret, rightSecret, emptyState] at hdeliveries
+example : ¬ LowEquiv 0
+    (transition { leftSecret with deliveries :=
+      (set1 leftSecret.deliveries 1
+        [{ handle := 2
+           sender := 0
+           word0 := 1
+           word1 := 2 }]) }
+      (.send 0 1 2 0x41 0x42))
+    (transition rightSecret (.send 0 1 2 0x41 0x42)) := by
+  intro h
+  have hreply := congrArg View.reply h
+  simp [LowEquiv, observe, transition, set1, leftSecret, rightSecret, emptyState] at hreply
 example : ¬ LowEquiv 0 (transition (emptyState (fun _ => 0) 0) (.allocate 0))
     (transition (emptyState (fun _ => 0) 1) (.allocate 0)) := by
   intro h
