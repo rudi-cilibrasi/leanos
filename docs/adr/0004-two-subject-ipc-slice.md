@@ -35,3 +35,23 @@ generated IPC C, linker layout, serial oracle, compiler/linker, GRUB, QEMU/TCG,
 and x86-64 semantics. A defect in any may forge caller selection, provenance,
 isolation, or the trace. DMA, speculation, covert channels, general scheduling,
 blocking IPC, capability transfer, arbitrary faults, and liveness are excluded.
+
+## Supervisor enforcement
+
+The completed leaf policy is activated with CR0.WP in the final paging-enable
+write. After vector 14 and the TSS are installed, CR4.SMEP is enabled and read
+back. Two one-shot CPL0 probes then require exact fatal page faults: error code
+3 and CR2 at a kernel-text byte for a supervisor write, and error code 17 and
+CR2/RIP at subject A's user-text entry for a supervisor instruction fetch. The
+handler advances only these exact boot phases; every mismatch and every other
+kernel fault remains fatal. The exact transcript and guest debug-exit status
+prevent a forged or missing PASS record from succeeding.
+
+`LeanOS.X86PageTable` proves the reviewed policy is W^X and, assuming modeled
+x86 permission semantics, that WP rejects the supervisor write and SMEP rejects
+the supervisor fetch while CPL3 execution remains permitted. The ELF/linker
+inspection and QEMU TCG probes are structured integration evidence, not a proof
+of assembly, control-register writes, fault delivery, QEMU, or processor
+semantics. Those items, plus the compiler/linker and the exact probe handler,
+remain in the TCB. SMEP CPU support is required; SMAP is deliberately out of
+scope.

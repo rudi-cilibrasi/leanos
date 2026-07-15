@@ -9,11 +9,16 @@ extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
+extern void enable_smep(void);
+extern void run_wp_probe(void);
+extern void run_smep_probe(void);
 extern void enter_user(void *, void *);
 extern void isr80(void);
 extern void isr14(void);
 extern char user_a_entry[], user_a_stack_top[], user_b_fault_instruction[];
 extern char user_b_fault_recovered[];
+extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
+extern char smep_probe_recovered[];
 
 struct __attribute__((packed)) idt_entry {
     uint16_t low, selector; uint8_t ist, attributes; uint16_t middle; uint32_t high, zero;
@@ -28,6 +33,7 @@ static struct tss64 tss;
 static uint8_t entry_stack[16384] __attribute__((aligned(16)));
 static unsigned ipc_step;
 static uint64_t current_subject = 1;
+static unsigned supervisor_probe;
 static struct { uint64_t word0, word1, sender; unsigned full; } mailbox;
 static void finish(uint8_t value);
 
@@ -170,6 +176,19 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
 
 uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
                             uint64_t fault_address) {
+    if (supervisor_probe == 1 && (saved_cs & 3u) == 0u && error == 3u &&
+        rip == (uint64_t)wp_probe_instruction &&
+        fault_address == (uint64_t)wp_probe_target) {
+        serial_puts("LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS\n");
+        supervisor_probe = 2;
+        return (uint64_t)wp_probe_recovered;
+    }
+    if (supervisor_probe == 3 && (saved_cs & 3u) == 0u && error == 17u &&
+        rip == (uint64_t)user_a_entry && fault_address == (uint64_t)user_a_entry) {
+        serial_puts("LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS\n");
+        supervisor_probe = 4;
+        return (uint64_t)smep_probe_recovered;
+    }
     if ((saved_cs & 3u) != 3u || error != 5u ||
         current_subject != 2 || ipc_step != 5 ||
         rip != (uint64_t)user_b_fault_instruction || fault_address != 0u) {
@@ -187,11 +206,25 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 
 void kernel_main(void) {
     serial_init();
-    serial_puts("LEANOS/3 BOOT target=x86_64-q35 subjects=2 schedule=fixed\n");
+    serial_puts("LEANOS/4 BOOT target=x86_64-q35 subjects=2 schedule=fixed controls=wp,smep\n");
 
     replay_oracle();
 
     privilege_init();
+    enable_smep();
+    uint64_t cr0, cr4;
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    if ((cr0 & (1ull << 16)) == 0 || (cr4 & (1ull << 20)) == 0) {
+        fail("supervisor-controls");
+    }
+    serial_puts("LEANOS/4 CONTROL cr0.wp=1 cr4.smep=1 stage=exception-path-ready\n");
+    supervisor_probe = 1;
+    run_wp_probe();
+    if (supervisor_probe != 2) fail("wp-no-fault");
+    supervisor_probe = 3;
+    run_smep_probe();
+    if (supervisor_probe != 4) fail("smep-no-fault");
     enter_user(user_a_entry, user_a_stack_top);
     fail("iret-returned");
 }
