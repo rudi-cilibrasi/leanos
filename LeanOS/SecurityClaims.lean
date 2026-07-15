@@ -133,7 +133,7 @@ theorem page_table_separation_witness :
       X86PageTable.walk (X86PageTable.encode pageTableSeparationState 2) 7 .read = .ok 5 ∧
       X86PageTable.walk (X86PageTable.encode pageTableSeparationState 1) 7 .read ≠
         X86PageTable.walk (X86PageTable.encode pageTableSeparationState 2) 7 .read := by
-  refine ⟨by native_decide, by native_decide, by rfl, by rfl, ?_⟩
+  refine ⟨by decide, by decide, by rfl, by rfl, ?_⟩
   simp [pageTableSeparationState, X86PageTable.walk, X86PageTable.encode,
     X86PageTable.encodedLeaf, X86PageTable.userAncestor, X86PageTable.canonicalPage,
     X86PageTable.lowerCanonicalPages, X86PageTable.representableFrame,
