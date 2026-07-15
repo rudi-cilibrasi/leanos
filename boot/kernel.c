@@ -10,7 +10,8 @@ extern void load_tss(void);
 extern void enter_user(void *, void *);
 extern void isr80(void);
 extern void isr14(void);
-extern char user_entry[], user_stack_top[], user_fault_recovered[];
+extern char user_entry[], user_stack_top[], user_fault_instruction[];
+extern char user_fault_recovered[];
 
 struct __attribute__((packed)) idt_entry {
     uint16_t low, selector; uint8_t ist, attributes; uint16_t middle; uint32_t high, zero;
@@ -107,9 +108,10 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     return result;
 }
 
-uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs) {
-    (void)rip;
-    if ((saved_cs & 3u) != 3u || (error & 4u) == 0) {
+uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
+                            uint64_t fault_address) {
+    if ((saved_cs & 3u) != 3u || error != 5u ||
+        rip != (uint64_t)user_fault_instruction || fault_address != 0u) {
         serial_puts("LEANOS/2 FINAL status=FAIL reason=kernel-fault\n"); finish(0x11);
     }
     serial_puts("LEANOS/2 FAULT vector=14 class=user-supervisor-access contained=1\n");

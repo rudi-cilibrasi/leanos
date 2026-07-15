@@ -2,6 +2,8 @@
 .set MB2_ARCH, 0
 .set MB2_LENGTH, mb2_end - mb2_start
 .set MB2_CHECKSUM, -(MB2_MAGIC + MB2_ARCH + MB2_LENGTH)
+.set PAGE_TABLE_COUNT, 8
+.set PAGE_ENTRY_COUNT, 512 * PAGE_TABLE_COUNT
 
 .section .multiboot,"a",@progbits
 .align 8
@@ -27,7 +29,7 @@ multiboot_entry:
        ranges receive U/S at the leaf.  Upper levels permit traversal. */
     mov $page_table, %edi
     mov $3, %eax
-    mov $4096, %ecx
+    mov $PAGE_ENTRY_COUNT, %ecx
 1:
     mov %eax, (%edi)
     movl $0x80000000, 4(%edi)
@@ -37,7 +39,7 @@ multiboot_entry:
 
     mov $page_table, %eax
     or $7, %eax
-    mov $4, %ecx
+    mov $PAGE_TABLE_COUNT, %ecx
     mov $page_directory, %edi
 2:
     mov %eax, (%edi)
@@ -139,7 +141,8 @@ page_directory:
     .skip 4096
 .align 4096
 page_table:
-    .skip 16384
+    .skip 4096 * PAGE_TABLE_COUNT
+page_table_end:
 .align 16
 boot_stack:
     .skip 16384
@@ -157,7 +160,7 @@ enter_user:
     push %rsi
     pushfq
     pop %rax
-    or $0x200, %rax
+    and $~0x200, %rax
     push %rax
     pushq $0x23
     push %rdi
@@ -186,11 +189,14 @@ isr80:
 .global isr14
 isr14:
     SAVE
-    mov 120(%rsp), %rdi
-    mov 128(%rsp), %rsi
-    mov 136(%rsp), %rdx
+    sub $8, %rsp
+    mov 128(%rsp), %rdi
+    mov 136(%rsp), %rsi
+    mov 144(%rsp), %rdx
+    mov %cr2, %rcx
     call page_fault_handler
-    mov %rax, 128(%rsp)
+    mov %rax, 136(%rsp)
+    add $8, %rsp
     RESTORE
     add $8, %rsp
     iretq
@@ -211,6 +217,8 @@ user_entry:
     xor %rcx, %rcx
     xor %rdx, %rdx
     int $0x80
+.global user_fault_instruction
+user_fault_instruction:
     mov 0, %rax
 .global user_fault_recovered
 user_fault_recovered:

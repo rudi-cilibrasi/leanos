@@ -16,6 +16,13 @@ for symbol in __kernel_text_start __kernel_text_end __user_text_start \
   }
 done
 
+page_table_start="$(nm -n "$elf" | awk '$3 == "page_table" { print "0x" $1 }')"
+page_table_end="$(nm -n "$elf" | awk '$3 == "page_table_end" { print "0x" $1 }')"
+[[ $((page_table_end - page_table_start)) -eq $((8 * 4096)) ]] || {
+  echo "error: page-table storage does not match eight installed tables" >&2
+  exit 1
+}
+
 # The runtime page-table constructor must keep U/S limited to the two reviewed
 # leaves, make instruction leaves read-only, and enable NX for all other leaves.
 grep -Fq 'orl $4, page_table(%eax)' boot/boot.S
