@@ -121,6 +121,10 @@ proves structural validity, permission non-amplification, current-frame
 agreement, NX enforcement, and cross-address-space separation. Hardware walks,
 CR3/TLB operations, boot integration, and the compiler remain trusted.
 
+The finite [single-core TLB model](docs/tlb-model.md) makes invalidation atomic
+with mapping/lifecycle mutation and revalidates cached translations against the
+current encoded walk and allocator ownership before use.
+
 The first total syscall model separates trusted caller/active-address-space
 context from untrusted fixed-width scalar words and proves invariant
 preservation, rejection stability, and caller confinement. Its vocabulary and
