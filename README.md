@@ -83,6 +83,10 @@ tables and a fixed cooperative handoff through one directional endpoint. Its
 tested behavior and unproved machine boundary are recorded in
 [ADR 0004](docs/adr/0004-two-subject-ipc-slice.md).
 
+The [one-shot timer slice](docs/adr/0005-one-shot-timer-preemption.md) uses a
+documented PIT interrupt to preempt a non-yielding subject and tests the
+scheduler-derived caller/address-space switch to the second subject.
+
 The first executable model is `LeanOS.KernelTransition.transition`, with
 machine-checked determinism, invariant-preservation, and rejection-stability
 theorems in

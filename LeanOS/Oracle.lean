@@ -1,11 +1,12 @@
 import LeanOS.KernelTransition
 import LeanOS.Syscall
 import LeanOS.IPCSyscall
+import LeanOS.Preemption
 
 /-!
 # Bounded scalar boundary oracle
 
-This is the canonical, version-one corpus for the three currently exported
+This is the canonical, version-one corpus for the four currently exported
 fixed-width adapters.  Expected words are evaluated from the adapter
 definitions, not copied into a C harness.  The corpus is deliberately finite;
 it is differential integration evidence, not a refinement theorem.
@@ -33,6 +34,10 @@ private def ipc (id : String) (caller operation word0 word1 : UInt64) : Vector :
   { id, adapter := "IPCSyscall.scalar", words := [caller, operation, word0, word1],
     expected := IPCSyscall.ipcDemo caller operation word0 word1 }
 
+private def preemption (id : String) (vector current queued armed : UInt64) : Vector :=
+  { id, adapter := "Preemption.scalar", words := [vector, current, queued, armed],
+    expected := Preemption.preemptionDemo vector current queued armed }
+
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
   boot "boot.accept" 0 1,
@@ -49,9 +54,13 @@ def vectors : List Vector := [
   ipc "ipc.receiver-send-denied" 2 3 1279607118 20307,
   ipc "ipc.receiver-receive" 2 4 1279607118 20307,
   ipc "ipc.malformed-boundary" 18446744073709551615 18446744073709551615
-    18446744073709551615 18446744073709551615]
+    18446744073709551615 18446744073709551615,
+  preemption "preemption.accept" 32 1 2 1,
+  preemption "preemption.masked" 32 1 2 0,
+  preemption "preemption.wrong-vector" 14 1 2 1,
+  preemption "preemption.forged-current" 32 2 1 1]
 
-theorem corpus_shape : vectors.length = 13 := by decide
+theorem corpus_shape : vectors.length = 17 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -65,6 +74,10 @@ theorem syscall_accept_agrees : (vectors[4]).expected = 1 := by native_decide
 theorem ipc_scenario_agrees :
     (vectors[8]).expected = 0 ∧ (vectors[9]).expected = 1 ∧
     (vectors[10]).expected = 0 ∧ (vectors[11]).expected = 2 := by native_decide
+theorem preemption_scenario_agrees :
+    (vectors[13]).expected = 0x0000000200000002 ∧
+    (vectors[14]).expected = 0 ∧ (vectors[15]).expected = 0 ∧
+    (vectors[16]).expected = 0 := by native_decide
 
 private def wordsText : List UInt64 → String
   | [] => ""

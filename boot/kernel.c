@@ -7,6 +7,7 @@
 extern uint64_t leanos_boot_transition(uint64_t state, uint64_t command);
 extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -15,8 +16,8 @@ extern void run_smep_probe(void);
 extern void enter_user(void *, void *);
 extern void isr80(void);
 extern void isr14(void);
-extern char user_a_entry[], user_a_stack_top[], user_b_fault_instruction[];
-extern char user_b_fault_recovered[];
+extern void isr32(void);
+extern char user_a_entry[], user_a_stack_top[];
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 
@@ -31,10 +32,10 @@ struct __attribute__((packed)) tss64 {
 static struct idt_entry idt[256] __attribute__((aligned(16)));
 static struct tss64 tss;
 static uint8_t entry_stack[16384] __attribute__((aligned(16)));
-static unsigned ipc_step;
+static unsigned preemption_step;
 static uint64_t current_subject = 1;
+static unsigned timer_accepted;
 static unsigned supervisor_probe;
-static struct { uint64_t word0, word1, sender; unsigned full; } mailbox;
 static void finish(uint8_t value);
 
 static inline void out8(uint16_t port, uint8_t value) {
@@ -76,7 +77,9 @@ static void replay_oracle(void) {
             ? leanos_boot_transition(v->words[0], v->words[1])
             : v->adapter == 1
                 ? leanos_syscall_demo(v->words[0], v->words[1], v->words[2], v->words[3])
-                : leanos_ipc_demo(v->words[0], v->words[1], v->words[2], v->words[3]);
+                : v->adapter == 2
+                    ? leanos_ipc_demo(v->words[0], v->words[1], v->words[2], v->words[3])
+                    : leanos_preemption_demo(v->words[0], v->words[1], v->words[2], v->words[3]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -116,6 +119,7 @@ static void privilege_init(void) {
     tss.rsp0 = (uint64_t)(entry_stack + sizeof(entry_stack));
     tss.iomap = sizeof(tss);
     set_gate(14, isr14, 0x8e);
+    set_gate(32, isr32, 0x8e);
     set_gate(0x80, isr80, 0xee);
     struct descriptor idtr = { sizeof(idt) - 1, (uint64_t)idt };
     __asm__ volatile ("lidt %0" : : "m"(idtr));
@@ -127,51 +131,55 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
-    if (ipc_step == 0 && current_subject == 1 && number == 4 &&
-        leanos_ipc_demo(current_subject, number, arg0, arg1) == 0) {
-        serial_puts("LEANOS/3 SUBJECT id=1 address-space=1 cpl=3\n");
-        serial_puts("LEANOS/3 IPC op=receive subject=1 result=denied reason=missing-receive\n");
-        ipc_step = 1;
+    (void)arg0; (void)arg1; (void)arg2;
+    if (preemption_step == 0 && current_subject == 1 && number == 1) {
+        serial_puts("LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0\n");
+        preemption_step = 1;
         return 0;
     }
-    if (ipc_step == 1 && current_subject == 1 && number == 3 && arg2 == 99 &&
-        !mailbox.full && leanos_ipc_demo(current_subject, number, arg0, arg1) == 1) {
-        mailbox.word0 = arg0;
-        mailbox.word1 = arg1;
-        mailbox.sender = current_subject;
-        mailbox.full = 1;
-        serial_puts("LEANOS/3 IPC op=send subject=1 result=accepted payload=4c45414e:4f53 supplied-sender=99\n");
-        ipc_step = 2;
-        return 1;
-    }
-    if (ipc_step == 2 && current_subject == 1 && number == 254) {
-        serial_puts("LEANOS/3 HANDOFF from=1 to=2 address-space=2 cr3=switched\n");
-        current_subject = 2;
-        ipc_step = 3;
-        return 0xfeed;
-    }
-    if (ipc_step == 3 && current_subject == 2 && number == 3 &&
-        leanos_ipc_demo(current_subject, number, arg0, arg1) == 0) {
-        serial_puts("LEANOS/3 SUBJECT id=2 address-space=2 cpl=3\n");
-        serial_puts("LEANOS/3 IPC op=send subject=2 result=denied reason=missing-send\n");
-        ipc_step = 4;
-        return 0;
-    }
-    if (ipc_step == 4 && current_subject == 2 && number == 4 && mailbox.full &&
-        mailbox.sender == 1 &&
-        leanos_ipc_demo(current_subject, number, mailbox.word0, mailbox.word1) == 2) {
-        mailbox.full = 0;
-        serial_puts("LEANOS/3 IPC op=receive subject=2 result=delivered sender=1 payload=4c45414e:4f53\n");
-        serial_puts("LEANOS/3 IPC supplied-sender=99 trusted=0 capability-transfer=none\n");
-        ipc_step = 5;
-        return 2;
-    }
-    if (ipc_step == 6 && current_subject == 2 && number == 255) {
-        serial_puts("LEANOS/3 RESUME kernel=1\n");
-        serial_puts("LEANOS/3 FINAL status=PASS\n");
+    if (preemption_step == 3 && current_subject == 2 && number == 2) {
+        serial_puts("LEANOS/5 SYSCALL subject=2 caller=2 address-space=2 authorized=1 canaries=preserved\n");
+        serial_puts("LEANOS/5 FINAL status=PASS ticks=1\n");
         finish(0x10);
     }
+    if (number == 3) fail("register-canary");
     fail("ipc-sequence");
+}
+
+void timer_handler(uint64_t saved_cs) {
+    /* Mask IRQ0 before acknowledging it: duplicate ticks cannot enter the
+       protocol.  The PIC/PIT bridge is trusted and documented in ADR 0005. */
+    out8(0x21, 0xff);
+    out8(0x20, 0x20);
+    if ((saved_cs & 3u) != 3u || current_subject != 1 ||
+        preemption_step != 1 || timer_accepted != 0) fail("timer-context");
+    uint64_t modeled = leanos_preemption_demo(32, current_subject, 2, 1);
+    uint64_t next_subject = modeled & 0xffffffffu;
+    uint64_t next_address_space = modeled >> 32;
+    if (next_subject != 2 || next_address_space != 2) fail("modeled-tick");
+    timer_accepted = 1;
+    serial_puts("LEANOS/5 TIMER vector=32 source=pit mode=one-shot origin=cpl3 accepted=1\n");
+    serial_puts("LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin\n");
+    current_subject = next_subject;
+    preemption_step = 2;
+}
+
+void switch_complete(void) {
+    if (current_subject != 2 || preemption_step != 2 || timer_accepted != 1)
+        fail("switch-binding");
+    preemption_step = 3;
+    serial_puts("LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=restored ticks-masked=1\n");
+}
+
+static void arm_timer(void) {
+    /* Legacy PIC remap: IRQ0 -> vector 32; all lines but IRQ0 remain masked. */
+    out8(0x20, 0x11); out8(0xa0, 0x11);
+    out8(0x21, 0x20); out8(0xa1, 0x28);
+    out8(0x21, 0x04); out8(0xa1, 0x02);
+    out8(0x21, 0x01); out8(0xa1, 0x01);
+    out8(0x21, 0xfe); out8(0xa1, 0xff);
+    /* PIT channel 0, mode 0, count 65535: a single terminal-count IRQ. */
+    out8(0x43, 0x30); out8(0x40, 0xff); out8(0x40, 0xff);
 }
 
 uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
@@ -189,14 +197,7 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
         supervisor_probe = 4;
         return (uint64_t)smep_probe_recovered;
     }
-    if ((saved_cs & 3u) != 3u || error != 5u ||
-        current_subject != 2 || ipc_step != 5 ||
-        rip != (uint64_t)user_b_fault_instruction || fault_address != 0u) {
-        fail("kernel-fault");
-    }
-    serial_puts("LEANOS/3 FAULT subject=2 vector=14 class=user-supervisor-access contained=1\n");
-    ipc_step = 6;
-    return (uint64_t)user_b_fault_recovered;
+    fail("kernel-fault");
 }
 
 /* The sole boot-reachable Lean runtime primitive. See docs/boot-image.md. */
@@ -206,7 +207,7 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 
 void kernel_main(void) {
     serial_init();
-    serial_puts("LEANOS/4 BOOT target=x86_64-q35 subjects=2 schedule=fixed controls=wp,smep\n");
+    serial_puts("LEANOS/5 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep\n");
 
     replay_oracle();
 
@@ -225,6 +226,7 @@ void kernel_main(void) {
     supervisor_probe = 3;
     run_smep_probe();
     if (supervisor_probe != 4) fail("smep-no-fault");
+    arm_timer();
     enter_user(user_a_entry, user_a_stack_top);
     fail("iret-returned");
 }
