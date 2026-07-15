@@ -268,8 +268,8 @@ theorem create_preserves_wellFormed (state : State) object subject slot
   split <;> try simpa [reject] using hstate
   split <;> try simpa [reject] using hstate
   change WellFormed
-    { capabilities := Capability.install (activate state.capabilities object) subject slot
-        { object, kind := .endpoint, rights := endpointRootRights }
+    { capabilities := Capability.installRoot (activate state.capabilities object) subject slot
+        object .endpoint endpointRootRights
       allocator := state.allocator
       binding := state.binding
       issuedAddressSpace := state.issuedAddressSpace
@@ -280,35 +280,87 @@ theorem create_preserves_wellFormed (state : State) object subject slot
   have hsubject : state.capabilities.subjects subject = true := by simp_all
   have hobjectFree : state.capabilities.objects object = false := by simp_all
   refine ⟨?_, ?_, ?_, ?_, hhistory⟩
-  · intro candidate candidateSlot capability hslot
-    by_cases htarget : candidate = subject ∧ candidateSlot = slot
-    · rcases htarget with ⟨rfl, rfl⟩
-      have hcapability : capability =
-          ({ object, kind := .endpoint, rights := endpointRootRights } : Capability.Capability) := by
-        simpa [Capability.install] using hslot.symm
-      subst capability
-      exact ⟨by simpa [Capability.install, activate] using hsubject,
-        by simp [Capability.install, activate, setBool],
-        by simp [Capability.install, activate],
-        by simp [Capability.rightsValid, endpointRootRights]⟩
-    · have hold : state.capabilities.slots candidate candidateSlot = some capability := by
-        simpa [Capability.install, activate, htarget] using hslot
-      have hwf := hcaps candidate candidateSlot capability hold
-      have hne : capability.object ≠ object := by
-        intro heq
-        subst object
-        simp_all
-      exact ⟨by simpa [Capability.install, activate] using hwf.1,
-        by simpa [Capability.install, activate, setBool, hne] using hwf.2.1,
-        by simpa [Capability.install, activate, hne] using hwf.2.2.1, hwf.2.2.2⟩
+  · rcases hcaps with ⟨hslots, hderivations, hunique⟩
+    refine ⟨?_, ?_, ?_⟩
+    · intro candidate candidateSlot capability hslot
+      by_cases htarget : candidate = subject ∧ candidateSlot = slot
+      · rcases htarget with ⟨rfl, rfl⟩
+        have hcapability : capability =
+            (⟨object, .endpoint, endpointRootRights,
+              state.capabilities.nextIdentity, none⟩ : Capability.Capability) := by
+          simpa [Capability.installRoot, Capability.install, activate] using hslot.symm
+        subst capability
+        refine ⟨by simpa [Capability.installRoot, Capability.install, activate] using hsubject,
+          by simp [Capability.installRoot, Capability.install, activate, setBool],
+          by simp [Capability.installRoot, Capability.install, activate],
+          by simp [Capability.rightsValid, endpointRootRights], Nat.lt_succ_self _, ?_, trivial⟩
+        simp [Capability.installRoot, Capability.install, activate]
+      · have hold : state.capabilities.slots candidate candidateSlot = some capability := by
+          simpa [Capability.installRoot, Capability.install, activate, htarget] using hslot
+        rcases hslots candidate candidateSlot capability hold with
+          ⟨hsub, hlive, hkind, hrights, hid, hentry, hedge⟩
+        have hne : capability.object ≠ object := by
+          intro heq; subst object; simp_all
+        refine ⟨by simpa [Capability.installRoot, Capability.install, activate] using hsub,
+          by simpa [Capability.installRoot, Capability.install, activate, setBool, hne] using hlive,
+          by simpa [Capability.installRoot, Capability.install, activate, hne] using hkind,
+          hrights, Nat.lt_succ_of_lt hid, ?_, ?_⟩
+        · simp [Capability.installRoot, Capability.install, activate, Nat.ne_of_lt hid, hentry]
+        · cases hp : capability.parent <;> simp only [hp] at hedge ⊢
+          rename_i parent
+          rcases hedge with ⟨hparent, pp, pr, hpentry, hsubset⟩
+          refine ⟨hparent, pp, pr, ?_, hsubset⟩
+          simp [Capability.installRoot, Capability.install, activate,
+            Nat.ne_of_lt (Nat.lt_trans hparent hid), hpentry]
+    · intro identity parent candidateObject kind rights hentry
+      by_cases hnew : identity = state.capabilities.nextIdentity
+      · subst identity
+        simp [Capability.installRoot, Capability.install, activate] at hentry
+        rcases hentry with ⟨rfl, rfl, rfl, rfl⟩
+        exact ⟨Nat.lt_succ_self _, trivial⟩
+      · have hold := hderivations identity parent candidateObject kind rights (by
+            simpa [Capability.installRoot, Capability.install, activate, hnew] using hentry)
+        exact ⟨Nat.lt_succ_of_lt hold.1, hold.2⟩
+    · intro left leftSlot leftCap right rightSlot rightCap hleft hright hid
+      by_cases hl : left = subject ∧ leftSlot = slot
+      · by_cases hr : right = subject ∧ rightSlot = slot
+        · exact ⟨hl.1.trans hr.1.symm, hl.2.trans hr.2.symm⟩
+        · rcases hl with ⟨rfl, rfl⟩
+          have hleftCap : leftCap =
+              (⟨object, .endpoint, endpointRootRights,
+                state.capabilities.nextIdentity, none⟩ : Capability.Capability) := by
+            symm
+            simpa [Capability.installRoot, Capability.install, activate] using hleft
+          subst leftCap
+          have hrc := hslots right rightSlot rightCap (by
+            simpa [Capability.installRoot, Capability.install, activate, hr] using hright)
+          have : state.capabilities.nextIdentity = rightCap.identity := by
+            simpa using hid
+          omega
+      · by_cases hr : right = subject ∧ rightSlot = slot
+        · rcases hr with ⟨rfl, rfl⟩
+          have hrightCap : rightCap =
+              (⟨object, .endpoint, endpointRootRights,
+                state.capabilities.nextIdentity, none⟩ : Capability.Capability) := by
+            symm
+            simpa [Capability.installRoot, Capability.install, activate] using hright
+          subst rightCap
+          have hlc := hslots left leftSlot leftCap (by
+            simpa [Capability.installRoot, Capability.install, activate, hl] using hleft)
+          have : leftCap.identity = state.capabilities.nextIdentity := by
+            simpa using hid
+          omega
+        · exact hunique left leftSlot leftCap right rightSlot rightCap
+            (by simpa [Capability.installRoot, Capability.install, activate, hl] using hleft)
+            (by simpa [Capability.installRoot, Capability.install, activate, hr] using hright) hid
   · intro candidate hlive hkind
     by_cases heq : candidate = object
     · subst candidate
       simp [setBool]
     · have hliveOld : state.capabilities.objects candidate = true := by
-        simpa [Capability.install, activate, setBool, heq] using hlive
+        simpa [Capability.installRoot, Capability.install, activate, setBool, heq] using hlive
       have hkindOld : state.capabilities.kinds candidate = some .endpoint := by
-        simpa [Capability.install, activate, heq] using hkind
+        simpa [Capability.installRoot, Capability.install, activate, heq] using hkind
       simpa [setBool, heq] using hissued candidate hliveOld hkindOld
   · intro candidate envelope hfound
     have hne : candidate ≠ object := by
@@ -316,8 +368,8 @@ theorem create_preserves_wellFormed (state : State) object subject slot
       subst candidate
       simp [setOption] at hfound
     have hold := hmail candidate envelope (by simpa [setOption, hne] using hfound)
-    exact ⟨by simpa [Capability.install, activate, setBool, hne] using hold.1,
-      by simpa [Capability.install, activate, hne] using hold.2.1, hold.2.2⟩
+    exact ⟨by simpa [Capability.installRoot, Capability.install, activate, setBool, hne] using hold.1,
+      by simpa [Capability.installRoot, Capability.install, activate, hne] using hold.2.1, hold.2.2⟩
   · intro candidate hnotlive
     by_cases heq : candidate = object
     · subst candidate
@@ -325,7 +377,7 @@ theorem create_preserves_wellFormed (state : State) object subject slot
     · have hold : state.capabilities.objects candidate ≠ true := by
         intro hlive
         apply hnotlive
-        simpa [Capability.install, activate, setBool, heq] using hlive
+        simpa [Capability.installRoot, Capability.install, activate, setBool, heq] using hlive
       simpa [setOption, heq] using hdead candidate hold
 
 /-- Every accepted send preserves the composite endpoint invariant. -/
@@ -353,7 +405,7 @@ theorem send_preserves_wellFormed (state : State) caller slot payload
             { endpoint := cap.object, sender := caller, payload } }
       rcases hstate with ⟨hcaps, hissued, hmail, hdead, hhistory⟩
       have hslot := Capability.lookup_found_slot state.capabilities caller slot cap hlookup
-      have hcap := hcaps caller slot cap hslot
+      have hcap := hcaps.1 caller slot cap hslot
       have hkind : cap.kind = .endpoint := by simp_all
       refine ⟨hcaps, hissued, ?_, ?_, ?_⟩
       · intro object envelope hfound
@@ -437,18 +489,42 @@ theorem destroy_preserves_wellFormed (state : State) subject slot
         sendHistory := state.sendHistory }
     rcases hstate with ⟨hcaps, hissued, hmail, hdead, hhistory⟩
     refine ⟨?_, ?_, ?_, ?_, hhistory⟩
-    · intro candidate candidateSlot found hslot
-      cases hold : state.capabilities.slots candidate candidateSlot with
-      | none => simp [retire, hold] at hslot
-      | some existing =>
-        by_cases heq : existing.object = cap.object
-        · simp [retire, hold, heq] at hslot
-        · have hfound : found = existing := by
-            simpa [retire, hold, heq] using hslot.symm
-          subst found
-          have hwf := hcaps candidate candidateSlot existing hold
-          exact ⟨hwf.1, by simpa [retire, setBool, heq] using hwf.2.1,
-            by simpa [retire, heq] using hwf.2.2.1, hwf.2.2.2⟩
+    · rcases hcaps with ⟨hslots, hderivations, hunique⟩
+      refine ⟨?_, ?_, ?_⟩
+      · intro candidate candidateSlot found hslot
+        cases hold : state.capabilities.slots candidate candidateSlot with
+        | none => simp [retire, hold] at hslot
+        | some existing =>
+          by_cases heq : existing.object = cap.object
+          · simp [retire, hold, heq] at hslot
+          · have hfound : found = existing := by
+              simpa [retire, hold, heq] using hslot.symm
+            subst found
+            rcases hslots candidate candidateSlot existing hold with
+              ⟨hsub, hlive, hkind, hrest⟩
+            exact ⟨hsub, by simpa [retire, setBool, heq] using hlive,
+              by simpa [retire, heq] using hkind, hrest⟩
+      · simpa [Capability.DerivationsWellFormed, retire] using hderivations
+      · intro left leftSlot leftCap right rightSlot rightCap hleft hright hid
+        have oldLeft : state.capabilities.slots left leftSlot = some leftCap := by
+          cases hold : state.capabilities.slots left leftSlot with
+          | none => simp [retire, hold] at hleft
+          | some existing =>
+            by_cases heq : existing.object = cap.object
+            · simp [retire, hold, heq] at hleft
+            · have : leftCap = existing := by
+                simpa [retire, hold, heq] using hleft.symm
+              simp [this] at hold ⊢
+        have oldRight : state.capabilities.slots right rightSlot = some rightCap := by
+          cases hold : state.capabilities.slots right rightSlot with
+          | none => simp [retire, hold] at hright
+          | some existing =>
+            by_cases heq : existing.object = cap.object
+            · simp [retire, hold, heq] at hright
+            · have : rightCap = existing := by
+                simpa [retire, hold, heq] using hright.symm
+              simp [this] at hold ⊢
+        exact hunique left leftSlot leftCap right rightSlot rightCap oldLeft oldRight hid
     · intro object hlive hkind
       have hne : object ≠ cap.object := by
         intro heq
