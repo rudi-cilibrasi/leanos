@@ -135,6 +135,11 @@ The bounded [user-copy model](docs/user-copy.md) prevalidates a small complete
 range through current virtual mappings before changing typed kernel buffers or
 live-frame byte memory, with explicit alias rejection and atomic failure.
 
+The [frame-scrubbing model](docs/frame-scrubbing.md) atomically clears reused
+frame contents before publishing a fresh memory-object lifetime and proves
+modeled reads cannot expose an earlier owner's bytes before the new owner
+writes.
+
 The [subject-lifecycle model](docs/subject-lifecycle.md) gives subjects
 never-reused identities and defines atomic termination cleanup across held
 capabilities, exclusively owned memory, address spaces, endpoints, pending

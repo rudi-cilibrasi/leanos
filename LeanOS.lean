@@ -3,6 +3,7 @@ import LeanOS.EndpointIPC
 import LeanOS.IPCSyscall
 import LeanOS.Example
 import LeanOS.FrameAllocator
+import LeanOS.FrameScrub
 import LeanOS.KernelTransition
 import LeanOS.MemoryLifecycle
 import LeanOS.Syscall
