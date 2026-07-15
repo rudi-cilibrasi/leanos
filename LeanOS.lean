@@ -1,4 +1,5 @@
 import LeanOS.Capability
+import LeanOS.BootMemoryMap
 import LeanOS.EndpointIPC
 import LeanOS.IPCSyscall
 import LeanOS.Interrupt
