@@ -2,6 +2,7 @@ import LeanOS.KernelTransition
 import LeanOS.Syscall
 import LeanOS.IPCSyscall
 import LeanOS.Preemption
+import LeanOS.BootAllocation
 
 /-!
 # Bounded scalar boundary oracle
@@ -38,6 +39,11 @@ private def preemption (id : String) (vector current queued armed : UInt64) : Ve
   { id, adapter := "Preemption.scalar", words := [vector, current, queued, armed],
     expected := Preemption.preemptionDemo vector current queued armed }
 
+private def bootAllocation (id : String) (magic infoBytes entryBytes selected flags : UInt64) :
+    Vector :=
+  { id, adapter := "BootAllocation.scalar", words := [magic, infoBytes, entryBytes, selected, flags],
+    expected := BootAllocation.check magic infoBytes entryBytes selected flags }
+
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
   boot "boot.accept" 0 1,
@@ -58,9 +64,18 @@ def vectors : List Vector := [
   preemption "preemption.accept" 32 1 2 1,
   preemption "preemption.masked" 32 1 2 0,
   preemption "preemption.wrong-vector" 14 1 2 1,
-  preemption "preemption.forged-current" 32 2 1 1]
+  preemption "preemption.forged-current" 32 2 1 1,
+  bootAllocation "boot-allocation.accept" BootAllocation.multiboot2Magic 128 24 512 15,
+  bootAllocation "boot-allocation.wrong-magic" 0 128 24 512 15,
+  bootAllocation "boot-allocation.truncated" BootAllocation.multiboot2Magic 8 24 512 15,
+  bootAllocation "boot-allocation.misaligned-size" BootAllocation.multiboot2Magic 127 24 512 15,
+  bootAllocation "boot-allocation.bad-entry-size" BootAllocation.multiboot2Magic 128 16 512 15,
+  bootAllocation "boot-allocation.fixed-width-overflow" BootAllocation.multiboot2Magic
+    18446744073709551615 24 512 15,
+  bootAllocation "boot-allocation.no-eligible-frame" BootAllocation.multiboot2Magic 128 24 4096 15,
+  bootAllocation "boot-allocation.publish-before-scrub" BootAllocation.multiboot2Magic 128 24 512 11]
 
-theorem corpus_shape : vectors.length = 17 := by decide
+theorem corpus_shape : vectors.length = 25 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide

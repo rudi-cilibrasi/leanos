@@ -1,6 +1,7 @@
 import LeanOS.Capability
 import LeanOS.BootMemoryMap
 import LeanOS.BootReservation
+import LeanOS.BootAllocation
 import LeanOS.BlockingIPC
 import LeanOS.EndpointIPC
 import LeanOS.IPCSyscall

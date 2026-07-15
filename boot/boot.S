@@ -23,6 +23,9 @@ mb2_end:
 .type multiboot_entry, @function
 multiboot_entry:
     cli
+    /* Preserve the Multiboot2 handoff before either register is reused. */
+    mov %eax, multiboot_magic
+    mov %ebx, multiboot_info
     mov $boot_stack_top, %esp
 
     /* Identity-map 16 MiB with 4 KiB leaves; only the two explicit user
@@ -150,6 +153,8 @@ long_mode_entry:
     mov %ax, %gs
     mov $boot_stack_top, %rsp
     xor %rbp, %rbp
+    mov multiboot_magic(%rip), %edi
+    mov multiboot_info(%rip), %esi
     call kernel_main
 3:
     cli
@@ -158,6 +163,13 @@ long_mode_entry:
 .size multiboot_entry, . - multiboot_entry
 
 .section .data.gdt,"aw",@progbits
+.align 8
+.global multiboot_magic
+multiboot_magic:
+    .long 0
+.global multiboot_info
+multiboot_info:
+    .long 0
 .align 8
 .global gdt64
 gdt64:

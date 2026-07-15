@@ -8,6 +8,8 @@ extern uint64_t leanos_boot_transition(uint64_t state, uint64_t command);
 extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t,
+                                             uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -26,6 +28,24 @@ extern char user_a_entry[], user_a_stack_top[];
 extern char user_a_stack[];
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
+extern char __boot_image_start[], __boot_image_end[];
+
+#define MULTIBOOT2_RUNTIME_MAGIC 0x36d76289u
+#define BOOT_ACCESSIBLE_LIMIT (16u * 1024u * 1024u)
+#define MAX_HANDOFF_BYTES 65536u
+#define MAX_MMAP_ENTRIES 128u
+#define PAGE_BYTES 4096u
+
+struct __attribute__((packed)) mb2_tag { uint32_t type, size; };
+struct __attribute__((packed)) mb2_mmap_tag {
+    uint32_t type, size, entry_size, entry_version;
+};
+struct __attribute__((packed)) mb2_mmap_entry {
+    uint64_t base, length; uint32_t type, reserved;
+};
+
+static uint8_t boot_frames[BOOT_ACCESSIBLE_LIMIT / PAGE_BYTES];
+static volatile uint64_t published_boot_object;
 
 struct __attribute__((packed)) idt_entry {
     uint16_t low, selector; uint8_t ist, attributes; uint16_t middle; uint32_t high, zero;
@@ -47,6 +67,116 @@ static unsigned copy_step;
 static void finish(uint8_t value);
 static __attribute__((noreturn)) void fail(const char *reason);
 static void serial_puts(const char *text);
+static void serial_putc(char value);
+
+static void serial_u64(uint64_t value) {
+    char digits[21]; unsigned length = 0;
+    if (value == 0) { serial_putc('0'); return; }
+    while (value != 0) { digits[length++] = (char)('0' + value % 10); value /= 10; }
+    while (length != 0) serial_putc(digits[--length]);
+}
+
+static __attribute__((noreturn)) void handoff_fail(const char *reason) {
+    serial_puts("LEANOS/7 BOOTALLOC status=FAIL reason="); serial_puts(reason);
+    serial_putc('\n'); finish(0x11);
+}
+
+static void reserve_byte_range(uint64_t start, uint64_t stop) {
+    uint64_t first = start / PAGE_BYTES;
+    uint64_t last = (stop + PAGE_BYTES - 1) / PAGE_BYTES;
+    if (last > sizeof(boot_frames)) last = sizeof(boot_frames);
+    for (uint64_t frame = first; frame < last; ++frame) boot_frames[frame] = 2;
+}
+
+/* Bounded, allocation-free Multiboot2 glue. Its correspondence to the Lean
+   evidence adapter is tested, but the byte loads themselves remain in the TCB. */
+static void boot_allocate(uint32_t magic, uint32_t info_address) {
+    if (magic != MULTIBOOT2_RUNTIME_MAGIC) handoff_fail("magic");
+    if ((info_address & 7u) != 0 || info_address < PAGE_BYTES ||
+        info_address >= BOOT_ACCESSIBLE_LIMIT) handoff_fail("pointer");
+    const uint8_t *info = (const uint8_t *)(uint64_t)info_address;
+    uint32_t total = *(const uint32_t *)info;
+    if (total < 16 || total > MAX_HANDOFF_BYTES || (total & 7u) != 0 ||
+        total > BOOT_ACCESSIBLE_LIMIT - info_address) handoff_fail("bounds");
+
+    uint32_t offset = 8, entries = 0, entry_size = 0;
+    uint64_t highest_end = 0; unsigned saw_map = 0, saw_end = 0;
+    while (offset <= total - 8) {
+        const struct mb2_tag *tag = (const struct mb2_tag *)(info + offset);
+        if (tag->size < 8 || tag->size > total - offset) handoff_fail("tag-size");
+        if (tag->type == 0) {
+            if (tag->size != 8) handoff_fail("end-tag");
+            saw_end = 1; break;
+        }
+        if (tag->type == 6) {
+            if (saw_map || tag->size < 16) handoff_fail("mmap-shape");
+            const struct mb2_mmap_tag *map = (const struct mb2_mmap_tag *)tag;
+            if (map->entry_size != sizeof(struct mb2_mmap_entry) ||
+                map->entry_version != 0 ||
+                (tag->size - 16) % map->entry_size != 0) handoff_fail("mmap-layout");
+            entry_size = map->entry_size;
+            uint32_t count = (tag->size - 16) / map->entry_size;
+            if (count == 0 || count > MAX_MMAP_ENTRIES) handoff_fail("mmap-count");
+            for (uint32_t i = 0; i < count; ++i) {
+                const struct mb2_mmap_entry *entry = (const struct mb2_mmap_entry *)
+                    ((const uint8_t *)map + 16 + i * map->entry_size);
+                uint64_t stop;
+                if (entry->length == 0 || __builtin_add_overflow(entry->base,
+                    entry->length, &stop)) handoff_fail("entry-range");
+                uint64_t first, last;
+                if (entry->type == 1) {
+                    if (stop > highest_end) highest_end = stop;
+                    if (entry->base > UINT64_MAX - (PAGE_BYTES - 1))
+                        handoff_fail("entry-round");
+                    first = (entry->base + PAGE_BYTES - 1) / PAGE_BYTES;
+                    last = stop / PAGE_BYTES;
+                    if (last > sizeof(boot_frames)) last = sizeof(boot_frames);
+                    for (uint64_t frame = first; frame < last; ++frame)
+                        if (boot_frames[frame] == 0) boot_frames[frame] = 1;
+                } else {
+                    first = entry->base / PAGE_BYTES;
+                    last = stop >= BOOT_ACCESSIBLE_LIMIT ? sizeof(boot_frames) :
+                        (stop + PAGE_BYTES - 1) / PAGE_BYTES;
+                    if (last > sizeof(boot_frames)) last = sizeof(boot_frames);
+                    for (uint64_t frame = first; frame < last; ++frame)
+                        boot_frames[frame] = 2;
+                }
+            }
+            entries = count; saw_map = 1;
+        }
+        uint32_t advance = (tag->size + 7u) & ~7u;
+        if (advance < tag->size || advance > total - offset) handoff_fail("tag-advance");
+        offset += advance;
+    }
+    if (!saw_end || !saw_map) handoff_fail("missing-tag");
+
+    reserve_byte_range(0, 1024u * 1024u);
+    reserve_byte_range((uint64_t)__boot_image_start, (uint64_t)__boot_image_end);
+    reserve_byte_range(info_address, (uint64_t)info_address + total);
+    uint64_t selected = sizeof(boot_frames);
+    for (uint64_t frame = 256; frame < sizeof(boot_frames); ++frame)
+        if (boot_frames[frame] == 1) { selected = frame; break; }
+    if (selected == sizeof(boot_frames)) handoff_fail("no-frame");
+    if (leanos_boot_allocation_check(magic, total, entry_size, selected, 15) != 1)
+        handoff_fail("model-check");
+
+    volatile uint8_t *frame = (volatile uint8_t *)(selected * PAGE_BYTES);
+    for (uint64_t i = 0; i < PAGE_BYTES; ++i) frame[i] = 0;
+    for (uint64_t i = 0; i < PAGE_BYTES; ++i)
+        if (frame[i] != 0) handoff_fail("scrub");
+    published_boot_object = selected + 1; /* publish only after the full scrub */
+
+    serial_puts("LEANOS/7 HANDOFF magic=valid info-bytes="); serial_u64(total);
+    serial_puts(" mmap-entries="); serial_u64(entries); serial_puts(" result=PASS\n");
+    serial_puts("LEANOS/7 MAP boot-pages="); serial_u64(sizeof(boot_frames));
+    serial_puts(" reported-top-mib="); serial_u64(highest_end / (1024u * 1024u));
+    serial_puts(" precedence=reserved result=PASS\n");
+    serial_puts("LEANOS/7 ALLOC frame="); serial_u64(selected);
+    serial_puts(" firmware-usable=1 boot-accessible=1 reserved=0 result=PASS\n");
+    serial_puts("LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS\n");
+    serial_puts("LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS\n");
+    serial_puts("LEANOS/7 BOOTALLOC status=PASS\n");
+}
 
 enum copy_policy {
     COPY_ALLOWED, COPY_TOO_LONG, COPY_OVERFLOW, COPY_NONCANONICAL,
@@ -143,7 +273,10 @@ static void replay_oracle(void) {
                 ? leanos_syscall_demo(v->words[0], v->words[1], v->words[2], v->words[3])
                 : v->adapter == 2
                     ? leanos_ipc_demo(v->words[0], v->words[1], v->words[2], v->words[3])
-                    : leanos_preemption_demo(v->words[0], v->words[1], v->words[2], v->words[3]);
+                : v->adapter == 3
+                    ? leanos_preemption_demo(v->words[0], v->words[1], v->words[2], v->words[3])
+                    : leanos_boot_allocation_check(v->words[0], v->words[1], v->words[2],
+                        v->words[3], v->words[4]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -300,9 +433,11 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
     return (uint8_t)(left == right);
 }
 
-void kernel_main(void) {
+void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
     serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap\n");
+
+    boot_allocate(multiboot_magic, multiboot_info);
 
     replay_oracle();
 

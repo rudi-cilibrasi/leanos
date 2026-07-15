@@ -124,8 +124,9 @@ The following new code and assumptions are trusted, not proved:
 - `boot/boot.S`, the Multiboot2 header, page tables, GDT, x86-64 mode switch,
   CR0.WP/CR4.SMEP writes and CPU-feature assumption, stack, fault probes, and
   System V ABI handoff;
-- `boot/kernel.c`, including UART polling, port I/O, QEMU debug-exit behavior,
-  serial formatting, and the manual `lean_uint64_dec_eq` implementation;
+- `boot/kernel.c`, including the bounded Multiboot2 byte parser, physical-frame
+  scrub, UART polling, port I/O, QEMU debug-exit behavior, serial formatting,
+  and the manual `lean_uint64_dec_eq` implementation;
 - Lean code generation and generated C, GCC, GNU assembler/linker and linker
   garbage collection, the linker script, GRUB, SeaBIOS, QEMU, and the x86-64,
   Multiboot2, 16550 UART, and emulated-device contracts.
