@@ -27,7 +27,7 @@ multiboot_entry:
 
     /* Identity-map 16 MiB with 4 KiB leaves; only the two explicit user
        ranges receive U/S at the leaf.  Upper levels permit traversal. */
-    mov $page_table, %edi
+    mov $page_table_a, %edi
     mov $3, %eax
     mov $PAGE_ENTRY_COUNT, %ecx
 1:
@@ -37,23 +37,51 @@ multiboot_entry:
     add $8, %edi
     loop 1b
 
-    mov $page_table, %eax
+    mov $page_table_a, %eax
     or $7, %eax
     mov $PAGE_TABLE_COUNT, %ecx
-    mov $page_directory, %edi
+    mov $page_directory_a, %edi
 2:
     mov %eax, (%edi)
     movl $0, 4(%edi)
     add $4096, %eax
     add $8, %edi
     loop 2b
-    mov $page_directory, %eax
+    mov $page_directory_a, %eax
     or $7, %eax
-    mov %eax, page_directory_pointer
-    mov $page_directory_pointer, %eax
+    mov %eax, page_directory_pointer_a
+    mov $page_directory_pointer_a, %eax
     or $7, %eax
-    mov %eax, page_map_level_4
-    movl $0, page_map_level_4 + 4
+    mov %eax, page_map_level_4_a
+    movl $0, page_map_level_4_a + 4
+
+    /* Address space B starts from the same supervisor-only identity map. */
+    mov $page_table_b, %edi
+    mov $3, %eax
+    mov $PAGE_ENTRY_COUNT, %ecx
+5:
+    mov %eax, (%edi)
+    movl $0x80000000, 4(%edi)
+    add $0x1000, %eax
+    add $8, %edi
+    loop 5b
+    mov $page_table_b, %eax
+    or $7, %eax
+    mov $PAGE_TABLE_COUNT, %ecx
+    mov $page_directory_b, %edi
+6:
+    mov %eax, (%edi)
+    movl $0, 4(%edi)
+    add $4096, %eax
+    add $8, %edi
+    loop 6b
+    mov $page_directory_b, %eax
+    or $7, %eax
+    mov %eax, page_directory_pointer_b
+    mov $page_directory_pointer_b, %eax
+    or $7, %eax
+    mov %eax, page_map_level_4_b
+    movl $0, page_map_level_4_b + 4
 
     /* Instruction pages are read-only and executable.  All other leaves
        retain NX; only these two explicit pages receive U/S. */
@@ -65,27 +93,39 @@ multiboot_entry:
     shr $9, %ecx
     and $0x7ff8, %ecx
 4:
-    andl $~2, page_table(%eax)
-    andl $0x7fffffff, page_table+4(%eax)
+    andl $~2, page_table_a(%eax)
+    andl $0x7fffffff, page_table_a+4(%eax)
+    andl $~2, page_table_b(%eax)
+    andl $0x7fffffff, page_table_b+4(%eax)
     add $8, %eax
     cmp %ecx, %eax
     jb 4b
 
-    mov $__user_text_start, %eax
+    mov $__user_a_text_start, %eax
     shr $9, %eax
     and $0x7ff8, %eax
-    orl $4, page_table(%eax)
-    andl $~2, page_table(%eax)
-    andl $0x7fffffff, page_table+4(%eax)
-    mov $__user_stack_start, %eax
+    orl $4, page_table_a(%eax)
+    andl $~2, page_table_a(%eax)
+    andl $0x7fffffff, page_table_a+4(%eax)
+    mov $__user_a_stack_start, %eax
     shr $9, %eax
     and $0x7ff8, %eax
-    orl $4, page_table(%eax)
+    orl $4, page_table_a(%eax)
+    mov $__user_b_text_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    orl $4, page_table_b(%eax)
+    andl $~2, page_table_b(%eax)
+    andl $0x7fffffff, page_table_b+4(%eax)
+    mov $__user_b_stack_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    orl $4, page_table_b(%eax)
 
     mov %cr4, %eax
     or $(1 << 5), %eax
     mov %eax, %cr4
-    mov $page_map_level_4, %eax
+    mov $page_map_level_4_a, %eax
     mov %eax, %cr3
     mov $0xc0000080, %ecx
     rdmsr
@@ -133,16 +173,28 @@ gdt64_pointer:
 
 .section .bss,"aw",@nobits
 .align 4096
-page_map_level_4:
+.global page_map_level_4_a
+page_map_level_4_a:
     .skip 4096
-page_directory_pointer:
+page_directory_pointer_a:
     .skip 4096
-page_directory:
+page_directory_a:
     .skip 4096
 .align 4096
-page_table:
+page_table_a:
     .skip 4096 * PAGE_TABLE_COUNT
-page_table_end:
+page_table_a_end:
+.global page_map_level_4_b
+page_map_level_4_b:
+    .skip 4096
+page_directory_pointer_b:
+    .skip 4096
+page_directory_b:
+    .skip 4096
+.align 4096
+page_table_b:
+    .skip 4096 * PAGE_TABLE_COUNT
+page_table_b_end:
 .align 16
 boot_stack:
     .skip 16384
@@ -183,6 +235,14 @@ isr80:
     mov 88(%rsp), %rcx
     mov 128(%rsp), %r8
     call syscall_handler
+    cmp $0xfeed, %rax
+    jne 7f
+    movq $user_b_entry, 120(%rsp)
+    movq $user_b_stack_top, 144(%rsp)
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    xor %rax, %rax
+7:
     mov %rax, 112(%rsp)
     RESTORE
     iretq
@@ -201,37 +261,65 @@ isr14:
     add $8, %rsp
     iretq
 
-.section .user.text,"ax",@progbits
-.global user_entry
-user_entry:
+.section .user.a.text,"ax",@progbits
+.global user_a_entry
+user_a_entry:
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
-    mov $0, %rax
-    mov $0, %rbx
-    mov $7, %rcx
-    mov $1, %rdx
-    int $0x80
-    mov $99, %rax
+    mov $4, %rax
     xor %rbx, %rbx
     xor %rcx, %rcx
     xor %rdx, %rdx
     int $0x80
-.global user_fault_instruction
-user_fault_instruction:
-    mov 0, %rax
-.global user_fault_recovered
-user_fault_recovered:
-    mov $255, %rax
+    mov $3, %rax
+    mov $0x4c45414e, %rbx
+    mov $0x4f53, %rcx
+    mov $99, %rdx
+    int $0x80
+    mov $254, %rax
     int $0x80
 1:  jmp 1b
 
-.section .user.bss,"aw",@nobits
+.section .user.a.bss,"aw",@nobits
 .align 4096
-.global user_stack
-user_stack:
+.global user_a_stack
+user_a_stack:
     .skip 4096
-.global user_stack_top
-user_stack_top:
+.global user_a_stack_top
+user_a_stack_top:
+
+.section .user.b.text,"ax",@progbits
+.global user_b_entry
+user_b_entry:
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov $3, %rax
+    mov $0x4c45414e, %rbx
+    mov $0x4f53, %rcx
+    xor %rdx, %rdx
+    int $0x80
+    mov $4, %rax
+    xor %rbx, %rbx
+    xor %rcx, %rcx
+    xor %rdx, %rdx
+    int $0x80
+.global user_b_fault_instruction
+user_b_fault_instruction:
+    mov 0, %rax
+.global user_b_fault_recovered
+user_b_fault_recovered:
+    mov $255, %rax
+    int $0x80
+2:  jmp 2b
+
+.section .user.b.bss,"aw",@nobits
+.align 4096
+.global user_b_stack
+user_b_stack:
+    .skip 4096
+.global user_b_stack_top
+user_b_stack_top:
 
 .section .note.GNU-stack,"",@progbits

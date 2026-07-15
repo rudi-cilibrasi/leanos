@@ -144,6 +144,40 @@ def ipcDemo (caller operation word0 word1 : UInt64) : UInt64 :=
   else if caller = 2 && operation = 4 && word0 = 0x4c45414e && word1 = 0x4f53 then 2
   else 0
 
+private def demoSubjects : Capability.SubjectId → Bool := fun subject => subject < 3
+private def demoInitialCapabilities : Capability.State :=
+  { subjects := demoSubjects
+    objects := fun _ => false
+    kinds := fun _ => none
+    slots := fun _ _ => none }
+private def demoInitial : EndpointIPC.State :=
+  { capabilities := demoInitialCapabilities
+    allocator := { frames := [], status := fun _ => .reserved }
+    binding := fun _ => none
+    issuedAddressSpace := fun _ => false
+    mailbox := fun _ => none
+    issued := fun _ => false
+    sendHistory := fun _ => [] }
+private def demoRoot := (EndpointIPC.create demoInitial 10 0 0).state
+private def demoSender := (EndpointIPC.delegate demoRoot 0 0 1 0 { send := true }).1
+private def demoReady := (EndpointIPC.delegate demoSender 0 0 2 0 { receive := true }).1
+private def demoPayload : EndpointIPC.Payload := { word0 := 0x4c45414e, word1 := 0x4f53 }
+private def demoSent := (EndpointIPC.send demoReady 1 0 demoPayload).state
+
+/-- The compact generated witness agrees with the reviewed directional endpoint
+scenario. The foreign mailbox and machine execution remain tested, not proved. -/
+theorem ipcDemo_agrees_with_endpoint_scenario :
+    ipcDemo 1 4 0x4c45414e 0x4f53 = 0 ∧
+    (EndpointIPC.receive demoReady 1 0).result = .rejected .missingReceive ∧
+    ipcDemo 1 3 0x4c45414e 0x4f53 = 1 ∧
+    (EndpointIPC.send demoReady 1 0 demoPayload).result = .accepted ∧
+    ipcDemo 2 3 0x4c45414e 0x4f53 = 0 ∧
+    (EndpointIPC.send demoSent 2 0 demoPayload).result = .rejected .missingSend ∧
+    ipcDemo 2 4 0x4c45414e 0x4f53 = 2 ∧
+    (EndpointIPC.receive demoSent 2 0).result =
+      .delivered { endpoint := 10, sender := 1, payload := demoPayload } := by
+  native_decide
+
 example : ipcDemo 1 3 0x4c45414e 0x4f53 = 1 := by native_decide
 example : ipcDemo 1 4 0x4c45414e 0x4f53 = 0 := by native_decide
 example : ipcDemo 2 3 0x4c45414e 0x4f53 = 0 := by native_decide

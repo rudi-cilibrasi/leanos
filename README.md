@@ -78,6 +78,11 @@ subject through an `int 0x80` gate, binds its calls to kernel-selected context,
 and contains one expected user page fault. Its assumptions and evidence are
 recorded in [ADR 0003](docs/adr/0003-ring3-syscall-fault-slice.md).
 
+The two-subject integration slice extends that boundary with separate page
+tables and a fixed cooperative handoff through one directional endpoint. Its
+tested behavior and unproved machine boundary are recorded in
+[ADR 0004](docs/adr/0004-two-subject-ipc-slice.md).
+
 The first executable model is `LeanOS.KernelTransition.transition`, with
 machine-checked determinism, invariant-preservation, and rejection-stability
 theorems in
