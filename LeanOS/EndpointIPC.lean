@@ -47,7 +47,7 @@ def WellFormed (state : State) : Prop :=
   (∀ object envelope, envelope ∈ state.sendHistory object → envelope.endpoint = object)
 
 inductive CreateError where
-  | invalidSubject | occupiedSlot | objectInUse | objectAlreadyIssued
+  | invalidSubject | outOfRange | occupiedSlot | objectInUse | objectAlreadyIssued
   deriving DecidableEq, Repr
 
 inductive DestroyError where
@@ -114,6 +114,7 @@ def endpointRootRights : Capability.Rights :=
 def create (state : State) (object : ObjectId) (subject : SubjectId) (slot : SlotId) :
     Outcome CreateError :=
   if state.capabilities.subjects subject != true then reject state .invalidSubject
+  else if !Capability.slotInRange state.capabilities subject slot then reject state .outOfRange
   else if (state.capabilities.slots subject slot).isSome then reject state .occupiedSlot
   else if state.capabilities.objects object then reject state .objectInUse
   else if state.issued object || state.issuedAddressSpace object then
@@ -250,6 +251,7 @@ theorem create_rejected_unchanged (state : State) object subject slot reason
   split <;> try simp_all [reject]
   split <;> try simp_all [reject]
   split <;> try simp_all [reject]
+  split <;> try simp_all [reject]
   split <;> simp_all [reject]
 
 theorem destroy_rejected_unchanged (state : State) subject slot reason
@@ -296,6 +298,7 @@ theorem create_preserves_wellFormed (state : State) object subject slot
   split <;> try simpa [reject] using hstate
   split <;> try simpa [reject] using hstate
   split <;> try simpa [reject] using hstate
+  split <;> try simpa [reject] using hstate
   change WellFormed
     { capabilities := Capability.installRoot (activate state.capabilities object) subject slot
         object .endpoint endpointRootRights
@@ -309,8 +312,10 @@ theorem create_preserves_wellFormed (state : State) object subject slot
   have hsubject : state.capabilities.subjects subject = true := by simp_all
   have hobjectFree : state.capabilities.objects object = false := by simp_all
   refine ⟨?_, ?_, ?_, ?_, hhistory⟩
-  · rcases hcaps with ⟨hslots, hderivations, hunique⟩
-    refine ⟨?_, ?_, ?_⟩
+  · rcases hcaps with ⟨hslots, hderivations, hunique, hspaces⟩
+    have hslotRange : Capability.slotInRange state.capabilities subject slot = true := by
+      simp_all
+    refine ⟨?_, ?_, ?_, ?_⟩
     · intro candidate candidateSlot capability hslot
       by_cases htarget : candidate = subject ∧ candidateSlot = slot
       · rcases htarget with ⟨rfl, rfl⟩
@@ -389,6 +394,15 @@ theorem create_preserves_wellFormed (state : State) object subject slot
         · exact hunique left leftSlot leftCap right rightSlot rightCap
             (by simpa [Capability.installRoot, Capability.install, activate, hl] using hleft)
             (by simpa [Capability.installRoot, Capability.install, activate, hr] using hright) hid
+    · intro candidate candidateSlot hout
+      change state.capabilities.slotCapacity candidate ≤ candidateSlot at hout
+      by_cases htarget : candidate = subject ∧ candidateSlot = slot
+      · rcases htarget with ⟨rfl, rfl⟩
+        have hlt : candidateSlot < state.capabilities.slotCapacity candidate := by
+          simpa [Capability.slotInRange] using hslotRange
+        omega
+      · simpa [Capability.installRoot, Capability.install, activate, htarget] using
+          hspaces candidate candidateSlot hout
   · intro candidate hlive hkind
     by_cases heq : candidate = object
     · subst candidate
@@ -525,8 +539,8 @@ theorem destroy_preserves_wellFormed (state : State) subject slot
         sendHistory := state.sendHistory }
     rcases hstate with ⟨hcaps, hissued, hmail, hdead, hhistory⟩
     refine ⟨?_, ?_, ?_, ?_, hhistory⟩
-    · rcases hcaps with ⟨hslots, hderivations, hunique⟩
-      refine ⟨?_, ?_, ?_⟩
+    · rcases hcaps with ⟨hslots, hderivations, hunique, hspaces⟩
+      refine ⟨?_, ?_, ?_, ?_⟩
       · intro candidate candidateSlot found hslot
         cases hold : state.capabilities.slots candidate candidateSlot with
         | none => simp [retire, hold] at hslot
@@ -561,6 +575,9 @@ theorem destroy_preserves_wellFormed (state : State) subject slot
                 simpa [retire, hold, heq] using hright.symm
               simp [this] at hold ⊢
         exact hunique left leftSlot leftCap right rightSlot rightCap oldLeft oldRight hid
+      · intro candidate candidateSlot hout
+        have hempty := hspaces candidate candidateSlot hout
+        simp [retire, hempty]
     · intro object hlive hkind
       have hne : object ≠ cap.object := by
         intro heq
@@ -782,7 +799,7 @@ example : (send withBoth 1 0 { word0 := 2, word1 := 10 }).state.mailbox 10 =
     some { endpoint := 10, sender := 1, payload := { word0 := 2, word1 := 10 } } := by
   native_decide
 -- Wrong-kind handles fail closed.
-example : (send root 0 9 payload).result = .rejected .wrongKind := by native_decide
+example : (send root 0 9 payload).result = .rejected .staleHandle := by native_decide
 -- Revocation before use removes the delegated endpoint authority.
 private def revokedSender := (revoke withSender 0 0 1 0).1
 example : (send revokedSender 1 0 payload).result = .rejected .staleHandle := by native_decide

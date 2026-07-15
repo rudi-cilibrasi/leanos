@@ -1,14 +1,19 @@
 # Capability authority model
 
-`LeanOS.Capability` is a sequential reference model. Subjects own numbered
-slots. Each occupied slot contains an object identifier, its recorded
+`LeanOS.Capability` is a sequential reference model. Each subject owns an
+independent finite capability space whose capacity is stored in the model.
+`capabilitySpace` enumerates exactly the in-range slots in ascending order;
+`copyBounded` installs into a caller-selected in-range empty slot, while
+`copyLowest` deterministically selects the lowest free slot. Together they
+report invalid subject, out-of-range, full, and occupied outcomes separately,
+and all rejections preserve the complete state. Each occupied slot contains an object identifier, its recorded
 `ObjectKind`, and a nonempty valid subset of
 `read`, `write`, `grant`, and `revoke`. Authority means that such a slot grants
 the named object/right pair. Lookup distinguishes forged subjects from stale or
 empty slots.
 
 Every installed capability has a never-reused identity and either an explicit
-root marker or one derivation parent. `copy` requires `grant`, delegates only a
+root marker or one derivation parent. The authoritative `copy` operation requires `grant`, delegates only a
 nonempty rights subset into an empty slot, and appends a fresh child identity.
 Direct `revoke` deletes only the selected slot. `revokeSubtree` requires revoke
 authority for the same object and kind, then atomically clears the selected
@@ -27,7 +32,8 @@ this slice support only grant/revoke because lifecycle operations are deferred.
 
 ## Proved guarantees
 
-- `WellFormed` requires unique live identities, matching append-only derivation
+- `WellFormed` requires every occupied slot to be inside its subject's finite
+  domain, unique live identities, matching append-only derivation
   metadata, parent/object/kind agreement, rights attenuation at parent edges,
   and strictly increasing parent-to-child identities, which rules out cycles.
 - `copy_preserves_wellFormed`, `revoke_preserves_wellFormed`, and
@@ -39,8 +45,16 @@ this slice support only grant/revoke because lifecycle operations are deferred.
 - `copy_rejected_unchanged`, `revoke_rejected_unchanged`, and
   `revokeSubtree_rejected_unchanged` prove that all
   rejected outcomes leave state unchanged.
+- `copyBounded_outOfRange_unchanged` and `copyLowest_full_unchanged` prove the
+  finite-space exhaustion paths preserve all state, including derivation
+  metadata. `install_other_subject` and `clear_other_subject` prove a selected
+  subject's slot mutation cannot alter an equal-numbered slot of another
+  subject.
 
-Executable traces cover `root → A → B → C`, attenuation, direct deletion's
+Executable traces cover capacities zero and one, independent filling of two
+subjects, out-of-range indices, repeated full allocation, revoke-then-reuse,
+and rejection of unchecked natural-number destinations by the authoritative
+operation. They also cover `root → A → B → C`, attenuation, direct deletion's
 known failure to revoke descendants, subtree revocation, independent roots,
 repeated/stale requests, and slot reuse. Memory/address-space/endpoint root
 creation uses the same identity store; whole-object destruction remains the
@@ -50,10 +64,17 @@ stronger operation and removes every live capability for the retired object.
 
 This is an atomic sequential model: selection and removal form one transition,
 so no copy or use can interleave with an accepted revoke. Parent walking uses
-at most `nextIdentity` steps per live slot. With `S` inspected slots and `I =
-nextIdentity`, subtree removal is `O(S·I)` time and retains `O(I)` append-only
-derivation history. Natural-number identities and the functional slot store are
-mathematical model assumptions, not fixed kernel resource bounds.
+at most `nextIdentity` steps per live slot. A bounded free/full check is `O(C)`
+for destination capacity `C`. With `S` inspected slots and `I = nextIdentity`,
+subtree removal is `O(S·I)` time and retains `O(I)` append-only derivation
+history. Bounding live slots does **not** bound lifetime identity metadata;
+identity-history exhaustion and reclamation remain a precise non-goal.
+
+Issue #71's future sealed in-flight transfers must use an atomic receive-side
+capacity check: a full receiver leaves both capability state and the message
+envelope unchanged. An envelope is not a live installed capability and does
+not consume a slot before successful receive, but it must retain provenance
+until that atomic installation succeeds.
 
 ## Boundaries and non-guarantees
 
@@ -62,5 +83,5 @@ They do not verify generated code, a runtime, compiler, kernel binary, or
 hardware. Concurrency, races, subject-termination policy, and a concrete
 bounded kernel representation are not modeled. Authority preservation is
 not confidentiality, information-flow noninterference, object-content
-integrity, availability, resource bounds, timing resistance, or resistance to
+integrity, total metadata bounds, timing resistance, or resistance to
 other covert channels.
