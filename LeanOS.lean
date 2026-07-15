@@ -3,5 +3,6 @@ import LeanOS.Example
 import LeanOS.FrameAllocator
 import LeanOS.KernelTransition
 import LeanOS.MemoryLifecycle
+import LeanOS.Syscall
 import LeanOS.VirtualMapping
 import LeanOS.X86PageTable

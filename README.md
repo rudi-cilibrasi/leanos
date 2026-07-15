@@ -111,6 +111,11 @@ proves structural validity, permission non-amplification, current-frame
 agreement, NX enforcement, and cross-address-space separation. Hardware walks,
 CR3/TLB operations, boot integration, and the compiler remain trusted.
 
+The first total syscall model separates trusted caller/active-address-space
+context from untrusted fixed-width scalar words and proves invariant
+preservation, rejection stability, and caller confinement. Its vocabulary and
+trust boundary are documented in [`docs/syscall-model.md`](docs/syscall-model.md).
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
