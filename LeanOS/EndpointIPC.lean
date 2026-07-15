@@ -1,4 +1,4 @@
-import LeanOS.Capability
+import LeanOS.MemoryLifecycle
 
 /-!
 # Capability-authorized endpoint IPC
@@ -27,10 +27,10 @@ structure Envelope where
   payload : Payload
   deriving DecidableEq, Repr
 
-structure State where
-  capabilities : Capability.State
+structure State extends MemoryLifecycle.State where
+  /-- Shared monotonic history from the composed address-space lifecycle. -/
+  issuedAddressSpace : ObjectId → Bool
   mailbox : ObjectId → Option Envelope
-  issued : ObjectId → Bool
   /-- Ghost evidence: append-only records created only by accepted sends. -/
   sendHistory : ObjectId → List Envelope
 
@@ -116,10 +116,12 @@ def create (state : State) (object : ObjectId) (subject : SubjectId) (slot : Slo
   if state.capabilities.subjects subject != true then reject state .invalidSubject
   else if (state.capabilities.slots subject slot).isSome then reject state .occupiedSlot
   else if state.capabilities.objects object then reject state .objectInUse
-  else if state.issued object then reject state .objectAlreadyIssued
+  else if state.issued object || state.issuedAddressSpace object then
+    reject state .objectAlreadyIssued
   else
     { state :=
-        { capabilities := Capability.install (activate state.capabilities object) subject slot
+        { state with
+          capabilities := Capability.install (activate state.capabilities object) subject slot
             { object, kind := .endpoint, rights := endpointRootRights }
           mailbox := setOption state.mailbox object none
           issued := setBool state.issued object true
@@ -176,6 +178,22 @@ def receive (state : State) (caller : SubjectId) (slot : SlotId) : ReceiveOutcom
         | some envelope =>
           { state := { state with mailbox := setOption state.mailbox cap.object none }
             result := .delivered envelope }
+
+/-- States reachable from a valid empty-mailbox state. Non-send transitions may
+remove messages but cannot introduce them; the only introducing event is an
+accepted invocation of `send`. -/
+inductive Reachable : State → Prop where
+  | initial (state : State) (wellFormed : WellFormed state)
+      (empty : ∀ object, state.mailbox object = none) : Reachable state
+  | withoutSend (prior next : State) (reachable : Reachable prior)
+      (wellFormed : WellFormed next)
+      (noIntroduction : ∀ object envelope, next.mailbox object = some envelope →
+        prior.mailbox object = some envelope) : Reachable next
+  | acceptedSend (prior : State) (caller : SubjectId) (slot : SlotId) (payload : Payload)
+      (reachable : Reachable prior)
+      (accepted : (send prior caller slot payload).result = .accepted)
+      (wellFormed : WellFormed (send prior caller slot payload).state) :
+      Reachable (send prior caller slot payload).state
 
 /-- Delegate through the shared capability policy; no IPC rule is duplicated. -/
 def delegate (state : State) (actor : SubjectId) (source : SlotId)
@@ -246,6 +264,9 @@ theorem create_preserves_wellFormed (state : State) object subject slot
   change WellFormed
     { capabilities := Capability.install (activate state.capabilities object) subject slot
         { object, kind := .endpoint, rights := endpointRootRights }
+      allocator := state.allocator
+      binding := state.binding
+      issuedAddressSpace := state.issuedAddressSpace
       mailbox := setOption state.mailbox object none
       issued := setBool state.issued object true
       sendHistory := state.sendHistory }
@@ -316,6 +337,9 @@ theorem send_preserves_wellFormed (state : State) caller slot payload
     next hfree =>
       change WellFormed
         { capabilities := state.capabilities
+          allocator := state.allocator
+          binding := state.binding
+          issuedAddressSpace := state.issuedAddressSpace
           mailbox := setOption state.mailbox cap.object
             (some { endpoint := cap.object, sender := caller, payload })
           issued := state.issued
@@ -367,6 +391,9 @@ theorem receive_preserves_wellFormed (state : State) caller slot
     next envelope hqueued =>
       change WellFormed
         { capabilities := state.capabilities
+          allocator := state.allocator
+          binding := state.binding
+          issuedAddressSpace := state.issuedAddressSpace
           mailbox := setOption state.mailbox cap.object none
           issued := state.issued
           sendHistory := state.sendHistory }
@@ -396,6 +423,9 @@ theorem destroy_preserves_wellFormed (state : State) subject slot
     split <;> try simpa [reject] using hstate
     change WellFormed
       { capabilities := retire state.capabilities cap.object
+        allocator := state.allocator
+        binding := state.binding
+        issuedAddressSpace := state.issuedAddressSpace
         mailbox := setOption state.mailbox cap.object none
         issued := state.issued
         sendHistory := state.sendHistory }
@@ -490,11 +520,48 @@ theorem accepted_send_records_caller (state : State) caller slot payload
     split at h <;> try contradiction
     exact ⟨cap.object, by simp [send, hlookup, setOption, *]⟩
 
-/-- A delivered envelope belongs to the accepted-send ghost history for this incarnation. -/
+/-- Every queued envelope in a reachable state was introduced by a concrete,
+accepted send event from an earlier reachable state. -/
+theorem reachable_mailbox_has_accepted_send (state : State) (hreach : Reachable state)
+    object envelope (hmail : state.mailbox object = some envelope) :
+    ∃ prior caller slot payload, Reachable prior ∧
+      (send prior caller slot payload).result = .accepted ∧
+      (send prior caller slot payload).state.mailbox object = some envelope ∧
+      envelope = { endpoint := object, sender := caller, payload := payload } := by
+  induction hreach with
+  | initial state _ empty => simp [empty object] at hmail
+  | withoutSend prior next _ _ noIntroduction ih =>
+      exact ih (noIntroduction object envelope hmail)
+  | acceptedSend prior eventCaller eventSlot eventPayload _ accepted _ ih =>
+      simp only [send] at accepted
+      split at accepted <;> try contradiction
+      next cap hlookup =>
+        split at accepted <;> try contradiction
+        split at accepted <;> try contradiction
+        split at accepted <;> try contradiction
+        split at accepted <;> try contradiction
+        split at accepted <;> try contradiction
+        by_cases heq : object = cap.object
+        · subst object
+          have henv : envelope =
+              ({ endpoint := cap.object, sender := eventCaller, payload := eventPayload } : Envelope) := by
+            simpa [send, hlookup, setOption, *] using hmail.symm
+          subst envelope
+          exact ⟨prior, eventCaller, eventSlot, eventPayload,
+            by assumption, by simp [send, hlookup, *],
+            by simp [send, hlookup, setOption, *], rfl⟩
+        · apply ih
+          simpa [send, hlookup, setOption, heq, *] using hmail
+
+/-- Delivery has event provenance from an accepted send in the reachable
+execution, and that event records its trusted caller in the envelope. -/
 theorem delivered_has_send_provenance (state : State) caller slot envelope
-    (hstate : WellFormed state)
+    (hreach : Reachable state)
     (h : (receive state caller slot).result = .delivered envelope) :
-    envelope ∈ state.sendHistory envelope.endpoint := by
+    ∃ prior sender senderSlot payload, Reachable prior ∧
+      (send prior sender senderSlot payload).result = .accepted ∧
+      (send prior sender senderSlot payload).state.mailbox envelope.endpoint = some envelope ∧
+      envelope.sender = sender := by
   have hmail : ∃ object, state.mailbox object = some envelope := by
     simp only [receive] at h
     split at h <;> try contradiction
@@ -509,8 +576,17 @@ theorem delivered_has_send_provenance (state : State) caller slot envelope
         subst queued
         exact ⟨cap.object, hqueued⟩
   obtain ⟨object, hmailbox⟩ := hmail
-  have hwf := hstate.2.2.1 object envelope hmailbox
-  simpa [hwf.2.2.1] using hwf.2.2.2
+  obtain ⟨prior, sender, senderSlot, payload, hprior, haccepted, hevent, henvelope⟩ :=
+    reachable_mailbox_has_accepted_send state hreach object envelope hmailbox
+  have hendpoint : envelope.endpoint = object := by
+    cases hreach with
+    | initial _ hwell _ => exact (hwell.2.2.1 object envelope hmailbox).2.2.1
+    | withoutSend _ _ _ hwell _ => exact (hwell.2.2.1 object envelope hmailbox).2.2.1
+    | acceptedSend _ _ _ _ _ _ hwell =>
+        exact (hwell.2.2.1 object envelope hmailbox).2.2.1
+  have hsender : envelope.sender = sender := by simp [henvelope]
+  subst object
+  exact ⟨prior, sender, senderSlot, payload, hprior, haccepted, hevent, hsender⟩
 
 /-- Destruction clears queued data and every installed capability for the endpoint. -/
 theorem destroy_clears (state : State) subject slot
@@ -560,7 +636,11 @@ private def initialCaps : Capability.State :=
     kinds := fun object => if object = 7 then some .memory else none
     slots := fun subject slot => if subject = 0 ∧ slot = 9 then some memoryCap else none }
 private def initial : State :=
-  { capabilities := initialCaps, mailbox := fun _ => none, issued := fun _ => false
+  { capabilities := initialCaps
+    allocator := { frames := [], status := fun _ => .reserved }
+    binding := fun _ => none
+    issuedAddressSpace := fun _ => false
+    mailbox := fun _ => none, issued := fun _ => false
     sendHistory := fun _ => [] }
 private def root := (create initial 10 0 0).state
 private def sendOnly : Capability.Rights := { send := true }
@@ -594,5 +674,10 @@ example : destroyed.mailbox 10 = none := by native_decide
 example : (receive destroyed 2 0).result = .rejected .staleHandle := by native_decide
 example : (destroy destroyed 0 0).result = .rejected .staleHandle := by native_decide
 example : (create destroyed 10 0 0).result = .rejected .objectAlreadyIssued := by native_decide
+-- A retired identifier from the composed address-space lifecycle is also unavailable.
+private def retiredAddressSpaceHistory : State :=
+  { initial with issuedAddressSpace := fun object => object = 11 }
+example : (create retiredAddressSpaceHistory 11 0 0).result =
+    .rejected .objectAlreadyIssued := by native_decide
 
 end LeanOS.EndpointIPC
