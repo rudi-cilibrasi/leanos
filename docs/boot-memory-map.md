@@ -33,9 +33,20 @@ classified as reserved rather than usable. The classifier walks frame numbers
 in ascending order, deduplicates by
 construction, and merges adjacent equal classifications, yielding deterministic
 nonzero, page-aligned, sorted, disjoint `FrameAllocator.Region` values.
-`normalize_functional` proves functional uniqueness for a fixed handoff. The
-executable reversed-input example checks order independence for the adversarial
-overlap sample; a general permutation theorem is not claimed here.
+`classifyFrame_eq_of_perm`, `singletonRegions_eq_of_perm`, and
+`normalizedEntryRegions_eq_of_perm` prove that every normalization stage
+exposed to later reservation work is invariant under `List.Perm`.
+`validateEntries_isOk_eq_of_perm` proves equal entry-validation acceptance
+versus rejection. Permutation preserves length and multiplicity, so tag sizing,
+entry-count, and resource bounds are not weakened. The raw witness list remains
+available in `Normalized`, but its order is not observable through allocation
+policy.
+
+Malformed permutations can report different error constructors because entry
+validation reports the first bad descriptor. The theorem intentionally claims
+only the same success/rejection status and, on success, the same regions; it
+does not canonicalize diagnostics. Structural handoff fields and tag order are
+unchanged by this result.
 
 `accepted_usable_sound` states the central executable predicate: every frame in
 an emitted usable region has complete usable coverage and no overlap with any
@@ -49,9 +60,12 @@ first-entry-wins overlap handling.
 
 `./scripts/check.sh` builds every module with no-sorries mode and runs the
 proof-integrity escape-hatch scan and regression fixture. Executable examples
-cover out-of-order and fragmented maps, overlap precedence, adjacent merging,
-partial pages, overflow, entries crossing and wholly above the scan limit,
-unsupported versions, malformed/missing tags, and bounded rejection.
+enumerate all permutations of small overlap/fragmentation, duplicate, and
+partial-page/above-limit corpora. Other examples cover adjacent merging,
+overflow, entries crossing the scan limit, unsupported versions,
+malformed/missing tags, and bounded rejection. A deliberately
+first-entry-wins classifier supplies a local counterexample: swapping usable
+and reserved overlapping entries changes its answer.
 
 Firmware and the bootloader remain trusted to describe real hardware
 truthfully. The byte decoder, boot assembly, compiler, generated code, and

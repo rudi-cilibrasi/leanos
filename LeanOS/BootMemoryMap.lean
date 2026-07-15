@@ -121,9 +121,27 @@ def classifyFrame (entries : List RawEntry) (frame : Nat) : Option RegionKind :=
   else if entries.any (fun e => overlaps e start stop) then some .reserved
   else none
 
+/-- Existential Boolean queries over entries are insensitive to their order. -/
+theorem any_eq_of_perm {entries₁ entries₂ : List RawEntry} (predicate : RawEntry → Bool)
+    (hperm : entries₁.Perm entries₂) :
+    entries₁.any predicate = entries₂.any predicate := by
+  exact hperm.any_eq
+
+/-- Conservative frame classification depends on entry content, not enumeration order. -/
+theorem classifyFrame_eq_of_perm {entries₁ entries₂ : List RawEntry}
+    (hperm : entries₁.Perm entries₂) (frame : Nat) :
+    classifyFrame entries₁ frame = classifyFrame entries₂ frame := by
+  simp only [classifyFrame, any_eq_of_perm _ hperm]
+
 def singletonRegions (entries : List RawEntry) : List Region :=
   (List.range frameLimit).filterMap fun frame =>
     (classifyFrame entries frame).map fun kind => { start := frame, count := 1, kind }
+
+/-- The bounded per-frame region scan is identical for permuted entry lists. -/
+theorem singletonRegions_eq_of_perm {entries₁ entries₂ : List RawEntry}
+    (hperm : entries₁.Perm entries₂) :
+    singletonRegions entries₁ = singletonRegions entries₂ := by
+  simp only [singletonRegions, classifyFrame_eq_of_perm hperm]
 
 def appendRegion (regions : List Region) (next : Region) : List Region :=
   match regions.reverse with
@@ -135,6 +153,15 @@ def appendRegion (regions : List Region) (next : Region) : List Region :=
 
 def mergeAdjacent (regions : List Region) : List Region :=
   regions.foldl appendRegion []
+
+def normalizedEntryRegions (entries : List RawEntry) : List Region :=
+  mergeAdjacent (singletonRegions entries)
+
+/-- Canonical allocator regions are identical for permuted raw entry lists. -/
+theorem normalizedEntryRegions_eq_of_perm {entries₁ entries₂ : List RawEntry}
+    (hperm : entries₁.Perm entries₂) :
+    normalizedEntryRegions entries₁ = normalizedEntryRegions entries₂ := by
+  simp only [normalizedEntryRegions, singletonRegions_eq_of_perm hperm]
 
 def regionShape (regions : List Region) : Bool :=
   regions.all fun r => r.count != 0 && r.start + r.count ≤ frameLimit
@@ -152,6 +179,12 @@ def usableSound (entries : List RawEntry) (regions : List Region) : Bool :=
   regions.all fun region =>
     region.kind != .usable || region.frames.all (usableFrameSound entries)
 
+theorem usableSound_eq_of_perm {entries₁ entries₂ : List RawEntry}
+    (hperm : entries₁.Perm entries₂) (regions : List Region) :
+    usableSound entries₁ regions = usableSound entries₂ regions := by
+  unfold usableSound usableFrameSound
+  simp only [hperm.any_eq]
+
 structure Normalized where
   entries : List RawEntry
   regions : List Region
@@ -160,12 +193,33 @@ structure Normalized where
   sound : usableSound entries regions = true
   allocatorAccepts : (FrameAllocator.init regions).isOk = true
 
-def normalize (handoff : Handoff) : Except Error Normalized := do
-  let entries ← validateHandoff handoff
-  for entry in entries do entryValid entry
+def validateEntries : List RawEntry → Except Error Unit
+  | [] => .ok ()
+  | entry :: rest => do
+      entryValid entry
+      validateEntries rest
+
+/-- Reordering can change which malformed entry is reported first, but cannot
+change whether entry validation accepts or rejects the list. -/
+theorem validateEntries_isOk_eq_of_perm {entries₁ entries₂ : List RawEntry}
+    (hperm : entries₁.Perm entries₂) :
+    (validateEntries entries₁).isOk = (validateEntries entries₂).isOk := by
+  induction hperm with
+  | nil => rfl
+  | cons entry _ ih =>
+      simp only [validateEntries]
+      cases entryValid entry
+      case error => rfl
+      case ok => exact ih
+  | swap first second _ =>
+      simp only [validateEntries]
+      cases entryValid first <;> cases entryValid second <;> rfl
+  | trans _ _ ih₁ ih₂ => exact ih₁.trans ih₂
+
+def buildNormalized (entries : List RawEntry) : Except Error Normalized := do
   let singletons := singletonRegions entries
   if singletons.length > maxExpandedFrames then throw .expandedFramesExceeded
-  let regions := mergeAdjacent singletons
+  let regions := normalizedEntryRegions entries
   if regions.length > maxRegions then throw .normalizedRegionsExceeded
   if hshape : regionShape regions then
     if hdisjoint : pairwiseDisjoint regions then
@@ -180,6 +234,15 @@ def normalize (handoff : Handoff) : Except Error Normalized := do
       else throw .normalizationInvariant
     else throw .normalizationInvariant
   else throw .normalizationInvariant
+
+def normalizeEntries (entries : List RawEntry) : Except Error Normalized :=
+  match validateEntries entries with
+  | .error reason => .error reason
+  | .ok _ => buildNormalized entries
+
+def normalize (handoff : Handoff) : Except Error Normalized := do
+  let entries ← validateHandoff handoff
+  normalizeEntries entries
 
 theorem normalize_functional handoff first second
     (hfirst : normalize handoff = first) (hsecond : normalize handoff = second) : first = second := by
@@ -270,6 +333,50 @@ example : normalizedRegions (mkHandoff [duplicatedEntry, duplicatedEntry]) =
 example : normalizedRegions (mkHandoff sample.reverse) = normalizedRegions (mkHandoff sample) := by
   native_decide
 
+def permutationCorpus : List RawEntry :=
+  [{ base := 0, length := 2 * pageBytes, kind := .usable },
+   { base := pageBytes, length := pageBytes, kind := .reserved },
+   { base := 3 * pageBytes, length := pageBytes, kind := .usable }]
+
+/-- All six permutations cover overlap precedence and fragmented adjacent output. -/
+def permutationCorpusOrders : List (List RawEntry) :=
+  match permutationCorpus with
+  | [a, b, c] => [[a, b, c], [a, c, b], [b, a, c], [b, c, a], [c, a, b], [c, b, a]]
+  | _ => []
+
+example : permutationCorpusOrders.all (fun entries =>
+    normalizedRegions (mkHandoff entries) = normalizedRegions (mkHandoff permutationCorpus)) =
+    true := by native_decide
+
+/-- Duplicate entries retain multiplicity while remaining order-independent. -/
+def duplicateCorpus : List RawEntry :=
+  [duplicatedEntry, { duplicatedEntry with kind := .reserved }, duplicatedEntry]
+
+def duplicateCorpusOrders : List (List RawEntry) :=
+  match duplicateCorpus with
+  | [a, b, c] => [[a, b, c], [a, c, b], [b, a, c], [b, c, a], [c, a, b], [c, b, a]]
+  | _ => []
+
+example : duplicateCorpusOrders.all
+    (fun entries => normalizedRegions (mkHandoff entries) =
+      normalizedRegions (mkHandoff duplicateCorpus)) = true := by
+  native_decide
+
+/-- Above-limit and mixed partial-page entries remain canonical under all orders. -/
+def boundaryCorpus : List RawEntry :=
+  [{ base := physicalLimit, length := pageBytes, kind := .usable },
+   { base := 1, length := pageBytes - 1, kind := .usable },
+   { base := pageBytes - 1, length := 2, kind := .reserved }]
+
+def boundaryCorpusOrders : List (List RawEntry) :=
+  match boundaryCorpus with
+  | [a, b, c] => [[a, b, c], [a, c, b], [b, a, c], [b, c, a], [c, a, b], [c, b, a]]
+  | _ => []
+
+example : boundaryCorpusOrders.all (fun entries =>
+    normalizedRegions (mkHandoff entries) = normalizedRegions (mkHandoff boundaryCorpus)) = true := by
+  native_decide
+
 def overflowingEntry : RawEntry :=
   { base := wordLimit - 1, length := 2, kind := .usable }
 
@@ -308,5 +415,18 @@ example : covers { base := 1, length := 4095, kind := .usable } 0 pageBytes = fa
 
 /-- First-entry-wins is unsound: the later reservation overlaps frame four. -/
 example : usableFrameSound sample 4 = false := by decide
+
+def classifyFrameFirstMatch (entries : List RawEntry) (frame : Nat) : Option RegionKind :=
+  let start := frame * pageBytes
+  let stop := start + pageBytes
+  entries.findSome? fun entry =>
+    if overlaps entry start stop then
+      some (if entry.kind == .usable && covers entry start stop then .usable else .reserved)
+    else none
+
+/-- A first-entry-wins classifier changes its answer when the overlapping
+usable and reserved descriptors are swapped. -/
+example : classifyFrameFirstMatch sample 4 != classifyFrameFirstMatch sample.reverse 4 := by
+  decide
 
 end LeanOS.BootMemoryMap
