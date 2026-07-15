@@ -20,20 +20,20 @@ abbrev AddressSpaceId := Scheduler.AddressSpaceId
 structure State where
   scheduler : Scheduler.State
   observation : Observation.State
+  mappingPermissions : SubjectId → Observation.Page →
+    Option VirtualMapping.Permissions
 
-/-- There is one authoritative current subject: the scheduler.  The legacy
-observation field is maintained only as a proved projection adapter. -/
+/-- Scheduler/lifecycle state and `mappingPermissions` are authoritative.
+Legacy observation fields are maintained only as proved projection adapters. -/
 def AdapterAgrees (state : State) : Prop :=
   state.observation.schedulerCurrent = state.scheduler.lifecycle.current ∧
-    state.observation.live = state.scheduler.lifecycle.capabilities.subjects
-
-def observe (observer : SubjectId) (state : State) : Observation.View :=
-  { Observation.observe observer state.observation with
-    live := state.scheduler.lifecycle.capabilities.subjects observer
-    schedulerCurrent := state.scheduler.lifecycle.current }
-
-def LowEquiv (observer : SubjectId) (left right : State) : Prop :=
-  observe observer left = observe observer right
+    state.observation.live = state.scheduler.lifecycle.capabilities.subjects ∧
+    (∀ subject slot,
+      state.observation.held subject slot =
+        (state.scheduler.lifecycle.capabilities.slots subject slot).map (·.rights)) ∧
+    state.observation.ownedMappings = state.mappingPermissions ∧
+    (∀ subject page, (state.mappingPermissions subject page).isSome =
+      (state.scheduler.lifecycle.mapping subject page).isSome)
 
 inductive SchedulerOp where
   | select | tick | terminate
@@ -46,11 +46,13 @@ inductive Step where
   deriving Repr
 
 inductive Reject where
-  | noCurrent | staleSubject | staleAddressSpace | nonActorOperation
+  | noCurrent | notLive | staleSubject | staleAddressSpace | nonActorOperation
   deriving DecidableEq, Repr
 
 inductive Event where
-  | rejected (reason : Reject)
+  | actorRejected (reason : Reject)
+  | scheduler (operation : SchedulerOp) (result : Scheduler.Result)
+      (view : Observation.View)
   | visible (view : Observation.View)
 
 structure Outcome where
@@ -77,16 +79,83 @@ theorem isSilent_iff observer operation :
     isSilent observer operation = true ↔ Observation.SilentFor observer operation := by
   cases operation <;> simp [isSilent, Observation.SilentFor]
 
-def sync (scheduler : Scheduler.State) (observation : Observation.State) : State :=
-  { scheduler
-    observation := { observation with
-      live := scheduler.lifecycle.capabilities.subjects
-      schedulerCurrent := scheduler.lifecycle.current } }
+def normalizedMappings (scheduler : Scheduler.State)
+    (mappingPermissions : SubjectId → Observation.Page →
+      Option VirtualMapping.Permissions) :
+    SubjectId → Observation.Page → Option VirtualMapping.Permissions :=
+  fun subject page =>
+    match scheduler.lifecycle.mapping subject page with
+    | none => none
+    | some _ => some ((mappingPermissions subject page).getD {})
 
-def schedulerStep (state : State) : SchedulerOp → State
-  | .select => sync (Scheduler.selectNext state.scheduler).state state.observation
-  | .tick => sync (Scheduler.tick state.scheduler).state state.observation
-  | .terminate => sync (Scheduler.terminateCurrent state.scheduler).state state.observation
+@[simp] theorem normalizedMappings_idem scheduler mappings :
+    normalizedMappings scheduler (normalizedMappings scheduler mappings) =
+      normalizedMappings scheduler mappings := by
+  funext subject page
+  simp only [normalizedMappings]
+  cases scheduler.lifecycle.mapping subject page <;> simp
+
+def observe (observer : SubjectId) (state : State) : Observation.View :=
+  { Observation.observe observer state.observation with
+    live := state.scheduler.lifecycle.capabilities.subjects observer
+    held := fun slot =>
+      (state.scheduler.lifecycle.capabilities.slots observer slot).map (·.rights)
+    ownedMappings := normalizedMappings state.scheduler state.mappingPermissions observer
+    schedulerCurrent := state.scheduler.lifecycle.current }
+
+def LowEquiv (observer : SubjectId) (left right : State) : Prop :=
+  observe observer left = observe observer right
+
+def syncObservation (scheduler : Scheduler.State)
+    (mappingPermissions : SubjectId → Observation.Page →
+      Option VirtualMapping.Permissions)
+    (observation : Observation.State) : Observation.State :=
+  { observation with
+    live := scheduler.lifecycle.capabilities.subjects
+    held := fun subject slot =>
+      (scheduler.lifecycle.capabilities.slots subject slot).map (·.rights)
+    ownedMappings := normalizedMappings scheduler mappingPermissions
+    schedulerCurrent := scheduler.lifecycle.current }
+
+def sync (scheduler : Scheduler.State)
+    (mappingPermissions : SubjectId → Observation.Page →
+      Option VirtualMapping.Permissions)
+    (observation : Observation.State) : State :=
+  { scheduler
+    mappingPermissions := normalizedMappings scheduler mappingPermissions
+    observation := syncObservation scheduler mappingPermissions observation }
+
+def schedulerStep (state : State) : SchedulerOp → Scheduler.Outcome
+  | .select => Scheduler.selectNext state.scheduler
+  | .tick => Scheduler.tick state.scheduler
+  | .terminate => Scheduler.terminateCurrent state.scheduler
+
+def applyActorToLifecycle (state : Scheduler.State) (space : AddressSpaceId) :
+    Observation.Step → Scheduler.State
+  | .delegate _ recipient slot rights =>
+      { state with lifecycle := { state.lifecycle with
+          capabilities := { state.lifecycle.capabilities with
+            slots := Observation.set2 state.lifecycle.capabilities.slots recipient slot
+              (some { object := slot, kind := .memory, rights }) } } }
+  | .revoke _ victim slot =>
+      { state with lifecycle := { state.lifecycle with
+          capabilities := { state.lifecycle.capabilities with
+            slots := Observation.set2 state.lifecycle.capabilities.slots victim slot none } } }
+  | .map _ page _ =>
+      { state with lifecycle := { state.lifecycle with
+          mapping := Observation.set2 state.lifecycle.mapping space page (some page) } }
+  | .unmap _ page =>
+      { state with lifecycle := { state.lifecycle with
+          mapping := Observation.set2 state.lifecycle.mapping space page none } }
+  | _ => state
+
+def applyActorToMappings
+    (mappings : SubjectId → Observation.Page → Option VirtualMapping.Permissions)
+    (space : AddressSpaceId) : Observation.Step →
+      SubjectId → Observation.Page → Option VirtualMapping.Permissions
+  | .map _ page permissions => Observation.set2 mappings space page (some permissions)
+  | .unmap _ page => Observation.set2 mappings space page none
+  | _ => mappings
 
 def actorResult (state : State) (claimedSubject : SubjectId)
     (claimedSpace : AddressSpaceId) (operation : Observation.Step) :
@@ -99,20 +168,26 @@ def actorResult (state : State) (claimedSubject : SubjectId)
     | some current =>
       if actor != claimedSubject || claimedSubject != current then
         .error .staleSubject
+      else if !state.scheduler.lifecycle.capabilities.subjects current then
+        .error .notLive
       else if Scheduler.ownsAddressSpace state.scheduler current != some claimedSpace then
         .error .staleAddressSpace
-      else .ok (sync state.scheduler (Observation.transition state.observation operation))
+      else .ok (sync (applyActorToLifecycle state.scheduler claimedSpace operation)
+        (applyActorToMappings state.mappingPermissions claimedSpace operation)
+        (Observation.transition state.observation operation))
 
 /-- Execute one request and classify exactly the declared low event.  An
 unrelated private actor operation is silent; scheduling, rejection, IPC,
 sharing, capability, and resource effects are retained. -/
 def executeOne (observer : SubjectId) (state : State) : Step → Outcome
   | .scheduler operation =>
-      let next := schedulerStep state operation
-      { state := next, event := some (.visible (observe observer next)) }
+      let outcome := schedulerStep state operation
+      let next := sync outcome.state state.mappingPermissions state.observation
+      { state := next,
+        event := some (.scheduler operation outcome.result (observe observer next)) }
   | .actor subject space operation =>
       match actorResult state subject space operation with
-      | .error reason => { state, event := some (.rejected reason) }
+      | .error reason => { state, event := some (.actorRejected reason) }
       | .ok next =>
         if isSilent observer operation then { state := next, event := none }
         else { state := next, event := some (.visible (observe observer next)) }
@@ -125,22 +200,31 @@ def run (observer : SubjectId) : State → List Step → State × List Event
       (tail.1, outcome.event.toList ++ tail.2)
 
 def applyEvent (prior : Observation.View) : Event → Observation.View
-  | .rejected _ => prior
+  | .actorRejected _ => prior
+  | .scheduler _ _ view => view
   | .visible view => view
 
 def replay (initial : Observation.View) (events : List Event) : Observation.View :=
   events.foldl applyEvent initial
 
-theorem sync_agrees scheduler observation : AdapterAgrees (sync scheduler observation) := by
-  simp [AdapterAgrees, sync]
+theorem sync_agrees scheduler mappings observation :
+    AdapterAgrees (sync scheduler mappings observation) := by
+  unfold AdapterAgrees sync syncObservation
+  refine ⟨rfl, rfl, ?_, rfl, ?_⟩
+  · intros; rfl
+  · intro subject page
+    simp only [normalizedMappings]
+    cases scheduler.lifecycle.mapping subject page <;> simp
 
 /-- An accepted actor request names exactly the selected subject and that
 subject's scheduler-derived owned address space. -/
 theorem accepted_actor_uses_current_owned_space state subject space operation next
     (h : actorResult state subject space operation = .ok next) :
     state.scheduler.lifecycle.current = some subject ∧
+      state.scheduler.lifecycle.capabilities.subjects subject = true ∧
       Scheduler.ownsAddressSpace state.scheduler subject = some space := by
   simp only [actorResult] at h
+  split at h <;> simp_all
   split at h <;> simp_all
   split at h <;> simp_all
   split at h <;> simp_all
@@ -156,24 +240,41 @@ theorem silent_actor_observe_unchanged observer state subject space operation ne
     (hr : actorResult state subject space operation = .ok next)
     (hs : Observation.SilentFor observer operation) :
     observe observer next = observe observer state := by
-  have hn : next = sync state.scheduler
+  have hn : next = sync (applyActorToLifecycle state.scheduler space operation)
+      (applyActorToMappings state.mappingPermissions space operation)
       (Observation.transition state.observation operation) := by
     grind [actorResult]
   subst next
-  have hv := Observation.silent_observe_unchanged observer state.observation operation hs
+  have hcontext := accepted_actor_uses_current_owned_space
+    state subject space operation _ hr
+  have hactor : actorOf operation = some subject := by
+    grind [actorResult]
+  have hv := Observation.silent_observe_unchanged
+    observer state.observation operation hs
   apply Observation.View.ext
-  · simp [observe, sync, Observation.observe]
-  · simpa [observe, sync, Observation.observe] using congrArg Observation.View.held hv
-  · simpa [observe, sync, Observation.observe] using
+  · cases operation <;>
+      simp [observe, sync, syncObservation, applyActorToLifecycle]
+  · cases operation <;>
+      simp_all [observe, sync, syncObservation, applyActorToLifecycle,
+        Observation.observe, Observation.set2, actorOf,
+        Observation.SilentFor] <;>
+      try { funext slot; simp_all [Observation.set2] }
+  · simpa [observe, sync, syncObservation, Observation.observe] using
       congrArg Observation.View.authorizedBytes hv
-  · simpa [observe, sync, Observation.observe] using
+  · simpa [observe, sync, syncObservation, Observation.observe] using
       congrArg Observation.View.sharedBytes hv
-  · simpa [observe, sync, Observation.observe] using
-      congrArg Observation.View.ownedMappings hv
-  · simpa [observe, sync, Observation.observe] using congrArg Observation.View.reply hv
-  · simpa [observe, sync, Observation.observe] using
+  · cases operation <;>
+      simp_all [observe, sync, syncObservation, applyActorToLifecycle,
+        applyActorToMappings, Observation.observe, Observation.set2,
+        normalizedMappings, Scheduler.ownsAddressSpace, actorOf,
+        Observation.SilentFor] <;>
+      try { funext page; simp_all [Observation.set2, normalizedMappings] }
+  · simpa [observe, sync, syncObservation, Observation.observe] using
+      congrArg Observation.View.reply hv
+  · simpa [observe, sync, syncObservation, Observation.observe] using
       congrArg Observation.View.deliveries hv
-  · simp [observe, sync]
+  · cases operation <;>
+      simp [observe, sync, syncObservation, applyActorToLifecycle]
 
 theorem executeOne_replays observer state step :
     observe observer (executeOne observer state step).state =
@@ -192,6 +293,27 @@ theorem executeOne_replays observer state step :
           silent_actor_observe_unchanged observer state subject space operation next hr silent
       · simp [replay, applyEvent]
 
+theorem executeOne_preserves_adapter observer state step
+    (hagrees : AdapterAgrees state) :
+    AdapterAgrees (executeOne observer state step).state := by
+  cases step with
+  | scheduler operation =>
+      simp only [executeOne]
+      exact sync_agrees _ _ _
+  | actor subject space operation =>
+      simp only [executeOne]
+      split
+      · exact hagrees
+      next next hr =>
+        have hn : AdapterAgrees next := by
+          have heq : next = sync (applyActorToLifecycle state.scheduler space operation)
+              (applyActorToMappings state.mappingPermissions space operation)
+              (Observation.transition state.observation operation) := by
+            grind [actorResult]
+          subst next
+          exact sync_agrees _ _ _
+        split <;> exact hn
+
 theorem run_replays observer state steps :
     observe observer (run observer state steps).1 =
       replay (observe observer state) (run observer state steps).2 := by
@@ -208,6 +330,14 @@ theorem run_replays observer state steps :
       cases event <;> simp [replay, applyEvent] at hone ⊢
       · rw [hone]
       · rw [hone]
+
+theorem run_preserves_adapter observer state steps (hagrees : AdapterAgrees state) :
+    AdapterAgrees (run observer state steps).1 := by
+  induction steps generalizing state with
+  | nil => simpa [run] using hagrees
+  | cons step rest ih =>
+      simp only [run]
+      exact ih _ (executeOne_preserves_adapter observer state step hagrees)
 
 def projection (observer : SubjectId) (state : State) (steps : List Step) : List Event :=
   (run observer state steps).2
@@ -258,8 +388,10 @@ private def localState (secret : Nat) (resources : Nat := 1) : Observation.State
     resourcesRemaining := resources
     schedulerCurrent := some 1 }
 
-private def pairedLeft : State := { scheduler, observation := localState 7 }
-private def pairedRight : State := { scheduler, observation := localState 99 }
+private def pairedLeft : State :=
+  { scheduler, observation := localState 7, mappingPermissions := fun _ _ => none }
+private def pairedRight : State :=
+  { scheduler, observation := localState 99, mappingPermissions := fun _ _ => none }
 
 private def leftTrace : List Step :=
   [.actor 1 1 (.privateWrite 1 4 0xaa),
@@ -292,6 +424,45 @@ example : actorResult pairedLeft 0 1 (.privateWrite 0 0 1) = .error .staleSubjec
   rfl
 example : actorResult pairedLeft 1 0 (.privateWrite 1 0 1) = .error .staleAddressSpace := by
   rfl
+
+private def deadCurrent : State :=
+  { pairedLeft with scheduler :=
+      { pairedLeft.scheduler with lifecycle :=
+          { pairedLeft.scheduler.lifecycle with
+            capabilities := { pairedLeft.scheduler.lifecycle.capabilities with
+              subjects := fun _ => false } } } }
+
+example : actorResult deadCurrent 1 1 (.privateWrite 1 0 1) = .error .notLive := by
+  rfl
+
+def schedulerEventResult : Option Event → Option Scheduler.Result
+  | some (.scheduler _ result _) => some result
+  | _ => none
+
+private def noCurrent : State :=
+  { pairedLeft with scheduler :=
+      { pairedLeft.scheduler with lifecycle :=
+          { pairedLeft.scheduler.lifecycle with current := none } } }
+
+private def missingSelectedSpace : State :=
+  { noCurrent with scheduler :=
+      { noCurrent.scheduler with
+        ready := [1]
+        lifecycle := { noCurrent.scheduler.lifecycle with
+          addressOwner := fun _ => none } } }
+
+private def fullReadyQueue : State :=
+  { pairedLeft with scheduler := { pairedLeft.scheduler with capacity := 1 } }
+
+example : schedulerEventResult
+    (executeOne 0 missingSelectedSpace (.scheduler .select)).event =
+      some (.rejected .noAddressSpace) := by rfl
+example : schedulerEventResult
+    (executeOne 0 fullReadyQueue (.scheduler .tick)).event =
+      some (.rejected .queueFull) := by rfl
+example : schedulerEventResult
+    (executeOne 0 noCurrent (.scheduler .terminate)).event =
+      some (.rejected .noCurrent) := by rfl
 
 /-- Public schedules, shared writes, observer-directed capabilities and IPC,
 resource results, and observed termination remain in the projection. -/
