@@ -105,6 +105,12 @@ capability-bounded read/write mappings, live translation checks, and stale
 mapping invalidation. Its policy, proved scope, examples, and limitations are
 documented in [`docs/virtual-mapping.md`](docs/virtual-mapping.md).
 
+The executable [x86-64 page-table refinement model](docs/x86-page-tables.md)
+encodes that policy into a constrained 4 KiB, four-level paging subset and
+proves structural validity, permission non-amplification, current-frame
+agreement, NX enforcement, and cross-address-space separation. Hardware walks,
+CR3/TLB operations, boot integration, and the compiler remain trusted.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
