@@ -121,6 +121,11 @@ context from untrusted fixed-width scalar words and proves invariant
 preservation, rejection stability, and caller confinement. Its vocabulary and
 trust boundary are documented in [`docs/syscall-model.md`](docs/syscall-model.md).
 
+The endpoint IPC model provides capability-authorized, capacity-one,
+nonblocking mailboxes with trusted sender provenance, never-reused endpoint
+identities, and complete destruction cleanup. Its precise proof boundary and
+exclusions are documented in [`docs/endpoint-ipc.md`](docs/endpoint-ipc.md).
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally

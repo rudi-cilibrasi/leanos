@@ -15,15 +15,17 @@ abbrev SubjectId := Nat
 abbrev ObjectId := Nat
 abbrev SlotId := Nat
 
-inductive ObjectKind where | memory | addressSpace
+inductive ObjectKind where | memory | addressSpace | endpoint
   deriving DecidableEq, Repr
 
-inductive Right where | read | write | grant | revoke
+inductive Right where | read | write | send | receive | grant | revoke
   deriving DecidableEq, Repr
 
 structure Rights where
   read : Bool := false
   write : Bool := false
+  send : Bool := false
+  receive : Bool := false
   grant : Bool := false
   revoke : Bool := false
   deriving DecidableEq, Repr
@@ -33,17 +35,21 @@ def oneRight (wanted : Right) : Rights :=
   match wanted with
   | .read => { read := true }
   | .write => { write := true }
+  | .send => { send := true }
+  | .receive => { receive := true }
   | .grant => { grant := true }
   | .revoke => { revoke := true }
 def allRights : Rights := { read := true, write := true, grant := true, revoke := true }
 def permits (rights : Rights) : Right → Bool
   | .read => rights.read | .write => rights.write
+  | .send => rights.send | .receive => rights.receive
   | .grant => rights.grant | .revoke => rights.revoke
 def hasRight (rights : Rights) (right : Right) : Prop := permits rights right = true
 def nonemptyRights (rights : Rights) : Bool :=
-  rights.read || rights.write || rights.grant || rights.revoke
+  rights.read || rights.write || rights.send || rights.receive || rights.grant || rights.revoke
 def rightsSubset (requested source : Rights) : Bool :=
   (!requested.read || source.read) && (!requested.write || source.write) &&
+    (!requested.send || source.send) && (!requested.receive || source.receive) &&
     (!requested.grant || source.grant) && (!requested.revoke || source.revoke)
 
 structure Capability where
@@ -59,9 +65,11 @@ structure State where
   slots : SubjectId → SlotId → Option Capability
 
 def rightsValid : ObjectKind → Rights → Bool
-  | .memory, rights => nonemptyRights rights
-  | .addressSpace, rights => (!rights.read && !rights.write) &&
+  | .memory, rights => (!rights.send && !rights.receive) && nonemptyRights rights
+  | .addressSpace, rights => (!rights.read && !rights.write && !rights.send && !rights.receive) &&
       (rights.grant || rights.revoke)
+  | .endpoint, rights => (!rights.read && !rights.write) &&
+      (rights.send || rights.receive || rights.grant || rights.revoke)
 
 inductive LookupOutcome where
   | invalidSubject | staleSlot | found (capability : Capability)
