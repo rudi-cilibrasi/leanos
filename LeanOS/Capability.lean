@@ -536,6 +536,52 @@ example : lookup
     (revoke (copy exampleState 0 0 1 0 readOnly).state 0 0 1 0).state 1 0 =
     .staleSlot := by decide
 
+private def lineageSubjects : SubjectId → Bool := fun subject => subject < 5
+private def lineageRoot : Capability :=
+  { identity := 1, object := 7, kind := .memory, rights := allRights }
+private def lineageState : State :=
+  { nextIdentity := 2
+    derivations := fun identity =>
+      if identity = 1 then some (none, 7, .memory, allRights) else none
+    subjects := lineageSubjects
+    objects := exampleObjects
+    kinds := exampleKinds
+    slots := fun subject slot =>
+      if subject = 0 ∧ slot = 0 then some lineageRoot else none }
+private def lineageA := (copy lineageState 0 0 1 0 allRights).state
+private def lineageB := (copy lineageA 1 0 2 0 allRights).state
+private def lineageC := (copy lineageB 2 0 3 0 readOnly).state
+
+/-- Direct slot deletion is deliberately not transitive: this executable
+counterexample keeps both descendants live after deleting their parent. -/
+example :
+    lookup (revoke lineageC 0 0 1 0).state 1 0 = .staleSlot ∧
+    lookup (revoke lineageC 0 0 1 0).state 2 0 = .found
+      { identity := 3, parent := some 2, object := 7, kind := .memory, rights := allRights } ∧
+    lookup (revoke lineageC 0 0 1 0).state 3 0 = .found
+      { identity := 4, parent := some 3, object := 7, kind := .memory, rights := readOnly } := by
+  decide
+
+/-- Subtree revocation closes the `root → A → B → C` delegation escape. -/
+example :
+    (revokeSubtree lineageC 0 0 1 0).result = .accepted ∧
+    lookup (revokeSubtree lineageC 0 0 1 0).state 1 0 = .staleSlot ∧
+    lookup (revokeSubtree lineageC 0 0 1 0).state 2 0 = .staleSlot ∧
+    lookup (revokeSubtree lineageC 0 0 1 0).state 3 0 = .staleSlot ∧
+    lookup (revokeSubtree lineageC 0 0 1 0).state 0 0 = .found lineageRoot := by
+  decide
+
+/-- Repeating a revocation through the stale victim slot is rejected without mutation. -/
+example :
+    let revoked := (revokeSubtree lineageC 0 0 1 0).state
+    (revokeSubtree revoked 0 0 1 0).result = .rejected .staleSlot ∧
+      (revokeSubtree revoked 0 0 1 0).state = revoked := by
+  dsimp only
+  have hrejected :
+      (revokeSubtree (revokeSubtree lineageC 0 0 1 0).state 0 0 1 0).result =
+        .rejected .staleSlot := by decide
+  exact ⟨hrejected, revokeSubtree_rejected_unchanged _ 0 0 1 0 .staleSlot hrejected⟩
+
 private def addressRights : Rights := { grant := true, revoke := true }
 private def addressCapability : Capability :=
   { object := 9, kind := .addressSpace, rights := addressRights }
