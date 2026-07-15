@@ -99,11 +99,13 @@ def yield (state : State) : Outcome :=
   match state.lifecycle.current with
   | none => reject state .noCurrent
   | some subject =>
-    match selectNext { state with
-        ready := state.ready ++ [subject]
-        lifecycle := { state.lifecycle with current := none } } with
-    | { result := .rejected reason, .. } => reject state reason
-    | outcome => outcome
+    if state.ready.length = state.capacity then reject state .queueFull
+    else
+      match selectNext { state with
+          ready := state.ready ++ [subject]
+          lifecycle := { state.lifecycle with current := none } } with
+      | { result := .rejected reason, .. } => reject state reason
+      | outcome => outcome
 
 /-- A timer tick is exactly one deterministic round-robin yield. -/
 def tick (state : State) : Outcome := yield state
@@ -151,6 +153,8 @@ theorem yield_rejected_unchanged state reason
   · simp_all [reject]
   next =>
     rename_i subject heq
+    split
+    · simp_all [reject]
     generalize hs : selectNext { state with
       ready := state.ready ++ [subject]
       lifecycle := { state.lifecycle with current := none } } = outcome
@@ -180,6 +184,81 @@ theorem terminateCurrent_rejected_unchanged state reason
           state.lifecycle subject lifecycleReason (by simp [ht])
         simp_all [reject]
 
+theorem add_preserves_wellFormed state subject (hwf : WellFormed state) :
+    WellFormed (add state subject).state := by
+  simp only [add]
+  split <;> simp_all [reject]
+  split <;> simp_all [reject]
+  split
+  · simp_all [reject]
+  next space hspace =>
+    split <;> simp_all [reject]
+    split <;> simp_all [reject]
+    simp_all [WellFormed, ownsAddressSpace]
+    grind
+
+theorem remove_preserves_wellFormed state subject (hwf : WellFormed state) :
+    WellFormed (remove state subject).state := by
+  simp only [remove]
+  split <;> simp_all [reject]
+  simp_all [WellFormed, SubjectLifecycle.WellFormed,
+    SubjectLifecycle.setBool, ownsAddressSpace]
+  grind
+
+theorem selectNext_preserves_wellFormed state (hwf : WellFormed state) :
+    WellFormed (selectNext state).state := by
+  simp only [selectNext]
+  split <;> simp_all [reject]
+  split <;> simp_all [reject]
+  all_goals grind [WellFormed, SubjectLifecycle.WellFormed, ownsAddressSpace]
+
+theorem yield_preserves_wellFormed state (hwf : WellFormed state) :
+    WellFormed (yield state).state := by
+  simp only [yield]
+  split <;> simp_all [reject]
+  next hcurrent subject =>
+    split
+    · simp_all [reject]
+    next hcapacity =>
+      have rotated : WellFormed { state with
+        ready := state.ready ++ [hcurrent]
+        lifecycle := { state.lifecycle with current := none } } := by
+        simp_all [WellFormed, SubjectLifecycle.WellFormed, ownsAddressSpace]
+        grind
+      generalize hs : selectNext { state with
+        ready := state.ready ++ [hcurrent]
+        lifecycle := { state.lifecycle with current := none } } = outcome
+      cases outcome with
+      | mk next result =>
+        have preserved := selectNext_preserves_wellFormed _ rotated
+        rw [hs] at preserved
+        cases result <;> simp_all [reject]
+
+theorem tick_preserves_wellFormed state (hwf : WellFormed state) :
+    WellFormed (tick state).state :=
+  yield_preserves_wellFormed state hwf
+
+theorem terminateCurrent_preserves_wellFormed state (hwf : WellFormed state) :
+    WellFormed (terminateCurrent state).state := by
+  simp only [terminateCurrent]
+  split <;> simp_all [reject]
+  next subject hcurrent =>
+    generalize ht : SubjectLifecycle.terminate state.lifecycle subject = outcome
+    cases outcome with
+    | mk lifecycle result =>
+      cases result with
+      | rejected reason => simp_all [reject]
+      | accepted =>
+        have heq : lifecycle = SubjectLifecycle.terminateState state.lifecycle subject := by
+          grind [SubjectLifecycle.terminate, SubjectLifecycle.reject]
+        subst lifecycle
+        have hlifecycle := SubjectLifecycle.terminateState_preserves_wellFormed
+          state.lifecycle subject hwf.1
+        simp_all [WellFormed, SubjectLifecycle.terminateState,
+          SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool,
+          ownsAddressSpace]
+        grind
+
 /-- A returned dispatch context is exactly the selected current subject and an
 address space owned by that subject; neither value is a transition argument. -/
 theorem dispatch_context_safe state next context
@@ -202,6 +281,15 @@ theorem termination_cleanup (state : State) (subject : SubjectId) :
     subject ∉ state.ready.filter (· ≠ subject) ∧
       (SubjectLifecycle.terminateState state.lifecycle subject).current ≠ some subject := by
   simp [SubjectLifecycle.terminateState]
+
+/-- Execute a finite sequence of scheduler transitions.  This is scheduler-step
+progress only: callers must assume ticks continue, the runnable set stays fixed,
+and no subject blocks during the execution. -/
+def runTransitions : Nat → State → State
+  | 0, state => state
+  | steps + 1, state =>
+      let outcome := if state.lifecycle.current.isSome then tick state else selectNext state
+      runTransitions steps outcome.state
 
 /-- Queue membership gives a finite round-robin position strictly below the
 documented capacity.  Under a fixed runnable set and repeated select/yield
@@ -255,6 +343,13 @@ example : (selectNext single).result = .accepted (some ⟨1, 1⟩) := by native_
 example : ((selectNext many).state.lifecycle.current) = some 0 := by native_decide
 example : (yield (selectNext many).state).state.lifecycle.current = some 1 := by native_decide
 example : (tick (yield (selectNext many).state).state).state.lifecycle.current = some 2 := by
+  native_decide
+/-- An executable repeated-transition witness: with a fixed three-subject queue
+and continuing scheduler steps, every subject is dispatched within one round. -/
+theorem many_selected_within_one_round :
+    (runTransitions 1 many).lifecycle.current = some 0 ∧
+    (runTransitions 2 many).lifecycle.current = some 1 ∧
+    (runTransitions 3 many).lifecycle.current = some 2 := by
   native_decide
 example : (add many 1).result = .rejected .duplicate := by native_decide
 example : (add empty 9).result = .rejected .notLive := by native_decide
