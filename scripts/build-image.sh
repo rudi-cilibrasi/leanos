@@ -49,6 +49,7 @@ lake env lean --c="$build/KernelTransition.c" LeanOS/KernelTransition.lean
 lake env lean --c="$build/Syscall.c" LeanOS/Syscall.lean
 lake env lean --c="$build/IPCSyscall.c" LeanOS/IPCSyscall.lean
 lake env lean --c="$build/Preemption.c" LeanOS/Preemption.lean
+lake env lean --c="$build/BootAllocation.c" LeanOS/BootAllocation.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -63,6 +64,8 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -o "$build/IPCSyscall.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Preemption.c" \
   -o "$build/Preemption.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/BootAllocation.c" \
+  -o "$build/BootAllocation.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
   -o "$build/kernel.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
@@ -72,7 +75,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
   -o build/boot/leanos.elf build/boot/boot.o build/boot/kernel.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
-  build/boot/Preemption.o
+  build/boot/Preemption.o build/boot/BootAllocation.o
 
 undefined="$(nm -u "$build/leanos.elf")"
 if [[ -n "$undefined" ]]; then
@@ -94,6 +97,10 @@ if ! nm "$build/leanos.elf" | grep -q ' T leanos_ipc_demo$'; then
 fi
 if ! nm "$build/leanos.elf" | grep -q ' T leanos_preemption_demo$'; then
   echo "error: generated image does not retain leanos_preemption_demo" >&2
+  exit 1
+fi
+if ! nm "$build/leanos.elf" | grep -q ' T leanos_boot_allocation_check$'; then
+  echo "error: generated image does not retain leanos_boot_allocation_check" >&2
   exit 1
 fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then

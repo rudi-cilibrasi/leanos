@@ -122,6 +122,11 @@ The [boot-reservation overlay](docs/boot-reservations.md) checks a finite
 boot-artifact manifest and gives its frames unconditional precedence before
 allocator initialization.
 
+The [boot-time allocation slice](docs/boot-allocation.md) preserves and checks
+the Multiboot2 handoff, reserves live boot artifacts, scrubs one bounded
+identity-mapped frame, and publishes it only after the exact QEMU trace records
+completion.
+
 The first composition of capability authority with frame ownership uses
 never-reused object identifiers to prove safe release and reuse; its lifetime
 rule, machine-checked guarantees, executable attacks, and limits are documented
