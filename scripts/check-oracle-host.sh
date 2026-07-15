@@ -7,6 +7,7 @@ rm -rf "$build"; mkdir -p "$build"
 lake env lean --c="$build/KernelTransition.c" LeanOS/KernelTransition.lean
 lake env lean --c="$build/Syscall.c" LeanOS/Syscall.lean
 lake env lean --c="$build/IPCSyscall.c" LeanOS/IPCSyscall.lean
+lake env lean --c="$build/Preemption.c" LeanOS/Preemption.lean
 prefix="$(lake env lean --print-prefix)"
 cc -std=c11 -I"$prefix/include" -I"$build" \
   -ffunction-sections -fdata-sections -c "$build/KernelTransition.c" -o "$build/KernelTransition.o"
@@ -14,8 +15,11 @@ cc -std=c11 -I"$prefix/include" -I"$build" \
   -ffunction-sections -fdata-sections -c "$build/Syscall.c" -o "$build/Syscall.o"
 cc -std=c11 -I"$prefix/include" -I"$build" \
   -ffunction-sections -fdata-sections -c "$build/IPCSyscall.c" -o "$build/IPCSyscall.o"
+cc -std=c11 -I"$prefix/include" -I"$build" \
+  -ffunction-sections -fdata-sections -c "$build/Preemption.c" -o "$build/Preemption.o"
 cc -std=c11 -Wall -Wextra -Werror -I"$build" -c tests/oracle-host.c -o "$build/host.o"
-cc -Wl,--gc-sections "$build/host.o" "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" -o "$build/host"
+cc -Wl,--gc-sections "$build/host.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" -o "$build/host"
 "$build/host" > "$build/host-results.txt"
-[[ "$(wc -l < "$build/host-results.txt")" -eq 13 ]]
-echo "Hosted generated-code oracle replay passed (13 vectors)"
+[[ "$(wc -l < "$build/host-results.txt")" -eq 17 ]]
+echo "Hosted generated-code oracle replay passed (17 vectors)"

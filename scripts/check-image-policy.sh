@@ -60,5 +60,6 @@ grep -Fq 'or $((1 << 8) | (1 << 11)), %eax' boot/boot.S
 # Each address space grants U/S only to its own text and stack symbols.
 ! grep -Fq '__user_b_text_start' <(sed -n '/__user_a_text_start/,/__user_b_text_start/{p}' boot/boot.S | head -n -1)
 nm "$elf" | grep -q ' T leanos_ipc_demo$'
+nm "$elf" | grep -q ' T leanos_preemption_demo$'
 
 echo "ELF sections, policy symbols, and constructed page-table policy passed"

@@ -17,23 +17,18 @@ set +e; timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"; statu
 expected="$(mktemp)"; trap 'rm -f "$expected"' EXIT
 corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
 [[ -f "$corpus" ]] || { echo "error: oracle corpus '$corpus' not found" >&2; exit 1; }
-echo 'LEANOS/4 BOOT target=x86_64-q35 subjects=2 schedule=fixed controls=wp,smep' > "$expected"
+echo 'LEANOS/5 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep' > "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 printf '%s\n' \
   'LEANOS/4 CONTROL cr0.wp=1 cr4.smep=1 stage=exception-path-ready' \
   'LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS' \
   'LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS' \
-  'LEANOS/3 SUBJECT id=1 address-space=1 cpl=3' \
-  'LEANOS/3 IPC op=receive subject=1 result=denied reason=missing-receive' \
-  'LEANOS/3 IPC op=send subject=1 result=accepted payload=4c45414e:4f53 supplied-sender=99' \
-  'LEANOS/3 HANDOFF from=1 to=2 address-space=2 cr3=switched' \
-  'LEANOS/3 SUBJECT id=2 address-space=2 cpl=3' \
-  'LEANOS/3 IPC op=send subject=2 result=denied reason=missing-send' \
-  'LEANOS/3 IPC op=receive subject=2 result=delivered sender=1 payload=4c45414e:4f53' \
-  'LEANOS/3 IPC supplied-sender=99 trusted=0 capability-transfer=none' \
-  'LEANOS/3 FAULT subject=2 vector=14 class=user-supervisor-access contained=1' \
-  'LEANOS/3 RESUME kernel=1' \
-  'LEANOS/3 FINAL status=PASS' >> "$expected"
+  'LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0' \
+  'LEANOS/5 TIMER vector=32 source=pit mode=one-shot origin=cpl3 accepted=1' \
+  'LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin' \
+  'LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=restored ticks-masked=1' \
+  'LEANOS/5 SYSCALL subject=2 caller=2 address-space=2 authorized=1 canaries=preserved' \
+  'LEANOS/5 FINAL status=PASS ticks=1' >> "$expected"
 if [[ $status -eq 124 || $status -eq 137 ]]; then echo "failure_class=timeout: QEMU exceeded ${limit}s wall limit" >&2; exit 1; fi
 if [[ $status -eq 35 ]]; then echo "failure_class=guest-error: guest emitted failure signal" >&2; exit 1; fi
 if [[ $status -ne 33 ]]; then echo "failure_class=qemu-error: QEMU exit status $status (expected 33)" >&2; exit 1; fi

@@ -2,7 +2,8 @@
 
 `LeanOS.Oracle` is the version-one, bounded corpus for every currently exported
 freestanding adapter: `KernelTransition.bootTransition` and
-`Syscall.syscallDemo`, and `IPCSyscall.ipcDemo`. Its stable thirteen-vector
+`Syscall.syscallDemo`, `IPCSyscall.ipcDemo`, and
+`Preemption.preemptionDemo`. Its stable seventeen-vector
 order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, and maximum
 `UInt64` boundary words. The Lean checks evaluate every expected result from

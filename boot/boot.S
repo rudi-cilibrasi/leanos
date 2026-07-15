@@ -239,7 +239,7 @@ enter_user:
     push %rsi
     pushfq
     pop %rax
-    and $~0x200, %rax
+    or $0x200, %rax
     push %rax
     pushq $0x23
     push %rdi
@@ -287,6 +287,24 @@ isr14:
     RESTORE
     add $8, %rsp
     iretq
+.global isr32
+isr32:
+    SAVE
+    mov 128(%rsp), %rdi
+    call timer_handler
+    /* The modeled one-shot scheduler selected B.  Install its fresh frame
+       before CR3 so no instruction is fetched with mismatched identity. */
+    movq $user_b_entry, 120(%rsp)
+    movq $user_b_stack_top, 144(%rsp)
+    movabs $0xc0dec0dec0dec0de, %rax
+    mov %rax, 24(%rsp)
+    movabs $0x51a7e51a7e51a7e5, %rax
+    mov %rax, 16(%rsp)
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    call switch_complete
+    RESTORE
+    iretq
 
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
@@ -294,17 +312,10 @@ user_a_entry:
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
-    mov $4, %rax
+    mov $1, %rax
     xor %rbx, %rbx
     xor %rcx, %rcx
     xor %rdx, %rdx
-    int $0x80
-    mov $3, %rax
-    mov $0x4c45414e, %rbx
-    mov $0x4f53, %rcx
-    mov $99, %rdx
-    int $0x80
-    mov $254, %rax
     int $0x80
 1:  jmp 1b
 
@@ -322,24 +333,20 @@ user_b_entry:
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
-    mov $3, %rax
-    mov $0x4c45414e, %rbx
-    mov $0x4f53, %rcx
-    xor %rdx, %rdx
-    int $0x80
-    mov $4, %rax
+    movabs $0xc0dec0dec0dec0de, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $0x51a7e51a7e51a7e5, %rax
+    cmp %rax, %r13
+    jne 2f
+    mov $2, %rax
     xor %rbx, %rbx
     xor %rcx, %rcx
     xor %rdx, %rdx
     int $0x80
-.global user_b_fault_instruction
-user_b_fault_instruction:
-    mov 0, %rax
-.global user_b_fault_recovered
-user_b_fault_recovered:
-    mov $255, %rax
+2:  mov $3, %rax
     int $0x80
-2:  jmp 2b
+3:  jmp 3b
 
 .section .user.b.bss,"aw",@nobits
 .align 4096

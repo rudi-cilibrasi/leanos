@@ -8,7 +8,7 @@ LEANOS_SOURCE_REVISION="$revision" lake exe leanos-oracle > "$out/corpus.tsv"
 awk -F '\t' '
   BEGIN { print "/* Generated from LeanOS.Oracle; do not edit. */"; print "struct oracle_vector { unsigned adapter, argc; unsigned long long words[4], expected; const char *id; };"; print "static const struct oracle_vector oracle_vectors[] = {" }
   $1 ~ /^[0-9]+$/ {
-    n=split($4,w,","); adapter=($3=="KernelTransition" ? 0 : ($3=="Syscall.scalar" ? 1 : 2)); printf "{%s,%d,{", adapter,n
+    n=split($4,w,","); adapter=($3=="KernelTransition" ? 0 : ($3=="Syscall.scalar" ? 1 : ($3=="IPCSyscall.scalar" ? 2 : 3))); printf "{%s,%d,{", adapter,n
     for(i=1;i<=4;i++) printf "%s%sULL",(i>1 ? "," : ""),(i<=n ? w[i] : 0)
     printf "},%sULL,\"%s\"},\n",$5,$2
   }
