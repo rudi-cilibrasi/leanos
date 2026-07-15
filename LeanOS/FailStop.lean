@@ -148,6 +148,71 @@ structure CompositeState where
   capabilities : Capability.State
   lifecycle : SubjectLifecycle.State
 
+/-- Every subsystem view is a projection of one authoritative lifecycle.  In
+particular, scheduling and interrupt containment cannot disagree about whether
+a subject is still live. -/
+def CompositeState.Coherent (state : CompositeState) : Prop :=
+  state.execution.core.lifecycle = state.lifecycle ∧
+  state.scheduler.lifecycle = state.lifecycle ∧
+  state.preemption.scheduler = state.scheduler ∧
+  state.capabilities = state.lifecycle.capabilities ∧
+  state.virtualMemory.memory.capabilities = state.lifecycle.capabilities ∧
+  state.ipc.virtualMemory.memory.capabilities = state.lifecycle.capabilities ∧
+  state.ipc.endpoints.capabilities = state.lifecycle.capabilities
+
+private def restrictMappings (lifecycle : SubjectLifecycle.State)
+    (mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
+      Option VirtualMapping.Mapping) :=
+  fun space page => match mappings space page with
+    | some mapping =>
+        if lifecycle.mapping space page = some mapping.object then some mapping else none
+    | none => none
+
+/-- Atomically publish a lifecycle change to every overlapping subsystem
+projection.  Rich subsystem-only data is retained only while the authoritative
+lifecycle still names it. -/
+private def installLifecycle (state : CompositeState)
+    (lifecycle : SubjectLifecycle.State) : CompositeState :=
+  let scheduler := { state.scheduler with lifecycle }
+  let virtualMemory := { state.virtualMemory with
+    memory := { state.virtualMemory.memory with capabilities := lifecycle.capabilities }
+    owner := lifecycle.addressOwner
+    mappings := restrictMappings lifecycle state.virtualMemory.mappings }
+  let ipcVirtualMemory := { state.ipc.virtualMemory with
+    memory := { state.ipc.virtualMemory.memory with capabilities := lifecycle.capabilities }
+    owner := lifecycle.addressOwner
+    mappings := restrictMappings lifecycle state.ipc.virtualMemory.mappings }
+  { state with
+    execution := { state.execution with core := { state.execution.core with lifecycle } }
+    scheduler
+    preemption := { state.preemption with scheduler }
+    virtualMemory
+    ipc := { state.ipc with
+      virtualMemory := ipcVirtualMemory
+      endpoints := { state.ipc.endpoints with capabilities := lifecycle.capabilities } }
+    capabilities := lifecycle.capabilities
+    lifecycle }
+
+private def installCapabilities (state : CompositeState)
+    (capabilities : Capability.State) : CompositeState :=
+  installLifecycle state { state.lifecycle with capabilities }
+
+private def installScheduler (state : CompositeState)
+    (scheduler : Scheduler.State) : CompositeState :=
+  installLifecycle { state with scheduler, preemption := { state.preemption with scheduler } }
+    scheduler.lifecycle
+
+private def lifecycleFromVirtualMemory (lifecycle : SubjectLifecycle.State)
+    (virtualMemory : VirtualMapping.State) : SubjectLifecycle.State :=
+  { lifecycle with
+    capabilities := virtualMemory.memory.capabilities
+    addressOwner := virtualMemory.owner
+    mapping := fun space page => (virtualMemory.mappings space page).map (·.object) }
+
+theorem installLifecycle_coherent state lifecycle :
+    (installLifecycle state lifecycle).Coherent := by
+  simp [installLifecycle, CompositeState.Coherent]
+
 /-- Typed inputs to the actual subsystem transitions.  This is deliberately not
 a tag paired with a caller-supplied post-state. -/
 inductive Operation where
@@ -176,42 +241,59 @@ structure GateOutcome where
   result : GateResult
 
 private def applyOperation (state : CompositeState) : Operation → CompositeState
-  | .interrupt frame => { state with execution := (dispatchHardware state.execution frame).state }
+  | .interrupt frame =>
+      let execution := (dispatchHardware state.execution frame).state
+      installLifecycle { state with execution } execution.core.lifecycle
   | .syscall context call =>
-      { state with virtualMemory := (Syscall.dispatch state.virtualMemory context call).state }
+      let virtualMemory := (Syscall.dispatch state.virtualMemory context call).state
+      installLifecycle { state with virtualMemory }
+        (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
   | .preempt frame =>
-      { state with preemption :=
-          (Preemption.oneShotTick state.preemption state.execution.core frame).state }
+      let preemption :=
+        (Preemption.oneShotTick state.preemption state.execution.core frame).state
+      installScheduler { state with preemption } preemption.scheduler
   | .ipc context call => { state with ipc := (IPCSyscall.dispatch state.ipc context call).state }
   | .capabilityCopy actor source destination destinationSlot rights =>
-      { state with capabilities :=
-          (Capability.copy state.capabilities actor source destination destinationSlot rights).state }
+      installCapabilities state
+        (Capability.copy state.capabilities actor source destination destinationSlot rights).state
   | .capabilityRevoke actor authoritySlot victim victimSlot =>
-      { state with capabilities :=
-          (Capability.revoke state.capabilities actor authoritySlot victim victimSlot).state }
+      installCapabilities state
+        (Capability.revoke state.capabilities actor authoritySlot victim victimSlot).state
   | .capabilityRevokeSubtree actor authoritySlot victim victimSlot =>
-      { state with capabilities :=
-          (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).state }
+      installCapabilities state
+        (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).state
   | .map actor slot addressSpace page permissions =>
-      { state with virtualMemory :=
-          (VirtualMapping.map state.virtualMemory actor slot addressSpace page permissions).state }
+      let virtualMemory :=
+        (VirtualMapping.map state.virtualMemory actor slot addressSpace page permissions).state
+      installLifecycle { state with virtualMemory }
+        (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
   | .unmap actor addressSpace page =>
-      { state with virtualMemory :=
-          (VirtualMapping.unmap state.virtualMemory actor addressSpace page).state }
+      let virtualMemory :=
+        (VirtualMapping.unmap state.virtualMemory actor addressSpace page).state
+      installLifecycle { state with virtualMemory }
+        (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
   | .createSubject subject =>
-      { state with lifecycle := (SubjectLifecycle.create state.lifecycle subject).state }
+      installLifecycle state (SubjectLifecycle.create state.lifecycle subject).state
   | .terminateSubject subject =>
-      { state with lifecycle := (SubjectLifecycle.terminate state.lifecycle subject).state }
+      installLifecycle state (SubjectLifecycle.terminate state.lifecycle subject).state
   | .scheduleAdd subject =>
-      { state with scheduler := (Scheduler.add state.scheduler subject).state }
+      installScheduler state (Scheduler.add state.scheduler subject).state
   | .scheduleRemove subject =>
-      { state with scheduler := (Scheduler.remove state.scheduler subject).state }
-  | .scheduleNext => { state with scheduler := (Scheduler.selectNext state.scheduler).state }
-  | .scheduleYield => { state with scheduler := (Scheduler.yield state.scheduler).state }
-  | .scheduleTick => { state with scheduler := (Scheduler.tick state.scheduler).state }
+      installScheduler state (Scheduler.remove state.scheduler subject).state
+  | .scheduleNext => installScheduler state (Scheduler.selectNext state.scheduler).state
+  | .scheduleYield => installScheduler state (Scheduler.yield state.scheduler).state
+  | .scheduleTick => installScheduler state (Scheduler.tick state.scheduler).state
   | .terminateCurrent =>
-      { state with scheduler := (Scheduler.terminateCurrent state.scheduler).state }
+      installScheduler state (Scheduler.terminateCurrent state.scheduler).state
   | .restart => state
+
+/-- A contained user fault is published to both scheduler views in the same
+composite step, so neither can select from the pre-termination lifecycle. -/
+theorem interrupt_synchronizes_lifecycle state frame :
+    let next := applyOperation state (.interrupt frame)
+    next.scheduler.lifecycle = next.execution.core.lifecycle ∧
+      next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
+  simp [applyOperation, installLifecycle]
 
 /-- The sole composite step computes the post-state by invoking the typed
 subsystem transition internally. -/
