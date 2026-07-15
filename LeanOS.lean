@@ -8,6 +8,7 @@ import LeanOS.Interrupt
 import LeanOS.Example
 import LeanOS.FrameAllocator
 import LeanOS.FrameScrub
+import LeanOS.FailStop
 import LeanOS.KernelTransition
 import LeanOS.MemoryLifecycle
 import LeanOS.Observation
