@@ -14,10 +14,11 @@ memory-map tag, and a final 8-byte end tag. Memory-map entries use the 24-byte
 version-zero format. Tag sizes must advance by a positive, aligned amount and
 must agree with the entry count. Limits are 64 tags, 64 KiB of tag data, 256
 entries, 512 normalized regions, and 4096 expanded frames. Addresses are
-checked with explicit unsigned 64-bit base-plus-length arithmetic and are
-restricted to the deliberately small, documented 16 MiB model limit. The
-information-structure address and its complete advertised extent must also fit
-in the unsigned 64-bit address space.
+checked with explicit unsigned 64-bit base-plus-length arithmetic. Raw entries
+may extend beyond the deliberately small 16 MiB scan limit so the model can
+consume the project's 128 MiB QEMU handoff; normalization clips its bounded
+frame scan at that limit. The information-structure address and its complete
+advertised extent must also fit in the unsigned 64-bit address space.
 
 Every error returns `Except.error`; no allocator state or partial prefix is
 available. These finite limits make validation and normalization total and
@@ -49,8 +50,8 @@ first-entry-wins overlap handling.
 `./scripts/check.sh` builds every module with no-sorries mode and runs the
 proof-integrity escape-hatch scan and regression fixture. Executable examples
 cover out-of-order and fragmented maps, overlap precedence, adjacent merging,
-partial pages, overflow, unsupported versions, malformed/missing tags, and
-bounded rejection.
+partial pages, overflow, entries crossing and wholly above the scan limit,
+unsupported versions, malformed/missing tags, and bounded rejection.
 
 Firmware and the bootloader remain trusted to describe real hardware
 truthfully. The byte decoder, boot assembly, compiler, generated code, and

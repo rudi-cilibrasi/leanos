@@ -52,7 +52,7 @@ inductive Error where
   | badMagic | unalignedInfo | malformedInfoSize | tooManyTags | tagBytesExceeded
   | malformedTagSize | missingEndTag | misplacedEndTag | missingMemoryMap
   | duplicateMemoryMap | badEntrySize | unsupportedEntryVersion | tooManyEntries
-  | zeroLength | addressOverflow | physicalLimitExceeded | expandedFramesExceeded
+  | zeroLength | addressOverflow | expandedFramesExceeded
   | normalizedRegionsExceeded | normalizationInvariant | allocatorRejected
   deriving BEq, DecidableEq, Repr
 
@@ -106,7 +106,6 @@ def entryValid (entry : RawEntry) : Except Error Unit := do
   if entry.length == 0 then throw .zeroLength
   if entry.base ≥ wordLimit || entry.length ≥ wordLimit ||
       entry.length > wordLimit - entry.base then throw .addressOverflow
-  if entry.base + entry.length > physicalLimit then throw .physicalLimitExceeded
 
 def overlaps (entry : RawEntry) (start stop : Nat) : Bool :=
   entry.base < stop && start < entry.base + entry.length
@@ -275,6 +274,12 @@ def overflowingEntry : RawEntry :=
   { base := wordLimit - 1, length := 2, kind := .usable }
 
 example : (normalize (mkHandoff [overflowingEntry])).isOk = false := by native_decide
+example : normalizedRegions
+    (mkHandoff [{ base := physicalLimit - pageBytes, length := (2 * pageBytes), kind := .usable }]) =
+      some [{ start := frameLimit - 1, count := 1, kind := .usable }] := by native_decide
+example : normalizedRegions
+    (mkHandoff [{ base := physicalLimit, length := (128 * 1024 * 1024 - physicalLimit), kind := .usable }]) =
+      some [] := by native_decide
 example : (normalize (mkHandoff [{ base := 0, length := 0, kind := .usable }])).isOk = false := by
   native_decide
 example : (normalize (mkHandoff sample (version := 1))).isOk = false := by native_decide
