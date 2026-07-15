@@ -87,6 +87,11 @@ The [one-shot timer slice](docs/adr/0005-one-shot-timer-preemption.md) uses a
 documented PIT interrupt to preempt a non-yielding subject and tests the
 scheduler-derived caller/address-space switch to the second subject.
 
+The [bounded SMAP copy slice](docs/adr/0006-smap-user-copy-window.md) composes
+whole-range user-copy validation with an explicit AC window and exercises one
+fixed boot syscall. Its Lean results are model-level; the assembly window and
+machine behavior remain trusted and integration-tested.
+
 The first executable model is `LeanOS.KernelTransition.transition`, with
 machine-checked determinism, invariant-preservation, and rejection-stability
 theorems in

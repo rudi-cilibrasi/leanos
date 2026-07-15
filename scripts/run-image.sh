@@ -17,12 +17,16 @@ set +e; timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"; statu
 expected="$(mktemp)"; trap 'rm -f "$expected"' EXIT
 corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
 [[ -f "$corpus" ]] || { echo "error: oracle corpus '$corpus' not found" >&2; exit 1; }
-echo 'LEANOS/5 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep' > "$expected"
+echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap' > "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 printf '%s\n' \
-  'LEANOS/4 CONTROL cr0.wp=1 cr4.smep=1 stage=exception-path-ready' \
+  'LEANOS/6 CONTROL cr0.wp=1 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready' \
   'LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS' \
   'LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS' \
+  'LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS' \
+  'LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS cleanup=PASS' \
+  'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 ac=cleared result=PASS' \
+  'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 ac=cleared result=PASS' \
   'LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0' \
   'LEANOS/5 TIMER vector=32 source=pit mode=one-shot origin=cpl3 accepted=1' \
   'LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin' \

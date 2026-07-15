@@ -34,6 +34,12 @@ for symbol in enable_smep run_wp_probe wp_probe_instruction wp_probe_recovered \
 done
 grep -Fq 'or $((1 << 31) | (1 << 16)), %eax' boot/boot.S
 grep -Fq 'bts $20, %rax' boot/boot.S
+grep -Fq 'bts $21, %rax' boot/boot.S
+[[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 2 ]]
+for symbol in smap_copy_from_stac smap_copy_from_clac smap_copy_to_stac \
+  smap_copy_to_clac run_smap_probe; do
+  nm "$elf" | grep -Eq "[[:space:]]${symbol}$" || { echo "error: SMAP evidence symbol missing: $symbol" >&2; exit 1; }
+done
 grep -Fq 'fault_address == (uint64_t)wp_probe_target' boot/kernel.c
 grep -Fq 'fault_address == (uint64_t)user_a_entry' boot/kernel.c
 grep -Fq 'if (supervisor_probe != 2) fail("wp-no-fault")' boot/kernel.c
@@ -51,6 +57,7 @@ done
 # The runtime page-table constructor must keep U/S limited to the two reviewed
 # leaves, make instruction leaves read-only, and enable NX for all other leaves.
 [[ "$(grep -Fc 'orl $4, page_table_a(%eax)' boot/boot.S)" -eq 2 ]]
+[[ "$(grep -Fc 'orl $4, page_table_a+8(%eax)' boot/boot.S)" -eq 1 ]]
 [[ "$(grep -Fc 'orl $4, page_table_b(%eax)' boot/boot.S)" -eq 2 ]]
 grep -Fq 'andl $~2, page_table_a(%eax)' boot/boot.S
 grep -Fq 'andl $~2, page_table_b(%eax)' boot/boot.S
