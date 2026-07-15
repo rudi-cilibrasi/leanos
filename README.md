@@ -150,6 +150,11 @@ and replayed through hosted generated code and every boot-reachable adapter.
 This differential check detects integration mismatches; it is not compiler or
 binary verification.
 
+The [interrupt model](docs/interrupt-model.md) gives the initial page-fault,
+timer, and syscall vector vocabulary, proves origin-sensitive dispatch and
+whole-subject user-fault containment, and records the unproved x86 entry and
+return boundary.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally

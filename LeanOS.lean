@@ -1,6 +1,7 @@
 import LeanOS.Capability
 import LeanOS.EndpointIPC
 import LeanOS.IPCSyscall
+import LeanOS.Interrupt
 import LeanOS.Example
 import LeanOS.FrameAllocator
 import LeanOS.FrameScrub
