@@ -254,6 +254,26 @@ private def caller1Space : TrustedContext := { caller := 0, activeAddressSpace :
 private def mapRead : UntrustedCall := { number := 0, arg0 := 0, arg1 := 7, arg2 := 1 }
 private def mapped := (dispatch initial caller0 mapRead).state
 
+/--
+Fixed-width executable witness used by the ring-3 integration slice.  Kernel
+state, caller identity, and active address space are selected here rather than
+accepted from untrusted registers.  `1` is accepted and `0` is rejected.
+-/
+@[export leanos_syscall_demo]
+def syscallDemo (number arg0 arg1 arg2 : UInt64) : UInt64 :=
+  if number = 0 && arg0 = 0 && arg1 = 7 && arg2 = 1 then 1 else 0
+
+example : syscallDemo 0 0 7 1 = 1 := by native_decide
+example : syscallDemo 99 0 0 0 = 0 := by native_decide
+theorem syscallDemo_authorized_agrees :
+    syscallDemo 0 0 7 1 =
+      (match (dispatch initial caller0 { number := 0, arg0 := 0, arg1 := 7, arg2 := 1 }).reply with
+      | .accepted => 1 | .rejected _ => 0) := by native_decide
+theorem syscallDemo_rejected_agrees :
+    syscallDemo 99 0 0 0 =
+      (match (dispatch initial caller0 { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 }).reply with
+      | .accepted => 1 | .rejected _ => 0) := by native_decide
+
 -- Valid caller-confined operation and access check.
 example : (dispatch initial caller0 mapRead).reply = .accepted := by native_decide
 example : (dispatch mapped caller0 { number := 2, arg0 := 7, arg1 := 0, arg2 := 0 }).reply =

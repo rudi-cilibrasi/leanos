@@ -15,7 +15,7 @@ version="$($qemu --version 2>&1 | head -n 1 || true)"
 printf 'QEMU version: %s\nQEMU command:' "${version:-unknown}" >&2; printf ' %q' "${command[@]}" >&2; printf '\nSerial log: %s\n' "$log" >&2
 set +e; timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"; status=$?; set -e
 expected="$(mktemp)"; trap 'rm -f "$expected"' EXIT
-printf '%s\n' 'LEANOS/1 BOOT target=x86_64-q35' 'LEANOS/1 TRANSITION state=0 command=1 result=1' 'LEANOS/1 TRANSITION state=0 command=7 result=0' 'LEANOS/1 FINAL status=PASS' > "$expected"
+printf '%s\n' 'LEANOS/2 BOOT target=x86_64-q35 entry=int80' 'LEANOS/2 TRANSITION state=0 command=1 result=1' 'LEANOS/2 TRANSITION state=0 command=7 result=0' 'LEANOS/2 USER cpl=3' 'LEANOS/2 SYSCALL kind=authorized result=accepted' 'LEANOS/2 SYSCALL kind=forged result=rejected' 'LEANOS/2 FAULT vector=14 class=user-supervisor-access contained=1' 'LEANOS/2 RESUME kernel=1' 'LEANOS/2 FINAL status=PASS' > "$expected"
 if [[ $status -eq 124 || $status -eq 137 ]]; then echo "failure_class=timeout: QEMU exceeded ${limit}s wall limit" >&2; exit 1; fi
 if [[ $status -eq 35 ]]; then echo "failure_class=guest-error: guest emitted failure signal" >&2; exit 1; fi
 if [[ $status -ne 33 ]]; then echo "failure_class=qemu-error: QEMU exit status $status (expected 33)" >&2; exit 1; fi

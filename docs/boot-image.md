@@ -20,6 +20,13 @@ from the documented toolchain. There are no repository-supplied binary blobs.
 
 ## Stable protocol and termination
 
+Version 2 extends the boot evidence with the ring-3 boundary described in
+[ADR 0003](adr/0003-ring3-syscall-fault-slice.md). It requires, in order, a
+CPL3 record, accepted and rejected syscall records, the expected vector-14
+classification, kernel resumption, and final success. The complete exact trace
+is encoded once in `scripts/run-image.sh`; reordered, missing, or extra records
+fail comparison. Version 1 below documents the preceding Phase 1 protocol.
+
 Version 1 is exactly four newline-terminated ASCII records:
 
 ```text

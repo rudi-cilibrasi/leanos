@@ -41,6 +41,7 @@ rm -rf "$build"
 mkdir -p "$iso_root/boot/grub"
 
 lake env lean --c="$build/KernelTransition.c" LeanOS/KernelTransition.lean
+lake env lean --c="$build/Syscall.c" LeanOS/Syscall.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -49,6 +50,8 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -ffile-prefix-map="$lean_prefix"=/lean-toolchain -g3 -O2)
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/KernelTransition.c" \
   -o "$build/KernelTransition.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Syscall.c" \
+  -o "$build/Syscall.o"
 "$cc" "${cflags[@]}" -Wall -Wextra -Werror -c boot/kernel.c \
   -o "$build/kernel.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
@@ -57,7 +60,7 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
   -o build/boot/leanos.elf build/boot/boot.o build/boot/kernel.o \
-  build/boot/KernelTransition.o
+  build/boot/KernelTransition.o build/boot/Syscall.o
 
 undefined="$(nm -u "$build/leanos.elf")"
 if [[ -n "$undefined" ]]; then
@@ -69,10 +72,15 @@ if ! nm "$build/leanos.elf" | grep -q ' T leanos_boot_transition$'; then
   echo "error: generated image does not retain leanos_boot_transition" >&2
   exit 1
 fi
+if ! nm "$build/leanos.elf" | grep -q ' T leanos_syscall_demo$'; then
+  echo "error: generated image does not retain leanos_syscall_demo" >&2
+  exit 1
+fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   echo "error: kernel ELF has no valid Multiboot2 header" >&2
   exit 1
 fi
+./scripts/check-image-policy.sh "$build/leanos.elf"
 
 cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"
