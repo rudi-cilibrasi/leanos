@@ -11,5 +11,6 @@ import LeanOS.Syscall
 import LeanOS.UserCopy
 import LeanOS.SubjectLifecycle
 import LeanOS.Oracle
+import LeanOS.Scheduler
 import LeanOS.VirtualMapping
 import LeanOS.X86PageTable
