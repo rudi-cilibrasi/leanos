@@ -4,3 +4,4 @@ import LeanOS.FrameAllocator
 import LeanOS.KernelTransition
 import LeanOS.MemoryLifecycle
 import LeanOS.VirtualMapping
+import LeanOS.X86PageTable
