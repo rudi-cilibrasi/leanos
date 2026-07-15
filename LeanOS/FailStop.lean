@@ -1,4 +1,6 @@
 import LeanOS.Interrupt
+import LeanOS.IPCSyscall
+import LeanOS.Preemption
 
 /-!
 # Irreversible exception fail-stop model
@@ -134,30 +136,94 @@ def dispatchHardware (state : State) (frame : Interrupt.HardwareFrame) : EntryOu
 def dispatch (state : State) (trap : Interrupt.Trap) : EntryOutcome :=
   dispatchHardware state trap.hardware
 
-/-- Every state-changing subsystem crosses this vocabulary and one gate. -/
+/-- The state of the modeled subsystems whose transitions can run after entry.
+Keeping these states under the execution latch makes bypassing it impossible in
+the composite transition system. -/
+structure CompositeState where
+  execution : State
+  scheduler : Scheduler.State
+  preemption : Preemption.State
+  virtualMemory : VirtualMapping.State
+  ipc : IPCSyscall.State
+  capabilities : Capability.State
+  lifecycle : SubjectLifecycle.State
+
+/-- Typed inputs to the actual subsystem transitions.  This is deliberately not
+a tag paired with a caller-supplied post-state. -/
 inductive Operation where
-  | syscall | timer | ipc | capability | mapping | framePublication
-  | subjectCreation | subjectTermination | contextRestore | restart
-  deriving DecidableEq, Repr
+  | interrupt (frame : Interrupt.HardwareFrame)
+  | syscall (context : Syscall.TrustedContext) (call : Syscall.UntrustedCall)
+  | preempt (frame : Interrupt.HardwareFrame)
+  | ipc (context : IPCSyscall.TrustedContext) (call : IPCSyscall.Call)
+  | capabilityCopy (actor source destination destinationSlot : Nat)
+      (rights : Capability.Rights)
+  | capabilityRevoke (actor authoritySlot victim victimSlot : Nat)
+  | capabilityRevokeSubtree (actor authoritySlot victim victimSlot : Nat)
+  | map (actor slot addressSpace page : Nat) (permissions : VirtualMapping.Permissions)
+  | unmap (actor addressSpace page : Nat)
+  | createSubject (subject : Nat)
+  | terminateSubject (subject : Nat)
+  | scheduleAdd (subject : Nat)
+  | scheduleRemove (subject : Nat)
+  | scheduleNext | scheduleYield | scheduleTick | terminateCurrent | restart
 
 inductive GateResult where
   | accepted | rejectedBusy | rejectedHalted (record : HaltRecord)
   deriving DecidableEq, Repr
 
 structure GateOutcome where
-  state : State
+  state : CompositeState
   result : GateResult
 
-/-- `proposed` is the complete atomic post-state computed by a subsystem. -/
-def gate (state : State) (_operation : Operation) (proposed : State) : GateOutcome :=
-  match state.mode with
-  | .running => { state := proposed, result := .accepted }
+private def applyOperation (state : CompositeState) : Operation → CompositeState
+  | .interrupt frame => { state with execution := (dispatchHardware state.execution frame).state }
+  | .syscall context call =>
+      { state with virtualMemory := (Syscall.dispatch state.virtualMemory context call).state }
+  | .preempt frame =>
+      { state with preemption :=
+          (Preemption.oneShotTick state.preemption state.execution.core frame).state }
+  | .ipc context call => { state with ipc := (IPCSyscall.dispatch state.ipc context call).state }
+  | .capabilityCopy actor source destination destinationSlot rights =>
+      { state with capabilities :=
+          (Capability.copy state.capabilities actor source destination destinationSlot rights).state }
+  | .capabilityRevoke actor authoritySlot victim victimSlot =>
+      { state with capabilities :=
+          (Capability.revoke state.capabilities actor authoritySlot victim victimSlot).state }
+  | .capabilityRevokeSubtree actor authoritySlot victim victimSlot =>
+      { state with capabilities :=
+          (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).state }
+  | .map actor slot addressSpace page permissions =>
+      { state with virtualMemory :=
+          (VirtualMapping.map state.virtualMemory actor slot addressSpace page permissions).state }
+  | .unmap actor addressSpace page =>
+      { state with virtualMemory :=
+          (VirtualMapping.unmap state.virtualMemory actor addressSpace page).state }
+  | .createSubject subject =>
+      { state with lifecycle := (SubjectLifecycle.create state.lifecycle subject).state }
+  | .terminateSubject subject =>
+      { state with lifecycle := (SubjectLifecycle.terminate state.lifecycle subject).state }
+  | .scheduleAdd subject =>
+      { state with scheduler := (Scheduler.add state.scheduler subject).state }
+  | .scheduleRemove subject =>
+      { state with scheduler := (Scheduler.remove state.scheduler subject).state }
+  | .scheduleNext => { state with scheduler := (Scheduler.selectNext state.scheduler).state }
+  | .scheduleYield => { state with scheduler := (Scheduler.yield state.scheduler).state }
+  | .scheduleTick => { state with scheduler := (Scheduler.tick state.scheduler).state }
+  | .terminateCurrent =>
+      { state with scheduler := (Scheduler.terminateCurrent state.scheduler).state }
+  | .restart => state
+
+/-- The sole composite step computes the post-state by invoking the typed
+subsystem transition internally. -/
+def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
+  match state.execution.mode with
+  | .running => { state := applyOperation state operation, result := .accepted }
   | .handling _ => { state, result := .rejectedBusy }
   | .halted record => { state, result := .rejectedHalted record }
 
-def runOperations (state : State) : List (Operation × State) → State
+def runOperations (state : CompositeState) : List Operation → CompositeState
   | [] => state
-  | proposal :: rest => runOperations (gate state proposal.1 proposal.2).state rest
+  | operation :: rest => runOperations (gate state operation).state rest
 
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
@@ -208,24 +274,32 @@ theorem halted_entry_absorbing state record frame
     dispatchHardware state frame = { state, action := .alreadyHalted record } := by
   simp [dispatchHardware, hmode]
 
-theorem halted_gate_absorbing state record operation proposed
-    (hmode : state.mode = .halted record) :
-    gate state operation proposed = { state, result := .rejectedHalted record } := by
+theorem halted_gate_absorbing state record operation
+    (hmode : state.execution.mode = .halted record) :
+    gate state operation = { state, result := .rejectedHalted record } := by
   simp [gate, hmode]
 
 theorem halted_suffix_absorbing state record proposals
-    (hmode : state.mode = .halted record) :
+    (hmode : state.execution.mode = .halted record) :
     runOperations state proposals = state := by
   induction proposals generalizing state with
   | nil => rfl
   | cons proposal rest ih =>
       simp only [runOperations]
-      rw [halted_gate_absorbing state record proposal.1 proposal.2 hmode]
+      rw [halted_gate_absorbing state record proposal hmode]
       exact ih state hmode
 
-theorem halted_never_accepts state record operation proposed
-    (hmode : state.mode = .halted record) :
-    (gate state operation proposed).result ≠ .accepted := by
+theorem halted_never_accepts state record operation
+    (hmode : state.execution.mode = .halted record) :
+    (gate state operation).result ≠ .accepted := by
+  simp [gate, hmode]
+
+/-- Terminal non-resumption over the complete typed composite step: no
+subsystem transition is accepted and no component of the terminal state can
+change. -/
+theorem halted_terminal_non_resumption state record operation
+    (hmode : state.execution.mode = .halted record) :
+    (gate state operation).state = state ∧ (gate state operation).result ≠ .accepted := by
   simp [gate, hmode]
 
 theorem fatal_atomicity state frame reason
@@ -371,18 +445,19 @@ example (core : Interrupt.State) :
       .fatal .nestedEntry := by
   simp [dispatchHardware, activeEntry, demoFrame, escalation, halt]
 
-example (core proposed : Interrupt.State) (record : HaltRecord) :
-    let halted : State := { core, mode := .halted record }
-    (gate halted .restart { core := proposed, mode := .running }).state = halted := by
-  simp [gate]
+example (state : CompositeState) (record : HaltRecord)
+    (hhalted : state.execution.mode = .halted record) :
+    (gate state .restart).state = state := by
+  simp [gate, hhalted]
 
-example (core proposed : Interrupt.State) (record : HaltRecord) :
-    let halted : State := { core, mode := .halted record }
-    runOperations halted [
-      (.syscall, { core := proposed, mode := .running }),
-      (.timer, { core := proposed, mode := .running }),
-      (.ipc, { core := proposed, mode := .running }),
-      (.subjectTermination, { core := proposed, mode := .running })] = halted := by
-  simp [runOperations, gate]
+example (state : CompositeState) (record : HaltRecord)
+    (hhalted : state.execution.mode = .halted record)
+    (syscallContext : Syscall.TrustedContext) (syscall : Syscall.UntrustedCall)
+    (ipcContext : IPCSyscall.TrustedContext) (ipc : IPCSyscall.Call)
+    (frame : Interrupt.HardwareFrame) :
+    runOperations state [
+      .syscall syscallContext syscall, .preempt frame, .ipc ipcContext ipc,
+      .capabilityRevoke 0 0 1 0, .unmap 0 0 0, .terminateSubject 0] = state := by
+  simp [runOperations, gate, hhalted]
 
 end LeanOS.FailStop

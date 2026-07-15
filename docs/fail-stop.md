@@ -18,11 +18,15 @@ active entry, and incoming vector/origin diagnostics. Lifecycle, capabilities,
 mappings, scheduler identity, saved context, mailbox, and resources remain the
 pre-fault `core`; fatal atomicity proves that freeze.
 
-All modeled syscall, timer, IPC, capability, mapping, frame publication,
-subject lifecycle, context restore, and restart proposals cross `gate`. Once
-halted it returns the identical state and rejects every operation. The
-absorption theorem extends this to arbitrary operation suffixes, so neither a
-CPL3 return nor an accepted mutation or trusted context restoration can occur.
+The composite state places scheduler/preemption, syscall virtual memory, IPC,
+capability, mapping, and subject-lifecycle state under the same execution latch.
+`Operation` carries each subsystem's typed inputs, and `gate` invokes the real
+subsystem transition internally; callers cannot supply an arbitrary post-state.
+Once halted it returns the identical composite state and rejects every
+operation. `halted_terminal_non_resumption` proves this for one composite step,
+and the absorption theorem extends it to arbitrary typed operation suffixes, so
+neither a CPL3 return nor an accepted mutation or trusted context restoration
+can occur.
 Attacker registers are absent from active-entry identity and cannot change
 classification, escalation, diagnostics, or the terminal latch. A kernel fault
 cannot be classified as user containment.
