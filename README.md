@@ -198,6 +198,10 @@ termination-insensitive paired finite-prefix theorem with explicit public
 channels and silent-step stuttering. It remains a Lean model result, not a
 refinement claim for the boot slices or machine code.
 
+The [security claim index](docs/security-claims.md) collects the stable,
+machine-checked propositions that form the currently advertised proof surface,
+including their assumptions, evidence classes, and explicit exclusions.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally

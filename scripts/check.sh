@@ -6,6 +6,8 @@ cd "$repo_root"
 
 lake build
 
+./scripts/check-security-claims.sh
+
 ./scripts/check-oracle-host.sh
 
 ./scripts/test-run-image.sh
@@ -49,6 +51,29 @@ fi
 
 if ! grep -q 'declaration uses `sorry`' "$negative_log"; then
   echo "error: sorry fixture failed without the expected Lean diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+for fixture in WeakenedAuthorityClaim DroppedSeparationClaim; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -q "tests/negative/${fixture}.lean.*error: Type mismatch" "$negative_log"; then
+    echo "error: security-claim fixture ${fixture} lacked the expected Lean diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
+if lake env lean tests/negative/VacuousClaimSetup.lean >"$negative_log" 2>&1; then
+  echo "error: vacuous security-claim fixture unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -q 'error: Type mismatch' "$negative_log" ||
+    ! grep -q 'KernelTransition.Command.unsupported' "$negative_log"; then
+  echo "error: vacuous security-claim fixture lacked its expected contradiction" >&2
   cat "$negative_log" >&2
   exit 1
 fi
