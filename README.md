@@ -176,6 +176,10 @@ timer, and syscall vector vocabulary, proves origin-sensitive dispatch and
 whole-subject user-fault containment, and records the unproved x86 entry and
 return boundary.
 
+The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,
+bounded double-fault escalation, and one absorbing gate for every modeled
+post-fatal mutation and context-restoration path.
+
 The [observer-relative isolation model](docs/observation-model.md) defines a
 subject's authorized view and proves scoped one-step low-equivalence and equal
 visible replies for unrelated sequential operations over disjoint actor-local
