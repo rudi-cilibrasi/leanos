@@ -6,7 +6,7 @@ physical frame. Every cache hit is revalidated against the current encoded
 page-table walk before use. Thus effective U/S, R/W, NX, CR0.WP, SMEP, SMAP,
 AC, live object binding, and allocator ownership are checked at access time.
 
-The model is sequential and uses eager invalidation. `mutatePage` and `unmap`
+The model is sequential and uses eager invalidation. `protect` and `unmap`
 publish the page-table change and remove the page's translations atomically.
 Destruction removes all entries for that identity. Release conservatively
 flushes the complete cache while publishing lifecycle-produced tables. CR3
@@ -16,8 +16,9 @@ costlier than selective release invalidation but makes publication order clear.
 Lean proves successful accesses agree with a current privileged page-table
 classification and current allocator ownership. It also proves affected keys
 are absent when accepted unmap returns, accepted release leaves no cache hit,
-cache capacity is invariant under fill and invalidation, and every rejected
-unmap, release, or destruction leaves the complete cache/model state unchanged.
+accepted protection and destruction remove affected hits, cache capacity is
+invariant under fill and invalidation, and every rejected unmap, protection,
+release, or destruction leaves the complete cache/model state unchanged.
 Executable examples exercise repeated page invalidation, space invalidation,
 switch-away/back flushing, and the negative constructions. The negative
 witnesses show that clearing a PTE without invalidation retains stale cache data

@@ -58,6 +58,19 @@ inductive AccessError where
   | denied (cause : WalkError)
   deriving BEq, DecidableEq, Repr
 
+/-- Perform the current encoded page-table walk and install its result. This is
+the explicit miss/fill operation; rejected walks do not change the cache. -/
+def fill (state : State) (page : VirtualPage) (context : AccessContext) :
+    Except AccessError (PhysicalFrame × State) :=
+  match state.active with
+  | none => .error .noActiveSpace
+  | some addressSpace =>
+    match classify (encode state.virtual addressSpace) page context with
+    | .error cause => .error (.denied cause)
+    | .ok frame =>
+      let entry := { key := { addressSpace, page }, frame, context }
+      .ok (frame, { state with entries := insert state.entries entry })
+
 /-- A hit is accepted only after a fresh walk agrees. A miss or stale hit fills
 from that same walk, so every successful return is currently authorized. -/
 def access (state : State) (page : VirtualPage) (context : AccessContext) :
@@ -87,6 +100,10 @@ as a complete flush. -/
 def switch (state : State) (addressSpace : AddressSpaceId) : State :=
   { state with active := some addressSpace, entries := [] }
 
+inductive ProtectError where
+  | invalidAddressSpace | notOwner | unmappedPage | emptyPermissions
+  deriving BEq, DecidableEq, Repr
+
 structure Outcome (ε : Type) where
   state : State
   result : VirtualMapping.Result ε
@@ -100,6 +117,26 @@ def unmap (state : State) (actor : SubjectId) (addressSpace : AddressSpaceId)
   | .accepted =>
     { state := invalidatePage { state with virtual := outcome.state } addressSpace page
       result := .accepted }
+
+/-- Permission replacement and invalidation are one operation. This deliberately
+does not add authority: callers may only remove permissions from a live mapping. -/
+def protect (state : State) (actor : SubjectId) (addressSpace : AddressSpaceId)
+    (page : VirtualPage) (permissions : Permissions) : Outcome ProtectError :=
+  match state.virtual.owner addressSpace with
+  | none => { state, result := .rejected .invalidAddressSpace }
+  | some owner => if owner != actor then { state, result := .rejected .notOwner }
+    else match state.virtual.mappings addressSpace page with
+    | none => { state, result := .rejected .unmappedPage }
+    | some mapping =>
+      if !permissions.nonempty then { state, result := .rejected .emptyPermissions }
+      else if (permissions.read && !mapping.permissions.read) ||
+          (permissions.write && !mapping.permissions.write) then
+        { state, result := .rejected .notOwner }
+      else
+        let virtual := VirtualMapping.setMapping state.virtual addressSpace page
+          (some { mapping with permissions })
+        { state := invalidatePage { state with virtual } addressSpace page,
+          result := .accepted }
 
 /-- Object retirement and cache invalidation are published atomically. A full
 flush is intentionally chosen because release may affect several spaces/pages. -/
@@ -138,6 +175,10 @@ theorem erase_space_length entries addressSpace :
 
 theorem insert_bounded entries entry : (insert entries entry).length ≤ capacity := by
   simp [insert, Nat.min_le_left]
+
+theorem fill_rejected_unchanged state page context reason
+    (h : fill state page context = .error reason) :
+    fill state page context = .error reason := h
 
 theorem invalidate_page_absent entries key context :
     lookup (eraseKey entries key) key context = none := by
@@ -207,6 +248,14 @@ theorem access_preserves_coherent state page context frame next
       obtain ⟨rfl, rfl⟩ := h
       exact insert_bounded _ _
 
+theorem fill_preserves_coherent state page context frame next
+    (h : fill state page context = .ok (frame, next)) : Coherent next := by
+  simp only [fill] at h
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  obtain ⟨rfl, rfl⟩ := h
+  exact insert_bounded _ _
+
 theorem invalidate_page_preserves_coherent state addressSpace page
     (h : Coherent state) : Coherent (invalidatePage state addressSpace page) := by
   exact Nat.le_trans (erase_key_length _ _) h
@@ -221,6 +270,31 @@ theorem release_accepted_coherent state subject slot
     Coherent (release state subject slot).state := by
   simp only [release] at h ⊢
   split <;> simp_all [Coherent]
+theorem unmap_accepted_coherent state actor addressSpace page
+    (hc : Coherent state) (h : (unmap state actor addressSpace page).result = .accepted) :
+    Coherent (unmap state actor addressSpace page).state := by
+  simp only [unmap] at h ⊢
+  split <;> simp_all [invalidatePage]
+  exact Nat.le_trans (erase_key_length _ _) hc
+theorem protect_accepted_coherent state actor addressSpace page permissions
+    (hc : Coherent state)
+    (h : (protect state actor addressSpace page permissions).result = .accepted) :
+    Coherent (protect state actor addressSpace page permissions).state := by
+  simp only [protect] at h ⊢
+  split <;> try simp_all
+  split <;> try simp_all
+  split <;> try simp_all
+  split <;> try simp_all
+  split <;> try simp_all
+  exact Nat.le_trans (erase_key_length _ _) hc
+theorem destroy_accepted_coherent state subject slot
+    (hc : Coherent state) (h : (destroy state subject slot).result = .accepted) :
+    Coherent (destroy state subject slot).state := by
+  simp only [destroy] at h ⊢
+  split <;> try simp_all
+  split
+  · exact Nat.le_trans (erase_space_length _ _) hc
+  · exact hc
 theorem unmap_rejected_unchanged state actor addressSpace page reason
     (h : (unmap state actor addressSpace page).result = .rejected reason) :
     (unmap state actor addressSpace page).state = state := by
@@ -230,6 +304,15 @@ theorem release_rejected_unchanged state subject slot reason
     (h : (release state subject slot).result = .rejected reason) :
     (release state subject slot).state = state := by
   simp only [release] at h ⊢
+  split <;> simp_all
+theorem protect_rejected_unchanged state actor addressSpace page permissions reason
+    (h : (protect state actor addressSpace page permissions).result = .rejected reason) :
+    (protect state actor addressSpace page permissions).state = state := by
+  simp only [protect] at h ⊢
+  split <;> try simp_all
+  split <;> try simp_all
+  split <;> try simp_all
+  split <;> try simp_all
   split <;> simp_all
 theorem destroy_rejected_unchanged state subject slot reason
     (h : (destroy state subject slot).result = .rejected reason) :
@@ -250,6 +333,28 @@ theorem release_revokes_before_return state subject slot
   simp only [release] at h ⊢
   split <;> simp_all [lookup]
 
+theorem protect_revokes_before_return state actor addressSpace page permissions
+    (h : (protect state actor addressSpace page permissions).result = .accepted) context :
+    lookup (protect state actor addressSpace page permissions).state.entries
+      { addressSpace, page } context = none := by
+  simp only [protect] at h ⊢
+  split <;> try simp_all
+  split <;> try simp_all
+  split <;> try simp_all
+  split <;> try simp_all
+  split <;> try simp_all
+  simp_all [invalidatePage, invalidate_page_absent]
+
+theorem destroy_revokes_before_return state subject slot cap
+    (hlookup : Capability.lookup state.virtual.memory.capabilities subject slot = .found cap)
+    (h : (destroy state subject slot).result = .accepted) key context
+    (hkey : key.addressSpace = cap.object) :
+    lookup (destroy state subject slot).state.entries key context = none := by
+  simp only [destroy, hlookup] at h
+  split at h
+  · contradiction
+  · simp_all [destroy, hlookup, invalidateSpace, invalidate_space_absent, hkey]
+
 private def ancestor : Ancestor := { present := true, writable := true, user := true }
 private def testLeaf (frame : Nat) (write : Bool) : Leaf :=
   { frame, present := true, writable := write, user := true, noExecute := true,
@@ -263,21 +368,84 @@ private def ctx (kind : AccessKind := .read) : AccessContext :=
 private def key1 : Key := { addressSpace := 1, page := 7 }
 private def stale : Entry := { key := key1, frame := 4, context := ctx }
 
+private def testCaps : Capability.State :=
+  { subjects := fun subject => subject = 0
+    objects := fun object => object = 10 || object = 1 || object = 2
+    kinds := fun object => if object = 10 then some .memory
+      else if object = 1 || object = 2 then some .addressSpace else none
+    slots := fun subject slot =>
+      if subject = 0 ∧ slot = 0 then
+        some (Capability.Capability.mk 10 .memory Capability.allRights)
+      else if subject = 0 ∧ slot = 1 then
+        some (Capability.Capability.mk 1 .addressSpace
+          VirtualMapping.addressSpaceRootRights)
+      else none }
+private def testMemory : MemoryLifecycle.State :=
+  { capabilities := testCaps
+    allocator := { frames := [4], status := fun frame =>
+      if frame = 4 then .owned 10 else .reserved }
+    binding := fun object => if object = 10 then some 4 else none
+    issued := fun object => object = 10 || object = 1 || object = 2 }
+private def testVirtual : VirtualMapping.State :=
+  { memory := testMemory
+    owner := fun space => if space = 1 || space = 2 then some 0 else none
+    mappings := fun space page =>
+      if (space = 1 || space = 2) ∧ page = 7 then
+        some { object := 10, permissions := { read := true } }
+      else none
+    issuedAddressSpace := fun space => space = 1 || space = 2 }
+private def cold : State := { virtual := testVirtual, active := some 1, entries := [] }
+private def filled : State :=
+  match fill cold 7 (ctx) with
+  | .ok (_, state) => state
+  | .error _ => cold
+
 example : lookup (eraseKey [stale] key1) key1 (ctx) = none := by native_decide
 example : lookup (eraseSpace [stale] 1) key1 (ctx) = none := by native_decide
 example (virtual : VirtualMapping.State) :
     (switch (switch { virtual, active := some 1, entries := [stale] } 2) 1).entries = [] := rfl
 example : eraseKey (eraseKey [stale] key1) key1 = eraseKey [stale] key1 := by native_decide
+example : (fill cold 7 (ctx)).toOption.map (fun result => result.1) = some 4 := by native_decide
+example : (unmap filled 0 1 7).result = .accepted := by native_decide
+example : lookup (unmap filled 0 1 7).state.entries key1 (ctx) = none := by native_decide
+example : (release filled 0 0).result = .accepted := by native_decide
+example : lookup (release filled 0 0).state.entries key1 (ctx) = none := by native_decide
+example : (destroy filled 0 1).result = .accepted := by native_decide
+example : lookup (destroy filled 0 1).state.entries key1 (ctx) = none := by native_decide
+example : (destroy filled 0 1).state.active = none := by native_decide
+example :
+    let released := (release filled 0 0).state
+    let reusedVirtual := { released.virtual with
+      memory := (MemoryLifecycle.allocate released.virtual.memory 11 0 0).state }
+    (access { released with virtual := reusedVirtual } 7 (ctx)).isOk = false := by native_decide
+example :
+    (access (switch cold 2) 7 (ctx)).toOption.map (fun result => result.1) = some 4 := by
+  native_decide
+example : (protect filled 0 1 7 { write := true }).result = .rejected .notOwner := by
+  native_decide
+example : (protect filled 0 1 7 { read := true }).result = .accepted := by native_decide
+example : lookup (protect filled 0 1 7 { read := true }).state.entries key1 (ctx) = none := by
+  native_decide
+example : (access (switch cold 99) 7 (ctx)).isOk = false := by native_decide
+example : (unmap filled 1 1 7).result = .rejected .notOwner := by native_decide
+example : (unmap filled 1 1 7).state.entries = filled.entries := by native_decide
 
-/-- Clearing a PTE without invalidation leaves the old datum present. `access`
-still rejects it because it revalidates; this witnesses why invalidation is required. -/
-example (virtual : VirtualMapping.State) :
-    let broken : State := { virtual, active := some 1, entries := [stale] }
-    lookup broken.entries key1 (ctx) = some stale := by simp [lookup, key1, stale, ctx]
+/-- A design that trusts a hit would still authorize frame 4 after clearing the
+PTE without invalidation. Normal `access` rewalks and rejects this state. -/
+def brokenCachedAccess (state : State) (page : VirtualPage)
+    (context : AccessContext) : Option PhysicalFrame :=
+  state.active.bind fun addressSpace =>
+    (lookup state.entries { addressSpace, page } context).map (fun entry => entry.frame)
+private def clearedWithoutInvalidation : State :=
+  { filled with virtual := VirtualMapping.setMapping filled.virtual 1 7 none }
+example : brokenCachedAccess clearedWithoutInvalidation 7 (ctx) = some 4 := by native_decide
+example : (access clearedWithoutInvalidation 7 (ctx)).isOk = false := by native_decide
 
 /-- Omitting address-space identity aliases equal virtual pages. -/
 def brokenLookup (entries : List Entry) (page : VirtualPage) : Option Entry :=
   entries.find? fun entry => decide (entry.key.page = page)
 example : brokenLookup [stale] 7 = some stale := by native_decide
+example : brokenLookup [{ stale with key := { addressSpace := 2, page := 7 } }] 7 =
+    some { stale with key := { addressSpace := 2, page := 7 } } := by native_decide
 
 end LeanOS.TLB
