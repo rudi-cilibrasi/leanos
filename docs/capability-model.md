@@ -7,11 +7,14 @@ slots. Each occupied slot contains an object identifier, its recorded
 the named object/right pair. Lookup distinguishes forged subjects from stale or
 empty slots.
 
-The minimal operations are `copy`, which requires `grant` and delegates only a
-nonempty subset into an empty slot, and direct `revoke`, which requires revoke
-authority over the target object's slot. This captures controlled authority
-creation and removal without prematurely choosing IPC or memory policy.
-Revoke is not recursive. Every denial is typed and preserves the whole state.
+Every installed capability has a never-reused identity and either an explicit
+root marker or one derivation parent. `copy` requires `grant`, delegates only a
+nonempty rights subset into an empty slot, and appends a fresh child identity.
+Direct `revoke` deletes only the selected slot. `revokeSubtree` requires revoke
+authority for the same object and kind, then atomically clears the selected
+identity and every live descendant. Independent roots and sibling subtrees
+survive. Every denial, including a stale or repeated request, preserves the
+complete state.
 
 The state registry is authoritative for object kind. Object identity remains a
 never-reused natural number (enforced by `MemoryLifecycle.issued`); retirement
@@ -24,25 +27,40 @@ this slice support only grant/revoke because lifecycle operations are deferred.
 
 ## Proved guarantees
 
-- `copy_preserves_wellFormed` and `revoke_preserves_wellFormed` prove both total
-  operations preserve valid subjects, live object/kind agreement, and valid
-  per-kind rights. Copy retains the source object and kind.
+- `WellFormed` requires unique live identities, matching append-only derivation
+  metadata, parent/object/kind agreement, rights attenuation at parent edges,
+  and strictly increasing parent-to-child identities, which rules out cycles.
+- `copy_preserves_wellFormed`, `revoke_preserves_wellFormed`, and
+  `revokeSubtree_preserves_wellFormed` prove preservation of that invariant.
 - `copy_no_authority_amplification` proves every post-copy right either existed
   for that subject or came from the actor's pre-state authority.
 - `revoke_no_authority_amplification` proves every post-revoke authority existed
   before revocation.
-- `copy_rejected_unchanged` and `revoke_rejected_unchanged` prove that all
+- `copy_rejected_unchanged`, `revoke_rejected_unchanged`, and
+  `revokeSubtree_rejected_unchanged` prove that all
   rejected outcomes leave state unchanged.
 
-Examples test delegation, forged IDs, stale source and target slots, missing
-grant, successful direct revocation, and the stale slot after revocation.
+Executable traces cover `root → A → B → C`, attenuation, direct deletion's
+known failure to revoke descendants, subtree revocation, independent roots,
+repeated/stale requests, and slot reuse. Memory/address-space/endpoint root
+creation uses the same identity store; whole-object destruction remains the
+stronger operation and removes every live capability for the retired object.
+
+## Bounds and temporal policy
+
+This is an atomic sequential model: selection and removal form one transition,
+so no copy or use can interleave with an accepted revoke. Parent walking uses
+at most `nextIdentity` steps per live slot. With `S` inspected slots and `I =
+nextIdentity`, subtree removal is `O(S·I)` time and retains `O(I)` append-only
+derivation history. Natural-number identities and the functional slot store are
+mathematical model assumptions, not fixed kernel resource bounds.
 
 ## Boundaries and non-guarantees
 
 The proofs concern only these Lean definitions under sequential evaluation.
 They do not verify generated code, a runtime, compiler, kernel binary, or
-hardware. Object lifetime and identifier reuse, derivation trees, recursive
-revocation, concurrency, and races are not modeled. Authority preservation is
+hardware. Concurrency, races, subject-termination policy, and a concrete
+bounded kernel representation are not modeled. Authority preservation is
 not confidentiality, information-flow noninterference, object-content
 integrity, availability, resource bounds, timing resistance, or resistance to
 other covert channels.

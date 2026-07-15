@@ -97,8 +97,8 @@ def allocate (state : State) (object : ObjectId) (subject : SubjectId)
     | .error .exhausted => reject state .exhausted
     | .ok allocation =>
       { state :=
-          { capabilities := Capability.install (activateObject state.capabilities object)
-              subject slot { object, kind := .memory, rights := Capability.allRights }
+          { capabilities := Capability.installRoot (activateObject state.capabilities object)
+              subject slot object .memory Capability.allRights
             allocator := allocation.state
             binding := setBinding state.binding object (some allocation.frame)
             issued := setIssued state.issued object }
@@ -206,12 +206,13 @@ theorem issued_identifier_never_reallocated (state : State) (object subject slot
 theorem allocated_root_capability (state : State) (object subject slot)
     (ha : (allocate state object subject slot).result = .accepted) :
     (allocate state object subject slot).state.capabilities.slots subject slot =
-      some { object, kind := .memory, rights := Capability.allRights } := by
+      some (⟨object, .memory, Capability.allRights,
+        state.capabilities.nextIdentity, none⟩ : Capability.Capability) := by
   simp only [allocate] at ha ⊢
   split <;> simp_all [reject]
   split <;> simp_all [reject]
   split <;> simp_all [reject]
-  split <;> simp_all [reject, Capability.install]
+  split <;> simp_all [reject, Capability.installRoot, Capability.install, activateObject]
 
 /-- The allocator representation makes successful ownership exclusive. -/
 theorem allocated_owner_exclusive (state : State) (object subject slot frame owner)

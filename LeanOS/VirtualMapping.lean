@@ -159,9 +159,9 @@ def createAddressSpace (state : State) (addressSpace : AddressSpaceId)
     reject state .identifierAlreadyIssued
   else if state.memory.capabilities.objects addressSpace then reject state .identifierLive
   else
-    let capabilities := Capability.install
+    let capabilities := Capability.installRoot
       (activateAddressSpace state.memory.capabilities addressSpace) subject slot
-      { object := addressSpace, kind := .addressSpace, rights := addressSpaceRootRights }
+      addressSpace .addressSpace addressSpaceRootRights
     { state := clearAddressSpaceMappings
         { state with
           memory := { state.memory with
@@ -566,7 +566,8 @@ theorem created_fresh_empty_root (state : State) addressSpace subject slot
       (createAddressSpace state addressSpace subject slot).state.memory.issued addressSpace = true ∧
       (createAddressSpace state addressSpace subject slot).state.owner addressSpace = some subject ∧
       (createAddressSpace state addressSpace subject slot).state.memory.capabilities.slots subject slot =
-        some { object := addressSpace, kind := .addressSpace, rights := addressSpaceRootRights } ∧
+        some (⟨addressSpace, .addressSpace, addressSpaceRootRights,
+          state.memory.capabilities.nextIdentity, none⟩ : Capability.Capability) ∧
       ∀ page, (createAddressSpace state addressSpace subject slot).state.mappings
         addressSpace page = none := by
   simp only [createAddressSpace] at h ⊢
@@ -580,7 +581,7 @@ theorem created_fresh_empty_root (state : State) addressSpace subject slot
     split at h <;> try contradiction
     rcases hboth with ⟨haddress, hglobal⟩
     simp_all [createAddressSpace, clearAddressSpaceMappings, setOwner, setIssuedAddressSpace,
-      MemoryLifecycle.setIssued, Capability.install, haddress, hglobal,
+      MemoryLifecycle.setIssued, Capability.installRoot, Capability.install, haddress, hglobal,
       activateAddressSpace, MemoryLifecycle.setObject]
 
 /-- Destruction retires the object, every capability naming it, its owner, and

@@ -121,8 +121,8 @@ def create (state : State) (object : ObjectId) (subject : SubjectId) (slot : Slo
   else
     { state :=
         { state with
-          capabilities := Capability.install (activate state.capabilities object) subject slot
-            { object, kind := .endpoint, rights := endpointRootRights }
+          capabilities := Capability.installRoot (activate state.capabilities object) subject slot
+            object .endpoint endpointRootRights
           mailbox := setOption state.mailbox object none
           issued := setBool state.issued object true
           sendHistory := state.sendHistory }
@@ -206,6 +206,12 @@ def delegate (state : State) (actor : SubjectId) (source : SlotId)
 def revoke (state : State) (actor : SubjectId) (authoritySlot : SlotId)
     (victim : SubjectId) (victimSlot : SlotId) : State × Capability.Result :=
   let outcome := Capability.revoke state.capabilities actor authoritySlot victim victimSlot
+  ({ state with capabilities := outcome.state }, outcome.result)
+
+/-- Atomically revoke one endpoint-capability lineage through the shared store. -/
+def revokeSubtree (state : State) (actor : SubjectId) (authoritySlot : SlotId)
+    (victim : SubjectId) (victimSlot : SlotId) : State × Capability.Result :=
+  let outcome := Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot
   ({ state with capabilities := outcome.state }, outcome.result)
 
 theorem create_rejected_unchanged (state : State) object subject slot reason
@@ -668,6 +674,15 @@ example : (send root 0 9 payload).result = .rejected .wrongKind := by native_dec
 -- Revocation before use removes the delegated endpoint authority.
 private def revokedSender := (revoke withSender 0 0 1 0).1
 example : (send revokedSender 1 0 payload).result = .rejected .staleHandle := by native_decide
+-- A sender cannot preserve authority by delegating before its lineage is revoked.
+private def grantSend : Capability.Rights := { send := true, grant := true }
+private def senderParent := (delegate root 0 0 1 0 grantSend).1
+private def senderChild := (delegate senderParent 1 0 2 1 sendOnly).1
+private def subtreeRevokedSender := (revokeSubtree senderChild 0 0 1 0).1
+example : (send subtreeRevokedSender 1 0 payload).result = .rejected .staleHandle := by
+  native_decide
+example : (send subtreeRevokedSender 2 1 payload).result = .rejected .staleHandle := by
+  native_decide
 -- Destroy clears a pending message; the stale handle and retired ID cannot be replayed.
 private def destroyed := (destroy sent 0 0).state
 example : destroyed.mailbox 10 = none := by native_decide
