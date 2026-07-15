@@ -145,6 +145,11 @@ never-reused identities and defines atomic termination cleanup across held
 capabilities, exclusively owned memory, address spaces, endpoints, pending
 provenance, and runnable/current state.
 
+The bounded [model-oracle corpus](docs/model-oracle.md) is evaluated in Lean
+and replayed through hosted generated code and every boot-reachable adapter.
+This differential check detects integration mismatches; it is not compiler or
+binary verification.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
