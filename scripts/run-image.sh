@@ -17,9 +17,12 @@ set +e; timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"; statu
 expected="$(mktemp)"; trap 'rm -f "$expected"' EXIT
 corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
 [[ -f "$corpus" ]] || { echo "error: oracle corpus '$corpus' not found" >&2; exit 1; }
-echo 'LEANOS/3 BOOT target=x86_64-q35 subjects=2 schedule=fixed' > "$expected"
+echo 'LEANOS/4 BOOT target=x86_64-q35 subjects=2 schedule=fixed controls=wp,smep' > "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 printf '%s\n' \
+  'LEANOS/4 CONTROL cr0.wp=1 cr4.smep=1 stage=exception-path-ready' \
+  'LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS' \
+  'LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS' \
   'LEANOS/3 SUBJECT id=1 address-space=1 cpl=3' \
   'LEANOS/3 IPC op=receive subject=1 result=denied reason=missing-receive' \
   'LEANOS/3 IPC op=send subject=1 result=accepted payload=4c45414e:4f53 supplied-sender=99' \

@@ -131,8 +131,9 @@ multiboot_entry:
     rdmsr
     or $((1 << 8) | (1 << 11)), %eax
     wrmsr
+    /* Construction is complete before paging and supervisor write protection. */
     mov %cr0, %eax
-    or $(1 << 31), %eax
+    or $((1 << 31) | (1 << 16)), %eax
     mov %eax, %cr0
     lgdt gdt64_pointer
     ljmp $0x08, $long_mode_entry
@@ -205,6 +206,32 @@ boot_stack_top:
 load_tss:
     mov $0x28, %ax
     ltr %ax
+    ret
+.global enable_smep
+enable_smep:
+    /* Called after the page-fault gate and TSS are installed. */
+    mov %cr4, %rax
+    bts $20, %rax
+    mov %rax, %cr4
+    ret
+.global run_wp_probe
+run_wp_probe:
+.global wp_probe_instruction
+wp_probe_instruction:
+    movb $0, wp_probe_target(%rip)
+.global wp_probe_recovered
+wp_probe_recovered:
+    ret
+.global wp_probe_target
+wp_probe_target:
+    nop
+.global run_smep_probe
+run_smep_probe:
+.global smep_probe_instruction
+smep_probe_instruction:
+    jmp user_a_entry
+.global smep_probe_recovered
+smep_probe_recovered:
     ret
 .global enter_user
 enter_user:

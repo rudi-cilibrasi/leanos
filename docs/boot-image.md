@@ -20,6 +20,11 @@ from the documented toolchain. There are no repository-supplied binary blobs.
 
 ## Stable protocol and termination
 
+Version 4 prefixes the version-3 subject trace with read-back evidence for
+CR0.WP and CR4.SMEP and exact, one-shot CPL0 write-protection and SMEP page
+faults. Their vector, error code, origin, and symbolic CR2 target are checked in
+the guest before being emitted; no arbitrary kernel fault is recoverable.
+
 Version 3 extends the boot evidence with the two-subject IPC boundary described
 in [ADR 0004](adr/0004-two-subject-ipc-slice.md). It requires exact records for
 both CPL3 subjects and address spaces, both directional denials, accepted send,
@@ -117,7 +122,8 @@ enumerates the experimental status, TCB, and unproved model-to-binary boundary.
 The following new code and assumptions are trusted, not proved:
 
 - `boot/boot.S`, the Multiboot2 header, page tables, GDT, x86-64 mode switch,
-  stack, and System V ABI handoff;
+  CR0.WP/CR4.SMEP writes and CPU-feature assumption, stack, fault probes, and
+  System V ABI handoff;
 - `boot/kernel.c`, including UART polling, port I/O, QEMU debug-exit behavior,
   serial formatting, and the manual `lean_uint64_dec_eq` implementation;
 - Lean code generation and generated C, GCC, GNU assembler/linker and linker
