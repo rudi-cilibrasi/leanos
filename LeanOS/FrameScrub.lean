@@ -192,6 +192,7 @@ theorem read_fresh_zero state object subject slot frame offset
     (hsubject : state.memory.capabilities.subjects subject = true)
     (hcap : state.memory.capabilities.slots subject slot = some
       { object, kind := .memory, rights := Capability.allRights })
+    (hslotRange : Capability.slotInRange state.memory.capabilities subject slot = true)
     (hbinding : state.memory.binding object = some frame)
     (hunwritten : state.written object = false)
     (hoffset : offset < frameBytes) :
@@ -199,7 +200,7 @@ theorem read_fresh_zero state object subject slot frame offset
   have howned := (hinvariant object frame hbinding hunwritten).1
   change state.memory.allocator.status frame = .owned object at howned
   have hauth : MemoryLifecycle.authorize state.memory subject slot .read = .ok frame := by
-    simp [MemoryLifecycle.authorize, Capability.lookup, hsubject, hcap, hbinding,
+    simp [MemoryLifecycle.authorize, Capability.lookup, hsubject, hcap, hslotRange, hbinding,
       howned, Capability.permits, Capability.allRights]
   have hzero := (hinvariant object frame hbinding hunwritten).2 offset hoffset
   simp only [readByte, hoffset, Bool.not_true, ↓reduceIte]

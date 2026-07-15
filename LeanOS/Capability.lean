@@ -78,6 +78,13 @@ structure State where
 
 abbrev Derivation := Option Nat × ObjectId × ObjectKind × Rights
 
+def slotInRange (state : State) (subject : SubjectId) (slot : SlotId) : Bool :=
+  slot < state.slotCapacity subject
+
+/-- No capability exists outside the finite domain owned by its subject. -/
+def SlotSpacesWellFormed (state : State) : Prop :=
+  ∀ subject slot, state.slotCapacity subject ≤ slot → state.slots subject slot = none
+
 def rightsValid : ObjectKind → Rights → Bool
   | .memory, rights => (!rights.send && !rights.receive) && nonemptyRights rights
   | .addressSpace, rights => (!rights.read && !rights.write && !rights.send && !rights.receive) &&
@@ -91,9 +98,11 @@ inductive LookupOutcome where
 
 def lookup (state : State) (subject : SubjectId) (slot : SlotId) : LookupOutcome :=
   if state.subjects subject then
-    match state.slots subject slot with
-    | some capability => .found capability
-    | none => .staleSlot
+    if slotInRange state subject slot then
+      match state.slots subject slot with
+      | some capability => .found capability
+      | none => .staleSlot
+    else .staleSlot
   else .invalidSubject
 
 def SlotsWellFormed (state : State) : Prop :=
@@ -135,7 +144,8 @@ def LiveIdentitiesUnique (state : State) : Prop :=
     subject = otherSubject ∧ slot = otherSlot
 
 def WellFormed (state : State) : Prop :=
-  SlotsWellFormed state ∧ DerivationsWellFormed state ∧ LiveIdentitiesUnique state
+  SlotsWellFormed state ∧ DerivationsWellFormed state ∧ LiveIdentitiesUnique state ∧
+    SlotSpacesWellFormed state
 
 /-- A subject has authority exactly when a slot grants the object/right pair. -/
 def HasAuthority (state : State) (subject : SubjectId) (object : ObjectId)
@@ -197,9 +207,6 @@ def clear (state : State) (subject : SubjectId) (slot : SlotId) : State :=
 def reject (state : State) (reason : Denial) : Outcome :=
   { state := state, result := .rejected reason }
 
-def slotInRange (state : State) (subject : SubjectId) (slot : SlotId) : Bool :=
-  slot < state.slotCapacity subject
-
 /-- The complete, finite capability space for a subject, in slot order. -/
 def capabilitySpace (state : State) (subject : SubjectId) : List (Option Capability) :=
   (List.range (state.slotCapacity subject)).map (state.slots subject)
@@ -210,10 +217,6 @@ def lowestFreeSlot (state : State) (subject : SubjectId) : Option SlotId :=
 
 def capabilitySpaceFull (state : State) (subject : SubjectId) : Bool :=
   (lowestFreeSlot state subject).isNone
-
-/-- No authority exists outside the finite domain owned by its subject. -/
-def SlotSpacesWellFormed (state : State) : Prop :=
-  ∀ subject slot, state.slotCapacity subject ≤ slot → state.slots subject slot = none
 
 theorem install_other_subject (state : State) (subject : SubjectId) (slot : SlotId)
     (capability : Capability) (other : SubjectId) (hne : other ≠ subject) :
@@ -230,10 +233,10 @@ theorem clear_other_subject (state : State) (subject : SubjectId) (slot : SlotId
 theorem lookup_found_slot (state : State) (subject : SubjectId) (slot : SlotId)
     (capability : Capability) (hfound : lookup state subject slot = .found capability) :
     state.slots subject slot = some capability := by
-  simp only [lookup] at hfound
-  split at hfound
-  · split at hfound <;> simp_all
-  · simp_all
+  unfold lookup at hfound
+  split at hfound <;> try contradiction
+  split at hfound <;> try contradiction
+  split at hfound <;> simp_all
 
 /-- Delegate a nonempty subset of one capability into an empty slot. -/
 def copy (state : State) (actor : SubjectId) (source : SlotId)
@@ -244,6 +247,7 @@ def copy (state : State) (actor : SubjectId) (source : SlotId)
   | .staleSlot => reject state .staleSlot
   | .found capability =>
       if state.subjects destination != true then reject state .invalidSubject
+      else if !slotInRange state destination destinationSlot then reject state .outOfRange
       else if (state.slots destination destinationSlot).isSome then
         reject state .occupiedSlot
       else if rightsValid capability.kind requested then
@@ -265,15 +269,11 @@ def copy (state : State) (actor : SubjectId) (source : SlotId)
         else reject state .missingGrant
       else reject state .emptyRights
 
-/-- Finite-space delegation. This is the bounded entry point for callers that
-install into a selected slot; an out-of-domain request cannot reach `copy`. -/
+/-- Compatibility name for the authoritative finite-space delegation operation. -/
 def copyBounded (state : State) (actor : SubjectId) (source : SlotId)
     (destination : SubjectId) (destinationSlot : SlotId)
     (requested : Rights) : Outcome :=
-  if state.subjects destination != true then reject state .invalidSubject
-  else if !slotInRange state destination destinationSlot then reject state .outOfRange
-  else if (state.slots destination destinationSlot).isSome then reject state .occupiedSlot
-  else copy state actor source destination destinationSlot requested
+  copy state actor source destination destinationSlot requested
 
 /-- Deterministic allocation into the lowest free destination slot. -/
 def copyLowest (state : State) (actor : SubjectId) (source : SlotId)
@@ -288,6 +288,8 @@ theorem copyBounded_outOfRange_unchanged (state : State) actor source destinatio
     (hout : slotInRange state destination destinationSlot = false) :
     (copyBounded state actor source destination destinationSlot requested).state = state := by
   unfold copyBounded
+  simp only [copy]
+  split <;> try rfl
   split <;> try rfl
   simp [hout, reject]
 
@@ -365,8 +367,8 @@ theorem clearSubtree_authority_subset (state : State) (identity : Nat)
 theorem clear_preserves_wellFormed (state : State) (subject : SubjectId)
     (slot : SlotId) (hstate : WellFormed state) :
     WellFormed (clear state subject slot) := by
-  rcases hstate with ⟨hslots, hhistory, hunique⟩
-  refine ⟨?_, ?_, ?_⟩
+  rcases hstate with ⟨hslots, hhistory, hunique, hspaces⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro candidate candidateSlot capability hslot
     apply hslots candidate candidateSlot capability
     by_cases htarget : candidate = subject ∧ candidateSlot = slot
@@ -382,11 +384,15 @@ theorem clear_preserves_wellFormed (state : State) (subject : SubjectId)
       · simp [clear, htarget] at hright
       · simpa [clear, htarget] using hright
     · exact hid
+  · intro candidate candidateSlot hout
+    by_cases htarget : candidate = subject ∧ candidateSlot = slot
+    · simp [clear, htarget]
+    · simpa [clear, htarget] using hspaces candidate candidateSlot hout
 
 theorem clearSubtree_preserves_wellFormed (state : State) (identity : Nat)
     (hstate : WellFormed state) : WellFormed (clearSubtree state identity) := by
-  rcases hstate with ⟨hslots, hhistory, hunique⟩
-  refine ⟨?_, ?_, ?_⟩
+  rcases hstate with ⟨hslots, hhistory, hunique, hspaces⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro subject slot capability hslot
     exact hslots subject slot capability
       (clearSubtree_slot_survives state identity subject slot capability hslot)
@@ -395,6 +401,9 @@ theorem clearSubtree_preserves_wellFormed (state : State) (identity : Nat)
     exact hunique left leftSlot leftCap right rightSlot rightCap
       (clearSubtree_slot_survives state identity left leftSlot leftCap hleft)
       (clearSubtree_slot_survives state identity right rightSlot rightCap hright) hid
+  · intro subject slot hout
+    have hempty := hspaces subject slot hout
+    simp [clearSubtree, hempty]
 
 /-- Atomically remove the selected capability and every recorded descendant.
 The authority and selected root are resolved before mutation, so every denial
@@ -468,13 +477,16 @@ theorem copy_preserves_wellFormed (state : State) (actor : SubjectId)
     split <;> try simp_all
     split <;> try simp_all
     split <;> try simp_all
+    split <;> try simp_all
     next hnonempty =>
       split <;> try simp_all
       split
-      · rcases hstate with ⟨hslots, hhistory, hunique⟩
+      · rcases hstate with ⟨hslots, hhistory, hunique, hspaces⟩
+        have hdestinationInRange :
+            slotInRange state destination destinationSlot = true := by assumption
         have hsource := lookup_found_slot state actor source capability hlookup
         have hsourceValid := hslots actor source capability hsource
-        refine ⟨?_, ?_, ?_⟩
+        refine ⟨?_, ?_, ?_, ?_⟩
         · intro subject slot found hslot
           by_cases htarget : subject = destination ∧ slot = destinationSlot
           · rcases htarget with ⟨rfl, rfl⟩
@@ -557,7 +569,16 @@ theorem copy_preserves_wellFormed (state : State) (actor : SubjectId)
             · exact hunique left leftSlot leftCap right rightSlot rightCap
                 (by simpa [install, hleftTarget] using hleft)
                 (by simpa [install, hrightTarget] using hright) hid
-      · simpa [reject] using hstate
+        · intro subject slot hout
+          by_cases htarget : subject = destination ∧ slot = destinationSlot
+          · rcases htarget with ⟨rfl, rfl⟩
+            change state.slotCapacity subject ≤ slot at hout
+            have hlt : slot < state.slotCapacity subject := by
+              simpa [slotInRange] using hdestinationInRange
+            omega
+          · change state.slotCapacity subject ≤ slot at hout
+            simpa [install, htarget] using hspaces subject slot hout
+      · simpa [reject]
 
 theorem revoke_preserves_wellFormed (state : State) (actor : SubjectId)
     (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
@@ -597,6 +618,7 @@ theorem copy_no_authority_amplification (state : State) (actor : SubjectId)
   simp only [copy] at hauthority
   split at hauthority <;> try simp_all [reject]
   next capability hlookup =>
+    split at hauthority <;> try simp_all
     split at hauthority <;> try simp_all
     split at hauthority <;> try simp_all
     split at hauthority <;> try simp_all
@@ -648,6 +670,7 @@ theorem copy_rejected_unchanged (state : State) (actor : SubjectId)
   simp only [copy] at hrejected ⊢
   split <;> try simp_all [reject]
   next capability =>
+    split <;> try simp_all
     split <;> try simp_all
     split <;> try simp_all
     split <;> try simp_all
@@ -877,10 +900,9 @@ example : (copyBounded finiteRevoked 2 0 0 0 readOnly).result = .accepted := by 
 example : (copyLowest finiteOneFull 2 0 0 readOnly).state = finiteOneFull := by
   exact copyLowest_full_unchanged _ _ _ _ _ (by decide)
 
-/-- Regression witness: the legacy mathematical transition accepts an
-unchecked natural-number destination, while the finite transition rejects it. -/
-example : (copy (finiteState 1 1) 2 0 0 99 readOnly).result = .accepted ∧
-    (copyBounded (finiteState 1 1) 2 0 0 99 readOnly).result = .rejected .outOfRange := by
-  decide
+/-- Regression witness: every public copy entry point rejects an unchecked
+natural-number destination outside the subject's finite domain. -/
+example : (copy (finiteState 1 1) 2 0 0 99 readOnly).result = .rejected .outOfRange ∧
+    (copyBounded (finiteState 1 1) 2 0 0 99 readOnly).result = .rejected .outOfRange := by decide
 
 end LeanOS.Capability
