@@ -11,6 +11,11 @@ extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
+extern void run_smap_probe(void);
+extern void smap_copy_from(void *, const void *, uint64_t);
+extern void smap_copy_to(void *, const void *, uint64_t);
+extern void smap_omit_cleanup_probe(void);
+extern void smap_force_clac(void);
 extern void run_wp_probe(void);
 extern void run_smep_probe(void);
 extern void enter_user(void *, void *);
@@ -18,6 +23,7 @@ extern void isr80(void);
 extern void isr14(void);
 extern void isr32(void);
 extern char user_a_entry[], user_a_stack_top[];
+extern char user_a_stack[];
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 
@@ -36,7 +42,65 @@ static unsigned preemption_step;
 static uint64_t current_subject = 1;
 static unsigned timer_accepted;
 static unsigned supervisor_probe;
+static uint8_t copy_buffer[16];
+static unsigned copy_step;
 static void finish(uint8_t value);
+static __attribute__((noreturn)) void fail(const char *reason);
+static void serial_puts(const char *text);
+
+enum copy_policy {
+    COPY_ALLOWED, COPY_TOO_LONG, COPY_OVERFLOW, COPY_NONCANONICAL,
+    COPY_WRONG_SUBJECT, COPY_UNMAPPED, COPY_READ_ONLY, COPY_STALE
+};
+
+static enum copy_policy validate_copy(uint64_t subject, unsigned lifetime_current,
+                                      uint64_t start, uint64_t length,
+                                      unsigned write) {
+    uint64_t end;
+    if (subject != 1) return COPY_WRONG_SUBJECT;
+    if (!lifetime_current) return COPY_STALE;
+    if (length > sizeof(copy_buffer)) return COPY_TOO_LONG;
+    if (__builtin_add_overflow(start, length, &end)) return COPY_OVERFLOW;
+    if (start >= (1ull << 47) || end >= (1ull << 47)) return COPY_NONCANONICAL;
+    if (start >= (uint64_t)user_a_entry && start < (uint64_t)user_a_stack) {
+        return write ? COPY_READ_ONLY : COPY_UNMAPPED;
+    }
+    if (start < (uint64_t)user_a_stack || end > (uint64_t)user_a_stack_top)
+        return COPY_UNMAPPED;
+    return COPY_ALLOWED;
+}
+
+static unsigned ac_is_set(void) {
+    uint64_t flags;
+    __asm__ volatile ("pushfq; pop %0" : "=r"(flags) : : "memory");
+    return (unsigned)((flags >> 18) & 1u);
+}
+
+static void exercise_copy_policy(void) {
+    uint8_t before_buffer[sizeof(copy_buffer)];
+    for (unsigned i = 0; i < sizeof(copy_buffer); ++i) {
+        copy_buffer[i] = (uint8_t)(0x80u + i);
+        before_buffer[i] = copy_buffer[i];
+    }
+    uint8_t before_user, after_user;
+    smap_copy_from(&before_user, user_a_stack, 1);
+    if (ac_is_set()) fail("policy-snapshot-ac-set");
+    if (validate_copy(1, 1, (uint64_t)user_a_stack, 0, 0) != COPY_ALLOWED ||
+        validate_copy(1, 1, (uint64_t)user_a_stack, 16, 0) != COPY_ALLOWED ||
+        validate_copy(1, 1, (uint64_t)user_a_stack_top, 1, 0) != COPY_UNMAPPED ||
+        validate_copy(1, 1, (uint64_t)user_a_entry, 1, 1) != COPY_READ_ONLY ||
+        validate_copy(1, 1, UINT64_MAX - 7, 16, 0) != COPY_OVERFLOW ||
+        validate_copy(1, 1, 1ull << 47, 1, 0) != COPY_NONCANONICAL ||
+        validate_copy(2, 1, (uint64_t)user_a_stack, 1, 0) != COPY_WRONG_SUBJECT ||
+        validate_copy(1, 0, (uint64_t)user_a_stack, 1, 0) != COPY_STALE)
+        fail("copy-policy-vectors");
+    for (unsigned i = 0; i < sizeof(copy_buffer); ++i)
+        if (copy_buffer[i] != before_buffer[i]) fail("copy-reject-buffer-partial");
+    smap_copy_from(&after_user, user_a_stack, 1);
+    if (ac_is_set()) fail("policy-canary-ac-set");
+    if (after_user != before_user) fail("copy-reject-user-partial");
+    serial_puts("LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS\n");
+}
 
 static inline void out8(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -127,12 +191,36 @@ static void privilege_init(void) {
 }
 
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
-                         uint64_t arg2, uint64_t saved_cs) {
+                         uint64_t arg2, uint64_t saved_cs,
+                         uint64_t saved_flags) {
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
-    (void)arg0; (void)arg1; (void)arg2;
+    if (current_subject == 1 && number == 4) {
+        if ((saved_flags & (1u << 10)) == 0) fail("copy-df-not-set");
+        uint64_t start = arg1;
+        if (validate_copy(current_subject, 1, start, arg2, arg0 == 1) != COPY_ALLOWED)
+            fail("copy-policy");
+        if (arg0 == 0 && copy_step == 0) {
+            smap_copy_from(copy_buffer, (const void *)start, arg2);
+            if (ac_is_set()) fail("copy-in-ac-set");
+            if (arg2 != 4 || copy_buffer[0] != 0x5a || copy_buffer[1] != 0xa5 ||
+                copy_buffer[2] != 0x3c || copy_buffer[3] != 0xc3) fail("copy-in-data");
+            copy_step = 1;
+            serial_puts("LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS\n");
+            return 0;
+        }
+        if (arg0 == 1 && copy_step == 1) {
+            smap_copy_to((void *)start, copy_buffer, arg2);
+            if (ac_is_set()) fail("copy-out-ac-set");
+            copy_step = 2;
+            serial_puts("LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS\n");
+            return 0;
+        }
+        fail("copy-sequence");
+    }
     if (preemption_step == 0 && current_subject == 1 && number == 1) {
+        if (copy_step != 2) fail("copy-missing");
         serial_puts("LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0\n");
         preemption_step = 1;
         return 0;
@@ -197,6 +285,13 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
         supervisor_probe = 4;
         return (uint64_t)smep_probe_recovered;
     }
+    if (supervisor_probe == 5 && (saved_cs & 3u) == 0u && error == 1u &&
+        fault_address == (uint64_t)user_a_stack) {
+        extern char smap_probe_recovered[];
+        serial_puts("LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS\n");
+        supervisor_probe = 6;
+        return (uint64_t)smap_probe_recovered;
+    }
     fail("kernel-fault");
 }
 
@@ -207,7 +302,7 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 
 void kernel_main(void) {
     serial_init();
-    serial_puts("LEANOS/5 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep\n");
+    serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap\n");
 
     replay_oracle();
 
@@ -216,16 +311,26 @@ void kernel_main(void) {
     uint64_t cr0, cr4;
     __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
     __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
-    if ((cr0 & (1ull << 16)) == 0 || (cr4 & (1ull << 20)) == 0) {
+    if ((cr0 & (1ull << 16)) == 0 || (cr4 & (1ull << 20)) == 0 ||
+        (cr4 & (1ull << 21)) == 0) {
         fail("supervisor-controls");
     }
-    serial_puts("LEANOS/4 CONTROL cr0.wp=1 cr4.smep=1 stage=exception-path-ready\n");
+    serial_puts("LEANOS/6 CONTROL cr0.wp=1 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready\n");
     supervisor_probe = 1;
     run_wp_probe();
     if (supervisor_probe != 2) fail("wp-no-fault");
     supervisor_probe = 3;
     run_smep_probe();
     if (supervisor_probe != 4) fail("smep-no-fault");
+    supervisor_probe = 5;
+    run_smap_probe();
+    if (supervisor_probe != 6) fail("smap-no-fault");
+    exercise_copy_policy();
+    smap_omit_cleanup_probe();
+    if (!ac_is_set()) fail("cleanup-probe-undetected");
+    smap_force_clac();
+    if (ac_is_set()) fail("cleanup-recovery");
+    serial_puts("LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS\n");
     arm_timer();
     enter_user(user_a_entry, user_a_stack_top);
     fail("iret-returned");

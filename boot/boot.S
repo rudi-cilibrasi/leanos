@@ -111,6 +111,7 @@ multiboot_entry:
     shr $9, %eax
     and $0x7ff8, %eax
     orl $4, page_table_a(%eax)
+    orl $4, page_table_a+8(%eax)
     mov $__user_b_text_start, %eax
     shr $9, %eax
     and $0x7ff8, %eax
@@ -212,7 +213,60 @@ enable_smep:
     /* Called after the page-fault gate and TSS are installed. */
     mov %cr4, %rax
     bts $20, %rax
+    bts $21, %rax
     mov %rax, %cr4
+    ret
+.global smap_copy_from
+smap_copy_from:
+    pushfq
+    cli
+.global smap_copy_from_cld
+smap_copy_from_cld:
+    cld
+.global smap_copy_from_stac
+smap_copy_from_stac:
+    stac
+    mov %rdx, %rcx
+    rep movsb
+.global smap_copy_from_clac
+smap_copy_from_clac:
+    clac
+    popfq
+    ret
+.global smap_copy_to
+smap_copy_to:
+    pushfq
+    cli
+.global smap_copy_to_cld
+smap_copy_to_cld:
+    cld
+.global smap_copy_to_stac
+smap_copy_to_stac:
+    stac
+    mov %rdx, %rcx
+    rep movsb
+.global smap_copy_to_clac
+smap_copy_to_clac:
+    clac
+    popfq
+    ret
+.global smap_omit_cleanup_probe
+smap_omit_cleanup_probe:
+.global smap_omit_cleanup_probe_stac
+smap_omit_cleanup_probe_stac:
+    stac
+    ret
+.global smap_force_clac
+smap_force_clac:
+    clac
+    ret
+.global run_smap_probe
+run_smap_probe:
+.global smap_probe_instruction
+smap_probe_instruction:
+    movb user_a_stack(%rip), %al
+.global smap_probe_recovered
+smap_probe_recovered:
     ret
 .global run_wp_probe
 run_wp_probe:
@@ -255,12 +309,19 @@ enter_user:
 .endm
 .global isr80
 isr80:
+.global isr80_clac
+isr80_clac:
+    clac
+.global isr80_cld
+isr80_cld:
+    cld
     SAVE
     mov 112(%rsp), %rdi
     mov 104(%rsp), %rsi
     mov 96(%rsp), %rdx
     mov 88(%rsp), %rcx
     mov 128(%rsp), %r8
+    mov 136(%rsp), %r9
     call syscall_handler
     cmp $0xfeed, %rax
     jne 7f
@@ -275,6 +336,12 @@ isr80:
     iretq
 .global isr14
 isr14:
+.global isr14_clac
+isr14_clac:
+    clac
+.global isr14_cld
+isr14_cld:
+    cld
     SAVE
     sub $8, %rsp
     mov 128(%rsp), %rdi
@@ -289,6 +356,12 @@ isr14:
     iretq
 .global isr32
 isr32:
+.global isr32_clac
+isr32_clac:
+    clac
+.global isr32_cld
+isr32_cld:
+    cld
     SAVE
     mov 128(%rsp), %rdi
     call timer_handler
@@ -312,18 +385,49 @@ user_a_entry:
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
+    movb $0x5a, user_a_stack+4094(%rip)
+    movb $0xa5, user_a_stack+4095(%rip)
+    movb $0x3c, user_a_stack+4096(%rip)
+    movb $0xc3, user_a_stack+4097(%rip)
+    mov $4, %rax
+    xor %rbx, %rbx
+    lea user_a_stack+4094(%rip), %rcx
+    mov $4, %rdx
+    std
+    int $0x80
+    cld
+    mov $4, %rax
+    mov $1, %rbx
+    lea user_a_stack+4110(%rip), %rcx
+    mov $4, %rdx
+    std
+    int $0x80
+    cld
+    cmpb $0x5a, user_a_stack+4110(%rip)
+    jne user_copy_fail
+    cmpb $0xa5, user_a_stack+4111(%rip)
+    jne user_copy_fail
+    cmpb $0x3c, user_a_stack+4112(%rip)
+    jne user_copy_fail
+    cmpb $0xc3, user_a_stack+4113(%rip)
+    jne user_copy_fail
     mov $1, %rax
     xor %rbx, %rbx
     xor %rcx, %rcx
     xor %rdx, %rdx
     int $0x80
+    jmp 1f
+user_copy_fail:
+    mov $3, %rax
+    int $0x80
+    ud2
 1:  jmp 1b
 
 .section .user.a.bss,"aw",@nobits
 .align 4096
 .global user_a_stack
 user_a_stack:
-    .skip 4096
+    .skip 8192
 .global user_a_stack_top
 user_a_stack_top:
 
