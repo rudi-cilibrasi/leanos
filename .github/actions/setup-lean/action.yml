@@ -1,0 +1,43 @@
+name: Set up pinned Lean toolchain
+description: Restore Elan and the pinned Lean toolchain before falling back to installation.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore Elan and pinned Lean toolchain
+      id: elan-cache
+      uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      with:
+        path: ~/.elan
+        key: elan-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}
+
+    - name: Install Elan and pinned Lean toolchain
+      if: steps.elan-cache.outputs.cache-hit != 'true'
+      uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
+      with:
+        auto-config: false
+        build: false
+        test: false
+        lint: false
+        use-github-cache: false
+
+    - name: Activate pinned Lean toolchain
+      shell: bash
+      run: |
+        echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+        "$HOME/.elan/bin/lean" --version
+        "$HOME/.elan/bin/lake" --version
+
+    - name: Save Elan and pinned Lean toolchain
+      if: steps.elan-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      with:
+        path: ~/.elan
+        key: ${{ steps.elan-cache.outputs.cache-primary-key }}
+
+    - name: Restore Lake build cache
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      with:
+        path: .lake
+        key: lake-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+        restore-keys: lake-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
