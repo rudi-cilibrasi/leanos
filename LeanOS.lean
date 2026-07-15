@@ -6,5 +6,6 @@ import LeanOS.KernelTransition
 import LeanOS.MemoryLifecycle
 import LeanOS.Syscall
 import LeanOS.UserCopy
+import LeanOS.SubjectLifecycle
 import LeanOS.VirtualMapping
 import LeanOS.X86PageTable

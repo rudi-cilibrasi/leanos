@@ -130,6 +130,11 @@ The bounded [user-copy model](docs/user-copy.md) prevalidates a small complete
 range through current virtual mappings before changing typed kernel buffers or
 live-frame byte memory, with explicit alias rejection and atomic failure.
 
+The [subject-lifecycle model](docs/subject-lifecycle.md) gives subjects
+never-reused identities and defines atomic termination cleanup across held
+capabilities, exclusively owned memory, address spaces, endpoints, pending
+provenance, and runnable/current state.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
