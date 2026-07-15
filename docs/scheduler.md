@@ -37,3 +37,8 @@ queue wraparound. The proofs and traces concern only the Lean model. They do
 not verify assembly context switching, timer hardware, generated code, QEMU,
 the compiler, or a kernel binary. No `unsafe`, `extern`, FFI, axiom, constant,
 `sorry`, or `admit` declaration is introduced.
+
+The [finite scheduled observer model](scheduled-observation.md) uses this
+scheduler/lifecycle state as the sole authoritative source of the selected
+subject and active address space. It exposes scheduler selections and observed
+termination as public events rather than treating scheduling as confidential.

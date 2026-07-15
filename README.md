@@ -183,6 +183,12 @@ memory. Authorized IPC and aliased shared memory/capabilities, global resource
 exhaustion, and visible scheduling are explicit
 channels; this is not a binary-level or timing-sensitive confidentiality claim.
 
+The [finite scheduled observer-isolation model](docs/scheduled-observation.md)
+composes that view with the bounded scheduler and proves a
+termination-insensitive paired finite-prefix theorem with explicit public
+channels and silent-step stuttering. It remains a Lean model result, not a
+refinement claim for the boot slices or machine code.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally
