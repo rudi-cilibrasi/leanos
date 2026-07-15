@@ -40,6 +40,10 @@ fi
 rm -rf "$build"
 mkdir -p "$iso_root/boot/grub"
 
+# C generation resolves project imports through Lake's compiled module path.
+# Build them here because image jobs and clean checkouts cannot rely on a
+# previous proof-check job's workspace.
+lake build
 lake env lean --c="$build/KernelTransition.c" LeanOS/KernelTransition.lean
 lake env lean --c="$build/Syscall.c" LeanOS/Syscall.lean
 lean_prefix="$(lake env lean --print-prefix)"
