@@ -155,6 +155,13 @@ timer, and syscall vector vocabulary, proves origin-sensitive dispatch and
 whole-subject user-fault containment, and records the unproved x86 entry and
 return boundary.
 
+The [observer-relative isolation model](docs/observation-model.md) defines a
+subject's authorized view and proves scoped one-step low-equivalence and equal
+visible replies for unrelated sequential operations over disjoint actor-local
+memory. Authorized IPC and aliased shared memory/capabilities, global resource
+exhaustion, and visible scheduling are explicit
+channels; this is not a binary-level or timing-sensitive confidentiality claim.
+
 ## Verification targets
 
 These are directions, not completed features. Work should land incrementally

@@ -7,6 +7,7 @@ import LeanOS.FrameAllocator
 import LeanOS.FrameScrub
 import LeanOS.KernelTransition
 import LeanOS.MemoryLifecycle
+import LeanOS.Observation
 import LeanOS.Syscall
 import LeanOS.UserCopy
 import LeanOS.SubjectLifecycle
