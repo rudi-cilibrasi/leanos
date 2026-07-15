@@ -73,6 +73,11 @@ headlessly with `./scripts/run-image.sh`; the stable protocol, pinned reference
 tools, debug artifacts, and added trusted boundary are documented in
 [the boot-image guide](docs/boot-image.md).
 
+The first Phase 2 executable boundary boots one deliberately tiny ring-3
+subject through an `int 0x80` gate, binds its calls to kernel-selected context,
+and contains one expected user page fault. Its assumptions and evidence are
+recorded in [ADR 0003](docs/adr/0003-ring3-syscall-fault-slice.md).
+
 The first executable model is `LeanOS.KernelTransition.transition`, with
 machine-checked determinism, invariant-preservation, and rejection-stability
 theorems in
