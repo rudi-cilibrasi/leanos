@@ -10,6 +10,9 @@ Endpoint capabilities use named `send`, `receive`, `grant`, and `revoke`
 rights. Memory and address-space capabilities cannot carry IPC rights. Shared
 capability copy and revoke operations enforce kind validity and rights-subset
 attenuation, so delegation cannot introduce authority absent from its source.
+`revokeSubtree` removes an endpoint handle and every transitively delegated
+descendant while preserving independent roots. Direct slot revoke remains
+available and intentionally has no lineage semantics.
 
 ## Identity, provenance, and cleanup
 
@@ -35,6 +38,8 @@ complete destruction cleanup. Executable traces cover the successful round
 trip, full and empty mailboxes, one-way delegation, forged sender data,
 wrong-kind handles, revocation, pending-message destruction, repeated destroy,
 and stale replay.
+The adversarial endpoint trace delegates send authority through an intermediary
+and confirms both intermediary and descendant fail after subtree revocation.
 
 These are properties of the executable Lean model. There is no claim that the
 boot image implements IPC or refines this model. The ghost send history is

@@ -4,10 +4,12 @@
 This executable, sequential reference model defines authority as a capability
 in a subject's slot granting a right over an object. `copy` requires `grant`
 and a rights subset; `revoke` removes one named capability and requires
-`revoke` over the same object. Every rejection preserves the complete state.
+`revoke` over the same object. `revokeSubtree` instead follows explicit,
+bounded derivation metadata and removes one selected lineage atomically. Every
+rejection preserves the complete state.
 
-Object lifetimes, concurrency, derivation trees, recursive revocation,
-information flow, timing and covert channels are outside the model.
+Object lifetimes, concurrency, information flow, timing and covert channels
+are outside the model.
 -/
 namespace LeanOS.Capability
 
@@ -56,13 +58,23 @@ structure Capability where
   object : ObjectId
   kind : ObjectKind
   rights : Rights
+  /-- Never-reused identity within one capability state. -/
+  identity : Nat := 0
+  /-- The capability copied to create this capability; roots have no parent. -/
+  parent : Option Nat := none
   deriving DecidableEq, Repr
 
 structure State where
+  /-- First identity not yet allocated by `copy`. Root constructors allocate below it. -/
+  nextIdentity : Nat := 1
+  /-- Metadata for identities allocated by delegation. Entries are never reused. -/
+  derivations : Nat → Option (Option Nat × ObjectId × ObjectKind × Rights) := fun _ => none
   subjects : SubjectId → Bool
   objects : ObjectId → Bool
   kinds : ObjectId → Option ObjectKind
   slots : SubjectId → SlotId → Option Capability
+
+abbrev Derivation := Option Nat × ObjectId × ObjectKind × Rights
 
 def rightsValid : ObjectKind → Rights → Bool
   | .memory, rights => (!rights.send && !rights.receive) && nonemptyRights rights
@@ -82,11 +94,46 @@ def lookup (state : State) (subject : SubjectId) (slot : SlotId) : LookupOutcome
     | none => .staleSlot
   else .invalidSubject
 
-def WellFormed (state : State) : Prop :=
+def SlotsWellFormed (state : State) : Prop :=
   ∀ subject slot capability, state.slots subject slot = some capability →
     state.subjects subject = true ∧ state.objects capability.object = true ∧
       state.kinds capability.object = some capability.kind ∧
-      rightsValid capability.kind capability.rights = true
+      rightsValid capability.kind capability.rights = true ∧
+      capability.identity < state.nextIdentity ∧
+      state.derivations capability.identity =
+        some (capability.parent, capability.object, capability.kind, capability.rights) ∧
+      match capability.parent with
+      | none => True
+      | some parentIdentity => parentIdentity < capability.identity ∧
+          ∃ parentParent parentRights,
+            state.derivations parentIdentity =
+              some (parentParent, capability.object, capability.kind, parentRights) ∧
+            rightsSubset capability.rights parentRights = true
+
+/-- The append-only derivation history agrees on object and kind, attenuates
+rights at every parent edge, and orders every parent before its child. The
+strict identity order is the construction invariant ruling out cycles. -/
+def DerivationsWellFormed (state : State) : Prop :=
+  ∀ identity parent object kind rights,
+    state.derivations identity = some (parent, object, kind, rights) →
+      identity < state.nextIdentity ∧ match parent with
+      | none => True
+      | some parentIdentity => parentIdentity < identity ∧
+          ∃ parentParent parentRights,
+            state.derivations parentIdentity =
+              some (parentParent, object, kind, parentRights) ∧
+            rightsSubset rights parentRights = true
+
+/-- No two live slots can name the same capability identity. -/
+def LiveIdentitiesUnique (state : State) : Prop :=
+  ∀ subject slot capability otherSubject otherSlot otherCapability,
+    state.slots subject slot = some capability →
+    state.slots otherSubject otherSlot = some otherCapability →
+    capability.identity = otherCapability.identity →
+    subject = otherSubject ∧ slot = otherSlot
+
+def WellFormed (state : State) : Prop :=
+  SlotsWellFormed state ∧ DerivationsWellFormed state ∧ LiveIdentitiesUnique state
 
 /-- A subject has authority exactly when a slot grants the object/right pair. -/
 def HasAuthority (state : State) (subject : SubjectId) (object : ObjectId)
@@ -127,6 +174,19 @@ def install (state : State) (subject : SubjectId) (slot : SlotId)
       if candidate = subject ∧ candidateSlot = slot then some capability
       else state.slots candidate candidateSlot }
 
+/-- Allocate and record a fresh root identity while installing its capability.
+Lifecycle operations use this instead of relying on the structure default. -/
+def installRoot (state : State) (subject : SubjectId) (slot : SlotId)
+    (object : ObjectId) (kind : ObjectKind) (rights : Rights) : State :=
+  let identity := state.nextIdentity
+  install
+    { state with
+      nextIdentity := identity + 1
+      derivations := fun candidate =>
+        if candidate = identity then some (none, object, kind, rights)
+        else state.derivations candidate }
+    subject slot { object, kind, rights, identity, parent := none }
+
 def clear (state : State) (subject : SubjectId) (slot : SlotId) : State :=
   { state with slots := fun candidate candidateSlot =>
       if candidate = subject ∧ candidateSlot = slot then none
@@ -157,8 +217,17 @@ def copy (state : State) (actor : SubjectId) (source : SlotId)
       else if rightsValid capability.kind requested then
         if capability.rights.grant then
           if rightsSubset requested capability.rights then
-            { state := install state destination destinationSlot
-                { object := capability.object, kind := capability.kind, rights := requested },
+            { state := install
+                { state with
+                  nextIdentity := state.nextIdentity + 1
+                  derivations := fun identity =>
+                    if identity = state.nextIdentity then
+                      some (some capability.identity, capability.object,
+                        capability.kind, requested)
+                    else state.derivations identity }
+                destination destinationSlot
+                { identity := state.nextIdentity, parent := some capability.identity,
+                  object := capability.object, kind := capability.kind, rights := requested },
               result := .accepted }
           else reject state .rightsNotSubset
         else reject state .missingGrant
@@ -180,6 +249,117 @@ def revoke (state : State) (actor : SubjectId) (authoritySlot : SlotId)
               { state := clear state victim victimSlot, result := .accepted }
             else reject state .objectMismatch
       else reject state .missingRevoke
+
+/-- Follow at most `fuel` recorded parent edges. The explicit bound makes
+revocation total even for malformed external states. -/
+def descendsFrom (state : State) (candidate ancestor : Nat) : Nat → Bool
+  | 0 => candidate == ancestor
+  | fuel + 1 =>
+      if candidate == ancestor then true
+      else match state.derivations candidate with
+        | some (some parent, _, _, _) => descendsFrom state parent ancestor fuel
+        | _ => false
+
+def clearSubtree (state : State) (identity : Nat) : State :=
+  { state with slots := fun subject slot =>
+      match state.slots subject slot with
+      | some capability =>
+          if descendsFrom state capability.identity identity state.nextIdentity then none
+          else some capability
+      | none => none }
+
+theorem clearSubtree_slot_survives (state : State) (identity : Nat)
+    (subject : SubjectId) (slot : SlotId) (capability : Capability) :
+    (clearSubtree state identity).slots subject slot = some capability →
+      state.slots subject slot = some capability := by
+  simp only [clearSubtree]
+  split
+  · rename_i found hfound
+    split
+    · simp
+    · rename_i hsurvives
+      intro heq
+      cases heq
+      exact hfound
+  · simp
+
+theorem clearSubtree_removes_descendant (state : State) (identity : Nat)
+    (subject : SubjectId) (slot : SlotId) (capability : Capability)
+    (hslot : state.slots subject slot = some capability)
+    (hdescendant : descendsFrom state capability.identity identity state.nextIdentity = true) :
+    (clearSubtree state identity).slots subject slot = none := by
+  simp [clearSubtree, hslot, hdescendant]
+
+theorem clearSubtree_authority_subset (state : State) (identity : Nat)
+    (subject : SubjectId) (object : ObjectId) (right : Right)
+    (hauthority : HasAuthority (clearSubtree state identity) subject object right) :
+    HasAuthority state subject object right := by
+  rcases hauthority with ⟨slot, capability, hslot, hobject, hright⟩
+  have hold := clearSubtree_slot_survives state identity subject slot capability hslot
+  exact ⟨slot, capability, hold, hobject, hright⟩
+
+theorem clear_preserves_wellFormed (state : State) (subject : SubjectId)
+    (slot : SlotId) (hstate : WellFormed state) :
+    WellFormed (clear state subject slot) := by
+  rcases hstate with ⟨hslots, hhistory, hunique⟩
+  refine ⟨?_, ?_, ?_⟩
+  · intro candidate candidateSlot capability hslot
+    apply hslots candidate candidateSlot capability
+    by_cases htarget : candidate = subject ∧ candidateSlot = slot
+    · simp [clear, htarget] at hslot
+    · simpa [clear, htarget] using hslot
+  · simpa [DerivationsWellFormed, clear] using hhistory
+  · intro left leftSlot leftCap right rightSlot rightCap hleft hright hid
+    apply hunique left leftSlot leftCap right rightSlot rightCap
+    · by_cases htarget : left = subject ∧ leftSlot = slot
+      · simp [clear, htarget] at hleft
+      · simpa [clear, htarget] using hleft
+    · by_cases htarget : right = subject ∧ rightSlot = slot
+      · simp [clear, htarget] at hright
+      · simpa [clear, htarget] using hright
+    · exact hid
+
+theorem clearSubtree_preserves_wellFormed (state : State) (identity : Nat)
+    (hstate : WellFormed state) : WellFormed (clearSubtree state identity) := by
+  rcases hstate with ⟨hslots, hhistory, hunique⟩
+  refine ⟨?_, ?_, ?_⟩
+  · intro subject slot capability hslot
+    exact hslots subject slot capability
+      (clearSubtree_slot_survives state identity subject slot capability hslot)
+  · simpa [DerivationsWellFormed, clearSubtree] using hhistory
+  · intro left leftSlot leftCap right rightSlot rightCap hleft hright hid
+    exact hunique left leftSlot leftCap right rightSlot rightCap
+      (clearSubtree_slot_survives state identity left leftSlot leftCap hleft)
+      (clearSubtree_slot_survives state identity right rightSlot rightCap hright) hid
+
+/-- Atomically remove the selected capability and every recorded descendant.
+The authority and selected root are resolved before mutation, so every denial
+preserves the complete state. -/
+def revokeSubtree (state : State) (actor : SubjectId) (authoritySlot : SlotId)
+    (victim : SubjectId) (victimSlot : SlotId) : Outcome :=
+  match lookup state actor authoritySlot with
+  | .invalidSubject => reject state .invalidSubject
+  | .staleSlot => reject state .staleSlot
+  | .found authority =>
+      if authority.rights.revoke then
+        match lookup state victim victimSlot with
+        | .invalidSubject => reject state .invalidSubject
+        | .staleSlot => reject state .staleSlot
+        | .found target =>
+            if authority.object = target.object && authority.kind = target.kind then
+              { state := clearSubtree state target.identity, result := .accepted }
+            else reject state .objectMismatch
+      else reject state .missingRevoke
+
+theorem revokeSubtree_preserves_registry (state : State) actor authoritySlot victim victimSlot :
+    let next := (revokeSubtree state actor authoritySlot victim victimSlot).state
+    next.subjects = state.subjects ∧ next.objects = state.objects ∧
+      next.kinds = state.kinds := by
+  simp only [revokeSubtree]
+  split <;> try exact ⟨rfl, rfl, rfl⟩
+  split <;> try exact ⟨rfl, rfl, rfl⟩
+  split <;> try exact ⟨rfl, rfl, rfl⟩
+  split <;> try exact ⟨rfl, rfl, rfl⟩
 
 theorem clear_authority_subset (state : State) (subject : SubjectId) (slot : SlotId)
     (candidate : SubjectId) (object : ObjectId) (right : Right)
@@ -227,21 +407,93 @@ theorem copy_preserves_wellFormed (state : State) (actor : SubjectId)
     next hnonempty =>
       split <;> try simp_all
       split
-      · intro subject slot found hslot
-        by_cases htarget : subject = destination ∧ slot = destinationSlot
-        · have hdestination : state.subjects destination = true := by simp_all
-          rcases htarget with ⟨rfl, rfl⟩
-          have hfound : found =
-              ({ object := capability.object, kind := capability.kind, rights := requested } : Capability) := by
-            symm
-            simpa [install] using hslot
-          subst found
-          have hsource := lookup_found_slot state actor source capability hlookup
-          have hvalid := hstate actor source capability hsource
-          exact ⟨by simpa [install] using hdestination,
-            hvalid.2.1, hvalid.2.2.1, by simpa using hnonempty⟩
-        · exact hstate subject slot found (by simpa [install, htarget] using hslot)
-      · try simp_all
+      · rcases hstate with ⟨hslots, hhistory, hunique⟩
+        have hsource := lookup_found_slot state actor source capability hlookup
+        have hsourceValid := hslots actor source capability hsource
+        refine ⟨?_, ?_, ?_⟩
+        · intro subject slot found hslot
+          by_cases htarget : subject = destination ∧ slot = destinationSlot
+          · rcases htarget with ⟨rfl, rfl⟩
+            have hfound : found =
+                ({ identity := state.nextIdentity, parent := some capability.identity,
+                   object := capability.object, kind := capability.kind,
+                   rights := requested } : Capability) := by
+              symm
+              simpa [install] using hslot
+            subst found
+            refine ⟨by simpa [install] using ‹state.subjects subject = true›,
+              hsourceValid.2.1, hsourceValid.2.2.1, by simpa using hnonempty,
+              Nat.lt_succ_self _, ?_, ?_⟩
+            · simp [install]
+            · refine ⟨hsourceValid.2.2.2.2.1, ?_⟩
+              exact ⟨capability.parent, capability.rights,
+                by simpa [install, Nat.ne_of_lt hsourceValid.2.2.2.2.1] using
+                  hsourceValid.2.2.2.2.2.1,
+                by simpa using ‹rightsSubset requested capability.rights = true›⟩
+          · have hold := hslots subject slot found (by simpa [install, htarget] using hslot)
+            rcases hold with ⟨hsubject, hobject, hkind, hrights, hid, hentry, hedge⟩
+            refine ⟨by simpa [install] using hsubject, hobject, hkind, hrights,
+              Nat.lt_succ_of_lt hid, ?_, ?_⟩
+            · simp [install, Nat.ne_of_lt hid]
+              exact hentry
+            · cases hparentEq : found.parent <;> simp only [hparentEq] at hedge ⊢
+              rename_i parentIdentity
+              rcases hedge with ⟨hparent, parentParent, parentRights, hpentry, hsubset⟩
+              refine ⟨hparent, parentParent, parentRights, ?_, hsubset⟩
+              simp [install, Nat.ne_of_lt (Nat.lt_trans hparent hid)]
+              exact hpentry
+        · intro identity parent object kind rights hentry
+          by_cases hnew : identity = state.nextIdentity
+          · subst identity
+            simp [install] at hentry
+            rcases hentry with ⟨rfl, rfl, rfl, rfl⟩
+            refine ⟨Nat.lt_succ_self _, hsourceValid.2.2.2.2.1,
+              capability.parent, capability.rights, ?_,
+              by simpa using ‹rightsSubset requested capability.rights = true›⟩
+            simp [install, Nat.ne_of_lt hsourceValid.2.2.2.2.1]
+            exact hsourceValid.2.2.2.2.2.1
+          · have hold := hhistory identity parent object kind rights (by
+                simpa [install, hnew] using hentry)
+            refine ⟨Nat.lt_succ_of_lt hold.1, ?_⟩
+            cases parent with
+            | none => trivial
+            | some parentIdentity =>
+                rcases hold.2 with ⟨hparent, parentParent, parentRights, hpentry, hsubset⟩
+                refine ⟨hparent, parentParent, parentRights, ?_, hsubset⟩
+                simp [install, Nat.ne_of_lt (Nat.lt_trans hparent hold.1)]
+                exact hpentry
+        · intro left leftSlot leftCap right rightSlot rightCap hleft hright hid
+          by_cases hleftTarget : left = destination ∧ leftSlot = destinationSlot
+          · by_cases hrightTarget : right = destination ∧ rightSlot = destinationSlot
+            · exact ⟨hleftTarget.1.trans hrightTarget.1.symm,
+                hleftTarget.2.trans hrightTarget.2.symm⟩
+            · rcases hleftTarget with ⟨rfl, rfl⟩
+              have hleftCap : leftCap =
+                  (⟨capability.object, capability.kind, requested,
+                    state.nextIdentity, some capability.identity⟩ : Capability) := by
+                symm; simpa [install] using hleft
+              subst leftCap
+              have hrightOld := hslots right rightSlot rightCap
+                (by simpa [install, hrightTarget] using hright)
+              have heq : state.nextIdentity = rightCap.identity := by simpa using hid
+              have hlt := hrightOld.2.2.2.2.1
+              omega
+          · by_cases hrightTarget : right = destination ∧ rightSlot = destinationSlot
+            · rcases hrightTarget with ⟨rfl, rfl⟩
+              have hrightCap : rightCap =
+                  (⟨capability.object, capability.kind, requested,
+                    state.nextIdentity, some capability.identity⟩ : Capability) := by
+                symm; simpa [install] using hright
+              subst rightCap
+              have hleftOld := hslots left leftSlot leftCap
+                (by simpa [install, hleftTarget] using hleft)
+              have heq : leftCap.identity = state.nextIdentity := by simpa using hid
+              have hlt := hleftOld.2.2.2.2.1
+              omega
+            · exact hunique left leftSlot leftCap right rightSlot rightCap
+                (by simpa [install, hleftTarget] using hleft)
+                (by simpa [install, hrightTarget] using hright) hid
+      · simpa [reject] using hstate
 
 theorem revoke_preserves_wellFormed (state : State) (actor : SubjectId)
     (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
@@ -254,10 +506,20 @@ theorem revoke_preserves_wellFormed (state : State) (actor : SubjectId)
     split <;> try simp_all
     next target hvictim =>
       split <;> try simp_all
-      intro subject slot capability hslot
-      by_cases htarget : subject = victim ∧ slot = victimSlot
-      · simp [clear, htarget] at hslot
-      · exact hstate subject slot capability (by simpa [clear, htarget] using hslot)
+      exact clear_preserves_wellFormed state victim victimSlot hstate
+
+theorem revokeSubtree_preserves_wellFormed (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
+    (hstate : WellFormed state) :
+    WellFormed (revokeSubtree state actor authoritySlot victim victimSlot).state := by
+  simp only [revokeSubtree]
+  split <;> try simp_all [reject]
+  next authority =>
+    split <;> try simp_all
+    split <;> try simp_all
+    next target hvictim =>
+      split <;> try simp_all
+      exact clearSubtree_preserves_wellFormed state target.identity hstate
 
 /-- Copy cannot create a right without pre-state authority provenance. -/
 theorem copy_no_authority_amplification (state : State) (actor : SubjectId)
@@ -276,14 +538,25 @@ theorem copy_no_authority_amplification (state : State) (actor : SubjectId)
     split at hauthority <;> try simp_all
     split at hauthority <;> try simp_all
     split at hauthority
-    · apply install_no_authority_amplification state actor destination destinationSlot
-        { object := capability.object, kind := capability.kind, rights := requested }
+    · have h := install_no_authority_amplification
+        { state with nextIdentity := state.nextIdentity + 1 }
+        actor destination destinationSlot
+        { identity := state.nextIdentity, parent := some capability.identity,
+          object := capability.object, kind := capability.kind, rights := requested }
         capability.rights
         (by simpa using ‹rightsSubset requested capability.rights = true›)
-      · intro granted hgranted
-        have hslot := lookup_found_slot state actor source capability hlookup
-        exact ⟨source, capability, hslot, rfl, hgranted⟩
-      · exact hauthority
+        (by
+          intro granted hgranted
+          have hslot := lookup_found_slot state actor source capability hlookup
+          exact ⟨source, capability, hslot, rfl, hgranted⟩)
+        candidate object right hauthority
+      rcases h with h | h
+      · left
+        rcases h with ⟨slot, cap, hslot, rest⟩
+        exact ⟨slot, cap, hslot, rest⟩
+      · right
+        rcases h with ⟨slot, cap, hslot, rest⟩
+        exact ⟨slot, cap, hslot, rest⟩
     · try simp_all
 
 theorem revoke_no_authority_amplification (state : State) (actor : SubjectId)
@@ -329,6 +602,35 @@ theorem revoke_rejected_unchanged (state : State) (actor : SubjectId)
     split <;> try simp_all
     split <;> try simp_all
     next target => split <;> try simp_all
+
+theorem revokeSubtree_rejected_unchanged (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
+    (reason : Denial)
+    (hrejected : (revokeSubtree state actor authoritySlot victim victimSlot).result =
+      .rejected reason) :
+    (revokeSubtree state actor authoritySlot victim victimSlot).state = state := by
+  simp only [revokeSubtree] at hrejected ⊢
+  split <;> try simp_all [reject]
+  next authority =>
+    split <;> try simp_all
+    split <;> try simp_all
+    next target => split <;> try simp_all
+
+theorem revokeSubtree_no_authority_amplification (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
+    (candidate : SubjectId) (object : ObjectId) (right : Right)
+    (hauthority : HasAuthority
+      (revokeSubtree state actor authoritySlot victim victimSlot).state
+      candidate object right) : HasAuthority state candidate object right := by
+  simp only [revokeSubtree] at hauthority
+  split at hauthority <;> try simp_all [reject]
+  next authority =>
+    split at hauthority <;> try simp_all
+    split at hauthority <;> try simp_all
+    next target hvictim =>
+      split at hauthority
+      · exact clearSubtree_authority_subset state target.identity candidate object right hauthority
+      · simp_all
 
 private def exampleSubjects : SubjectId → Bool := fun subject => subject < 2
 private def exampleObjects : ObjectId → Bool := fun object => object = 7
@@ -393,8 +695,74 @@ example : lookup
     (revoke (copy exampleState 0 0 1 0 readOnly).state 0 0 1 0).state 1 0 =
     .staleSlot := by decide
 
+private def lineageSubjects : SubjectId → Bool := fun subject => subject < 5
+private def lineageRoot : Capability :=
+  { identity := 1, object := 7, kind := .memory, rights := allRights }
+private def lineageState : State :=
+  { nextIdentity := 2
+    derivations := fun identity =>
+      if identity = 1 then some (none, 7, .memory, allRights) else none
+    subjects := lineageSubjects
+    objects := exampleObjects
+    kinds := exampleKinds
+    slots := fun subject slot =>
+      if subject = 0 ∧ slot = 0 then some lineageRoot else none }
+private def lineageA := (copy lineageState 0 0 1 0 allRights).state
+private def lineageB := (copy lineageA 1 0 2 0 allRights).state
+private def lineageC := (copy lineageB 2 0 3 0 readOnly).state
+
+/-- Direct slot deletion is deliberately not transitive: this executable
+counterexample keeps both descendants live after deleting their parent. -/
+example :
+    lookup (revoke lineageC 0 0 1 0).state 1 0 = .staleSlot ∧
+    lookup (revoke lineageC 0 0 1 0).state 2 0 = .found
+      { identity := 3, parent := some 2, object := 7, kind := .memory, rights := allRights } ∧
+    lookup (revoke lineageC 0 0 1 0).state 3 0 = .found
+      { identity := 4, parent := some 3, object := 7, kind := .memory, rights := readOnly } := by
+  decide
+
+/-- Subtree revocation closes the `root → A → B → C` delegation escape. -/
+example :
+    (revokeSubtree lineageC 0 0 1 0).result = .accepted ∧
+    lookup (revokeSubtree lineageC 0 0 1 0).state 1 0 = .staleSlot ∧
+    lookup (revokeSubtree lineageC 0 0 1 0).state 2 0 = .staleSlot ∧
+    lookup (revokeSubtree lineageC 0 0 1 0).state 3 0 = .staleSlot ∧
+    lookup (revokeSubtree lineageC 0 0 1 0).state 0 0 = .found lineageRoot := by
+  decide
+
+/-- Repeating a revocation through the stale victim slot is rejected without mutation. -/
+example :
+    let revoked := (revokeSubtree lineageC 0 0 1 0).state
+    (revokeSubtree revoked 0 0 1 0).result = .rejected .staleSlot ∧
+      (revokeSubtree revoked 0 0 1 0).state = revoked := by
+  dsimp only
+  have hrejected :
+      (revokeSubtree (revokeSubtree lineageC 0 0 1 0).state 0 0 1 0).result =
+        .rejected .staleSlot := by decide
+  exact ⟨hrejected, revokeSubtree_rejected_unchanged _ 0 0 1 0 .staleSlot hrejected⟩
+
+/-- Reusing the cleared slot allocates a fresh identity; stale lineage identity
+cannot capture the new capability. -/
+private def reusedLineageSlot :=
+  copy (revokeSubtree lineageC 0 0 1 0).state 0 0 1 0 readOnly
+example : reusedLineageSlot.result = .accepted := by decide
+example : lookup reusedLineageSlot.state 1 0 = .found
+    { identity := 5, parent := some 1, object := 7, kind := .memory, rights := readOnly } := by
+  decide
+
+/-- Revocation is lineage-selective even when two roots name the same object. -/
+private def twoRootState : State :=
+  installRoot lineageState 4 0 7 .memory allRights
+private def twoRootA := (copy twoRootState 0 0 1 0 allRights).state
+private def twoRootRevoked := (revokeSubtree twoRootA 4 0 1 0).state
+example : lookup twoRootRevoked 1 0 = .staleSlot ∧
+    lookup twoRootRevoked 4 0 = .found
+      { identity := 2, parent := none, object := 7, kind := .memory, rights := allRights } := by
+  decide
+
 private def addressRights : Rights := { grant := true, revoke := true }
-private def addressCapability : Capability := Capability.mk 9 .addressSpace addressRights
+private def addressCapability : Capability :=
+  { object := 9, kind := .addressSpace, rights := addressRights }
 private def addressState : State :=
   { subjects := exampleSubjects
     objects := fun object => object = 9

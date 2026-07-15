@@ -159,9 +159,9 @@ def createAddressSpace (state : State) (addressSpace : AddressSpaceId)
     reject state .identifierAlreadyIssued
   else if state.memory.capabilities.objects addressSpace then reject state .identifierLive
   else
-    let capabilities := Capability.install
+    let capabilities := Capability.installRoot
       (activateAddressSpace state.memory.capabilities addressSpace) subject slot
-      { object := addressSpace, kind := .addressSpace, rights := addressSpaceRootRights }
+      addressSpace .addressSpace addressSpaceRootRights
     { state := clearAddressSpaceMappings
         { state with
           memory := { state.memory with
@@ -566,7 +566,8 @@ theorem created_fresh_empty_root (state : State) addressSpace subject slot
       (createAddressSpace state addressSpace subject slot).state.memory.issued addressSpace = true ∧
       (createAddressSpace state addressSpace subject slot).state.owner addressSpace = some subject ∧
       (createAddressSpace state addressSpace subject slot).state.memory.capabilities.slots subject slot =
-        some { object := addressSpace, kind := .addressSpace, rights := addressSpaceRootRights } ∧
+        some (⟨addressSpace, .addressSpace, addressSpaceRootRights,
+          state.memory.capabilities.nextIdentity, none⟩ : Capability.Capability) ∧
       ∀ page, (createAddressSpace state addressSpace subject slot).state.mappings
         addressSpace page = none := by
   simp only [createAddressSpace] at h ⊢
@@ -580,7 +581,7 @@ theorem created_fresh_empty_root (state : State) addressSpace subject slot
     split at h <;> try contradiction
     rcases hboth with ⟨haddress, hglobal⟩
     simp_all [createAddressSpace, clearAddressSpaceMappings, setOwner, setIssuedAddressSpace,
-      MemoryLifecycle.setIssued, Capability.install, haddress, hglobal,
+      MemoryLifecycle.setIssued, Capability.installRoot, Capability.install, haddress, hglobal,
       activateAddressSpace, MemoryLifecycle.setObject]
 
 /-- Destruction retires the object, every capability naming it, its owner, and
@@ -678,7 +679,8 @@ private def caps : Capability.State :=
     kinds := fun object => if object = 10 then some .memory else none
     slots := fun subject slot =>
       if subject = 0 ∧ slot = 0 then
-        some (Capability.Capability.mk 10 .memory Capability.allRights)
+        some ({ object := 10, kind := .memory, rights := Capability.allRights } :
+          Capability.Capability)
       else none }
 private def allocator : FrameAllocator.State :=
   { frames := [4], status := fun frame => if frame = 4 then .owned 10 else .reserved }
@@ -693,7 +695,8 @@ private def readOnly := (map initial 0 0 5 7 { read := true }).state
 private def readRights : Capability.Rights := { read := true }
 private def readSlots (subject : SubjectId) (slot : SlotId) : Option Capability.Capability :=
   if subject = 0 ∧ slot = 0 then
-    some (Capability.Capability.mk 10 .memory readRights)
+    some ({ object := 10, kind := .memory, rights := readRights } :
+      Capability.Capability)
   else none
 private def readCapMemory : MemoryLifecycle.State :=
   { memory with capabilities :=
@@ -719,9 +722,11 @@ private def twoObjectCaps : Capability.State :=
     kinds := fun object => if object = 10 || object = 11 then some .memory else none
     slots := fun subject slot =>
       if subject = 0 ∧ slot = 0 then
-        some (Capability.Capability.mk 10 .memory Capability.allRights)
+        some ({ object := 10, kind := .memory, rights := Capability.allRights } :
+          Capability.Capability)
       else if subject = 1 ∧ slot = 0 then
-        some (Capability.Capability.mk 11 .memory Capability.allRights)
+        some ({ object := 11, kind := .memory, rights := Capability.allRights } :
+          Capability.Capability)
       else none }
 private def twoObjectMemory : MemoryLifecycle.State :=
   { capabilities := twoObjectCaps
