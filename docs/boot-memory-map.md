@@ -32,6 +32,9 @@ classified as reserved rather than usable. The classifier walks frame numbers
 in ascending order, deduplicates by
 construction, and merges adjacent equal classifications, yielding deterministic
 nonzero, page-aligned, sorted, disjoint `FrameAllocator.Region` values.
+`normalize_functional` proves functional uniqueness for a fixed handoff. The
+executable reversed-input example checks order independence for the adversarial
+overlap sample; a general permutation theorem is not claimed here.
 
 `accepted_usable_sound` states the central executable predicate: every frame in
 an emitted usable region has complete usable coverage and no overlap with any

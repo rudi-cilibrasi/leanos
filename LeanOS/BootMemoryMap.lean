@@ -84,6 +84,8 @@ def extractMemoryMap : List Tag → Except Error (List RawEntry)
           if rest.any (fun tag => match tag with | .memoryMap .. => true | _ => false)
           then .error .duplicateMemoryMap
           else if rest.getLast? != some (.end 8) then .error .missingEndTag
+          else if rest.dropLast.any (fun tag => match tag with | .end _ => true | _ => false)
+          then .error .misplacedEndTag
           else .ok entries
   | _ :: rest => extractMemoryMap rest
 
@@ -180,7 +182,7 @@ def normalize (handoff : Handoff) : Except Error Normalized := do
     else throw .normalizationInvariant
   else throw .normalizationInvariant
 
-theorem normalize_deterministic handoff first second
+theorem normalize_functional handoff first second
     (hfirst : normalize handoff = first) (hsecond : normalize handoff = second) : first = second := by
   rw [hfirst] at hsecond
   exact hsecond
@@ -283,6 +285,10 @@ example : (normalize { (mkHandoff sample) with tags :=
 example : (normalize { { (mkHandoff sample) with totalSize := 24 } with
     tags := [.memoryMap 15 memoryMapEntrySize 0 [], .end 8] }).isOk = false := by native_decide
 example : (normalize { (mkHandoff sample) with infoAddress := wordLimit }).isOk = false := by
+  native_decide
+example : (normalize { (mkHandoff sample) with
+    totalSize := (mkHandoff sample).totalSize + 16,
+    tags := (mkHandoff sample).tags.dropLast ++ [.end 8, .ignored 8, .end 8] }).isOk = false := by
   native_decide
 
 def tooMany : List RawEntry :=
