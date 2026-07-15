@@ -11,6 +11,9 @@ fail() { echo "security-claim index error: $*" >&2; exit 1; }
 
 rows="$(sed -n '/claim-index:start/,/claim-index:end/p' "$index" | grep '^| SC-' || true)"
 [[ -n "$rows" ]] || fail "no claim entries"
+lean_checks="$(mktemp --suffix=.lean)"
+trap 'rm -f "$lean_checks"' EXIT
+printf 'import LeanOS.SecurityClaims\n' >"$lean_checks"
 
 ids="$(printf '%s\n' "$rows" | awk -F'|' '{gsub(/^ +| +$/, "", $2); print $2}')"
 duplicate="$(printf '%s\n' "$ids" | sort | uniq -d | head -1)"
@@ -24,12 +27,29 @@ while IFS='|' read -r _ id declaration source model assumptions evidence exclusi
   done
   decl="$(printf '%s' "$declaration" | tr -d '` ' )"
   case "$evidence" in
-    *Proved*) grep -Eq "^theorem ${decl}([[:space:]]|$)" "$contract" ||
-      fail "$id names unknown contract theorem: $decl" ;;
+    *Proved*)
+      [[ "$decl" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
+        fail "$id has invalid contract theorem name: $decl"
+      printf '#check LeanOS.SecurityClaims.%s\n' "$decl" >>"$lean_checks"
+      ;;
     *Tested*) [[ "$evidence" == *scripts/* ]] || fail "$id Tested evidence lacks repository script" ;;
     *) fail "$id has unknown evidence classification: $evidence" ;;
   esac
 done <<< "$rows"
+
+lean_log="$(mktemp)"
+if ! (cd "$root" && lake env lean "$lean_checks") >"$lean_log" 2>&1; then
+  unknown="$(sed -n 's/.*Unknown identifier `LeanOS.SecurityClaims\.\([^`]*\)`.*/\1/p' \
+    "$lean_log" | head -1)"
+  if [[ -n "$unknown" ]]; then
+    rm -f "$lean_log"
+    fail "index names unknown contract theorem: $unknown"
+  fi
+  cat "$lean_log" >&2
+  rm -f "$lean_log"
+  fail "Lean could not validate contract theorem declarations"
+fi
+rm -f "$lean_log"
 
 if [[ "$require_complete_index" == 1 ]]; then
   while IFS='|' read -r contract_id contract_decl; do
@@ -79,7 +99,7 @@ if [[ "${LEANOS_CLAIM_INDEX_SELF_TEST:-1}" == 1 ]]; then
 Duplicate.md|duplicate ID: SC-DUPLICATE
 UnknownTheorem.md|names unknown contract theorem: theorem_that_does_not_exist
 MissingEvidence.md|SC-MISSING-EVIDENCE has missing evidence
-ScriptAsProof.md|names unknown contract theorem: scripts/check.sh
+ScriptAsProof.md|has invalid contract theorem name: scripts/check.sh
 EOF
 
   missing_row_log="$(mktemp)"

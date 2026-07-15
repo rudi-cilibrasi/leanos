@@ -96,6 +96,49 @@ theorem initial_transition_witness :
       (KernelTransition.transition KernelTransition.initialState .initialize).result = .accepted := by
   exact ⟨KernelTransition.initialState_wellFormed, rfl⟩
 
+/-- Concrete non-vacuity witness for the page-table separation contract: the encoder materializes
+two leaves for the same page in distinct address spaces and their walks differ. -/
+private def pageTableSeparationState : VirtualMapping.State :=
+  { memory :=
+      { capabilities :=
+          { subjects := fun _ => true
+            objects := fun object => object = 10 || object = 11
+            kinds := fun object =>
+              if object = 10 || object = 11 then some .memory else none
+            slots := fun _ _ => none }
+        allocator :=
+          { frames := [4, 5]
+            status := fun frame => if frame = 4 then .owned 10
+              else if frame = 5 then .owned 11 else .reserved }
+        binding := fun object => if object = 10 then some 4
+          else if object = 11 then some 5 else none
+        issued := fun object => object = 10 || object = 11 }
+    owner := fun addressSpace => if addressSpace = 1 then some 1
+      else if addressSpace = 2 then some 2 else none
+    mappings := fun addressSpace page =>
+      if page != 7 then none
+      else if addressSpace = 1 then
+        some { object := 10, permissions := { read := true } }
+      else if addressSpace = 2 then
+        some { object := 11, permissions := { read := true } }
+      else none
+    issuedAddressSpace := fun addressSpace => addressSpace = 1 || addressSpace = 2 }
+
+theorem page_table_separation_witness :
+    (X86PageTable.encode pageTableSeparationState 1).leaf 7 =
+        some (X86PageTable.Leaf.mk 4 true false true true true) ∧
+      (X86PageTable.encode pageTableSeparationState 2).leaf 7 =
+        some (X86PageTable.Leaf.mk 5 true false true true true) ∧
+      X86PageTable.walk (X86PageTable.encode pageTableSeparationState 1) 7 .read = .ok 4 ∧
+      X86PageTable.walk (X86PageTable.encode pageTableSeparationState 2) 7 .read = .ok 5 ∧
+      X86PageTable.walk (X86PageTable.encode pageTableSeparationState 1) 7 .read ≠
+        X86PageTable.walk (X86PageTable.encode pageTableSeparationState 2) 7 .read := by
+  refine ⟨by native_decide, by native_decide, by rfl, by rfl, ?_⟩
+  simp [pageTableSeparationState, X86PageTable.walk, X86PageTable.encode,
+    X86PageTable.encodedLeaf, X86PageTable.userAncestor, X86PageTable.canonicalPage,
+    X86PageTable.lowerCanonicalPages, X86PageTable.representableFrame,
+    X86PageTable.physicalFrameLimit]
+
 /-- Adversarial executable check: an unsupported command cannot be accepted. -/
 example : (KernelTransition.transition KernelTransition.initialState .unsupported).result =
     .rejected := by decide
