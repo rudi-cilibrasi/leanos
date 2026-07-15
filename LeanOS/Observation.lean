@@ -25,11 +25,6 @@ abbrev SlotId := Capability.SlotId
 abbrev Page := VirtualMapping.VirtualPage
 abbrev Address := Nat
 
-inductive Reply where
-  | none | accepted | rejected (code : Nat) | access (allowed : Bool)
-  | allocated (token : Nat) | exhausted | ipcFull | ipcEmpty
-  deriving BEq, DecidableEq, Repr
-
 structure Delivery where
   /-- Observer-local endpoint handle, not a raw kernel object identifier. -/
   handle : SlotId
@@ -38,10 +33,19 @@ structure Delivery where
   word1 : UInt64
   deriving BEq, DecidableEq, Repr
 
+inductive Reply where
+  | none | accepted | rejected (code : Nat) | access (allowed : Bool)
+  | allocated (token : Nat) | exhausted | ipcFull | ipcEmpty
+  | ipcDelivered (delivery : Delivery)
+  deriving BEq, DecidableEq, Repr
+
 structure State where
   live : SubjectId -> Bool
   held : SubjectId -> SlotId -> Option Capability.Rights
+  /-- Bytes in the actor-local, non-aliased region covered by the theorem. -/
   authorizedBytes : SubjectId -> Address -> UInt8
+  /-- Explicitly shared bytes, visible to every authorized participant here. -/
+  sharedBytes : Address -> UInt8
   ownedMappings : SubjectId -> Page -> Option VirtualMapping.Permissions
   reply : SubjectId -> Reply
   deliveries : SubjectId -> List Delivery
@@ -56,6 +60,7 @@ structure View where
   live : Bool
   held : SlotId -> Option Capability.Rights
   authorizedBytes : Address -> UInt8
+  sharedBytes : Address -> UInt8
   ownedMappings : Page -> Option VirtualMapping.Permissions
   reply : Reply
   deliveries : List Delivery
@@ -66,6 +71,7 @@ theorem View.ext {left right : View}
     (hlive : left.live = right.live)
     (hheld : left.held = right.held)
     (hbytes : left.authorizedBytes = right.authorizedBytes)
+    (hsharedBytes : left.sharedBytes = right.sharedBytes)
     (hmappings : left.ownedMappings = right.ownedMappings)
     (hreply : left.reply = right.reply)
     (hdeliveries : left.deliveries = right.deliveries)
@@ -79,6 +85,7 @@ def observe (observer : SubjectId) (state : State) : View :=
   { live := state.live observer
     held := state.held observer
     authorizedBytes := state.authorizedBytes observer
+    sharedBytes := state.sharedBytes
     ownedMappings := state.ownedMappings observer
     reply := state.reply observer
     deliveries := state.deliveries observer
@@ -98,6 +105,7 @@ def set2 (values : Nat -> Nat -> α) (first second : Nat) (value : α) : Nat -> 
 
 inductive Step where
   | privateWrite (actor : SubjectId) (address : Address) (value : UInt8)
+  | sharedWrite (actor : SubjectId) (address : Address) (value : UInt8)
   | map (actor : SubjectId) (page : Page) (permissions : VirtualMapping.Permissions)
   | unmap (actor : SubjectId) (page : Page)
   | access (actor : SubjectId) (allowed : Bool)
@@ -119,6 +127,8 @@ def writeBytes (bytes : Address -> UInt8) (address : Address) :
 def transition (state : State) : Step -> State
   | .privateWrite actor address value =>
       { state with authorizedBytes := set2 state.authorizedBytes actor address value }
+  | .sharedWrite _ address value =>
+      { state with sharedBytes := set1 state.sharedBytes address value }
   | .map actor page permissions =>
       { state with
         ownedMappings := set2 state.ownedMappings actor page (some permissions)
@@ -153,10 +163,12 @@ def transition (state : State) : Step -> State
           else state.deliveries
         reply := set1 state.reply actor (if empty then .accepted else .ipcFull) }
   | .receive actor =>
-      let queued := state.deliveries actor
-      { state with
-        deliveries := set1 state.deliveries actor queued.tail
-        reply := set1 state.reply actor (if queued.isEmpty then .ipcEmpty else .accepted) }
+      match state.deliveries actor with
+      | [] => { state with reply := set1 state.reply actor .ipcEmpty }
+      | delivery :: remaining =>
+          { state with
+            deliveries := set1 state.deliveries actor remaining
+            reply := set1 state.reply actor (.ipcDelivered delivery) }
   | .allocate actor =>
       if state.resourcesRemaining = 0 then
         { state with reply := set1 state.reply actor .exhausted }
@@ -175,7 +187,7 @@ def SilentFor (observer : SubjectId) : Step -> Prop
   | .delegate _ recipient _ _ => observer != recipient
   | .revoke _ victim _ => observer != victim
   | .send actor recipient _ _ _ => observer != actor ∧ observer != recipient
-  | .allocate _ | .schedule _ => False
+  | .sharedWrite _ _ _ | .allocate _ | .schedule _ => False
 
 theorem silent_observe_unchanged (observer : SubjectId) (state : State) (step : Step)
     (hsilent : SilentFor observer step) :
@@ -208,6 +220,7 @@ private def emptyState (secret : SubjectId -> Nat) (resources : Nat) : State :=
   { live := fun subject => subject < 2
     held := fun _ _ => none
     authorizedBytes := fun _ _ => 0
+    sharedBytes := fun _ => 0
     ownedMappings := fun _ _ => none
     reply := fun _ => .none
     deliveries := fun _ => []
@@ -244,6 +257,14 @@ example : LowEquiv 0 (transition leftSecret (.send 1 1 2 0x41 0x42))
     (transition rightSecret (.send 1 1 2 0x41 0x42)) := by rfl
 example : LowEquiv 0 (transition leftSecret (.receive 1))
     (transition rightSecret (.receive 1)) := by rfl
+example :
+    let delivery : Delivery := { handle := 2, sender := 1, word0 := 0x41, word1 := 0x42 }
+    let left := { leftSecret with deliveries := set1 leftSecret.deliveries 0 [delivery] }
+    let right := { rightSecret with deliveries := set1 rightSecret.deliveries 0 [delivery] }
+    (transition left (.receive 0)).reply 0 =
+      .ipcDelivered delivery ∧
+    (transition left (.receive 0)).reply 0 = (transition right (.receive 0)).reply 0 := by
+  simp [transition, set1]
 
 -- Deliberate declared channels permit an observer-visible difference.
 example : ¬ LowEquiv 0 leftSecret
@@ -256,6 +277,12 @@ example : ¬ LowEquiv 0 leftSecret
   intro h
   have hdeliveries := congrArg View.deliveries h
   simp [LowEquiv, observe, transition, set1, leftSecret, rightSecret, emptyState] at hdeliveries
+-- Shared/aliased memory is an explicit channel, not a silent private write.
+example : ¬ LowEquiv 0 leftSecret
+    (transition rightSecret (.sharedWrite 1 4 0xaa)) := by
+  intro h
+  have hbytes := congrArg (fun view => view.sharedBytes 4) h
+  simp [LowEquiv, observe, transition, set1, leftSecret, rightSecret, emptyState] at hbytes
 example : ¬ LowEquiv 0
     (transition { leftSecret with deliveries :=
       (set1 leftSecret.deliveries 1

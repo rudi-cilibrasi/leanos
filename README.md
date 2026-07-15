@@ -157,8 +157,9 @@ return boundary.
 
 The [observer-relative isolation model](docs/observation-model.md) defines a
 subject's authorized view and proves scoped one-step low-equivalence and equal
-visible replies for unrelated sequential operations. Authorized IPC and shared
-capabilities, global resource exhaustion, and visible scheduling are explicit
+visible replies for unrelated sequential operations over disjoint actor-local
+memory. Authorized IPC and aliased shared memory/capabilities, global resource
+exhaustion, and visible scheduling are explicit
 channels; this is not a binary-level or timing-sensitive confidentiality claim.
 
 ## Verification targets
