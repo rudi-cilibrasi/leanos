@@ -3,6 +3,7 @@ ENTRY(multiboot_entry)
 SECTIONS
 {
   . = 1M;
+  __boot_image_start = .;
   .multiboot : { KEEP(*(.multiboot)) }
   __kernel_text_start = .;
   .text : ALIGN(4K) { *(.text.boot) *(.text .text.*) }
@@ -26,5 +27,7 @@ SECTIONS
   __user_b_stack_start = .;
   .user_b_bss : { *(.user.b.bss) }
   __user_b_stack_end = .;
+  . = ALIGN(4K);
+  __boot_image_end = .;
   /DISCARD/ : { *(.comment) *(.eh_frame) *(.note*) }
 }
