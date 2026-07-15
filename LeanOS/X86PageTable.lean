@@ -50,7 +50,25 @@ inductive UserAccess where | read | write | execute
 
 inductive WalkError where
   | nonCanonical | notPresent | supervisor | notWritable | noExecute
-  | reservedBits | frameOutOfRange
+  | smep | smap | reservedBits | frameOutOfRange
+  deriving BEq, DecidableEq, Repr
+
+inductive Privilege where | supervisor | user
+  deriving BEq, DecidableEq, Repr
+
+inductive AccessKind where | read | write | execute
+  deriving BEq, DecidableEq, Repr
+
+/-- Exactly the control state used by the LeanOS paging policy. `ac` is only
+an SMAP override; it has no effect on user accesses or instruction fetches. -/
+structure AccessContext where
+  privilege : Privilege
+  kind : AccessKind
+  writeProtect : Bool
+  nxEnable : Bool
+  smep : Bool
+  smap : Bool
+  ac : Bool
   deriving BEq, DecidableEq, Repr
 
 def legalAncestor (entry : Ancestor) : Prop :=
@@ -66,6 +84,54 @@ def StructurallyValid (table : PageTable) : Prop :=
 
 def ancestorsWritable (table : PageTable) : Bool :=
   table.pml4.writable && table.pdpt.writable && table.pd.writable
+
+def ancestorsUser (table : PageTable) : Bool :=
+  table.pml4.user && table.pdpt.user && table.pd.user
+
+/-- Executable classification for CPL, CR0.WP, EFER.NXE, CR4.SMEP/SMAP and
+the EFLAGS.AC copy-window override. Permission bits are conjoined at all four
+levels. The table is assumed not to mutate during a classification. -/
+def classify (table : PageTable) (page : VirtualPage) (context : AccessContext) :
+    Except WalkError PhysicalFrame :=
+  if !canonicalPage page then .error .nonCanonical
+  else if !(table.pml4.present && table.pdpt.present && table.pd.present) then
+    .error .notPresent
+  else match table.leaf page with
+    | none => .error .notPresent
+    | some leaf =>
+      if !leaf.present then .error .notPresent
+      else if !leaf.reservedBitsClear then .error .reservedBits
+      else if !representableFrame leaf.frame then .error .frameOutOfRange
+      else
+        let userPage := ancestorsUser table && leaf.user
+        match context.privilege with
+        | .user =>
+          if !userPage then .error .supervisor
+          else match context.kind with
+            | .read => .ok leaf.frame
+            | .write => if ancestorsWritable table && leaf.writable then .ok leaf.frame
+              else .error .notWritable
+            | .execute => if context.nxEnable && leaf.noExecute then .error .noExecute
+              else .ok leaf.frame
+        | .supervisor =>
+          match context.kind with
+          | .execute =>
+            if context.smep && userPage then .error .smep
+            else if context.nxEnable && leaf.noExecute then .error .noExecute
+            else .ok leaf.frame
+          | .read =>
+            if context.smap && userPage && !context.ac then .error .smap else .ok leaf.frame
+          | .write =>
+            if context.smap && userPage && !context.ac then .error .smap
+            else if context.writeProtect && !(ancestorsWritable table && leaf.writable) then
+              .error .notWritable
+            else .ok leaf.frame
+
+theorem classify_deterministic table page access first second
+    (hfirst : classify table page access = first)
+    (hsecond : classify table page access = second) : first = second := by
+  rw [hfirst] at hsecond
+  exact hsecond
 
 /-- A software model of the relevant x86 permission conjunction. -/
 def walk (table : PageTable) (page : VirtualPage) (access : UserAccess) :
@@ -229,6 +295,165 @@ private def demoLeaf (frame : Nat) (write user nx : Bool) : Leaf :=
 private def demo (entry : Option Leaf) : PageTable :=
   { pml4 := userAncestor, pdpt := userAncestor, pd := userAncestor,
     leaf := fun page => if page = 7 then entry else none }
+
+/-- Reviewed mixed-map regions. Frames and pages remain explicit inputs rather
+than deriving authority from linker symbols or boot globals. -/
+inductive PolicyRegion where
+  | kernelText | kernelData | kernelStack | pageTables | userText | userStack
+  deriving BEq, DecidableEq, Repr
+
+def policyLeaf (region : PolicyRegion) (frame : PhysicalFrame) : Leaf :=
+  match region with
+  | .kernelText => demoLeaf frame false false false
+  | .kernelData | .kernelStack | .pageTables => demoLeaf frame true false true
+  | .userText => demoLeaf frame false true false
+  | .userStack => demoLeaf frame true true true
+
+def PolicyLeaf (region : PolicyRegion) (leaf : Leaf) : Prop :=
+  leaf = policyLeaf region leaf.frame
+
+def MixedStructurallyValid (table : PageTable) : Prop :=
+  table.pml4.present = true ∧ table.pdpt.present = true ∧ table.pd.present = true ∧
+    ∀ page leaf, table.leaf page = some leaf → canonicalPage page = true ∧
+      leaf.present = true ∧ leaf.reservedBitsClear = true ∧
+        representableFrame leaf.frame = true
+
+/-- A one-leaf executable instance of the reviewed policy. Larger maps are
+formed by selecting the appropriate `policyLeaf` at each owned virtual page. -/
+def policyTable (region : PolicyRegion) (page : VirtualPage)
+    (frame : PhysicalFrame) : PageTable :=
+  { pml4 := userAncestor, pdpt := userAncestor, pd := userAncestor,
+    leaf := fun candidate => if candidate = page then some (policyLeaf region frame) else none }
+
+theorem policy_table_structurally_valid region page frame
+    (hpage : canonicalPage page = true) (hframe : representableFrame frame = true) :
+    MixedStructurallyValid (policyTable region page frame) := by
+  refine ⟨rfl, rfl, rfl, ?_⟩
+  intro candidate leaf hleaf
+  simp only [policyTable] at hleaf
+  split at hleaf <;> try contradiction
+  next heq =>
+    simp at hleaf
+    subst candidate
+    subst leaf
+    cases region <;> simp_all [policyLeaf, demoLeaf]
+
+theorem policy_wx_exclusive region frame :
+    (policyLeaf region frame).writable = false ∨
+      (policyLeaf region frame).noExecute = true := by
+  cases region <;> simp [policyLeaf, demoLeaf]
+
+theorem kernel_text_policy frame : PolicyLeaf .kernelText (policyLeaf .kernelText frame) := by
+  rfl
+theorem kernel_data_policy frame : PolicyLeaf .kernelData (policyLeaf .kernelData frame) := by
+  rfl
+theorem user_text_policy frame : PolicyLeaf .userText (policyLeaf .userText frame) := by
+  rfl
+theorem user_stack_policy frame : PolicyLeaf .userStack (policyLeaf .userStack frame) := by
+  rfl
+
+theorem kernel_text_attributes frame :
+    (policyLeaf .kernelText frame).user = false ∧
+      (policyLeaf .kernelText frame).writable = false ∧
+        (policyLeaf .kernelText frame).noExecute = false := by
+  simp [policyLeaf, demoLeaf]
+theorem kernel_writable_region_attributes
+    (region : PolicyRegion) (h : region = .kernelData ∨ region = .kernelStack ∨
+      region = .pageTables) :
+    (policyLeaf region frame).user = false ∧ (policyLeaf region frame).writable = true ∧
+      (policyLeaf region frame).noExecute = true := by
+  rcases h with rfl | rfl | rfl <;> simp [policyLeaf, demoLeaf]
+theorem user_text_attributes frame :
+    (policyLeaf .userText frame).user = true ∧
+      (policyLeaf .userText frame).writable = false ∧
+        (policyLeaf .userText frame).noExecute = false := by
+  simp [policyLeaf, demoLeaf]
+theorem user_stack_attributes frame :
+    (policyLeaf .userStack frame).user = true ∧
+      (policyLeaf .userStack frame).writable = true ∧
+        (policyLeaf .userStack frame).noExecute = true := by
+  simp [policyLeaf, demoLeaf]
+
+private def context (privilege : Privilege) (kind : AccessKind)
+    (wp nxe smep smap ac : Bool := true) : AccessContext :=
+  { privilege, kind, writeProtect := wp, nxEnable := nxe, smep, smap, ac }
+
+private def policyDemo (region : PolicyRegion) : PageTable :=
+  demo (some (policyLeaf region 4))
+
+theorem cpl3_kernel_text_denied kind :
+    classify (policyDemo .kernelText) 7 (context .user kind) = .error .supervisor := by
+  cases kind <;> rfl
+
+theorem cpl3_kernel_data_denied kind :
+    classify (policyDemo .kernelData) 7 (context .user kind) = .error .supervisor := by
+  cases kind <;> rfl
+
+theorem cpl3_kernel_stack_denied kind :
+    classify (policyDemo .kernelStack) 7 (context .user kind) = .error .supervisor := by
+  cases kind <;> rfl
+
+theorem cpl3_page_tables_denied kind :
+    classify (policyDemo .pageTables) 7 (context .user kind) = .error .supervisor := by
+  cases kind <;> rfl
+
+theorem wp_protects_kernel_text :
+    classify (policyDemo .kernelText) 7 (context .supervisor .write) =
+      .error .notWritable := by rfl
+
+theorem smep_protects_user_text :
+    classify (policyDemo .userText) 7 (context .supervisor .execute) = .error .smep := by
+  rfl
+
+theorem smap_requires_override :
+    classify (policyDemo .userStack) 7
+      (context .supervisor .read true true true true false) = .error .smap := by
+  rfl
+
+-- User mode is confined from every supervisor region.
+example : classify (policyDemo .kernelText) 7 (context .user .read) =
+    .error .supervisor := by rfl
+example : classify (policyDemo .kernelData) 7 (context .user .write) =
+    .error .supervisor := by rfl
+example : classify (policyDemo .kernelText) 7 (context .user .execute) =
+    .error .supervisor := by rfl
+-- CR0.WP, SMEP, SMAP, AC, and NXE have distinct observable boundaries.
+example : classify (policyDemo .kernelText) 7 (context .supervisor .write) =
+    .error .notWritable := by rfl
+example : classify (policyDemo .kernelText) 7
+    (context .supervisor .write false) = .ok 4 := by rfl
+example : classify (policyDemo .userText) 7 (context .supervisor .execute) =
+    .error .smep := by rfl
+example : classify (policyDemo .userText) 7
+    (context .supervisor .execute true true false) = .ok 4 := by rfl
+example : classify (policyDemo .userStack) 7 (context .supervisor .read) =
+    .ok 4 := by rfl
+example : classify (policyDemo .userStack) 7
+    (context .supervisor .read true true true true false) = .error .smap := by rfl
+example : classify (policyDemo .userStack) 7
+    (context .supervisor .read true true true true true) = .ok 4 := by rfl
+example : classify (policyDemo .userStack) 7
+    (context .supervisor .read true true true false false) = .ok 4 := by rfl
+example : classify (policyDemo .userStack) 7
+    (context .user .execute true true) = .error .noExecute := by rfl
+example : classify (policyDemo .userStack) 7
+    (context .user .execute true false) = .ok 4 := by rfl
+-- Ancestor conjunction and malformed entries are classified before leaf access.
+example : classify { policyDemo .userStack with pml4 := { userAncestor with writable := false } }
+    7 (context .user .write) = .error .notWritable := by rfl
+example : classify { policyDemo .userStack with pdpt := { userAncestor with user := false } }
+    7 (context .user .read) = .error .supervisor := by rfl
+example : classify (demo (some { policyLeaf .userStack 4 with writable := false }))
+    7 (context .user .write) = .error .notWritable := by rfl
+example : classify { policyDemo .userStack with pd := { userAncestor with present := false } }
+    7 (context .user .read) = .error .notPresent := by rfl
+example : classify (demo (some { policyLeaf .userStack 4 with present := false }))
+    7 (context .user .read) = .error .notPresent := by rfl
+example : classify (demo (some { policyLeaf .userStack 4 with reservedBitsClear := false }))
+    7 (context .user .read) = .error .reservedBits := by rfl
+-- The same reviewed policy behaves independently in two address-space values.
+example : classify (demo (some (policyLeaf .userText 4))) 7 (context .user .read) = .ok 4 := by rfl
+example : classify (demo (some (policyLeaf .userText 5))) 7 (context .user .read) = .ok 5 := by rfl
 
 example : walk (demo (some (demoLeaf 4 false true true))) 7 .read = .ok 4 := by rfl
 example : walk (demo (some (demoLeaf 4 false true true))) 7 .write =
