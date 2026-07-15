@@ -214,6 +214,35 @@ def revokeSubtree (state : State) (actor : SubjectId) (authoritySlot : SlotId)
   let outcome := Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot
   ({ state with capabilities := outcome.state }, outcome.result)
 
+theorem revokeSubtree_preserves_wellFormed (state : State) actor authoritySlot victim victimSlot
+    (hstate : WellFormed state) :
+    WellFormed (revokeSubtree state actor authoritySlot victim victimSlot).1 := by
+  refine ⟨Capability.revokeSubtree_preserves_wellFormed
+    state.capabilities actor authoritySlot victim victimSlot hstate.1,
+    ?_⟩
+  have hregistry := Capability.revokeSubtree_preserves_registry
+    state.capabilities actor authoritySlot victim victimSlot
+  simp only [revokeSubtree]
+  rw [hregistry.2.1, hregistry.2.2]
+  exact hstate.2
+
+theorem revokeSubtree_preserves_noncapability_state (state : State)
+    actor authoritySlot victim victimSlot :
+    let next := (revokeSubtree state actor authoritySlot victim victimSlot).1
+    next.allocator = state.allocator ∧ next.binding = state.binding ∧
+      next.issued = state.issued ∧ next.issuedAddressSpace = state.issuedAddressSpace ∧
+      next.mailbox = state.mailbox ∧ next.sendHistory = state.sendHistory := by
+  simp [revokeSubtree]
+
+theorem revokeSubtree_rejected_unchanged (state : State) actor authoritySlot victim victimSlot reason
+    (hrejected : (revokeSubtree state actor authoritySlot victim victimSlot).2 =
+      .rejected reason) :
+    (revokeSubtree state actor authoritySlot victim victimSlot).1 = state := by
+  have hcaps := Capability.revokeSubtree_rejected_unchanged
+    state.capabilities actor authoritySlot victim victimSlot reason (by
+      simpa [revokeSubtree] using hrejected)
+  simp [revokeSubtree, hcaps]
+
 theorem create_rejected_unchanged (state : State) object subject slot reason
     (h : (create state object subject slot).result = .rejected reason) :
     (create state object subject slot).state = state := by
@@ -320,7 +349,14 @@ theorem create_preserves_wellFormed (state : State) object subject slot
         exact ⟨Nat.lt_succ_self _, trivial⟩
       · have hold := hderivations identity parent candidateObject kind rights (by
             simpa [Capability.installRoot, Capability.install, activate, hnew] using hentry)
-        exact ⟨Nat.lt_succ_of_lt hold.1, hold.2⟩
+        refine ⟨Nat.lt_succ_of_lt hold.1, ?_⟩
+        cases parent with
+        | none => trivial
+        | some parentIdentity =>
+            rcases hold.2 with ⟨hparent, pp, pr, hpentry, hsubset⟩
+            refine ⟨hparent, pp, pr, ?_, hsubset⟩
+            simp [Capability.installRoot, Capability.install, activate,
+              Nat.ne_of_lt (Nat.lt_trans hparent hold.1), hpentry]
     · intro left leftSlot leftCap right rightSlot rightCap hleft hright hid
       by_cases hl : left = subject ∧ leftSlot = slot
       · by_cases hr : right = subject ∧ rightSlot = slot

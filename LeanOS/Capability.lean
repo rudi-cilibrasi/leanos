@@ -118,7 +118,11 @@ def DerivationsWellFormed (state : State) : Prop :=
     state.derivations identity = some (parent, object, kind, rights) →
       identity < state.nextIdentity ∧ match parent with
       | none => True
-      | some parentIdentity => parentIdentity < identity
+      | some parentIdentity => parentIdentity < identity ∧
+          ∃ parentParent parentRights,
+            state.derivations parentIdentity =
+              some (parentParent, object, kind, parentRights) ∧
+            rightsSubset rights parentRights = true
 
 /-- No two live slots can name the same capability identity. -/
 def LiveIdentitiesUnique (state : State) : Prop :=
@@ -347,6 +351,16 @@ def revokeSubtree (state : State) (actor : SubjectId) (authoritySlot : SlotId)
             else reject state .objectMismatch
       else reject state .missingRevoke
 
+theorem revokeSubtree_preserves_registry (state : State) actor authoritySlot victim victimSlot :
+    let next := (revokeSubtree state actor authoritySlot victim victimSlot).state
+    next.subjects = state.subjects ∧ next.objects = state.objects ∧
+      next.kinds = state.kinds := by
+  simp only [revokeSubtree]
+  split <;> try exact ⟨rfl, rfl, rfl⟩
+  split <;> try exact ⟨rfl, rfl, rfl⟩
+  split <;> try exact ⟨rfl, rfl, rfl⟩
+  split <;> try exact ⟨rfl, rfl, rfl⟩
+
 theorem clear_authority_subset (state : State) (subject : SubjectId) (slot : SlotId)
     (candidate : SubjectId) (object : ObjectId) (right : Right)
     (hauthority : HasAuthority (clear state subject slot) candidate object right) :
@@ -433,13 +447,21 @@ theorem copy_preserves_wellFormed (state : State) (actor : SubjectId)
           · subst identity
             simp [install] at hentry
             rcases hentry with ⟨rfl, rfl, rfl, rfl⟩
-            exact ⟨Nat.lt_succ_self _, hsourceValid.2.2.2.2.1⟩
+            refine ⟨Nat.lt_succ_self _, hsourceValid.2.2.2.2.1,
+              capability.parent, capability.rights, ?_,
+              by simpa using ‹rightsSubset requested capability.rights = true›⟩
+            simp [install, Nat.ne_of_lt hsourceValid.2.2.2.2.1]
+            exact hsourceValid.2.2.2.2.2.1
           · have hold := hhistory identity parent object kind rights (by
                 simpa [install, hnew] using hentry)
             refine ⟨Nat.lt_succ_of_lt hold.1, ?_⟩
             cases parent with
             | none => trivial
-            | some parentIdentity => exact hold.2
+            | some parentIdentity =>
+                rcases hold.2 with ⟨hparent, parentParent, parentRights, hpentry, hsubset⟩
+                refine ⟨hparent, parentParent, parentRights, ?_, hsubset⟩
+                simp [install, Nat.ne_of_lt (Nat.lt_trans hparent hold.1)]
+                exact hpentry
         · intro left leftSlot leftCap right rightSlot rightCap hleft hright hid
           by_cases hleftTarget : left = destination ∧ leftSlot = destinationSlot
           · by_cases hrightTarget : right = destination ∧ rightSlot = destinationSlot
