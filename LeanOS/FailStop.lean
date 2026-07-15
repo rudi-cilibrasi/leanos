@@ -159,8 +159,13 @@ def CompositeState.Coherent (state : CompositeState) : Prop :=
   state.virtualMemory.memory.capabilities = state.lifecycle.capabilities ∧
   state.ipc.virtualMemory.memory.capabilities = state.lifecycle.capabilities ∧
   state.ipc.endpoints.capabilities = state.lifecycle.capabilities ∧
+  (∀ subject, state.lifecycle.current = some subject →
+    state.execution.core.context.currentSubject = subject ∧
+    state.execution.core.context.activeAddressSpace = subject) ∧
   (∀ object, state.lifecycle.capabilities.objects object ≠ true →
-    state.ipc.endpoints.mailbox object = none)
+    state.ipc.endpoints.mailbox object = none) ∧
+  (∀ object envelope, state.ipc.endpoints.mailbox object = some envelope →
+    state.lifecycle.capabilities.subjects envelope.sender = true)
 
 private def restrictMappings (lifecycle : SubjectLifecycle.State)
     (mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
@@ -172,7 +177,25 @@ private def restrictMappings (lifecycle : SubjectLifecycle.State)
 
 private def restrictMailboxes (lifecycle : SubjectLifecycle.State)
     (mailbox : EndpointIPC.ObjectId → Option EndpointIPC.Envelope) :=
-  fun object => if lifecycle.capabilities.objects object = true then mailbox object else none
+  fun object => match mailbox object with
+    | some envelope =>
+        if lifecycle.capabilities.objects object = true ∧
+            lifecycle.capabilities.subjects envelope.sender = true then some envelope else none
+    | none => none
+
+private def synchronizeMemory (lifecycle : SubjectLifecycle.State)
+    (memory : MemoryLifecycle.State) : MemoryLifecycle.State :=
+  { memory with
+    capabilities := lifecycle.capabilities
+    binding := fun object => (lifecycle.ownedMemory object).map (·.2)
+    allocator := { memory.allocator with
+      status := fun frame =>
+        match memory.allocator.status frame with
+        | .owned object =>
+            match lifecycle.ownedMemory object with
+            | some (_, ownedFrame) => if ownedFrame = frame then .owned object else .free
+            | none => .free
+        | status => status } }
 
 /-- Atomically publish a lifecycle change to every overlapping subsystem
 projection.  Rich subsystem-only data is retained only while the authoritative
@@ -180,16 +203,20 @@ lifecycle still names it. -/
 private def installLifecycle (state : CompositeState)
     (lifecycle : SubjectLifecycle.State) : CompositeState :=
   let scheduler := { state.scheduler with lifecycle }
+  let context := match lifecycle.current with
+    | some subject => { state.execution.core.context with
+        currentSubject := subject, activeAddressSpace := subject }
+    | none => state.execution.core.context
   let virtualMemory := { state.virtualMemory with
-    memory := { state.virtualMemory.memory with capabilities := lifecycle.capabilities }
+    memory := synchronizeMemory lifecycle state.virtualMemory.memory
     owner := lifecycle.addressOwner
     mappings := restrictMappings lifecycle state.virtualMemory.mappings }
   let ipcVirtualMemory := { state.ipc.virtualMemory with
-    memory := { state.ipc.virtualMemory.memory with capabilities := lifecycle.capabilities }
+    memory := synchronizeMemory lifecycle state.ipc.virtualMemory.memory
     owner := lifecycle.addressOwner
     mappings := restrictMappings lifecycle state.ipc.virtualMemory.mappings }
   { state with
-    execution := { state.execution with core := { state.execution.core with lifecycle } }
+    execution := { state.execution with core := { state.execution.core with lifecycle, context } }
     scheduler
     preemption := { state.preemption with scheduler }
     virtualMemory
@@ -219,14 +246,49 @@ private def lifecycleFromVirtualMemory (lifecycle : SubjectLifecycle.State)
 
 theorem installLifecycle_coherent state lifecycle :
     (installLifecycle state lifecycle).Coherent := by
-  simp [installLifecycle, CompositeState.Coherent, restrictMailboxes]
-  intro object hdead halive
-  simp_all
+  simp [installLifecycle, CompositeState.Coherent, restrictMailboxes, synchronizeMemory]
+  constructor
+  · intro subject hcurrent
+    simp [hcurrent]
+  constructor
+  · intro object hdead
+    split <;> simp_all
+  · intro object envelope hmailbox
+    cases hsource : state.ipc.endpoints.mailbox object with
+    | none => simp [hsource] at hmailbox
+    | some actual =>
+        simp [hsource] at hmailbox
+        rw [← hmailbox.2]
+        exact hmailbox.1.2
 
 theorem installLifecycle_clears_retired_mailbox state lifecycle object
     (hdead : lifecycle.capabilities.objects object ≠ true) :
     (installLifecycle state lifecycle).ipc.endpoints.mailbox object = none := by
-  simp [installLifecycle, restrictMailboxes, hdead]
+  simp [installLifecycle, restrictMailboxes]
+  cases state.ipc.endpoints.mailbox object <;> simp [hdead]
+
+theorem installLifecycle_clears_dead_sender state lifecycle object envelope
+    (hdead : lifecycle.capabilities.subjects envelope.sender ≠ true) :
+    (installLifecycle state lifecycle).ipc.endpoints.mailbox object ≠ some envelope := by
+  simp [installLifecycle, restrictMailboxes]
+  cases hmailbox : state.ipc.endpoints.mailbox object with
+  | none => simp
+  | some actual =>
+      by_cases hlive : lifecycle.capabilities.objects object = true ∧
+          lifecycle.capabilities.subjects actual.sender = true
+      · simp [hlive]
+        intro heq
+        subst actual
+        exact hdead hlive.2
+      · simp [hlive]
+
+theorem installLifecycle_releases_retired_memory state lifecycle object frame
+    (_hbinding : state.virtualMemory.memory.binding object = some frame)
+    (howned : state.virtualMemory.memory.allocator.status frame = .owned object)
+    (hretired : lifecycle.ownedMemory object = none) :
+    (installLifecycle state lifecycle).virtualMemory.memory.binding object = none ∧
+      (installLifecycle state lifecycle).virtualMemory.memory.allocator.status frame = .free := by
+  simp [installLifecycle, synchronizeMemory, howned, hretired]
 
 /-- Typed inputs to the actual subsystem transitions.  This is deliberately not
 a tag paired with a caller-supplied post-state. -/
