@@ -375,10 +375,10 @@ private def testCaps : Capability.State :=
       else if object = 1 || object = 2 then some .addressSpace else none
     slots := fun subject slot =>
       if subject = 0 ∧ slot = 0 then
-        some (Capability.Capability.mk 10 .memory Capability.allRights)
+        some (Capability.Capability.mk 10 .memory Capability.allRights 0 none)
       else if subject = 0 ∧ slot = 1 then
         some (Capability.Capability.mk 1 .addressSpace
-          VirtualMapping.addressSpaceRootRights)
+          VirtualMapping.addressSpaceRootRights 0 none)
       else none }
 private def testMemory : MemoryLifecycle.State :=
   { capabilities := testCaps
