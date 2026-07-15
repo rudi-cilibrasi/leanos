@@ -42,7 +42,19 @@ structure State where
   /-- The kernel-owned SMAP AC override. Entry closes it before classification. -/
   copyOverride : Bool := false
 
-def WellFormed (state : State) : Prop := Interrupt.WellFormed state.core
+def ActiveEntry.WellFormed (entry : ActiveEntry) : Prop :=
+  entry.vector = entry.frame.vector ∧ entry.origin = entry.frame.savedPrivilege
+
+/-- Lifecycle consistency plus the kernel-owned entry transaction invariant.
+The legacy latch is retained only as a reflected implementation boundary: the
+authoritative identity is the `handling` payload, and its duplicate fields must
+agree with the saved frame. -/
+def WellFormed (state : State) : Prop :=
+  Interrupt.WellFormed state.core ∧
+    match state.mode with
+    | .running => state.core.context.entryActive = false
+    | .handling entry => entry.WellFormed ∧ state.core.context.entryActive = true
+    | .halted _ => state.core.context.entryActive = true
 
 inductive EntryAction where
   | contained (subject : Interrupt.SubjectId)
@@ -78,7 +90,9 @@ def beginEntry (state : State) (frame : Interrupt.HardwareFrame) : EntryOutcome 
   | .halted record => { state, action := .alreadyHalted record }
   | .handling active => halt state (escalation active frame) (some active) frame
   | .running =>
-      { state := { state with mode := .handling (activeEntry frame), copyOverride := false }
+      { state := { state with
+          core := { state.core with context := { state.core.context with entryActive := true } }
+          mode := .handling (activeEntry frame), copyOverride := false }
         action := .rejected .wrongOrigin }
 
 def mapFatal : Interrupt.FatalReason → FatalReason
@@ -153,30 +167,36 @@ theorem dispatchHardware_deterministic state frame first second
 
 theorem dispatchHardware_preserves_wellFormed state frame (hstate : WellFormed state) :
     WellFormed (dispatchHardware state frame).state := by
-  change SubjectLifecycle.WellFormed state.core.lifecycle at hstate
-  change SubjectLifecycle.WellFormed (dispatchHardware state frame).state.core.lifecycle
+  rcases hstate with ⟨hlifecycle, hmodeWellFormed⟩
+  change SubjectLifecycle.WellFormed state.core.lifecycle at hlifecycle
   cases hmode : state.mode with
-  | handling active => simpa [dispatchHardware, hmode, halt, WellFormed] using hstate
-  | halted record => simpa [dispatchHardware, hmode, WellFormed] using hstate
+  | handling active =>
+      simp only [hmode] at hmodeWellFormed
+      simpa [dispatchHardware, hmode, halt, WellFormed, Interrupt.WellFormed] using
+        And.intro hlifecycle hmodeWellFormed.2
+  | halted record =>
+      simpa [dispatchHardware, hmode, WellFormed, Interrupt.WellFormed] using
+        And.intro hlifecycle hmodeWellFormed
   | running =>
+      simp only [hmode] at hmodeWellFormed
       simp only [dispatchHardware, hmode, beginEntry, finishEntry, activeEntry]
       unfold Interrupt.dispatchHardware
       cases hvector : Interrupt.decodeVector frame.vector with
-      | none => simpa [hvector, halt, WellFormed] using hstate
+      | none => simpa [hvector, halt, WellFormed, Interrupt.WellFormed] using hlifecycle
       | some vector =>
           cases vector with
           | pageFault =>
               cases frame.savedPrivilege with
-              | kernel => simpa [hvector, halt, WellFormed] using hstate
+              | kernel => simpa [hvector, halt, WellFormed, Interrupt.WellFormed] using hlifecycle
               | user =>
-                  simpa [hvector, WellFormed] using
+                  simpa [hvector, WellFormed, Interrupt.WellFormed] using
                     SubjectLifecycle.terminateState_preserves_wellFormed
-                      state.core.lifecycle state.core.context.currentSubject hstate
-          | timer => simpa [hvector, WellFormed] using hstate
+                      state.core.lifecycle state.core.context.currentSubject hlifecycle
+          | timer => simpa [hvector, WellFormed, Interrupt.WellFormed] using hlifecycle
           | syscall =>
               cases frame.savedPrivilege <;>
                 cases hreturn : Interrupt.validUserReturn frame <;>
-                simpa [hvector, hreturn, WellFormed] using hstate
+                simpa [hvector, hreturn, WellFormed, Interrupt.WellFormed] using hlifecycle
 
 theorem attacker_registers_cannot_change_dispatch state frame first second :
     dispatch state { hardware := frame, registers := first } =
@@ -210,7 +230,7 @@ theorem halted_never_accepts state record operation proposed
 
 theorem fatal_atomicity state frame reason
     (hfatal : (dispatchHardware state frame).action = .fatal reason) :
-    (dispatchHardware state frame).state.core = state.core := by
+    (dispatchHardware state frame).state.core.lifecycle = state.core.lifecycle := by
   cases hmode : state.mode with
   | handling active => simp [dispatchHardware, hmode, halt]
   | halted record => simp [dispatchHardware, hmode] at hfatal
