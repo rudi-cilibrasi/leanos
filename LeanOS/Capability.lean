@@ -72,6 +72,8 @@ structure State where
   subjects : SubjectId → Bool
   objects : ObjectId → Bool
   kinds : ObjectId → Option ObjectKind
+  /-- Number of executable slots owned independently by each subject. -/
+  slotCapacity : SubjectId → Nat := fun _ => 4
   slots : SubjectId → SlotId → Option Capability
 
 abbrev Derivation := Option Nat × ObjectId × ObjectKind × Rights
@@ -142,7 +144,7 @@ def HasAuthority (state : State) (subject : SubjectId) (object : ObjectId)
     capability.object = object ∧ hasRight capability.rights right
 
 inductive Denial where
-  | invalidSubject | staleSlot | occupiedSlot | emptyRights
+  | invalidSubject | staleSlot | outOfRange | occupiedSlot | full | emptyRights
   | missingGrant | rightsNotSubset | missingRevoke | objectMismatch | kindMismatch
   | invalidRights
   deriving DecidableEq, Repr
@@ -195,6 +197,36 @@ def clear (state : State) (subject : SubjectId) (slot : SlotId) : State :=
 def reject (state : State) (reason : Denial) : Outcome :=
   { state := state, result := .rejected reason }
 
+def slotInRange (state : State) (subject : SubjectId) (slot : SlotId) : Bool :=
+  slot < state.slotCapacity subject
+
+/-- The complete, finite capability space for a subject, in slot order. -/
+def capabilitySpace (state : State) (subject : SubjectId) : List (Option Capability) :=
+  (List.range (state.slotCapacity subject)).map (state.slots subject)
+
+def lowestFreeSlot (state : State) (subject : SubjectId) : Option SlotId :=
+  (List.range (state.slotCapacity subject)).find? fun slot =>
+    (state.slots subject slot).isNone
+
+def capabilitySpaceFull (state : State) (subject : SubjectId) : Bool :=
+  (lowestFreeSlot state subject).isNone
+
+/-- No authority exists outside the finite domain owned by its subject. -/
+def SlotSpacesWellFormed (state : State) : Prop :=
+  ∀ subject slot, state.slotCapacity subject ≤ slot → state.slots subject slot = none
+
+theorem install_other_subject (state : State) (subject : SubjectId) (slot : SlotId)
+    (capability : Capability) (other : SubjectId) (hne : other ≠ subject) :
+    (install state subject slot capability).slots other = state.slots other := by
+  funext candidateSlot
+  simp [install, hne]
+
+theorem clear_other_subject (state : State) (subject : SubjectId) (slot : SlotId)
+    (other : SubjectId) (hne : other ≠ subject) :
+    (clear state subject slot).slots other = state.slots other := by
+  funext candidateSlot
+  simp [clear, hne]
+
 theorem lookup_found_slot (state : State) (subject : SubjectId) (slot : SlotId)
     (capability : Capability) (hfound : lookup state subject slot = .found capability) :
     state.slots subject slot = some capability := by
@@ -232,6 +264,38 @@ def copy (state : State) (actor : SubjectId) (source : SlotId)
           else reject state .rightsNotSubset
         else reject state .missingGrant
       else reject state .emptyRights
+
+/-- Finite-space delegation. This is the bounded entry point for callers that
+install into a selected slot; an out-of-domain request cannot reach `copy`. -/
+def copyBounded (state : State) (actor : SubjectId) (source : SlotId)
+    (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) : Outcome :=
+  if state.subjects destination != true then reject state .invalidSubject
+  else if !slotInRange state destination destinationSlot then reject state .outOfRange
+  else if (state.slots destination destinationSlot).isSome then reject state .occupiedSlot
+  else copy state actor source destination destinationSlot requested
+
+/-- Deterministic allocation into the lowest free destination slot. -/
+def copyLowest (state : State) (actor : SubjectId) (source : SlotId)
+    (destination : SubjectId) (requested : Rights) : Outcome :=
+  if state.subjects destination != true then reject state .invalidSubject
+  else match lowestFreeSlot state destination with
+    | none => reject state .full
+    | some destinationSlot => copyBounded state actor source destination destinationSlot requested
+
+theorem copyBounded_outOfRange_unchanged (state : State) actor source destination
+    destinationSlot requested
+    (hout : slotInRange state destination destinationSlot = false) :
+    (copyBounded state actor source destination destinationSlot requested).state = state := by
+  unfold copyBounded
+  split <;> try rfl
+  simp [hout, reject]
+
+theorem copyLowest_full_unchanged (state : State) actor source destination requested
+    (hfull : capabilitySpaceFull state destination = true) :
+    (copyLowest state actor source destination requested).state = state := by
+  simp [copyLowest, capabilitySpaceFull] at hfull ⊢
+  split <;> simp_all [reject]
 
 /-- Directly remove one capability when the actor has revoke over its object. -/
 def revoke (state : State) (actor : SubjectId) (authoritySlot : SlotId)
@@ -779,5 +843,44 @@ example : authorizeKind staleAddressState 0 0 .addressSpace = .error .staleSlot 
 example : (copy addressState 0 0 1 0 { grant := true }).result = .accepted := by decide
 example : (revoke (copy addressState 0 0 1 0 { grant := true }).state 0 0 1 0).result =
     .accepted := by decide
+
+/-! Finite-space regression traces.  Subject 2 owns the delegation root;
+subjects 0 and 1 have independently configurable capability-space bounds. -/
+private def finiteState (capacity0 capacity1 : Nat) : State :=
+  { exampleState with
+    subjects := fun subject => subject < 3
+    slotCapacity := fun subject => if subject = 0 then capacity0
+      else if subject = 1 then capacity1 else 1
+    slots := fun subject slot =>
+      if subject = 2 ∧ slot = 0 then some lineageRoot else none }
+
+example : (copyBounded (finiteState 0 1) 2 0 0 0 readOnly).result =
+    .rejected .outOfRange := by decide
+example : (copyBounded (finiteState 1 1) 2 0 0 1 readOnly).result =
+    .rejected .outOfRange := by decide
+
+private def finiteOneFull := (copyLowest (finiteState 1 1) 2 0 0 readOnly).state
+example : (copyBounded (finiteState 1 1) 2 0 0 0 readOnly).result = .accepted := by decide
+example : (copyBounded finiteOneFull 2 0 0 0 readOnly).result = .rejected .occupiedSlot := by decide
+example : (copyLowest finiteOneFull 2 0 0 readOnly).result = .rejected .full := by decide
+example : (copyBounded (finiteState 1 1) 2 0 1 0 readOnly).result = .accepted := by decide
+example : finiteOneFull.slots 1 0 = none := by decide
+
+private def finiteBoth0 := (copyBounded (finiteState 1 1) 2 0 0 0 readOnly).state
+private def finiteBoth := (copyBounded finiteBoth0 2 0 1 0 readOnly).state
+example : finiteBoth.slots 0 0 |>.isSome := by decide
+example : finiteBoth.slots 1 0 |>.isSome := by decide
+
+private def finiteRevoked := (revoke finiteOneFull 2 0 0 0).state
+example : finiteRevoked.slots 0 0 = none := by decide
+example : (copyBounded finiteRevoked 2 0 0 0 readOnly).result = .accepted := by decide
+example : (copyLowest finiteOneFull 2 0 0 readOnly).state = finiteOneFull := by
+  exact copyLowest_full_unchanged _ _ _ _ _ (by decide)
+
+/-- Regression witness: the legacy mathematical transition accepts an
+unchecked natural-number destination, while the finite transition rejects it. -/
+example : (copy (finiteState 1 1) 2 0 0 99 readOnly).result = .accepted ∧
+    (copyBounded (finiteState 1 1) 2 0 0 99 readOnly).result = .rejected .outOfRange := by
+  decide
 
 end LeanOS.Capability
