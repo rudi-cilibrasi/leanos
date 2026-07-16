@@ -92,6 +92,16 @@ def ReadyContextAgreement (state : State) : Prop :=
     context.kind = .suspended → context.owner ∈ state.scheduler.ready) ∧
   (state.scheduler.lifecycle.current.isSome → state.scheduler.ready ≠ [])
 
+/-- The modeled CR3 and page-table ownership view are projections of the same
+authoritative lifecycle used by the scheduler.  This prevents a switch from
+silently repairing a stale active space or entering a destination whose page
+tables are attributed to another subject. -/
+def TranslationAgreement (state : State) : Prop :=
+  state.translations.virtual.owner = state.scheduler.lifecycle.addressOwner ∧
+    match state.scheduler.lifecycle.current with
+    | none => state.translations.active = none
+    | some subject => state.translations.active = some subject
+
 /-- In addition to scheduler invariants, the bank has unique, live ownership,
 and never contains the currently executing context. -/
 def WellFormed (state : State) : Prop :=
@@ -102,6 +112,7 @@ def WellFormed (state : State) : Prop :=
     (∀ subject, state.scheduler.lifecycle.current = some subject →
       contextFor state.contexts subject = none) ∧
     ReadyContextAgreement state ∧
+    TranslationAgreement state ∧
     TLB.Coherent state.translations
 
 inductive Error where
@@ -152,6 +163,8 @@ def switch (state : State) (interruptState : Interrupt.State)
                   scheduled.state.lifecycle.capabilities.subjects destination.owner != true ||
                   scheduled.state.lifecycle.runnable destination.owner != true ||
                   scheduled.state.lifecycle.addressOwner destination.addressSpace !=
+                    some destination.owner ||
+                  state.translations.virtual.owner destination.addressSpace !=
                     some destination.owner then
                 reject state .staleDestination
               else
@@ -356,7 +369,7 @@ theorem accepted_tick_has_restorable_destination state current selected
       validContext state destination ∧
       destination.owner = selected.currentSubject ∧
       destination.addressSpace = selected.activeAddressSpace := by
-  rcases hstate with ⟨_, _, _, hvalid, _, hagreement, _⟩
+  rcases hstate with ⟨_, _, _, hvalid, _, hagreement, _, _⟩
   rcases accepted_tick_rotates_ready state.scheduler current selected hcurrent
       (hagreement.2.2 (by simp [hcurrent])) hselected with ⟨rest, hqueue, _⟩
   obtain ⟨queued, hqueuedMem, hqueuedOwner⟩ :=
@@ -398,7 +411,8 @@ theorem switch_preserves_wellFormed state interruptState frame registers
       schedulerResult selected hselected maybeDestination destination hdestination
       hdestinationValid =>
     rcases hstate with
-      ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hagreement, htlb⟩
+      ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hagreement,
+        htranslations, htlb⟩
     have hscheduler' := Scheduler.tick_preserves_wellFormed state.scheduler hscheduler
     obtain ⟨hnextCurrent, hcapabilities, hrunnable, haddressOwner, hselectedSpace⟩ :=
       accepted_tick_facts state.scheduler current selected hcurrent hselected
@@ -417,7 +431,7 @@ theorem switch_preserves_wellFormed state interruptState frame registers
           state.scheduler.lifecycle.runnable current = true ∧
           state.scheduler.lifecycle.addressOwner current = some current := by
       grind [Scheduler.WellFormed, Scheduler.ownsAddressSpace]
-    refine ⟨hscheduler', ?_, ?_, ?_, ?_, ?_, TLB.switch_coherent _ _⟩
+    refine ⟨hscheduler', ?_, ?_, ?_, ?_, ?_, ?_, TLB.switch_coherent _ _⟩
     · simp only [List.length_cons]
       calc
         (eraseContext state.contexts selected.currentSubject).length + 1 ≤
@@ -486,6 +500,10 @@ theorem switch_preserves_wellFormed state interruptState frame registers
       · intro _
         rw [hnextReady]
         simp
+    · rcases htranslations with ⟨hownerProjection, hactiveProjection⟩
+      constructor
+      · simpa [TLB.switch, haddressOwner] using hownerProjection
+      · simp [TLB.switch, hnextCurrent, hselectedSpace]
 
 /-- Attacker-controlled general registers can affect only the saved payload;
 they cannot influence which bank entry is selected for restoration. -/
@@ -682,6 +700,20 @@ example (translations : TLB.State) :
   simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
     switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
     Interrupt.validUserReturn, reject]
+
+/-- A scheduler-valid destination is still rejected when the encoded virtual
+ownership view attributes its page tables to a different subject. -/
+example (translations : TLB.State) :
+    let state := roundTripStart translations
+    let staleVirtual := { state.translations.virtual with
+      owner := fun space => if space = 2 then some 3 else state.translations.virtual.owner space }
+    (switch { state with translations := { state.translations with virtual := staleVirtual } }
+      (demoInterrupt 1) (demoFrame 0x401000 0x801000 0x246)
+      (demoRegisters 0x10)).error = some .staleDestination := by
+  simp [roundTripStart, initialContext, demoInterrupt, demoLifecycle, demoFrame,
+    demoRegisters, switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
+    Interrupt.validUserReturn, Scheduler.tick, Scheduler.yield, Scheduler.selectNext,
+    Scheduler.ownsAddressSpace, contextFor, reject]
 
 /-- A matching active CR3 is insufficient when the encoded virtual-memory
 ownership view assigns the current address space to another subject. -/
