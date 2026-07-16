@@ -27,9 +27,25 @@ structure Sealed where
   rights : Capability.Rights
   deriving DecidableEq, Repr
 
+/-- Observer-visible events. Payload data is retained, but it never supplies an
+authority-bearing identifier. -/
+inductive Event where
+  | dataSent (endpoint : ObjectId) (sender : SubjectId) (payload : EndpointIPC.Payload)
+  | dataReceived (endpoint : ObjectId) (receiver : SubjectId)
+  | offered (endpoint identity : Nat) (sender : SubjectId) (payload : EndpointIPC.Payload)
+  | received (endpoint identity : Nat) (receiver : SubjectId) (slot : SlotId)
+  | canceled (endpoint identity : Nat)
+  deriving DecidableEq, Repr
+
+structure Trace where
+  events : ObjectId → List Event
+
 structure State extends toEndpointState : EndpointIPC.State where
   /-- At most one sealed descendant, indexed by its capacity-one mailbox. -/
   pending : ObjectId → Option Sealed
+  /-- Append-only observer trace, partitioned by endpoint so bulk cleanup does
+  not require enumerating the functional endpoint namespace. -/
+  trace : Trace := ⟨fun _ => []⟩
 
 def WellFormed (state : State) : Prop :=
   EndpointIPC.WellFormed state.toEndpointState ∧
@@ -50,14 +66,6 @@ def WellFormed (state : State) : Prop :=
       cap.identity ≠ transfer.identity) ∧
     (∀ other otherTransfer, state.pending other = some otherTransfer →
       otherTransfer.identity = transfer.identity → other = endpoint)
-
-/-- Observer-visible events. Payload data is retained, but it never supplies an
-authority-bearing identifier. -/
-inductive Event where
-  | offered (endpoint identity : Nat) (sender : SubjectId) (payload : EndpointIPC.Payload)
-  | received (endpoint identity : Nat) (receiver : SubjectId) (slot : SlotId)
-  | canceled (endpoint identity : Nat)
-  deriving DecidableEq, Repr
 
 inductive OfferError where
   | invalidSubject | staleEndpoint | wrongEndpointKind | missingSend | retiredEndpoint | full
@@ -93,6 +101,61 @@ def rejectAccept (state : State) (reason : AcceptError) : AcceptOutcome :=
 def setPending (values : ObjectId → Option Sealed) endpoint value :=
   fun candidate => if candidate = endpoint then value else values candidate
 
+/-- Append one event to the endpoint-local observer trace. Keeping this update
+behind a named operation prevents unrelated transition proofs from expanding
+the functional trace representation. -/
+def record (state : State) (endpoint : ObjectId) (event : Event) : State :=
+  { state with
+    trace := ⟨fun candidate => if candidate = endpoint then
+      state.trace.events candidate ++ [event]
+    else state.trace.events candidate⟩ }
+
+/-- The accepted receipt update, kept separate from validation so rejection
+proofs do not unfold the trace and capability-store mutations. -/
+def deliver (state : State) (caller destinationSlot : Nat)
+    (endpointCap : Capability.Capability) (envelope : EndpointIPC.Envelope)
+    (transfer : Sealed) : AcceptOutcome :=
+  let nextEndpoint : EndpointIPC.State :=
+    { state.toEndpointState with
+      capabilities := Capability.install state.capabilities caller destinationSlot
+        ⟨transfer.object, transfer.kind, transfer.rights,
+          transfer.identity, some transfer.parent⟩
+      mailbox := EndpointIPC.setOption state.mailbox endpointCap.object none }
+  { state := record
+      { toEndpointState := nextEndpoint
+        pending := setPending state.pending endpointCap.object none
+        trace := state.trace }
+      endpointCap.object
+      (.received endpointCap.object transfer.identity caller destinationSlot)
+    result := .delivered envelope }
+
+/-- Consume an envelope that has no sealed descendant.  This is deliberately a
+separate update from `deliver`: data receipt never inspects or changes a
+destination capability slot. -/
+def deliverData (state : State) (caller : SubjectId)
+    (endpointCap : Capability.Capability) (envelope : EndpointIPC.Envelope) : AcceptOutcome :=
+  { state := record
+      { state with mailbox := EndpointIPC.setOption state.mailbox endpointCap.object none }
+      endpointCap.object (.dataReceived endpointCap.object caller)
+    result := .delivered envelope }
+
+/-- Composite data-only send.  Callers must use this wrapper rather than
+mutating the embedded endpoint state, so attachment metadata and the mailbox
+remain one atomic tagged state. -/
+def sendData (state : State) (caller : SubjectId) (endpointSlot : SlotId)
+    (payload : EndpointIPC.Payload) : Outcome EndpointIPC.SendError :=
+  let sent := EndpointIPC.send state.toEndpointState caller endpointSlot payload
+  match sent.result with
+  | .rejected reason => reject state reason
+  | .accepted =>
+      match Capability.lookup state.capabilities caller endpointSlot with
+      | .found endpointCap =>
+          { state := record
+              { toEndpointState := sent.state, pending := state.pending, trace := state.trace }
+              endpointCap.object (.dataSent endpointCap.object caller payload)
+            result := .accepted }
+      | _ => reject state .staleHandle
+
 /-- Offer one attenuated authority. Object, parent, and sender all come from
 trusted slots/context; payload words remain inert. -/
 def offer (state : State) (caller : SubjectId) (endpointSlot sourceSlot : SlotId)
@@ -119,7 +182,7 @@ def offer (state : State) (caller : SubjectId) (endpointSlot sourceSlot : SlotId
             ⟨identity, source.identity, caller, source.object, source.kind, rights⟩
           let envelope : EndpointIPC.Envelope :=
             { endpoint := endpointCap.object, sender := caller, payload }
-          { state := { state with
+          { state := record { state with
               capabilities := { state.capabilities with
                 nextIdentity := identity + 1
                 derivations := fun candidate => if candidate = identity then
@@ -128,6 +191,7 @@ def offer (state : State) (caller : SubjectId) (endpointSlot sourceSlot : SlotId
               mailbox := EndpointIPC.setOption state.mailbox endpointCap.object (some envelope)
               sendHistory := EndpointIPC.appendHistory state.sendHistory endpointCap.object envelope
               pending := setPending state.pending endpointCap.object (some sealed) }
+              endpointCap.object (.offered endpointCap.object identity caller payload)
             result := .accepted }
 
 /-- Atomically consume the envelope and install its sealed descendant in the
@@ -145,30 +209,21 @@ def accept (state : State) (caller : SubjectId) (endpointSlot destinationSlot : 
     else match state.mailbox endpointCap.object with
       | none => rejectAccept state .empty
       | some envelope =>
-        if !Capability.slotInRange state.capabilities caller destinationSlot then
-          rejectAccept state .outOfRange
-        else if (state.capabilities.slots caller destinationSlot).isSome then
-          rejectAccept state .occupiedSlot
-        else match state.pending endpointCap.object with
-          | none => rejectAccept state .canceled
-          | some transfer =>
+        match state.pending endpointCap.object with
+        | none => deliverData state caller endpointCap envelope
+        | some transfer =>
+          if !Capability.slotInRange state.capabilities caller destinationSlot then
+            rejectAccept state .outOfRange
+          else if (state.capabilities.slots caller destinationSlot).isSome then
+            rejectAccept state .occupiedSlot
+          else
             if state.capabilities.objects transfer.object != true then rejectAccept state .canceled
             else if state.capabilities.kinds transfer.object != some transfer.kind then rejectAccept state .canceled
             else if state.capabilities.derivations transfer.identity !=
                 some (some transfer.parent, transfer.object, transfer.kind, transfer.rights) then
               rejectAccept state .canceled
             else if !Capability.rightsValid transfer.kind transfer.rights then rejectAccept state .canceled
-            else
-              let nextEndpoint : EndpointIPC.State :=
-                { state.toEndpointState with
-                  capabilities := Capability.install state.capabilities caller destinationSlot
-                    ⟨transfer.object, transfer.kind, transfer.rights,
-                      transfer.identity, some transfer.parent⟩
-                  mailbox := EndpointIPC.setOption state.mailbox endpointCap.object none }
-              { state :=
-                  { toEndpointState := nextEndpoint
-                    pending := setPending state.pending endpointCap.object none }
-                result := .delivered envelope }
+            else deliver state caller destinationSlot endpointCap envelope transfer
 
 /-- Remove offers selected by a lifetime/revocation policy. Derivation records
 remain as append-only history, but no canceled identity can be installed. -/
@@ -181,7 +236,13 @@ def cancelWhere (state : State) (selected : Sealed → Bool) : State :=
     pending := fun endpoint =>
       match state.pending endpoint with
       | some transfer => if selected transfer then none else some transfer
-      | none => none }
+      | none => none
+    trace := ⟨fun endpoint =>
+      match state.pending endpoint with
+      | some transfer => if selected transfer then
+          state.trace.events endpoint ++ [.canceled endpoint transfer.identity]
+        else state.trace.events endpoint
+      | none => state.trace.events endpoint⟩ }
 
 /-- Subject termination in this composition updates the authoritative subject
 and slot store and cancels every envelope sent by that subject atomically. -/
@@ -217,7 +278,8 @@ def retireObject (state : State) (subject : SubjectId) (slot : SlotId) :
           issuedAddressSpace := state.issuedAddressSpace
           mailbox := state.mailbox
           sendHistory := state.sendHistory }
-      let transitioned : State := { toEndpointState := endpointState, pending := state.pending }
+      let transitioned : State :=
+        { toEndpointState := endpointState, pending := state.pending, trace := state.trace }
       { state := cancelWhere transitioned (fun transfer => transfer.object = cap.object)
         result := .accepted }
 
@@ -234,7 +296,7 @@ def destroyEndpoint (state : State) (subject : SubjectId) (slot : SlotId) :
     | .rejected reason => reject state reason
     | .accepted =>
       let transitioned : State :=
-        { toEndpointState := destroyed.state, pending := state.pending }
+        { toEndpointState := destroyed.state, pending := state.pending, trace := state.trace }
       let canceled := cancelWhere transitioned (fun transfer => transfer.object = cap.object)
       { state := { canceled with pending := setPending canceled.pending cap.object none }
         result := .accepted }
@@ -404,18 +466,20 @@ theorem accept_rejected_unchanged state caller endpointSlot destinationSlot reas
     split <;> try simp_all [rejectAccept]
     split <;> try simp_all [rejectAccept]
     next envelope =>
-      split <;> try simp_all [rejectAccept]
+      split <;> try simp_all [rejectAccept, deliverData]
       split <;> try simp_all [rejectAccept]
       split <;> try simp_all [rejectAccept]
       next transfer =>
         split <;> try simp_all [rejectAccept]
         split <;> try simp_all [rejectAccept]
         split <;> try simp_all [rejectAccept]
-        split <;> simp_all [rejectAccept]
+        split <;> simp_all [rejectAccept, deliver]
 
 /-- Successful receipt consumes exactly its mailbox and installs its sealed
 identity in the trusted caller's chosen slot. -/
 theorem delivered_installs_exactly_once state caller endpointSlot destinationSlot envelope
+    (hattached : ∀ endpoint, state.mailbox endpoint = some envelope →
+      state.pending endpoint ≠ none)
     (h : (accept state caller endpointSlot destinationSlot).result = .delivered envelope) :
     ∃ endpoint transfer,
       state.pending endpoint = some transfer ∧
@@ -435,21 +499,27 @@ theorem delivered_installs_exactly_once state caller endpointSlot destinationSlo
     split at h <;> try contradiction
     split at h <;> try contradiction
     next envelope hmail =>
-      split at h <;> try contradiction
-      split at h <;> try contradiction
-      split at h <;> try contradiction
+      split at h
       next transfer hpending =>
+        cases h
+        exact False.elim (hattached endpointCap.object hmail hpending)
+      next transfer hpending =>
+        split at h <;> try contradiction
+        split at h <;> try contradiction
         split at h <;> try contradiction
         split at h <;> try contradiction
         split at h <;> try contradiction
         split at h <;> try contradiction
         cases h
         refine ⟨endpointCap.object, transfer, hpending, hmail, ?_, ?_, ?_⟩ <;>
-          simp [setPending, EndpointIPC.setOption, Capability.install, *]
+          simp (maxSteps := 500000) [deliver, record, setPending,
+            EndpointIPC.setOption, Capability.install, *]
 
 /-- Delivery returns the exact envelope stored before the transition. In
 particular, neither payload word participates in selecting installed authority. -/
 theorem delivered_envelope_and_payload_independent state caller endpointSlot destinationSlot envelope
+    (hattached : ∀ endpoint, state.mailbox endpoint = some envelope →
+      state.pending endpoint ≠ none)
     (h : (accept state caller endpointSlot destinationSlot).result = .delivered envelope) :
     ∃ endpoint transfer,
       state.mailbox endpoint = some envelope ∧
@@ -459,7 +529,7 @@ theorem delivered_envelope_and_payload_independent state caller endpointSlot des
           ⟨transfer.object, transfer.kind, transfer.rights,
             transfer.identity, some transfer.parent⟩ := by
   obtain ⟨endpoint, transfer, hpending, hmail, _, _, hslot⟩ :=
-    delivered_installs_exactly_once state caller endpointSlot destinationSlot envelope h
+    delivered_installs_exactly_once state caller endpointSlot destinationSlot envelope hattached h
   exact ⟨endpoint, transfer, hmail, hpending, hslot⟩
 
 /-- Conservation follows directly from the strengthened pending invariant:
@@ -477,6 +547,8 @@ descendant recorded beside the returned envelope. Payload is absent from every
 authority-bearing equality. -/
 theorem delivered_authority_conserved state caller endpointSlot destinationSlot envelope
     (hstate : WellFormed state)
+    (hattached : ∀ endpoint, state.mailbox endpoint = some envelope →
+      state.pending endpoint ≠ none)
     (h : (accept state caller endpointSlot destinationSlot).result = .delivered envelope) :
     ∃ endpoint, ∃ transfer : Sealed, ∃ parentParent parentRights,
       state.mailbox endpoint = some envelope ∧
@@ -488,9 +560,34 @@ theorem delivered_authority_conserved state caller endpointSlot destinationSlot 
           ⟨transfer.object, transfer.kind, transfer.rights,
             transfer.identity, some transfer.parent⟩ := by
   obtain ⟨endpoint, transfer, hmail, hpending, hslot⟩ :=
-    delivered_envelope_and_payload_independent state caller endpointSlot destinationSlot envelope h
+    delivered_envelope_and_payload_independent state caller endpointSlot destinationSlot envelope
+      hattached h
   obtain ⟨parentParent, parentRights, hparent, hsubset⟩ :=
     pending_rights_conserved state endpoint transfer hstate hpending
   exact ⟨endpoint, transfer, parentParent, parentRights, hmail, hparent, hsubset, hslot⟩
+
+set_option maxHeartbeats 800000 in
+/-- Changing only the inert payload cannot change the reserved derivation or
+sealed authority.  The envelopes and observer events may differ because the
+payload itself is intentionally visible. -/
+theorem offer_authority_payload_independent state caller endpointSlot sourceSlot
+    leftPayload rightPayload rights :
+    (offer state caller endpointSlot sourceSlot leftPayload rights).state.capabilities =
+        (offer state caller endpointSlot sourceSlot rightPayload rights).state.capabilities ∧
+      (offer state caller endpointSlot sourceSlot leftPayload rights).state.pending =
+        (offer state caller endpointSlot sourceSlot rightPayload rights).state.pending := by
+  simp only [offer]
+  split <;> try simp_all [reject]
+  next endpointCap =>
+    split <;> try simp_all [reject]
+    split <;> try simp_all [reject]
+    split <;> try simp_all [reject]
+    split <;> try simp_all [reject]
+    split <;> try simp_all [reject]
+    split <;> try simp_all [reject]
+    next source =>
+      split <;> try simp_all [reject]
+      split <;> try simp_all [reject]
+      split <;> simp_all [reject, record]
 
 end LeanOS.CapabilityTransfer
