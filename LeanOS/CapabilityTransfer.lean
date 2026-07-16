@@ -897,15 +897,21 @@ example :
         { word0 := 8, word1 := 44 } { read := true }).result = .rejected .staleSource := by
   native_decide
 
-/-- The same replacement attack is denied by every other holder-facing
-authority consumer: the raw numbered slot sees the replacement, but the old
-generation cannot send data, retire memory, or destroy an endpoint. -/
+/-- The same endpoint replacement attack is denied by every holder-facing
+endpoint authority consumer: the raw numbered slot sees the replacement, but
+the old generation cannot offer, send, receive, or destroy through it. -/
 example :
     let oldEndpoint := CapabilityHandle.issue 0 destroyTraceEndpointCap
+    let source := CapabilityHandle.issue 2 destroyTraceMemory
     Capability.lookup replacementEndpointState.capabilities 0 0 =
         .found replacementEndpoint ∧
+      (offerHandles replacementEndpointState 0 oldEndpoint source .memory
+        { word0 := 71, word1 := 98 } { read := true }).result =
+          .rejected .staleEndpoint ∧
       (sendDataHandle replacementEndpointState 0 oldEndpoint
         { word0 := 71, word1 := 98 }).result = .rejected .staleHandle ∧
+      (acceptHandle replacementEndpointState 0 oldEndpoint 1).result =
+        .rejected .staleEndpoint ∧
       (destroyEndpointHandle replacementEndpointState 0 oldEndpoint).result =
         .rejected .staleHandle := by
   native_decide
