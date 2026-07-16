@@ -746,6 +746,58 @@ theorem accept_rejected_unchanged state caller endpointSlot destinationSlot reas
         split <;> try simp_all [rejectAccept]
         split <;> simp_all [rejectAccept, deliver]
 
+set_option maxHeartbeats 800000 in
+/-- Receipt preserves the authoritative capability invariant.  In the attached
+case this is the proof that moving a reserved identity into the trusted
+receiver's empty slot does not create a malformed or duplicate live
+capability; data-only receipt and every rejection leave the store unchanged. -/
+theorem accept_preserves_capabilityWellFormed state caller endpointSlot destinationSlot
+    (hstate : WellFormed state) :
+    Capability.WellFormed
+      (accept state caller endpointSlot destinationSlot).state.capabilities := by
+  simp only [accept]
+  split <;> try simpa [rejectAccept] using hstate.1.1
+  next endpointCap hlookup =>
+    split <;> try simpa [rejectAccept] using hstate.1.1
+    split <;> try simpa [rejectAccept] using hstate.1.1
+    split <;> try simpa [rejectAccept] using hstate.1.1
+    split <;> try simpa [rejectAccept] using hstate.1.1
+    split <;> try simpa [rejectAccept] using hstate.1.1
+    next envelope hmail =>
+      split
+      next hpending =>
+        simpa [deliverData, record] using hstate.1.1
+      next transfer hpending =>
+        split <;> try simpa [rejectAccept] using hstate.1.1
+        next hrange =>
+          split <;> try simpa [rejectAccept] using hstate.1.1
+          next hempty =>
+            split <;> try simpa [rejectAccept] using hstate.1.1
+            next hobject =>
+              split <;> try simpa [rejectAccept] using hstate.1.1
+              next hkind =>
+                split <;> try simpa [rejectAccept] using hstate.1.1
+                next hentry =>
+                  split <;> try simpa [rejectAccept] using hstate.1.1
+                  next hrights =>
+                    have hpendingInvariant := hstate.2 endpointCap.object transfer hpending
+                    have hendpointSlot := Capability.lookup_found_slot
+                      state.capabilities caller endpointSlot endpointCap hlookup
+                    have hcaller := hstate.1.1.1 caller endpointSlot endpointCap hendpointSlot
+                    apply install_reserved_preserves_capabilityWellFormed
+                    · exact hstate.1.1
+                    · exact hcaller.1
+                    · simpa [Capability.slotInRange] using hrange
+                    · simpa using hempty
+                    · simpa using hobject
+                    · simpa using hkind
+                    · simpa using hrights
+                    · exact hpendingInvariant.2.2.2.2.2.2.2.1
+                    · exact hpendingInvariant.2.2.2.2.2.2.1
+                    · simpa using hentry
+                    · exact hpendingInvariant.2.2.2.2.2.1
+                    · exact hpendingInvariant.2.2.2.2.2.2.2.2.1
+
 /-- Successful receipt consumes exactly its mailbox and installs its sealed
 identity in the trusted caller's chosen slot. -/
 theorem delivered_installs_exactly_once state caller endpointSlot destinationSlot envelope
