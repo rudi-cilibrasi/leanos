@@ -1,5 +1,7 @@
 # LeanOS
 
+![LeanOS — a formally modeled operating-system kernel](assets/leanos-social-preview.png)
+
 LeanOS is an experiment in building a small operating-system kernel whose
 implementation, executable specification, and machine-checked proofs evolve
 together in Lean 4.
