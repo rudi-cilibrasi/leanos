@@ -272,6 +272,10 @@ structure Plan where
   tableFramesValidityChecked : tableFramesValid = true
   tableFramesUnique : Bool
   tableFramesUniquenessChecked : tableFramesUnique = true
+  /-- Exact ancestor layout and validated reservation result accepted by
+  `compile`. Live-table validation must not take either from a second input. -/
+  compiledAncestors : AncestorPaths
+  compiledReservationResult : Option BootReservation.Result
 
 /-- Total compiler/checker for the deliberately finite supported subset. -/
 def compile (input : Input) : Except Error Plan := do
@@ -309,7 +313,8 @@ def compile (input : Input) : Except Error Plan := do
                           hstructural, hrefines, hsupervisor, hattributes,
                           tableFramesReserved input, htables,
                           tableFramesRepresentable input, hframes,
-                          tableFramesDistinct input, hframesUnique⟩
+                          tableFramesDistinct input, hframesUnique,
+                          input.ancestors, input.reservationResult⟩
                       else throw .incompatibleOverlap
                     else throw .wrongOwner
                   else throw .incompatibleOverlap
@@ -412,14 +417,14 @@ def legalDecodedAncestor (entry : DecodedAncestor) : Bool :=
     entry.reservedBitsClear &&
     representableFrame entry.nextFrame
 
-def decodedAncestorReserved (input : Input) (entry : DecodedAncestor) : Bool :=
-  match input.reservationResult with
+def decodedAncestorReserved (plan : Plan) (entry : DecodedAncestor) : Bool :=
+  match plan.compiledReservationResult with
   | none => false
   | some reserved => reservedAsPageTable reserved.intervals entry.nextFrame
 
-def expectedAncestorFrames (input : Input) : Space → AncestorFrames
-  | .subjectA => input.ancestors.subjectA
-  | .subjectB => input.ancestors.subjectB
+def expectedAncestorFrames (plan : Plan) : Space → AncestorFrames
+  | .subjectA => plan.compiledAncestors.subjectA
+  | .subjectB => plan.compiledAncestors.subjectB
 
 def absentDecodedAncestor : DecodedAncestor :=
   { present := false, writable := false, user := false, noExecute := false,
@@ -441,14 +446,14 @@ def pdAncestorTable (frames : List PhysicalFrame) : List DecodedAncestor :=
 
 /-- Match every ancestor-table slot, not only the selected pointers. This binds
 the decoded pointer to its paging index and proves absence for all other slots. -/
-def ancestorTablesMatch (input : Input) (report : DecodedRoot) : Bool :=
-  let expected := expectedAncestorFrames input report.space
+def ancestorTablesMatch (plan : Plan) (report : DecodedRoot) : Bool :=
+  let expected := expectedAncestorFrames plan report.space
   report.pml4Entries == singletonAncestorTable expected.pdpt &&
     report.pdptEntries == singletonAncestorTable expected.pd &&
     report.pdEntries == pdAncestorTable expected.pts
 
-def decodedAncestorTableReserved (input : Input) (entries : List DecodedAncestor) : Bool :=
-  entries.all fun entry => !entry.present || decodedAncestorReserved input entry
+def decodedAncestorTableReserved (plan : Plan) (entries : List DecodedAncestor) : Bool :=
+  entries.all fun entry => !entry.present || decodedAncestorReserved plan entry
 
 def decodedNoDuplicates (leaves : List DecodedLeaf) : Bool :=
   leaves.Pairwise fun a b => a.page != b.page
@@ -469,13 +474,13 @@ def expectedDecodedAt (plan : Plan) (space : Space) (page : Nat) : Leaf :=
 /-- Compare all 4,096 decoded PTEs reached through the eight PT pointers.
 Manifest omissions are deliberately absent zero entries, so neither an extra
 present mapping nor corruption in a later PT can hide outside the report. -/
-def validateDecodedRoot (input : Input) (plan : Plan) (report : DecodedRoot) :
+def validateDecodedRoot (plan : Plan) (report : DecodedRoot) :
     Except ReportError Unit := do
   if report.selectedRoot != expectedRoot plan report.space then throw .wrongRoot
-  if !ancestorTablesMatch input report then throw .wrongAncestor
-  if !(decodedAncestorTableReserved input report.pml4Entries &&
-      decodedAncestorTableReserved input report.pdptEntries &&
-      decodedAncestorTableReserved input report.pdEntries) then throw .unreservedAncestor
+  if !ancestorTablesMatch plan report then throw .wrongAncestor
+  if !(decodedAncestorTableReserved plan report.pml4Entries &&
+      decodedAncestorTableReserved plan report.pdptEntries &&
+      decodedAncestorTableReserved plan report.pdEntries) then throw .unreservedAncestor
   if !decodedNoDuplicates report.leaves then throw .duplicateActual
   for actual in report.leaves do
     if actual.page >= supportedPathPages then throw .unexpectedLeaf
@@ -483,19 +488,19 @@ def validateDecodedRoot (input : Input) (plan : Plan) (report : DecodedRoot) :
       throw .mismatchedLeaf
   if report.leaves.length != supportedPathPages then throw .missingLeaf
 
-theorem decoded_validation_deterministic input plan report first second
-    (hfirst : validateDecodedRoot input plan report = first)
-    (hsecond : validateDecodedRoot input plan report = second) : first = second := by
+theorem decoded_validation_deterministic plan report first second
+    (hfirst : validateDecodedRoot plan report = first)
+    (hsecond : validateDecodedRoot plan report = second) : first = second := by
   rw [hfirst] at hsecond
   exact hsecond
 
 /-- Require one report for each address space, rather than allowing an
 integration harness to validate the same selected root twice. -/
-def validateDecodedPair (input : Input) (plan : Plan)
+def validateDecodedPair (plan : Plan)
     (subjectA subjectB : DecodedRoot) : Except ReportError Unit := do
   if subjectA.space != .subjectA || subjectB.space != .subjectB then throw .wrongRoot
-  validateDecodedRoot input plan subjectA
-  validateDecodedRoot input plan subjectB
+  validateDecodedRoot plan subjectA
+  validateDecodedRoot plan subjectB
 
 /-! ## Executable positive and adversarial fixtures -/
 
@@ -662,8 +667,11 @@ example : rejectedAs
 def decodedAncestor (frame : Nat) : DecodedAncestor :=
   expectedDecodedAncestor frame
 
-def decodedReport (plan : Plan) (space : Space) : DecodedRoot :=
-  let expected := expectedAncestorFrames sampleInput space
+def decodedReportWithAncestors (plan : Plan) (ancestors : AncestorPaths)
+    (space : Space) : DecodedRoot :=
+  let expected := match space with
+    | .subjectA => ancestors.subjectA
+    | .subjectB => ancestors.subjectB
   { space, selectedRoot := expectedRoot plan space,
     pml4Entries := singletonAncestorTable expected.pdpt,
     pdptEntries := singletonAncestorTable expected.pd,
@@ -671,10 +679,13 @@ def decodedReport (plan : Plan) (space : Space) : DecodedRoot :=
     leaves := (List.range supportedPathPages).map fun page =>
       { page, leaf := expectedDecodedAt plan space page } }
 
+def decodedReport (plan : Plan) (space : Space) : DecodedRoot :=
+  decodedReportWithAncestors plan plan.compiledAncestors space
+
 def sampleReportCheck (mutate : DecodedRoot → DecodedRoot) : Except ReportError Unit :=
   match compile sampleInput with
   | .error _ => .error .missingLeaf
-  | .ok plan => validateDecodedRoot sampleInput plan (mutate (decodedReport plan .subjectA))
+  | .ok plan => validateDecodedRoot plan (mutate (decodedReport plan .subjectA))
 
 def unchangedReport (report : DecodedRoot) : DecodedRoot := report
 def wrongRootReport (report : DecodedRoot) : DecodedRoot := { report with selectedRoot := 11 }
@@ -776,6 +787,21 @@ example : reportRejectedAs (sampleReportCheck extraPdAncestorReport) .wrongAnces
   native_decide
 example : reportRejectedAs (sampleReportCheck misplacedPdAncestorReport) .wrongAncestor = true := by
   native_decide
+/-- A report produced from a different reserved input cannot substitute an
+ancestor that aliases one of the compiled plan's PT frames. -/
+def crossInputAliasedAncestorCheck : Except ReportError Unit :=
+  match compile sampleInput with
+  | .error _ => .error .missingLeaf
+  | .ok plan =>
+      let substituted :=
+        { sampleInput.ancestors with
+          subjectA :=
+            { sampleInput.ancestors.subjectA with
+              pdpt := sampleInput.ancestors.subjectA.pts[7]! } }
+      validateDecodedRoot plan (decodedReportWithAncestors plan substituted .subjectA)
+
+example : reportRejectedAs crossInputAliasedAncestorCheck .wrongAncestor = true := by
+  native_decide
 example : reportRejectedAs (sampleReportCheck duplicateLeafReport) .duplicateActual = true := by
   native_decide
 example : reportRejectedAs (sampleReportCheck unexpectedLeafReport) .unexpectedLeaf = true := by
@@ -799,7 +825,7 @@ def samplePairCheck (mutateA mutateB : DecodedRoot → DecodedRoot) :
     Except ReportError Unit :=
   match compile sampleInput with
   | .error _ => .error .missingLeaf
-  | .ok plan => validateDecodedPair sampleInput plan
+  | .ok plan => validateDecodedPair plan
       (mutateA (decodedReport plan .subjectA)) (mutateB (decodedReport plan .subjectB))
 
 example : reportAccepted (samplePairCheck unchangedReport unchangedReport) = true := by
@@ -816,7 +842,7 @@ def swappedUserLeavesCheck : Except ReportError Unit :=
       let reportB := decodedReport plan .subjectB
       let userA := reportA.leaves.filter fun entry => entry.leaf.user
       let userB := reportB.leaves.filter fun entry => entry.leaf.user
-      validateDecodedPair sampleInput plan
+      validateDecodedPair plan
         { reportA with leaves := reportA.leaves.filter (fun entry => !entry.leaf.user) ++ userB }
         { reportB with leaves := reportB.leaves.filter (fun entry => !entry.leaf.user) ++ userA }
 
