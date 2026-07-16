@@ -47,7 +47,9 @@ def WellFormed (state : State) : Prop :=
       Capability.rightsSubset transfer.rights parentRights = true) ∧
     transfer.parent < transfer.identity ∧ transfer.identity < state.capabilities.nextIdentity ∧
     (∀ subject slot cap, state.capabilities.slots subject slot = some cap →
-      cap.identity ≠ transfer.identity)
+      cap.identity ≠ transfer.identity) ∧
+    (∀ other otherTransfer, state.pending other = some otherTransfer →
+      otherTransfer.identity = transfer.identity → other = endpoint)
 
 /-- Observer-visible events. Payload data is retained, but it never supplies an
 authority-bearing identifier. -/
@@ -251,6 +253,125 @@ noncomputable def revokeSubtree (state : State) (actor authoritySlot victim vict
         ({ canceled with capabilities := outcome.state }, outcome.result)
       else (state, outcome.result)
   | _ => (state, (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).result)
+
+/-- Reserving an append-only derivation identity without installing it in a
+slot preserves the authoritative capability invariant. -/
+private theorem reserve_preserves_capabilityWellFormed (caps : Capability.State)
+    (source : Capability.Capability) (rights : Capability.Rights)
+    (hcaps : Capability.WellFormed caps)
+    (hsource : ∃ subject slot, caps.slots subject slot = some source)
+    (_hvalid : Capability.rightsValid source.kind rights = true)
+    (hsubset : Capability.rightsSubset rights source.rights = true) :
+    Capability.WellFormed { caps with
+      nextIdentity := caps.nextIdentity + 1
+      derivations := fun candidate => if candidate = caps.nextIdentity then
+        some (some source.identity, source.object, source.kind, rights)
+        else caps.derivations candidate } := by
+  rcases hsource with ⟨subject, slot, hslot⟩
+  rcases hcaps with ⟨hslots, hderivations, hunique, hspaces⟩
+  have hs := hslots subject slot source hslot
+  refine ⟨?_, ?_, hunique, hspaces⟩
+  · intro holder candidateSlot cap hfound
+    rcases hslots holder candidateSlot cap hfound with
+      ⟨hlive, hobject, hkind, hrights, hid, hentry, hedge⟩
+    refine ⟨hlive, hobject, hkind, hrights, Nat.lt_succ_of_lt hid, ?_, ?_⟩
+    · simp [Nat.ne_of_lt hid, hentry]
+    · cases hp : cap.parent <;> simp only [hp] at hedge ⊢
+      rename_i parent
+      rcases hedge with ⟨hparent, parentParent, parentRights, hpentry, hrightsSubset⟩
+      refine ⟨hparent, parentParent, parentRights, ?_, hrightsSubset⟩
+      simp [Nat.ne_of_lt (Nat.lt_trans hparent hid), hpentry]
+  · intro identity parent object kind recordedRights hentry
+    by_cases hnew : identity = caps.nextIdentity
+    · subst identity
+      simp at hentry
+      rcases hentry with ⟨rfl, rfl, rfl, rfl⟩
+      exact ⟨Nat.lt_succ_self _, hs.2.2.2.2.1, source.parent, source.rights,
+        by simpa [Nat.ne_of_lt hs.2.2.2.2.1] using hs.2.2.2.2.2.1, hsubset⟩
+    · have hold := hderivations identity parent object kind recordedRights (by
+          simpa [hnew] using hentry)
+      refine ⟨Nat.lt_succ_of_lt hold.1, ?_⟩
+      cases parent with
+      | none => trivial
+      | some parentIdentity =>
+          rcases hold.2 with ⟨hparent, parentParent, parentRights, hpentry, hrightsSubset⟩
+          refine ⟨hparent, parentParent, parentRights, ?_, hrightsSubset⟩
+          simp [Nat.ne_of_lt (Nat.lt_trans hparent hold.1), hpentry]
+
+/-- Installing a previously reserved, globally unique identity into an empty
+bounded slot preserves the authoritative capability invariant. -/
+private theorem install_reserved_preserves_capabilityWellFormed
+    (caps : Capability.State) (subject slot : Nat) (transfer : Sealed)
+    (hcaps : Capability.WellFormed caps)
+    (hsubject : caps.subjects subject = true)
+    (hrange : Capability.slotInRange caps subject slot = true)
+    (hempty : caps.slots subject slot = none)
+    (hobject : caps.objects transfer.object = true)
+    (hkind : caps.kinds transfer.object = some transfer.kind)
+    (hrights : Capability.rightsValid transfer.kind transfer.rights = true)
+    (hid : transfer.identity < caps.nextIdentity)
+    (hparentLt : transfer.parent < transfer.identity)
+    (hentry : caps.derivations transfer.identity =
+      some (some transfer.parent, transfer.object, transfer.kind, transfer.rights))
+    (hparent : ∃ parentParent parentRights,
+      caps.derivations transfer.parent =
+        some (parentParent, transfer.object, transfer.kind, parentRights) ∧
+      Capability.rightsSubset transfer.rights parentRights = true)
+    (huniqueId : ∀ holder candidateSlot cap, caps.slots holder candidateSlot = some cap →
+      cap.identity ≠ transfer.identity) :
+    Capability.WellFormed (Capability.install caps subject slot
+      ⟨transfer.object, transfer.kind, transfer.rights,
+        transfer.identity, some transfer.parent⟩) := by
+  rcases hcaps with ⟨hslots, hderivations, hunique, hspaces⟩
+  refine ⟨?_, by simpa only [Capability.DerivationsWellFormed, Capability.install] using
+    hderivations, ?_, ?_⟩
+  · intro holder candidateSlot cap hslot
+    by_cases htarget : holder = subject ∧ candidateSlot = slot
+    · rcases htarget with ⟨rfl, rfl⟩
+      have : cap = ⟨transfer.object, transfer.kind, transfer.rights,
+          transfer.identity, some transfer.parent⟩ := by
+        simpa [Capability.install] using hslot.symm
+      subst cap
+      exact ⟨by simpa [Capability.install] using hsubject, hobject, hkind, hrights,
+        hid, by simpa [Capability.install] using hentry, ⟨hparentLt, hparent⟩⟩
+    · have hold : caps.slots holder candidateSlot = some cap := by
+        simpa [Capability.install, htarget] using hslot
+      rcases hslots holder candidateSlot cap hold with
+        ⟨hlive, hliveObject, hcapKind, hcapRights, hcapId, hcapEntry, hedge⟩
+      exact ⟨by simpa [Capability.install] using hlive, hliveObject, hcapKind,
+        hcapRights, hcapId, by simpa [Capability.install] using hcapEntry, hedge⟩
+  · intro left leftSlot leftCap right rightSlot rightCap hleft hright heq
+    by_cases hl : left = subject ∧ leftSlot = slot
+    · by_cases hr : right = subject ∧ rightSlot = slot
+      · exact ⟨hl.1.trans hr.1.symm, hl.2.trans hr.2.symm⟩
+      · rcases hl with ⟨rfl, rfl⟩
+        have hleftId : leftCap.identity = transfer.identity := by
+          have : leftCap = ⟨transfer.object, transfer.kind, transfer.rights,
+              transfer.identity, some transfer.parent⟩ := by
+            simpa [Capability.install] using hleft.symm
+          simp [this]
+        have hold := huniqueId right rightSlot rightCap
+          (by simpa [Capability.install, hr] using hright)
+        exact False.elim (hold (heq.symm.trans hleftId))
+    · by_cases hr : right = subject ∧ rightSlot = slot
+      · rcases hr with ⟨rfl, rfl⟩
+        have hrightId : rightCap.identity = transfer.identity := by
+          have : rightCap = ⟨transfer.object, transfer.kind, transfer.rights,
+              transfer.identity, some transfer.parent⟩ := by
+            simpa [Capability.install] using hright.symm
+          simp [this]
+        exact False.elim (huniqueId left leftSlot leftCap
+          (by simpa [Capability.install, hl] using hleft) (heq.trans hrightId))
+      · exact hunique left leftSlot leftCap right rightSlot rightCap
+          (by simpa [Capability.install, hl] using hleft)
+          (by simpa [Capability.install, hr] using hright) heq
+  · intro holder candidateSlot hout
+    by_cases htarget : holder = subject ∧ candidateSlot = slot
+    · rcases htarget with ⟨rfl, rfl⟩
+      change caps.slotCapacity holder ≤ candidateSlot at hout
+      exact False.elim (Nat.not_lt_of_ge hout
+        (by simpa [Capability.slotInRange] using hrange))
+    · simpa [Capability.install, htarget] using hspaces holder candidateSlot hout
 
 set_option maxHeartbeats 800000 in
 theorem offer_rejected_unchanged state caller endpointSlot sourceSlot payload rights reason
