@@ -164,6 +164,10 @@ nonblocking mailboxes with trusted sender provenance, never-reused endpoint
 identities, and complete destruction cleanup. Its precise proof boundary and
 exclusions are documented in [`docs/endpoint-ipc.md`](docs/endpoint-ipc.md).
 
+The bounded [capability-transfer model](docs/capability-transfer.md) attaches
+at most one sealed, attenuated descendant to an endpoint envelope and installs
+it atomically on receipt without interpreting payload words as authority.
+
 The bounded [user-copy model](docs/user-copy.md) prevalidates a small complete
 range through current virtual mappings before changing typed kernel buffers or
 live-frame byte memory, with explicit alias rejection and atomic failure.
