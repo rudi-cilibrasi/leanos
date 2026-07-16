@@ -28,6 +28,7 @@ fi
 build="$repo_root/build/boot"
 iso_root="$build/iso"
 df_iso_root="$build/iso-double-fault"
+df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -39,7 +40,8 @@ if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 rm -rf "$build"
-mkdir -p "$iso_root/boot/grub" "$df_iso_root/boot/grub"
+mkdir -p "$iso_root/boot/grub" "$df_iso_root/boot/grub" \
+  "$df_negative_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
 
 # C generation resolves project imports through Lake's compiled module path.
@@ -73,6 +75,9 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -c boot/boot.S -o "$build/boot.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_DF_MAP_GUARD=1 \
+  -c boot/boot.S -o "$build/boot-df-guard-mapped.o"
 
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
@@ -85,6 +90,12 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
   build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
   build/boot/BootAllocation.o
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
+  -o build/boot/leanos-double-fault-guard-mapped.elf \
+  build/boot/boot-df-guard-mapped.o build/boot/kernel-double-fault.o \
+  build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
+  build/boot/Preemption.o build/boot/BootAllocation.o
 
 undefined="$(nm -u "$build/leanos.elf")"
 if [[ -n "$undefined" ]]; then
@@ -124,9 +135,13 @@ cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-double-fault.elf" "$df_iso_root/boot/leanos.elf"
 cp boot/grub-double-fault.cfg "$df_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-double-fault-guard-mapped.elf" \
+  "$df_negative_iso_root/boot/leanos.elf"
+cp boot/grub-double-fault.cfg "$df_negative_iso_root/boot/grub/grub.cfg"
 printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
   > "$iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
 # BIOS-only output avoids GRUB's nondeterministic FAT/EFI image. A fixed ISO
 # UUID and file dates make repeated builds independent of wall-clock time.
 grub-mkrescue -d /usr/lib/grub/i386-pc \
@@ -137,9 +152,15 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-double-fault.iso" "$df_iso_root" -- \
   -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
+  "$df_negative_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
 sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-double-fault.iso" "$build/leanos.elf" \
   "$build/leanos-double-fault.elf" \
+  "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
+  "$build/leanos-double-fault-guard-mapped.elf" \
   > "$build/SHA256SUMS"
 echo "built build/boot/leanos-${version}-x86_64.iso at $source_revision"
 echo "symbols: build/boot/leanos.map; debug ELF: build/boot/leanos.elf"

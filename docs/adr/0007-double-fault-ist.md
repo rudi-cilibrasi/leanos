@@ -20,11 +20,13 @@ failure each emit one fixed terminal record and leave through distinct
 debug-exit values; neither path returns.
 
 The dedicated probe disables the ordinary controlled fault probes by entering
-before them. It sets RSP to the boundary above the unmapped guard and invokes an
-absent vector-13 gate. Delivery of that general-protection exception cannot
-write its frame, causing a page fault during contributory-exception delivery
-and therefore vector 8. The normal image does not invoke this probe and retains
-its exact existing success protocol.
+before them. It sets RSP to the boundary above the unmapped guard and raises a
+real general-protection exception by loading an invalid segment selector. The
+present vector-13 IST0 gate cannot push its frame, causing a page fault during
+contributory-exception delivery and therefore vector 8. A separately built
+negative image leaves the guard mapped and must reach the vector-13 terminal
+failure path instead of vector 8. The normal image does not invoke this probe
+and retains its exact existing success protocol.
 
 ## Evidence
 

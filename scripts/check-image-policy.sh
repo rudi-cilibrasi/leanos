@@ -27,7 +27,7 @@ for symbol in __boot_image_start __boot_image_end __kernel_text_start __kernel_t
   }
 done
 
-for symbol in isr8 isr8_clac isr8_cld run_double_fault_probe \
+for symbol in isr8 isr8_clac isr8_cld isr13 run_double_fault_probe \
   __df_ist_guard_start __df_ist_guard_end __df_ist_stack_start \
   __df_ist_stack_end df_ist_guard df_ist_stack df_ist_stack_top; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
@@ -65,6 +65,7 @@ stack_end="$(symbol_address __df_ist_stack_end)"
 grep -Fq 'tss.ist[0] = (uint64_t)__df_ist_stack_end;' boot/kernel.c
 [[ "$(grep -Ec 'set_gate\([^,]+,[^,]+, 1,' boot/kernel.c)" -eq 1 ]]
 grep -Fq 'set_gate(8, isr8, 1, 0x8e);' boot/kernel.c
+grep -Fq 'set_gate(13, isr13, 0, 0x8e);' boot/kernel.c
 grep -Fq 'movl $0, page_table_a(%eax)' boot/boot.S
 grep -Fq 'movl $0, page_table_b(%eax)' boot/boot.S
 stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr8>:/,/<isr80>:/p')"

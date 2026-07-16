@@ -11,6 +11,8 @@ image="${1:-build/boot/leanos-${version}-x86_64-double-fault.iso}"
 log="${LEANOS_SERIAL_LOG:-build/boot/double-fault.serial.log}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 terminal='LEANOS/8 TERMINAL reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none'
+negative='LEANOS/8 NEGATIVE reason=guard-mapped vector=13 double-fault=absent status=FAIL'
+expect_guard_mapped="${LEANOS_EXPECT_GUARD_MAPPED:-0}"
 
 for tool in "$qemu" timeout; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -50,6 +52,15 @@ set -e
 if [[ $status -eq 124 || $status -eq 137 ]]; then
   echo "failure_class=timeout: QEMU exceeded ${limit}s wall limit" >&2
   exit 1
+fi
+if [[ "$expect_guard_mapped" == 1 ]]; then
+  if [[ $status -ne 39 ]] || [[ "$(grep -Fxc "$negative" "$log")" -ne 1 ]] || \
+     grep -Fq 'LEANOS/8 TERMINAL reason=double-fault' "$log"; then
+    echo "failure_class=negative-guard: mapped guard did not prevent double-fault success" >&2
+    exit 1
+  fi
+  echo "LeanOS mapped-guard negative passed; vector 13 handled and vector 8 absent"
+  exit 0
 fi
 if [[ $status -eq 39 ]]; then
   echo "failure_class=guest-evidence: guest rejected IST1 evidence" >&2

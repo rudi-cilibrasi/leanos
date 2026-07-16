@@ -127,6 +127,7 @@ multiboot_entry:
     orl $4, page_table_b(%eax)
 
     /* The page immediately below IST1 is absent in both address spaces. */
+#ifndef LEANOS_DF_MAP_GUARD
     mov $__df_ist_guard_start, %eax
     shr $9, %eax
     and $0x7ff8, %eax
@@ -134,6 +135,7 @@ multiboot_entry:
     movl $0, page_table_a+4(%eax)
     movl $0, page_table_b(%eax)
     movl $0, page_table_b+4(%eax)
+#endif
 
     mov %cr4, %eax
     or $(1 << 5), %eax
@@ -334,16 +336,17 @@ enter_user:
     push %rdi
     iretq
 
-/* Invoke the absent vector-13 gate with RSP in the unmapped IST guard.  The
-   resulting #GP cannot push its frame, so the #PF during delivery escalates
-   the two contributory exceptions to #DF. */
+/* Raise a real #GP with RSP immediately above the unmapped guard.  Its present
+   IST0 gate must push an exception frame into the guard, so the resulting #PF
+   during contributory-exception delivery escalates to #DF. */
 .global run_double_fault_probe
 run_double_fault_probe:
     cli
     clac
     cld
     mov $__df_ist_guard_end, %rsp
-    int $13
+    mov $0xffff, %eax
+    mov %ax, %ds
 1:  hlt
     jmp 1b
 
@@ -362,6 +365,20 @@ run_double_fault_probe:
     dec %ecx
     jnz 1b
 .endm
+
+/* Reaching this present #GP gate means the ordinary-stack frame push worked.
+   The guard-mapped negative image must take this path and must not claim #DF. */
+.global isr13
+isr13:
+    cli
+    clac
+    cld
+    DF_SERIAL df_guard_mapped_record, df_guard_mapped_record_end-df_guard_mapped_record
+    mov $0x13, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+6:  hlt
+    jmp 6b
 
 /* Vector 8 has a hardware error-code word.  This terminal stub uses no C ABI,
    calls, pushes, allocation, formatting, recovery path, or iretq. */
@@ -408,6 +425,9 @@ df_success_record_end:
 df_failure_record:
     .ascii "LEANOS/8 TERMINAL reason=double-fault evidence=invalid status=FAIL\n"
 df_failure_record_end:
+df_guard_mapped_record:
+    .ascii "LEANOS/8 NEGATIVE reason=guard-mapped vector=13 double-fault=absent status=FAIL\n"
+df_guard_mapped_record_end:
 
 .section .text,"ax",@progbits
 

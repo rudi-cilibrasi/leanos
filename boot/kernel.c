@@ -23,6 +23,7 @@ extern void run_smep_probe(void);
 extern void enter_user(void *, void *);
 extern void isr80(void);
 extern void isr8(void);
+extern void isr13(void);
 extern void isr14(void);
 extern void isr32(void);
 extern void run_double_fault_probe(void);
@@ -324,6 +325,7 @@ static void privilege_init(void) {
     *(uint64_t *)((uint64_t)__df_ist_stack_end - 128u) =
         0x15a1c0decafef00dull;
     set_gate(8, isr8, 1, 0x8e);
+    set_gate(13, isr13, 0, 0x8e);
     set_gate(14, isr14, 0, 0x8e);
     set_gate(32, isr32, 0, 0x8e);
     set_gate(0x80, isr80, 0, 0xee);
