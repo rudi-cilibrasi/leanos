@@ -132,7 +132,8 @@ def switch (state : State) (interruptState : Interrupt.State)
         if interruptState.context.currentSubject != current ||
             interruptState.context.activeAddressSpace != current then
           reject state .contextMismatch
-        else if state.translations.active != some current then
+        else if state.translations.active != some current ||
+            state.translations.virtual.owner current != some current then
           reject state .staleActiveSpace
         else if (contextFor state.contexts current).isSome then reject state .duplicateSave
         else if state.capacity ≤ state.contexts.length then reject state .bankFull
@@ -641,7 +642,9 @@ private def roundTripStart (translations : TLB.State) : State :=
       capacity := 3 }
     contexts := [initialContext 2 0x20, initialContext 3 0x30]
     capacity := 3
-    translations := { translations with active := some 1 } }
+    translations := { translations with
+      virtual := { translations.virtual with owner := (demoLifecycle 1).addressOwner }
+      active := some 1 } }
 
 private def switchAToB (translations : TLB.State) : Outcome :=
   switch (roundTripStart translations) (demoInterrupt 1)
@@ -676,6 +679,19 @@ example (translations : TLB.State) :
     (switch (roundTripStart translations) (demoInterrupt 2)
       (demoFrame 0x401000 0x801000 0x246) (demoRegisters 0x10)).error =
         some .contextMismatch := by
+  simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
+    switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
+    Interrupt.validUserReturn, reject]
+
+/-- A matching active CR3 is insufficient when the encoded virtual-memory
+ownership view assigns the current address space to another subject. -/
+example (translations : TLB.State) :
+    let state := roundTripStart translations
+    let staleVirtual := { state.translations.virtual with
+      owner := fun space => if space = 1 then some 3 else state.translations.virtual.owner space }
+    (switch { state with translations := { state.translations with virtual := staleVirtual } }
+      (demoInterrupt 1) (demoFrame 0x401000 0x801000 0x246)
+      (demoRegisters 0x10)).error = some .staleActiveSpace := by
   simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
     switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
     Interrupt.validUserReturn, reject]
