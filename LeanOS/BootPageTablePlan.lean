@@ -390,9 +390,11 @@ structure DecodedLeaf where
 structure DecodedRoot where
   space : Space
   selectedRoot : PhysicalFrame
-  pml4 : DecodedAncestor
-  pdpt : DecodedAncestor
-  ptPointers : List DecodedAncestor
+  /-- Complete decoded ancestor tables. Keeping all 512 slots makes both an
+  extra present pointer and a pointer emitted at the wrong index observable. -/
+  pml4Entries : List DecodedAncestor
+  pdptEntries : List DecodedAncestor
+  pdEntries : List DecodedAncestor
   leaves : List DecodedLeaf
   deriving BEq, DecidableEq, Repr
 
@@ -419,10 +421,34 @@ def expectedAncestorFrames (input : Input) : Space → AncestorFrames
   | .subjectA => input.ancestors.subjectA
   | .subjectB => input.ancestors.subjectB
 
-def ancestorPointersMatch (input : Input) (report : DecodedRoot) : Bool :=
+def absentDecodedAncestor : DecodedAncestor :=
+  { present := false, writable := false, user := false, noExecute := false,
+    hugePage := false, reservedBitsClear := true, nextFrame := 0 }
+
+def expectedDecodedAncestor (frame : PhysicalFrame) : DecodedAncestor :=
+  { present := true, writable := true, user := true, noExecute := false,
+    hugePage := false, reservedBitsClear := true, nextFrame := frame }
+
+def singletonAncestorTable (frame : PhysicalFrame) : List DecodedAncestor :=
+  (List.range 512).map fun index =>
+    if index == 0 then expectedDecodedAncestor frame else absentDecodedAncestor
+
+def pdAncestorTable (frames : List PhysicalFrame) : List DecodedAncestor :=
+  (List.range 512).map fun index =>
+    match frames[index]? with
+    | some frame => expectedDecodedAncestor frame
+    | none => absentDecodedAncestor
+
+/-- Match every ancestor-table slot, not only the selected pointers. This binds
+the decoded pointer to its paging index and proves absence for all other slots. -/
+def ancestorTablesMatch (input : Input) (report : DecodedRoot) : Bool :=
   let expected := expectedAncestorFrames input report.space
-  report.pml4.nextFrame == expected.pdpt && report.pdpt.nextFrame == expected.pd &&
-    report.ptPointers.map (·.nextFrame) == expected.pts
+  report.pml4Entries == singletonAncestorTable expected.pdpt &&
+    report.pdptEntries == singletonAncestorTable expected.pd &&
+    report.pdEntries == pdAncestorTable expected.pts
+
+def decodedAncestorTableReserved (input : Input) (entries : List DecodedAncestor) : Bool :=
+  entries.all fun entry => !entry.present || decodedAncestorReserved input entry
 
 def decodedNoDuplicates (leaves : List DecodedLeaf) : Bool :=
   leaves.Pairwise fun a b => a.page != b.page
@@ -446,12 +472,10 @@ present mapping nor corruption in a later PT can hide outside the report. -/
 def validateDecodedRoot (input : Input) (plan : Plan) (report : DecodedRoot) :
     Except ReportError Unit := do
   if report.selectedRoot != expectedRoot plan report.space then throw .wrongRoot
-  if !(legalDecodedAncestor report.pml4 && legalDecodedAncestor report.pdpt &&
-      report.ptPointers.length == bootPtCount &&
-      report.ptPointers.all legalDecodedAncestor) then throw .wrongAncestor
-  if !ancestorPointersMatch input report then throw .wrongAncestor
-  if !(decodedAncestorReserved input report.pml4 && decodedAncestorReserved input report.pdpt &&
-      report.ptPointers.all (decodedAncestorReserved input)) then throw .unreservedAncestor
+  if !ancestorTablesMatch input report then throw .wrongAncestor
+  if !(decodedAncestorTableReserved input report.pml4Entries &&
+      decodedAncestorTableReserved input report.pdptEntries &&
+      decodedAncestorTableReserved input report.pdEntries) then throw .unreservedAncestor
   if !decodedNoDuplicates report.leaves then throw .duplicateActual
   for actual in report.leaves do
     if actual.page >= supportedPathPages then throw .unexpectedLeaf
@@ -636,14 +660,14 @@ example : rejectedAs
     .addressOverflow = true := by native_decide
 
 def decodedAncestor (frame : Nat) : DecodedAncestor :=
-  { present := true, writable := true, user := true, noExecute := false,
-    hugePage := false, reservedBitsClear := true, nextFrame := frame }
+  expectedDecodedAncestor frame
 
 def decodedReport (plan : Plan) (space : Space) : DecodedRoot :=
   let expected := expectedAncestorFrames sampleInput space
   { space, selectedRoot := expectedRoot plan space,
-    pml4 := decodedAncestor expected.pdpt, pdpt := decodedAncestor expected.pd,
-    ptPointers := expected.pts.map decodedAncestor,
+    pml4Entries := singletonAncestorTable expected.pdpt,
+    pdptEntries := singletonAncestorTable expected.pd,
+    pdEntries := pdAncestorTable expected.pts,
     leaves := (List.range supportedPathPages).map fun page =>
       { page, leaf := expectedDecodedAt plan space page } }
 
@@ -655,19 +679,37 @@ def sampleReportCheck (mutate : DecodedRoot → DecodedRoot) : Except ReportErro
 def unchangedReport (report : DecodedRoot) : DecodedRoot := report
 def wrongRootReport (report : DecodedRoot) : DecodedRoot := { report with selectedRoot := 11 }
 def wrongAncestorReport (report : DecodedRoot) : DecodedRoot :=
-  { report with ptPointers := report.ptPointers.modify 0 fun e => { e with present := false } }
+  { report with pdEntries := report.pdEntries.modify 0 fun e => { e with present := false } }
 def wrongAncestorWritableReport (report : DecodedRoot) : DecodedRoot :=
-  { report with ptPointers := report.ptPointers.modify 0 fun e => { e with writable := false } }
+  { report with pdEntries := report.pdEntries.modify 0 fun e => { e with writable := false } }
 def wrongAncestorUserReport (report : DecodedRoot) : DecodedRoot :=
-  { report with ptPointers := report.ptPointers.modify 0 fun e => { e with user := false } }
+  { report with pdEntries := report.pdEntries.modify 0 fun e => { e with user := false } }
 def wrongAncestorReservedBitsReport (report : DecodedRoot) : DecodedRoot :=
-  { report with ptPointers := report.ptPointers.modify 0 fun e => { e with reservedBitsClear := false } }
+  { report with pdEntries := report.pdEntries.modify 0 fun e => { e with reservedBitsClear := false } }
 def wrongAncestorNXReport (report : DecodedRoot) : DecodedRoot :=
-  { report with ptPointers := report.ptPointers.modify 7 fun e => { e with noExecute := true } }
+  { report with pdEntries := report.pdEntries.modify 7 fun e => { e with noExecute := true } }
 def wrongAncestorHugePageReport (report : DecodedRoot) : DecodedRoot :=
-  { report with ptPointers := report.ptPointers.modify 7 fun e => { e with hugePage := true } }
+  { report with pdEntries := report.pdEntries.modify 7 fun e => { e with hugePage := true } }
 def wrongAncestorPointerReport (report : DecodedRoot) : DecodedRoot :=
-  { report with ptPointers := report.ptPointers.modify 7 fun e => { e with nextFrame := e.nextFrame + 1 } }
+  { report with pdEntries := report.pdEntries.modify 7 fun e => { e with nextFrame := e.nextFrame + 1 } }
+def extraPml4AncestorReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pml4Entries := report.pml4Entries.modify 1 fun _ => decodedAncestor 31 }
+def misplacedPml4AncestorReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pml4Entries :=
+      (report.pml4Entries.modify 0 fun _ => absentDecodedAncestor).modify 1 fun _ =>
+        decodedAncestor 12 }
+def extraPdptAncestorReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pdptEntries := report.pdptEntries.modify 1 fun _ => decodedAncestor 31 }
+def misplacedPdptAncestorReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pdptEntries :=
+      (report.pdptEntries.modify 0 fun _ => absentDecodedAncestor).modify 1 fun _ =>
+        decodedAncestor 13 }
+def extraPdAncestorReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pdEntries := report.pdEntries.modify bootPtCount fun _ => decodedAncestor 31 }
+def misplacedPdAncestorReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pdEntries :=
+      (report.pdEntries.modify 0 fun _ => absentDecodedAncestor).modify bootPtCount fun _ =>
+        decodedAncestor 14 }
 def duplicateLeafReport (report : DecodedRoot) : DecodedRoot :=
   { report with leaves := report.leaves ++ report.leaves.take 1 }
 def unexpectedLeafReport (report : DecodedRoot) : DecodedRoot :=
@@ -721,6 +763,18 @@ example : reportRejectedAs (sampleReportCheck wrongAncestorNXReport) .wrongAnces
 example : reportRejectedAs (sampleReportCheck wrongAncestorHugePageReport) .wrongAncestor = true := by
   native_decide
 example : reportRejectedAs (sampleReportCheck wrongAncestorPointerReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck extraPml4AncestorReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck misplacedPml4AncestorReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck extraPdptAncestorReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck misplacedPdptAncestorReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck extraPdAncestorReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck misplacedPdAncestorReport) .wrongAncestor = true := by
   native_decide
 example : reportRejectedAs (sampleReportCheck duplicateLeafReport) .duplicateActual = true := by
   native_decide
