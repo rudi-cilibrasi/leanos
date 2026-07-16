@@ -742,18 +742,20 @@ theorem cleanup_preserves_readyContextAgreement state subject
     have hreadyOld := hstate.2.1 context hcontextOld hsuspended
     simp [cleanupSubject, hreadyOld, hownerNe]
 
-/-- Cleanup crosses the scheduler, capability, virtual-memory, and TLB models.
-The peer precondition records the obligations owned by those peer models:
-termination must leave a runnable destination when a current subject remains,
-and the capability/mapping cleanup must preserve their lifecycle and resource
-kind invariants.  These are deliberately explicit instead of treating the C
-cleanup sequence as proof of the composite property. -/
-def CleanupPeerPrecondition (state : State) (subject : SubjectId) : Prop :=
-  ((cleanupSubject state subject).scheduler.lifecycle.current.isSome →
-      (cleanupSubject state subject).scheduler.ready ≠ []) ∧
-    VirtualMapping.LifecycleWellFormed
-      (cleanupSubject state subject).translations.virtual ∧
-    ResourceKindAgreement (cleanupSubject state subject)
+/-- The cleanup properties derived here solely from the pre-state invariant.
+This deliberately excludes the virtual-lifecycle and resource-kind fields:
+their preservation still needs a proof about the composed capability cleanup,
+not assumptions that restate those desired postconditions. -/
+def CleanupCoreWellFormed (state : State) : Prop :=
+  Scheduler.WellFormed state.scheduler ∧
+    state.contexts.length ≤ state.capacity ∧
+    state.contexts.Pairwise (fun first second => first.owner ≠ second.owner) ∧
+    (∀ context, context ∈ state.contexts → validContext state context) ∧
+    (∀ subject, state.scheduler.lifecycle.current = some subject →
+      contextFor state.contexts subject = none) ∧
+    ReadyContextAgreement state ∧
+    TranslationAgreement state ∧
+    TLB.Coherent state.translations
 
 /-- Regression for the cross-kind cleanup bug: a well-formed composite state
 cannot give one live identifier both memory ownership and address-space
@@ -771,20 +773,22 @@ theorem wellFormed_excludes_memory_addressSpace_alias state object memoryOwner f
   rw [hvirtual.1] at haddressKind
   simp [hmemoryKind] at haddressKind
 
-/-- Subject cleanup preserves the complete resumable-preemption invariant
-when the documented peer-model cleanup obligations hold. -/
-theorem cleanupSubject_preserves_wellFormed state subject
+/-- Subject cleanup preserves the scheduler, context-bank, ownership projection,
+and bounded TLB invariants derived from a well-formed pre-state.  This theorem
+intentionally makes no full `WellFormed` claim until virtual-lifecycle cleanup
+preservation is proved rather than assumed. -/
+theorem cleanupSubject_preserves_coreWellFormed state subject
     (hstate : WellFormed state)
-    (hpeer : CleanupPeerPrecondition state subject) :
-    WellFormed (cleanupSubject state subject) := by
+    (hreadyPeer : (cleanupSubject state subject).scheduler.lifecycle.current.isSome →
+      (cleanupSubject state subject).scheduler.ready ≠ []) :
+    CleanupCoreWellFormed (cleanupSubject state subject) := by
   rcases hstate with
     ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hagreement,
-      _htranslations, hvirtual, _hkinds, htlb⟩
-  rcases hpeer with ⟨hreadyPeer, hvirtualPeer, hkindsPeer⟩
+      _htranslations, _hvirtual, _hkinds, htlb⟩
   refine ⟨?_, ?_, ?_, ?_, ?_,
     cleanup_preserves_readyContextAgreement state subject hagreement hreadyPeer,
     cleanup_preserves_translationAgreement state subject,
-    ⟨?_, hvirtualPeer⟩, hkindsPeer, ?_⟩
+    ?_⟩
   · unfold Scheduler.WellFormed at hscheduler ⊢
     rcases hscheduler with ⟨hlifecycle, hnodup, hbound, hready, hcurrent⟩
     refine ⟨?_, ?_, ?_, ?_, ?_⟩
@@ -879,7 +883,6 @@ theorem cleanupSubject_preserves_wellFormed state subject
     have holdNoOwner := List.find?_eq_none.mp holdAbsent context
       (List.mem_filter.mp hmem).1
     simpa using holdNoOwner
-  · simp [cleanupSubject]
   · exact Nat.le_trans (TLB.erase_space_length state.translations.entries subject) htlb
 
 private def demoLifecycle (current : SubjectId) : SubjectLifecycle.State :=
@@ -955,6 +958,40 @@ private def roundTripStart (translations : TLB.State) : State :=
     translations := { translations with
       virtual := { translations.virtual with owner := (demoLifecycle 1).addressOwner }
       active := some 1 } }
+
+/-- Executable cleanup fixture with distinct address-space and memory object
+identifiers.  It catches the earlier cross-kind collision bug by requiring
+termination of subject 1 to retire its own resources without retiring subject
+2's live address space. -/
+private def cleanupRegressionState (translations : TLB.State) : State :=
+  let base := roundTripStart translations
+  let capabilities : Capability.State := {
+    (demoLifecycle 1).capabilities with
+    objects := fun object => object = 1 || object = 2 || object = 10
+    kinds := fun object =>
+      if object = 1 || object = 2 then some .addressSpace
+      else if object = 10 then some .memory else none }
+  let lifecycle : SubjectLifecycle.State := {
+    demoLifecycle 1 with
+    capabilities := capabilities
+    ownedMemory := fun object => if object = 10 then some (1, 10) else none }
+  { base with
+    scheduler := { base.scheduler with lifecycle := lifecycle }
+    translations := { base.translations with
+      virtual := { base.translations.virtual with
+        memory := { base.translations.virtual.memory with capabilities := capabilities }
+        owner := lifecycle.addressOwner } } }
+
+example (translations : TLB.State) :
+    let cleaned := cleanupSubject (cleanupRegressionState translations) 1
+    cleaned.scheduler.lifecycle.capabilities.objects 1 = false ∧
+      cleaned.scheduler.lifecycle.capabilities.objects 10 = false ∧
+      cleaned.scheduler.lifecycle.capabilities.objects 2 = true ∧
+      cleaned.scheduler.lifecycle.capabilities.kinds 2 = some .addressSpace ∧
+      cleaned.scheduler.lifecycle.addressOwner 2 = some 2 := by
+  simp [cleanupRegressionState, roundTripStart, demoLifecycle, cleanupSubject,
+    retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
+    SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool]
 
 private def switchAToB (translations : TLB.State) : Outcome :=
   switch (roundTripStart translations) (demoInterrupt 1)
