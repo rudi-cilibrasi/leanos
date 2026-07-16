@@ -847,6 +847,10 @@ private def destroyTraceState : State :=
 private def replacementSource : Capability.Capability :=
   { object := 8, kind := .memory, rights := Capability.allRights, identity := 44 }
 
+private def replacementEndpoint : Capability.Capability :=
+  { object := 10, kind := .endpoint, rights := EndpointIPC.endpointRootRights,
+    identity := 45 }
+
 private def destroyTraceEndpointCap : Capability.Capability :=
   { object := 10, kind := .endpoint, rights := EndpointIPC.endpointRootRights,
     identity := 1 }
@@ -855,6 +859,11 @@ private def replacementState : State :=
   { destroyTraceState with
     capabilities := Capability.install
       (Capability.clear destroyTraceState.capabilities 0 2) 0 2 replacementSource }
+
+private def replacementEndpointState : State :=
+  { destroyTraceState with
+    capabilities := Capability.install
+      (Capability.clear destroyTraceState.capabilities 0 0) 0 0 replacementEndpoint }
 
 private def dataOnlyState : State :=
   { toEndpointState := destroyTraceRoot
@@ -884,6 +893,33 @@ example :
       (offerHandles replacementState 0 endpointHandle oldSource .memory
         { word0 := 8, word1 := 44 } { read := true }).result = .rejected .staleSource := by
   native_decide
+
+/-- The same replacement attack is denied by every other holder-facing
+authority consumer: the raw numbered slot sees the replacement, but the old
+generation cannot send data, retire memory, or destroy an endpoint. -/
+example :
+    let oldEndpoint := CapabilityHandle.issue 0 destroyTraceEndpointCap
+    Capability.lookup replacementEndpointState.capabilities 0 0 =
+        .found replacementEndpoint ∧
+      (sendDataHandle replacementEndpointState 0 oldEndpoint
+        { word0 := 71, word1 := 98 }).result = .rejected .staleHandle ∧
+      (destroyEndpointHandle replacementEndpointState 0 oldEndpoint).result =
+        .rejected .staleHandle := by
+  native_decide
+
+example :
+    let oldMemory := CapabilityHandle.issue 2 destroyTraceMemory
+    Capability.lookup replacementState.capabilities 0 2 = .found replacementSource ∧
+      (retireObjectHandle replacementState 0 oldMemory).result = .rejected .staleSlot := by
+  native_decide
+
+/-- Transitive revocation also rejects an old authority generation before its
+raw slot can select the replacement capability. -/
+example :
+    let oldMemory := CapabilityHandle.issue 2 destroyTraceMemory
+    (revokeSubtreeHandles replacementState 0 oldMemory .memory 0 oldMemory).2 =
+      .rejected .staleSlot := by
+  rfl
 
 example : let outcome := destroyEndpoint destroyTraceState 0 0
     outcome.result = .accepted ∧
