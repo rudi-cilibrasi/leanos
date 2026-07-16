@@ -415,16 +415,19 @@ def cancelWhere (state : State) (selected : Sealed → Bool) : State :=
         else state.trace.events endpoint
       | none => state.trace.events endpoint⟩ }
 
-/-- Subject termination in this composition updates the authoritative subject
-and slot store and cancels every envelope sent by that subject atomically. -/
-def terminateSender (state : State) (subject : SubjectId) : State :=
-  let transitioned : State := { state with
-    capabilities := { state.capabilities with
-      subjects := fun candidate => if candidate = subject then false
-        else state.capabilities.subjects candidate
-      slots := fun holder slot => if holder = subject then none
-        else state.capabilities.slots holder slot } }
-  cancelWhere transitioned (fun transfer => transfer.sender = subject)
+/-- Cancel offers made by one sender without claiming to terminate that
+subject.  Authoritative termination belongs to `SubjectLifecycle`, whose
+ownership and scheduling state is deliberately not embedded in this model. -/
+def cancelSenderOffers (state : State) (subject : SubjectId) : State :=
+  cancelWhere state (fun transfer => transfer.sender = subject)
+
+/-- Sender-offer cancellation changes exactly those pending records whose
+trusted sender is the selected subject. -/
+theorem cancelSenderOffers_pending state subject endpoint transfer
+    (h : state.pending endpoint = some transfer) :
+    (cancelSenderOffers state subject).pending endpoint =
+      if transfer.sender = subject then none else some transfer := by
+  simp [cancelSenderOffers, cancelWhere, h]
 
 /-- Retire a memory object through the authoritative allocator/lifetime
 transition, then cancel its sealed descendants only when release succeeds. -/

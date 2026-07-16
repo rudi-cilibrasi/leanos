@@ -33,13 +33,12 @@ case preserve the complete pre-state. A second accept sees an empty mailbox.
 ## Cancellation and lifetime
 
 Cancellation removes both sides of an offer but retains append-only derivation
-history. `terminateSender` is only the capability-transfer slice of subject
-cleanup: it marks the subject dead in the embedded capability store, clears
-that holder's slots, and cancels offers made by that sender. It is not the
-authoritative `SubjectLifecycle.terminate` transition and does not claim to
-clean that model's ownership, mappings, scheduling, or mailbox state. There is no
-preselected receiver to cancel: a terminated subject cannot pass trusted
-receive lookup. `retireObject` cancels every offer of the retired object;
+history. `cancelSenderOffers` cancels offers made by a sender without changing
+subject liveness or installed slots. Authoritative sender termination must be
+composed with `SubjectLifecycle.terminate`; this model deliberately does not
+carry the ownership and scheduling state needed to claim that transition.
+There is no preselected receiver to cancel. `retireObject` cancels every offer
+of the retired object;
 `destroyEndpoint` also clears that endpoint's mailbox. The composed
 `revokeSubtree` uses the shared ancestry relation to remove installed and
 sealed descendants atomically. Thus a canceled identity cannot later become
