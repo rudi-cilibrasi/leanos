@@ -1,4 +1,5 @@
 import LeanOS.Capability
+import LeanOS.CapabilityHandle
 import LeanOS.BootMemoryMap
 import LeanOS.BootReservation
 import LeanOS.BootAllocation
