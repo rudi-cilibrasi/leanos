@@ -264,6 +264,33 @@ theorem offerHandles_stale_source_rejected state caller endpoint source sourceKi
       .rejected .staleSource := by
   simp [offerHandles, hendpoint, hsource, reject]
 
+/-- A rejected data-only send is fully atomic, including its observer trace. -/
+theorem sendData_rejected_unchanged state caller endpointSlot payload reason
+    (h : (sendData state caller endpointSlot payload).result = .rejected reason) :
+    (sendData state caller endpointSlot payload).state = state := by
+  simp only [sendData] at h ⊢
+  split <;> try simp_all [reject]
+  next sent hsent =>
+    split <;> simp_all [reject]
+
+/-- Every accepted data-only send appends exactly its public send event to the
+endpoint selected by trusted caller authority. -/
+theorem sendData_accepted_records state caller endpointSlot payload
+    (h : (sendData state caller endpointSlot payload).result = .accepted) :
+    ∃ endpointCap,
+      Capability.lookup state.capabilities caller endpointSlot = .found endpointCap ∧
+      (sendData state caller endpointSlot payload).state.trace.events endpointCap.object =
+        state.trace.events endpointCap.object ++
+          [.dataSent endpointCap.object caller payload] := by
+  simp only [sendData] at h ⊢
+  split at h <;> try contradiction
+  next sent hsent =>
+    split at h <;> try contradiction
+    next endpointCap hlookup =>
+      cases h
+      refine ⟨endpointCap, hlookup, ?_⟩
+      simp [record]
+
 /-- Remove offers selected by a lifetime/revocation policy. Derivation records
 remain as append-only history, but no canceled identity can be installed. -/
 def cancelWhere (state : State) (selected : Sealed → Bool) : State :=
