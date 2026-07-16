@@ -41,6 +41,13 @@ and stale replay.
 The adversarial endpoint trace delegates send authority through an intermediary
 and confirms both intermediary and descendant fail after subtree revocation.
 
+Endpoint authority exposed to a holder is represented by the shared
+[generation-bound capability handle](capability-handles.md), not an
+endpoint-specific token. Clearing, revoking, or destroying an endpoint
+capability makes that handle stale even when its bounded slot is later reused.
+The current IPC model has no implicit capability transfer; a future sealed
+transfer may issue a handle only after atomic receive-side installation.
+
 These are properties of the executable Lean model. There is no claim that the
 boot image implements IPC or refines this model. The ghost send history is
 proof evidence, not externally observable endpoint storage.
