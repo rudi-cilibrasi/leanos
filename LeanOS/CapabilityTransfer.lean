@@ -345,7 +345,14 @@ theorem sendData_accepted_unattached state caller endpointSlot payload
 
 private theorem endpointSend_capabilities_unchanged state caller slot payload :
     (EndpointIPC.send state caller slot payload).state.capabilities = state.capabilities := by
-  simp [EndpointIPC.send, EndpointIPC.reject]
+  simp only [EndpointIPC.send]
+  split <;> try rfl
+  next cap hlookup =>
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    split <;> rfl
 
 private theorem endpointSend_preserves_occupied_mailbox state caller slot payload endpoint envelope
     (hmail : state.mailbox endpoint = some envelope) :
