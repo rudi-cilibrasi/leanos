@@ -270,6 +270,101 @@ theorem switch_preserves_scheduler_and_tlb state interruptState frame registers
     exact ⟨Scheduler.tick_preserves_wellFormed _ hscheduler,
       TLB.switch_coherent _ _⟩
 
+private theorem accepted_tick_is_select scheduler current selected
+    (hcurrent : scheduler.lifecycle.current = some current)
+    (hselected : (Scheduler.tick scheduler).result = .accepted (some selected)) :
+    Scheduler.tick scheduler = Scheduler.selectNext { scheduler with
+      ready := scheduler.ready ++ [current]
+      lifecycle := { scheduler.lifecycle with current := none } } := by
+  simp only [Scheduler.tick, Scheduler.yield, hcurrent]
+  split
+  · rename_i hfull
+    unfold Scheduler.tick Scheduler.yield at hselected
+    simp [hcurrent, hfull, Scheduler.reject] at hselected
+  generalize hs : Scheduler.selectNext { scheduler with
+    ready := scheduler.ready ++ [current]
+    lifecycle := { scheduler.lifecycle with current := none } } = outcome
+  cases outcome with
+  | mk next result =>
+    cases result with
+    | rejected reason =>
+      have hrejected : (Scheduler.tick scheduler).result = .rejected reason := by
+        simp [Scheduler.tick, Scheduler.yield, hcurrent, *, Scheduler.reject]
+      rw [hrejected] at hselected
+      contradiction
+    | accepted context => simp_all
+
+private theorem accepted_tick_facts scheduler current selected
+    (hcurrent : scheduler.lifecycle.current = some current)
+    (hselected : (Scheduler.tick scheduler).result = .accepted (some selected)) :
+    let next := (Scheduler.tick scheduler).state
+    next.lifecycle.current = some selected.currentSubject ∧
+      next.lifecycle.capabilities = scheduler.lifecycle.capabilities ∧
+      next.lifecycle.runnable = scheduler.lifecycle.runnable ∧
+      next.lifecycle.addressOwner = scheduler.lifecycle.addressOwner ∧
+      selected.activeAddressSpace = selected.currentSubject := by
+  have heq := accepted_tick_is_select scheduler current selected hcurrent hselected
+  rw [heq] at hselected ⊢
+  grind [Scheduler.selectNext, Scheduler.ownsAddressSpace, Scheduler.reject]
+
+/-- Every save/select/restore transition preserves the complete composite
+invariant, including bounded unique ownership and validity of the rewritten
+context bank. -/
+theorem switch_preserves_wellFormed state interruptState frame registers
+    (hstate : WellFormed state) :
+    WellFormed (switch state interruptState frame registers).state := by
+  simp only [switch]
+  split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  next action haction hframe maybeCurrent current hcurrent hbinding hnone hroom
+      schedulerResult selected hselected maybeDestination destination hdestination
+      hdestinationValid =>
+    rcases hstate with ⟨hscheduler, hcapacity, hunique, hvalid, habsent, htlb⟩
+    have hscheduler' := Scheduler.tick_preserves_wellFormed state.scheduler hscheduler
+    obtain ⟨hnextCurrent, hcapabilities, hrunnable, haddressOwner, hselectedSpace⟩ :=
+      accepted_tick_facts state.scheduler current selected hcurrent hselected
+    have hselectedNe : selected.currentSubject ≠ current := by
+      intro hequal
+      rw [hequal, hnone] at hdestination
+      contradiction
+    have hnoCurrentOwner : ∀ context, context ∈ state.contexts →
+        context.owner ≠ current := by
+      simpa [contextFor, List.find?_eq_none] using hnone
+    have hcurrentValid :
+        state.scheduler.lifecycle.capabilities.subjects current = true ∧
+          state.scheduler.lifecycle.runnable current = true ∧
+          state.scheduler.lifecycle.addressOwner current = some current := by
+      grind [Scheduler.WellFormed, Scheduler.ownsAddressSpace]
+    refine ⟨hscheduler', ?_, ?_, ?_, ?_, TLB.switch_coherent _ _⟩
+    · simp only [List.length_cons]
+      calc
+        (eraseContext state.contexts selected.currentSubject).length + 1 ≤
+            state.contexts.length + 1 := by
+              exact Nat.add_le_add_right (List.length_filter_le _ _) 1
+        _ ≤ state.capacity := hroom
+    · simp only [List.pairwise_cons]
+      refine ⟨?_, hunique.filter _⟩
+      intro context hcontext
+      exact Ne.symm (hnoCurrentOwner context (List.mem_filter.mp hcontext).1)
+    · intro context hcontext
+      rcases List.mem_cons.mp hcontext with rfl | hcontext
+      · simp only [validContext]
+        simpa [hcapabilities, hrunnable, haddressOwner] using
+          And.intro hframe hcurrentValid
+      · have hold := hvalid context (List.mem_filter.mp hcontext).1
+        simpa [validContext, hcapabilities, hrunnable, haddressOwner] using hold
+    · intro subject hsubject
+      have : subject = selected.currentSubject := by grind
+      subst subject
+      simp [contextFor, eraseContext, Ne.symm hselectedNe]
+
 /-- Attacker-controlled general registers can affect only the saved payload;
 they cannot influence which bank entry is selected for restoration. -/
 theorem registers_cannot_select_restore state interruptState frame first second :
