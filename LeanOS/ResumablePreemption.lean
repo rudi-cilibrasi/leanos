@@ -544,6 +544,15 @@ address space with the same identifier; this is the explicit no-reuse boundary
 used by `Scheduler.ownsAddressSpace`. -/
 def cleanupSubject (state : State) (subject : SubjectId) : State :=
   let lifecycle := SubjectLifecycle.terminateState state.scheduler.lifecycle subject
+  let virtual := state.translations.virtual
+  let mappings := fun addressSpace page =>
+    match virtual.mappings addressSpace page with
+    | some mapping =>
+        if lifecycle.addressOwner addressSpace = none then none
+        else if lifecycle.capabilities.objects mapping.object != true then none
+        else if lifecycle.mapping addressSpace page = some mapping.object then some mapping
+        else none
+    | none => none
   { state with
     scheduler := {
       state.scheduler with
@@ -552,7 +561,10 @@ def cleanupSubject (state : State) (subject : SubjectId) : State :=
     contexts := eraseContext state.contexts subject
     translations := {
       TLB.invalidateSpace state.translations subject with
-      virtual := { state.translations.virtual with owner := lifecycle.addressOwner }
+      virtual := { virtual with
+        memory := { virtual.memory with capabilities := lifecycle.capabilities }
+        owner := lifecycle.addressOwner
+        mappings := mappings }
       active := lifecycle.current } }
 
 theorem cleanup_removes_context state subject :
@@ -568,6 +580,27 @@ theorem cleanup_terminates_subject state subject :
     (cleanupSubject state subject).scheduler.lifecycle.capabilities.subjects subject = false := by
   simp [cleanupSubject, SubjectLifecycle.terminateState,
     SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool]
+
+/-- Cleanup removes every encoded page-table mapping in an address space whose
+owner is terminated; changing only the owner projection would leave stale
+authoritative mappings behind. -/
+theorem cleanup_removes_owned_space_mappings state subject addressSpace page
+    (howner : state.scheduler.lifecycle.addressOwner addressSpace = some subject) :
+    (cleanupSubject state subject).translations.virtual.mappings addressSpace page = none := by
+  simp [cleanupSubject, SubjectLifecycle.terminateState, howner]
+  split <;> rfl
+
+/-- Cleanup also removes a page-table entry whose backing object is retired by
+subject termination, even when the entry occurs in a different address space.
+Keeping such an entry would violate `VirtualMapping.WellFormed` because the
+mapping would no longer name a live capability object. -/
+theorem cleanup_removes_retired_object_mapping state subject addressSpace page mapping
+    (hmapping : state.translations.virtual.mappings addressSpace page = some mapping)
+    (hretired :
+      (SubjectLifecycle.terminateState state.scheduler.lifecycle subject).capabilities.objects
+        mapping.object = false) :
+    (cleanupSubject state subject).translations.virtual.mappings addressSpace page = none := by
+  simp [cleanupSubject, hmapping, hretired]
 
 /-- Lifecycle and translation ownership are updated as one cleanup projection;
 terminating the current subject also clears the modeled active address space. -/
