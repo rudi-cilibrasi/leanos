@@ -22,13 +22,16 @@ extern void run_wp_probe(void);
 extern void run_smep_probe(void);
 extern void enter_user(void *, void *);
 extern void isr80(void);
+extern void isr8(void);
 extern void isr14(void);
 extern void isr32(void);
+extern void run_double_fault_probe(void);
 extern char user_a_entry[], user_a_stack_top[];
 extern char user_a_stack[];
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
+extern char __df_ist_stack_start[], __df_ist_stack_end[];
 
 #define MULTIBOOT2_RUNTIME_MAGIC 0x36d76289u
 #define BOOT_ACCESSIBLE_LIMIT (16u * 1024u * 1024u)
@@ -300,9 +303,10 @@ static __attribute__((noreturn)) void fail(const char *reason) {
     finish(0x11);
 }
 
-static void set_gate(unsigned vector, void (*handler)(void), uint8_t attributes) {
+static void set_gate(unsigned vector, void (*handler)(void), uint8_t ist,
+                     uint8_t attributes) {
     uint64_t address = (uint64_t)handler;
-    idt[vector] = (struct idt_entry){ (uint16_t)address, 0x08, 0, attributes,
+    idt[vector] = (struct idt_entry){ (uint16_t)address, 0x08, ist, attributes,
         (uint16_t)(address >> 16), (uint32_t)(address >> 32), 0 };
 }
 
@@ -314,10 +318,15 @@ static void privilege_init(void) {
         (((base >> 24) & 0xffu) << 56);
     gdt64[6] = base >> 32;
     tss.rsp0 = (uint64_t)(entry_stack + sizeof(entry_stack));
+    tss.ist[0] = (uint64_t)__df_ist_stack_end;
     tss.iomap = sizeof(tss);
-    set_gate(14, isr14, 0x8e);
-    set_gate(32, isr32, 0x8e);
-    set_gate(0x80, isr80, 0xee);
+    *(uint64_t *)__df_ist_stack_start = 0xd0b1efa17badc0deull;
+    *(uint64_t *)((uint64_t)__df_ist_stack_end - 128u) =
+        0x15a1c0decafef00dull;
+    set_gate(8, isr8, 1, 0x8e);
+    set_gate(14, isr14, 0, 0x8e);
+    set_gate(32, isr32, 0, 0x8e);
+    set_gate(0x80, isr80, 0, 0xee);
     struct descriptor idtr = { sizeof(idt) - 1, (uint64_t)idt };
     __asm__ volatile ("lidt %0" : : "m"(idtr));
     load_tss();
@@ -442,6 +451,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     replay_oracle();
 
     privilege_init();
+#ifdef LEANOS_DOUBLE_FAULT_PROBE
+    run_double_fault_probe();
+#endif
     enable_smep();
     uint64_t cr0, cr4;
     __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));

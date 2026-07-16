@@ -126,6 +126,15 @@ multiboot_entry:
     and $0x7ff8, %eax
     orl $4, page_table_b(%eax)
 
+    /* The page immediately below IST1 is absent in both address spaces. */
+    mov $__df_ist_guard_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    movl $0, page_table_a(%eax)
+    movl $0, page_table_a+4(%eax)
+    movl $0, page_table_b(%eax)
+    movl $0, page_table_b+4(%eax)
+
     mov %cr4, %eax
     or $(1 << 5), %eax
     mov %eax, %cr4
@@ -213,6 +222,20 @@ page_table_b_end:
 boot_stack:
     .skip 16384
 boot_stack_top:
+
+.section .df_ist.guard,"aw",@nobits
+.align 4096
+.global df_ist_guard
+df_ist_guard:
+    .skip 4096
+
+.section .df_ist.stack,"aw",@nobits
+.align 4096
+.global df_ist_stack
+df_ist_stack:
+    .skip 16384
+.global df_ist_stack_top
+df_ist_stack_top:
 
 .section .text,"ax",@progbits
 .global load_tss
@@ -310,6 +333,83 @@ enter_user:
     pushq $0x23
     push %rdi
     iretq
+
+/* Invoke the absent vector-13 gate with RSP in the unmapped IST guard.  The
+   resulting #GP cannot push its frame, so the #PF during delivery escalates
+   the two contributory exceptions to #DF. */
+.global run_double_fault_probe
+run_double_fault_probe:
+    cli
+    clac
+    cld
+    mov $__df_ist_guard_end, %rsp
+    int $13
+1:  hlt
+    jmp 1b
+
+.macro DF_SERIAL label, length
+    lea \label(%rip), %rsi
+    mov $\length, %ecx
+1:
+    mov $0x3fd, %dx
+2:  inb %dx, %al
+    test $0x20, %al
+    jz 2b
+    movb (%rsi), %al
+    mov $0x3f8, %dx
+    outb %al, %dx
+    inc %rsi
+    dec %ecx
+    jnz 1b
+.endm
+
+/* Vector 8 has a hardware error-code word.  This terminal stub uses no C ABI,
+   calls, pushes, allocation, formatting, recovery path, or iretq. */
+.global isr8
+.global isr8_clac
+.global isr8_cld
+isr8:
+    cli
+isr8_clac:
+    clac
+isr8_cld:
+    cld
+    mov %rsp, %rbx
+    cmp $__df_ist_stack_start, %rbx
+    jb 3f
+    cmp $__df_ist_stack_end, %rbx
+    jae 3f
+    cmpq $0, 0(%rbx)
+    jne 3f
+    movabs $0xd0b1efa17badc0de, %rax
+    cmp %rax, __df_ist_stack_start(%rip)
+    jne 3f
+    movabs $0x15a1c0decafef00d, %rax
+    cmp %rax, __df_ist_stack_end-128(%rip)
+    jne 3f
+    DF_SERIAL df_success_record, df_success_record_end-df_success_record
+    mov $0x12, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+4:  hlt
+    jmp 4b
+3:
+    DF_SERIAL df_failure_record, df_failure_record_end-df_failure_record
+    mov $0x13, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+5:  hlt
+    jmp 5b
+
+.section .rodata,"a",@progbits
+df_success_record:
+    .ascii "LEANOS/8 TERMINAL reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none\n"
+df_success_record_end:
+df_failure_record:
+    .ascii "LEANOS/8 TERMINAL reason=double-fault evidence=invalid status=FAIL\n"
+df_failure_record_end:
+
+.section .text,"ax",@progbits
 
 .macro SAVE
     push %rax; push %rbx; push %rcx; push %rdx; push %rbp; push %rsi; push %rdi
