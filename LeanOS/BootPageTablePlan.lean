@@ -406,6 +406,11 @@ example : rejectedAs { sampleInput with roots := { subjectA := 10, subjectB := 1
 example : rejectedAs { sampleInput with tableReservations := [] }
     .unreservedTableFrame = true := by native_decide
 example : rejectedAs
+    { sampleInput with regions := sampleRegions ++
+        [{ space := .subjectA, virtualStart := 30 * pageBytes, byteLength := pageBytes,
+           physicalStart := 30 * pageBytes, policy := .pageTables, owner := .supervisor }] }
+    .unreservedTableFrame = true := by native_decide
+example : rejectedAs
     { sampleInput with tableReservations :=
         [{ identity := .loadedImage, firstFrame := 10, frameCount := 16,
            lifetime := .permanent }] }
@@ -415,6 +420,25 @@ example : rejectedAs
     .invalidTableFrame = true := by native_decide
 example : rejectedAs { sampleInput with regions := sampleRegions ++ [sampleRegions[0]!] }
     .duplicateLeaf = true := by native_decide
+example : rejectedAs { sampleInput with regions := [{ sampleRegions[0]! with byteLength := 0 }] }
+    .emptyRegion = true := by native_decide
+example : rejectedAs
+    { sampleInput with regions := [{ sampleRegions[0]! with virtualStart := pageBytes + 1 }] }
+    .misaligned = true := by native_decide
+example : rejectedAs
+    { sampleInput with regions := [{ sampleRegions[0]! with physicalStart := pageBytes + 1 }] }
+    .misaligned = true := by native_decide
+example : rejectedAs
+    { sampleInput with regions := [{ sampleRegions[0]! with byteLength := pageBytes + 1 }] }
+    .misaligned = true := by native_decide
+example : rejectedAs
+    { sampleInput with regions :=
+        [{ sampleRegions[0]! with virtualStart := lowerCanonicalPages * pageBytes }] }
+    .nonCanonical = true := by native_decide
+example : rejectedAs
+    { sampleInput with regions :=
+        [{ sampleRegions[0]! with physicalStart := physicalFrameLimit * pageBytes }] }
+    .frameOutOfRange = true := by native_decide
 example : rejectedAs { sampleInput with regions :=
     [{ sampleRegions[2]! with owner := .subjectB }] } .wrongOwner = true := by native_decide
 def sampleOverflowRegion : Region :=
@@ -446,8 +470,16 @@ def unchangedReport (report : DecodedRoot) : DecodedRoot := report
 def wrongRootReport (report : DecodedRoot) : DecodedRoot := { report with selectedRoot := 11 }
 def wrongAncestorReport (report : DecodedRoot) : DecodedRoot :=
   { report with pd := { report.pd with present := false } }
+def wrongAncestorWritableReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pd := { report.pd with writable := false } }
+def wrongAncestorUserReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pd := { report.pd with user := false } }
+def wrongAncestorReservedBitsReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pd := { report.pd with reservedBitsClear := false } }
 def wrongAncestorPointerReport (report : DecodedRoot) : DecodedRoot :=
   { report with pd := { report.pd with nextFrame := report.pd.nextFrame + 1 } }
+def duplicateLeafReport (report : DecodedRoot) : DecodedRoot :=
+  { report with leaves := report.leaves ++ report.leaves.take 1 }
 def unexpectedLeafReport (report : DecodedRoot) : DecodedRoot :=
   { report with leaves := report.leaves ++
       [{ page := 300, leaf := policyLeaf .userStack 300 }] }
@@ -487,7 +519,15 @@ example : reportAccepted (sampleReportCheck unchangedReport) = true := by native
 example : reportRejectedAs (sampleReportCheck wrongRootReport) .wrongRoot = true := by native_decide
 example : reportRejectedAs (sampleReportCheck wrongAncestorReport) .wrongAncestor = true := by
   native_decide
+example : reportRejectedAs (sampleReportCheck wrongAncestorWritableReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck wrongAncestorUserReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck wrongAncestorReservedBitsReport) .wrongAncestor = true := by
+  native_decide
 example : reportRejectedAs (sampleReportCheck wrongAncestorPointerReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck duplicateLeafReport) .duplicateActual = true := by
   native_decide
 example : reportRejectedAs (sampleReportCheck unexpectedLeafReport) .unexpectedLeaf = true := by
   native_decide
