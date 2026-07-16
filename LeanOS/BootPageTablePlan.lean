@@ -40,12 +40,11 @@ structure Roots where
   subjectB : PhysicalFrame
   deriving BEq, DecidableEq, Repr
 
-/-- The three non-root table frames reached while walking the bounded Phase 2
-lower-half map.  The root frame itself is carried by `Roots`. -/
+/-- The non-root frames for the boot constructor's eight-PT 16 MiB map. -/
 structure AncestorFrames where
   pdpt : PhysicalFrame
   pd : PhysicalFrame
-  pt : PhysicalFrame
+  pts : List PhysicalFrame
   deriving BEq, DecidableEq, Repr
 
 structure AncestorPaths where
@@ -75,14 +74,13 @@ inductive Error where
   | nonCanonical | frameOutOfRange | wrongOwner | incompatibleOverlap
   | duplicateLeaf | duplicateTableFrame | unreservedTableFrame | invalidTableFrame
   | missingRequiredRegion | unsafePhysicalAlias | missingValidatedReservation
+  | tableManifestMismatch
   deriving BEq, DecidableEq, Repr
 
 def aligned (address : Nat) : Bool := address % pageBytes == 0
 
-/-- The current early-boot constructor supplies exactly one PT below each PD.
-Consequently its finite model can represent only the first 512 4 KiB pages.
-Broader virtual layouts must carry additional ancestor paths explicitly. -/
-def supportedPathPages : Nat := 512
+def bootPtCount : Nat := 8
+def supportedPathPages : Nat := 512 * bootPtCount
 
 def ownerMatches (region : Region) : Bool :=
   match region.policy, region.owner, region.space with
@@ -129,10 +127,12 @@ def tableFramesReserved (input : Input) : Bool :=
       reservedAsPageTable reserved.intervals input.roots.subjectB &&
       reservedAsPageTable reserved.intervals input.ancestors.subjectA.pdpt &&
       reservedAsPageTable reserved.intervals input.ancestors.subjectA.pd &&
-      reservedAsPageTable reserved.intervals input.ancestors.subjectA.pt &&
+      input.ancestors.subjectA.pts.length == bootPtCount &&
+      input.ancestors.subjectA.pts.all (reservedAsPageTable reserved.intervals) &&
       reservedAsPageTable reserved.intervals input.ancestors.subjectB.pdpt &&
       reservedAsPageTable reserved.intervals input.ancestors.subjectB.pd &&
-      reservedAsPageTable reserved.intervals input.ancestors.subjectB.pt &&
+      input.ancestors.subjectB.pts.length == bootPtCount &&
+      input.ancestors.subjectB.pts.all (reservedAsPageTable reserved.intervals) &&
       input.regions.all fun region => region.policy != .pageTables ||
         (List.range (region.byteLength / pageBytes)).all fun offset =>
           reservedAsPageTable reserved.intervals
@@ -142,16 +142,19 @@ def tableFramesRepresentable (input : Input) : Bool :=
   representableFrame input.roots.subjectA && representableFrame input.roots.subjectB &&
     representableFrame input.ancestors.subjectA.pdpt &&
     representableFrame input.ancestors.subjectA.pd &&
-    representableFrame input.ancestors.subjectA.pt &&
+    input.ancestors.subjectA.pts.length == bootPtCount &&
+    input.ancestors.subjectA.pts.all representableFrame &&
     representableFrame input.ancestors.subjectB.pdpt &&
     representableFrame input.ancestors.subjectB.pd &&
-    representableFrame input.ancestors.subjectB.pt
+    input.ancestors.subjectB.pts.length == bootPtCount &&
+    input.ancestors.subjectB.pts.all representableFrame
 
 def tableFrames (input : Input) : List PhysicalFrame :=
   [input.roots.subjectA, input.roots.subjectB,
-   input.ancestors.subjectA.pdpt, input.ancestors.subjectA.pd,
-   input.ancestors.subjectA.pt, input.ancestors.subjectB.pdpt,
-   input.ancestors.subjectB.pd, input.ancestors.subjectB.pt]
+   input.ancestors.subjectA.pdpt, input.ancestors.subjectA.pd] ++
+   input.ancestors.subjectA.pts ++
+   [input.ancestors.subjectB.pdpt, input.ancestors.subjectB.pd] ++
+   input.ancestors.subjectB.pts
 
 /-- Each level has distinct storage.  Aliasing a root with one of its descendants,
 or two descendants with each other, cannot describe the supported four-level tree. -/
@@ -208,6 +211,18 @@ def userAvoidsTableFrames (frames : List PhysicalFrame) (leaves : List CompiledL
 
 def userAvoidsLiveTableFrames (input : Input) (leaves : List CompiledLeaf) : Bool :=
   userAvoidsTableFrames (tableFrames input) leaves
+
+/-- The manifest names exactly the constructor-owned table frames in both
+address spaces, at their identity-mapped boot addresses.  This prevents an
+otherwise valid reservation from being paired with unrelated `.pageTables`
+regions. -/
+def tableManifestMatches (input : Input) (leaves : List CompiledLeaf) : Bool :=
+  let frames := tableFrames input
+  [.subjectA, .subjectB].all fun space =>
+    let declared := leaves.filter fun entry =>
+      entry.space == space && entry.policy == .pageTables
+    declared.all (fun entry => entry.page == entry.leaf.frame && frames.contains entry.leaf.frame) &&
+      frames.all fun frame => declared.any fun entry => entry.leaf.frame == frame
 
 /-- Every emitted leaf is in the supported 4 KiB lower-half subset. -/
 def structurallySafe (leaves : List CompiledLeaf) : Bool :=
@@ -268,6 +283,7 @@ def compile (input : Input) : Except Error Plan := do
       if hreserved : !tableFramesReserved input then throw .unreservedTableFrame else
       let leaves <- input.regions.flatMapM compileRegion
       if !requiredCoverage input then throw .missingRequiredRegion
+      if !tableManifestMatches input leaves then throw .tableManifestMismatch
       if hduplicates : noDuplicateLeaves leaves then
         if hwx : wxSafe leaves then
           if !physicalAliasesSafe leaves then throw .unsafePhysicalAlias else
@@ -376,7 +392,7 @@ structure DecodedRoot where
   selectedRoot : PhysicalFrame
   pml4 : DecodedAncestor
   pdpt : DecodedAncestor
-  pd : DecodedAncestor
+  ptPointers : List DecodedAncestor
   leaves : List DecodedLeaf
   deriving BEq, DecidableEq, Repr
 
@@ -406,7 +422,7 @@ def expectedAncestorFrames (input : Input) : Space → AncestorFrames
 def ancestorPointersMatch (input : Input) (report : DecodedRoot) : Bool :=
   let expected := expectedAncestorFrames input report.space
   report.pml4.nextFrame == expected.pdpt && report.pdpt.nextFrame == expected.pd &&
-    report.pd.nextFrame == expected.pt
+    report.ptPointers.map (·.nextFrame) == expected.pts
 
 def decodedNoDuplicates (leaves : List DecodedLeaf) : Bool :=
   leaves.Pairwise fun a b => a.page != b.page
@@ -417,24 +433,31 @@ def expectedAt (plan : Plan) (space : Space) (page : Nat) : Option Leaf :=
 def actualAt (report : DecodedRoot) (page : Nat) : Option Leaf :=
   (report.leaves.find? fun entry => entry.page == page).map (·.leaf)
 
-/-- Compare a decoded root with precisely the leaves emitted by `compile`.
-The two directions reject both omitted and unmanifested present leaves. -/
+def absentLeaf : Leaf :=
+  { frame := 0, present := false, writable := false, user := false,
+    noExecute := false, reservedBitsClear := true }
+
+def expectedDecodedAt (plan : Plan) (space : Space) (page : Nat) : Leaf :=
+  (expectedAt plan space page).getD absentLeaf
+
+/-- Compare all 4,096 decoded PTEs reached through the eight PT pointers.
+Manifest omissions are deliberately absent zero entries, so neither an extra
+present mapping nor corruption in a later PT can hide outside the report. -/
 def validateDecodedRoot (input : Input) (plan : Plan) (report : DecodedRoot) :
     Except ReportError Unit := do
   if report.selectedRoot != expectedRoot plan report.space then throw .wrongRoot
   if !(legalDecodedAncestor report.pml4 && legalDecodedAncestor report.pdpt &&
-      legalDecodedAncestor report.pd) then throw .wrongAncestor
+      report.ptPointers.length == bootPtCount &&
+      report.ptPointers.all legalDecodedAncestor) then throw .wrongAncestor
   if !ancestorPointersMatch input report then throw .wrongAncestor
   if !(decodedAncestorReserved input report.pml4 && decodedAncestorReserved input report.pdpt &&
-      decodedAncestorReserved input report.pd) then throw .unreservedAncestor
+      report.ptPointers.all (decodedAncestorReserved input)) then throw .unreservedAncestor
   if !decodedNoDuplicates report.leaves then throw .duplicateActual
   for actual in report.leaves do
-    match expectedAt plan report.space actual.page with
-    | none => throw .unexpectedLeaf
-    | some expected => if actual.leaf != expected then throw .mismatchedLeaf
-  for expected in plan.leaves do
-    if expected.space == report.space && actualAt report expected.page != some expected.leaf then
-      throw .missingLeaf
+    if actual.page >= supportedPathPages then throw .unexpectedLeaf
+    if actual.leaf != expectedDecodedAt plan report.space actual.page then
+      throw .mismatchedLeaf
+  if report.leaves.length != supportedPathPages then throw .missingLeaf
 
 theorem decoded_validation_deterministic input plan report first second
     (hfirst : validateDecodedRoot input plan report = first)
@@ -453,14 +476,14 @@ def validateDecodedPair (input : Input) (plan : Plan)
 /-! ## Executable positive and adversarial fixtures -/
 
 def sampleReservations : List Interval :=
-  [{ identity := .pageTables, firstFrame := 10, frameCount := 16,
+  [{ identity := .pageTables, firstFrame := 10, frameCount := 22,
      lifetime := .permanent }]
 
 def sampleReservationManifest : List Reservation :=
   [{ identity := .lowMemory, start := 0, length := pageBytes, lifetime := .permanent },
-   { identity := .loadedImage, start := 2 * pageBytes, length := 24 * pageBytes,
+   { identity := .loadedImage, start := 2 * pageBytes, length := 30 * pageBytes,
      lifetime := .permanent },
-   { identity := .pageTables, start := 10 * pageBytes, length := 16 * pageBytes,
+   { identity := .pageTables, start := 10 * pageBytes, length := 22 * pageBytes,
      lifetime := .permanent },
    { identity := .descriptorTables, start := 3 * pageBytes, length := pageBytes,
      lifetime := .permanent },
@@ -490,10 +513,10 @@ def sampleRegions : List Region :=
      physicalStart := 3 * pageBytes, policy := .kernelStack, owner := .supervisor },
    { space := .subjectB, virtualStart := 3 * pageBytes, byteLength := pageBytes,
      physicalStart := 3 * pageBytes, policy := .kernelStack, owner := .supervisor },
-   { space := .subjectA, virtualStart := 10 * pageBytes, byteLength := 4 * pageBytes,
+   { space := .subjectA, virtualStart := 10 * pageBytes, byteLength := 22 * pageBytes,
      physicalStart := 10 * pageBytes, policy := .pageTables, owner := .supervisor },
-   { space := .subjectB, virtualStart := 14 * pageBytes, byteLength := 4 * pageBytes,
-     physicalStart := 14 * pageBytes, policy := .pageTables, owner := .supervisor },
+   { space := .subjectB, virtualStart := 10 * pageBytes, byteLength := 22 * pageBytes,
+     physicalStart := 10 * pageBytes, policy := .pageTables, owner := .supervisor },
    { space := .subjectA, virtualStart := 100 * pageBytes, byteLength := pageBytes,
      physicalStart := 100 * pageBytes, policy := .userText, owner := .subjectA },
    { space := .subjectA, virtualStart := 101 * pageBytes, byteLength := pageBytes,
@@ -506,8 +529,8 @@ def sampleRegions : List Region :=
 def sampleInput : Input :=
   { roots := { subjectA := 10, subjectB := 11 }, nxe := true,
     ancestors :=
-      { subjectA := { pdpt := 12, pd := 13, pt := 14 },
-        subjectB := { pdpt := 15, pd := 16, pt := 17 } },
+      { subjectA := { pdpt := 12, pd := 13, pts := List.range 8 |>.map (14 + ·) },
+        subjectB := { pdpt := 22, pd := 23, pts := List.range 8 |>.map (24 + ·) } },
     regions := sampleRegions, reservationResult := sampleReservationResult }
 
 def rejectedAs (input : Input) (wanted : Error) : Bool :=
@@ -532,13 +555,11 @@ actual root supplied to the table constructor. -/
 example : rejectedAs
     { sampleInput with regions := sampleRegions.map fun region =>
         if region.policy == .pageTables then
-          match region.space with
-          | .subjectA => { region with physicalStart := 18 * pageBytes }
-          | .subjectB => { region with physicalStart := 22 * pageBytes }
+          { region with virtualStart := region.virtualStart + pageBytes }
         else if region.space == .subjectA && region.policy == .userText then
           { region with physicalStart := sampleInput.roots.subjectA * pageBytes }
         else region }
-    .unsafePhysicalAlias = true := by native_decide
+    .tableManifestMismatch = true := by native_decide
 example : rejectedAs { sampleInput with nxe := false } .missingNXE = true := by native_decide
 example : rejectedAs { sampleInput with roots := { subjectA := 10, subjectB := 10 } }
     .equalRoots = true := by native_decide
@@ -546,8 +567,8 @@ example : rejectedAs { sampleInput with reservationResult := none }
     .missingValidatedReservation = true := by native_decide
 example : rejectedAs
     { sampleInput with regions := sampleRegions ++
-        [{ space := .subjectA, virtualStart := 30 * pageBytes, byteLength := pageBytes,
-           physicalStart := 30 * pageBytes, policy := .pageTables, owner := .supervisor }] }
+        [{ space := .subjectA, virtualStart := 35 * pageBytes, byteLength := pageBytes,
+           physicalStart := 35 * pageBytes, policy := .pageTables, owner := .supervisor }] }
     .unreservedTableFrame = true := by native_decide
 example : rejectedAs
     { sampleInput with roots := { subjectA := physicalFrameLimit, subjectB := 11 } }
@@ -560,7 +581,8 @@ example : rejectedAs
 example : rejectedAs
     { sampleInput with ancestors :=
         { sampleInput.ancestors with
-          subjectB := { sampleInput.ancestors.subjectB with pd := sampleInput.ancestors.subjectB.pt } } }
+          subjectB := { sampleInput.ancestors.subjectB with
+            pd := sampleInput.ancestors.subjectB.pts[0]! } } }
     .duplicateTableFrame = true := by native_decide
 example : rejectedAs { sampleInput with regions := sampleRegions ++ [sampleRegions[0]!] }
     .duplicateLeaf = true := by native_decide
@@ -621,9 +643,9 @@ def decodedReport (plan : Plan) (space : Space) : DecodedRoot :=
   let expected := expectedAncestorFrames sampleInput space
   { space, selectedRoot := expectedRoot plan space,
     pml4 := decodedAncestor expected.pdpt, pdpt := decodedAncestor expected.pd,
-    pd := decodedAncestor expected.pt,
-    leaves := (plan.leaves.filter (·.space == space)).map fun entry =>
-      { page := entry.page, leaf := entry.leaf } }
+    ptPointers := expected.pts.map decodedAncestor,
+    leaves := (List.range supportedPathPages).map fun page =>
+      { page, leaf := expectedDecodedAt plan space page } }
 
 def sampleReportCheck (mutate : DecodedRoot → DecodedRoot) : Except ReportError Unit :=
   match compile sampleInput with
@@ -633,24 +655,24 @@ def sampleReportCheck (mutate : DecodedRoot → DecodedRoot) : Except ReportErro
 def unchangedReport (report : DecodedRoot) : DecodedRoot := report
 def wrongRootReport (report : DecodedRoot) : DecodedRoot := { report with selectedRoot := 11 }
 def wrongAncestorReport (report : DecodedRoot) : DecodedRoot :=
-  { report with pd := { report.pd with present := false } }
+  { report with ptPointers := report.ptPointers.modify 0 fun e => { e with present := false } }
 def wrongAncestorWritableReport (report : DecodedRoot) : DecodedRoot :=
-  { report with pd := { report.pd with writable := false } }
+  { report with ptPointers := report.ptPointers.modify 0 fun e => { e with writable := false } }
 def wrongAncestorUserReport (report : DecodedRoot) : DecodedRoot :=
-  { report with pd := { report.pd with user := false } }
+  { report with ptPointers := report.ptPointers.modify 0 fun e => { e with user := false } }
 def wrongAncestorReservedBitsReport (report : DecodedRoot) : DecodedRoot :=
-  { report with pd := { report.pd with reservedBitsClear := false } }
+  { report with ptPointers := report.ptPointers.modify 0 fun e => { e with reservedBitsClear := false } }
 def wrongAncestorNXReport (report : DecodedRoot) : DecodedRoot :=
-  { report with pd := { report.pd with noExecute := true } }
+  { report with ptPointers := report.ptPointers.modify 7 fun e => { e with noExecute := true } }
 def wrongAncestorHugePageReport (report : DecodedRoot) : DecodedRoot :=
-  { report with pd := { report.pd with hugePage := true } }
+  { report with ptPointers := report.ptPointers.modify 7 fun e => { e with hugePage := true } }
 def wrongAncestorPointerReport (report : DecodedRoot) : DecodedRoot :=
-  { report with pd := { report.pd with nextFrame := report.pd.nextFrame + 1 } }
+  { report with ptPointers := report.ptPointers.modify 7 fun e => { e with nextFrame := e.nextFrame + 1 } }
 def duplicateLeafReport (report : DecodedRoot) : DecodedRoot :=
   { report with leaves := report.leaves ++ report.leaves.take 1 }
 def unexpectedLeafReport (report : DecodedRoot) : DecodedRoot :=
   { report with leaves := report.leaves ++
-      [{ page := 300, leaf := policyLeaf .userStack 300 }] }
+      [{ page := supportedPathPages, leaf := policyLeaf .userStack supportedPathPages }] }
 def missingLeafReport (report : DecodedRoot) : DecodedRoot :=
   { report with leaves := report.leaves.drop 1 }
 def flippedWritableReport (report : DecodedRoot) : DecodedRoot :=
@@ -659,7 +681,8 @@ def flippedWritableReport (report : DecodedRoot) : DecodedRoot :=
       else entry }
 def flippedPresentReport (report : DecodedRoot) : DecodedRoot :=
   { report with leaves := report.leaves.mapIdx fun index entry =>
-      if index == 0 then { entry with leaf := { entry.leaf with present := false } } else entry }
+      if index == 0 then { entry with leaf := { entry.leaf with present := !entry.leaf.present } }
+      else entry }
 def flippedUserReport (report : DecodedRoot) : DecodedRoot :=
   { report with leaves := report.leaves.mapIdx fun index entry =>
       if index == 0 then { entry with leaf := { entry.leaf with user := !entry.leaf.user } }
