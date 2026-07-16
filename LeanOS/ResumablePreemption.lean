@@ -26,6 +26,14 @@ structure Registers where
   source : UInt64
   destination : UInt64
   basePointer : UInt64
+  r8 : UInt64
+  r9 : UInt64
+  r10 : UInt64
+  r11 : UInt64
+  r12 : UInt64
+  r13 : UInt64
+  r14 : UInt64
+  r15 : UInt64
   deriving BEq, DecidableEq, Repr
 
 inductive ContextKind where | initial | suspended
@@ -84,7 +92,7 @@ def WellFormed (state : State) : Prop :=
     TLB.Coherent state.translations
 
 inductive Error where
-  | nonTimer | fatalEntry | malformedIncoming | noCurrent | duplicateSave
+  | nonTimer | fatalEntry | malformedIncoming | noCurrent | contextMismatch | duplicateSave
   | bankFull | schedulerRejected | noDestination | staleDestination
   deriving DecidableEq, Repr
 
@@ -108,7 +116,10 @@ def switch (state : State) (interruptState : Interrupt.State)
     else match state.scheduler.lifecycle.current with
       | none => reject state .noCurrent
       | some current =>
-        if (contextFor state.contexts current).isSome then reject state .duplicateSave
+        if interruptState.context.currentSubject != current ||
+            interruptState.context.activeAddressSpace != current then
+          reject state .contextMismatch
+        else if (contextFor state.contexts current).isSome then reject state .duplicateSave
         else if state.capacity ≤ state.contexts.length then reject state .bankFull
         else
           let scheduled := Scheduler.tick state.scheduler
@@ -155,12 +166,32 @@ theorem rejected_unchanged state interruptState frame registers reason
   all_goals split <;> simp_all [reject]
   all_goals split <;> simp_all [reject]
   all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
 
 theorem rejected_exposes_no_restore state interruptState frame registers reason
     (h : (switch state interruptState frame registers).error = some reason) :
     (switch state interruptState frame registers).restored = none := by
   simp only [switch] at h ⊢
   split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
   all_goals split <;> simp_all [reject]
   all_goals split <;> simp_all [reject]
   all_goals split <;> simp_all [reject]
@@ -181,6 +212,7 @@ theorem restored_context_is_scheduler_selected state interruptState frame regist
       context.addressSpace = selected.activeAddressSpace := by
   simp only [switch] at h
   split at h <;> try simp_all [reject]
+  all_goals split at h <;> try simp_all [reject]
   all_goals split at h <;> try simp_all [reject]
   all_goals split at h <;> try simp_all [reject]
   all_goals split at h <;> try simp_all [reject]
@@ -211,6 +243,7 @@ theorem restored_context_is_live_and_owned state interruptState frame registers 
     all_goals split at hs <;> try simp_all [reject]
     all_goals split at hs <;> try simp_all [reject]
     all_goals split at hs <;> try simp_all [reject]
+    all_goals split at hs <;> try simp_all [reject]
     all_goals rcases hs with ⟨rfl, rfl, rfl⟩
     all_goals grind
 
@@ -232,8 +265,10 @@ theorem switch_preserves_scheduler_and_tlb state interruptState frame registers
   all_goals split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
-  all_goals exact ⟨Scheduler.tick_preserves_wellFormed _ hscheduler,
-    TLB.switch_coherent _ _⟩
+  all_goals split <;> try simp_all [reject]
+  all_goals
+    exact ⟨Scheduler.tick_preserves_wellFormed _ hscheduler,
+      TLB.switch_coherent _ _⟩
 
 /-- Attacker-controlled general registers can affect only the saved payload;
 they cannot influence which bank entry is selected for restoration. -/
@@ -242,6 +277,7 @@ theorem registers_cannot_select_restore state interruptState frame first second 
       (switch state interruptState frame second).restored := by
   simp only [switch]
   split <;> try rfl
+  all_goals split <;> try rfl
   all_goals split <;> try rfl
   all_goals split <;> try rfl
   all_goals split <;> try rfl
@@ -339,7 +375,15 @@ private def demoRegisters (marker : UInt64) : Registers :=
     data := marker + 3
     source := marker + 4
     destination := marker + 5
-    basePointer := marker + 6 }
+    basePointer := marker + 6
+    r8 := marker + 8
+    r9 := marker + 9
+    r10 := marker + 10
+    r11 := marker + 11
+    r12 := marker + 12
+    r13 := marker + 13
+    r14 := marker + 14
+    r15 := marker + 15 }
 
 private def initialContext (owner : SubjectId) (marker : UInt64) : Context :=
   { owner
@@ -383,6 +427,16 @@ theorem bounded_round_trip_preserves_a (translations : TLB.State) :
     Interrupt.decodeVector, Interrupt.validUserReturn, Scheduler.tick, Scheduler.yield,
     Scheduler.selectNext, Scheduler.ownsAddressSpace, contextFor, eraseContext,
     TLB.switch]
+
+/-- A timer entry whose interrupt-side subject/address-space binding disagrees
+with the scheduler is rejected before any context is saved or restored. -/
+example (translations : TLB.State) :
+    (switch (roundTripStart translations) (demoInterrupt 2)
+      (demoFrame 0x401000 0x801000 0x246) (demoRegisters 0x10)).error =
+        some .contextMismatch := by
+  simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
+    switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
+    Interrupt.validUserReturn, reject]
 
 example (translations : TLB.State) :
     (switch (roundTripStart translations) (demoInterrupt 1)
