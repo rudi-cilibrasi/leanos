@@ -53,6 +53,9 @@ structure State where
   contexts : List Context
   capacity : Nat
   translations : TLB.State
+  /-- Irreversible execution latch.  This is the resumable layer's projection
+  of the repository-wide fail-stop mode; once set, no later call may restore. -/
+  halted : Bool := false
 
 def contextFor (contexts : List Context) (subject : SubjectId) : Option Context :=
   contexts.find? (fun context => context.owner == subject)
@@ -115,6 +118,10 @@ def WellFormed (state : State) : Prop :=
     TranslationAgreement state ∧
     TLB.Coherent state.translations
 
+theorem wellFormed_set_halted state halted :
+    WellFormed { state with halted := halted } ↔ WellFormed state := by
+  rfl
+
 inductive Error where
   | nonTimer | fatalEntry | malformedIncoming | noCurrent | contextMismatch | duplicateSave
   | staleActiveSpace | bankFull | schedulerRejected | noDestination | staleDestination
@@ -128,13 +135,17 @@ structure Outcome where
 def reject (state : State) (reason : Error) : Outcome :=
   { state, restored := none, error := some reason }
 
+def halt (state : State) : Outcome :=
+  { state := { state with halted := true }, restored := none, error := some .fatalEntry }
+
 /-- One accepted timer entry validates and saves the current user frame,
 performs the authoritative scheduler step, consumes exactly the selected
 context, and flushes cached translations by the no-PCID `TLB.switch` model. -/
 def switch (state : State) (interruptState : Interrupt.State)
     (incomingFrame : Interrupt.HardwareFrame) (incomingRegisters : Registers) : Outcome :=
-  match (Interrupt.dispatchHardware interruptState incomingFrame).action with
-  | .fatal _ => reject state .fatalEntry
+  if state.halted then reject state .fatalEntry
+  else match (Interrupt.dispatchHardware interruptState incomingFrame).action with
+  | .fatal _ => halt state
   | .timer =>
     if Interrupt.validUserReturn incomingFrame != true then reject state .malformedIncoming
     else match state.scheduler.lifecycle.current with
@@ -184,9 +195,11 @@ def switch (state : State) (interruptState : Interrupt.State)
   | _ => reject state .nonTimer
 
 theorem rejected_unchanged state interruptState frame registers reason
+    (hreason : reason ≠ .fatalEntry)
     (h : (switch state interruptState frame registers).error = some reason) :
     (switch state interruptState frame registers).state = state := by
   simp only [switch] at h ⊢
+  split <;> simp_all [reject, halt]
   split <;> simp_all [reject]
   all_goals split <;> simp_all [reject]
   all_goals split <;> simp_all [reject]
@@ -215,6 +228,7 @@ theorem rejected_exposes_no_restore state interruptState frame registers reason
     (h : (switch state interruptState frame registers).error = some reason) :
     (switch state interruptState frame registers).restored = none := by
   simp only [switch] at h ⊢
+  split <;> simp_all [reject, halt]
   split <;> simp_all [reject]
   all_goals split <;> simp_all [reject]
   all_goals split <;> simp_all [reject]
@@ -240,6 +254,7 @@ theorem restored_context_is_scheduler_selected state interruptState frame regist
       context.owner = selected.currentSubject ∧
       context.addressSpace = selected.activeAddressSpace := by
   simp only [switch] at h
+  split at h <;> try simp_all [reject, halt]
   split at h <;> try simp_all [reject]
   all_goals split at h <;> try simp_all [reject]
   all_goals split at h <;> try simp_all [reject]
@@ -265,6 +280,7 @@ theorem restored_context_is_live_and_owned state interruptState frame registers 
     simp only at h ⊢
     subst restored
     simp only [switch] at hs
+    split at hs <;> try simp_all [reject, halt]
     split at hs <;> try simp_all [reject]
     all_goals split at hs <;> try simp_all [reject]
     all_goals split at hs <;> try simp_all [reject]
@@ -288,6 +304,7 @@ theorem switch_preserves_scheduler_and_tlb state interruptState frame registers
         (switch state interruptState frame registers).state.scheduler ∧
       TLB.Coherent (switch state interruptState frame registers).state.translations := by
   simp only [switch]
+  split <;> try simp_all [reject, halt]
   split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
@@ -398,6 +415,7 @@ theorem switch_preserves_wellFormed state interruptState frame registers
     WellFormed (switch state interruptState frame registers).state := by
   simp only [switch]
   split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject, halt, wellFormed_set_halted]
   all_goals split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
@@ -511,6 +529,7 @@ theorem registers_cannot_select_restore state interruptState frame first second 
     (switch state interruptState frame first).restored =
       (switch state interruptState frame second).restored := by
   simp only [switch]
+  split <;> try rfl
   split <;> try rfl
   all_goals split <;> try rfl
   all_goals split <;> try rfl
@@ -738,6 +757,20 @@ theorem bounded_round_trip_preserves_a (translations : TLB.State) :
     Interrupt.decodeVector, Interrupt.validUserReturn, Scheduler.tick, Scheduler.yield,
     Scheduler.selectNext, Scheduler.ownsAddressSpace, contextFor, eraseContext,
     TLB.switch]
+
+/- A fatal entry irreversibly closes the resumable path: even a later valid
+timer entry cannot expose a context or alter the latched state. -/
+example (translations : TLB.State) :
+    let fatalFrame := { demoFrame 0x401000 0x801000 0x246 with vector := 77 }
+    let halted := (switch (roundTripStart translations) (demoInterrupt 1)
+      fatalFrame (demoRegisters 0x10)).state
+    halted.halted = true ∧
+      (switch halted (demoInterrupt 1) (demoFrame 0x401000 0x801000 0x246)
+        (demoRegisters 0x10)).restored = none ∧
+      (switch halted (demoInterrupt 1) (demoFrame 0x401000 0x801000 0x246)
+        (demoRegisters 0x10)).state = halted := by
+  simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
+    switch, Interrupt.dispatchHardware, Interrupt.decodeVector, halt, reject]
 
 /-- A timer entry whose interrupt-side subject/address-space binding disagrees
 with the scheduler is rejected before any context is saved or restored. -/
