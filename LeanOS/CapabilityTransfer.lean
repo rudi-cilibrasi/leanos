@@ -10,6 +10,8 @@ the sealed descendant cannot authorize an operation before atomic receipt.
 -/
 namespace LeanOS.CapabilityTransfer
 
+set_option linter.unusedSimpArgs false
+
 open LeanOS
 abbrev SubjectId := Capability.SubjectId
 abbrev ObjectId := Capability.ObjectId
@@ -32,7 +34,8 @@ structure State extends toEndpointState : EndpointIPC.State where
 def WellFormed (state : State) : Prop :=
   EndpointIPC.WellFormed state.toEndpointState ∧
   ∀ endpoint transfer, state.pending endpoint = some transfer →
-    (∃ envelope, state.mailbox endpoint = some envelope) ∧
+    (∃ envelope, state.mailbox endpoint = some envelope ∧
+      envelope.endpoint = endpoint ∧ envelope.sender = transfer.sender) ∧
     state.capabilities.objects transfer.object = true ∧
     state.capabilities.kinds transfer.object = some transfer.kind ∧
     Capability.rightsValid transfer.kind transfer.rights = true ∧
@@ -72,6 +75,18 @@ structure Outcome (ε : Type) where
   result : Result ε
 
 def reject (state : State) (reason : ε) : Outcome ε := { state, result := .rejected reason }
+
+inductive AcceptResult where
+  | delivered (envelope : EndpointIPC.Envelope)
+  | rejected (reason : AcceptError)
+  deriving DecidableEq, Repr
+
+structure AcceptOutcome where
+  state : State
+  result : AcceptResult
+
+def rejectAccept (state : State) (reason : AcceptError) : AcceptOutcome :=
+  { state, result := .rejected reason }
 
 def setPending (values : ObjectId → Option Sealed) endpoint value :=
   fun candidate => if candidate = endpoint then value else values candidate
@@ -116,31 +131,31 @@ def offer (state : State) (caller : SubjectId) (endpointSlot sourceSlot : SlotId
 /-- Atomically consume the envelope and install its sealed descendant in the
 trusted receiver's chosen empty slot. -/
 def accept (state : State) (caller : SubjectId) (endpointSlot destinationSlot : SlotId) :
-    Outcome AcceptError :=
+    AcceptOutcome :=
   match Capability.lookup state.capabilities caller endpointSlot with
-  | .invalidSubject => reject state .invalidSubject
-  | .staleSlot => reject state .staleEndpoint
+  | .invalidSubject => rejectAccept state .invalidSubject
+  | .staleSlot => rejectAccept state .staleEndpoint
   | .found endpointCap =>
-    if endpointCap.kind != .endpoint then reject state .wrongEndpointKind
-    else if !endpointCap.rights.receive then reject state .missingReceive
-    else if state.capabilities.objects endpointCap.object != true then reject state .retiredEndpoint
-    else if state.capabilities.kinds endpointCap.object != some .endpoint then reject state .retiredEndpoint
+    if endpointCap.kind != .endpoint then rejectAccept state .wrongEndpointKind
+    else if !endpointCap.rights.receive then rejectAccept state .missingReceive
+    else if state.capabilities.objects endpointCap.object != true then rejectAccept state .retiredEndpoint
+    else if state.capabilities.kinds endpointCap.object != some .endpoint then rejectAccept state .retiredEndpoint
     else match state.mailbox endpointCap.object with
-      | none => reject state .empty
-      | some _ =>
+      | none => rejectAccept state .empty
+      | some envelope =>
         if !Capability.slotInRange state.capabilities caller destinationSlot then
-          reject state .outOfRange
+          rejectAccept state .outOfRange
         else if (state.capabilities.slots caller destinationSlot).isSome then
-          reject state .occupiedSlot
+          rejectAccept state .occupiedSlot
         else match state.pending endpointCap.object with
-          | none => reject state .canceled
+          | none => rejectAccept state .canceled
           | some transfer =>
-            if state.capabilities.objects transfer.object != true then reject state .canceled
-            else if state.capabilities.kinds transfer.object != some transfer.kind then reject state .canceled
+            if state.capabilities.objects transfer.object != true then rejectAccept state .canceled
+            else if state.capabilities.kinds transfer.object != some transfer.kind then rejectAccept state .canceled
             else if state.capabilities.derivations transfer.identity !=
                 some (some transfer.parent, transfer.object, transfer.kind, transfer.rights) then
-              reject state .canceled
-            else if !Capability.rightsValid transfer.kind transfer.rights then reject state .canceled
+              rejectAccept state .canceled
+            else if !Capability.rightsValid transfer.kind transfer.rights then rejectAccept state .canceled
             else
               let nextEndpoint : EndpointIPC.State :=
                 { state.toEndpointState with
@@ -151,7 +166,7 @@ def accept (state : State) (caller : SubjectId) (endpointSlot destinationSlot : 
               { state :=
                   { toEndpointState := nextEndpoint
                     pending := setPending state.pending endpointCap.object none }
-                result := .accepted }
+                result := .delivered envelope }
 
 /-- Remove offers selected by a lifetime/revocation policy. Derivation records
 remain as append-only history, but no canceled identity can be installed. -/
@@ -166,23 +181,61 @@ def cancelWhere (state : State) (selected : Sealed → Bool) : State :=
       | some transfer => if selected transfer then none else some transfer
       | none => none }
 
-/-- Sender termination cancels its unaccepted offers. Receiver termination
-needs no special record: the receiver is selected only by trusted accept
-context and a terminated subject cannot pass capability lookup. -/
+/-- Subject termination in this composition updates the authoritative subject
+and slot store and cancels every envelope sent by that subject atomically. -/
 def terminateSender (state : State) (subject : SubjectId) : State :=
-  cancelWhere state (fun transfer => transfer.sender = subject)
+  let transitioned : State := { state with
+    capabilities := { state.capabilities with
+      subjects := fun candidate => if candidate = subject then false
+        else state.capabilities.subjects candidate
+      slots := fun holder slot => if holder = subject then none
+        else state.capabilities.slots holder slot } }
+  cancelWhere transitioned (fun transfer => transfer.sender = subject)
 
-/-- Whole-object retirement invalidates every offer for that object. -/
-def retireObject (state : State) (object : ObjectId) : State :=
-  cancelWhere state (fun transfer => transfer.object = object)
+/-- Retire a memory object through the authoritative allocator/lifetime
+transition, then cancel its sealed descendants only when release succeeds. -/
+def retireObject (state : State) (subject : SubjectId) (slot : SlotId) :
+    Outcome MemoryLifecycle.ReleaseError :=
+  match Capability.lookup state.capabilities subject slot with
+  | .invalidSubject => reject state .invalidSubject
+  | .staleSlot => reject state .staleSlot
+  | .found cap =>
+    let memoryState : MemoryLifecycle.State :=
+      { capabilities := state.capabilities, allocator := state.allocator
+        binding := state.binding, issued := state.issued }
+    let released := MemoryLifecycle.release memoryState subject slot
+    match released.result with
+    | .rejected reason => reject state reason
+    | .accepted =>
+      let endpointState : EndpointIPC.State :=
+        { capabilities := released.state.capabilities
+          allocator := released.state.allocator
+          binding := released.state.binding
+          issued := released.state.issued
+          issuedAddressSpace := state.issuedAddressSpace
+          mailbox := state.mailbox
+          sendHistory := state.sendHistory }
+      let transitioned : State := { toEndpointState := endpointState, pending := state.pending }
+      { state := cancelWhere transitioned (fun transfer => transfer.object = cap.object)
+        result := .accepted }
 
-/-- Endpoint destruction removes both its capacity-one envelope and any offer
-whose transferred object is that endpoint. -/
-def destroyEndpoint (state : State) (endpoint : ObjectId) : State :=
-  let canceled := retireObject state endpoint
-  { canceled with
-    mailbox := EndpointIPC.setOption canceled.mailbox endpoint none
-    pending := setPending canceled.pending endpoint none }
+/-- Destroy an endpoint through `EndpointIPC.destroy`, then cancel the
+endpoint mailbox record and offers transferring that endpoint only on success. -/
+def destroyEndpoint (state : State) (subject : SubjectId) (slot : SlotId) :
+    Outcome EndpointIPC.DestroyError :=
+  match Capability.lookup state.capabilities subject slot with
+  | .invalidSubject => reject state .invalidSubject
+  | .staleSlot => reject state .staleHandle
+  | .found cap =>
+    let destroyed := EndpointIPC.destroy state.toEndpointState subject slot
+    match destroyed.result with
+    | .rejected reason => reject state reason
+    | .accepted =>
+      let transitioned : State :=
+        { toEndpointState := destroyed.state, pending := state.pending }
+      let canceled := cancelWhere transitioned (fun transfer => transfer.object = cap.object)
+      { state := { canceled with pending := setPending canceled.pending cap.object none }
+        result := .accepted }
 
 /-- A transitive revocation atomically clears installed descendants in the
 authoritative store and sealed descendants in mailboxes. -/
@@ -199,12 +252,53 @@ noncomputable def revokeSubtree (state : State) (actor authoritySlot victim vict
       else (state, outcome.result)
   | _ => (state, (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).result)
 
+set_option maxHeartbeats 800000 in
+theorem offer_rejected_unchanged state caller endpointSlot sourceSlot payload rights reason
+    (h : (offer state caller endpointSlot sourceSlot payload rights).result = .rejected reason) :
+    (offer state caller endpointSlot sourceSlot payload rights).state = state := by
+  simp only [offer] at h ⊢
+  split <;> try simp_all [reject]
+  next endpointCap =>
+    split <;> try simp_all [reject]
+    split <;> try simp_all [reject]
+    split <;> try simp_all [reject]
+    split <;> try simp_all [reject]
+    split <;> try simp_all [reject]
+    split <;> try simp_all [reject]
+    next source =>
+      split <;> try simp_all [reject]
+      split <;> try simp_all [reject]
+      split <;> simp_all [reject]
+
+set_option maxHeartbeats 800000 in
+theorem accept_rejected_unchanged state caller endpointSlot destinationSlot reason
+    (h : (accept state caller endpointSlot destinationSlot).result = .rejected reason) :
+    (accept state caller endpointSlot destinationSlot).state = state := by
+  simp only [accept] at h ⊢
+  split <;> try simp_all [rejectAccept]
+  next endpointCap =>
+    split <;> try simp_all [rejectAccept]
+    split <;> try simp_all [rejectAccept]
+    split <;> try simp_all [rejectAccept]
+    split <;> try simp_all [rejectAccept]
+    split <;> try simp_all [rejectAccept]
+    next envelope =>
+      split <;> try simp_all [rejectAccept]
+      split <;> try simp_all [rejectAccept]
+      split <;> try simp_all [rejectAccept]
+      next transfer =>
+        split <;> try simp_all [rejectAccept]
+        split <;> try simp_all [rejectAccept]
+        split <;> try simp_all [rejectAccept]
+        split <;> simp_all [rejectAccept]
+
 /-- Successful receipt consumes exactly its mailbox and installs its sealed
 identity in the trusted caller's chosen slot. -/
-theorem accepted_installs_exactly_once state caller endpointSlot destinationSlot
-    (h : (accept state caller endpointSlot destinationSlot).result = .accepted) :
+theorem delivered_installs_exactly_once state caller endpointSlot destinationSlot envelope
+    (h : (accept state caller endpointSlot destinationSlot).result = .delivered envelope) :
     ∃ endpoint transfer,
       state.pending endpoint = some transfer ∧
+      state.mailbox endpoint = some envelope ∧
       (accept state caller endpointSlot destinationSlot).state.pending endpoint = none ∧
       (accept state caller endpointSlot destinationSlot).state.mailbox endpoint = none ∧
       (accept state caller endpointSlot destinationSlot).state.capabilities.slots
@@ -228,8 +322,24 @@ theorem accepted_installs_exactly_once state caller endpointSlot destinationSlot
         split at h <;> try contradiction
         split at h <;> try contradiction
         split at h <;> try contradiction
-        refine ⟨endpointCap.object, transfer, hpending, ?_, ?_, ?_⟩ <;>
+        cases h
+        refine ⟨endpointCap.object, transfer, hpending, hmail, ?_, ?_, ?_⟩ <;>
           simp [setPending, EndpointIPC.setOption, Capability.install, *]
+
+/-- Delivery returns the exact envelope stored before the transition. In
+particular, neither payload word participates in selecting installed authority. -/
+theorem delivered_envelope_and_payload_independent state caller endpointSlot destinationSlot envelope
+    (h : (accept state caller endpointSlot destinationSlot).result = .delivered envelope) :
+    ∃ endpoint transfer,
+      state.mailbox endpoint = some envelope ∧
+      state.pending endpoint = some transfer ∧
+      (accept state caller endpointSlot destinationSlot).state.capabilities.slots
+        caller destinationSlot = some
+          ⟨transfer.object, transfer.kind, transfer.rights,
+            transfer.identity, some transfer.parent⟩ := by
+  obtain ⟨endpoint, transfer, hpending, hmail, _, _, hslot⟩ :=
+    delivered_installs_exactly_once state caller endpointSlot destinationSlot envelope h
+  exact ⟨endpoint, transfer, hmail, hpending, hslot⟩
 
 /-- Conservation follows directly from the strengthened pending invariant:
 every sealed right is an attenuated child of its recorded parent. -/
@@ -240,5 +350,26 @@ theorem pending_rights_conserved state endpoint transfer
         some (parentParent, transfer.object, transfer.kind, parentRights) ∧
       Capability.rightsSubset transfer.rights parentRights = true := by
   exact (hstate.2 endpoint transfer h).2.2.2.2.2.1
+
+/-- For a well-formed pre-state, delivery installs the exact attenuated
+descendant recorded beside the returned envelope. Payload is absent from every
+authority-bearing equality. -/
+theorem delivered_authority_conserved state caller endpointSlot destinationSlot envelope
+    (hstate : WellFormed state)
+    (h : (accept state caller endpointSlot destinationSlot).result = .delivered envelope) :
+    ∃ endpoint, ∃ transfer : Sealed, ∃ parentParent parentRights,
+      state.mailbox endpoint = some envelope ∧
+      state.capabilities.derivations transfer.parent =
+        some (parentParent, transfer.object, transfer.kind, parentRights) ∧
+      Capability.rightsSubset transfer.rights parentRights = true ∧
+      (accept state caller endpointSlot destinationSlot).state.capabilities.slots
+        caller destinationSlot = some
+          ⟨transfer.object, transfer.kind, transfer.rights,
+            transfer.identity, some transfer.parent⟩ := by
+  obtain ⟨endpoint, transfer, hmail, hpending, hslot⟩ :=
+    delivered_envelope_and_payload_independent state caller endpointSlot destinationSlot envelope h
+  obtain ⟨parentParent, parentRights, hparent, hsubset⟩ :=
+    pending_rights_conserved state endpoint transfer hstate hpending
+  exact ⟨endpoint, transfer, parentParent, parentRights, hmail, hparent, hsubset, hslot⟩
 
 end LeanOS.CapabilityTransfer
