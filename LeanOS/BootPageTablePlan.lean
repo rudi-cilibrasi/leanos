@@ -450,6 +450,11 @@ example : rejectedAs
     .duplicateTableFrame = true := by native_decide
 example : rejectedAs { sampleInput with regions := sampleRegions ++ [sampleRegions[0]!] }
     .duplicateLeaf = true := by native_decide
+example : rejectedAs
+    { sampleInput with regions := sampleRegions ++
+        [{ { { sampleRegions[0]! with virtualStart := 0 } with
+             byteLength := 2 * pageBytes } with physicalStart := 0 }] }
+    .duplicateLeaf = true := by native_decide
 example : rejectedAs { sampleInput with regions := [{ sampleRegions[0]! with byteLength := 0 }] }
     .emptyRegion = true := by native_decide
 example : rejectedAs
@@ -471,12 +476,19 @@ example : rejectedAs
     .frameOutOfRange = true := by native_decide
 example : rejectedAs { sampleInput with regions :=
     [{ sampleRegions[2]! with owner := .subjectB }] } .wrongOwner = true := by native_decide
+example : rejectedAs { sampleInput with regions :=
+    [{ sampleRegions[2]! with space := .subjectB }] } .wrongOwner = true := by native_decide
 def sampleOverflowRegion : Region :=
   { sampleRegions[0]! with
     virtualStart := 2 ^ 64 - pageBytes
     byteLength := 2 * pageBytes }
 
 example : rejectedAs { sampleInput with regions := [sampleOverflowRegion] }
+    .addressOverflow = true := by native_decide
+example : rejectedAs
+    { sampleInput with regions :=
+        [{ { sampleRegions[0]! with physicalStart := 2 ^ 64 - pageBytes } with
+           byteLength := 2 * pageBytes }] }
     .addressOverflow = true := by native_decide
 
 def decodedAncestor (frame : Nat) : DecodedAncestor :=
