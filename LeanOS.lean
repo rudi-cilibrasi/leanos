@@ -15,6 +15,7 @@ import LeanOS.KernelTransition
 import LeanOS.MemoryLifecycle
 import LeanOS.Observation
 import LeanOS.Preemption
+import LeanOS.ResumablePreemption
 import LeanOS.Syscall
 import LeanOS.UserCopy
 import LeanOS.UserCopyWindow
