@@ -76,9 +76,21 @@ theorem contextFor_save_consume contexts saved destination :
 
 def validContext (state : State) (context : Context) : Prop :=
   Interrupt.validUserReturn context.frame = true ∧
+    context.addressSpace = context.owner ∧
     state.scheduler.lifecycle.capabilities.subjects context.owner = true ∧
     state.scheduler.lifecycle.runnable context.owner = true ∧
     state.scheduler.lifecycle.addressOwner context.addressSpace = some context.owner
+
+/-- Every queued subject has a restorable context, and every suspended context
+belongs to the ready queue.  An `.initial` context may be staged before its
+subject is first added to the queue; this is the only permitted non-ready bank
+entry.  A current subject needs a nonempty queue for a resumable timer tick. -/
+def ReadyContextAgreement (state : State) : Prop :=
+  (∀ subject, subject ∈ state.scheduler.ready →
+    ∃ context, context ∈ state.contexts ∧ context.owner = subject) ∧
+  (∀ context, context ∈ state.contexts →
+    context.kind = .suspended → context.owner ∈ state.scheduler.ready) ∧
+  (state.scheduler.lifecycle.current.isSome → state.scheduler.ready ≠ [])
 
 /-- In addition to scheduler invariants, the bank has unique, live ownership,
 and never contains the currently executing context. -/
@@ -89,6 +101,7 @@ def WellFormed (state : State) : Prop :=
     (∀ context, context ∈ state.contexts → validContext state context) ∧
     (∀ subject, state.scheduler.lifecycle.current = some subject →
       contextFor state.contexts subject = none) ∧
+    ReadyContextAgreement state ∧
     TLB.Coherent state.translations
 
 inductive Error where
@@ -307,6 +320,57 @@ private theorem accepted_tick_facts scheduler current selected
   rw [heq] at hselected ⊢
   grind [Scheduler.selectNext, Scheduler.ownsAddressSpace, Scheduler.reject]
 
+private theorem accepted_tick_rotates_ready scheduler current selected
+    (hcurrent : scheduler.lifecycle.current = some current)
+    (hready : scheduler.ready ≠ [])
+    (hselected : (Scheduler.tick scheduler).result = .accepted (some selected)) :
+    ∃ rest, scheduler.ready = selected.currentSubject :: rest ∧
+      (Scheduler.tick scheduler).state.ready = rest ++ [current] := by
+  have heq := accepted_tick_is_select scheduler current selected hcurrent hselected
+  rw [heq] at hselected ⊢
+  cases hqueue : scheduler.ready with
+  | nil => contradiction
+  | cons queued rest =>
+    simp only [hqueue, List.cons_append, Scheduler.selectNext] at hselected ⊢
+    split at hselected <;> simp_all [Scheduler.reject]
+    next space hspace =>
+      have : queued = selected.currentSubject := by grind
+      subst queued
+      grind
+
+/-- A well-formed resumable state cannot accept a timer selection for a
+subject whose kernel-owned context is absent.  The destination is valid and
+its address space is exactly the scheduler-selected address space. -/
+theorem accepted_tick_has_restorable_destination state current selected
+    (hstate : WellFormed state)
+    (hcurrent : state.scheduler.lifecycle.current = some current)
+    (hselected : (Scheduler.tick state.scheduler).result = .accepted (some selected)) :
+    ∃ destination,
+      contextFor state.contexts selected.currentSubject = some destination ∧
+      validContext state destination ∧
+      destination.owner = selected.currentSubject ∧
+      destination.addressSpace = selected.activeAddressSpace := by
+  rcases hstate with ⟨_, _, _, hvalid, _, hagreement, _⟩
+  rcases accepted_tick_rotates_ready state.scheduler current selected hcurrent
+      (hagreement.2.2 (by simp [hcurrent])) hselected with ⟨rest, hqueue, _⟩
+  obtain ⟨queued, hqueuedMem, hqueuedOwner⟩ :=
+    hagreement.1 selected.currentSubject (by simp [hqueue])
+  have hdestinationSome : (contextFor state.contexts selected.currentSubject).isSome := by
+    simp only [contextFor, List.find?_isSome]
+    exact ⟨queued, hqueuedMem, by simpa using hqueuedOwner⟩
+  rw [Option.isSome_iff_exists] at hdestinationSome
+  obtain ⟨destination, hdestination⟩ := hdestinationSome
+  refine ⟨destination, hdestination, hvalid destination ?_,
+    contextFor_owner _ _ _ hdestination, ?_⟩
+  · exact List.mem_of_find?_eq_some hdestination
+  · have howner := contextFor_owner _ _ _ hdestination
+    have hspace := (accepted_tick_facts state.scheduler current selected
+      hcurrent hselected).2.2.2.2
+    have hvalidDestination := hvalid destination
+      (List.mem_of_find?_eq_some hdestination)
+    simp only [validContext] at hvalidDestination
+    grind
+
 /-- Every save/select/restore transition preserves the complete composite
 invariant, including bounded unique ownership and validity of the rewritten
 context bank. -/
@@ -326,10 +390,14 @@ theorem switch_preserves_wellFormed state interruptState frame registers
   next action haction hframe maybeCurrent current hcurrent hbinding hnone hroom
       schedulerResult selected hselected maybeDestination destination hdestination
       hdestinationValid =>
-    rcases hstate with ⟨hscheduler, hcapacity, hunique, hvalid, habsent, htlb⟩
+    rcases hstate with
+      ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hagreement, htlb⟩
     have hscheduler' := Scheduler.tick_preserves_wellFormed state.scheduler hscheduler
     obtain ⟨hnextCurrent, hcapabilities, hrunnable, haddressOwner, hselectedSpace⟩ :=
       accepted_tick_facts state.scheduler current selected hcurrent hselected
+    obtain ⟨rest, hqueue, hnextReady⟩ := accepted_tick_rotates_ready
+      state.scheduler current selected hcurrent
+        (hagreement.2.2 (by simp [hcurrent])) hselected
     have hselectedNe : selected.currentSubject ≠ current := by
       intro hequal
       rw [hequal, hnone] at hdestination
@@ -342,7 +410,7 @@ theorem switch_preserves_wellFormed state interruptState frame registers
           state.scheduler.lifecycle.runnable current = true ∧
           state.scheduler.lifecycle.addressOwner current = some current := by
       grind [Scheduler.WellFormed, Scheduler.ownsAddressSpace]
-    refine ⟨hscheduler', ?_, ?_, ?_, ?_, TLB.switch_coherent _ _⟩
+    refine ⟨hscheduler', ?_, ?_, ?_, ?_, ?_, TLB.switch_coherent _ _⟩
     · simp only [List.length_cons]
       calc
         (eraseContext state.contexts selected.currentSubject).length + 1 ≤
@@ -355,15 +423,62 @@ theorem switch_preserves_wellFormed state interruptState frame registers
       exact Ne.symm (hnoCurrentOwner context (List.mem_filter.mp hcontext).1)
     · intro context hcontext
       rcases List.mem_cons.mp hcontext with rfl | hcontext
-      · simp only [validContext]
-        simpa [hcapabilities, hrunnable, haddressOwner] using
-          And.intro hframe hcurrentValid
+      · exact ⟨hframe, rfl, by
+          simpa [hcapabilities, hrunnable, haddressOwner] using hcurrentValid⟩
       · have hold := hvalid context (List.mem_filter.mp hcontext).1
         simpa [validContext, hcapabilities, hrunnable, haddressOwner] using hold
     · intro subject hsubject
       have : subject = selected.currentSubject := by grind
       subst subject
       simp [contextFor, eraseContext, Ne.symm hselectedNe]
+    · refine ⟨?_, ?_, ?_⟩
+      · intro subject hsubject
+        rw [hnextReady] at hsubject
+        have hcases : subject ∈ rest ∨ subject = current := by
+          simpa using hsubject
+        rcases hcases with hrest | hsubjectCurrent
+        · obtain ⟨context, hcontextMem, hcontextOwner⟩ := hagreement.1 subject (by
+            rw [hqueue]
+            simp [hrest])
+          have hsubjectNe : subject ≠ selected.currentSubject := by
+            intro heq
+            subst subject
+            have := hscheduler.2.1
+            rw [hqueue] at this
+            simp_all
+          have hcurrentNe : current ≠ subject := by
+            intro heq
+            subst subject
+            have hcurrentNotReady := hscheduler.2.2.2.2 current hcurrent |>.2.2.2
+            have hcurrentRest : current ∈ rest := by simpa [heq] using hrest
+            apply hcurrentNotReady
+            rw [hqueue]
+            exact List.mem_cons_of_mem _ hcurrentRest
+          refine ⟨context, ?_⟩
+          exact ⟨by simp [eraseContext, hcontextMem, hcontextOwner, hsubjectNe],
+            hcontextOwner⟩
+        · subst subject
+          refine ⟨{
+            owner := current
+            addressSpace := current
+            frame := frame
+            registers := registers
+            kind := .suspended }, ?_⟩
+          simp
+      · intro context hcontext hsuspended
+        rcases List.mem_cons.mp hcontext with hsaved | hretained
+        · subst context
+          simp [hnextReady]
+        · have holdMem := (List.mem_filter.mp hretained).1
+          have holdReady := hagreement.2.1 context holdMem hsuspended
+          have hnotSelected : context.owner ≠ selected.currentSubject := by
+            simpa using (List.mem_filter.mp hretained).2
+          rw [hqueue] at holdReady
+          rw [hnextReady]
+          simp_all
+      · intro _
+        rw [hnextReady]
+        simp
 
 /-- Attacker-controlled general registers can affect only the saved payload;
 they cannot influence which bank entry is selected for restoration. -/
@@ -423,6 +538,31 @@ theorem cleanup_terminates_subject state subject :
     (cleanupSubject state subject).scheduler.lifecycle.capabilities.subjects subject = false := by
   simp [cleanupSubject, SubjectLifecycle.terminateState,
     SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool]
+
+/-- Cleanup preserves ready/context agreement whenever it leaves a queued
+destination for a still-current subject.  If cleanup removes the final peer,
+the resulting single runnable subject deliberately leaves the resumable-state
+domain: a timer tick has no distinct context to restore. -/
+theorem cleanup_preserves_readyContextAgreement state subject
+    (hstate : ReadyContextAgreement state)
+    (hpeer : (cleanupSubject state subject).scheduler.lifecycle.current.isSome →
+      (cleanupSubject state subject).scheduler.ready ≠ []) :
+    ReadyContextAgreement (cleanupSubject state subject) := by
+  refine ⟨?_, ?_, hpeer⟩
+  · intro queued hqueued
+    have hqueuedOld : queued ∈ state.scheduler.ready := by
+      simpa [cleanupSubject] using (List.mem_filter.mp hqueued).1
+    have hqueuedNe : queued ≠ subject := by
+      simpa using (List.mem_filter.mp hqueued).2
+    obtain ⟨context, hcontext, howner⟩ := hstate.1 queued hqueuedOld
+    refine ⟨context, ?_, howner⟩
+    simp [cleanupSubject, eraseContext, hcontext, howner, hqueuedNe]
+  · intro context hcontext hsuspended
+    have hcontextOld := (List.mem_filter.mp hcontext).1
+    have hownerNe : context.owner ≠ subject := by
+      simpa using (List.mem_filter.mp hcontext).2
+    have hreadyOld := hstate.2.1 context hcontextOld hsuspended
+    simp [cleanupSubject, hreadyOld, hownerNe]
 
 private def demoLifecycle (current : SubjectId) : SubjectLifecycle.State :=
   { capabilities := {
