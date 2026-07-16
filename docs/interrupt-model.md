@@ -54,7 +54,10 @@ Hardware construction and decoding of the trap frame and flags, IDT and TSS
 descriptors, kernel-stack selection, interrupt masking, assembly save/restore,
 CR3/TLB operations, `iretq`, canonical-address and region checks, page tables,
 generated code, compiler, QEMU, and x86-64 semantics remain trusted. This model
-slice adds no `unsafe`, `extern`, FFI, axiom, or constant declaration. A
-fixed-width generated adapter, shared assembly epilogue, final-ELF dominance
-inspection, and corrupt-frame QEMU fixtures are still required before claiming
-that the boot image follows this protocol.
+slice adds no `unsafe`, `extern`, FFI, axiom, or constant declaration. The boot
+image now routes initial dispatch, syscall resume, and timer restore through one
+bounded C validator and shared assembly epilogue. Final-ELF inspection permits
+only that CPL3 `iretq` plus the separately classified diagnostic CPL0 recovery
+site, and rejects calls or context changes between validation and consumption.
+The C adapter and inspection are integration evidence, not refinement proofs;
+the shared generated-model oracle and corrupt-frame QEMU corpus remain required.

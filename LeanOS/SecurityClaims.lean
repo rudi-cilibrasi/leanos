@@ -84,8 +84,8 @@ kernel-selected frame/context tuple and its privilege-critical fields. -/
 theorem user_return_context_confinement request attested
     (haccepted : Interrupt.validateUserReturn request = .accepted attested) :
     attested.hardware.savedPrivilege = .user ∧
-      attested.hardware.codeSelector = 0x1b ∧
-      attested.hardware.stackSelector = 0x23 ∧
+      attested.hardware.codeSelector = 0x23 ∧
+      attested.hardware.stackSelector = 0x1b ∧
       attested.flags.interruptEnable = true ∧
       attested.flags.direction = false ∧
       attested.flags.alignmentCheck = false ∧

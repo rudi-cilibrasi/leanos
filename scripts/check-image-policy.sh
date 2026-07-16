@@ -113,8 +113,8 @@ grep -Fq 'or $((1 << 31) | (1 << 16)), %eax' boot/boot.S
 grep -Fq 'bts $20, %rax' boot/boot.S
 grep -Fq 'bts $21, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]
-[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 8 ]]
-[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 9 ]]
+[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 9 ]]
+[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 10 ]]
 for symbol in smap_copy_from_cld smap_copy_from_stac smap_copy_from_clac \
   smap_copy_to_cld smap_copy_to_stac \
   smap_copy_to_clac smap_omit_cleanup_probe_stac smap_force_clac \
@@ -150,5 +150,28 @@ grep -Fq 'or $((1 << 8) | (1 << 11)), %eax' boot/boot.S
 ! grep -Fq '__user_b_text_start' <(sed -n '/__user_a_text_start/,/__user_b_text_start/{p}' boot/boot.S | head -n -1)
 grep -q ' T leanos_ipc_demo$' <<<"$symbols"
 grep -q ' T leanos_preemption_demo$' <<<"$symbols"
+
+# All CPL3 transitions converge on one validator call and consume the validated
+# frame without an intervening call, write, or context switch. The sole other
+# iretq belongs to the explicitly separate supervisor diagnostic recovery path.
+for symbol in user_return_epilogue user_return_iretq validate_user_return; do
+  grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+    echo "error: user-return policy symbol missing: $symbol" >&2; exit 1;
+  }
+done
+[[ "$(objdump -d "$elf" | grep -c '[[:space:]]iretq')" -eq 2 ]] || {
+  echo "error: expected one validated user iretq and one diagnostic kernel iretq" >&2; exit 1;
+}
+return_disassembly="$(objdump -d "$elf" | sed -n '/<user_return_epilogue>:/,/<user_return_iretq>:/p')"
+grep -Eq 'call.*<validate_user_return>' <<<"$return_disassembly" || {
+  echo "error: user-return epilogue does not call validator" >&2; exit 1;
+}
+post_validation="$(objdump -d "$elf" | sed -n '/call.*<validate_user_return>/,/<user_return_iretq>:/p')"
+if grep -Eq '\<(call|mov .*%cr3)\>' <<<"${post_validation#*$'\n'}"; then
+  echo "error: validated return frame/context changes before iretq" >&2; exit 1
+fi
+[[ "$(grep -Ec '^[[:space:]]+iretq$' boot/boot.S)" -eq 2 ]] || {
+  echo "error: raw iretq added outside classified return sites" >&2; exit 1;
+}
 
 echo "ELF sections, policy symbols, and constructed page-table policy passed"

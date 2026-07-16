@@ -29,6 +29,8 @@ extern void isr32(void);
 extern void run_double_fault_probe(void);
 extern char user_a_entry[], user_a_stack_top[];
 extern char user_a_stack[];
+extern char user_b_entry[], user_b_stack[], user_b_stack_top[];
+extern char page_map_level_4_a[], page_map_level_4_b[];
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
@@ -63,7 +65,7 @@ static struct idt_entry idt[256] __attribute__((aligned(16)));
 static struct tss64 tss;
 static uint8_t entry_stack[16384] __attribute__((aligned(16)));
 static unsigned preemption_step;
-static uint64_t current_subject = 1;
+uint64_t current_subject = 1;
 static unsigned timer_accepted;
 static unsigned supervisor_probe;
 static uint8_t copy_buffer[16];
@@ -78,6 +80,45 @@ static void serial_u64(uint64_t value) {
     if (value == 0) { serial_putc('0'); return; }
     while (value != 0) { digits[length++] = (char)('0' + value % 10); value /= 10; }
     while (length != 0) serial_putc(digits[--length]);
+}
+
+static unsigned canonical(uint64_t value) {
+    uint64_t high = value >> 47;
+    return high == 0 || high == 0x1ffffu;
+}
+
+/* Fixed-width, allocation-free machine adapter for the authoritative return
+   policy. `saved` is the complete SAVE register bank followed by RIP, CS,
+   RFLAGS, RSP, and SS. Rejection enters the existing absorbing terminal path. */
+void validate_user_return(const uint64_t *saved, uint64_t purpose) {
+    uint64_t rip = saved[15], cs = saved[16], flags = saved[17];
+    uint64_t rsp = saved[18], ss = saved[19], cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    const char *code_first, *code_last, *stack_first, *stack_last, *expected_cr3;
+    if (current_subject == 1) {
+        code_first = user_a_entry; code_last = user_a_stack;
+        stack_first = user_a_stack; stack_last = user_a_stack_top;
+        expected_cr3 = page_map_level_4_a;
+    } else if (current_subject == 2) {
+        code_first = user_b_entry; code_last = user_b_stack;
+        stack_first = user_b_stack; stack_last = user_b_stack_top;
+        expected_cr3 = page_map_level_4_b;
+    } else fail("user-return-subject");
+    if (purpose < 1 || purpose > 3) fail("user-return-purpose");
+    if (cs != 0x23 || ss != 0x1b) fail("user-return-selector");
+    if (!canonical(rip) || !canonical(rsp)) fail("user-return-noncanonical");
+    /* Require IF and architectural bit 1; reject DF, IOPL, NT, RF, VM, AC,
+       and every flag outside the deliberately reviewed arithmetic subset. */
+    const uint64_t required = (1ull << 1) | (1ull << 9);
+    const uint64_t allowed = required | 1ull | (1ull << 2) | (1ull << 4) |
+        (1ull << 6) | (1ull << 7) | (1ull << 11);
+    if ((flags & required) != required || (flags & ~allowed) != 0)
+        fail("user-return-flags");
+    if (rip < (uint64_t)code_first || rip >= (uint64_t)code_last)
+        fail("user-return-code");
+    if (rsp < (uint64_t)stack_first || rsp > (uint64_t)stack_last)
+        fail("user-return-stack");
+    if (cr3 != (uint64_t)expected_cr3) fail("user-return-cr3");
 }
 
 static __attribute__((noreturn)) void handoff_fail(const char *reason) {

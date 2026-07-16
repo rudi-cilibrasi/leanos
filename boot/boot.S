@@ -334,7 +334,14 @@ enter_user:
     push %rax
     pushq $0x23
     push %rdi
-    iretq
+    /* Supply an all-zero initial register bank so every CPL3 transition uses
+       the same reviewed validator/restore epilogue. */
+    xor %eax, %eax
+    .rept 15
+    push %rax
+    .endr
+    mov $1, %esi
+    jmp user_return_epilogue
 
 /* Raise a real #GP with RSP immediately above the unmapped guard.  Its present
    IST0 gate must push an exception frame into the guard, so the resulting #PF
@@ -464,8 +471,8 @@ isr80_cld:
     xor %rax, %rax
 7:
     mov %rax, 112(%rsp)
-    RESTORE
-    iretq
+    mov $2, %esi
+    jmp user_return_epilogue
 .global isr14
 isr14:
 .global isr14_clac
@@ -508,7 +515,19 @@ isr32_cld:
     movq $page_map_level_4_b, %rax
     mov %rax, %cr3
     call switch_complete
+    mov $3, %esi
+    jmp user_return_epilogue
+
+/* The only boot-reachable CPL3 return. validate_user_return receives the exact
+   immutable register/frame tuple at RSP; after acceptance this block performs
+   no frame write, context change, or call before consuming that tuple. */
+.global user_return_epilogue
+.global user_return_iretq
+user_return_epilogue:
+    mov %rsp, %rdi
+    call validate_user_return
     RESTORE
+user_return_iretq:
     iretq
 
 .section .user.a.text,"ax",@progbits

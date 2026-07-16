@@ -573,7 +573,7 @@ theorem legacy_fatal_not_absorbing (core : Interrupt.State)
 
 private def demoFrame (vector : Nat) (origin : Interrupt.Privilege) : Interrupt.HardwareFrame :=
   { vector, errorCode := 0, savedPrivilege := origin, instructionPointer := 0x400000,
-    stackPointer := 0x500000, codeSelector := 0x1b, stackSelector := 0x23,
+    stackPointer := 0x500000, codeSelector := 0x23, stackSelector := 0x1b,
     flags := 2, canonicalInstructionPointer := true,
     canonicalStackPointer := true, flagsAllowed := true }
 

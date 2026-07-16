@@ -88,8 +88,8 @@ structure Outcome where
   action : Action
 
 def validUserReturn (frame : HardwareFrame) : Bool :=
-  frame.savedPrivilege = .user && frame.codeSelector = 0x1b &&
-    frame.stackSelector = 0x23 && frame.canonicalInstructionPointer &&
+  frame.savedPrivilege = .user && frame.codeSelector = 0x23 &&
+    frame.stackSelector = 0x1b && frame.canonicalInstructionPointer &&
     frame.canonicalStackPointer && frame.flagsAllowed
 
 /-! ## Authoritative outgoing user-return validation
@@ -158,7 +158,7 @@ def validateUserReturn (request : UserReturnRequest) : UserReturnValidation :=
   if request.purpose = .diagnosticKernelRecovery then .rejected .wrongPurpose
   else if request.executionMode != .running then .rejected .fatalMode
   else if request.hardware.savedPrivilege != .user then .rejected .wrongOrigin
-  else if request.hardware.codeSelector != 0x1b || request.hardware.stackSelector != 0x23 then
+  else if request.hardware.codeSelector != 0x23 || request.hardware.stackSelector != 0x1b then
     .rejected .wrongSelector
   else if !request.hardware.canonicalInstructionPointer ||
       !request.hardware.canonicalStackPointer then .rejected .noncanonical
@@ -201,8 +201,8 @@ theorem accepted_attests_exact_request request attested
 theorem accepted_user_return_context_confined request attested
     (haccepted : validateUserReturn request = .accepted attested) :
     attested.hardware.savedPrivilege = .user ∧
-      attested.hardware.codeSelector = 0x1b ∧
-      attested.hardware.stackSelector = 0x23 ∧
+      attested.hardware.codeSelector = 0x23 ∧
+      attested.hardware.stackSelector = 0x1b ∧
       attested.hardware.canonicalInstructionPointer = true ∧
       attested.hardware.canonicalStackPointer = true ∧
       attested.flags.interruptEnable = true ∧
@@ -429,8 +429,8 @@ theorem malformed_return_cannot_resume state frame
 theorem resume_requires_safe_user_frame state frame
     (hresume : (dispatchHardware state frame).action = .resume) :
     validUserReturn frame = true ∧
-      frame.savedPrivilege = .user ∧ frame.codeSelector = 0x1b ∧
-      frame.stackSelector = 0x23 ∧ frame.canonicalInstructionPointer = true ∧
+      frame.savedPrivilege = .user ∧ frame.codeSelector = 0x23 ∧
+      frame.stackSelector = 0x1b ∧ frame.canonicalInstructionPointer = true ∧
       frame.canonicalStackPointer = true ∧ frame.flagsAllowed = true := by
   unfold dispatchHardware at hresume
   split at hresume <;> simp_all
@@ -476,7 +476,7 @@ private def registers : AttackerRegisters := ⟨1, 2, 3, 4⟩
 private def frame (vector : Nat) (origin : Privilege) : HardwareFrame :=
   { vector, errorCode := 0, savedPrivilege := origin,
     instructionPointer := 0x400000, stackPointer := 0x500000,
-    codeSelector := 0x1b, stackSelector := 0x23, flags := 2,
+    codeSelector := 0x23, stackSelector := 0x1b, flags := 2,
     canonicalInstructionPointer := true, canonicalStackPointer := true,
     flagsAllowed := true }
 private def context : TrustedContext := ⟨1, 11, 0x800000, false⟩
