@@ -149,12 +149,15 @@ def tableFramesRepresentable (input : Input) : Bool :=
     input.ancestors.subjectB.pts.length == bootPtCount &&
     input.ancestors.subjectB.pts.all representableFrame
 
+def layoutFrames (roots : Roots) (ancestors : AncestorPaths) : List PhysicalFrame :=
+  [roots.subjectA, roots.subjectB,
+   ancestors.subjectA.pdpt, ancestors.subjectA.pd] ++
+   ancestors.subjectA.pts ++
+   [ancestors.subjectB.pdpt, ancestors.subjectB.pd] ++
+   ancestors.subjectB.pts
+
 def tableFrames (input : Input) : List PhysicalFrame :=
-  [input.roots.subjectA, input.roots.subjectB,
-   input.ancestors.subjectA.pdpt, input.ancestors.subjectA.pd] ++
-   input.ancestors.subjectA.pts ++
-   [input.ancestors.subjectB.pdpt, input.ancestors.subjectB.pd] ++
-   input.ancestors.subjectB.pts
+  layoutFrames input.roots input.ancestors
 
 /-- Each level has distinct storage.  Aliasing a root with one of its descendants,
 or two descendants with each other, cannot describe the supported four-level tree. -/
@@ -276,6 +279,9 @@ structure Plan where
   `compile`. Live-table validation must not take either from a second input. -/
   compiledAncestors : AncestorPaths
   compiledReservationResult : Option BootReservation.Result
+  /-- Proof-carrying commitment to the exact ancestor layout accepted by
+  `compile`. Updating `compiledAncestors` alone cannot produce another `Plan`. -/
+  compiledLayoutBound : layoutFrames roots compiledAncestors = liveTableFrames
 
 /-- Total compiler/checker for the deliberately finite supported subset. -/
 def compile (input : Input) : Except Error Plan := do
@@ -314,7 +320,7 @@ def compile (input : Input) : Except Error Plan := do
                           tableFramesReserved input, htables,
                           tableFramesRepresentable input, hframes,
                           tableFramesDistinct input, hframesUnique,
-                          input.ancestors, input.reservationResult⟩
+                          input.ancestors, input.reservationResult, rfl⟩
                       else throw .incompatibleOverlap
                     else throw .wrongOwner
                   else throw .incompatibleOverlap
@@ -371,6 +377,10 @@ theorem accepted_table_frames_representable input plan (_h : compile input = .ok
 
 theorem accepted_table_frames_distinct input plan (_h : compile input = .ok plan) :
     plan.tableFramesUnique = true := plan.tableFramesUniquenessChecked
+
+theorem accepted_compiled_layout_bound input plan (_h : compile input = .ok plan) :
+    layoutFrames plan.roots plan.compiledAncestors = plan.liveTableFrames :=
+  plan.compiledLayoutBound
 
 /-! ## Bounded live-table comparison boundary -/
 
