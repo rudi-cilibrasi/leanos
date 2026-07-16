@@ -72,7 +72,7 @@ structure CompiledLeaf where
 inductive Error where
   | missingNXE | equalRoots | misaligned | emptyRegion | addressOverflow
   | nonCanonical | frameOutOfRange | wrongOwner | incompatibleOverlap
-  | duplicateLeaf | unreservedTableFrame | invalidTableFrame
+  | duplicateLeaf | duplicateTableFrame | unreservedTableFrame | invalidTableFrame
   deriving BEq, DecidableEq, Repr
 
 def aligned (address : Nat) : Bool := address % pageBytes == 0
@@ -136,6 +136,17 @@ def tableFramesRepresentable (input : Input) : Bool :=
     representableFrame input.ancestors.subjectB.pd &&
     representableFrame input.ancestors.subjectB.pt
 
+def tableFrames (input : Input) : List PhysicalFrame :=
+  [input.roots.subjectA, input.roots.subjectB,
+   input.ancestors.subjectA.pdpt, input.ancestors.subjectA.pd,
+   input.ancestors.subjectA.pt, input.ancestors.subjectB.pdpt,
+   input.ancestors.subjectB.pd, input.ancestors.subjectB.pt]
+
+/-- Each level has distinct storage.  Aliasing a root with one of its descendants,
+or two descendants with each other, cannot describe the supported four-level tree. -/
+def tableFramesDistinct (input : Input) : Bool :=
+  (tableFrames input).Pairwise (· != ·)
+
 def wxSafe (leaves : List CompiledLeaf) : Bool :=
   leaves.all fun entry => !entry.leaf.writable || entry.leaf.noExecute
 
@@ -196,13 +207,16 @@ structure Plan where
   reservationsChecked : tableFramesReserved = true
   tableFramesValid : Bool
   tableFramesValidityChecked : tableFramesValid = true
+  tableFramesUnique : Bool
+  tableFramesUniquenessChecked : tableFramesUnique = true
 
 /-- Total compiler/checker for the deliberately finite supported subset. -/
 def compile (input : Input) : Except Error Plan := do
   if !input.nxe then throw .missingNXE
   if hroot : input.roots.subjectA == input.roots.subjectB then throw .equalRoots else
     if hvalid : !tableFramesRepresentable input then throw .invalidTableFrame else
-     if hreserved : !tableFramesReserved input then throw .unreservedTableFrame else
+     if hunique : !tableFramesDistinct input then throw .duplicateTableFrame else
+      if hreserved : !tableFramesReserved input then throw .unreservedTableFrame else
       let leaves <- input.regions.flatMapM compileRegion
       if hduplicates : noDuplicateLeaves leaves then
         if hwx : wxSafe leaves then
@@ -220,10 +234,13 @@ def compile (input : Input) : Except Error Plan := do
                         simpa using hreserved
                       have hframes : tableFramesRepresentable input = true := by
                         simpa using hvalid
+                      have hframesUnique : tableFramesDistinct input = true := by
+                        simpa using hunique
                       pure ⟨input.roots, leaves, hroots, hduplicates, hwx, hownership, hseparated,
                         hstructural, hrefines, hsupervisor, hattributes,
                         tableFramesReserved input, htables,
-                        tableFramesRepresentable input, hframes⟩
+                        tableFramesRepresentable input, hframes,
+                        tableFramesDistinct input, hframesUnique⟩
                     else throw .incompatibleOverlap
                   else throw .wrongOwner
                 else throw .incompatibleOverlap
@@ -271,6 +288,9 @@ theorem accepted_table_frames_reserved input plan (_h : compile input = .ok plan
 
 theorem accepted_table_frames_representable input plan (_h : compile input = .ok plan) :
     plan.tableFramesValid = true := plan.tableFramesValidityChecked
+
+theorem accepted_table_frames_distinct input plan (_h : compile input = .ok plan) :
+    plan.tableFramesUnique = true := plan.tableFramesUniquenessChecked
 
 /-! ## Bounded live-table comparison boundary -/
 
@@ -418,6 +438,16 @@ example : rejectedAs
 example : rejectedAs
     { sampleInput with roots := { subjectA := physicalFrameLimit, subjectB := 11 } }
     .invalidTableFrame = true := by native_decide
+example : rejectedAs
+    { sampleInput with ancestors :=
+        { sampleInput.ancestors with
+          subjectA := { sampleInput.ancestors.subjectA with pdpt := sampleInput.roots.subjectA } } }
+    .duplicateTableFrame = true := by native_decide
+example : rejectedAs
+    { sampleInput with ancestors :=
+        { sampleInput.ancestors with
+          subjectB := { sampleInput.ancestors.subjectB with pd := sampleInput.ancestors.subjectB.pt } } }
+    .duplicateTableFrame = true := by native_decide
 example : rejectedAs { sampleInput with regions := sampleRegions ++ [sampleRegions[0]!] }
     .duplicateLeaf = true := by native_decide
 example : rejectedAs { sampleInput with regions := [{ sampleRegions[0]! with byteLength := 0 }] }
