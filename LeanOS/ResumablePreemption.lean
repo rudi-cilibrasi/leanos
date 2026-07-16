@@ -543,13 +543,17 @@ together.  The scheduler model currently identifies each subject's owned
 address space with the same identifier; this is the explicit no-reuse boundary
 used by `Scheduler.ownsAddressSpace`. -/
 def cleanupSubject (state : State) (subject : SubjectId) : State :=
+  let lifecycle := SubjectLifecycle.terminateState state.scheduler.lifecycle subject
   { state with
     scheduler := {
       state.scheduler with
-      lifecycle := SubjectLifecycle.terminateState state.scheduler.lifecycle subject
+      lifecycle := lifecycle
       ready := state.scheduler.ready.filter (· != subject) }
     contexts := eraseContext state.contexts subject
-    translations := TLB.invalidateSpace state.translations subject }
+    translations := {
+      TLB.invalidateSpace state.translations subject with
+      virtual := { state.translations.virtual with owner := lifecycle.addressOwner }
+      active := lifecycle.current } }
 
 theorem cleanup_removes_context state subject :
     contextFor (cleanupSubject state subject).contexts subject = none := by
@@ -564,6 +568,17 @@ theorem cleanup_terminates_subject state subject :
     (cleanupSubject state subject).scheduler.lifecycle.capabilities.subjects subject = false := by
   simp [cleanupSubject, SubjectLifecycle.terminateState,
     SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool]
+
+/-- Lifecycle and translation ownership are updated as one cleanup projection;
+terminating the current subject also clears the modeled active address space. -/
+theorem cleanup_preserves_translationAgreement state subject :
+    TranslationAgreement (cleanupSubject state subject) := by
+  simp only [TranslationAgreement, cleanupSubject]
+  split <;> constructor
+  · trivial
+  · assumption
+  · trivial
+  · assumption
 
 /-- Cleanup preserves ready/context agreement whenever it leaves a queued
 destination for a still-current subject.  If cleanup removes the final peer,
