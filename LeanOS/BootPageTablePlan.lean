@@ -58,8 +58,9 @@ structure Input where
   ancestors : AncestorPaths
   nxe : Bool
   regions : List Region
-  tableReservations : List Interval
-  deriving Repr
+  /-- The page-table reservation is accepted only as part of the allocator
+  result that validated and overlaid the complete boot manifest. -/
+  reservationResult : Option BootReservation.Result
 
 structure CompiledLeaf where
   space : Space
@@ -73,7 +74,7 @@ inductive Error where
   | missingNXE | equalRoots | misaligned | emptyRegion | addressOverflow
   | nonCanonical | frameOutOfRange | wrongOwner | incompatibleOverlap
   | duplicateLeaf | duplicateTableFrame | unreservedTableFrame | invalidTableFrame
-  | missingRequiredRegion | unsafePhysicalAlias
+  | missingRequiredRegion | unsafePhysicalAlias | missingValidatedReservation
   deriving BEq, DecidableEq, Repr
 
 def aligned (address : Nat) : Bool := address % pageBytes == 0
@@ -115,18 +116,21 @@ def reservedAsPageTable (reservations : List Interval) (frame : PhysicalFrame) :
     interval.identity == .pageTables && interval.contains frame
 
 def tableFramesReserved (input : Input) : Bool :=
-  reservedAsPageTable input.tableReservations input.roots.subjectA &&
-    reservedAsPageTable input.tableReservations input.roots.subjectB &&
-    reservedAsPageTable input.tableReservations input.ancestors.subjectA.pdpt &&
-    reservedAsPageTable input.tableReservations input.ancestors.subjectA.pd &&
-    reservedAsPageTable input.tableReservations input.ancestors.subjectA.pt &&
-    reservedAsPageTable input.tableReservations input.ancestors.subjectB.pdpt &&
-    reservedAsPageTable input.tableReservations input.ancestors.subjectB.pd &&
-    reservedAsPageTable input.tableReservations input.ancestors.subjectB.pt &&
-    input.regions.all fun region => region.policy != .pageTables ||
-      (List.range (region.byteLength / pageBytes)).all fun offset =>
-        reservedAsPageTable input.tableReservations
-          (region.physicalStart / pageBytes + offset)
+  match input.reservationResult with
+  | none => false
+  | some reserved =>
+    reservedAsPageTable reserved.intervals input.roots.subjectA &&
+      reservedAsPageTable reserved.intervals input.roots.subjectB &&
+      reservedAsPageTable reserved.intervals input.ancestors.subjectA.pdpt &&
+      reservedAsPageTable reserved.intervals input.ancestors.subjectA.pd &&
+      reservedAsPageTable reserved.intervals input.ancestors.subjectA.pt &&
+      reservedAsPageTable reserved.intervals input.ancestors.subjectB.pdpt &&
+      reservedAsPageTable reserved.intervals input.ancestors.subjectB.pd &&
+      reservedAsPageTable reserved.intervals input.ancestors.subjectB.pt &&
+      input.regions.all fun region => region.policy != .pageTables ||
+        (List.range (region.byteLength / pageBytes)).all fun offset =>
+          reservedAsPageTable reserved.intervals
+            (region.physicalStart / pageBytes + offset)
 
 def tableFramesRepresentable (input : Input) : Bool :=
   representableFrame input.roots.subjectA && representableFrame input.roots.subjectB &&
@@ -251,6 +255,7 @@ structure Plan where
 /-- Total compiler/checker for the deliberately finite supported subset. -/
 def compile (input : Input) : Except Error Plan := do
   if !input.nxe then throw .missingNXE
+  if input.reservationResult.isNone then throw .missingValidatedReservation
   if hroot : input.roots.subjectA == input.roots.subjectB then throw .equalRoots else
     if hvalid : !tableFramesRepresentable input then throw .invalidTableFrame else
      if hunique : !tableFramesDistinct input then throw .duplicateTableFrame else
@@ -381,7 +386,9 @@ def legalDecodedAncestor (entry : DecodedAncestor) : Bool :=
     representableFrame entry.nextFrame
 
 def decodedAncestorReserved (input : Input) (entry : DecodedAncestor) : Bool :=
-  reservedAsPageTable input.tableReservations entry.nextFrame
+  match input.reservationResult with
+  | none => false
+  | some reserved => reservedAsPageTable reserved.intervals entry.nextFrame
 
 def expectedAncestorFrames (input : Input) : Space → AncestorFrames
   | .subjectA => input.ancestors.subjectA
@@ -440,6 +447,27 @@ def sampleReservations : List Interval :=
   [{ identity := .pageTables, firstFrame := 10, frameCount := 16,
      lifetime := .permanent }]
 
+def sampleReservationManifest : List Reservation :=
+  [{ identity := .lowMemory, start := 0, length := pageBytes, lifetime := .permanent },
+   { identity := .loadedImage, start := 2 * pageBytes, length := 24 * pageBytes,
+     lifetime := .permanent },
+   { identity := .pageTables, start := 10 * pageBytes, length := 16 * pageBytes,
+     lifetime := .permanent },
+   { identity := .descriptorTables, start := 3 * pageBytes, length := pageBytes,
+     lifetime := .permanent },
+   { identity := .kernelStacks, start := 4 * pageBytes, length := pageBytes,
+     lifetime := .permanent },
+   { identity := .embeddedUsers, start := 5 * pageBytes, length := pageBytes,
+     lifetime := .permanent },
+   { identity := .multibootInfo, start := pageBytes, length := pageBytes,
+     lifetime := .bootstrap }]
+
+def sampleReservationHandoff : BootMemoryMap.Handoff :=
+  BootMemoryMap.mkHandoff [{ base := 0, length := 40 * pageBytes, kind := .usable }]
+
+def sampleReservationResult : Option BootReservation.Result :=
+  (initializeAllocator sampleReservationHandoff sampleReservationManifest).toOption
+
 def sampleRegions : List Region :=
   [{ space := .subjectA, virtualStart := pageBytes, byteLength := pageBytes,
      physicalStart := pageBytes, policy := .kernelText, owner := .supervisor },
@@ -471,7 +499,7 @@ def sampleInput : Input :=
     ancestors :=
       { subjectA := { pdpt := 12, pd := 13, pt := 14 },
         subjectB := { pdpt := 15, pd := 16, pt := 17 } },
-    regions := sampleRegions, tableReservations := sampleReservations }
+    regions := sampleRegions, reservationResult := sampleReservationResult }
 
 def rejectedAs (input : Input) (wanted : Error) : Bool :=
   match compile input with
@@ -505,17 +533,12 @@ example : rejectedAs
 example : rejectedAs { sampleInput with nxe := false } .missingNXE = true := by native_decide
 example : rejectedAs { sampleInput with roots := { subjectA := 10, subjectB := 10 } }
     .equalRoots = true := by native_decide
-example : rejectedAs { sampleInput with tableReservations := [] }
-    .unreservedTableFrame = true := by native_decide
+example : rejectedAs { sampleInput with reservationResult := none }
+    .missingValidatedReservation = true := by native_decide
 example : rejectedAs
     { sampleInput with regions := sampleRegions ++
         [{ space := .subjectA, virtualStart := 30 * pageBytes, byteLength := pageBytes,
            physicalStart := 30 * pageBytes, policy := .pageTables, owner := .supervisor }] }
-    .unreservedTableFrame = true := by native_decide
-example : rejectedAs
-    { sampleInput with tableReservations :=
-        [{ identity := .loadedImage, firstFrame := 10, frameCount := 16,
-           lifetime := .permanent }] }
     .unreservedTableFrame = true := by native_decide
 example : rejectedAs
     { sampleInput with roots := { subjectA := physicalFrameLimit, subjectB := 11 } }
