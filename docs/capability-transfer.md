@@ -16,11 +16,12 @@ is not installed in any subject slot, so it grants no ordinary authority while
 in flight. The payload cannot choose the object, kind, identity, parent, or
 sender.
 
-Holder-facing callers use `offerHandles` and `acceptHandle`, which bind the
-endpoint and source references to their installed capability generations.
-The raw-slot `offer` and `accept` definitions are internal transition kernels
-used after that check; replaying an old handle after same-slot replacement is
-rejected as stale.
+Holder-facing callers use `sendDataHandle`, `offerHandles`, `acceptHandle`,
+`retireObjectHandle`, `destroyEndpointHandle`, and `revokeSubtreeHandles`.
+These bind every authority-consuming endpoint, source, lifecycle, authority,
+and lineage-root reference to its installed capability generation. The raw-slot
+definitions are internal transition kernels used after those checks; replaying
+an old handle after same-slot replacement is rejected as stale.
 
 `accept` derives the receiver from trusted caller context. It first checks
 receive authority, endpoint lifetime, the complete envelope, destination slot,

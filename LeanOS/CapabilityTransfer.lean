@@ -156,6 +156,16 @@ def sendData (state : State) (caller : SubjectId) (endpointSlot : SlotId)
             result := .accepted }
       | _ => reject state .staleHandle
 
+/-- Generation-checked holder-facing data send. Reusing the numbered endpoint
+slot cannot redirect an old request to a replacement endpoint. -/
+def sendDataHandle (state : State) (caller : SubjectId)
+    (endpoint : CapabilityHandle.Handle) (payload : EndpointIPC.Payload) :
+    Outcome EndpointIPC.SendError :=
+  match CapabilityHandle.resolve state.capabilities caller endpoint .endpoint with
+  | .error .invalidSubject => reject state .invalidSubject
+  | .error _ => reject state .staleHandle
+  | .ok _ => sendData state caller endpoint.slot payload
+
 /-- Offer one attenuated authority. Object, parent, and sender all come from
 trusted slots/context; payload words remain inert. -/
 def offer (state : State) (caller : SubjectId) (endpointSlot sourceSlot : SlotId)
@@ -291,6 +301,94 @@ theorem sendData_accepted_records state caller endpointSlot payload
       refine ⟨endpointCap, hlookup, ?_⟩
       simp [record]
 
+/-- In a well-formed composite state, an accepted data-only send cannot reuse
+an endpoint carrying sealed attachment metadata.  Its selected endpoint remains
+explicitly untagged, so the matching receive takes the data-only path. -/
+theorem sendData_accepted_unattached state caller endpointSlot payload
+    (hstate : WellFormed state)
+    (h : (sendData state caller endpointSlot payload).result = .accepted) :
+    ∃ endpointCap,
+      Capability.lookup state.capabilities caller endpointSlot = .found endpointCap ∧
+      (sendData state caller endpointSlot payload).state.pending endpointCap.object = none := by
+  simp only [sendData] at h ⊢
+  split at h <;> try contradiction
+  next sent hsent =>
+    split at h <;> try contradiction
+    next endpointCap hlookup =>
+      cases h
+      refine ⟨endpointCap, hlookup, ?_⟩
+      simp only [record]
+      change state.pending endpointCap.object = none
+      have hempty : state.mailbox endpointCap.object = none := by
+        simp only [EndpointIPC.send] at hsent
+        split at hsent <;> try contradiction
+        next cap hcap =>
+          split at hsent <;> try contradiction
+          split at hsent <;> try contradiction
+          split at hsent <;> try contradiction
+          split at hsent <;> try contradiction
+          split at hsent <;> try contradiction
+          next hfree =>
+            have : cap = endpointCap := by
+              rw [hcap] at hlookup
+              cases hlookup
+              rfl
+            subst cap
+            cases hm : state.mailbox endpointCap.object with
+            | none => rfl
+            | some _ => simp [hm] at hfree
+      cases hpending : state.pending endpointCap.object with
+      | none => rfl
+      | some transfer =>
+          obtain ⟨envelope, hmail, _⟩ := (hstate.2 endpointCap.object transfer hpending).1
+          simp [hempty] at hmail
+
+private theorem endpointSend_capabilities_unchanged state caller slot payload :
+    (EndpointIPC.send state caller slot payload).state.capabilities = state.capabilities := by
+  simp [EndpointIPC.send, EndpointIPC.reject]
+
+private theorem endpointSend_preserves_occupied_mailbox state caller slot payload endpoint envelope
+    (hmail : state.mailbox endpoint = some envelope) :
+    (EndpointIPC.send state caller slot payload).state.mailbox endpoint = some envelope := by
+  simp only [EndpointIPC.send]
+  split <;> try simpa [EndpointIPC.reject] using hmail
+  next cap hlookup =>
+    split <;> try simpa [EndpointIPC.reject] using hmail
+    split <;> try simpa [EndpointIPC.reject] using hmail
+    split <;> try simpa [EndpointIPC.reject] using hmail
+    split <;> try simpa [EndpointIPC.reject] using hmail
+    split <;> try simpa [EndpointIPC.reject] using hmail
+    next hfree =>
+      have hne : endpoint ≠ cap.object := by
+        intro heq
+        subst endpoint
+        simp [hmail] at hfree
+      simpa [EndpointIPC.setOption, hne] using hmail
+
+/-- Data-only send preserves the complete composite invariant, not merely the
+embedded endpoint invariant. In particular, an accepted send cannot overwrite
+the mailbox corresponding to any existing sealed attachment. -/
+theorem sendData_preserves_wellFormed state caller endpointSlot payload
+    (hstate : WellFormed state) :
+    WellFormed (sendData state caller endpointSlot payload).state := by
+  simp only [sendData]
+  split <;> try simpa [reject] using hstate
+  next sent hsent =>
+    split <;> try simpa [reject] using hstate
+    next endpointCap hlookup =>
+      refine ⟨?_, ?_⟩
+      · simpa [record] using
+          EndpointIPC.send_preserves_wellFormed state.toEndpointState caller endpointSlot payload
+            hstate.1
+      · intro endpoint transfer hpending
+        simp only [record] at hpending ⊢
+        have hold := hstate.2 endpoint transfer hpending
+        rcases hold with ⟨⟨envelope, hmail, hendpoint, hsender⟩, hrest⟩
+        rw [endpointSend_capabilities_unchanged] at ⊢
+        exact ⟨⟨envelope,
+          endpointSend_preserves_occupied_mailbox _ _ _ _ _ _ hmail,
+          hendpoint, hsender⟩, hrest⟩
+
 /-- Remove offers selected by a lifetime/revocation policy. Derivation records
 remain as append-only history, but no canceled identity can be installed. -/
 def cancelWhere (state : State) (selected : Sealed → Bool) : State :=
@@ -349,6 +447,15 @@ def retireObject (state : State) (subject : SubjectId) (slot : SlotId) :
       { state := cancelWhere transitioned (fun transfer => transfer.object = cap.object)
         result := .accepted }
 
+/-- Generation-checked holder-facing memory retirement. -/
+def retireObjectHandle (state : State) (subject : SubjectId)
+    (handle : CapabilityHandle.Handle) : Outcome MemoryLifecycle.ReleaseError :=
+  match CapabilityHandle.resolve state.capabilities subject handle .memory with
+  | .error .invalidSubject => reject state .invalidSubject
+  | .error .kindMismatch => reject state .kindMismatch
+  | .error _ => reject state .staleSlot
+  | .ok _ => retireObject state subject handle.slot
+
 /-- Cancel the attachment occupying one endpoint, independent of the kind or
 object carried by that attachment. -/
 def cancelEndpointOffer (state : State) (endpoint : ObjectId) : State :=
@@ -382,6 +489,15 @@ def destroyEndpoint (state : State) (subject : SubjectId) (slot : SlotId) :
           trace := canceled.trace }
       { state := next, result := .accepted }
 
+/-- Generation-checked holder-facing endpoint destruction. -/
+def destroyEndpointHandle (state : State) (subject : SubjectId)
+    (handle : CapabilityHandle.Handle) : Outcome EndpointIPC.DestroyError :=
+  match CapabilityHandle.resolve state.capabilities subject handle .endpoint with
+  | .error .invalidSubject => reject state .invalidSubject
+  | .error .kindMismatch => reject state .wrongKind
+  | .error _ => reject state .staleHandle
+  | .ok _ => destroyEndpoint state subject handle.slot
+
 /-- A transitive revocation atomically clears installed descendants in the
 authoritative store and sealed descendants in mailboxes. -/
 noncomputable def revokeSubtree (state : State) (actor authoritySlot victim victimSlot : Nat) :
@@ -396,6 +512,18 @@ noncomputable def revokeSubtree (state : State) (actor authoritySlot victim vict
         ({ canceled with capabilities := outcome.state }, outcome.result)
       else (state, outcome.result)
   | _ => (state, (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).result)
+
+/-- Generation-checked holder-facing transitive revocation. Both the authority
+and selected lineage root are bound to their installed generations. -/
+noncomputable def revokeSubtreeHandles (state : State) (actor : SubjectId)
+    (authority : CapabilityHandle.Handle) (kind : Capability.ObjectKind)
+    (victim : SubjectId) (target : CapabilityHandle.Handle) : State × Capability.Result :=
+  match CapabilityHandle.resolve state.capabilities actor authority kind with
+  | .error reason => (state, .rejected (CapabilityHandle.denial reason))
+  | .ok _ =>
+      match CapabilityHandle.resolve state.capabilities victim target kind with
+      | .error reason => (state, .rejected (CapabilityHandle.denial reason))
+      | .ok _ => revokeSubtree state actor authority.slot victim target.slot
 
 /-- Reserving an append-only derivation identity without installing it in a
 slot preserves the authoritative capability invariant. -/
@@ -681,7 +809,7 @@ private def destroyTraceCaps : Capability.State :=
     objects := fun object => object = 7
     kinds := fun object => if object = 7 then some .memory else none
     slots := fun subject slot =>
-      if subject = 0 ∧ slot = 9 then some destroyTraceMemory else none }
+      if subject = 0 ∧ slot = 2 then some destroyTraceMemory else none }
 private def destroyTraceInitialEndpoint : EndpointIPC.State :=
   { capabilities := destroyTraceCaps
     allocator := { frames := [], status := fun _ => .reserved }
@@ -708,6 +836,47 @@ private def destroyTraceState : State :=
       (setPending (fun _ => none) 10 (some destroyTraceTransfer))
       11 (some destroyTraceEndpointTransfer)
     trace := ⟨fun _ => []⟩ }
+
+private def replacementSource : Capability.Capability :=
+  { object := 8, kind := .memory, rights := Capability.allRights, identity := 44 }
+
+private def destroyTraceEndpointCap : Capability.Capability :=
+  { object := 10, kind := .endpoint, rights := EndpointIPC.endpointRootRights,
+    identity := 1 }
+
+private def replacementState : State :=
+  { destroyTraceState with
+    capabilities := Capability.install
+      (Capability.clear destroyTraceState.capabilities 0 2) 0 2 replacementSource }
+
+private def dataOnlyState : State :=
+  { toEndpointState := destroyTraceRoot
+    pending := fun _ => none
+    trace := ⟨fun _ => []⟩ }
+
+/-- Executable regression: an accepted plain send keeps the endpoint explicitly
+untagged, and receipt follows the data-only path without installing authority in
+the nominated destination slot. -/
+example :
+    let payload : EndpointIPC.Payload := { word0 := 71, word1 := 98 }
+    let sent := sendData dataOnlyState 0 0 payload
+    sent.result = .accepted ∧
+      sent.state.pending 10 = none ∧
+      (accept sent.state 0 0 1).result =
+        .delivered { endpoint := 10, sender := 0, payload := payload } ∧
+      (accept sent.state 0 0 1).state.pending 10 = none ∧
+      (accept sent.state 0 0 1).state.capabilities.slots 0 1 = none := by
+  native_decide
+
+/-- A concrete clear-plus-same-slot replacement cannot redirect an offer made
+with the old source generation, even though raw slot lookup sees the replacement. -/
+example :
+    let endpointHandle := CapabilityHandle.issue 0 destroyTraceEndpointCap
+    let oldSource := CapabilityHandle.issue 2 destroyTraceMemory
+    Capability.lookup replacementState.capabilities 0 2 = .found replacementSource ∧
+      (offerHandles replacementState 0 endpointHandle oldSource .memory
+        { word0 := 8, word1 := 44 } { read := true }).result = .rejected .staleSource := by
+  native_decide
 
 example : let outcome := destroyEndpoint destroyTraceState 0 0
     outcome.result = .accepted ∧
