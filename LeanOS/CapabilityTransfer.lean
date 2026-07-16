@@ -579,6 +579,24 @@ private theorem reserve_preserves_capabilityWellFormed (caps : Capability.State)
           refine ⟨hparent, parentParent, parentRights, ?_, hrightsSubset⟩
           simp [Nat.ne_of_lt (Nat.lt_trans hparent hold.1), hpentry]
 
+/- Reserving a derivation changes no endpoint lifetime data.  Factoring this
+out keeps the composite offer proof focused on the new mailbox/pending pair. -/
+private theorem reserve_preserves_endpointWellFormed (state : EndpointIPC.State)
+    (source : Capability.Capability) (rights : Capability.Rights)
+    (hstate : EndpointIPC.WellFormed state)
+    (hsource : ∃ subject slot, state.capabilities.slots subject slot = some source)
+    (hvalid : Capability.rightsValid source.kind rights = true)
+    (hsubset : Capability.rightsSubset rights source.rights = true) :
+    EndpointIPC.WellFormed { state with
+      capabilities := { state.capabilities with
+        nextIdentity := state.capabilities.nextIdentity + 1
+        derivations := fun candidate => if candidate = state.capabilities.nextIdentity then
+          some (some source.identity, source.object, source.kind, rights)
+          else state.capabilities.derivations candidate } } := by
+  rcases hstate with ⟨hcaps, hissued, hmail, hdead, hhistory⟩
+  refine ⟨reserve_preserves_capabilityWellFormed state.capabilities source rights
+    hcaps hsource hvalid hsubset, hissued, hmail, hdead, hhistory⟩
+
 /-- Installing a previously reserved, globally unique identity into an empty
 bounded slot preserves the authoritative capability invariant. -/
 private theorem install_reserved_preserves_capabilityWellFormed
@@ -671,6 +689,40 @@ theorem offer_rejected_unchanged state caller endpointSlot sourceSlot payload ri
       split <;> try simp_all [reject]
       split <;> try simp_all [reject]
       split <;> simp_all [reject]
+
+set_option maxHeartbeats 800000 in
+/-- An accepted offer reserves exactly one sealed child of the trusted source
+slot, and the recorded rights are an attenuated subset of that parent's rights. -/
+theorem offer_accepted_records_attenuated state caller endpointSlot sourceSlot payload rights
+    (h : (offer state caller endpointSlot sourceSlot payload rights).result = .accepted) :
+    ∃ endpointCap source,
+      Capability.lookup state.capabilities caller endpointSlot = .found endpointCap ∧
+      Capability.lookup state.capabilities caller sourceSlot = .found source ∧
+      (offer state caller endpointSlot sourceSlot payload rights).state.pending
+          endpointCap.object = some
+            ⟨state.capabilities.nextIdentity, source.identity, caller,
+              source.object, source.kind, rights⟩ ∧
+      (offer state caller endpointSlot sourceSlot payload rights).state.capabilities.derivations
+          state.capabilities.nextIdentity =
+            some (some source.identity, source.object, source.kind, rights) ∧
+      Capability.rightsSubset rights source.rights = true := by
+  simp only [offer] at h ⊢
+  split at h <;> try contradiction
+  next endpointCap hendpoint =>
+    split at h <;> try contradiction
+    split at h <;> try contradiction
+    split at h <;> try contradiction
+    split at h <;> try contradiction
+    split at h <;> try contradiction
+    split at h <;> try contradiction
+    next source hsource =>
+      split at h <;> try contradiction
+      split at h <;> try contradiction
+      split at h <;> try contradiction
+      cases h
+      refine ⟨endpointCap, source, hendpoint, hsource, ?_, ?_, by simp_all⟩
+      · simp_all [offer, record, setPending]
+      · simp_all [offer, record]
 
 set_option maxHeartbeats 800000 in
 theorem accept_rejected_unchanged state caller endpointSlot destinationSlot reason
