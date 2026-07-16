@@ -92,6 +92,154 @@ def validUserReturn (frame : HardwareFrame) : Bool :=
     frame.stackSelector = 0x23 && frame.canonicalInstructionPointer &&
     frame.canonicalStackPointer && frame.flagsAllowed
 
+/-! ## Authoritative outgoing user-return validation
+
+This transition deliberately returns the request it accepted.  The accepted
+value is therefore an attestation of the complete immutable frame/context
+tuple, rather than a Boolean that could accidentally be reused for a different
+mutable frame.  Machine code consuming the attestation remains a refinement
+boundary.
+-/
+
+inductive ReturnPurpose where
+  | initialDispatch | syscallResume | schedulerRestore | containedFaultResume
+  | diagnosticKernelRecovery
+  deriving DecidableEq, Repr
+
+inductive ExecutionMode where | running | halted
+  deriving DecidableEq, Repr
+
+structure UserRegion where
+  first : UInt64
+  pastLast : UInt64
+  deriving DecidableEq, Repr
+
+def UserRegion.contains (region : UserRegion) (address : UInt64) : Bool :=
+  region.first ≤ address && address < region.pastLast
+
+/-- Decoded architectural flag policy supplied beside the raw frame.  The
+machine adapter must establish that these bits agree with `hardware.flags`. -/
+structure ReturnFlags where
+  interruptEnable : Bool
+  direction : Bool
+  alignmentCheck : Bool
+  nestedTask : Bool
+  virtual8086 : Bool
+  ioPrivilegeLevel : UInt64
+  reservedAllowed : Bool
+  deriving DecidableEq, Repr
+
+structure UserReturnRequest where
+  hardware : HardwareFrame
+  purpose : ReturnPurpose
+  frameSubject : SubjectId
+  frameAddressSpace : AddressSpaceId
+  frameCr3 : UInt64
+  expectedSubject : SubjectId
+  expectedAddressSpace : AddressSpaceId
+  expectedCr3 : UInt64
+  executionMode : ExecutionMode
+  lifecycle : SubjectLifecycle.State
+  codeRegion : UserRegion
+  stackRegion : UserRegion
+  flags : ReturnFlags
+
+inductive ReturnRejectReason where
+  | wrongPurpose | fatalMode | wrongOrigin | wrongSelector | noncanonical
+  | forbiddenFlags | staleSubject | wrongAddressSpace | wrongCr3
+  | instructionOutsideSubject | stackOutsideSubject
+  deriving DecidableEq, Repr
+
+inductive UserReturnValidation where
+  | accepted (attested : UserReturnRequest)
+  | rejected (reason : ReturnRejectReason)
+
+def validateUserReturn (request : UserReturnRequest) : UserReturnValidation :=
+  if request.purpose = .diagnosticKernelRecovery then .rejected .wrongPurpose
+  else if request.executionMode != .running then .rejected .fatalMode
+  else if request.hardware.savedPrivilege != .user then .rejected .wrongOrigin
+  else if request.hardware.codeSelector != 0x1b || request.hardware.stackSelector != 0x23 then
+    .rejected .wrongSelector
+  else if !request.hardware.canonicalInstructionPointer ||
+      !request.hardware.canonicalStackPointer then .rejected .noncanonical
+  else if !request.hardware.flagsAllowed || !request.flags.reservedAllowed ||
+      !request.flags.interruptEnable || request.flags.direction ||
+      request.flags.alignmentCheck || request.flags.nestedTask ||
+      request.flags.virtual8086 || request.flags.ioPrivilegeLevel != 0 then
+    .rejected .forbiddenFlags
+  else if request.lifecycle.capabilities.subjects request.expectedSubject != true ||
+      request.lifecycle.runnable request.expectedSubject != true ||
+      request.lifecycle.current != some request.expectedSubject ||
+      request.frameSubject != request.expectedSubject then .rejected .staleSubject
+  else if request.lifecycle.addressOwner request.expectedAddressSpace !=
+      some request.expectedSubject ||
+      request.frameAddressSpace != request.expectedAddressSpace then
+    .rejected .wrongAddressSpace
+  else if request.frameCr3 != request.expectedCr3 then .rejected .wrongCr3
+  else if !request.codeRegion.contains request.hardware.instructionPointer then
+    .rejected .instructionOutsideSubject
+  else if !request.stackRegion.contains request.hardware.stackPointer then
+    .rejected .stackOutsideSubject
+  else .accepted request
+
+theorem accepted_attests_exact_request request attested
+    (haccepted : validateUserReturn request = .accepted attested) :
+    attested = request := by
+  unfold validateUserReturn at haccepted
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> simp_all
+
+theorem accepted_user_return_context_confined request attested
+    (haccepted : validateUserReturn request = .accepted attested) :
+    attested.hardware.savedPrivilege = .user ∧
+      attested.hardware.codeSelector = 0x1b ∧
+      attested.hardware.stackSelector = 0x23 ∧
+      attested.hardware.canonicalInstructionPointer = true ∧
+      attested.hardware.canonicalStackPointer = true ∧
+      attested.flags.interruptEnable = true ∧
+      attested.flags.direction = false ∧
+      attested.flags.alignmentCheck = false ∧
+      attested.flags.nestedTask = false ∧
+      attested.flags.virtual8086 = false ∧
+      attested.flags.ioPrivilegeLevel = 0 ∧
+      attested.executionMode = .running ∧
+      attested.lifecycle.current = some attested.expectedSubject ∧
+      attested.lifecycle.runnable attested.expectedSubject = true ∧
+      attested.frameSubject = attested.expectedSubject ∧
+      attested.lifecycle.addressOwner attested.expectedAddressSpace =
+        some attested.expectedSubject ∧
+      attested.frameAddressSpace = attested.expectedAddressSpace ∧
+      attested.frameCr3 = attested.expectedCr3 := by
+  have hattested : attested = request :=
+    accepted_attests_exact_request request attested haccepted
+  rw [hattested] at haccepted ⊢
+  unfold validateUserReturn at haccepted
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> simp_all
+
+theorem diagnostic_recovery_never_authorizes_user_return request
+    (hpurpose : request.purpose = .diagnosticKernelRecovery) :
+    validateUserReturn request = .rejected .wrongPurpose := by
+  simp [validateUserReturn, hpurpose]
+
 def dispatchHardware (state : State) (frame : HardwareFrame) : Outcome :=
   if state.context.entryActive then { state, action := .fatal .nestedEntry }
   else match decodeVector frame.vector with

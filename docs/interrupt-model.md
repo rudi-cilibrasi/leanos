@@ -15,6 +15,16 @@ selectors, canonical instruction and stack pointers, and allowed flags.
 Syscall entry from kernel privilege is rejected separately as a wrong-origin
 event rather than being mislabeled as a malformed user return.
 
+`validateUserReturn` is the authoritative total outgoing transition. Its input
+combines the frame with kernel-selected purpose, live subject, owned address
+space, CR3 identity, execution mode, executable region, writable stack region,
+and decoded flag policy. It rejects diagnostic kernel recovery, halted mode,
+stale scheduler/context bindings, noncanonical or out-of-region addresses,
+wrong selectors or CR3, cleared IF, and set DF, AC, NT, VM, or IOPL. Acceptance
+returns an attestation of the entire immutable request, preventing the model API
+from validating one tuple and consuming another. The confinement theorem proves
+the accepted privilege-critical fields and scheduler/address-space binding.
+
 A user page fault atomically applies the subject-lifecycle termination policy
 to the kernel-selected current subject. Existing lifecycle proofs establish
 complete cleanup; this module additionally proves preservation of unrelated
@@ -40,9 +50,11 @@ subject-lifecycle model, invariant preservation, and rejection of malformed
 returns. Compilation and execution of examples test the executable model; they
 do not prove the machine boundary.
 
-Hardware construction of the trap frame, IDT and TSS descriptors, kernel-stack
-selection, interrupt masking, assembly save/restore, `iretq`, canonical-address
-and flags checks, page tables, generated code, compiler, QEMU, and x86-64
-semantics remain trusted. This change adds no `unsafe`, `extern`, FFI, axiom, or
-constant declaration and does not change the executable image. Connecting the
-model to that image is future integration work.
+Hardware construction and decoding of the trap frame and flags, IDT and TSS
+descriptors, kernel-stack selection, interrupt masking, assembly save/restore,
+CR3/TLB operations, `iretq`, canonical-address and region checks, page tables,
+generated code, compiler, QEMU, and x86-64 semantics remain trusted. This model
+slice adds no `unsafe`, `extern`, FFI, axiom, or constant declaration. A
+fixed-width generated adapter, shared assembly epilogue, final-ELF dominance
+inspection, and corrupt-frame QEMU fixtures are still required before claiming
+that the boot image follows this protocol.

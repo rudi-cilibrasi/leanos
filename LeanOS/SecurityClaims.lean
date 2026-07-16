@@ -79,6 +79,27 @@ theorem failstop_halted_suffix_absorbing state record proposals
     FailStop.runOperations state proposals = state := by
   exact FailStop.halted_suffix_absorbing state record proposals hmode
 
+/-- SC-USER-RETURN-CONFINEMENT: an accepted return attests the complete
+kernel-selected frame/context tuple and its privilege-critical fields. -/
+theorem user_return_context_confinement request attested
+    (haccepted : Interrupt.validateUserReturn request = .accepted attested) :
+    attested.hardware.savedPrivilege = .user ∧
+      attested.hardware.codeSelector = 0x1b ∧
+      attested.hardware.stackSelector = 0x23 ∧
+      attested.flags.interruptEnable = true ∧
+      attested.flags.direction = false ∧
+      attested.flags.alignmentCheck = false ∧
+      attested.lifecycle.current = some attested.expectedSubject ∧
+      attested.frameSubject = attested.expectedSubject ∧
+      attested.frameAddressSpace = attested.expectedAddressSpace ∧
+      attested.frameCr3 = attested.expectedCr3 := by
+  have h := Interrupt.accepted_user_return_context_confined request attested haccepted
+  exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
+    h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps
     (hlow : ScheduledObservation.LowEquiv observer left right)
