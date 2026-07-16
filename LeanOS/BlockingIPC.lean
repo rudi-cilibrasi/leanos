@@ -1,4 +1,5 @@
 import LeanOS.Scheduler
+import LeanOS.CapabilityHandle
 
 /-!
 # Atomic blocking endpoint receive
@@ -193,6 +194,20 @@ def send (state : State) (caller : SubjectId) (slot : SlotId) (payload : Payload
           let envelope := { endpoint := cap.object, sender := caller, payload }
           { state := wakeState state cap.object receiver envelope, result := .accepted }
 
+/-- Generation-checked holder-facing blocking receive boundary. -/
+def receiveOrBlockHandle (state : State) (caller : SubjectId)
+    (handle : CapabilityHandle.Handle) : ReceiveOutcome :=
+  match CapabilityHandle.resolve state.scheduler.lifecycle.capabilities caller handle .endpoint with
+  | .error _ => rejectReceive state .staleHandle
+  | .ok _ => receiveOrBlock state caller handle.slot
+
+/-- Generation-checked holder-facing blocking send boundary. -/
+def sendHandle (state : State) (caller : SubjectId) (handle : CapabilityHandle.Handle)
+    (payload : Payload) : Outcome :=
+  match CapabilityHandle.resolve state.scheduler.lifecycle.capabilities caller handle .endpoint with
+  | .error _ => reject state .staleHandle
+  | .ok _ => send state caller handle.slot payload
+
 def cancelSubject (state : State) (subject : SubjectId) : State :=
   match state.waiterEndpoint subject with
   | none => state
@@ -231,11 +246,26 @@ def destroy (state : State) (caller : SubjectId) (slot : SlotId) : Outcome :=
             capabilities := EndpointIPC.retire cancelled.scheduler.lifecycle.capabilities cap.object } } }
         result := .accepted }
 
+def destroyHandle (state : State) (caller : SubjectId)
+    (handle : CapabilityHandle.Handle) : Outcome :=
+  match CapabilityHandle.resolve state.scheduler.lifecycle.capabilities caller handle .endpoint with
+  | .error _ => reject state .staleHandle
+  | .ok _ => destroy state caller handle.slot
+
 /-- Direct revocation cancels the victim if the shared capability operation accepts. -/
 def revoke (state : State) (actor : SubjectId) (authoritySlot : SlotId)
     (victim : SubjectId) (victimSlot : SlotId) : State × Capability.Result :=
   let outcome := Capability.revoke state.scheduler.lifecycle.capabilities
     actor authoritySlot victim victimSlot
+  let next := { state with scheduler := { state.scheduler with
+    lifecycle := { state.scheduler.lifecycle with capabilities := outcome.state } } }
+  if outcome.result = .accepted then (cancelSubject next victim, outcome.result)
+  else (state, outcome.result)
+
+def revokeHandle (state : State) (actor : SubjectId) (authority : CapabilityHandle.Handle)
+    (victim : SubjectId) (target : CapabilityHandle.Handle) : State × Capability.Result :=
+  let outcome := CapabilityHandle.revoke state.scheduler.lifecycle.capabilities
+    actor authority .endpoint victim target
   let next := { state with scheduler := { state.scheduler with
     lifecycle := { state.scheduler.lifecycle with capabilities := outcome.state } } }
   if outcome.result = .accepted then (cancelSubject next victim, outcome.result)
@@ -250,6 +280,28 @@ noncomputable def revokeSubtree (state : State) (actor : SubjectId) (authoritySl
   exact
   let outcome := Capability.revokeSubtree state.scheduler.lifecycle.capabilities
     actor authoritySlot victim victimSlot
+  let next := { state with scheduler := { state.scheduler with
+    lifecycle := { state.scheduler.lifecycle with capabilities := outcome.state } } }
+  if outcome.result = .accepted then
+    ({ next with
+      waiters := fun endpoint =>
+        (state.waiters endpoint).filter (fun subject => decide (authorizedReceive next subject endpoint))
+      waiterEndpoint := fun subject =>
+        match state.waiterEndpoint subject with
+        | some endpoint => if authorizedReceive next subject endpoint then some endpoint else none
+        | none => none
+      completion := fun subject =>
+        if allWaiters state subject ∧ ¬ allWaiters next subject then some .cancelled
+        else state.completion subject }, outcome.result)
+  else (state, outcome.result)
+
+noncomputable def revokeSubtreeHandle (state : State) (actor : SubjectId)
+    (authority : CapabilityHandle.Handle) (victim : SubjectId)
+    (target : CapabilityHandle.Handle) : State × Capability.Result := by
+  classical
+  exact
+  let outcome := CapabilityHandle.revokeSubtree state.scheduler.lifecycle.capabilities
+    actor authority .endpoint victim target
   let next := { state with scheduler := { state.scheduler with
     lifecycle := { state.scheduler.lifecycle with capabilities := outcome.state } } }
   if outcome.result = .accepted then

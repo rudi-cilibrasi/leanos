@@ -19,6 +19,11 @@ and non-reuse of issued identity. Executable examples cover delegated
 authority, a live mapping, a pending message, termination of the current
 subject, repeated termination, and identifier replay.
 
+Termination clears the subject's installed slots, so every holder-visible
+[generation-bound handle](capability-handles.md) for those slots becomes stale.
+Reusing the bounded slot later can issue only a handle carrying a different,
+never-reused capability identity; the old handle therefore cannot revive.
+
 This is not executable ring-3 teardown and does not prove physical memory
 zeroization. The trusted caller is the kernel lifecycle operation itself;
 authorization policy for a future management capability is outside this first

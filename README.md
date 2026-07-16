@@ -109,6 +109,11 @@ provenance for a minimal copy/revoke operation set. These are model-level
 properties, not claims about information flow, covert channels, concurrency,
 object lifetimes, generated code, or a kernel binary.
 
+Holder-visible [generation-bound capability handles](docs/capability-handles.md)
+pair each bounded subject-local slot with its never-reused capability identity,
+so clearing or replacing a slot cannot make an old handle authorize the new
+occupant.
+
 The physical-frame allocator reference model and its representation,
 complexity, initialization assumptions, proved invariants, and capability
 ownership boundary are documented in
