@@ -190,6 +190,15 @@ def physicalAliasesSafe (leaves : List CompiledLeaf) : Bool :=
     a.leaf.frame != b.leaf.frame ||
       (!a.leaf.user && !b.leaf.user && a.policy == b.policy)
 
+/-- The live roots and ancestor frames are authoritative constructor inputs,
+not inferred from whichever `.pageTables` regions the manifest happens to
+contain.  No user mapping may therefore alias any one of those frames. -/
+def userAvoidsTableFrames (frames : List PhysicalFrame) (leaves : List CompiledLeaf) : Bool :=
+  leaves.all fun entry => !entry.leaf.user || !frames.contains entry.leaf.frame
+
+def userAvoidsLiveTableFrames (input : Input) (leaves : List CompiledLeaf) : Bool :=
+  userAvoidsTableFrames (tableFrames input) leaves
+
 /-- Every emitted leaf is in the supported 4 KiB lower-half subset. -/
 def structurallySafe (leaves : List CompiledLeaf) : Bool :=
   leaves.all fun entry => canonicalPage entry.page &&
@@ -226,6 +235,8 @@ structure Plan where
   wx : wxSafe leaves = true
   ownership : ownershipSafe leaves = true
   userViewsSeparated : userViewsSeparated leaves = true
+  liveTableFrames : List PhysicalFrame
+  liveTablesChecked : userAvoidsTableFrames liveTableFrames leaves = true
   structural : structurallySafe leaves = true
   policyRefinement : refinesPolicy leaves = true
   supervisorOnly : supervisorConfinement leaves = true
@@ -249,33 +260,36 @@ def compile (input : Input) : Except Error Plan := do
       if hduplicates : noDuplicateLeaves leaves then
         if hwx : wxSafe leaves then
           if !physicalAliasesSafe leaves then throw .unsafePhysicalAlias else
-          if hownership : ownershipSafe leaves then
-            if hseparated : userViewsSeparated leaves then
-              if hstructural : structurallySafe leaves then
-                if hrefines : refinesPolicy leaves then
-                  if hsupervisor : supervisorConfinement leaves then
-                    if hattributes : policyAttributesSafe leaves then
-                      have hroots : input.roots.subjectA ≠ input.roots.subjectB := by
-                        intro heq
-                        apply hroot
-                        simp [heq]
-                      have htables : tableFramesReserved input = true := by
-                        simpa using hreserved
-                      have hframes : tableFramesRepresentable input = true := by
-                        simpa using hvalid
-                      have hframesUnique : tableFramesDistinct input = true := by
-                        simpa using hunique
-                      pure ⟨input.roots, leaves, hroots, hduplicates, hwx, hownership, hseparated,
-                        hstructural, hrefines, hsupervisor, hattributes,
-                        tableFramesReserved input, htables,
-                        tableFramesRepresentable input, hframes,
-                        tableFramesDistinct input, hframesUnique⟩
-                    else throw .incompatibleOverlap
-                  else throw .wrongOwner
-                else throw .incompatibleOverlap
-              else throw .nonCanonical
+          if hliveTables : userAvoidsLiveTableFrames input leaves then
+            if hownership : ownershipSafe leaves then
+              if hseparated : userViewsSeparated leaves then
+                if hstructural : structurallySafe leaves then
+                  if hrefines : refinesPolicy leaves then
+                    if hsupervisor : supervisorConfinement leaves then
+                      if hattributes : policyAttributesSafe leaves then
+                        have hroots : input.roots.subjectA ≠ input.roots.subjectB := by
+                          intro heq
+                          apply hroot
+                          simp [heq]
+                        have htables : tableFramesReserved input = true := by
+                          simpa using hreserved
+                        have hframes : tableFramesRepresentable input = true := by
+                          simpa using hvalid
+                        have hframesUnique : tableFramesDistinct input = true := by
+                          simpa using hunique
+                        pure ⟨input.roots, leaves, hroots, hduplicates, hwx, hownership, hseparated,
+                          tableFrames input, hliveTables,
+                          hstructural, hrefines, hsupervisor, hattributes,
+                          tableFramesReserved input, htables,
+                          tableFramesRepresentable input, hframes,
+                          tableFramesDistinct input, hframesUnique⟩
+                      else throw .incompatibleOverlap
+                    else throw .wrongOwner
+                  else throw .incompatibleOverlap
+                else throw .nonCanonical
+              else throw .incompatibleOverlap
             else throw .incompatibleOverlap
-          else throw .incompatibleOverlap
+          else throw .unsafePhysicalAlias
         else throw .incompatibleOverlap
       else throw .duplicateLeaf
 
@@ -289,6 +303,11 @@ theorem accepted_wx input plan (_h : compile input = .ok plan) :
 
 theorem accepted_ownership input plan (_h : compile input = .ok plan) :
     ownershipSafe plan.leaves = true := plan.ownership
+
+theorem accepted_user_avoids_live_table_frames input plan
+    (_h : compile input = .ok plan) :
+    userAvoidsTableFrames plan.liveTableFrames plan.leaves = true :=
+  plan.liveTablesChecked
 
 theorem accepted_distinct_user_views input plan (_h : compile input = .ok plan) :
     userViewsSeparated plan.leaves = true := plan.userViewsSeparated
@@ -468,6 +487,18 @@ example : rejectedAs { sampleInput with regions := sampleRegions.tail }
 example : rejectedAs
     { sampleInput with regions := sampleRegions.map fun region =>
         if region.space == .subjectA && region.policy == .userText then
+          { region with physicalStart := sampleInput.roots.subjectA * pageBytes }
+        else region }
+    .unsafePhysicalAlias = true := by native_decide
+/-- Moving the declared page-table regions cannot hide a user alias of the
+actual root supplied to the table constructor. -/
+example : rejectedAs
+    { sampleInput with regions := sampleRegions.map fun region =>
+        if region.policy == .pageTables then
+          match region.space with
+          | .subjectA => { region with physicalStart := 18 * pageBytes }
+          | .subjectB => { region with physicalStart := 22 * pageBytes }
+        else if region.space == .subjectA && region.policy == .userText then
           { region with physicalStart := sampleInput.roots.subjectA * pageBytes }
         else region }
     .unsafePhysicalAlias = true := by native_decide
