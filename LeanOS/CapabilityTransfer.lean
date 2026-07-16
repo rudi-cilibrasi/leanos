@@ -194,6 +194,24 @@ def offer (state : State) (caller : SubjectId) (endpointSlot sourceSlot : SlotId
               endpointCap.object (.offered endpointCap.object identity caller payload)
             result := .accepted }
 
+/-- Holder-facing offer. Both authority-consuming references are generation
+checked before the raw-slot transition runs, so reusing either numbered slot
+cannot redirect an old request to replacement authority. `sourceKind` is
+trusted operation metadata, not payload data. -/
+def offerHandles (state : State) (caller : SubjectId)
+    (endpoint source : CapabilityHandle.Handle)
+    (sourceKind : Capability.ObjectKind) (payload : EndpointIPC.Payload)
+    (rights : Capability.Rights) : Outcome OfferError :=
+  match CapabilityHandle.resolve state.capabilities caller endpoint .endpoint with
+  | .error .invalidSubject => reject state .invalidSubject
+  | .error .kindMismatch => reject state .wrongEndpointKind
+  | .error _ => reject state .staleEndpoint
+  | .ok _ =>
+      match CapabilityHandle.resolve state.capabilities caller source sourceKind with
+      | .error .invalidSubject => reject state .invalidSubject
+      | .error _ => reject state .staleSource
+      | .ok _ => offer state caller endpoint.slot source.slot payload rights
+
 /-- Atomically consume the envelope and install its sealed descendant in the
 trusted receiver's chosen empty slot. -/
 def accept (state : State) (caller : SubjectId) (endpointSlot destinationSlot : SlotId) :
@@ -224,6 +242,27 @@ def accept (state : State) (caller : SubjectId) (endpointSlot destinationSlot : 
               rejectAccept state .canceled
             else if !Capability.rightsValid transfer.kind transfer.rights then rejectAccept state .canceled
             else deliver state caller destinationSlot endpointCap envelope transfer
+
+/-- Holder-facing receipt. The endpoint generation is selected before the
+raw-slot transition; the destination remains an empty slot chosen for output,
+so it intentionally has no pre-existing generation handle. -/
+def acceptHandle (state : State) (caller : SubjectId)
+    (endpoint : CapabilityHandle.Handle) (destinationSlot : SlotId) : AcceptOutcome :=
+  match CapabilityHandle.resolve state.capabilities caller endpoint .endpoint with
+  | .error .invalidSubject => rejectAccept state .invalidSubject
+  | .error .kindMismatch => rejectAccept state .wrongEndpointKind
+  | .error _ => rejectAccept state .staleEndpoint
+  | .ok _ => accept state caller endpoint.slot destinationSlot
+
+theorem offerHandles_stale_source_rejected state caller endpoint source sourceKind
+    payload rights endpointCap
+    (hendpoint : CapabilityHandle.resolve state.capabilities caller endpoint .endpoint =
+      .ok endpointCap)
+    (hsource : CapabilityHandle.resolve state.capabilities caller source sourceKind =
+      .error .staleHandle) :
+    (offerHandles state caller endpoint source sourceKind payload rights).result =
+      .rejected .staleSource := by
+  simp [offerHandles, hendpoint, hsource, reject]
 
 /-- Remove offers selected by a lifetime/revocation policy. Derivation records
 remain as append-only history, but no canceled identity can be installed. -/

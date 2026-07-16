@@ -16,6 +16,12 @@ is not installed in any subject slot, so it grants no ordinary authority while
 in flight. The payload cannot choose the object, kind, identity, parent, or
 sender.
 
+Holder-facing callers use `offerHandles` and `acceptHandle`, which bind the
+endpoint and source references to their installed capability generations.
+The raw-slot `offer` and `accept` definitions are internal transition kernels
+used after that check; replaying an old handle after same-slot replacement is
+rejected as stale.
+
 `accept` derives the receiver from trusted caller context. It first checks
 receive authority, endpoint lifetime, the complete envelope, destination slot,
 object lifetime and kind, and the exact append-only derivation record. Only
@@ -26,13 +32,23 @@ case preserve the complete pre-state. A second accept sees an empty mailbox.
 ## Cancellation and lifetime
 
 Cancellation removes both sides of an offer but retains append-only derivation
-history. `terminateSender` cancels offers made by that sender. There is no
+history. `terminateSender` is only the capability-transfer slice of subject
+cleanup: it marks the subject dead in the embedded capability store, clears
+that holder's slots, and cancels offers made by that sender. It is not the
+authoritative `SubjectLifecycle.terminate` transition and does not claim to
+clean that model's ownership, mappings, scheduling, or mailbox state. There is no
 preselected receiver to cancel: a terminated subject cannot pass trusted
 receive lookup. `retireObject` cancels every offer of the retired object;
 `destroyEndpoint` also clears that endpoint's mailbox. The composed
 `revokeSubtree` uses the shared ancestry relation to remove installed and
 sealed descendants atomically. Thus a canceled identity cannot later become
 usable, even if a numeric slot or object identifier is reused.
+
+Address-space authority can be sealed and received, but this composition does
+not yet carry `VirtualMapping.State`; therefore it has no atomic
+address-space-destruction adapter. Callers must not model address-space
+destruction by mutating only the embedded capability store. The corresponding
+authoritative lifecycle composition remains deferred rather than proved here.
 
 The explicit observer vocabulary distinguishes offer, receipt, and
 cancellation and includes the receiver authority change. Payload contents and
