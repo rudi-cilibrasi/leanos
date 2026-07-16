@@ -283,6 +283,17 @@ def retireObject (state : State) (subject : SubjectId) (slot : SlotId) :
       { state := cancelWhere transitioned (fun transfer => transfer.object = cap.object)
         result := .accepted }
 
+/-- Cancel the attachment occupying one endpoint, independent of the kind or
+object carried by that attachment. -/
+def cancelEndpointOffer (state : State) (endpoint : ObjectId) : State :=
+  match state.pending endpoint with
+  | none => state
+  | some transfer => record
+      { state with
+        mailbox := EndpointIPC.setOption state.mailbox endpoint none
+        pending := setPending state.pending endpoint none }
+      endpoint (.canceled endpoint transfer.identity)
+
 /-- Destroy an endpoint through `EndpointIPC.destroy`, then cancel the
 endpoint mailbox record and offers transferring that endpoint only on success. -/
 def destroyEndpoint (state : State) (subject : SubjectId) (slot : SlotId) :
@@ -295,11 +306,15 @@ def destroyEndpoint (state : State) (subject : SubjectId) (slot : SlotId) :
     match destroyed.result with
     | .rejected reason => reject state reason
     | .accepted =>
-      let transitioned : State :=
-        { toEndpointState := destroyed.state, pending := state.pending, trace := state.trace }
-      let canceled := cancelWhere transitioned (fun transfer => transfer.object = cap.object)
-      { state := { canceled with pending := setPending canceled.pending cap.object none }
-        result := .accepted }
+      let endpointCanceled := cancelEndpointOffer state cap.object
+      let canceled := cancelWhere endpointCanceled (fun transfer => transfer.object = cap.object)
+      let nextEndpoint : EndpointIPC.State :=
+        { destroyed.state with mailbox := canceled.mailbox }
+      let next : State :=
+        { toEndpointState := nextEndpoint
+          pending := canceled.pending
+          trace := canceled.trace }
+      { state := next, result := .accepted }
 
 /-- A transitive revocation atomically clears installed descendants in the
 authoritative store and sealed descendants in mailboxes. -/
@@ -589,5 +604,53 @@ theorem offer_authority_payload_independent state caller endpointSlot sourceSlot
       split <;> try simp_all [reject]
       split <;> try simp_all [reject]
       split <;> simp_all [reject, record]
+
+-- Endpoint destruction cancels the attachment occupying that endpoint even
+-- when the attachment names a different-kind object.
+private def destroyTraceSubjects : SubjectId → Bool := fun subject => subject = 0
+private def destroyTraceMemory : Capability.Capability :=
+  { object := 7, kind := .memory, rights := Capability.allRights, identity := 0 }
+private def destroyTraceCaps : Capability.State :=
+  { subjects := destroyTraceSubjects
+    objects := fun object => object = 7
+    kinds := fun object => if object = 7 then some .memory else none
+    slots := fun subject slot =>
+      if subject = 0 ∧ slot = 9 then some destroyTraceMemory else none }
+private def destroyTraceInitialEndpoint : EndpointIPC.State :=
+  { capabilities := destroyTraceCaps
+    allocator := { frames := [], status := fun _ => .reserved }
+    binding := fun _ => none
+    issued := fun _ => false
+    issuedAddressSpace := fun _ => false
+    mailbox := fun _ => none
+    sendHistory := fun _ => [] }
+private def destroyTraceRoot := (EndpointIPC.create destroyTraceInitialEndpoint 10 0 0).state
+private def destroyTraceEnvelope : EndpointIPC.Envelope :=
+  { endpoint := 10, sender := 0, payload := { word0 := 4, word1 := 71 } }
+private def destroyTraceTransfer : Sealed :=
+  { identity := 42, parent := 0, sender := 0, object := 7, kind := .memory,
+    rights := { read := true } }
+private def destroyTraceEndpointTransfer : Sealed :=
+  { identity := 43, parent := 1, sender := 0, object := 10, kind := .endpoint,
+    rights := { send := true } }
+private def destroyTraceState : State :=
+  { toEndpointState := { destroyTraceRoot with
+      mailbox := EndpointIPC.setOption
+        (EndpointIPC.setOption destroyTraceRoot.mailbox 10 (some destroyTraceEnvelope))
+        11 (some { destroyTraceEnvelope with endpoint := 11 }) }
+    pending := setPending
+      (setPending (fun _ => none) 10 (some destroyTraceTransfer))
+      11 (some destroyTraceEndpointTransfer)
+    trace := ⟨fun _ => []⟩ }
+
+example : let outcome := destroyEndpoint destroyTraceState 0 0
+    outcome.result = .accepted ∧
+      outcome.state.mailbox 10 = none ∧
+      outcome.state.pending 10 = none ∧
+      outcome.state.trace.events 10 = [.canceled 10 42] ∧
+      outcome.state.mailbox 11 = none ∧
+      outcome.state.pending 11 = none ∧
+      outcome.state.trace.events 11 = [.canceled 11 43] := by
+  native_decide
 
 end LeanOS.CapabilityTransfer
