@@ -106,7 +106,7 @@ def WellFormed (state : State) : Prop :=
 
 inductive Error where
   | nonTimer | fatalEntry | malformedIncoming | noCurrent | contextMismatch | duplicateSave
-  | bankFull | schedulerRejected | noDestination | staleDestination
+  | staleActiveSpace | bankFull | schedulerRejected | noDestination | staleDestination
   deriving DecidableEq, Repr
 
 structure Outcome where
@@ -132,6 +132,8 @@ def switch (state : State) (interruptState : Interrupt.State)
         if interruptState.context.currentSubject != current ||
             interruptState.context.activeAddressSpace != current then
           reject state .contextMismatch
+        else if state.translations.active != some current then
+          reject state .staleActiveSpace
         else if (contextFor state.contexts current).isSome then reject state .duplicateSave
         else if state.capacity ≤ state.contexts.length then reject state .bankFull
         else
@@ -232,6 +234,7 @@ theorem restored_context_is_scheduler_selected state interruptState frame regist
   all_goals split at h <;> try simp_all [reject]
   all_goals split at h <;> try simp_all [reject]
   all_goals split at h <;> try simp_all [reject]
+  all_goals split at h <;> try simp_all [reject]
   all_goals split at h <;> simp_all [reject]
 
 /-- Every successful restore is live in the post-scheduler lifecycle and is
@@ -257,6 +260,7 @@ theorem restored_context_is_live_and_owned state interruptState frame registers 
     all_goals split at hs <;> try simp_all [reject]
     all_goals split at hs <;> try simp_all [reject]
     all_goals split at hs <;> try simp_all [reject]
+    all_goals split at hs <;> try simp_all [reject]
     all_goals rcases hs with ⟨rfl, rfl, rfl⟩
     all_goals grind
 
@@ -271,6 +275,7 @@ theorem switch_preserves_scheduler_and_tlb state interruptState frame registers
       TLB.Coherent (switch state interruptState frame registers).state.translations := by
   simp only [switch]
   split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
@@ -387,7 +392,8 @@ theorem switch_preserves_wellFormed state interruptState frame registers
   all_goals split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
   all_goals split <;> try simp_all [reject]
-  next action haction hframe maybeCurrent current hcurrent hbinding hnone hroom
+  all_goals split <;> try simp_all [reject]
+  next action haction hframe maybeCurrent current hcurrent hbinding hactive hnone hroom
       schedulerResult selected hselected maybeDestination destination hdestination
       hdestinationValid =>
     rcases hstate with
@@ -487,6 +493,7 @@ theorem registers_cannot_select_restore state interruptState frame first second 
       (switch state interruptState frame second).restored := by
   simp only [switch]
   split <;> try rfl
+  all_goals split <;> try rfl
   all_goals split <;> try rfl
   all_goals split <;> try rfl
   all_goals split <;> try rfl
@@ -634,7 +641,7 @@ private def roundTripStart (translations : TLB.State) : State :=
       capacity := 3 }
     contexts := [initialContext 2 0x20, initialContext 3 0x30]
     capacity := 3
-    translations }
+    translations := { translations with active := some 1 } }
 
 private def switchAToB (translations : TLB.State) : Outcome :=
   switch (roundTripStart translations) (demoInterrupt 1)
@@ -669,6 +676,17 @@ example (translations : TLB.State) :
     (switch (roundTripStart translations) (demoInterrupt 2)
       (demoFrame 0x401000 0x801000 0x246) (demoRegisters 0x10)).error =
         some .contextMismatch := by
+  simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
+    switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
+    Interrupt.validUserReturn, reject]
+
+/-- A stale CR3/TLB projection is rejected even when the scheduler and
+interrupt-entry projections agree on the current subject. -/
+example (translations : TLB.State) :
+    let state := roundTripStart translations
+    (switch { state with translations := { state.translations with active := some 3 } }
+      (demoInterrupt 1) (demoFrame 0x401000 0x801000 0x246)
+      (demoRegisters 0x10)).error = some .staleActiveSpace := by
   simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
     switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
     Interrupt.validUserReturn, reject]
