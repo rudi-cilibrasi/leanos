@@ -12,6 +12,12 @@ replaced generations, retired objects, wrong kinds, and invalid subjects fail
 with typed results. Resolution is read-only, so every denial preserves the
 complete capability state.
 
+Holder-facing capability copy/revoke and endpoint send/receive/destroy paths
+use generation-checked wrappers before entering their internal raw-slot state
+transitions. Blocking IPC exposes the same checked boundaries. Raw slot lookup
+is reserved for internal cleanup, invariant proofs, and compatibility inside
+the model; it is not a holder authority boundary.
+
 The model uses the append-only natural-number identity already maintained by
 the capability derivation graph. It therefore has no finite wraparound inside
 one modeled boot lifetime. A future fixed-width userspace encoding must add an

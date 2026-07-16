@@ -40,6 +40,40 @@ def resolve (state : State) (trustedSubject : SubjectId) (handle : Handle)
 def issue (slot : SlotId) (capability : Capability) : Handle :=
   { slot, identity := capability.identity }
 
+def denial : ResolveDenial → Denial
+  | .invalidSubject => .invalidSubject
+  | .outOfRange => .outOfRange
+  | .staleHandle => .staleSlot
+  | .kindMismatch => .kindMismatch
+
+/-- Holder-facing delegation.  The raw-slot operation remains the internal
+transition after the generation check has selected its authority record. -/
+def copy (state : State) (actor : SubjectId) (source : Handle)
+    (expected : ObjectKind) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) : Outcome :=
+  match resolve state actor source expected with
+  | .error reason => reject state (denial reason)
+  | .ok _ => Capability.copy state actor source.slot destination destinationSlot requested
+
+/-- Holder-facing direct revocation checks both the authority and selected
+victim generations before invoking the atomic raw-slot transition. -/
+def revoke (state : State) (actor : SubjectId) (authority : Handle)
+    (expected : ObjectKind) (victim : SubjectId) (target : Handle) : Outcome :=
+  match resolve state actor authority expected with
+  | .error reason => reject state (denial reason)
+  | .ok _ => match resolve state victim target expected with
+    | .error reason => reject state (denial reason)
+    | .ok _ => Capability.revoke state actor authority.slot victim target.slot
+
+/-- Holder-facing transitive revocation has the same generation checks. -/
+def revokeSubtree (state : State) (actor : SubjectId) (authority : Handle)
+    (expected : ObjectKind) (victim : SubjectId) (target : Handle) : Outcome :=
+  match resolve state actor authority expected with
+  | .error reason => reject state (denial reason)
+  | .ok _ => match resolve state victim target expected with
+    | .error reason => reject state (denial reason)
+    | .ok _ => Capability.revokeSubtree state actor authority.slot victim target.slot
+
 /-- A handle freshly issued for the capability currently installed in a live,
 in-range slot resolves to exactly that capability. -/
 theorem resolve_issued (state : State) (trustedSubject : SubjectId) (slot : SlotId)

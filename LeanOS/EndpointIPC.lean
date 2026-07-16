@@ -1,4 +1,5 @@
 import LeanOS.MemoryLifecycle
+import LeanOS.CapabilityHandle
 
 /-!
 # Capability-authorized endpoint IPC
@@ -180,6 +181,30 @@ def receive (state : State) (caller : SubjectId) (slot : SlotId) : ReceiveOutcom
           { state := { state with mailbox := setOption state.mailbox cap.object none }
             result := .delivered envelope }
 
+/-- Generation-checked holder-facing send boundary. -/
+def sendHandle (state : State) (caller : SubjectId) (handle : CapabilityHandle.Handle)
+    (payload : Payload) : Outcome SendError :=
+  match CapabilityHandle.resolve state.capabilities caller handle .endpoint with
+  | .error .invalidSubject => reject state .invalidSubject
+  | .error _ => reject state .staleHandle
+  | .ok _ => send state caller handle.slot payload
+
+/-- Generation-checked holder-facing receive boundary. -/
+def receiveHandle (state : State) (caller : SubjectId)
+    (handle : CapabilityHandle.Handle) : ReceiveOutcome :=
+  match CapabilityHandle.resolve state.capabilities caller handle .endpoint with
+  | .error .invalidSubject => rejectReceive state .invalidSubject
+  | .error _ => rejectReceive state .staleHandle
+  | .ok _ => receive state caller handle.slot
+
+/-- Generation-checked holder-facing endpoint destruction boundary. -/
+def destroyHandle (state : State) (caller : SubjectId)
+    (handle : CapabilityHandle.Handle) : Outcome DestroyError :=
+  match CapabilityHandle.resolve state.capabilities caller handle .endpoint with
+  | .error .invalidSubject => reject state .invalidSubject
+  | .error _ => reject state .staleHandle
+  | .ok _ => destroy state caller handle.slot
+
 /-- States reachable from a valid empty-mailbox state. Non-send transitions may
 remove messages but cannot introduce them; the only introducing event is an
 accepted invocation of `send`. -/
@@ -203,16 +228,35 @@ def delegate (state : State) (actor : SubjectId) (source : SlotId)
   let outcome := Capability.copy state.capabilities actor source destination destinationSlot rights
   ({ state with capabilities := outcome.state }, outcome.result)
 
+def delegateHandle (state : State) (actor : SubjectId) (source : CapabilityHandle.Handle)
+    (destination : SubjectId) (destinationSlot : SlotId) (rights : Capability.Rights) :
+    State × Capability.Result :=
+  let outcome := CapabilityHandle.copy state.capabilities actor source .endpoint
+    destination destinationSlot rights
+  ({ state with capabilities := outcome.state }, outcome.result)
+
 /-- Revoke through the shared capability policy. -/
 def revoke (state : State) (actor : SubjectId) (authoritySlot : SlotId)
     (victim : SubjectId) (victimSlot : SlotId) : State × Capability.Result :=
   let outcome := Capability.revoke state.capabilities actor authoritySlot victim victimSlot
   ({ state with capabilities := outcome.state }, outcome.result)
 
+def revokeHandle (state : State) (actor : SubjectId) (authority : CapabilityHandle.Handle)
+    (victim : SubjectId) (target : CapabilityHandle.Handle) : State × Capability.Result :=
+  let outcome := CapabilityHandle.revoke state.capabilities actor authority .endpoint victim target
+  ({ state with capabilities := outcome.state }, outcome.result)
+
 /-- Atomically revoke one endpoint-capability lineage through the shared store. -/
 def revokeSubtree (state : State) (actor : SubjectId) (authoritySlot : SlotId)
     (victim : SubjectId) (victimSlot : SlotId) : State × Capability.Result :=
   let outcome := Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot
+  ({ state with capabilities := outcome.state }, outcome.result)
+
+def revokeSubtreeHandle (state : State) (actor : SubjectId)
+    (authority : CapabilityHandle.Handle) (victim : SubjectId)
+    (target : CapabilityHandle.Handle) : State × Capability.Result :=
+  let outcome := CapabilityHandle.revokeSubtree state.capabilities actor authority .endpoint
+    victim target
   ({ state with capabilities := outcome.state }, outcome.result)
 
 theorem revokeSubtree_preserves_wellFormed (state : State) actor authoritySlot victim victimSlot
@@ -803,6 +847,19 @@ example : (send root 0 9 payload).result = .rejected .staleHandle := by native_d
 -- Revocation before use removes the delegated endpoint authority.
 private def revokedSender := (revoke withSender 0 0 1 0).1
 example : (send revokedSender 1 0 payload).result = .rejected .staleHandle := by native_decide
+
+-- End-to-end replay through the real send consumer: revoke generation 2,
+-- install a different endpoint at the same slot, and reject the delayed handle.
+private def rootHandle : CapabilityHandle.Handle := { slot := 0, identity := 1 }
+private def oldSenderHandle : CapabilityHandle.Handle := { slot := 0, identity := 2 }
+private def handleRevokedSender :=
+  (revokeHandle withSender 0 rootHandle 1 oldSenderHandle).1
+private def replacementSender := (create handleRevokedSender 11 1 0).state
+private def replacementHandle : CapabilityHandle.Handle := { slot := 0, identity := 3 }
+example : (sendHandle replacementSender 1 oldSenderHandle payload).result =
+    .rejected .staleHandle := by native_decide
+example : (sendHandle replacementSender 1 replacementHandle payload).result = .accepted := by
+  native_decide
 -- A sender cannot preserve authority by delegating before its lineage is revoked.
 private def grantSend : Capability.Rights := { send := true, grant := true }
 private def senderParent := (delegate root 0 0 1 0 grantSend).1
