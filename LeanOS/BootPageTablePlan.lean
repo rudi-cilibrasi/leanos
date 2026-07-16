@@ -79,6 +79,11 @@ inductive Error where
 
 def aligned (address : Nat) : Bool := address % pageBytes == 0
 
+/-- The current early-boot constructor supplies exactly one PT below each PD.
+Consequently its finite model can represent only the first 512 4 KiB pages.
+Broader virtual layouts must carry additional ancestor paths explicitly. -/
+def supportedPathPages : Nat := 512
+
 def ownerMatches (region : Region) : Bool :=
   match region.policy, region.owner, region.space with
   | .kernelText, .supervisor, _ | .kernelData, .supervisor, _
@@ -96,7 +101,8 @@ def compileRegion (region : Region) : Except Error (List CompiledLeaf) := do
   let firstPage := region.virtualStart / pageBytes
   let firstFrame := region.physicalStart / pageBytes
   let count := region.byteLength / pageBytes
-  if firstPage + count > lowerCanonicalPages then throw .nonCanonical
+  if firstPage + count > lowerCanonicalPages || firstPage + count > supportedPathPages then
+    throw .nonCanonical
   if firstFrame + count > physicalFrameLimit then throw .frameOutOfRange
   if !ownerMatches region then throw .wrongOwner
   pure <| (List.range count).map fun offset =>
@@ -354,6 +360,8 @@ structure DecodedAncestor where
   present : Bool
   writable : Bool
   user : Bool
+  noExecute : Bool
+  hugePage : Bool
   reservedBitsClear : Bool
   nextFrame : PhysicalFrame
   deriving BEq, DecidableEq, Repr
@@ -382,7 +390,8 @@ def expectedRoot (plan : Plan) : Space → PhysicalFrame
   | .subjectB => plan.roots.subjectB
 
 def legalDecodedAncestor (entry : DecodedAncestor) : Bool :=
-  entry.present && entry.writable && entry.user && entry.reservedBitsClear &&
+  entry.present && entry.writable && entry.user && !entry.noExecute && !entry.hugePage &&
+    entry.reservedBitsClear &&
     representableFrame entry.nextFrame
 
 def decodedAncestorReserved (input : Input) (entry : DecodedAncestor) : Bool :=
@@ -575,6 +584,14 @@ example : rejectedAs
     { sampleInput with regions :=
         [{ sampleRegions[0]! with virtualStart := lowerCanonicalPages * pageBytes }] }
     .nonCanonical = true := by native_decide
+/-- A lower-canonical leaf that crosses into a second PT is outside the single
+ancestor path supplied by `Input`. -/
+example : rejectedAs
+    { sampleInput with regions := sampleRegions.map fun region =>
+        if region.space == .subjectA && region.policy == .userText then
+          { region with virtualStart := supportedPathPages * pageBytes }
+        else region }
+    .nonCanonical = true := by native_decide
 example : rejectedAs
     { sampleInput with regions :=
         [{ sampleRegions[0]! with physicalStart := physicalFrameLimit * pageBytes }] }
@@ -597,8 +614,8 @@ example : rejectedAs
     .addressOverflow = true := by native_decide
 
 def decodedAncestor (frame : Nat) : DecodedAncestor :=
-  { present := true, writable := true, user := true, reservedBitsClear := true,
-    nextFrame := frame }
+  { present := true, writable := true, user := true, noExecute := false,
+    hugePage := false, reservedBitsClear := true, nextFrame := frame }
 
 def decodedReport (plan : Plan) (space : Space) : DecodedRoot :=
   let expected := expectedAncestorFrames sampleInput space
@@ -623,6 +640,10 @@ def wrongAncestorUserReport (report : DecodedRoot) : DecodedRoot :=
   { report with pd := { report.pd with user := false } }
 def wrongAncestorReservedBitsReport (report : DecodedRoot) : DecodedRoot :=
   { report with pd := { report.pd with reservedBitsClear := false } }
+def wrongAncestorNXReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pd := { report.pd with noExecute := true } }
+def wrongAncestorHugePageReport (report : DecodedRoot) : DecodedRoot :=
+  { report with pd := { report.pd with hugePage := true } }
 def wrongAncestorPointerReport (report : DecodedRoot) : DecodedRoot :=
   { report with pd := { report.pd with nextFrame := report.pd.nextFrame + 1 } }
 def duplicateLeafReport (report : DecodedRoot) : DecodedRoot :=
@@ -671,6 +692,10 @@ example : reportRejectedAs (sampleReportCheck wrongAncestorWritableReport) .wron
 example : reportRejectedAs (sampleReportCheck wrongAncestorUserReport) .wrongAncestor = true := by
   native_decide
 example : reportRejectedAs (sampleReportCheck wrongAncestorReservedBitsReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck wrongAncestorNXReport) .wrongAncestor = true := by
+  native_decide
+example : reportRejectedAs (sampleReportCheck wrongAncestorHugePageReport) .wrongAncestor = true := by
   native_decide
 example : reportRejectedAs (sampleReportCheck wrongAncestorPointerReport) .wrongAncestor = true := by
   native_decide
