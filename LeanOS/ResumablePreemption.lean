@@ -105,6 +105,15 @@ def TranslationAgreement (state : State) : Prop :=
     | none => state.translations.active = none
     | some subject => state.translations.active = some subject
 
+/-- The scheduler and virtual-memory model share one capability registry, and
+the latter carries its complete mapping/lifecycle invariant.  Keeping this in
+the composite predicate prevents cleanup from manufacturing authority by
+copying between independently well-formed capability projections. -/
+def VirtualAgreement (state : State) : Prop :=
+  state.translations.virtual.memory.capabilities =
+      state.scheduler.lifecycle.capabilities ∧
+    VirtualMapping.LifecycleWellFormed state.translations.virtual
+
 /-- In addition to scheduler invariants, the bank has unique, live ownership,
 and never contains the currently executing context. -/
 def WellFormed (state : State) : Prop :=
@@ -116,6 +125,7 @@ def WellFormed (state : State) : Prop :=
       contextFor state.contexts subject = none) ∧
     ReadyContextAgreement state ∧
     TranslationAgreement state ∧
+    VirtualAgreement state ∧
     TLB.Coherent state.translations
 
 theorem wellFormed_set_halted state halted :
@@ -386,7 +396,7 @@ theorem accepted_tick_has_restorable_destination state current selected
       validContext state destination ∧
       destination.owner = selected.currentSubject ∧
       destination.addressSpace = selected.activeAddressSpace := by
-  rcases hstate with ⟨_, _, _, hvalid, _, hagreement, _, _⟩
+  rcases hstate with ⟨_, _, _, hvalid, _, hagreement, _, _, _⟩
   rcases accepted_tick_rotates_ready state.scheduler current selected hcurrent
       (hagreement.2.2 (by simp [hcurrent])) hselected with ⟨rest, hqueue, _⟩
   obtain ⟨queued, hqueuedMem, hqueuedOwner⟩ :=
@@ -430,7 +440,7 @@ theorem switch_preserves_wellFormed state interruptState frame registers
       hdestinationValid =>
     rcases hstate with
       ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hagreement,
-        htranslations, htlb⟩
+        htranslations, hvirtual, htlb⟩
     have hscheduler' := Scheduler.tick_preserves_wellFormed state.scheduler hscheduler
     obtain ⟨hnextCurrent, hcapabilities, hrunnable, haddressOwner, hselectedSpace⟩ :=
       accepted_tick_facts state.scheduler current selected hcurrent hselected
@@ -449,7 +459,7 @@ theorem switch_preserves_wellFormed state interruptState frame registers
           state.scheduler.lifecycle.runnable current = true ∧
           state.scheduler.lifecycle.addressOwner current = some current := by
       grind [Scheduler.WellFormed, Scheduler.ownsAddressSpace]
-    refine ⟨hscheduler', ?_, ?_, ?_, ?_, ?_, ?_, TLB.switch_coherent _ _⟩
+    refine ⟨hscheduler', ?_, ?_, ?_, ?_, ?_, ?_, ?_, TLB.switch_coherent _ _⟩
     · simp only [List.length_cons]
       calc
         (eraseContext state.contexts selected.currentSubject).length + 1 ≤
@@ -522,6 +532,10 @@ theorem switch_preserves_wellFormed state interruptState frame registers
       constructor
       · simpa [TLB.switch, haddressOwner] using hownerProjection
       · simp [TLB.switch, hnextCurrent, hselectedSpace]
+    · rcases hvirtual with ⟨hcapabilityProjection, hvirtualWellFormed⟩
+      constructor
+      · simpa [TLB.switch, hcapabilities] using hcapabilityProjection
+      · simpa [TLB.switch] using hvirtualWellFormed
 
 /-- Attacker-controlled general registers can affect only the saved payload;
 they cannot influence which bank entry is selected for restoration. -/
