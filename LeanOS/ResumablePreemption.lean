@@ -742,6 +742,146 @@ theorem cleanup_preserves_readyContextAgreement state subject
     have hreadyOld := hstate.2.1 context hcontextOld hsuspended
     simp [cleanupSubject, hreadyOld, hownerNe]
 
+/-- Cleanup crosses the scheduler, capability, virtual-memory, and TLB models.
+The peer precondition records the obligations owned by those peer models:
+termination must leave a runnable destination when a current subject remains,
+and the capability/mapping cleanup must preserve their lifecycle and resource
+kind invariants.  These are deliberately explicit instead of treating the C
+cleanup sequence as proof of the composite property. -/
+def CleanupPeerPrecondition (state : State) (subject : SubjectId) : Prop :=
+  ((cleanupSubject state subject).scheduler.lifecycle.current.isSome →
+      (cleanupSubject state subject).scheduler.ready ≠ []) ∧
+    VirtualMapping.LifecycleWellFormed
+      (cleanupSubject state subject).translations.virtual ∧
+    ResourceKindAgreement (cleanupSubject state subject)
+
+/-- Regression for the cross-kind cleanup bug: a well-formed composite state
+cannot give one live identifier both memory ownership and address-space
+ownership, so terminating the memory owner cannot retire another subject's
+address space through an identifier collision. -/
+theorem wellFormed_excludes_memory_addressSpace_alias state object memoryOwner frame
+    addressOwner (hstate : WellFormed state)
+    (hmemory : state.scheduler.lifecycle.ownedMemory object = some (memoryOwner, frame))
+    (haddress : state.scheduler.lifecycle.addressOwner object = some addressOwner) : False := by
+  rcases hstate with ⟨_, _, _, _, _, _, htranslations, hvirtual, hkinds, _⟩
+  have hmemoryKind := hkinds.1 object memoryOwner frame hmemory
+  have haddressKind := (hvirtual.2.2.2.1 object addressOwner (by
+    rw [htranslations.1]
+    exact haddress)).2.1
+  rw [hvirtual.1] at haddressKind
+  simp [hmemoryKind] at haddressKind
+
+/-- Subject cleanup preserves the complete resumable-preemption invariant
+when the documented peer-model cleanup obligations hold. -/
+theorem cleanupSubject_preserves_wellFormed state subject
+    (hstate : WellFormed state)
+    (hpeer : CleanupPeerPrecondition state subject) :
+    WellFormed (cleanupSubject state subject) := by
+  rcases hstate with
+    ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hagreement,
+      _htranslations, hvirtual, _hkinds, htlb⟩
+  rcases hpeer with ⟨hreadyPeer, hvirtualPeer, hkindsPeer⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_,
+    cleanup_preserves_readyContextAgreement state subject hagreement hreadyPeer,
+    cleanup_preserves_translationAgreement state subject,
+    ⟨?_, hvirtualPeer⟩, hkindsPeer, ?_⟩
+  · unfold Scheduler.WellFormed at hscheduler ⊢
+    rcases hscheduler with ⟨hlifecycle, hnodup, hbound, hready, hcurrent⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · have hterminated := SubjectLifecycle.terminateState_preserves_wellFormed
+        state.scheduler.lifecycle subject hlifecycle
+      unfold SubjectLifecycle.WellFormed at hterminated ⊢
+      simpa [cleanupSubject, retireOwnedAddressSpaces,
+        SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+        SubjectLifecycle.setBool] using hterminated
+    · exact hnodup.filter (fun candidate => candidate != subject)
+    · exact Nat.le_trans (List.length_filter_le _ _) hbound
+    · intro candidate hcandidate
+      have hold : candidate ∈ state.scheduler.ready := (List.mem_filter.mp hcandidate).1
+      have hne : candidate ≠ subject := by simpa using (List.mem_filter.mp hcandidate).2
+      rcases hready candidate hold with ⟨hlive, hrunnable, hspace⟩
+      refine ⟨?_, ?_, ?_⟩
+      · simpa [cleanupSubject, retireOwnedAddressSpaces,
+          SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+          SubjectLifecycle.setBool, hne] using hlive
+      · simpa [cleanupSubject, SubjectLifecycle.terminateState,
+          SubjectLifecycle.setBool, hne] using hrunnable
+      · have haddress : state.scheduler.lifecycle.addressOwner candidate = some candidate := by
+          unfold Scheduler.ownsAddressSpace at hspace
+          split at hspace
+          · assumption
+          · simp at hspace
+        unfold Scheduler.ownsAddressSpace
+        simp only [cleanupSubject]
+        have haddressNe : state.scheduler.lifecycle.addressOwner candidate ≠ some subject := by
+          rw [haddress]
+          simp [hne]
+        simp [SubjectLifecycle.terminateState, haddressNe, haddress, hne]
+    · intro candidate hcandidate
+      have hne : candidate ≠ subject := by
+        intro heq
+        subst candidate
+        simp [cleanupSubject, SubjectLifecycle.terminateState] at hcandidate
+      have hcurrentFacts : state.scheduler.lifecycle.current ≠ some subject ∧
+          state.scheduler.lifecycle.current = some candidate := by
+        simpa [cleanupSubject, SubjectLifecycle.terminateState, hne] using hcandidate
+      have holdCurrent : state.scheduler.lifecycle.current = some candidate := hcurrentFacts.2
+      rcases hcurrent candidate holdCurrent with ⟨hlive, hrunnable, hspace, hnotReady⟩
+      refine ⟨?_, ?_, ?_, ?_⟩
+      · simpa [cleanupSubject, retireOwnedAddressSpaces,
+          SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+          SubjectLifecycle.setBool, hne] using hlive
+      · simpa [cleanupSubject, SubjectLifecycle.terminateState,
+          SubjectLifecycle.setBool, hne] using hrunnable
+      · have haddress : state.scheduler.lifecycle.addressOwner candidate = some candidate := by
+          unfold Scheduler.ownsAddressSpace at hspace
+          split at hspace
+          · assumption
+          · simp at hspace
+        unfold Scheduler.ownsAddressSpace
+        simp only [cleanupSubject]
+        have haddressNe : state.scheduler.lifecycle.addressOwner candidate ≠ some subject := by
+          rw [haddress]
+          simp [hne]
+        simp [SubjectLifecycle.terminateState, haddressNe, haddress, hne]
+      · simp [cleanupSubject, hnotReady]
+  · exact Nat.le_trans (List.length_filter_le _ _) hcapacity
+  · exact hunique.filter (fun context => context.owner != subject)
+  · intro context hcontext
+    have holdMem := (List.mem_filter.mp hcontext).1
+    have hownerNe : context.owner ≠ subject := by
+      simpa using (List.mem_filter.mp hcontext).2
+    rcases hvalid context holdMem with ⟨hframe, hspaceEq, hlive, hrunnable, howner⟩
+    refine ⟨hframe, hspaceEq, ?_, ?_, ?_⟩
+    · simpa [cleanupSubject, retireOwnedAddressSpaces,
+        SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+        SubjectLifecycle.setBool, hownerNe] using hlive
+    · simpa [cleanupSubject, SubjectLifecycle.terminateState,
+        SubjectLifecycle.setBool, hownerNe] using hrunnable
+    · have hspaceNe : state.scheduler.lifecycle.addressOwner context.addressSpace ≠
+          some subject := by
+        rw [howner]
+        simp [hownerNe]
+      simpa [cleanupSubject, SubjectLifecycle.terminateState, hspaceNe] using howner
+  · intro candidate hcurrent
+    have hne : candidate ≠ subject := by
+      intro heq
+      subst candidate
+      simp [cleanupSubject, SubjectLifecycle.terminateState] at hcurrent
+    have holdCurrent : state.scheduler.lifecycle.current = some candidate := by
+      have hcurrentFacts : state.scheduler.lifecycle.current ≠ some subject ∧
+          state.scheduler.lifecycle.current = some candidate := by
+        simpa [cleanupSubject, SubjectLifecycle.terminateState, hne] using hcurrent
+      exact hcurrentFacts.2
+    have holdAbsent := habsent candidate holdCurrent
+    apply List.find?_eq_none.mpr
+    intro context hmem
+    have holdNoOwner := List.find?_eq_none.mp holdAbsent context
+      (List.mem_filter.mp hmem).1
+    simpa using holdNoOwner
+  · simp [cleanupSubject]
+  · exact Nat.le_trans (TLB.erase_space_length state.translations.entries subject) htlb
+
 private def demoLifecycle (current : SubjectId) : SubjectLifecycle.State :=
   { capabilities := {
       subjects := fun subject => subject = 1 || subject = 2 || subject = 3
