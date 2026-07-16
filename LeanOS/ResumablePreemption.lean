@@ -556,13 +556,41 @@ theorem save_consume_preserves_other contexts saved destination other context
   have hother : other ≠ destination := Ne.symm hdestination
   simp [eraseContext, howner, hcontext, hother]
 
+/-- Retire every address-space capability object owned by `subject`, including
+all delegated handles.  `SubjectLifecycle.terminateState` does not know that
+address-space identifiers are capability objects, so the resumable composition
+must close that lifecycle projection explicitly. -/
+def retireOwnedAddressSpaces (state : SubjectLifecycle.State) (subject : SubjectId)
+    (base : Capability.State) : Capability.State :=
+  { base with
+    objects := fun object =>
+      if state.addressOwner object = some subject then false
+      else base.objects object
+    kinds := fun object =>
+      if state.addressOwner object = some subject then none
+      else base.kinds object
+    slots := fun holder slot =>
+      match base.slots holder slot with
+      | none => none
+      | some capability =>
+          if state.addressOwner capability.object = some subject then none
+          else some capability }
+
+theorem retireOwnedAddressSpaces_preserves_retired_object state subject base object
+    (hretired : base.objects object = false) :
+    (retireOwnedAddressSpaces state subject base).objects object = false := by
+  simp [retireOwnedAddressSpaces, hretired]
+
 /-- Subject termination is one composite cleanup step: lifecycle ownership,
 scheduler membership, the resumable slot, and cached translations disappear
 together.  The scheduler model currently identifies each subject's owned
 address space with the same identifier; this is the explicit no-reuse boundary
 used by `Scheduler.ownsAddressSpace`. -/
 def cleanupSubject (state : State) (subject : SubjectId) : State :=
-  let lifecycle := SubjectLifecycle.terminateState state.scheduler.lifecycle subject
+  let oldLifecycle := state.scheduler.lifecycle
+  let terminated := SubjectLifecycle.terminateState oldLifecycle subject
+  let lifecycle := { terminated with
+    capabilities := retireOwnedAddressSpaces oldLifecycle subject terminated.capabilities }
   let virtual := state.translations.virtual
   let mappings := fun addressSpace page =>
     match virtual.mappings addressSpace page with
@@ -597,8 +625,29 @@ theorem cleanup_removes_scheduler_membership state subject :
 
 theorem cleanup_terminates_subject state subject :
     (cleanupSubject state subject).scheduler.lifecycle.capabilities.subjects subject = false := by
-  simp [cleanupSubject, SubjectLifecycle.terminateState,
+  simp [cleanupSubject, retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
     SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool]
+
+/-- Every address-space object owned by the terminated subject is retired from
+both lifecycle projections rather than merely becoming ownerless. -/
+theorem cleanup_retires_owned_address_space state subject addressSpace
+    (howner : state.scheduler.lifecycle.addressOwner addressSpace = some subject) :
+    (cleanupSubject state subject).scheduler.lifecycle.capabilities.objects addressSpace = false ∧
+      (cleanupSubject state subject).scheduler.lifecycle.capabilities.kinds addressSpace = none ∧
+      (cleanupSubject state subject).translations.virtual.memory.capabilities.objects
+        addressSpace = false := by
+  simp [cleanupSubject, retireOwnedAddressSpaces, howner]
+
+/-- Delegated capabilities cannot keep a destroyed address space reachable. -/
+theorem cleanup_clears_owned_address_space_handles state subject holder slot capability
+    (hslot : state.scheduler.lifecycle.capabilities.slots holder slot = some capability)
+    (howner : state.scheduler.lifecycle.addressOwner capability.object = some subject) :
+    (cleanupSubject state subject).scheduler.lifecycle.capabilities.slots holder slot = none ∧
+      (cleanupSubject state subject).translations.virtual.memory.capabilities.slots
+        holder slot = none := by
+  simp [cleanupSubject, retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
+    SubjectLifecycle.terminatedCapabilities, hslot, howner]
+  split <;> simp_all
 
 /-- Cleanup removes every encoded page-table mapping in an address space whose
 owner is terminated; changing only the owner projection would leave stale
@@ -619,7 +668,11 @@ theorem cleanup_removes_retired_object_mapping state subject addressSpace page m
       (SubjectLifecycle.terminateState state.scheduler.lifecycle subject).capabilities.objects
         mapping.object = false) :
     (cleanupSubject state subject).translations.virtual.mappings addressSpace page = none := by
-  simp [cleanupSubject, hmapping, hretired]
+  have hretired' := retireOwnedAddressSpaces_preserves_retired_object
+    state.scheduler.lifecycle subject
+    (SubjectLifecycle.terminateState state.scheduler.lifecycle subject).capabilities
+    mapping.object hretired
+  simp [cleanupSubject, hmapping, hretired']
 
 /-- Lifecycle and translation ownership are updated as one cleanup projection;
 terminating the current subject also clears the modeled active address space. -/
