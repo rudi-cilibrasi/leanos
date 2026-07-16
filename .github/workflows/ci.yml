@@ -78,6 +78,13 @@ jobs:
           mkdir -p build/ci
           ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
           ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-smoke.log
+          LEANOS_SERIAL_LOG=build/boot/double-fault.serial.log \
+            ./scripts/run-double-fault.sh 2>&1 | tee build/ci/qemu-double-fault.log
+          LEANOS_EXPECT_GUARD_MAPPED=1 \
+            LEANOS_SERIAL_LOG=build/boot/double-fault-guard-mapped.serial.log \
+            ./scripts/run-double-fault.sh \
+              build/boot/leanos-0.1.0-x86_64-double-fault-guard-mapped.iso \
+              2>&1 | tee build/ci/qemu-double-fault-guard-mapped.log
 
       - name: Preserve reproducibility artifacts
         if: always()
@@ -86,10 +93,14 @@ jobs:
           name: leanos-boot-${{ github.sha }}
           path: |
             build/boot/leanos-0.1.0-x86_64.iso
+            build/boot/leanos-0.1.0-x86_64-double-fault.iso
             build/boot/leanos.elf
+            build/boot/leanos-double-fault.elf
             build/boot/leanos.map
+            build/boot/leanos-double-fault.map
             build/boot/SHA256SUMS
             build/boot/serial.log
+            build/boot/double-fault.serial.log
             build/boot/corpus.tsv
             build/oracle/host-results.txt
             build/ci/*.log

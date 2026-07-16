@@ -12,6 +12,8 @@ lake build
 
 ./scripts/test-run-image.sh
 
+./scripts/test-run-double-fault.sh
+
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
   experiments/freestanding-boundary/Boundary.lean
 lake env lean -DwarningAsError=true -R experiments/hosted-boundary \
