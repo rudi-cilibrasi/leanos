@@ -73,6 +73,7 @@ inductive Error where
   | missingNXE | equalRoots | misaligned | emptyRegion | addressOverflow
   | nonCanonical | frameOutOfRange | wrongOwner | incompatibleOverlap
   | duplicateLeaf | duplicateTableFrame | unreservedTableFrame | invalidTableFrame
+  | missingRequiredRegion | unsafePhysicalAlias
   deriving BEq, DecidableEq, Repr
 
 def aligned (address : Nat) : Bool := address % pageBytes == 0
@@ -147,6 +148,24 @@ or two descendants with each other, cannot describe the supported four-level tre
 def tableFramesDistinct (input : Input) : Bool :=
   (tableFrames input).Pairwise (· != ·)
 
+def hasRegion (input : Input) (space : Space) (policy : PolicyRegion) (owner : Owner) : Bool :=
+  input.regions.any fun region =>
+    region.space == space && region.policy == policy && region.owner == owner
+
+/-- The Phase 2 plan is not an optional list: both roots must contain the
+reviewed supervisor classes and their subject-specific user text and stack. -/
+def requiredCoverage (input : Input) : Bool :=
+  [.subjectA, .subjectB].all fun space =>
+    hasRegion input space .kernelText .supervisor &&
+    hasRegion input space .kernelData .supervisor &&
+    hasRegion input space .kernelStack .supervisor &&
+    hasRegion input space .pageTables .supervisor &&
+    match space with
+    | .subjectA =>
+        hasRegion input space .userText .subjectA && hasRegion input space .userStack .subjectA
+    | .subjectB =>
+        hasRegion input space .userText .subjectB && hasRegion input space .userStack .subjectB
+
 def wxSafe (leaves : List CompiledLeaf) : Bool :=
   leaves.all fun entry => !entry.leaf.writable || entry.leaf.noExecute
 
@@ -162,6 +181,14 @@ frames may intentionally be identical in both roots. -/
 def userViewsSeparated (leaves : List CompiledLeaf) : Bool :=
   leaves.Pairwise fun a b =>
     !a.leaf.user || !b.leaf.user || a.space == b.space || a.leaf.frame != b.leaf.frame
+
+/-- Physical aliases are permitted only for the same reviewed supervisor
+policy in the two roots.  In particular, user leaves can never alias a live
+root/ancestor frame or any other supervisor-owned frame. -/
+def physicalAliasesSafe (leaves : List CompiledLeaf) : Bool :=
+  leaves.Pairwise fun a b =>
+    a.leaf.frame != b.leaf.frame ||
+      (!a.leaf.user && !b.leaf.user && a.policy == b.policy)
 
 /-- Every emitted leaf is in the supported 4 KiB lower-half subset. -/
 def structurallySafe (leaves : List CompiledLeaf) : Bool :=
@@ -218,8 +245,10 @@ def compile (input : Input) : Except Error Plan := do
      if hunique : !tableFramesDistinct input then throw .duplicateTableFrame else
       if hreserved : !tableFramesReserved input then throw .unreservedTableFrame else
       let leaves <- input.regions.flatMapM compileRegion
+      if !requiredCoverage input then throw .missingRequiredRegion
       if hduplicates : noDuplicateLeaves leaves then
         if hwx : wxSafe leaves then
+          if !physicalAliasesSafe leaves then throw .unsafePhysicalAlias else
           if hownership : ownershipSafe leaves then
             if hseparated : userViewsSeparated leaves then
               if hstructural : structurallySafe leaves then
@@ -397,6 +426,18 @@ def sampleRegions : List Region :=
      physicalStart := pageBytes, policy := .kernelText, owner := .supervisor },
    { space := .subjectB, virtualStart := pageBytes, byteLength := pageBytes,
      physicalStart := pageBytes, policy := .kernelText, owner := .supervisor },
+   { space := .subjectA, virtualStart := 2 * pageBytes, byteLength := pageBytes,
+     physicalStart := 2 * pageBytes, policy := .kernelData, owner := .supervisor },
+   { space := .subjectB, virtualStart := 2 * pageBytes, byteLength := pageBytes,
+     physicalStart := 2 * pageBytes, policy := .kernelData, owner := .supervisor },
+   { space := .subjectA, virtualStart := 3 * pageBytes, byteLength := pageBytes,
+     physicalStart := 3 * pageBytes, policy := .kernelStack, owner := .supervisor },
+   { space := .subjectB, virtualStart := 3 * pageBytes, byteLength := pageBytes,
+     physicalStart := 3 * pageBytes, policy := .kernelStack, owner := .supervisor },
+   { space := .subjectA, virtualStart := 10 * pageBytes, byteLength := 4 * pageBytes,
+     physicalStart := 10 * pageBytes, policy := .pageTables, owner := .supervisor },
+   { space := .subjectB, virtualStart := 14 * pageBytes, byteLength := 4 * pageBytes,
+     physicalStart := 14 * pageBytes, policy := .pageTables, owner := .supervisor },
    { space := .subjectA, virtualStart := 100 * pageBytes, byteLength := pageBytes,
      physicalStart := 100 * pageBytes, policy := .userText, owner := .subjectA },
    { space := .subjectA, virtualStart := 101 * pageBytes, byteLength := pageBytes,
@@ -420,6 +461,16 @@ def rejectedAs (input : Input) (wanted : Error) : Bool :=
 
 example : (match compile sampleInput with | .ok _ => true | .error _ => false) = true := by
   native_decide
+example : rejectedAs { sampleInput with regions := [] } .missingRequiredRegion = true := by
+  native_decide
+example : rejectedAs { sampleInput with regions := sampleRegions.tail }
+    .missingRequiredRegion = true := by native_decide
+example : rejectedAs
+    { sampleInput with regions := sampleRegions.map fun region =>
+        if region.space == .subjectA && region.policy == .userText then
+          { region with physicalStart := sampleInput.roots.subjectA * pageBytes }
+        else region }
+    .unsafePhysicalAlias = true := by native_decide
 example : rejectedAs { sampleInput with nxe := false } .missingNXE = true := by native_decide
 example : rejectedAs { sampleInput with roots := { subjectA := 10, subjectB := 10 } }
     .equalRoots = true := by native_decide
@@ -475,9 +526,9 @@ example : rejectedAs
         [{ sampleRegions[0]! with physicalStart := physicalFrameLimit * pageBytes }] }
     .frameOutOfRange = true := by native_decide
 example : rejectedAs { sampleInput with regions :=
-    [{ sampleRegions[2]! with owner := .subjectB }] } .wrongOwner = true := by native_decide
+    [{ sampleRegions[8]! with owner := .subjectB }] } .wrongOwner = true := by native_decide
 example : rejectedAs { sampleInput with regions :=
-    [{ sampleRegions[2]! with space := .subjectB }] } .wrongOwner = true := by native_decide
+    [{ sampleRegions[8]! with space := .subjectB }] } .wrongOwner = true := by native_decide
 def sampleOverflowRegion : Region :=
   { sampleRegions[0]! with
     virtualStart := 2 ^ 64 - pageBytes
@@ -607,11 +658,11 @@ def swappedUserLeavesCheck : Except ReportError Unit :=
   | .ok plan =>
       let reportA := decodedReport plan .subjectA
       let reportB := decodedReport plan .subjectB
-      let userA := reportA.leaves.drop 1
-      let userB := reportB.leaves.drop 1
+      let userA := reportA.leaves.filter fun entry => entry.leaf.user
+      let userB := reportB.leaves.filter fun entry => entry.leaf.user
       validateDecodedPair sampleInput plan
-        { reportA with leaves := reportA.leaves.take 1 ++ userB }
-        { reportB with leaves := reportB.leaves.take 1 ++ userA }
+        { reportA with leaves := reportA.leaves.filter (fun entry => !entry.leaf.user) ++ userB }
+        { reportB with leaves := reportB.leaves.filter (fun entry => !entry.leaf.user) ++ userA }
 
 example : reportRejectedAs swappedUserLeavesCheck .mismatchedLeaf = true := by native_decide
 
