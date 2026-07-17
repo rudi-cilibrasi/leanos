@@ -717,6 +717,89 @@ theorem cleanup_preserves_translationAgreement state subject :
   · trivial
   · assumption
 
+/-- Cleanup preserves the mapping-safety portion of the virtual lifecycle from
+the composite pre-state.  Any retained mapping still has a live owner and
+backing object, agrees with the authoritative lifecycle mapping, and keeps the
+owner's capability witness; mappings whose authority is retired are filtered
+out by the cleanup transition. -/
+theorem cleanup_preserves_virtualMappingWellFormed state subject
+    (hstate : WellFormed state) :
+    VirtualMapping.WellFormed (cleanupSubject state subject).translations.virtual := by
+  rcases hstate with
+    ⟨hscheduler, _, _, _, _, _, htranslations, hvirtual, _, _⟩
+  rcases hscheduler with ⟨hlifecycle, _, _, _, _⟩
+  rcases hlifecycle with ⟨_, _, haddressLive, _, _, _⟩
+  rcases hvirtual.2 with ⟨hwell, _, _, _⟩
+  unfold VirtualMapping.WellFormed at hwell ⊢
+  constructor
+  · intro addressSpace owner howner
+    have hownerFacts :
+        state.scheduler.lifecycle.addressOwner addressSpace ≠ some subject ∧
+          state.scheduler.lifecycle.addressOwner addressSpace = some owner := by
+      simpa [cleanupSubject, SubjectLifecycle.terminateState] using howner
+    have hownerOld := hownerFacts.2
+    have hlive := haddressLive addressSpace owner hownerOld
+    have hownerNe : owner ≠ subject := by
+      intro heq
+      subst owner
+      simp [cleanupSubject, SubjectLifecycle.terminateState, hownerOld] at howner
+    simpa [cleanupSubject, retireOwnedAddressSpaces,
+      SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+      SubjectLifecycle.setBool, hownerNe] using hlive
+  · intro addressSpace page mapping hmapping
+    have hmappingOld :
+        state.translations.virtual.mappings addressSpace page = some mapping := by
+      simp only [cleanupSubject] at hmapping
+      split at hmapping <;> simp_all
+    have hownerSome :
+        (SubjectLifecycle.terminateState state.scheduler.lifecycle subject).addressOwner
+          addressSpace ≠ none := by
+      simp only [cleanupSubject] at hmapping
+      split at hmapping <;> simp_all
+    have hobjectLive :
+        (retireOwnedAddressSpaces state.scheduler.lifecycle subject
+          (SubjectLifecycle.terminateState state.scheduler.lifecycle subject).capabilities).objects
+            mapping.object = true := by
+      simp only [cleanupSubject] at hmapping
+      split at hmapping <;> simp_all
+    rcases hwell.2 addressSpace page mapping hmappingOld with
+      ⟨owner, frame, hownerOld, hpermissions, hbinding, howned, hread, hwrite⟩
+    have hownerLifecycle :
+        state.scheduler.lifecycle.addressOwner addressSpace = some owner := by
+      rw [← htranslations.1]
+      exact hownerOld
+    have hownerNe : owner ≠ subject := by
+      intro heq
+      subst owner
+      simp [SubjectLifecycle.terminateState, hownerLifecycle] at hownerSome
+    have hownerNew :
+        (SubjectLifecycle.terminateState state.scheduler.lifecycle subject).addressOwner
+          addressSpace = some owner := by
+      simp [SubjectLifecycle.terminateState, hownerLifecycle, hownerNe]
+    have preserveAuthority (right : Capability.Right)
+        (hauthority : Capability.HasAuthority
+          state.translations.virtual.memory.capabilities owner mapping.object right) :
+        Capability.HasAuthority
+          (retireOwnedAddressSpaces state.scheduler.lifecycle subject
+            (SubjectLifecycle.terminateState state.scheduler.lifecycle subject).capabilities)
+          owner mapping.object right := by
+      rcases hauthority with ⟨slot, capability, hslot, hobject, hright⟩
+      refine ⟨slot, capability, ?_, hobject, hright⟩
+      rw [hvirtual.1] at hslot
+      simp [retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
+        SubjectLifecycle.terminatedCapabilities] at hobjectLive
+      simp [retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
+        SubjectLifecycle.terminatedCapabilities, hslot, hownerNe, hobject,
+        hobjectLive]
+    refine ⟨owner, frame, ?_, hpermissions, hbinding, howned, ?_, ?_⟩
+    · simpa [cleanupSubject] using hownerNew
+    · intro hpermission
+      simpa [cleanupSubject] using
+        preserveAuthority Capability.Right.read (hread hpermission)
+    · intro hpermission
+      simpa [cleanupSubject] using
+        preserveAuthority Capability.Right.write (hwrite hpermission)
+
 /-- Cleanup preserves ready/context agreement whenever it leaves a queued
 destination for a still-current subject.  If cleanup removes the final peer,
 the resulting single runnable subject deliberately leaves the resumable-state
@@ -1085,6 +1168,46 @@ example (translations : TLB.State) :
     demoLifecycle, cleanupSubject, retireOwnedAddressSpaces,
     SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
     SubjectLifecycle.setBool]
+
+/-- Executable retained-mapping regression for the mapping-safety preservation
+lemma: cleaning subject `1` leaves subject `2`'s mapping and its read-authority
+witness intact. -/
+private def cleanupMappingRegressionState (translations : TLB.State) : State :=
+  let base := cleanupRegressionState translations
+  let capability : Capability.Capability :=
+    { object := 10, kind := .memory, rights := { read := true } }
+  let capabilities : Capability.State := {
+    base.scheduler.lifecycle.capabilities with
+    slots := fun holder slot =>
+      if holder = 2 ∧ slot = 0 then some capability else none }
+  let lifecycle : SubjectLifecycle.State := {
+    base.scheduler.lifecycle with
+    capabilities := capabilities
+    ownedMemory := fun object => if object = 10 then some (2, 10) else none
+    mapping := fun addressSpace page =>
+      if addressSpace = 2 ∧ page = 7 then some 10 else none }
+  { base with
+    scheduler := { base.scheduler with lifecycle := lifecycle }
+    translations := { base.translations with
+      virtual := { base.translations.virtual with
+        memory := { base.translations.virtual.memory with capabilities := capabilities }
+        mappings := fun addressSpace page =>
+          if addressSpace = 2 ∧ page = 7 then
+            some { object := 10, permissions := { read := true } }
+          else none } } }
+
+example (translations : TLB.State) :
+    let cleaned := cleanupSubject (cleanupMappingRegressionState translations) 1
+    cleaned.translations.virtual.mappings 2 7 =
+        some { object := 10, permissions := { read := true } } ∧
+      Capability.HasAuthority cleaned.translations.virtual.memory.capabilities
+        2 10 .read := by
+  simp [cleanupMappingRegressionState, cleanupRegressionState, roundTripStart,
+    demoLifecycle, cleanupSubject, retireOwnedAddressSpaces,
+    SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+    Capability.HasAuthority]
+  exact ⟨0, { object := 10, kind := .memory, rights := { read := true } },
+    by rfl, rfl, rfl⟩
 
 private def switchAToB (translations : TLB.State) : Outcome :=
   switch (roundTripStart translations) (demoInterrupt 1)
