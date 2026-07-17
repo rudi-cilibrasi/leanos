@@ -156,7 +156,7 @@ def HasAuthority (state : State) (subject : SubjectId) (object : ObjectId)
 inductive Denial where
   | invalidSubject | staleSlot | outOfRange | occupiedSlot | full | emptyRights
   | missingGrant | rightsNotSubset | missingRevoke | objectMismatch | kindMismatch
-  | invalidRights
+  | invalidRights | generationExhausted
   deriving DecidableEq, Repr
 
 inductive Result where

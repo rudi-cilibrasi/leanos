@@ -181,7 +181,11 @@ def copy (state : State) (actor : SubjectId) (source : Handle)
     (requested : Rights) : Outcome :=
   match resolve state actor source expected with
   | .error reason => reject state (denial reason)
-  | .ok _ => Capability.copy state actor source.slot destination destinationSlot requested
+  | .ok _ =>
+      if state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity then
+        reject state .generationExhausted
+      else if slotReserved ≤ destinationSlot then reject state .outOfRange
+      else Capability.copy state actor source.slot destination destinationSlot requested
 
 /-- Userspace delegation boundary. The source word cannot select the actor or
 destination subject and is decoded before the internal slot transition. -/
@@ -192,7 +196,10 @@ def copyWord (state : State) (actor : SubjectId) (sourceWord : UInt64)
   | .error (.denied reason) => reject state (denial reason)
   | .error (.malformed _) => reject state .staleSlot
   | .ok source =>
-      Capability.copy state actor source.handle.slot destination destinationSlot requested
+      if state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity then
+        reject state .generationExhausted
+      else if slotReserved ≤ destinationSlot then reject state .outOfRange
+      else Capability.copy state actor source.handle.slot destination destinationSlot requested
 
 /-- An accepted userspace copy records successful full-word resolution of the
 exact source authority before delegation. -/
@@ -211,7 +218,38 @@ theorem copyWord_accepted_resolves state actor sourceWord expected destination
       | denied resolveReason =>
           cases resolveReason <;> simp [copyWord, hsource, reject] at haccepted
   | ok source =>
-      exact ⟨source, rfl, by simpa [copyWord, hsource] using haccepted⟩
+      by_cases hexhausted : state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity
+      · simp [copyWord, hsource, hexhausted, reject] at haccepted
+      · by_cases hslot : slotReserved ≤ destinationSlot
+        · simp [copyWord, hsource, hexhausted, hslot, reject] at haccepted
+        · exact ⟨source, rfl,
+            by simpa [copyWord, hsource, hexhausted, hslot] using haccepted⟩
+
+/-- Every accepted userspace copy allocates inside the canonical generation
+and slot domain, so the fresh destination authority has an encodable handle. -/
+theorem copyWord_accepted_fresh_handle_encodable state actor sourceWord expected destination
+    destinationSlot requested
+    (haccepted : (copyWord state actor sourceWord expected destination destinationSlot
+      requested).result = .accepted) :
+    ∃ word, encode { slot := destinationSlot, identity := state.nextIdentity } = some word := by
+  cases hsource : resolveCurrent state { caller := actor } sourceWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [copyWord, hsource, reject] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [copyWord, hsource, reject] at haccepted
+  | ok source =>
+      by_cases hexhausted : state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity
+      · simp [copyWord, hsource, hexhausted, reject] at haccepted
+      · by_cases hslot : slotReserved ≤ destinationSlot
+        · simp [copyWord, hsource, hexhausted, hslot, reject] at haccepted
+        · have hpositive : 0 < state.nextIdentity :=
+            Nat.pos_of_ne_zero (fun hzero => hexhausted (Or.inl hzero))
+          have hgeneration : state.nextIdentity < generationReserved :=
+            Nat.lt_of_not_ge (fun hge => hexhausted (Or.inr hge))
+          have hslot' : destinationSlot < slotReserved := Nat.lt_of_not_ge hslot
+          refine ⟨UInt64.ofNat (destinationSlot + state.nextIdentity * slotRadix), ?_⟩
+          simp [encode, Encodable, hslot', hpositive, hgeneration]
 
 /-- A malformed or denied copy word is state preserving. -/
 theorem copyWord_resolution_rejected_unchanged state actor sourceWord expected
@@ -587,6 +625,19 @@ example :
         .rejected .staleSlot ∧
       (copyWord demoState 0 (12 * 65536 + 65535) .memory 1 0
         (oneRight .read)).state.slots 1 0 = none := by
+  native_decide
+
+private def demoExhausted : State := { demoState with nextIdentity := generationReserved }
+
+-- Userspace issuance fails closed before either reserved field can appear in a
+-- fresh handle, even when the raw capability transition would reject later.
+example :
+    (copyWord demoExhausted 0 demoWord .memory 1 0 (oneRight .read)).result =
+      .rejected .generationExhausted := by
+  native_decide
+example :
+    (copyWord demoState 0 demoWord .memory 1 slotReserved (oneRight .read)).result =
+      .rejected .outOfRange := by
   native_decide
 
 private def demoRevoker : Capability :=

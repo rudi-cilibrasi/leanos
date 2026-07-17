@@ -37,7 +37,11 @@ holder authority boundary.
 The capability graph still records identities as natural numbers internally.
 Only identities in the finite canonical range can be issued as userspace
 words. The codec therefore exposes exhaustion rather than silently reducing a
-natural-number identity modulo 48 bits.
+natural-number identity modulo 48 bits. Capability copy and sealed-transfer
+offer boundaries reject zero or reserved/exhausted generations before
+allocation, and copy also rejects destination slots outside the encodable
+16-bit domain. Accepted copy and offer theorems produce the corresponding
+canonical fresh handle encoding.
 
 The Lean theorems prove codec round-trip and canonical uniqueness for every
 encodable handle, and prove that successful current-caller resolution returns

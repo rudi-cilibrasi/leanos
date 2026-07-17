@@ -69,7 +69,7 @@ def WellFormed (state : State) : Prop :=
 
 inductive OfferError where
   | invalidSubject | staleEndpoint | wrongEndpointKind | missingSend | retiredEndpoint | full
-  | staleSource | missingGrant | emptyRights | rightsNotSubset
+  | staleSource | missingGrant | emptyRights | rightsNotSubset | generationExhausted
   deriving DecidableEq, Repr
 
 inductive AcceptError where
@@ -220,7 +220,11 @@ def offerHandles (state : State) (caller : SubjectId)
       match CapabilityHandle.resolve state.capabilities caller source sourceKind with
       | .error .invalidSubject => reject state .invalidSubject
       | .error _ => reject state .staleSource
-      | .ok _ => offer state caller endpoint.slot source.slot payload rights
+      | .ok _ =>
+          if state.capabilities.nextIdentity = 0 ∨
+              CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity then
+            reject state .generationExhausted
+          else offer state caller endpoint.slot source.slot payload rights
 
 /-- Userspace capability-transfer boundary. Both opaque words are decoded and
 resolved in the trusted caller's capability space before the internal slot
@@ -236,7 +240,11 @@ def offerWords (state : State) (caller : SubjectId)
       match CapabilityHandle.resolveCurrent state.capabilities { caller } sourceWord sourceKind with
       | .error (.denied .invalidSubject) => reject state .invalidSubject
       | .error _ => reject state .staleSource
-      | .ok source => offer state caller endpoint.handle.slot source.handle.slot payload rights
+      | .ok source =>
+          if state.capabilities.nextIdentity = 0 ∨
+              CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity then
+            reject state .generationExhausted
+          else offer state caller endpoint.handle.slot source.handle.slot payload rights
 
 /-- Acceptance at the userspace transfer boundary records both successful
 full-word resolutions before the raw-slot transition. -/
@@ -269,8 +277,52 @@ theorem offerWords_accepted_resolves state caller endpointWord sourceWord source
               cases resolveReason <;>
                 simp [offerWords, hendpoint, hsource, reject] at haccepted
       | ok source =>
-          exact ⟨endpoint, source, rfl, rfl,
-            by simpa [offerWords, hendpoint, hsource] using haccepted⟩
+          by_cases hgeneration : state.capabilities.nextIdentity = 0 ∨
+              CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity
+          · simp [offerWords, hendpoint, hsource, hgeneration, reject] at haccepted
+          · exact ⟨endpoint, source, rfl, rfl,
+              by simpa [offerWords, hendpoint, hsource, hgeneration] using haccepted⟩
+
+/-- An accepted userspace offer reserves an identity inside the canonical
+48-bit generation domain, so every usable destination slot can encode the
+eventual installed descendant without truncation. -/
+theorem offerWords_accepted_generation_encodable state caller endpointWord sourceWord sourceKind
+    payload rights destinationSlot
+    (hslot : destinationSlot < CapabilityHandle.slotReserved)
+    (haccepted : (offerWords state caller endpointWord sourceWord sourceKind
+      payload rights).result = .accepted) :
+    ∃ word, CapabilityHandle.encode
+      { slot := destinationSlot, identity := state.capabilities.nextIdentity } = some word := by
+  cases hendpoint : CapabilityHandle.resolveCurrent state.capabilities
+      { caller } endpointWord .endpoint with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [offerWords, hendpoint, reject] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [offerWords, hendpoint, reject] at haccepted
+  | ok endpoint =>
+      cases hsource : CapabilityHandle.resolveCurrent state.capabilities
+          { caller } sourceWord sourceKind with
+      | error reason =>
+          cases reason with
+          | malformed decodeReason =>
+              simp [offerWords, hendpoint, hsource, reject] at haccepted
+          | denied resolveReason =>
+              cases resolveReason <;>
+                simp [offerWords, hendpoint, hsource, reject] at haccepted
+      | ok source =>
+          by_cases hexhausted : state.capabilities.nextIdentity = 0 ∨
+              CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity
+          · simp [offerWords, hendpoint, hsource, hexhausted, reject] at haccepted
+          · have hpositive : 0 < state.capabilities.nextIdentity :=
+              Nat.pos_of_ne_zero (fun hzero => hexhausted (Or.inl hzero))
+            have hgeneration : state.capabilities.nextIdentity <
+                CapabilityHandle.generationReserved :=
+              Nat.lt_of_not_ge (fun hge => hexhausted (Or.inr hge))
+            refine ⟨UInt64.ofNat (destinationSlot +
+              state.capabilities.nextIdentity * CapabilityHandle.slotRadix), ?_⟩
+            simp [CapabilityHandle.encode, CapabilityHandle.Encodable,
+              hslot, hpositive, hgeneration]
 
 /-- Atomically consume the envelope and install its sealed descendant in the
 trusted receiver's chosen empty slot. -/
@@ -1149,6 +1201,11 @@ private def usableReplacementState : State :=
     pending := fun _ => none
     trace := ⟨fun _ => []⟩ }
 
+private def exhaustedReplacementState : State :=
+  { usableReplacementState with
+    capabilities := { usableReplacementState.capabilities with
+      nextIdentity := CapabilityHandle.generationReserved } }
+
 private def dataOnlyState : State :=
   { toEndpointState := destroyTraceRoot
     pending := fun _ => none
@@ -1166,6 +1223,19 @@ example :
         .delivered { endpoint := 10, sender := 0, payload := payload } ∧
       (accept sent.state 0 0 1).state.pending 10 = none ∧
       (accept sent.state 0 0 1).state.capabilities.slots 0 1 = none := by
+  native_decide
+
+/-- Generation exhaustion fails closed before an offered descendant can enter
+the sealed-transfer state. -/
+example :
+    let endpointWord := UInt64.ofNat 65536
+    let sourceWord := UInt64.ofNat 2883586
+    let outcome := offerWords exhaustedReplacementState 0 endpointWord sourceWord .memory
+      { word0 := 71, word1 := 98 } { read := true }
+    outcome.result = .rejected .generationExhausted ∧
+      outcome.state.capabilities.nextIdentity = CapabilityHandle.generationReserved ∧
+      outcome.state.pending 10 = exhaustedReplacementState.pending 10 ∧
+      outcome.state.mailbox 10 = exhaustedReplacementState.mailbox 10 := by
   native_decide
 
 /-- The public transfer boundary accepts only the canonical words for the
