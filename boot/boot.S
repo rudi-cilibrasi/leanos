@@ -531,11 +531,17 @@ saved_context_a:
 .global saved_context_b
 saved_context_b:
     .skip 160
+.global saved_context_a_original_rip
+saved_context_a_original_rip:
+    .skip 8
 .global saved_context_a_original_flags
 saved_context_a_original_flags:
     .skip 8
 .global saved_context_a_original_rsp
 saved_context_a_original_rsp:
+    .skip 8
+.global saved_context_b_original_rip
+saved_context_b_original_rip:
     .skip 8
 .global saved_context_b_original_flags
 saved_context_b_original_flags:
@@ -572,6 +578,8 @@ isr32_cld:
     lea saved_context_a(%rip), %rdi
     mov $20, %ecx
     rep movsq
+    mov saved_context_a+120(%rip), %rax
+    mov %rax, saved_context_a_original_rip(%rip)
     mov saved_context_a+136(%rip), %rax
     mov %rax, saved_context_a_original_flags(%rip)
     mov saved_context_a+144(%rip), %rax
@@ -592,6 +600,8 @@ isr32_cld:
     lea saved_context_b(%rip), %rdi
     mov $20, %ecx
     rep movsq
+    mov saved_context_b+120(%rip), %rax
+    mov %rax, saved_context_b_original_rip(%rip)
     mov saved_context_b+136(%rip), %rax
     mov %rax, saved_context_b_original_flags(%rip)
     mov saved_context_b+144(%rip), %rax

@@ -30,7 +30,8 @@ both logical stack markers from the target and saved RSP words and both r12
 markers from their concrete buffers. A cross-owned restore bank is a generated
 rejecting vector and a boot-side preflight negative; corrupt saved RSP data
 fails before the final transcript. Assembly snapshots each bank's exact
-original RSP and RFLAGS into separate kernel-owned metadata. C compares both
+original RIP, RSP, and RFLAGS into separate kernel-owned metadata. C compares
+both
 saved banks and A's restored target against those snapshots before claiming
 that the original frame resumed.
 The runner rejects missing or duplicate ticks, restart instead of resume,
