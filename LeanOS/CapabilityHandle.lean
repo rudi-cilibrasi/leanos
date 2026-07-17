@@ -183,6 +183,17 @@ def copy (state : State) (actor : SubjectId) (source : Handle)
   | .error reason => reject state (denial reason)
   | .ok _ => Capability.copy state actor source.slot destination destinationSlot requested
 
+/-- Userspace delegation boundary. The source word cannot select the actor or
+destination subject and is decoded before the internal slot transition. -/
+def copyWord (state : State) (actor : SubjectId) (sourceWord : UInt64)
+    (expected : ObjectKind) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) : Outcome :=
+  match resolveCurrent state { caller := actor } sourceWord expected with
+  | .error (.denied reason) => reject state (denial reason)
+  | .error (.malformed _) => reject state .staleSlot
+  | .ok source =>
+      Capability.copy state actor source.handle.slot destination destinationSlot requested
+
 /-- Holder-facing direct revocation checks both the authority and selected
 victim generations before invoking the atomic raw-slot transition. -/
 def revoke (state : State) (actor : SubjectId) (authority : Handle)
@@ -193,6 +204,19 @@ def revoke (state : State) (actor : SubjectId) (authority : Handle)
     | .error reason => reject state (denial reason)
     | .ok _ => Capability.revoke state actor authority.slot victim target.slot
 
+/-- Userspace direct-revocation boundary. Both authority-consuming words are
+decoded in kernel-selected capability spaces before atomic revocation. -/
+def revokeWords (state : State) (actor : SubjectId) (authorityWord : UInt64)
+    (expected : ObjectKind) (victim : SubjectId) (targetWord : UInt64) : Outcome :=
+  match resolveCurrent state { caller := actor } authorityWord expected with
+  | .error (.denied reason) => reject state (denial reason)
+  | .error (.malformed _) => reject state .staleSlot
+  | .ok authority =>
+      match resolveCurrent state { caller := victim } targetWord expected with
+      | .error (.denied reason) => reject state (denial reason)
+      | .error (.malformed _) => reject state .staleSlot
+      | .ok target => Capability.revoke state actor authority.handle.slot victim target.handle.slot
+
 /-- Holder-facing transitive revocation has the same generation checks. -/
 def revokeSubtree (state : State) (actor : SubjectId) (authority : Handle)
     (expected : ObjectKind) (victim : SubjectId) (target : Handle) : Outcome :=
@@ -201,6 +225,19 @@ def revokeSubtree (state : State) (actor : SubjectId) (authority : Handle)
   | .ok _ => match resolve state victim target expected with
     | .error reason => reject state (denial reason)
     | .ok _ => Capability.revokeSubtree state actor authority.slot victim target.slot
+
+/-- Userspace transitive-revocation boundary with the same two-word checks. -/
+def revokeSubtreeWords (state : State) (actor : SubjectId) (authorityWord : UInt64)
+    (expected : ObjectKind) (victim : SubjectId) (targetWord : UInt64) : Outcome :=
+  match resolveCurrent state { caller := actor } authorityWord expected with
+  | .error (.denied reason) => reject state (denial reason)
+  | .error (.malformed _) => reject state .staleSlot
+  | .ok authority =>
+      match resolveCurrent state { caller := victim } targetWord expected with
+      | .error (.denied reason) => reject state (denial reason)
+      | .error (.malformed _) => reject state .staleSlot
+      | .ok target =>
+          Capability.revokeSubtree state actor authority.handle.slot victim target.handle.slot
 
 /-- A handle freshly issued for the capability currently installed in a live,
 in-range slot resolves to exactly that capability. -/
@@ -396,5 +433,28 @@ example : resolveCurrent demoState { caller := 0 } (13 * 65536) .memory =
     .error (.denied .staleHandle) := by rfl
 example : resolveCurrent demoState { caller := 0 } (12 * 65536 + 65535) .memory =
     .error (.malformed .reservedSlot) := by rfl
+
+-- Capability copy/revoke userspace adapters share the same decoder rather than
+-- recovering a raw slot by masking or truncation.
+example :
+    let source : Capability :=
+      { demoCapability with rights := { read := true, grant := true } }
+    let state := install demoState 0 0 source
+    (copyWord state 0 demoWord .memory 1 0 (oneRight .read)).result = .accepted := by
+  native_decide
+example :
+    let replacement : Capability :=
+      { object := 8, kind := .memory, rights := oneRight .read, identity := 13 }
+    let reused := install (clear demoState 0 0) 0 0 replacement
+    (copyWord reused 0 demoWord .memory 1 0 (oneRight .read)).result =
+        .rejected .staleSlot ∧
+      (copyWord reused 0 demoWord .memory 1 0 (oneRight .read)).state.slots 1 0 = none := by
+  native_decide
+example :
+    (copyWord demoState 0 (12 * 65536 + 65535) .memory 1 0 (oneRight .read)).result =
+        .rejected .staleSlot ∧
+      (copyWord demoState 0 (12 * 65536 + 65535) .memory 1 0
+        (oneRight .read)).state.slots 1 0 = none := by
+  native_decide
 
 end LeanOS.CapabilityHandle
