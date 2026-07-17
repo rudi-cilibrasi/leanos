@@ -238,6 +238,40 @@ def offerWords (state : State) (caller : SubjectId)
       | .error _ => reject state .staleSource
       | .ok source => offer state caller endpoint.handle.slot source.handle.slot payload rights
 
+/-- Acceptance at the userspace transfer boundary records both successful
+full-word resolutions before the raw-slot transition. -/
+theorem offerWords_accepted_resolves state caller endpointWord sourceWord sourceKind
+    payload rights
+    (haccepted : (offerWords state caller endpointWord sourceWord sourceKind
+      payload rights).result = .accepted) :
+    ∃ endpoint source,
+      CapabilityHandle.resolveCurrent state.capabilities { caller } endpointWord .endpoint =
+        .ok endpoint ∧
+      CapabilityHandle.resolveCurrent state.capabilities { caller } sourceWord sourceKind =
+        .ok source ∧
+      (offer state caller endpoint.handle.slot source.handle.slot payload rights).result =
+        .accepted := by
+  cases hendpoint : CapabilityHandle.resolveCurrent state.capabilities
+      { caller } endpointWord .endpoint with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [offerWords, hendpoint, reject] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [offerWords, hendpoint, reject] at haccepted
+  | ok endpoint =>
+      cases hsource : CapabilityHandle.resolveCurrent state.capabilities
+          { caller } sourceWord sourceKind with
+      | error reason =>
+          cases reason with
+          | malformed decodeReason =>
+              simp [offerWords, hendpoint, hsource, reject] at haccepted
+          | denied resolveReason =>
+              cases resolveReason <;>
+                simp [offerWords, hendpoint, hsource, reject] at haccepted
+      | ok source =>
+          exact ⟨endpoint, source, rfl, rfl,
+            by simpa [offerWords, hendpoint, hsource] using haccepted⟩
+
 /-- Atomically consume the envelope and install its sealed descendant in the
 trusted receiver's chosen empty slot. -/
 def accept (state : State) (caller : SubjectId) (endpointSlot destinationSlot : SlotId) :
@@ -552,6 +586,17 @@ def destroyEndpointWord (state : State) (subject : SubjectId) (word : UInt64) :
   | .error (.denied .kindMismatch) => reject state .wrongKind
   | .error _ => reject state .staleHandle
   | .ok resolution => destroyEndpoint state subject resolution.handle.slot
+
+/-- Decode or generation denial at destruction is state preserving and cannot
+reach the raw endpoint-lifetime transition. -/
+theorem destroyEndpointWord_resolution_rejected_unchanged state subject word reason
+    (hresolve : CapabilityHandle.resolveCurrent state.capabilities
+      { caller := subject } word .endpoint = .error reason) :
+    (destroyEndpointWord state subject word).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [destroyEndpointWord, hresolve, reject]
+  | denied resolveReason =>
+      cases resolveReason <;> simp [destroyEndpointWord, hresolve, reject]
 
 /-- A transitive revocation atomically clears installed descendants in the
 authoritative store and sealed descendants in mailboxes. -/

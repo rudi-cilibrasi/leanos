@@ -42,7 +42,10 @@ natural-number identity modulo 48 bits.
 The Lean theorems prove codec round-trip and canonical uniqueness for every
 encodable handle, and prove that successful current-caller resolution returns
 exactly the live capability in the trusted caller's capability space. They
-also prove that clearing or replacing a slot
+also prove that an accepted sealed transfer records successful full-word
+resolution of both endpoint and source before its internal transition, and
+that a denied endpoint-destruction word cannot change state or reach the raw
+lifetime operation. They prove that clearing or replacing a slot
 denies the old handle, that direct or transitive subtree revocation denies a
 descendant's old handle, that installing authority for another subject cannot
 change resolution, and that simultaneously live issued handles cannot alias
