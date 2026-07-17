@@ -109,6 +109,51 @@ theorem decode_encode (handle : Handle) (word : UInt64)
     simp [hnotSlot, Nat.ne_of_gt hpositive, hnotGeneration]
   case isFalse hinvalid => simp at hencode
 
+/-- Every successfully decoded word is the unique canonical encoding of the
+decoded handle.  Together with `decode_encode`, this makes acceptance exactly
+the image of `encode`, rather than merely proving examples reject. -/
+theorem encode_decode (word : UInt64) (handle : Handle)
+    (hdecode : decode word = .ok handle) : encode handle = some word := by
+  simp only [decode] at hdecode
+  split at hdecode <;> try contradiction
+  next hslot =>
+    split at hdecode <;> try contradiction
+    next hgeneration =>
+      injection hdecode with hhandle
+      subst handle
+      have hslotBound : word.toNat % slotRadix < slotRadix :=
+        Nat.mod_lt _ (by simp [slotRadix])
+      have hwordBound : word.toNat < generationRadix * slotRadix := by
+        rw [wordSpace]
+        exact word.toNat_lt
+      have hgenerationBound : word.toNat / slotRadix < generationRadix :=
+        Nat.div_lt_of_lt_mul (by simpa [Nat.mul_comm] using hwordBound)
+      have hencodable : Encodable
+          { slot := word.toNat % slotRadix, identity := word.toNat / slotRadix } := by
+        unfold Encodable
+        constructor
+        · rw [slotReserved_value] at hslot ⊢
+          rw [slotRadix_value] at hslotBound
+          exact Nat.lt_of_le_of_ne (Nat.le_pred_of_lt hslotBound) hslot
+        constructor
+        · exact Nat.pos_of_ne_zero (fun hzero => hgeneration (Or.inl hzero))
+        · rw [generationReserved_value]
+          have hradix : generationRadix = 281474976710656 := by native_decide
+          rw [hradix] at hgenerationBound
+          have hne : word.toNat / slotRadix ≠ 281474976710655 := by
+            intro heq
+            apply hgeneration
+            right
+            simpa [generationReserved_value] using heq
+          exact Nat.lt_of_le_of_ne (Nat.le_pred_of_lt hgenerationBound) hne
+      simp only [encode, if_pos hencodable, Option.some.injEq]
+      apply UInt64.toNat_inj.mp
+      rw [UInt64.toNat_ofNat']
+      have hrecompose :
+          word.toNat % slotRadix + word.toNat / slotRadix * slotRadix = word.toNat := by
+        simpa [Nat.mul_comm] using (Nat.mod_add_div word.toNat slotRadix)
+      rw [hrecompose, Nat.mod_eq_of_lt word.toNat_lt]
+
 /-- Canonical uniqueness: one accepted word cannot encode two handles. -/
 theorem encode_injective (first second : Handle) (word : UInt64)
     (hfirst : encode first = some word) (hsecond : encode second = some word) :

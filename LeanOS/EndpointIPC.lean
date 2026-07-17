@@ -48,7 +48,8 @@ def WellFormed (state : State) : Prop :=
   (∀ object envelope, envelope ∈ state.sendHistory object → envelope.endpoint = object)
 
 inductive CreateError where
-  | invalidSubject | outOfRange | occupiedSlot | objectInUse | objectAlreadyIssued
+  | invalidSubject | outOfRange | generationExhausted | occupiedSlot | objectInUse
+  | objectAlreadyIssued
   deriving DecidableEq, Repr
 
 inductive DestroyError where
@@ -115,7 +116,11 @@ def endpointRootRights : Capability.Rights :=
 def create (state : State) (object : ObjectId) (subject : SubjectId) (slot : SlotId) :
     Outcome CreateError :=
   if state.capabilities.subjects subject != true then reject state .invalidSubject
+  else if CapabilityHandle.slotReserved ≤ slot then reject state .outOfRange
   else if !Capability.slotInRange state.capabilities subject slot then reject state .outOfRange
+  else if state.capabilities.nextIdentity = 0 ∨
+      CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity then
+    reject state .generationExhausted
   else if (state.capabilities.slots subject slot).isSome then reject state .occupiedSlot
   else if state.capabilities.objects object then reject state .objectInUse
   else if state.issued object || state.issuedAddressSpace object then
@@ -296,6 +301,8 @@ theorem create_rejected_unchanged (state : State) object subject slot reason
   split <;> try simp_all [reject]
   split <;> try simp_all [reject]
   split <;> try simp_all [reject]
+  split <;> try simp_all [reject]
+  split <;> try simp_all [reject]
   split <;> simp_all [reject]
 
 theorem destroy_rejected_unchanged (state : State) subject slot reason
@@ -338,6 +345,8 @@ theorem create_preserves_wellFormed (state : State) object subject slot
     (hstate : WellFormed state) :
     WellFormed (create state object subject slot).state := by
   simp only [create]
+  split <;> try simpa [reject] using hstate
+  split <;> try simpa [reject] using hstate
   split <;> try simpa [reject] using hstate
   split <;> try simpa [reject] using hstate
   split <;> try simpa [reject] using hstate
@@ -880,5 +889,15 @@ private def retiredAddressSpaceHistory : State :=
   { initial with issuedAddressSpace := fun object => object = 11 }
 example : (create retiredAddressSpaceHistory 11 0 0).result =
     .rejected .objectAlreadyIssued := by native_decide
+
+private def exhaustedRootIdentity : State :=
+  { initial with capabilities :=
+      { initial.capabilities with nextIdentity := CapabilityHandle.generationReserved } }
+
+example : (create exhaustedRootIdentity 10 0 0).result =
+    .rejected .generationExhausted := by native_decide
+
+example : (create initial 10 0 CapabilityHandle.slotReserved).result =
+    .rejected .outOfRange := by native_decide
 
 end LeanOS.EndpointIPC

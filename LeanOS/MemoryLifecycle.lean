@@ -1,4 +1,4 @@
-import LeanOS.Capability
+import LeanOS.CapabilityHandle
 import LeanOS.FrameAllocator
 
 /-!
@@ -42,7 +42,7 @@ def WellFormed (state : State) : Prop :=
     state.binding object = some frame)
 
 inductive AllocationError where
-  | invalidSubject | occupiedSlot | objectAlreadyIssued | exhausted
+  | invalidSubject | outOfRange | occupiedSlot | objectAlreadyIssued | exhausted
   deriving BEq, DecidableEq, Repr
 
 inductive ReleaseError where
@@ -91,6 +91,11 @@ def activateObject (state : Capability.State) (object : ObjectId) : Capability.S
 def allocate (state : State) (object : ObjectId) (subject : SubjectId)
     (slot : SlotId) : Outcome AllocationError :=
   if state.capabilities.subjects subject != true then reject state .invalidSubject
+  else if CapabilityHandle.slotReserved ≤ slot ∨
+      !Capability.slotInRange state.capabilities subject slot then reject state .outOfRange
+  else if state.capabilities.nextIdentity = 0 ∨
+      CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity then
+    reject state .exhausted
   else if (state.capabilities.slots subject slot).isSome then reject state .occupiedSlot
   else if state.issued object then reject state .objectAlreadyIssued
   else match FrameAllocator.allocate state.allocator object with
@@ -147,6 +152,8 @@ theorem allocate_rejected_unchanged (state : State) (object subject slot) (reaso
   split <;> try simp_all [reject]
   split <;> try simp_all [reject]
   split <;> try simp_all [reject]
+  split <;> try simp_all [reject]
+  split <;> try simp_all [reject]
   split <;> simp_all [reject]
 
 theorem release_rejected_unchanged (state : State) (subject slot) (reason)
@@ -167,6 +174,8 @@ theorem allocated_binding (state : State) (object subject slot)
       FrameAllocator.IsOwnedBy (allocate state object subject slot).state.allocator
         frame object := by
   simp only [allocate] at ha ⊢
+  split <;> simp_all [reject]
+  split <;> simp_all [reject]
   split <;> simp_all [reject]
   split <;> simp_all [reject]
   split <;> simp_all [reject]
@@ -192,6 +201,8 @@ theorem allocation_requires_unissued (state : State) (object subject slot)
   split at ha <;> try contradiction
   split at ha <;> try contradiction
   split at ha <;> try contradiction
+  split at ha <;> try contradiction
+  split at ha <;> try contradiction
   next hissued => simp_all
 
 /-- No operation can allocate an identifier once its lifetime has been issued. -/
@@ -199,6 +210,8 @@ theorem issued_identifier_never_reallocated (state : State) (object subject slot
     (hissued : state.issued object = true) :
     (allocate state object subject slot).result ≠ .accepted := by
   simp only [allocate]
+  split <;> simp_all [reject]
+  split <;> simp_all [reject]
   split <;> simp_all [reject]
   split <;> simp_all [reject]
 
@@ -209,6 +222,8 @@ theorem allocated_root_capability (state : State) (object subject slot)
       some (⟨object, .memory, Capability.allRights,
         state.capabilities.nextIdentity, none⟩ : Capability.Capability) := by
   simp only [allocate] at ha ⊢
+  split <;> simp_all [reject]
+  split <;> simp_all [reject]
   split <;> simp_all [reject]
   split <;> simp_all [reject]
   split <;> simp_all [reject]
@@ -305,5 +320,15 @@ example : (release delegated 0 0).result = .accepted := by native_decide
 example : reused.binding 11 = some 4 := by native_decide
 example : authorize reused 1 0 .read = .error .staleSlot := by rfl
 example : (allocate released 10 2 0).result = .rejected .objectAlreadyIssued := by native_decide
+
+private def exhaustedRootIdentity : State :=
+  { initial with capabilities :=
+      { initial.capabilities with nextIdentity := CapabilityHandle.generationReserved } }
+
+example : (allocate exhaustedRootIdentity 10 2 0).result = .rejected .exhausted := by
+  native_decide
+
+example : (allocate initial 10 2 CapabilityHandle.slotReserved).result =
+    .rejected .outOfRange := by native_decide
 
 end LeanOS.MemoryLifecycle
