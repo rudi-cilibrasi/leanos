@@ -256,32 +256,33 @@ def policyAttributesSafe (leaves : List CompiledLeaf) : Bool :=
     | .userStack => entry.leaf.user && entry.leaf.writable && entry.leaf.noExecute
 
 structure Plan where
-  roots : Roots
-  leaves : List CompiledLeaf
-  rootsDistinct : roots.subjectA ≠ roots.subjectB
-  noDuplicates : noDuplicateLeaves leaves = true
-  wx : wxSafe leaves = true
-  ownership : ownershipSafe leaves = true
-  userViewsSeparated : userViewsSeparated leaves = true
-  liveTableFrames : List PhysicalFrame
-  liveTablesChecked : userAvoidsTableFrames liveTableFrames leaves = true
-  structural : structurallySafe leaves = true
-  policyRefinement : refinesPolicy leaves = true
-  supervisorOnly : supervisorConfinement leaves = true
-  policyAttributes : policyAttributesSafe leaves = true
-  tableFramesReserved : Bool
-  reservationsChecked : tableFramesReserved = true
-  tableFramesValid : Bool
-  tableFramesValidityChecked : tableFramesValid = true
-  tableFramesUnique : Bool
-  tableFramesUniquenessChecked : tableFramesUnique = true
+  private mk ::
+  private roots : Roots
+  private leaves : List CompiledLeaf
+  private rootsDistinct : roots.subjectA ≠ roots.subjectB
+  private noDuplicates : noDuplicateLeaves leaves = true
+  private wx : wxSafe leaves = true
+  private ownership : ownershipSafe leaves = true
+  private userViewsSeparated : userViewsSeparated leaves = true
+  private liveTableFrames : List PhysicalFrame
+  private liveTablesChecked : userAvoidsTableFrames liveTableFrames leaves = true
+  private structural : structurallySafe leaves = true
+  private policyRefinement : refinesPolicy leaves = true
+  private supervisorOnly : supervisorConfinement leaves = true
+  private policyAttributes : policyAttributesSafe leaves = true
+  private tableFramesReserved : Bool
+  private reservationsChecked : tableFramesReserved = true
+  private tableFramesValid : Bool
+  private tableFramesValidityChecked : tableFramesValid = true
+  private tableFramesUnique : Bool
+  private tableFramesUniquenessChecked : tableFramesUnique = true
   /-- Exact ancestor layout and validated reservation result accepted by
   `compile`. Live-table validation must not take either from a second input. -/
-  compiledAncestors : AncestorPaths
-  compiledReservationResult : Option BootReservation.Result
+  private compiledAncestors : AncestorPaths
+  private compiledReservationResult : Option BootReservation.Result
   /-- Proof-carrying commitment to the exact ancestor layout accepted by
   `compile`. Updating `compiledAncestors` alone cannot produce another `Plan`. -/
-  compiledLayoutBound : layoutFrames roots compiledAncestors = liveTableFrames
+  private compiledLayoutBound : layoutFrames roots compiledAncestors = liveTableFrames
 
 /-- Total compiler/checker for the deliberately finite supported subset. -/
 def compile (input : Input) : Except Error Plan := do

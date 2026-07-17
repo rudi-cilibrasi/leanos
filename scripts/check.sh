@@ -64,6 +64,18 @@ if ! grep -q 'tests/negative/InvalidBound.lean.*error:' "$negative_log"; then
   exit 1
 fi
 
+if lake env lean tests/negative/BootPageTablePlanMutation.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: boot page-table plan mutation unexpectedly type-checked" >&2
+  exit 1
+fi
+
+if ! grep -q "invalid .* notation.*constructor.*private" "$negative_log"; then
+  echo "error: boot page-table plan mutation lacked the private-constructor diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 if lake env lean -DwarningAsError=true tests/negative/Sorry.lean \
     >"$negative_log" 2>&1; then
   echo "error: a declaration using sorry unexpectedly type-checked" >&2
