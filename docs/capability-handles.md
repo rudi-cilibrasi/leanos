@@ -44,17 +44,21 @@ encodable handle, and prove that successful current-caller resolution returns
 exactly the live capability in the trusted caller's capability space. They
 also prove that an accepted sealed transfer records successful full-word
 resolution of both endpoint and source before its internal transition, and
-that a denied endpoint-destruction word cannot change state or reach the raw
-lifetime operation. They prove that clearing or replacing a slot
+that accepted copy, direct-revocation, and transitive-revocation boundaries
+record the exact decoded authority and target generations before their raw
+slot transitions. Malformed or denied authority and target words preserve
+state. A denied endpoint-destruction word likewise cannot change state or
+reach the raw lifetime operation. They prove that clearing or replacing a slot
 denies the old handle, that direct or transitive subtree revocation denies a
 descendant's old handle, that installing authority for another subject cannot
 change resolution, and that simultaneously live issued handles cannot alias
 different slots. Executable examples cover fresh use, reserved slot and
 generation fields, out-of-domain encode rejection, equal words under a
 different trusted caller, changed generation bits, clear, and same-slot
-replacement. A negative regression also demonstrates that the former raw-slot
-lookup accepts the replacement while the generation-aware resolver rejects the
-stale handle.
+replacement. Direct and transitive revocation vectors cover accepted current
+words, stale target replay, and reserved authority fields. A negative
+regression also demonstrates that the former raw-slot lookup accepts the
+replacement while the generation-aware resolver rejects the stale handle.
 
 These are model-level results. The bit layout is the issue's reviewed model
 contract, not a promise of permanent ABI stability. This checkpoint does not
