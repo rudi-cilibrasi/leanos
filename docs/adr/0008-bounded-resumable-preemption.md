@@ -21,7 +21,12 @@ separate saved A/B canaries and the actual image selectors, CS `0x23` and SS
 `0x1b`. The exact transcript requires two timer, context, paging, and switch
 records plus A's original-frame resume record and `FINAL ticks=2`.
 
-The shared oracle contains both A-to-B and B-to-A scalar scheduler bindings.
+The shared oracle contains both scalar scheduler bindings and composite
+save/select/restore witnesses for A-to-B and B-to-A. The composite encoding
+packs the restored owner, address space, logical stack, and r12 marker beside
+the outgoing bank owner, stack, and r12 marker. The boot path feeds it markers
+from the actual target frame and separate outgoing save bank; a cross-owned
+restore bank is a generated rejecting vector.
 The runner rejects missing or duplicate ticks, restart instead of resume,
 cross-restored identity, stale CR3, wrong caller, corrupt register/stack/flags
 or selectors, a forged final PASS, guest failure, and timeout. The real QEMU

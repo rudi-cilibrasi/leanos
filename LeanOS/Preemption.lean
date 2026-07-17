@@ -149,4 +149,34 @@ example : preemptionDemo 32 1 2 1 = 0x0000000200000002 := by decide
 example : preemptionDemo 32 2 1 1 = 0x0000000100000001 := by decide
 example : preemptionDemo 32 2 3 1 = 0 := by decide
 
+private def witnessByte (value : UInt64) : UInt64 := value % 0x100
+
+/-- Stable packed save/restore witness, low to high: restored owner, restored
+address space, restored logical stack marker, restored r12 marker, saved owner,
+saved logical stack marker, and saved r12 marker. -/
+def encodeResumableWitness (restoredOwner restoredAddressSpace restoredFrameMarker
+    restoredRegisterMarker savedOwner savedFrameMarker savedRegisterMarker : UInt64) : UInt64 :=
+  witnessByte restoredOwner + witnessByte restoredAddressSpace * 0x100 +
+    witnessByte restoredFrameMarker * 0x10000 +
+    witnessByte restoredRegisterMarker * 0x1000000 +
+    witnessByte savedOwner * 0x100000000 +
+    witnessByte savedFrameMarker * 0x10000000000 +
+    witnessByte savedRegisterMarker * 0x1000000000000
+
+/-- Allocation-free boundary for the composite model's bounded A -> B -> A
+witness. Inputs are taken from kernel-owned bank selection and the actual
+target/outgoing frames. A cross-owned bank is rejected before packing. -/
+@[export leanos_resumable_preemption_demo]
+def resumableDemo (leg bankOwner frameMarker bankRegisterMarker
+    incomingRegisterMarker : UInt64) : UInt64 :=
+  if leg == 1 && bankOwner == 2 && frameMarker == 2 then
+    encodeResumableWitness 2 2 frameMarker bankRegisterMarker 1 1 incomingRegisterMarker
+  else if leg == 2 && bankOwner == 1 && frameMarker == 1 then
+    encodeResumableWitness 1 1 frameMarker bankRegisterMarker 2 2 incomingRegisterMarker
+  else 0
+
+example : resumableDemo 1 2 2 0xde 0x1c = 0x1c0101de020202 := by decide
+example : resumableDemo 2 1 1 0x1c 0xde = 0xde02021c010101 := by decide
+example : resumableDemo 2 2 1 0x1c 0xde = 0 := by decide
+
 end LeanOS.Preemption

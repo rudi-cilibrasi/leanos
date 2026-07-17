@@ -3,7 +3,8 @@
 `LeanOS.Oracle` is the version-one, bounded corpus for every currently exported
 freestanding adapter: `KernelTransition.bootTransition` and
 `Syscall.syscallDemo`, `IPCSyscall.ipcDemo`, and
-`Preemption.preemptionDemo`, and `BootAllocation.check`. Its stable
+`Preemption.preemptionDemo`, `Preemption.resumableDemo`, and
+`BootAllocation.check`. Its stable
 twenty-six-vector
 order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
@@ -13,7 +14,12 @@ checks evaluate every expected result from
 the adapter definition and connect the accepted and rejected examples to the
 source models.
 
-`./scripts/generate-oracle.sh` emits `corpus.tsv` and a C header from that one
+The resumable adapter executes both composite context-bank legs and packs the
+restored owner/address-space, logical stack marker, and r12 marker together
+with the outgoing saved owner/stack/r12 markers. The boot path derives those
+markers from the actual target frame and separate save bank, so exchanging A
+and B is rejected by the same generated-code witness rather than only by a
+serial symptom check. `./scripts/generate-oracle.sh` emits `corpus.tsv` and a C header from that one
 Lean executable. The file records its schema and source revision. The complete
 proof gate replays it against hosted Lean-generated C. Image construction embeds
 the same generated header; QEMU must report an ordered result for every vector

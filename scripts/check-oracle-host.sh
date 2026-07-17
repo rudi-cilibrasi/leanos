@@ -24,5 +24,5 @@ cc -std=c11 -Wall -Wextra -Werror -I"$build" -c tests/oracle-host.c -o "$build/h
 cc -Wl,--gc-sections "$build/host.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" -o "$build/host"
 "$build/host" > "$build/host-results.txt"
-[[ "$(wc -l < "$build/host-results.txt")" -eq 26 ]]
-echo "Hosted generated-code oracle replay passed (26 vectors)"
+[[ "$(wc -l < "$build/host-results.txt")" -eq 29 ]]
+echo "Hosted generated-code oracle replay passed (29 vectors)"

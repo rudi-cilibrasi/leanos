@@ -573,6 +573,7 @@ isr32_cld:
     movq $page_map_level_4_a, %rax
     mov %rax, %cr3
 3:
+    mov %rsp, %rdi
     call switch_complete
     RESTORE
     iretq

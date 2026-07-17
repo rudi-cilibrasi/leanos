@@ -1368,6 +1368,82 @@ private def roundTripStart (translations : TLB.State) : State :=
       virtual := { translations.virtual with owner := (demoLifecycle 1).addressOwner }
       active := some 1 } }
 
+/-! The generated-code boundary below deliberately exports the composite
+save/select/restore transition rather than a second scheduler-only answer.
+The frame marker is the logical stack owner (A = 1, B = 2), and the register
+marker is the low byte of the preserved r12 canary.  Kernel replay derives
+both from the actual target frame and the separate outgoing save bank. -/
+
+private def oracleTranslations : TLB.State :=
+  { virtual := {
+      memory := {
+        capabilities := {
+          subjects := fun _ => false
+          objects := fun _ => false
+          kinds := fun _ => none
+          slots := fun _ _ => none }
+        allocator := { frames := [], status := fun _ => .free }
+        binding := fun _ => none
+        issued := fun _ => false }
+      owner := fun _ => none
+      mappings := fun _ _ => none
+      issuedAddressSpace := fun _ => false }
+    active := none
+    entries := [] }
+
+private def markedContext (context : Context) (owner : UInt64)
+    (frameMarker registerMarker : UInt64) : Context :=
+  { context with
+    owner := owner.toNat
+    addressSpace := owner.toNat
+    frame := { context.frame with stackPointer := frameMarker }
+    registers := { context.registers with r12 := registerMarker } }
+
+/-- Packed shared witness, low to high: restored owner, restored address
+space, restored frame marker, restored r12 marker, saved owner, saved frame
+marker, and saved r12 marker. -/
+def encodeSwitchWitness (restored saved : Context) : UInt64 :=
+  Preemption.encodeResumableWitness (UInt64.ofNat restored.owner)
+    (UInt64.ofNat restored.addressSpace) restored.frame.stackPointer restored.registers.r12
+    (UInt64.ofNat saved.owner) saved.frame.stackPointer saved.registers.r12
+
+private def encodeOutcome (savedOwner : SubjectId) (outcome : Outcome) : UInt64 :=
+  match outcome.restored, contextFor outcome.state.contexts savedOwner with
+  | some restored, some saved => encodeSwitchWitness restored saved
+  | _, _ => 0
+
+private def oracleSwitchAToB : Outcome :=
+  let start := roundTripStart oracleTranslations
+  let destination := markedContext (initialContext 2 0x20) 2 2 0xde
+  let state := { start with
+    contexts := destination :: eraseContext start.contexts destination.owner }
+  switch state (demoInterrupt 1)
+    { demoFrame 0x401000 1 0x246 with stackPointer := 1 }
+    { demoRegisters 0x10 with r12 := 0x1c }
+
+private def oracleSwitchBToA : Outcome :=
+  let afterA := oracleSwitchAToB.state
+  match contextFor afterA.contexts 1 with
+  | none => reject afterA .noDestination
+  | some destination =>
+    let marked := markedContext destination 1 1 0x1c
+    let state := { afterA with
+      contexts := marked :: eraseContext afterA.contexts destination.owner }
+    switch state (demoInterrupt 2)
+      { demoFrame 0x402000 2 0x286 with stackPointer := 2 }
+      { demoRegisters 0x20 with r12 := 0xde }
+
+theorem resumableDemo_both_legs_agree :
+    Preemption.resumableDemo 1 2 2 0xde 0x1c = encodeOutcome 1 oracleSwitchAToB ∧
+    Preemption.resumableDemo 2 1 1 0x1c 0xde = encodeOutcome 2 oracleSwitchBToA := by
+  native_decide
+
+/-- Giving A's restore slot B's owner is rejected by the same composite
+switch used by the positive B -> A vector. -/
+theorem resumableDemo_cross_substitution_rejected :
+    Preemption.resumableDemo 2 2 1 0x1c 0xde = 0 := by
+  native_decide
+
 /-- Executable cleanup fixture with distinct address-space and memory object
 identifiers.  It catches the earlier cross-kind collision bug by requiring
 termination of subject 1 to retire its own resources without retiring subject

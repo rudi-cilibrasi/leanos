@@ -15,6 +15,8 @@ extern uint64_t leanos_boot_transition(uint64_t state, uint64_t command);
 extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_resumable_preemption_demo(uint64_t, uint64_t, uint64_t,
+                                                  uint64_t, uint64_t);
 extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t,
                                              uint64_t, uint64_t);
 extern uint64_t gdt64[];
@@ -36,6 +38,7 @@ extern void isr32(void);
 extern void run_double_fault_probe(void);
 extern char user_a_entry[], user_a_stack_top[];
 extern char user_a_stack[];
+extern char user_b_stack[], user_b_stack_top[];
 extern uint64_t saved_context_a[], saved_context_b[];
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
@@ -478,6 +481,9 @@ static void replay_oracle(void) {
                     ? leanos_ipc_demo(v->words[0], v->words[1], v->words[2], v->words[3])
                 : v->adapter == 3
                     ? leanos_preemption_demo(v->words[0], v->words[1], v->words[2], v->words[3])
+                : v->adapter == 4
+                    ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
+                        v->words[3], v->words[4])
                     : leanos_boot_allocation_check(v->words[0], v->words[1], v->words[2],
                         v->words[3], v->words[4]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
@@ -624,15 +630,35 @@ uint64_t timer_handler(uint64_t saved_cs) {
     return next_subject;
 }
 
-void switch_complete(void) {
+static uint64_t stack_marker(uint64_t stack_pointer) {
+    if (stack_pointer >= (uint64_t)user_a_stack &&
+        stack_pointer <= (uint64_t)user_a_stack_top) return 1;
+    if (stack_pointer >= (uint64_t)user_b_stack &&
+        stack_pointer <= (uint64_t)user_b_stack_top) return 2;
+    fail("context-stack");
+}
+
+static void check_resumable_witness(uint64_t leg, const uint64_t *target,
+                                    const uint64_t *saved, unsigned vector_index) {
+    uint64_t target_owner = leg == 1 ? 2 : 1;
+    uint64_t got = leanos_resumable_preemption_demo(leg, target_owner,
+        stack_marker(target[18]), target[3] & 0xffu, saved[3] & 0xffu);
+    if (got != oracle_vectors[vector_index].expected) fail("modeled-restore");
+}
+
+void switch_complete(uint64_t *target) {
     if (current_subject == 2 && preemption_step == 2 && timer_accepted == 1) {
         check_selected_root_b();
+        check_resumable_witness(1, target, saved_context_a,
+            ORACLE_INDEX_RESUMABLE_A_TO_B);
         preemption_step = 3;
         serial_puts("LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=initial contexts=separate\n");
         return;
     }
     if (current_subject == 1 && preemption_step == 5 && timer_accepted == 2) {
         check_selected_root_a();
+        check_resumable_witness(2, target, saved_context_b,
+            ORACLE_INDEX_RESUMABLE_B_TO_A);
         preemption_step = 6;
         serial_puts("LEANOS/5 SWITCH subject=1 address-space=1 cr3=switched stack=resumed contexts=separate\n");
         return;

@@ -39,6 +39,13 @@ private def preemption (id : String) (vector current queued armed : UInt64) : Ve
   { id, adapter := "Preemption.scalar", words := [vector, current, queued, armed],
     expected := Preemption.preemptionDemo vector current queued armed }
 
+private def resumable (id : String) (leg bankOwner frameMarker bankRegisterMarker
+    incomingRegisterMarker : UInt64) : Vector :=
+  { id, adapter := "Preemption.resumable",
+    words := [leg, bankOwner, frameMarker, bankRegisterMarker, incomingRegisterMarker],
+    expected := Preemption.resumableDemo leg bankOwner frameMarker
+      bankRegisterMarker incomingRegisterMarker }
+
 private def bootAllocation (id : String) (magic infoBytes entryBytes selected flags : UInt64) :
     Vector :=
   { id, adapter := "BootAllocation.scalar", words := [magic, infoBytes, entryBytes, selected, flags],
@@ -66,6 +73,9 @@ def vectors : List Vector := [
   preemption "preemption.wrong-vector" 14 1 2 1,
   preemption "preemption.resume" 32 2 1 1,
   preemption "preemption.forged-current" 32 2 3 1,
+  resumable "resumable.a-to-b" 1 2 2 0xde 0x1c,
+  resumable "resumable.b-to-a" 2 1 1 0x1c 0xde,
+  resumable "resumable.cross-restored" 2 2 1 0x1c 0xde,
   bootAllocation "boot-allocation.accept" BootAllocation.multiboot2Magic 128 24 512 15,
   bootAllocation "boot-allocation.wrong-magic" 0 128 24 512 15,
   bootAllocation "boot-allocation.truncated" BootAllocation.multiboot2Magic 8 24 512 15,
@@ -76,7 +86,7 @@ def vectors : List Vector := [
   bootAllocation "boot-allocation.no-eligible-frame" BootAllocation.multiboot2Magic 128 24 4096 15,
   bootAllocation "boot-allocation.publish-before-scrub" BootAllocation.multiboot2Magic 128 24 512 11]
 
-theorem corpus_shape : vectors.length = 26 := by decide
+theorem corpus_shape : vectors.length = 29 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -95,6 +105,10 @@ theorem preemption_scenario_agrees :
     (vectors[14]).expected = 0 ∧ (vectors[15]).expected = 0 ∧
     (vectors[16]).expected = 0x0000000100000001 ∧
     (vectors[17]).expected = 0 := by native_decide
+theorem resumable_scenario_agrees :
+    (vectors[18]).expected = 0x1c0101de020202 ∧
+    (vectors[19]).expected = 0xde02021c010101 ∧
+    (vectors[20]).expected = 0 := by native_decide
 
 private def wordsText : List UInt64 → String
   | [] => ""
