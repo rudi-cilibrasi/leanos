@@ -149,7 +149,8 @@ grep -Fq 'or $((1 << 8) | (1 << 11)), %eax' boot/boot.S
 grep -Fq 'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' boot/kernel.c
 grep -Fq 'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' boot/kernel.c
 grep -Fq 'LEANOS/8 PAGING root=B selected=1 result=PASS' boot/kernel.c
-grep -Fq 'LEANOS/8 PAGING fixture=flip-present root=A page=0 result=REJECTED' boot/kernel.c
+grep -Fq 'check_live_page_table_mutations();' boot/kernel.c
+grep -Fq 'fixture=wrong-cr3 root=A level=cr3' boot/kernel.c
 
 # Each address space grants U/S only to its own text and stack symbols.
 ! grep -Fq '__user_b_text_start' <(sed -n '/__user_a_text_start/,/__user_b_text_start/{p}' boot/boot.S | head -n -1)

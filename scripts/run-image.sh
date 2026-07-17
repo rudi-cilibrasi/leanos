@@ -24,8 +24,7 @@ corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
 echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap' > "$expected"
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' \
-  'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' \
-  'LEANOS/8 PAGING fixture=flip-present root=A page=0 result=REJECTED' >> "$expected"
+  'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 printf '%s\n' \
   'LEANOS/6 CONTROL cr0.wp=1 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready' \
@@ -58,6 +57,24 @@ if [[ ${#allocation_lines[@]} -ne 6 ]] ||
   echo "failure_class=boot-allocation-trace: exact ordered allocation protocol not observed" >&2
   exit 1
 fi
-sed '/^LEANOS\/7 /d' "$log" > "$without_allocation"
+mapfile -t paging_fixtures < <(grep '^LEANOS/8 PAGING fixture=' "$log")
+paging_specs=(
+  'flip-present B pt' 'flip-user B pt' 'flip-writable B pt'
+  'flip-nx B pt' 'wrong-frame B pt' 'ancestor-pointer B pml4'
+  'ancestor-flags B pdpt' 'swapped-user-leaves B pt'
+  'extra-mapping B pt' 'omitted-mapping B pt' 'wrong-cr3 A cr3'
+)
+if [[ ${#paging_fixtures[@]} -ne ${#paging_specs[@]} ]]; then
+  echo "failure_class=page-table-fixtures: complete live-mutation matrix not observed" >&2
+  exit 1
+fi
+for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
+  read -r name root_name level <<< "${paging_specs[i]}"
+  if [[ ! "${paging_fixtures[i]}" =~ ^LEANOS/8\ PAGING\ fixture=${name}\ root=${root_name}\ level=${level}\ page=[0-9]+\ expected=[0-9]+\ actual=[0-9]+\ result=REJECTED$ ]]; then
+    echo "failure_class=page-table-fixtures: invalid or reordered fixture '${paging_fixtures[i]}'" >&2
+    exit 1
+  fi
+done
+sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
 echo "LeanOS boot smoke test passed; guest success and complete protocol observed; serial log: $log"
