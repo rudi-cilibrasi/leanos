@@ -33,12 +33,31 @@ extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
 extern char __df_ist_stack_start[], __df_ist_stack_end[];
+extern char __df_ist_guard_start[], __df_ist_guard_end[];
+extern char __kernel_text_start[], __kernel_text_end[];
+extern char __user_a_text_start[], __user_a_text_end[];
+extern char __user_a_stack_start[], __user_a_stack_end[];
+extern char __user_b_text_start[], __user_b_text_end[];
+extern char __user_b_stack_start[], __user_b_stack_end[];
+extern uint64_t page_map_level_4_a[], page_directory_pointer_a[];
+extern uint64_t page_directory_a[], page_table_a[];
+extern uint64_t page_map_level_4_b[], page_directory_pointer_b[];
+extern uint64_t page_directory_b[], page_table_b[];
 
 #define MULTIBOOT2_RUNTIME_MAGIC 0x36d76289u
 #define BOOT_ACCESSIBLE_LIMIT (16u * 1024u * 1024u)
 #define MAX_HANDOFF_BYTES 65536u
 #define MAX_MMAP_ENTRIES 128u
 #define PAGE_BYTES 4096u
+#define BOOT_PT_COUNT 8u
+#define BOOT_LEAF_COUNT (512u * BOOT_PT_COUNT)
+#define PTE_PRESENT 1ull
+#define PTE_WRITABLE 2ull
+#define PTE_USER 4ull
+#define PTE_ACCESSED (1ull << 5)
+#define PTE_DIRTY (1ull << 6)
+#define PTE_NX (1ull << 63)
+#define PTE_ADDRESS 0x000ffffffffff000ull
 
 struct __attribute__((packed)) mb2_tag { uint32_t type, size; };
 struct __attribute__((packed)) mb2_mmap_tag {
@@ -72,6 +91,111 @@ static void finish(uint8_t value);
 static __attribute__((noreturn)) void fail(const char *reason);
 static void serial_puts(const char *text);
 static void serial_putc(char value);
+static void serial_u64(uint64_t value);
+
+enum boot_region_policy { REGION_KERNEL_TEXT, REGION_SUPERVISOR_DATA,
+    REGION_USER_TEXT, REGION_USER_STACK, REGION_UNMAPPED };
+struct boot_region {
+    const char *start, *end;
+    enum boot_region_policy policy;
+};
+
+static int page_in(const char *start, const char *end, uint64_t page) {
+    uint64_t first = (uint64_t)start / PAGE_BYTES;
+    uint64_t last = ((uint64_t)end + PAGE_BYTES - 1u) / PAGE_BYTES;
+    return page >= first && page < last;
+}
+
+/* This compact manifest is linker-resolved in the final ELF. The early
+   assembly constructor remains trusted; this guest checker independently
+   decodes its complete bounded result after paging is active. */
+static uint64_t expected_boot_leaf(unsigned space, uint64_t page) {
+    const struct boot_region common[] = {
+        { __kernel_text_start, __kernel_text_end, REGION_KERNEL_TEXT },
+        { __df_ist_guard_start, __df_ist_guard_end, REGION_UNMAPPED },
+    };
+    const struct boot_region owned[] = {
+        { space == 1 ? __user_a_text_start : __user_b_text_start,
+          space == 1 ? __user_a_text_end : __user_b_text_end, REGION_USER_TEXT },
+        { space == 1 ? __user_a_stack_start : __user_b_stack_start,
+          space == 1 ? __user_a_stack_end : __user_b_stack_end, REGION_USER_STACK },
+    };
+    enum boot_region_policy policy = REGION_SUPERVISOR_DATA;
+    for (unsigned i = 0; i < sizeof(common) / sizeof(common[0]); ++i)
+        if (page_in(common[i].start, common[i].end, page)) policy = common[i].policy;
+    for (unsigned i = 0; i < sizeof(owned) / sizeof(owned[0]); ++i)
+        if (page_in(owned[i].start, owned[i].end, page)) policy = owned[i].policy;
+    if (policy == REGION_UNMAPPED) return 0;
+    uint64_t flags = PTE_PRESENT;
+    if (policy == REGION_SUPERVISOR_DATA || policy == REGION_USER_STACK)
+        flags |= PTE_WRITABLE | PTE_NX;
+    if (policy == REGION_USER_TEXT || policy == REGION_USER_STACK) flags |= PTE_USER;
+    return page * PAGE_BYTES | flags;
+}
+
+static int decoded_root_matches(unsigned space, uint64_t *root, uint64_t *pdpt,
+                                uint64_t *pd, uint64_t *pt, int corrupt_present) {
+    if ((root[0] & ~PTE_ACCESSED) != ((uint64_t)pdpt | 7u) ||
+        (pdpt[0] & ~PTE_ACCESSED) != ((uint64_t)pd | 7u)) {
+        serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
+        serial_puts(" level=ancestor root-expected="); serial_u64((uint64_t)pdpt | 7u);
+        serial_puts(" root-actual="); serial_u64(root[0]);
+        serial_puts(" pdpt-expected="); serial_u64((uint64_t)pd | 7u);
+        serial_puts(" pdpt-actual="); serial_u64(pdpt[0]); serial_putc('\n');
+        return 0;
+    }
+    for (unsigned i = 1; i < 512; ++i)
+        if (root[i] != 0 || pdpt[i] != 0) return 0;
+    for (unsigned i = 0; i < 512; ++i) {
+        uint64_t expected = i < BOOT_PT_COUNT ? (uint64_t)(pt + i * 512u) | 7u : 0;
+        if ((pd[i] & ~PTE_ACCESSED) != expected) {
+            serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
+            serial_puts(" level=pd index="); serial_u64(i);
+            serial_puts(" expected="); serial_u64(expected);
+            serial_puts(" actual="); serial_u64(pd[i]); serial_putc('\n');
+            return 0;
+        }
+    }
+    for (uint64_t page = 0; page < BOOT_LEAF_COUNT; ++page) {
+        uint64_t actual = pt[page];
+        if (corrupt_present && page == 0) actual ^= PTE_PRESENT;
+        uint64_t expected = expected_boot_leaf(space, page);
+        if ((actual & ~(PTE_ACCESSED | PTE_DIRTY)) != expected) {
+            if (!corrupt_present) {
+                serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
+                serial_puts(" page="); serial_u64(page);
+                serial_puts(" expected="); serial_u64(expected);
+                serial_puts(" actual="); serial_u64(actual);
+                serial_putc('\n');
+            }
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void check_boot_page_tables(void) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a ||
+        &page_map_level_4_a[0] == &page_map_level_4_b[0]) fail("pt-root-a");
+    if (!decoded_root_matches(1, page_map_level_4_a, page_directory_pointer_a,
+                              page_directory_a, page_table_a, 0)) fail("pt-decode-a");
+    serial_puts("LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS\n");
+    if (!decoded_root_matches(2, page_map_level_4_b, page_directory_pointer_b,
+                              page_directory_b, page_table_b, 0)) fail("pt-decode-b");
+    serial_puts("LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS\n");
+    if (decoded_root_matches(1, page_map_level_4_a, page_directory_pointer_a,
+                             page_directory_a, page_table_a, 1)) fail("pt-negative-accepted");
+    serial_puts("LEANOS/8 PAGING fixture=flip-present root=A page=0 result=REJECTED\n");
+}
+
+static void check_selected_root_b(void) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b) fail("pt-root-b");
+    serial_puts("LEANOS/8 PAGING root=B selected=1 result=PASS\n");
+}
 
 static void serial_u64(uint64_t value) {
     char digits[21]; unsigned length = 0;
@@ -399,6 +523,7 @@ void timer_handler(uint64_t saved_cs) {
 void switch_complete(void) {
     if (current_subject != 2 || preemption_step != 2 || timer_accepted != 1)
         fail("switch-binding");
+    check_selected_root_b();
     preemption_step = 3;
     serial_puts("LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=restored ticks-masked=1\n");
 }
@@ -447,6 +572,8 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
     serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap\n");
+
+    check_boot_page_tables();
 
     boot_allocate(multiboot_magic, multiboot_info);
 

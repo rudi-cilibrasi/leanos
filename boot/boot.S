@@ -201,22 +201,28 @@ gdt64_pointer:
 .global page_map_level_4_a
 page_map_level_4_a:
     .skip 4096
+.global page_directory_pointer_a
 page_directory_pointer_a:
     .skip 4096
+.global page_directory_a
 page_directory_a:
     .skip 4096
 .align 4096
+.global page_table_a
 page_table_a:
     .skip 4096 * PAGE_TABLE_COUNT
 page_table_a_end:
 .global page_map_level_4_b
 page_map_level_4_b:
     .skip 4096
+.global page_directory_pointer_b
 page_directory_pointer_b:
     .skip 4096
+.global page_directory_b
 page_directory_b:
     .skip 4096
 .align 4096
+.global page_table_b
 page_table_b:
     .skip 4096 * PAGE_TABLE_COUNT
 page_table_b_end:
