@@ -56,6 +56,7 @@ lake env lean --c="$build/Syscall.c" LeanOS/Syscall.lean
 lake env lean --c="$build/IPCSyscall.c" LeanOS/IPCSyscall.lean
 lake env lean --c="$build/Preemption.c" LeanOS/Preemption.lean
 lake env lean --c="$build/BootAllocation.c" LeanOS/BootAllocation.lean
+lake env lean --c="$build/Interrupt.c" LeanOS/Interrupt.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -72,6 +73,8 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -o "$build/Preemption.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/BootAllocation.c" \
   -o "$build/BootAllocation.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Interrupt.c" \
+  -o "$build/Interrupt.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
   -o "$build/kernel.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -93,19 +96,19 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-prelink.map" \
   -o "$build/leanos-prelink.elf" "$build/boot.o" "$build/kernel.o" \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-  "$build/Preemption.o" "$build/BootAllocation.o"
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
   -o "$build/leanos-double-fault-prelink.elf" "$build/boot.o" \
   "$build/kernel-double-fault.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-  "$build/BootAllocation.o"
+  "$build/BootAllocation.o" "$build/Interrupt.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-guard-prelink.map" \
   -o "$build/leanos-guard-prelink.elf" "$build/boot-df-guard-mapped.o" \
   "$build/kernel-double-fault-guard-mapped.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-  "$build/BootAllocation.o"
+  "$build/BootAllocation.o" "$build/Interrupt.o"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-prelink.elf" \
   "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-prelink.elf" \
@@ -124,7 +127,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
   -o build/boot/leanos.elf build/boot/boot.o build/boot/kernel.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
-  build/boot/Preemption.o build/boot/BootAllocation.o
+  build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o
 
 ./scripts/generate-boot-page-plan.sh "$build/leanos.elf" \
   "$build/boot-page-plan.final.h"
@@ -137,14 +140,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -o build/boot/leanos-double-fault.elf build/boot/boot.o \
   build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
   build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
-  build/boot/BootAllocation.o
+  build/boot/BootAllocation.o build/boot/Interrupt.o
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
   -o build/boot/leanos-double-fault-guard-mapped.elf \
   build/boot/boot-df-guard-mapped.o \
   build/boot/kernel-double-fault-guard-mapped.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
-  build/boot/Preemption.o build/boot/BootAllocation.o
+  build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o
 
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
   "$build/boot-page-plan-double-fault.final.h"
@@ -185,6 +188,10 @@ if ! grep -q ' T leanos_preemption_demo$' <<<"$symbols"; then
 fi
 if ! grep -q ' T leanos_boot_allocation_check$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_boot_allocation_check" >&2
+  exit 1
+fi
+if ! grep -q ' T leanos_user_return_demo$' <<<"$symbols"; then
+  echo "error: generated image does not retain leanos_user_return_demo" >&2
   exit 1
 fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then

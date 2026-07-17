@@ -3,11 +3,11 @@
 `LeanOS.Oracle` is the version-one, bounded corpus for every currently exported
 freestanding adapter: `KernelTransition.bootTransition` and
 `Syscall.syscallDemo`, `IPCSyscall.ipcDemo`, and
-`Preemption.preemptionDemo`, and `BootAllocation.check`. Its stable
-twenty-five-vector
-order covers accepted calls,
+`Preemption.preemptionDemo`, `BootAllocation.check`, and
+`Interrupt.userReturnDemo`. Its stable forty-nine-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
-and publication-order failures, and maximum `UInt64` boundary words. The Lean
+and publication-order failures, maximum `UInt64` boundary words, and accepted
+initial/syscall/scheduler returns plus adversarial return frames and contexts. The Lean
 checks evaluate every expected result from
 the adapter definition and connect the accepted and rejected examples to the
 source models.
@@ -28,6 +28,15 @@ verified compilation, or proof about the final binary. Corpus extraction, Lean
 code generation, the C compiler, ABI, C/assembly glue, linker, serial checker,
 QEMU, firmware, and hardware semantics remain trusted. New boot-reachable
 adapters must extend the versioned corpus and its model-agreement checks.
+
+The return adapter uses one bounded synthetic subject/address-space fixture.
+Its five scalar words encode a kernel-owned purpose/context mode, RIP, RSP,
+packed CS/SS selectors, and RFLAGS. The negative matrix covers noncanonical and
+out-of-region addresses, wrong selectors and origin, IOPL/NT/VM/AC/DF/IF,
+stale subject/address-space/CR3 bindings, fatal and diagnostic modes, and a
+validate-then-mutate attempt. The exported scalar path remains allocation-free;
+the richer Lean transition still returns the complete accepted request as its
+attestation.
 
 Run the complete local evidence path with:
 

@@ -240,6 +240,127 @@ theorem diagnostic_recovery_never_authorizes_user_return request
     validateUserReturn request = .rejected .wrongPurpose := by
   simp [validateUserReturn, hpurpose]
 
+/-! ## Fixed-width differential-oracle adapter
+
+The oracle uses one synthetic live subject and address space so five scalar
+words can exercise the complete return policy without exposing function-valued
+model state at the ABI.  `mode` selects a kernel-owned purpose or one controlled
+context corruption; the remaining words are the outgoing machine fields.
+-/
+
+private def oracleCanonical (address : UInt64) : Bool :=
+  let high := address / 0x800000000000
+  high = 0 || high = 0x1ffff
+
+private def oracleFlag (flags divisor : UInt64) : Bool :=
+  flags / divisor % 2 = 1
+
+private def oracleFlagsAllowed (flags : UInt64) : Bool :=
+  let arithmetic :=
+    (if oracleFlag flags 0x1 then 0x1 else 0) +
+    (if oracleFlag flags 0x4 then 0x4 else 0) +
+    (if oracleFlag flags 0x10 then 0x10 else 0) +
+    (if oracleFlag flags 0x40 then 0x40 else 0) +
+    (if oracleFlag flags 0x80 then 0x80 else 0) +
+    (if oracleFlag flags 0x800 then 0x800 else 0)
+  flags = 0x202 + arithmetic
+
+private def oracleLifecycle (mode : UInt64) : SubjectLifecycle.State :=
+  { capabilities :=
+      { subjects := fun subject => subject = 1 && mode != 8
+        objects := fun _ => false
+        kinds := fun _ => none
+        slots := fun _ _ => none }
+    issuedSubjects := fun subject => subject = 1
+    ownedMemory := fun _ => none
+    addressOwner := fun addressSpace =>
+      if addressSpace = 11 && mode != 9 then some 1 else none
+    mapping := fun _ _ => none
+    endpointOwner := fun _ => none
+    mailbox := fun _ => none
+    frameOwner := fun _ => none
+    freeFrame := fun _ => true
+    runnable := fun subject => subject = 1 && mode != 8
+    current := if mode = 8 then none else some 1 }
+
+private def oraclePurpose (mode : UInt64) : ReturnPurpose :=
+  if mode = 2 then .syscallResume
+  else if mode = 3 then .schedulerRestore
+  else if mode = 4 then .containedFaultResume
+  else if mode = 5 then .diagnosticKernelRecovery
+  else .initialDispatch
+
+private def oracleRequest (mode rip rsp selectors flags : UInt64) : UserReturnRequest :=
+  { hardware :=
+      { vector := 0
+        errorCode := 0
+        savedPrivilege := if mode = 7 then .kernel else .user
+        instructionPointer := rip
+        stackPointer := rsp
+        codeSelector := selectors % 0x10000
+        stackSelector := selectors / 0x10000
+        flags
+        canonicalInstructionPointer := oracleCanonical rip
+        canonicalStackPointer := oracleCanonical rsp
+        flagsAllowed := oracleFlagsAllowed flags }
+    purpose := oraclePurpose mode
+    frameSubject := if mode = 11 then 2 else 1
+    frameAddressSpace := if mode = 12 then 12 else 11
+    frameCr3 := if mode = 10 then 0x2000 else 0x1000
+    expectedSubject := 1
+    expectedAddressSpace := 11
+    expectedCr3 := 0x1000
+    executionMode := if mode = 6 then .halted else .running
+    lifecycle := oracleLifecycle mode
+    codeRegion := ⟨0x400000, 0x401000⟩
+    stackRegion := ⟨0x500000, 0x501000⟩
+    flags :=
+      { interruptEnable := oracleFlag flags 0x200
+        direction := oracleFlag flags 0x400
+        alignmentCheck := oracleFlag flags 0x40000
+        nestedTask := oracleFlag flags 0x4000
+        virtual8086 := oracleFlag flags 0x20000
+        ioPrivilegeLevel := flags / 0x1000 % 4
+        reservedAllowed := oracleFlagsAllowed flags } }
+
+/-- Consumption checks the field taken from the accepted attestation, rather
+than re-reading a mutable outgoing frame. -/
+def consumeValidatedInstructionPointer (request : UserReturnRequest)
+    (consumedInstructionPointer : UInt64) : Bool :=
+  match validateUserReturn request with
+  | .accepted attested => attested.hardware.instructionPointer = consumedInstructionPointer
+  | .rejected _ => false
+
+private def oracleModelAccepts (request : UserReturnRequest) : Bool :=
+  match validateUserReturn request with
+  | .accepted _ => true
+  | .rejected _ => false
+
+/-- Bounded generated-code adapter for shared Lean/host/boot differential
+replay. Modes 1--4 are valid purposes; modes 5--12 inject one policy failure;
+mode 13 validates a good request and then attempts to consume a mutated RIP. -/
+@[export leanos_user_return_demo]
+def userReturnDemo (mode rip rsp selectors flags : UInt64) : UInt64 :=
+  if (mode = 1 || mode = 2 || mode = 3 || mode = 4) &&
+      oracleCanonical rip && oracleCanonical rsp && selectors = 0x1b0023 &&
+      oracleFlagsAllowed flags && 0x400000 ≤ rip && rip < 0x401000 &&
+      0x500000 ≤ rsp && rsp < 0x501000 then 1 else 0
+
+theorem userReturnDemo_accepts_reviewed_purposes :
+    userReturnDemo 1 0x400100 0x500ff8 0x1b0023 0x202 = 1 ∧
+    userReturnDemo 2 0x400100 0x500ff8 0x1b0023 0x202 = 1 ∧
+    userReturnDemo 3 0x400100 0x500ff8 0x1b0023 0x202 = 1 ∧
+    oracleModelAccepts (oracleRequest 1 0x400100 0x500ff8 0x1b0023 0x202) ∧
+    oracleModelAccepts (oracleRequest 2 0x400100 0x500ff8 0x1b0023 0x202) ∧
+    oracleModelAccepts (oracleRequest 3 0x400100 0x500ff8 0x1b0023 0x202) := by
+  native_decide
+
+theorem userReturnDemo_rejects_mutated_consumption :
+    userReturnDemo 13 0x400100 0x500ff8 0x1b0023 0x202 = 0 ∧
+    consumeValidatedInstructionPointer
+      (oracleRequest 13 0x400100 0x500ff8 0x1b0023 0x202) 0x400101 = false := by
+  native_decide
+
 def dispatchHardware (state : State) (frame : HardwareFrame) : Outcome :=
   if state.context.entryActive then { state, action := .fatal .nestedEntry }
   else match decodeVector frame.vector with

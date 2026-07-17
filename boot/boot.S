@@ -560,6 +560,10 @@ isr32_cld:
 .global user_return_epilogue
 .global user_return_iretq
 user_return_epilogue:
+    /* Normalize the two explicitly kernel-managed override bits in the exact
+       outgoing frame before it is validated.  NT, VM, IOPL, selectors, and
+       every address/context field remain reject-only. */
+    andq $-263169, 136(%rsp) /* ~(RFLAGS.DF | RFLAGS.AC) */
     mov %rsp, %rdi
     call validate_user_return
     RESTORE

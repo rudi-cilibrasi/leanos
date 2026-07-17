@@ -24,6 +24,8 @@ wrong selectors or CR3, cleared IF, and set DF, AC, NT, VM, or IOPL. Acceptance
 returns an attestation of the entire immutable request, preventing the model API
 from validating one tuple and consuming another. The confinement theorem proves
 the accepted privilege-critical fields and scheduler/address-space binding.
+The shared machine epilogue clears the kernel-managed saved DF and AC bits
+before validation; the other forbidden flag fields remain reject-only.
 
 A user page fault atomically applies the subject-lifecycle termination policy
 to the kernel-selected current subject. Existing lifecycle proofs establish
@@ -59,5 +61,8 @@ image now routes initial dispatch, syscall resume, and timer restore through one
 bounded C validator and shared assembly epilogue. Final-ELF inspection permits
 only that CPL3 `iretq` plus the separately classified diagnostic CPL0 recovery
 site, and rejects calls or context changes between validation and consumption.
-The C adapter and inspection are integration evidence, not refinement proofs;
-the shared generated-model oracle and corrupt-frame QEMU corpus remain required.
+The C adapter and inspection are integration evidence, not refinement proofs.
+The shared generated-model oracle now replays accepted initial, syscall, and
+scheduler returns plus a bounded malformed-frame/context matrix through hosted
+generated code and the boot image. A controlled corrupt-frame QEMU corpus
+remains required.

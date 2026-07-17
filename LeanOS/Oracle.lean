@@ -3,11 +3,12 @@ import LeanOS.Syscall
 import LeanOS.IPCSyscall
 import LeanOS.Preemption
 import LeanOS.BootAllocation
+import LeanOS.Interrupt
 
 /-!
 # Bounded scalar boundary oracle
 
-This is the canonical, version-one corpus for the four currently exported
+This is the canonical, version-one corpus for the currently exported
 fixed-width adapters.  Expected words are evaluated from the adapter
 definitions, not copied into a C harness.  The corpus is deliberately finite;
 it is differential integration evidence, not a refinement theorem.
@@ -44,6 +45,10 @@ private def bootAllocation (id : String) (magic infoBytes entryBytes selected fl
   { id, adapter := "BootAllocation.scalar", words := [magic, infoBytes, entryBytes, selected, flags],
     expected := BootAllocation.check magic infoBytes entryBytes selected flags }
 
+private def userReturn (id : String) (mode rip rsp selectors flags : UInt64) : Vector :=
+  { id, adapter := "Interrupt.userReturn", words := [mode, rip, rsp, selectors, flags],
+    expected := Interrupt.userReturnDemo mode rip rsp selectors flags }
+
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
   boot "boot.accept" 0 1,
@@ -73,9 +78,33 @@ def vectors : List Vector := [
   bootAllocation "boot-allocation.fixed-width-overflow" BootAllocation.multiboot2Magic
     18446744073709551615 24 512 15,
   bootAllocation "boot-allocation.no-eligible-frame" BootAllocation.multiboot2Magic 128 24 4096 15,
-  bootAllocation "boot-allocation.publish-before-scrub" BootAllocation.multiboot2Magic 128 24 512 11]
+  bootAllocation "boot-allocation.publish-before-scrub" BootAllocation.multiboot2Magic 128 24 512 11,
+  userReturn "user-return.initial" 1 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.syscall-resume" 2 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.scheduler-restore" 3 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.noncanonical-rip" 1 0x800000000000 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.noncanonical-rsp" 1 0x400100 0x800000000000 0x1b0023 0x202,
+  userReturn "user-return.wrong-cs" 1 0x400100 0x500ff8 0x1b0008 0x202,
+  userReturn "user-return.wrong-ss" 1 0x400100 0x500ff8 0x100023 0x202,
+  userReturn "user-return.kernel-origin" 7 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.iopl" 1 0x400100 0x500ff8 0x1b0023 0x1202,
+  userReturn "user-return.nt" 1 0x400100 0x500ff8 0x1b0023 0x4202,
+  userReturn "user-return.vm" 1 0x400100 0x500ff8 0x1b0023 0x20202,
+  userReturn "user-return.ac" 1 0x400100 0x500ff8 0x1b0023 0x40202,
+  userReturn "user-return.df" 1 0x400100 0x500ff8 0x1b0023 0x602,
+  userReturn "user-return.if-cleared" 1 0x400100 0x500ff8 0x1b0023 0x2,
+  userReturn "user-return.stale-subject" 8 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.stale-address-space" 9 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.wrong-cr3" 10 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.wrong-frame-subject" 11 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.wrong-frame-address-space" 12 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.fatal-mode" 6 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.code-outside-subject" 1 0x401000 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.stack-outside-subject" 1 0x400100 0x501000 0x1b0023 0x202,
+  userReturn "user-return.diagnostic-recovery" 5 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.validate-then-mutate" 13 0x400100 0x500ff8 0x1b0023 0x202]
 
-theorem corpus_shape : vectors.length = 25 := by decide
+theorem corpus_shape : vectors.length = 49 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -93,6 +122,11 @@ theorem preemption_scenario_agrees :
     (vectors[13]).expected = 0x0000000200000002 ∧
     (vectors[14]).expected = 0 ∧ (vectors[15]).expected = 0 ∧
     (vectors[16]).expected = 0 := by native_decide
+theorem user_return_scenario_agrees :
+    (vectors[25]).expected = 1 ∧ (vectors[26]).expected = 1 ∧
+    (vectors[27]).expected = 1 ∧
+    (vectors.drop 28).all (fun vector => vector.expected = 0) = true := by
+  native_decide
 
 private def wordsText : List UInt64 → String
   | [] => ""

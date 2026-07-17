@@ -17,6 +17,8 @@ extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t,
                                              uint64_t, uint64_t);
+extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t,
+                                        uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -37,7 +39,6 @@ extern void run_double_fault_probe(void);
 extern char user_a_entry[], user_a_stack_top[];
 extern char user_a_stack[];
 extern char user_b_entry[], user_b_stack[], user_b_stack_top[];
-extern char page_map_level_4_a[], page_map_level_4_b[];
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
@@ -284,7 +285,8 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
     uint64_t rip = saved[15], cs = saved[16], flags = saved[17];
     uint64_t rsp = saved[18], ss = saved[19], cr3;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
-    const char *code_first, *code_last, *stack_first, *stack_last, *expected_cr3;
+    const char *code_first, *code_last, *stack_first, *stack_last;
+    const uint64_t *expected_cr3;
     if (current_subject == 1) {
         code_first = user_a_entry; code_last = user_a_stack;
         stack_first = user_a_stack; stack_last = user_a_stack_top;
@@ -510,8 +512,11 @@ static void replay_oracle(void) {
                     ? leanos_ipc_demo(v->words[0], v->words[1], v->words[2], v->words[3])
                 : v->adapter == 3
                     ? leanos_preemption_demo(v->words[0], v->words[1], v->words[2], v->words[3])
-                    : leanos_boot_allocation_check(v->words[0], v->words[1], v->words[2],
-                        v->words[3], v->words[4]);
+                    : v->adapter == 4
+                        ? leanos_boot_allocation_check(v->words[0], v->words[1], v->words[2],
+                            v->words[3], v->words[4])
+                        : leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
+                            v->words[3], v->words[4]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
