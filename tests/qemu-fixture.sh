@@ -7,6 +7,39 @@ memory_mib=128
 for ((i=1; i<=$#; ++i)); do
   if [[ "${!i}" == -m ]]; then next=$((i + 1)); memory_mib="${!next%M}"; fi
 done
+if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
+      "${LEANOS_QEMU_FIXTURE_V2:-0}" != 1 ]]; then
+  set +e
+  LEANOS_QEMU_FIXTURE_V2=1 "$0" "$@"
+  status=$?
+  set -e
+  sed -i \
+    -e 's/schedule=one-shot-pit/schedule=bounded-two-shot-pit/' \
+    -e 's/mode=one-shot origin=cpl3/mode=bounded-one-shot sequence=1 origin=cpl3/' \
+    -e 's/stack=restored ticks-masked=1/stack=initial contexts=separate/' \
+    -e 's|LEANOS/5 FINAL status=PASS ticks=1|LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=2 origin=cpl3 accepted=1\nLEANOS/5 CONTEXT old-subject=2 old-address-space=2 new-subject=1 new-address-space=1 policy=round-robin\nLEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\nLEANOS/5 SWITCH subject=1 address-space=1 cr3=switched stack=resumed contexts=separate\nLEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate\nLEANOS/5 FINAL status=PASS ticks=2|' \
+    "$log"
+  exit "$status"
+fi
+case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
+missing-second-tick|fresh-restart|cross-restored|stale-resume-cr3|corrupt-stack|corrupt-flags|corrupt-selectors|forged-pass)
+  mode="${LEANOS_QEMU_FIXTURE_MODE}"
+  set +e
+  LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
+  set -e
+  case "$mode" in
+    missing-second-tick) sed -i '/sequence=2/d' "$log" ;;
+    fresh-restart) sed -i 's/frame=original/frame=fresh/' "$log" ;;
+    cross-restored) sed -i 's/RESUME subject=1 caller=1/RESUME subject=2 caller=2/' "$log" ;;
+    stale-resume-cr3) sed -i 's/root=A selected=1 resumed=1/root=B selected=1 resumed=1/' "$log" ;;
+    corrupt-stack) sed -i 's/frame=original canaries=preserved/frame=original stack=corrupt/' "$log" ;;
+    corrupt-flags) sed -i 's/frame=original canaries=preserved/frame=original flags=corrupt/' "$log" ;;
+    corrupt-selectors) sed -i 's/frame=original canaries=preserved/frame=original selectors=corrupt/' "$log" ;;
+    forged-pass) sed -i '/^LEANOS\/5 /d' "$log" ;;
+  esac
+  exit 33
+  ;;
+esac
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
 success) echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap' > "$log"; printf '%s\n' 'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' 'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' 'LEANOS/8 PAGING fixture=flip-present root=B level=pt page=0 expected=1 actual=0 result=REJECTED' 'LEANOS/8 PAGING fixture=flip-user root=B level=pt page=1 expected=1 actual=5 result=REJECTED' 'LEANOS/8 PAGING fixture=flip-writable root=B level=pt page=2 expected=1 actual=3 result=REJECTED' 'LEANOS/8 PAGING fixture=flip-nx root=B level=pt page=3 expected=1 actual=9223372036854775809 result=REJECTED' 'LEANOS/8 PAGING fixture=wrong-frame root=B level=pt page=0 expected=1 actual=4097 result=REJECTED' 'LEANOS/8 PAGING fixture=ancestor-pointer root=B level=pml4 page=0 expected=8199 actual=12295 result=REJECTED' 'LEANOS/8 PAGING fixture=ancestor-flags root=B level=pdpt page=0 expected=12295 actual=12291 result=REJECTED' 'LEANOS/8 PAGING fixture=swapped-user-leaves root=B level=pt page=4 expected=16389 actual=20481 result=REJECTED' 'LEANOS/8 PAGING fixture=extra-mapping root=B level=pt page=5 expected=0 actual=9223372036854796291 result=REJECTED' 'LEANOS/8 PAGING fixture=omitted-mapping root=B level=pt page=4 expected=16389 actual=0 result=REJECTED' 'LEANOS/8 PAGING fixture=wrong-cr3 root=A level=cr3 page=0 expected=4096 actual=8192 result=REJECTED' 'LEANOS/7 HANDOFF magic=valid info-bytes=1024 mmap-entries=8 result=PASS' "LEANOS/7 MAP boot-pages=4096 reported-top-mib=$((memory_mib - 1)) precedence=reserved result=PASS" 'LEANOS/7 ALLOC frame=512 firmware-usable=1 boot-accessible=1 reserved=0 result=PASS' 'LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS' 'LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS' 'LEANOS/7 BOOTALLOC status=PASS' >> "$log"; awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$LEANOS_ORACLE_CORPUS" >> "$log"; printf '%s\n' 'LEANOS/6 CONTROL cr0.wp=1 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready' 'LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS' 'LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS' 'LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS' 'LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS' 'LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS' 'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' 'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' 'LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0' 'LEANOS/5 TIMER vector=32 source=pit mode=one-shot origin=cpl3 accepted=1' 'LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin' 'LEANOS/8 PAGING root=B selected=1 result=PASS' 'LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=restored ticks-masked=1' 'LEANOS/5 SYSCALL subject=2 caller=2 address-space=2 authorized=1 canaries=preserved' 'LEANOS/5 FINAL status=PASS ticks=1' >> "$log"; exit 33;;
 missing-paging) set +e; LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"; set -e; sed -i '/LEANOS\/8 PAGING/d' "$log"; exit 33;;

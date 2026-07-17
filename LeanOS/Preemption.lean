@@ -130,15 +130,14 @@ def encodeContext : Option Scheduler.TrustedContext → UInt64
       UInt64.ofNat context.currentSubject +
         UInt64.ofNat context.activeAddressSpace * 0x100000000
 
-/--
-Allocation-free scalar witness for the boot boundary.  The packed result is
-`addressSpace << 32 | subject`; zero rejects anything except the reviewed
-one-shot transition from current subject 1 to queued subject 2.
--/
+/-- Allocation-free scalar witness for the bounded boot boundary.  The packed
+result is `addressSpace << 32 | subject`; zero rejects anything except either
+leg of the reviewed A -> B -> A pair of independently armed timer steps. -/
 @[export leanos_preemption_demo]
 def preemptionDemo (vector current queued armed : UInt64) : UInt64 :=
-  if vector == 32 && current == 1 && queued == 2 && armed == 1 then
-    0x0000000200000002
+  if vector != 32 || armed != 1 then 0
+  else if current == 1 && queued == 2 then 0x0000000200000002
+  else if current == 2 && queued == 1 then 0x0000000100000001
   else 0
 
 theorem preemptionDemo_agrees :
@@ -147,6 +146,37 @@ theorem preemptionDemo_agrees :
   native_decide
 
 example : preemptionDemo 32 1 2 1 = 0x0000000200000002 := by decide
-example : preemptionDemo 32 2 1 1 = 0 := by decide
+example : preemptionDemo 32 2 1 1 = 0x0000000100000001 := by decide
+example : preemptionDemo 32 2 3 1 = 0 := by decide
+
+private def witnessByte (value : UInt64) : UInt64 := value % 0x100
+
+/-- Stable packed save/restore witness, low to high: restored owner, restored
+address space, restored logical stack marker, restored r12 marker, saved owner,
+saved logical stack marker, and saved r12 marker. -/
+def encodeResumableWitness (restoredOwner restoredAddressSpace restoredFrameMarker
+    restoredRegisterMarker savedOwner savedFrameMarker savedRegisterMarker : UInt64) : UInt64 :=
+  witnessByte restoredOwner + witnessByte restoredAddressSpace * 0x100 +
+    witnessByte restoredFrameMarker * 0x10000 +
+    witnessByte restoredRegisterMarker * 0x1000000 +
+    witnessByte savedOwner * 0x100000000 +
+    witnessByte savedFrameMarker * 0x10000000000 +
+    witnessByte savedRegisterMarker * 0x1000000000000
+
+/-- Allocation-free boundary for the composite model's bounded A -> B -> A
+witness. Inputs are taken from kernel-owned bank selection and the actual
+target/outgoing frames. A cross-owned bank is rejected before packing. -/
+@[export leanos_resumable_preemption_demo]
+def resumableDemo (leg targetDescriptor savedDescriptor targetRegisterMarker
+    savedRegisterMarker : UInt64) : UInt64 :=
+  if leg == 1 && targetDescriptor == 0x202 && savedDescriptor == 0x101 then
+    encodeResumableWitness 2 2 2 targetRegisterMarker 1 1 savedRegisterMarker
+  else if leg == 2 && targetDescriptor == 0x101 && savedDescriptor == 0x202 then
+    encodeResumableWitness 1 1 1 targetRegisterMarker 2 2 savedRegisterMarker
+  else 0
+
+example : resumableDemo 1 0x202 0x101 0xde 0x1c = 0x1c0101de020202 := by decide
+example : resumableDemo 2 0x101 0x202 0x1c 0xde = 0xde02021c010101 := by decide
+example : resumableDemo 2 0x102 0x202 0x1c 0xde = 0 := by decide
 
 end LeanOS.Preemption

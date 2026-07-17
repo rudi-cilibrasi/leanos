@@ -40,6 +40,14 @@ private def preemption (id : String) (vector current queued armed : UInt64) : Ve
   { id, adapter := "Preemption.scalar", words := [vector, current, queued, armed],
     expected := Preemption.preemptionDemo vector current queued armed }
 
+private def resumable (id : String) (leg targetDescriptor savedDescriptor
+    targetRegisterMarker savedRegisterMarker : UInt64) : Vector :=
+  { id, adapter := "Preemption.resumable",
+    words := [leg, targetDescriptor, savedDescriptor, targetRegisterMarker,
+      savedRegisterMarker],
+    expected := Preemption.resumableDemo leg targetDescriptor savedDescriptor
+      targetRegisterMarker savedRegisterMarker }
+
 private def bootAllocation (id : String) (magic infoBytes entryBytes selected flags : UInt64) :
     Vector :=
   { id, adapter := "BootAllocation.scalar", words := [magic, infoBytes, entryBytes, selected, flags],
@@ -69,7 +77,11 @@ def vectors : List Vector := [
   preemption "preemption.accept" 32 1 2 1,
   preemption "preemption.masked" 32 1 2 0,
   preemption "preemption.wrong-vector" 14 1 2 1,
-  preemption "preemption.forged-current" 32 2 1 1,
+  preemption "preemption.resume" 32 2 1 1,
+  preemption "preemption.forged-current" 32 2 3 1,
+  resumable "resumable.a-to-b" 1 0x202 0x101 0xde 0x1c,
+  resumable "resumable.b-to-a" 2 0x101 0x202 0x1c 0xde,
+  resumable "resumable.cross-restored" 2 0x102 0x202 0x1c 0xde,
   bootAllocation "boot-allocation.accept" BootAllocation.multiboot2Magic 128 24 512 15,
   bootAllocation "boot-allocation.wrong-magic" 0 128 24 512 15,
   bootAllocation "boot-allocation.truncated" BootAllocation.multiboot2Magic 8 24 512 15,
@@ -104,7 +116,7 @@ def vectors : List Vector := [
   userReturn "user-return.diagnostic-recovery" 5 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.validate-then-mutate" 13 0x400100 0x500ff8 0x1b0023 0x202]
 
-theorem corpus_shape : vectors.length = 49 := by decide
+theorem corpus_shape : vectors.length = 53 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -121,11 +133,16 @@ theorem ipc_scenario_agrees :
 theorem preemption_scenario_agrees :
     (vectors[13]).expected = 0x0000000200000002 ∧
     (vectors[14]).expected = 0 ∧ (vectors[15]).expected = 0 ∧
-    (vectors[16]).expected = 0 := by native_decide
+    (vectors[16]).expected = 0x0000000100000001 ∧
+    (vectors[17]).expected = 0 := by native_decide
+theorem resumable_scenario_agrees :
+    (vectors[18]).expected = 0x1c0101de020202 ∧
+    (vectors[19]).expected = 0xde02021c010101 ∧
+    (vectors[20]).expected = 0 := by native_decide
 theorem user_return_scenario_agrees :
-    (vectors[25]).expected = 1 ∧ (vectors[26]).expected = 1 ∧
-    (vectors[27]).expected = 1 ∧
-    (vectors.drop 28).all (fun vector => vector.expected = 0) = true := by
+    (vectors[29]).expected = 1 ∧ (vectors[30]).expected = 1 ∧
+    (vectors[31]).expected = 1 ∧
+    (vectors.drop 32).all (fun vector => vector.expected = 0) = true := by
   native_decide
 
 private def wordsText : List UInt64 → String

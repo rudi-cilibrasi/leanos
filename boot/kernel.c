@@ -15,6 +15,8 @@ extern uint64_t leanos_boot_transition(uint64_t state, uint64_t command);
 extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_resumable_preemption_demo(uint64_t, uint64_t, uint64_t,
+                                                  uint64_t, uint64_t);
 extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t,
                                              uint64_t, uint64_t);
 extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t,
@@ -38,7 +40,14 @@ extern void isr32(void);
 extern void run_double_fault_probe(void);
 extern char user_a_entry[], user_a_stack_top[];
 extern char user_a_stack[];
-extern char user_b_entry[], user_b_stack[], user_b_stack_top[];
+extern char user_b_entry[];
+extern char user_b_stack[], user_b_stack_top[];
+extern uint64_t saved_context_a[], saved_context_b[];
+extern uint64_t initial_context_b[];
+extern const uint64_t saved_context_owner_a, saved_context_owner_b;
+extern uint64_t saved_context_a_original_flags, saved_context_a_original_rsp;
+extern uint64_t saved_context_b_original_flags, saved_context_b_original_rsp;
+extern uint64_t saved_context_a_original_rip, saved_context_b_original_rip;
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
@@ -102,6 +111,10 @@ static __attribute__((noreturn)) void fail(const char *reason);
 static void serial_puts(const char *text);
 static void serial_putc(char value);
 static void serial_u64(uint64_t value);
+static void arm_timer(void);
+static uint64_t stack_marker(uint64_t stack_pointer);
+static void check_cross_bank_negative(void);
+static void check_initial_b_frame_negative(void);
 
 /* The arrays are emitted only after the linker-resolved Input is accepted by
    LeanOS.BootPageTablePlan.compile. The early assembly constructor remains
@@ -264,6 +277,13 @@ static void check_selected_root_b(void) {
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b) fail("pt-root-b");
     serial_puts("LEANOS/8 PAGING root=B selected=1 result=PASS\n");
+}
+
+static void check_selected_root_a(void) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a) fail("pt-root-a-resume");
+    serial_puts("LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\n");
 }
 
 static void serial_u64(uint64_t value) {
@@ -512,7 +532,10 @@ static void replay_oracle(void) {
                     ? leanos_ipc_demo(v->words[0], v->words[1], v->words[2], v->words[3])
                 : v->adapter == 3
                     ? leanos_preemption_demo(v->words[0], v->words[1], v->words[2], v->words[3])
-                    : v->adapter == 4
+                : v->adapter == 4
+                    ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
+                        v->words[3], v->words[4])
+                    : v->adapter == 5
                         ? leanos_boot_allocation_check(v->words[0], v->words[1], v->words[2],
                             v->words[3], v->words[4])
                         : leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
@@ -607,37 +630,151 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     }
     if (preemption_step == 3 && current_subject == 2 && number == 2) {
         serial_puts("LEANOS/5 SYSCALL subject=2 caller=2 address-space=2 authorized=1 canaries=preserved\n");
-        serial_puts("LEANOS/5 FINAL status=PASS ticks=1\n");
+        preemption_step = 4;
+        arm_timer();
+        return 0;
+    }
+    if (current_subject == 1 && number == 6) {
+        if (preemption_step == 1) return 0;
+        if (preemption_step == 6) return 1;
+        fail("resume-probe-state");
+    }
+    if (preemption_step == 6 && current_subject == 1 && number == 5) {
+        if (timer_accepted != 2 || saved_context_a[3] != 0xa11ca11ca11ca11cull ||
+            saved_context_a[2] != 0xa22da22da22da22dull ||
+            saved_context_b[3] != 0xc0dec0dec0dec0deull ||
+            saved_context_b[2] != 0x51a7e51a7e51a7e5ull ||
+            saved_context_a[15] != saved_context_a_original_rip ||
+            saved_context_a[17] != saved_context_a_original_flags ||
+            saved_context_a[18] != saved_context_a_original_rsp ||
+            saved_context_b[15] != saved_context_b_original_rip ||
+            saved_context_b[17] != saved_context_b_original_flags ||
+            saved_context_b[18] != saved_context_b_original_rsp ||
+            saved_context_a[16] != 0x23 || saved_context_a[19] != 0x1b ||
+            saved_context_b[16] != 0x23 || saved_context_b[19] != 0x1b)
+            fail("saved-context");
+        serial_puts("LEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate\n");
+        serial_puts("LEANOS/5 FINAL status=PASS ticks=2\n");
         finish(0x10);
     }
     if (number == 3) fail("register-canary");
     fail("ipc-sequence");
 }
 
-void timer_handler(uint64_t saved_cs) {
+uint64_t timer_handler(uint64_t saved_cs) {
     /* Mask IRQ0 before acknowledging it: duplicate ticks cannot enter the
        protocol.  The PIC/PIT bridge is trusted and documented in ADR 0005. */
     out8(0x21, 0xff);
     out8(0x20, 0x20);
-    if ((saved_cs & 3u) != 3u || current_subject != 1 ||
-        preemption_step != 1 || timer_accepted != 0) fail("timer-context");
-    uint64_t modeled = leanos_preemption_demo(32, current_subject, 2, 1);
+    uint64_t queued;
+    if ((saved_cs & 3u) != 3u) fail("timer-origin");
+    if (current_subject == 1 && preemption_step == 1 && timer_accepted == 0)
+        queued = 2;
+    else if (current_subject == 2 && preemption_step == 4 && timer_accepted == 1)
+        queued = 1;
+    else fail("timer-context");
+    uint64_t old_subject = current_subject;
+    uint64_t modeled = leanos_preemption_demo(32, current_subject, queued, 1);
     uint64_t next_subject = modeled & 0xffffffffu;
     uint64_t next_address_space = modeled >> 32;
-    if (next_subject != 2 || next_address_space != 2) fail("modeled-tick");
-    timer_accepted = 1;
-    serial_puts("LEANOS/5 TIMER vector=32 source=pit mode=one-shot origin=cpl3 accepted=1\n");
-    serial_puts("LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin\n");
+    if (next_subject != queued || next_address_space != queued) fail("modeled-tick");
+    ++timer_accepted;
+    serial_puts(timer_accepted == 1
+        ? "LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=1 origin=cpl3 accepted=1\n"
+        : "LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=2 origin=cpl3 accepted=1\n");
+    serial_puts(old_subject == 1
+        ? "LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin\n"
+        : "LEANOS/5 CONTEXT old-subject=2 old-address-space=2 new-subject=1 new-address-space=1 policy=round-robin\n");
     current_subject = next_subject;
-    preemption_step = 2;
+    preemption_step = next_subject == 2 ? 2 : 5;
+    return next_subject;
 }
 
-void switch_complete(void) {
-    if (current_subject != 2 || preemption_step != 2 || timer_accepted != 1)
-        fail("switch-binding");
-    check_selected_root_b();
-    preemption_step = 3;
-    serial_puts("LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=restored ticks-masked=1\n");
+static uint64_t stack_marker(uint64_t stack_pointer) {
+    if (stack_pointer >= (uint64_t)user_a_stack &&
+        stack_pointer <= (uint64_t)user_a_stack_top) return 1;
+    if (stack_pointer >= (uint64_t)user_b_stack &&
+        stack_pointer <= (uint64_t)user_b_stack_top) return 2;
+    fail("context-stack");
+}
+
+static uint64_t context_descriptor(uint64_t owner, uint64_t stack_pointer) {
+    if (owner != 1 && owner != 2) fail("context-owner");
+    return owner | (stack_marker(stack_pointer) << 8);
+}
+
+static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
+                                 uint64_t original_flags, uint64_t original_rsp,
+                                 uint64_t owner) {
+    if (frame[15] != original_rip || frame[17] != original_flags ||
+        frame[18] != original_rsp ||
+        stack_marker(original_rsp) != owner)
+        fail("context-frame-changed");
+}
+
+static int initial_b_frame_valid(const volatile uint64_t *frame) {
+    return frame[15] == (uint64_t)user_b_entry && frame[16] == 0x23 &&
+        frame[17] == 0x202 && frame[18] == (uint64_t)user_b_stack_top &&
+        frame[19] == 0x1b;
+}
+
+static void check_initial_b_frame(const volatile uint64_t *frame) {
+    if (!initial_b_frame_valid(frame)) fail("initial-context-frame");
+}
+
+static void check_resumable_witness(uint64_t leg, const uint64_t *target,
+                                    const uint64_t *saved, uint64_t target_owner,
+                                    uint64_t saved_owner, unsigned vector_index) {
+    uint64_t got = leanos_resumable_preemption_demo(leg,
+        context_descriptor(target_owner, target[18]),
+        context_descriptor(saved_owner, saved[18]),
+        target[3] & 0xffu, saved[3] & 0xffu);
+    if (got != oracle_vectors[vector_index].expected) fail("modeled-restore");
+}
+
+void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
+    if (current_subject == 2 && preemption_step == 2 && timer_accepted == 1) {
+        check_selected_root_b();
+        check_initial_b_frame(target);
+        check_original_frame(saved_context_a, saved_context_a_original_rip,
+            saved_context_a_original_flags,
+            saved_context_a_original_rsp, saved_context_owner_a);
+        check_resumable_witness(1, target, saved_context_a, target_owner, saved_owner,
+            ORACLE_INDEX_RESUMABLE_A_TO_B);
+        preemption_step = 3;
+        serial_puts("LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=initial contexts=separate\n");
+        return;
+    }
+    if (current_subject == 1 && preemption_step == 5 && timer_accepted == 2) {
+        check_selected_root_a();
+        check_original_frame(saved_context_b, saved_context_b_original_rip,
+            saved_context_b_original_flags,
+            saved_context_b_original_rsp, saved_context_owner_b);
+        check_original_frame(target, saved_context_a_original_rip,
+            saved_context_a_original_flags,
+            saved_context_a_original_rsp, saved_context_owner_a);
+        check_resumable_witness(2, target, saved_context_b, target_owner, saved_owner,
+            ORACLE_INDEX_RESUMABLE_B_TO_A);
+        preemption_step = 6;
+        serial_puts("LEANOS/5 SWITCH subject=1 address-space=1 cr3=switched stack=resumed contexts=separate\n");
+        return;
+    }
+    fail("switch-binding");
+}
+
+static void check_cross_bank_negative(void) {
+    uint64_t crossed_target = saved_context_owner_b | (1ull << 8);
+    uint64_t saved_b = saved_context_owner_b | (2ull << 8);
+    if (leanos_resumable_preemption_demo(2, crossed_target, saved_b, 0x1c, 0xde) != 0)
+        fail("cross-bank-negative");
+}
+
+static void check_initial_b_frame_negative(void) {
+    uint64_t original_flags = initial_context_b[17];
+    initial_context_b[17] = 0x206;
+    if (initial_b_frame_valid(initial_context_b)) fail("initial-flags-negative");
+    initial_context_b[17] = original_flags;
+    check_initial_b_frame(initial_context_b);
 }
 
 static void arm_timer(void) {
@@ -683,7 +820,7 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
-    serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap\n");
+    serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 
     check_boot_page_tables();
 
@@ -719,6 +856,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     smap_force_clac();
     if (ac_is_set()) fail("cleanup-recovery");
     serial_puts("LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS\n");
+    check_cross_bank_negative();
+    check_initial_b_frame_negative();
     arm_timer();
     enter_user(user_a_entry, user_a_stack_top);
     fail("iret-returned");
