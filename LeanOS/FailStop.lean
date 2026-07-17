@@ -194,6 +194,13 @@ def selectReturnAuthority (state : State) (purpose : Interrupt.ReturnPurpose) : 
           returnAuthorityArmed := true }
       else { state with returnAuthorityArmed := false }
 
+@[simp] theorem selectReturnAuthority_core state purpose :
+    (selectReturnAuthority state purpose).core = state.core := by
+  unfold selectReturnAuthority
+  split
+  · rfl
+  · split <;> rfl
+
 theorem selectReturnAuthority_wellFormed state purpose
     (hstate : WellFormed state) : WellFormed (selectReturnAuthority state purpose) := by
   rcases hstate with ⟨hcore, _hbound, hmode⟩
@@ -422,7 +429,9 @@ private def installLifecycle (state : CompositeState)
     owner := lifecycle.addressOwner
     mappings := restrictMappings lifecycle state.ipc.virtualMemory.mappings }
   { state with
-    execution := { state.execution with core := { state.execution.core with lifecycle, context } }
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle, context }
+      returnAuthorityArmed := false }
     scheduler
     preemption := { state.preemption with scheduler }
     virtualMemory
@@ -500,6 +509,7 @@ theorem installLifecycle_releases_retired_memory state lifecycle object frame
 a tag paired with a caller-supplied post-state. -/
 inductive Operation where
   | interrupt (frame : Interrupt.HardwareFrame)
+  | selectUserReturn (purpose : Interrupt.ReturnPurpose)
   | userReturn (request : Interrupt.UserReturnRequest)
   | syscall (context : Syscall.TrustedContext) (call : Syscall.UntrustedCall)
   | preempt (frame : Interrupt.HardwareFrame)
@@ -526,8 +536,15 @@ structure GateOutcome where
 
 private def applyOperation (state : CompositeState) : Operation → CompositeState
   | .interrupt frame =>
-      let execution := (dispatchHardware state.execution frame).state
-      installLifecycle { state with execution } execution.core.lifecycle
+      let entry := dispatchHardware state.execution frame
+      let entered := installLifecycle { state with execution := entry.state }
+        entry.state.core.lifecycle
+      match entry.action with
+      | .syscall =>
+          { entered with execution := selectReturnAuthority entered.execution .syscallResume }
+      | _ => entered
+  | .selectUserReturn purpose =>
+      { state with execution := selectReturnAuthority state.execution purpose }
   | .userReturn request =>
       { state with execution := (completeUserReturn state.execution request).state }
   | .syscall context call =>
@@ -542,7 +559,9 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
       | .timer =>
           let preemption :=
             (Preemption.oneShotTick entered.preemption entered.execution.core frame).state
-          installScheduler { entered with preemption } preemption.scheduler
+          let scheduled := installScheduler { entered with preemption } preemption.scheduler
+          { scheduled with
+            execution := selectReturnAuthority scheduled.execution .schedulerRestore }
       | _ => entered
   | .ipc context call => { state with ipc := (IPCSyscall.dispatch state.ipc context call).state }
   | .capabilityCopy actor source destination destinationSlot rights =>
@@ -585,7 +604,9 @@ theorem interrupt_synchronizes_lifecycle state frame :
     let next := applyOperation state (.interrupt frame)
     next.scheduler.lifecycle = next.execution.core.lifecycle ∧
       next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
-  simp [applyOperation, installLifecycle]
+  simp only [applyOperation]
+  generalize hentry : dispatchHardware state.execution frame = entry
+  cases entry.action <;> simp [installLifecycle]
 
 /-- Preemption cannot reinterpret a fatal hardware frame as an accepted
 scheduler no-op: the authoritative entry path latches the same terminal mode. -/
@@ -602,6 +623,25 @@ def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
   | .running => { state := applyOperation state operation, result := .accepted }
   | .handling _ => { state, result := .rejectedBusy }
   | .halted record => { state, result := .rejectedHalted record }
+
+/-- Initial dispatch is also represented by a typed composite step; syscall
+and timer paths reselect automatically after their final context update. -/
+theorem select_user_return_is_reachable state purpose
+    (hmode : state.execution.mode = .running) :
+    (gate state (.selectUserReturn purpose)).state.execution =
+      selectReturnAuthority state.execution purpose := by
+  simp [gate, hmode, applyOperation]
+
+theorem syscall_entry_reselects state frame
+    (hmode : state.execution.mode = .running)
+    (hsyscall : (dispatchHardware state.execution frame).action = .syscall) :
+    (gate state (.interrupt frame)).state.execution =
+      selectReturnAuthority
+        (installLifecycle
+          { state with execution := (dispatchHardware state.execution frame).state }
+          (dispatchHardware state.execution frame).state.core.lifecycle).execution
+        .syscallResume := by
+  simp [gate, hmode, applyOperation, hsyscall]
 
 def runOperations (state : CompositeState) : List Operation → CompositeState
   | [] => state

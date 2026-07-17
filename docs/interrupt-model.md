@@ -34,6 +34,10 @@ normalizes scheduler identity from execution state, and takes the remaining
 policy from the bound record. It converts rejection into a
 typed absorbing halt record without changing lifecycle, authority, scheduling,
 IPC, or resource views.
+Initial dispatch selects through the typed `selectUserReturn` gate operation;
+syscall and scheduler-return paths reselect automatically after entry and the
+final context update. Lifecycle, scheduler, capability, and virtual-memory
+installation clears any earlier selection before that reselection.
 The shared machine epilogue clears the kernel-managed saved DF and AC bits
 before validation; the other forbidden flag fields remain reject-only.
 

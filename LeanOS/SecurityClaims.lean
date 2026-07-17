@@ -128,7 +128,7 @@ private def returnWitnessLifecycle : SubjectLifecycle.State :=
         slots := fun _ _ => none }
     issuedSubjects := fun subject => subject = 1
     ownedMemory := fun _ => none
-    addressOwner := fun space => if space = 11 then some 1 else none
+    addressOwner := fun space => if space = 1 then some 1 else none
     mapping := fun _ _ => none
     endpointOwner := fun _ => none
     mailbox := fun _ => none
@@ -148,11 +148,11 @@ private def returnWitnessBase : FailStop.State :=
       { lifecycle := returnWitnessLifecycle
         context :=
           { currentSubject := 1
-            activeAddressSpace := 11
+            activeAddressSpace := 1
             kernelStack := 0
             entryActive := false } }
     mode := .running
-    returnAddressSpace := fun space => if space = 11 then some returnWitnessView else none }
+    returnAddressSpace := fun space => if space = 1 then some returnWitnessView else none }
 
 private def returnWitnessState : FailStop.State :=
   FailStop.selectReturnAuthority returnWitnessBase .initialDispatch
@@ -172,10 +172,10 @@ private def returnWitnessRequest : Interrupt.UserReturnRequest :=
         flagsAllowed := true }
     purpose := .initialDispatch
     frameSubject := 1
-    frameAddressSpace := 11
+    frameAddressSpace := 1
     frameCr3 := 0x1000
     expectedSubject := 1
-    expectedAddressSpace := 11
+    expectedAddressSpace := 1
     expectedCr3 := 0x1000
     executionMode := .running
     lifecycle := returnWitnessLifecycle
@@ -200,6 +200,59 @@ theorem user_return_authority_reachable_witness :
   · apply FailStop.selectReturnAuthority_wellFormed
     simp [returnWitnessBase, returnWitnessLifecycle, FailStop.WellFormed,
       Interrupt.WellFormed, SubjectLifecycle.WellFormed]
+  · rfl
+
+private def returnWitnessMemory : MemoryLifecycle.State :=
+  { capabilities := returnWitnessLifecycle.capabilities
+    allocator := { frames := [], status := fun _ => .reserved }
+    binding := fun _ => none
+    issued := fun _ => false }
+
+private def returnWitnessVirtualMemory : VirtualMapping.State :=
+  { memory := returnWitnessMemory
+    owner := returnWitnessLifecycle.addressOwner
+    mappings := fun _ _ => none
+    issuedAddressSpace := fun space => space = 1 }
+
+private def returnWitnessEndpoints : EndpointIPC.State :=
+  { capabilities := returnWitnessLifecycle.capabilities
+    allocator := returnWitnessMemory.allocator
+    binding := returnWitnessMemory.binding
+    issued := returnWitnessMemory.issued
+    issuedAddressSpace := fun _ => false
+    mailbox := fun _ => none
+    sendHistory := fun _ => [] }
+
+private def returnWitnessComposite : FailStop.CompositeState :=
+  let scheduler : Scheduler.State :=
+    { lifecycle := returnWitnessLifecycle, ready := [], capacity := 0 }
+  { execution := returnWitnessBase
+    scheduler
+    preemption := { scheduler, timerArmed := false, acceptedTicks := 1 }
+    virtualMemory := returnWitnessVirtualMemory
+    ipc := { virtualMemory := returnWitnessVirtualMemory, endpoints := returnWitnessEndpoints }
+    capabilities := returnWitnessLifecycle.capabilities
+    lifecycle := returnWitnessLifecycle }
+
+private def returnWitnessSyscallFrame : Interrupt.HardwareFrame :=
+  { returnWitnessRequest.hardware with vector := 128 }
+
+private def returnWitnessSyscallRequest : Interrupt.UserReturnRequest :=
+  { returnWitnessRequest with
+    hardware := returnWitnessSyscallFrame
+    purpose := .syscallResume }
+
+/-- Concrete typed composite trace: syscall entry clears old authority, the
+entry path reselects from the live context, and the following return is accepted
+without changing the composite state. -/
+theorem user_return_composite_entry_witness :
+    let entered := (FailStop.gate returnWitnessComposite
+      (.interrupt returnWitnessSyscallFrame)).state
+    entered.execution.returnAuthorityArmed = true ∧
+      (FailStop.gate entered (.userReturn returnWitnessSyscallRequest)).state = entered := by
+  dsimp only
+  constructor
+  · native_decide
   · rfl
 
 /-- SC-USER-RETURN-FAILSTOP: a rejected outgoing return atomically latches a
