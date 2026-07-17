@@ -245,6 +245,56 @@ def revokeWords (state : State) (actor : SubjectId) (authorityWord : UInt64)
       | .error (.malformed _) => reject state .staleSlot
       | .ok target => Capability.revoke state actor authority.handle.slot victim target.handle.slot
 
+/-- Acceptance at the userspace direct-revocation boundary records successful
+full-word resolution of both the authority and selected victim generation. -/
+theorem revokeWords_accepted_resolves state actor authorityWord expected victim targetWord
+    (haccepted : (revokeWords state actor authorityWord expected victim targetWord).result =
+      .accepted) :
+    ∃ authority target,
+      resolveCurrent state { caller := actor } authorityWord expected = .ok authority ∧
+      resolveCurrent state { caller := victim } targetWord expected = .ok target ∧
+      (Capability.revoke state actor authority.handle.slot victim target.handle.slot).result =
+        .accepted := by
+  cases hauthority : resolveCurrent state { caller := actor } authorityWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [revokeWords, hauthority, reject] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [revokeWords, hauthority, reject] at haccepted
+  | ok authority =>
+      cases htarget : resolveCurrent state { caller := victim } targetWord expected with
+      | error reason =>
+          cases reason with
+          | malformed decodeReason =>
+              simp [revokeWords, hauthority, htarget, reject] at haccepted
+          | denied resolveReason =>
+              cases resolveReason <;>
+                simp [revokeWords, hauthority, htarget, reject] at haccepted
+      | ok target =>
+          exact ⟨authority, target, rfl, rfl,
+            by simpa [revokeWords, hauthority, htarget] using haccepted⟩
+
+/-- A malformed or denied direct-revocation authority word is state preserving. -/
+theorem revokeWords_authority_rejected_unchanged state actor authorityWord expected victim
+    targetWord reason
+    (hresolve : resolveCurrent state { caller := actor } authorityWord expected = .error reason) :
+    (revokeWords state actor authorityWord expected victim targetWord).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [revokeWords, hresolve, reject]
+  | denied resolveReason => cases resolveReason <;> simp [revokeWords, hresolve, reject]
+
+/-- Once authority resolves, a malformed or denied direct-revocation target
+word still preserves state and cannot reach the raw slot transition. -/
+theorem revokeWords_target_rejected_unchanged state actor authorityWord expected victim
+    targetWord authority reason
+    (hauthority : resolveCurrent state { caller := actor } authorityWord expected = .ok authority)
+    (htarget : resolveCurrent state { caller := victim } targetWord expected = .error reason) :
+    (revokeWords state actor authorityWord expected victim targetWord).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [revokeWords, hauthority, htarget, reject]
+  | denied resolveReason =>
+      cases resolveReason <;> simp [revokeWords, hauthority, htarget, reject]
+
 /-- Holder-facing transitive revocation has the same generation checks. -/
 def revokeSubtree (state : State) (actor : SubjectId) (authority : Handle)
     (expected : ObjectKind) (victim : SubjectId) (target : Handle) : Outcome :=
@@ -266,6 +316,60 @@ def revokeSubtreeWords (state : State) (actor : SubjectId) (authorityWord : UInt
       | .error (.malformed _) => reject state .staleSlot
       | .ok target =>
           Capability.revokeSubtree state actor authority.handle.slot victim target.handle.slot
+
+/-- Acceptance at the userspace transitive-revocation boundary records
+successful full-word resolution of both the authority and lineage root. -/
+theorem revokeSubtreeWords_accepted_resolves state actor authorityWord expected victim targetWord
+    (haccepted :
+      (revokeSubtreeWords state actor authorityWord expected victim targetWord).result =
+        .accepted) :
+    ∃ authority target,
+      resolveCurrent state { caller := actor } authorityWord expected = .ok authority ∧
+      resolveCurrent state { caller := victim } targetWord expected = .ok target ∧
+      (Capability.revokeSubtree state actor authority.handle.slot victim target.handle.slot).result =
+        .accepted := by
+  cases hauthority : resolveCurrent state { caller := actor } authorityWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason =>
+          simp [revokeSubtreeWords, hauthority, reject] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;>
+            simp [revokeSubtreeWords, hauthority, reject] at haccepted
+  | ok authority =>
+      cases htarget : resolveCurrent state { caller := victim } targetWord expected with
+      | error reason =>
+          cases reason with
+          | malformed decodeReason =>
+              simp [revokeSubtreeWords, hauthority, htarget, reject] at haccepted
+          | denied resolveReason =>
+              cases resolveReason <;>
+                simp [revokeSubtreeWords, hauthority, htarget, reject] at haccepted
+      | ok target =>
+          exact ⟨authority, target, rfl, rfl,
+            by simpa [revokeSubtreeWords, hauthority, htarget] using haccepted⟩
+
+/-- A malformed or denied transitive-revocation authority word is state preserving. -/
+theorem revokeSubtreeWords_authority_rejected_unchanged state actor authorityWord expected
+    victim targetWord reason
+    (hresolve : resolveCurrent state { caller := actor } authorityWord expected = .error reason) :
+    (revokeSubtreeWords state actor authorityWord expected victim targetWord).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [revokeSubtreeWords, hresolve, reject]
+  | denied resolveReason =>
+      cases resolveReason <;> simp [revokeSubtreeWords, hresolve, reject]
+
+/-- Once authority resolves, a malformed or denied transitive-revocation
+lineage-root word preserves state and cannot reach raw subtree clearing. -/
+theorem revokeSubtreeWords_target_rejected_unchanged state actor authorityWord expected victim
+    targetWord authority reason
+    (hauthority : resolveCurrent state { caller := actor } authorityWord expected = .ok authority)
+    (htarget : resolveCurrent state { caller := victim } targetWord expected = .error reason) :
+    (revokeSubtreeWords state actor authorityWord expected victim targetWord).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [revokeSubtreeWords, hauthority, htarget, reject]
+  | denied resolveReason =>
+      cases resolveReason <;> simp [revokeSubtreeWords, hauthority, htarget, reject]
 
 /-- A handle freshly issued for the capability currently installed in a live,
 in-range slot resolves to exactly that capability. -/
