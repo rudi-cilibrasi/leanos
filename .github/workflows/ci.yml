@@ -75,6 +75,7 @@ jobs:
 
       - name: Build and boot image
         run: |
+          set -o pipefail
           mkdir -p build/ci
           ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
           ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-smoke.log

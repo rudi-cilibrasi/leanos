@@ -112,7 +112,9 @@ static int page_in(const char *start, const char *end, uint64_t page) {
 static uint64_t expected_boot_leaf(unsigned space, uint64_t page) {
     const struct boot_region common[] = {
         { __kernel_text_start, __kernel_text_end, REGION_KERNEL_TEXT },
+#ifndef LEANOS_DF_MAP_GUARD
         { __df_ist_guard_start, __df_ist_guard_end, REGION_UNMAPPED },
+#endif
     };
     const struct boot_region owned[] = {
         { space == 1 ? __user_a_text_start : __user_b_text_start,
