@@ -117,8 +117,8 @@ private def demoFrame : Interrupt.HardwareFrame :=
     savedPrivilege := .user
     instructionPointer := 0
     stackPointer := 0
-    codeSelector := 0x1b
-    stackSelector := 0x23
+    codeSelector := 0x23
+    stackSelector := 0x1b
     flags := 0x202
     canonicalInstructionPointer := true
     canonicalStackPointer := true
@@ -130,15 +130,14 @@ def encodeContext : Option Scheduler.TrustedContext → UInt64
       UInt64.ofNat context.currentSubject +
         UInt64.ofNat context.activeAddressSpace * 0x100000000
 
-/--
-Allocation-free scalar witness for the boot boundary.  The packed result is
-`addressSpace << 32 | subject`; zero rejects anything except the reviewed
-one-shot transition from current subject 1 to queued subject 2.
--/
+/-- Allocation-free scalar witness for the bounded boot boundary.  The packed
+result is `addressSpace << 32 | subject`; zero rejects anything except either
+leg of the reviewed A -> B -> A pair of independently armed timer steps. -/
 @[export leanos_preemption_demo]
 def preemptionDemo (vector current queued armed : UInt64) : UInt64 :=
-  if vector == 32 && current == 1 && queued == 2 && armed == 1 then
-    0x0000000200000002
+  if vector != 32 || armed != 1 then 0
+  else if current == 1 && queued == 2 then 0x0000000200000002
+  else if current == 2 && queued == 1 then 0x0000000100000001
   else 0
 
 theorem preemptionDemo_agrees :
@@ -147,6 +146,7 @@ theorem preemptionDemo_agrees :
   native_decide
 
 example : preemptionDemo 32 1 2 1 = 0x0000000200000002 := by decide
-example : preemptionDemo 32 2 1 1 = 0 := by decide
+example : preemptionDemo 32 2 1 1 = 0x0000000100000001 := by decide
+example : preemptionDemo 32 2 3 1 = 0 := by decide
 
 end LeanOS.Preemption

@@ -523,6 +523,15 @@ isr14_cld:
     add $8, %rsp
     iretq
 .global isr32
+.section .bss,"aw",@nobits
+.align 16
+.global saved_context_a
+saved_context_a:
+    .skip 160
+.global saved_context_b
+saved_context_b:
+    .skip 160
+.section .text,"ax",@progbits
 isr32:
 .global isr32_clac
 isr32_clac:
@@ -533,8 +542,16 @@ isr32_cld:
     SAVE
     mov 128(%rsp), %rdi
     call timer_handler
-    /* The modeled one-shot scheduler selected B.  Install its fresh frame
-       before CR3 so no instruction is fetched with mismatched identity. */
+    cmp $2, %rax
+    je 1f
+    cmp $1, %rax
+    je 2f
+    ud2
+1:  /* Save A's exact GPR/iret frame, then install B's fresh context. */
+    mov %rsp, %rsi
+    lea saved_context_a(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
     movq $user_b_entry, 120(%rsp)
     movq $user_b_stack_top, 144(%rsp)
     movabs $0xc0dec0dec0dec0de, %rax
@@ -543,6 +560,19 @@ isr32_cld:
     mov %rax, 16(%rsp)
     movq $page_map_level_4_b, %rax
     mov %rax, %cr3
+    jmp 3f
+2:  /* Preserve B separately and restore A byte-for-byte before CR3/iretq. */
+    mov %rsp, %rsi
+    lea saved_context_b(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    lea saved_context_a(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+3:
     call switch_complete
     RESTORE
     iretq
@@ -583,13 +613,26 @@ user_a_entry:
     xor %rbx, %rbx
     xor %rcx, %rcx
     xor %rdx, %rdx
+    movabs $0xa11ca11ca11ca11c, %r12
+    movabs $0xa22da22da22da22d, %r13
     int $0x80
-    jmp 1f
+1:  mov $6, %rax
+    int $0x80
+    test %rax, %rax
+    jz 1b
+    movabs $0xa11ca11ca11ca11c, %rax
+    cmp %rax, %r12
+    jne user_copy_fail
+    movabs $0xa22da22da22da22d, %rax
+    cmp %rax, %r13
+    jne user_copy_fail
+    mov $5, %rax
+    int $0x80
+    ud2
 user_copy_fail:
     mov $3, %rax
     int $0x80
     ud2
-1:  jmp 1b
 
 .section .user.a.bss,"aw",@nobits
 .align 4096
@@ -616,6 +659,7 @@ user_b_entry:
     xor %rcx, %rcx
     xor %rdx, %rdx
     int $0x80
+1:  jmp 1b
 2:  mov $3, %rax
     int $0x80
 3:  jmp 3b

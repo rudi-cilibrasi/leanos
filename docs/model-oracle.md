@@ -4,10 +4,11 @@
 freestanding adapter: `KernelTransition.bootTransition` and
 `Syscall.syscallDemo`, `IPCSyscall.ipcDemo`, and
 `Preemption.preemptionDemo`, and `BootAllocation.check`. Its stable
-twenty-five-vector
+twenty-six-vector
 order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
-and publication-order failures, and maximum `UInt64` boundary words. The Lean
+and publication-order failures, both bounded A/B preemption directions, and
+maximum `UInt64` boundary words. The Lean
 checks evaluate every expected result from
 the adapter definition and connect the accepted and rejected examples to the
 source models.

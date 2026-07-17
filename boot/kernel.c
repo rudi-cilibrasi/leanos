@@ -36,6 +36,7 @@ extern void isr32(void);
 extern void run_double_fault_probe(void);
 extern char user_a_entry[], user_a_stack_top[];
 extern char user_a_stack[];
+extern uint64_t saved_context_a[], saved_context_b[];
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
@@ -99,6 +100,7 @@ static __attribute__((noreturn)) void fail(const char *reason);
 static void serial_puts(const char *text);
 static void serial_putc(char value);
 static void serial_u64(uint64_t value);
+static void arm_timer(void);
 
 /* The arrays are emitted only after the linker-resolved Input is accepted by
    LeanOS.BootPageTablePlan.compile. The early assembly constructor remains
@@ -261,6 +263,13 @@ static void check_selected_root_b(void) {
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b) fail("pt-root-b");
     serial_puts("LEANOS/8 PAGING root=B selected=1 result=PASS\n");
+}
+
+static void check_selected_root_a(void) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a) fail("pt-root-a-resume");
+    serial_puts("LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\n");
 }
 
 static void serial_u64(uint64_t value) {
@@ -561,37 +570,74 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     }
     if (preemption_step == 3 && current_subject == 2 && number == 2) {
         serial_puts("LEANOS/5 SYSCALL subject=2 caller=2 address-space=2 authorized=1 canaries=preserved\n");
-        serial_puts("LEANOS/5 FINAL status=PASS ticks=1\n");
+        preemption_step = 4;
+        arm_timer();
+        return 0;
+    }
+    if (current_subject == 1 && number == 6) {
+        if (preemption_step == 1) return 0;
+        if (preemption_step == 6) return 1;
+        fail("resume-probe-state");
+    }
+    if (preemption_step == 6 && current_subject == 1 && number == 5) {
+        if (timer_accepted != 2 || saved_context_a[3] != 0xa11ca11ca11ca11cull ||
+            saved_context_a[2] != 0xa22da22da22da22dull ||
+            saved_context_b[3] != 0xc0dec0dec0dec0deull ||
+            saved_context_b[2] != 0x51a7e51a7e51a7e5ull ||
+            saved_context_a[16] != 0x23 || saved_context_a[19] != 0x1b ||
+            saved_context_b[16] != 0x23 || saved_context_b[19] != 0x1b)
+            fail("saved-context");
+        serial_puts("LEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate\n");
+        serial_puts("LEANOS/5 FINAL status=PASS ticks=2\n");
         finish(0x10);
     }
     if (number == 3) fail("register-canary");
     fail("ipc-sequence");
 }
 
-void timer_handler(uint64_t saved_cs) {
+uint64_t timer_handler(uint64_t saved_cs) {
     /* Mask IRQ0 before acknowledging it: duplicate ticks cannot enter the
        protocol.  The PIC/PIT bridge is trusted and documented in ADR 0005. */
     out8(0x21, 0xff);
     out8(0x20, 0x20);
-    if ((saved_cs & 3u) != 3u || current_subject != 1 ||
-        preemption_step != 1 || timer_accepted != 0) fail("timer-context");
-    uint64_t modeled = leanos_preemption_demo(32, current_subject, 2, 1);
+    uint64_t queued;
+    if ((saved_cs & 3u) != 3u) fail("timer-origin");
+    if (current_subject == 1 && preemption_step == 1 && timer_accepted == 0)
+        queued = 2;
+    else if (current_subject == 2 && preemption_step == 4 && timer_accepted == 1)
+        queued = 1;
+    else fail("timer-context");
+    uint64_t old_subject = current_subject;
+    uint64_t modeled = leanos_preemption_demo(32, current_subject, queued, 1);
     uint64_t next_subject = modeled & 0xffffffffu;
     uint64_t next_address_space = modeled >> 32;
-    if (next_subject != 2 || next_address_space != 2) fail("modeled-tick");
-    timer_accepted = 1;
-    serial_puts("LEANOS/5 TIMER vector=32 source=pit mode=one-shot origin=cpl3 accepted=1\n");
-    serial_puts("LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin\n");
+    if (next_subject != queued || next_address_space != queued) fail("modeled-tick");
+    ++timer_accepted;
+    serial_puts(timer_accepted == 1
+        ? "LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=1 origin=cpl3 accepted=1\n"
+        : "LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=2 origin=cpl3 accepted=1\n");
+    serial_puts(old_subject == 1
+        ? "LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin\n"
+        : "LEANOS/5 CONTEXT old-subject=2 old-address-space=2 new-subject=1 new-address-space=1 policy=round-robin\n");
     current_subject = next_subject;
-    preemption_step = 2;
+    preemption_step = next_subject == 2 ? 2 : 5;
+    return next_subject;
 }
 
 void switch_complete(void) {
-    if (current_subject != 2 || preemption_step != 2 || timer_accepted != 1)
-        fail("switch-binding");
-    check_selected_root_b();
-    preemption_step = 3;
-    serial_puts("LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=restored ticks-masked=1\n");
+    if (current_subject == 2 && preemption_step == 2 && timer_accepted == 1) {
+        check_selected_root_b();
+        preemption_step = 3;
+        serial_puts("LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=initial contexts=separate\n");
+        return;
+    }
+    if (current_subject == 1 && preemption_step == 5 && timer_accepted == 2) {
+        check_selected_root_a();
+        preemption_step = 6;
+        serial_puts("LEANOS/5 SWITCH subject=1 address-space=1 cr3=switched stack=resumed contexts=separate\n");
+        return;
+    }
+    fail("switch-binding");
 }
 
 static void arm_timer(void) {
@@ -637,7 +683,7 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
-    serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap\n");
+    serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 
     check_boot_page_tables();
 

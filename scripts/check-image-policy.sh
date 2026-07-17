@@ -156,5 +156,16 @@ grep -Fq 'fixture=wrong-cr3 root=A level=cr3' boot/kernel.c
 ! grep -Fq '__user_b_text_start' <(sed -n '/__user_a_text_start/,/__user_b_text_start/{p}' boot/boot.S | head -n -1)
 grep -q ' T leanos_ipc_demo$' <<<"$symbols"
 grep -q ' T leanos_preemption_demo$' <<<"$symbols"
+grep -q ' B saved_context_a$' <<<"$symbols"
+grep -q ' B saved_context_b$' <<<"$symbols"
+saved_a="$(nm -n "$elf" | awk '$3 == "saved_context_a" { print "0x" $1 }')"
+saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
+[[ $((saved_b - saved_a)) -eq 160 ]] || {
+  echo "error: resumable context A does not occupy the reviewed 160-byte image" >&2
+  exit 1
+}
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 3 ]]
+grep -Fq 'saved_context_a[16] != 0x23' boot/kernel.c
+grep -Fq 'saved_context_b[19] != 0x1b' boot/kernel.c
 
 echo "ELF sections, policy symbols, and constructed page-table policy passed"

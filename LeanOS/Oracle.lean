@@ -64,7 +64,8 @@ def vectors : List Vector := [
   preemption "preemption.accept" 32 1 2 1,
   preemption "preemption.masked" 32 1 2 0,
   preemption "preemption.wrong-vector" 14 1 2 1,
-  preemption "preemption.forged-current" 32 2 1 1,
+  preemption "preemption.resume" 32 2 1 1,
+  preemption "preemption.forged-current" 32 2 3 1,
   bootAllocation "boot-allocation.accept" BootAllocation.multiboot2Magic 128 24 512 15,
   bootAllocation "boot-allocation.wrong-magic" 0 128 24 512 15,
   bootAllocation "boot-allocation.truncated" BootAllocation.multiboot2Magic 8 24 512 15,
@@ -75,7 +76,7 @@ def vectors : List Vector := [
   bootAllocation "boot-allocation.no-eligible-frame" BootAllocation.multiboot2Magic 128 24 4096 15,
   bootAllocation "boot-allocation.publish-before-scrub" BootAllocation.multiboot2Magic 128 24 512 11]
 
-theorem corpus_shape : vectors.length = 25 := by decide
+theorem corpus_shape : vectors.length = 26 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -92,7 +93,8 @@ theorem ipc_scenario_agrees :
 theorem preemption_scenario_agrees :
     (vectors[13]).expected = 0x0000000200000002 ∧
     (vectors[14]).expected = 0 ∧ (vectors[15]).expected = 0 ∧
-    (vectors[16]).expected = 0 := by native_decide
+    (vectors[16]).expected = 0x0000000100000001 ∧
+    (vectors[17]).expected = 0 := by native_decide
 
 private def wordsText : List UInt64 → String
   | [] => ""
