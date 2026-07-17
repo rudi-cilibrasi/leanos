@@ -362,6 +362,15 @@ smep_probe_recovered:
     ret
 .global enter_user
 enter_user:
+#ifdef LEANOS_RETURN_INITIAL_INDIRECT_FIXTURE
+    /* Negative final-ELF fixture: bypass validation from initial dispatch. */
+    lea user_return_restore(%rip), %rax
+    jmp *%rax
+#endif
+    /* This function is entered by a SysV call and never returns.  Discard the
+       caller return address so the synthetic 160-byte frame leaves RSP
+       16-byte aligned at the validator call site. */
+    add $8, %rsp
     pushq $0x1b
     push %rsi
     pushfq
@@ -370,7 +379,18 @@ enter_user:
     push %rax
     pushq $0x23
     push %rdi
-    iretq
+    /* Supply an all-zero initial register bank so every CPL3 transition uses
+       the same reviewed validator/restore epilogue. */
+    xor %eax, %eax
+    .rept 15
+    push %rax
+    .endr
+    mov $1, %esi
+#ifdef LEANOS_RETURN_BRANCH_FIXTURE
+    jmp user_return_restore
+#else
+    jmp user_return_epilogue
+#endif
 
 /* Raise a real #GP with RSP immediately above the unmapped guard.  Its present
    IST0 gate must push an exception frame into the guard, so the resulting #PF
@@ -500,8 +520,8 @@ isr80_cld:
     xor %rax, %rax
 7:
     mov %rax, 112(%rsp)
-    RESTORE
-    iretq
+    mov $2, %esi
+    jmp user_return_epilogue
 .global isr14
 isr14:
 .global isr14_clac
@@ -518,9 +538,13 @@ isr14_cld:
     mov %cr2, %rcx
     call page_fault_handler
     mov %rax, 136(%rsp)
+.global diagnostic_return_restore
+diagnostic_return_restore:
     add $8, %rsp
     RESTORE
     add $8, %rsp
+.global diagnostic_return_iretq
+diagnostic_return_iretq:
     iretq
 .global isr32
 .section .bss,"aw",@nobits
@@ -639,7 +663,48 @@ isr32_cld:
 3:
     mov %rsp, %rdi
     call switch_complete
+    mov $3, %esi
+    jmp user_return_epilogue
+
+/* The only boot-reachable CPL3 return. validate_user_return receives the exact
+   immutable register/frame tuple at RSP; after acceptance this block performs
+   no frame write, context change, or call before consuming that tuple. */
+.global user_return_epilogue
+.global user_return_iretq
+user_return_epilogue:
+    /* Normalize the two explicitly kernel-managed override bits in the exact
+       outgoing frame before it is validated.  NT, VM, IOPL, selectors, and
+       every address/context field remain reject-only. */
+    andq $-263169, 136(%rsp) /* ~(RFLAGS.DF | RFLAGS.AC) */
+    mov %rsp, %rdi
+    call validate_user_return
+#ifdef LEANOS_RETURN_POST_VALIDATE_QEMU_FIXTURE
+    /* Negative machine-path fixture: mutate the attested RIP, then re-enter
+       the production validator so the guest records a typed terminal result
+       before the mutated tuple can reach RESTORE/iretq. */
+    movabs $0x0000800000000000, %rax
+    mov %rax, 120(%rsp)
+    mov %rsp, %rdi
+    mov $1, %esi
+    call validate_user_return
+#endif
+#ifdef LEANOS_RETURN_INDIRECT_FIXTURE
+    /* Negative final-ELF fixture: synthesize an indirect restore entrant. */
+    lea user_return_restore(%rip), %rax
+    push %rax
+    ret
+#endif
+.global user_return_restore
+user_return_restore:
+#ifdef LEANOS_RETURN_RESTORE_FIXTURE
+    /* Negative final-ELF fixture: consume one slot into the wrong register. */
+    pop %r14
+    pop %r14; pop %r13; pop %r12; pop %r11; pop %r10; pop %r9; pop %r8
+    pop %rdi; pop %rsi; pop %rbp; pop %rdx; pop %rcx; pop %rbx; pop %rax
+#else
     RESTORE
+#endif
+user_return_iretq:
     iretq
 
 .section .user.a.text,"ax",@progbits

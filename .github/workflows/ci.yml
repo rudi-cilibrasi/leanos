@@ -79,6 +79,7 @@ jobs:
           mkdir -p build/ci
           ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
           ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-smoke.log
+          ./scripts/run-return-corruptions.sh 2>&1 | tee build/ci/qemu-return-corruptions.log
           LEANOS_SERIAL_LOG=build/boot/double-fault.serial.log \
             ./scripts/run-double-fault.sh 2>&1 | tee build/ci/qemu-double-fault.log
           LEANOS_EXPECT_GUARD_MAPPED=1 \
@@ -105,6 +106,11 @@ jobs:
             build/boot/SHA256SUMS
             build/boot/serial.log
             build/boot/double-fault.serial.log
+            build/boot/return-corruption-*.serial.log
+            build/boot/return-*-policy.log
+            build/boot/leanos-0.1.0-x86_64-return-*.iso
+            build/boot/leanos-return-*.elf
+            build/boot/leanos-return-*.map
             build/boot/corpus.tsv
             build/oracle/host-results.txt
             build/ci/*.log

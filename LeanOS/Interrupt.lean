@@ -78,7 +78,7 @@ inductive RejectReason where | malformedReturn | wrongOrigin
 inductive Action where
   | contained (subject : SubjectId)
   | timer
-  | resume
+  | syscall
   | rejected (reason : RejectReason)
   | fatal (reason : FatalReason)
   deriving DecidableEq, Repr
@@ -87,10 +87,347 @@ structure Outcome where
   state : State
   action : Action
 
-def validUserReturn (frame : HardwareFrame) : Bool :=
+/-- Structural predicate for saved user frames used by the preemption model.
+It is not an authorization to leave the kernel; outgoing returns use
+`validateUserReturn`. -/
+def validSavedUserFrame (frame : HardwareFrame) : Bool :=
   frame.savedPrivilege = .user && frame.codeSelector = 0x23 &&
     frame.stackSelector = 0x1b && frame.canonicalInstructionPointer &&
     frame.canonicalStackPointer && frame.flagsAllowed
+
+/-! ## Authoritative outgoing user-return validation
+
+This transition deliberately returns the request it accepted.  The accepted
+value is therefore an attestation of the complete immutable frame/context
+tuple, rather than a Boolean that could accidentally be reused for a different
+mutable frame.  Machine code consuming the attestation remains a refinement
+boundary.
+-/
+
+inductive ReturnPurpose where
+  | initialDispatch | syscallResume | schedulerRestore | containedFaultResume
+  | diagnosticKernelRecovery
+  deriving DecidableEq, Repr
+
+inductive ExecutionMode where | running | halted
+  deriving DecidableEq, Repr
+
+structure UserRegion where
+  first : UInt64
+  pastLast : UInt64
+  deriving DecidableEq, Repr
+
+def UserRegion.contains (region : UserRegion) (address : UInt64) : Bool :=
+  region.first ≤ address && address < region.pastLast
+
+/-- A saved stack pointer may name the first byte beyond the mapped stack: it
+is an empty-stack cursor, not a memory access.  Actual stack memory remains the
+half-open interval recognized by `contains`. -/
+def UserRegion.containsStackPointer (region : UserRegion) (address : UInt64) : Bool :=
+  region.first ≤ address && address ≤ region.pastLast
+
+/-- Kernel-owned return policy selected before an untrusted outgoing frame is
+presented to the fail-stop gate. -/
+structure TrustedReturnAuthority where
+  purpose : ReturnPurpose
+  expectedCr3 : UInt64
+  codeRegion : UserRegion
+  stackRegion : UserRegion
+  deriving DecidableEq, Repr
+
+def defaultReturnAuthority : TrustedReturnAuthority :=
+  { purpose := .initialDispatch
+    expectedCr3 := 0
+    codeRegion := ⟨0, 0⟩
+    stackRegion := ⟨0, 0⟩ }
+
+/-- Decoded architectural flag policy supplied beside the raw frame.  The
+machine adapter must establish that these bits agree with `hardware.flags`. -/
+structure ReturnFlags where
+  interruptEnable : Bool
+  direction : Bool
+  alignmentCheck : Bool
+  nestedTask : Bool
+  virtual8086 : Bool
+  ioPrivilegeLevel : UInt64
+  reservedAllowed : Bool
+  deriving DecidableEq, Repr
+
+/-- Decode the complete reviewed user-return RFLAGS policy from the raw word.
+No caller-supplied Boolean summary participates in outgoing authorization. -/
+def rawReturnFlagsAllowed (flags : UInt64) : Bool :=
+  let flag (divisor : UInt64) := flags / divisor % 2 = 1
+  let arithmetic :=
+    (if flag 0x1 then 0x1 else 0) +
+    (if flag 0x4 then 0x4 else 0) +
+    (if flag 0x10 then 0x10 else 0) +
+    (if flag 0x40 then 0x40 else 0) +
+    (if flag 0x80 then 0x80 else 0) +
+    (if flag 0x800 then 0x800 else 0)
+  flags = 0x202 + arithmetic
+
+structure UserReturnRequest where
+  hardware : HardwareFrame
+  purpose : ReturnPurpose
+  frameSubject : SubjectId
+  frameAddressSpace : AddressSpaceId
+  frameCr3 : UInt64
+  expectedSubject : SubjectId
+  expectedAddressSpace : AddressSpaceId
+  expectedCr3 : UInt64
+  executionMode : ExecutionMode
+  lifecycle : SubjectLifecycle.State
+  codeRegion : UserRegion
+  stackRegion : UserRegion
+  flags : ReturnFlags
+
+inductive ReturnRejectReason where
+  | unselectedAuthority | wrongPurpose | fatalMode | wrongOrigin | wrongSelector | noncanonical
+  | forbiddenFlags | staleSubject | wrongAddressSpace | wrongCr3
+  | instructionOutsideSubject | stackOutsideSubject
+  deriving DecidableEq, Repr
+
+inductive UserReturnValidation where
+  | accepted (attested : UserReturnRequest)
+  | rejected (reason : ReturnRejectReason)
+
+def validateUserReturn (request : UserReturnRequest) : UserReturnValidation :=
+  if request.purpose = .diagnosticKernelRecovery then .rejected .wrongPurpose
+  else if request.executionMode != .running then .rejected .fatalMode
+  else if request.hardware.savedPrivilege != .user then .rejected .wrongOrigin
+  else if request.hardware.codeSelector != 0x23 || request.hardware.stackSelector != 0x1b then
+    .rejected .wrongSelector
+  else if !request.hardware.canonicalInstructionPointer ||
+      !request.hardware.canonicalStackPointer then .rejected .noncanonical
+  else if !rawReturnFlagsAllowed request.hardware.flags then
+    .rejected .forbiddenFlags
+  else if request.lifecycle.capabilities.subjects request.expectedSubject != true ||
+      request.lifecycle.runnable request.expectedSubject != true ||
+      request.lifecycle.current != some request.expectedSubject ||
+      request.frameSubject != request.expectedSubject then .rejected .staleSubject
+  else if request.lifecycle.addressOwner request.expectedAddressSpace !=
+      some request.expectedSubject ||
+      request.frameAddressSpace != request.expectedAddressSpace then
+    .rejected .wrongAddressSpace
+  else if request.frameCr3 != request.expectedCr3 then .rejected .wrongCr3
+  else if !request.codeRegion.contains request.hardware.instructionPointer then
+    .rejected .instructionOutsideSubject
+  else if !request.stackRegion.containsStackPointer request.hardware.stackPointer then
+    .rejected .stackOutsideSubject
+  else .accepted request
+
+theorem accepted_attests_exact_request request attested
+    (haccepted : validateUserReturn request = .accepted attested) :
+    attested = request := by
+  unfold validateUserReturn at haccepted
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> simp_all
+
+theorem accepted_user_return_context_confined request attested
+    (haccepted : validateUserReturn request = .accepted attested) :
+    attested = request ∧
+      attested.purpose ≠ .diagnosticKernelRecovery ∧
+      attested.executionMode = .running ∧
+      attested.hardware.savedPrivilege = .user ∧
+      attested.hardware.codeSelector = 0x23 ∧
+      attested.hardware.stackSelector = 0x1b ∧
+      attested.hardware.canonicalInstructionPointer = true ∧
+      attested.hardware.canonicalStackPointer = true ∧
+      rawReturnFlagsAllowed attested.hardware.flags = true ∧
+      attested.lifecycle.capabilities.subjects attested.expectedSubject = true ∧
+      attested.lifecycle.runnable attested.expectedSubject = true ∧
+      attested.lifecycle.current = some attested.expectedSubject ∧
+      attested.frameSubject = attested.expectedSubject ∧
+      attested.lifecycle.addressOwner attested.expectedAddressSpace =
+        some attested.expectedSubject ∧
+      attested.frameAddressSpace = attested.expectedAddressSpace ∧
+      attested.frameCr3 = attested.expectedCr3 ∧
+      attested.codeRegion.contains attested.hardware.instructionPointer = true ∧
+      attested.stackRegion.containsStackPointer attested.hardware.stackPointer = true := by
+  have hattested : attested = request :=
+    accepted_attests_exact_request request attested haccepted
+  rw [hattested] at haccepted ⊢
+  unfold validateUserReturn at haccepted
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> simp_all
+
+theorem diagnostic_recovery_never_authorizes_user_return request
+    (hpurpose : request.purpose = .diagnosticKernelRecovery) :
+    validateUserReturn request = .rejected .wrongPurpose := by
+  simp [validateUserReturn, hpurpose]
+
+/-! ## Fixed-width differential-oracle adapter
+
+The oracle uses one synthetic live subject and address space so five scalar
+words can exercise the complete return policy without exposing function-valued
+model state at the ABI.  `mode` selects a kernel-owned purpose or one controlled
+context corruption; the remaining words are the outgoing machine fields.
+-/
+
+private def oracleCanonical (address : UInt64) : Bool :=
+  let high := address / 0x800000000000
+  high = 0 || high = 0x1ffff
+
+private def oracleFlag (flags divisor : UInt64) : Bool :=
+  flags / divisor % 2 = 1
+
+private def oracleFlagsAllowed (flags : UInt64) : Bool :=
+  rawReturnFlagsAllowed flags
+
+private def oracleLifecycle (mode : UInt64) : SubjectLifecycle.State :=
+  { capabilities :=
+      { subjects := fun subject => subject = 1 && mode != 8
+        objects := fun _ => false
+        kinds := fun _ => none
+        slots := fun _ _ => none }
+    issuedSubjects := fun subject => subject = 1
+    ownedMemory := fun _ => none
+    addressOwner := fun addressSpace =>
+      if addressSpace = 11 && mode != 9 then some 1 else none
+    mapping := fun _ _ => none
+    endpointOwner := fun _ => none
+    mailbox := fun _ => none
+    frameOwner := fun _ => none
+    freeFrame := fun _ => true
+    runnable := fun subject => subject = 1 && mode != 8
+    current := if mode = 8 then none else some 1 }
+
+private def oraclePurpose (mode : UInt64) : ReturnPurpose :=
+  if mode = 2 then .syscallResume
+  else if mode = 3 then .schedulerRestore
+  else if mode = 1 || (6 ≤ mode && mode ≤ 13) then .initialDispatch
+  else .diagnosticKernelRecovery
+
+private def oracleRequest (mode rip rsp selectors flags : UInt64) : UserReturnRequest :=
+  { hardware :=
+      { vector := 0
+        errorCode := 0
+        savedPrivilege := if mode = 7 then .kernel else .user
+        instructionPointer := rip
+        stackPointer := rsp
+        codeSelector := selectors % 0x10000
+        stackSelector := selectors / 0x10000
+        flags
+        canonicalInstructionPointer := oracleCanonical rip
+        canonicalStackPointer := oracleCanonical rsp
+        flagsAllowed := oracleFlagsAllowed flags }
+    purpose := oraclePurpose mode
+    frameSubject := if mode = 11 then 2 else 1
+    frameAddressSpace := if mode = 12 then 12 else 11
+    frameCr3 := if mode = 10 then 0x2000 else 0x1000
+    expectedSubject := 1
+    expectedAddressSpace := 11
+    expectedCr3 := 0x1000
+    executionMode := if mode = 6 then .halted else .running
+    lifecycle := oracleLifecycle mode
+    codeRegion := ⟨0x400000, 0x401000⟩
+    stackRegion := ⟨0x500000, 0x501000⟩
+    flags :=
+      { interruptEnable := oracleFlag flags 0x200
+        direction := oracleFlag flags 0x400
+        alignmentCheck := oracleFlag flags 0x40000
+        nestedTask := oracleFlag flags 0x4000
+        virtual8086 := oracleFlag flags 0x20000
+        ioPrivilegeLevel := flags / 0x1000 % 4
+        reservedAllowed := oracleFlagsAllowed flags } }
+
+/-- Consumption checks the field taken from the accepted attestation, rather
+than re-reading a mutable outgoing frame. -/
+def consumeValidatedInstructionPointer (request : UserReturnRequest)
+    (consumedInstructionPointer : UInt64) : Bool :=
+  match validateUserReturn request with
+  | .accepted attested => attested.hardware.instructionPointer = consumedInstructionPointer
+  | .rejected _ => false
+
+private def oracleModelAccepts (request : UserReturnRequest) : Bool :=
+  match validateUserReturn request with
+  | .accepted _ => true
+  | .rejected _ => false
+
+private theorem oracleModelAccepts_iff (request : UserReturnRequest) :
+    oracleModelAccepts request = true ↔
+      validateUserReturn request = .accepted request := by
+  constructor
+  · intro haccepts
+    unfold oracleModelAccepts at haccepts
+    cases hvalidation : validateUserReturn request with
+    | rejected reason => simp [hvalidation] at haccepts
+    | accepted attested =>
+        have hattested := accepted_attests_exact_request request attested hvalidation
+        subst attested
+        rfl
+  · intro hvalidation
+    simp [oracleModelAccepts, hvalidation]
+
+/-- Allocation-free spelling of the same bounded request predicate, suitable
+for the freestanding generated-code ABI. -/
+private def oracleScalarAccepts (mode rip rsp selectors flags : UInt64) : Bool :=
+  if !(mode = 1 || mode = 2 || mode = 3 || (6 ≤ mode && mode ≤ 13)) then false
+  else if mode = 6 then false
+  else if mode = 7 then false
+  else if selectors % 0x10000 != 0x23 || selectors / 0x10000 != 0x1b then false
+  else if !oracleCanonical rip || !oracleCanonical rsp then false
+  else if !oracleFlagsAllowed flags || !oracleFlag flags 0x200 ||
+      oracleFlag flags 0x400 || oracleFlag flags 0x40000 ||
+      oracleFlag flags 0x4000 || oracleFlag flags 0x20000 ||
+      flags / 0x1000 % 4 != 0 then false
+  else if mode = 8 || mode = 11 then false
+  else if mode = 9 || mode = 12 then false
+  else if mode = 10 then false
+  else if !(0x400000 ≤ rip && rip < 0x401000) then false
+  else if !(0x500000 ≤ rsp && rsp ≤ 0x501000) then false
+  else true
+
+/-- Bounded generated-code adapter for shared Lean/host/boot differential
+replay. Modes 1--3 are the boot-supported purposes; modes 6--12 inject one
+policy failure; mode 13 validates a good request and then attempts to consume a
+mutated RIP. Every other mode is total-to-rejection. -/
+@[export leanos_user_return_demo]
+def userReturnDemo (mode rip rsp selectors flags : UInt64) : UInt64 :=
+  if mode = 13 then 0
+  else if oracleScalarAccepts mode rip rsp selectors flags then 1 else 0
+
+/-- Model-derived expectation used to generate the shared corpus.  This is
+kept separate from the allocation-free exported adapter so hosted and boot
+replay compare two independently evaluated paths. -/
+def userReturnModelExpected (mode rip rsp selectors flags : UInt64) : UInt64 :=
+  let request := oracleRequest mode rip rsp selectors flags
+  if mode = 13 then
+    if consumeValidatedInstructionPointer request (rip + 1) then 1 else 0
+  else if oracleModelAccepts request then 1 else 0
+
+theorem userReturnDemo_accepts_reviewed_purposes :
+    userReturnDemo 1 0x400100 0x500ff8 0x1b0023 0x202 = 1 ∧
+    userReturnDemo 2 0x400100 0x500ff8 0x1b0023 0x202 = 1 ∧
+    userReturnDemo 3 0x400100 0x500ff8 0x1b0023 0x202 = 1 ∧
+    oracleModelAccepts (oracleRequest 1 0x400100 0x500ff8 0x1b0023 0x202) ∧
+    oracleModelAccepts (oracleRequest 2 0x400100 0x500ff8 0x1b0023 0x202) ∧
+    oracleModelAccepts (oracleRequest 3 0x400100 0x500ff8 0x1b0023 0x202) := by
+  native_decide
+
+theorem userReturnDemo_rejects_mutated_consumption :
+    userReturnDemo 13 0x400100 0x500ff8 0x1b0023 0x202 = 0 ∧
+    consumeValidatedInstructionPointer
+      (oracleRequest 13 0x400100 0x500ff8 0x1b0023 0x202) 0x400101 = false := by
+  native_decide
 
 def dispatchHardware (state : State) (frame : HardwareFrame) : Outcome :=
   if state.context.entryActive then { state, action := .fatal .nestedEntry }
@@ -108,9 +445,7 @@ def dispatchHardware (state : State) (frame : HardwareFrame) : Outcome :=
     | some .syscall =>
         match frame.savedPrivilege with
         | .kernel => { state, action := .rejected .wrongOrigin }
-        | .user =>
-            if validUserReturn frame then { state, action := .resume }
-            else { state, action := .rejected .malformedReturn }
+        | .user => { state, action := .syscall }
 
 /-- Register contents are deliberately erased before trusted classification. -/
 def dispatch (state : State) (trap : Trap) : Outcome :=
@@ -140,10 +475,7 @@ theorem dispatchHardware_preserves_trusted_context state frame :
       | pageFault => cases frame.savedPrivilege <;> simp [hvector]
       | timer => simp [hvector]
       | syscall =>
-        cases frame.savedPrivilege
-        · simp [hvector]
-        · simp only [hvector]
-          by_cases hvalid : validUserReturn frame = true <;> simp [hvalid]
+        cases frame.savedPrivilege <;> simp [hvector]
 
 theorem attacker_registers_cannot_change_trusted_context state frame registers :
     (dispatch state { hardware := frame, registers }).state.context = state.context := by
@@ -168,9 +500,7 @@ theorem dispatch_preserves_invariant_or_fatal state trap (hstate : WellFormed st
             state.lifecycle state.context.currentSubject hstate
       | timer => simpa [hvector] using hstate
       | syscall =>
-        cases trap.hardware.savedPrivilege
-        · simp [hvector, hstate]
-        · cases hreturn : validUserReturn trap.hardware <;> simp [hvector, hreturn, hstate]
+        cases trap.hardware.savedPrivilege <;> simp [hvector, hstate]
 
 theorem user_page_fault_contained state frame
     (hnested : state.context.entryActive = false)
@@ -264,63 +594,34 @@ theorem contained_fault_preserves_unrelated_endpoint state frame object owner
     SubjectLifecycle.terminateState, howner, hunrelated]
   rfl
 
-theorem malformed_return_cannot_resume state frame
-    (hmalformed : validUserReturn frame = false) :
-    (dispatchHardware state frame).action ≠ .resume := by
-  unfold dispatchHardware
-  split <;> simp
+theorem syscall_entry_requires_user_origin state frame
+    (hsyscall : (dispatchHardware state frame).action = .syscall) :
+    frame.savedPrivilege = .user := by
+  unfold dispatchHardware at hsyscall
+  split at hsyscall <;> simp_all
   next =>
     cases hvector : decodeVector frame.vector with
-    | none => simp [hvector]
+    | none => simp [hvector] at hsyscall
     | some vector =>
       cases vector with
-      | pageFault => cases frame.savedPrivilege <;> simp [hvector]
-      | timer => simp [hvector]
-      | syscall => cases frame.savedPrivilege <;> simp [hvector, hmalformed]
-
-theorem resume_requires_safe_user_frame state frame
-    (hresume : (dispatchHardware state frame).action = .resume) :
-    validUserReturn frame = true ∧
-      frame.savedPrivilege = .user ∧ frame.codeSelector = 0x23 ∧
-      frame.stackSelector = 0x1b ∧ frame.canonicalInstructionPointer = true ∧
-      frame.canonicalStackPointer = true ∧ frame.flagsAllowed = true := by
-  unfold dispatchHardware at hresume
-  split at hresume <;> simp_all
-  next =>
-    cases hvector : decodeVector frame.vector with
-    | none => simp [hvector] at hresume
-    | some vector =>
-      cases vector with
-      | pageFault =>
-        cases hprivilege : frame.savedPrivilege <;> simp [hvector, hprivilege] at hresume
-      | timer => simp [hvector] at hresume
+      | pageFault => cases hprivilege : frame.savedPrivilege <;>
+          simp [hvector, hprivilege] at hsyscall
+      | timer => simp [hvector] at hsyscall
       | syscall =>
-        by_cases hkernel : frame.savedPrivilege = .kernel
-        · simp [hvector, hkernel] at hresume
-        · have horigin : frame.savedPrivilege = .user := by
-            have hcases : frame.savedPrivilege = .kernel ∨
-                frame.savedPrivilege = .user := by
-              cases frame.savedPrivilege
-              · exact Or.inl rfl
-              · exact Or.inr rfl
-            exact hcases.resolve_left hkernel
-          by_cases hvalid : validUserReturn frame = true
-          · have hfields := hvalid
-            simp [validUserReturn, horigin] at hfields
-            exact ⟨hvalid, horigin, hfields.1.1.1.1, hfields.1.1.1.2,
-              hfields.1.1.2, hfields.1.2, hfields.2⟩
-          · simp [hvector, horigin, hvalid] at hresume
+          cases hprivilege : frame.savedPrivilege with
+          | kernel => simp [hvector, hprivilege] at hsyscall
+          | user => rfl
 
-theorem resume_preserves_trusted_subject state frame
-    (_hresume : (dispatchHardware state frame).action = .resume) :
+theorem syscall_preserves_trusted_subject state frame
+    (_hsyscall : (dispatchHardware state frame).action = .syscall) :
     (dispatchHardware state frame).state.context.currentSubject =
       state.context.currentSubject := by
   exact congrArg (fun context => context.currentSubject)
     (dispatchHardware_preserves_trusted_context state frame)
 
-theorem fatal_cannot_resume_as_other_subject state frame reason
+theorem fatal_cannot_be_syscall state frame reason
     (hfatal : (dispatchHardware state frame).action = .fatal reason) :
-    (dispatchHardware state frame).action ≠ .resume := by
+    (dispatchHardware state frame).action ≠ .syscall := by
   rw [hfatal]
   simp
 
@@ -347,22 +648,20 @@ example (lifecycle : SubjectLifecycle.State) :
     (dispatch (modelState lifecycle) ⟨frame 32 .user, registers⟩).action = .timer := by
   simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector]
 example (lifecycle : SubjectLifecycle.State) :
-    (dispatch (modelState lifecycle) ⟨frame 128 .user, registers⟩).action = .resume := by
-  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector, validUserReturn]
+    (dispatch (modelState lifecycle) ⟨frame 128 .user, registers⟩).action = .syscall := by
+  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector]
 example (lifecycle : SubjectLifecycle.State) :
     (dispatch (modelState lifecycle) ⟨frame 128 .kernel, registers⟩).action =
       .rejected .wrongOrigin := by
   simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector]
 example (lifecycle : SubjectLifecycle.State) :
     let malformed := { frame 128 .user with codeSelector := 0x8 }
-    (dispatch (modelState lifecycle) ⟨malformed, registers⟩).action =
-      .rejected .malformedReturn := by
-  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector, validUserReturn]
+    (dispatch (modelState lifecycle) ⟨malformed, registers⟩).action = .syscall := by
+  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector]
 example (lifecycle : SubjectLifecycle.State) :
     let malformed := { frame 128 .user with flagsAllowed := false }
-    (dispatch (modelState lifecycle) ⟨malformed, registers⟩).action =
-      .rejected .malformedReturn := by
-  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector, validUserReturn]
+    (dispatch (modelState lifecycle) ⟨malformed, registers⟩).action = .syscall := by
+  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector]
 example (lifecycle : SubjectLifecycle.State) :
     let nested := { modelState lifecycle with context := { context with entryActive := true } }
     (dispatch nested ⟨frame 32 .user, registers⟩).action = .fatal .nestedEntry := by

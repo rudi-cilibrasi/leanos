@@ -175,4 +175,117 @@ grep -Fq 'if (initial_b_frame_valid(initial_context_b)) fail("initial-flags-nega
 grep -Fq 'saved_context_a[16] != 0x23' boot/kernel.c
 grep -Fq 'saved_context_b[19] != 0x1b' boot/kernel.c
 
+# All CPL3 transitions converge on one validator call and consume the validated
+# frame without an intervening call, write, or context switch. The sole other
+# iretq belongs to the explicitly separate supervisor diagnostic recovery path.
+for symbol in diagnostic_return_restore diagnostic_return_iretq \
+  user_return_epilogue user_return_restore user_return_iretq validate_user_return; do
+  grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+    echo "error: user-return policy symbol missing: $symbol" >&2; exit 1;
+  }
+done
+[[ "$(objdump -d "$elf" | grep -c '[[:space:]]iretq')" -eq 2 ]] || {
+  echo "error: expected one validated user iretq and one diagnostic kernel iretq" >&2; exit 1;
+}
+return_disassembly="$(objdump -d "$elf" | sed -n '/<user_return_epilogue>:/,/<user_return_iretq>:/p')"
+grep -Eq 'call.*<validate_user_return>' <<<"$return_disassembly" || {
+  echo "error: user-return epilogue does not call validator" >&2; exit 1;
+}
+initial_return_disassembly="$(objdump -d --no-show-raw-insn "$elf" |
+  sed -n '/<enter_user>:/,/<run_double_fault_probe>:/p')"
+[[ "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+add[ql]?[[:space:]]+\$0x8,%rsp$' \
+    <<<"$initial_return_disassembly")" -eq 1 &&
+   "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+push' \
+    <<<"$initial_return_disassembly")" -eq 21 &&
+   "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+pop' \
+    <<<"$initial_return_disassembly")" -eq 1 ]] || {
+  echo "error: initial user-return path does not preserve SysV validator-call alignment" >&2
+  exit 1
+}
+restore_sequence="$(objdump -d --no-show-raw-insn "$elf" |
+  awk '/<user_return_restore>:/ { capture=1; next }
+       /<user_return_iretq>:/ { capture=0 }
+       capture {
+         sub(/^[[:space:]]*[0-9a-f]+:[[:space:]]*/, "")
+         gsub(/[[:space:]]+/, " ")
+         if ($0 == "") next
+         sequence = sequence (sequence == "" ? "" : ";") $0
+       }
+       END { print sequence }')"
+expected_restore='pop %r15;pop %r14;pop %r13;pop %r12;pop %r11;pop %r10;pop %r9;pop %r8;pop %rdi;pop %rsi;pop %rbp;pop %rdx;pop %rcx;pop %rbx;pop %rax'
+[[ "$restore_sequence" == "$expected_restore" ]] || {
+  echo "error: unexpected exact user-return restore sequence" >&2; exit 1;
+}
+
+diagnostic_sequence="$(objdump -d --no-show-raw-insn "$elf" |
+  awk '/<diagnostic_return_restore>:/ { capture=1; next }
+       /<diagnostic_return_iretq>:/ { capture=0 }
+       capture {
+         sub(/^[[:space:]]*[0-9a-f]+:[[:space:]]*/, "")
+         gsub(/[[:space:]]+/, " ")
+         if ($0 == "") next
+         sequence = sequence (sequence == "" ? "" : ";") $0
+       }
+       END { print sequence }')"
+expected_diagnostic="add \$0x8,%rsp;${expected_restore};add \$0x8,%rsp"
+[[ "$diagnostic_sequence" == "$expected_diagnostic" ]] || {
+  echo "error: unexpected exact diagnostic restore sequence" >&2; exit 1;
+}
+
+# No direct control-flow edge may enter the interval after validation; normal
+# execution reaches `user_return_restore` only by fallthrough from the call.
+user_restore_address=$((16#$(nm -n "$elf" | awk '$3 == "user_return_restore" { print $1 }')))
+user_iretq_address=$((16#$(nm -n "$elf" | awk '$3 == "user_return_iretq" { print $1 }')))
+diagnostic_restore_address=$((16#$(nm -n "$elf" | awk '$3 == "diagnostic_return_restore" { print $1 }')))
+diagnostic_iretq_address=$((16#$(nm -n "$elf" | awk '$3 == "diagnostic_return_iretq" { print $1 }')))
+while read -r source target; do
+  [[ -n "$source" && -n "$target" ]] || continue
+  target_value=$((16#$target))
+  if (( (target_value >= user_restore_address && target_value <= user_iretq_address) ||
+        (target_value >= diagnostic_restore_address && target_value <= diagnostic_iretq_address) )); then
+    echo "error: control-flow edge $source -> $target enters post-validation restore interval" >&2
+    exit 1
+  fi
+done < <(objdump -d --no-show-raw-insn "$elf" |
+  sed -nE 's/^[[:space:]]*([0-9a-f]+):[[:space:]]+(j[a-z]*|call[a-z]*|loop[a-z]*)[[:space:]]+([0-9a-f]+).*/\1 \3/p')
+
+# Interrupt return assembly is deliberately free of computed jumps, calls, and
+# returns. This closes the static-CFG hole where a synthesized `ret` could enter
+# either restore interval without appearing as a direct branch target. C code's
+# ordinary returns and its compiler-generated jump table lie outside this range.
+interrupt_start=$((16#$(nm -n "$elf" | awk '$3 == "enter_user" { print $1 }')))
+return_end=$((user_iretq_address + 1))
+while read -r source instruction; do
+  [[ -n "$source" ]] || continue
+  source_value=$((16#$source))
+  if (( source_value >= interrupt_start && source_value < return_end )); then
+    echo "error: indirect control-flow instruction $source ($instruction) in interrupt return assembly" >&2
+    exit 1
+  fi
+done < <(objdump -d --no-show-raw-insn "$elf" |
+  sed -nE 's/^[[:space:]]*([0-9a-f]+):[[:space:]]+((j[a-z]*|call[a-z]*)[[:space:]]+\*.*|retq?)$/\1 \2/p')
+
+# After the validator call, normal execution must fall directly into the exact
+# restore sequence. This catches frame writes or extra direct calls that the
+# edge and indirect-transfer checks above intentionally classify separately.
+pre_restore_sequence="$(objdump -d --no-show-raw-insn "$elf" |
+  awk '/<user_return_epilogue>:/ { capture=1; next }
+       /<user_return_restore>:/ { capture=0 }
+       capture {
+         sub(/^[[:space:]]*[0-9a-f]+:[[:space:]]*/, "")
+         gsub(/[[:space:]]+/, " ")
+         if ($0 ~ /^call .*<validate_user_return>$/) $0 = "call <validate_user_return>"
+         if ($0 == "") next
+         sequence = sequence (sequence == "" ? "" : ";") $0
+       }
+       END { print sequence }')"
+expected_pre_restore='andq $0xfffffffffffbfbff,0x88(%rsp);mov %rsp,%rdi;call <validate_user_return>'
+[[ "$pre_restore_sequence" == "$expected_pre_restore" ]] || {
+  echo "error: mutation or control flow added after user-return validation" >&2
+  exit 1
+}
+[[ "$(grep -Ec '^[[:space:]]+iretq$' boot/boot.S)" -eq 2 ]] || {
+  echo "error: raw iretq added outside classified return sites" >&2; exit 1;
+}
+
 echo "ELF sections, policy symbols, and constructed page-table policy passed"

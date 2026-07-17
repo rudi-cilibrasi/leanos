@@ -78,7 +78,7 @@ theorem contextFor_save_consume contexts saved destination :
   simp [contextFor]
 
 def validContext (state : State) (context : Context) : Prop :=
-  Interrupt.validUserReturn context.frame = true ∧
+  Interrupt.validSavedUserFrame context.frame = true ∧
     context.addressSpace = context.owner ∧
     state.scheduler.lifecycle.capabilities.subjects context.owner = true ∧
     state.scheduler.lifecycle.runnable context.owner = true ∧
@@ -171,7 +171,7 @@ def switch (state : State) (interruptState : Interrupt.State)
   else match (Interrupt.dispatchHardware interruptState incomingFrame).action with
   | .fatal _ => halt state
   | .timer =>
-    if Interrupt.validUserReturn incomingFrame != true then reject state .malformedIncoming
+    if Interrupt.validSavedUserFrame incomingFrame != true then reject state .malformedIncoming
     else match state.scheduler.lifecycle.current with
       | none => reject state .noCurrent
       | some current =>
@@ -194,7 +194,7 @@ def switch (state : State) (interruptState : Interrupt.State)
             | some destination =>
               if destination.addressSpace != selected.activeAddressSpace ||
                   destination.owner != selected.currentSubject ||
-                  Interrupt.validUserReturn destination.frame != true ||
+                  Interrupt.validSavedUserFrame destination.frame != true ||
                   scheduled.state.lifecycle.capabilities.subjects destination.owner != true ||
                   scheduled.state.lifecycle.runnable destination.owner != true ||
                   scheduled.state.lifecycle.addressOwner destination.addressSpace !=
@@ -1583,7 +1583,7 @@ theorem bounded_round_trip_preserves_a (translations : TLB.State) :
       some (initialContext 3 0x30) := by
   simp [switchAToB, switchBToA, roundTripStart, demoInterrupt, demoLifecycle,
     initialContext, demoFrame, demoRegisters, switch, Interrupt.dispatchHardware,
-    Interrupt.decodeVector, Interrupt.validUserReturn, Scheduler.tick, Scheduler.yield,
+    Interrupt.decodeVector, Interrupt.validSavedUserFrame, Scheduler.tick, Scheduler.yield,
     Scheduler.selectNext, Scheduler.ownsAddressSpace, contextFor, eraseContext,
     TLB.switch]
 
@@ -1609,7 +1609,7 @@ example (translations : TLB.State) :
         some .contextMismatch := by
   simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
     switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
-    Interrupt.validUserReturn, reject]
+    Interrupt.validSavedUserFrame, reject]
 
 /-- A scheduler-valid destination is still rejected when the encoded virtual
 ownership view attributes its page tables to a different subject. -/
@@ -1622,7 +1622,7 @@ example (translations : TLB.State) :
       (demoRegisters 0x10)).error = some .staleDestination := by
   simp [roundTripStart, initialContext, demoInterrupt, demoLifecycle, demoFrame,
     demoRegisters, switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
-    Interrupt.validUserReturn, Scheduler.tick, Scheduler.yield, Scheduler.selectNext,
+    Interrupt.validSavedUserFrame, Scheduler.tick, Scheduler.yield, Scheduler.selectNext,
     Scheduler.ownsAddressSpace, contextFor, reject]
 
 /-- A matching active CR3 is insufficient when the encoded virtual-memory
@@ -1636,7 +1636,7 @@ example (translations : TLB.State) :
       (demoRegisters 0x10)).error = some .staleActiveSpace := by
   simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
     switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
-    Interrupt.validUserReturn, reject]
+    Interrupt.validSavedUserFrame, reject]
 
 /-- A stale CR3/TLB projection is rejected even when the scheduler and
 interrupt-entry projections agree on the current subject. -/
@@ -1647,7 +1647,7 @@ example (translations : TLB.State) :
       (demoRegisters 0x10)).error = some .staleActiveSpace := by
   simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
     switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
-    Interrupt.validUserReturn, reject]
+    Interrupt.validSavedUserFrame, reject]
 
 example (translations : TLB.State) :
     (switch (roundTripStart translations) (demoInterrupt 1)
@@ -1655,7 +1655,7 @@ example (translations : TLB.State) :
       (demoRegisters 0x10)).error = some .malformedIncoming := by
   simp [roundTripStart, demoInterrupt, demoLifecycle, demoFrame, demoRegisters,
     switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
-    Interrupt.validUserReturn, reject]
+    Interrupt.validSavedUserFrame, reject]
 
 example (translations : TLB.State) :
     let state := roundTripStart translations
@@ -1665,7 +1665,7 @@ example (translations : TLB.State) :
         some .duplicateSave := by
   simp [roundTripStart, initialContext, demoInterrupt, demoLifecycle, demoFrame,
     demoRegisters, switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
-    Interrupt.validUserReturn, contextFor, reject]
+    Interrupt.validSavedUserFrame, contextFor, reject]
 
 example (translations : TLB.State) :
     let state := roundTripStart translations
@@ -1674,7 +1674,7 @@ example (translations : TLB.State) :
         some .noDestination := by
   simp [roundTripStart, initialContext, demoInterrupt, demoLifecycle, demoFrame,
     demoRegisters, switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
-    Interrupt.validUserReturn, Scheduler.tick, Scheduler.yield, Scheduler.selectNext,
+    Interrupt.validSavedUserFrame, Scheduler.tick, Scheduler.yield, Scheduler.selectNext,
     Scheduler.ownsAddressSpace, contextFor, eraseContext, reject]
 
 example (translations : TLB.State) :
@@ -1685,7 +1685,7 @@ example (translations : TLB.State) :
       (demoRegisters 0x10)).error = some .staleDestination := by
   simp [roundTripStart, initialContext, demoInterrupt, demoLifecycle, demoFrame,
     demoRegisters, switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
-    Interrupt.validUserReturn, Scheduler.tick, Scheduler.yield, Scheduler.selectNext,
+    Interrupt.validSavedUserFrame, Scheduler.tick, Scheduler.yield, Scheduler.selectNext,
     Scheduler.ownsAddressSpace, contextFor, eraseContext, reject]
 
 example (translations : TLB.State) :
@@ -1694,14 +1694,14 @@ example (translations : TLB.State) :
       (demoFrame 0x401000 0x801000 0x246) (demoRegisters 0x10)).error = some .bankFull := by
   simp [roundTripStart, initialContext, demoInterrupt, demoLifecycle, demoFrame,
     demoRegisters, switch, Interrupt.dispatchHardware, Interrupt.decodeVector,
-    Interrupt.validUserReturn, contextFor, reject]
+    Interrupt.validSavedUserFrame, contextFor, reject]
 
 example (translations : TLB.State) :
     (switchBToA translations).state.translations.active = some 1 ∧
       (switchBToA translations).state.translations.entries = [] := by
   simp [switchAToB, switchBToA, roundTripStart, demoInterrupt, demoLifecycle,
     initialContext, demoFrame, demoRegisters, switch, Interrupt.dispatchHardware,
-    Interrupt.decodeVector, Interrupt.validUserReturn, Scheduler.tick, Scheduler.yield,
+    Interrupt.decodeVector, Interrupt.validSavedUserFrame, Scheduler.tick, Scheduler.yield,
     Scheduler.selectNext, Scheduler.ownsAddressSpace, contextFor, eraseContext,
     TLB.switch]
 

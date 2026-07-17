@@ -19,6 +19,8 @@ extern uint64_t leanos_resumable_preemption_demo(uint64_t, uint64_t, uint64_t,
                                                   uint64_t, uint64_t);
 extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t,
                                              uint64_t, uint64_t);
+extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t,
+                                        uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -66,6 +68,9 @@ extern uint64_t page_directory_b[], page_table_b[];
 #define MAX_HANDOFF_BYTES 65536u
 #define MAX_MMAP_ENTRIES 128u
 #define PAGE_BYTES 4096u
+#ifndef LEANOS_RETURN_CORRUPTION_MODE
+#define LEANOS_RETURN_CORRUPTION_MODE 0
+#endif
 #define BOOT_PT_COUNT 8u
 #define BOOT_LEAF_COUNT (512u * BOOT_PT_COUNT)
 #define PTE_PRESENT 1ull
@@ -99,7 +104,7 @@ static struct idt_entry idt[256] __attribute__((aligned(16)));
 static struct tss64 tss;
 static uint8_t entry_stack[16384] __attribute__((aligned(16)));
 static unsigned preemption_step;
-static uint64_t current_subject = 1;
+uint64_t current_subject = 1;
 static unsigned timer_accepted;
 static unsigned supervisor_probe;
 static uint8_t copy_buffer[16];
@@ -289,6 +294,97 @@ static void serial_u64(uint64_t value) {
     if (value == 0) { serial_putc('0'); return; }
     while (value != 0) { digits[length++] = (char)('0' + value % 10); value /= 10; }
     while (length != 0) serial_putc(digits[--length]);
+}
+
+static unsigned canonical(uint64_t value) {
+    uint64_t high = value >> 47;
+    return high == 0 || high == 0x1ffffu;
+}
+
+#if LEANOS_RETURN_CORRUPTION_MODE != 0
+static volatile uint64_t return_corruption_mode = LEANOS_RETURN_CORRUPTION_MODE;
+
+static const char *return_corruption_name(uint64_t mode) {
+    switch (mode) {
+    case 1: return "kernel-selector";
+    case 2: return "wrong-stack-selector";
+    case 3: return "noncanonical-rip";
+    case 4: return "noncanonical-rsp";
+    case 5: return "outside-code";
+    case 6: return "outside-stack";
+    case 7: return "flags-ac";
+    case 8: return "flags-df";
+    case 9: return "stale-cr3";
+    case 10: return "stale-context";
+    case 11: return "post-validation-mutation";
+    default: return "none";
+    }
+}
+
+/* Controlled negative images corrupt the actual outgoing frame immediately
+   before the production validator reads it. Each image must terminate here,
+   before the first user instruction or iret completion can be observed. */
+static void inject_return_corruption(uint64_t *saved) {
+    uint64_t mode = return_corruption_mode;
+    if (mode == 0) return;
+    serial_puts("LEANOS/9 RETURN fixture=");
+    serial_puts(return_corruption_name(mode));
+    serial_puts(" stage=outgoing-frame result=INJECTED\n");
+    switch (mode) {
+    case 1: saved[16] = 0x08; break;
+    case 2: saved[19] = 0x10; break;
+    case 3: saved[15] = 0x0000800000000000ull; break;
+    case 4: saved[18] = 0x0000800000000000ull; break;
+    case 5: saved[15] = (uint64_t)user_a_stack; break;
+    case 6: saved[18] = (uint64_t)user_a_entry; break;
+    case 7: saved[17] |= 1ull << 18; break;
+    case 8: saved[17] |= 1ull << 10; break;
+    case 9:
+        __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_b) : "memory");
+        break;
+    case 10: current_subject = 2; break;
+    case 11: break;
+    default: fail("user-return-fixture-mode");
+    }
+}
+#endif
+
+/* Fixed-width, allocation-free machine adapter for the authoritative return
+   policy. `saved` is the complete SAVE register bank followed by RIP, CS,
+   RFLAGS, RSP, and SS. Rejection enters the existing absorbing terminal path. */
+void validate_user_return(const uint64_t *saved, uint64_t purpose) {
+#if LEANOS_RETURN_CORRUPTION_MODE != 0
+    inject_return_corruption((uint64_t *)saved);
+#endif
+    uint64_t rip = saved[15], cs = saved[16], flags = saved[17];
+    uint64_t rsp = saved[18], ss = saved[19], cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    const char *code_first, *code_last, *stack_first, *stack_last;
+    const uint64_t *expected_cr3;
+    if (current_subject == 1) {
+        code_first = user_a_entry; code_last = user_a_stack;
+        stack_first = user_a_stack; stack_last = user_a_stack_top;
+        expected_cr3 = page_map_level_4_a;
+    } else if (current_subject == 2) {
+        code_first = user_b_entry; code_last = user_b_stack;
+        stack_first = user_b_stack; stack_last = user_b_stack_top;
+        expected_cr3 = page_map_level_4_b;
+    } else fail("user-return-subject");
+    if (purpose < 1 || purpose > 3) fail("user-return-purpose");
+    if (cs != 0x23 || ss != 0x1b) fail("user-return-selector");
+    if (!canonical(rip) || !canonical(rsp)) fail("user-return-noncanonical");
+    /* Require IF and architectural bit 1; reject DF, IOPL, NT, RF, VM, AC,
+       and every flag outside the deliberately reviewed arithmetic subset. */
+    const uint64_t required = (1ull << 1) | (1ull << 9);
+    const uint64_t allowed = required | 1ull | (1ull << 2) | (1ull << 4) |
+        (1ull << 6) | (1ull << 7) | (1ull << 11);
+    if ((flags & required) != required || (flags & ~allowed) != 0)
+        fail("user-return-flags");
+    if (rip < (uint64_t)code_first || rip >= (uint64_t)code_last)
+        fail("user-return-code");
+    if (rsp < (uint64_t)stack_first || rsp > (uint64_t)stack_last)
+        fail("user-return-stack");
+    if (cr3 != (uint64_t)expected_cr3) fail("user-return-cr3");
 }
 
 static __attribute__((noreturn)) void handoff_fail(const char *reason) {
@@ -493,8 +589,11 @@ static void replay_oracle(void) {
                 : v->adapter == 4
                     ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
                         v->words[3], v->words[4])
-                    : leanos_boot_allocation_check(v->words[0], v->words[1], v->words[2],
-                        v->words[3], v->words[4]);
+                    : v->adapter == 5
+                        ? leanos_boot_allocation_check(v->words[0], v->words[1], v->words[2],
+                            v->words[3], v->words[4])
+                        : leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
+                            v->words[3], v->words[4]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");

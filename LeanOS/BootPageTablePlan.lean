@@ -285,6 +285,26 @@ structure Plan where
   `compile`. Updating `compiledAncestors` alone cannot produce another `Plan`. -/
   private compiledLayoutBound : layoutFrames roots compiledAncestors = liveTableFrames
 
+/-- Public, read-only projections used by return-policy consumers.  A `Plan`
+can only be constructed by `compile`, so these values retain its checks. -/
+def Plan.rootFrame (plan : Plan) : Space → PhysicalFrame
+  | .subjectA => plan.roots.subjectA
+  | .subjectB => plan.roots.subjectB
+
+def Plan.hasPolicyLeaf (plan : Plan) (space : Space) (page : Nat)
+    (policy : PolicyRegion) (owner : Owner) : Bool :=
+  plan.leaves.any fun leaf =>
+    leaf.space == space && leaf.page == page && leaf.policy == policy && leaf.owner == owner
+
+/-- Query the physical frame as well as the reviewed policy.  This projection
+lets a consumer compare a compiled leaf with a separately modeled live map
+without exposing `Plan`'s constructor or unchecked leaf list. -/
+def Plan.hasPolicyLeafAtFrame (plan : Plan) (space : Space) (page : Nat)
+    (frame : X86PageTable.PhysicalFrame) (policy : PolicyRegion) (owner : Owner) : Bool :=
+  plan.leaves.any fun leaf =>
+    leaf.space == space && leaf.page == page && leaf.leaf.frame == frame &&
+      leaf.policy == policy && leaf.owner == owner
+
 /-- Total compiler/checker for the deliberately finite supported subset. -/
 def compile (input : Input) : Except Error Plan := do
   if !input.nxe then throw .missingNXE
