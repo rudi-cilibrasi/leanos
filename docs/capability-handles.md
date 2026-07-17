@@ -45,11 +45,13 @@ words. The codec therefore exposes exhaustion rather than silently reducing a
 natural-number identity modulo 48 bits. Capability copy and sealed-transfer
 offer boundaries reject zero or reserved/exhausted generations before
 allocation, and copy also rejects destination slots outside the encodable
-16-bit domain. Accepted copy and offer theorems produce the corresponding
-canonical fresh handle encoding. Receipt boundaries likewise reject reserved
-destination slots and noncanonical sealed generations before consuming the
-mailbox; every delivered attached receipt therefore admits the exact installed
-handle encoding.
+16-bit domain. An accepted userspace copy returns the corresponding canonical
+fresh handle word. Receipt boundaries likewise reject reserved destination
+slots and noncanonical sealed generations before consuming the mailbox; every
+delivered attached receipt returns the exact installed handle word, while
+data-only delivery returns no capability word. The associated Lean theorems
+tie each exposed word to the capability record installed in the destination
+slot.
 
 The Lean theorems prove codec round-trip and canonical uniqueness for every
 encodable handle, and prove that successful current-caller resolution returns

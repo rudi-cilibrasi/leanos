@@ -94,9 +94,12 @@ inductive AcceptResult where
 structure AcceptOutcome where
   state : State
   result : AcceptResult
+  /-- Exact generation-bound word installed by an authority-bearing receipt.
+  Data-only delivery and every rejection expose no capability word. -/
+  deliveredWord : Option UInt64
 
 def rejectAccept (state : State) (reason : AcceptError) : AcceptOutcome :=
-  { state, result := .rejected reason }
+  { state, result := .rejected reason, deliveredWord := none }
 
 def setPending (values : ObjectId → Option Sealed) endpoint value :=
   fun candidate => if candidate = endpoint then value else values candidate
@@ -127,7 +130,23 @@ def deliver (state : State) (caller destinationSlot : Nat)
         trace := state.trace }
       endpointCap.object
       (.received endpointCap.object transfer.identity caller destinationSlot)
-    result := .delivered envelope }
+    result := .delivered envelope
+    deliveredWord := CapabilityHandle.encode
+      { slot := destinationSlot, identity := transfer.identity } }
+
+/-- The word exposed by attached delivery is definitionally the handle of the
+exact capability record installed in the receiver's selected slot. -/
+theorem deliver_exposes_installed_word state caller destinationSlot endpointCap envelope transfer :
+    (deliver state caller destinationSlot endpointCap envelope transfer).deliveredWord =
+        CapabilityHandle.encode { slot := destinationSlot, identity := transfer.identity } ∧
+      (deliver state caller destinationSlot endpointCap envelope transfer).state.capabilities.slots
+        caller destinationSlot = some
+          ⟨transfer.object, transfer.kind, transfer.rights,
+            transfer.identity, some transfer.parent⟩ := by
+  constructor
+  · rfl
+  · simp (maxSteps := 500000) [deliver, record, setPending,
+      EndpointIPC.setOption, Capability.install]
 
 /-- Consume an envelope that has no sealed descendant.  This is deliberately a
 separate update from `deliver`: data receipt never inspects or changes a
@@ -137,7 +156,8 @@ def deliverData (state : State) (caller : SubjectId)
   { state := record
       { state with mailbox := EndpointIPC.setOption state.mailbox endpointCap.object none }
       endpointCap.object (.dataReceived endpointCap.object caller)
-    result := .delivered envelope }
+    result := .delivered envelope
+    deliveredWord := none }
 
 /-- Composite data-only send.  Callers must use this wrapper rather than
 mutating the embedded endpoint state, so attachment metadata and the mailbox
@@ -1346,6 +1366,20 @@ example :
         some sourceWord ∧
       (offerWords usableReplacementState 0 endpointWord sourceWord .memory
         { word0 := 71, word1 := 98 } { read := true }).result = .accepted := by
+  native_decide
+
+/-- Attached receipt makes the fresh generation-bound word directly available
+and that word names the exact installed destination capability. -/
+example :
+    let endpointWord := UInt64.ofNat 65536
+    let sourceWord := UInt64.ofNat 2883586
+    let offered := offerWords usableReplacementState 0 endpointWord sourceWord .memory
+      { word0 := 71, word1 := 98 } { read := true }
+    let received := acceptWord offered.state 0 endpointWord 1
+    received.result = .delivered
+        { endpoint := 10, sender := 0, payload := { word0 := 71, word1 := 98 } } ∧
+      received.deliveredWord = some (UInt64.ofNat (2 * 65536 + 1)) ∧
+      (received.state.capabilities.slots 0 1).map Capability.Capability.identity = some 2 := by
   native_decide
 
 /-- Replaying the old endpoint word after same-slot replacement is rejected

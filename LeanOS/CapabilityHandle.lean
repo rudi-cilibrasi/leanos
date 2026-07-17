@@ -232,19 +232,35 @@ def copy (state : State) (actor : SubjectId) (source : Handle)
       else if slotReserved ≤ destinationSlot then reject state .outOfRange
       else Capability.copy state actor source.slot destination destinationSlot requested
 
+structure CopyWordOutcome where
+  state : State
+  result : Capability.Result
+  /-- Exact word naming the freshly installed destination capability. -/
+  freshWord : Option UInt64
+
+def rejectCopyWord (state : State) (reason : Denial) : CopyWordOutcome :=
+  { state, result := .rejected reason, freshWord := none }
+
 /-- Userspace delegation boundary. The source word cannot select the actor or
 destination subject and is decoded before the internal slot transition. -/
 def copyWord (state : State) (actor : SubjectId) (sourceWord : UInt64)
     (expected : ObjectKind) (destination : SubjectId) (destinationSlot : SlotId)
-    (requested : Rights) : Outcome :=
+    (requested : Rights) : CopyWordOutcome :=
   match resolveCurrent state { caller := actor } sourceWord expected with
-  | .error (.denied reason) => reject state (denial reason)
-  | .error (.malformed _) => reject state .staleSlot
+  | .error (.denied reason) => rejectCopyWord state (denial reason)
+  | .error (.malformed _) => rejectCopyWord state .staleSlot
   | .ok source =>
       if state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity then
-        reject state .generationExhausted
-      else if slotReserved ≤ destinationSlot then reject state .outOfRange
-      else Capability.copy state actor source.handle.slot destination destinationSlot requested
+        rejectCopyWord state .generationExhausted
+      else if slotReserved ≤ destinationSlot then rejectCopyWord state .outOfRange
+      else
+        let copied := Capability.copy state actor source.handle.slot destination
+          destinationSlot requested
+        { state := copied.state
+          result := copied.result
+          freshWord := match copied.result with
+            | .accepted => encode { slot := destinationSlot, identity := state.nextIdentity }
+            | .rejected _ => none }
 
 /-- An accepted userspace copy records successful full-word resolution of the
 exact source authority before delegation. -/
@@ -259,14 +275,14 @@ theorem copyWord_accepted_resolves state actor sourceWord expected destination
   cases hsource : resolveCurrent state { caller := actor } sourceWord expected with
   | error reason =>
       cases reason with
-      | malformed decodeReason => simp [copyWord, hsource, reject] at haccepted
+      | malformed decodeReason => simp [copyWord, hsource, rejectCopyWord] at haccepted
       | denied resolveReason =>
-          cases resolveReason <;> simp [copyWord, hsource, reject] at haccepted
+          cases resolveReason <;> simp [copyWord, hsource, rejectCopyWord] at haccepted
   | ok source =>
       by_cases hexhausted : state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity
-      · simp [copyWord, hsource, hexhausted, reject] at haccepted
+      · simp [copyWord, hsource, hexhausted, rejectCopyWord] at haccepted
       · by_cases hslot : slotReserved ≤ destinationSlot
-        · simp [copyWord, hsource, hexhausted, hslot, reject] at haccepted
+        · simp [copyWord, hsource, hexhausted, hslot, rejectCopyWord] at haccepted
         · exact ⟨source, rfl,
             by simpa [copyWord, hsource, hexhausted, hslot] using haccepted⟩
 
@@ -280,14 +296,14 @@ theorem copyWord_accepted_fresh_handle_encodable state actor sourceWord expected
   cases hsource : resolveCurrent state { caller := actor } sourceWord expected with
   | error reason =>
       cases reason with
-      | malformed decodeReason => simp [copyWord, hsource, reject] at haccepted
+      | malformed decodeReason => simp [copyWord, hsource, rejectCopyWord] at haccepted
       | denied resolveReason =>
-          cases resolveReason <;> simp [copyWord, hsource, reject] at haccepted
+          cases resolveReason <;> simp [copyWord, hsource, rejectCopyWord] at haccepted
   | ok source =>
       by_cases hexhausted : state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity
-      · simp [copyWord, hsource, hexhausted, reject] at haccepted
+      · simp [copyWord, hsource, hexhausted, rejectCopyWord] at haccepted
       · by_cases hslot : slotReserved ≤ destinationSlot
-        · simp [copyWord, hsource, hexhausted, hslot, reject] at haccepted
+        · simp [copyWord, hsource, hexhausted, hslot, rejectCopyWord] at haccepted
         · have hpositive : 0 < state.nextIdentity :=
             Nat.pos_of_ne_zero (fun hzero => hexhausted (Or.inl hzero))
           have hgeneration : state.nextIdentity < generationReserved :=
@@ -296,14 +312,39 @@ theorem copyWord_accepted_fresh_handle_encodable state actor sourceWord expected
           refine ⟨UInt64.ofNat (destinationSlot + state.nextIdentity * slotRadix), ?_⟩
           simp [encode, Encodable, hslot', hpositive, hgeneration]
 
+/-- A successful userspace copy returns the exact canonical word for the
+fresh capability installed at the destination. -/
+theorem copyWord_accepted_returns_fresh_word state actor sourceWord expected destination
+    destinationSlot requested
+    (haccepted : (copyWord state actor sourceWord expected destination destinationSlot
+      requested).result = .accepted) :
+    (copyWord state actor sourceWord expected destination destinationSlot
+      requested).freshWord = encode { slot := destinationSlot, identity := state.nextIdentity } := by
+  cases hsource : resolveCurrent state { caller := actor } sourceWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason =>
+          simp [copyWord, hsource, rejectCopyWord] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [copyWord, hsource, rejectCopyWord] at haccepted
+  | ok source =>
+      by_cases hexhausted : state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity
+      · simp [copyWord, hsource, hexhausted, rejectCopyWord] at haccepted
+      · by_cases hslot : slotReserved ≤ destinationSlot
+        · simp [copyWord, hsource, hexhausted, hslot, rejectCopyWord] at haccepted
+        · have hcopy : (Capability.copy state actor source.handle.slot destination
+              destinationSlot requested).result = .accepted := by
+            simpa [copyWord, hsource, hexhausted, hslot] using haccepted
+          simp [copyWord, hsource, hexhausted, hslot, hcopy]
+
 /-- A malformed or denied copy word is state preserving. -/
 theorem copyWord_resolution_rejected_unchanged state actor sourceWord expected
     destination destinationSlot requested reason
     (hresolve : resolveCurrent state { caller := actor } sourceWord expected = .error reason) :
     (copyWord state actor sourceWord expected destination destinationSlot requested).state = state := by
   cases reason with
-  | malformed decodeReason => simp [copyWord, hresolve, reject]
-  | denied resolveReason => cases resolveReason <;> simp [copyWord, hresolve, reject]
+  | malformed decodeReason => simp [copyWord, hresolve, rejectCopyWord]
+  | denied resolveReason => cases resolveReason <;> simp [copyWord, hresolve, rejectCopyWord]
 
 /-- Holder-facing direct revocation checks both the authority and selected
 victim generations before invoking the atomic raw-slot transition. -/
@@ -655,7 +696,9 @@ example :
     let source : Capability :=
       { demoCapability with rights := { read := true, grant := true } }
     let state := install demoState 0 0 source
-    (copyWord state 0 demoWord .memory 1 0 (oneRight .read)).result = .accepted := by
+    (copyWord state 0 demoWord .memory 1 0 (oneRight .read)).result = .accepted ∧
+      (copyWord state 0 demoWord .memory 1 0 (oneRight .read)).freshWord =
+        some (UInt64.ofNat (13 * 65536)) := by
   native_decide
 example :
     let replacement : Capability :=
