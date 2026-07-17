@@ -589,4 +589,49 @@ example :
         (oneRight .read)).state.slots 1 0 = none := by
   native_decide
 
+private def demoRevoker : Capability :=
+  { demoCapability with rights := { read := true, grant := true, revoke := true } }
+
+private def demoRevocationRoot : State := install demoState 0 0 demoRevoker
+
+private def demoRevocationState : State :=
+  (Capability.copy demoRevocationRoot 0 0 1 0 (oneRight .read)).state
+
+private def demoTargetWord : UInt64 := 13 * 65536
+
+-- Direct and transitive revocation both accept the complete current words and
+-- remove the generation selected by the target word.
+example :
+    (revokeWords demoRevocationState 0 demoWord .memory 1 demoTargetWord).result =
+        .accepted ∧
+      (revokeWords demoRevocationState 0 demoWord .memory 1 demoTargetWord).state.slots 1 0 =
+        none := by
+  native_decide
+example :
+    (revokeSubtreeWords demoRevocationState 0 demoWord .memory 1 demoTargetWord).result =
+        .accepted ∧
+      (revokeSubtreeWords demoRevocationState 0 demoWord .memory 1 demoTargetWord).state.slots
+          1 0 = none := by
+  native_decide
+
+private def demoReusedTarget : State :=
+  install (clear demoRevocationState 1 0) 1 0
+    { object := 8, kind := .memory, rights := oneRight .read, identity := 14 }
+
+-- Replaying the cleared target generation and supplying a reserved authority
+-- word are state-preserving denials at both revocation boundaries.
+example :
+    (revokeWords demoReusedTarget 0 demoWord .memory 1 demoTargetWord).result =
+        .rejected .staleSlot ∧
+      (revokeWords demoReusedTarget 0 demoWord .memory 1 demoTargetWord).state.slots 1 0 =
+        demoReusedTarget.slots 1 0 := by
+  native_decide
+example :
+    let malformedAuthority := demoWord + 65535
+    (revokeSubtreeWords demoRevocationState 0 malformedAuthority .memory 1 demoTargetWord).result =
+        .rejected .staleSlot ∧
+      (revokeSubtreeWords demoRevocationState 0 malformedAuthority .memory 1
+        demoTargetWord).state.slots 1 0 = demoRevocationState.slots 1 0 := by
+  native_decide
+
 end LeanOS.CapabilityHandle
