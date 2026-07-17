@@ -557,6 +557,30 @@ saved_context_owner_a:
 .global saved_context_owner_b
 saved_context_owner_b:
     .quad 2
+.set B_INITIAL_RAX, 0x010001
+.set B_INITIAL_RBX, 0x020002
+.set B_INITIAL_RCX, 0x030003
+.set B_INITIAL_RDX, 0x040004
+.set B_INITIAL_RBP, 0x050005
+.set B_INITIAL_RSI, 0x060006
+.set B_INITIAL_RDI, 0x070007
+.set B_INITIAL_R8,  0x080008
+.set B_INITIAL_R9,  0x090009
+.set B_INITIAL_R10, 0x100010
+.set B_INITIAL_R11, 0x110011
+.set B_INITIAL_R12, 0xc0dec0dec0dec0de
+.set B_INITIAL_R13, 0x51a7e51a7e51a7e5
+.set B_INITIAL_R14, 0x140014
+.set B_INITIAL_R15, 0x150015
+.align 16
+.global initial_context_b
+initial_context_b:
+    /* SAVE layout: r15..rax, then the five-word iretq frame. */
+    .quad B_INITIAL_R15, B_INITIAL_R14, B_INITIAL_R13, B_INITIAL_R12
+    .quad B_INITIAL_R11, B_INITIAL_R10, B_INITIAL_R9, B_INITIAL_R8
+    .quad B_INITIAL_RDI, B_INITIAL_RSI, B_INITIAL_RBP, B_INITIAL_RDX
+    .quad B_INITIAL_RCX, B_INITIAL_RBX, B_INITIAL_RAX
+    .quad user_b_entry, 0x23, 0x202, user_b_stack_top, 0x1b
 .section .text,"ax",@progbits
 isr32:
 .global isr32_clac
@@ -584,12 +608,10 @@ isr32_cld:
     mov %rax, saved_context_a_original_flags(%rip)
     mov saved_context_a+144(%rip), %rax
     mov %rax, saved_context_a_original_rsp(%rip)
-    movq $user_b_entry, 120(%rsp)
-    movq $user_b_stack_top, 144(%rsp)
-    movabs $0xc0dec0dec0dec0de, %rax
-    mov %rax, 24(%rsp)
-    movabs $0x51a7e51a7e51a7e5, %rax
-    mov %rax, 16(%rsp)
+    lea initial_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
     movq $page_map_level_4_b, %rax
     mov %rax, %cr3
     mov saved_context_owner_b(%rip), %rsi
@@ -688,15 +710,42 @@ user_a_stack_top:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+    /* Reaching syscall 2 certifies that no A register survived dispatch. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    cmp $B_INITIAL_RCX, %rcx
+    jne 2f
+    cmp $B_INITIAL_RDX, %rdx
+    jne 2f
+    cmp $B_INITIAL_RBP, %rbp
+    jne 2f
+    cmp $B_INITIAL_RSI, %rsi
+    jne 2f
+    cmp $B_INITIAL_RDI, %rdi
+    jne 2f
+    cmp $B_INITIAL_R8, %r8
+    jne 2f
+    cmp $B_INITIAL_R9, %r9
+    jne 2f
+    cmp $B_INITIAL_R10, %r10
+    jne 2f
+    cmp $B_INITIAL_R11, %r11
+    jne 2f
+    cmp $B_INITIAL_R14, %r14
+    jne 2f
+    cmp $B_INITIAL_R15, %r15
+    jne 2f
+    movabs $B_INITIAL_R12, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %rax
+    cmp %rax, %r13
+    jne 2f
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
-    movabs $0xc0dec0dec0dec0de, %rax
-    cmp %rax, %r12
-    jne 2f
-    movabs $0x51a7e51a7e51a7e5, %rax
-    cmp %rax, %r13
-    jne 2f
     mov $2, %rax
     xor %rbx, %rbx
     xor %rcx, %rcx

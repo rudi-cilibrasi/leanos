@@ -158,13 +158,17 @@ grep -q ' T leanos_ipc_demo$' <<<"$symbols"
 grep -q ' T leanos_preemption_demo$' <<<"$symbols"
 grep -q ' B saved_context_a$' <<<"$symbols"
 grep -q ' B saved_context_b$' <<<"$symbols"
+grep -q ' R initial_context_b$' <<<"$symbols"
 saved_a="$(nm -n "$elf" | awk '$3 == "saved_context_a" { print "0x" $1 }')"
 saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
 [[ $((saved_b - saved_a)) -eq 160 ]] || {
   echo "error: resumable context A does not occupy the reviewed 160-byte image" >&2
   exit 1
 }
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 3 ]]
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 4 ]]
+grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S
+[[ "$(grep -Ec 'cmp \$B_INITIAL_R[A-Z0-9]+, %r' boot/boot.S)" -eq 13 ]]
+[[ "$(grep -Fc 'movabs $B_INITIAL_R' boot/boot.S)" -eq 2 ]]
 grep -Fq 'saved_context_a[16] != 0x23' boot/kernel.c
 grep -Fq 'saved_context_b[19] != 0x1b' boot/kernel.c
 

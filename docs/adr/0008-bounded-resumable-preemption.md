@@ -13,13 +13,17 @@ RIP, CS, RFLAGS, RSP, and SS. Selection comes only from the generated bounded
 `leanos_preemption_demo` result and protected `current_subject`, never from a
 user register or syscall word.
 
-The handler masks IRQ0 before EOI. B explicitly reaches an authorized syscall
-before the second one-shot is armed. Both directions reload CR3 and verify the
-selected root before `iretq`. A polls a harmless kernel-state token, then checks
-its distinct `r12`/`r13` canaries after resumption; the kernel also checks the
-separate saved A/B canaries and the actual image selectors, CS `0x23` and SS
-`0x1b`. The exact transcript requires two timer, context, paging, and switch
-records plus A's original-frame resume record and `FINAL ticks=2`.
+The handler masks IRQ0 before EOI. A complete, immutable 160-byte B image
+initializes every GPR and return-frame word rather than deriving B from A's
+saved image. Before reusing any register, B checks all fifteen distinct initial
+GPR values; only then can it reach the authorized syscall that arms the second
+one-shot. This is a boot-reachable regression against cross-subject register
+inheritance. Both directions reload CR3 and verify the selected root before
+`iretq`. A polls a harmless kernel-state token, then checks its distinct
+`r12`/`r13` canaries after resumption; the kernel also checks the separate saved
+A/B canaries and the actual image selectors, CS `0x23` and SS `0x1b`. The exact
+transcript requires two timer, context, paging, and switch records plus A's
+original-frame resume record and `FINAL ticks=2`.
 
 The shared oracle contains both scalar scheduler bindings and composite
 save/select/restore witnesses for A-to-B and B-to-A. The composite encoding
