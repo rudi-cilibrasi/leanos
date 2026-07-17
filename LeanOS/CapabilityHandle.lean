@@ -133,6 +133,13 @@ inductive WordResolveDenial where
   | denied (reason : ResolveDenial)
   deriving DecidableEq, Repr
 
+/-- A successful userspace resolution keeps the canonical decoded handle next
+to the exact authority record selected by it. -/
+structure Resolution where
+  handle : Handle
+  capability : Capability
+  deriving DecidableEq, Repr
+
 /-- The one canonical generation-aware capability resolver. -/
 def resolve (state : State) (trustedSubject : SubjectId) (handle : Handle)
     (expected : ObjectKind) : Except ResolveDenial Capability :=
@@ -150,13 +157,13 @@ def resolve (state : State) (trustedSubject : SubjectId) (handle : Handle)
 /-- The reusable userspace boundary: decode one opaque word, then resolve only
 inside the capability space selected by trusted current-caller context. -/
 def resolveCurrent (state : State) (context : TrustedCaller) (word : UInt64)
-    (expected : ObjectKind) : Except WordResolveDenial Capability :=
+    (expected : ObjectKind) : Except WordResolveDenial Resolution :=
   match decode word with
   | .error reason => .error (.malformed reason)
   | .ok handle =>
       match resolve state context.caller handle expected with
       | .error reason => .error (.denied reason)
-      | .ok capability => .ok capability
+      | .ok capability => .ok { handle, capability }
 
 def issue (slot : SlotId) (capability : Capability) : Handle :=
   { slot, identity := capability.identity }
@@ -227,27 +234,33 @@ theorem resolve_sound (state : State) (trustedSubject : SubjectId) (handle : Han
   split at hresolve <;> simp_all
 
 theorem resolveCurrent_sound (state : State) (context : TrustedCaller) (word : UInt64)
-    (expected : ObjectKind) (capability : Capability)
-    (hresolve : resolveCurrent state context word expected = .ok capability) :
-    ∃ handle,
-      decode word = .ok handle ∧
+    (expected : ObjectKind) (resolution : Resolution)
+    (hresolve : resolveCurrent state context word expected = .ok resolution) :
+      decode word = .ok resolution.handle ∧
       state.subjects context.caller = true ∧
-      slotInRange state context.caller handle.slot = true ∧
-      state.slots context.caller handle.slot = some capability ∧
-      capability.identity = handle.identity ∧ capability.kind = expected ∧
-      state.objects capability.object = true ∧
-      state.kinds capability.object = some expected := by
+      slotInRange state context.caller resolution.handle.slot = true ∧
+      state.slots context.caller resolution.handle.slot = some resolution.capability ∧
+      resolution.capability.identity = resolution.handle.identity ∧
+      resolution.capability.kind = expected ∧
+      state.objects resolution.capability.object = true ∧
+      state.kinds resolution.capability.object = some expected := by
+  rcases resolution with ⟨expectedHandle, expectedCapability⟩
   cases hdecode : decode word with
   | error reason => simp [resolveCurrent, hdecode] at hresolve
   | ok handle =>
       cases hresolved : resolve state context.caller handle expected with
       | error reason => simp [resolveCurrent, hdecode, hresolved] at hresolve
       | ok found =>
-          have heq : found = capability := by
+          have heq : ({ handle, capability := found } : Resolution) =
+              { handle := expectedHandle, capability := expectedCapability } := by
             simpa [resolveCurrent, hdecode, hresolved] using hresolve
-          subst found
-          exact ⟨handle, rfl,
-            resolve_sound state context.caller handle expected capability hresolved⟩
+          have hhandle : handle = expectedHandle := congrArg Resolution.handle heq
+          have hcapability : found = expectedCapability :=
+            congrArg Resolution.capability heq
+          subst expectedHandle
+          subst expectedCapability
+          exact ⟨rfl,
+            resolve_sound state context.caller handle expected found hresolved⟩
 
 /-- Clearing a slot permanently invalidates its old handle at that point. -/
 theorem clear_denies_handle (state : State) (subject : SubjectId) (handle : Handle)
@@ -374,7 +387,8 @@ example : encode { slot := slotReserved, identity := 12 } = none := by native_de
 -- The decoded word is resolved only in the capability space named by trusted
 -- current-caller context; neither changing generation bits nor reusing the
 -- same word under another caller can select authority.
-example : resolveCurrent demoState { caller := 0 } demoWord .memory = .ok demoCapability := by
+example : resolveCurrent demoState { caller := 0 } demoWord .memory =
+    .ok { handle := demoHandle, capability := demoCapability } := by
   rfl
 example : resolveCurrent demoState { caller := 1 } demoWord .memory =
     .error (.denied .staleHandle) := by rfl
