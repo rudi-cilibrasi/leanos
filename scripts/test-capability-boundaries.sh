@@ -73,4 +73,16 @@ if ! grep -q 'raw-slot capability revoke in the blocking IPC word boundary' "$lo
   exit 1
 fi
 
+cp LeanOS/BlockingIPC.lean "$blocking_fixture"
+sed -i '0,/CapabilityHandle\.revokeSubtreeWords/s//Capability.revokeSubtree/' "$blocking_fixture"
+if run_fixture >"$log" 2>&1; then
+  echo "error: raw blocking IPC subtree revoke fixture unexpectedly passed" >&2
+  exit 1
+fi
+if ! grep -q 'raw-slot subtree revoke in the blocking IPC word boundary' "$log"; then
+  cat "$log" >&2
+  echo "error: raw blocking IPC subtree fixture lacked the expected diagnostic" >&2
+  exit 1
+fi
+
 echo "Capability boundary negative regression checks passed"

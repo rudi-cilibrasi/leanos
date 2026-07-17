@@ -419,6 +419,48 @@ noncomputable def revokeSubtreeHandle (state : State) (actor : SubjectId)
         else state.completion subject }, outcome.result)
   else (state, outcome.result)
 
+/-- Userspace transitive revocation applies the same two-word generation checks
+before filtering waiters whose endpoint authority lies in the revoked subtree. -/
+noncomputable def revokeSubtreeWords (state : State) (actor : SubjectId)
+    (authorityWord : UInt64) (victim : SubjectId) (targetWord : UInt64) :
+    State × Capability.Result := by
+  classical
+  exact
+  let outcome := CapabilityHandle.revokeSubtreeWords
+    state.scheduler.lifecycle.capabilities actor authorityWord .endpoint victim targetWord
+  let next := { state with scheduler := { state.scheduler with
+    lifecycle := { state.scheduler.lifecycle with capabilities := outcome.state } } }
+  if outcome.result = .accepted then
+    ({ next with
+      waiters := fun endpoint =>
+        (state.waiters endpoint).filter (fun subject => decide (authorizedReceive next subject endpoint))
+      waiterEndpoint := fun subject =>
+        match state.waiterEndpoint subject with
+        | some endpoint => if authorizedReceive next subject endpoint then some endpoint else none
+        | none => none
+      completion := fun subject =>
+        if allWaiters state subject ∧ ¬ allWaiters next subject then some .cancelled
+        else state.completion subject }, outcome.result)
+  else (state, outcome.result)
+
+/-- Accepted transitive revocation resolves the exact current authority and
+lineage-root words before reaching the internal subtree transition. -/
+theorem revokeSubtreeWords_accepted_resolves state actor authorityWord victim targetWord
+    (haccepted : (revokeSubtreeWords state actor authorityWord victim targetWord).2 = .accepted) :
+    ∃ authority target,
+      CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
+          { caller := actor } authorityWord .endpoint = .ok authority ∧
+      CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
+          { caller := victim } targetWord .endpoint = .ok target ∧
+      (Capability.revokeSubtree state.scheduler.lifecycle.capabilities actor authority.handle.slot
+        victim target.handle.slot).result = .accepted := by
+  simp only [revokeSubtreeWords] at haccepted
+  split at haccepted
+  next hresult =>
+    exact CapabilityHandle.revokeSubtreeWords_accepted_resolves
+      state.scheduler.lifecycle.capabilities actor authorityWord .endpoint victim targetWord hresult
+  next hresult => exact False.elim (hresult haccepted)
+
 def terminate (state : State) (subject : SubjectId) : State :=
   let lifecycle := SubjectLifecycle.terminate state.scheduler.lifecycle subject
   match lifecycle.result with
