@@ -1422,6 +1422,17 @@ example (translations : TLB.State) :
   simp [crossKindAliasRegressionState, cleanupRegressionState, roundTripStart,
     demoLifecycle] at hkind
 
+/-- The former cross-kind alias is rejected by the complete compositional
+invariant, not merely by a standalone helper predicate. -/
+example (translations : TLB.State) :
+    ¬ WellFormed (crossKindAliasRegressionState translations) := by
+  intro hstate
+  rcases hstate with ⟨_, _, _, _, _, _, _, _, hagreement, _⟩
+  have hkind := hagreement.1 2 3 10 (by
+    simp [crossKindAliasRegressionState])
+  simp [crossKindAliasRegressionState, cleanupRegressionState, roundTripStart,
+    demoLifecycle] at hkind
+
 example (translations : TLB.State) :
     let cleaned := cleanupSubject (crossKindAliasRegressionState translations) 3
     cleaned.scheduler.lifecycle.addressOwner 2 = some 2 ∧
