@@ -27,6 +27,8 @@ fi
 
 build="$repo_root/build/boot"
 iso_root="$build/iso"
+df_iso_root="$build/iso-double-fault"
+df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -38,8 +40,12 @@ if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 rm -rf "$build"
-mkdir -p "$iso_root/boot/grub"
+mkdir -p "$iso_root/boot/grub" "$df_iso_root/boot/grub" \
+  "$df_negative_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-double-fault.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-guard.h"
 
 # C generation resolves project imports through Lake's compiled module path.
 # Build them here because image jobs and clean checkouts cannot rely on a
@@ -68,8 +74,51 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -o "$build/BootAllocation.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
   -o "$build/kernel.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_DOUBLE_FAULT_PROBE=1 -DLEANOS_DF_MAP_GUARD=1 \
+  -c boot/kernel.c -o "$build/kernel-double-fault-guard-mapped.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -c boot/boot.S -o "$build/boot.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_DF_MAP_GUARD=1 \
+  -c boot/boot.S -o "$build/boot-df-guard-mapped.o"
+
+# The first link fixes every symbol address while using a same-sized plan
+# placeholder. Lean then accepts the linker-resolved Input and emits the exact
+# PTE arrays used by the guest walker. Recompiling only kernel.c preserves all
+# section sizes; the final comparison rejects any unexpected address drift.
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-prelink.map" \
+  -o "$build/leanos-prelink.elf" "$build/boot.o" "$build/kernel.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
+  -o "$build/leanos-double-fault-prelink.elf" "$build/boot.o" \
+  "$build/kernel-double-fault.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-guard-prelink.map" \
+  -o "$build/leanos-guard-prelink.elf" "$build/boot-df-guard-mapped.o" \
+  "$build/kernel-double-fault-guard-mapped.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o"
+./scripts/generate-boot-page-plan.sh "$build/leanos-prelink.elf" \
+  "$build/boot-page-plan.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-prelink.elf" \
+  "$build/boot-page-plan-double-fault.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-guard-prelink.elf" \
+  "$build/boot-page-plan-guard.h"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
+  -o "$build/kernel.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_DOUBLE_FAULT_PROBE=1 -DLEANOS_DF_MAP_GUARD=1 \
+  -c boot/kernel.c -o "$build/kernel-double-fault-guard-mapped.o"
 
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
@@ -77,29 +126,64 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
   build/boot/Preemption.o build/boot/BootAllocation.o
 
+./scripts/generate-boot-page-plan.sh "$build/leanos.elf" \
+  "$build/boot-page-plan.final.h"
+cmp "$build/boot-page-plan.h" "$build/boot-page-plan.final.h" || {
+  echo "error: linker-resolved boot page-table plan drifted after final link" >&2
+  exit 1
+}
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map build/boot/leanos-double-fault.map \
+  -o build/boot/leanos-double-fault.elf build/boot/boot.o \
+  build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
+  build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
+  build/boot/BootAllocation.o
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
+  -o build/boot/leanos-double-fault-guard-mapped.elf \
+  build/boot/boot-df-guard-mapped.o \
+  build/boot/kernel-double-fault-guard-mapped.o \
+  build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
+  build/boot/Preemption.o build/boot/BootAllocation.o
+
+./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
+  "$build/boot-page-plan-double-fault.final.h"
+cmp "$build/boot-page-plan-double-fault.h" \
+  "$build/boot-page-plan-double-fault.final.h" || {
+  echo "error: double-fault boot page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-guard-mapped.elf" \
+  "$build/boot-page-plan-guard.final.h"
+cmp "$build/boot-page-plan-guard.h" "$build/boot-page-plan-guard.final.h" || {
+  echo "error: guard-mapped boot page-table plan drifted after final link" >&2
+  exit 1
+}
+
 undefined="$(nm -u "$build/leanos.elf")"
 if [[ -n "$undefined" ]]; then
   echo "error: boot image has unexpected undefined symbols:" >&2
   echo "$undefined" >&2
   exit 1
 fi
-if ! nm "$build/leanos.elf" | grep -q ' T leanos_boot_transition$'; then
+symbols="$(nm "$build/leanos.elf")"
+if ! grep -q ' T leanos_boot_transition$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_boot_transition" >&2
   exit 1
 fi
-if ! nm "$build/leanos.elf" | grep -q ' T leanos_syscall_demo$'; then
+if ! grep -q ' T leanos_syscall_demo$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_syscall_demo" >&2
   exit 1
 fi
-if ! nm "$build/leanos.elf" | grep -q ' T leanos_ipc_demo$'; then
+if ! grep -q ' T leanos_ipc_demo$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_ipc_demo" >&2
   exit 1
 fi
-if ! nm "$build/leanos.elf" | grep -q ' T leanos_preemption_demo$'; then
+if ! grep -q ' T leanos_preemption_demo$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_preemption_demo" >&2
   exit 1
 fi
-if ! nm "$build/leanos.elf" | grep -q ' T leanos_boot_allocation_check$'; then
+if ! grep -q ' T leanos_boot_allocation_check$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_boot_allocation_check" >&2
   exit 1
 fi
@@ -108,18 +192,38 @@ if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   exit 1
 fi
 ./scripts/check-image-policy.sh "$build/leanos.elf"
+./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 
 cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-double-fault.elf" "$df_iso_root/boot/leanos.elf"
+cp boot/grub-double-fault.cfg "$df_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-double-fault-guard-mapped.elf" \
+  "$df_negative_iso_root/boot/leanos.elf"
+cp boot/grub-double-fault.cfg "$df_negative_iso_root/boot/grub/grub.cfg"
 printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
   > "$iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
 # BIOS-only output avoids GRUB's nondeterministic FAT/EFI image. A fixed ISO
 # UUID and file dates make repeated builds independent of wall-clock time.
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64.iso" "$iso_root" -- \
   -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
-sha256sum "$build/leanos-${version}-x86_64.iso" "$build/leanos.elf" \
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-double-fault.iso" "$df_iso_root" -- \
+  -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
+  "$df_negative_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+sha256sum "$build/leanos-${version}-x86_64.iso" \
+  "$build/leanos-${version}-x86_64-double-fault.iso" "$build/leanos.elf" \
+  "$build/leanos-double-fault.elf" \
+  "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
+  "$build/leanos-double-fault-guard-mapped.elf" \
   > "$build/SHA256SUMS"
 echo "built build/boot/leanos-${version}-x86_64.iso at $source_revision"
 echo "symbols: build/boot/leanos.map; debug ELF: build/boot/leanos.elf"

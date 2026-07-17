@@ -164,6 +164,10 @@ nonblocking mailboxes with trusted sender provenance, never-reused endpoint
 identities, and complete destruction cleanup. Its precise proof boundary and
 exclusions are documented in [`docs/endpoint-ipc.md`](docs/endpoint-ipc.md).
 
+The bounded [capability-transfer model](docs/capability-transfer.md) attaches
+at most one sealed, attenuated descendant to an endpoint envelope and installs
+it atomically on receipt without interpreting payload words as authority.
+
 The bounded [user-copy model](docs/user-copy.md) prevalidates a small complete
 range through current virtual mappings before changing typed kernel buffers or
 live-frame byte memory, with explicit alias rejection and atomic failure.
@@ -191,6 +195,11 @@ return boundary.
 The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,
 bounded double-fault escalation, and one absorbing gate for every modeled
 post-fatal mutation and context-restoration path.
+
+The [double-fault IST slice](docs/adr/0007-double-fault-ist.md) installs a
+dedicated guarded stack for vector 8 and exercises one deterministic QEMU
+fail-stop path. This is machine-integration evidence, not proof of x86
+exception delivery or of the resulting binary.
 
 The [observer-relative isolation model](docs/observation-model.md) defines a
 subject's authorized view and proves scoped one-step low-equivalence and equal

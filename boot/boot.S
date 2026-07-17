@@ -126,6 +126,47 @@ multiboot_entry:
     and $0x7ff8, %eax
     orl $4, page_table_b(%eax)
 
+    /* The canonical plan omits the other subject's pages entirely rather than
+       retaining supervisor aliases in that address space. */
+    mov $__user_b_text_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    mov $__user_b_stack_end, %ecx
+    add $0xfff, %ecx
+    shr $9, %ecx
+    and $0x7ff8, %ecx
+7:
+    movl $0, page_table_a(%eax)
+    movl $0, page_table_a+4(%eax)
+    add $8, %eax
+    cmp %ecx, %eax
+    jb 7b
+
+    mov $__user_a_text_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    mov $__user_a_stack_end, %ecx
+    add $0xfff, %ecx
+    shr $9, %ecx
+    and $0x7ff8, %ecx
+8:
+    movl $0, page_table_b(%eax)
+    movl $0, page_table_b+4(%eax)
+    add $8, %eax
+    cmp %ecx, %eax
+    jb 8b
+
+    /* The page immediately below IST1 is absent in both address spaces. */
+#ifndef LEANOS_DF_MAP_GUARD
+    mov $__df_ist_guard_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    movl $0, page_table_a(%eax)
+    movl $0, page_table_a+4(%eax)
+    movl $0, page_table_b(%eax)
+    movl $0, page_table_b+4(%eax)
+#endif
+
     mov %cr4, %eax
     or $(1 << 5), %eax
     mov %eax, %cr4
@@ -190,22 +231,28 @@ gdt64_pointer:
 .global page_map_level_4_a
 page_map_level_4_a:
     .skip 4096
+.global page_directory_pointer_a
 page_directory_pointer_a:
     .skip 4096
+.global page_directory_a
 page_directory_a:
     .skip 4096
 .align 4096
+.global page_table_a
 page_table_a:
     .skip 4096 * PAGE_TABLE_COUNT
 page_table_a_end:
 .global page_map_level_4_b
 page_map_level_4_b:
     .skip 4096
+.global page_directory_pointer_b
 page_directory_pointer_b:
     .skip 4096
+.global page_directory_b
 page_directory_b:
     .skip 4096
 .align 4096
+.global page_table_b
 page_table_b:
     .skip 4096 * PAGE_TABLE_COUNT
 page_table_b_end:
@@ -213,6 +260,20 @@ page_table_b_end:
 boot_stack:
     .skip 16384
 boot_stack_top:
+
+.section .df_ist.guard,"aw",@nobits
+.align 4096
+.global df_ist_guard
+df_ist_guard:
+    .skip 4096
+
+.section .df_ist.stack,"aw",@nobits
+.align 4096
+.global df_ist_stack
+df_ist_stack:
+    .skip 16384
+.global df_ist_stack_top
+df_ist_stack_top:
 
 .section .text,"ax",@progbits
 .global load_tss
@@ -310,6 +371,101 @@ enter_user:
     pushq $0x23
     push %rdi
     iretq
+
+/* Raise a real #GP with RSP immediately above the unmapped guard.  Its present
+   IST0 gate must push an exception frame into the guard, so the resulting #PF
+   during contributory-exception delivery escalates to #DF. */
+.global run_double_fault_probe
+run_double_fault_probe:
+    cli
+    clac
+    cld
+    mov $__df_ist_guard_end, %rsp
+    mov $0xffff, %eax
+    mov %ax, %ds
+1:  hlt
+    jmp 1b
+
+.macro DF_SERIAL label, length
+    lea \label(%rip), %rsi
+    mov $\length, %ecx
+1:
+    mov $0x3fd, %dx
+2:  inb %dx, %al
+    test $0x20, %al
+    jz 2b
+    movb (%rsi), %al
+    mov $0x3f8, %dx
+    outb %al, %dx
+    inc %rsi
+    dec %ecx
+    jnz 1b
+.endm
+
+/* Reaching this present #GP gate means the ordinary-stack frame push worked.
+   The guard-mapped negative image must take this path and must not claim #DF. */
+.global isr13
+isr13:
+    cli
+    clac
+    cld
+    DF_SERIAL df_guard_mapped_record, df_guard_mapped_record_end-df_guard_mapped_record
+    mov $0x13, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+6:  hlt
+    jmp 6b
+
+/* Vector 8 has a hardware error-code word.  This terminal stub uses no C ABI,
+   calls, pushes, allocation, formatting, recovery path, or iretq. */
+.global isr8
+.global isr8_clac
+.global isr8_cld
+isr8:
+    cli
+isr8_clac:
+    clac
+isr8_cld:
+    cld
+    mov %rsp, %rbx
+    cmp $__df_ist_stack_start, %rbx
+    jb 3f
+    cmp $__df_ist_stack_end, %rbx
+    jae 3f
+    cmpq $0, 0(%rbx)
+    jne 3f
+    movabs $0xd0b1efa17badc0de, %rax
+    cmp %rax, __df_ist_stack_start(%rip)
+    jne 3f
+    movabs $0x15a1c0decafef00d, %rax
+    cmp %rax, __df_ist_stack_end-128(%rip)
+    jne 3f
+    DF_SERIAL df_success_record, df_success_record_end-df_success_record
+    mov $0x12, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+4:  hlt
+    jmp 4b
+3:
+    DF_SERIAL df_failure_record, df_failure_record_end-df_failure_record
+    mov $0x13, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+5:  hlt
+    jmp 5b
+
+.section .rodata,"a",@progbits
+df_success_record:
+    .ascii "LEANOS/8 TERMINAL reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none\n"
+df_success_record_end:
+df_failure_record:
+    .ascii "LEANOS/8 TERMINAL reason=double-fault evidence=invalid status=FAIL\n"
+df_failure_record_end:
+df_guard_mapped_record:
+    .ascii "LEANOS/8 NEGATIVE reason=guard-mapped vector=13 double-fault=absent status=FAIL\n"
+df_guard_mapped_record_end:
+
+.section .text,"ax",@progbits
 
 .macro SAVE
     push %rax; push %rbx; push %rcx; push %rdx; push %rbp; push %rsi; push %rdi

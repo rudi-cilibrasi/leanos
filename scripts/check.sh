@@ -5,12 +5,15 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 lake build
+lake build leanos-boot-plan
 
 ./scripts/check-security-claims.sh
 
 ./scripts/check-oracle-host.sh
 
 ./scripts/test-run-image.sh
+
+./scripts/test-run-double-fault.sh
 
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
   experiments/freestanding-boundary/Boundary.lean
@@ -58,6 +61,18 @@ fi
 
 if ! grep -q 'tests/negative/InvalidBound.lean.*error:' "$negative_log"; then
   echo "error: negative proof fixture failed without the expected Lean diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/BootPageTablePlanMutation.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: boot page-table plan mutation unexpectedly type-checked" >&2
+  exit 1
+fi
+
+if ! grep -q "invalid .* notation.*constructor.*private" "$negative_log"; then
+  echo "error: boot page-table plan mutation lacked the private-constructor diagnostic" >&2
   cat "$negative_log" >&2
   exit 1
 fi
