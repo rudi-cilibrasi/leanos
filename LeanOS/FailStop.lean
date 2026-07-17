@@ -1,4 +1,5 @@
 import LeanOS.Interrupt
+import LeanOS.BootPageTablePlan
 import LeanOS.IPCSyscall
 import LeanOS.Preemption
 
@@ -16,6 +17,8 @@ set_option linter.unusedSimpArgs false
 
 inductive FatalReason where
   | kernelFault | unsupportedVector | nestedEntry | doubleFault
+  | invalidUserReturn (purpose : Interrupt.ReturnPurpose)
+      (reason : Interrupt.ReturnRejectReason)
   deriving DecidableEq, Repr
 
 /-- Kernel-owned entry identity.  General-purpose registers are absent. -/
@@ -38,21 +41,75 @@ inductive Mode where
   | halted (record : HaltRecord)
   deriving DecidableEq, Repr
 
+structure ReturnAddressSpace where
+  subject : Interrupt.SubjectId
+  expectedCr3 : UInt64
+  codeRegion : Interrupt.UserRegion
+  stackRegion : Interrupt.UserRegion
+  deriving DecidableEq, Repr
+
 structure State where
   core : Interrupt.State
   mode : Mode
+  /-- Kernel-owned projection of the installed page-table plan.  The return
+  selector reads this view; an outgoing proposal cannot supply it. -/
+  returnAddressSpace : Interrupt.AddressSpaceId → Option ReturnAddressSpace := fun _ => none
+  /-- Proof-carrying page-table plan installed for the live boot image. -/
+  returnPlan : Option BootPageTablePlan.Plan := none
+  /-- Kernel-selected purpose and address-space policy for the next return. -/
+  returnAuthority : Interrupt.TrustedReturnAuthority := Interrupt.defaultReturnAuthority
+  /-- True only after `selectReturnAuthority` has bound the authority record to
+  the live scheduler subject and its installed address-space view. -/
+  returnAuthorityArmed : Bool := false
   /-- The kernel-owned SMAP AC override. Entry closes it before classification. -/
   copyOverride : Bool := false
 
 def ActiveEntry.WellFormed (entry : ActiveEntry) : Prop :=
   entry.vector = entry.frame.vector ∧ entry.origin = entry.frame.savedPrivilege
 
-/-- Lifecycle consistency plus the kernel-owned entry transaction invariant.
-The legacy latch is retained only as a reflected implementation boundary: the
-authoritative identity is the `handling` payload, and its duplicate fields must
-agree with the saved frame. -/
+def ReturnAddressSpace.planBound (view : ReturnAddressSpace)
+    (addressSpace : Interrupt.AddressSpaceId) (plan : BootPageTablePlan.Plan) : Bool :=
+  let selected :=
+    if view.subject = 1 && addressSpace = 1 then
+      some (BootPageTablePlan.Space.subjectA, BootPageTablePlan.Owner.subjectA)
+    else if view.subject = 2 && addressSpace = 2 then
+      some (BootPageTablePlan.Space.subjectB, BootPageTablePlan.Owner.subjectB)
+    else none
+  match selected with
+  | none => false
+  | some (space, owner) =>
+      let codeFirst := view.codeRegion.first.toNat
+      let codeLast := view.codeRegion.pastLast.toNat
+      let stackFirst := view.stackRegion.first.toNat
+      let stackLast := view.stackRegion.pastLast.toNat
+      view.expectedCr3 = UInt64.ofNat (plan.rootFrame space * X86PageTable.pageBytes) &&
+        codeFirst % X86PageTable.pageBytes = 0 &&
+        codeLast = codeFirst + X86PageTable.pageBytes &&
+        stackFirst % X86PageTable.pageBytes = 0 &&
+        stackLast = stackFirst + X86PageTable.pageBytes &&
+        plan.hasPolicyLeaf space (codeFirst / X86PageTable.pageBytes) .userText owner &&
+        plan.hasPolicyLeaf space (stackFirst / X86PageTable.pageBytes) .userStack owner
+
+/-- The armed record is an exact projection of the live subject's installed
+address-space view, rather than a free-standing collection of numbers. -/
+def ReturnAuthorityBound (state : State) : Prop :=
+  ∃ view plan, state.returnAddressSpace state.core.context.activeAddressSpace = some view ∧
+    state.returnPlan = some plan ∧
+    view.planBound state.core.context.activeAddressSpace plan = true ∧
+    view.subject = state.core.context.currentSubject ∧
+    state.core.lifecycle.current = some view.subject ∧
+    state.core.lifecycle.capabilities.subjects view.subject = true ∧
+    state.core.lifecycle.runnable view.subject = true ∧
+    state.core.lifecycle.addressOwner state.core.context.activeAddressSpace = some view.subject ∧
+    state.returnAuthority.expectedCr3 = view.expectedCr3 ∧
+    state.returnAuthority.codeRegion = view.codeRegion ∧
+    state.returnAuthority.stackRegion = view.stackRegion
+
+/-- Lifecycle consistency, a bound armed return policy, and the kernel-owned
+entry transaction invariant. -/
 def WellFormed (state : State) : Prop :=
   Interrupt.WellFormed state.core ∧
+    (state.returnAuthorityArmed = true → ReturnAuthorityBound state) ∧
     match state.mode with
     | .running => state.core.context.entryActive = false
     | .handling entry => entry.WellFormed ∧ state.core.context.entryActive = true
@@ -60,7 +117,7 @@ def WellFormed (state : State) : Prop :=
 
 inductive EntryAction where
   | contained (subject : Interrupt.SubjectId)
-  | timer | resume
+  | timer | syscall
   | rejected (reason : Interrupt.RejectReason)
   | fatal (reason : FatalReason)
   | alreadyHalted (record : HaltRecord)
@@ -82,7 +139,10 @@ def escalation (active : ActiveEntry) (incoming : Interrupt.HardwareFrame) : Fat
 def halt (state : State) (reason : FatalReason) (active : Option ActiveEntry)
     (incoming : Interrupt.HardwareFrame) : EntryOutcome :=
   let record := HaltRecord.mk reason active incoming.vector incoming.savedPrivilege
-  { state := { state with mode := .halted record, copyOverride := false },
+  { state := { state with
+      mode := .halted record
+      returnAuthorityArmed := false
+      copyOverride := false }
     action := .fatal reason }
 
 /-- Begin entry without changing lifecycle, authority, scheduling, mailbox, or
@@ -94,7 +154,9 @@ def beginEntry (state : State) (frame : Interrupt.HardwareFrame) : EntryOutcome 
   | .running =>
       { state := { state with
           core := { state.core with context := { state.core.context with entryActive := true } }
-          mode := .handling (activeEntry frame), copyOverride := false }
+          mode := .handling (activeEntry frame)
+          returnAuthorityArmed := false
+          copyOverride := false }
         action := .rejected .wrongOrigin }
 
 def mapFatal : Interrupt.FatalReason → FatalReason
@@ -120,8 +182,8 @@ def finishEntry (state : State) : EntryOutcome :=
             action := .contained subject }
       | .timer =>
           { state := { state with core := outcome.state, mode := .running }, action := .timer }
-      | .resume =>
-          { state := { state with core := outcome.state, mode := .running }, action := .resume }
+      | .syscall =>
+          { state := { state with core := outcome.state, mode := .running }, action := .syscall }
       | .rejected reason =>
           { state := { state with core := outcome.state, mode := .running },
             action := .rejected reason }
@@ -136,6 +198,187 @@ def dispatchHardware (state : State) (frame : Interrupt.HardwareFrame) : EntryOu
 def dispatch (state : State) (trap : Interrupt.Trap) : EntryOutcome :=
   dispatchHardware state trap.hardware
 
+/-! ## Terminal outgoing user-return transaction -/
+
+/-- Select the next return policy from the installed address-space view.  The
+selection is armed only when scheduler identity, liveness, and ownership agree;
+the proposed hardware frame is not an input to this transition. -/
+def selectReturnAuthority (state : State) (purpose : Interrupt.ReturnPurpose) : State :=
+  match state.returnPlan, state.returnAddressSpace state.core.context.activeAddressSpace with
+  | some plan, some view =>
+      if view.subject = state.core.context.currentSubject ∧
+          state.core.lifecycle.current = some view.subject ∧
+          state.core.lifecycle.capabilities.subjects view.subject = true ∧
+          state.core.lifecycle.runnable view.subject = true ∧
+          state.core.lifecycle.addressOwner state.core.context.activeAddressSpace =
+            some view.subject ∧ view.planBound state.core.context.activeAddressSpace plan = true then
+        { state with
+          returnAuthority :=
+            { purpose
+              expectedCr3 := view.expectedCr3
+              codeRegion := view.codeRegion
+              stackRegion := view.stackRegion }
+          returnAuthorityArmed := true }
+      else { state with returnAuthorityArmed := false }
+  | _, _ => { state with returnAuthorityArmed := false }
+
+@[simp] theorem selectReturnAuthority_core state purpose :
+    (selectReturnAuthority state purpose).core = state.core := by
+  unfold selectReturnAuthority
+  split
+  · split <;> rfl
+  · rfl
+
+theorem selectReturnAuthority_wellFormed state purpose
+    (hstate : WellFormed state) : WellFormed (selectReturnAuthority state purpose) := by
+  rcases hstate with ⟨hcore, _hbound, hmode⟩
+  unfold selectReturnAuthority
+  split
+  · rename_i plan view hplan hview
+    by_cases hchecks : view.subject = state.core.context.currentSubject ∧
+        state.core.lifecycle.current = some view.subject ∧
+        state.core.lifecycle.capabilities.subjects view.subject = true ∧
+        state.core.lifecycle.runnable view.subject = true ∧
+        state.core.lifecycle.addressOwner state.core.context.activeAddressSpace = some view.subject ∧
+        view.planBound state.core.context.activeAddressSpace plan = true
+    · rw [if_pos hchecks]
+      refine ⟨hcore, ?_, hmode⟩
+      intro _
+      exact ⟨view, plan, hview, hplan, hchecks.2.2.2.2.2, hchecks.1,
+        hchecks.2.1, hchecks.2.2.1, hchecks.2.2.2.1,
+        hchecks.2.2.2.2.1, rfl, rfl, rfl⟩
+    · rw [if_neg hchecks]
+      exact ⟨hcore, by simp, hmode⟩
+  · exact ⟨hcore, by simp, hmode⟩
+
+inductive UserReturnAction where
+  | accepted (attested : Interrupt.UserReturnRequest)
+  | fatal (record : HaltRecord)
+  | alreadyHalted (record : HaltRecord)
+
+structure UserReturnOutcome where
+  state : State
+  action : UserReturnAction
+
+/-- Replace every caller-supplied policy field with execution-latch state. -/
+def authoritativeReturnRequest (state : State) (request : Interrupt.UserReturnRequest) :
+    Interrupt.UserReturnRequest :=
+  { request with
+      lifecycle := state.core.lifecycle
+      expectedSubject := state.core.context.currentSubject
+      expectedAddressSpace := state.core.context.activeAddressSpace
+      expectedCr3 := state.returnAuthority.expectedCr3
+      codeRegion := state.returnAuthority.codeRegion
+      stackRegion := state.returnAuthority.stackRegion
+      purpose := state.returnAuthority.purpose
+      executionMode := .running }
+
+private def latchInvalidUserReturn (state : State) (request : Interrupt.UserReturnRequest)
+    (reason : Interrupt.ReturnRejectReason) (active : Option ActiveEntry) :
+    UserReturnOutcome :=
+  let record : HaltRecord :=
+    { reason := .invalidUserReturn state.returnAuthority.purpose reason
+      active
+      incomingVector := request.hardware.vector
+      incomingOrigin := request.hardware.savedPrivilege }
+  { state := { state with
+      core := { state.core with context := { state.core.context with entryActive := true } }
+      mode := .halted record
+      copyOverride := false }
+    action := .fatal record }
+
+/-- Authoritative epilogue gate. Rejection records its purpose/reason and
+latches the absorbing terminal mode before any modeled frame consumption. -/
+def completeUserReturn (state : State) (request : Interrupt.UserReturnRequest) :
+    UserReturnOutcome :=
+  match state.mode with
+  | .halted record => { state, action := .alreadyHalted record }
+  | .handling active => latchInvalidUserReturn state request .fatalMode (some active)
+  | .running =>
+      if state.returnAuthorityArmed != true then
+        latchInvalidUserReturn state request .unselectedAuthority none
+      else
+        let normalized := authoritativeReturnRequest state request
+        match Interrupt.validateUserReturn normalized with
+        | .accepted attested => { state, action := .accepted attested }
+        | .rejected reason => latchInvalidUserReturn state normalized reason none
+
+theorem accepted_user_return_is_atomic state request attested
+    (hmode : state.mode = .running)
+    (harmed : state.returnAuthorityArmed = true)
+    (haccepted : Interrupt.validateUserReturn
+      (authoritativeReturnRequest state request) = .accepted attested) :
+    completeUserReturn state request = { state, action := .accepted attested } := by
+  simp [completeUserReturn, hmode, harmed, haccepted]
+
+theorem rejected_user_return_latches state request reason
+    (hmode : state.mode = .running)
+    (harmed : state.returnAuthorityArmed = true)
+    (hrejected : Interrupt.validateUserReturn
+      (authoritativeReturnRequest state request) = .rejected reason) :
+    (completeUserReturn state request).state.mode =
+      .halted
+        { reason := .invalidUserReturn state.returnAuthority.purpose reason
+          active := none
+          incomingVector := request.hardware.vector
+          incomingOrigin := request.hardware.savedPrivilege } ∧
+      (completeUserReturn state request).state.core.lifecycle = state.core.lifecycle ∧
+      (completeUserReturn state request).state.copyOverride = false := by
+  simp only [completeUserReturn, hmode, harmed]
+  rw [hrejected]
+  simp [latchInvalidUserReturn, authoritativeReturnRequest]
+
+theorem halted_user_return_absorbing state request record
+    (hmode : state.mode = .halted record) :
+    completeUserReturn state request = { state, action := .alreadyHalted record } := by
+  simp [completeUserReturn, hmode]
+
+/-- Acceptance is pinned to the kernel-owned policy record; changing policy
+copies in the proposal cannot select another purpose, CR3, or memory region. -/
+theorem accepted_user_return_uses_authority state request attested
+    (hmode : state.mode = .running)
+    (haccepted : (completeUserReturn state request).action = .accepted attested) :
+    attested.purpose = state.returnAuthority.purpose ∧
+      attested.expectedCr3 = state.returnAuthority.expectedCr3 ∧
+      attested.codeRegion = state.returnAuthority.codeRegion ∧
+      attested.stackRegion = state.returnAuthority.stackRegion := by
+  simp only [completeUserReturn, hmode] at haccepted
+  split at haccepted
+  · simp [latchInvalidUserReturn] at haccepted
+  generalize hnormalized : authoritativeReturnRequest state request = normalized at haccepted
+  cases hvalidation : Interrupt.validateUserReturn normalized with
+  | rejected reason => simp [hvalidation, latchInvalidUserReturn] at haccepted
+  | accepted actual =>
+      simp [hvalidation] at haccepted
+      subst actual
+      have hexact := Interrupt.accepted_attests_exact_request normalized attested hvalidation
+      subst attested
+      rw [← hnormalized]
+      simp [authoritativeReturnRequest]
+
+theorem accepted_user_return_has_bound_authority state request attested
+    (hstate : WellFormed state)
+    (haccepted : (completeUserReturn state request).action = .accepted attested) :
+    ReturnAuthorityBound state := by
+  rcases hstate with ⟨_, hbound, _⟩
+  apply hbound
+  cases hmode : state.mode with
+  | running =>
+      simp only [completeUserReturn, hmode] at haccepted
+      split at haccepted
+      · simp [latchInvalidUserReturn] at haccepted
+      · simp_all
+  | handling active => simp [completeUserReturn, hmode, latchInvalidUserReturn] at haccepted
+  | halted record => simp [completeUserReturn, hmode] at haccepted
+
+theorem accepted_user_return_requires_running state request attested
+    (haccepted : (completeUserReturn state request).action = .accepted attested) :
+    state.mode = .running := by
+  cases hmode : state.mode with
+  | running => rfl
+  | handling active => simp [completeUserReturn, hmode, latchInvalidUserReturn] at haccepted
+  | halted record => simp [completeUserReturn, hmode] at haccepted
+
 /-- The state of the modeled subsystems whose transitions can run after entry.
 Keeping these states under the execution latch makes bypassing it impossible in
 the composite transition system. -/
@@ -147,6 +390,71 @@ structure CompositeState where
   ipc : IPCSyscall.State
   capabilities : Capability.State
   lifecycle : SubjectLifecycle.State
+
+/-- A compiled return plan refines the active live virtual-memory view exactly
+at the two leaves used by the return gate.  The live object bindings must name
+the same physical frames as the compiled user-text/user-stack leaves. -/
+def ReturnAddressSpace.liveBound (view : ReturnAddressSpace)
+    (addressSpace : Interrupt.AddressSpaceId) (plan : BootPageTablePlan.Plan)
+    (virtualMemory : VirtualMapping.State) : Bool :=
+  let selected :=
+    if view.subject = 1 && addressSpace = 1 then
+      some (BootPageTablePlan.Space.subjectA, BootPageTablePlan.Owner.subjectA)
+    else if view.subject = 2 && addressSpace = 2 then
+      some (BootPageTablePlan.Space.subjectB, BootPageTablePlan.Owner.subjectB)
+    else none
+  match selected with
+  | none => false
+  | some (space, owner) =>
+      let codePage := view.codeRegion.first.toNat / X86PageTable.pageBytes
+      let stackPage := view.stackRegion.first.toNat / X86PageTable.pageBytes
+      match virtualMemory.mappings addressSpace codePage,
+          virtualMemory.mappings addressSpace stackPage with
+      | some codeMapping, some stackMapping =>
+          match virtualMemory.memory.binding codeMapping.object,
+              virtualMemory.memory.binding stackMapping.object with
+          | some codeFrame, some stackFrame =>
+              virtualMemory.owner addressSpace = some view.subject &&
+                virtualMemory.memory.capabilities.objects codeMapping.object &&
+                virtualMemory.memory.capabilities.kinds codeMapping.object = some .memory &&
+                virtualMemory.memory.allocator.status codeFrame =
+                  .owned codeMapping.object &&
+                virtualMemory.memory.capabilities.objects stackMapping.object &&
+                virtualMemory.memory.capabilities.kinds stackMapping.object = some .memory &&
+                virtualMemory.memory.allocator.status stackFrame =
+                  .owned stackMapping.object &&
+                codeMapping.permissions.read && !codeMapping.permissions.write &&
+                stackMapping.permissions.read && stackMapping.permissions.write &&
+                plan.hasPolicyLeafAtFrame space codePage codeFrame .userText owner &&
+                plan.hasPolicyLeafAtFrame space stackPage stackFrame .userStack owner
+          | _, _ => false
+      | _, _ => false
+
+/-- Cross-subsystem refinement checked whenever return authority is selected
+or consumed.  A detached compiled plan cannot authorize an unmapped target. -/
+def CompositeState.ReturnPlanLive (state : CompositeState) : Bool :=
+  match state.execution.returnPlan,
+      state.execution.returnAddressSpace state.execution.core.context.activeAddressSpace with
+  | some plan, some view =>
+      view.liveBound state.execution.core.context.activeAddressSpace plan state.virtualMemory
+  | _, _ => false
+
+/-- Select authority only from a compiled plan that agrees with the current
+live virtual-memory mappings. -/
+def selectLiveReturnAuthority (state : CompositeState)
+    (purpose : Interrupt.ReturnPurpose) : CompositeState :=
+  if state.ReturnPlanLive then
+    { state with execution := selectReturnAuthority state.execution purpose }
+  else
+    { state with execution := { state.execution with returnAuthorityArmed := false } }
+
+theorem selectLiveReturnAuthority_armed_implies_live state purpose
+    (harmed : (selectLiveReturnAuthority state purpose).execution.returnAuthorityArmed = true) :
+    state.ReturnPlanLive = true := by
+  unfold selectLiveReturnAuthority at harmed
+  split at harmed
+  · assumption
+  · simp at harmed
 
 /-- Every subsystem view is a projection of one authoritative lifecycle.  In
 particular, scheduling and interrupt containment cannot disagree about whether
@@ -216,7 +524,9 @@ private def installLifecycle (state : CompositeState)
     owner := lifecycle.addressOwner
     mappings := restrictMappings lifecycle state.ipc.virtualMemory.mappings }
   { state with
-    execution := { state.execution with core := { state.execution.core with lifecycle, context } }
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle, context }
+      returnAuthorityArmed := false }
     scheduler
     preemption := { state.preemption with scheduler }
     virtualMemory
@@ -294,6 +604,8 @@ theorem installLifecycle_releases_retired_memory state lifecycle object frame
 a tag paired with a caller-supplied post-state. -/
 inductive Operation where
   | interrupt (frame : Interrupt.HardwareFrame)
+  | selectUserReturn (purpose : Interrupt.ReturnPurpose)
+  | userReturn (request : Interrupt.UserReturnRequest)
   | syscall (context : Syscall.TrustedContext) (call : Syscall.UntrustedCall)
   | preempt (frame : Interrupt.HardwareFrame)
   | ipc (context : IPCSyscall.TrustedContext) (call : IPCSyscall.Call)
@@ -319,12 +631,21 @@ structure GateOutcome where
 
 private def applyOperation (state : CompositeState) : Operation → CompositeState
   | .interrupt frame =>
-      let execution := (dispatchHardware state.execution frame).state
-      installLifecycle { state with execution } execution.core.lifecycle
+      let entry := dispatchHardware state.execution frame
+      installLifecycle { state with execution := entry.state }
+        entry.state.core.lifecycle
+  | .selectUserReturn purpose =>
+      selectLiveReturnAuthority state purpose
+  | .userReturn request =>
+      let execution :=
+        if state.ReturnPlanLive then state.execution
+        else { state.execution with returnAuthorityArmed := false }
+      { state with execution := (completeUserReturn execution request).state }
   | .syscall context call =>
       let virtualMemory := (Syscall.dispatch state.virtualMemory context call).state
-      installLifecycle { state with virtualMemory }
+      let installed := installLifecycle { state with virtualMemory }
         (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
+      selectLiveReturnAuthority installed .syscallResume
   | .preempt frame =>
       let entry := dispatchHardware state.execution frame
       let entered := installLifecycle { state with execution := entry.state }
@@ -333,7 +654,8 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
       | .timer =>
           let preemption :=
             (Preemption.oneShotTick entered.preemption entered.execution.core frame).state
-          installScheduler { entered with preemption } preemption.scheduler
+          let scheduled := installScheduler { entered with preemption } preemption.scheduler
+          selectLiveReturnAuthority scheduled .schedulerRestore
       | _ => entered
   | .ipc context call => { state with ipc := (IPCSyscall.dispatch state.ipc context call).state }
   | .capabilityCopy actor source destination destinationSlot rights =>
@@ -376,7 +698,9 @@ theorem interrupt_synchronizes_lifecycle state frame :
     let next := applyOperation state (.interrupt frame)
     next.scheduler.lifecycle = next.execution.core.lifecycle ∧
       next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
-  simp [applyOperation, installLifecycle]
+  simp only [applyOperation]
+  generalize hentry : dispatchHardware state.execution frame = entry
+  cases entry.action <;> simp [installLifecycle]
 
 /-- Preemption cannot reinterpret a fatal hardware frame as an accepted
 scheduler no-op: the authoritative entry path latches the same terminal mode. -/
@@ -394,6 +718,19 @@ def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
   | .handling _ => { state, result := .rejectedBusy }
   | .halted record => { state, result := .rejectedHalted record }
 
+/-- Initial dispatch is also represented by a typed composite step; syscall
+and timer paths reselect only after their final context update. -/
+theorem select_user_return_is_reachable state purpose
+    (hmode : state.execution.mode = .running) :
+    (gate state (.selectUserReturn purpose)).state =
+      selectLiveReturnAuthority state purpose := by
+  simp [gate, hmode, applyOperation]
+
+theorem syscall_entry_leaves_return_unarmed state frame
+    (hmode : state.execution.mode = .running) :
+    (gate state (.interrupt frame)).state.execution.returnAuthorityArmed = false := by
+  simp [gate, hmode, applyOperation, installLifecycle]
+
 def runOperations (state : CompositeState) : List Operation → CompositeState
   | [] => state
   | operation :: rest => runOperations (gate state operation).state rest
@@ -406,7 +743,7 @@ theorem dispatchHardware_deterministic state frame first second
 
 theorem dispatchHardware_preserves_wellFormed state frame (hstate : WellFormed state) :
     WellFormed (dispatchHardware state frame).state := by
-  rcases hstate with ⟨hlifecycle, hmodeWellFormed⟩
+  rcases hstate with ⟨hlifecycle, hbound, hmodeWellFormed⟩
   change SubjectLifecycle.WellFormed state.core.lifecycle at hlifecycle
   cases hmode : state.mode with
   | handling active =>
@@ -415,7 +752,7 @@ theorem dispatchHardware_preserves_wellFormed state frame (hstate : WellFormed s
         And.intro hlifecycle hmodeWellFormed.2
   | halted record =>
       simpa [dispatchHardware, hmode, WellFormed, Interrupt.WellFormed] using
-        And.intro hlifecycle hmodeWellFormed
+        And.intro hlifecycle (And.intro hbound hmodeWellFormed)
   | running =>
       simp only [hmode] at hmodeWellFormed
       simp only [dispatchHardware, hmode, beginEntry, finishEntry, activeEntry]
@@ -434,8 +771,7 @@ theorem dispatchHardware_preserves_wellFormed state frame (hstate : WellFormed s
           | timer => simpa [hvector, WellFormed, Interrupt.WellFormed] using hlifecycle
           | syscall =>
               cases frame.savedPrivilege <;>
-                cases hreturn : Interrupt.validUserReturn frame <;>
-                simpa [hvector, hreturn, WellFormed, Interrupt.WellFormed] using hlifecycle
+                simpa [hvector, WellFormed, Interrupt.WellFormed] using hlifecycle
 
 theorem attacker_registers_cannot_change_dispatch state frame first second :
     dispatch state { hardware := frame, registers := first } =
@@ -461,6 +797,53 @@ theorem halted_suffix_absorbing state record proposals
       simp only [runOperations]
       rw [halted_gate_absorbing state record proposal hmode]
       exact ih state hmode
+
+/-- Outgoing-return rejection is one atomic composite step: it records the
+typed terminal reason, changes no lifecycle/authority/scheduler/resource view,
+and absorbs every later typed operation. -/
+theorem rejected_user_return_composite_atomicity state request reason proposals
+    (hmode : state.execution.mode = .running)
+    (harmed : state.execution.returnAuthorityArmed = true)
+    (hlive : state.ReturnPlanLive = true)
+    (hrejected : Interrupt.validateUserReturn
+      (authoritativeReturnRequest state.execution request) = .rejected reason) :
+    let record : HaltRecord :=
+      { reason := .invalidUserReturn state.execution.returnAuthority.purpose reason
+        active := none
+        incomingVector := request.hardware.vector
+        incomingOrigin := request.hardware.savedPrivilege }
+    let next := (gate state (.userReturn request)).state
+    next.execution.mode = .halted record ∧
+      next.execution.core.lifecycle = state.execution.core.lifecycle ∧
+      next.scheduler = state.scheduler ∧
+      next.preemption = state.preemption ∧
+      next.virtualMemory = state.virtualMemory ∧
+      next.ipc = state.ipc ∧
+      next.capabilities = state.capabilities ∧
+      next.lifecycle = state.lifecycle ∧
+      runOperations next proposals = next := by
+  dsimp only
+  have hterminal :
+      ((gate state (.userReturn request)).state.execution.mode =
+        .halted
+          { reason := .invalidUserReturn state.execution.returnAuthority.purpose reason
+            active := none
+            incomingVector := request.hardware.vector
+            incomingOrigin := request.hardware.savedPrivilege }) := by
+    simp only [gate, hmode, applyOperation, hlive, if_true, completeUserReturn, harmed]
+    rw [hrejected]
+    simp [latchInvalidUserReturn, authoritativeReturnRequest]
+  refine ⟨hterminal, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp only [gate, hmode, applyOperation, hlive, if_true, completeUserReturn, harmed]
+    rw [hrejected]
+    simp [latchInvalidUserReturn, authoritativeReturnRequest]
+  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive]
+  · exact halted_suffix_absorbing _ _ proposals hterminal
 
 theorem halted_never_accepts state record operation
     (hmode : state.execution.mode = .halted record) :
@@ -537,7 +920,7 @@ theorem contained_requires_user_origin state frame subject
           exact interrupt_contained_requires_user _ _ _ hh
       | fatal reason => simp [activeEntry, hd, halt] at hcontained
       | timer => simp [activeEntry, hd] at hcontained
-      | resume => simp [activeEntry, hd] at hcontained
+      | syscall => simp [activeEntry, hd] at hcontained
       | rejected reason => simp [activeEntry, hd] at hcontained
 
 theorem double_fault_escalation state active frame
@@ -560,20 +943,20 @@ theorem legacy_fatal_not_absorbing (core : Interrupt.State)
     (hkvector : kernelFault.vector = 14)
     (hkorigin : kernelFault.savedPrivilege = .kernel)
     (hsvector : syscall.vector = 128)
-    (hsvalid : Interrupt.validUserReturn syscall = true) :
+    (_hsvalid : Interrupt.validSavedUserFrame syscall = true) :
     (Interrupt.dispatchHardware core kernelFault).action = .fatal .kernelFault ∧
-      (Interrupt.dispatchHardware core syscall).action = .resume := by
+      (Interrupt.dispatchHardware core syscall).action = .syscall := by
   constructor
   · exact Interrupt.kernel_page_fault_is_fatal core kernelFault hidle hkvector hkorigin
   · have horigin : syscall.savedPrivilege = .user := by
-      simp [Interrupt.validUserReturn] at hsvalid
+      have hsvalid := _hsvalid
+      simp [Interrupt.validSavedUserFrame] at hsvalid
       exact hsvalid.1.1.1.1.1
-    simp [Interrupt.dispatchHardware, hidle, hsvector, Interrupt.decodeVector,
-      horigin, hsvalid]
+    simp [Interrupt.dispatchHardware, hidle, hsvector, Interrupt.decodeVector, horigin]
 
 private def demoFrame (vector : Nat) (origin : Interrupt.Privilege) : Interrupt.HardwareFrame :=
   { vector, errorCode := 0, savedPrivilege := origin, instructionPointer := 0x400000,
-    stackPointer := 0x500000, codeSelector := 0x1b, stackSelector := 0x23,
+    stackPointer := 0x500000, codeSelector := 0x23, stackSelector := 0x1b,
     flags := 2, canonicalInstructionPointer := true,
     canonicalStackPointer := true, flagsAllowed := true }
 
@@ -596,9 +979,9 @@ example (core : Interrupt.State) :
 
 example (core : Interrupt.State) :
     (dispatchHardware { core, mode := .running } (demoFrame 128 .user)).action =
-      .resume := by
+      .syscall := by
   simp [dispatchHardware, beginEntry, finishEntry, activeEntry, demoFrame,
-    Interrupt.dispatchHardware, Interrupt.decodeVector, Interrupt.validUserReturn]
+    Interrupt.dispatchHardware, Interrupt.decodeVector]
 
 example (core : Interrupt.State) :
     (dispatchHardware { core, mode := .running } (demoFrame 77 .user)).action =

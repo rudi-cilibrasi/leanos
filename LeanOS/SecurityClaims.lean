@@ -79,6 +79,275 @@ theorem failstop_halted_suffix_absorbing state record proposals
     FailStop.runOperations state proposals = state := by
   exact FailStop.halted_suffix_absorbing state record proposals hmode
 
+/-- SC-USER-RETURN-CONFINEMENT: an accepted return attests the complete
+kernel-selected frame/context tuple and its privilege-critical fields. -/
+theorem user_return_context_confinement request attested
+    (haccepted : Interrupt.validateUserReturn request = .accepted attested) :
+    attested = request ∧
+      attested.purpose ≠ .diagnosticKernelRecovery ∧
+      attested.executionMode = .running ∧
+      attested.hardware.savedPrivilege = .user ∧
+      attested.hardware.codeSelector = 0x23 ∧
+      attested.hardware.stackSelector = 0x1b ∧
+      attested.hardware.canonicalInstructionPointer = true ∧
+      attested.hardware.canonicalStackPointer = true ∧
+      Interrupt.rawReturnFlagsAllowed attested.hardware.flags = true ∧
+      attested.lifecycle.capabilities.subjects attested.expectedSubject = true ∧
+      attested.lifecycle.runnable attested.expectedSubject = true ∧
+      attested.lifecycle.current = some attested.expectedSubject ∧
+      attested.frameSubject = attested.expectedSubject ∧
+      attested.lifecycle.addressOwner attested.expectedAddressSpace =
+        some attested.expectedSubject ∧
+      attested.frameAddressSpace = attested.expectedAddressSpace ∧
+      attested.frameCr3 = attested.expectedCr3 ∧
+      attested.codeRegion.contains attested.hardware.instructionPointer = true ∧
+      attested.stackRegion.containsStackPointer attested.hardware.stackPointer = true := by
+  exact Interrupt.accepted_user_return_context_confined request attested haccepted
+
+/-- SC-USER-RETURN-AUTHORITY: the executable target policy accepted by the
+terminal gate is exactly the kernel-owned policy, never a proposal copy. -/
+theorem user_return_authority_confinement state request attested
+    (hstate : FailStop.WellFormed state)
+    (haccepted : (FailStop.completeUserReturn state request).action = .accepted attested) :
+    FailStop.ReturnAuthorityBound state ∧
+      attested.purpose = state.returnAuthority.purpose ∧
+      attested.expectedCr3 = state.returnAuthority.expectedCr3 ∧
+      attested.codeRegion = state.returnAuthority.codeRegion ∧
+      attested.stackRegion = state.returnAuthority.stackRegion := by
+  have hbound := FailStop.accepted_user_return_has_bound_authority state request attested
+    hstate haccepted
+  have hmode := FailStop.accepted_user_return_requires_running state request attested haccepted
+  exact ⟨hbound, FailStop.accepted_user_return_uses_authority state request attested
+    hmode haccepted⟩
+
+/-- SC-USER-RETURN-LIVE-PLAN: any authority armed by the composite selector
+was checked against the active virtual-memory mappings and their physical
+bindings, not merely against an attached compiled plan. -/
+theorem user_return_authority_requires_live_plan state purpose
+    (harmed : (FailStop.selectLiveReturnAuthority state purpose).execution.returnAuthorityArmed =
+      true) :
+    state.ReturnPlanLive = true := by
+  exact FailStop.selectLiveReturnAuthority_armed_implies_live state purpose harmed
+
+private def returnWitnessLifecycle : SubjectLifecycle.State :=
+  { capabilities :=
+      { subjects := fun subject => subject = 1
+        objects := fun object => object = 100 || object = 101
+        kinds := fun object => if object = 100 || object = 101 then some .memory else none
+        slots := fun _ _ => none }
+    issuedSubjects := fun subject => subject = 1
+    ownedMemory := fun object =>
+      if object = 100 then some (1, 100)
+      else if object = 101 then some (1, 101)
+      else none
+    addressOwner := fun space => if space = 1 then some 1 else none
+    mapping := fun space page =>
+      if space = 1 ∧ page = 100 then some 100
+      else if space = 1 ∧ page = 101 then some 101
+      else none
+    endpointOwner := fun _ => none
+    mailbox := fun _ => none
+    frameOwner := fun frame =>
+      if frame = 100 then some 1 else if frame = 101 then some 1 else none
+    freeFrame := fun frame =>
+      if frame = 100 then false else if frame = 101 then false else true
+    runnable := fun subject => subject = 1
+    current := some 1 }
+
+private def returnWitnessPlan : Option BootPageTablePlan.Plan :=
+  (BootPageTablePlan.compile BootPageTablePlan.sampleInput).toOption
+
+private def returnWitnessView : FailStop.ReturnAddressSpace :=
+  { subject := 1
+    expectedCr3 := 0xa000
+    codeRegion := ⟨0x64000, 0x65000⟩
+    stackRegion := ⟨0x65000, 0x66000⟩ }
+
+private def returnWitnessBase : FailStop.State :=
+  { core :=
+      { lifecycle := returnWitnessLifecycle
+        context :=
+          { currentSubject := 1
+            activeAddressSpace := 1
+            kernelStack := 0
+            entryActive := false } }
+    mode := .running
+    returnAddressSpace := fun space => if space = 1 then some returnWitnessView else none
+    returnPlan := returnWitnessPlan }
+
+private def returnWitnessState : FailStop.State :=
+  FailStop.selectReturnAuthority returnWitnessBase .initialDispatch
+
+private def returnWitnessRequest : Interrupt.UserReturnRequest :=
+  { hardware :=
+      { vector := 0
+        errorCode := 0
+        savedPrivilege := .user
+        instructionPointer := 0x64100
+        stackPointer := 0x65ff8
+        codeSelector := 0x23
+        stackSelector := 0x1b
+        flags := 0x202
+        canonicalInstructionPointer := true
+        canonicalStackPointer := true
+        flagsAllowed := true }
+    purpose := .initialDispatch
+    frameSubject := 1
+    frameAddressSpace := 1
+    frameCr3 := 0xa000
+    expectedSubject := 1
+    expectedAddressSpace := 1
+    expectedCr3 := 0xa000
+    executionMode := .running
+    lifecycle := returnWitnessLifecycle
+    codeRegion := ⟨0x64000, 0x65000⟩
+    stackRegion := ⟨0x65000, 0x66000⟩
+    flags :=
+      { interruptEnable := true
+        direction := false
+        alignmentCheck := false
+        nestedTask := false
+        virtual8086 := false
+        ioPrivilegeLevel := 0
+        reservedAllowed := true } }
+
+set_option maxRecDepth 100000 in
+/-- The authority-selection transition reaches a well-formed armed state whose
+complete return gate accepts the matching live frame. -/
+theorem user_return_authority_reachable_witness :
+    FailStop.WellFormed returnWitnessState ∧
+      (FailStop.completeUserReturn returnWitnessState returnWitnessRequest).action =
+        .accepted returnWitnessRequest := by
+  constructor
+  · apply FailStop.selectReturnAuthority_wellFormed
+    simp [returnWitnessBase, returnWitnessLifecycle, FailStop.WellFormed,
+      Interrupt.WellFormed, SubjectLifecycle.WellFormed]
+    intro object subject frame howned
+    by_cases h100 : object = 100
+    · subst object
+      simp at howned
+      cases howned
+      simp_all
+    · by_cases h101 : object = 101
+      · subst object
+        simp [h100] at howned
+        cases howned
+        simp_all
+      · simp [h100, h101] at howned
+  · rfl
+
+private def returnWitnessMemory : MemoryLifecycle.State :=
+  { capabilities := returnWitnessLifecycle.capabilities
+    allocator :=
+      { frames := [100, 101]
+        status := fun frame =>
+          if frame = 100 then .owned 100
+          else if frame = 101 then .owned 101
+          else .reserved }
+    binding := fun object =>
+      if object = 100 then some 100 else if object = 101 then some 101 else none
+    issued := fun object => object = 100 || object = 101 }
+
+private def returnWitnessVirtualMemory : VirtualMapping.State :=
+  { memory := returnWitnessMemory
+    owner := returnWitnessLifecycle.addressOwner
+    mappings := fun space page =>
+      if space = 1 ∧ page = 100 then
+        some { object := 100, permissions := { read := true, write := false } }
+      else if space = 1 ∧ page = 101 then
+        some { object := 101, permissions := { read := true, write := true } }
+      else none
+    issuedAddressSpace := fun space => space = 1 }
+
+private def returnWitnessEndpoints : EndpointIPC.State :=
+  { capabilities := returnWitnessLifecycle.capabilities
+    allocator := returnWitnessMemory.allocator
+    binding := returnWitnessMemory.binding
+    issued := returnWitnessMemory.issued
+    issuedAddressSpace := fun _ => false
+    mailbox := fun _ => none
+    sendHistory := fun _ => [] }
+
+private def returnWitnessComposite : FailStop.CompositeState :=
+  let scheduler : Scheduler.State :=
+    { lifecycle := returnWitnessLifecycle, ready := [], capacity := 0 }
+  { execution := returnWitnessBase
+    scheduler
+    preemption := { scheduler, timerArmed := false, acceptedTicks := 1 }
+    virtualMemory := returnWitnessVirtualMemory
+    ipc := { virtualMemory := returnWitnessVirtualMemory, endpoints := returnWitnessEndpoints }
+    capabilities := returnWitnessLifecycle.capabilities
+    lifecycle := returnWitnessLifecycle }
+
+private def returnWitnessSyscallFrame : Interrupt.HardwareFrame :=
+  { returnWitnessRequest.hardware with vector := 128 }
+
+private def returnWitnessSyscallRequest : Interrupt.UserReturnRequest :=
+  { returnWitnessRequest with
+    hardware := returnWitnessSyscallFrame
+    purpose := .syscallResume }
+
+private def returnWitnessSyscallContext : Syscall.TrustedContext :=
+  { caller := 1, activeAddressSpace := 1 }
+
+private def returnWitnessSyscallCall : Syscall.UntrustedCall :=
+  { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 }
+
+set_option maxRecDepth 100000 in
+/-- Concrete typed composite trace: syscall entry clears old authority, the
+syscall body installs its final lifecycle/context and reselects, and the
+following return is accepted without changing the composite state. -/
+theorem user_return_composite_entry_witness :
+    let entered := (FailStop.gate returnWitnessComposite
+      (.interrupt returnWitnessSyscallFrame)).state
+    let called := (FailStop.gate entered
+      (.syscall returnWitnessSyscallContext returnWitnessSyscallCall)).state
+    called.ReturnPlanLive = true ∧
+      called.execution.returnAuthorityArmed = true ∧
+      (FailStop.gate called (.userReturn returnWitnessSyscallRequest)).state = called := by
+  dsimp only
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  · rfl
+
+set_option maxRecDepth 100000 in
+/-- Syscall classification alone cannot authorize a return: the syscall body
+must install its final lifecycle/context before authority is reselected. -/
+theorem user_return_syscall_entry_cannot_skip_body :
+    let entered := (FailStop.gate returnWitnessComposite
+      (.interrupt returnWitnessSyscallFrame)).state
+    entered.execution.returnAuthorityArmed = false := by
+  native_decide
+
+/-- SC-USER-RETURN-FAILSTOP: a rejected outgoing return atomically latches a
+typed terminal record, freezes every composite subsystem, and absorbs all
+later operations. -/
+theorem user_return_rejection_failstop state request reason proposals
+    (hmode : state.execution.mode = .running)
+    (harmed : state.execution.returnAuthorityArmed = true)
+    (hlive : state.ReturnPlanLive = true)
+    (hrejected : Interrupt.validateUserReturn
+      (FailStop.authoritativeReturnRequest state.execution request) = .rejected reason) :
+    let record : FailStop.HaltRecord :=
+      { reason := .invalidUserReturn state.execution.returnAuthority.purpose reason
+        active := none
+        incomingVector := request.hardware.vector
+        incomingOrigin := request.hardware.savedPrivilege }
+    let next := (FailStop.gate state (.userReturn request)).state
+    next.execution.mode = .halted record ∧
+      next.execution.core.lifecycle = state.execution.core.lifecycle ∧
+      next.scheduler = state.scheduler ∧
+      next.preemption = state.preemption ∧
+      next.virtualMemory = state.virtualMemory ∧
+      next.ipc = state.ipc ∧
+      next.capabilities = state.capabilities ∧
+      next.lifecycle = state.lifecycle ∧
+      FailStop.runOperations next proposals = next := by
+  exact FailStop.rejected_user_return_composite_atomicity state request reason proposals
+    hmode harmed hlive hrejected
+
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps
     (hlow : ScheduledObservation.LowEquiv observer left right)

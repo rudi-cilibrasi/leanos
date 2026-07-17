@@ -362,6 +362,15 @@ smep_probe_recovered:
     ret
 .global enter_user
 enter_user:
+#ifdef LEANOS_RETURN_INITIAL_INDIRECT_FIXTURE
+    /* Negative final-ELF fixture: bypass validation from initial dispatch. */
+    lea user_return_restore(%rip), %rax
+    jmp *%rax
+#endif
+    /* This function is entered by a SysV call and never returns.  Discard the
+       caller return address so the synthetic 160-byte frame leaves RSP
+       16-byte aligned at the validator call site. */
+    add $8, %rsp
     pushq $0x1b
     push %rsi
     pushfq
@@ -370,7 +379,18 @@ enter_user:
     push %rax
     pushq $0x23
     push %rdi
-    iretq
+    /* Supply an all-zero initial register bank so every CPL3 transition uses
+       the same reviewed validator/restore epilogue. */
+    xor %eax, %eax
+    .rept 15
+    push %rax
+    .endr
+    mov $1, %esi
+#ifdef LEANOS_RETURN_BRANCH_FIXTURE
+    jmp user_return_restore
+#else
+    jmp user_return_epilogue
+#endif
 
 /* Raise a real #GP with RSP immediately above the unmapped guard.  Its present
    IST0 gate must push an exception frame into the guard, so the resulting #PF
@@ -500,8 +520,8 @@ isr80_cld:
     xor %rax, %rax
 7:
     mov %rax, 112(%rsp)
-    RESTORE
-    iretq
+    mov $2, %esi
+    jmp user_return_epilogue
 .global isr14
 isr14:
 .global isr14_clac
@@ -518,11 +538,74 @@ isr14_cld:
     mov %cr2, %rcx
     call page_fault_handler
     mov %rax, 136(%rsp)
+.global diagnostic_return_restore
+diagnostic_return_restore:
     add $8, %rsp
     RESTORE
     add $8, %rsp
+.global diagnostic_return_iretq
+diagnostic_return_iretq:
     iretq
 .global isr32
+.section .bss,"aw",@nobits
+.align 16
+.global saved_context_a
+saved_context_a:
+    .skip 160
+.global saved_context_b
+saved_context_b:
+    .skip 160
+.global saved_context_a_original_rip
+saved_context_a_original_rip:
+    .skip 8
+.global saved_context_a_original_flags
+saved_context_a_original_flags:
+    .skip 8
+.global saved_context_a_original_rsp
+saved_context_a_original_rsp:
+    .skip 8
+.global saved_context_b_original_rip
+saved_context_b_original_rip:
+    .skip 8
+.global saved_context_b_original_flags
+saved_context_b_original_flags:
+    .skip 8
+.global saved_context_b_original_rsp
+saved_context_b_original_rsp:
+    .skip 8
+.section .rodata,"a",@progbits
+.align 8
+.global saved_context_owner_a
+saved_context_owner_a:
+    .quad 1
+.global saved_context_owner_b
+saved_context_owner_b:
+    .quad 2
+.set B_INITIAL_RAX, 0x010001
+.set B_INITIAL_RBX, 0x020002
+.set B_INITIAL_RCX, 0x030003
+.set B_INITIAL_RDX, 0x040004
+.set B_INITIAL_RBP, 0x050005
+.set B_INITIAL_RSI, 0x060006
+.set B_INITIAL_RDI, 0x070007
+.set B_INITIAL_R8,  0x080008
+.set B_INITIAL_R9,  0x090009
+.set B_INITIAL_R10, 0x100010
+.set B_INITIAL_R11, 0x110011
+.set B_INITIAL_R12, 0xc0dec0dec0dec0de
+.set B_INITIAL_R13, 0x51a7e51a7e51a7e5
+.set B_INITIAL_R14, 0x140014
+.set B_INITIAL_R15, 0x150015
+.align 16
+.global initial_context_b
+initial_context_b:
+    /* SAVE layout: r15..rax, then the five-word iretq frame. */
+    .quad B_INITIAL_R15, B_INITIAL_R14, B_INITIAL_R13, B_INITIAL_R12
+    .quad B_INITIAL_R11, B_INITIAL_R10, B_INITIAL_R9, B_INITIAL_R8
+    .quad B_INITIAL_RDI, B_INITIAL_RSI, B_INITIAL_RBP, B_INITIAL_RDX
+    .quad B_INITIAL_RCX, B_INITIAL_RBX, B_INITIAL_RAX
+    .quad user_b_entry, 0x23, 0x202, user_b_stack_top, 0x1b
+.section .text,"ax",@progbits
 isr32:
 .global isr32_clac
 isr32_clac:
@@ -533,18 +616,95 @@ isr32_cld:
     SAVE
     mov 128(%rsp), %rdi
     call timer_handler
-    /* The modeled one-shot scheduler selected B.  Install its fresh frame
-       before CR3 so no instruction is fetched with mismatched identity. */
-    movq $user_b_entry, 120(%rsp)
-    movq $user_b_stack_top, 144(%rsp)
-    movabs $0xc0dec0dec0dec0de, %rax
-    mov %rax, 24(%rsp)
-    movabs $0x51a7e51a7e51a7e5, %rax
-    mov %rax, 16(%rsp)
+    cmp $2, %rax
+    je 1f
+    cmp $1, %rax
+    je 2f
+    ud2
+1:  /* Save A's exact GPR/iret frame, then install B's fresh context. */
+    mov %rsp, %rsi
+    lea saved_context_a(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_a+120(%rip), %rax
+    mov %rax, saved_context_a_original_rip(%rip)
+    mov saved_context_a+136(%rip), %rax
+    mov %rax, saved_context_a_original_flags(%rip)
+    mov saved_context_a+144(%rip), %rax
+    mov %rax, saved_context_a_original_rsp(%rip)
+    lea initial_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
     movq $page_map_level_4_b, %rax
     mov %rax, %cr3
+    mov saved_context_owner_b(%rip), %rsi
+    mov saved_context_owner_a(%rip), %rdx
+    jmp 3f
+2:  /* Preserve B separately and restore A byte-for-byte before CR3/iretq. */
+    mov %rsp, %rsi
+    lea saved_context_b(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_b+120(%rip), %rax
+    mov %rax, saved_context_b_original_rip(%rip)
+    mov saved_context_b+136(%rip), %rax
+    mov %rax, saved_context_b_original_flags(%rip)
+    mov saved_context_b+144(%rip), %rax
+    mov %rax, saved_context_b_original_rsp(%rip)
+    lea saved_context_a(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+    mov saved_context_owner_a(%rip), %rsi
+    mov saved_context_owner_b(%rip), %rdx
+3:
+    mov %rsp, %rdi
     call switch_complete
+    mov $3, %esi
+    jmp user_return_epilogue
+
+/* The only boot-reachable CPL3 return. validate_user_return receives the exact
+   immutable register/frame tuple at RSP; after acceptance this block performs
+   no frame write, context change, or call before consuming that tuple. */
+.global user_return_epilogue
+.global user_return_iretq
+user_return_epilogue:
+    /* Normalize the two explicitly kernel-managed override bits in the exact
+       outgoing frame before it is validated.  NT, VM, IOPL, selectors, and
+       every address/context field remain reject-only. */
+    andq $-263169, 136(%rsp) /* ~(RFLAGS.DF | RFLAGS.AC) */
+    mov %rsp, %rdi
+    call validate_user_return
+#ifdef LEANOS_RETURN_POST_VALIDATE_QEMU_FIXTURE
+    /* Negative machine-path fixture: mutate the attested RIP, then re-enter
+       the production validator so the guest records a typed terminal result
+       before the mutated tuple can reach RESTORE/iretq. */
+    movabs $0x0000800000000000, %rax
+    mov %rax, 120(%rsp)
+    mov %rsp, %rdi
+    mov $1, %esi
+    call validate_user_return
+#endif
+#ifdef LEANOS_RETURN_INDIRECT_FIXTURE
+    /* Negative final-ELF fixture: synthesize an indirect restore entrant. */
+    lea user_return_restore(%rip), %rax
+    push %rax
+    ret
+#endif
+.global user_return_restore
+user_return_restore:
+#ifdef LEANOS_RETURN_RESTORE_FIXTURE
+    /* Negative final-ELF fixture: consume one slot into the wrong register. */
+    pop %r14
+    pop %r14; pop %r13; pop %r12; pop %r11; pop %r10; pop %r9; pop %r8
+    pop %rdi; pop %rsi; pop %rbp; pop %rdx; pop %rcx; pop %rbx; pop %rax
+#else
     RESTORE
+#endif
+user_return_iretq:
     iretq
 
 .section .user.a.text,"ax",@progbits
@@ -583,13 +743,26 @@ user_a_entry:
     xor %rbx, %rbx
     xor %rcx, %rcx
     xor %rdx, %rdx
+    movabs $0xa11ca11ca11ca11c, %r12
+    movabs $0xa22da22da22da22d, %r13
     int $0x80
-    jmp 1f
+1:  mov $6, %rax
+    int $0x80
+    test %rax, %rax
+    jz 1b
+    movabs $0xa11ca11ca11ca11c, %rax
+    cmp %rax, %r12
+    jne user_copy_fail
+    movabs $0xa22da22da22da22d, %rax
+    cmp %rax, %r13
+    jne user_copy_fail
+    mov $5, %rax
+    int $0x80
+    ud2
 user_copy_fail:
     mov $3, %rax
     int $0x80
     ud2
-1:  jmp 1b
 
 .section .user.a.bss,"aw",@nobits
 .align 4096
@@ -602,20 +775,48 @@ user_a_stack_top:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+    /* Reaching syscall 2 certifies that no A register survived dispatch. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    cmp $B_INITIAL_RCX, %rcx
+    jne 2f
+    cmp $B_INITIAL_RDX, %rdx
+    jne 2f
+    cmp $B_INITIAL_RBP, %rbp
+    jne 2f
+    cmp $B_INITIAL_RSI, %rsi
+    jne 2f
+    cmp $B_INITIAL_RDI, %rdi
+    jne 2f
+    cmp $B_INITIAL_R8, %r8
+    jne 2f
+    cmp $B_INITIAL_R9, %r9
+    jne 2f
+    cmp $B_INITIAL_R10, %r10
+    jne 2f
+    cmp $B_INITIAL_R11, %r11
+    jne 2f
+    cmp $B_INITIAL_R14, %r14
+    jne 2f
+    cmp $B_INITIAL_R15, %r15
+    jne 2f
+    movabs $B_INITIAL_R12, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %rax
+    cmp %rax, %r13
+    jne 2f
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
-    movabs $0xc0dec0dec0dec0de, %rax
-    cmp %rax, %r12
-    jne 2f
-    movabs $0x51a7e51a7e51a7e5, %rax
-    cmp %rax, %r13
-    jne 2f
     mov $2, %rax
     xor %rbx, %rbx
     xor %rcx, %rcx
     xor %rdx, %rdx
     int $0x80
+1:  jmp 1b
 2:  mov $3, %rax
     int $0x80
 3:  jmp 3b

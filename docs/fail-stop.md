@@ -3,9 +3,13 @@
 `LeanOS.FailStop` is the authoritative composite execution latch around the
 interrupt classifier. Its modes are `running`, `handling` a kernel-owned active
 entry, and `halted` with a typed record. Entry and completion are explicit. A
-normal syscall return, timer event, rejection, or contained CPL3 page fault
-returns to `running`; the contained fault still atomically applies the existing
-whole-subject cleanup policy. Kernel page faults and unsupported vectors halt.
+normal syscall entry classification, timer event, incoming wrong-origin
+rejection, or contained CPL3 page fault returns to `running`; the contained
+fault still atomically applies the existing whole-subject cleanup policy.
+Outgoing user return is a distinct `completeUserReturn` transaction: validation
+failure records its purpose and reason, freezes every composite subsystem, and
+enters the same absorbing halt gate. Kernel page faults and unsupported vectors
+also halt.
 The kernel-owned SMAP copy override is cleared on every entry and remains clear
 after a fatal transition, so an interrupted diagnostic or copy window cannot
 leak privileged access into a later context.
