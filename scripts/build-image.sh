@@ -145,6 +145,11 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/boot-page-plan-guard.h"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
   -o "$build/kernel.o"
+if nm "$build/kernel.o" | grep -Eq \
+    'return_corruption_mode|return_corruption_name|inject_return_corruption'; then
+  echo "error: normal kernel object contains return-corruption fixture code" >&2
+  exit 1
+fi
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture mode _reason <<<"$spec"
   "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \

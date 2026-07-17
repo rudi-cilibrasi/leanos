@@ -301,6 +301,7 @@ static unsigned canonical(uint64_t value) {
     return high == 0 || high == 0x1ffffu;
 }
 
+#if LEANOS_RETURN_CORRUPTION_MODE != 0
 static volatile uint64_t return_corruption_mode = LEANOS_RETURN_CORRUPTION_MODE;
 
 static const char *return_corruption_name(uint64_t mode) {
@@ -346,12 +347,15 @@ static void inject_return_corruption(uint64_t *saved) {
     default: fail("user-return-fixture-mode");
     }
 }
+#endif
 
 /* Fixed-width, allocation-free machine adapter for the authoritative return
    policy. `saved` is the complete SAVE register bank followed by RIP, CS,
    RFLAGS, RSP, and SS. Rejection enters the existing absorbing terminal path. */
 void validate_user_return(const uint64_t *saved, uint64_t purpose) {
+#if LEANOS_RETURN_CORRUPTION_MODE != 0
     inject_return_corruption((uint64_t *)saved);
+#endif
     uint64_t rip = saved[15], cs = saved[16], flags = saved[17];
     uint64_t rsp = saved[18], ss = saved[19], cr3;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
