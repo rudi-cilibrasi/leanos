@@ -613,6 +613,94 @@ theorem retireOwnedAddressSpaces_preserves_retired_object state subject base obj
     (retireOwnedAddressSpaces state subject base).objects object = false := by
   simp [retireOwnedAddressSpaces, hretired]
 
+/-- Removing a subject and every object it owns is a monotone restriction of
+the capability state: retained slots still name the same live, well-kinded
+object and the append-only derivation history is unchanged. -/
+theorem cleanupCapabilities_preserves_wellFormed state subject
+    (hstate : Capability.WellFormed state.capabilities) :
+    Capability.WellFormed
+      (retireOwnedAddressSpaces state subject
+        (SubjectLifecycle.terminatedCapabilities state subject)) := by
+  rcases hstate with ⟨hslots, hderivations, hunique, hspaces⟩
+  have retainedSlot : ∀ holder slot capability,
+      (retireOwnedAddressSpaces state subject
+        (SubjectLifecycle.terminatedCapabilities state subject)).slots holder slot =
+          some capability →
+      state.capabilities.slots holder slot = some capability := by
+    intro holder slot capability hslot
+    simp only [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities] at hslot
+    cases hold : state.capabilities.slots holder slot with
+    | none =>
+      rw [hold] at hslot
+      simp [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities] at hslot
+    | some original =>
+      by_cases hholder : holder = subject
+      · rw [hold] at hslot
+        simp [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities,
+          hholder] at hslot
+      by_cases hmemory :
+          (state.ownedMemory original.object).any (fun owner => owner.1 = subject) = true
+      · rw [hold] at hslot
+        simp [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities,
+          hholder, hmemory] at hslot
+      by_cases hendpoint : state.endpointOwner original.object = some subject
+      · rw [hold] at hslot
+        simp [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities,
+          hholder, hmemory, hendpoint] at hslot
+      by_cases haddress : state.addressOwner original.object = some subject
+      · rw [hold] at hslot
+        simp [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities,
+          hholder, hmemory, hendpoint, haddress] at hslot
+      have heq : original = capability := by
+        simpa [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities,
+          hold, hholder, hmemory, hendpoint, haddress] using hslot
+      subst capability
+      rfl
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro holder slot capability hslot
+    have holdSlot := retainedSlot holder slot capability hslot
+    have hslot' := hslot
+    simp only [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities] at hslot'
+    have hholder : holder ≠ subject := by
+      intro h
+      rw [holdSlot] at hslot'
+      simp [h] at hslot'
+    have hmemory :
+        (state.ownedMemory capability.object).any (fun owner => owner.1 = subject) = false := by
+      cases h : (state.ownedMemory capability.object).any
+          (fun owner => owner.1 = subject)
+      · rfl
+      · rw [holdSlot] at hslot'
+        simp [hholder, h] at hslot'
+    have hendpoint : state.endpointOwner capability.object ≠ some subject := by
+      intro h
+      rw [holdSlot] at hslot'
+      simp [hholder, hmemory, h] at hslot'
+    have haddress : state.addressOwner capability.object ≠ some subject := by
+      intro h
+      rw [holdSlot] at hslot'
+      simp [hholder, hmemory, hendpoint, h] at hslot'
+    have hold := hslots holder slot capability holdSlot
+    rcases hold with
+      ⟨hsubject, hobject, hkind, hrights, hidentity, hderivation, hparent⟩
+    refine ⟨?_, ?_, ?_, hrights, hidentity, hderivation, hparent⟩
+    · simpa [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities,
+        SubjectLifecycle.setBool, hholder] using hsubject
+    · simpa [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities,
+        hmemory, hendpoint, haddress] using hobject
+    · simpa [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities,
+        hmemory, hendpoint, haddress] using hkind
+  · change Capability.DerivationsWellFormed state.capabilities
+    exact hderivations
+  · intro holder slot capability otherHolder otherSlot otherCapability
+      hslot hother hidentity
+    exact hunique holder slot capability otherHolder otherSlot otherCapability
+      (retainedSlot holder slot capability hslot)
+      (retainedSlot otherHolder otherSlot otherCapability hother) hidentity
+  · intro holder slot hout
+    simp only [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities]
+    rw [hspaces holder slot hout]
+
 /-- Subject termination is one composite cleanup step: lifecycle ownership,
 scheduler membership, the resumable slot, and cached translations disappear
 together.  The scheduler model currently identifies each subject's owned
