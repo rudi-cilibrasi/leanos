@@ -55,7 +55,7 @@ private def bootAllocation (id : String) (magic infoBytes entryBytes selected fl
 
 private def userReturn (id : String) (mode rip rsp selectors flags : UInt64) : Vector :=
   { id, adapter := "Interrupt.userReturn", words := [mode, rip, rsp, selectors, flags],
-    expected := Interrupt.userReturnDemo mode rip rsp selectors flags }
+    expected := Interrupt.userReturnModelExpected mode rip rsp selectors flags }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -144,6 +144,18 @@ theorem user_return_scenario_agrees :
     (vectors[29]).expected = 1 ∧ (vectors[30]).expected = 1 ∧
     (vectors[31]).expected = 1 ∧ (vectors[32]).expected = 1 ∧
     (vectors.drop 33).all (fun vector => vector.expected = 0) = true := by
+  native_decide
+
+private def userReturnAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "Interrupt.userReturn", [mode, rip, rsp, selectors, flags] =>
+      Interrupt.userReturnDemo mode rip rsp selectors flags = vector.expected
+  | _, _ => true
+
+/-- Every checked user-return vector couples the freestanding exported adapter
+to an expectation evaluated through the authoritative validator. -/
+theorem user_return_adapter_agrees_with_model :
+    vectors.all userReturnAdapterAgrees = true := by
   native_decide
 
 private def wordsText : List UInt64 → String

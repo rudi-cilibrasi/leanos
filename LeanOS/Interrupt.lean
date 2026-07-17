@@ -209,25 +209,32 @@ theorem accepted_attests_exact_request request attested
 
 theorem accepted_user_return_context_confined request attested
     (haccepted : validateUserReturn request = .accepted attested) :
-    attested.hardware.savedPrivilege = .user ∧
+    attested = request ∧
+      attested.purpose ≠ .diagnosticKernelRecovery ∧
+      attested.executionMode = .running ∧
+      attested.hardware.savedPrivilege = .user ∧
       attested.hardware.codeSelector = 0x23 ∧
       attested.hardware.stackSelector = 0x1b ∧
       attested.hardware.canonicalInstructionPointer = true ∧
       attested.hardware.canonicalStackPointer = true ∧
+      attested.hardware.flagsAllowed = true ∧
+      attested.flags.reservedAllowed = true ∧
       attested.flags.interruptEnable = true ∧
       attested.flags.direction = false ∧
       attested.flags.alignmentCheck = false ∧
       attested.flags.nestedTask = false ∧
       attested.flags.virtual8086 = false ∧
       attested.flags.ioPrivilegeLevel = 0 ∧
-      attested.executionMode = .running ∧
-      attested.lifecycle.current = some attested.expectedSubject ∧
+      attested.lifecycle.capabilities.subjects attested.expectedSubject = true ∧
       attested.lifecycle.runnable attested.expectedSubject = true ∧
+      attested.lifecycle.current = some attested.expectedSubject ∧
       attested.frameSubject = attested.expectedSubject ∧
       attested.lifecycle.addressOwner attested.expectedAddressSpace =
         some attested.expectedSubject ∧
       attested.frameAddressSpace = attested.expectedAddressSpace ∧
-      attested.frameCr3 = attested.expectedCr3 := by
+      attested.frameCr3 = attested.expectedCr3 ∧
+      attested.codeRegion.contains attested.hardware.instructionPointer = true ∧
+      attested.stackRegion.containsStackPointer attested.hardware.stackPointer = true := by
   have hattested : attested = request :=
     accepted_attests_exact_request request attested haccepted
   rw [hattested] at haccepted ⊢
@@ -386,6 +393,15 @@ mode 13 validates a good request and then attempts to consume a mutated RIP. -/
 def userReturnDemo (mode rip rsp selectors flags : UInt64) : UInt64 :=
   if mode = 13 then 0
   else if oracleScalarAccepts mode rip rsp selectors flags then 1 else 0
+
+/-- Model-derived expectation used to generate the shared corpus.  This is
+kept separate from the allocation-free exported adapter so hosted and boot
+replay compare two independently evaluated paths. -/
+def userReturnModelExpected (mode rip rsp selectors flags : UInt64) : UInt64 :=
+  let request := oracleRequest mode rip rsp selectors flags
+  if mode = 13 then
+    if consumeValidatedInstructionPointer request (rip + 1) then 1 else 0
+  else if oracleModelAccepts request then 1 else 0
 
 theorem userReturnDemo_accepts_reviewed_purposes :
     userReturnDemo 1 0x400100 0x500ff8 0x1b0023 0x202 = 1 ∧

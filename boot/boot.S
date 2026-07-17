@@ -377,7 +377,11 @@ enter_user:
     push %rax
     .endr
     mov $1, %esi
+#ifdef LEANOS_RETURN_BRANCH_FIXTURE
+    jmp user_return_restore
+#else
     jmp user_return_epilogue
+#endif
 
 /* Raise a real #GP with RSP immediately above the unmapped guard.  Its present
    IST0 gate must push an exception frame into the guard, so the resulting #PF
@@ -661,7 +665,16 @@ user_return_epilogue:
     andq $-263169, 136(%rsp) /* ~(RFLAGS.DF | RFLAGS.AC) */
     mov %rsp, %rdi
     call validate_user_return
+.global user_return_restore
+user_return_restore:
+#ifdef LEANOS_RETURN_RESTORE_FIXTURE
+    /* Negative final-ELF fixture: consume one slot into the wrong register. */
+    pop %r14
+    pop %r14; pop %r13; pop %r12; pop %r11; pop %r10; pop %r9; pop %r8
+    pop %rdi; pop %rsi; pop %rbp; pop %rdx; pop %rcx; pop %rbx; pop %rax
+#else
     RESTORE
+#endif
 user_return_iretq:
     iretq
 

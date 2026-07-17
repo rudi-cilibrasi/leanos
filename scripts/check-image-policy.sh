@@ -178,7 +178,7 @@ grep -Fq 'saved_context_b[19] != 0x1b' boot/kernel.c
 # All CPL3 transitions converge on one validator call and consume the validated
 # frame without an intervening call, write, or context switch. The sole other
 # iretq belongs to the explicitly separate supervisor diagnostic recovery path.
-for symbol in user_return_epilogue user_return_iretq validate_user_return; do
+for symbol in user_return_epilogue user_return_restore user_return_iretq validate_user_return; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: user-return policy symbol missing: $symbol" >&2; exit 1;
   }
@@ -190,19 +190,34 @@ return_disassembly="$(objdump -d "$elf" | sed -n '/<user_return_epilogue>:/,/<us
 grep -Eq 'call.*<validate_user_return>' <<<"$return_disassembly" || {
   echo "error: user-return epilogue does not call validator" >&2; exit 1;
 }
-post_validation="$(objdump -d "$elf" | sed -n '/call.*<validate_user_return>/,/<user_return_iretq>:/p')"
-post_validation_body="${post_validation#*$'\n'}"
-if grep -Eq '\<(call|push[a-z]*|mov .*%cr3)\>' <<<"$post_validation_body" ||
-    grep -Eq '\<(mov|add|sub|and|or|xor|inc|dec|xchg)[a-z]*[[:space:]][^,]*,[^#]*\(' \
-      <<<"$post_validation_body"; then
-  echo "error: validated return frame/context changes before iretq" >&2; exit 1
-fi
-# The validated site is reached only by fallthrough.  Reject any control-flow
-# edge that can jump directly to the consuming label and bypass validation.
-if objdump -d "$elf" |
-    grep -Eq '[[:space:]]j[a-z]*[[:space:]].*<user_return_iretq>'; then
-  echo "error: branch can bypass user-return validation" >&2; exit 1
-fi
+restore_sequence="$(objdump -d --no-show-raw-insn "$elf" |
+  awk '/<user_return_restore>:/ { capture=1; next }
+       /<user_return_iretq>:/ { capture=0 }
+       capture {
+         sub(/^[[:space:]]*[0-9a-f]+:[[:space:]]*/, "")
+         gsub(/[[:space:]]+/, " ")
+         if ($0 == "") next
+         sequence = sequence (sequence == "" ? "" : ";") $0
+       }
+       END { print sequence }')"
+expected_restore='pop %r15;pop %r14;pop %r13;pop %r12;pop %r11;pop %r10;pop %r9;pop %r8;pop %rdi;pop %rsi;pop %rbp;pop %rdx;pop %rcx;pop %rbx;pop %rax'
+[[ "$restore_sequence" == "$expected_restore" ]] || {
+  echo "error: unexpected exact user-return restore sequence" >&2; exit 1;
+}
+
+# No direct control-flow edge may enter the interval after validation; normal
+# execution reaches `user_return_restore` only by fallthrough from the call.
+restore_address=$((16#$(nm -n "$elf" | awk '$3 == "user_return_restore" { print $1 }')))
+iretq_address=$((16#$(nm -n "$elf" | awk '$3 == "user_return_iretq" { print $1 }')))
+while read -r source target; do
+  [[ -n "$source" && -n "$target" ]] || continue
+  target_value=$((16#$target))
+  if (( target_value >= restore_address && target_value <= iretq_address )); then
+    echo "error: control-flow edge $source -> $target enters post-validation restore interval" >&2
+    exit 1
+  fi
+done < <(objdump -d --no-show-raw-insn "$elf" |
+  sed -nE 's/^[[:space:]]*([0-9a-f]+):[[:space:]]+(j[a-z]*|call[a-z]*|loop[a-z]*)[[:space:]]+([0-9a-f]+).*/\1 \3/p')
 [[ "$(grep -Ec '^[[:space:]]+iretq$' boot/boot.S)" -eq 2 ]] || {
   echo "error: raw iretq added outside classified return sites" >&2; exit 1;
 }

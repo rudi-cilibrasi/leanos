@@ -85,6 +85,12 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -c boot/boot.S -o "$build/boot.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_RESTORE_FIXTURE=1 \
+  -c boot/boot.S -o "$build/boot-return-restore-fixture.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_BRANCH_FIXTURE=1 \
+  -c boot/boot.S -o "$build/boot-return-branch-fixture.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_DF_MAP_GUARD=1 \
   -c boot/boot.S -o "$build/boot-df-guard-mapped.o"
 
@@ -200,6 +206,28 @@ if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
 fi
 ./scripts/check-image-policy.sh "$build/leanos.elf"
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
+
+for fixture in restore branch; do
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-return-${fixture}-fixture.map" \
+    -o "$build/leanos-return-${fixture}-fixture.elf" \
+    "$build/boot-return-${fixture}-fixture.o" "$build/kernel.o" \
+    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o"
+  if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}-fixture.elf" \
+      >"$build/return-${fixture}-fixture.log" 2>&1; then
+    echo "error: user-return ${fixture} negative fixture unexpectedly passed" >&2
+    exit 1
+  fi
+done
+grep -Fq 'error: unexpected exact user-return restore sequence' \
+  "$build/return-restore-fixture.log" || {
+  echo "error: restore negative fixture lacked expected diagnostic" >&2; exit 1;
+}
+grep -Fq 'enters post-validation restore interval' \
+  "$build/return-branch-fixture.log" || {
+  echo "error: branch negative fixture lacked expected diagnostic" >&2; exit 1;
+}
 
 cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"

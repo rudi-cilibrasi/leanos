@@ -22,8 +22,10 @@ and decoded flag policy. It rejects diagnostic kernel recovery, halted mode,
 stale scheduler/context bindings, noncanonical or out-of-region addresses,
 wrong selectors or CR3, cleared IF, and set DF, AC, NT, VM, or IOPL. Acceptance
 returns an attestation of the entire immutable request, preventing the model API
-from validating one tuple and consuming another. The confinement theorem proves
-the accepted privilege-critical fields and scheduler/address-space binding.
+from validating one tuple and consuming another. The confinement theorem pins
+exact request identity and every validator condition: purpose and mode,
+canonicality and region containment, complete flags, subject liveness,
+runnability and selection, address ownership, and CR3 binding.
 The shared machine epilogue clears the kernel-managed saved DF and AC bits
 before validation; the other forbidden flag fields remain reject-only.
 
@@ -62,7 +64,8 @@ bounded C validator and shared assembly epilogue. Final-ELF inspection permits
 only that CPL3 `iretq` plus the separately classified diagnostic CPL0 recovery
 site, and rejects calls or context changes between validation and consumption.
 The C adapter and inspection are integration evidence, not refinement proofs.
-The shared generated-model oracle now replays accepted initial, syscall, and
-scheduler returns plus a bounded malformed-frame/context matrix through hosted
+The shared generated-model oracle derives expected return results from
+`validateUserReturn`, proves pointwise agreement with the allocation-free
+adapter for every corpus vector, and replays those vectors through hosted
 generated code and the boot image. A controlled corrupt-frame QEMU corpus
 remains required.
