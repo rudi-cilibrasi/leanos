@@ -60,7 +60,7 @@ def WellFormed (state : State) : Prop :=
 
 inductive EntryAction where
   | contained (subject : Interrupt.SubjectId)
-  | timer | resume
+  | timer | syscall
   | rejected (reason : Interrupt.RejectReason)
   | fatal (reason : FatalReason)
   | alreadyHalted (record : HaltRecord)
@@ -120,8 +120,8 @@ def finishEntry (state : State) : EntryOutcome :=
             action := .contained subject }
       | .timer =>
           { state := { state with core := outcome.state, mode := .running }, action := .timer }
-      | .resume =>
-          { state := { state with core := outcome.state, mode := .running }, action := .resume }
+      | .syscall =>
+          { state := { state with core := outcome.state, mode := .running }, action := .syscall }
       | .rejected reason =>
           { state := { state with core := outcome.state, mode := .running },
             action := .rejected reason }
@@ -434,8 +434,7 @@ theorem dispatchHardware_preserves_wellFormed state frame (hstate : WellFormed s
           | timer => simpa [hvector, WellFormed, Interrupt.WellFormed] using hlifecycle
           | syscall =>
               cases frame.savedPrivilege <;>
-                cases hreturn : Interrupt.validUserReturn frame <;>
-                simpa [hvector, hreturn, WellFormed, Interrupt.WellFormed] using hlifecycle
+                simpa [hvector, WellFormed, Interrupt.WellFormed] using hlifecycle
 
 theorem attacker_registers_cannot_change_dispatch state frame first second :
     dispatch state { hardware := frame, registers := first } =
@@ -537,7 +536,7 @@ theorem contained_requires_user_origin state frame subject
           exact interrupt_contained_requires_user _ _ _ hh
       | fatal reason => simp [activeEntry, hd, halt] at hcontained
       | timer => simp [activeEntry, hd] at hcontained
-      | resume => simp [activeEntry, hd] at hcontained
+      | syscall => simp [activeEntry, hd] at hcontained
       | rejected reason => simp [activeEntry, hd] at hcontained
 
 theorem double_fault_escalation state active frame
@@ -560,16 +559,16 @@ theorem legacy_fatal_not_absorbing (core : Interrupt.State)
     (hkvector : kernelFault.vector = 14)
     (hkorigin : kernelFault.savedPrivilege = .kernel)
     (hsvector : syscall.vector = 128)
-    (hsvalid : Interrupt.validUserReturn syscall = true) :
+    (_hsvalid : Interrupt.validSavedUserFrame syscall = true) :
     (Interrupt.dispatchHardware core kernelFault).action = .fatal .kernelFault ∧
-      (Interrupt.dispatchHardware core syscall).action = .resume := by
+      (Interrupt.dispatchHardware core syscall).action = .syscall := by
   constructor
   · exact Interrupt.kernel_page_fault_is_fatal core kernelFault hidle hkvector hkorigin
   · have horigin : syscall.savedPrivilege = .user := by
-      simp [Interrupt.validUserReturn] at hsvalid
+      have hsvalid := _hsvalid
+      simp [Interrupt.validSavedUserFrame] at hsvalid
       exact hsvalid.1.1.1.1.1
-    simp [Interrupt.dispatchHardware, hidle, hsvector, Interrupt.decodeVector,
-      horigin, hsvalid]
+    simp [Interrupt.dispatchHardware, hidle, hsvector, Interrupt.decodeVector, horigin]
 
 private def demoFrame (vector : Nat) (origin : Interrupt.Privilege) : Interrupt.HardwareFrame :=
   { vector, errorCode := 0, savedPrivilege := origin, instructionPointer := 0x400000,
@@ -596,9 +595,9 @@ example (core : Interrupt.State) :
 
 example (core : Interrupt.State) :
     (dispatchHardware { core, mode := .running } (demoFrame 128 .user)).action =
-      .resume := by
+      .syscall := by
   simp [dispatchHardware, beginEntry, finishEntry, activeEntry, demoFrame,
-    Interrupt.dispatchHardware, Interrupt.decodeVector, Interrupt.validUserReturn]
+    Interrupt.dispatchHardware, Interrupt.decodeVector]
 
 example (core : Interrupt.State) :
     (dispatchHardware { core, mode := .running } (demoFrame 77 .user)).action =

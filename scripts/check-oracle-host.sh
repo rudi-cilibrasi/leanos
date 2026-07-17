@@ -28,5 +28,5 @@ cc -Wl,--gc-sections "$build/host.o" "$build/KernelTransition.o" "$build/Syscall
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" -o "$build/host"
 "$build/host" > "$build/host-results.txt"
-[[ "$(wc -l < "$build/host-results.txt")" -eq 53 ]]
-echo "Hosted generated-code oracle replay passed (53 vectors)"
+[[ "$(wc -l < "$build/host-results.txt")" -eq 54 ]]
+echo "Hosted generated-code oracle replay passed (54 vectors)"

@@ -78,7 +78,7 @@ inductive RejectReason where | malformedReturn | wrongOrigin
 inductive Action where
   | contained (subject : SubjectId)
   | timer
-  | resume
+  | syscall
   | rejected (reason : RejectReason)
   | fatal (reason : FatalReason)
   deriving DecidableEq, Repr
@@ -87,7 +87,10 @@ structure Outcome where
   state : State
   action : Action
 
-def validUserReturn (frame : HardwareFrame) : Bool :=
+/-- Structural predicate for saved user frames used by the preemption model.
+It is not an authorization to leave the kernel; outgoing returns use
+`validateUserReturn`. -/
+def validSavedUserFrame (frame : HardwareFrame) : Bool :=
   frame.savedPrivilege = .user && frame.codeSelector = 0x23 &&
     frame.stackSelector = 0x1b && frame.canonicalInstructionPointer &&
     frame.canonicalStackPointer && frame.flagsAllowed
@@ -116,6 +119,12 @@ structure UserRegion where
 
 def UserRegion.contains (region : UserRegion) (address : UInt64) : Bool :=
   region.first ≤ address && address < region.pastLast
+
+/-- A saved stack pointer may name the first byte beyond the mapped stack: it
+is an empty-stack cursor, not a memory access.  Actual stack memory remains the
+half-open interval recognized by `contains`. -/
+def UserRegion.containsStackPointer (region : UserRegion) (address : UInt64) : Bool :=
+  region.first ≤ address && address ≤ region.pastLast
 
 /-- Decoded architectural flag policy supplied beside the raw frame.  The
 machine adapter must establish that these bits agree with `hardware.flags`. -/
@@ -178,7 +187,7 @@ def validateUserReturn (request : UserReturnRequest) : UserReturnValidation :=
   else if request.frameCr3 != request.expectedCr3 then .rejected .wrongCr3
   else if !request.codeRegion.contains request.hardware.instructionPointer then
     .rejected .instructionOutsideSubject
-  else if !request.stackRegion.contains request.hardware.stackPointer then
+  else if !request.stackRegion.containsStackPointer request.hardware.stackPointer then
     .rejected .stackOutsideSubject
   else .accepted request
 
@@ -336,15 +345,47 @@ private def oracleModelAccepts (request : UserReturnRequest) : Bool :=
   | .accepted _ => true
   | .rejected _ => false
 
+private theorem oracleModelAccepts_iff (request : UserReturnRequest) :
+    oracleModelAccepts request = true ↔
+      validateUserReturn request = .accepted request := by
+  constructor
+  · intro haccepts
+    unfold oracleModelAccepts at haccepts
+    cases hvalidation : validateUserReturn request with
+    | rejected reason => simp [hvalidation] at haccepts
+    | accepted attested =>
+        have hattested := accepted_attests_exact_request request attested hvalidation
+        subst attested
+        rfl
+  · intro hvalidation
+    simp [oracleModelAccepts, hvalidation]
+
+/-- Allocation-free spelling of the same bounded request predicate, suitable
+for the freestanding generated-code ABI. -/
+private def oracleScalarAccepts (mode rip rsp selectors flags : UInt64) : Bool :=
+  if mode = 5 then false
+  else if mode = 6 then false
+  else if mode = 7 then false
+  else if selectors % 0x10000 != 0x23 || selectors / 0x10000 != 0x1b then false
+  else if !oracleCanonical rip || !oracleCanonical rsp then false
+  else if !oracleFlagsAllowed flags || !oracleFlag flags 0x200 ||
+      oracleFlag flags 0x400 || oracleFlag flags 0x40000 ||
+      oracleFlag flags 0x4000 || oracleFlag flags 0x20000 ||
+      flags / 0x1000 % 4 != 0 then false
+  else if mode = 8 || mode = 11 then false
+  else if mode = 9 || mode = 12 then false
+  else if mode = 10 then false
+  else if !(0x400000 ≤ rip && rip < 0x401000) then false
+  else if !(0x500000 ≤ rsp && rsp ≤ 0x501000) then false
+  else true
+
 /-- Bounded generated-code adapter for shared Lean/host/boot differential
 replay. Modes 1--4 are valid purposes; modes 5--12 inject one policy failure;
 mode 13 validates a good request and then attempts to consume a mutated RIP. -/
 @[export leanos_user_return_demo]
 def userReturnDemo (mode rip rsp selectors flags : UInt64) : UInt64 :=
-  if (mode = 1 || mode = 2 || mode = 3 || mode = 4) &&
-      oracleCanonical rip && oracleCanonical rsp && selectors = 0x1b0023 &&
-      oracleFlagsAllowed flags && 0x400000 ≤ rip && rip < 0x401000 &&
-      0x500000 ≤ rsp && rsp < 0x501000 then 1 else 0
+  if mode = 13 then 0
+  else if oracleScalarAccepts mode rip rsp selectors flags then 1 else 0
 
 theorem userReturnDemo_accepts_reviewed_purposes :
     userReturnDemo 1 0x400100 0x500ff8 0x1b0023 0x202 = 1 ∧
@@ -377,9 +418,7 @@ def dispatchHardware (state : State) (frame : HardwareFrame) : Outcome :=
     | some .syscall =>
         match frame.savedPrivilege with
         | .kernel => { state, action := .rejected .wrongOrigin }
-        | .user =>
-            if validUserReturn frame then { state, action := .resume }
-            else { state, action := .rejected .malformedReturn }
+        | .user => { state, action := .syscall }
 
 /-- Register contents are deliberately erased before trusted classification. -/
 def dispatch (state : State) (trap : Trap) : Outcome :=
@@ -409,10 +448,7 @@ theorem dispatchHardware_preserves_trusted_context state frame :
       | pageFault => cases frame.savedPrivilege <;> simp [hvector]
       | timer => simp [hvector]
       | syscall =>
-        cases frame.savedPrivilege
-        · simp [hvector]
-        · simp only [hvector]
-          by_cases hvalid : validUserReturn frame = true <;> simp [hvalid]
+        cases frame.savedPrivilege <;> simp [hvector]
 
 theorem attacker_registers_cannot_change_trusted_context state frame registers :
     (dispatch state { hardware := frame, registers }).state.context = state.context := by
@@ -437,9 +473,7 @@ theorem dispatch_preserves_invariant_or_fatal state trap (hstate : WellFormed st
             state.lifecycle state.context.currentSubject hstate
       | timer => simpa [hvector] using hstate
       | syscall =>
-        cases trap.hardware.savedPrivilege
-        · simp [hvector, hstate]
-        · cases hreturn : validUserReturn trap.hardware <;> simp [hvector, hreturn, hstate]
+        cases trap.hardware.savedPrivilege <;> simp [hvector, hstate]
 
 theorem user_page_fault_contained state frame
     (hnested : state.context.entryActive = false)
@@ -533,63 +567,34 @@ theorem contained_fault_preserves_unrelated_endpoint state frame object owner
     SubjectLifecycle.terminateState, howner, hunrelated]
   rfl
 
-theorem malformed_return_cannot_resume state frame
-    (hmalformed : validUserReturn frame = false) :
-    (dispatchHardware state frame).action ≠ .resume := by
-  unfold dispatchHardware
-  split <;> simp
+theorem syscall_entry_requires_user_origin state frame
+    (hsyscall : (dispatchHardware state frame).action = .syscall) :
+    frame.savedPrivilege = .user := by
+  unfold dispatchHardware at hsyscall
+  split at hsyscall <;> simp_all
   next =>
     cases hvector : decodeVector frame.vector with
-    | none => simp [hvector]
+    | none => simp [hvector] at hsyscall
     | some vector =>
       cases vector with
-      | pageFault => cases frame.savedPrivilege <;> simp [hvector]
-      | timer => simp [hvector]
-      | syscall => cases frame.savedPrivilege <;> simp [hvector, hmalformed]
-
-theorem resume_requires_safe_user_frame state frame
-    (hresume : (dispatchHardware state frame).action = .resume) :
-    validUserReturn frame = true ∧
-      frame.savedPrivilege = .user ∧ frame.codeSelector = 0x23 ∧
-      frame.stackSelector = 0x1b ∧ frame.canonicalInstructionPointer = true ∧
-      frame.canonicalStackPointer = true ∧ frame.flagsAllowed = true := by
-  unfold dispatchHardware at hresume
-  split at hresume <;> simp_all
-  next =>
-    cases hvector : decodeVector frame.vector with
-    | none => simp [hvector] at hresume
-    | some vector =>
-      cases vector with
-      | pageFault =>
-        cases hprivilege : frame.savedPrivilege <;> simp [hvector, hprivilege] at hresume
-      | timer => simp [hvector] at hresume
+      | pageFault => cases hprivilege : frame.savedPrivilege <;>
+          simp [hvector, hprivilege] at hsyscall
+      | timer => simp [hvector] at hsyscall
       | syscall =>
-        by_cases hkernel : frame.savedPrivilege = .kernel
-        · simp [hvector, hkernel] at hresume
-        · have horigin : frame.savedPrivilege = .user := by
-            have hcases : frame.savedPrivilege = .kernel ∨
-                frame.savedPrivilege = .user := by
-              cases frame.savedPrivilege
-              · exact Or.inl rfl
-              · exact Or.inr rfl
-            exact hcases.resolve_left hkernel
-          by_cases hvalid : validUserReturn frame = true
-          · have hfields := hvalid
-            simp [validUserReturn, horigin] at hfields
-            exact ⟨hvalid, horigin, hfields.1.1.1.1, hfields.1.1.1.2,
-              hfields.1.1.2, hfields.1.2, hfields.2⟩
-          · simp [hvector, horigin, hvalid] at hresume
+          cases hprivilege : frame.savedPrivilege with
+          | kernel => simp [hvector, hprivilege] at hsyscall
+          | user => rfl
 
-theorem resume_preserves_trusted_subject state frame
-    (_hresume : (dispatchHardware state frame).action = .resume) :
+theorem syscall_preserves_trusted_subject state frame
+    (_hsyscall : (dispatchHardware state frame).action = .syscall) :
     (dispatchHardware state frame).state.context.currentSubject =
       state.context.currentSubject := by
   exact congrArg (fun context => context.currentSubject)
     (dispatchHardware_preserves_trusted_context state frame)
 
-theorem fatal_cannot_resume_as_other_subject state frame reason
+theorem fatal_cannot_be_syscall state frame reason
     (hfatal : (dispatchHardware state frame).action = .fatal reason) :
-    (dispatchHardware state frame).action ≠ .resume := by
+    (dispatchHardware state frame).action ≠ .syscall := by
   rw [hfatal]
   simp
 
@@ -616,22 +621,20 @@ example (lifecycle : SubjectLifecycle.State) :
     (dispatch (modelState lifecycle) ⟨frame 32 .user, registers⟩).action = .timer := by
   simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector]
 example (lifecycle : SubjectLifecycle.State) :
-    (dispatch (modelState lifecycle) ⟨frame 128 .user, registers⟩).action = .resume := by
-  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector, validUserReturn]
+    (dispatch (modelState lifecycle) ⟨frame 128 .user, registers⟩).action = .syscall := by
+  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector]
 example (lifecycle : SubjectLifecycle.State) :
     (dispatch (modelState lifecycle) ⟨frame 128 .kernel, registers⟩).action =
       .rejected .wrongOrigin := by
   simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector]
 example (lifecycle : SubjectLifecycle.State) :
     let malformed := { frame 128 .user with codeSelector := 0x8 }
-    (dispatch (modelState lifecycle) ⟨malformed, registers⟩).action =
-      .rejected .malformedReturn := by
-  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector, validUserReturn]
+    (dispatch (modelState lifecycle) ⟨malformed, registers⟩).action = .syscall := by
+  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector]
 example (lifecycle : SubjectLifecycle.State) :
     let malformed := { frame 128 .user with flagsAllowed := false }
-    (dispatch (modelState lifecycle) ⟨malformed, registers⟩).action =
-      .rejected .malformedReturn := by
-  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector, validUserReturn]
+    (dispatch (modelState lifecycle) ⟨malformed, registers⟩).action = .syscall := by
+  simp [dispatch, dispatchHardware, modelState, context, frame, decodeVector]
 example (lifecycle : SubjectLifecycle.State) :
     let nested := { modelState lifecycle with context := { context with entryActive := true } }
     (dispatch nested ⟨frame 32 .user, registers⟩).action = .fatal .nestedEntry := by

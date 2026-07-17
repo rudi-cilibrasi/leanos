@@ -94,6 +94,7 @@ def vectors : List Vector := [
   userReturn "user-return.initial" 1 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.syscall-resume" 2 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.scheduler-restore" 3 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.empty-stack-cursor" 1 0x400100 0x501000 0x1b0023 0x202,
   userReturn "user-return.noncanonical-rip" 1 0x800000000000 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.noncanonical-rsp" 1 0x400100 0x800000000000 0x1b0023 0x202,
   userReturn "user-return.wrong-cs" 1 0x400100 0x500ff8 0x1b0008 0x202,
@@ -112,11 +113,11 @@ def vectors : List Vector := [
   userReturn "user-return.wrong-frame-address-space" 12 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.fatal-mode" 6 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.code-outside-subject" 1 0x401000 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.stack-outside-subject" 1 0x400100 0x501000 0x1b0023 0x202,
+  userReturn "user-return.stack-outside-subject" 1 0x400100 0x501001 0x1b0023 0x202,
   userReturn "user-return.diagnostic-recovery" 5 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.validate-then-mutate" 13 0x400100 0x500ff8 0x1b0023 0x202]
 
-theorem corpus_shape : vectors.length = 53 := by decide
+theorem corpus_shape : vectors.length = 54 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -141,8 +142,8 @@ theorem resumable_scenario_agrees :
     (vectors[20]).expected = 0 := by native_decide
 theorem user_return_scenario_agrees :
     (vectors[29]).expected = 1 ∧ (vectors[30]).expected = 1 ∧
-    (vectors[31]).expected = 1 ∧
-    (vectors.drop 32).all (fun vector => vector.expected = 0) = true := by
+    (vectors[31]).expected = 1 ∧ (vectors[32]).expected = 1 ∧
+    (vectors.drop 33).all (fun vector => vector.expected = 0) = true := by
   native_decide
 
 private def wordsText : List UInt64 → String

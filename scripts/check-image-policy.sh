@@ -191,8 +191,17 @@ grep -Eq 'call.*<validate_user_return>' <<<"$return_disassembly" || {
   echo "error: user-return epilogue does not call validator" >&2; exit 1;
 }
 post_validation="$(objdump -d "$elf" | sed -n '/call.*<validate_user_return>/,/<user_return_iretq>:/p')"
-if grep -Eq '\<(call|mov .*%cr3)\>' <<<"${post_validation#*$'\n'}"; then
+post_validation_body="${post_validation#*$'\n'}"
+if grep -Eq '\<(call|push[a-z]*|mov .*%cr3)\>' <<<"$post_validation_body" ||
+    grep -Eq '\<(mov|add|sub|and|or|xor|inc|dec|xchg)[a-z]*[[:space:]][^,]*,[^#]*\(' \
+      <<<"$post_validation_body"; then
   echo "error: validated return frame/context changes before iretq" >&2; exit 1
+fi
+# The validated site is reached only by fallthrough.  Reject any control-flow
+# edge that can jump directly to the consuming label and bypass validation.
+if objdump -d "$elf" |
+    grep -Eq '[[:space:]]j[a-z]*[[:space:]].*<user_return_iretq>'; then
+  echo "error: branch can bypass user-return validation" >&2; exit 1
 fi
 [[ "$(grep -Ec '^[[:space:]]+iretq$' boot/boot.S)" -eq 2 ]] || {
   echo "error: raw iretq added outside classified return sites" >&2; exit 1;
