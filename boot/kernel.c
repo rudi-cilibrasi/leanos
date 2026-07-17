@@ -38,8 +38,10 @@ extern void isr32(void);
 extern void run_double_fault_probe(void);
 extern char user_a_entry[], user_a_stack_top[];
 extern char user_a_stack[];
+extern char user_b_entry[];
 extern char user_b_stack[], user_b_stack_top[];
 extern uint64_t saved_context_a[], saved_context_b[];
+extern uint64_t initial_context_b[];
 extern const uint64_t saved_context_owner_a, saved_context_owner_b;
 extern uint64_t saved_context_a_original_flags, saved_context_a_original_rsp;
 extern uint64_t saved_context_b_original_flags, saved_context_b_original_rsp;
@@ -110,6 +112,7 @@ static void serial_u64(uint64_t value);
 static void arm_timer(void);
 static uint64_t stack_marker(uint64_t stack_pointer);
 static void check_cross_bank_negative(void);
+static void check_initial_b_frame_negative(void);
 
 /* The arrays are emitted only after the linker-resolved Input is accepted by
    LeanOS.BootPageTablePlan.compile. The early assembly constructor remains
@@ -664,6 +667,16 @@ static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
         fail("context-frame-changed");
 }
 
+static int initial_b_frame_valid(const volatile uint64_t *frame) {
+    return frame[15] == (uint64_t)user_b_entry && frame[16] == 0x23 &&
+        frame[17] == 0x202 && frame[18] == (uint64_t)user_b_stack_top &&
+        frame[19] == 0x1b;
+}
+
+static void check_initial_b_frame(const volatile uint64_t *frame) {
+    if (!initial_b_frame_valid(frame)) fail("initial-context-frame");
+}
+
 static void check_resumable_witness(uint64_t leg, const uint64_t *target,
                                     const uint64_t *saved, uint64_t target_owner,
                                     uint64_t saved_owner, unsigned vector_index) {
@@ -677,6 +690,7 @@ static void check_resumable_witness(uint64_t leg, const uint64_t *target,
 void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
     if (current_subject == 2 && preemption_step == 2 && timer_accepted == 1) {
         check_selected_root_b();
+        check_initial_b_frame(target);
         check_original_frame(saved_context_a, saved_context_a_original_rip,
             saved_context_a_original_flags,
             saved_context_a_original_rsp, saved_context_owner_a);
@@ -708,6 +722,14 @@ static void check_cross_bank_negative(void) {
     uint64_t saved_b = saved_context_owner_b | (2ull << 8);
     if (leanos_resumable_preemption_demo(2, crossed_target, saved_b, 0x1c, 0xde) != 0)
         fail("cross-bank-negative");
+}
+
+static void check_initial_b_frame_negative(void) {
+    uint64_t original_flags = initial_context_b[17];
+    initial_context_b[17] = 0x206;
+    if (initial_b_frame_valid(initial_context_b)) fail("initial-flags-negative");
+    initial_context_b[17] = original_flags;
+    check_initial_b_frame(initial_context_b);
 }
 
 static void arm_timer(void) {
@@ -790,6 +812,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     if (ac_is_set()) fail("cleanup-recovery");
     serial_puts("LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS\n");
     check_cross_bank_negative();
+    check_initial_b_frame_negative();
     arm_timer();
     enter_user(user_a_entry, user_a_stack_top);
     fail("iret-returned");

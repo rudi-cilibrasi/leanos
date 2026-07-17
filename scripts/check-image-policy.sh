@@ -169,6 +169,9 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S
 [[ "$(grep -Ec 'cmp \$B_INITIAL_R[A-Z0-9]+, %r' boot/boot.S)" -eq 13 ]]
 [[ "$(grep -Fc 'movabs $B_INITIAL_R' boot/boot.S)" -eq 2 ]]
+grep -Fq 'check_initial_b_frame(target);' boot/kernel.c
+grep -Fq 'initial_context_b[17] = 0x206;' boot/kernel.c
+grep -Fq 'if (initial_b_frame_valid(initial_context_b)) fail("initial-flags-negative");' boot/kernel.c
 grep -Fq 'saved_context_a[16] != 0x23' boot/kernel.c
 grep -Fq 'saved_context_b[19] != 0x1b' boot/kernel.c
 

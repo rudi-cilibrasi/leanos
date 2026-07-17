@@ -20,9 +20,11 @@ with the outgoing saved owner/stack/r12 markers. Target and outgoing
 descriptors combine kernel-owned bank metadata with each frame's actual saved
 RSP; r12 markers also come from the two concrete buffers. The boot path thus
 rejects a corrupted outgoing stack or exchanged bank before the success
-transcript. B is restored from an immutable complete initial image and checks
+transcript. B is restored from a kernel-owned complete initial image and checks
 all fifteen distinct GPR values before its first authorized syscall, so the
-boot protocol also fails if any A register is inherited. Exact kernel-owned
+boot protocol also fails if any A register is inherited. The kernel validates
+the exact initial RIP/CS/RFLAGS/RSP/SS before restore, and a live-image negative
+mutates RFLAGS to a different valid user value and requires rejection. Exact kernel-owned
 RIP/RSP/RFLAGS snapshots additionally guard the
 full saved return-frame words that are intentionally too large for the compact
 oracle descriptor, so exchanging A and B is rejected by the same generated-code
