@@ -20,6 +20,13 @@ from the documented toolchain. There are no repository-supplied binary blobs.
 
 ## Stable protocol and termination
 
+Version 10 adds the scheduler-driven blocking-IPC slice in
+[ADR 0009](adr/0009-blocking-ipc-boot.md). The exact trace starts B in CPL3,
+records its empty receive and non-runnable state, dispatches A in A's address
+space, records one accepted send and one ready insertion, restores B's saved
+context and address space, and delivers the exact two-word payload with trusted
+sender 1. Missing, reordered, duplicated, or forged records fail comparison.
+
 Version 4 prefixes the version-3 subject trace with read-back evidence for
 CR0.WP and CR4.SMEP and exact, one-shot CPL0 write-protection and SMEP page
 faults. Their vector, error code, origin, and symbolic CR2 target are checked in

@@ -130,9 +130,20 @@ def vectors : List Vector := [
   blockingIPC "blocking-ipc.deliver-b" 3 4 2 0x4c45414e 0x4f53,
   blockingIPC "blocking-ipc.wrong-caller" 1 2 2 0x4c45414e 0x4f53,
   blockingIPC "blocking-ipc.wrong-phase" 0 2 1 0x4c45414e 0x4f53,
-  blockingIPC "blocking-ipc.forged-payload" 3 4 2 0 0x4f53]
+  blockingIPC "blocking-ipc.forged-payload" 3 4 2 0 0x4f53,
+  blockingIPC "blocking-ipc.empty-wrong-subject" 0 10 9 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.missing-receive" 0 11 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.missing-send" 1 12 1 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.stale-endpoint" 0 13 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.full-wait-queue" 0 14 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.full-ready-queue" 1 15 1 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.duplicate-block" 0 16 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.duplicate-wake" 1 17 1 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.wrong-endpoint" 0 18 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.forged-sender" 3 19 2 1 0x4f53,
+  blockingIPC "blocking-ipc.cancel-before-send" 1 20 1 0x4c45414e 0x4f53]
 
-theorem corpus_shape : vectors.length = 64 := by decide
+theorem corpus_shape : vectors.length = 75 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -167,7 +178,8 @@ theorem blocking_ipc_scenario_agrees :
     (vectors[59]).expected = BlockingIPC.encodeBootEvent 3 3 2 2 0 ∧
     (vectors[60]).expected = BlockingIPC.encodeBootEvent 4 4 2 2 1 ∧
     (vectors[61]).expected = 0 ∧ (vectors[62]).expected = 0 ∧
-    (vectors[63]).expected = 0 := by
+    (vectors[63]).expected = 0 ∧
+    (vectors.drop 64).all (fun vector => vector.expected = 0) = true := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

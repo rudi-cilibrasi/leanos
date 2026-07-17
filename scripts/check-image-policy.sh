@@ -156,6 +156,7 @@ grep -Fq 'fixture=wrong-cr3 root=A level=cr3' boot/kernel.c
 ! grep -Fq '__user_b_text_start' <(sed -n '/__user_a_text_start/,/__user_b_text_start/{p}' boot/boot.S | head -n -1)
 grep -q ' T leanos_ipc_demo$' <<<"$symbols"
 grep -q ' T leanos_preemption_demo$' <<<"$symbols"
+grep -q ' T leanos_blocking_ipc_demo$' <<<"$symbols"
 grep -q ' B saved_context_a$' <<<"$symbols"
 grep -q ' B saved_context_b$' <<<"$symbols"
 grep -q ' R initial_context_b$' <<<"$symbols"
@@ -165,10 +166,13 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
   echo "error: resumable context A does not occupy the reviewed 160-byte image" >&2
   exit 1
 }
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 4 ]]
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 7 ]]
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S
-[[ "$(grep -Ec 'cmp \$B_INITIAL_R[A-Z0-9]+, %r' boot/boot.S)" -eq 13 ]]
-[[ "$(grep -Fc 'movabs $B_INITIAL_R' boot/boot.S)" -eq 2 ]]
+grep -Fq 'cmp $0xbeef, %rax' boot/boot.S
+grep -Fq 'cmp $0xcafe, %rax' boot/boot.S
+grep -Fq 'lea saved_context_b(%rip), %rsi' boot/boot.S
+grep -Fq 'movq $user_a_entry, 120(%rsp)' boot/boot.S
+grep -Fq 'movq $0x4c45414e, 112(%rsp)' boot/boot.S
 grep -Fq 'check_initial_b_frame(target);' boot/kernel.c
 grep -Fq 'initial_context_b[17] = 0x206;' boot/kernel.c
 grep -Fq 'if (initial_b_frame_valid(initial_context_b)) fail("initial-flags-negative");' boot/kernel.c

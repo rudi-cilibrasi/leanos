@@ -733,6 +733,31 @@ private def bootBlocked := (receiveOrBlock bootInitial 2 0).state
 private def bootAwakened := (send bootBlocked 1 0 bootPayload).state
 private def bootDispatched : State :=
   { bootAwakened with scheduler := (Scheduler.yield bootAwakened.scheduler).state }
+private def missingRightsCap : Capability.Capability :=
+  endpointCap { send := false, receive := false }
+
+private def withoutReceive : State := { bootInitial with
+  scheduler := { bootInitial.scheduler with lifecycle :=
+    { bootInitial.scheduler.lifecycle with capabilities :=
+      { bootInitial.scheduler.lifecycle.capabilities with slots := fun subject slot =>
+        if subject = 2 ∧ slot = 0 then (Option.some missingRightsCap)
+        else bootInitial.scheduler.lifecycle.capabilities.slots subject slot } } } }
+private def withoutSend : State := { bootBlocked with
+  scheduler := { bootBlocked.scheduler with lifecycle :=
+    { bootBlocked.scheduler.lifecycle with capabilities :=
+      { bootBlocked.scheduler.lifecycle.capabilities with slots := fun subject slot =>
+        if subject = 1 ∧ slot = 0 then (Option.some missingRightsCap)
+        else bootBlocked.scheduler.lifecycle.capabilities.slots subject slot } } } }
+private def retiredBootEndpoint : State := { bootInitial with
+  scheduler := { bootInitial.scheduler with lifecycle :=
+    { bootInitial.scheduler.lifecycle with capabilities :=
+      { bootInitial.scheduler.lifecycle.capabilities with objects := fun _ => false } } } }
+private def duplicateBootWaiter : State := { bootInitial with
+  waiters := setWaiters bootInitial.waiters 10 [2]
+  waiterEndpoint := setWaiterEndpoint bootInitial.waiterEndpoint 2 (some 10) }
+private def fullBootReady : State := { bootBlocked with
+  scheduler := { bootBlocked.scheduler with ready := [3, 0, 2] } }
+private def cancelledBootReceiver := cancelSubject bootBlocked 2
 
 /-- The four compact results agree with the actual composite transitions used
 by the reviewed boot scenario.  Generated C and machine state remain a tested
@@ -752,6 +777,35 @@ theorem blockingIpcDemo_agrees_with_composite_scenario :
       encodeBootEvent 4 4 2 2 1 ∧
     (receiveOrBlock bootDispatched 2 0).result = .delivered
       { endpoint := 10, sender := 1, payload := bootPayload } := by
+  native_decide
+
+/-- The stable rejection vectors name concrete model failures instead of only
+testing arbitrary malformed scalar words.  Duplicate cancellation is a no-op,
+and a post-cancellation send cannot reserve delivery for B. -/
+theorem blockingIpcDemo_rejection_scenario_agrees :
+    blockingIpcDemo 0 10 9 bootPayload.word0 bootPayload.word1 = 0 ∧
+    (receiveOrBlock bootInitial 9 0).result = .rejected .wrongCaller ∧
+    blockingIpcDemo 0 11 2 bootPayload.word0 bootPayload.word1 = 0 ∧
+    (receiveOrBlock withoutReceive 2 0).result = .rejected .missingReceive ∧
+    blockingIpcDemo 1 12 1 bootPayload.word0 bootPayload.word1 = 0 ∧
+    (send withoutSend 1 0 bootPayload).result = .rejected .missingSend ∧
+    blockingIpcDemo 0 13 2 bootPayload.word0 bootPayload.word1 = 0 ∧
+    (receiveOrBlock retiredBootEndpoint 2 0).result = .rejected .retiredEndpoint ∧
+    blockingIpcDemo 0 14 2 bootPayload.word0 bootPayload.word1 = 0 ∧
+    (receiveOrBlock noWaiterCapacity 2 0).result = .rejected .waiterQueueFull ∧
+    blockingIpcDemo 1 15 1 bootPayload.word0 bootPayload.word1 = 0 ∧
+    (send fullBootReady 1 0 bootPayload).result = .rejected .readyQueueFull ∧
+    blockingIpcDemo 0 16 2 bootPayload.word0 bootPayload.word1 = 0 ∧
+    (receiveOrBlock duplicateBootWaiter 2 0).result = .rejected .duplicateWaiter ∧
+    blockingIpcDemo 1 17 1 bootPayload.word0 bootPayload.word1 = 0 ∧
+    (cancelSubject cancelledBootReceiver 2).waiters 10 = [] ∧
+    (cancelSubject cancelledBootReceiver 2).scheduler.ready =
+      cancelledBootReceiver.scheduler.ready ∧
+    blockingIpcDemo 0 18 2 bootPayload.word0 bootPayload.word1 = 0 ∧
+    (receiveOrBlock bootInitial 2 9).result = .rejected .staleHandle ∧
+    blockingIpcDemo 3 19 2 1 bootPayload.word1 = 0 ∧
+    blockingIpcDemo 1 20 1 bootPayload.word0 bootPayload.word1 = 0 ∧
+    (send cancelledBootReceiver 1 0 bootPayload).state.completion 2 = some .cancelled := by
   native_decide
 
 example (word0 word1 : UInt64) : blockingIpcDemo 1 2 2 word0 word1 = 0 := by
