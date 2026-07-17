@@ -773,6 +773,70 @@ theorem wellFormed_excludes_memory_addressSpace_alias state object memoryOwner f
   rw [hvirtual.1] at haddressKind
   simp [hmemoryKind] at haddressKind
 
+/-- Composite cleanup preserves the lifecycle resource-kind projection.  The
+proof rules out both ways the capability cleanup could otherwise erase the
+kind of a retained resource: ownership by the terminated subject and a
+cross-kind alias with one of that subject's other resources. -/
+theorem cleanup_preserves_resourceKindAgreement state subject
+    (hstate : WellFormed state) :
+    ResourceKindAgreement (cleanupSubject state subject) := by
+  have hfull := hstate
+  rcases hstate with ⟨_, _, _, _, _, _, _, _, hkinds, _⟩
+  constructor
+  · intro object owner frame howned
+    have holdOwned : state.scheduler.lifecycle.ownedMemory object = some (owner, frame) := by
+      simp only [cleanupSubject, SubjectLifecycle.terminateState] at howned
+      split at howned <;> simp_all
+    have hownerNe : owner ≠ subject := by
+      intro heq
+      subst owner
+      simp [cleanupSubject, SubjectLifecycle.terminateState, holdOwned] at howned
+    have hmemoryKind := hkinds.1 object owner frame holdOwned
+    have hendpointNe : state.scheduler.lifecycle.endpointOwner object ≠ some subject := by
+      intro hendpoint
+      have hendpointKind := hkinds.2 object subject hendpoint
+      simp [hmemoryKind] at hendpointKind
+    have haddressNe : state.scheduler.lifecycle.addressOwner object ≠ some subject := by
+      intro haddress
+      exact wellFormed_excludes_memory_addressSpace_alias state object owner frame subject
+        hfull holdOwned haddress
+    simp [cleanupSubject, retireOwnedAddressSpaces,
+      SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+      holdOwned, hownerNe, hendpointNe, haddressNe, hmemoryKind]
+  · intro object owner hendpoint
+    have holdEndpoint : state.scheduler.lifecycle.endpointOwner object = some owner := by
+      simp [cleanupSubject, SubjectLifecycle.terminateState] at hendpoint
+      exact hendpoint.2
+    have hownerNe : owner ≠ subject := by
+      intro heq
+      subst owner
+      simp [cleanupSubject, SubjectLifecycle.terminateState, holdEndpoint] at hendpoint
+    have hendpointKind := hkinds.2 object owner holdEndpoint
+    have hmemoryNe : ∀ memoryOwner frame,
+        state.scheduler.lifecycle.ownedMemory object ≠ some (memoryOwner, frame) := by
+      intro memoryOwner frame hmemory
+      have hmemoryKind := hkinds.1 object memoryOwner frame hmemory
+      simp [hmemoryKind] at hendpointKind
+    have hmemoryAny :
+        Option.any (fun ownership => decide (ownership.1 = subject))
+          (state.scheduler.lifecycle.ownedMemory object) = false := by
+      cases hmemory : state.scheduler.lifecycle.ownedMemory object with
+      | none => simp
+      | some ownership =>
+        rcases ownership with ⟨memoryOwner, frame⟩
+        exact False.elim (hmemoryNe memoryOwner frame hmemory)
+    have haddressNe : state.scheduler.lifecycle.addressOwner object ≠ some subject := by
+      intro haddress
+      rcases hfull with ⟨_, _, _, _, _, _, htranslations, hvirtual, _, _⟩
+      have haddressKind := (hvirtual.2.2.2.1 object subject (by
+        rw [htranslations.1]
+        exact haddress)).2.1
+      rw [hvirtual.1] at haddressKind
+      simp [hendpointKind] at haddressKind
+    simp [cleanupSubject, retireOwnedAddressSpaces,
+      SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+      holdEndpoint, hownerNe, hmemoryAny, haddressNe, hendpointKind]
+
 /-- Subject cleanup preserves the scheduler, context-bank, ownership projection,
 and bounded TLB invariants derived from a well-formed pre-state.  This theorem
 intentionally makes no full `WellFormed` claim until virtual-lifecycle cleanup
