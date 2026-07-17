@@ -302,9 +302,8 @@ private def oracleLifecycle (mode : UInt64) : SubjectLifecycle.State :=
 private def oraclePurpose (mode : UInt64) : ReturnPurpose :=
   if mode = 2 then .syscallResume
   else if mode = 3 then .schedulerRestore
-  else if mode = 4 then .containedFaultResume
-  else if mode = 5 then .diagnosticKernelRecovery
-  else .initialDispatch
+  else if mode = 1 || (6 ≤ mode && mode ≤ 13) then .initialDispatch
+  else .diagnosticKernelRecovery
 
 private def oracleRequest (mode rip rsp selectors flags : UInt64) : UserReturnRequest :=
   { hardware :=
@@ -370,7 +369,7 @@ private theorem oracleModelAccepts_iff (request : UserReturnRequest) :
 /-- Allocation-free spelling of the same bounded request predicate, suitable
 for the freestanding generated-code ABI. -/
 private def oracleScalarAccepts (mode rip rsp selectors flags : UInt64) : Bool :=
-  if mode = 5 then false
+  if !(mode = 1 || mode = 2 || mode = 3 || (6 ≤ mode && mode ≤ 13)) then false
   else if mode = 6 then false
   else if mode = 7 then false
   else if selectors % 0x10000 != 0x23 || selectors / 0x10000 != 0x1b then false
@@ -387,8 +386,9 @@ private def oracleScalarAccepts (mode rip rsp selectors flags : UInt64) : Bool :
   else true
 
 /-- Bounded generated-code adapter for shared Lean/host/boot differential
-replay. Modes 1--4 are valid purposes; modes 5--12 inject one policy failure;
-mode 13 validates a good request and then attempts to consume a mutated RIP. -/
+replay. Modes 1--3 are the boot-supported purposes; modes 6--12 inject one
+policy failure; mode 13 validates a good request and then attempts to consume a
+mutated RIP. Every other mode is total-to-rejection. -/
 @[export leanos_user_return_demo]
 def userReturnDemo (mode rip rsp selectors flags : UInt64) : UInt64 :=
   if mode = 13 then 0

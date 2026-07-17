@@ -95,6 +95,9 @@ def vectors : List Vector := [
   userReturn "user-return.syscall-resume" 2 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.scheduler-restore" 3 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.empty-stack-cursor" 1 0x400100 0x501000 0x1b0023 0x202,
+  userReturn "user-return.zero-purpose" 0 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.unsupported-contained-fault" 4 0x400100 0x500ff8 0x1b0023 0x202,
+  userReturn "user-return.max-purpose" 18446744073709551615 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.noncanonical-rip" 1 0x800000000000 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.noncanonical-rsp" 1 0x400100 0x800000000000 0x1b0023 0x202,
   userReturn "user-return.wrong-cs" 1 0x400100 0x500ff8 0x1b0008 0x202,
@@ -117,7 +120,7 @@ def vectors : List Vector := [
   userReturn "user-return.diagnostic-recovery" 5 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.validate-then-mutate" 13 0x400100 0x500ff8 0x1b0023 0x202]
 
-theorem corpus_shape : vectors.length = 54 := by decide
+theorem corpus_shape : vectors.length = 57 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide

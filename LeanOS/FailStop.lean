@@ -372,6 +372,7 @@ theorem installLifecycle_releases_retired_memory state lifecycle object frame
 a tag paired with a caller-supplied post-state. -/
 inductive Operation where
   | interrupt (frame : Interrupt.HardwareFrame)
+  | userReturn (request : Interrupt.UserReturnRequest)
   | syscall (context : Syscall.TrustedContext) (call : Syscall.UntrustedCall)
   | preempt (frame : Interrupt.HardwareFrame)
   | ipc (context : IPCSyscall.TrustedContext) (call : IPCSyscall.Call)
@@ -399,6 +400,8 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
   | .interrupt frame =>
       let execution := (dispatchHardware state.execution frame).state
       installLifecycle { state with execution } execution.core.lifecycle
+  | .userReturn request =>
+      { state with execution := (completeUserReturn state.execution request).state }
   | .syscall context call =>
       let virtualMemory := (Syscall.dispatch state.virtualMemory context call).state
       installLifecycle { state with virtualMemory }
@@ -538,6 +541,51 @@ theorem halted_suffix_absorbing state record proposals
       simp only [runOperations]
       rw [halted_gate_absorbing state record proposal hmode]
       exact ih state hmode
+
+/-- Outgoing-return rejection is one atomic composite step: it records the
+typed terminal reason, changes no lifecycle/authority/scheduler/resource view,
+and absorbs every later typed operation. -/
+theorem rejected_user_return_composite_atomicity state request reason proposals
+    (hmode : state.execution.mode = .running)
+    (hrejected : Interrupt.validateUserReturn
+      (authoritativeReturnRequest state.execution request) = .rejected reason) :
+    let record : HaltRecord :=
+      { reason := .invalidUserReturn request.purpose reason
+        active := none
+        incomingVector := request.hardware.vector
+        incomingOrigin := request.hardware.savedPrivilege }
+    let next := (gate state (.userReturn request)).state
+    next.execution.mode = .halted record ∧
+      next.execution.core.lifecycle = state.execution.core.lifecycle ∧
+      next.scheduler = state.scheduler ∧
+      next.preemption = state.preemption ∧
+      next.virtualMemory = state.virtualMemory ∧
+      next.ipc = state.ipc ∧
+      next.capabilities = state.capabilities ∧
+      next.lifecycle = state.lifecycle ∧
+      runOperations next proposals = next := by
+  dsimp only
+  have hterminal :
+      ((gate state (.userReturn request)).state.execution.mode =
+        .halted
+          { reason := .invalidUserReturn request.purpose reason
+            active := none
+            incomingVector := request.hardware.vector
+            incomingOrigin := request.hardware.savedPrivilege }) := by
+    simp only [gate, hmode, applyOperation, completeUserReturn]
+    rw [hrejected]
+    simp [latchInvalidUserReturn, authoritativeReturnRequest]
+  refine ⟨hterminal, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp only [gate, hmode, applyOperation, completeUserReturn]
+    rw [hrejected]
+    simp [latchInvalidUserReturn, authoritativeReturnRequest]
+  · simp [gate, hmode, applyOperation]
+  · simp [gate, hmode, applyOperation]
+  · simp [gate, hmode, applyOperation]
+  · simp [gate, hmode, applyOperation]
+  · simp [gate, hmode, applyOperation]
+  · simp [gate, hmode, applyOperation]
+  · exact halted_suffix_absorbing _ _ proposals hterminal
 
 theorem halted_never_accepts state record operation
     (hmode : state.execution.mode = .halted record) :

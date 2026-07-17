@@ -111,6 +111,31 @@ theorem user_return_context_confinement request attested
       attested.stackRegion.containsStackPointer attested.hardware.stackPointer = true := by
   exact Interrupt.accepted_user_return_context_confined request attested haccepted
 
+/-- SC-USER-RETURN-FAILSTOP: a rejected outgoing return atomically latches a
+typed terminal record, freezes every composite subsystem, and absorbs all
+later operations. -/
+theorem user_return_rejection_failstop state request reason proposals
+    (hmode : state.execution.mode = .running)
+    (hrejected : Interrupt.validateUserReturn
+      (FailStop.authoritativeReturnRequest state.execution request) = .rejected reason) :
+    let record : FailStop.HaltRecord :=
+      { reason := .invalidUserReturn request.purpose reason
+        active := none
+        incomingVector := request.hardware.vector
+        incomingOrigin := request.hardware.savedPrivilege }
+    let next := (FailStop.gate state (.userReturn request)).state
+    next.execution.mode = .halted record ∧
+      next.execution.core.lifecycle = state.execution.core.lifecycle ∧
+      next.scheduler = state.scheduler ∧
+      next.preemption = state.preemption ∧
+      next.virtualMemory = state.virtualMemory ∧
+      next.ipc = state.ipc ∧
+      next.capabilities = state.capabilities ∧
+      next.lifecycle = state.lifecycle ∧
+      FailStop.runOperations next proposals = next := by
+  exact FailStop.rejected_user_return_composite_atomicity state request reason proposals
+    hmode hrejected
+
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps
     (hlow : ScheduledObservation.LowEquiv observer left right)

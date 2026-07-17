@@ -91,6 +91,9 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_BRANCH_FIXTURE=1 \
   -c boot/boot.S -o "$build/boot-return-branch-fixture.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_INDIRECT_FIXTURE=1 \
+  -c boot/boot.S -o "$build/boot-return-indirect-fixture.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_DF_MAP_GUARD=1 \
   -c boot/boot.S -o "$build/boot-df-guard-mapped.o"
 
@@ -207,7 +210,7 @@ fi
 ./scripts/check-image-policy.sh "$build/leanos.elf"
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 
-for fixture in restore branch; do
+for fixture in restore branch indirect; do
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
     -T boot/linker.ld -Map "$build/leanos-return-${fixture}-fixture.map" \
     -o "$build/leanos-return-${fixture}-fixture.elf" \
@@ -227,6 +230,10 @@ grep -Fq 'error: unexpected exact user-return restore sequence' \
 grep -Fq 'enters post-validation restore interval' \
   "$build/return-branch-fixture.log" || {
   echo "error: branch negative fixture lacked expected diagnostic" >&2; exit 1;
+}
+grep -Fq 'indirect control-flow instruction' \
+  "$build/return-indirect-fixture.log" || {
+  echo "error: indirect negative fixture lacked expected diagnostic" >&2; exit 1;
 }
 
 cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"

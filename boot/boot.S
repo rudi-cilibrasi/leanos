@@ -529,9 +529,13 @@ isr14_cld:
     mov %cr2, %rcx
     call page_fault_handler
     mov %rax, 136(%rsp)
+.global diagnostic_return_restore
+diagnostic_return_restore:
     add $8, %rsp
     RESTORE
     add $8, %rsp
+.global diagnostic_return_iretq
+diagnostic_return_iretq:
     iretq
 .global isr32
 .section .bss,"aw",@nobits
@@ -665,6 +669,12 @@ user_return_epilogue:
     andq $-263169, 136(%rsp) /* ~(RFLAGS.DF | RFLAGS.AC) */
     mov %rsp, %rdi
     call validate_user_return
+#ifdef LEANOS_RETURN_INDIRECT_FIXTURE
+    /* Negative final-ELF fixture: synthesize an indirect restore entrant. */
+    lea user_return_restore(%rip), %rax
+    push %rax
+    ret
+#endif
 .global user_return_restore
 user_return_restore:
 #ifdef LEANOS_RETURN_RESTORE_FIXTURE

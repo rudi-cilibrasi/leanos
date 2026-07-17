@@ -25,7 +25,10 @@ returns an attestation of the entire immutable request, preventing the model API
 from validating one tuple and consuming another. The confinement theorem pins
 exact request identity and every validator condition: purpose and mode,
 canonicality and region containment, complete flags, subject liveness,
-runnability and selection, address ownership, and CR3 binding.
+runnability and selection, address ownership, and CR3 binding. The composite
+`FailStop.completeUserReturn` transition normalizes scheduler identity from the
+execution state and converts any rejection into a typed absorbing halt record
+without changing lifecycle, authority, scheduling, IPC, or resource views.
 The shared machine epilogue clears the kernel-managed saved DF and AC bits
 before validation; the other forbidden flag fields remain reject-only.
 
