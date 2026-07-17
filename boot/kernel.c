@@ -1,5 +1,12 @@
 #include <stdint.h>
 #include "corpus.h"
+#if defined(LEANOS_DF_MAP_GUARD)
+#include "boot-page-plan-guard.h"
+#elif defined(LEANOS_DOUBLE_FAULT_PROBE)
+#include "boot-page-plan-double-fault.h"
+#else
+#include "boot-page-plan.h"
+#endif
 
 #define COM1 0x3f8u
 #define DEBUG_EXIT 0xf4u
@@ -35,12 +42,31 @@ extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
 extern char __df_ist_stack_start[], __df_ist_stack_end[];
+extern char __df_ist_guard_start[], __df_ist_guard_end[];
+extern char __kernel_text_start[], __kernel_text_end[];
+extern char __user_a_text_start[], __user_a_text_end[];
+extern char __user_a_stack_start[], __user_a_stack_end[];
+extern char __user_b_text_start[], __user_b_text_end[];
+extern char __user_b_stack_start[], __user_b_stack_end[];
+extern uint64_t page_map_level_4_a[], page_directory_pointer_a[];
+extern uint64_t page_directory_a[], page_table_a[];
+extern uint64_t page_map_level_4_b[], page_directory_pointer_b[];
+extern uint64_t page_directory_b[], page_table_b[];
 
 #define MULTIBOOT2_RUNTIME_MAGIC 0x36d76289u
 #define BOOT_ACCESSIBLE_LIMIT (16u * 1024u * 1024u)
 #define MAX_HANDOFF_BYTES 65536u
 #define MAX_MMAP_ENTRIES 128u
 #define PAGE_BYTES 4096u
+#define BOOT_PT_COUNT 8u
+#define BOOT_LEAF_COUNT (512u * BOOT_PT_COUNT)
+#define PTE_PRESENT 1ull
+#define PTE_WRITABLE 2ull
+#define PTE_USER 4ull
+#define PTE_ACCESSED (1ull << 5)
+#define PTE_DIRTY (1ull << 6)
+#define PTE_NX (1ull << 63)
+#define PTE_ADDRESS 0x000ffffffffff000ull
 
 struct __attribute__((packed)) mb2_tag { uint32_t type, size; };
 struct __attribute__((packed)) mb2_mmap_tag {
@@ -74,6 +100,170 @@ static void finish(uint8_t value);
 static __attribute__((noreturn)) void fail(const char *reason);
 static void serial_puts(const char *text);
 static void serial_putc(char value);
+static void serial_u64(uint64_t value);
+
+/* The arrays are emitted only after the linker-resolved Input is accepted by
+   LeanOS.BootPageTablePlan.compile. The early assembly constructor remains
+   trusted; this guest checker independently decodes and compares its result. */
+static uint64_t expected_boot_leaf(unsigned space, uint64_t page) {
+#ifdef LEANOS_DF_MAP_GUARD
+    uint64_t guard_first = (uint64_t)__df_ist_guard_start / PAGE_BYTES;
+    uint64_t guard_last = ((uint64_t)__df_ist_guard_end + PAGE_BYTES - 1u) / PAGE_BYTES;
+    if (page >= guard_first && page < guard_last)
+        return page * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX;
+#endif
+    return space == 1 ? leanos_boot_plan_a[page] : leanos_boot_plan_b[page];
+}
+
+static int decoded_root_matches(unsigned space, uint64_t *root, uint64_t *pdpt,
+                                uint64_t *pd, uint64_t *pt, int report_mismatch) {
+    if ((root[0] & ~PTE_ACCESSED) != ((uint64_t)pdpt | 7u) ||
+        (pdpt[0] & ~PTE_ACCESSED) != ((uint64_t)pd | 7u)) {
+        if (report_mismatch) {
+            serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
+            serial_puts(" level=ancestor root-expected="); serial_u64((uint64_t)pdpt | 7u);
+            serial_puts(" root-actual="); serial_u64(root[0]);
+            serial_puts(" pdpt-expected="); serial_u64((uint64_t)pd | 7u);
+            serial_puts(" pdpt-actual="); serial_u64(pdpt[0]); serial_putc('\n');
+        }
+        return 0;
+    }
+    for (unsigned i = 1; i < 512; ++i)
+        if (root[i] != 0 || pdpt[i] != 0) return 0;
+    for (unsigned i = 0; i < 512; ++i) {
+        uint64_t expected = i < BOOT_PT_COUNT ? (uint64_t)(pt + i * 512u) | 7u : 0;
+        if ((pd[i] & ~PTE_ACCESSED) != expected) {
+            if (report_mismatch) {
+                serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
+                serial_puts(" level=pd index="); serial_u64(i);
+                serial_puts(" expected="); serial_u64(expected);
+                serial_puts(" actual="); serial_u64(pd[i]); serial_putc('\n');
+            }
+            return 0;
+        }
+    }
+    for (uint64_t page = 0; page < BOOT_LEAF_COUNT; ++page) {
+        uint64_t actual = pt[page];
+        uint64_t expected = expected_boot_leaf(space, page);
+        if ((actual & ~(PTE_ACCESSED | PTE_DIRTY)) != expected) {
+            if (report_mismatch) {
+                serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
+                serial_puts(" page="); serial_u64(page);
+                serial_puts(" expected="); serial_u64(expected);
+                serial_puts(" actual="); serial_u64(actual);
+                serial_putc('\n');
+            }
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void expect_live_mutation_rejected(const char *fixture,
+        uint64_t *slot, uint64_t replacement, const char *level, uint64_t page) {
+    uint64_t saved = *slot;
+    *slot = replacement;
+    __asm__ volatile ("" ::: "memory");
+    int accepted = decoded_root_matches(2, page_map_level_4_b,
+        page_directory_pointer_b, page_directory_b, page_table_b, 0);
+    *slot = saved;
+    __asm__ volatile ("" ::: "memory");
+    if (accepted) fail("pt-live-mutation-accepted");
+    serial_puts("LEANOS/8 PAGING fixture="); serial_puts(fixture);
+    serial_puts(" root=B level="); serial_puts(level);
+    serial_puts(" page="); serial_u64(page);
+    serial_puts(" expected="); serial_u64(saved);
+    serial_puts(" actual="); serial_u64(replacement);
+    serial_puts(" result=REJECTED\n");
+}
+
+static uint64_t boot_page(const char *address) {
+    return (uint64_t)address / PAGE_BYTES;
+}
+
+/* Mutate the actual inactive-B tables, run the same complete walker, and
+   restore each slot. These are live-table fixtures: a checker that reads a
+   copy, the wrong root, or only a summary cannot reject the full matrix. */
+static void check_live_page_table_mutations(void) {
+    uint64_t kernel_text = boot_page(__kernel_text_start);
+    uint64_t user_text = boot_page(__user_b_text_start);
+    uint64_t user_stack = boot_page(__user_b_stack_start);
+
+    expect_live_mutation_rejected("flip-present", &page_table_b[0],
+        page_table_b[0] ^ PTE_PRESENT, "pt", 0);
+    expect_live_mutation_rejected("flip-user", &page_table_b[user_text],
+        page_table_b[user_text] ^ PTE_USER, "pt", user_text);
+    expect_live_mutation_rejected("flip-writable", &page_table_b[kernel_text],
+        page_table_b[kernel_text] ^ PTE_WRITABLE, "pt", kernel_text);
+    expect_live_mutation_rejected("flip-nx", &page_table_b[user_stack],
+        page_table_b[user_stack] ^ PTE_NX, "pt", user_stack);
+    expect_live_mutation_rejected("wrong-frame", &page_table_b[0],
+        page_table_b[0] ^ PAGE_BYTES, "pt", 0);
+    expect_live_mutation_rejected("ancestor-pointer", &page_map_level_4_b[0],
+        page_map_level_4_b[0] ^ PAGE_BYTES, "pml4", 0);
+    expect_live_mutation_rejected("ancestor-flags", &page_directory_pointer_b[0],
+        page_directory_pointer_b[0] ^ PTE_USER, "pdpt", 0);
+
+    uint64_t a_text = boot_page(__user_a_text_start);
+    uint64_t saved_a = page_table_b[a_text];
+    uint64_t saved_b = page_table_b[user_text];
+    page_table_b[a_text] = saved_b;
+    page_table_b[user_text] = saved_a;
+    __asm__ volatile ("" ::: "memory");
+    int swapped_accepted = decoded_root_matches(2, page_map_level_4_b,
+        page_directory_pointer_b, page_directory_b, page_table_b, 0);
+    page_table_b[a_text] = saved_a;
+    page_table_b[user_text] = saved_b;
+    __asm__ volatile ("" ::: "memory");
+    if (swapped_accepted) fail("pt-swapped-leaves-accepted");
+    serial_puts("LEANOS/8 PAGING fixture=swapped-user-leaves root=B level=pt page=");
+    serial_u64(user_text); serial_puts(" expected="); serial_u64(saved_b);
+    serial_puts(" actual="); serial_u64(saved_a);
+    serial_puts(" result=REJECTED\n");
+
+#ifndef LEANOS_DF_MAP_GUARD
+    uint64_t guard = boot_page(__df_ist_guard_start);
+    expect_live_mutation_rejected("extra-mapping", &page_table_b[guard],
+        guard * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
+        "pt", guard);
+#endif
+    expect_live_mutation_rejected("omitted-mapping", &page_table_b[user_text],
+        0, "pt", user_text);
+
+    uint64_t selected;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(selected));
+    __asm__ volatile ("mov %0, %%cr3" :: "r"((uint64_t)page_map_level_4_b) : "memory");
+    uint64_t wrong_selected;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(wrong_selected));
+    __asm__ volatile ("mov %0, %%cr3" :: "r"(selected) : "memory");
+    if ((wrong_selected & PTE_ADDRESS) == (uint64_t)page_map_level_4_a)
+        fail("pt-cr3-fixture-accepted");
+    serial_puts("LEANOS/8 PAGING fixture=wrong-cr3 root=A level=cr3 page=0 expected=");
+    serial_u64((uint64_t)page_map_level_4_a);
+    serial_puts(" actual="); serial_u64(wrong_selected & PTE_ADDRESS);
+    serial_puts(" result=REJECTED\n");
+}
+
+static void check_boot_page_tables(void) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a ||
+        &page_map_level_4_a[0] == &page_map_level_4_b[0]) fail("pt-root-a");
+    if (!decoded_root_matches(1, page_map_level_4_a, page_directory_pointer_a,
+                              page_directory_a, page_table_a, 1)) fail("pt-decode-a");
+    serial_puts("LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS\n");
+    if (!decoded_root_matches(2, page_map_level_4_b, page_directory_pointer_b,
+                              page_directory_b, page_table_b, 1)) fail("pt-decode-b");
+    serial_puts("LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS\n");
+    check_live_page_table_mutations();
+}
+
+static void check_selected_root_b(void) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b) fail("pt-root-b");
+    serial_puts("LEANOS/8 PAGING root=B selected=1 result=PASS\n");
+}
 
 static void serial_u64(uint64_t value) {
     char digits[21]; unsigned length = 0;
@@ -440,6 +630,7 @@ void timer_handler(uint64_t saved_cs) {
 void switch_complete(void) {
     if (current_subject != 2 || preemption_step != 2 || timer_accepted != 1)
         fail("switch-binding");
+    check_selected_root_b();
     preemption_step = 3;
     serial_puts("LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=restored ticks-masked=1\n");
 }
@@ -488,6 +679,8 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
     serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap\n");
+
+    check_boot_page_tables();
 
     boot_allocate(multiboot_magic, multiboot_info);
 
