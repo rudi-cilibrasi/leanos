@@ -23,6 +23,13 @@ and lineage-root reference to its installed capability generation. The raw-slot
 definitions are internal transition kernels used after those checks; replaying
 an old handle after same-slot replacement is rejected as stale.
 
+Userspace entry uses the corresponding canonical word boundaries:
+`offerWords`, `acceptWord`, `retireObjectWord`, `destroyEndpointWord`, and
+`revokeSubtreeWords`. The last operation resolves both the revocation authority
+and lineage root in their trusted subjects' capability spaces before it can
+cancel installed or sealed descendants. Acceptance records both exact
+resolutions; malformed and stale words preserve the complete composite state.
+
 `accept` derives the receiver from trusted caller context. It first checks
 receive authority, endpoint lifetime, the complete envelope, destination slot,
 object lifetime and kind, and the exact append-only derivation record. Only

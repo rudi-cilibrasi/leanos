@@ -625,6 +625,81 @@ noncomputable def revokeSubtreeHandles (state : State) (actor : SubjectId)
       | .error reason => (state, .rejected (CapabilityHandle.denial reason))
       | .ok _ => revokeSubtree state actor authority.slot victim target.slot
 
+/-- Userspace composite-revocation boundary. Both words are decoded and
+generation-resolved before installed and sealed descendants can be canceled. -/
+noncomputable def revokeSubtreeWords (state : State) (actor : SubjectId)
+    (authorityWord : UInt64) (kind : Capability.ObjectKind)
+    (victim : SubjectId) (targetWord : UInt64) : State × Capability.Result :=
+  match CapabilityHandle.resolveCurrent state.capabilities
+      { caller := actor } authorityWord kind with
+  | .error (.denied reason) => (state, .rejected (CapabilityHandle.denial reason))
+  | .error (.malformed _) => (state, .rejected .staleSlot)
+  | .ok authority =>
+      match CapabilityHandle.resolveCurrent state.capabilities
+          { caller := victim } targetWord kind with
+      | .error (.denied reason) => (state, .rejected (CapabilityHandle.denial reason))
+      | .error (.malformed _) => (state, .rejected .staleSlot)
+      | .ok target => revokeSubtree state actor authority.handle.slot victim target.handle.slot
+
+/-- Accepted composite revocation records both exact word resolutions before
+the internal installed-plus-sealed subtree transition. -/
+theorem revokeSubtreeWords_accepted_resolves state actor authorityWord kind victim targetWord
+    (haccepted : (revokeSubtreeWords state actor authorityWord kind victim targetWord).2 =
+      .accepted) :
+    ∃ authority target,
+      CapabilityHandle.resolveCurrent state.capabilities
+        { caller := actor } authorityWord kind = .ok authority ∧
+      CapabilityHandle.resolveCurrent state.capabilities
+        { caller := victim } targetWord kind = .ok target ∧
+      (revokeSubtree state actor authority.handle.slot victim target.handle.slot).2 =
+        .accepted := by
+  cases hauthority : CapabilityHandle.resolveCurrent state.capabilities
+      { caller := actor } authorityWord kind with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason =>
+          simp [revokeSubtreeWords, hauthority] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [revokeSubtreeWords, hauthority] at haccepted
+  | ok authority =>
+      cases htarget : CapabilityHandle.resolveCurrent state.capabilities
+          { caller := victim } targetWord kind with
+      | error reason =>
+          cases reason with
+          | malformed decodeReason =>
+              simp [revokeSubtreeWords, hauthority, htarget] at haccepted
+          | denied resolveReason =>
+              cases resolveReason <;>
+                simp [revokeSubtreeWords, hauthority, htarget] at haccepted
+      | ok target =>
+          exact ⟨authority, target, rfl, rfl,
+            by simpa [revokeSubtreeWords, hauthority, htarget] using haccepted⟩
+
+/-- A malformed or denied composite-revocation authority word preserves the
+entire transfer, mailbox, derivation, and capability state. -/
+theorem revokeSubtreeWords_authority_rejected_unchanged state actor authorityWord kind victim
+    targetWord reason
+    (hresolve : CapabilityHandle.resolveCurrent state.capabilities
+      { caller := actor } authorityWord kind = .error reason) :
+    (revokeSubtreeWords state actor authorityWord kind victim targetWord).1 = state := by
+  cases reason with
+  | malformed decodeReason => simp [revokeSubtreeWords, hresolve]
+  | denied resolveReason => cases resolveReason <;> simp [revokeSubtreeWords, hresolve]
+
+/-- Once authority resolves, a malformed or denied lineage-root word still
+preserves the complete composite state. -/
+theorem revokeSubtreeWords_target_rejected_unchanged state actor authorityWord kind victim
+    targetWord authority reason
+    (hauthority : CapabilityHandle.resolveCurrent state.capabilities
+      { caller := actor } authorityWord kind = .ok authority)
+    (htarget : CapabilityHandle.resolveCurrent state.capabilities
+      { caller := victim } targetWord kind = .error reason) :
+    (revokeSubtreeWords state actor authorityWord kind victim targetWord).1 = state := by
+  cases reason with
+  | malformed decodeReason => simp [revokeSubtreeWords, hauthority, htarget]
+  | denied resolveReason =>
+      cases resolveReason <;> simp [revokeSubtreeWords, hauthority, htarget]
+
 /-- Reserving an append-only derivation identity without installing it in a
 slot preserves the authoritative capability invariant. -/
 private theorem reserve_preserves_capabilityWellFormed (caps : Capability.State)
@@ -1169,6 +1244,25 @@ example :
     (revokeSubtreeHandles replacementState 0 oldMemory .memory 0 oldMemory).2 =
       .rejected .staleSlot := by
   rfl
+
+/-- Composite revocation accepts only the canonical current authority and
+lineage-root words, and stale replay preserves the installed replacement. -/
+example :
+    let replacementWord : UInt64 := 44 * 65536 + 2
+    (revokeSubtreeWords usableReplacementState 0 replacementWord .memory 0
+      replacementWord).2 = .accepted ∧
+      (revokeSubtreeWords usableReplacementState 0 replacementWord .memory 0
+        replacementWord).1.capabilities.slots 0 2 = none := by
+  dsimp [revokeSubtreeWords]
+  constructor <;> rfl
+example :
+    let staleWord : UInt64 := 43 * 65536 + 2
+    (revokeSubtreeWords usableReplacementState 0 staleWord .memory 0 staleWord).2 =
+        .rejected .staleSlot ∧
+      (revokeSubtreeWords usableReplacementState 0 staleWord .memory 0 staleWord).1.capabilities.slots
+          0 2 = usableReplacementState.capabilities.slots 0 2 := by
+  dsimp [revokeSubtreeWords]
+  constructor <;> rfl
 
 example : let outcome := destroyEndpoint destroyTraceState 0 0
     outcome.result = .accepted ∧
