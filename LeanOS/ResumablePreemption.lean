@@ -1057,6 +1057,35 @@ example (translations : TLB.State) :
     retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
     SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool]
 
+/-- Negative regression for the former cross-kind cleanup collision.  Object
+`2` is still the live address space of subject `2`, but the lifecycle also
+attributes that identifier as memory owned by subject `3`.  The composite
+resource-kind invariant rejects this pre-state; without that gate, cleaning
+subject `3` retires object `2` while leaving its address-space owner intact. -/
+private def crossKindAliasRegressionState (translations : TLB.State) : State :=
+  let base := cleanupRegressionState translations
+  { base with
+    scheduler := { base.scheduler with
+      lifecycle := { base.scheduler.lifecycle with
+        ownedMemory := fun object => if object = 2 then some (3, 10) else none } } }
+
+example (translations : TLB.State) :
+    ¬ ResourceKindAgreement (crossKindAliasRegressionState translations) := by
+  intro hagreement
+  have hkind := hagreement.1 2 3 10 (by
+    simp [crossKindAliasRegressionState])
+  simp [crossKindAliasRegressionState, cleanupRegressionState, roundTripStart,
+    demoLifecycle] at hkind
+
+example (translations : TLB.State) :
+    let cleaned := cleanupSubject (crossKindAliasRegressionState translations) 3
+    cleaned.scheduler.lifecycle.addressOwner 2 = some 2 ∧
+      cleaned.scheduler.lifecycle.capabilities.objects 2 = false := by
+  simp [crossKindAliasRegressionState, cleanupRegressionState, roundTripStart,
+    demoLifecycle, cleanupSubject, retireOwnedAddressSpaces,
+    SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+    SubjectLifecycle.setBool]
+
 private def switchAToB (translations : TLB.State) : Outcome :=
   switch (roundTripStart translations) (demoInterrupt 1)
     (demoFrame 0x401000 0x801000 0x246) (demoRegisters 0x10)
