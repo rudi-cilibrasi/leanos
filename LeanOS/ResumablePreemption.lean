@@ -701,6 +701,23 @@ theorem cleanupCapabilities_preserves_wellFormed state subject
     simp only [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities]
     rw [hspaces holder slot hout]
 
+/-- Authority over an unrelated live object survives subject cleanup.  These
+four side conditions are exactly the branches that the composite cleanup uses
+to remove slots. -/
+theorem cleanupCapabilities_preserves_authority state subject holder object right
+    (hauthority : Capability.HasAuthority state.capabilities holder object right)
+    (hholder : holder ≠ subject)
+    (hmemory : (state.ownedMemory object).any (fun owner => owner.1 = subject) = false)
+    (hendpoint : state.endpointOwner object ≠ some subject)
+    (haddress : state.addressOwner object ≠ some subject) :
+    Capability.HasAuthority
+      (retireOwnedAddressSpaces state subject
+        (SubjectLifecycle.terminatedCapabilities state subject)) holder object right := by
+  rcases hauthority with ⟨slot, capability, hslot, hobject, hright⟩
+  refine ⟨slot, capability, ?_, hobject, hright⟩
+  simp [retireOwnedAddressSpaces, SubjectLifecycle.terminatedCapabilities,
+    hslot, hholder, hmemory, hendpoint, haddress, hobject]
+
 /-- Subject termination is one composite cleanup step: lifecycle ownership,
 scheduler membership, the resumable slot, and cached translations disappear
 together.  The scheduler model currently identifies each subject's owned
@@ -887,6 +904,147 @@ theorem cleanup_preserves_virtualMappingWellFormed state subject
     · intro hpermission
       simpa [cleanupSubject] using
         preserveAuthority Capability.Right.write (hwrite hpermission)
+
+/-- Composite cleanup preserves the complete virtual address-space lifecycle,
+not just its retained page mappings.  Resource-kind agreement rules out an
+address-space identifier being retired through the memory or endpoint cleanup
+branches. -/
+theorem cleanup_preserves_virtualLifecycleWellFormed state subject
+    (hstate : WellFormed state) :
+    VirtualMapping.LifecycleWellFormed
+      (cleanupSubject state subject).translations.virtual := by
+  have hfull := hstate
+  rcases hstate with
+    ⟨_, _, _, _, _, _, htranslations, hvirtual, hkinds, _⟩
+  rcases hvirtual.2 with ⟨_, hcapabilities, hownerLive, hliveOwner⟩
+  have hcapabilities' :
+      Capability.WellFormed state.scheduler.lifecycle.capabilities := by
+    rw [← hvirtual.1]
+    exact hcapabilities
+  refine ⟨cleanup_preserves_virtualMappingWellFormed state subject hfull,
+    ?_, ?_, ?_⟩
+  · simpa [cleanupSubject, SubjectLifecycle.terminateState] using
+      cleanupCapabilities_preserves_wellFormed state.scheduler.lifecycle subject hcapabilities'
+  · intro addressSpace owner howner
+    have hownerFacts :
+        state.scheduler.lifecycle.addressOwner addressSpace ≠ some subject ∧
+          state.scheduler.lifecycle.addressOwner addressSpace = some owner := by
+      simpa [cleanupSubject, SubjectLifecycle.terminateState] using howner
+    have hownerOld : state.translations.virtual.owner addressSpace = some owner := by
+      rw [htranslations.1]
+      exact hownerFacts.2
+    rcases hownerLive addressSpace owner hownerOld with
+      ⟨hobject, hkind, hissuedAddressSpace, hissuedMemory, hauthority⟩
+    have hkindLifecycle :
+        state.scheduler.lifecycle.capabilities.kinds addressSpace =
+          some .addressSpace := by
+      rw [← hvirtual.1]
+      exact hkind
+    have hmemory :
+        (state.scheduler.lifecycle.ownedMemory addressSpace).any
+          (fun ownership => ownership.1 = subject) = false := by
+      cases hold : state.scheduler.lifecycle.ownedMemory addressSpace with
+      | none => rfl
+      | some ownership =>
+        by_cases heq : ownership.1 = subject
+        · rcases ownership with ⟨memoryOwner, frame⟩
+          have hmemoryKind := hkinds.1 addressSpace memoryOwner frame hold
+          simp [heq, hmemoryKind] at hkindLifecycle
+        · simp [hold, heq]
+    have hendpoint :
+        state.scheduler.lifecycle.endpointOwner addressSpace ≠ some subject := by
+      intro hendpointOwner
+      have hendpointKind := hkinds.2 addressSpace subject hendpointOwner
+      simp [hendpointKind] at hkindLifecycle
+    have hauthorityLifecycle : Capability.HasAuthority
+        state.scheduler.lifecycle.capabilities owner addressSpace .revoke := by
+      rw [← hvirtual.1]
+      exact hauthority
+    have hauthorityNew := cleanupCapabilities_preserves_authority
+      state.scheduler.lifecycle subject owner addressSpace .revoke
+      hauthorityLifecycle (by
+        intro heq
+        subst owner
+        exact hownerFacts.1 hownerFacts.2) hmemory hendpoint hownerFacts.1
+    have hobjectLifecycle :
+        state.scheduler.lifecycle.capabilities.objects addressSpace = true := by
+      rw [← hvirtual.1]
+      exact hobject
+    have hkindLifecycle' :
+        state.scheduler.lifecycle.capabilities.kinds addressSpace =
+          some .addressSpace := hkindLifecycle
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · simpa [cleanupSubject, retireOwnedAddressSpaces,
+        SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+        hmemory, hendpoint, hownerFacts.1] using hobjectLifecycle
+    · simpa [cleanupSubject, retireOwnedAddressSpaces,
+        SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+        hmemory, hendpoint, hownerFacts.1] using hkindLifecycle'
+    · simpa [cleanupSubject] using hissuedAddressSpace
+    · simpa [cleanupSubject] using hissuedMemory
+    · simpa [cleanupSubject, SubjectLifecycle.terminateState] using hauthorityNew
+  · intro addressSpace hobject hkind
+    have hobjectStep :
+        state.scheduler.lifecycle.addressOwner addressSpace ≠ some subject ∧
+          (SubjectLifecycle.terminateState state.scheduler.lifecycle subject).capabilities.objects
+            addressSpace = true := by
+      simpa [cleanupSubject, retireOwnedAddressSpaces] using hobject
+    have hterminatedFacts :
+        (state.scheduler.lifecycle.ownedMemory addressSpace).any
+              (fun ownership => ownership.1 = subject) = false ∧
+          state.scheduler.lifecycle.endpointOwner addressSpace ≠ some subject ∧
+          state.scheduler.lifecycle.capabilities.objects addressSpace = true := by
+      have hraw :
+          ((state.scheduler.lifecycle.ownedMemory addressSpace).any
+                (fun ownership => ownership.1 = subject) = false ∧
+            state.scheduler.lifecycle.endpointOwner addressSpace ≠ some subject) ∧
+            state.scheduler.lifecycle.capabilities.objects addressSpace = true := by
+        simpa [SubjectLifecycle.terminateState,
+          SubjectLifecycle.terminatedCapabilities] using hobjectStep.2
+      exact ⟨hraw.1.1, hraw.1.2, hraw.2⟩
+    have hobjectFacts :
+        state.scheduler.lifecycle.addressOwner addressSpace ≠ some subject ∧
+          (state.scheduler.lifecycle.ownedMemory addressSpace).any
+              (fun ownership => ownership.1 = subject) = false ∧
+          state.scheduler.lifecycle.endpointOwner addressSpace ≠ some subject ∧
+          state.scheduler.lifecycle.capabilities.objects addressSpace = true :=
+      ⟨hobjectStep.1, hterminatedFacts⟩
+    have hkindOld :
+        state.scheduler.lifecycle.capabilities.kinds addressSpace =
+          some .addressSpace := by
+      simpa [cleanupSubject, retireOwnedAddressSpaces,
+        SubjectLifecycle.terminateState, SubjectLifecycle.terminatedCapabilities,
+        hobjectFacts.1,
+        hobjectFacts.2.1, hobjectFacts.2.2.1] using hkind
+    have hobjectVirtual :
+        state.translations.virtual.memory.capabilities.objects addressSpace = true := by
+      rw [hvirtual.1]
+      exact hobjectFacts.2.2.2
+    have hkindVirtual :
+        state.translations.virtual.memory.capabilities.kinds addressSpace =
+          some .addressSpace := by
+      rw [hvirtual.1]
+      exact hkindOld
+    obtain ⟨owner, hownerOld⟩ :=
+      hliveOwner addressSpace hobjectVirtual hkindVirtual
+    have hownerLifecycle :
+        state.scheduler.lifecycle.addressOwner addressSpace = some owner := by
+      rw [← htranslations.1]
+      exact hownerOld
+    have hownerNe : owner ≠ subject := by
+      intro heq
+      subst owner
+      exact hobjectFacts.1 hownerLifecycle
+    refine ⟨owner, ?_⟩
+    simp [cleanupSubject, SubjectLifecycle.terminateState,
+      hobjectFacts.1, hownerLifecycle, hownerNe]
+
+theorem cleanup_preserves_virtualAgreement state subject
+    (hstate : WellFormed state) :
+    VirtualAgreement (cleanupSubject state subject) := by
+  constructor
+  · rfl
+  · exact cleanup_preserves_virtualLifecycleWellFormed state subject hstate
 
 /-- Cleanup preserves ready/context agreement whenever it leaves a queued
 destination for a still-current subject.  If cleanup removes the final peer,
@@ -1119,6 +1277,22 @@ theorem cleanupSubject_preserves_coreWellFormed state subject
       (List.mem_filter.mp hmem).1
     simpa using holdNoOwner
   · exact Nat.le_trans (TLB.erase_space_length state.translations.entries subject) htlb
+
+/-- Subject cleanup preserves the full resumable-state invariant from pre-state
+facts alone.  The sole operational side condition says that cleanup must not
+leave a current subject without any resumable peer. -/
+theorem cleanupSubject_preserves_wellFormed state subject
+    (hstate : WellFormed state)
+    (hreadyPeer : (cleanupSubject state subject).scheduler.lifecycle.current.isSome →
+      (cleanupSubject state subject).scheduler.ready ≠ []) :
+    WellFormed (cleanupSubject state subject) := by
+  have hcore := cleanupSubject_preserves_coreWellFormed state subject hstate hreadyPeer
+  rcases hcore with
+    ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hready,
+      htranslations, htlb⟩
+  exact ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hready,
+    htranslations, cleanup_preserves_virtualAgreement state subject hstate,
+    cleanup_preserves_resourceKindAgreement state subject hstate, htlb⟩
 
 private def demoLifecycle (current : SubjectId) : SubjectLifecycle.State :=
   { capabilities := {
