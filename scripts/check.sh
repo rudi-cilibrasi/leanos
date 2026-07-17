@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 lake build
+lake build leanos-boot-plan
 
 ./scripts/check-security-claims.sh
 

@@ -126,6 +126,36 @@ multiboot_entry:
     and $0x7ff8, %eax
     orl $4, page_table_b(%eax)
 
+    /* The canonical plan omits the other subject's pages entirely rather than
+       retaining supervisor aliases in that address space. */
+    mov $__user_b_text_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    mov $__user_b_stack_end, %ecx
+    add $0xfff, %ecx
+    shr $9, %ecx
+    and $0x7ff8, %ecx
+7:
+    movl $0, page_table_a(%eax)
+    movl $0, page_table_a+4(%eax)
+    add $8, %eax
+    cmp %ecx, %eax
+    jb 7b
+
+    mov $__user_a_text_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    mov $__user_a_stack_end, %ecx
+    add $0xfff, %ecx
+    shr $9, %ecx
+    and $0x7ff8, %ecx
+8:
+    movl $0, page_table_b(%eax)
+    movl $0, page_table_b+4(%eax)
+    add $8, %eax
+    cmp %ecx, %eax
+    jb 8b
+
     /* The page immediately below IST1 is absent in both address spaces. */
 #ifndef LEANOS_DF_MAP_GUARD
     mov $__df_ist_guard_start, %eax

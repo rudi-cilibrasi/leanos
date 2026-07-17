@@ -43,6 +43,9 @@ rm -rf "$build"
 mkdir -p "$iso_root/boot/grub" "$df_iso_root/boot/grub" \
   "$df_negative_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-double-fault.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-guard.h"
 
 # C generation resolves project imports through Lake's compiled module path.
 # Build them here because image jobs and clean checkouts cannot rely on a
@@ -82,11 +85,53 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_DF_MAP_GUARD=1 \
   -c boot/boot.S -o "$build/boot-df-guard-mapped.o"
 
+# The first link fixes every symbol address while using a same-sized plan
+# placeholder. Lean then accepts the linker-resolved Input and emits the exact
+# PTE arrays used by the guest walker. Recompiling only kernel.c preserves all
+# section sizes; the final comparison rejects any unexpected address drift.
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-prelink.map" \
+  -o "$build/leanos-prelink.elf" "$build/boot.o" "$build/kernel.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
+  -o "$build/leanos-double-fault-prelink.elf" "$build/boot.o" \
+  "$build/kernel-double-fault.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-guard-prelink.map" \
+  -o "$build/leanos-guard-prelink.elf" "$build/boot-df-guard-mapped.o" \
+  "$build/kernel-double-fault-guard-mapped.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o"
+./scripts/generate-boot-page-plan.sh "$build/leanos-prelink.elf" \
+  "$build/boot-page-plan.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-prelink.elf" \
+  "$build/boot-page-plan-double-fault.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-guard-prelink.elf" \
+  "$build/boot-page-plan-guard.h"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
+  -o "$build/kernel.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_DOUBLE_FAULT_PROBE=1 -DLEANOS_DF_MAP_GUARD=1 \
+  -c boot/kernel.c -o "$build/kernel-double-fault-guard-mapped.o"
+
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
   -o build/boot/leanos.elf build/boot/boot.o build/boot/kernel.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
   build/boot/Preemption.o build/boot/BootAllocation.o
+
+./scripts/generate-boot-page-plan.sh "$build/leanos.elf" \
+  "$build/boot-page-plan.final.h"
+cmp "$build/boot-page-plan.h" "$build/boot-page-plan.final.h" || {
+  echo "error: linker-resolved boot page-table plan drifted after final link" >&2
+  exit 1
+}
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos-double-fault.map \
   -o build/boot/leanos-double-fault.elf build/boot/boot.o \
@@ -100,6 +145,20 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   build/boot/kernel-double-fault-guard-mapped.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
   build/boot/Preemption.o build/boot/BootAllocation.o
+
+./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
+  "$build/boot-page-plan-double-fault.final.h"
+cmp "$build/boot-page-plan-double-fault.h" \
+  "$build/boot-page-plan-double-fault.final.h" || {
+  echo "error: double-fault boot page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-guard-mapped.elf" \
+  "$build/boot-page-plan-guard.final.h"
+cmp "$build/boot-page-plan-guard.h" "$build/boot-page-plan-guard.final.h" || {
+  echo "error: guard-mapped boot page-table plan drifted after final link" >&2
+  exit 1
+}
 
 undefined="$(nm -u "$build/leanos.elf")"
 if [[ -n "$undefined" ]]; then

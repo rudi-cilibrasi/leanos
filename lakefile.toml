@@ -9,3 +9,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 [[lean_exe]]
 name = "leanos-oracle"
 root = "LeanOS.Oracle"
+
+[[lean_exe]]
+name = "leanos-boot-plan"
+root = "LeanOS.BootPageTablePlanGenerator"
+moreLeanArgs = ["-DwarningAsError=true"]

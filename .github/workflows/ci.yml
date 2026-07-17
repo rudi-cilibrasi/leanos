@@ -99,6 +99,9 @@ jobs:
             build/boot/leanos-double-fault.elf
             build/boot/leanos.map
             build/boot/leanos-double-fault.map
+            build/boot/leanos-prelink.map
+            build/boot/boot-page-plan.h
+            build/boot/boot-page-plan.final.h
             build/boot/SHA256SUMS
             build/boot/serial.log
             build/boot/double-fault.serial.log

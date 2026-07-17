@@ -1,5 +1,12 @@
 #include <stdint.h>
 #include "corpus.h"
+#if defined(LEANOS_DF_MAP_GUARD)
+#include "boot-page-plan-guard.h"
+#elif defined(LEANOS_DOUBLE_FAULT_PROBE)
+#include "boot-page-plan-double-fault.h"
+#else
+#include "boot-page-plan.h"
+#endif
 
 #define COM1 0x3f8u
 #define DEBUG_EXIT 0xf4u
@@ -93,46 +100,17 @@ static void serial_puts(const char *text);
 static void serial_putc(char value);
 static void serial_u64(uint64_t value);
 
-enum boot_region_policy { REGION_KERNEL_TEXT, REGION_SUPERVISOR_DATA,
-    REGION_USER_TEXT, REGION_USER_STACK, REGION_UNMAPPED };
-struct boot_region {
-    const char *start, *end;
-    enum boot_region_policy policy;
-};
-
-static int page_in(const char *start, const char *end, uint64_t page) {
-    uint64_t first = (uint64_t)start / PAGE_BYTES;
-    uint64_t last = ((uint64_t)end + PAGE_BYTES - 1u) / PAGE_BYTES;
-    return page >= first && page < last;
-}
-
-/* This compact manifest is linker-resolved in the final ELF. The early
-   assembly constructor remains trusted; this guest checker independently
-   decodes its complete bounded result after paging is active. */
+/* The arrays are emitted only after the linker-resolved Input is accepted by
+   LeanOS.BootPageTablePlan.compile. The early assembly constructor remains
+   trusted; this guest checker independently decodes and compares its result. */
 static uint64_t expected_boot_leaf(unsigned space, uint64_t page) {
-    const struct boot_region common[] = {
-        { __kernel_text_start, __kernel_text_end, REGION_KERNEL_TEXT },
-#ifndef LEANOS_DF_MAP_GUARD
-        { __df_ist_guard_start, __df_ist_guard_end, REGION_UNMAPPED },
+#ifdef LEANOS_DF_MAP_GUARD
+    uint64_t guard_first = (uint64_t)__df_ist_guard_start / PAGE_BYTES;
+    uint64_t guard_last = ((uint64_t)__df_ist_guard_end + PAGE_BYTES - 1u) / PAGE_BYTES;
+    if (page >= guard_first && page < guard_last)
+        return page * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX;
 #endif
-    };
-    const struct boot_region owned[] = {
-        { space == 1 ? __user_a_text_start : __user_b_text_start,
-          space == 1 ? __user_a_text_end : __user_b_text_end, REGION_USER_TEXT },
-        { space == 1 ? __user_a_stack_start : __user_b_stack_start,
-          space == 1 ? __user_a_stack_end : __user_b_stack_end, REGION_USER_STACK },
-    };
-    enum boot_region_policy policy = REGION_SUPERVISOR_DATA;
-    for (unsigned i = 0; i < sizeof(common) / sizeof(common[0]); ++i)
-        if (page_in(common[i].start, common[i].end, page)) policy = common[i].policy;
-    for (unsigned i = 0; i < sizeof(owned) / sizeof(owned[0]); ++i)
-        if (page_in(owned[i].start, owned[i].end, page)) policy = owned[i].policy;
-    if (policy == REGION_UNMAPPED) return 0;
-    uint64_t flags = PTE_PRESENT;
-    if (policy == REGION_SUPERVISOR_DATA || policy == REGION_USER_STACK)
-        flags |= PTE_WRITABLE | PTE_NX;
-    if (policy == REGION_USER_TEXT || policy == REGION_USER_STACK) flags |= PTE_USER;
-    return page * PAGE_BYTES | flags;
+    return space == 1 ? leanos_boot_plan_a[page] : leanos_boot_plan_b[page];
 }
 
 static int decoded_root_matches(unsigned space, uint64_t *root, uint64_t *pdpt,
