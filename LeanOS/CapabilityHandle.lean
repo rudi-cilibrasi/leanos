@@ -19,8 +19,118 @@ structure Handle where
   identity : Nat
   deriving DecidableEq, Repr
 
+/-! ## Canonical fixed-width encoding
+
+The userspace word is divided into a 16-bit slot field and a 48-bit generation
+field.  The all-ones value of each field is reserved, as is generation zero.
+Consequently, allocation must stop before `generationReserved`; wrapping or
+reusing a generation is never an encoding policy.
+-/
+
+def slotRadix : Nat := 2 ^ 16
+def generationRadix : Nat := 2 ^ 48
+def slotReserved : Nat := slotRadix - 1
+def generationReserved : Nat := generationRadix - 1
+
+private theorem slotRadix_value : slotRadix = 65536 := by native_decide
+private theorem slotReserved_value : slotReserved = 65535 := by native_decide
+private theorem generationReserved_value : generationReserved = 281474976710655 := by
+  native_decide
+private theorem wordSpace : generationRadix * slotRadix = 2 ^ 64 := by native_decide
+
+def Encodable (handle : Handle) : Prop :=
+  handle.slot < slotReserved ∧ 0 < handle.identity ∧ handle.identity < generationReserved
+
+instance (handle : Handle) : Decidable (Encodable handle) := by
+  unfold Encodable
+  infer_instance
+
+inductive DecodeError where
+  | reservedSlot | reservedGeneration
+  deriving DecidableEq, Repr
+
+/-- Encode exactly the bounded, non-reserved handle domain. -/
+def encode (handle : Handle) : Option UInt64 :=
+  if Encodable handle then
+    some (UInt64.ofNat (handle.slot + handle.identity * slotRadix))
+  else none
+
+/-- Total decoder for the canonical 16/48 split.  Every rejected word names a
+reserved slot or generation; there is no truncating conversion to a raw slot. -/
+def decode (word : UInt64) : Except DecodeError Handle :=
+  let slot := word.toNat % slotRadix
+  let identity := word.toNat / slotRadix
+  if slot = slotReserved then .error .reservedSlot
+  else if identity = 0 ∨ identity = generationReserved then .error .reservedGeneration
+  else .ok { slot, identity }
+
+/-- Encoding a valid bounded handle and decoding its word is exact. -/
+theorem decode_encode (handle : Handle) (word : UInt64)
+    (hencode : encode handle = some word) : decode word = .ok handle := by
+  simp only [encode] at hencode
+  split at hencode
+  case isTrue hvalid =>
+    simp only [Option.some.injEq] at hencode
+    subst word
+    rcases hvalid with ⟨hslot, hpositive, hgeneration⟩
+    have hslotRadix : handle.slot < slotRadix := by
+      exact Nat.lt_trans hslot (by native_decide)
+    have hgenerationRadix : handle.identity < generationRadix := by
+      exact Nat.lt_trans hgeneration (by native_decide)
+    have hword : handle.slot + handle.identity * slotRadix < 2 ^ 64 := by
+      have hsum :
+          handle.slot + handle.identity * slotRadix <
+            (handle.identity + 1) * slotRadix := by
+        simpa [Nat.add_mul, Nat.add_comm] using
+          Nat.add_lt_add_right hslotRadix (handle.identity * slotRadix)
+      have hmul :
+          (handle.identity + 1) * slotRadix ≤ generationRadix * slotRadix :=
+        Nat.mul_le_mul_right slotRadix (Nat.succ_le_of_lt hgenerationRadix)
+      rw [wordSpace] at hmul
+      exact Nat.lt_of_lt_of_le hsum hmul
+    have htoNat :
+        (UInt64.ofNat (handle.slot + handle.identity * slotRadix)).toNat =
+          handle.slot + handle.identity * slotRadix := by
+      rw [UInt64.toNat_ofNat', Nat.mod_eq_of_lt hword]
+    have hmod :
+        (handle.slot + handle.identity * slotRadix) % slotRadix = handle.slot := by
+      rw [Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hslotRadix]
+    have hdiv :
+        (handle.slot + handle.identity * slotRadix) / slotRadix = handle.identity := by
+      rw [Nat.add_mul_div_right handle.slot handle.identity]
+      · rw [Nat.div_eq_of_lt hslotRadix, Nat.zero_add]
+      · simp [slotRadix]
+    have hnotSlot : handle.slot ≠ slotReserved := by
+      exact Nat.ne_of_lt hslot
+    have hnotGeneration : handle.identity ≠ generationReserved := by
+      exact Nat.ne_of_lt hgeneration
+    simp only [decode, htoNat]
+    rw [hmod, hdiv]
+    simp [hnotSlot, Nat.ne_of_gt hpositive, hnotGeneration]
+  case isFalse hinvalid => simp at hencode
+
+/-- Canonical uniqueness: one accepted word cannot encode two handles. -/
+theorem encode_injective (first second : Handle) (word : UInt64)
+    (hfirst : encode first = some word) (hsecond : encode second = some word) :
+    first = second := by
+  have dfirst := decode_encode first word hfirst
+  have dsecond := decode_encode second word hsecond
+  rw [dfirst] at dsecond
+  exact Except.ok.inj dsecond
+
 inductive ResolveDenial where
   | invalidSubject | outOfRange | staleHandle | kindMismatch
+  deriving DecidableEq, Repr
+
+/-- Trusted entry/scheduler provenance.  It is intentionally not part of the
+untrusted handle word. -/
+structure TrustedCaller where
+  caller : SubjectId
+  deriving DecidableEq, Repr
+
+inductive WordResolveDenial where
+  | malformed (reason : DecodeError)
+  | denied (reason : ResolveDenial)
   deriving DecidableEq, Repr
 
 /-- The one canonical generation-aware capability resolver. -/
@@ -36,6 +146,17 @@ def resolve (state : State) (trustedSubject : SubjectId) (handle : Handle)
         else if state.objects capability.object != true then .error .staleHandle
         else if state.kinds capability.object != some expected then .error .kindMismatch
         else .ok capability
+
+/-- The reusable userspace boundary: decode one opaque word, then resolve only
+inside the capability space selected by trusted current-caller context. -/
+def resolveCurrent (state : State) (context : TrustedCaller) (word : UInt64)
+    (expected : ObjectKind) : Except WordResolveDenial Capability :=
+  match decode word with
+  | .error reason => .error (.malformed reason)
+  | .ok handle =>
+      match resolve state context.caller handle expected with
+      | .error reason => .error (.denied reason)
+      | .ok capability => .ok capability
 
 def issue (slot : SlotId) (capability : Capability) : Handle :=
   { slot, identity := capability.identity }
@@ -104,6 +225,29 @@ theorem resolve_sound (state : State) (trustedSubject : SubjectId) (handle : Han
   split at hresolve <;> try simp_all
   split at hresolve <;> try simp_all
   split at hresolve <;> simp_all
+
+theorem resolveCurrent_sound (state : State) (context : TrustedCaller) (word : UInt64)
+    (expected : ObjectKind) (capability : Capability)
+    (hresolve : resolveCurrent state context word expected = .ok capability) :
+    ∃ handle,
+      decode word = .ok handle ∧
+      state.subjects context.caller = true ∧
+      slotInRange state context.caller handle.slot = true ∧
+      state.slots context.caller handle.slot = some capability ∧
+      capability.identity = handle.identity ∧ capability.kind = expected ∧
+      state.objects capability.object = true ∧
+      state.kinds capability.object = some expected := by
+  cases hdecode : decode word with
+  | error reason => simp [resolveCurrent, hdecode] at hresolve
+  | ok handle =>
+      cases hresolved : resolve state context.caller handle expected with
+      | error reason => simp [resolveCurrent, hdecode, hresolved] at hresolve
+      | ok found =>
+          have heq : found = capability := by
+            simpa [resolveCurrent, hdecode, hresolved] using hresolve
+          subst found
+          exact ⟨handle, rfl,
+            resolve_sound state context.caller handle expected capability hresolved⟩
 
 /-- Clearing a slot permanently invalidates its old handle at that point. -/
 theorem clear_denies_handle (state : State) (subject : SubjectId) (handle : Handle)
@@ -187,6 +331,7 @@ private def demoState : State :=
       if subject = 0 && slot = 0 then some demoCapability else none }
 
 private def demoHandle : Handle := issue 0 demoCapability
+private def demoWord : UInt64 := 12 * 65536
 
 /-- Deliberately unsafe historical behavior, retained only as a negative
 regression: resolving a raw slot cannot distinguish two generations. -/
@@ -215,5 +360,27 @@ example :
       resolve reused 0 demoHandle .memory = .error .staleHandle := by
   dsimp
   constructor <;> rfl
+
+-- Canonical fixed-width vectors and malformed/reserved negative cases.
+example : encode demoHandle = some demoWord := by native_decide
+example : decode demoWord = .ok demoHandle := by rfl
+example : decode 0 = .error .reservedGeneration := by rfl
+example : decode (12 * 65536 + 65535) = .error .reservedSlot := by rfl
+example : decode ((281474976710655 : UInt64) * 65536) =
+    .error .reservedGeneration := by rfl
+example : encode { slot := 0, identity := generationReserved } = none := by native_decide
+example : encode { slot := slotReserved, identity := 12 } = none := by native_decide
+
+-- The decoded word is resolved only in the capability space named by trusted
+-- current-caller context; neither changing generation bits nor reusing the
+-- same word under another caller can select authority.
+example : resolveCurrent demoState { caller := 0 } demoWord .memory = .ok demoCapability := by
+  rfl
+example : resolveCurrent demoState { caller := 1 } demoWord .memory =
+    .error (.denied .staleHandle) := by rfl
+example : resolveCurrent demoState { caller := 0 } (13 * 65536) .memory =
+    .error (.denied .staleHandle) := by rfl
+example : resolveCurrent demoState { caller := 0 } (12 * 65536 + 65535) .memory =
+    .error (.malformed .reservedSlot) := by rfl
 
 end LeanOS.CapabilityHandle
