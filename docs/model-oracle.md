@@ -20,8 +20,10 @@ with the outgoing saved owner/stack/r12 markers. Target and outgoing
 descriptors combine kernel-owned bank metadata with each frame's actual saved
 RSP; r12 markers also come from the two concrete buffers. The boot path thus
 rejects a corrupted outgoing stack or exchanged bank before the success
-transcript, so exchanging A
-and B is rejected by the same generated-code witness rather than only by a
+transcript. Exact kernel-owned RSP/RFLAGS snapshots additionally guard the
+full saved return-frame words that are intentionally too large for the compact
+oracle descriptor, so exchanging A and B is rejected by the same generated-code
+witness rather than only by a
 serial symptom check. `./scripts/generate-oracle.sh` emits `corpus.tsv` and a C header from that one
 Lean executable. The file records its schema and source revision. The complete
 proof gate replays it against hosted Lean-generated C. Image construction embeds

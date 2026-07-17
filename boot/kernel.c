@@ -41,6 +41,8 @@ extern char user_a_stack[];
 extern char user_b_stack[], user_b_stack_top[];
 extern uint64_t saved_context_a[], saved_context_b[];
 extern const uint64_t saved_context_owner_a, saved_context_owner_b;
+extern uint64_t saved_context_a_original_flags, saved_context_a_original_rsp;
+extern uint64_t saved_context_b_original_flags, saved_context_b_original_rsp;
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
@@ -593,8 +595,10 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             saved_context_a[2] != 0xa22da22da22da22dull ||
             saved_context_b[3] != 0xc0dec0dec0dec0deull ||
             saved_context_b[2] != 0x51a7e51a7e51a7e5ull ||
-            stack_marker(saved_context_a[18]) != 1 ||
-            stack_marker(saved_context_b[18]) != 2 ||
+            saved_context_a[17] != saved_context_a_original_flags ||
+            saved_context_a[18] != saved_context_a_original_rsp ||
+            saved_context_b[17] != saved_context_b_original_flags ||
+            saved_context_b[18] != saved_context_b_original_rsp ||
             saved_context_a[16] != 0x23 || saved_context_a[19] != 0x1b ||
             saved_context_b[16] != 0x23 || saved_context_b[19] != 0x1b)
             fail("saved-context");
@@ -648,6 +652,13 @@ static uint64_t context_descriptor(uint64_t owner, uint64_t stack_pointer) {
     return owner | (stack_marker(stack_pointer) << 8);
 }
 
+static void check_original_frame(const uint64_t *frame, uint64_t original_flags,
+                                 uint64_t original_rsp, uint64_t owner) {
+    if (frame[17] != original_flags || frame[18] != original_rsp ||
+        stack_marker(original_rsp) != owner)
+        fail("context-frame-changed");
+}
+
 static void check_resumable_witness(uint64_t leg, const uint64_t *target,
                                     const uint64_t *saved, uint64_t target_owner,
                                     uint64_t saved_owner, unsigned vector_index) {
@@ -661,6 +672,8 @@ static void check_resumable_witness(uint64_t leg, const uint64_t *target,
 void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
     if (current_subject == 2 && preemption_step == 2 && timer_accepted == 1) {
         check_selected_root_b();
+        check_original_frame(saved_context_a, saved_context_a_original_flags,
+            saved_context_a_original_rsp, saved_context_owner_a);
         check_resumable_witness(1, target, saved_context_a, target_owner, saved_owner,
             ORACLE_INDEX_RESUMABLE_A_TO_B);
         preemption_step = 3;
@@ -669,6 +682,10 @@ void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_own
     }
     if (current_subject == 1 && preemption_step == 5 && timer_accepted == 2) {
         check_selected_root_a();
+        check_original_frame(saved_context_b, saved_context_b_original_flags,
+            saved_context_b_original_rsp, saved_context_owner_b);
+        check_original_frame(target, saved_context_a_original_flags,
+            saved_context_a_original_rsp, saved_context_owner_a);
         check_resumable_witness(2, target, saved_context_b, target_owner, saved_owner,
             ORACLE_INDEX_RESUMABLE_B_TO_A);
         preemption_step = 6;

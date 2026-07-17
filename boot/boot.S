@@ -531,6 +531,18 @@ saved_context_a:
 .global saved_context_b
 saved_context_b:
     .skip 160
+.global saved_context_a_original_flags
+saved_context_a_original_flags:
+    .skip 8
+.global saved_context_a_original_rsp
+saved_context_a_original_rsp:
+    .skip 8
+.global saved_context_b_original_flags
+saved_context_b_original_flags:
+    .skip 8
+.global saved_context_b_original_rsp
+saved_context_b_original_rsp:
+    .skip 8
 .section .rodata,"a",@progbits
 .align 8
 .global saved_context_owner_a
@@ -560,6 +572,10 @@ isr32_cld:
     lea saved_context_a(%rip), %rdi
     mov $20, %ecx
     rep movsq
+    mov saved_context_a+136(%rip), %rax
+    mov %rax, saved_context_a_original_flags(%rip)
+    mov saved_context_a+144(%rip), %rax
+    mov %rax, saved_context_a_original_rsp(%rip)
     movq $user_b_entry, 120(%rsp)
     movq $user_b_stack_top, 144(%rsp)
     movabs $0xc0dec0dec0dec0de, %rax
@@ -576,6 +592,10 @@ isr32_cld:
     lea saved_context_b(%rip), %rdi
     mov $20, %ecx
     rep movsq
+    mov saved_context_b+136(%rip), %rax
+    mov %rax, saved_context_b_original_flags(%rip)
+    mov saved_context_b+144(%rip), %rax
+    mov %rax, saved_context_b_original_rsp(%rip)
     lea saved_context_a(%rip), %rsi
     mov %rsp, %rdi
     mov $20, %ecx
