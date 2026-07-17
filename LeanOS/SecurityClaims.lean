@@ -137,11 +137,14 @@ private def returnWitnessLifecycle : SubjectLifecycle.State :=
     runnable := fun subject => subject = 1
     current := some 1 }
 
+private def returnWitnessPlan : Option BootPageTablePlan.Plan :=
+  (BootPageTablePlan.compile BootPageTablePlan.sampleInput).toOption
+
 private def returnWitnessView : FailStop.ReturnAddressSpace :=
   { subject := 1
-    expectedCr3 := 0x1000
-    codeRegion := ⟨0x400000, 0x401000⟩
-    stackRegion := ⟨0x500000, 0x501000⟩ }
+    expectedCr3 := 0xa000
+    codeRegion := ⟨0x64000, 0x65000⟩
+    stackRegion := ⟨0x65000, 0x66000⟩ }
 
 private def returnWitnessBase : FailStop.State :=
   { core :=
@@ -152,7 +155,8 @@ private def returnWitnessBase : FailStop.State :=
             kernelStack := 0
             entryActive := false } }
     mode := .running
-    returnAddressSpace := fun space => if space = 1 then some returnWitnessView else none }
+    returnAddressSpace := fun space => if space = 1 then some returnWitnessView else none
+    returnPlan := returnWitnessPlan }
 
 private def returnWitnessState : FailStop.State :=
   FailStop.selectReturnAuthority returnWitnessBase .initialDispatch
@@ -162,8 +166,8 @@ private def returnWitnessRequest : Interrupt.UserReturnRequest :=
       { vector := 0
         errorCode := 0
         savedPrivilege := .user
-        instructionPointer := 0x400100
-        stackPointer := 0x500ff8
+        instructionPointer := 0x64100
+        stackPointer := 0x65ff8
         codeSelector := 0x23
         stackSelector := 0x1b
         flags := 0x202
@@ -173,14 +177,14 @@ private def returnWitnessRequest : Interrupt.UserReturnRequest :=
     purpose := .initialDispatch
     frameSubject := 1
     frameAddressSpace := 1
-    frameCr3 := 0x1000
+    frameCr3 := 0xa000
     expectedSubject := 1
     expectedAddressSpace := 1
-    expectedCr3 := 0x1000
+    expectedCr3 := 0xa000
     executionMode := .running
     lifecycle := returnWitnessLifecycle
-    codeRegion := ⟨0x400000, 0x401000⟩
-    stackRegion := ⟨0x500000, 0x501000⟩
+    codeRegion := ⟨0x64000, 0x65000⟩
+    stackRegion := ⟨0x65000, 0x66000⟩
     flags :=
       { interruptEnable := true
         direction := false
@@ -190,6 +194,7 @@ private def returnWitnessRequest : Interrupt.UserReturnRequest :=
         ioPrivilegeLevel := 0
         reservedAllowed := true } }
 
+set_option maxRecDepth 100000 in
 /-- The authority-selection transition reaches a well-formed armed state whose
 complete return gate accepts the matching live frame. -/
 theorem user_return_authority_reachable_witness :
@@ -242,14 +247,23 @@ private def returnWitnessSyscallRequest : Interrupt.UserReturnRequest :=
     hardware := returnWitnessSyscallFrame
     purpose := .syscallResume }
 
+private def returnWitnessSyscallContext : Syscall.TrustedContext :=
+  { caller := 1, activeAddressSpace := 1 }
+
+private def returnWitnessSyscallCall : Syscall.UntrustedCall :=
+  { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 }
+
+set_option maxRecDepth 100000 in
 /-- Concrete typed composite trace: syscall entry clears old authority, the
-entry path reselects from the live context, and the following return is accepted
-without changing the composite state. -/
+syscall body installs its final lifecycle/context and reselects, and the
+following return is accepted without changing the composite state. -/
 theorem user_return_composite_entry_witness :
     let entered := (FailStop.gate returnWitnessComposite
       (.interrupt returnWitnessSyscallFrame)).state
-    entered.execution.returnAuthorityArmed = true ∧
-      (FailStop.gate entered (.userReturn returnWitnessSyscallRequest)).state = entered := by
+    let called := (FailStop.gate entered
+      (.syscall returnWitnessSyscallContext returnWitnessSyscallCall)).state
+    called.execution.returnAuthorityArmed = true ∧
+      (FailStop.gate called (.userReturn returnWitnessSyscallRequest)).state = called := by
   dsimp only
   constructor
   · native_decide

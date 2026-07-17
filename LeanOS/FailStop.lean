@@ -1,4 +1,5 @@
 import LeanOS.Interrupt
+import LeanOS.BootPageTablePlan
 import LeanOS.IPCSyscall
 import LeanOS.Preemption
 
@@ -53,6 +54,8 @@ structure State where
   /-- Kernel-owned projection of the installed page-table plan.  The return
   selector reads this view; an outgoing proposal cannot supply it. -/
   returnAddressSpace : Interrupt.AddressSpaceId → Option ReturnAddressSpace := fun _ => none
+  /-- Proof-carrying page-table plan installed for the live boot image. -/
+  returnPlan : Option BootPageTablePlan.Plan := none
   /-- Kernel-selected purpose and address-space policy for the next return. -/
   returnAuthority : Interrupt.TrustedReturnAuthority := Interrupt.defaultReturnAuthority
   /-- True only after `selectReturnAuthority` has bound the authority record to
@@ -64,10 +67,35 @@ structure State where
 def ActiveEntry.WellFormed (entry : ActiveEntry) : Prop :=
   entry.vector = entry.frame.vector ∧ entry.origin = entry.frame.savedPrivilege
 
+def ReturnAddressSpace.planBound (view : ReturnAddressSpace)
+    (addressSpace : Interrupt.AddressSpaceId) (plan : BootPageTablePlan.Plan) : Bool :=
+  let selected :=
+    if view.subject = 1 && addressSpace = 1 then
+      some (BootPageTablePlan.Space.subjectA, BootPageTablePlan.Owner.subjectA)
+    else if view.subject = 2 && addressSpace = 2 then
+      some (BootPageTablePlan.Space.subjectB, BootPageTablePlan.Owner.subjectB)
+    else none
+  match selected with
+  | none => false
+  | some (space, owner) =>
+      let codeFirst := view.codeRegion.first.toNat
+      let codeLast := view.codeRegion.pastLast.toNat
+      let stackFirst := view.stackRegion.first.toNat
+      let stackLast := view.stackRegion.pastLast.toNat
+      view.expectedCr3 = UInt64.ofNat (plan.rootFrame space * X86PageTable.pageBytes) &&
+        codeFirst % X86PageTable.pageBytes = 0 &&
+        codeLast = codeFirst + X86PageTable.pageBytes &&
+        stackFirst % X86PageTable.pageBytes = 0 &&
+        stackLast = stackFirst + X86PageTable.pageBytes &&
+        plan.hasPolicyLeaf space (codeFirst / X86PageTable.pageBytes) .userText owner &&
+        plan.hasPolicyLeaf space (stackFirst / X86PageTable.pageBytes) .userStack owner
+
 /-- The armed record is an exact projection of the live subject's installed
 address-space view, rather than a free-standing collection of numbers. -/
 def ReturnAuthorityBound (state : State) : Prop :=
-  ∃ view, state.returnAddressSpace state.core.context.activeAddressSpace = some view ∧
+  ∃ view plan, state.returnAddressSpace state.core.context.activeAddressSpace = some view ∧
+    state.returnPlan = some plan ∧
+    view.planBound state.core.context.activeAddressSpace plan = true ∧
     view.subject = state.core.context.currentSubject ∧
     state.core.lifecycle.current = some view.subject ∧
     state.core.lifecycle.capabilities.subjects view.subject = true ∧
@@ -176,15 +204,14 @@ def dispatch (state : State) (trap : Interrupt.Trap) : EntryOutcome :=
 selection is armed only when scheduler identity, liveness, and ownership agree;
 the proposed hardware frame is not an input to this transition. -/
 def selectReturnAuthority (state : State) (purpose : Interrupt.ReturnPurpose) : State :=
-  match state.returnAddressSpace state.core.context.activeAddressSpace with
-  | none => { state with returnAuthorityArmed := false }
-  | some view =>
+  match state.returnPlan, state.returnAddressSpace state.core.context.activeAddressSpace with
+  | some plan, some view =>
       if view.subject = state.core.context.currentSubject ∧
           state.core.lifecycle.current = some view.subject ∧
           state.core.lifecycle.capabilities.subjects view.subject = true ∧
           state.core.lifecycle.runnable view.subject = true ∧
           state.core.lifecycle.addressOwner state.core.context.activeAddressSpace =
-            some view.subject then
+            some view.subject ∧ view.planBound state.core.context.activeAddressSpace plan = true then
         { state with
           returnAuthority :=
             { purpose
@@ -193,33 +220,36 @@ def selectReturnAuthority (state : State) (purpose : Interrupt.ReturnPurpose) : 
               stackRegion := view.stackRegion }
           returnAuthorityArmed := true }
       else { state with returnAuthorityArmed := false }
+  | _, _ => { state with returnAuthorityArmed := false }
 
 @[simp] theorem selectReturnAuthority_core state purpose :
     (selectReturnAuthority state purpose).core = state.core := by
   unfold selectReturnAuthority
   split
-  · rfl
   · split <;> rfl
+  · rfl
 
 theorem selectReturnAuthority_wellFormed state purpose
     (hstate : WellFormed state) : WellFormed (selectReturnAuthority state purpose) := by
   rcases hstate with ⟨hcore, _hbound, hmode⟩
   unfold selectReturnAuthority
   split
-  · simp_all [WellFormed, ReturnAuthorityBound]
-  · rename_i view hview
+  · rename_i plan view hplan hview
     by_cases hchecks : view.subject = state.core.context.currentSubject ∧
         state.core.lifecycle.current = some view.subject ∧
         state.core.lifecycle.capabilities.subjects view.subject = true ∧
         state.core.lifecycle.runnable view.subject = true ∧
-        state.core.lifecycle.addressOwner state.core.context.activeAddressSpace = some view.subject
+        state.core.lifecycle.addressOwner state.core.context.activeAddressSpace = some view.subject ∧
+        view.planBound state.core.context.activeAddressSpace plan = true
     · rw [if_pos hchecks]
       refine ⟨hcore, ?_, hmode⟩
       intro _
-      exact ⟨view, hview, hchecks.1, hchecks.2.1, hchecks.2.2.1,
-        hchecks.2.2.2.1, hchecks.2.2.2.2, rfl, rfl, rfl⟩
+      exact ⟨view, plan, hview, hplan, hchecks.2.2.2.2.2, hchecks.1,
+        hchecks.2.1, hchecks.2.2.1, hchecks.2.2.2.1,
+        hchecks.2.2.2.2.1, rfl, rfl, rfl⟩
     · rw [if_neg hchecks]
       exact ⟨hcore, by simp, hmode⟩
+  · exact ⟨hcore, by simp, hmode⟩
 
 inductive UserReturnAction where
   | accepted (attested : Interrupt.UserReturnRequest)
@@ -549,8 +579,10 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
       { state with execution := (completeUserReturn state.execution request).state }
   | .syscall context call =>
       let virtualMemory := (Syscall.dispatch state.virtualMemory context call).state
-      installLifecycle { state with virtualMemory }
+      let installed := installLifecycle { state with virtualMemory }
         (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
+      { installed with
+        execution := selectReturnAuthority installed.execution .syscallResume }
   | .preempt frame =>
       let entry := dispatchHardware state.execution frame
       let entered := installLifecycle { state with execution := entry.state }

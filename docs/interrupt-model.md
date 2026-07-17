@@ -27,16 +27,19 @@ exact request identity and every validator condition: purpose and mode,
 canonicality and region containment, complete flags, subject liveness,
 runnability and selection, address ownership, and CR3 binding. The composite
 `FailStop.selectReturnAuthority` transition first binds the live scheduler
-subject and owned address space to the kernel's installed page-table view. It
-arms an exact purpose, CR3, executable-region, and stack-region record only when
-those views agree. `FailStop.completeUserReturn` refuses an unarmed record,
+subject and owned address space to a proof-carrying `BootPageTablePlan.Plan`. It
+arms an exact purpose, CR3 root, executable page, and stack page only when the
+root and exact user-text/user-stack leaves occur in that compiled plan.
+`FailStop.completeUserReturn` refuses an unarmed record,
 normalizes scheduler identity from execution state, and takes the remaining
 policy from the bound record. It converts rejection into a
 typed absorbing halt record without changing lifecycle, authority, scheduling,
 IPC, or resource views.
 Initial dispatch selects through the typed `selectUserReturn` gate operation;
 syscall and scheduler-return paths reselect automatically after entry and the
-final context update. Lifecycle, scheduler, capability, and virtual-memory
+final context update. The syscall body performs its final reselection only
+after publishing its resulting virtual-memory and lifecycle state. Lifecycle,
+scheduler, capability, and virtual-memory
 installation clears any earlier selection before that reselection.
 The shared machine epilogue clears the kernel-managed saved DF and AC bits
 before validation; the other forbidden flag fields remain reject-only.
