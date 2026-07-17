@@ -222,6 +222,22 @@ def offerHandles (state : State) (caller : SubjectId)
       | .error _ => reject state .staleSource
       | .ok _ => offer state caller endpoint.slot source.slot payload rights
 
+/-- Userspace capability-transfer boundary. Both opaque words are decoded and
+resolved in the trusted caller's capability space before the internal slot
+transition can observe either authority. -/
+def offerWords (state : State) (caller : SubjectId)
+    (endpointWord sourceWord : UInt64) (sourceKind : Capability.ObjectKind)
+    (payload : EndpointIPC.Payload) (rights : Capability.Rights) : Outcome OfferError :=
+  match CapabilityHandle.resolveCurrent state.capabilities { caller } endpointWord .endpoint with
+  | .error (.denied .invalidSubject) => reject state .invalidSubject
+  | .error (.denied .kindMismatch) => reject state .wrongEndpointKind
+  | .error _ => reject state .staleEndpoint
+  | .ok endpoint =>
+      match CapabilityHandle.resolveCurrent state.capabilities { caller } sourceWord sourceKind with
+      | .error (.denied .invalidSubject) => reject state .invalidSubject
+      | .error _ => reject state .staleSource
+      | .ok source => offer state caller endpoint.handle.slot source.handle.slot payload rights
+
 /-- Atomically consume the envelope and install its sealed descendant in the
 trusted receiver's chosen empty slot. -/
 def accept (state : State) (caller : SubjectId) (endpointSlot destinationSlot : SlotId) :
@@ -263,6 +279,16 @@ def acceptHandle (state : State) (caller : SubjectId)
   | .error .kindMismatch => rejectAccept state .wrongEndpointKind
   | .error _ => rejectAccept state .staleEndpoint
   | .ok _ => accept state caller endpoint.slot destinationSlot
+
+/-- Userspace receipt boundary. The destination is only an empty bounded output
+slot; the authority-consuming endpoint reference must be a canonical word. -/
+def acceptWord (state : State) (caller : SubjectId) (endpointWord : UInt64)
+    (destinationSlot : SlotId) : AcceptOutcome :=
+  match CapabilityHandle.resolveCurrent state.capabilities { caller } endpointWord .endpoint with
+  | .error (.denied .invalidSubject) => rejectAccept state .invalidSubject
+  | .error (.denied .kindMismatch) => rejectAccept state .wrongEndpointKind
+  | .error _ => rejectAccept state .staleEndpoint
+  | .ok endpoint => accept state caller endpoint.handle.slot destinationSlot
 
 theorem offerHandles_stale_source_rejected state caller endpoint source sourceKind
     payload rights endpointCap
@@ -466,6 +492,15 @@ def retireObjectHandle (state : State) (subject : SubjectId)
   | .error _ => reject state .staleSlot
   | .ok _ => retireObject state subject handle.slot
 
+/-- Userspace memory-retirement boundary using the shared canonical decoder. -/
+def retireObjectWord (state : State) (subject : SubjectId) (word : UInt64) :
+    Outcome MemoryLifecycle.ReleaseError :=
+  match CapabilityHandle.resolveCurrent state.capabilities { caller := subject } word .memory with
+  | .error (.denied .invalidSubject) => reject state .invalidSubject
+  | .error (.denied .kindMismatch) => reject state .kindMismatch
+  | .error _ => reject state .staleSlot
+  | .ok resolution => retireObject state subject resolution.handle.slot
+
 /-- Cancel the attachment occupying one endpoint, independent of the kind or
 object carried by that attachment. -/
 def cancelEndpointOffer (state : State) (endpoint : ObjectId) : State :=
@@ -507,6 +542,16 @@ def destroyEndpointHandle (state : State) (subject : SubjectId)
   | .error .kindMismatch => reject state .wrongKind
   | .error _ => reject state .staleHandle
   | .ok _ => destroyEndpoint state subject handle.slot
+
+/-- Userspace endpoint-destruction boundary using the same canonical word
+decoder as map, IPC send/receive, and capability transfer. -/
+def destroyEndpointWord (state : State) (subject : SubjectId) (word : UInt64) :
+    Outcome EndpointIPC.DestroyError :=
+  match CapabilityHandle.resolveCurrent state.capabilities { caller := subject } word .endpoint with
+  | .error (.denied .invalidSubject) => reject state .invalidSubject
+  | .error (.denied .kindMismatch) => reject state .wrongKind
+  | .error _ => reject state .staleHandle
+  | .ok resolution => destroyEndpoint state subject resolution.handle.slot
 
 /-- A transitive revocation atomically clears installed descendants in the
 authoritative store and sealed descendants in mailboxes. -/
@@ -972,6 +1017,18 @@ private def replacementEndpointState : State :=
     capabilities := Capability.install
       (Capability.clear destroyTraceState.capabilities 0 0) 0 0 replacementEndpoint }
 
+private def usableReplacementCaps : Capability.State :=
+  { (Capability.install destroyTraceRoot.capabilities 0 2 replacementSource) with
+    objects := fun object => if object = 8 then true else
+      destroyTraceRoot.capabilities.objects object
+    kinds := fun object =>
+      if object = 8 then some .memory else destroyTraceRoot.capabilities.kinds object }
+
+private def usableReplacementState : State :=
+  { toEndpointState := { destroyTraceRoot with capabilities := usableReplacementCaps }
+    pending := fun _ => none
+    trace := ⟨fun _ => []⟩ }
+
 private def dataOnlyState : State :=
   { toEndpointState := destroyTraceRoot
     pending := fun _ => none
@@ -989,6 +1046,40 @@ example :
         .delivered { endpoint := 10, sender := 0, payload := payload } ∧
       (accept sent.state 0 0 1).state.pending 10 = none ∧
       (accept sent.state 0 0 1).state.capabilities.slots 0 1 = none := by
+  native_decide
+
+/-- The public transfer boundary accepts only the canonical words for the
+current endpoint and source generations. -/
+example :
+    let endpointWord := UInt64.ofNat 65536
+    let sourceWord := UInt64.ofNat 2883586
+    CapabilityHandle.encode (CapabilityHandle.issue 0 destroyTraceEndpointCap) =
+        some endpointWord ∧
+      CapabilityHandle.encode (CapabilityHandle.issue 2 replacementSource) =
+        some sourceWord ∧
+      (offerWords usableReplacementState 0 endpointWord sourceWord .memory
+        { word0 := 71, word1 := 98 } { read := true }).result = .accepted := by
+  native_decide
+
+/-- Replaying the old endpoint word after same-slot replacement is rejected
+without changing transfer, mailbox, or capability state. -/
+example :
+    let oldEndpointWord := UInt64.ofNat 65536
+    let outcome := destroyEndpointWord replacementEndpointState 0 oldEndpointWord
+    outcome.result = .rejected .staleHandle ∧
+      outcome.state.pending 10 = replacementEndpointState.pending 10 ∧
+      outcome.state.mailbox 10 = replacementEndpointState.mailbox 10 ∧
+      outcome.state.capabilities.slots 0 0 =
+        replacementEndpointState.capabilities.slots 0 0 := by
+  native_decide
+
+/-- A noncanonical all-reserved word cannot reach endpoint destruction. -/
+example :
+    let outcome := destroyEndpointWord destroyTraceState 0 (UInt64.ofNat (2 ^ 64 - 1))
+    outcome.result = .rejected .staleHandle ∧
+      outcome.state.pending 10 = destroyTraceState.pending 10 ∧
+      outcome.state.mailbox 10 = destroyTraceState.mailbox 10 ∧
+      outcome.state.capabilities.slots 0 0 = destroyTraceState.capabilities.slots 0 0 := by
   native_decide
 
 /-- A concrete clear-plus-same-slot replacement cannot redirect an offer made

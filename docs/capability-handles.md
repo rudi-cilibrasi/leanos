@@ -24,11 +24,15 @@ replaced generations, retired objects, wrong kinds, and invalid subjects fail
 with typed results. Resolution is read-only, so every denial preserves the
 complete capability state.
 
-Holder-facing capability copy/revoke and endpoint send/receive/destroy paths
-use generation-checked wrappers before entering their internal raw-slot state
-transitions. Blocking IPC exposes the same checked boundaries. Raw slot lookup
-is reserved for internal cleanup, invariant proofs, and compatibility inside
-the model; it is not a holder authority boundary.
+Holder-facing capability copy/revoke, endpoint send/receive/destroy, blocking
+IPC, and sealed capability-transfer paths use generation-checked wrappers
+before entering their internal raw-slot state transitions. Transfer offer
+decodes both the endpoint and source words in the trusted sender's capability
+space; receipt decodes the endpoint word while treating the destination as an
+empty bounded output slot. Memory retirement and endpoint destruction use the
+same `resolveCurrent` boundary. Raw slot lookup is reserved for internal
+cleanup, invariant proofs, and compatibility inside the model; it is not a
+holder authority boundary.
 
 The capability graph still records identities as natural numbers internally.
 Only identities in the finite canonical range can be issued as userspace
@@ -52,6 +56,6 @@ stale handle.
 These are model-level results. The bit layout is the issue's reviewed model
 contract, not a promise of permanent ABI stability. This checkpoint does not
 establish concurrent lookup/revocation safety, generated-code refinement, or
-QEMU behavior. Migrating every boot-reachable map, IPC, blocking IPC,
-copy/revoke, and transfer path to `resolveCurrent` remains required before the
+QEMU behavior. Boot-reachable capability copy/revoke and transfer syscall
+adapters still need to expose only these word-level boundaries before the
 syscall-routing issue is complete.
