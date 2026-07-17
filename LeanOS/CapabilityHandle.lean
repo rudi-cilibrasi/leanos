@@ -194,6 +194,34 @@ def copyWord (state : State) (actor : SubjectId) (sourceWord : UInt64)
   | .ok source =>
       Capability.copy state actor source.handle.slot destination destinationSlot requested
 
+/-- An accepted userspace copy records successful full-word resolution of the
+exact source authority before delegation. -/
+theorem copyWord_accepted_resolves state actor sourceWord expected destination
+    destinationSlot requested
+    (haccepted : (copyWord state actor sourceWord expected destination destinationSlot
+      requested).result = .accepted) :
+    ∃ source,
+      resolveCurrent state { caller := actor } sourceWord expected = .ok source ∧
+      (Capability.copy state actor source.handle.slot destination destinationSlot
+        requested).result = .accepted := by
+  cases hsource : resolveCurrent state { caller := actor } sourceWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [copyWord, hsource, reject] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [copyWord, hsource, reject] at haccepted
+  | ok source =>
+      exact ⟨source, rfl, by simpa [copyWord, hsource] using haccepted⟩
+
+/-- A malformed or denied copy word is state preserving. -/
+theorem copyWord_resolution_rejected_unchanged state actor sourceWord expected
+    destination destinationSlot requested reason
+    (hresolve : resolveCurrent state { caller := actor } sourceWord expected = .error reason) :
+    (copyWord state actor sourceWord expected destination destinationSlot requested).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [copyWord, hresolve, reject]
+  | denied resolveReason => cases resolveReason <;> simp [copyWord, hresolve, reject]
+
 /-- Holder-facing direct revocation checks both the authority and selected
 victim generations before invoking the atomic raw-slot transition. -/
 def revoke (state : State) (actor : SubjectId) (authority : Handle)
