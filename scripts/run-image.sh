@@ -22,6 +22,9 @@ trap 'rm -f "$expected" "$without_allocation"' EXIT
 corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
 [[ -f "$corpus" ]] || { echo "error: oracle corpus '$corpus' not found" >&2; exit 1; }
 echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap' > "$expected"
+printf '%s\n' \
+  'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' \
+  'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 printf '%s\n' \
   'LEANOS/6 CONTROL cr0.wp=1 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready' \
@@ -35,13 +38,14 @@ printf '%s\n' \
   'LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0' \
   'LEANOS/5 TIMER vector=32 source=pit mode=one-shot origin=cpl3 accepted=1' \
   'LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin' \
+  'LEANOS/8 PAGING root=B selected=1 result=PASS' \
   'LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=restored ticks-masked=1' \
   'LEANOS/5 SYSCALL subject=2 caller=2 address-space=2 authorized=1 canaries=preserved' \
   'LEANOS/5 FINAL status=PASS ticks=1' >> "$expected"
 if [[ $status -eq 124 || $status -eq 137 ]]; then echo "failure_class=timeout: QEMU exceeded ${limit}s wall limit" >&2; exit 1; fi
 if [[ $status -eq 35 ]]; then echo "failure_class=guest-error: guest emitted failure signal" >&2; exit 1; fi
 if [[ $status -ne 33 ]]; then echo "failure_class=qemu-error: QEMU exit status $status (expected 33)" >&2; exit 1; fi
-allocation_trace="$(sed -n '2,7p' "$log")"
+allocation_trace="$(awk '/^LEANOS\/7 /' "$log")"
 mapfile -t allocation_lines <<<"$allocation_trace"
 if [[ ${#allocation_lines[@]} -ne 6 ]] ||
    [[ ! "${allocation_lines[0]}" =~ ^LEANOS/7\ HANDOFF\ magic=valid\ info-bytes=[1-9][0-9]*\ mmap-entries=[1-9][0-9]*\ result=PASS$ ]] ||
@@ -53,6 +57,24 @@ if [[ ${#allocation_lines[@]} -ne 6 ]] ||
   echo "failure_class=boot-allocation-trace: exact ordered allocation protocol not observed" >&2
   exit 1
 fi
-sed '2,7d' "$log" > "$without_allocation"
+mapfile -t paging_fixtures < <(grep '^LEANOS/8 PAGING fixture=' "$log")
+paging_specs=(
+  'flip-present B pt' 'flip-user B pt' 'flip-writable B pt'
+  'flip-nx B pt' 'wrong-frame B pt' 'ancestor-pointer B pml4'
+  'ancestor-flags B pdpt' 'swapped-user-leaves B pt'
+  'extra-mapping B pt' 'omitted-mapping B pt' 'wrong-cr3 A cr3'
+)
+if [[ ${#paging_fixtures[@]} -ne ${#paging_specs[@]} ]]; then
+  echo "failure_class=page-table-fixtures: complete live-mutation matrix not observed" >&2
+  exit 1
+fi
+for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
+  read -r name root_name level <<< "${paging_specs[i]}"
+  if [[ ! "${paging_fixtures[i]}" =~ ^LEANOS/8\ PAGING\ fixture=${name}\ root=${root_name}\ level=${level}\ page=[0-9]+\ expected=[0-9]+\ actual=[0-9]+\ result=REJECTED$ ]]; then
+    echo "failure_class=page-table-fixtures: invalid or reordered fixture '${paging_fixtures[i]}'" >&2
+    exit 1
+  fi
+done
+sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
 echo "LeanOS boot smoke test passed; guest success and complete protocol observed; serial log: $log"

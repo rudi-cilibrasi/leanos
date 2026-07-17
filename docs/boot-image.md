@@ -137,3 +137,30 @@ another primitive, foreign declaration, assembly file, device, or runtime
 service must update this inventory. The generated code and machine execution
 are integration-tested; neither compilation nor QEMU success proves refinement
 to the Lean model or verifies the boot chain.
+
+## Linked page-table plan boundary
+
+`scripts/build-image.sh` now performs a size-stable two-pass link for each boot
+variant. The prelink uses fixed-size placeholder arrays solely to determine the
+final linker symbol addresses. `scripts/generate-boot-page-plan.sh` passes those
+addresses to the host-only `leanos-boot-plan` executable, which constructs all
+8,192 candidate leaves, both CR3 roots, all ancestor frames, and the validated
+boot reservation as one `BootPageTablePlan.Input`. It emits the canonical PTE
+arrays only when `BootPageTablePlan.compile` accepts that input. The final link
+is rejected if regenerating from its symbols changes the emitted arrays.
+
+The early assembly still constructs paging before generated Lean code can run.
+After paging is active, the guest walker decodes both complete live hierarchies
+and compares every ancestor slot and leaf with the generated arrays. Subject A
+and B pages are absent from the other subject's root, both selected CR3 values
+are checked, and controlled mutations of live inactive tables must be rejected.
+CI preserves the prelink map, accepted header, regenerated final header, final
+map/ELF, and serial records so the boundary can be reproduced and inspected.
+
+This is a proved property of accepted plan values plus tested correspondence at
+the build and QEMU boundaries. Symbol extraction, the size-stability argument,
+header transport, compiler/linker behavior, assembly stores, guest pointer
+chasing, CR3 hardware semantics, and QEMU remain explicitly trusted. The
+guard-mapped double-fault negative is a selected test-policy deviation: its one
+guard leaf is expected live by the variant checker but is not part of the normal
+accepted boot plan.

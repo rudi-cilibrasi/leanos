@@ -21,7 +21,8 @@ for symbol in __boot_image_start __boot_image_end __kernel_text_start __kernel_t
   __user_a_text_end __user_a_stack_start __user_a_stack_end \
   __user_b_text_start __user_b_text_end __user_b_stack_start \
   __user_b_stack_end entry_stack page_table_a page_table_b \
-  page_map_level_4_a page_map_level_4_b; do
+  page_map_level_4_a page_directory_pointer_a page_directory_a \
+  page_map_level_4_b page_directory_pointer_b page_directory_b; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: image policy symbol missing: $symbol" >&2; exit 1;
   }
@@ -113,8 +114,8 @@ grep -Fq 'or $((1 << 31) | (1 << 16)), %eax' boot/boot.S
 grep -Fq 'bts $20, %rax' boot/boot.S
 grep -Fq 'bts $21, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]
-[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 8 ]]
-[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 9 ]]
+[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 9 ]]
+[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 10 ]]
 for symbol in smap_copy_from_cld smap_copy_from_stac smap_copy_from_clac \
   smap_copy_to_cld smap_copy_to_stac \
   smap_copy_to_clac smap_omit_cleanup_probe_stac smap_force_clac \
@@ -145,6 +146,11 @@ grep -Fq 'andl $~2, page_table_a(%eax)' boot/boot.S
 grep -Fq 'andl $~2, page_table_b(%eax)' boot/boot.S
 grep -Fq 'movl $0x80000000, 4(%edi)' boot/boot.S
 grep -Fq 'or $((1 << 8) | (1 << 11)), %eax' boot/boot.S
+grep -Fq 'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' boot/kernel.c
+grep -Fq 'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' boot/kernel.c
+grep -Fq 'LEANOS/8 PAGING root=B selected=1 result=PASS' boot/kernel.c
+grep -Fq 'check_live_page_table_mutations();' boot/kernel.c
+grep -Fq 'fixture=wrong-cr3 root=A level=cr3' boot/kernel.c
 
 # Each address space grants U/S only to its own text and stack symbols.
 ! grep -Fq '__user_b_text_start' <(sed -n '/__user_a_text_start/,/__user_b_text_start/{p}' boot/boot.S | head -n -1)
