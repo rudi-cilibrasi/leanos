@@ -59,6 +59,12 @@ replacement. Direct and transitive revocation vectors cover accepted current
 words, stale target replay, and reserved authority fields. A negative
 regression also demonstrates that the former raw-slot lookup accepts the
 replacement while the generation-aware resolver rejects the stale handle.
+The repository-owned capability-boundary check additionally inspects the
+boot-reachable map and nonblocking IPC dispatcher definitions. It requires
+opaque `UInt64` handle words, `resolveCurrent`, and post-resolution slot use,
+and rejects direct `Capability.lookup` or `handleWord.toNat` fallbacks in those
+dispatchers. This is a narrow source-policy regression, not a refinement proof
+for the generated binary.
 
 These are model-level results. The bit layout is the issue's reviewed model
 contract, not a promise of permanent ABI stability. This checkpoint does not
