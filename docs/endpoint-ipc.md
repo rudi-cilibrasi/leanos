@@ -45,6 +45,17 @@ Endpoint authority exposed to a holder is represented by the shared
 [generation-bound capability handle](capability-handles.md), not an
 endpoint-specific token. Clearing, revoking, or destroying an endpoint
 capability makes that handle stale even when its bounded slot is later reused.
+The nonblocking `IPCSyscall` send and receive calls accept the canonical opaque
+`UInt64` encoding, decode it without truncation, and resolve it only in the
+capability space selected by trusted caller context. Malformed reserved fields,
+wrong generations, wrong kinds, retired endpoints, and another subject's
+equal-looking handle are typed handle rejections that preserve the complete
+adapter state. Only a successful resolution passes the decoded internal slot to
+the endpoint transition. Machine-checked accepted-send and delivered-receive
+theorems expose the exact decoded handle and live capability identity selected
+by that resolution; the existing authority theorems separately establish the
+required send or receive right.
+
 The current IPC model has no implicit capability transfer; a future sealed
 transfer may issue a handle only after atomic receive-side installation.
 
