@@ -25,8 +25,10 @@ generated C, and replayed in the guest before this machine path.
 
 Lean proves that the four accepted scalar encodings agree with the concrete
 composite blocking-IPC and scheduler transitions. It proves atomic reservation,
-unique ready membership, trusted provenance, and exact delivery for the modeled
-scenario. QEMU tests one corresponding machine execution; it does not prove
+the receiver is non-runnable and absent from the ready queue after blocking,
+the sender is selected, wakeup makes the receiver runnable with exactly one
+ready entry and one reserved completion, trusted provenance, and exact delivery
+for the modeled scenario. QEMU tests one corresponding machine execution; it does not prove
 assembly, generated C, compiler, linker, page tables, CR3/TLB behavior, or x86
 execution refines the Lean model.
 

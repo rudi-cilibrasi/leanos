@@ -766,13 +766,21 @@ theorem blockingIpcDemo_agrees_with_composite_scenario :
     blockingIpcDemo 0 1 2 bootPayload.word0 bootPayload.word1 =
       encodeBootEvent 1 1 1 1 0 ∧
     (receiveOrBlock bootInitial 2 0).result = .blocked ∧
+    bootBlocked.scheduler.lifecycle.runnable 2 = false ∧
+    bootBlocked.scheduler.lifecycle.current = some 1 ∧
+    2 ∉ bootBlocked.scheduler.ready ∧
     blockingIpcDemo 1 2 1 bootPayload.word0 bootPayload.word1 =
       encodeBootEvent 2 2 1 1 0 ∧
     (send bootBlocked 1 0 bootPayload).result = .accepted ∧
+    bootAwakened.scheduler.lifecycle.runnable 2 = true ∧
+    bootAwakened.scheduler.ready.count 2 = 1 ∧
+    bootAwakened.completion 2 = some (.delivered
+      { endpoint := 10, sender := 1, payload := bootPayload }) ∧
     blockingIpcDemo 2 3 1 bootPayload.word0 bootPayload.word1 =
       encodeBootEvent 3 3 2 2 0 ∧
     (Scheduler.yield bootAwakened.scheduler).result = .accepted (some
       { currentSubject := 2, activeAddressSpace := 2 }) ∧
+    bootDispatched.scheduler.lifecycle.current = some 2 ∧
     blockingIpcDemo 3 4 2 bootPayload.word0 bootPayload.word1 =
       encodeBootEvent 4 4 2 2 1 ∧
     (receiveOrBlock bootDispatched 2 0).result = .delivered
