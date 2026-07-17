@@ -34,6 +34,11 @@ same `resolveCurrent` boundary. Raw slot lookup is reserved for internal
 cleanup, invariant proofs, and compatibility inside the model; it is not a
 holder authority boundary.
 
+Blocking IPC's direct-revocation adapter accepts two canonical words and
+performs waiter cancellation only after both current endpoint generations
+resolve and the shared atomic revocation accepts. It does not expose either raw
+slot through its userspace-facing boundary.
+
 The capability graph still records identities as natural numbers internally.
 Only identities in the finite canonical range can be issued as userspace
 words. The codec therefore exposes exhaustion rather than silently reducing a

@@ -343,6 +343,36 @@ def revokeHandle (state : State) (actor : SubjectId) (authority : CapabilityHand
   if outcome.result = .accepted then (cancelSubject next victim, outcome.result)
   else (state, outcome.result)
 
+/-- Userspace direct revocation for blocking IPC. Both the revocation authority
+and victim endpoint are canonical generation-bound words; waiter cancellation
+runs only after the shared atomic revocation accepts. -/
+def revokeWords (state : State) (actor : SubjectId) (authorityWord : UInt64)
+    (victim : SubjectId) (targetWord : UInt64) : State × Capability.Result :=
+  let outcome := CapabilityHandle.revokeWords state.scheduler.lifecycle.capabilities
+    actor authorityWord .endpoint victim targetWord
+  let next := { state with scheduler := { state.scheduler with
+    lifecycle := { state.scheduler.lifecycle with capabilities := outcome.state } } }
+  if outcome.result = .accepted then (cancelSubject next victim, outcome.result)
+  else (state, outcome.result)
+
+/-- An accepted blocking-IPC revocation reached its internal slot transition
+only after resolving both exact endpoint generations in their trusted subjects. -/
+theorem revokeWords_accepted_resolves state actor authorityWord victim targetWord
+    (haccepted : (revokeWords state actor authorityWord victim targetWord).2 = .accepted) :
+    ∃ authority target,
+      CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
+          { caller := actor } authorityWord .endpoint = .ok authority ∧
+      CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
+          { caller := victim } targetWord .endpoint = .ok target ∧
+      (Capability.revoke state.scheduler.lifecycle.capabilities actor authority.handle.slot
+        victim target.handle.slot).result = .accepted := by
+  simp only [revokeWords] at haccepted
+  split at haccepted
+  next hresult =>
+    exact CapabilityHandle.revokeWords_accepted_resolves
+      state.scheduler.lifecycle.capabilities actor authorityWord .endpoint victim targetWord hresult
+  next hresult => exact False.elim (hresult haccepted)
+
 /-- Transitive revocation performs the same atomic cleanup for every waiter
 whose receive authority disappeared from the resulting capability store. -/
 noncomputable def revokeSubtree (state : State) (actor : SubjectId) (authoritySlot : SlotId)

@@ -33,11 +33,14 @@ reject_pattern() {
 syscall_dispatch="$(mktemp)"
 ipc_dispatch="$(mktemp)"
 blocking_dispatch="$(mktemp)"
-trap 'rm -f "$syscall_dispatch" "$ipc_dispatch" "$blocking_dispatch"' EXIT
+blocking_revoke="$(mktemp)"
+trap 'rm -f "$syscall_dispatch" "$ipc_dispatch" "$blocking_dispatch" "$blocking_revoke"' EXIT
 
 sed -n '/^def dispatchDecoded /,/^def dispatch /p' "$syscall_source" >"$syscall_dispatch"
 sed -n '/^def dispatch /,/^theorem dispatch_preserves/p' "$ipc_source" >"$ipc_dispatch"
 sed -n '/^def receiveOrBlockWord /,/^def cancelSubject /p' "$blocking_source" >"$blocking_dispatch"
+sed -n '/^def revokeWords /,/^\/-- An accepted blocking-IPC revocation/p' \
+  "$blocking_source" >"$blocking_revoke"
 
 require_literal "$syscall_source" \
   '| some permissions => .ok (.map call.arg0 call.arg1.toNat permissions)' \
@@ -72,6 +75,10 @@ require_literal "$blocking_dispatch" 'resolution.handle.slot' \
   'post-resolution blocking IPC slot dispatch'
 reject_pattern "$blocking_dispatch" 'Capability\.lookup|handleWord\.toNat' \
   'a raw-slot capability lookup in boot-reachable blocking IPC dispatch'
+require_literal "$blocking_revoke" 'CapabilityHandle.revokeWords' \
+  'generation-checked blocking IPC revocation'
+reject_pattern "$blocking_revoke" 'Capability\.revoke[[:space:]]' \
+  'a raw-slot capability revoke in the blocking IPC word boundary'
 
 if (( failure != 0 )); then
   exit 1
