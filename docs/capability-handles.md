@@ -41,7 +41,10 @@ natural-number identity modulo 48 bits. Capability copy and sealed-transfer
 offer boundaries reject zero or reserved/exhausted generations before
 allocation, and copy also rejects destination slots outside the encodable
 16-bit domain. Accepted copy and offer theorems produce the corresponding
-canonical fresh handle encoding.
+canonical fresh handle encoding. Receipt boundaries likewise reject reserved
+destination slots and noncanonical sealed generations before consuming the
+mailbox; every delivered attached receipt therefore admits the exact installed
+handle encoding.
 
 The Lean theorems prove codec round-trip and canonical uniqueness for every
 encodable handle, and prove that successful current-caller resolution returns

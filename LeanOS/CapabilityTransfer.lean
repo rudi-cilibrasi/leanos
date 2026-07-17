@@ -74,7 +74,7 @@ inductive OfferError where
 
 inductive AcceptError where
   | invalidSubject | staleEndpoint | wrongEndpointKind | missingReceive | retiredEndpoint | empty
-  | outOfRange | occupiedSlot | canceled
+  | outOfRange | occupiedSlot | canceled | generationExhausted
   deriving DecidableEq, Repr
 
 inductive Result (ε : Type) where | accepted | rejected (reason : ε)
@@ -364,7 +364,16 @@ def acceptHandle (state : State) (caller : SubjectId)
   | .error .invalidSubject => rejectAccept state .invalidSubject
   | .error .kindMismatch => rejectAccept state .wrongEndpointKind
   | .error _ => rejectAccept state .staleEndpoint
-  | .ok _ => accept state caller endpoint.slot destinationSlot
+  | .ok endpointCap =>
+      match state.pending endpointCap.object with
+        | some transfer =>
+            if CapabilityHandle.slotReserved ≤ destinationSlot then
+              rejectAccept state .outOfRange
+            else if transfer.identity = 0 ∨
+                CapabilityHandle.generationReserved ≤ transfer.identity then
+              rejectAccept state .generationExhausted
+            else accept state caller endpoint.slot destinationSlot
+        | none => accept state caller endpoint.slot destinationSlot
 
 /-- Userspace receipt boundary. The destination is only an empty bounded output
 slot; the authority-consuming endpoint reference must be a canonical word. -/
@@ -374,7 +383,58 @@ def acceptWord (state : State) (caller : SubjectId) (endpointWord : UInt64)
   | .error (.denied .invalidSubject) => rejectAccept state .invalidSubject
   | .error (.denied .kindMismatch) => rejectAccept state .wrongEndpointKind
   | .error _ => rejectAccept state .staleEndpoint
-  | .ok endpoint => accept state caller endpoint.handle.slot destinationSlot
+  | .ok endpoint =>
+      match state.pending endpoint.capability.object with
+        | some transfer =>
+            if CapabilityHandle.slotReserved ≤ destinationSlot then
+              rejectAccept state .outOfRange
+            else if transfer.identity = 0 ∨
+                CapabilityHandle.generationReserved ≤ transfer.identity then
+              rejectAccept state .generationExhausted
+            else accept state caller endpoint.handle.slot destinationSlot
+        | none => accept state caller endpoint.handle.slot destinationSlot
+
+/-- Every delivered userspace receipt selected a canonical endpoint word. If
+the mailbox carried sealed authority, its destination and exact pending
+generation also admit a canonical installed-handle encoding. -/
+theorem acceptWord_delivered_boundary_encodable state caller endpointWord destinationSlot envelope
+    (hdelivered : (acceptWord state caller endpointWord destinationSlot).result =
+      .delivered envelope) :
+    ∃ endpoint,
+      CapabilityHandle.resolveCurrent state.capabilities { caller } endpointWord .endpoint =
+        .ok endpoint ∧
+      (match state.pending endpoint.capability.object with
+        | none => True
+        | some transfer => destinationSlot < CapabilityHandle.slotReserved ∧
+            ∃ word, CapabilityHandle.encode
+              { slot := destinationSlot, identity := transfer.identity } = some word) := by
+  cases hendpoint : CapabilityHandle.resolveCurrent state.capabilities
+      { caller } endpointWord .endpoint with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [acceptWord, hendpoint, rejectAccept] at hdelivered
+      | denied resolveReason =>
+          cases resolveReason <;> simp [acceptWord, hendpoint, rejectAccept] at hdelivered
+  | ok endpoint =>
+      refine ⟨endpoint, rfl, ?_⟩
+      cases hpending : state.pending endpoint.capability.object with
+      | none => simp [hpending]
+      | some transfer =>
+          by_cases hslot : CapabilityHandle.slotReserved ≤ destinationSlot
+          · simp [acceptWord, hendpoint, hslot, hpending, rejectAccept] at hdelivered
+          · refine ⟨Nat.lt_of_not_ge hslot, ?_⟩
+            by_cases hexhausted : transfer.identity = 0 ∨
+                CapabilityHandle.generationReserved ≤ transfer.identity
+            · simp [acceptWord, hendpoint, hslot, hpending, hexhausted,
+                rejectAccept] at hdelivered
+            · have hpositive : 0 < transfer.identity :=
+                Nat.pos_of_ne_zero (fun hzero => hexhausted (Or.inl hzero))
+              have hgeneration : transfer.identity < CapabilityHandle.generationReserved :=
+                Nat.lt_of_not_ge (fun hge => hexhausted (Or.inr hge))
+              refine ⟨UInt64.ofNat (destinationSlot +
+                transfer.identity * CapabilityHandle.slotRadix), ?_⟩
+              simp [CapabilityHandle.encode, CapabilityHandle.Encodable,
+                Nat.lt_of_not_ge hslot, hpositive, hgeneration]
 
 theorem offerHandles_stale_source_rejected state caller endpoint source sourceKind
     payload rights endpointCap
@@ -1223,6 +1283,43 @@ example :
         .delivered { endpoint := 10, sender := 0, payload := payload } ∧
       (accept sent.state 0 0 1).state.pending 10 = none ∧
       (accept sent.state 0 0 1).state.capabilities.slots 0 1 = none := by
+  native_decide
+
+/-- A data-only receipt does not consume or validate the unused destination
+slot; only an attached authority needs an encodable output handle. -/
+example :
+    let endpointWord := UInt64.ofNat 65536
+    let payload : EndpointIPC.Payload := { word0 := 71, word1 := 98 }
+    let sent := sendData dataOnlyState 0 0 payload
+    (acceptWord sent.state 0 endpointWord CapabilityHandle.slotReserved).result =
+      .delivered { endpoint := 10, sender := 0, payload := payload } := by
+  native_decide
+
+/-- Receipt rejects the reserved destination slot before consuming a valid
+sealed envelope. -/
+example :
+    let endpointWord := UInt64.ofNat 65536
+    let sourceWord := UInt64.ofNat 2883586
+    let offered := offerWords usableReplacementState 0 endpointWord sourceWord .memory
+      { word0 := 71, word1 := 98 } { read := true }
+    let received := acceptWord offered.state 0 endpointWord CapabilityHandle.slotReserved
+    offered.result = .accepted ∧
+      received.result = .rejected .outOfRange ∧
+      received.state.pending 10 = offered.state.pending 10 ∧
+      received.state.mailbox 10 = offered.state.mailbox 10 := by
+  native_decide
+
+/-- Even an invalid sealed identity introduced through the internal raw offer
+cannot cross the userspace receipt boundary. -/
+example :
+    let endpointWord := UInt64.ofNat 65536
+    let offered := offer exhaustedReplacementState 0 0 2
+      { word0 := 71, word1 := 98 } { read := true }
+    let received := acceptWord offered.state 0 endpointWord 1
+    offered.result = .accepted ∧
+      received.result = .rejected .generationExhausted ∧
+      received.state.pending 10 = offered.state.pending 10 ∧
+      received.state.mailbox 10 = offered.state.mailbox 10 := by
   native_decide
 
 /-- Generation exhaustion fails closed before an offered descendant can enter
