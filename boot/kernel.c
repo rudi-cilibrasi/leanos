@@ -68,6 +68,9 @@ extern uint64_t page_directory_b[], page_table_b[];
 #define MAX_HANDOFF_BYTES 65536u
 #define MAX_MMAP_ENTRIES 128u
 #define PAGE_BYTES 4096u
+#ifndef LEANOS_RETURN_CORRUPTION_MODE
+#define LEANOS_RETURN_CORRUPTION_MODE 0
+#endif
 #define BOOT_PT_COUNT 8u
 #define BOOT_LEAF_COUNT (512u * BOOT_PT_COUNT)
 #define PTE_PRESENT 1ull
@@ -298,10 +301,57 @@ static unsigned canonical(uint64_t value) {
     return high == 0 || high == 0x1ffffu;
 }
 
+static volatile uint64_t return_corruption_mode = LEANOS_RETURN_CORRUPTION_MODE;
+
+static const char *return_corruption_name(uint64_t mode) {
+    switch (mode) {
+    case 1: return "kernel-selector";
+    case 2: return "wrong-stack-selector";
+    case 3: return "noncanonical-rip";
+    case 4: return "noncanonical-rsp";
+    case 5: return "outside-code";
+    case 6: return "outside-stack";
+    case 7: return "flags-ac";
+    case 8: return "flags-df";
+    case 9: return "stale-cr3";
+    case 10: return "stale-context";
+    case 11: return "post-validation-mutation";
+    default: return "none";
+    }
+}
+
+/* Controlled negative images corrupt the actual outgoing frame immediately
+   before the production validator reads it. Each image must terminate here,
+   before the first user instruction or iret completion can be observed. */
+static void inject_return_corruption(uint64_t *saved) {
+    uint64_t mode = return_corruption_mode;
+    if (mode == 0) return;
+    serial_puts("LEANOS/9 RETURN fixture=");
+    serial_puts(return_corruption_name(mode));
+    serial_puts(" stage=outgoing-frame result=INJECTED\n");
+    switch (mode) {
+    case 1: saved[16] = 0x08; break;
+    case 2: saved[19] = 0x10; break;
+    case 3: saved[15] = 0x0000800000000000ull; break;
+    case 4: saved[18] = 0x0000800000000000ull; break;
+    case 5: saved[15] = (uint64_t)user_a_stack; break;
+    case 6: saved[18] = (uint64_t)user_a_entry; break;
+    case 7: saved[17] |= 1ull << 18; break;
+    case 8: saved[17] |= 1ull << 10; break;
+    case 9:
+        __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_b) : "memory");
+        break;
+    case 10: current_subject = 2; break;
+    case 11: break;
+    default: fail("user-return-fixture-mode");
+    }
+}
+
 /* Fixed-width, allocation-free machine adapter for the authoritative return
    policy. `saved` is the complete SAVE register bank followed by RIP, CS,
    RFLAGS, RSP, and SS. Rejection enters the existing absorbing terminal path. */
 void validate_user_return(const uint64_t *saved, uint64_t purpose) {
+    inject_return_corruption((uint64_t *)saved);
     uint64_t rip = saved[15], cs = saved[16], flags = saved[17];
     uint64_t rsp = saved[18], ss = saved[19], cr3;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));

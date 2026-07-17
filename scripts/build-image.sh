@@ -31,6 +31,19 @@ df_iso_root="$build/iso-double-fault"
 df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
+return_corruptions=(
+  'kernel-selector:1:user-return-selector'
+  'wrong-stack-selector:2:user-return-selector'
+  'noncanonical-rip:3:user-return-noncanonical'
+  'noncanonical-rsp:4:user-return-noncanonical'
+  'outside-code:5:user-return-code'
+  'outside-stack:6:user-return-stack'
+  'flags-ac:7:user-return-flags'
+  'flags-df:8:user-return-flags'
+  'stale-cr3:9:user-return-cr3'
+  'stale-context:10:user-return-code'
+  'post-validation-mutation:11:user-return-noncanonical'
+)
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: LEANOS_VERSION must be MAJOR.MINOR.PATCH" >&2
   exit 1
@@ -97,6 +110,9 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_INITIAL_INDIRECT_FIXTURE=1 \
   -c boot/boot.S -o "$build/boot-return-initial-indirect-fixture.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_POST_VALIDATE_QEMU_FIXTURE=1 \
+  -c boot/boot.S -o "$build/boot-return-post-validation-qemu.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_DF_MAP_GUARD=1 \
   -c boot/boot.S -o "$build/boot-df-guard-mapped.o"
 
@@ -129,6 +145,12 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/boot-page-plan-guard.h"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
   -o "$build/kernel.o"
+for spec in "${return_corruptions[@]}"; do
+  IFS=: read -r fixture mode _reason <<<"$spec"
+  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+    -DLEANOS_RETURN_CORRUPTION_MODE="$mode" -c boot/kernel.c \
+    -o "$build/kernel-return-${fixture}.o"
+done
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -140,6 +162,33 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -o build/boot/leanos.elf build/boot/boot.o build/boot/kernel.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
   build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o
+
+for spec in "${return_corruptions[@]}"; do
+  IFS=: read -r fixture _mode _reason <<<"$spec"
+  boot_object="$build/boot.o"
+  if [[ "$fixture" == post-validation-mutation ]]; then
+    boot_object="$build/boot-return-post-validation-qemu.o"
+  fi
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-return-${fixture}.map" \
+    -o "$build/leanos-return-${fixture}.elf" "$boot_object" \
+    "$build/kernel-return-${fixture}.o" "$build/KernelTransition.o" \
+    "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+    "$build/BootAllocation.o" "$build/Interrupt.o"
+  if [[ "$fixture" == post-validation-mutation ]]; then
+    if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}.elf" \
+        >"$build/return-${fixture}-policy.log" 2>&1; then
+      echo "error: post-validation mutation policy fixture unexpectedly passed" >&2
+      exit 1
+    fi
+    grep -Fq 'mutation or control flow added after user-return validation' \
+      "$build/return-${fixture}-policy.log" || {
+      echo "error: post-validation fixture lacked policy diagnostic" >&2; exit 1;
+    }
+  else
+    ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}.elf"
+  fi
+done
 
 ./scripts/generate-boot-page-plan.sh "$build/leanos.elf" \
   "$build/boot-page-plan.final.h"
@@ -254,6 +303,14 @@ printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
   > "$iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
+for spec in "${return_corruptions[@]}"; do
+  IFS=: read -r fixture _mode _reason <<<"$spec"
+  fixture_root="$build/iso-return-${fixture}"
+  mkdir -p "$fixture_root/boot/grub"
+  cp "$build/leanos-return-${fixture}.elf" "$fixture_root/boot/leanos.elf"
+  cp boot/grub.cfg "$fixture_root/boot/grub/grub.cfg"
+  cp "$build/SOURCE_REVISION" "$fixture_root/boot/SOURCE_REVISION"
+done
 # BIOS-only output avoids GRUB's nondeterministic FAT/EFI image. A fixed ISO
 # UUID and file dates make repeated builds independent of wall-clock time.
 grub-mkrescue -d /usr/lib/grub/i386-pc \
@@ -268,11 +325,24 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
   "$df_negative_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
+for spec in "${return_corruptions[@]}"; do
+  IFS=: read -r fixture _mode _reason <<<"$spec"
+  grub-mkrescue -d /usr/lib/grub/i386-pc \
+    -o "$build/leanos-${version}-x86_64-return-${fixture}.iso" \
+    "$build/iso-return-${fixture}" -- \
+    -volume_date uuid 2000010100000000 \
+    -volume_date all_file_dates 2000010100000000 >/dev/null
+done
 sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-double-fault.iso" "$build/leanos.elf" \
   "$build/leanos-double-fault.elf" \
   "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
   "$build/leanos-double-fault-guard-mapped.elf" \
   > "$build/SHA256SUMS"
+for spec in "${return_corruptions[@]}"; do
+  IFS=: read -r fixture _mode _reason <<<"$spec"
+  sha256sum "$build/leanos-${version}-x86_64-return-${fixture}.iso" \
+    "$build/leanos-return-${fixture}.elf" >> "$build/SHA256SUMS"
+done
 echo "built build/boot/leanos-${version}-x86_64.iso at $source_revision"
 echo "symbols: build/boot/leanos.map; debug ELF: build/boot/leanos.elf"

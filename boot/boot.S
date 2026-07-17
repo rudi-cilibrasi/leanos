@@ -678,6 +678,16 @@ user_return_epilogue:
     andq $-263169, 136(%rsp) /* ~(RFLAGS.DF | RFLAGS.AC) */
     mov %rsp, %rdi
     call validate_user_return
+#ifdef LEANOS_RETURN_POST_VALIDATE_QEMU_FIXTURE
+    /* Negative machine-path fixture: mutate the attested RIP, then re-enter
+       the production validator so the guest records a typed terminal result
+       before the mutated tuple can reach RESTORE/iretq. */
+    movabs $0x0000800000000000, %rax
+    mov %rax, 120(%rsp)
+    mov %rsp, %rdi
+    mov $1, %esi
+    call validate_user_return
+#endif
 #ifdef LEANOS_RETURN_INDIRECT_FIXTURE
     /* Negative final-ELF fixture: synthesize an indirect restore entrant. */
     lea user_return_restore(%rip), %rax

@@ -264,6 +264,26 @@ while read -r source instruction; do
   fi
 done < <(objdump -d --no-show-raw-insn "$elf" |
   sed -nE 's/^[[:space:]]*([0-9a-f]+):[[:space:]]+((j[a-z]*|call[a-z]*)[[:space:]]+\*.*|retq?)$/\1 \2/p')
+
+# After the validator call, normal execution must fall directly into the exact
+# restore sequence. This catches frame writes or extra direct calls that the
+# edge and indirect-transfer checks above intentionally classify separately.
+pre_restore_sequence="$(objdump -d --no-show-raw-insn "$elf" |
+  awk '/<user_return_epilogue>:/ { capture=1; next }
+       /<user_return_restore>:/ { capture=0 }
+       capture {
+         sub(/^[[:space:]]*[0-9a-f]+:[[:space:]]*/, "")
+         gsub(/[[:space:]]+/, " ")
+         if ($0 ~ /^call .*<validate_user_return>$/) $0 = "call <validate_user_return>"
+         if ($0 == "") next
+         sequence = sequence (sequence == "" ? "" : ";") $0
+       }
+       END { print sequence }')"
+expected_pre_restore='andq $0xfffffffffffbfbff,0x88(%rsp);mov %rsp,%rdi;call <validate_user_return>'
+[[ "$pre_restore_sequence" == "$expected_pre_restore" ]] || {
+  echo "error: mutation or control flow added after user-return validation" >&2
+  exit 1
+}
 [[ "$(grep -Ec '^[[:space:]]+iretq$' boot/boot.S)" -eq 2 ]] || {
   echo "error: raw iretq added outside classified return sites" >&2; exit 1;
 }

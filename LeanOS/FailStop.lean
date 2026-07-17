@@ -415,6 +415,14 @@ def ReturnAddressSpace.liveBound (view : ReturnAddressSpace)
               virtualMemory.memory.binding stackMapping.object with
           | some codeFrame, some stackFrame =>
               virtualMemory.owner addressSpace = some view.subject &&
+                virtualMemory.memory.capabilities.objects codeMapping.object &&
+                virtualMemory.memory.capabilities.kinds codeMapping.object = some .memory &&
+                virtualMemory.memory.allocator.status codeFrame =
+                  .owned codeMapping.object &&
+                virtualMemory.memory.capabilities.objects stackMapping.object &&
+                virtualMemory.memory.capabilities.kinds stackMapping.object = some .memory &&
+                virtualMemory.memory.allocator.status stackFrame =
+                  .owned stackMapping.object &&
                 codeMapping.permissions.read && !codeMapping.permissions.write &&
                 stackMapping.permissions.read && stackMapping.permissions.write &&
                 plan.hasPolicyLeafAtFrame space codePage codeFrame .userText owner &&

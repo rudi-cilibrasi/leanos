@@ -88,4 +88,10 @@ The shared generated-model oracle derives expected return results from
 `validateUserReturn`, proves pointwise agreement with the allocation-free
 adapter for every corpus vector, and replays those vectors through hosted
 generated code and the boot image. A controlled corrupt-frame QEMU corpus
-remains required.
+boots eleven negative images that mutate the actual outgoing frame immediately
+before validation: kernel/wrong stack selectors, noncanonical and out-of-region
+RIP/RSP, AC/DF, stale CR3/context, and a post-validation RIP mutation. Every
+image must emit its typed rejection and terminate before the first CPL3 entry;
+the post-validation image must also fail final-ELF policy inspection. CI
+preserves each image, ELF/map, policy diagnostic, and serial log as integration
+evidence, not as a refinement proof of assembly, QEMU, or hardware.
