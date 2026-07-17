@@ -204,7 +204,8 @@ root/ancestor frame or any other supervisor-owned frame. -/
 def physicalAliasesSafe (leaves : List CompiledLeaf) : Bool :=
   leaves.Pairwise fun a b =>
     a.leaf.frame != b.leaf.frame ||
-      (!a.leaf.user && !b.leaf.user && a.policy == b.policy)
+      (!a.leaf.user && !b.leaf.user && a.space != b.space &&
+        a.page == b.page && a.policy == b.policy)
 
 /-- The live roots and ancestor frames are authoritative constructor inputs,
 not inferred from whichever `.pageTables` regions the manifest happens to
@@ -589,6 +590,14 @@ example : rejectedAs
         if region.space == .subjectA && region.policy == .userText then
           { region with physicalStart := sampleInput.roots.subjectA * pageBytes }
         else region }
+    .unsafePhysicalAlias = true := by native_decide
+/-- Supervisor sharing is limited to the same reviewed virtual mapping across
+the two roots; an extra same-root alias is not part of the canonical plan. -/
+example : rejectedAs
+    { sampleInput with regions := sampleRegions ++
+        [{ space := .subjectA, virtualStart := 300 * pageBytes,
+           byteLength := pageBytes, physicalStart := 2 * pageBytes,
+           policy := .kernelData, owner := .supervisor }] }
     .unsafePhysicalAlias = true := by native_decide
 /-- Moving the declared page-table regions cannot hide a user alias of the
 actual root supplied to the table constructor. -/
