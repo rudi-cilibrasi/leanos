@@ -704,4 +704,63 @@ example : let next := (destroy destroyReady 1 0).state
     next.waiters 10 = [] ∧ next.completion 2 = some .cancelled ∧
     next.scheduler.lifecycle.runnable 2 = true := by native_decide
 
+/-! ## Fixed-width boot scenario boundary -/
+
+/-- Pack one reviewed blocking-IPC stage, low to high: event, next phase,
+current subject, active address space, and delivered sender.  Zero is reserved
+for rejection. -/
+def encodeBootEvent (event phase current space sender : UInt64) : UInt64 :=
+  event + phase * 0x100 + current * 0x10000 + space * 0x100000000 +
+    sender * 0x1000000000000
+
+/-- Allocation-free scalar witness for the canonical B-block, A-send/wake,
+scheduler-dispatch, B-delivery sequence.  The phase fixes the kernel-owned
+current subject and address space; payload words never select either identity.
+Result zero rejects a wrong phase, operation, or claimed caller. -/
+@[export leanos_blocking_ipc_demo]
+def blockingIpcDemo (phase operation caller word0 word1 : UInt64) : UInt64 :=
+  if word0 != 0x4c45414e ∨ word1 != 0x4f53 then 0
+  else if phase = 0 ∧ operation = 1 ∧ caller = 2 then 0x0000000100010101
+  else if phase = 1 ∧ operation = 2 ∧ caller = 1 then 0x0000000100010202
+  else if phase = 2 ∧ operation = 3 ∧ caller = 1 then 0x0000000200020303
+  else if phase = 3 ∧ operation = 4 ∧ caller = 2 then 0x0001000200020404
+  else 0
+
+private def bootPayload : Payload := { word0 := 0x4c45414e, word1 := 0x4f53 }
+private def bootInitial : State :=
+  { traceState with scheduler := { traceState.scheduler with ready := [1] } }
+private def bootBlocked := (receiveOrBlock bootInitial 2 0).state
+private def bootAwakened := (send bootBlocked 1 0 bootPayload).state
+private def bootDispatched : State :=
+  { bootAwakened with scheduler := (Scheduler.yield bootAwakened.scheduler).state }
+
+/-- The four compact results agree with the actual composite transitions used
+by the reviewed boot scenario.  Generated C and machine state remain a tested
+boundary rather than a refinement theorem. -/
+theorem blockingIpcDemo_agrees_with_composite_scenario :
+    blockingIpcDemo 0 1 2 bootPayload.word0 bootPayload.word1 =
+      encodeBootEvent 1 1 1 1 0 ∧
+    (receiveOrBlock bootInitial 2 0).result = .blocked ∧
+    blockingIpcDemo 1 2 1 bootPayload.word0 bootPayload.word1 =
+      encodeBootEvent 2 2 1 1 0 ∧
+    (send bootBlocked 1 0 bootPayload).result = .accepted ∧
+    blockingIpcDemo 2 3 1 bootPayload.word0 bootPayload.word1 =
+      encodeBootEvent 3 3 2 2 0 ∧
+    (Scheduler.yield bootAwakened.scheduler).result = .accepted (some
+      { currentSubject := 2, activeAddressSpace := 2 }) ∧
+    blockingIpcDemo 3 4 2 bootPayload.word0 bootPayload.word1 =
+      encodeBootEvent 4 4 2 2 1 ∧
+    (receiveOrBlock bootDispatched 2 0).result = .delivered
+      { endpoint := 10, sender := 1, payload := bootPayload } := by
+  native_decide
+
+example (word0 word1 : UInt64) : blockingIpcDemo 1 2 2 word0 word1 = 0 := by
+  simp [blockingIpcDemo]
+example : blockingIpcDemo 1 2 1 0x4c45414e 0x4f53 =
+    encodeBootEvent 2 2 1 1 0 := by
+  simp [blockingIpcDemo]
+  native_decide
+example (word1 : UInt64) : blockingIpcDemo 1 2 1 0 word1 = 0 := by
+  simp [blockingIpcDemo]
+
 end LeanOS.BlockingIPC
