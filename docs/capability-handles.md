@@ -67,15 +67,16 @@ words, stale target replay, and reserved authority fields. A negative
 regression also demonstrates that the former raw-slot lookup accepts the
 replacement while the generation-aware resolver rejects the stale handle.
 The repository-owned capability-boundary check additionally inspects the
-boot-reachable map and nonblocking IPC dispatcher definitions. It requires
-opaque `UInt64` handle words, `resolveCurrent`, and post-resolution slot use,
-and rejects direct `Capability.lookup` or `handleWord.toNat` fallbacks in those
-dispatchers. This is a narrow source-policy regression, not a refinement proof
-for the generated binary.
+boot-reachable map, nonblocking IPC, and blocking IPC dispatcher definitions.
+It requires opaque `UInt64` handle words, `resolveCurrent`, and post-resolution
+slot use, and rejects direct `Capability.lookup` or `handleWord.toNat`
+fallbacks in those dispatchers. This is a narrow source-policy regression, not
+a refinement proof for the generated binary.
 
 These are model-level results. The bit layout is the issue's reviewed model
 contract, not a promise of permanent ABI stability. This checkpoint does not
 establish concurrent lookup/revocation safety, generated-code refinement, or
-QEMU behavior. Boot-reachable capability copy/revoke and transfer syscall
-adapters still need to expose only these word-level boundaries before the
-syscall-routing issue is complete.
+QEMU behavior. Capability copy/revoke and transfer are not operations in the
+current boot syscall vocabulary; their model-facing public boundaries accept
+only the canonical words documented above, so a future boot adapter must route
+through those boundaries rather than exposing the internal raw-slot kernels.

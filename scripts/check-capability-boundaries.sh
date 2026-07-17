@@ -6,6 +6,7 @@ cd "$repo_root"
 
 syscall_source="${CAPABILITY_SYSCALL_SOURCE:-LeanOS/Syscall.lean}"
 ipc_source="${CAPABILITY_IPC_SOURCE:-LeanOS/IPCSyscall.lean}"
+blocking_source="${CAPABILITY_BLOCKING_SOURCE:-LeanOS/BlockingIPC.lean}"
 
 failure=0
 
@@ -31,10 +32,12 @@ reject_pattern() {
 
 syscall_dispatch="$(mktemp)"
 ipc_dispatch="$(mktemp)"
-trap 'rm -f "$syscall_dispatch" "$ipc_dispatch"' EXIT
+blocking_dispatch="$(mktemp)"
+trap 'rm -f "$syscall_dispatch" "$ipc_dispatch" "$blocking_dispatch"' EXIT
 
 sed -n '/^def dispatchDecoded /,/^def dispatch /p' "$syscall_source" >"$syscall_dispatch"
 sed -n '/^def dispatch /,/^theorem dispatch_preserves/p' "$ipc_source" >"$ipc_dispatch"
+sed -n '/^def receiveOrBlockWord /,/^def cancelSubject /p' "$blocking_source" >"$blocking_dispatch"
 
 require_literal "$syscall_source" \
   '| some permissions => .ok (.map call.arg0 call.arg1.toNat permissions)' \
@@ -58,6 +61,17 @@ require_literal "$ipc_dispatch" 'resolution.handle.slot' \
   'post-resolution internal-slot dispatch'
 reject_pattern "$ipc_dispatch" 'Capability\.lookup|handleWord\.toNat' \
   'a raw-slot capability lookup in boot-reachable IPC dispatch'
+
+require_literal "$blocking_source" 'def receiveOrBlockWord' \
+  'an opaque blocking-receive boundary'
+require_literal "$blocking_source" 'def sendWord' \
+  'an opaque blocking-send boundary'
+require_literal "$blocking_dispatch" 'CapabilityHandle.resolveCurrent' \
+  'generation-checked blocking IPC resolution'
+require_literal "$blocking_dispatch" 'resolution.handle.slot' \
+  'post-resolution blocking IPC slot dispatch'
+reject_pattern "$blocking_dispatch" 'Capability\.lookup|handleWord\.toNat' \
+  'a raw-slot capability lookup in boot-reachable blocking IPC dispatch'
 
 if (( failure != 0 )); then
   exit 1
