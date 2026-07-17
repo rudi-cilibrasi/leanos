@@ -18,7 +18,7 @@ event rather than being mislabeled as a malformed user return.
 `validateUserReturn` is the authoritative total outgoing transition. Its input
 combines the frame with kernel-selected purpose, live subject, owned address
 space, CR3 identity, execution mode, executable region, writable stack region,
-and decoded flag policy. It rejects diagnostic kernel recovery, halted mode,
+and the raw saved RFLAGS word. It rejects diagnostic kernel recovery, halted mode,
 stale scheduler/context bindings, noncanonical or out-of-region addresses,
 wrong selectors or CR3, cleared IF, and set DF, AC, NT, VM, or IOPL. Acceptance
 returns an attestation of the entire immutable request, preventing the model API
@@ -27,8 +27,10 @@ exact request identity and every validator condition: purpose and mode,
 canonicality and region containment, complete flags, subject liveness,
 runnability and selection, address ownership, and CR3 binding. The composite
 `FailStop.completeUserReturn` transition normalizes scheduler identity from the
-execution state and converts any rejection into a typed absorbing halt record
-without changing lifecycle, authority, scheduling, IPC, or resource views.
+execution state and takes purpose, expected CR3, and executable/stack regions
+from its kernel-owned `returnAuthority` record. It converts rejection into a
+typed absorbing halt record without changing lifecycle, authority, scheduling,
+IPC, or resource views.
 The shared machine epilogue clears the kernel-managed saved DF and AC bits
 before validation; the other forbidden flag fields remain reject-only.
 

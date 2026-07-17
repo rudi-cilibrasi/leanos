@@ -43,6 +43,8 @@ inductive Mode where
 structure State where
   core : Interrupt.State
   mode : Mode
+  /-- Kernel-selected purpose and address-space policy for the next return. -/
+  returnAuthority : Interrupt.TrustedReturnAuthority := Interrupt.defaultReturnAuthority
   /-- The kernel-owned SMAP AC override. Entry closes it before classification. -/
   copyOverride : Bool := false
 
@@ -149,21 +151,24 @@ structure UserReturnOutcome where
   state : State
   action : UserReturnAction
 
-/-- Replace caller-supplied scheduler identity with the execution latch's
-authoritative lifecycle/current subject/address space before validation. -/
+/-- Replace every caller-supplied policy field with execution-latch state. -/
 def authoritativeReturnRequest (state : State) (request : Interrupt.UserReturnRequest) :
     Interrupt.UserReturnRequest :=
   { request with
       lifecycle := state.core.lifecycle
       expectedSubject := state.core.context.currentSubject
       expectedAddressSpace := state.core.context.activeAddressSpace
+      expectedCr3 := state.returnAuthority.expectedCr3
+      codeRegion := state.returnAuthority.codeRegion
+      stackRegion := state.returnAuthority.stackRegion
+      purpose := state.returnAuthority.purpose
       executionMode := .running }
 
 private def latchInvalidUserReturn (state : State) (request : Interrupt.UserReturnRequest)
     (reason : Interrupt.ReturnRejectReason) (active : Option ActiveEntry) :
     UserReturnOutcome :=
   let record : HaltRecord :=
-    { reason := .invalidUserReturn request.purpose reason
+    { reason := .invalidUserReturn state.returnAuthority.purpose reason
       active
       incomingVector := request.hardware.vector
       incomingOrigin := request.hardware.savedPrivilege }
@@ -199,7 +204,7 @@ theorem rejected_user_return_latches state request reason
       (authoritativeReturnRequest state request) = .rejected reason) :
     (completeUserReturn state request).state.mode =
       .halted
-        { reason := .invalidUserReturn request.purpose reason
+        { reason := .invalidUserReturn state.returnAuthority.purpose reason
           active := none
           incomingVector := request.hardware.vector
           incomingOrigin := request.hardware.savedPrivilege } ∧
@@ -213,6 +218,27 @@ theorem halted_user_return_absorbing state request record
     (hmode : state.mode = .halted record) :
     completeUserReturn state request = { state, action := .alreadyHalted record } := by
   simp [completeUserReturn, hmode]
+
+/-- Acceptance is pinned to the kernel-owned policy record; changing policy
+copies in the proposal cannot select another purpose, CR3, or memory region. -/
+theorem accepted_user_return_uses_authority state request attested
+    (hmode : state.mode = .running)
+    (haccepted : (completeUserReturn state request).action = .accepted attested) :
+    attested.purpose = state.returnAuthority.purpose ∧
+      attested.expectedCr3 = state.returnAuthority.expectedCr3 ∧
+      attested.codeRegion = state.returnAuthority.codeRegion ∧
+      attested.stackRegion = state.returnAuthority.stackRegion := by
+  simp only [completeUserReturn, hmode] at haccepted
+  generalize hnormalized : authoritativeReturnRequest state request = normalized at haccepted
+  cases hvalidation : Interrupt.validateUserReturn normalized with
+  | rejected reason => simp [hvalidation, latchInvalidUserReturn] at haccepted
+  | accepted actual =>
+      simp [hvalidation] at haccepted
+      subst actual
+      have hexact := Interrupt.accepted_attests_exact_request normalized attested hvalidation
+      subst attested
+      rw [← hnormalized]
+      simp [authoritativeReturnRequest]
 
 /-- The state of the modeled subsystems whose transitions can run after entry.
 Keeping these states under the execution latch makes bypassing it impossible in
@@ -550,7 +576,7 @@ theorem rejected_user_return_composite_atomicity state request reason proposals
     (hrejected : Interrupt.validateUserReturn
       (authoritativeReturnRequest state.execution request) = .rejected reason) :
     let record : HaltRecord :=
-      { reason := .invalidUserReturn request.purpose reason
+      { reason := .invalidUserReturn state.execution.returnAuthority.purpose reason
         active := none
         incomingVector := request.hardware.vector
         incomingOrigin := request.hardware.savedPrivilege }
@@ -568,7 +594,7 @@ theorem rejected_user_return_composite_atomicity state request reason proposals
   have hterminal :
       ((gate state (.userReturn request)).state.execution.mode =
         .halted
-          { reason := .invalidUserReturn request.purpose reason
+          { reason := .invalidUserReturn state.execution.returnAuthority.purpose reason
             active := none
             incomingVector := request.hardware.vector
             incomingOrigin := request.hardware.savedPrivilege }) := by

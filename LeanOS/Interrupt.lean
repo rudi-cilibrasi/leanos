@@ -126,6 +126,21 @@ half-open interval recognized by `contains`. -/
 def UserRegion.containsStackPointer (region : UserRegion) (address : UInt64) : Bool :=
   region.first ≤ address && address ≤ region.pastLast
 
+/-- Kernel-owned return policy selected before an untrusted outgoing frame is
+presented to the fail-stop gate. -/
+structure TrustedReturnAuthority where
+  purpose : ReturnPurpose
+  expectedCr3 : UInt64
+  codeRegion : UserRegion
+  stackRegion : UserRegion
+  deriving DecidableEq, Repr
+
+def defaultReturnAuthority : TrustedReturnAuthority :=
+  { purpose := .initialDispatch
+    expectedCr3 := 0
+    codeRegion := ⟨0, 0⟩
+    stackRegion := ⟨0, 0⟩ }
+
 /-- Decoded architectural flag policy supplied beside the raw frame.  The
 machine adapter must establish that these bits agree with `hardware.flags`. -/
 structure ReturnFlags where
@@ -137,6 +152,19 @@ structure ReturnFlags where
   ioPrivilegeLevel : UInt64
   reservedAllowed : Bool
   deriving DecidableEq, Repr
+
+/-- Decode the complete reviewed user-return RFLAGS policy from the raw word.
+No caller-supplied Boolean summary participates in outgoing authorization. -/
+def rawReturnFlagsAllowed (flags : UInt64) : Bool :=
+  let flag (divisor : UInt64) := flags / divisor % 2 = 1
+  let arithmetic :=
+    (if flag 0x1 then 0x1 else 0) +
+    (if flag 0x4 then 0x4 else 0) +
+    (if flag 0x10 then 0x10 else 0) +
+    (if flag 0x40 then 0x40 else 0) +
+    (if flag 0x80 then 0x80 else 0) +
+    (if flag 0x800 then 0x800 else 0)
+  flags = 0x202 + arithmetic
 
 structure UserReturnRequest where
   hardware : HardwareFrame
@@ -171,10 +199,7 @@ def validateUserReturn (request : UserReturnRequest) : UserReturnValidation :=
     .rejected .wrongSelector
   else if !request.hardware.canonicalInstructionPointer ||
       !request.hardware.canonicalStackPointer then .rejected .noncanonical
-  else if !request.hardware.flagsAllowed || !request.flags.reservedAllowed ||
-      !request.flags.interruptEnable || request.flags.direction ||
-      request.flags.alignmentCheck || request.flags.nestedTask ||
-      request.flags.virtual8086 || request.flags.ioPrivilegeLevel != 0 then
+  else if !rawReturnFlagsAllowed request.hardware.flags then
     .rejected .forbiddenFlags
   else if request.lifecycle.capabilities.subjects request.expectedSubject != true ||
       request.lifecycle.runnable request.expectedSubject != true ||
@@ -217,14 +242,7 @@ theorem accepted_user_return_context_confined request attested
       attested.hardware.stackSelector = 0x1b ∧
       attested.hardware.canonicalInstructionPointer = true ∧
       attested.hardware.canonicalStackPointer = true ∧
-      attested.hardware.flagsAllowed = true ∧
-      attested.flags.reservedAllowed = true ∧
-      attested.flags.interruptEnable = true ∧
-      attested.flags.direction = false ∧
-      attested.flags.alignmentCheck = false ∧
-      attested.flags.nestedTask = false ∧
-      attested.flags.virtual8086 = false ∧
-      attested.flags.ioPrivilegeLevel = 0 ∧
+      rawReturnFlagsAllowed attested.hardware.flags = true ∧
       attested.lifecycle.capabilities.subjects attested.expectedSubject = true ∧
       attested.lifecycle.runnable attested.expectedSubject = true ∧
       attested.lifecycle.current = some attested.expectedSubject ∧
@@ -272,14 +290,7 @@ private def oracleFlag (flags divisor : UInt64) : Bool :=
   flags / divisor % 2 = 1
 
 private def oracleFlagsAllowed (flags : UInt64) : Bool :=
-  let arithmetic :=
-    (if oracleFlag flags 0x1 then 0x1 else 0) +
-    (if oracleFlag flags 0x4 then 0x4 else 0) +
-    (if oracleFlag flags 0x10 then 0x10 else 0) +
-    (if oracleFlag flags 0x40 then 0x40 else 0) +
-    (if oracleFlag flags 0x80 then 0x80 else 0) +
-    (if oracleFlag flags 0x800 then 0x800 else 0)
-  flags = 0x202 + arithmetic
+  rawReturnFlagsAllowed flags
 
 private def oracleLifecycle (mode : UInt64) : SubjectLifecycle.State :=
   { capabilities :=

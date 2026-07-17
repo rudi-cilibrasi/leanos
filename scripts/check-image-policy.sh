@@ -242,7 +242,7 @@ done < <(objdump -d --no-show-raw-insn "$elf" |
 # returns. This closes the static-CFG hole where a synthesized `ret` could enter
 # either restore interval without appearing as a direct branch target. C code's
 # ordinary returns and its compiler-generated jump table lie outside this range.
-interrupt_start=$((16#$(nm -n "$elf" | awk '$3 == "isr80" { print $1 }')))
+interrupt_start=$((16#$(nm -n "$elf" | awk '$3 == "enter_user" { print $1 }')))
 return_end=$((user_iretq_address + 1))
 while read -r source instruction; do
   [[ -n "$source" ]] || continue

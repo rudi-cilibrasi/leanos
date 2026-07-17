@@ -91,14 +91,7 @@ theorem user_return_context_confinement request attested
       attested.hardware.stackSelector = 0x1b ∧
       attested.hardware.canonicalInstructionPointer = true ∧
       attested.hardware.canonicalStackPointer = true ∧
-      attested.hardware.flagsAllowed = true ∧
-      attested.flags.reservedAllowed = true ∧
-      attested.flags.interruptEnable = true ∧
-      attested.flags.direction = false ∧
-      attested.flags.alignmentCheck = false ∧
-      attested.flags.nestedTask = false ∧
-      attested.flags.virtual8086 = false ∧
-      attested.flags.ioPrivilegeLevel = 0 ∧
+      Interrupt.rawReturnFlagsAllowed attested.hardware.flags = true ∧
       attested.lifecycle.capabilities.subjects attested.expectedSubject = true ∧
       attested.lifecycle.runnable attested.expectedSubject = true ∧
       attested.lifecycle.current = some attested.expectedSubject ∧
@@ -111,6 +104,17 @@ theorem user_return_context_confinement request attested
       attested.stackRegion.containsStackPointer attested.hardware.stackPointer = true := by
   exact Interrupt.accepted_user_return_context_confined request attested haccepted
 
+/-- SC-USER-RETURN-AUTHORITY: the executable target policy accepted by the
+terminal gate is exactly the kernel-owned policy, never a proposal copy. -/
+theorem user_return_authority_confinement state request attested
+    (hmode : state.mode = .running)
+    (haccepted : (FailStop.completeUserReturn state request).action = .accepted attested) :
+    attested.purpose = state.returnAuthority.purpose ∧
+      attested.expectedCr3 = state.returnAuthority.expectedCr3 ∧
+      attested.codeRegion = state.returnAuthority.codeRegion ∧
+      attested.stackRegion = state.returnAuthority.stackRegion := by
+  exact FailStop.accepted_user_return_uses_authority state request attested hmode haccepted
+
 /-- SC-USER-RETURN-FAILSTOP: a rejected outgoing return atomically latches a
 typed terminal record, freezes every composite subsystem, and absorbs all
 later operations. -/
@@ -119,7 +123,7 @@ theorem user_return_rejection_failstop state request reason proposals
     (hrejected : Interrupt.validateUserReturn
       (FailStop.authoritativeReturnRequest state.execution request) = .rejected reason) :
     let record : FailStop.HaltRecord :=
-      { reason := .invalidUserReturn request.purpose reason
+      { reason := .invalidUserReturn state.execution.returnAuthority.purpose reason
         active := none
         incomingVector := request.hardware.vector
         incomingOrigin := request.hardware.savedPrivilege }

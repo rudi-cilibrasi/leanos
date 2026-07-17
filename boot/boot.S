@@ -362,6 +362,11 @@ smep_probe_recovered:
     ret
 .global enter_user
 enter_user:
+#ifdef LEANOS_RETURN_INITIAL_INDIRECT_FIXTURE
+    /* Negative final-ELF fixture: bypass validation from initial dispatch. */
+    lea user_return_restore(%rip), %rax
+    jmp *%rax
+#endif
     pushq $0x1b
     push %rsi
     pushfq
