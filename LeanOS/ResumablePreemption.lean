@@ -1434,14 +1434,16 @@ private def oracleSwitchBToA : Outcome :=
       { demoRegisters 0x20 with r12 := 0xde }
 
 theorem resumableDemo_both_legs_agree :
-    Preemption.resumableDemo 1 2 2 0xde 0x1c = encodeOutcome 1 oracleSwitchAToB ∧
-    Preemption.resumableDemo 2 1 1 0x1c 0xde = encodeOutcome 2 oracleSwitchBToA := by
+    Preemption.resumableDemo 1 0x202 0x101 0xde 0x1c =
+      encodeOutcome 1 oracleSwitchAToB ∧
+    Preemption.resumableDemo 2 0x101 0x202 0x1c 0xde =
+      encodeOutcome 2 oracleSwitchBToA := by
   native_decide
 
 /-- Giving A's restore slot B's owner is rejected by the same composite
 switch used by the positive B -> A vector. -/
 theorem resumableDemo_cross_substitution_rejected :
-    Preemption.resumableDemo 2 2 1 0x1c 0xde = 0 := by
+    Preemption.resumableDemo 2 0x102 0x202 0x1c 0xde = 0 := by
   native_decide
 
 /-- Executable cleanup fixture with distinct address-space and memory object

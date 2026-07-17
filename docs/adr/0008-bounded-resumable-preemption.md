@@ -24,9 +24,12 @@ records plus A's original-frame resume record and `FINAL ticks=2`.
 The shared oracle contains both scalar scheduler bindings and composite
 save/select/restore witnesses for A-to-B and B-to-A. The composite encoding
 packs the restored owner, address space, logical stack, and r12 marker beside
-the outgoing bank owner, stack, and r12 marker. The boot path feeds it markers
-from the actual target frame and separate outgoing save bank; a cross-owned
-restore bank is a generated rejecting vector.
+the outgoing bank owner, stack, and r12 marker. The assembly passes immutable
+kernel-owned owner tags for the selected and outgoing banks, while C derives
+both logical stack markers from the target and saved RSP words and both r12
+markers from their concrete buffers. A cross-owned restore bank is a generated
+rejecting vector and a boot-side preflight negative; corrupt saved RSP data
+fails before the final transcript.
 The runner rejects missing or duplicate ticks, restart instead of resume,
 cross-restored identity, stale CR3, wrong caller, corrupt register/stack/flags
 or selectors, a forged final PASS, guest failure, and timeout. The real QEMU

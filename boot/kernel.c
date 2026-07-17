@@ -40,6 +40,7 @@ extern char user_a_entry[], user_a_stack_top[];
 extern char user_a_stack[];
 extern char user_b_stack[], user_b_stack_top[];
 extern uint64_t saved_context_a[], saved_context_b[];
+extern const uint64_t saved_context_owner_a, saved_context_owner_b;
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
@@ -104,6 +105,8 @@ static void serial_puts(const char *text);
 static void serial_putc(char value);
 static void serial_u64(uint64_t value);
 static void arm_timer(void);
+static uint64_t stack_marker(uint64_t stack_pointer);
+static void check_cross_bank_negative(void);
 
 /* The arrays are emitted only after the linker-resolved Input is accepted by
    LeanOS.BootPageTablePlan.compile. The early assembly constructor remains
@@ -590,6 +593,8 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             saved_context_a[2] != 0xa22da22da22da22dull ||
             saved_context_b[3] != 0xc0dec0dec0dec0deull ||
             saved_context_b[2] != 0x51a7e51a7e51a7e5ull ||
+            stack_marker(saved_context_a[18]) != 1 ||
+            stack_marker(saved_context_b[18]) != 2 ||
             saved_context_a[16] != 0x23 || saved_context_a[19] != 0x1b ||
             saved_context_b[16] != 0x23 || saved_context_b[19] != 0x1b)
             fail("saved-context");
@@ -638,18 +643,25 @@ static uint64_t stack_marker(uint64_t stack_pointer) {
     fail("context-stack");
 }
 
+static uint64_t context_descriptor(uint64_t owner, uint64_t stack_pointer) {
+    if (owner != 1 && owner != 2) fail("context-owner");
+    return owner | (stack_marker(stack_pointer) << 8);
+}
+
 static void check_resumable_witness(uint64_t leg, const uint64_t *target,
-                                    const uint64_t *saved, unsigned vector_index) {
-    uint64_t target_owner = leg == 1 ? 2 : 1;
-    uint64_t got = leanos_resumable_preemption_demo(leg, target_owner,
-        stack_marker(target[18]), target[3] & 0xffu, saved[3] & 0xffu);
+                                    const uint64_t *saved, uint64_t target_owner,
+                                    uint64_t saved_owner, unsigned vector_index) {
+    uint64_t got = leanos_resumable_preemption_demo(leg,
+        context_descriptor(target_owner, target[18]),
+        context_descriptor(saved_owner, saved[18]),
+        target[3] & 0xffu, saved[3] & 0xffu);
     if (got != oracle_vectors[vector_index].expected) fail("modeled-restore");
 }
 
-void switch_complete(uint64_t *target) {
+void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
     if (current_subject == 2 && preemption_step == 2 && timer_accepted == 1) {
         check_selected_root_b();
-        check_resumable_witness(1, target, saved_context_a,
+        check_resumable_witness(1, target, saved_context_a, target_owner, saved_owner,
             ORACLE_INDEX_RESUMABLE_A_TO_B);
         preemption_step = 3;
         serial_puts("LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=initial contexts=separate\n");
@@ -657,13 +669,20 @@ void switch_complete(uint64_t *target) {
     }
     if (current_subject == 1 && preemption_step == 5 && timer_accepted == 2) {
         check_selected_root_a();
-        check_resumable_witness(2, target, saved_context_b,
+        check_resumable_witness(2, target, saved_context_b, target_owner, saved_owner,
             ORACLE_INDEX_RESUMABLE_B_TO_A);
         preemption_step = 6;
         serial_puts("LEANOS/5 SWITCH subject=1 address-space=1 cr3=switched stack=resumed contexts=separate\n");
         return;
     }
     fail("switch-binding");
+}
+
+static void check_cross_bank_negative(void) {
+    uint64_t crossed_target = saved_context_owner_b | (1ull << 8);
+    uint64_t saved_b = saved_context_owner_b | (2ull << 8);
+    if (leanos_resumable_preemption_demo(2, crossed_target, saved_b, 0x1c, 0xde) != 0)
+        fail("cross-bank-negative");
 }
 
 static void arm_timer(void) {
@@ -745,6 +764,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     smap_force_clac();
     if (ac_is_set()) fail("cleanup-recovery");
     serial_puts("LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS\n");
+    check_cross_bank_negative();
     arm_timer();
     enter_user(user_a_entry, user_a_stack_top);
     fail("iret-returned");

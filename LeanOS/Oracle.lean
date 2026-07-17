@@ -39,12 +39,13 @@ private def preemption (id : String) (vector current queued armed : UInt64) : Ve
   { id, adapter := "Preemption.scalar", words := [vector, current, queued, armed],
     expected := Preemption.preemptionDemo vector current queued armed }
 
-private def resumable (id : String) (leg bankOwner frameMarker bankRegisterMarker
-    incomingRegisterMarker : UInt64) : Vector :=
+private def resumable (id : String) (leg targetDescriptor savedDescriptor
+    targetRegisterMarker savedRegisterMarker : UInt64) : Vector :=
   { id, adapter := "Preemption.resumable",
-    words := [leg, bankOwner, frameMarker, bankRegisterMarker, incomingRegisterMarker],
-    expected := Preemption.resumableDemo leg bankOwner frameMarker
-      bankRegisterMarker incomingRegisterMarker }
+    words := [leg, targetDescriptor, savedDescriptor, targetRegisterMarker,
+      savedRegisterMarker],
+    expected := Preemption.resumableDemo leg targetDescriptor savedDescriptor
+      targetRegisterMarker savedRegisterMarker }
 
 private def bootAllocation (id : String) (magic infoBytes entryBytes selected flags : UInt64) :
     Vector :=
@@ -73,9 +74,9 @@ def vectors : List Vector := [
   preemption "preemption.wrong-vector" 14 1 2 1,
   preemption "preemption.resume" 32 2 1 1,
   preemption "preemption.forged-current" 32 2 3 1,
-  resumable "resumable.a-to-b" 1 2 2 0xde 0x1c,
-  resumable "resumable.b-to-a" 2 1 1 0x1c 0xde,
-  resumable "resumable.cross-restored" 2 2 1 0x1c 0xde,
+  resumable "resumable.a-to-b" 1 0x202 0x101 0xde 0x1c,
+  resumable "resumable.b-to-a" 2 0x101 0x202 0x1c 0xde,
+  resumable "resumable.cross-restored" 2 0x102 0x202 0x1c 0xde,
   bootAllocation "boot-allocation.accept" BootAllocation.multiboot2Magic 128 24 512 15,
   bootAllocation "boot-allocation.wrong-magic" 0 128 24 512 15,
   bootAllocation "boot-allocation.truncated" BootAllocation.multiboot2Magic 8 24 512 15,

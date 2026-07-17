@@ -167,16 +167,16 @@ def encodeResumableWitness (restoredOwner restoredAddressSpace restoredFrameMark
 witness. Inputs are taken from kernel-owned bank selection and the actual
 target/outgoing frames. A cross-owned bank is rejected before packing. -/
 @[export leanos_resumable_preemption_demo]
-def resumableDemo (leg bankOwner frameMarker bankRegisterMarker
-    incomingRegisterMarker : UInt64) : UInt64 :=
-  if leg == 1 && bankOwner == 2 && frameMarker == 2 then
-    encodeResumableWitness 2 2 frameMarker bankRegisterMarker 1 1 incomingRegisterMarker
-  else if leg == 2 && bankOwner == 1 && frameMarker == 1 then
-    encodeResumableWitness 1 1 frameMarker bankRegisterMarker 2 2 incomingRegisterMarker
+def resumableDemo (leg targetDescriptor savedDescriptor targetRegisterMarker
+    savedRegisterMarker : UInt64) : UInt64 :=
+  if leg == 1 && targetDescriptor == 0x202 && savedDescriptor == 0x101 then
+    encodeResumableWitness 2 2 2 targetRegisterMarker 1 1 savedRegisterMarker
+  else if leg == 2 && targetDescriptor == 0x101 && savedDescriptor == 0x202 then
+    encodeResumableWitness 1 1 1 targetRegisterMarker 2 2 savedRegisterMarker
   else 0
 
-example : resumableDemo 1 2 2 0xde 0x1c = 0x1c0101de020202 := by decide
-example : resumableDemo 2 1 1 0x1c 0xde = 0xde02021c010101 := by decide
-example : resumableDemo 2 2 1 0x1c 0xde = 0 := by decide
+example : resumableDemo 1 0x202 0x101 0xde 0x1c = 0x1c0101de020202 := by decide
+example : resumableDemo 2 0x101 0x202 0x1c 0xde = 0xde02021c010101 := by decide
+example : resumableDemo 2 0x102 0x202 0x1c 0xde = 0 := by decide
 
 end LeanOS.Preemption

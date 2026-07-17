@@ -531,6 +531,14 @@ saved_context_a:
 .global saved_context_b
 saved_context_b:
     .skip 160
+.section .rodata,"a",@progbits
+.align 8
+.global saved_context_owner_a
+saved_context_owner_a:
+    .quad 1
+.global saved_context_owner_b
+saved_context_owner_b:
+    .quad 2
 .section .text,"ax",@progbits
 isr32:
 .global isr32_clac
@@ -560,6 +568,8 @@ isr32_cld:
     mov %rax, 16(%rsp)
     movq $page_map_level_4_b, %rax
     mov %rax, %cr3
+    mov saved_context_owner_b(%rip), %rsi
+    mov saved_context_owner_a(%rip), %rdx
     jmp 3f
 2:  /* Preserve B separately and restore A byte-for-byte before CR3/iretq. */
     mov %rsp, %rsi
@@ -572,6 +582,8 @@ isr32_cld:
     rep movsq
     movq $page_map_level_4_a, %rax
     mov %rax, %cr3
+    mov saved_context_owner_a(%rip), %rsi
+    mov saved_context_owner_b(%rip), %rdx
 3:
     mov %rsp, %rdi
     call switch_complete
