@@ -16,6 +16,8 @@ set_option linter.unusedSimpArgs false
 
 inductive FatalReason where
   | kernelFault | unsupportedVector | nestedEntry | doubleFault
+  | invalidUserReturn (purpose : Interrupt.ReturnPurpose)
+      (reason : Interrupt.ReturnRejectReason)
   deriving DecidableEq, Repr
 
 /-- Kernel-owned entry identity.  General-purpose registers are absent. -/
@@ -135,6 +137,82 @@ def dispatchHardware (state : State) (frame : Interrupt.HardwareFrame) : EntryOu
 
 def dispatch (state : State) (trap : Interrupt.Trap) : EntryOutcome :=
   dispatchHardware state trap.hardware
+
+/-! ## Terminal outgoing user-return transaction -/
+
+inductive UserReturnAction where
+  | accepted (attested : Interrupt.UserReturnRequest)
+  | fatal (record : HaltRecord)
+  | alreadyHalted (record : HaltRecord)
+
+structure UserReturnOutcome where
+  state : State
+  action : UserReturnAction
+
+/-- Replace caller-supplied scheduler identity with the execution latch's
+authoritative lifecycle/current subject/address space before validation. -/
+def authoritativeReturnRequest (state : State) (request : Interrupt.UserReturnRequest) :
+    Interrupt.UserReturnRequest :=
+  { request with
+      lifecycle := state.core.lifecycle
+      expectedSubject := state.core.context.currentSubject
+      expectedAddressSpace := state.core.context.activeAddressSpace
+      executionMode := .running }
+
+private def latchInvalidUserReturn (state : State) (request : Interrupt.UserReturnRequest)
+    (reason : Interrupt.ReturnRejectReason) (active : Option ActiveEntry) :
+    UserReturnOutcome :=
+  let record : HaltRecord :=
+    { reason := .invalidUserReturn request.purpose reason
+      active
+      incomingVector := request.hardware.vector
+      incomingOrigin := request.hardware.savedPrivilege }
+  { state := { state with
+      core := { state.core with context := { state.core.context with entryActive := true } }
+      mode := .halted record
+      copyOverride := false }
+    action := .fatal record }
+
+/-- Authoritative epilogue gate. Rejection records its purpose/reason and
+latches the absorbing terminal mode before any modeled frame consumption. -/
+def completeUserReturn (state : State) (request : Interrupt.UserReturnRequest) :
+    UserReturnOutcome :=
+  match state.mode with
+  | .halted record => { state, action := .alreadyHalted record }
+  | .handling active => latchInvalidUserReturn state request .fatalMode (some active)
+  | .running =>
+      let normalized := authoritativeReturnRequest state request
+      match Interrupt.validateUserReturn normalized with
+      | .accepted attested => { state, action := .accepted attested }
+      | .rejected reason => latchInvalidUserReturn state normalized reason none
+
+theorem accepted_user_return_is_atomic state request attested
+    (hmode : state.mode = .running)
+    (haccepted : Interrupt.validateUserReturn
+      (authoritativeReturnRequest state request) = .accepted attested) :
+    completeUserReturn state request = { state, action := .accepted attested } := by
+  simp [completeUserReturn, hmode, haccepted]
+
+theorem rejected_user_return_latches state request reason
+    (hmode : state.mode = .running)
+    (hrejected : Interrupt.validateUserReturn
+      (authoritativeReturnRequest state request) = .rejected reason) :
+    (completeUserReturn state request).state.mode =
+      .halted
+        { reason := .invalidUserReturn request.purpose reason
+          active := none
+          incomingVector := request.hardware.vector
+          incomingOrigin := request.hardware.savedPrivilege } ∧
+      (completeUserReturn state request).state.core.lifecycle = state.core.lifecycle ∧
+      (completeUserReturn state request).state.copyOverride = false := by
+  simp only [completeUserReturn, hmode]
+  rw [hrejected]
+  simp [latchInvalidUserReturn, authoritativeReturnRequest]
+
+theorem halted_user_return_absorbing state request record
+    (hmode : state.mode = .halted record) :
+    completeUserReturn state request = { state, action := .alreadyHalted record } := by
+  simp [completeUserReturn, hmode]
 
 /-- The state of the modeled subsystems whose transitions can run after entry.
 Keeping these states under the execution latch makes bypassing it impossible in
