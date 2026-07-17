@@ -40,23 +40,48 @@ inductive Mode where
   | halted (record : HaltRecord)
   deriving DecidableEq, Repr
 
+structure ReturnAddressSpace where
+  subject : Interrupt.SubjectId
+  expectedCr3 : UInt64
+  codeRegion : Interrupt.UserRegion
+  stackRegion : Interrupt.UserRegion
+  deriving DecidableEq, Repr
+
 structure State where
   core : Interrupt.State
   mode : Mode
+  /-- Kernel-owned projection of the installed page-table plan.  The return
+  selector reads this view; an outgoing proposal cannot supply it. -/
+  returnAddressSpace : Interrupt.AddressSpaceId → Option ReturnAddressSpace := fun _ => none
   /-- Kernel-selected purpose and address-space policy for the next return. -/
   returnAuthority : Interrupt.TrustedReturnAuthority := Interrupt.defaultReturnAuthority
+  /-- True only after `selectReturnAuthority` has bound the authority record to
+  the live scheduler subject and its installed address-space view. -/
+  returnAuthorityArmed : Bool := false
   /-- The kernel-owned SMAP AC override. Entry closes it before classification. -/
   copyOverride : Bool := false
 
 def ActiveEntry.WellFormed (entry : ActiveEntry) : Prop :=
   entry.vector = entry.frame.vector ∧ entry.origin = entry.frame.savedPrivilege
 
-/-- Lifecycle consistency plus the kernel-owned entry transaction invariant.
-The legacy latch is retained only as a reflected implementation boundary: the
-authoritative identity is the `handling` payload, and its duplicate fields must
-agree with the saved frame. -/
+/-- The armed record is an exact projection of the live subject's installed
+address-space view, rather than a free-standing collection of numbers. -/
+def ReturnAuthorityBound (state : State) : Prop :=
+  ∃ view, state.returnAddressSpace state.core.context.activeAddressSpace = some view ∧
+    view.subject = state.core.context.currentSubject ∧
+    state.core.lifecycle.current = some view.subject ∧
+    state.core.lifecycle.capabilities.subjects view.subject = true ∧
+    state.core.lifecycle.runnable view.subject = true ∧
+    state.core.lifecycle.addressOwner state.core.context.activeAddressSpace = some view.subject ∧
+    state.returnAuthority.expectedCr3 = view.expectedCr3 ∧
+    state.returnAuthority.codeRegion = view.codeRegion ∧
+    state.returnAuthority.stackRegion = view.stackRegion
+
+/-- Lifecycle consistency, a bound armed return policy, and the kernel-owned
+entry transaction invariant. -/
 def WellFormed (state : State) : Prop :=
   Interrupt.WellFormed state.core ∧
+    (state.returnAuthorityArmed = true → ReturnAuthorityBound state) ∧
     match state.mode with
     | .running => state.core.context.entryActive = false
     | .handling entry => entry.WellFormed ∧ state.core.context.entryActive = true
@@ -86,7 +111,10 @@ def escalation (active : ActiveEntry) (incoming : Interrupt.HardwareFrame) : Fat
 def halt (state : State) (reason : FatalReason) (active : Option ActiveEntry)
     (incoming : Interrupt.HardwareFrame) : EntryOutcome :=
   let record := HaltRecord.mk reason active incoming.vector incoming.savedPrivilege
-  { state := { state with mode := .halted record, copyOverride := false },
+  { state := { state with
+      mode := .halted record
+      returnAuthorityArmed := false
+      copyOverride := false }
     action := .fatal reason }
 
 /-- Begin entry without changing lifecycle, authority, scheduling, mailbox, or
@@ -98,7 +126,9 @@ def beginEntry (state : State) (frame : Interrupt.HardwareFrame) : EntryOutcome 
   | .running =>
       { state := { state with
           core := { state.core with context := { state.core.context with entryActive := true } }
-          mode := .handling (activeEntry frame), copyOverride := false }
+          mode := .handling (activeEntry frame)
+          returnAuthorityArmed := false
+          copyOverride := false }
         action := .rejected .wrongOrigin }
 
 def mapFatal : Interrupt.FatalReason → FatalReason
@@ -141,6 +171,48 @@ def dispatch (state : State) (trap : Interrupt.Trap) : EntryOutcome :=
   dispatchHardware state trap.hardware
 
 /-! ## Terminal outgoing user-return transaction -/
+
+/-- Select the next return policy from the installed address-space view.  The
+selection is armed only when scheduler identity, liveness, and ownership agree;
+the proposed hardware frame is not an input to this transition. -/
+def selectReturnAuthority (state : State) (purpose : Interrupt.ReturnPurpose) : State :=
+  match state.returnAddressSpace state.core.context.activeAddressSpace with
+  | none => { state with returnAuthorityArmed := false }
+  | some view =>
+      if view.subject = state.core.context.currentSubject ∧
+          state.core.lifecycle.current = some view.subject ∧
+          state.core.lifecycle.capabilities.subjects view.subject = true ∧
+          state.core.lifecycle.runnable view.subject = true ∧
+          state.core.lifecycle.addressOwner state.core.context.activeAddressSpace =
+            some view.subject then
+        { state with
+          returnAuthority :=
+            { purpose
+              expectedCr3 := view.expectedCr3
+              codeRegion := view.codeRegion
+              stackRegion := view.stackRegion }
+          returnAuthorityArmed := true }
+      else { state with returnAuthorityArmed := false }
+
+theorem selectReturnAuthority_wellFormed state purpose
+    (hstate : WellFormed state) : WellFormed (selectReturnAuthority state purpose) := by
+  rcases hstate with ⟨hcore, _hbound, hmode⟩
+  unfold selectReturnAuthority
+  split
+  · simp_all [WellFormed, ReturnAuthorityBound]
+  · rename_i view hview
+    by_cases hchecks : view.subject = state.core.context.currentSubject ∧
+        state.core.lifecycle.current = some view.subject ∧
+        state.core.lifecycle.capabilities.subjects view.subject = true ∧
+        state.core.lifecycle.runnable view.subject = true ∧
+        state.core.lifecycle.addressOwner state.core.context.activeAddressSpace = some view.subject
+    · rw [if_pos hchecks]
+      refine ⟨hcore, ?_, hmode⟩
+      intro _
+      exact ⟨view, hview, hchecks.1, hchecks.2.1, hchecks.2.2.1,
+        hchecks.2.2.2.1, hchecks.2.2.2.2, rfl, rfl, rfl⟩
+    · rw [if_neg hchecks]
+      exact ⟨hcore, by simp, hmode⟩
 
 inductive UserReturnAction where
   | accepted (attested : Interrupt.UserReturnRequest)
@@ -186,20 +258,25 @@ def completeUserReturn (state : State) (request : Interrupt.UserReturnRequest) :
   | .halted record => { state, action := .alreadyHalted record }
   | .handling active => latchInvalidUserReturn state request .fatalMode (some active)
   | .running =>
-      let normalized := authoritativeReturnRequest state request
-      match Interrupt.validateUserReturn normalized with
-      | .accepted attested => { state, action := .accepted attested }
-      | .rejected reason => latchInvalidUserReturn state normalized reason none
+      if state.returnAuthorityArmed != true then
+        latchInvalidUserReturn state request .unselectedAuthority none
+      else
+        let normalized := authoritativeReturnRequest state request
+        match Interrupt.validateUserReturn normalized with
+        | .accepted attested => { state, action := .accepted attested }
+        | .rejected reason => latchInvalidUserReturn state normalized reason none
 
 theorem accepted_user_return_is_atomic state request attested
     (hmode : state.mode = .running)
+    (harmed : state.returnAuthorityArmed = true)
     (haccepted : Interrupt.validateUserReturn
       (authoritativeReturnRequest state request) = .accepted attested) :
     completeUserReturn state request = { state, action := .accepted attested } := by
-  simp [completeUserReturn, hmode, haccepted]
+  simp [completeUserReturn, hmode, harmed, haccepted]
 
 theorem rejected_user_return_latches state request reason
     (hmode : state.mode = .running)
+    (harmed : state.returnAuthorityArmed = true)
     (hrejected : Interrupt.validateUserReturn
       (authoritativeReturnRequest state request) = .rejected reason) :
     (completeUserReturn state request).state.mode =
@@ -210,7 +287,7 @@ theorem rejected_user_return_latches state request reason
           incomingOrigin := request.hardware.savedPrivilege } ∧
       (completeUserReturn state request).state.core.lifecycle = state.core.lifecycle ∧
       (completeUserReturn state request).state.copyOverride = false := by
-  simp only [completeUserReturn, hmode]
+  simp only [completeUserReturn, hmode, harmed]
   rw [hrejected]
   simp [latchInvalidUserReturn, authoritativeReturnRequest]
 
@@ -229,6 +306,8 @@ theorem accepted_user_return_uses_authority state request attested
       attested.codeRegion = state.returnAuthority.codeRegion ∧
       attested.stackRegion = state.returnAuthority.stackRegion := by
   simp only [completeUserReturn, hmode] at haccepted
+  split at haccepted
+  · simp [latchInvalidUserReturn] at haccepted
   generalize hnormalized : authoritativeReturnRequest state request = normalized at haccepted
   cases hvalidation : Interrupt.validateUserReturn normalized with
   | rejected reason => simp [hvalidation, latchInvalidUserReturn] at haccepted
@@ -239,6 +318,29 @@ theorem accepted_user_return_uses_authority state request attested
       subst attested
       rw [← hnormalized]
       simp [authoritativeReturnRequest]
+
+theorem accepted_user_return_has_bound_authority state request attested
+    (hstate : WellFormed state)
+    (haccepted : (completeUserReturn state request).action = .accepted attested) :
+    ReturnAuthorityBound state := by
+  rcases hstate with ⟨_, hbound, _⟩
+  apply hbound
+  cases hmode : state.mode with
+  | running =>
+      simp only [completeUserReturn, hmode] at haccepted
+      split at haccepted
+      · simp [latchInvalidUserReturn] at haccepted
+      · simp_all
+  | handling active => simp [completeUserReturn, hmode, latchInvalidUserReturn] at haccepted
+  | halted record => simp [completeUserReturn, hmode] at haccepted
+
+theorem accepted_user_return_requires_running state request attested
+    (haccepted : (completeUserReturn state request).action = .accepted attested) :
+    state.mode = .running := by
+  cases hmode : state.mode with
+  | running => rfl
+  | handling active => simp [completeUserReturn, hmode, latchInvalidUserReturn] at haccepted
+  | halted record => simp [completeUserReturn, hmode] at haccepted
 
 /-- The state of the modeled subsystems whose transitions can run after entry.
 Keeping these states under the execution latch makes bypassing it impossible in
@@ -513,7 +615,7 @@ theorem dispatchHardware_deterministic state frame first second
 
 theorem dispatchHardware_preserves_wellFormed state frame (hstate : WellFormed state) :
     WellFormed (dispatchHardware state frame).state := by
-  rcases hstate with ⟨hlifecycle, hmodeWellFormed⟩
+  rcases hstate with ⟨hlifecycle, hbound, hmodeWellFormed⟩
   change SubjectLifecycle.WellFormed state.core.lifecycle at hlifecycle
   cases hmode : state.mode with
   | handling active =>
@@ -522,7 +624,7 @@ theorem dispatchHardware_preserves_wellFormed state frame (hstate : WellFormed s
         And.intro hlifecycle hmodeWellFormed.2
   | halted record =>
       simpa [dispatchHardware, hmode, WellFormed, Interrupt.WellFormed] using
-        And.intro hlifecycle hmodeWellFormed
+        And.intro hlifecycle (And.intro hbound hmodeWellFormed)
   | running =>
       simp only [hmode] at hmodeWellFormed
       simp only [dispatchHardware, hmode, beginEntry, finishEntry, activeEntry]
@@ -573,6 +675,7 @@ typed terminal reason, changes no lifecycle/authority/scheduler/resource view,
 and absorbs every later typed operation. -/
 theorem rejected_user_return_composite_atomicity state request reason proposals
     (hmode : state.execution.mode = .running)
+    (harmed : state.execution.returnAuthorityArmed = true)
     (hrejected : Interrupt.validateUserReturn
       (authoritativeReturnRequest state.execution request) = .rejected reason) :
     let record : HaltRecord :=
@@ -598,11 +701,11 @@ theorem rejected_user_return_composite_atomicity state request reason proposals
             active := none
             incomingVector := request.hardware.vector
             incomingOrigin := request.hardware.savedPrivilege }) := by
-    simp only [gate, hmode, applyOperation, completeUserReturn]
+    simp only [gate, hmode, applyOperation, completeUserReturn, harmed]
     rw [hrejected]
     simp [latchInvalidUserReturn, authoritativeReturnRequest]
   refine ⟨hterminal, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · simp only [gate, hmode, applyOperation, completeUserReturn]
+  · simp only [gate, hmode, applyOperation, completeUserReturn, harmed]
     rw [hrejected]
     simp [latchInvalidUserReturn, authoritativeReturnRequest]
   · simp [gate, hmode, applyOperation]

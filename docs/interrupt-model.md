@@ -26,9 +26,12 @@ from validating one tuple and consuming another. The confinement theorem pins
 exact request identity and every validator condition: purpose and mode,
 canonicality and region containment, complete flags, subject liveness,
 runnability and selection, address ownership, and CR3 binding. The composite
-`FailStop.completeUserReturn` transition normalizes scheduler identity from the
-execution state and takes purpose, expected CR3, and executable/stack regions
-from its kernel-owned `returnAuthority` record. It converts rejection into a
+`FailStop.selectReturnAuthority` transition first binds the live scheduler
+subject and owned address space to the kernel's installed page-table view. It
+arms an exact purpose, CR3, executable-region, and stack-region record only when
+those views agree. `FailStop.completeUserReturn` refuses an unarmed record,
+normalizes scheduler identity from execution state, and takes the remaining
+policy from the bound record. It converts rejection into a
 typed absorbing halt record without changing lifecycle, authority, scheduling,
 IPC, or resource views.
 The shared machine epilogue clears the kernel-managed saved DF and AC bits
@@ -45,7 +48,9 @@ be reported as containment. Timer delivery preserves the complete state and
 produces only a scheduling event. A well-formed state is preserved by every
 nonfatal transition; fatal transitions cannot resume as any subject. Any
 accepted return has a valid CPL3 frame and retains the kernel-selected current
-subject.
+subject. The stable authority claim exposes the installed-view binding, and a
+concrete well-formed witness reaches an armed state and completes an accepted
+return, so the contract is not vacuous.
 
 Executable traces cover user and kernel page faults, an unexpected vector,
 timer delivery, valid return, wrong-origin syscall entry, malformed selectors

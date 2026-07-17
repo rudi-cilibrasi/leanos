@@ -107,19 +107,107 @@ theorem user_return_context_confinement request attested
 /-- SC-USER-RETURN-AUTHORITY: the executable target policy accepted by the
 terminal gate is exactly the kernel-owned policy, never a proposal copy. -/
 theorem user_return_authority_confinement state request attested
-    (hmode : state.mode = .running)
+    (hstate : FailStop.WellFormed state)
     (haccepted : (FailStop.completeUserReturn state request).action = .accepted attested) :
-    attested.purpose = state.returnAuthority.purpose ∧
+    FailStop.ReturnAuthorityBound state ∧
+      attested.purpose = state.returnAuthority.purpose ∧
       attested.expectedCr3 = state.returnAuthority.expectedCr3 ∧
       attested.codeRegion = state.returnAuthority.codeRegion ∧
       attested.stackRegion = state.returnAuthority.stackRegion := by
-  exact FailStop.accepted_user_return_uses_authority state request attested hmode haccepted
+  have hbound := FailStop.accepted_user_return_has_bound_authority state request attested
+    hstate haccepted
+  have hmode := FailStop.accepted_user_return_requires_running state request attested haccepted
+  exact ⟨hbound, FailStop.accepted_user_return_uses_authority state request attested
+    hmode haccepted⟩
+
+private def returnWitnessLifecycle : SubjectLifecycle.State :=
+  { capabilities :=
+      { subjects := fun subject => subject = 1
+        objects := fun _ => false
+        kinds := fun _ => none
+        slots := fun _ _ => none }
+    issuedSubjects := fun subject => subject = 1
+    ownedMemory := fun _ => none
+    addressOwner := fun space => if space = 11 then some 1 else none
+    mapping := fun _ _ => none
+    endpointOwner := fun _ => none
+    mailbox := fun _ => none
+    frameOwner := fun _ => none
+    freeFrame := fun _ => true
+    runnable := fun subject => subject = 1
+    current := some 1 }
+
+private def returnWitnessView : FailStop.ReturnAddressSpace :=
+  { subject := 1
+    expectedCr3 := 0x1000
+    codeRegion := ⟨0x400000, 0x401000⟩
+    stackRegion := ⟨0x500000, 0x501000⟩ }
+
+private def returnWitnessBase : FailStop.State :=
+  { core :=
+      { lifecycle := returnWitnessLifecycle
+        context :=
+          { currentSubject := 1
+            activeAddressSpace := 11
+            kernelStack := 0
+            entryActive := false } }
+    mode := .running
+    returnAddressSpace := fun space => if space = 11 then some returnWitnessView else none }
+
+private def returnWitnessState : FailStop.State :=
+  FailStop.selectReturnAuthority returnWitnessBase .initialDispatch
+
+private def returnWitnessRequest : Interrupt.UserReturnRequest :=
+  { hardware :=
+      { vector := 0
+        errorCode := 0
+        savedPrivilege := .user
+        instructionPointer := 0x400100
+        stackPointer := 0x500ff8
+        codeSelector := 0x23
+        stackSelector := 0x1b
+        flags := 0x202
+        canonicalInstructionPointer := true
+        canonicalStackPointer := true
+        flagsAllowed := true }
+    purpose := .initialDispatch
+    frameSubject := 1
+    frameAddressSpace := 11
+    frameCr3 := 0x1000
+    expectedSubject := 1
+    expectedAddressSpace := 11
+    expectedCr3 := 0x1000
+    executionMode := .running
+    lifecycle := returnWitnessLifecycle
+    codeRegion := ⟨0x400000, 0x401000⟩
+    stackRegion := ⟨0x500000, 0x501000⟩
+    flags :=
+      { interruptEnable := true
+        direction := false
+        alignmentCheck := false
+        nestedTask := false
+        virtual8086 := false
+        ioPrivilegeLevel := 0
+        reservedAllowed := true } }
+
+/-- The authority-selection transition reaches a well-formed armed state whose
+complete return gate accepts the matching live frame. -/
+theorem user_return_authority_reachable_witness :
+    FailStop.WellFormed returnWitnessState ∧
+      (FailStop.completeUserReturn returnWitnessState returnWitnessRequest).action =
+        .accepted returnWitnessRequest := by
+  constructor
+  · apply FailStop.selectReturnAuthority_wellFormed
+    simp [returnWitnessBase, returnWitnessLifecycle, FailStop.WellFormed,
+      Interrupt.WellFormed, SubjectLifecycle.WellFormed]
+  · rfl
 
 /-- SC-USER-RETURN-FAILSTOP: a rejected outgoing return atomically latches a
 typed terminal record, freezes every composite subsystem, and absorbs all
 later operations. -/
 theorem user_return_rejection_failstop state request reason proposals
     (hmode : state.execution.mode = .running)
+    (harmed : state.execution.returnAuthorityArmed = true)
     (hrejected : Interrupt.validateUserReturn
       (FailStop.authoritativeReturnRequest state.execution request) = .rejected reason) :
     let record : FailStop.HaltRecord :=
@@ -138,7 +226,7 @@ theorem user_return_rejection_failstop state request reason proposals
       next.lifecycle = state.lifecycle ∧
       FailStop.runOperations next proposals = next := by
   exact FailStop.rejected_user_return_composite_atomicity state request reason proposals
-    hmode hrejected
+    hmode harmed hrejected
 
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps

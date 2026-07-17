@@ -182,7 +182,7 @@ structure UserReturnRequest where
   flags : ReturnFlags
 
 inductive ReturnRejectReason where
-  | wrongPurpose | fatalMode | wrongOrigin | wrongSelector | noncanonical
+  | unselectedAuthority | wrongPurpose | fatalMode | wrongOrigin | wrongSelector | noncanonical
   | forbiddenFlags | staleSubject | wrongAddressSpace | wrongCr3
   | instructionOutsideSubject | stackOutsideSubject
   deriving DecidableEq, Repr
