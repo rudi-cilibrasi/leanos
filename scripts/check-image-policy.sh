@@ -191,6 +191,17 @@ return_disassembly="$(objdump -d "$elf" | sed -n '/<user_return_epilogue>:/,/<us
 grep -Eq 'call.*<validate_user_return>' <<<"$return_disassembly" || {
   echo "error: user-return epilogue does not call validator" >&2; exit 1;
 }
+initial_return_disassembly="$(objdump -d --no-show-raw-insn "$elf" |
+  sed -n '/<enter_user>:/,/<run_double_fault_probe>:/p')"
+[[ "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+add[ql]?[[:space:]]+\$0x8,%rsp$' \
+    <<<"$initial_return_disassembly")" -eq 1 &&
+   "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+push' \
+    <<<"$initial_return_disassembly")" -eq 21 &&
+   "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+pop' \
+    <<<"$initial_return_disassembly")" -eq 1 ]] || {
+  echo "error: initial user-return path does not preserve SysV validator-call alignment" >&2
+  exit 1
+}
 restore_sequence="$(objdump -d --no-show-raw-insn "$elf" |
   awk '/<user_return_restore>:/ { capture=1; next }
        /<user_return_iretq>:/ { capture=0 }

@@ -391,6 +391,63 @@ structure CompositeState where
   capabilities : Capability.State
   lifecycle : SubjectLifecycle.State
 
+/-- A compiled return plan refines the active live virtual-memory view exactly
+at the two leaves used by the return gate.  The live object bindings must name
+the same physical frames as the compiled user-text/user-stack leaves. -/
+def ReturnAddressSpace.liveBound (view : ReturnAddressSpace)
+    (addressSpace : Interrupt.AddressSpaceId) (plan : BootPageTablePlan.Plan)
+    (virtualMemory : VirtualMapping.State) : Bool :=
+  let selected :=
+    if view.subject = 1 && addressSpace = 1 then
+      some (BootPageTablePlan.Space.subjectA, BootPageTablePlan.Owner.subjectA)
+    else if view.subject = 2 && addressSpace = 2 then
+      some (BootPageTablePlan.Space.subjectB, BootPageTablePlan.Owner.subjectB)
+    else none
+  match selected with
+  | none => false
+  | some (space, owner) =>
+      let codePage := view.codeRegion.first.toNat / X86PageTable.pageBytes
+      let stackPage := view.stackRegion.first.toNat / X86PageTable.pageBytes
+      match virtualMemory.mappings addressSpace codePage,
+          virtualMemory.mappings addressSpace stackPage with
+      | some codeMapping, some stackMapping =>
+          match virtualMemory.memory.binding codeMapping.object,
+              virtualMemory.memory.binding stackMapping.object with
+          | some codeFrame, some stackFrame =>
+              virtualMemory.owner addressSpace = some view.subject &&
+                codeMapping.permissions.read && !codeMapping.permissions.write &&
+                stackMapping.permissions.read && stackMapping.permissions.write &&
+                plan.hasPolicyLeafAtFrame space codePage codeFrame .userText owner &&
+                plan.hasPolicyLeafAtFrame space stackPage stackFrame .userStack owner
+          | _, _ => false
+      | _, _ => false
+
+/-- Cross-subsystem refinement checked whenever return authority is selected
+or consumed.  A detached compiled plan cannot authorize an unmapped target. -/
+def CompositeState.ReturnPlanLive (state : CompositeState) : Bool :=
+  match state.execution.returnPlan,
+      state.execution.returnAddressSpace state.execution.core.context.activeAddressSpace with
+  | some plan, some view =>
+      view.liveBound state.execution.core.context.activeAddressSpace plan state.virtualMemory
+  | _, _ => false
+
+/-- Select authority only from a compiled plan that agrees with the current
+live virtual-memory mappings. -/
+def selectLiveReturnAuthority (state : CompositeState)
+    (purpose : Interrupt.ReturnPurpose) : CompositeState :=
+  if state.ReturnPlanLive then
+    { state with execution := selectReturnAuthority state.execution purpose }
+  else
+    { state with execution := { state.execution with returnAuthorityArmed := false } }
+
+theorem selectLiveReturnAuthority_armed_implies_live state purpose
+    (harmed : (selectLiveReturnAuthority state purpose).execution.returnAuthorityArmed = true) :
+    state.ReturnPlanLive = true := by
+  unfold selectLiveReturnAuthority at harmed
+  split at harmed
+  · assumption
+  · simp at harmed
+
 /-- Every subsystem view is a projection of one authoritative lifecycle.  In
 particular, scheduling and interrupt containment cannot disagree about whether
 a subject is still live. -/
@@ -567,22 +624,20 @@ structure GateOutcome where
 private def applyOperation (state : CompositeState) : Operation → CompositeState
   | .interrupt frame =>
       let entry := dispatchHardware state.execution frame
-      let entered := installLifecycle { state with execution := entry.state }
+      installLifecycle { state with execution := entry.state }
         entry.state.core.lifecycle
-      match entry.action with
-      | .syscall =>
-          { entered with execution := selectReturnAuthority entered.execution .syscallResume }
-      | _ => entered
   | .selectUserReturn purpose =>
-      { state with execution := selectReturnAuthority state.execution purpose }
+      selectLiveReturnAuthority state purpose
   | .userReturn request =>
-      { state with execution := (completeUserReturn state.execution request).state }
+      let execution :=
+        if state.ReturnPlanLive then state.execution
+        else { state.execution with returnAuthorityArmed := false }
+      { state with execution := (completeUserReturn execution request).state }
   | .syscall context call =>
       let virtualMemory := (Syscall.dispatch state.virtualMemory context call).state
       let installed := installLifecycle { state with virtualMemory }
         (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
-      { installed with
-        execution := selectReturnAuthority installed.execution .syscallResume }
+      selectLiveReturnAuthority installed .syscallResume
   | .preempt frame =>
       let entry := dispatchHardware state.execution frame
       let entered := installLifecycle { state with execution := entry.state }
@@ -592,8 +647,7 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
           let preemption :=
             (Preemption.oneShotTick entered.preemption entered.execution.core frame).state
           let scheduled := installScheduler { entered with preemption } preemption.scheduler
-          { scheduled with
-            execution := selectReturnAuthority scheduled.execution .schedulerRestore }
+          selectLiveReturnAuthority scheduled .schedulerRestore
       | _ => entered
   | .ipc context call => { state with ipc := (IPCSyscall.dispatch state.ipc context call).state }
   | .capabilityCopy actor source destination destinationSlot rights =>
@@ -657,23 +711,17 @@ def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
   | .halted record => { state, result := .rejectedHalted record }
 
 /-- Initial dispatch is also represented by a typed composite step; syscall
-and timer paths reselect automatically after their final context update. -/
+and timer paths reselect only after their final context update. -/
 theorem select_user_return_is_reachable state purpose
     (hmode : state.execution.mode = .running) :
-    (gate state (.selectUserReturn purpose)).state.execution =
-      selectReturnAuthority state.execution purpose := by
+    (gate state (.selectUserReturn purpose)).state =
+      selectLiveReturnAuthority state purpose := by
   simp [gate, hmode, applyOperation]
 
-theorem syscall_entry_reselects state frame
-    (hmode : state.execution.mode = .running)
-    (hsyscall : (dispatchHardware state.execution frame).action = .syscall) :
-    (gate state (.interrupt frame)).state.execution =
-      selectReturnAuthority
-        (installLifecycle
-          { state with execution := (dispatchHardware state.execution frame).state }
-          (dispatchHardware state.execution frame).state.core.lifecycle).execution
-        .syscallResume := by
-  simp [gate, hmode, applyOperation, hsyscall]
+theorem syscall_entry_leaves_return_unarmed state frame
+    (hmode : state.execution.mode = .running) :
+    (gate state (.interrupt frame)).state.execution.returnAuthorityArmed = false := by
+  simp [gate, hmode, applyOperation, installLifecycle]
 
 def runOperations (state : CompositeState) : List Operation → CompositeState
   | [] => state
@@ -748,6 +796,7 @@ and absorbs every later typed operation. -/
 theorem rejected_user_return_composite_atomicity state request reason proposals
     (hmode : state.execution.mode = .running)
     (harmed : state.execution.returnAuthorityArmed = true)
+    (hlive : state.ReturnPlanLive = true)
     (hrejected : Interrupt.validateUserReturn
       (authoritativeReturnRequest state.execution request) = .rejected reason) :
     let record : HaltRecord :=
@@ -773,19 +822,19 @@ theorem rejected_user_return_composite_atomicity state request reason proposals
             active := none
             incomingVector := request.hardware.vector
             incomingOrigin := request.hardware.savedPrivilege }) := by
-    simp only [gate, hmode, applyOperation, completeUserReturn, harmed]
+    simp only [gate, hmode, applyOperation, hlive, if_true, completeUserReturn, harmed]
     rw [hrejected]
     simp [latchInvalidUserReturn, authoritativeReturnRequest]
   refine ⟨hterminal, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · simp only [gate, hmode, applyOperation, completeUserReturn, harmed]
+  · simp only [gate, hmode, applyOperation, hlive, if_true, completeUserReturn, harmed]
     rw [hrejected]
     simp [latchInvalidUserReturn, authoritativeReturnRequest]
-  · simp [gate, hmode, applyOperation]
-  · simp [gate, hmode, applyOperation]
-  · simp [gate, hmode, applyOperation]
-  · simp [gate, hmode, applyOperation]
-  · simp [gate, hmode, applyOperation]
-  · simp [gate, hmode, applyOperation]
+  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive]
   · exact halted_suffix_absorbing _ _ proposals hterminal
 
 theorem halted_never_accepts state record operation

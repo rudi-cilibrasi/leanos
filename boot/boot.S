@@ -367,6 +367,10 @@ enter_user:
     lea user_return_restore(%rip), %rax
     jmp *%rax
 #endif
+    /* This function is entered by a SysV call and never returns.  Discard the
+       caller return address so the synthetic 160-byte frame leaves RSP
+       16-byte aligned at the validator call site. */
+    add $8, %rsp
     pushq $0x1b
     push %rsi
     pushfq

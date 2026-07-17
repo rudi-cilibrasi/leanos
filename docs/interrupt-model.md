@@ -26,19 +26,22 @@ from validating one tuple and consuming another. The confinement theorem pins
 exact request identity and every validator condition: purpose and mode,
 canonicality and region containment, complete flags, subject liveness,
 runnability and selection, address ownership, and CR3 binding. The composite
-`FailStop.selectReturnAuthority` transition first binds the live scheduler
+`FailStop.selectLiveReturnAuthority` transition first binds the live scheduler
 subject and owned address space to a proof-carrying `BootPageTablePlan.Plan`. It
 arms an exact purpose, CR3 root, executable page, and stack page only when the
-root and exact user-text/user-stack leaves occur in that compiled plan.
+root and exact user-text/user-stack leaves occur in that compiled plan and
+their physical frames equal the active virtual-memory mappings' live object
+bindings.
 `FailStop.completeUserReturn` refuses an unarmed record,
 normalizes scheduler identity from execution state, and takes the remaining
 policy from the bound record. It converts rejection into a
 typed absorbing halt record without changing lifecycle, authority, scheduling,
 IPC, or resource views.
 Initial dispatch selects through the typed `selectUserReturn` gate operation;
-syscall and scheduler-return paths reselect automatically after entry and the
-final context update. The syscall body performs its final reselection only
-after publishing its resulting virtual-memory and lifecycle state. Lifecycle,
+syscall and scheduler-return paths reselect automatically only after the final
+context update. Syscall classification itself stays unarmed, so an immediate
+return cannot skip the modeled syscall body. The syscall body performs its
+reselection only after publishing its resulting virtual-memory and lifecycle state. Lifecycle,
 scheduler, capability, and virtual-memory
 installation clears any earlier selection before that reselection.
 The shared machine epilogue clears the kernel-managed saved DF and AC bits
