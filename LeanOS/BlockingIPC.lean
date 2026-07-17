@@ -208,6 +208,78 @@ def sendHandle (state : State) (caller : SubjectId) (handle : CapabilityHandle.H
   | .error _ => reject state .staleHandle
   | .ok _ => send state caller handle.slot payload
 
+inductive WordReceiveResult where
+  | completed (result : ReceiveResult)
+  | handleRejected (reason : CapabilityHandle.WordResolveDenial)
+  deriving DecidableEq, Repr
+
+structure WordReceiveOutcome where
+  state : State
+  result : WordReceiveResult
+
+inductive WordResult where
+  | completed (result : Result)
+  | handleRejected (reason : CapabilityHandle.WordResolveDenial)
+  deriving DecidableEq, Repr
+
+structure WordOutcome where
+  state : State
+  result : WordResult
+
+/-- Boot-reachable blocking receive boundary. The userspace word is decoded and
+generation-checked only in the capability space selected by trusted caller
+provenance before the internal raw-slot transition is invoked. -/
+def receiveOrBlockWord (state : State) (caller : SubjectId)
+    (handleWord : UInt64) : WordReceiveOutcome :=
+  match CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
+      { caller } handleWord .endpoint with
+  | .error reason => { state, result := .handleRejected reason }
+  | .ok resolution =>
+      let outcome := receiveOrBlock state caller resolution.handle.slot
+      { state := outcome.state, result := .completed outcome.result }
+
+/-- Boot-reachable blocking send boundary with the same canonical handle ABI. -/
+def sendWord (state : State) (caller : SubjectId) (handleWord : UInt64)
+    (payload : Payload) : WordOutcome :=
+  match CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
+      { caller } handleWord .endpoint with
+  | .error reason => { state, result := .handleRejected reason }
+  | .ok resolution =>
+      let outcome := send state caller resolution.handle.slot payload
+      { state := outcome.state, result := .completed outcome.result }
+
+/-- Any blocking receive that reaches the raw-slot transition first resolved
+the exact current endpoint identity for the trusted caller. -/
+theorem completed_receive_word_resolves_exact (state : State) caller handleWord result
+    (hcompleted : (receiveOrBlockWord state caller handleWord).result = .completed result) :
+    ∃ handle capability,
+      CapabilityHandle.decode handleWord = .ok handle ∧
+      state.scheduler.lifecycle.capabilities.subjects caller = true ∧
+      Capability.slotInRange state.scheduler.lifecycle.capabilities caller handle.slot = true ∧
+      state.scheduler.lifecycle.capabilities.slots caller handle.slot = some capability ∧
+      capability.identity = handle.identity ∧ capability.kind = .endpoint ∧
+      state.scheduler.lifecycle.capabilities.objects capability.object = true ∧
+      state.scheduler.lifecycle.capabilities.kinds capability.object = some .endpoint := by
+  cases hresolve : CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
+      { caller } handleWord .endpoint with
+  | error denial => simp [receiveOrBlockWord, hresolve] at hcompleted
+  | ok resolution =>
+      rcases CapabilityHandle.resolveCurrent_sound state.scheduler.lifecycle.capabilities
+        { caller } handleWord .endpoint resolution hresolve with
+        ⟨hdecode, hsubject, hrange, hslot, hidentity, hkind, hlive, hkinds⟩
+      exact ⟨resolution.handle, resolution.capability, hdecode, hsubject, hrange,
+        hslot, hidentity, hkind, hlive, hkinds⟩
+
+/-- Malformed or stale words are state-preserving at the shared userspace
+boundary; no raw-slot lookup or blocking transition is reached. -/
+theorem rejected_receive_word_preserves_state (state : State) caller handleWord reason
+    (hrejected : (receiveOrBlockWord state caller handleWord).result =
+      .handleRejected reason) :
+    (receiveOrBlockWord state caller handleWord).state = state := by
+  cases hresolve : CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
+      { caller } handleWord .endpoint <;>
+    simp [receiveOrBlockWord, hresolve] at hrejected ⊢
+
 def cancelSubject (state : State) (subject : SubjectId) : State :=
   match state.waiterEndpoint subject with
   | none => state

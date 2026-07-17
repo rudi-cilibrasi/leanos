@@ -35,6 +35,12 @@ counterexamples record why split check/sleep and unreserved wakeup are unsafe.
 Compilation and QEMU are integration evidence only; generated code, the boot
 path, the compiler, and hardware remain outside this proof boundary.
 
+Userspace-facing blocking receive and send use `receiveOrBlockWord` and
+`sendWord`. Both consume the canonical 16-bit-slot/48-bit-generation opaque
+word from `CapabilityHandle`, resolve it only in the trusted caller's capability
+space, and preserve state on malformed, reserved, or stale encodings. The
+raw-slot transitions remain internal model operations after this shared check.
+
 Operations scan a bounded capability-slot function when checking receive
 authority and filter bounded queues during cleanup. FIFO block/wake is linear
 in the represented list length. No boot adapter is claimed by this model.
