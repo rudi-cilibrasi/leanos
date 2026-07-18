@@ -385,6 +385,9 @@ fi
 nm -n "$build/leanos.elf" >"$build/entry-stack-symbols.txt"
 objdump -d --no-show-raw-insn "$build/leanos.elf" \
   >"$build/entry-stack-disassembly.txt"
+LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-final-elf-edges.tsv" \
+  ./scripts/check-entry-stack-budget.sh "$build/leanos.elf" \
+  | tee "$build/entry-stack-final-elf.txt"
 ./scripts/check-image-policy.sh "$build/leanos.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"

@@ -8,6 +8,8 @@ report_dir="${LEANOS_STACK_USAGE_DIR:-build/boot}"
 manifest="${LEANOS_ENTRY_STACK_MANIFEST:-scripts/entry-stack-callgraph.tsv}"
 usable_bytes="${LEANOS_ENTRY_STACK_USABLE_BYTES:-16384}"
 assembly_source="${LEANOS_ENTRY_ASSEMBLY_SOURCE:-boot/boot.S}"
+elf="${1:-}"
+elf_edges_output="${LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT:-}"
 
 [[ "$usable_bytes" =~ ^[0-9]+$ && "$usable_bytes" -gt 0 ]] || {
   echo "error: entry-stack usable byte budget must be a positive integer" >&2; exit 1;
@@ -42,10 +44,11 @@ while IFS=$'\t' read -r location bytes qualifier extra; do
 done < <(cat "${reports[@]}")
 
 paths=0
-while IFS=$'\t' read -r path origin hardware_error safety functions extra; do
+while IFS=$'\t' read -r path origin hardware_error safety elf_root functions extra; do
   [[ -n "$path" && "${path:0:1}" != '#' ]] || continue
   [[ -z "${extra:-}" && ( "$origin" == user || "$origin" == kernel ) && \
-     ( "$hardware_error" == 0 || "$hardware_error" == 1 ) && "$safety" =~ ^[0-9]+$ ]] || {
+     ( "$hardware_error" == 0 || "$hardware_error" == 1 ) && "$safety" =~ ^[0-9]+$ && \
+     "$elf_root" =~ ^[A-Za-z_][A-Za-z0-9_.]*$ ]] || {
     echo "error: path=$path malformed entry-stack manifest row" >&2; exit 1;
   }
   hardware_frame=24
@@ -85,3 +88,68 @@ while IFS=$'\t' read -r path origin hardware_error safety functions extra; do
   paths=$((paths + 1))
 done < "$manifest"
 (( paths > 0 )) || { echo "error: entry-stack call graph has no paths" >&2; exit 1; }
+
+[[ -n "$elf" ]] || exit 0
+[[ -f "$elf" ]] || { echo "error: missing final entry-stack ELF '$elf'" >&2; exit 1; }
+command -v nm >/dev/null 2>&1 || { echo "error: missing required tool 'nm'" >&2; exit 1; }
+command -v objdump >/dev/null 2>&1 || { echo "error: missing required tool 'objdump'" >&2; exit 1; }
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+nm -n "$elf" | awk 'NF >= 3 { print $3 }' | sort -u >"$tmp/symbols"
+objdump -d --no-show-raw-insn "$elf" | awk -v indirect="$tmp/indirect" '
+  /^[[:xdigit:]]+[[:space:]]+<[^>]+>:/ {
+    caller = $2; gsub(/[<>:]/, "", caller); next
+  }
+  caller != "" && $2 ~ /^(callq?|jmpq?)$/ {
+    target = $NF
+    if (target ~ /^<[^>]+>$/) {
+      gsub(/[<>]/, "", target); sub(/\+0x.*/, "", target)
+      if (caller != target) print caller "\t" target
+    } else if ($3 ~ /^\*/) {
+      print caller "\t" $2 "\t" $3 >> indirect
+    }
+  }
+' | sort -u >"$tmp/edges"
+touch "$tmp/indirect"
+if [[ -n "$elf_edges_output" ]]; then
+  cp "$tmp/edges" "$elf_edges_output"
+fi
+
+while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions _extra; do
+  [[ -n "$path" && "${path:0:1}" != '#' ]] || continue
+  grep -Fxq "$elf_root" "$tmp/symbols" || {
+    echo "error: path=$path final-elf-missing-root=$elf_root" >&2; exit 1;
+  }
+  printf '%s\n' "$elf_root" >"$tmp/reachable"
+  : >"$tmp/reachable.next"
+  while :; do
+    before="$(wc -l <"$tmp/reachable")"
+    awk 'NR == FNR { reached[$1] = 1; next }
+         reached[$1] { print $2 }' "$tmp/reachable" "$tmp/edges" \
+      >>"$tmp/reachable.next"
+    cat "$tmp/reachable" "$tmp/reachable.next" | sort -u >"$tmp/reachable.new"
+    mv "$tmp/reachable.new" "$tmp/reachable"
+    : >"$tmp/reachable.next"
+    [[ "$(wc -l <"$tmp/reachable")" -eq "$before" ]] && break
+  done
+  IFS=';' read -ra chain <<<"$functions"
+  for function_name in "$elf_root" "${chain[@]}"; do
+    grep -Fxq "$function_name" "$tmp/symbols" || {
+      echo "error: path=$path final-elf-missing-function=$function_name" >&2; exit 1;
+    }
+    grep -Fxq "$function_name" "$tmp/reachable" || {
+      echo "error: path=$path final-elf-unreachable-function=$function_name root=$elf_root" >&2
+      exit 1
+    }
+    if awk -F '\t' -v fn="$function_name" '$1 == fn { found = 1 } END { exit !found }' \
+        "$tmp/indirect"; then
+      edge="$(awk -F '\t' -v fn="$function_name" '$1 == fn { print $2 " " $3; exit }' \
+        "$tmp/indirect")"
+      echo "error: path=$path final-elf-indirect-edge=$function_name:$edge" >&2
+      exit 1
+    fi
+  done
+  printf 'path=%s final-elf-root=%s reviewed-functions=%s extracted-edges=%s result=PASS\n' \
+    "$path" "$elf_root" "${#chain[@]}" "$(wc -l <"$tmp/edges")"
+done < "$manifest"

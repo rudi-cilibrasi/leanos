@@ -159,11 +159,15 @@ syscall or timer prefix is 176 bytes (40-byte hardware frame, 120-byte save
 bank, and 16-byte normalizer), rather than a manually entered constant.
 CI also retains the exact reviewed call-graph snapshot, raw compiler `.su`
 files, sorted final-ELF symbols, and final disassembly beside that report.
-This is compiler- and call-graph-checking evidence, not a proof of GCC, the
-generated C, assembly, or the final machine path.
+After the final link, the gate extracts direct and tail-call edges from the ELF,
+requires every reviewed stack contributor to be retained and reachable from
+its named entry stub, and rejects indirect transfers in reviewed functions.
+The extracted edges and final-ELF verdict are retained as checking evidence,
+not a proof of GCC, generated C, assembly, or the final machine path.
 
-Distinct reservation-manifest identities, full final-ELF call-graph extraction,
-assembly/disassembly push-count checks, high-water observations, and forced
+Distinct reservation-manifest identities, complete transitive call-graph
+accounting beyond the reviewed contributors, assembly/disassembly push-count
+checks, high-water observations, and forced
 overflow through IST1 remain future integration work. No stable security claim
 is advertised for this checkpoint.
 

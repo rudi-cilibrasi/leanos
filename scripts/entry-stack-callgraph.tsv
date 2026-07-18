@@ -1,5 +1,5 @@
-# path	origin	hardware-error	safety-bytes	functions (outermost to deepest reviewed call)
-syscall	user	0	4096	authorize_interrupt_entry;syscall_handler;leanos_capability_reuse_demo;serial_u64
-timer-switch	user	0	4096	authorize_interrupt_entry;timer_handler;leanos_preemption_demo;switch_complete;check_resumable_witness;leanos_resumable_preemption_demo
-user-page-fault	user	1	4096	authorize_interrupt_entry;page_fault_handler;serial_puts;complete_interrupt_entry
-kernel-diagnostic	kernel	1	4096	authorize_interrupt_entry;page_fault_handler;serial_puts;complete_interrupt_entry
+# path	origin	hardware-error	safety-bytes	final-ELF-root	functions (reviewed stack contributors)
+syscall	user	0	4096	isr80_cld	authorize_interrupt_entry;syscall_handler;leanos_capability_reuse_demo;serial_u64
+timer-switch	user	0	4096	isr32_cld	authorize_interrupt_entry;timer_handler;leanos_preemption_demo;switch_complete;check_resumable_witness;leanos_resumable_preemption_demo
+user-page-fault	user	1	4096	isr14_cld	authorize_interrupt_entry;page_fault_handler;serial_puts;complete_interrupt_entry
+kernel-diagnostic	kernel	1	4096	isr14_cld	authorize_interrupt_entry;page_fault_handler;serial_puts;complete_interrupt_entry

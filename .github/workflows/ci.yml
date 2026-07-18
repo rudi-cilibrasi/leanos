@@ -114,6 +114,8 @@ jobs:
             build/boot/entry-stack-callgraph.tsv
             build/boot/entry-stack-symbols.txt
             build/boot/entry-stack-disassembly.txt
+            build/boot/entry-stack-final-elf.txt
+            build/boot/entry-stack-final-elf-edges.tsv
             build/boot/*.su
             build/boot/return-corruption-*.serial.log
             build/boot/return-*-policy.log
