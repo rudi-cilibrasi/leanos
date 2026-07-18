@@ -147,11 +147,19 @@ tables, while the guest decoder rejects a controlled attempt to restore it.
 Final-ELF policy checks bind the section flags, exact adjacency and sizes,
 canonical top symbol, TSS assignment, and reviewed unmapping instruction.
 
-Distinct reservation-manifest identities, compiler `.su` reports, the reviewed
-call graph, assembly/disassembly cost checks, high-water observations, and
-forced overflow through IST1 remain future integration work and trusted/checked
-evidence rather than theorem claims. No stable security claim is advertised for
-this checkpoint.
+The image compiler now emits `.su` reports for the handwritten and generated C
+objects. `scripts/entry-stack-callgraph.tsv` records the reviewed boot-reachable
+ordinary-entry paths, including the architectural/stub prefix and a 4 KiB
+safety margin. `scripts/check-entry-stack-budget.sh` rejects missing or dynamic
+usage, unresolved indirect edges, cycles in a path, and any total above the
+16 KiB usable interval; its machine-readable report is retained with the image.
+This is compiler- and call-graph-checking evidence, not a proof of GCC, the
+generated C, assembly, or the final machine path.
+
+Distinct reservation-manifest identities, full final-ELF call-graph extraction,
+assembly/disassembly push-count checks, high-water observations, and forced
+overflow through IST1 remain future integration work. No stable security claim
+is advertised for this checkpoint.
 
 ## Proof, tests, and trusted assumptions
 

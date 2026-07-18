@@ -78,6 +78,7 @@ lake env lean --c="$build/CapabilityReuse.c" LeanOS/CapabilityReuse.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
+  -fstack-usage
   -fdebug-prefix-map="$repo_root"=. -ffile-prefix-map="$repo_root"=.
   -fdebug-prefix-map="$lean_prefix"=/lean-toolchain
   -ffile-prefix-map="$lean_prefix"=/lean-toolchain -g3 -O2)
@@ -114,6 +115,8 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -DLEANOS_ENTRY_ADVERSARIAL=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-adversarial.h"' \
   -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
+
+./scripts/check-entry-stack-budget.sh | tee "$build/entry-stack-budget.txt"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -c boot/boot.S -o "$build/boot.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \

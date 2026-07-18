@@ -1,0 +1,5 @@
+# path	prefix-bytes	safety-bytes	functions (outermost to deepest reviewed call)
+syscall	168	4096	authorize_interrupt_entry;syscall_handler;leanos_capability_reuse_demo;serial_u64
+timer-switch	168	4096	authorize_interrupt_entry;timer_handler;leanos_preemption_demo;switch_complete;check_resumable_witness;leanos_resumable_preemption_demo
+user-page-fault	176	4096	authorize_interrupt_entry;page_fault_handler;serial_puts;complete_interrupt_entry
+kernel-diagnostic	160	4096	authorize_interrupt_entry;page_fault_handler;serial_puts;complete_interrupt_entry
