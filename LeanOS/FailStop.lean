@@ -637,6 +637,24 @@ private def installScheduler (state : CompositeState)
   installLifecycle { state with scheduler, preemption := { state.preemption with scheduler } }
     scheduler.lifecycle
 
+/-- Installing an authoritative scheduler retains its queue and capacity
+exactly; only the lifecycle shared with the other projections is republished. -/
+@[simp] theorem installScheduler_scheduler state scheduler :
+    (installScheduler state scheduler).scheduler = scheduler := by
+  simp [installScheduler, installLifecycle]
+
+/-- The legacy preemption projection observes the same scheduler that was
+installed by the composite scheduler step. -/
+@[simp] theorem installScheduler_preemption_scheduler state scheduler :
+    (installScheduler state scheduler).preemption.scheduler = scheduler := by
+  simp [installScheduler, installLifecycle]
+
+/-- Scheduler installation publishes the scheduler's lifecycle as the unique
+authoritative lifecycle projection. -/
+@[simp] theorem installScheduler_lifecycle state scheduler :
+    (installScheduler state scheduler).lifecycle = scheduler.lifecycle := by
+  simp [installScheduler, installLifecycle]
+
 /-- Publish the exact #74 context-bank state through every legacy projection.
 The context list, TLB entries, and terminal latch are retained verbatim. -/
 private def installResumable (state : CompositeState)
@@ -1264,6 +1282,38 @@ theorem gate_rejected_mode_preserves_runtimeWellFormed state operation
   | running => exact False.elim (hnotRunning hmode)
   | handling active => simpa [gate, hmode] using hstate
   | halted record => simpa [gate, hmode] using hstate
+
+/-- An accepted queue insertion is a sound composite mutation: its public
+reply is the scheduler's accepted reply, its scheduler projection is the exact
+subsystem post-state, and that projection remains well formed. -/
+theorem gate_scheduleAdd_accepted_sound state subject context next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Scheduler.add state.scheduler subject =
+      { state := next, result := .accepted context })
+    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (gate state (.scheduleAdd subject)).result =
+        .completed (.scheduler (.accepted context)) ∧
+      (gate state (.scheduleAdd subject)).state.scheduler = next ∧
+      Scheduler.WellFormed (gate state (.scheduleAdd subject)).state.scheduler := by
+  have hpreserved := Scheduler.add_preserves_wellFormed state.scheduler subject hwellFormed
+  rw [haccepted] at hpreserved
+  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+
+/-- An accepted dispatch likewise cannot be paired with a repaired or
+caller-selected scheduler: the composite projection is exactly the state that
+produced the typed dispatch context, and its invariant is preserved. -/
+theorem gate_scheduleNext_accepted_sound state context next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Scheduler.selectNext state.scheduler =
+      { state := next, result := .accepted context })
+    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (gate state .scheduleNext).result =
+        .completed (.scheduler (.accepted context)) ∧
+      (gate state .scheduleNext).state.scheduler = next ∧
+      Scheduler.WellFormed (gate state .scheduleNext).state.scheduler := by
+  have hpreserved := Scheduler.selectNext_preserves_wellFormed state.scheduler hwellFormed
+  rw [haccepted] at hpreserved
+  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
 
 /-- A completed syscall exposes exactly the reply produced under the
 kernel-selected caller and address space. -/
