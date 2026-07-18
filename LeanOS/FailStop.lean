@@ -2194,6 +2194,140 @@ theorem restart_operationPreservesRuntimeWellFormed :
   intro state hstate
   exact gate_restart_preserves_runtimeWellFormed state hstate
 
+private theorem dispatchIPC_send_classifies state handleWord word0 word1 :
+    (dispatchIPC state (.send handleWord word0 word1)).reply = .syscall .sent ∨
+      (∃ reason, (dispatchIPC state (.send handleWord word0 word1)).reply =
+        .syscall (.sendHandleRejected reason)) ∨
+      ∃ reason, (dispatchIPC state (.send handleWord word0 word1)).reply =
+        .syscall (.sendRejected reason) := by
+  cases hresolve : CapabilityHandle.resolveCurrent state.ipc.endpoints.capabilities
+      { caller := state.execution.core.context.currentSubject }
+      handleWord .endpoint with
+  | error reason =>
+      exact Or.inr (Or.inl ⟨reason, by simp [dispatchIPC, IPCSyscall.dispatch, hresolve]⟩)
+  | ok resolution =>
+      cases hsend : EndpointIPC.send state.ipc.endpoints
+          state.execution.core.context.currentSubject resolution.handle.slot
+          { word0, word1 } with
+      | mk next result =>
+          cases result with
+          | accepted =>
+              exact Or.inl (by simp [dispatchIPC, IPCSyscall.dispatch, hresolve, hsend])
+          | rejected reason =>
+              exact Or.inr (Or.inr
+                ⟨reason, by simp [dispatchIPC, IPCSyscall.dispatch, hresolve, hsend]⟩)
+
+/-- The complete data-send constructor discharges the reusable operation
+obligation.  Its unique success reply uses the accepted-send preservation
+theorem; every other finite reply is a state-preserving typed rejection. -/
+theorem ipcSend_operationPreservesRuntimeWellFormed handleWord word0 word1 :
+    OperationPreservesRuntimeWellFormed (.ipc (.send handleWord word0 word1)) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · rcases dispatchIPC_send_classifies state handleWord word0 word1 with
+      hsent | ⟨reason, hrejected⟩ | ⟨reason, hrejected⟩
+    · exact (gate_ipc_send_accepted_preserves_runtimeWellFormed state
+        handleWord word0 word1 hstate hmode hsent).1
+    · exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+        (.ipc (.send handleWord word0 word1))
+        (.ipc (.syscall (.sendHandleRejected reason))) hstate
+        (by simp [gate, hmode, operationReply, hrejected])
+        (.ipcSendHandle (.send handleWord word0 word1) reason hrejected)).1
+    · exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+        (.ipc (.send handleWord word0 word1))
+        (.ipc (.syscall (.sendRejected reason))) hstate
+        (by simp [gate, hmode, operationReply, hrejected])
+        (.ipcSend (.send handleWord word0 word1) reason hrejected)).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.ipc (.send handleWord word0 word1)) hstate hmode
+
+private theorem dispatchIPC_receive_classifies state handleWord :
+    (dispatchIPC state (.receive handleWord)).reply = .sealedTransferPending ∨
+      (∃ sender word0 word1, (dispatchIPC state (.receive handleWord)).reply =
+        .syscall (.delivered sender word0 word1)) ∨
+      (∃ reason, (dispatchIPC state (.receive handleWord)).reply =
+        .syscall (.receiveHandleRejected reason)) ∨
+      ∃ reason, (dispatchIPC state (.receive handleWord)).reply =
+        .syscall (.receiveRejected reason) := by
+  cases hguard : CapabilityHandle.resolveCurrent state.transfers.capabilities
+      { caller := state.execution.core.context.currentSubject }
+      handleWord .endpoint with
+  | ok endpoint =>
+      cases hpending : state.transfers.pending endpoint.capability.object with
+      | some transfer =>
+          exact Or.inl (by simp [dispatchIPC, hguard, hpending])
+      | none =>
+          cases hresolve : CapabilityHandle.resolveCurrent state.ipc.endpoints.capabilities
+              { caller := state.execution.core.context.currentSubject }
+              handleWord .endpoint with
+          | error reason =>
+              exact Or.inr (Or.inr (Or.inl
+                ⟨reason, by simp [dispatchIPC, hguard, hpending,
+                  IPCSyscall.dispatch, hresolve]⟩))
+          | ok resolution =>
+              cases hreceive : EndpointIPC.receive state.ipc.endpoints
+                  state.execution.core.context.currentSubject resolution.handle.slot with
+              | mk next result =>
+                  cases result with
+                  | delivered envelope =>
+                      exact Or.inr (Or.inl
+                        ⟨envelope.sender, envelope.payload.word0, envelope.payload.word1,
+                          by simp [dispatchIPC, hguard, hpending,
+                            IPCSyscall.dispatch, hresolve, hreceive]⟩)
+                  | rejected reason =>
+                      exact Or.inr (Or.inr (Or.inr
+                        ⟨reason, by simp [dispatchIPC, hguard, hpending,
+                          IPCSyscall.dispatch, hresolve, hreceive]⟩))
+  | error guardReason =>
+      cases hresolve : CapabilityHandle.resolveCurrent state.ipc.endpoints.capabilities
+          { caller := state.execution.core.context.currentSubject }
+          handleWord .endpoint with
+      | error reason =>
+          exact Or.inr (Or.inr (Or.inl
+            ⟨reason, by simp [dispatchIPC, hguard, IPCSyscall.dispatch, hresolve]⟩))
+      | ok resolution =>
+          cases hreceive : EndpointIPC.receive state.ipc.endpoints
+              state.execution.core.context.currentSubject resolution.handle.slot with
+          | mk next result =>
+              cases result with
+              | delivered envelope =>
+                  exact Or.inr (Or.inl
+                    ⟨envelope.sender, envelope.payload.word0, envelope.payload.word1,
+                      by simp [dispatchIPC, hguard, IPCSyscall.dispatch, hresolve, hreceive]⟩)
+              | rejected reason =>
+                  exact Or.inr (Or.inr (Or.inr
+                    ⟨reason, by simp [dispatchIPC, hguard,
+                      IPCSyscall.dispatch, hresolve, hreceive]⟩))
+
+/-- The complete data-receive constructor likewise composes accepted delivery,
+sealed-mailbox protection, ordinary endpoint rejection, and outer latch
+rejection into one operation-family preservation theorem. -/
+theorem ipcReceive_operationPreservesRuntimeWellFormed handleWord :
+    OperationPreservesRuntimeWellFormed (.ipc (.receive handleWord)) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · rcases dispatchIPC_receive_classifies state handleWord with
+      hsealed | ⟨sender, word0, word1, hdelivered⟩ |
+        ⟨reason, hrejected⟩ | ⟨reason, hrejected⟩
+    · exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+        (.ipc (.receive handleWord)) (.ipc .sealedTransferPending) hstate
+        (by simp [gate, hmode, operationReply, hsealed])
+        (.ipcSealed (.receive handleWord) hsealed)).1
+    · exact (gate_ipc_receive_accepted_preserves_runtimeWellFormed state
+        handleWord sender word0 word1 hstate hmode hdelivered).1
+    · exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+        (.ipc (.receive handleWord))
+        (.ipc (.syscall (.receiveHandleRejected reason))) hstate
+        (by simp [gate, hmode, operationReply, hrejected])
+        (.ipcReceiveHandle (.receive handleWord) reason hrejected)).1
+    · exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+        (.ipc (.receive handleWord))
+        (.ipc (.syscall (.receiveRejected reason))) hstate
+        (by simp [gate, hmode, operationReply, hrejected])
+        (.ipcReceive (.receive handleWord) reason hrejected)).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.ipc (.receive handleWord)) hstate hmode
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
