@@ -257,8 +257,10 @@ page_table_b:
     .skip 4096 * PAGE_TABLE_COUNT
 page_table_b_end:
 .align 16
+.global boot_stack
 boot_stack:
     .skip 16384
+.global boot_stack_top
 boot_stack_top:
 
 .section .df_ist.guard,"aw",@nobits
@@ -426,6 +428,33 @@ run_double_fault_probe:
    The guard-mapped negative image must take this path and must not claim #DF. */
 .global isr13
 isr13:
+#ifdef LEANOS_ENTRY_ADVERSARIAL
+    clac
+    cld
+    push %rax; push %rbx; push %rcx; push %rdx; push %rbp; push %rsi; push %rdi
+    push %r8; push %r9; push %r10; push %r11; push %r12; push %r13; push %r14; push %r15
+    sub $8, %rsp
+    mov 128(%rsp), %rdi
+    mov 136(%rsp), %rsi
+    mov 144(%rsp), %rdx
+    call entry_adversarial_gp_handler
+    mov %rax, 136(%rsp)
+    add $8, %rsp
+    /* Discard the #GP error word by shifting the five-word user frame into
+       the standard SAVE+iret layout consumed by the existing validator. */
+    mov 128(%rsp), %rax
+    mov %rax, 120(%rsp)
+    mov 136(%rsp), %rax
+    mov %rax, 128(%rsp)
+    mov 144(%rsp), %rax
+    mov %rax, 136(%rsp)
+    mov 152(%rsp), %rax
+    mov %rax, 144(%rsp)
+    mov 160(%rsp), %rax
+    mov %rax, 152(%rsp)
+    mov $2, %esi
+    jmp user_return_epilogue
+#else
     cli
     clac
     cld
@@ -435,6 +464,7 @@ isr13:
     outb %al, %dx
 6:  hlt
     jmp 6b
+#endif
 
 /* Vector 8 has a hardware error-code word.  This terminal stub uses no C ABI,
    calls, pushes, allocation, formatting, recovery path, or iretq. */
@@ -495,6 +525,22 @@ df_guard_mapped_record_end:
     pop %r15; pop %r14; pop %r13; pop %r12; pop %r11; pop %r10; pop %r9; pop %r8
     pop %rdi; pop %rsi; pop %rbp; pop %rdx; pop %rcx; pop %rbx; pop %rax
 .endm
+/* All ordinary gates execute this protocol after AC/DF cleanup and SAVE.
+   No operation-specific handler reads the architectural frame until the
+   kernel-owned manifest adapter has authorized its vector/stub/shape/context. */
+.macro NORMALIZE_ENTRY vector, has_error, cs_offset
+    /* No-error entries arrive 16-byte aligned after SAVE.  Reserve both an
+       explicit dummy error slot and padding so the C call remains aligned. */
+    sub $16, %rsp
+    movq $0, (%rsp)
+    movq $0, 8(%rsp)
+    mov $\vector, %edi
+    mov $\has_error, %esi
+    mov %rsp, %rdx
+    mov \cs_offset(%rsp), %rcx
+    call authorize_interrupt_entry
+    add $16, %rsp
+.endm
 .global isr80
 isr80:
 .global isr80_clac
@@ -504,6 +550,7 @@ isr80_clac:
 isr80_cld:
     cld
     SAVE
+    NORMALIZE_ENTRY 128, 0, 144
     mov 112(%rsp), %rdi
     mov 104(%rsp), %rsi
     mov 96(%rsp), %rdx
@@ -584,11 +631,22 @@ isr14_cld:
     cld
     SAVE
     sub $8, %rsp
+    movq $0, (%rsp)
+    mov $14, %edi
+    mov $1, %esi
+    mov %rsp, %rdx
+    mov 144(%rsp), %rcx
+    call authorize_interrupt_entry
     mov 128(%rsp), %rdi
     mov 136(%rsp), %rsi
     mov 144(%rsp), %rdx
     mov %cr2, %rcx
     call page_fault_handler
+    sub $16, %rsp
+    mov %rax, 8(%rsp)
+    call complete_interrupt_entry
+    mov 8(%rsp), %rax
+    add $16, %rsp
     mov %rax, 136(%rsp)
 .global diagnostic_return_restore
 diagnostic_return_restore:
@@ -666,6 +724,7 @@ isr32_clac:
 isr32_cld:
     cld
     SAVE
+    NORMALIZE_ENTRY 32, 0, 144
     mov 128(%rsp), %rdi
     call timer_handler
     cmp $2, %rax
@@ -765,6 +824,10 @@ user_a_entry:
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
+#ifdef LEANOS_ENTRY_ADVERSARIAL
+    int $14
+    int $32
+#endif
     movb $0x5a, user_a_stack+4094(%rip)
     movb $0xa5, user_a_stack+4095(%rip)
     movb $0x3c, user_a_stack+4096(%rip)
