@@ -329,6 +329,7 @@ if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   exit 1
 fi
 ./scripts/check-image-policy.sh "$build/leanos.elf"
+./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 
 for fixture in restore branch indirect initial-indirect; do

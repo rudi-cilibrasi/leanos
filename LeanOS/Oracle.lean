@@ -60,7 +60,9 @@ private def userReturn (id : String) (mode rip rsp selectors flags : UInt64) : V
 
 private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt64) : Vector :=
   { id, adapter := "BlockingIPC.scalar", words := [phase, operation, caller, word0, word1],
-    expected := BlockingIPC.blockingIpcDemo phase operation caller word0 word1 }
+    expected := if 10 ≤ operation then
+      BlockingIPC.blockingIpcModelRejection phase operation caller word0 word1
+    else BlockingIPC.blockingIpcDemo phase operation caller word0 word1 }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -179,7 +181,7 @@ theorem blocking_ipc_scenario_agrees :
     (vectors[60]).expected = BlockingIPC.encodeBootEvent 4 4 2 2 1 ∧
     (vectors[61]).expected = 0 ∧ (vectors[62]).expected = 0 ∧
     (vectors[63]).expected = 0 ∧
-    (vectors.drop 64).all (fun vector => vector.expected = 0) = true := by
+    (vectors.drop 64).all (fun vector => vector.expected ≠ 0) = true := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=
