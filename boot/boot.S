@@ -873,12 +873,26 @@ user_b_entry:
     mov %ax, %es
 #ifdef LEANOS_PREEMPTION_SCENARIO
     mov $2, %rax
-#else
-    mov $7, %rax
-#endif
     xor %rbx, %rbx
     xor %rcx, %rcx
     xor %rdx, %rdx
+#else
+    mov $7, %rax
+    xor %rbx, %rbx
+    xor %rcx, %rcx
+    mov $B_INITIAL_RDX, %rdx
+    mov $B_INITIAL_RBP, %rbp
+    mov $B_INITIAL_RSI, %rsi
+    mov $B_INITIAL_RDI, %rdi
+    mov $B_INITIAL_R8, %r8
+    mov $B_INITIAL_R9, %r9
+    mov $B_INITIAL_R10, %r10
+    mov $B_INITIAL_R11, %r11
+    movabs $B_INITIAL_R12, %r12
+    movabs $B_INITIAL_R13, %r13
+    mov $B_INITIAL_R14, %r14
+    mov $B_INITIAL_R15, %r15
+#endif
     int $0x80
 #ifndef LEANOS_PREEMPTION_SCENARIO
     cmp $0x4c45414e, %rax
@@ -887,8 +901,34 @@ user_b_entry:
     jne 2f
     cmp $1, %rcx
     jne 2f
-    mov %rax, %rbx
-    mov %rcx, %rdx
+    cmp $B_INITIAL_RDX, %rdx
+    jne 2f
+    cmp $B_INITIAL_RBP, %rbp
+    jne 2f
+    cmp $B_INITIAL_RSI, %rsi
+    jne 2f
+    cmp $B_INITIAL_RDI, %rdi
+    jne 2f
+    cmp $B_INITIAL_R8, %r8
+    jne 2f
+    cmp $B_INITIAL_R9, %r9
+    jne 2f
+    cmp $B_INITIAL_R10, %r10
+    jne 2f
+    cmp $B_INITIAL_R11, %r11
+    jne 2f
+    cmp $B_INITIAL_R14, %r14
+    jne 2f
+    cmp $B_INITIAL_R15, %r15
+    jne 2f
+    movabs $B_INITIAL_R12, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %rax
+    cmp %rax, %r13
+    jne 2f
+    mov $0x4c45414e, %rbx
+    mov $1, %rdx
     mov $0x4f53, %rcx
     mov $9, %rax
     int $0x80

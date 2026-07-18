@@ -44,6 +44,7 @@ return_corruptions=(
   'stale-cr3:9:user-return-cr3'
   'stale-context:10:user-return-code'
   'post-validation-mutation:11:user-return-noncanonical'
+  'blocking-context-canary:12:register-canary'
 )
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: LEANOS_VERSION must be MAJOR.MINOR.PATCH" >&2
@@ -410,7 +411,9 @@ for spec in "${return_corruptions[@]}"; do
     -volume_date all_file_dates 2000010100000000 >/dev/null
 done
 sha256sum "$build/leanos-${version}-x86_64.iso" \
+  "$build/leanos-${version}-x86_64-preemption.iso" \
   "$build/leanos-${version}-x86_64-double-fault.iso" "$build/leanos.elf" \
+  "$build/leanos-preemption.elf" "$build/leanos-preemption.map" \
   "$build/leanos-double-fault.elf" \
   "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
   "$build/leanos-double-fault-guard-mapped.elf" \

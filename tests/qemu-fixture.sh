@@ -31,7 +31,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
     -e '/^LEANOS\/5 /d' \
     -e '/^LEANOS\/8 PAGING root=B selected=1 result=PASS$/d' \
     -e '/^LEANOS\/6 COPY direction=in/i LEANOS/8 PAGING root=B selected=1 result=PASS\nLEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10\nLEANOS/10 IPC event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS\nLEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\nLEANOS/10 IPC event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1' \
-    -e '/^LEANOS\/6 COPY direction=out/a LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1\nLEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS\nLEANOS/8 PAGING root=B selected=1 result=PASS\nLEANOS/10 IPC event=dispatch subject=2 address-space=2 reservation=owned trusted=1\nLEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1\nLEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1' \
+    -e '/^LEANOS\/6 COPY direction=out/a LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1\nLEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS\nLEANOS/8 PAGING root=B selected=1 result=PASS\nLEANOS/10 IPC event=dispatch subject=2 address-space=2 reservation=owned trusted=1\nLEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\nLEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1' \
     "$log"
   exit "$status"
 fi

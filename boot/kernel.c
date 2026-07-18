@@ -322,6 +322,7 @@ static const char *return_corruption_name(uint64_t mode) {
     case 9: return "stale-cr3";
     case 10: return "stale-context";
     case 11: return "post-validation-mutation";
+    case 12: return "blocking-context-canary";
     default: return "none";
     }
 }
@@ -332,6 +333,7 @@ static const char *return_corruption_name(uint64_t mode) {
 static void inject_return_corruption(uint64_t *saved) {
     uint64_t mode = return_corruption_mode;
     if (mode == 0) return;
+    if (mode == 12 && !(current_subject == 2 && blocking_ipc_step == 4)) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
     serial_puts(" stage=outgoing-frame result=INJECTED\n");
@@ -351,6 +353,7 @@ static void inject_return_corruption(uint64_t *saved) {
         break;
     case 10: current_subject = current_subject == 1 ? 2 : 1; break;
     case 11: break;
+    case 12: saved[7] ^= 1; break;
     default: fail("user-return-fixture-mode");
     }
 }
@@ -728,7 +731,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         uint64_t got = leanos_blocking_ipc_demo(3, 4, 2, arg0, arg1);
         if (got != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_DELIVER_B].expected || arg2 != 1)
             fail("blocking-ipc-model-delivery");
-        serial_puts("LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1\n");
+        serial_puts("LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\n");
         serial_puts("LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1\n");
         finish(0x10);
     }

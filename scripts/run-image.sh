@@ -72,7 +72,7 @@ printf '%s\n' \
   'LEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
   'LEANOS/10 IPC event=dispatch subject=2 address-space=2 reservation=owned trusted=1' \
-  'LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1' \
+  'LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved' \
   'LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1' >> "$expected"
 fi
 if [[ $status -eq 124 || $status -eq 137 ]]; then echo "failure_class=timeout: QEMU exceeded ${limit}s wall limit" >&2; exit 1; fi

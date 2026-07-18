@@ -32,6 +32,7 @@ specs=(
   'stale-cr3:user-return-cr3'
   'stale-context:user-return-code'
   'post-validation-mutation:user-return-noncanonical'
+  'blocking-context-canary:register-canary'
 )
 
 for spec in "${specs[@]}"; do
