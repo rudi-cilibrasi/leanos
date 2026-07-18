@@ -1419,6 +1419,107 @@ theorem acceptWord_preserves_wellFormed state caller endpointWord destinationSlo
               simpa [acceptWord, hendpoint, hpending, hslot, hexhausted] using hpreserved
 
 set_option maxHeartbeats 2400000 in
+/-- A delivered raw receipt changes no registry classification and preserves
+all previously installed authority. -/
+private theorem accept_delivered_preserves_registry_and_authority state caller endpointSlot
+    destinationSlot envelope
+    (hdelivered : (accept state caller endpointSlot destinationSlot).result =
+      .delivered envelope) :
+    let next := (accept state caller endpointSlot destinationSlot).state.capabilities
+    next.subjects = state.capabilities.subjects ∧
+      next.objects = state.capabilities.objects ∧
+      next.kinds = state.capabilities.kinds ∧
+      next.slotCapacity = state.capabilities.slotCapacity ∧
+      (∀ subject slot capability,
+        state.capabilities.slots subject slot = some capability →
+          next.slots subject slot = some capability) ∧
+      (∀ subject object right,
+        Capability.HasAuthority state.capabilities subject object right →
+          Capability.HasAuthority next subject object right) := by
+  cases hlookup : Capability.lookup state.capabilities caller endpointSlot with
+  | invalidSubject => simp [accept, hlookup, rejectAccept] at hdelivered
+  | staleSlot => simp [accept, hlookup, rejectAccept] at hdelivered
+  | found endpointCap =>
+    by_cases hkind : endpointCap.kind != .endpoint
+    · simp [accept, hlookup, hkind, rejectAccept] at hdelivered
+    · by_cases hreceive : !endpointCap.rights.receive
+      · simp [accept, hlookup, hkind, hreceive, rejectAccept] at hdelivered
+      · by_cases hobject : state.capabilities.objects endpointCap.object != true
+        · simp [accept, hlookup, hkind, hreceive, hobject, rejectAccept] at hdelivered
+        · by_cases hendpointKind :
+              state.capabilities.kinds endpointCap.object != some .endpoint
+          · simp [accept, hlookup, hkind, hreceive, hobject, hendpointKind,
+              rejectAccept] at hdelivered
+          · cases hmail : state.mailbox endpointCap.object with
+            | none =>
+                simp [accept, hlookup, hkind, hreceive, hobject, hendpointKind,
+                  hmail, rejectAccept] at hdelivered
+            | some foundEnvelope =>
+              cases hpending : state.pending endpointCap.object with
+              | none =>
+                  simp [accept, hlookup, hkind, hreceive, hobject, hendpointKind,
+                    hmail, hpending, deliverData, record] at hdelivered ⊢
+              | some foundTransfer =>
+                by_cases hrange : !Capability.slotInRange state.capabilities caller
+                    destinationSlot
+                · simp [accept, hlookup, hkind, hreceive, hobject, hendpointKind,
+                    hmail, hpending, hrange, rejectAccept] at hdelivered
+                · by_cases hempty :
+                      (state.capabilities.slots caller destinationSlot).isSome
+                  · simp [accept, hlookup, hkind, hreceive, hobject, hendpointKind,
+                      hmail, hpending, hrange, hempty, rejectAccept] at hdelivered
+                  · by_cases htransferObject :
+                        state.capabilities.objects foundTransfer.object != true
+                    · simp [accept, hlookup, hkind, hreceive, hobject, hendpointKind,
+                        hmail, hpending, hrange, hempty, htransferObject,
+                        rejectAccept] at hdelivered
+                    · by_cases htransferKind : state.capabilities.kinds
+                          foundTransfer.object != some foundTransfer.kind
+                      · simp [accept, hlookup, hkind, hreceive, hobject, hendpointKind,
+                          hmail, hpending, hrange, hempty, htransferObject, htransferKind,
+                          rejectAccept] at hdelivered
+                      · by_cases hderivation : state.capabilities.derivations
+                            foundTransfer.identity != some (some foundTransfer.parent,
+                              foundTransfer.object, foundTransfer.kind,
+                              foundTransfer.rights)
+                        · simp [accept, hlookup, hkind, hreceive, hobject, hendpointKind,
+                            hmail, hpending, hrange, hempty, htransferObject,
+                            htransferKind, hderivation, rejectAccept] at hdelivered
+                        · by_cases hrights :
+                              !Capability.rightsValid foundTransfer.kind foundTransfer.rights
+                          · simp [accept, hlookup, hkind, hreceive, hobject,
+                              hendpointKind, hmail, hpending, hrange, hempty,
+                              htransferObject, htransferKind, hderivation, hrights,
+                              rejectAccept] at hdelivered
+                          · simp only [accept, hlookup, hkind, hreceive, hobject,
+                              hendpointKind, hmail, hpending, hrange, hempty,
+                              htransferObject, htransferKind, hderivation, hrights,
+                              Bool.false_eq_true, ↓reduceIte] at hdelivered ⊢
+                            cases hdelivered
+                            simp only [deliver, record, Capability.install]
+                            refine ⟨trivial, trivial, trivial, trivial, ?_, ?_⟩
+                            · intro subject slot capability hslot
+                              by_cases htarget :
+                                  subject = caller ∧ slot = destinationSlot
+                              · rcases htarget with ⟨rfl, rfl⟩
+                                have hsome :
+                                    (state.capabilities.slots subject slot).isSome = true := by
+                                  simp [hslot]
+                                exact False.elim (hempty hsome)
+                              · simpa [htarget] using hslot
+                            · intro subject object right authority
+                              rcases authority with
+                                ⟨slot, capability, hslot, hobject, hright⟩
+                              refine ⟨slot, capability, ?_, hobject, hright⟩
+                              by_cases htarget :
+                                  subject = caller ∧ slot = destinationSlot
+                              · rcases htarget with ⟨rfl, rfl⟩
+                                have hsome :
+                                    (state.capabilities.slots subject slot).isSome = true := by
+                                  simp [hslot]
+                                exact False.elim (hempty hsome)
+                              · simpa [htarget] using hslot
+
 /-- A delivered public receipt changes no registry classification and preserves
 every capability that was already installed.  The attached-delivery case only
 fills the checked-empty destination slot; data-only delivery leaves the whole
@@ -1439,83 +1540,37 @@ theorem acceptWord_delivered_preserves_registry_and_authority state caller endpo
       (∀ subject object right,
         Capability.HasAuthority state.capabilities subject object right →
           Capability.HasAuthority next subject object right) := by
-  simp only [acceptWord] at hdelivered ⊢
-  split <;> try simp_all [rejectAccept]
-  next endpoint =>
-    split
-    next transfer =>
-      split <;> try simp_all [rejectAccept]
-      split <;> try simp_all [rejectAccept]
-      simp only [accept] at hdelivered ⊢
-      split <;> try simp_all [rejectAccept]
-      next endpointCap =>
-        split <;> try simp_all [rejectAccept]
-        split <;> try simp_all [rejectAccept]
-        split <;> try simp_all [rejectAccept]
-        split <;> try simp_all [rejectAccept]
-        split <;> try simp_all [rejectAccept]
-        next foundEnvelope =>
-          split
-          next hnone => simp_all [deliverData, record]
-          next foundTransfer =>
-            split <;> try simp_all [rejectAccept]
-            next hrange =>
-              split <;> try simp_all [rejectAccept]
-              next hempty =>
-                split <;> try simp_all [rejectAccept]
-                split <;> try simp_all [rejectAccept]
-                split <;> try simp_all [rejectAccept]
-                split <;> try simp_all [rejectAccept]
-                simp only [deliver, record, Capability.install]
-                refine ⟨rfl, rfl, rfl, rfl, ?_, ?_⟩
-                · intro subject slot capability hslot
-                  by_cases htarget : subject = caller ∧ slot = destinationSlot
-                  · rcases htarget with ⟨rfl, rfl⟩
-                    simp [hempty] at hslot
-                  · simpa [htarget] using hslot
-                · intro subject object right authority
-                  rcases authority with ⟨slot, capability, hslot, hobject, hright⟩
-                  refine ⟨slot, capability, ?_, hobject, hright⟩
-                  by_cases htarget : subject = caller ∧ slot = destinationSlot
-                  · rcases htarget with ⟨rfl, rfl⟩
-                    simp [hempty] at hslot
-                  · simpa [htarget] using hslot
-    next hnone =>
-      simp only [accept] at hdelivered ⊢
-      split <;> try simp_all [rejectAccept]
-      next endpointCap =>
-        split <;> try simp_all [rejectAccept]
-        split <;> try simp_all [rejectAccept]
-        split <;> try simp_all [rejectAccept]
-        split <;> try simp_all [rejectAccept]
-        split <;> try simp_all [rejectAccept]
-        next foundEnvelope =>
-          split
-          next hpending => simp_all [deliverData, record]
-          next foundTransfer =>
-            split <;> try simp_all [rejectAccept]
-            next hrange =>
-              split <;> try simp_all [rejectAccept]
-              next hempty =>
-                split <;> try simp_all [rejectAccept]
-                split <;> try simp_all [rejectAccept]
-                split <;> try simp_all [rejectAccept]
-                split <;> try simp_all [rejectAccept]
-                simp only [deliver, record, Capability.install]
-                refine ⟨rfl, rfl, rfl, rfl, ?_, ?_⟩
-                · intro subject slot capability hslot
-                  by_cases htarget : subject = caller ∧ slot = destinationSlot
-                  · rcases htarget with ⟨rfl, rfl⟩
-                    simp [hempty] at hslot
-                  · simpa [htarget] using hslot
-                · intro subject object right authority
-                  rcases authority with ⟨slot, capability, hslot, hobject, hright⟩
-                  refine ⟨slot, capability, ?_, hobject, hright⟩
-                  by_cases htarget : subject = caller ∧ slot = destinationSlot
-                  · rcases htarget with ⟨rfl, rfl⟩
-                    simp [hempty] at hslot
-                  · simpa [htarget] using hslot
-
+  cases hendpoint : CapabilityHandle.resolveCurrent state.capabilities
+      { caller } endpointWord .endpoint with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [acceptWord, hendpoint, rejectAccept] at hdelivered
+      | denied resolveReason =>
+          cases resolveReason <;>
+            simp [acceptWord, hendpoint, rejectAccept] at hdelivered
+  | ok endpoint =>
+      cases hpending : state.pending endpoint.capability.object with
+      | none =>
+          have hraw : (accept state caller endpoint.handle.slot destinationSlot).result =
+              .delivered envelope := by
+            simpa [acceptWord, hendpoint, hpending] using hdelivered
+          simpa [acceptWord, hendpoint, hpending] using
+            accept_delivered_preserves_registry_and_authority state caller
+              endpoint.handle.slot destinationSlot envelope hraw
+      | some transfer =>
+          by_cases hslot : CapabilityHandle.slotReserved ≤ destinationSlot
+          · simp [acceptWord, hendpoint, hpending, hslot, rejectAccept] at hdelivered
+          · by_cases hexhausted : transfer.identity = 0 ∨
+                CapabilityHandle.generationReserved ≤ transfer.identity
+            · simp [acceptWord, hendpoint, hpending, hslot, hexhausted,
+                rejectAccept] at hdelivered
+            · have hraw :
+                  (accept state caller endpoint.handle.slot destinationSlot).result =
+                    .delivered envelope := by
+                simpa [acceptWord, hendpoint, hpending, hslot, hexhausted] using hdelivered
+              simpa [acceptWord, hendpoint, hpending, hslot, hexhausted] using
+                accept_delivered_preserves_registry_and_authority state caller
+                  endpoint.handle.slot destinationSlot envelope hraw
 /-- Successful receipt consumes exactly its mailbox and installs its sealed
 identity in the trusted caller's chosen slot. -/
 theorem delivered_installs_exactly_once state caller endpointSlot destinationSlot envelope
