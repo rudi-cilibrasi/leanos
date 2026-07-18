@@ -188,7 +188,9 @@ the 4 KiB static safety margin to remain untouched, and emit a bounded
 supervisor-only zero page and record the resulting error-code-5 vector-14 path
 before recovery; their final records cover the blocking-IPC syscall or the
 cumulative timer/context-switch scenario. The runner requires both records in
-order, validates their arithmetic, and retains them as a CI artifact. This
+order, validates their path identities and arithmetic, and retains them as a
+CI artifact. Targeted runner fixtures reject a missing, duplicate, reordered,
+mislabeled, or arithmetically inconsistent observation. This
 diagnostic can miss writes that reproduce the paint word, is cumulative rather
 than path-isolated, and does not replace the final-ELF/compiler gate. A
 kernel-origin diagnostic path does not switch through `rsp0`; a separate

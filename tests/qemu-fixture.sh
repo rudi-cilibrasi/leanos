@@ -42,7 +42,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   exit "$status"
 fi
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-entry-high-water-missing|entry-high-water-invalid|entry-high-water-duplicate)
+entry-high-water-missing|entry-high-water-invalid|entry-high-water-duplicate|entry-high-water-reordered|entry-high-water-wrong-path)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
@@ -51,6 +51,17 @@ entry-high-water-missing|entry-high-water-invalid|entry-high-water-duplicate)
     entry-high-water-missing) sed -i '/^LEANOS\/11 ENTRY-HIGH-WATER /d' "$log" ;;
     entry-high-water-invalid) sed -i 's/margin-bytes=15872/margin-bytes=15871/' "$log" ;;
     entry-high-water-duplicate) sed -i '/^LEANOS\/11 ENTRY-HIGH-WATER /p' "$log" ;;
+    entry-high-water-reordered)
+      final_high_water_path=syscall
+      [[ "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == preemption ]] &&
+        final_high_water_path=timer-context-switch
+      sed -i -e 's/path=user-page-fault/path=__ENTRY_HIGH_WATER_SWAP__/' \
+        -e "s/path=${final_high_water_path}/path=user-page-fault/" \
+        -e "s/path=__ENTRY_HIGH_WATER_SWAP__/path=${final_high_water_path}/" "$log"
+      ;;
+    entry-high-water-wrong-path)
+      sed -i 's/path=user-page-fault/path=kernel-diagnostic/' "$log"
+      ;;
   esac
   exit 33
   ;;
