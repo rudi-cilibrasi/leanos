@@ -12,6 +12,7 @@ extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t, uint6
 extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) { return left == right; }
 
 int main(void) {
@@ -37,8 +38,11 @@ int main(void) {
                             : v->adapter == 7
                                 ? leanos_blocking_ipc_demo(v->words[0], v->words[1], v->words[2],
                                     v->words[3], v->words[4])
-                                : leanos_capability_reuse_demo(v->words[0], v->words[1],
-                                    v->words[2], v->words[3], v->words[4]);
+                                : v->adapter == 8
+                                    ? leanos_capability_reuse_demo(v->words[0], v->words[1],
+                                        v->words[2], v->words[3], v->words[4])
+                                    : leanos_entry_demo(v->words[0], v->words[1], v->words[2],
+                                        v->words[3], v->words[4]);
         if (got != v->expected) {
             fprintf(stderr, "oracle mismatch: %u %s expected=%llu got=%llu\n", i, v->id,
                 v->expected, (unsigned long long)got);

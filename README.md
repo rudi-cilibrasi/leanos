@@ -6,11 +6,117 @@ LeanOS is an experiment in building a small operating-system kernel whose
 implementation, executable specification, and machine-checked proofs evolve
 together in Lean 4.
 
-The project is at the **concept and bootstrap stage**. There is no bootable
-kernel yet, and none of the security properties below should be read as a
-current guarantee. The immediate goal is deliberately smaller: boot a minimal
-image under QEMU, exercise it deterministically in CI, and prove useful
-properties about its first kernel abstractions.
+The project is an **experimental research prototype**, not a verified operating
+system. It now builds bootable x86-64 images, exercises several deterministic
+machine scenarios under QEMU, and checks a growing set of Lean models and
+theorems. Those are different kinds of evidence: the theorems apply to the
+models, while QEMU tests selected compiled integration paths.
+
+## Current status
+
+The evidence paths meet in the repository, but they do not carry the same
+claim. In particular, the compiled path crosses a trusted, unproved boundary:
+
+```mermaid
+flowchart TB
+    M["Lean executable models"] --> T["Lean theorem statements<br/>and proof source"]
+    T --> E["Lean elaborator"]
+    E --> R["Elaborated proof terms"]
+    R --> K["Lean kernel<br/>proof-term checker"]
+    K --> P["Lean-proved<br/>model properties"]
+
+    M --> G
+    subgraph TCB["Trusted / unproved implementation and execution boundary"]
+        direction TB
+        G["Lean code generation<br/>and generated C"]
+        B["Runtime shim, handwritten C/assembly,<br/>compiler, linker, and boot chain"]
+        Q["QEMU/TCG and assumed<br/>x86-64/device semantics"]
+        G --> B --> Q
+    end
+
+    Q --> O["QEMU-tested<br/>finite scenario observations"]
+    P -. "no refinement theorem" .-> O
+
+    classDef proved fill:#d5f5e3,stroke:#18794e,color:#111
+    classDef tested fill:#dbeafe,stroke:#2563eb,color:#111
+    classDef trusted fill:#fff3cd,stroke:#9a6700,color:#111
+    class P proved
+    class O tested
+    class K,G,B,Q trusted
+```
+
+The dashed edge marks the missing model-to-binary refinement theorem; it does
+not turn the QEMU observations into proof. Trusted coloring covers both the
+Lean kernel assumed to check elaborated proof terms soundly and the unproved
+implementation/execution path whose correctness is assumed when interpreting
+the tested observations. The elaborator constructs proof terms, but the kernel
+rechecks those terms rather than trusting the elaborator's result directly.
+
+### QEMU-tested behavior
+
+The CI image boots headlessly on a single emulated x86-64 `q35` CPU under TCG.
+Success requires an exact serial transcript, a guest debug-exit signal, and
+completion within a fixed timeout; merely reaching the kernel or printing a
+partial log does not pass. The executable scenarios currently include:
+
+- the default two-subject, two-address-space blocking-IPC path, from B blocking
+  on an empty endpoint through A's send/wake to exact delivery back to B;
+- a bounded preemption path with two PIT interrupts, separate saved contexts,
+  CR3 changes, a switch from A to B, and resumption of A's original frame;
+- boot-time memory-map validation, reservation, frame scrubbing and publication,
+  live page-table checks, WP/SMEP/SMAP probes, and bounded user-copy checks;
+- a dedicated double-fault IST fail-stop probe and a mapped-guard negative; and
+- twelve deliberately corrupted user-return images that must fail with their
+  expected typed rejection before reaching CPL3.
+
+Before the main machine path, the normal images also replay the same bounded
+75-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+hosted generated C. These finite QEMU runs provide reproducible integration
+evidence for the named scenarios. They are not exhaustive tests, hardware
+qualification, or proofs that the binary refines the Lean models.
+
+### Lean-proved properties
+
+The default Lake target builds the kernel reference models and their
+machine-checked proofs. The proved surface includes, among other properties,
+deterministic kernel transitions, invariant and well-formedness preservation,
+capability-authority provenance, exclusive frame ownership, page-table
+separation, syscall confinement, fail-stop absorption, user-return confinement,
+and finite scheduled observer isolation. The
+[security claim index](docs/security-claims.md) is the canonical summary of
+advertised theorem statements, assumptions, and exclusions.
+
+Every such result is a theorem about its named Lean state, transition, and
+assumptions. Unless an explicit refinement theorem is added, it says nothing by
+itself about generated C, handwritten boot code, QEMU execution, or physical
+hardware.
+
+### Proof and evidence enforcement
+
+`./scripts/check.sh` builds every default Lean module with warnings as errors,
+checks the security-claim index against independently typed contract theorems,
+replays the generated-C oracle, runs boundary and host-harness regressions, and
+requires deliberately invalid or weakened proof fixtures to remain rejected.
+It also rejects `sorry`, `admit`, and unapproved `axiom`, `constant`, `unsafe`,
+`extern`, or FFI declarations in project Lean sources. CI runs that gate before
+building and booting the images, then retains the image, ELF, map, generated
+page-table plans, tool versions, and serial evidence for inspection.
+
+These checks protect the repository's stated proof discipline; they do not
+verify Lean's kernel, the code generator, the C compiler, or the resulting
+machine code.
+
+### Trusted and tested boundaries
+
+The current trusted computing base still includes handwritten assembly and C,
+the restricted Lean runtime shim, Lean code generation and generated C, the C
+compiler and binutils, linker scripts, GRUB, SeaBIOS, QEMU/TCG, host-side
+evidence scripts, and the assumed x86-64 and device semantics. The boot scenarios
+test only the fixed single-core paths and adversarial cases documented by their
+ADRs. General concurrency, DMA, timing and covert channels, arbitrary hardware,
+arbitrary faults, and full implementation refinement remain outside the current
+claims. [ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md) defines
+the evidence vocabulary and baseline boundary; later ADRs record each addition.
 
 ## Why LeanOS?
 
@@ -43,9 +149,10 @@ Making those boundaries visible is part of the work.
 5. **Reproduce everything.** Pin toolchains and make local and CI commands use
    the same scripts.
 
-## First vertical slice
+## Boot and model progress
 
-The first credible milestone is a deterministic, headless QEMU boot that:
+The first vertical-slice milestone is now implemented as a deterministic,
+headless QEMU boot that:
 
 1. loads a versioned x86-64 image;
 2. initializes the minimum required runtime;
@@ -54,11 +161,9 @@ The first credible milestone is a deterministic, headless QEMU boot that:
 5. exits QEMU with a machine-readable success code; and
 6. is built, proved, booted, and checked by GitHub Actions.
 
-The implementation language and ABI at the boot boundary are not decided yet.
-An early toolchain spike will determine whether Lean-generated code can be used
-freestanding with a suitably small runtime or whether the first slice needs a
-minimal assembly/C/Rust loader around a Lean model. The decision and its TCB
-impact will be recorded before the kernel architecture hardens.
+The selected boundary uses a minimal assembly/C loader around restricted,
+allocation-free generated C from Lean. That bridge is deliberately small and
+tested, but remains part of the TCB rather than a proved refinement layer.
 
 The target platform, Phase 1 threat model, proof vocabulary, allowed milestone
 claims, and initial trusted computing base are fixed in
@@ -139,6 +244,12 @@ never-reused object identifiers to prove safe release and reuse; its lifetime
 rule, machine-checked guarantees, executable attacks, and limits are documented
 in [`docs/memory-lifecycle.md`](docs/memory-lifecycle.md).
 
+Fixed boot-admitted [per-subject frame budgets](docs/frame-budgets.md) partition
+eligible allocator frames, charge allocation to trusted kernel context, preserve
+credit exactly across release and termination, and prove that a peer with an
+available commitment can allocate independently of another subject's exhaustion.
+Capability delegation does not transfer or duplicate the original charge.
+
 The executable virtual-mapping model adds subject-owned address spaces,
 capability-bounded read/write mappings, live translation checks, and stale
 mapping invalidation. Its policy, proved scope, examples, and limitations are
@@ -196,6 +307,10 @@ timer, and syscall vector vocabulary, proves origin-sensitive dispatch and
 whole-subject user-fault containment, and records the unproved x86 entry and
 return boundary.
 
+The bounded inbound entry manifest and total trap-frame normalizer bind those
+ordinary gates to explicit x86 raw shapes and kernel-owned subject, address
+space, CR3, stack, purpose, and nested-entry state before a boot handler runs.
+
 The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,
 bounded double-fault escalation, and one absorbing gate for every modeled
 post-fatal mutation and context-restoration path.
@@ -224,8 +339,9 @@ including their assumptions, evidence classes, and explicit exclusions.
 
 ## Verification targets
 
-These are directions, not completed features. Work should land incrementally
-with an explicit threat model and proof statement.
+These are long-term directions, not claims that the completed slices satisfy an
+entire verification target. Work lands incrementally with an explicit threat
+model and proof statement.
 
 - **Functional correctness:** kernel operations refine a small abstract state
   machine and satisfy documented API contracts.
@@ -253,7 +369,7 @@ CI will grow in layers:
 | --- | --- | --- |
 | Repository | Markdown and repository hygiene | Active |
 | Lean | Build all modules and check proofs with a pinned toolchain | Active |
-| Host tests | Run pure state-machine and property tests | Planned |
+| Host tests | Generated-C oracle and boundary/harness regressions | Active |
 | Emulator | Build and boot headlessly with timeout and serial assertions | Active |
 | Artifacts | Preserve image, ELF, map, checksums, versions, and serial log | Active |
 | Release | Publish tagged reproducible images with provenance | Active |
@@ -292,21 +408,25 @@ The pull-request workflow uses only these repository-owned entry points:
 ./scripts/check-markdown.sh
 ./scripts/check.sh
 ./scripts/build-image.sh
-./scripts/run-image.sh
+./scripts/record-tool-versions.sh
+./scripts/run-emulator-evidence.py run
 ```
 
 The first command requires Node.js/npm. Image building and QEMU prerequisites,
 the exact Ubuntu 24.04 package versions used in CI, and emulator resource bounds
 are listed in [the boot-image guide](docs/boot-image.md). CI first runs the
-Markdown and complete Lean proof-integrity gates, then builds and boots the
-image without KVM. It retains the ISO, debug ELF, symbol map, checksums, pinned
-tool versions, and serial log for 14 days, including available diagnostics from
-failed runs. Controlled negative fixtures ensure theorem, compiler, serial
-protocol, guest-signal, and timeout failures cannot pass.
+Markdown and complete Lean proof-integrity gates, then builds once and executes
+the versioned mandatory emulator matrix without KVM. The matrix is the sole
+release-blocking QEMU inventory for pull requests and tags. CI retains images,
+debug ELFs, symbol maps, checksums, pinned tool versions, serial logs, exact
+commands, and the machine-readable evidence report for 14 days, including
+available diagnostics from failed runs. Controlled negative fixtures ensure
+theorem, compiler, matrix-inventory, artifact-hash, serial-protocol,
+guest-signal, and timeout failures cannot pass.
 
-Tags matching `vMAJOR.MINOR.PATCH` additionally run the exact proof, build, and
-QEMU gates, require a byte-identical double build, and publish experimental
-release artifacts with checksums and GitHub provenance. The version policy,
+Tags matching `vMAJOR.MINOR.PATCH` additionally run that same matrix, require a
+byte-identical double build, and publish its evidence manifest with checksums
+and GitHub provenance. The version policy,
 artifact inventory, trusted-boundary warning, and download verification
 commands are in [the boot-image guide](docs/boot-image.md).
 
@@ -357,10 +477,11 @@ Architecture-changing work should begin with a short issue or decision record.
 Proofs are part of the implementation: changes that invalidate them should fix
 or deliberately revise the associated specification in the same pull request.
 
-## Current repository status
+## Reading the evidence
 
-Today the repository contains its project charter, the Phase 1 architecture
-boundary, a pinned Lean project, and repository hygiene and proof-build checks.
-The issue tracker defines the bootstrap work. Until a milestone is linked here
-with passing proof and emulator evidence, LeanOS should be described as an
-experimental research project rather than a verified operating system.
+Use the [security claim index](docs/security-claims.md) for the current proved
+surface, the accepted [architecture decisions](docs/adr/) for scenario-specific
+claims and TCB additions, and the [boot-image guide](docs/boot-image.md) for
+reproduction commands and exact QEMU evidence. LeanOS should continue to be
+described as an experimental research project rather than a verified operating
+system.

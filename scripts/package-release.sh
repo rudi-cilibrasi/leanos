@@ -15,6 +15,9 @@ if [[ "$(git rev-list -n 1 "$tag")" != "$revision" ]]; then
   exit 1
 fi
 
+evidence="build/evidence/emulator-evidence.json"
+./scripts/run-emulator-evidence.py verify "$evidence" --version "$version"
+
 release="$repo_root/build/release"
 rm -rf "$release"
 mkdir -p "$release"
@@ -31,7 +34,15 @@ cp build/boot/leanos-preemption.map \
   "$release/leanos-${version}-x86_64-preemption.map"
 cp build/boot/preemption.serial.log \
   "$release/leanos-${version}-preemption-serial.log"
+cp build/boot/entry-adversarial.serial.log \
+  "$release/leanos-${version}-entry-adversarial-serial.log"
+cp build/boot/double-fault.serial.log \
+  "$release/leanos-${version}-double-fault-serial.log"
+cp build/boot/double-fault-guard-mapped.serial.log \
+  "$release/leanos-${version}-double-fault-guard-mapped-serial.log"
 cp build/boot/corpus.tsv "$release/leanos-${version}-oracle.tsv"
+cp "$evidence" "$release/EMULATOR_EVIDENCE.json"
+cp scripts/emulator-evidence-matrix.tsv "$release/EMULATOR_EVIDENCE_MATRIX.tsv"
 cp build/boot/SOURCE_REVISION "$release/SOURCE_REVISION"
 cp docs/release-notes.md "$release/RELEASE_NOTES.md"
 LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
@@ -43,7 +54,11 @@ LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
   "leanos-${version}-x86_64-preemption.elf" \
   "leanos-${version}-x86_64-preemption.map" \
   "leanos-${version}-preemption-serial.log" \
+  "leanos-${version}-entry-adversarial-serial.log" \
+  "leanos-${version}-double-fault-serial.log" \
+  "leanos-${version}-double-fault-guard-mapped-serial.log" \
   "leanos-${version}-oracle.tsv" \
+  EMULATOR_EVIDENCE.json EMULATOR_EVIDENCE_MATRIX.tsv \
   SOURCE_REVISION TOOLCHAIN.txt RELEASE_NOTES.md > SHA256SUMS)
 
 echo "packaged $tag release assets in build/release"

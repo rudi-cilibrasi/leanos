@@ -1,0 +1,21 @@
+# leanos-emulator-evidence-v1
+# mandatory-count	18
+# id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
+blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
+entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
+preemption	boot	accepted-boot	30	leanos-@VERSION@-x86_64-preemption.iso	leanos-preemption.elf	preemption.serial.log	preemption	-	-
+return-kernel-selector	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-kernel-selector.iso	leanos-return-kernel-selector.elf	return-corruption-kernel-selector.serial.log	kernel-selector	1	user-return-selector
+return-wrong-stack-selector	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-wrong-stack-selector.iso	leanos-return-wrong-stack-selector.elf	return-corruption-wrong-stack-selector.serial.log	wrong-stack-selector	2	user-return-selector
+return-noncanonical-rip	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-noncanonical-rip.iso	leanos-return-noncanonical-rip.elf	return-corruption-noncanonical-rip.serial.log	noncanonical-rip	3	user-return-noncanonical
+return-noncanonical-rsp	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-noncanonical-rsp.iso	leanos-return-noncanonical-rsp.elf	return-corruption-noncanonical-rsp.serial.log	noncanonical-rsp	4	user-return-noncanonical
+return-outside-code	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-outside-code.iso	leanos-return-outside-code.elf	return-corruption-outside-code.serial.log	outside-code	5	user-return-code
+return-outside-stack	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-outside-stack.iso	leanos-return-outside-stack.elf	return-corruption-outside-stack.serial.log	outside-stack	6	user-return-stack
+return-flags-ac	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-flags-ac.iso	leanos-return-flags-ac.elf	return-corruption-flags-ac.serial.log	flags-ac	7	user-return-flags
+return-flags-df	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-flags-df.iso	leanos-return-flags-df.elf	return-corruption-flags-df.serial.log	flags-df	8	user-return-flags
+return-stale-cr3	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-stale-cr3.iso	leanos-return-stale-cr3.elf	return-corruption-stale-cr3.serial.log	stale-cr3	9	user-return-cr3
+return-stale-context	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-stale-context.iso	leanos-return-stale-context.elf	return-corruption-stale-context.serial.log	stale-context	10	user-return-code
+return-post-validation-mutation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-post-validation-mutation.iso	leanos-return-post-validation-mutation.elf	return-corruption-post-validation-mutation.serial.log	post-validation-mutation	11	user-return-noncanonical
+return-blocking-context-canary	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-blocking-context-canary.iso	leanos-return-blocking-context-canary.elf	return-corruption-blocking-context-canary.serial.log	blocking-context-canary	12	register-canary
+return-capability-reuse-generation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-capability-reuse-generation.iso	leanos-return-capability-reuse-generation.elf	return-corruption-capability-reuse-generation.serial.log	capability-reuse-generation	13	capability-reuse-generation
+double-fault	double-fault	fail-stop	30	leanos-@VERSION@-x86_64-double-fault.iso	leanos-double-fault.elf	double-fault.serial.log	double-fault	-	-
+double-fault-guard-mapped	double-fault-guard	controlled-rejection	30	leanos-@VERSION@-x86_64-double-fault-guard-mapped.iso	leanos-double-fault-guard-mapped.elf	double-fault-guard-mapped.serial.log	double-fault-guard-mapped	-	-

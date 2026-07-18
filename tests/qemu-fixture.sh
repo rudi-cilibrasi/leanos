@@ -13,6 +13,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
   status=$?
   set -e
+  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
   sed -i \
     -e 's/schedule=one-shot-pit/schedule=bounded-two-shot-pit/' \
     -e 's/mode=one-shot origin=cpl3/mode=bounded-one-shot sequence=1 origin=cpl3/' \
@@ -26,6 +27,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
   status=$?
   set -e
+  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
   sed -i \
     -e 's|LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc|' \
     -e '/^LEANOS\/5 /d' \
@@ -33,6 +35,9 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
     -e '/^LEANOS\/6 COPY direction=in/i LEANOS/8 PAGING root=B selected=1 result=PASS\nLEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10\nLEANOS/9 CAPREUSE event=initial subject=2 handle=131072 endpoint=10 accepted=1\nLEANOS/9 CAPREUSE event=clear slot=0 old-generation=2 result=PASS\nLEANOS/9 CAPREUSE event=install slot=0 generation=3 endpoint=11 result=PASS\nLEANOS/9 CAPREUSE event=stale-replay subject=2 handle=131072 rejected=1\nLEANOS/9 CAPREUSE event=unchanged endpoint=11 mailbox=empty result=PASS\nLEANOS/9 CAPREUSE event=fresh subject=2 handle=196608 endpoint=11 accepted=1\nLEANOS/9 CAPREUSE status=PASS stale-effects=0 fresh-effects=1\nLEANOS/10 IPC event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS\nLEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\nLEANOS/10 IPC event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1' \
     -e '/^LEANOS\/6 COPY direction=out/a LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1\nLEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS\nLEANOS/8 PAGING root=B selected=1 result=PASS\nLEANOS/10 IPC event=dispatch subject=2 address-space=2 reservation=owned trusted=1\nLEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\nLEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1' \
     "$log"
+  if [[ "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == entry-adversarial ]]; then
+    sed -i '/event=dispatch subject=1/a LEANOS/11 ENTRY-ADVERSARIAL attempted-vector=14 delivered=13 privileged-handler=unreached result=PASS\nLEANOS/11 ENTRY-ADVERSARIAL attempted-vector=32 delivered=13 privileged-handler=unreached result=PASS' "$log"
+  fi
   exit "$status"
 fi
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in

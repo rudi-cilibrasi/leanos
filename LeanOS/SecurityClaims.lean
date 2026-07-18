@@ -1,9 +1,11 @@
 import LeanOS.KernelTransition
 import LeanOS.Capability
 import LeanOS.FrameAllocator
+import LeanOS.FrameBudget
 import LeanOS.X86PageTable
 import LeanOS.Syscall
 import LeanOS.FailStop
+import LeanOS.InterruptEntry
 import LeanOS.ScheduledObservation
 
 /-! # Stable security-claim contract
@@ -52,6 +54,22 @@ theorem frame_ownership_exclusive
     (hright : FrameAllocator.IsOwnedBy state frame right) : left = right := by
   exact FrameAllocator.ownership_exclusive state frame left right hleft hright
 
+/-- SC-FRAME-BUDGET-ISOLATION: an admitted subject with an available committed
+frame and valid object/slot inputs can allocate independently of peer usage. -/
+theorem admitted_frame_budget_isolation state subject object slot
+    (hlive : state.memory.capabilities.subjects subject = true)
+    (hslot : slot < CapabilityHandle.slotReserved)
+    (hinrange : Capability.slotInRange state.memory.capabilities subject slot = true)
+    (hidentity : state.memory.capabilities.nextIdentity ≠ 0)
+    (hidentityBound : state.memory.capabilities.nextIdentity <
+      CapabilityHandle.generationReserved)
+    (hempty : state.memory.capabilities.slots subject slot = none)
+    (hunissued : state.memory.issued object = false)
+    (havailable : FrameBudget.hasAvailable state subject = true) :
+    (FrameBudget.allocate state subject object slot).result = .accepted := by
+  exact FrameBudget.available_allocation_accepted state subject object slot hlive hslot
+    hinrange hidentity hidentityBound hempty hunissued havailable
+
 /-- SC-PT-SEPARATION: distinct encoded frames yield distinct read walks. -/
 theorem page_table_distinct_spaces_separated
     (state : VirtualMapping.State) first second page firstLeaf secondLeaf
@@ -78,6 +96,16 @@ theorem failstop_halted_suffix_absorbing state record proposals
     (hmode : state.execution.mode = .halted record) :
     FailStop.runOperations state proposals = state := by
   exact FailStop.halted_suffix_absorbing state record proposals hmode
+
+/-- SC-INTERRUPT-ENTRY-BINDING: every normalized record constructor copies
+authority-bearing context fields from the kernel-owned input. -/
+theorem interrupt_entry_context_binding entry raw context :
+    (InterruptEntry.makeNormalized entry raw context).currentSubject = context.currentSubject ∧
+    (InterruptEntry.makeNormalized entry raw context).activeAddressSpace =
+      context.activeAddressSpace ∧
+    (InterruptEntry.makeNormalized entry raw context).activeCr3 = context.activeCr3 ∧
+    (InterruptEntry.makeNormalized entry raw context).stackIdentity = context.stackIdentity := by
+  exact InterruptEntry.makeNormalized_binds_context entry raw context
 
 /-- SC-USER-RETURN-CONFINEMENT: an accepted return attests the complete
 kernel-selected frame/context tuple and its privilege-critical fields. -/
