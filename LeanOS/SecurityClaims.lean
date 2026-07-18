@@ -116,6 +116,22 @@ theorem composite_gate_sealed_receive_preserves_runtimeWellFormed
   exact FailStop.gate_sealed_receive_preserves_runtimeWellFormed state handleWord
     endpoint transfer hstate hmode hresolve hpending
 
+/-- SC-COMPOSITE-GATE-SEND-WF: the accepted data-send mutation preserves the
+complete runtime invariant while publishing one exact typed success. -/
+theorem composite_gate_data_send_preserves_runtimeWellFormed
+    state handleWord word0 word1
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hsent : (FailStop.operationReply state
+      (.ipc (.send handleWord word0 word1))) = .ipc (.syscall .sent)) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.ipc (.send handleWord word0 word1))).state ∧
+      (FailStop.gate state (.ipc (.send handleWord word0 word1))).result =
+        .completed (.ipc (.syscall .sent)) := by
+  apply FailStop.gate_ipc_send_accepted_preserves_runtimeWellFormed
+    state handleWord word0 word1 hstate hmode
+  simpa [FailStop.operationReply] using hsent
+
 /-- SC-COMPOSITE-GATE-CONTRACT: every completed public gate step identifies
 the running latch, exact typed reply, and exact composite post-state; both
 gate-level rejection classes and every classified nonfatal subsystem rejection

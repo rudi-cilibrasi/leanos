@@ -1334,6 +1334,157 @@ theorem gate_sealed_receive_preserves_runtimeWellFormed state handleWord endpoin
     hresolve hpending
   simp [gate, hmode, applyOperation, operationReply, hguard, hstate]
 
+private theorem endpointSend_capabilities_unchanged state caller slot payload :
+    (EndpointIPC.send state caller slot payload).state.capabilities = state.capabilities := by
+  simp only [EndpointIPC.send]
+  split <;> try rfl
+  next cap => split <;> try rfl
+              split <;> try rfl
+              split <;> try rfl
+              split <;> try rfl
+              split <;> rfl
+
+private theorem endpointSend_preserves_occupied_mailbox state caller slot payload
+    endpoint envelope (hmail : state.mailbox endpoint = some envelope) :
+    (EndpointIPC.send state caller slot payload).state.mailbox endpoint = some envelope := by
+  simp only [EndpointIPC.send]
+  split <;> try simpa [EndpointIPC.reject] using hmail
+  next cap hlookup =>
+    split <;> try simpa [EndpointIPC.reject] using hmail
+    split <;> try simpa [EndpointIPC.reject] using hmail
+    split <;> try simpa [EndpointIPC.reject] using hmail
+    split <;> try simpa [EndpointIPC.reject] using hmail
+    split <;> try simpa [EndpointIPC.reject] using hmail
+    next hfree =>
+      have hne : endpoint ≠ cap.object := by
+        intro heq
+        subst endpoint
+        simp [hmail] at hfree
+      simpa [EndpointIPC.setOption, hne] using hmail
+
+private theorem endpointSend_preserves_live_senders state caller slot payload
+    (hwellFormed : Capability.WellFormed state.capabilities)
+    (hlive : ∀ object envelope, state.mailbox object = some envelope →
+      state.capabilities.subjects envelope.sender = true) :
+    ∀ object envelope,
+      (EndpointIPC.send state caller slot payload).state.mailbox object = some envelope →
+        (EndpointIPC.send state caller slot payload).state.capabilities.subjects
+          envelope.sender = true := by
+  simp only [EndpointIPC.send]
+  split <;> try simpa [EndpointIPC.reject] using hlive
+  next cap hlookup =>
+    split <;> try simpa [EndpointIPC.reject] using hlive
+    split <;> try simpa [EndpointIPC.reject] using hlive
+    split <;> try simpa [EndpointIPC.reject] using hlive
+    split <;> try simpa [EndpointIPC.reject] using hlive
+    split <;> try simpa [EndpointIPC.reject] using hlive
+    next hfree =>
+      intro object envelope hmail
+      by_cases heq : object = cap.object
+      · subst object
+        have henvelope : envelope = { endpoint := cap.object, sender := caller, payload } := by
+          simpa [EndpointIPC.setOption] using hmail.symm
+        subst envelope
+        exact (hwellFormed.1 caller slot cap
+          (Capability.lookup_found_slot state.capabilities caller slot cap hlookup)).1
+      · exact hlive object envelope (by simpa [EndpointIPC.setOption, heq] using hmail)
+
+/-- A successful data send is one complete global-invariant mutation.  The
+endpoint post-state is published to both the IPC and sealed-transfer views,
+while the latter's pending attachment map is retained exactly. -/
+theorem gate_ipc_send_accepted_preserves_runtimeWellFormed state handleWord word0 word1
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hsent : (dispatchIPC state (.send handleWord word0 word1)).reply =
+      .syscall .sent) :
+    RuntimeWellFormed (gate state (.ipc (.send handleWord word0 word1))).state ∧
+      (gate state (.ipc (.send handleWord word0 word1))).result =
+        .completed (.ipc (.syscall .sent)) := by
+  rcases hstate with
+    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
+  rcases hcoherent with
+    ⟨hexecLife, hschedulerLife, hpreemptionScheduler, hcapsLife,
+      hmemoryCaps, hipcVirtual, hipcCaps, hresumableScheduler,
+      htranslationVirtual, htransferEndpoints, hcontext, hdead, hsender⟩
+  cases hresolve : CapabilityHandle.resolveCurrent state.ipc.endpoints.capabilities
+      { caller := state.execution.core.context.currentSubject }
+      handleWord .endpoint with
+  | error reason => simp [dispatchIPC, IPCSyscall.dispatch, hresolve] at hsent
+  | ok resolution =>
+      cases hsend : EndpointIPC.send state.ipc.endpoints
+          state.execution.core.context.currentSubject resolution.handle.slot
+          { word0, word1 } with
+      | mk endpoints result =>
+          cases result with
+          | rejected reason =>
+              simp [dispatchIPC, IPCSyscall.dispatch, hresolve, hsend] at hsent
+          | accepted =>
+              have hdispatch :
+                  IPCSyscall.dispatch state.ipc state.ipcContext
+                    (.send handleWord word0 word1) =
+                    { state := { state.ipc with endpoints }
+                      reply := .sent } := by
+                simp [IPCSyscall.dispatch, hresolve, hsend]
+              have hcapEq : endpoints.capabilities = state.ipc.endpoints.capabilities := by
+                simpa [hsend] using endpointSend_capabilities_unchanged
+                  state.ipc.endpoints state.execution.core.context.currentSubject
+                  resolution.handle.slot { word0, word1 }
+              have hipc' : IPCSyscall.WellFormed
+                  (IPCSyscall.dispatch state.ipc state.ipcContext
+                    (.send handleWord word0 word1)).state :=
+                IPCSyscall.dispatch_preserves_wellFormed state.ipc state.ipcContext
+                  (.send handleWord word0 word1) hipc
+              have hendpoint : EndpointIPC.WellFormed endpoints := by
+                have preserved := EndpointIPC.send_preserves_wellFormed state.ipc.endpoints
+                  state.execution.core.context.currentSubject resolution.handle.slot
+                  { word0, word1 } hipc.2
+                simpa [hsend] using preserved
+              have htransfers' : CapabilityTransfer.WellFormed
+                  { state.transfers with toEndpointState := endpoints } := by
+                refine ⟨hendpoint, ?_⟩
+                intro endpoint transfer hpending
+                have hold := htransfers.2 endpoint transfer hpending
+                rcases hold with ⟨⟨envelope, hmailbox, henvelope⟩, hrest⟩
+                rw [htransferEndpoints] at hmailbox
+                refine ⟨⟨envelope, ?_, henvelope⟩, ?_⟩
+                · simpa [hsend] using
+                    endpointSend_preserves_occupied_mailbox
+                      state.ipc.endpoints
+                      state.execution.core.context.currentSubject
+                      resolution.handle.slot { word0, word1 } endpoint envelope hmailbox
+                · simpa [htransferEndpoints, hcapEq] using hrest
+              have hcoherent' :
+                  (installIPC state
+                    (IPCSyscall.dispatch state.ipc state.ipcContext
+                      (.send handleWord word0 word1)).state).Coherent := by
+                simp only [CompositeState.Coherent, installIPC]
+                refine ⟨hexecLife, hschedulerLife, hpreemptionScheduler, hcapsLife,
+                  hmemoryCaps, ?_, ?_, hresumableScheduler, htranslationVirtual, ?_,
+                  hcontext, ?_, ?_⟩
+                · simpa [IPCSyscall.dispatch, hresolve, hsend] using hipcVirtual
+                · simpa [hdispatch, hcapEq] using hipcCaps
+                · simp [IPCSyscall.dispatch, hresolve, hsend]
+                · intro object hnotLive
+                  simpa [hdispatch] using
+                    hendpoint.2.2.2.1 object (by simpa [hcapEq, hipcCaps] using hnotLive)
+                · intro object envelope hmail
+                  have hliveSender := endpointSend_preserves_live_senders state.ipc.endpoints
+                    state.execution.core.context.currentSubject resolution.handle.slot
+                    { word0, word1 } hipc.2.1 (by
+                      intro priorObject priorEnvelope hprior
+                      simpa [hipcCaps] using hsender priorObject priorEnvelope hprior)
+                    object envelope (by simpa [hdispatch, hsend] using hmail)
+                  simpa [hsend, hcapEq, hipcCaps] using hliveSender
+              constructor
+              · rw [hdispatch] at hipc' hcoherent'
+                simpa [gate, hmode, applyOperation, dispatchIPC, IPCSyscall.dispatch,
+                  hresolve, hsend, installIPC, hdispatch] using
+                  ⟨hcoherent', hexecution, hlifecycle, hcapabilities, hvirtual, hipc',
+                    hscheduler, hpreemption, hresumable, htransfers', hhalted, hlive⟩
+              · simp [gate, hmode, operationReply, dispatchIPC, IPCSyscall.dispatch,
+                  hresolve, hsend]
+
 /-- Busy and terminal rejection are invariant-preserving for every operation;
 neither path invokes a synchronization helper or a subsystem transition. -/
 theorem gate_rejected_mode_preserves_runtimeWellFormed state operation
