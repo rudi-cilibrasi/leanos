@@ -68,10 +68,17 @@ policy-mismatch, kernel-origin, stale-binding, and dispatch-invariant cases and
 replays the generated adapter in both hosted C and the boot image. These are
 finite model/boundary tests, not a refinement proof.
 
+The versioned emulator evidence matrix treats the dedicated two-subject denial
+image as a mandatory accepted-boot scenario. Its report binds the exact QEMU
+command, source revision, image and ELF hashes, and complete serial log. CI
+retains that ISO, ELF, link map, final page-table plans, serial transcript,
+final-ELF disassembly, and the extended-state policy verdict for 14 days.
+
 Still trusted and unproved are CPUID and control-register reads, instruction
 decoding, hardware exception priority and delivery, descriptor loads, assembly,
 generated code, the compiler/linker, firmware/GRUB state, and the final binary.
-No QEMU claim is made by this checkpoint.
+The QEMU scenario is tested evidence for one pinned emulator configuration; it
+does not turn any of those boundaries into proved properties.
 
 ## Boot control-state integration
 
@@ -90,23 +97,22 @@ Vectors 6 and 7 are now user-only interrupt gates in the same bounded entry
 manifest and trap-frame normalizer as page fault, timer, and syscall entry.
 Their assembly stubs clear AC/DF, save only the modeled GPR frame, and call the
 shared kernel-owned authorization adapter before any denial operation.  A
-same-privilege kernel #UD/#NM cannot normalize as a contained event.  The
-current post-normalization machine endpoint remains intentionally fail-stop.
+same-privilege kernel #UD/#NM cannot normalize as a contained event.
 The Lean transition now composes normalization-compatible classification with
 authoritative cleanup and peer selection. The post-normalization C endpoint
 invokes the generated fixed-width #NM/#UD adapter, which is also replayed by
-the shared oracle, before retaining the fail-stop publication boundary. This
-checkpoint does not yet claim that assembly publishes the modeled successful
-dispatch.
+the shared oracle, and assembly publishes the selected peer through the common
+validated return path in the dedicated denial image.
 
 ## Remaining integration
 
 The machine endpoint now consumes the cleanup/dispatch result, retires A, and
 restores the scheduler-selected peer. The global model also carries the
 denied-state predicate around #104's authoritative operation vocabulary and
-proves single-step and finite-sequence preservation. Final work still needs
-the deterministic two-subject QEMU denial scenario, refinement of the global
-wrapper to the generated/machine gate, complete unauthorized-instruction
-source/final-ELF checks and negative
-fixtures, preserved control/CPUID snapshots and disassembly, exact serial
-evidence, and documentation of the pinned QEMU CPU contract.
+proves single-step and finite-sequence preservation. The deterministic x87
+two-subject QEMU scenario is now release-blocking and its exact serial and
+final-ELF evidence are retained. Final work still needs representative
+MMX/SSE/AVX denial coverage, refinement of the global wrapper to the
+generated/machine gate, complete unauthorized-instruction source/final-ELF
+checks and negative fixtures, a decoded CPUID snapshot, and documentation of
+the pinned QEMU CPU contract.

@@ -427,6 +427,10 @@ fi
 ./scripts/check-image-policy.sh "$build/leanos-extended-state.elf"
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
+objdump -d --no-show-raw-insn "$build/leanos-extended-state.elf" \
+  > "$build/extended-state.disassembly.txt"
+./scripts/check-extended-state-policy.sh "$build/leanos-extended-state.elf" \
+  | tee "$build/extended-state-policy-report.txt"
 ./scripts/test-extended-state-policy.sh "$build/leanos.elf"
 ./scripts/check-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-report.txt"
 ./scripts/test-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-fixtures.log"

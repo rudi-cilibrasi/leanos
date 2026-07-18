@@ -89,27 +89,35 @@ jobs:
           path: |
             build/boot/leanos-0.1.0-x86_64.iso
             build/boot/leanos-0.1.0-x86_64-preemption.iso
+            build/boot/leanos-0.1.0-x86_64-extended-state.iso
             build/boot/leanos-0.1.0-x86_64-double-fault.iso
             build/boot/leanos-0.1.0-x86_64-entry-adversarial.iso
             build/boot/leanos.elf
             build/boot/leanos-preemption.elf
+            build/boot/leanos-extended-state.elf
             build/boot/leanos-double-fault.elf
             build/boot/leanos-entry-adversarial.elf
             build/boot/leanos.map
             build/boot/leanos-preemption.map
+            build/boot/leanos-extended-state.map
             build/boot/leanos-double-fault.map
             build/boot/leanos-prelink.map
             build/boot/boot-page-plan.h
             build/boot/boot-page-plan.final.h
             build/boot/boot-page-plan-preemption.h
             build/boot/boot-page-plan-preemption.final.h
+            build/boot/boot-page-plan-extended-state.h
+            build/boot/boot-page-plan-extended-state.final.h
             build/boot/SHA256SUMS
             build/boot/serial.log
             build/boot/preemption.serial.log
+            build/boot/extended-state.serial.log
             build/boot/double-fault.serial.log
             build/boot/entry-adversarial.serial.log
             build/boot/entry-policy-report.txt
             build/boot/entry-policy-fixtures.log
+            build/boot/extended-state.disassembly.txt
+            build/boot/extended-state-policy-report.txt
             build/boot/return-corruption-*.serial.log
             build/boot/return-*-policy.log
             build/boot/leanos-0.1.0-x86_64-return-*.iso
