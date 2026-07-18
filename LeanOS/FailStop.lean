@@ -310,6 +310,15 @@ private def latchInvalidUserReturn (state : State) (request : Interrupt.UserRetu
       copyOverride := false }
     action := .fatal record }
 
+/-- Latching a rejected outgoing return preserves the execution invariant:
+the lifecycle and bound authority are unchanged, while the entry-active bit
+is set exactly as required by terminal mode. -/
+private theorem latchInvalidUserReturn_preserves_wellFormed state request reason active
+    (hstate : WellFormed state) :
+    WellFormed (latchInvalidUserReturn state request reason active).state := by
+  rcases hstate with ⟨hcore, hbound, _⟩
+  exact ⟨hcore, hbound, by simp [latchInvalidUserReturn]⟩
+
 /-- Authoritative epilogue gate. Rejection records its purpose/reason and
 latches the absorbing terminal mode before any modeled frame consumption. -/
 def completeUserReturn (state : State) (request : Interrupt.UserReturnRequest) :
@@ -919,7 +928,13 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       let execution :=
         if state.ReturnPlanLive then state.execution
         else { state.execution with returnAuthorityArmed := false }
-      { state with execution := (completeUserReturn execution request).state }
+      let outcome := completeUserReturn execution request
+      match outcome.action with
+      | .fatal _ =>
+          { state with
+            execution := outcome.state
+            resumable := { state.resumable with halted := true } }
+      | .accepted _ | .alreadyHalted _ => { state with execution := outcome.state }
   | .syscall call =>
       let outcome := Syscall.dispatch state.virtualMemory state.syscallContext call
       match outcome.reply with
@@ -1343,10 +1358,89 @@ theorem gate_userReturn_accepted_preserves_runtimeWellFormed state request attes
     | true => rfl
   have hplan : state.ReturnPlanLive = true := hstate.2.2.2.2.2.2.2.2.2.2.2 harmed
   have hunchanged := accepted_user_return_state_unchanged state.execution request attested haccepted
+  have hoperation : applyOperation state (.userReturn request) = state := by
+    simp [applyOperation, hplan, hunchanged, haccepted]
   refine ⟨?_, ?_, ?_⟩
-  · simpa [gate, hmode, applyOperation, hplan, hunchanged] using hstate
-  · simp [gate, hmode, applyOperation, hplan, hunchanged]
+  · simpa [gate, hmode, hoperation] using hstate
+  · simp [gate, hmode, hoperation]
   · simp [gate, hmode, operationReply, hplan, haccepted]
+
+/-- The complete outgoing-return operation preserves the global invariant.
+Successful attestation is atomic; every malformed or unselected proposal
+publishes the terminal execution latch together with the resumable latch, so
+the two fail-stop projections cannot disagree after rejection. -/
+theorem gate_userReturn_preserves_runtimeWellFormed state request
+    (hstate : RuntimeWellFormed state) :
+    RuntimeWellFormed (gate state (.userReturn request)).state := by
+  by_cases hmode : state.execution.mode = .running
+  · by_cases hlive : state.ReturnPlanLive = true
+    · cases harmed : state.execution.returnAuthorityArmed with
+      | false =>
+          rcases hstate with
+            ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+              hscheduler, hpreemption, hresumable, htransfers, hhalted, hauthority⟩
+          have hliveMailbox := hcoherent.2.2.2.2.2.2.2.2.2.2.2.2
+          have hexecutionFatal := latchInvalidUserReturn_preserves_wellFormed
+            state.execution request .unselectedAuthority none hexecution
+          have hresumableHalted : ResumablePreemption.WellFormed
+              { state.resumable with halted := true } :=
+            (ResumablePreemption.wellFormed_set_halted state.resumable true).2 hresumable
+          simp_all [gate, applyOperation, completeUserReturn, latchInvalidUserReturn,
+            RuntimeWellFormed, CompositeState.Coherent,
+            ResumablePreemption.wellFormed_set_halted]
+          exact hliveMailbox
+      | true =>
+          cases hvalidation : Interrupt.validateUserReturn
+              (authoritativeReturnRequest state.execution request) with
+          | accepted attested =>
+              have haccepted : (completeUserReturn state.execution request).action =
+                  .accepted attested := by
+                simp [completeUserReturn, hmode, harmed, hvalidation]
+              exact (gate_userReturn_accepted_preserves_runtimeWellFormed state request
+                attested hstate hmode haccepted).1
+          | rejected reason =>
+              rcases hstate with
+                ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+                  hscheduler, hpreemption, hresumable, htransfers, hhalted, hauthority⟩
+              have hliveMailbox := hcoherent.2.2.2.2.2.2.2.2.2.2.2.2
+              have hexecutionFatal := latchInvalidUserReturn_preserves_wellFormed
+                state.execution (authoritativeReturnRequest state.execution request)
+                reason none hexecution
+              have hresumableHalted : ResumablePreemption.WellFormed
+                  { state.resumable with halted := true } :=
+                (ResumablePreemption.wellFormed_set_halted state.resumable true).2 hresumable
+              have hliveFatal :
+                  ({ state with
+                    execution := (latchInvalidUserReturn state.execution
+                      (authoritativeReturnRequest state.execution request) reason none).state
+                    resumable := { state.resumable with halted := true } }).ReturnPlanLive = true := by
+                simpa [CompositeState.ReturnPlanLive, latchInvalidUserReturn] using hlive
+              simp_all [gate, applyOperation, completeUserReturn, latchInvalidUserReturn,
+                RuntimeWellFormed, CompositeState.Coherent,
+                ResumablePreemption.wellFormed_set_halted]
+              exact hliveMailbox
+    · rcases hstate with
+        ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+          hscheduler, hpreemption, hresumable, htransfers, hhalted, hauthority⟩
+      have hliveMailbox := hcoherent.2.2.2.2.2.2.2.2.2.2.2.2
+      rcases hexecution with ⟨hcore, _hbound, hexecutionMode⟩
+      have hexecutionPrepared : WellFormed
+          { state.execution with returnAuthorityArmed := false } :=
+        ⟨hcore, by simp, hexecutionMode⟩
+      have hexecutionFatal := latchInvalidUserReturn_preserves_wellFormed
+        { state.execution with returnAuthorityArmed := false }
+        request .unselectedAuthority none hexecutionPrepared
+      have hresumableHalted : ResumablePreemption.WellFormed
+          { state.resumable with halted := true } :=
+        (ResumablePreemption.wellFormed_set_halted state.resumable true).2 hresumable
+      simp_all [gate, applyOperation, completeUserReturn, latchInvalidUserReturn,
+        RuntimeWellFormed, CompositeState.Coherent,
+        ResumablePreemption.wellFormed_set_halted]
+      exact hliveMailbox
+  · cases hactual : state.execution.mode with
+    | running => exact False.elim (hmode hactual)
+    | handling active => simpa [gate, hactual] using hstate
+    | halted record => simpa [gate, hactual] using hstate
 
 /-- Restart is the identity running operation and therefore preserves the full
 runtime invariant without touching any authoritative subsystem state. -/
@@ -2189,6 +2283,14 @@ theorem selectUserReturn_operationPreservesRuntimeWellFormed purpose :
   intro state hstate
   exact gate_selectUserReturn_preserves_runtimeWellFormed state purpose hstate
 
+/-- Outgoing return is now a complete operation-family instance: successful
+attestation is atomic and every terminal rejection synchronizes both fail-stop
+projections before the trace continues. -/
+theorem userReturn_operationPreservesRuntimeWellFormed request :
+    OperationPreservesRuntimeWellFormed (.userReturn request) := by
+  intro state hstate
+  exact gate_userReturn_preserves_runtimeWellFormed state request hstate
+
 theorem restart_operationPreservesRuntimeWellFormed :
     OperationPreservesRuntimeWellFormed .restart := by
   intro state hstate
@@ -2416,6 +2518,15 @@ theorem rejected_user_return_composite_atomicity state request reason proposals
       next.lifecycle = state.lifecycle ∧
       runOperations next proposals = next := by
   dsimp only
+  have hfatal : (completeUserReturn state.execution request).action =
+      .fatal
+        { reason := .invalidUserReturn state.execution.returnAuthority.purpose reason
+          active := none
+          incomingVector := request.hardware.vector
+          incomingOrigin := request.hardware.savedPrivilege } := by
+    simp only [completeUserReturn, hmode, harmed]
+    rw [hrejected]
+    rfl
   have hterminal :
       ((gate state (.userReturn request)).state.execution.mode =
         .halted
@@ -2430,12 +2541,12 @@ theorem rejected_user_return_composite_atomicity state request reason proposals
   · simp only [gate, hmode, applyOperation, hlive, if_true, completeUserReturn, harmed]
     rw [hrejected]
     simp [latchInvalidUserReturn, authoritativeReturnRequest]
-  · simp [gate, hmode, applyOperation, hlive]
-  · simp [gate, hmode, applyOperation, hlive]
-  · simp [gate, hmode, applyOperation, hlive]
-  · simp [gate, hmode, applyOperation, hlive]
-  · simp [gate, hmode, applyOperation, hlive]
-  · simp [gate, hmode, applyOperation, hlive]
+  · simp [gate, hmode, applyOperation, hlive, hfatal]
+  · simp [gate, hmode, applyOperation, hlive, hfatal]
+  · simp [gate, hmode, applyOperation, hlive, hfatal]
+  · simp [gate, hmode, applyOperation, hlive, hfatal]
+  · simp [gate, hmode, applyOperation, hlive, hfatal]
+  · simp [gate, hmode, applyOperation, hlive, hfatal]
   · exact halted_suffix_absorbing _ _ proposals hterminal
 
 theorem halted_never_accepts state record operation
