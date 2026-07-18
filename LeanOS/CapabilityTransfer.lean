@@ -1418,6 +1418,104 @@ theorem acceptWord_preserves_wellFormed state caller endpointWord destinationSlo
                   endpoint.handle.slot destinationSlot hstate
               simpa [acceptWord, hendpoint, hpending, hslot, hexhausted] using hpreserved
 
+set_option maxHeartbeats 2400000 in
+/-- A delivered public receipt changes no registry classification and preserves
+every capability that was already installed.  The attached-delivery case only
+fills the checked-empty destination slot; data-only delivery leaves the whole
+capability store unchanged.  This is the monotonicity fact needed to publish a
+receipt through composite consumers that rely on pre-existing authority. -/
+theorem acceptWord_delivered_preserves_registry_and_authority state caller endpointWord
+    destinationSlot envelope
+    (hdelivered : (acceptWord state caller endpointWord destinationSlot).result =
+      .delivered envelope) :
+    let next := (acceptWord state caller endpointWord destinationSlot).state.capabilities
+    next.subjects = state.capabilities.subjects ∧
+      next.objects = state.capabilities.objects ∧
+      next.kinds = state.capabilities.kinds ∧
+      next.slotCapacity = state.capabilities.slotCapacity ∧
+      (∀ subject slot capability,
+        state.capabilities.slots subject slot = some capability →
+          next.slots subject slot = some capability) ∧
+      (∀ subject object right,
+        Capability.HasAuthority state.capabilities subject object right →
+          Capability.HasAuthority next subject object right) := by
+  simp only [acceptWord] at hdelivered ⊢
+  split <;> try simp_all [rejectAccept]
+  next endpoint =>
+    split
+    next transfer =>
+      split <;> try simp_all [rejectAccept]
+      split <;> try simp_all [rejectAccept]
+      simp only [accept] at hdelivered ⊢
+      split <;> try simp_all [rejectAccept]
+      next endpointCap =>
+        split <;> try simp_all [rejectAccept]
+        split <;> try simp_all [rejectAccept]
+        split <;> try simp_all [rejectAccept]
+        split <;> try simp_all [rejectAccept]
+        split <;> try simp_all [rejectAccept]
+        next foundEnvelope =>
+          split
+          next hnone => simp_all [deliverData, record]
+          next foundTransfer =>
+            split <;> try simp_all [rejectAccept]
+            next hrange =>
+              split <;> try simp_all [rejectAccept]
+              next hempty =>
+                split <;> try simp_all [rejectAccept]
+                split <;> try simp_all [rejectAccept]
+                split <;> try simp_all [rejectAccept]
+                split <;> try simp_all [rejectAccept]
+                simp only [deliver, record, Capability.install]
+                refine ⟨rfl, rfl, rfl, rfl, ?_, ?_⟩
+                · intro subject slot capability hslot
+                  by_cases htarget : subject = caller ∧ slot = destinationSlot
+                  · rcases htarget with ⟨rfl, rfl⟩
+                    simp [hempty] at hslot
+                  · simpa [htarget] using hslot
+                · intro subject object right authority
+                  rcases authority with ⟨slot, capability, hslot, hobject, hright⟩
+                  refine ⟨slot, capability, ?_, hobject, hright⟩
+                  by_cases htarget : subject = caller ∧ slot = destinationSlot
+                  · rcases htarget with ⟨rfl, rfl⟩
+                    simp [hempty] at hslot
+                  · simpa [htarget] using hslot
+    next hnone =>
+      simp only [accept] at hdelivered ⊢
+      split <;> try simp_all [rejectAccept]
+      next endpointCap =>
+        split <;> try simp_all [rejectAccept]
+        split <;> try simp_all [rejectAccept]
+        split <;> try simp_all [rejectAccept]
+        split <;> try simp_all [rejectAccept]
+        split <;> try simp_all [rejectAccept]
+        next foundEnvelope =>
+          split
+          next hpending => simp_all [deliverData, record]
+          next foundTransfer =>
+            split <;> try simp_all [rejectAccept]
+            next hrange =>
+              split <;> try simp_all [rejectAccept]
+              next hempty =>
+                split <;> try simp_all [rejectAccept]
+                split <;> try simp_all [rejectAccept]
+                split <;> try simp_all [rejectAccept]
+                split <;> try simp_all [rejectAccept]
+                simp only [deliver, record, Capability.install]
+                refine ⟨rfl, rfl, rfl, rfl, ?_, ?_⟩
+                · intro subject slot capability hslot
+                  by_cases htarget : subject = caller ∧ slot = destinationSlot
+                  · rcases htarget with ⟨rfl, rfl⟩
+                    simp [hempty] at hslot
+                  · simpa [htarget] using hslot
+                · intro subject object right authority
+                  rcases authority with ⟨slot, capability, hslot, hobject, hright⟩
+                  refine ⟨slot, capability, ?_, hobject, hright⟩
+                  by_cases htarget : subject = caller ∧ slot = destinationSlot
+                  · rcases htarget with ⟨rfl, rfl⟩
+                    simp [hempty] at hslot
+                  · simpa [htarget] using hslot
+
 /-- Successful receipt consumes exactly its mailbox and installs its sealed
 identity in the trusted caller's chosen slot. -/
 theorem delivered_installs_exactly_once state caller endpointSlot destinationSlot envelope

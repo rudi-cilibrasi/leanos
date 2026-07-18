@@ -1758,6 +1758,46 @@ theorem gate_transferAccept_delivered_preserves_transferWellFormed state endpoin
       hstate.2.2.2.2.2.2.2.2.2.1
   · simp [gate, hmode, operationReply, applyOperation, hdelivered]
 
+/-- A delivered public transfer receipt is published through every composite
+consumer in one step and preserves the complete runtime invariant. -/
+theorem gate_transferAccept_delivered_preserves_runtimeWellFormed state endpointWord
+    destinationSlot envelope
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hdelivered : (CapabilityTransfer.acceptWord state.transfers
+      state.execution.core.context.currentSubject endpointWord destinationSlot).result =
+        .delivered envelope) :
+    RuntimeWellFormed (gate state (.transferAccept endpointWord destinationSlot)).state := by
+  let nextTransfers := (CapabilityTransfer.acceptWord state.transfers
+    state.execution.core.context.currentSubject endpointWord destinationSlot).state
+  have hnextTransfers : CapabilityTransfer.WellFormed nextTransfers := by
+    exact CapabilityTransfer.acceptWord_preserves_wellFormed state.transfers
+      state.execution.core.context.currentSubject endpointWord destinationSlot
+      hstate.2.2.2.2.2.2.2.2.2.1
+  have hregistry := CapabilityTransfer.acceptWord_delivered_preserves_registry_and_authority
+    state.transfers state.execution.core.context.currentSubject endpointWord destinationSlot
+      envelope hdelivered
+  change RuntimeWellFormed (installTransfers state nextTransfers)
+  rcases hstate with
+    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
+  rcases hcoherent with
+    ⟨hexecLife, hschedulerLife, hpreemptionScheduler, hcapsLife,
+      hmemoryCaps, hipcVirtual, hipcCaps, hresumableScheduler,
+      htranslationVirtual, htransferEndpoints, hcontext, hdead, hsender⟩
+  rcases hregistry with
+    ⟨hsubjects, hobjects, hkinds, hslotCapacity, hslots, hauthority⟩
+  unfold RuntimeWellFormed
+  refine ⟨installLifecycle_coherent _ _, ?_⟩
+  simp only [installTransfers, installLifecycle]
+  all_goals simp_all [SubjectLifecycle.WellFormed, WellFormed,
+    Interrupt.WellFormed, VirtualMapping.LifecycleWellFormed,
+    VirtualMapping.WellFormed, MemoryLifecycle.WellFormed,
+    IPCSyscall.WellFormed, EndpointIPC.WellFormed, Scheduler.WellFormed,
+    Preemption.WellFormed, ResumablePreemption.WellFormed,
+    CompositeState.ReturnPlanLive, synchronizeMemory, restrictMappings,
+    restrictMailboxes, Capability.HasAuthority]
+
 /-- Busy and terminal rejection are invariant-preserving for every operation;
 neither path invokes a synchronization helper or a subsystem transition. -/
 theorem gate_rejected_mode_preserves_runtimeWellFormed state operation
