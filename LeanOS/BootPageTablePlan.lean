@@ -552,6 +552,10 @@ def sampleReservationManifest : List Reservation :=
      lifetime := .permanent },
    { identity := .embeddedUsers, start := 5 * pageBytes, length := pageBytes,
      lifetime := .permanent },
+   { identity := .ordinaryEntryGuard, start := 6 * pageBytes, length := pageBytes,
+     lifetime := .permanent },
+   { identity := .ordinaryEntryStack, start := 7 * pageBytes, length := pageBytes,
+     lifetime := .permanent },
    { identity := .multibootInfo, start := pageBytes, length := pageBytes,
      lifetime := .bootstrap }]
 

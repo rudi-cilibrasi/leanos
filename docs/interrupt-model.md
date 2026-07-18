@@ -171,9 +171,13 @@ be satisfied by the reviewed source manifest alone.
 The extracted edges and final-ELF verdict are retained as checking evidence,
 not a proof of GCC, generated C, assembly, or the final machine path.
 
-Distinct reservation-manifest identities, high-water observations, and forced
-overflow through IST1 remain future integration work. No stable security claim
-is advertised for this checkpoint.
+The accepted boot-reservation manifest now carries distinct
+`.ordinaryEntryGuard` and `.ordinaryEntryStack` identities. Allocator
+initialization rejects non-adjacency or overlap with page tables, descriptor
+tables, the separate double-fault stack reservation, or embedded user images;
+the enclosing loaded-image reservation intentionally contains both. High-water
+observations and forced overflow through IST1 remain future integration work.
+No stable security claim is advertised for this checkpoint.
 
 ## Proof, tests, and trusted assumptions
 
