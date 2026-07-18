@@ -46,6 +46,24 @@ grep -Fq 'cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave
   "$kernel_source" || {
   echo "error: extended-state field=cpuid-evidence missing" >&2; exit 1;
 }
+if grep -Eiq '^[[:space:]]*(clts|fxrstor|xrstor)(64)?([[:space:]]|$)' "$boot_source" ||
+   grep -Eiq '"[[:space:]]*(clts|fxrstor|xrstor)(64)?([[:space:]]|"|$)' "$kernel_source"; then
+  echo "error: extended-state field=unauthorized-enable-or-restore source" >&2
+  exit 1
+fi
+source_control_writes="$(grep -Ec \
+  '^[[:space:]]*mov[qwl]?[[:space:]]+%[[:alnum:]]+,[[:space:]]*%cr(0|4)([[:space:]]|$)' \
+  "$boot_source")"
+[[ "$source_control_writes" -eq 3 &&
+   "$(grep -Fc 'mov %eax, %cr0' "$boot_source")" -eq 1 &&
+   "$(grep -Fc 'mov %eax, %cr4' "$boot_source")" -eq 1 &&
+   "$(grep -Fc 'mov %rax, %cr4' "$boot_source")" -eq 1 ]] || {
+  echo "error: extended-state field=control-write-inventory source" >&2; exit 1;
+}
+if grep -Eq 'mov[^"]*,[[:space:]]*%%cr(0|4)' "$kernel_source"; then
+  echo "error: extended-state field=control-write-inventory source" >&2
+  exit 1
+fi
 
 disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 grep -Eq '[[:space:]]and[[:space:]]+\$0xfffbf9ff,%eax' <<<"$disassembly" || {
@@ -61,5 +79,9 @@ if grep -Eiq '[[:space:]](clts|fxrstor|xrstor)(64)?([[:space:]]|$)' <<<"$disasse
   echo "error: extended-state field=unauthorized-enable-or-restore final-elf" >&2
   exit 1
 fi
+[[ "$(grep -Ec '[[:space:]]mov[[:space:]]+%[[:alnum:]]+,%cr(0|4)([[:space:]]|$)' \
+  <<<"$disassembly")" -eq 3 ]] || {
+  echo "error: extended-state field=control-write-inventory final-elf" >&2; exit 1;
+}
 
 echo "Extended-state CPUID/CR0/CR4 derivation, live snapshot, and final-ELF policy passed"

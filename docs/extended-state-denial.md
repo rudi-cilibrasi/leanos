@@ -75,6 +75,13 @@ retains that ISO, ELF, link map, final page-table plans, serial transcript,
 final-ELF disassembly, decoded CPUID/control-state snapshot, and the
 extended-state policy verdict for 14 days.
 
+The source and final-ELF policy gates also fix the reviewed CR0/CR4 write
+inventory and reject `clts`, `fxrstor`, and `xrstor`. Controlled fixtures add
+each forbidden instruction and an extra CR0 write to the source snapshot and
+must retain their typed rejection diagnostics. This protects the inspection
+gate from silent relaxation; it does not prove the disassembler or source scan
+complete for arbitrary instruction encodings.
+
 Still trusted and unproved are CPUID and control-register reads, instruction
 decoding, hardware exception priority and delivery, descriptor loads, assembly,
 generated code, the compiler/linker, firmware/GRUB state, and the final binary.
@@ -123,6 +130,5 @@ proves single-step and finite-sequence preservation. The deterministic x87
 two-subject QEMU scenario is now release-blocking and its exact serial and
 final-ELF evidence are retained. Final work still needs representative
 MMX/SSE/AVX denial coverage, refinement of the global wrapper to the
-generated/machine gate, complete unauthorized-instruction source/final-ELF
-checks and negative fixtures, and the remaining threat-model/TCB inventory
-updates.
+generated/machine gate, broader handler/runner negative fixtures, and the
+remaining threat-model/TCB inventory updates.
