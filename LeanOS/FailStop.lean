@@ -1654,6 +1654,29 @@ theorem gate_ipc_receive_accepted_preserves_runtimeWellFormed state handleWord s
                   · simpa [gate, hmode, operationReply, dispatchIPC, hguard, hpending,
                       IPCSyscall.dispatch, hresolve, hreceive, hdispatch] using henvelope
 
+/-- An accepted public transfer offer is backed by a whole-invariant
+preserving sealed-transfer mutation and is reported as that exact typed
+success by the composite gate.  The remaining global lift is isolated to the
+publication laws of `installTransfers`, rather than the authority transition. -/
+theorem gate_transferOffer_accepted_preserves_transferWellFormed state endpointWord sourceWord
+    sourceKind payload rights
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (CapabilityTransfer.offerWords state.transfers
+      state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+      payload rights).result = .accepted) :
+    CapabilityTransfer.WellFormed
+        (CapabilityTransfer.offerWords state.transfers
+          state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+          payload rights).state ∧
+      (gate state (.transferOffer endpointWord sourceWord sourceKind payload rights)).result =
+        .completed (.transferOffer .accepted) := by
+  constructor
+  · exact CapabilityTransfer.offerWords_accepted_preserves_wellFormed
+      state.transfers state.execution.core.context.currentSubject endpointWord sourceWord
+      sourceKind payload rights hstate.2.2.2.2.2.2.2.2.2.1 haccepted
+  · simp [gate, hmode, operationReply, applyOperation, haccepted]
+
 /-- Busy and terminal rejection are invariant-preserving for every operation;
 neither path invokes a synchronization helper or a subsystem transition. -/
 theorem gate_rejected_mode_preserves_runtimeWellFormed state operation

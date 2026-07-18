@@ -1021,6 +1021,119 @@ theorem offer_accepted_records_attenuated state caller endpointSlot sourceSlot p
       · simp_all [offer, record, setPending]
       · simp_all [offer, record]
 
+set_option maxHeartbeats 1600000 in
+/-- Reserving a sealed descendant and publishing its tagged mailbox preserves
+the complete transfer invariant.  This is the subsystem preservation lemma
+used by the composite gate: the new derivation is not installed in any live
+slot, and the mailbox and pending tag are introduced atomically. -/
+theorem offer_accepted_preserves_wellFormed state caller endpointSlot sourceSlot payload rights
+    (hstate : WellFormed state)
+    (haccepted : (offer state caller endpointSlot sourceSlot payload rights).result = .accepted) :
+    WellFormed (offer state caller endpointSlot sourceSlot payload rights).state := by
+  rcases hstate with ⟨hendpoint, hpending⟩
+  simp only [offer] at haccepted ⊢
+  split at haccepted ⊢ <;> try contradiction
+  next endpointCap hendpointLookup =>
+    split at haccepted ⊢ <;> try contradiction
+    split at haccepted ⊢ <;> try contradiction
+    split at haccepted ⊢ <;> try contradiction
+    split at haccepted ⊢ <;> try contradiction
+    split at haccepted ⊢ <;> try contradiction
+    split at haccepted ⊢ <;> try contradiction
+    next source hsourceLookup =>
+      split at haccepted ⊢ <;> try contradiction
+      split at haccepted ⊢ <;> try contradiction
+      split at haccepted ⊢ <;> try contradiction
+      cases haccepted
+      simp only [record]
+      constructor
+      · rcases hendpoint with ⟨hcaps, hissued, hmail, hdead, hhistory⟩
+        have hsourceSlot : state.capabilities.slots caller sourceSlot = some source :=
+          Capability.lookup_found_slot state.capabilities caller sourceSlot source hsourceLookup
+        refine ⟨reserve_preserves_capabilityWellFormed state.capabilities source rights
+            hcaps ⟨caller, sourceSlot, hsourceSlot⟩ (by simp_all) (by simp_all), ?_, ?_, ?_, ?_⟩
+        · simpa using hissued
+        · intro object envelope hmailbox
+          by_cases heq : object = endpointCap.object
+          · subst object
+            simp [EndpointIPC.setOption] at hmailbox
+            rcases hmailbox with rfl
+            refine ⟨by simp_all, by simp_all, rfl, ?_⟩
+            simp [EndpointIPC.appendHistory]
+          · have hold := hmail object envelope (by
+                  simpa [EndpointIPC.setOption, heq] using hmailbox)
+            simpa [EndpointIPC.appendHistory, heq] using hold
+        · intro object hnotLive
+          by_cases heq : object = endpointCap.object
+          · subst object
+            exact False.elim (hnotLive (by simp_all))
+          · simpa [EndpointIPC.setOption, heq] using hdead object hnotLive
+        · intro object envelope hin
+          by_cases heq : object = endpointCap.object
+          · subst object
+            simp [EndpointIPC.appendHistory] at hin
+            rcases hin with hin | hin
+            · exact hhistory endpointCap.object envelope hin
+            · simpa using hin
+          · exact hhistory object envelope (by
+                  simpa [EndpointIPC.appendHistory, heq] using hin)
+      · intro endpoint transfer hnextPending
+        by_cases heq : endpoint = endpointCap.object
+        · subst endpoint
+          simp [setPending] at hnextPending
+          rcases hnextPending with rfl
+          have hendpointSlot := Capability.lookup_found_slot state.capabilities caller
+            endpointSlot endpointCap hendpointLookup
+          have hsourceSlot := Capability.lookup_found_slot state.capabilities caller
+            sourceSlot source hsourceLookup
+          have hendpointFacts := hendpoint.1.1 caller endpointSlot endpointCap hendpointSlot
+          have hsourceFacts := hendpoint.1.1 caller sourceSlot source hsourceSlot
+          refine ⟨⟨{ endpoint := endpointCap.object, sender := caller, payload }, ?_, rfl, rfl⟩,
+            ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+          · simp [EndpointIPC.setOption]
+          · exact hsourceFacts.2.1
+          · exact hsourceFacts.2.2.1
+          · simpa using ‹Capability.rightsValid source.kind rights = true›
+          · simp
+          · exact ⟨source.parent, source.rights, hsourceFacts.2.2.2.2.2.1,
+              by simpa using ‹Capability.rightsSubset rights source.rights = true›⟩
+          · exact hsourceFacts.2.2.2.2.1
+          · exact Nat.lt_succ_self _
+          · intro subject slot cap hslot heqIdentity
+            have hold := hendpoint.1.3 subject slot cap hslot caller sourceSlot source
+              hsourceSlot heqIdentity
+            exact Nat.not_lt_of_ge (Nat.le_of_eq hold.2) hsourceFacts.2.2.2.2.1
+          · intro other otherTransfer hother hidentity
+            by_cases hotherEq : other = endpointCap.object
+            · exact hotherEq
+            · simp [setPending, hotherEq] at hother
+              have hold := hpending other otherTransfer hother
+              exact False.elim (Nat.ne_of_lt hold.2.2.2.2.2.2.2.1 hidentity)
+        · have hold := hpending endpoint transfer (by
+                simpa [setPending, heq] using hnextPending)
+          rcases hold with ⟨⟨envelope, hmailbox, henvelope⟩, hrest⟩
+          refine ⟨⟨envelope, ?_, henvelope⟩, ?_⟩
+          · simpa [EndpointIPC.setOption, heq] using hmailbox
+          · simpa [Nat.ne_of_lt hrest.2.2.2.2.2.2.1] using hrest
+
+/-- The canonical word boundary inherits whole-transfer preservation from the
+raw accepted offer selected after both authority-bearing handles resolve. -/
+theorem offerWords_accepted_preserves_wellFormed state caller endpointWord sourceWord sourceKind
+    payload rights
+    (hstate : WellFormed state)
+    (haccepted : (offerWords state caller endpointWord sourceWord sourceKind
+      payload rights).result = .accepted) :
+    WellFormed (offerWords state caller endpointWord sourceWord sourceKind payload rights).state := by
+  obtain ⟨endpoint, source, hendpoint, hsource, hraw⟩ :=
+    offerWords_accepted_resolves state caller endpointWord sourceWord sourceKind
+      payload rights haccepted
+  have hpreserved := offer_accepted_preserves_wellFormed state caller endpoint.handle.slot
+    source.handle.slot payload rights hstate hraw
+  simp only [offerWords, hendpoint, hsource]
+  split
+  · contradiction
+  · exact hpreserved
+
 set_option maxHeartbeats 800000 in
 theorem accept_rejected_unchanged state caller endpointSlot destinationSlot reason
     (h : (accept state caller endpointSlot destinationSlot).result = .rejected reason) :
