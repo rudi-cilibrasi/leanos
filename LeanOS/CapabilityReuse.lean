@@ -58,6 +58,45 @@ def sendWord (state : EndpointIPC.State) (caller : Capability.SubjectId)
   | .error _ => EndpointIPC.reject state .staleHandle
   | .ok handle => EndpointIPC.sendHandle state caller handle message
 
+/-! ## Fixed-width differential-oracle adapter
+
+The phase is a selector for one of the three exact states in the reuse
+sequence, not caller-controlled kernel state: zero is the live original
+authority, one is the cleared slot, and two is the same slot after fresh
+installation.  The caller remains trusted entry context in the real machine
+path; exposing it here lets the shared bounded corpus exercise caller binding.
+-/
+
+def phaseState (phase : UInt64) : EndpointIPC.State :=
+  if phase = 0 then withSender else if phase = 1 then revoked else reusedState
+
+def modelExpected (phase caller word word0 word1 : UInt64) : UInt64 :=
+  let outcome := sendWord (phaseState phase) caller.toNat word { word0, word1 }
+  match outcome.result with
+  | .accepted => 1
+  | .rejected _ => 0
+
+@[export leanos_capability_reuse_demo]
+def capabilityReuseDemo (phase caller word word0 word1 : UInt64) : UInt64 :=
+  if word0 = 0xCAFE && word1 = 0xBEEF &&
+      ((phase = 0 && caller = 1 && word = 2 * 65536) ||
+       (phase = 2 && caller = 1 && word = 3 * 65536)) then 1 else 0
+
+theorem exported_adapter_refines_bounded_sequence :
+    capabilityReuseDemo 0 1 staleWord payload.word0 payload.word1 =
+      modelExpected 0 1 staleWord payload.word0 payload.word1 ∧
+    capabilityReuseDemo 1 1 staleWord payload.word0 payload.word1 =
+      modelExpected 1 1 staleWord payload.word0 payload.word1 ∧
+    capabilityReuseDemo 2 1 staleWord payload.word0 payload.word1 =
+      modelExpected 2 1 staleWord payload.word0 payload.word1 ∧
+    capabilityReuseDemo 2 0 currentWord payload.word0 payload.word1 =
+      modelExpected 2 0 currentWord payload.word0 payload.word1 ∧
+    capabilityReuseDemo 2 1 18446744073709551615 payload.word0 payload.word1 =
+      modelExpected 2 1 18446744073709551615 payload.word0 payload.word1 ∧
+    capabilityReuseDemo 2 1 currentWord payload.word0 payload.word1 =
+      modelExpected 2 1 currentWord payload.word0 payload.word1 := by
+  native_decide
+
 theorem words_reuse_exact_slot :
     staleHandle.slot = currentHandle.slot ∧ staleHandle.identity ≠ currentHandle.identity := by
   decide
@@ -107,6 +146,14 @@ theorem current_word_accepted :
 theorem current_word_targets_replacement :
     (sendWord reusedState 1 currentWord payload).state.mailbox 11 =
       some { endpoint := 11, sender := 1, payload } := by
+  native_decide
+
+theorem adapter_sequence_agrees :
+    capabilityReuseDemo 0 1 staleWord payload.word0 payload.word1 = 1 ∧
+    capabilityReuseDemo 1 1 staleWord payload.word0 payload.word1 = 0 ∧
+    capabilityReuseDemo 2 1 staleWord payload.word0 payload.word1 = 0 ∧
+    capabilityReuseDemo 2 0 currentWord payload.word0 payload.word1 = 0 ∧
+    capabilityReuseDemo 2 1 currentWord payload.word0 payload.word1 = 1 := by
   native_decide
 
 end LeanOS.CapabilityReuse

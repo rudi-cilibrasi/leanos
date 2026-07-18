@@ -24,7 +24,9 @@ extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t,
 extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t,
                                         uint64_t, uint64_t);
 extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t,
-                                         uint64_t, uint64_t);
+                                          uint64_t, uint64_t);
+extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t,
+                                              uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -605,8 +607,11 @@ static void replay_oracle(void) {
                         : v->adapter == 6
                             ? leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
                                 v->words[3], v->words[4])
-                            : leanos_blocking_ipc_demo(v->words[0], v->words[1], v->words[2],
-                                v->words[3], v->words[4]);
+                            : v->adapter == 7
+                                ? leanos_blocking_ipc_demo(v->words[0], v->words[1], v->words[2],
+                                    v->words[3], v->words[4])
+                                : leanos_capability_reuse_demo(v->words[0], v->words[1],
+                                    v->words[2], v->words[3], v->words[4]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");

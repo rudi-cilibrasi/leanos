@@ -5,6 +5,7 @@ import LeanOS.Preemption
 import LeanOS.BootAllocation
 import LeanOS.Interrupt
 import LeanOS.BlockingIPC
+import LeanOS.CapabilityReuse
 
 /-!
 # Bounded scalar boundary oracle
@@ -63,6 +64,10 @@ private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt
     expected := if 10 ≤ operation then
       BlockingIPC.blockingIpcModelRejection phase operation caller word0 word1
     else BlockingIPC.blockingIpcDemo phase operation caller word0 word1 }
+
+private def capabilityReuse (id : String) (phase caller word word0 word1 : UInt64) : Vector :=
+  { id, adapter := "CapabilityReuse.scalar", words := [phase, caller, word, word0, word1],
+    expected := CapabilityReuse.modelExpected phase caller word word0 word1 }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -143,9 +148,16 @@ def vectors : List Vector := [
   blockingIPC "blocking-ipc.duplicate-wake" 1 17 1 0x4c45414e 0x4f53,
   blockingIPC "blocking-ipc.wrong-endpoint" 0 18 2 0x4c45414e 0x4f53,
   blockingIPC "blocking-ipc.forged-sender" 3 19 2 1 0x4f53,
-  blockingIPC "blocking-ipc.cancel-before-send" 1 20 1 0x4c45414e 0x4f53]
+  blockingIPC "blocking-ipc.cancel-before-send" 1 20 1 0x4c45414e 0x4f53,
+  capabilityReuse "capability-reuse.initial" 0 1 (2 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.cleared-slot" 1 1 (2 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.stale-generation" 2 1 (2 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.fresh-generation" 2 1 (3 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.wrong-subject" 2 0 (3 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.malformed-generation" 2 1 18446744073709551615
+    0xCAFE 0xBEEF]
 
-theorem corpus_shape : vectors.length = 75 := by decide
+theorem corpus_shape : vectors.length = 81 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -181,7 +193,13 @@ theorem blocking_ipc_scenario_agrees :
     (vectors[60]).expected = BlockingIPC.encodeBootEvent 4 4 2 2 1 ∧
     (vectors[61]).expected = 0 ∧ (vectors[62]).expected = 0 ∧
     (vectors[63]).expected = 0 ∧
-    (vectors.drop 64).all (fun vector => vector.expected ≠ 0) = true := by
+    ((vectors.drop 64).take 11).all (fun vector => vector.expected ≠ 0) = true := by
+  native_decide
+
+theorem capability_reuse_scenario_agrees :
+    (vectors[75]).expected = 1 ∧ (vectors[76]).expected = 0 ∧
+    (vectors[77]).expected = 0 ∧ (vectors[78]).expected = 1 ∧
+    (vectors[79]).expected = 0 ∧ (vectors[80]).expected = 0 := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=
