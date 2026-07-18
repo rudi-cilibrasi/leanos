@@ -62,12 +62,42 @@ theorem words_reuse_exact_slot :
     staleHandle.slot = currentHandle.slot ∧ staleHandle.identity ≠ currentHandle.identity := by
   decide
 
+theorem initial_word_accepted :
+    (sendWord withSender 1 staleWord payload).result = .accepted := by
+  native_decide
+
+theorem initial_word_targets_original :
+    (sendWord withSender 1 staleWord payload).state.mailbox 10 =
+      some { endpoint := 10, sender := 1, payload } := by
+  native_decide
+
+theorem cleared_slot_rejects_old_word :
+    (sendWord revoked 1 staleWord payload).result = .rejected .staleHandle := by
+  native_decide
+
+theorem cleared_slot_rejection_preserves_state :
+    (sendWord revoked 1 staleWord payload).state = revoked := by
+  rfl
+
 theorem stale_word_rejected :
     (sendWord reusedState 1 staleWord payload).result = .rejected .staleHandle := by
   native_decide
 
 theorem stale_word_preserves_state :
     (sendWord reusedState 1 staleWord payload).state = reusedState := by
+  rfl
+
+theorem another_subject_rejected :
+    (sendWord reusedState 0 currentWord payload).result = .rejected .staleHandle := by
+  native_decide
+
+theorem malformed_word_rejected :
+    (sendWord reusedState 1 18446744073709551615 payload).result =
+      .rejected .staleHandle := by
+  native_decide
+
+theorem malformed_word_preserves_state :
+    (sendWord reusedState 1 18446744073709551615 payload).state = reusedState := by
   rfl
 
 theorem current_word_accepted :
