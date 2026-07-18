@@ -38,9 +38,11 @@ symbols=(
   __kernel_text_start __kernel_text_end
   __df_ist_guard_start __df_ist_guard_end
   __df_ist_stack_start __df_ist_stack_end
+  __entry_stack_guard_start __entry_stack_guard_end
+  __entry_stack_start __entry_stack_end
   page_map_level_4_a page_directory_pointer_a page_directory_a page_table_a
   page_map_level_4_b page_directory_pointer_b page_directory_b page_table_b
-  page_table_b_end boot_stack __user_a_text_start
+  page_table_b_end boot_stack boot_stack_top
   __user_a_text_start __user_a_text_end
   __user_a_stack_start __user_a_stack_end
   __user_b_text_start __user_b_text_end

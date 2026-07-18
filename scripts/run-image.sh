@@ -113,7 +113,8 @@ paging_specs=(
   'flip-present B pt' 'flip-user B pt' 'flip-writable B pt'
   'flip-nx B pt' 'wrong-frame B pt' 'ancestor-pointer B pml4'
   'ancestor-flags B pdpt' 'swapped-user-leaves B pt'
-  'extra-mapping B pt' 'omitted-mapping B pt' 'wrong-cr3 A cr3'
+  'extra-mapping B pt' 'entry-guard-mapping B pt'
+  'omitted-mapping B pt' 'wrong-cr3 A cr3'
 )
 if [[ ${#paging_fixtures[@]} -ne ${#paging_specs[@]} ]]; then
   echo "failure_class=page-table-fixtures: complete live-mutation matrix not observed" >&2

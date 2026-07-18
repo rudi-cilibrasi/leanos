@@ -60,6 +60,8 @@ extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
 extern char __df_ist_stack_start[], __df_ist_stack_end[];
 extern char __df_ist_guard_start[], __df_ist_guard_end[];
+extern char __entry_stack_guard_start[], __entry_stack_guard_end[];
+extern char __entry_stack_start[], __entry_stack_end[];
 extern char __kernel_text_start[], __kernel_text_end[];
 extern char boot_stack[], boot_stack_top[];
 extern char __user_a_text_start[], __user_a_text_end[];
@@ -110,7 +112,8 @@ struct __attribute__((packed)) tss64 {
 };
 static struct idt_entry idt[256] __attribute__((aligned(16)));
 static struct tss64 tss;
-static uint8_t entry_stack[16384] __attribute__((aligned(16)));
+static uint8_t entry_stack[16384]
+    __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
 static unsigned timer_accepted;
@@ -159,8 +162,8 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     if (!user && vector != 14) fail("entry-origin");
     if (user && saved_cs != 0x23) fail("entry-user-selector");
     if (!user && (saved_cs & 3u) != 0) fail("entry-kernel-selector");
-    uint64_t first = user ? (uint64_t)entry_stack : (uint64_t)boot_stack;
-    uint64_t past = user ? (uint64_t)(entry_stack + sizeof(entry_stack)) :
+    uint64_t first = user ? (uint64_t)__entry_stack_start : (uint64_t)boot_stack;
+    uint64_t past = user ? (uint64_t)__entry_stack_end :
                            (uint64_t)boot_stack_top;
     uint64_t bytes = user ? 40 : 24;
     if (frame_address < first || frame_address + bytes > past)
@@ -200,7 +203,7 @@ static void check_entry_manifest(void) {
             idt[vector].attributes != want->attr || idt[vector].zero != 0)
             fail("entry-descriptor-mismatch");
     }
-    if (tss.rsp0 != (uint64_t)(entry_stack + sizeof(entry_stack)) ||
+    if (tss.rsp0 != (uint64_t)__entry_stack_end ||
         tss.ist[0] != (uint64_t)__df_ist_stack_end)
         fail("entry-tss-mismatch");
     serial_puts("LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
@@ -346,6 +349,10 @@ static void check_live_page_table_mutations(void) {
         guard * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
         "pt", guard);
 #endif
+    uint64_t entry_guard = boot_page(__entry_stack_guard_start);
+    expect_live_mutation_rejected("entry-guard-mapping", &page_table_b[entry_guard],
+        entry_guard * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
+        "pt", entry_guard);
     expect_live_mutation_rejected("omitted-mapping", &page_table_b[user_text],
         0, "pt", user_text);
 
@@ -753,7 +760,7 @@ static void privilege_init(void) {
         (0x89ull << 40) | (((limit >> 16) & 0xfu) << 48) |
         (((base >> 24) & 0xffu) << 56);
     gdt64[6] = base >> 32;
-    tss.rsp0 = (uint64_t)(entry_stack + sizeof(entry_stack));
+    tss.rsp0 = (uint64_t)__entry_stack_end;
     tss.ist[0] = (uint64_t)__df_ist_stack_end;
     tss.iomap = sizeof(tss);
     *(uint64_t *)__df_ist_stack_start = 0xd0b1efa17badc0deull;

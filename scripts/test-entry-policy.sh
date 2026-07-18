@@ -32,7 +32,7 @@ extra_present() { sed -i '/set_gate(13, isr13/a\    set_gate(77, isr13, 0, 0x8e)
 swapped_error_shape() { sed -i '/^isr14:/,/^\.global isr32/ s/mov \$1, %esi/mov $0, %esi/' "$tmp/boot.S"; }
 branch_cleanup() { sed -i '/^isr32_clac:/,/^isr32_cld:/ s/^[[:space:]]*clac$/    nop/' "$tmp/boot.S"; }
 c_before_normalize() { sed -i '/NORMALIZE_ENTRY 128, 0/i\    call syscall_handler' "$tmp/boot.S"; }
-wrong_tss_stack() { sed -i 's/tss.rsp0 = (uint64_t)(entry_stack + sizeof(entry_stack));/tss.rsp0 = (uint64_t)boot_stack_top;/' "$tmp/kernel.c"; }
+wrong_tss_stack() { sed -i 's/tss.rsp0 = (uint64_t)__entry_stack_end;/tss.rsp0 = (uint64_t)boot_stack_top;/' "$tmp/kernel.c"; }
 
 run_fixture wrong-target 'vector=14 field=target-or-dpl' wrong_target
 run_fixture page-fault-dpl3 'vector=14 field=target-or-dpl' page_fault_dpl3

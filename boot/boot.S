@@ -167,6 +167,16 @@ multiboot_entry:
     movl $0, page_table_b+4(%eax)
 #endif
 
+    /* The linker-owned page immediately below the ordinary CPL3 entry stack
+       is absent in every live address space. */
+    mov $__entry_stack_guard_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    movl $0, page_table_a(%eax)
+    movl $0, page_table_a+4(%eax)
+    movl $0, page_table_b(%eax)
+    movl $0, page_table_b+4(%eax)
+
     mov %cr4, %eax
     or $(1 << 5), %eax
     mov %eax, %cr4

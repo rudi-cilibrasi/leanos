@@ -21,7 +21,8 @@ done
 for symbol in __boot_image_start __boot_image_end __kernel_text_start __kernel_text_end __user_a_text_start \
   __user_a_text_end __user_a_stack_start __user_a_stack_end \
   __user_b_text_start __user_b_text_end __user_b_stack_start \
-  __user_b_stack_end entry_stack page_table_a page_table_b \
+  __user_b_stack_end entry_stack __entry_stack_guard_start \
+  __entry_stack_guard_end __entry_stack_start __entry_stack_end page_table_a page_table_b \
   page_map_level_4_a page_directory_pointer_a page_directory_a \
   page_map_level_4_b page_directory_pointer_b page_directory_b; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
@@ -37,7 +38,7 @@ for symbol in isr8 isr8_clac isr8_cld isr13 run_double_fault_probe \
     exit 1
   }
 done
-for section in .df_ist_guard .df_ist_stack; do
+for section in .df_ist_guard .df_ist_stack .entry_stack_guard .entry_stack; do
   [[ "$(flags "$section")" == *A* && "$(flags "$section")" == *W* && \
      "$(flags "$section")" != *X* ]] || {
     echo "error: $section must be allocated, writable, and non-executable" >&2
@@ -64,12 +65,28 @@ stack_end="$(symbol_address __df_ist_stack_end)"
   echo "error: double-fault guard/IST1 bounds are not one page plus 16 KiB" >&2
   exit 1
 }
+entry_guard_start="$(symbol_address __entry_stack_guard_start)"
+entry_guard_end="$(symbol_address __entry_stack_guard_end)"
+entry_stack_start="$(symbol_address __entry_stack_start)"
+entry_stack_end="$(symbol_address __entry_stack_end)"
+entry_stack_symbol="$(symbol_address entry_stack)"
+[[ $((entry_guard_end - entry_guard_start)) -eq 4096 && \
+   $((entry_guard_end)) -eq $((entry_stack_start)) && \
+   $((entry_stack_end - entry_stack_start)) -eq 16384 && \
+   $((entry_guard_start % 4096)) -eq 0 && \
+   $((entry_stack_end % 16)) -eq 0 && \
+   $((entry_stack_symbol)) -eq $((entry_stack_start)) ]] || {
+  echo "error: ordinary-entry guard/stack bounds are not one page plus 16 KiB" >&2
+  exit 1
+}
+grep -Fq 'tss.rsp0 = (uint64_t)__entry_stack_end;' boot/kernel.c
 grep -Fq 'tss.ist[0] = (uint64_t)__df_ist_stack_end;' boot/kernel.c
 [[ "$(grep -Ec 'set_gate\([^,]+,[^,]+, 1,' boot/kernel.c)" -eq 1 ]]
 grep -Fq 'set_gate(8, isr8, 1, 0x8e);' boot/kernel.c
 grep -Fq 'set_gate(13, isr13, 0, 0x8e);' boot/kernel.c
 grep -Fq 'movl $0, page_table_a(%eax)' boot/boot.S
 grep -Fq 'movl $0, page_table_b(%eax)' boot/boot.S
+[[ "$(grep -Fc 'mov $__entry_stack_guard_start, %eax' boot/boot.S)" -eq 1 ]]
 stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr8>:/,/<isr80>:/p')"
 [[ -n "$stub_disassembly" ]] || {
   echo "error: could not isolate vector-8 disassembly" >&2

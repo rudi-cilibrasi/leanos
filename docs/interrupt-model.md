@@ -136,12 +136,22 @@ authorize an operation handler or return.
 
 The executable witnesses use zero machine-derived contribution solely to check
 the common fixed protocol for syscall, timer, user-page-fault, and supervisor
-diagnostic purposes. They are not a concrete production budget. Linker-owned
-ordinary guard/stack sections, page-table-plan and reservation identities,
-compiler `.su` reports, the reviewed call graph, assembly/disassembly cost
-checks, high-water observations, and forced overflow through IST1 remain future
-integration work and trusted/checked evidence rather than theorem claims. No
-stable security claim is advertised for this checkpoint.
+diagnostic purposes. They are not a concrete production budget. The concrete
+image now places the ordinary stack in a page-aligned linker-owned 16 KiB
+`.entry_stack` interval immediately above a 4 KiB `.entry_stack_guard`; both
+ranges are half-open, and `TSS.rsp0` receives the linker's exclusive
+`__entry_stack_end`. The accepted linker-resolved page-table plan classifies
+the usable pages as supervisor-only writable/NX stack leaves and emits no leaf
+for the guard in either root. Early assembly removes that leaf from both live
+tables, while the guest decoder rejects a controlled attempt to restore it.
+Final-ELF policy checks bind the section flags, exact adjacency and sizes,
+canonical top symbol, TSS assignment, and reviewed unmapping instruction.
+
+Distinct reservation-manifest identities, compiler `.su` reports, the reviewed
+call graph, assembly/disassembly cost checks, high-water observations, and
+forced overflow through IST1 remain future integration work and trusted/checked
+evidence rather than theorem claims. No stable security claim is advertised for
+this checkpoint.
 
 ## Proof, tests, and trusted assumptions
 

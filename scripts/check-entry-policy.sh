@@ -32,7 +32,7 @@ grep -Fq 'set_gate(0x80, isr80, 0, 0xee);' "$kernel_source" || {
 [[ "$(grep -Ec 'set_gate\([^,]+,[^,]+,[^,]+, 0xee\)' "$kernel_source")" -eq 1 ]] || {
   echo "error: vector=128 field=dpl expected=3 violated=extra-dpl3-gate" >&2; exit 1;
 }
-grep -Fq 'tss.rsp0 = (uint64_t)(entry_stack + sizeof(entry_stack));' "$kernel_source" || {
+grep -Fq 'tss.rsp0 = (uint64_t)__entry_stack_end;' "$kernel_source" || {
   echo "error: vector=128 field=tss.rsp0" >&2; exit 1;
 }
 
