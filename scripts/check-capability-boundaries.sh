@@ -55,7 +55,7 @@ require_literal "$syscall_dispatch" 'resolution.handle.slot' \
 reject_pattern "$syscall_source" '\.map[[:space:]]+call\.arg0\.toNat' \
   'a truncating raw-slot map decoder'
 reject_pattern "$syscall_dispatch" 'Capability\.lookup|handleWord\.toNat' \
-  'a raw-slot capability lookup in boot-reachable map dispatch'
+  'a raw-slot capability lookup in model-facing map dispatch'
 
 require_literal "$ipc_source" '| send (handleWord : UInt64)' \
   'an opaque send-handle word'
@@ -66,7 +66,7 @@ require_literal "$ipc_dispatch" 'CapabilityHandle.resolveCurrent' \
 require_literal "$ipc_dispatch" 'resolution.handle.slot' \
   'post-resolution internal-slot dispatch'
 reject_pattern "$ipc_dispatch" 'Capability\.lookup|handleWord\.toNat' \
-  'a raw-slot capability lookup in boot-reachable IPC dispatch'
+  'a raw-slot capability lookup in model-facing IPC dispatch'
 
 require_literal "$blocking_source" 'def receiveOrBlockWord' \
   'an opaque blocking-receive boundary'
@@ -77,7 +77,7 @@ require_literal "$blocking_dispatch" 'CapabilityHandle.resolveCurrent' \
 require_literal "$blocking_dispatch" 'resolution.handle.slot' \
   'post-resolution blocking IPC slot dispatch'
 reject_pattern "$blocking_dispatch" 'Capability\.lookup|handleWord\.toNat' \
-  'a raw-slot capability lookup in boot-reachable blocking IPC dispatch'
+  'a raw-slot capability lookup in model-facing blocking IPC dispatch'
 require_literal "$blocking_revoke" 'CapabilityHandle.revokeWords' \
   'generation-checked blocking IPC revocation'
 reject_pattern "$blocking_revoke" 'Capability\.revoke[[:space:]]' \
@@ -91,4 +91,4 @@ if (( failure != 0 )); then
   exit 1
 fi
 
-echo "Boot-reachable capability boundary checks passed"
+echo "Model-facing capability boundary source-policy checks passed"

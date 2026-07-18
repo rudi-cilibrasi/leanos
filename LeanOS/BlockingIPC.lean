@@ -226,7 +226,7 @@ structure WordOutcome where
   state : State
   result : WordResult
 
-/-- Boot-reachable blocking receive boundary. The userspace word is decoded and
+/-- Model-facing blocking receive boundary. The userspace word is decoded and
 generation-checked only in the capability space selected by trusted caller
 provenance before the internal raw-slot transition is invoked. -/
 def receiveOrBlockWord (state : State) (caller : SubjectId)
@@ -238,7 +238,7 @@ def receiveOrBlockWord (state : State) (caller : SubjectId)
       let outcome := receiveOrBlock state caller resolution.handle.slot
       { state := outcome.state, result := .completed outcome.result }
 
-/-- Boot-reachable blocking send boundary with the same canonical handle ABI. -/
+/-- Model-facing blocking send boundary with the same canonical handle ABI. -/
 def sendWord (state : State) (caller : SubjectId) (handleWord : UInt64)
     (payload : Payload) : WordOutcome :=
   match CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
@@ -279,6 +279,37 @@ theorem rejected_receive_word_preserves_state (state : State) caller handleWord 
   cases hresolve : CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
       { caller } handleWord .endpoint <;>
     simp [receiveOrBlockWord, hresolve] at hrejected ⊢
+
+/-- Any blocking send that reaches the raw-slot transition first resolved the
+exact current endpoint identity for the trusted caller. -/
+theorem completed_send_word_resolves_exact (state : State) caller handleWord payload result
+    (hcompleted : (sendWord state caller handleWord payload).result = .completed result) :
+    ∃ handle capability,
+      CapabilityHandle.decode handleWord = .ok handle ∧
+      state.scheduler.lifecycle.capabilities.subjects caller = true ∧
+      Capability.slotInRange state.scheduler.lifecycle.capabilities caller handle.slot = true ∧
+      state.scheduler.lifecycle.capabilities.slots caller handle.slot = some capability ∧
+      capability.identity = handle.identity ∧ capability.kind = .endpoint ∧
+      state.scheduler.lifecycle.capabilities.objects capability.object = true ∧
+      state.scheduler.lifecycle.capabilities.kinds capability.object = some .endpoint := by
+  cases hresolve : CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
+      { caller } handleWord .endpoint with
+  | error denial => simp [sendWord, hresolve] at hcompleted
+  | ok resolution =>
+      rcases CapabilityHandle.resolveCurrent_sound state.scheduler.lifecycle.capabilities
+        { caller } handleWord .endpoint resolution hresolve with
+        ⟨hdecode, hsubject, hrange, hslot, hidentity, hkind, hlive, hkinds⟩
+      exact ⟨resolution.handle, resolution.capability, hdecode, hsubject, hrange,
+        hslot, hidentity, hkind, hlive, hkinds⟩
+
+/-- Malformed, stale, or wrong-caller send words are state-preserving before
+the internal send transition is reached. -/
+theorem rejected_send_word_preserves_state (state : State) caller handleWord payload reason
+    (hrejected : (sendWord state caller handleWord payload).result = .handleRejected reason) :
+    (sendWord state caller handleWord payload).state = state := by
+  cases hresolve : CapabilityHandle.resolveCurrent state.scheduler.lifecycle.capabilities
+      { caller } handleWord .endpoint <;>
+    simp [sendWord, hresolve] at hrejected ⊢
 
 def cancelSubject (state : State) (subject : SubjectId) : State :=
   match state.waiterEndpoint subject with
@@ -543,7 +574,7 @@ example : splitCheckSleepLostWakeup = true := by decide
 example : unreservedWakeupAllowsTheft = true := by decide
 
 private def endpointCap (rights : Capability.Rights) : Capability.Capability :=
-  { object := 10, kind := .endpoint, rights }
+  { object := 10, kind := .endpoint, rights, identity := 1 }
 
 private def traceCapabilities : Capability.State :=
   { subjects := fun subject => subject < 4
@@ -577,6 +608,8 @@ private def traceState : State :=
     completion := fun _ => none }
 
 private def tracePayload : Payload := { word0 := 0xCAFE, word1 := 0xBEEF }
+private def traceEndpointWord : UInt64 := 0x0000000000010000
+private def staleEndpointWord : UInt64 := 0x0000000000020000
 private def receiverBlocked := (receiveOrBlock traceState 2 0).state
 private def receiverAwakened := (send receiverBlocked 1 0 tracePayload).state
 
@@ -597,6 +630,23 @@ private def receiverCurrent : State := { sentFirst with
     lifecycle := { sentFirst.scheduler.lifecycle with current := some 2 }
     ready := [1, 3] } }
 example : (send sendFirst 1 0 tracePayload).result = .accepted := by native_decide
+example : (sendWord sendFirst 1 traceEndpointWord tracePayload).result =
+    .completed .accepted := by native_decide
+example : (sendWord sendFirst 1 staleEndpointWord tracePayload).result =
+    .handleRejected (.denied .staleHandle) := by native_decide
+example : (sendWord sendFirst 1 0 tracePayload).result =
+    .handleRejected (.malformed .reservedGeneration) := by native_decide
+example : (sendWord sendFirst 9 traceEndpointWord tracePayload).result =
+    .handleRejected (.denied .invalidSubject) := by native_decide
+example : (sendWord sendFirst 1 staleEndpointWord tracePayload).state = sendFirst := by
+  exact rejected_send_word_preserves_state sendFirst 1 staleEndpointWord tracePayload
+    (.denied .staleHandle) (by native_decide)
+example : (sendWord sendFirst 1 0 tracePayload).state = sendFirst := by
+  exact rejected_send_word_preserves_state sendFirst 1 0 tracePayload
+    (.malformed .reservedGeneration) (by native_decide)
+example : (sendWord sendFirst 9 traceEndpointWord tracePayload).state = sendFirst := by
+  exact rejected_send_word_preserves_state sendFirst 9 traceEndpointWord tracePayload
+    (.denied .invalidSubject) (by native_decide)
 example : (receiveOrBlock receiverCurrent 2 0).result = .delivered
     { endpoint := 10, sender := 1, payload := tracePayload } := by native_decide
 example : (receiveOrBlock (receiveOrBlock receiverCurrent 2 0).state 2 0).result = .blocked := by

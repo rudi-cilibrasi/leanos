@@ -43,7 +43,7 @@ if run_fixture >"$log" 2>&1; then
   echo "error: raw IPC lookup fixture unexpectedly passed" >&2
   exit 1
 fi
-if ! grep -q 'raw-slot capability lookup in boot-reachable IPC dispatch' "$log"; then
+if ! grep -q 'raw-slot capability lookup in model-facing IPC dispatch' "$log"; then
   cat "$log" >&2
   echo "error: raw IPC lookup fixture lacked the expected diagnostic" >&2
   exit 1
@@ -55,7 +55,7 @@ if run_fixture >"$log" 2>&1; then
   echo "error: raw blocking IPC lookup fixture unexpectedly passed" >&2
   exit 1
 fi
-if ! grep -q 'raw-slot capability lookup in boot-reachable blocking IPC dispatch' "$log"; then
+if ! grep -q 'raw-slot capability lookup in model-facing blocking IPC dispatch' "$log"; then
   cat "$log" >&2
   echo "error: raw blocking IPC lookup fixture lacked the expected diagnostic" >&2
   exit 1
