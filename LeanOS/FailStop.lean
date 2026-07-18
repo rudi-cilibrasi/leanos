@@ -655,6 +655,17 @@ authoritative lifecycle projection. -/
     (installScheduler state scheduler).lifecycle = scheduler.lifecycle := by
   simp [installScheduler, installLifecycle]
 
+/-- Scheduler publication is one synchronization step: execution,
+preemption, and resumable-context consumers all observe the exact installed
+scheduler lifecycle and queue state. -/
+theorem installScheduler_synchronizes_consumers state scheduler :
+    let next := installScheduler state scheduler
+    next.execution.core.lifecycle = scheduler.lifecycle ∧
+      next.scheduler = scheduler ∧
+      next.preemption.scheduler = scheduler ∧
+      next.resumable.scheduler = scheduler := by
+  simp [installScheduler, installLifecycle]
+
 /-- Publish the exact #74 context-bank state through every legacy projection.
 The context list, TLB entries, and terminal latch are retained verbatim. -/
 private def installResumable (state : CompositeState)
@@ -1325,6 +1336,68 @@ theorem gate_scheduleNext_accepted_sound state context next
       (gate state .scheduleNext).state.scheduler = next ∧
       Scheduler.WellFormed (gate state .scheduleNext).state.scheduler := by
   have hpreserved := Scheduler.selectNext_preserves_wellFormed state.scheduler hwellFormed
+  rw [haccepted] at hpreserved
+  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+
+/-- Accepted queue removal publishes the scheduler's exact lifecycle cleanup
+through the composite synchronization boundary and preserves its invariant. -/
+theorem gate_scheduleRemove_accepted_sound state subject context next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Scheduler.remove state.scheduler subject =
+      { state := next, result := .accepted context })
+    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (gate state (.scheduleRemove subject)).result =
+        .completed (.scheduler (.accepted context)) ∧
+      (gate state (.scheduleRemove subject)).state.scheduler = next ∧
+      Scheduler.WellFormed (gate state (.scheduleRemove subject)).state.scheduler := by
+  have hpreserved := Scheduler.remove_preserves_wellFormed state.scheduler subject hwellFormed
+  rw [haccepted] at hpreserved
+  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+
+/-- An accepted voluntary yield retains the exact round-robin post-state;
+composite synchronization cannot repair or replace the scheduler result. -/
+theorem gate_scheduleYield_accepted_sound state context next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Scheduler.yield state.scheduler =
+      { state := next, result := .accepted context })
+    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (gate state .scheduleYield).result =
+        .completed (.scheduler (.accepted context)) ∧
+      (gate state .scheduleYield).state.scheduler = next ∧
+      Scheduler.WellFormed (gate state .scheduleYield).state.scheduler := by
+  have hpreserved := Scheduler.yield_preserves_wellFormed state.scheduler hwellFormed
+  rw [haccepted] at hpreserved
+  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+
+/-- A successful timer scheduling step is the exact accepted tick transition
+and retains the scheduler invariant after all shared projections are updated. -/
+theorem gate_scheduleTick_accepted_sound state context next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Scheduler.tick state.scheduler =
+      { state := next, result := .accepted context })
+    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (gate state .scheduleTick).result =
+        .completed (.scheduler (.accepted context)) ∧
+      (gate state .scheduleTick).state.scheduler = next ∧
+      Scheduler.WellFormed (gate state .scheduleTick).state.scheduler := by
+  have hpreserved := Scheduler.tick_preserves_wellFormed state.scheduler hwellFormed
+  rw [haccepted] at hpreserved
+  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+
+/-- Accepted current-subject termination exposes the exact scheduler cleanup
+state, including its filtered queue and terminated lifecycle, and proves that
+the scheduler invariant survives the composite publication step. -/
+theorem gate_terminateCurrent_accepted_sound state context next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Scheduler.terminateCurrent state.scheduler =
+      { state := next, result := .accepted context })
+    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (gate state .terminateCurrent).result =
+        .completed (.scheduler (.accepted context)) ∧
+      (gate state .terminateCurrent).state.scheduler = next ∧
+      Scheduler.WellFormed (gate state .terminateCurrent).state.scheduler := by
+  have hpreserved := Scheduler.terminateCurrent_preserves_wellFormed
+    state.scheduler hwellFormed
   rw [haccepted] at hpreserved
   simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
 
