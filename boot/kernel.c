@@ -836,13 +836,17 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs) {
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     if (current_subject != 1 || peer != 2)
         fail("extended-state-denial-scenario-binding");
-    if (extended_state_probe_class > 1)
+    if (extended_state_probe_class > 2)
         fail("extended-state-denial-probe-class");
+    uint64_t expected_vector = extended_state_probe_class == 2 ? 6 : 7;
+    if (vector != expected_vector)
+        fail("extended-state-denial-probe-vector");
     current_subject = peer;
     serial_puts("LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=");
     serial_u64(vector);
     serial_puts(" instruction=");
-    serial_puts(extended_state_probe_class == 0 ? "x87" : "mmx");
+    serial_puts(extended_state_probe_class == 0 ? "x87" :
+        extended_state_probe_class == 1 ? "mmx" : "sse");
     serial_puts(" bank-write=prevented cleanup=complete peer=2\n");
     return peer;
 #else
@@ -1287,11 +1291,13 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     current_subject = 1;
     __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
-    if (extended_state_probe_class > 1)
+    if (extended_state_probe_class > 2)
         fail("extended-state-probe-class");
     serial_puts("LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=");
-    serial_puts(extended_state_probe_class == 0 ? "x87" : "mmx");
-    serial_puts(" expected-vector=7\n");
+    serial_puts(extended_state_probe_class == 0 ? "x87" :
+        extended_state_probe_class == 1 ? "mmx" : "sse");
+    serial_puts(extended_state_probe_class == 2 ?
+        " expected-vector=6\n" : " expected-vector=7\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     arm_timer();

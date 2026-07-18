@@ -113,6 +113,19 @@ def run_fixtures() -> None:
             "mandatory inventory count differs",
         )
 
+        missing_extended_state_sse = tmp / "missing-extended-state-sse.tsv"
+        mutate_matrix(
+            missing_extended_state_sse,
+            lambda lines: [
+                line for line in lines
+                if not line.startswith("extended-state-denial-sse\t")
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_extended_state_sse),
+            "mandatory inventory count differs",
+        )
+
         wrong_class = tmp / "wrong-class.tsv"
         mutate_matrix(
             wrong_class,

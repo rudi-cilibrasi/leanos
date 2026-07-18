@@ -76,6 +76,11 @@ elif [[ "$probe" == mmx ]]; then
     <<<"$disassembly" || {
     echo "error: extended-state field=mmx-probe final-elf" >&2; exit 1;
   }
+elif [[ "$probe" == sse ]]; then
+  grep -Eq '[[:space:]]xorps[[:space:]]+%xmm0,%xmm0([[:space:]]|$)' \
+    <<<"$disassembly" || {
+    echo "error: extended-state field=sse-probe final-elf" >&2; exit 1;
+  }
 elif [[ -n "$probe" ]]; then
   echo "error: extended-state field=probe-class unsupported=$probe" >&2
   exit 1

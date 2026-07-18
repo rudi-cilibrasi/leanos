@@ -874,9 +874,10 @@ user_a_entry:
     mov %ax, %es
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     /* Each dedicated image must deny before modifying its selected shared
-       extended-state bank.  Both encodings are two bytes, keeping the common
-       page-table plan and all later symbol addresses identical. */
-#ifdef LEANOS_EXTENDED_STATE_MMX_PROBE
+       extended-state bank. */
+#ifdef LEANOS_EXTENDED_STATE_SSE_PROBE
+    xorps %xmm0, %xmm0
+#elif defined(LEANOS_EXTENDED_STATE_MMX_PROBE)
     pxor %mm0, %mm0
 #else
     fld1
@@ -956,7 +957,9 @@ user_a_stack_top:
 .section .rodata,"a",@progbits
 .global extended_state_probe_class
 extended_state_probe_class:
-#ifdef LEANOS_EXTENDED_STATE_MMX_PROBE
+#ifdef LEANOS_EXTENDED_STATE_SSE_PROBE
+    .quad 2
+#elif defined(LEANOS_EXTENDED_STATE_MMX_PROBE)
     .quad 1
 #else
     .quad 0

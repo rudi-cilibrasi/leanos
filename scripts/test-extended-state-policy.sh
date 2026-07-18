@@ -3,6 +3,7 @@ set -euo pipefail
 
 elf="${1:-build/boot/leanos.elf}"
 mmx_elf="${2:-}"
+sse_elf="${3:-}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -60,23 +61,31 @@ run_fixture unauthorized-fxrstor 'field=unauthorized-enable-or-restore source' a
 run_fixture unauthorized-xrstor 'field=unauthorized-enable-or-restore source' add_xrstor
 run_fixture unauthorized-cr0-write 'field=control-write-inventory source' add_cr0_write
 
+check_probe_mismatch() {
+  local image="$1" actual="$2" expected="$3"
+  local log="$tmp/${actual}-as-${expected}.log"
+  if ./scripts/check-extended-state-policy.sh "$image" "$expected" \
+      >"$log" 2>&1; then
+    echo "error: $actual image unexpectedly satisfied the $expected probe policy" >&2
+    exit 1
+  fi
+  grep -Fq "field=${expected}-probe final-elf" "$log" || {
+    echo "error: $actual/$expected probe mismatch lacked typed diagnostic" >&2
+    exit 1
+  }
+}
+
 if [[ -n "$mmx_elf" ]]; then
-  if ./scripts/check-extended-state-policy.sh "$elf" mmx \
-      >"$tmp/x87-as-mmx.log" 2>&1; then
-    echo "error: x87 image unexpectedly satisfied the MMX probe policy" >&2
-    exit 1
-  fi
-  grep -Fq 'field=mmx-probe final-elf' "$tmp/x87-as-mmx.log" || {
-    echo "error: x87/MMX probe mismatch lacked typed diagnostic" >&2; exit 1;
-  }
-  if ./scripts/check-extended-state-policy.sh "$mmx_elf" x87 \
-      >"$tmp/mmx-as-x87.log" 2>&1; then
-    echo "error: MMX image unexpectedly satisfied the x87 probe policy" >&2
-    exit 1
-  fi
-  grep -Fq 'field=x87-probe final-elf' "$tmp/mmx-as-x87.log" || {
-    echo "error: MMX/x87 probe mismatch lacked typed diagnostic" >&2; exit 1;
-  }
+  check_probe_mismatch "$elf" x87 mmx
+  check_probe_mismatch "$mmx_elf" mmx x87
+fi
+if [[ -n "$sse_elf" ]]; then
+  check_probe_mismatch "$elf" x87 sse
+  check_probe_mismatch "$mmx_elf" mmx sse
+  check_probe_mismatch "$sse_elf" sse x87
+  check_probe_mismatch "$sse_elf" sse mmx
+fi
+if [[ -n "$mmx_elf" || -n "$sse_elf" ]]; then
   echo "EXTENDED-STATE fixture=probe-class-swap field=probe-class final-elf result=REJECTED"
 fi
 
