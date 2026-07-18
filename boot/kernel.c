@@ -719,7 +719,10 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         uint64_t checked_word = arg0;
 #if LEANOS_RETURN_CORRUPTION_MODE == 13
         serial_puts("LEANOS/9 CAPREUSE fixture=capability-reuse-generation stage=word-boundary result=INJECTED\n");
-        checked_word = 3 * 65536 + (arg0 & 0xffffu);
+        /* A valid slot with generation 2 in the low 32 bits. Any accidental
+         * 48-to-32-bit truncation aliases the live stale handle and would
+         * accept; the full-width adapter must reject it. */
+        checked_word = UINT64_C(0x100000002) * UINT64_C(65536) + (arg0 & 0xffffu);
 #endif
         uint64_t got = leanos_capability_reuse_demo(
             capability_reuse_state, 1, checked_word, arg1, arg2);

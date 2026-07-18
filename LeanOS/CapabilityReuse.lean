@@ -215,33 +215,13 @@ private def encodeScenarioScalar (event nextState evidence slot generation endpo
   event + nextState * 0x100 + evidence * 0x10000 + slot * 0x1000000 +
     generation * 0x10000000000 + endpoint * 0x100000000000000
 
-/-- Compact encoded whole-scenario transition used at the freestanding ABI.
-It decodes every word into the canonical slot/generation fields before applying
-the explicit scenario state. Invalid states and malformed or nonmatching
-handles reject with zero. There is one policy here: both the oracle model and
-the exported consumer invoke this definition. -/
-def scenarioTransition (state caller word _word0 _word1 : UInt64) : UInt64 :=
-  let slot := decodedSlot word
-  let generation := decodedGeneration word
-  if caller != 1 then 0
-  else if state = 6 then
-    encodeScenarioScalar state 0 caller caller (word - word) (caller + 11)
-  else if !decodedWordValid word then 0
-  else if slot != 0 then 0
-  else if state = 0 then
-    if generation = 2 then encodeScenarioScalar 1 1 11 slot generation 10 else 0
-  else if state = 1 then
-    if generation = 2 then encodeScenarioScalar 2 2 15 slot (generation + 1) 11 else 0
-  else if state = 2 then
-    if generation = 2 then encodeScenarioScalar 3 3 8 slot generation 11 else 0
-  else if state = 3 then
-    if generation = 3 then encodeScenarioScalar 4 4 5 slot generation 11 else 0
-  else if state = 4 then
-    if generation = 4 then encodeScenarioScalar 5 0 8 slot generation 7 else 0
-  else 0
+/-- The freestanding ABI executes the authoritative decoder, resolver, and
+endpoint transition directly, avoiding a second copied scalar policy. -/
+def scenarioTransition (state caller word word0 word1 : UInt64) : UInt64 :=
+  authoritativeScenarioTransition state caller word word0 word1
 
 def modelExpected (state caller word word0 word1 : UInt64) : UInt64 :=
-  scenarioTransition state caller word word0 word1
+  authoritativeScenarioTransition state caller word word0 word1
 
 /-- Generated whole-scenario adapter. Each call executes the compact canonical
 field decoder and the encoded transition selected by the explicit state. -/
@@ -267,6 +247,12 @@ theorem scalar_refines_scenario_all_inputs (state caller word word0 word1 : UInt
       scenarioTransition state caller word word0 word1 := by
   rfl
 
+theorem exported_adapter_refines_authoritative_all_inputs
+    (state caller word word0 word1 : UInt64) :
+    capabilityReuseDemo state caller word word0 word1 =
+      authoritativeScenarioTransition state caller word word0 word1 := by
+  rfl
+
 theorem exported_adapter_refines_all_inputs (state caller word word0 word1 : UInt64) :
     capabilityReuseDemo state caller word word0 word1 =
       modelExpected state caller word word0 word1 := by
@@ -274,7 +260,7 @@ theorem exported_adapter_refines_all_inputs (state caller word word0 word1 : UIn
 
 theorem invalid_state_five_rejects_all_inputs (caller word word0 word1 : UInt64) :
     capabilityReuseDemo 5 caller word word0 word1 = 0 := by
-  simp [capabilityReuseDemo, scenarioTransition]
+  simp [capabilityReuseDemo, scenarioTransition, authoritativeScenarioTransition]
 
 /-- The scalar encoding is checked against the canonical decoder and shared
 capability/endpoint operations at every successful scenario transition. -/
