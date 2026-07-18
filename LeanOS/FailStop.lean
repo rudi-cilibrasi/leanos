@@ -231,6 +231,27 @@ def selectReturnAuthority (state : State) (purpose : Interrupt.ReturnPurpose) : 
   · split <;> rfl
   · rfl
 
+@[simp] theorem selectReturnAuthority_mode state purpose :
+    (selectReturnAuthority state purpose).mode = state.mode := by
+  unfold selectReturnAuthority
+  split
+  · split <;> rfl
+  · rfl
+
+@[simp] theorem selectReturnAuthority_returnPlan state purpose :
+    (selectReturnAuthority state purpose).returnPlan = state.returnPlan := by
+  unfold selectReturnAuthority
+  split
+  · split <;> rfl
+  · rfl
+
+@[simp] theorem selectReturnAuthority_returnAddressSpace state purpose :
+    (selectReturnAuthority state purpose).returnAddressSpace = state.returnAddressSpace := by
+  unfold selectReturnAuthority
+  split
+  · split <;> rfl
+  · rfl
+
 theorem selectReturnAuthority_wellFormed state purpose
     (hstate : WellFormed state) : WellFormed (selectReturnAuthority state purpose) := by
   rcases hstate with ⟨hcore, _hbound, hmode⟩
@@ -461,6 +482,48 @@ theorem selectLiveReturnAuthority_armed_implies_live state purpose
   split at harmed
   · assumption
   · simp at harmed
+
+theorem selectLiveReturnAuthority_eq_execution_update state purpose :
+    selectLiveReturnAuthority state purpose =
+      { state with execution := (selectLiveReturnAuthority state purpose).execution } := by
+  unfold selectLiveReturnAuthority
+  split <;> rfl
+
+@[simp] theorem selectLiveReturnAuthority_core state purpose :
+    (selectLiveReturnAuthority state purpose).execution.core = state.execution.core := by
+  unfold selectLiveReturnAuthority
+  split <;> simp
+
+@[simp] theorem selectLiveReturnAuthority_mode state purpose :
+    (selectLiveReturnAuthority state purpose).execution.mode = state.execution.mode := by
+  unfold selectLiveReturnAuthority
+  split <;> simp
+
+@[simp] theorem selectLiveReturnAuthority_execution_returnPlan state purpose :
+    (selectLiveReturnAuthority state purpose).execution.returnPlan =
+      state.execution.returnPlan := by
+  unfold selectLiveReturnAuthority
+  split <;> simp
+
+@[simp] theorem selectLiveReturnAuthority_execution_returnAddressSpace state purpose :
+    (selectLiveReturnAuthority state purpose).execution.returnAddressSpace =
+      state.execution.returnAddressSpace := by
+  unfold selectLiveReturnAuthority
+  split <;> simp
+
+@[simp] theorem selectLiveReturnAuthority_returnPlanLive state purpose :
+    (selectLiveReturnAuthority state purpose).ReturnPlanLive = state.ReturnPlanLive := by
+  rw [selectLiveReturnAuthority_eq_execution_update]
+  simp [CompositeState.ReturnPlanLive]
+
+theorem selectLiveReturnAuthority_execution_wellFormed state purpose
+    (hstate : WellFormed state.execution) :
+    WellFormed (selectLiveReturnAuthority state purpose).execution := by
+  unfold selectLiveReturnAuthority
+  split
+  · exact selectReturnAuthority_wellFormed state.execution purpose hstate
+  · rcases hstate with ⟨hcore, hbound, hmode⟩
+    exact ⟨hcore, by simp, hmode⟩
 
 /-- Every subsystem view is a projection of one authoritative lifecycle.  In
 particular, scheduling and interrupt containment cannot disagree about whether
@@ -781,7 +844,9 @@ private def dispatchIPC (state : CompositeState) (call : IPCSyscall.Call) :
             (.receive handleWord)
           { state := installIPC state outcome.state, reply := .syscall outcome.reply }
 
-private def applyOperation (state : CompositeState) : Operation → CompositeState
+/-- Exact composite post-state selected by one typed operation.  This is public
+so refinement layers can state that their adapter agrees with the gate. -/
+def applyOperation (state : CompositeState) : Operation → CompositeState
   | .interrupt frame =>
       let entry := dispatchHardware state.execution frame
       installLifecycle { state with execution := entry.state }
@@ -865,7 +930,7 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
 /-- Exact typed observation of the subsystem transition selected by an
 operation.  Unlike the former generic `accepted`, this cannot erase an
 operation-specific rejection. -/
-private def operationReply (state : CompositeState) : Operation → OperationReply
+def operationReply (state : CompositeState) : Operation → OperationReply
   | .interrupt frame => .interrupt (dispatchHardware state.execution frame).action
   | .selectUserReturn purpose =>
       .returnSelection (selectLiveReturnAuthority state purpose).execution.returnAuthorityArmed
@@ -966,6 +1031,75 @@ def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
       { state := applyOperation state operation, result := .completed (operationReply state operation) }
   | .handling _ => { state, result := .rejectedBusy }
   | .halted record => { state, result := .rejectedHalted record }
+
+/-- A running gate exposes the exact typed subsystem observation paired with
+the exact composite post-state computed from the same pre-state and operation.
+This is the generic soundness law used by operation-specific acceptance proofs;
+`completed` does not erase a typed rejection carried by `OperationReply`. -/
+theorem gate_running_exact state operation
+    (hmode : state.execution.mode = .running) :
+    gate state operation =
+      { state := applyOperation state operation
+        result := .completed (operationReply state operation) } := by
+  simp [gate, hmode]
+
+/-- Both public gate rejection classes are atomic for every operation.  Busy
+and halted results retain the identical composite state, including the exact
+#71 transfer trace and #74 context bank. -/
+theorem gate_mode_rejection_atomicity state operation
+    (hrejected : (gate state operation).result = .rejectedBusy ∨
+      ∃ record, (gate state operation).result = .rejectedHalted record) :
+    (gate state operation).state = state := by
+  cases hmode : state.execution.mode with
+  | running => simp [gate, hmode] at hrejected
+  | handling active => simp [gate, hmode]
+  | halted record => simp [gate, hmode]
+
+/-- Any completed result proves that the latch was running and identifies both
+the exact typed reply and exact post-state.  Thus a subsystem rejection cannot
+be mistaken for a different operation's success, and no caller-selected state
+can be paired with an authoritative reply. -/
+theorem gate_completed_sound state operation reply
+    (hcompleted : (gate state operation).result = .completed reply) :
+    state.execution.mode = .running ∧
+      reply = operationReply state operation ∧
+      (gate state operation).state = applyOperation state operation := by
+  cases hmode : state.execution.mode with
+  | running => simp [gate, hmode] at hcompleted ⊢; simp [gate, hmode, hcompleted]
+  | handling active => simp [gate, hmode] at hcompleted
+  | halted record => simp [gate, hmode] at hcompleted
+
+/-- Return-authority selection is a complete running-operation preservation
+slice: it changes only the execution projection, arms authority only after the
+live-plan check, and leaves the authoritative #71/#74 states exact. -/
+theorem gate_selectUserReturn_preserves_runtimeWellFormed state purpose
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running) :
+    RuntimeWellFormed (gate state (.selectUserReturn purpose)).state := by
+  rcases hstate with
+    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
+  have hselected := selectLiveReturnAuthority_execution_wellFormed state purpose hexecution
+  have harmed := selectLiveReturnAuthority_armed_implies_live state purpose
+  simp only [gate, hmode, applyOperation]
+  rw [selectLiveReturnAuthority_eq_execution_update]
+  refine ⟨?_, hselected, hlifecycle, hcapabilities, hvirtual, hipc,
+    hscheduler, hpreemption, hresumable, htransfers, ?_, ?_⟩
+  · simpa [CompositeState.Coherent] using hcoherent
+  · simpa using hhalted
+  · intro harmedSelected
+    have hliveSelected := harmed (by simpa using harmedSelected)
+    simpa [CompositeState.ReturnPlanLive] using hliveSelected
+
+/-- Restart is the identity running operation and therefore preserves the full
+runtime invariant without touching any authoritative subsystem state. -/
+theorem gate_restart_preserves_runtimeWellFormed state
+    (hstate : RuntimeWellFormed state) :
+    RuntimeWellFormed (gate state .restart).state := by
+  cases hmode : state.execution.mode with
+  | running => simpa [gate, hmode, applyOperation] using hstate
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
 
 /-- The guarded sealed-mailbox rejection is a genuine composite gate
 preservation step: it retains the full global runtime invariant, rather than

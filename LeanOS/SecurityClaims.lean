@@ -115,6 +115,34 @@ theorem composite_gate_sealed_receive_preserves_runtimeWellFormed
   exact FailStop.gate_sealed_receive_preserves_runtimeWellFormed state handleWord
     endpoint transfer hstate hmode hresolve hpending
 
+/-- SC-COMPOSITE-GATE-CONTRACT: every completed public gate step identifies
+the running latch, exact typed reply, and exact composite post-state; both
+gate-level rejection classes preserve the complete state. -/
+theorem composite_gate_typed_result_contract state operation :
+    (∀ reply, (FailStop.gate state operation).result = .completed reply →
+      state.execution.mode = .running ∧
+        reply = FailStop.operationReply state operation ∧
+        (FailStop.gate state operation).state = FailStop.applyOperation state operation) ∧
+    (((FailStop.gate state operation).result = .rejectedBusy ∨
+      ∃ record, (FailStop.gate state operation).result = .rejectedHalted record) →
+      (FailStop.gate state operation).state = state) := by
+  constructor
+  · intro reply hcompleted
+    exact FailStop.gate_completed_sound state operation reply hcompleted
+  · exact FailStop.gate_mode_rejection_atomicity state operation
+
+/-- SC-COMPOSITE-CONTROL-WF: both running control operations preserve the
+complete invariant, including the exact sealed-transfer and resumable states. -/
+theorem composite_gate_control_preserves_runtimeWellFormed state purpose
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.selectUserReturn purpose)).state ∧
+      FailStop.RuntimeWellFormed (FailStop.gate state .restart).state := by
+  exact ⟨FailStop.gate_selectUserReturn_preserves_runtimeWellFormed state purpose
+      hstate hmode,
+    FailStop.gate_restart_preserves_runtimeWellFormed state hstate⟩
+
 /-- SC-USER-RETURN-CONFINEMENT: an accepted return attests the complete
 kernel-selected frame/context tuple and its privilege-critical fields. -/
 theorem user_return_context_confinement request attested
