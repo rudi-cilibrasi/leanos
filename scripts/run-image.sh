@@ -66,6 +66,13 @@ else
 printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
   'LEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10' \
+  'LEANOS/9 CAPREUSE event=initial subject=2 handle=131072 endpoint=10 accepted=1' \
+  'LEANOS/9 CAPREUSE event=clear slot=0 old-generation=2 result=PASS' \
+  'LEANOS/9 CAPREUSE event=install slot=0 generation=3 endpoint=11 result=PASS' \
+  'LEANOS/9 CAPREUSE event=stale-replay subject=2 handle=131072 rejected=1' \
+  'LEANOS/9 CAPREUSE event=unchanged endpoint=11 mailbox=empty result=PASS' \
+  'LEANOS/9 CAPREUSE event=fresh subject=2 handle=196608 endpoint=11 accepted=1' \
+  'LEANOS/9 CAPREUSE status=PASS stale-effects=0 fresh-effects=1' \
   'LEANOS/10 IPC event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS' \
   'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
   'LEANOS/10 IPC event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1' \

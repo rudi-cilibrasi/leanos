@@ -32,7 +32,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
     -e 's|LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc|' \
     -e '/^LEANOS\/5 /d' \
     -e '/^LEANOS\/8 PAGING root=B selected=1 result=PASS$/d' \
-    -e '/^LEANOS\/6 COPY direction=in/i LEANOS/8 PAGING root=B selected=1 result=PASS\nLEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10\nLEANOS/10 IPC event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS\nLEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\nLEANOS/10 IPC event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1' \
+    -e '/^LEANOS\/6 COPY direction=in/i LEANOS/8 PAGING root=B selected=1 result=PASS\nLEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10\nLEANOS/9 CAPREUSE event=initial subject=2 handle=131072 endpoint=10 accepted=1\nLEANOS/9 CAPREUSE event=clear slot=0 old-generation=2 result=PASS\nLEANOS/9 CAPREUSE event=install slot=0 generation=3 endpoint=11 result=PASS\nLEANOS/9 CAPREUSE event=stale-replay subject=2 handle=131072 rejected=1\nLEANOS/9 CAPREUSE event=unchanged endpoint=11 mailbox=empty result=PASS\nLEANOS/9 CAPREUSE event=fresh subject=2 handle=196608 endpoint=11 accepted=1\nLEANOS/9 CAPREUSE status=PASS stale-effects=0 fresh-effects=1\nLEANOS/10 IPC event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS\nLEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\nLEANOS/10 IPC event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1' \
     -e '/^LEANOS\/6 COPY direction=out/a LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1\nLEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS\nLEANOS/8 PAGING root=B selected=1 result=PASS\nLEANOS/10 IPC event=dispatch subject=2 address-space=2 reservation=owned trusted=1\nLEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\nLEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1' \
     "$log"
   if [[ "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == entry-adversarial ]]; then
@@ -54,6 +54,24 @@ omit-block|old-handoff|wrong-context|missing-wake|duplicate-wake|stolen-delivery
     duplicate-wake) sed -i '/event=wake/p' "$log" ;;
     stolen-delivery) sed -i 's/event=deliver receiver=2/event=deliver receiver=1/' "$log" ;;
     forged-pass) sed -i '/^LEANOS\/10 IPC/d' "$log" ;;
+  esac
+  exit 33
+  ;;
+esac
+case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
+reuse-generation-ignored|reuse-truncated-handle|reuse-old-acts-replacement|reuse-forged-pass|reuse-wrong-caller|reuse-fresh-omitted|reuse-reordered)
+  mode="${LEANOS_QEMU_FIXTURE_MODE}"
+  set +e
+  LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
+  set -e
+  case "$mode" in
+    reuse-generation-ignored) sed -i 's/handle=131072 rejected=1/handle=131072 accepted=1/' "$log" ;;
+    reuse-truncated-handle) sed -i 's/event=stale-replay subject=2 handle=131072/event=stale-replay subject=2 handle=0/' "$log" ;;
+    reuse-old-acts-replacement) sed -i 's/mailbox=empty/mailbox=sent/' "$log" ;;
+    reuse-forged-pass) sed -i '/^LEANOS\/9 CAPREUSE event=/d' "$log" ;;
+    reuse-wrong-caller) sed -i 's/event=initial subject=2/event=initial subject=1/' "$log" ;;
+    reuse-fresh-omitted) sed -i '/CAPREUSE event=fresh/d' "$log" ;;
+    reuse-reordered) sed -i 's/event=clear/__CLEAR__/; s/event=install/event=clear/; s/__CLEAR__/event=install/' "$log" ;;
   esac
   exit 33
   ;;

@@ -80,6 +80,20 @@ slot use, and rejects direct `Capability.lookup` or `handleWord.toNat`
 fallbacks in those dispatchers. This is a narrow source-policy regression, not
 a refinement proof for the generated binary.
 
+The boot integration reuses subject 2's slot 0 from generation 2 to generation
+3. Its structured serial transcript records initial use, clear, replacement,
+stale denial with an unchanged endpoint and mailbox, and successful fresh use.
+The repository-owned QEMU runner checks those records in order and preserves
+`build/boot/serial.log`; seven transcript fixtures reject truncated generation
+fields, stale acceptance, caller forgery, omitted fresh use, replacement-state
+mutation, and reordered evidence. A separate machine fixture rewrites the stale
+word to the replacement generation at the generated-code boundary and requires
+the typed `capability-reuse-generation` failure before the reuse protocol can
+complete. These runs test the generated adapter, C dispatch, serial protocol,
+and guest fail-stop wiring. They do not prove refinement: Lean-to-C generation,
+the C compiler and ABI, kernel glue, serial transport, QEMU, firmware, and x86-64
+execution remain in the TCB.
+
 These are model-level results. The bit layout is the issue's reviewed model
 contract, not a promise of permanent ABI stability. This checkpoint does not
 establish concurrent lookup/revocation safety, generated-code refinement, or

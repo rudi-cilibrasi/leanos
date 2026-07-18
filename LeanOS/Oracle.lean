@@ -6,6 +6,7 @@ import LeanOS.BootAllocation
 import LeanOS.Interrupt
 import LeanOS.InterruptEntry
 import LeanOS.BlockingIPC
+import LeanOS.CapabilityReuse
 
 /-!
 # Bounded scalar boundary oracle
@@ -64,6 +65,10 @@ private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt
     expected := if 10 ≤ operation then
       BlockingIPC.blockingIpcModelRejection phase operation caller word0 word1
     else BlockingIPC.blockingIpcDemo phase operation caller word0 word1 }
+
+private def capabilityReuse (id : String) (phase caller word word0 word1 : UInt64) : Vector :=
+  { id, adapter := "CapabilityReuse.scalar", words := [phase, caller, word, word0, word1],
+    expected := CapabilityReuse.modelExpected phase caller word word0 word1 }
 
 private def interruptEntry (id : String) (descriptor frame stack context cleanup : UInt64) :
     Vector :=
@@ -150,6 +155,20 @@ def vectors : List Vector := [
   blockingIPC "blocking-ipc.wrong-endpoint" 0 18 2 0x4c45414e 0x4f53,
   blockingIPC "blocking-ipc.forged-sender" 3 19 2 1 0x4f53,
   blockingIPC "blocking-ipc.cancel-before-send" 1 20 1 0x4c45414e 0x4f53,
+  capabilityReuse "capability-reuse.initial" 0 1 (2 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.cleared-slot" 1 1 (2 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.stale-generation" 2 1 (2 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.fresh-generation" 3 1 (3 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.wrong-subject" 2 0 (3 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.malformed-generation" 2 1 18446744073709551615
+    0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.high-generation-alias" 2 1
+    ((4294967296 + 2) * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.wrong-kind" 4 1 (4 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.invalid-state-five" 5 1 (3 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.generation-exhausted" 6 1 0 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.boundary-payload" 3 1 (3 * 65536)
+    18446744073709551615 18446744073709551615,
   interruptEntry "entry.syscall" 32896 291 0x800000 257 3,
   interruptEntry "entry.user-page-fault" 69134 291 0x800000 257 3,
   interruptEntry "entry.timer" 8224 291 0x800000 257 3,
@@ -168,7 +187,7 @@ def vectors : List Vector := [
   interruptEntry "entry.ac-uncleared" 32896 291 0x800000 257 2,
   interruptEntry "entry.df-uncleared" 32896 291 0x800000 257 1]
 
-theorem corpus_shape : vectors.length = 92 := by decide
+theorem corpus_shape : vectors.length = 103 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -207,9 +226,29 @@ theorem blocking_ipc_scenario_agrees :
     ((vectors.drop 64).take 11).all (fun vector => vector.expected ≠ 0) = true := by
   native_decide
 
+theorem capability_reuse_scenario_agrees :
+    (vectors[75]).expected = CapabilityReuse.encodeScenarioEvent 1 1 11
+      CapabilityReuse.staleHandle 10 ∧
+    (vectors[76]).expected = CapabilityReuse.encodeScenarioEvent 2 2 15
+      CapabilityReuse.currentHandle 11 ∧
+    (vectors[77]).expected = CapabilityReuse.encodeScenarioEvent 3 3 8
+      CapabilityReuse.staleHandle 11 ∧
+    (vectors[78]).expected = CapabilityReuse.encodeScenarioEvent 4 4 5
+      CapabilityReuse.currentHandle 11 ∧
+    (vectors[79]).expected = 0 ∧ (vectors[80]).expected = 0 ∧
+    (vectors[81]).expected = 0 ∧
+    (vectors[82]).expected = CapabilityReuse.encodeScenarioEvent 5 0 8
+      { slot := 0, identity := 4 } 7 ∧
+    (vectors[83]).expected = 0 ∧
+    (vectors[84]).expected = CapabilityReuse.encodeScenarioEvent 6 0 1
+      { slot := 1, identity := 0 } 12 ∧
+    (vectors[85]).expected = CapabilityReuse.encodeScenarioEvent 4 4 5
+      CapabilityReuse.currentHandle 11 := by
+  native_decide
+
 theorem interrupt_entry_scenario_agrees :
-    ((vectors.drop 75).take 4).all (fun vector => vector.expected ≠ 0) = true ∧
-    (vectors.drop 79).all (fun vector => vector.expected = 0) = true := by
+    ((vectors.drop 86).take 4).all (fun vector => vector.expected ≠ 0) = true ∧
+    (vectors.drop 90).all (fun vector => vector.expected = 0) = true := by
   native_decide
 
 private def interruptEntryAdapterAgrees (vector : Vector) : Bool :=
