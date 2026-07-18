@@ -5,7 +5,8 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `Syscall.syscallDemo`, `IPCSyscall.ipcDemo`, and
 `Preemption.preemptionDemo`, `Preemption.resumableDemo`, and
 `BootAllocation.check`, `Interrupt.userReturnDemo`, and
-`BlockingIPC.blockingIpcDemo`. Its stable 75-vector order covers accepted calls,
+`BlockingIPC.blockingIpcDemo`, and `CapabilityReuse.capabilityReuseDemo`. Its
+stable 84-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -47,7 +48,12 @@ QEMU, firmware, and hardware semantics remain trusted. New boot-reachable
 adapters must extend the versioned corpus and its model-agreement checks. The
 blocking-IPC vectors are also consumed by the guest's block, send/wake,
 dispatch, and delivery gates, so payload words cannot select the trusted caller
-or active address space.
+or active address space. The capability-reuse vectors cover initial authority,
+clear, stale and fresh generations, wrong caller and object kind, malformed and
+exhausted generations, and maximum payload words. The guest consumes the same
+results while exercising same-slot replacement; ordered serial checks and
+negative fixtures establish reproducible integration evidence for stale denial
+and fresh success, not a proof of the boot binary.
 
 The return adapter uses one bounded synthetic subject/address-space fixture.
 Its five scalar words encode a kernel-owned purpose/context mode, RIP, RSP,
