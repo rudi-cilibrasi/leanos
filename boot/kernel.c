@@ -137,6 +137,34 @@ static uint64_t stack_marker(uint64_t stack_pointer);
 static void check_cross_bank_negative(void);
 static void check_initial_b_frame_negative(void);
 
+static void record_extended_state_cpuid(void) {
+    uint32_t max_leaf, unused_b, unused_c, unused_d;
+    __asm__ volatile ("cpuid"
+        : "=a"(max_leaf), "=b"(unused_b), "=c"(unused_c), "=d"(unused_d)
+        : "a"(0u), "c"(0u));
+    if (max_leaf < 1u)
+        fail("extended-state-cpuid-leaf");
+
+    uint32_t leaf_a, leaf_b, leaf_c, leaf_d;
+    __asm__ volatile ("cpuid"
+        : "=a"(leaf_a), "=b"(leaf_b), "=c"(leaf_c), "=d"(leaf_d)
+        : "a"(1u), "c"(0u));
+    (void)leaf_a;
+    (void)leaf_b;
+    const uint32_t x87 = (leaf_d >> 0) & 1u;
+    const uint32_t mmx = (leaf_d >> 23) & 1u;
+    const uint32_t sse = (leaf_d >> 25) & 1u;
+    const uint32_t sse2 = (leaf_d >> 26) & 1u;
+    const uint32_t xsave = (leaf_c >> 26) & 1u;
+    const uint32_t osxsave = (leaf_c >> 27) & 1u;
+    const uint32_t avx = (leaf_c >> 28) & 1u;
+    if (!x87 || !mmx || !sse || !sse2 || !xsave || !avx || osxsave)
+        fail("extended-state-cpuid-contract");
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    serial_puts("LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS\n");
+#endif
+}
+
 static uint64_t idt_target(const struct idt_entry *entry) {
     return entry->low | (uint64_t)entry->middle << 16 | (uint64_t)entry->high << 32;
 }
@@ -1232,6 +1260,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         (cr4 & (1ull << 20)) == 0 || (cr4 & (1ull << 21)) == 0) {
         fail("supervisor-controls");
     }
+    record_extended_state_cpuid();
     serial_puts("LEANOS/6 CONTROL cr0.wp=1 cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready\n");
     supervisor_probe = 1;
     run_wp_probe();

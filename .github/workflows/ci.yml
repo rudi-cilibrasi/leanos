@@ -118,6 +118,7 @@ jobs:
             build/boot/entry-policy-fixtures.log
             build/boot/extended-state.disassembly.txt
             build/boot/extended-state-policy-report.txt
+            build/boot/extended-state-control-snapshot.txt
             build/boot/return-corruption-*.serial.log
             build/boot/return-*-policy.log
             build/boot/leanos-0.1.0-x86_64-return-*.iso

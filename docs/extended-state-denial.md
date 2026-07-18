@@ -72,7 +72,8 @@ The versioned emulator evidence matrix treats the dedicated two-subject denial
 image as a mandatory accepted-boot scenario. Its report binds the exact QEMU
 command, source revision, image and ELF hashes, and complete serial log. CI
 retains that ISO, ELF, link map, final page-table plans, serial transcript,
-final-ELF disassembly, and the extended-state policy verdict for 14 days.
+final-ELF disassembly, decoded CPUID/control-state snapshot, and the
+extended-state policy verdict for 14 days.
 
 Still trusted and unproved are CPUID and control-register reads, instruction
 decoding, hardware exception priority and delivery, descriptor loads, assembly,
@@ -90,6 +91,15 @@ CR0/CR4 and rejects any mismatch before a user return. The final-ELF/source
 policy checker binds the two named normalization sites to their reviewed
 instructions. These are inspected and QEMU-tested machine-boundary facts, not
 proof that the processor implements the Lean control-state model.
+
+The release scenario pins `qemu-system-x86_64` 8.2.2 under TCG with the Q35
+machine, one CPU, and `-cpu max`. The guest decodes CPUID leaf 1 after control
+normalization and requires x87, MMX, SSE, SSE2, XSAVE, and AVX to be advertised
+while the dynamic OSXSAVE bit remains clear. A missing leaf, feature mismatch,
+or inherited OSXSAVE state fails before CPL3 entry. The runner records that
+decoded feature line together with the live CR0/CR4 line in
+`extended-state-control-snapshot.txt`; this is reproducible evidence for the
+pinned emulator contract, not a general hardware or CPUID theorem.
 
 ## Shared entry integration
 
@@ -114,5 +124,5 @@ two-subject QEMU scenario is now release-blocking and its exact serial and
 final-ELF evidence are retained. Final work still needs representative
 MMX/SSE/AVX denial coverage, refinement of the global wrapper to the
 generated/machine gate, complete unauthorized-instruction source/final-ELF
-checks and negative fixtures, a decoded CPUID snapshot, and documentation of
-the pinned QEMU CPU contract.
+checks and negative fixtures, and the remaining threat-model/TCB inventory
+updates.

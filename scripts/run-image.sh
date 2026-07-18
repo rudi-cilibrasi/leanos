@@ -43,6 +43,9 @@ printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 echo 'LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' >> "$expected"
+if [[ "$scenario" == extended-state ]]; then
+  echo 'LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS' >> "$expected"
+fi
 printf '%s\n' \
   'LEANOS/6 CONTROL cr0.wp=1 cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready' \
   'LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS' \
@@ -138,4 +141,13 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
 done
 sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
+if [[ "$scenario" == extended-state ]]; then
+  snapshot="${LEANOS_EXTENDED_STATE_SNAPSHOT:-build/boot/extended-state-control-snapshot.txt}"
+  mkdir -p "$(dirname "$snapshot")"
+  grep -E '^LEANOS/(13 EXTENDED-STATE cpuid\.1\.|6 CONTROL )' "$log" > "$snapshot"
+  [[ $(wc -l < "$snapshot") -eq 2 ]] || {
+    echo "failure_class=extended-state-snapshot: decoded CPUID/control snapshot incomplete" >&2
+    exit 1
+  }
+fi
 echo "LeanOS boot smoke test passed; guest success and complete protocol observed; serial log: $log"

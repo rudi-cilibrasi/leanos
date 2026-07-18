@@ -34,9 +34,13 @@ inherit_cr4() {
 omit_live_snapshot() {
   sed -i '/const uint64_t forbidden_cr4 =/d' "$tmp/kernel.c"
 }
+omit_cpuid_snapshot() {
+  sed -i 's/: "a"(1u), "c"(0u));/: "a"(2u), "c"(0u));/' "$tmp/kernel.c"
+}
 
 run_fixture inherited-cr0 'field=cr0-normalization' inherit_cr0
 run_fixture inherited-cr4 'field=cr4-normalization' inherit_cr4
 run_fixture missing-live-snapshot 'field=live-cr4-snapshot' omit_live_snapshot
+run_fixture missing-cpuid-snapshot 'field=cpuid-leaf1' omit_cpuid_snapshot
 
 echo "Controlled extended-state boot-policy fixtures passed"

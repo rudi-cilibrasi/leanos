@@ -39,6 +39,13 @@ grep -Fq 'leanos_extended_state_denial_demo(mode, vector, current_subject,' \
   "$kernel_source" || {
   echo "error: extended-state field=runtime-adapter missing" >&2; exit 1;
 }
+grep -Fq ': "a"(1u), "c"(0u));' "$kernel_source" || {
+  echo "error: extended-state field=cpuid-leaf1 missing" >&2; exit 1;
+}
+grep -Fq 'cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS' \
+  "$kernel_source" || {
+  echo "error: extended-state field=cpuid-evidence missing" >&2; exit 1;
+}
 
 disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 grep -Eq '[[:space:]]and[[:space:]]+\$0xfffbf9ff,%eax' <<<"$disassembly" || {
@@ -47,9 +54,12 @@ grep -Eq '[[:space:]]and[[:space:]]+\$0xfffbf9ff,%eax' <<<"$disassembly" || {
 grep -Eq '[[:space:]]or[[:space:]]+\$0x8001000e,%eax' <<<"$disassembly" || {
   echo "error: extended-state field=cr0-normalization final-elf" >&2; exit 1;
 }
+[[ $(grep -Ec '[[:space:]]cpuid([[:space:]]|$)' <<<"$disassembly") -ge 2 ]] || {
+  echo "error: extended-state field=cpuid-snapshot final-elf" >&2; exit 1;
+}
 if grep -Eiq '[[:space:]](clts|fxrstor|xrstor)(64)?([[:space:]]|$)' <<<"$disassembly"; then
   echo "error: extended-state field=unauthorized-enable-or-restore final-elf" >&2
   exit 1
 fi
 
-echo "Extended-state CR0/CR4 derivation, live snapshot, and final-ELF policy passed"
+echo "Extended-state CPUID/CR0/CR4 derivation, live snapshot, and final-ELF policy passed"
