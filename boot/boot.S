@@ -877,6 +877,28 @@ user_b_entry:
     xor %rcx, %rcx
     xor %rdx, %rdx
 #else
+    mov $10, %rax
+    mov $(2 * 65536), %rbx
+    mov $0xcafe, %rcx
+    mov $0xbeef, %rdx
+    int $0x80
+    mov %rax, %r14
+    cmp $(3 * 65536), %r14
+    jne 2f
+    mov $11, %rax
+    mov $(2 * 65536), %rbx
+    mov $0xcafe, %rcx
+    mov $0xbeef, %rdx
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    mov $12, %rax
+    mov %r14, %rbx
+    mov $0xcafe, %rcx
+    mov $0xbeef, %rdx
+    int $0x80
+    cmp $1, %rax
+    jne 2f
     mov $7, %rax
     xor %rbx, %rbx
     xor %rcx, %rcx

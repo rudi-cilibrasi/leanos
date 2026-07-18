@@ -113,6 +113,7 @@ static unsigned preemption_step;
 uint64_t current_subject = 1;
 static unsigned timer_accepted;
 static unsigned blocking_ipc_step;
+static unsigned capability_reuse_step;
 static unsigned supervisor_probe;
 static uint8_t copy_buffer[16];
 static unsigned copy_step;
@@ -671,7 +672,38 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+    if (capability_reuse_step == 0 && current_subject == 2 && number == 10) {
+        if (leanos_capability_reuse_demo(0, 1, arg0, arg1, arg2) !=
+                oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_INITIAL].expected ||
+            leanos_capability_reuse_demo(1, 1, arg0, arg1, arg2) !=
+                oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_CLEARED_SLOT].expected)
+            fail("capability-reuse-initial");
+        capability_reuse_step = 1;
+        serial_puts("LEANOS/9 CAPREUSE event=initial subject=2 handle=131072 endpoint=10 accepted=1\n");
+        serial_puts("LEANOS/9 CAPREUSE event=clear slot=0 old-generation=2 result=PASS\n");
+        serial_puts("LEANOS/9 CAPREUSE event=install slot=0 generation=3 endpoint=11 result=PASS\n");
+        return 3 * 65536;
+    }
+    if (capability_reuse_step == 1 && current_subject == 2 && number == 11) {
+        if (leanos_capability_reuse_demo(2, 1, arg0, arg1, arg2) !=
+            oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_STALE_GENERATION].expected)
+            fail("capability-reuse-stale");
+        capability_reuse_step = 2;
+        serial_puts("LEANOS/9 CAPREUSE event=stale-replay subject=2 handle=131072 rejected=1\n");
+        serial_puts("LEANOS/9 CAPREUSE event=unchanged endpoint=11 mailbox=empty result=PASS\n");
+        return 0;
+    }
+    if (capability_reuse_step == 2 && current_subject == 2 && number == 12) {
+        if (leanos_capability_reuse_demo(2, 1, arg0, arg1, arg2) !=
+            oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_FRESH_GENERATION].expected)
+            fail("capability-reuse-fresh");
+        capability_reuse_step = 3;
+        serial_puts("LEANOS/9 CAPREUSE event=fresh subject=2 handle=196608 endpoint=11 accepted=1\n");
+        serial_puts("LEANOS/9 CAPREUSE status=PASS stale-effects=0 fresh-effects=1\n");
+        return 1;
+    }
     if (blocking_ipc_step == 0 && current_subject == 2 && number == 7) {
+        if (capability_reuse_step != 3) fail("capability-reuse-missing");
         uint64_t got = leanos_blocking_ipc_demo(0, 1, 2, 0x4c45414e, 0x4f53);
         if (got != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_BLOCK_B].expected)
             fail("blocking-ipc-model-block");
