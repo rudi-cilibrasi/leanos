@@ -279,6 +279,31 @@ theorem peer_available_not_budgetExhausted state subject object slot
     simp_all
   split <;> simp_all [reject]
 
+/-- Under the ordinary object/slot preconditions, an admitted free frame makes
+allocation succeed; exhaustion of any peer is irrelevant to this decision. -/
+theorem available_allocation_accepted state subject object slot
+    (hlive : state.memory.capabilities.subjects subject = true)
+    (hslot : slot < CapabilityHandle.slotReserved)
+    (hinrange : Capability.slotInRange state.memory.capabilities subject slot = true)
+    (hidentity : state.memory.capabilities.nextIdentity ≠ 0)
+    (hidentityBound : state.memory.capabilities.nextIdentity <
+      CapabilityHandle.generationReserved)
+    (hempty : state.memory.capabilities.slots subject slot = none)
+    (hunissued : state.memory.issued object = false)
+    (havailable : hasAvailable state subject = true) :
+    (allocate state subject object slot).result = .accepted := by
+  have hslotBound : ¬CapabilityHandle.slotReserved ≤ slot := by omega
+  have hgenerationBound :
+      ¬CapabilityHandle.generationReserved ≤ state.memory.capabilities.nextIdentity := by omega
+  cases hfirst : firstAvailable state subject with
+  | none =>
+    have hisolation := peer_available_not_budgetExhausted state subject object slot havailable
+    simp [allocate, hlive, hslotBound, hinrange, hidentity, hgenerationBound, hempty,
+      hunissued, hfirst, reject] at hisolation
+  | some frame =>
+    simp [allocate, hlive, hslotBound, hinrange, hidentity, hgenerationBound, hempty,
+      hunissued, hfirst]
+
 theorem release_preserves_commitment state subject slot :
     (release state subject slot).state.commitment = state.commitment := by
   unfold release

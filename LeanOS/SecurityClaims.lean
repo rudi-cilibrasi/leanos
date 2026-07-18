@@ -1,6 +1,7 @@
 import LeanOS.KernelTransition
 import LeanOS.Capability
 import LeanOS.FrameAllocator
+import LeanOS.FrameBudget
 import LeanOS.X86PageTable
 import LeanOS.Syscall
 import LeanOS.FailStop
@@ -51,6 +52,22 @@ theorem frame_ownership_exclusive
     (hleft : FrameAllocator.IsOwnedBy state frame left)
     (hright : FrameAllocator.IsOwnedBy state frame right) : left = right := by
   exact FrameAllocator.ownership_exclusive state frame left right hleft hright
+
+/-- SC-FRAME-BUDGET-ISOLATION: an admitted subject with an available committed
+frame and valid object/slot inputs can allocate independently of peer usage. -/
+theorem admitted_frame_budget_isolation state subject object slot
+    (hlive : state.memory.capabilities.subjects subject = true)
+    (hslot : slot < CapabilityHandle.slotReserved)
+    (hinrange : Capability.slotInRange state.memory.capabilities subject slot = true)
+    (hidentity : state.memory.capabilities.nextIdentity ≠ 0)
+    (hidentityBound : state.memory.capabilities.nextIdentity <
+      CapabilityHandle.generationReserved)
+    (hempty : state.memory.capabilities.slots subject slot = none)
+    (hunissued : state.memory.issued object = false)
+    (havailable : FrameBudget.hasAvailable state subject = true) :
+    (FrameBudget.allocate state subject object slot).result = .accepted := by
+  exact FrameBudget.available_allocation_accepted state subject object slot hlive hslot
+    hinrange hidentity hidentityBound hempty hunissued havailable
 
 /-- SC-PT-SEPARATION: distinct encoded frames yield distinct read walks. -/
 theorem page_table_distinct_spaces_separated
