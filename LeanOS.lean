@@ -11,6 +11,7 @@ import LeanOS.IPCSyscall
 import LeanOS.Interrupt
 import LeanOS.Example
 import LeanOS.FrameAllocator
+import LeanOS.FrameBudget
 import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.KernelTransition
