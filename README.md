@@ -223,9 +223,11 @@ occupant.
 
 The finite [user extended-state denial model](docs/extended-state-denial.md)
 requires an explicit fail-closed CR0/CR4 policy before modeled user return and
-confines typed x87/MMX/SIMD denial to the authoritative current subject. Machine
-control-state normalization and exception delivery remain trusted integration
-work rather than theorem claims.
+confines typed x87/MMX/SIMD denial to the authoritative current subject. Its
+cleanup transition reuses the scheduler, lifecycle, mapping/TLB, and resumable
+context state, then selects only a kernel-owned peer context or typed idle.
+Machine exception delivery and cleanup/restore remain trusted integration work
+rather than theorem claims.
 
 The physical-frame allocator reference model and its representation,
 complexity, initialization assumptions, proved invariants, and capability

@@ -45,12 +45,22 @@ Proved in Lean for this finite model:
   address space, independent of attacker payload;
 - kernel-origin and policy-inconsistent events cannot be contained user faults;
 - an already-fatal state absorbs later classification; and
-- an allowed modeled user return implies the exact denial policy remains live.
+- an allowed modeled user return implies the exact denial policy remains live;
+- contained denial cleanup reuses the authoritative resumable-preemption
+  lifecycle, ready queue, context bank, mapping, and TLB state, leaving the
+  faulting subject neither live, queued, current, nor resumable;
+- a successful peer result comes only from `Scheduler.selectNext` and the
+  selected subject's kernel-owned saved context; and
+- policy, binding, or dispatch inconsistency changes only the absorbing halt
+  latch, without publishing partial cleanup.
 
 Executable `native_decide` cases cover an accepted policy and user #NM,
 unexpected vector, kernel origin, stale subject binding, cleared CR0.TS,
 enabled CR4.OSXSAVE, incoherent CPUID projection, and policy relaxation before
-return. These execute the Lean model; they are not machine tests.
+return. The shared 112-record oracle adds fixed-width #NM/#UD peer-dispatch, idle,
+policy-mismatch, kernel-origin, stale-binding, and dispatch-invariant cases and
+replays the generated adapter in both hosted C and the boot image. These are
+finite model/boundary tests, not a refinement proof.
 
 Still trusted and unproved are CPUID and control-register reads, instruction
 decoding, hardware exception priority and delivery, descriptor loads, assembly,
@@ -75,15 +85,20 @@ manifest and trap-frame normalizer as page fault, timer, and syscall entry.
 Their assembly stubs clear AC/DF, save only the modeled GPR frame, and call the
 shared kernel-owned authorization adapter before any denial operation.  A
 same-privilege kernel #UD/#NM cannot normalize as a contained event.  The
-current post-normalization endpoint is intentionally fail-stop until lifecycle
-cleanup and peer dispatch are composed; this checkpoint does not claim a
-successful contained machine denial.
+current post-normalization machine endpoint remains intentionally fail-stop.
+The Lean transition now composes normalization-compatible classification with
+authoritative cleanup and peer selection. The post-normalization C endpoint
+invokes the generated fixed-width #NM/#UD adapter, which is also replayed by
+the shared oracle, before retaining the fail-stop publication boundary. This
+checkpoint does not yet claim that assembly publishes the modeled successful
+dispatch.
 
 ## Remaining integration
 
-The next checkpoint must compose normalized user denial with issue #101's
-authoritative cleanup/peer-dispatch path.
-Issues #104 and #105 must then carry this predicate through the global runtime
-and generated stateful boundary. Final work also needs source/final-ELF policy
-checks, negative fixtures, a two-subject QEMU scenario, preserved snapshots and
-disassembly, and documentation of the exact pinned QEMU CPU contract.
+The machine endpoint must consume the cleanup/dispatch result, retire A, restore
+the scheduler-selected peer through the common validated return path, and add
+the deterministic two-subject QEMU denial scenario. Issues #104 and #105 must
+carry the denied-state predicate through the global runtime. Final work also
+needs complete unauthorized-instruction source/final-ELF checks and negative
+fixtures, preserved control/CPUID snapshots and disassembly, exact serial
+evidence, and documentation of the pinned QEMU CPU contract.

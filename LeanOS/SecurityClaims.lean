@@ -390,6 +390,16 @@ theorem extended_state_denial_confined state event subject
       ExtendedState.ContextBound state := by
   exact ExtendedState.denied_subject_confined state event subject h
 
+/-- SC-EXTENDED-STATE-CLEANUP: authoritative denial cleanup removes every
+live scheduler and resumable-context reference to the faulting subject. -/
+theorem extended_state_denial_cleanup_nonresumable machine subject :
+    let cleaned := ResumablePreemption.cleanupSubject machine subject
+    cleaned.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      subject ∉ cleaned.scheduler.ready ∧
+      cleaned.scheduler.lifecycle.current ≠ some subject ∧
+      ResumablePreemption.contextFor cleaned.contexts subject = none := by
+  exact ExtendedState.denial_cleanup_cannot_resume machine subject
+
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps
     (hlow : ScheduledObservation.LowEquiv observer left right)

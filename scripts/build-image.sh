@@ -75,6 +75,7 @@ lake env lean --c="$build/Interrupt.c" LeanOS/Interrupt.lean
 lake env lean --c="$build/InterruptEntry.c" LeanOS/InterruptEntry.lean
 lake env lean --c="$build/BlockingIPC.c" LeanOS/BlockingIPC.lean
 lake env lean --c="$build/CapabilityReuse.c" LeanOS/CapabilityReuse.lean
+lake env lean --c="$build/ExtendedState.c" LeanOS/ExtendedState.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -99,6 +100,8 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -o "$build/BlockingIPC.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/CapabilityReuse.c" \
   -o "$build/CapabilityReuse.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/ExtendedState.c" \
+  -o "$build/ExtendedState.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
   -o "$build/kernel.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -150,35 +153,35 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -o "$build/leanos-prelink.elf" "$build/boot.o" "$build/kernel.o" \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o"
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-preemption-prelink.map" \
   -o "$build/leanos-preemption-prelink.elf" "$build/boot-preemption.o" \
   "$build/kernel-preemption.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
   -o "$build/leanos-double-fault-prelink.elf" "$build/boot.o" \
   "$build/kernel-double-fault.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o"
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-entry-adversarial-prelink.map" \
   -o "$build/leanos-entry-adversarial-prelink.elf" "$build/boot-entry-adversarial.o" \
   "$build/kernel-entry-adversarial.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-guard-prelink.map" \
   -o "$build/leanos-guard-prelink.elf" "$build/boot-df-guard-mapped.o" \
   "$build/kernel-double-fault-guard-mapped.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o"
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-prelink.elf" \
   "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-preemption-prelink.elf" \
@@ -221,21 +224,21 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -o build/boot/leanos.elf build/boot/boot.o build/boot/kernel.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
   build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o
+  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-entry-adversarial.map" \
   -o "$build/leanos-entry-adversarial.elf" "$build/boot-entry-adversarial.o" \
   "$build/kernel-entry-adversarial.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-preemption.map" \
   -o "$build/leanos-preemption.elf" "$build/boot-preemption.o" \
   "$build/kernel-preemption.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture mode _reason <<<"$spec"
@@ -249,7 +252,7 @@ for spec in "${return_corruptions[@]}"; do
     "$build/kernel-return-${fixture}.o" "$build/KernelTransition.o" \
     "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
     "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-    "$build/BlockingIPC.o" "$build/CapabilityReuse.o"
+    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o"
   ./scripts/generate-boot-page-plan.sh "$build/leanos-return-${fixture}-prelink.elf" \
     "$build/boot-page-plan-return-${fixture}.h"
   "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -262,7 +265,7 @@ for spec in "${return_corruptions[@]}"; do
     "$build/kernel-return-${fixture}.o" "$build/KernelTransition.o" \
     "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
     "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-    "$build/BlockingIPC.o" "$build/CapabilityReuse.o"
+    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o"
   ./scripts/generate-boot-page-plan.sh "$build/leanos-return-${fixture}.elf" \
     "$build/boot-page-plan-return-${fixture}.final.h"
   cmp "$build/boot-page-plan-return-${fixture}.h" \
@@ -304,7 +307,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
   build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
   build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o
+  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
   -o build/boot/leanos-double-fault-guard-mapped.elf \
@@ -312,7 +315,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   build/boot/kernel-double-fault-guard-mapped.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
   build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o
+  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o
 
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
   "$build/boot-page-plan-double-fault.final.h"
@@ -374,6 +377,10 @@ if ! grep -q ' T leanos_capability_reuse_demo$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_capability_reuse_demo" >&2
   exit 1
 fi
+if ! grep -q ' T leanos_extended_state_denial_demo$' <<<"$symbols"; then
+  echo "error: generated image does not retain leanos_extended_state_denial_demo" >&2
+  exit 1
+fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   echo "error: kernel ELF has no valid Multiboot2 header" >&2
   exit 1
@@ -393,7 +400,7 @@ for fixture in restore branch indirect initial-indirect; do
     "$build/boot-return-${fixture}-fixture.o" "$build/kernel.o" \
     "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
     "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-    "$build/BlockingIPC.o" "$build/CapabilityReuse.o"
+    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o"
   if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}-fixture.elf" \
       >"$build/return-${fixture}-fixture.log" 2>&1; then
     echo "error: user-return ${fixture} negative fixture unexpectedly passed" >&2

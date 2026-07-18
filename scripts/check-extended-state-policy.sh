@@ -35,6 +35,10 @@ grep -Fq 'cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0
   "$kernel_source" || {
   echo "error: extended-state field=evidence-record missing" >&2; exit 1;
 }
+grep -Fq 'leanos_extended_state_denial_demo(mode, vector, current_subject,' \
+  "$kernel_source" || {
+  echo "error: extended-state field=runtime-adapter missing" >&2; exit 1;
+}
 
 disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 grep -Eq '[[:space:]]and[[:space:]]+\$0xfffbf9ff,%eax' <<<"$disassembly" || {

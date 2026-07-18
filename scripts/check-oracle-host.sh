@@ -13,6 +13,7 @@ lake env lean --c="$build/Interrupt.c" LeanOS/Interrupt.lean
 lake env lean --c="$build/InterruptEntry.c" LeanOS/InterruptEntry.lean
 lake env lean --c="$build/BlockingIPC.c" LeanOS/BlockingIPC.lean
 lake env lean --c="$build/CapabilityReuse.c" LeanOS/CapabilityReuse.lean
+lake env lean --c="$build/ExtendedState.c" LeanOS/ExtendedState.lean
 prefix="$(lake env lean --print-prefix)"
 cc -std=c11 -I"$prefix/include" -I"$build" \
   -ffunction-sections -fdata-sections -c "$build/KernelTransition.c" -o "$build/KernelTransition.o"
@@ -32,11 +33,13 @@ cc -std=c11 -I"$prefix/include" -I"$build" \
   -ffunction-sections -fdata-sections -c "$build/BlockingIPC.c" -o "$build/BlockingIPC.o"
 cc -std=c11 -I"$prefix/include" -I"$build" \
   -ffunction-sections -fdata-sections -c "$build/CapabilityReuse.c" -o "$build/CapabilityReuse.o"
+cc -std=c11 -I"$prefix/include" -I"$build" \
+  -ffunction-sections -fdata-sections -c "$build/ExtendedState.c" -o "$build/ExtendedState.o"
 cc -std=c11 -Wall -Wextra -Werror -I"$build" -c tests/oracle-host.c -o "$build/host.o"
 cc -Wl,--gc-sections "$build/host.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" -o "$build/host"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" -o "$build/host"
 "$build/host" > "$build/host-results.txt"
-[[ "$(wc -l < "$build/host-results.txt")" -eq 105 ]]
-echo "Hosted generated-code oracle replay passed (105 vectors)"
+[[ "$(wc -l < "$build/host-results.txt")" -eq 112 ]]
+echo "Hosted generated-code oracle replay passed (112 vectors)"

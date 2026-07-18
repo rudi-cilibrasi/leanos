@@ -7,6 +7,7 @@ import LeanOS.Interrupt
 import LeanOS.InterruptEntry
 import LeanOS.BlockingIPC
 import LeanOS.CapabilityReuse
+import LeanOS.ExtendedState
 
 /-!
 # Bounded scalar boundary oracle
@@ -74,6 +75,12 @@ private def interruptEntry (id : String) (descriptor frame stack context cleanup
     Vector :=
   { id, adapter := "Interrupt.entry", words := [descriptor, frame, stack, context, cleanup],
     expected := InterruptEntry.entryModelExpected descriptor frame stack context cleanup }
+
+private def extendedState (id : String) (mode vector current active normalized : UInt64) :
+    Vector :=
+  { id, adapter := "ExtendedState.denialDispatch",
+    words := [mode, vector, current, active, normalized],
+    expected := ExtendedState.denialDispatchModel mode vector current active normalized }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -187,9 +194,16 @@ def vectors : List Vector := [
   interruptEntry "entry.stack-high" 32896 291 0x803ff0 257 3,
   interruptEntry "entry.nested" 32896 291 0x800000 257 7,
   interruptEntry "entry.ac-uncleared" 32896 291 0x800000 257 2,
-  interruptEntry "entry.df-uncleared" 32896 291 0x800000 257 1]
+  interruptEntry "entry.df-uncleared" 32896 291 0x800000 257 1,
+  extendedState "extended-state.dispatch-peer" 0 7 1 1 1,
+  extendedState "extended-state.policy-mismatch" 1 7 1 1 1,
+  extendedState "extended-state.kernel-origin" 2 7 1 1 1,
+  extendedState "extended-state.dispatch-invariant" 3 7 1 1 1,
+  extendedState "extended-state.idle" 4 7 1 1 1,
+  extendedState "extended-state.stale-binding" 0 7 1 1 2,
+  extendedState "extended-state.dispatch-peer-ud" 6 6 1 1 1]
 
-theorem corpus_shape : vectors.length = 105 := by decide
+theorem corpus_shape : vectors.length = 112 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -250,7 +264,7 @@ theorem capability_reuse_scenario_agrees :
 
 theorem interrupt_entry_scenario_agrees :
     ((vectors.drop 86).take 6).all (fun vector => vector.expected ≠ 0) = true ∧
-    (vectors.drop 92).all (fun vector => vector.expected = 0) = true := by
+    ((vectors.drop 92).take 13).all (fun vector => vector.expected = 0) = true := by
   native_decide
 
 private def interruptEntryAdapterAgrees (vector : Vector) : Bool :=
@@ -261,6 +275,16 @@ private def interruptEntryAdapterAgrees (vector : Vector) : Bool :=
 
 theorem interrupt_entry_adapter_agrees_with_model :
     vectors.all interruptEntryAdapterAgrees = true := by
+  native_decide
+
+theorem extended_state_dispatch_scenario_agrees :
+    (vectors[105]).expected = 0x102 ∧
+    (vectors[106]).expected = 0 ∧
+    (vectors[107]).expected = 0 ∧
+    (vectors[108]).expected = 0 ∧
+    (vectors[109]).expected = 1 ∧
+    (vectors[110]).expected = 0 ∧
+    (vectors[111]).expected = 0x102 := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

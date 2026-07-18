@@ -28,6 +28,8 @@ extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t,
 extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t);
 extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_extended_state_denial_demo(uint64_t, uint64_t, uint64_t,
+                                                   uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -719,8 +721,11 @@ static void replay_oracle(void) {
                                 : v->adapter == 8
                                     ? leanos_capability_reuse_demo(v->words[0], v->words[1],
                                         v->words[2], v->words[3], v->words[4])
-                                    : leanos_entry_demo(v->words[0], v->words[1], v->words[2],
-                                        v->words[3], v->words[4]);
+                                    : v->adapter == 9
+                                        ? leanos_entry_demo(v->words[0], v->words[1], v->words[2],
+                                            v->words[3], v->words[4])
+                                        : leanos_extended_state_denial_demo(v->words[0], v->words[1],
+                                            v->words[2], v->words[3], v->words[4]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -782,14 +787,26 @@ static void privilege_init(void) {
     load_tss();
 }
 
-/* Vector 6/7 now traverse the shared normalized entry boundary.  Until the
-   lifecycle cleanup/peer-dispatch adapter is composed, reaching this endpoint
-   is deliberately terminal rather than resuming the faulting subject. */
+/* Vector 6/7 now traverse the shared normalized entry boundary and the bounded
+   generated cleanup/peer decision.  Machine cleanup and restored-frame
+   publication remain deliberately terminal until the common return path is
+   wired to consume that decision. */
 __attribute__((noreturn)) void extended_state_denial_handler(uint64_t vector,
                                                               uint64_t saved_cs) {
     if ((vector != 6 && vector != 7) || saved_cs != 0x23)
         fail("extended-state-denial-binding");
-    fail("extended-state-denial-uncomposed");
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    uint64_t expected_cr3 = current_subject == 1 ? (uint64_t)page_map_level_4_a :
+        current_subject == 2 ? (uint64_t)page_map_level_4_b : 0;
+    if (expected_cr3 == 0 || cr3 != expected_cr3)
+        fail("extended-state-denial-binding");
+    uint64_t mode = vector == 6 ? 6 : 0;
+    uint64_t peer = current_subject == 1 ? 2 : 1;
+    if (leanos_extended_state_denial_demo(mode, vector, current_subject,
+            current_subject, current_subject) != 0x100 + peer)
+        fail("extended-state-denial-model");
+    fail("extended-state-denial-dispatch-unpublished");
 }
 
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,

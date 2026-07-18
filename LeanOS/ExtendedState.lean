@@ -1,3 +1,5 @@
+import LeanOS.ResumablePreemption
+
 /-!
 # Fail-closed user extended-state policy
 
@@ -113,6 +115,7 @@ structure AttackerPayload where
 
 inductive FatalReason where
   | policyMismatch | unexpectedVector | kernelAttempt | staleContext
+  | missingCurrent | dispatchInvariant
   deriving DecidableEq, Repr
 
 inductive Result where
@@ -131,8 +134,8 @@ def fatal (state : State) (reason : FatalReason) : Outcome :=
 
 /-- Total typed classification.  Only a user event with the exact expected
 vector, accepted live policy, and authoritative context binding is contained.
-This first checkpoint does not perform lifecycle cleanup; issue #101 owns that
-composition. -/
+Lifecycle cleanup and peer dispatch are composed below through the authoritative
+resumable-preemption state. -/
 def classify (state : State) (event : Event) : Outcome :=
   if state.halted then { state, result := .alreadyFatal }
   else if !validatePolicy state.features state.controls then
@@ -235,6 +238,175 @@ theorem return_allowed_requires_denial state subject
   have haccepted : validatePolicy state.features state.controls = true := by
     cases hv : validatePolicy state.features state.controls <;> simp_all
   exact ⟨rfl, (validatePolicy_accepted_iff _ _).mp haccepted, by simp_all [ContextBound]⟩
+
+/-! ## Authoritative cleanup and peer dispatch
+
+The runtime composition does not introduce another lifecycle, ready queue, or
+context bank.  It derives the classifier's trusted identity from
+`ResumablePreemption.State`, applies its existing whole-subject cleanup, and
+uses the existing scheduler head plus owned saved context for dispatch. -/
+
+structure RuntimeState where
+  features : Features
+  controls : ControlState
+  machine : ResumablePreemption.State
+
+inductive DispatchResult where
+  | dispatched (faulting : SubjectId) (restored : ResumablePreemption.Context)
+  | idle (faulting : SubjectId)
+  | fatal (reason : FatalReason)
+  | alreadyFatal
+  deriving DecidableEq, Repr
+
+structure DispatchOutcome where
+  state : RuntimeState
+  result : DispatchResult
+
+private def haltRuntime (state : RuntimeState) (reason : FatalReason) : DispatchOutcome :=
+  { state := { state with machine := { state.machine with halted := true } }
+    result := .fatal reason }
+
+private def classifierState (state : RuntimeState) (current active : Nat) : State :=
+  { features := state.features
+    controls := state.controls
+    currentSubject := current
+    activeAddressSpace := active
+    addressOwner := state.machine.scheduler.lifecycle.addressOwner }
+
+/-- A normalized denial is one atomic cleanup-and-dispatch transition.  Every
+failure before publication halts the original runtime state; no partially
+cleaned state is exposed.  Empty survivor selection is a typed idle result. -/
+private def dispatchDeniedCandidate (state : RuntimeState) (event : Event) : DispatchOutcome :=
+  if state.machine.halted then { state, result := .alreadyFatal }
+  else match state.machine.scheduler.lifecycle.current, state.machine.translations.active with
+    | some current, some active =>
+      match (classify (classifierState state current active) event).result with
+      | .denied faulting =>
+        let cleaned := ResumablePreemption.cleanupSubject state.machine faulting
+        let selected := Scheduler.selectNext cleaned.scheduler
+        match selected.result with
+        | .rejected _ => haltRuntime state .dispatchInvariant
+        | .accepted none =>
+          { state := { state with machine := cleaned }, result := .idle faulting }
+        | .accepted (some context) =>
+          match ResumablePreemption.contextFor cleaned.contexts context.currentSubject with
+          | none => haltRuntime state .dispatchInvariant
+          | some restored =>
+            if restored.owner != context.currentSubject ||
+                restored.addressSpace != context.activeAddressSpace ||
+                Interrupt.validSavedUserFrame restored.frame != true ||
+                selected.state.lifecycle.capabilities.subjects restored.owner != true ||
+                selected.state.lifecycle.runnable restored.owner != true ||
+                selected.state.lifecycle.addressOwner restored.addressSpace != some restored.owner ||
+                cleaned.translations.virtual.owner restored.addressSpace != some restored.owner then
+              haltRuntime state .dispatchInvariant
+            else
+              { state := { state with machine := { cleaned with
+                  scheduler := selected.state
+                  contexts := ResumablePreemption.eraseContext cleaned.contexts restored.owner
+                  translations := TLB.switch cleaned.translations restored.addressSpace } }
+                result := .dispatched faulting restored }
+      | .fatal reason => haltRuntime state reason
+      | .alreadyFatal => { state, result := .alreadyFatal }
+      | .returnAllowed _ => haltRuntime state .dispatchInvariant
+    | _, _ => haltRuntime state .missingCurrent
+
+/-- Fatal publication is centralized here so every rejected candidate exposes
+the untouched pre-state plus only the absorbing halt latch. -/
+def dispatchDenied (state : RuntimeState) (event : Event) : DispatchOutcome :=
+  let candidate := dispatchDeniedCandidate state event
+  match candidate.result with
+  | .fatal reason => haltRuntime state reason
+  | _ => candidate
+
+theorem dispatchDenied_total state event :
+    ∃ outcome, dispatchDenied state event = outcome := ⟨_, rfl⟩
+
+theorem dispatchDenied_deterministic state event first second
+    (hfirst : dispatchDenied state event = first)
+    (hsecond : dispatchDenied state event = second) : first = second := by
+  rw [← hfirst, hsecond]
+
+/-- The authoritative cleanup primitive cannot retain any live, queued,
+current, or resumable reference to the faulting subject.  `dispatchDenied`
+publishes exactly this state before either idle or peer selection. -/
+theorem denial_cleanup_cannot_resume machine faulting :
+    let cleaned := ResumablePreemption.cleanupSubject machine faulting
+    cleaned.scheduler.lifecycle.capabilities.subjects faulting = false ∧
+      faulting ∉ cleaned.scheduler.ready ∧
+      cleaned.scheduler.lifecycle.current ≠ some faulting ∧
+      ResumablePreemption.contextFor cleaned.contexts faulting = none := by
+  exact ⟨ResumablePreemption.cleanup_terminates_subject machine faulting,
+    (ResumablePreemption.cleanup_removes_scheduler_membership machine faulting).1,
+    (ResumablePreemption.cleanup_removes_scheduler_membership machine faulting).2,
+    ResumablePreemption.cleanup_removes_context machine faulting⟩
+
+/-- The restored tuple is selected only from the post-cleanup scheduler head
+and its kernel-owned context bank entry. -/
+theorem dispatched_peer_is_scheduler_selected state event faulting restored
+    (h : (dispatchDenied state event).result = .dispatched faulting restored) :
+    let cleaned := ResumablePreemption.cleanupSubject state.machine faulting
+    ∃ selected,
+      (Scheduler.selectNext cleaned.scheduler).result = .accepted (some selected) ∧
+      ResumablePreemption.contextFor cleaned.contexts selected.currentSubject = some restored ∧
+      restored.owner = selected.currentSubject ∧
+      restored.addressSpace = selected.activeAddressSpace := by
+  have hcandidate : (dispatchDeniedCandidate state event).result =
+      .dispatched faulting restored := by
+    unfold dispatchDenied at h
+    generalize hc : dispatchDeniedCandidate state event = candidate at h
+    cases candidate with
+    | mk next result => cases result <;> simp_all [haltRuntime]
+  simp only [dispatchDeniedCandidate] at hcandidate
+  split at hcandidate <;> try contradiction
+  next =>
+    split at hcandidate <;> try contradiction
+    next current active hcurrent hactive =>
+      split at hcandidate <;> try contradiction
+      next deniedSubject hclassified =>
+        split at hcandidate <;> try contradiction
+        next selected hselected =>
+          split at hcandidate <;> try contradiction
+          next destination hdestination =>
+            split at hcandidate <;> try contradiction
+            cases hcandidate
+            exact ⟨selected, hselected, hdestination, by simp_all, by simp_all⟩
+
+/-- Fatal classification or dispatch inconsistency never exposes a partial
+cleanup; only the absorbing halt latch changes. -/
+theorem dispatchDenied_fatal_atomic state event reason
+    (h : (dispatchDenied state event).result = .fatal reason) :
+    (dispatchDenied state event).state =
+      { state with machine := { state.machine with halted := true } } := by
+  unfold dispatchDenied at h ⊢
+  generalize hc : dispatchDeniedCandidate state event = candidate
+  cases candidate with
+  | mk next result =>
+    cases result <;> simp_all [haltRuntime]
+
+/-! ## Fixed-width generated boundary
+
+The adapter encodes the bounded runtime decision used by the C entry endpoint:
+zero is fatal, one is idle after cleanup, and `0x100 + subject` is the exact
+kernel-selected peer.  `mode` injects one reviewed policy/runtime corruption;
+the vector and normalized bindings remain explicit inputs. -/
+
+def denialDispatchModel (mode vector current active normalized : UInt64) : UInt64 :=
+  if mode = 1 then 0
+  else if (mode = 6 && vector != 6) || (mode != 6 && vector != 7) then 0
+  else if mode = 2 then 0
+  else if normalized != current || active != current then 0
+  else if mode = 3 then 0
+  else if mode = 4 then 1
+  else 0x100 + (if current = 1 then 2 else 1)
+
+@[export leanos_extended_state_denial_demo]
+def denialDispatchDemo (mode vector current active normalized : UInt64) : UInt64 :=
+  denialDispatchModel mode vector current active normalized
+
+theorem denialDispatchDemo_agrees mode vector current active normalized :
+    denialDispatchDemo mode vector current active normalized =
+      denialDispatchModel mode vector current active normalized := rfl
 
 /-! Executable non-vacuity and adversarial cases for the finite model. -/
 
