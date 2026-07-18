@@ -402,6 +402,22 @@ theorem accepted_user_return_requires_running state request attested
   | handling active => simp [completeUserReturn, hmode, latchInvalidUserReturn] at haccepted
   | halted record => simp [completeUserReturn, hmode] at haccepted
 
+/-- An accepted outgoing return only attests the kernel-normalized request; it
+does not mutate any execution-latch field. -/
+theorem accepted_user_return_state_unchanged state request attested
+    (haccepted : (completeUserReturn state request).action = .accepted attested) :
+    (completeUserReturn state request).state = state := by
+  cases hmode : state.mode with
+  | handling active => simp [completeUserReturn, hmode, latchInvalidUserReturn] at haccepted
+  | halted record => simp [completeUserReturn, hmode] at haccepted
+  | running =>
+      simp only [completeUserReturn, hmode] at haccepted ⊢
+      split at haccepted
+      · simp [latchInvalidUserReturn] at haccepted
+      · split at haccepted
+        · simp_all [latchInvalidUserReturn]
+        · simp_all [latchInvalidUserReturn]
+
 /-- The state of the modeled subsystems whose transitions can run after entry.
 Keeping these states under the execution latch makes bypassing it impossible in
 the composite transition system. -/
@@ -1306,6 +1322,27 @@ theorem gate_selectUserReturn_preserves_runtimeWellFormed state purpose
   · intro harmedSelected
     have hliveSelected := harmed (by simpa using harmedSelected)
     simpa [CompositeState.ReturnPlanLive] using hliveSelected
+
+/-- An accepted outgoing user return is a complete accepted-operation slice:
+the runtime invariant forces its armed authority to refer to the live mapping
+plan, and successful attestation leaves the entire composite state unchanged. -/
+theorem gate_userReturn_accepted_preserves_runtimeWellFormed state request attested
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (completeUserReturn state.execution request).action = .accepted attested) :
+    RuntimeWellFormed (gate state (.userReturn request)).state ∧
+      (gate state (.userReturn request)).state = state ∧
+      (gate state (.userReturn request)).result = .completed (.userReturn .accepted) := by
+  have harmed : state.execution.returnAuthorityArmed = true := by
+    cases hvalue : state.execution.returnAuthorityArmed with
+    | false => simp [completeUserReturn, hmode, hvalue, latchInvalidUserReturn] at haccepted
+    | true => rfl
+  have hplan : state.ReturnPlanLive = true := hstate.2.2.2.2.2.2.2.2.2.2.2 harmed
+  have hunchanged := accepted_user_return_state_unchanged state.execution request attested haccepted
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [gate, hmode, applyOperation, hplan, hunchanged] using hstate
+  · simp [gate, hmode, applyOperation, hplan, hunchanged]
+  · simp [gate, hmode, operationReply, hplan, haccepted]
 
 /-- Restart is the identity running operation and therefore preserves the full
 runtime invariant without touching any authoritative subsystem state. -/
