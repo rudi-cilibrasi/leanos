@@ -2,7 +2,12 @@
 set -euo pipefail
 
 elf="${1:-build/boot/leanos.elf}"
+kernel_source="${LEANOS_ENTRY_KERNEL_SOURCE:-boot/kernel.c}"
+boot_source="${LEANOS_ENTRY_BOOT_SOURCE:-boot/boot.S}"
 [[ -f "$elf" ]] || { echo "error: missing entry-policy ELF: $elf" >&2; exit 1; }
+[[ -f "$kernel_source" && -f "$boot_source" ]] || {
+  echo "error: missing entry-policy source snapshot" >&2; exit 1;
+}
 
 symbols="$(nm "$elf")"
 for symbol in isr14 isr32 isr80 authorize_interrupt_entry complete_interrupt_entry \
@@ -12,14 +17,40 @@ for symbol in isr14 isr32 isr80 authorize_interrupt_entry complete_interrupt_ent
   }
 done
 
-[[ "$(grep -Ec 'set_gate\(' boot/kernel.c)" -eq 6 ]] || {
-  echo "error: entry manifest has an unexpected installed-gate count" >&2; exit 1;
+[[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 6 ]] || {
+  echo "error: vector=77 field=present violated=unexpected-installed-gate-count" >&2; exit 1;
 }
-grep -Fq 'set_gate(14, isr14, 0, 0x8e);' boot/kernel.c
-grep -Fq 'set_gate(32, isr32, 0, 0x8e);' boot/kernel.c
-grep -Fq 'set_gate(0x80, isr80, 0, 0xee);' boot/kernel.c
-[[ "$(grep -Ec 'set_gate\([^,]+,[^,]+,[^,]+, 0xee\)' boot/kernel.c)" -eq 1 ]] || {
+grep -Fq 'set_gate(14, isr14, 0, 0x8e);' "$kernel_source" || {
+  echo "error: vector=14 field=target-or-dpl" >&2; exit 1;
+}
+grep -Fq 'set_gate(32, isr32, 0, 0x8e);' "$kernel_source" || {
+  echo "error: vector=32 field=target-or-dpl" >&2; exit 1;
+}
+grep -Fq 'set_gate(0x80, isr80, 0, 0xee);' "$kernel_source" || {
+  echo "error: vector=128 field=target-or-dpl" >&2; exit 1;
+}
+[[ "$(grep -Ec 'set_gate\([^,]+,[^,]+,[^,]+, 0xee\)' "$kernel_source")" -eq 1 ]] || {
   echo "error: vector=128 field=dpl expected=3 violated=extra-dpl3-gate" >&2; exit 1;
+}
+grep -Fq 'tss.rsp0 = (uint64_t)(entry_stack + sizeof(entry_stack));' "$kernel_source" || {
+  echo "error: vector=128 field=tss.rsp0" >&2; exit 1;
+}
+
+source_path="$(sed -n '/^isr80:/,/^\.global isr14/p' "$boot_source")"
+source_cleanup="$(grep -n -m1 '^[[:space:]]*clac$' <<<"$source_path" | cut -d: -f1)"
+source_normalize="$(grep -n -m1 'NORMALIZE_ENTRY 128, 0' <<<"$source_path" | cut -d: -f1)"
+source_handler="$(grep -n -m1 'call syscall_handler' <<<"$source_path" | cut -d: -f1)"
+[[ -n "$source_cleanup" && -n "$source_normalize" && -n "$source_handler" &&
+   "$source_cleanup" -lt "$source_normalize" && "$source_normalize" -lt "$source_handler" ]] || {
+  echo "error: vector=128 path=normalization" >&2; exit 1;
+}
+source_path="$(sed -n '/^isr32:/,/^\/\* The only boot-reachable CPL3 return/p' "$boot_source")"
+grep -q '^[[:space:]]*clac$' <<<"$source_path" || {
+  echo "error: vector=32 path=cleanup" >&2; exit 1;
+}
+source_path="$(sed -n '/^isr14:/,/^\.global isr32/p' "$boot_source")"
+grep -q 'mov \$1, %esi' <<<"$source_path" || {
+  echo "error: vector=14 field=error-shape" >&2; exit 1;
 }
 
 address() { nm -n "$elf" | awk -v name="$1" '$3 == name { print "0x" $1 }'; }
@@ -53,25 +84,8 @@ epilogue_dis="$(objdump -d --no-show-raw-insn --start-address="$(address user_re
 grep -q 'call.*<validate_user_return>' <<<"$epilogue_dis" || {
   echo "error: ordinary entry path does not reach the reviewed return gate" >&2; exit 1;
 }
-grep -Fq 'if (ordinary_entry_active) ordinary_entry_active = 0;' boot/kernel.c || {
+grep -Fq 'if (ordinary_entry_active) ordinary_entry_active = 0;' "$kernel_source" || {
   echo "error: reviewed return gate does not consume the entry latch" >&2; exit 1;
 }
 
-# Bounded one-field mutations of the decoded descriptor/TSS/path snapshot.
-# Each line names the same field diagnostic the production checker must emit.
-fixtures=(
-  'wrong-target:vector=14 field=target'
-  'page-fault-dpl3:vector=14 field=dpl'
-  'timer-dpl3:vector=32 field=dpl'
-  'extra-present:vector=77 field=present'
-  'swapped-error-shape:vector=14 field=error-shape'
-  'branch-around-cleanup:vector=32 path=cleanup'
-  'c-before-normalize:vector=128 path=normalization'
-  'wrong-tss-stack:vector=128 field=tss.rsp0'
-)
-for fixture in "${fixtures[@]}"; do
-  IFS=: read -r name diagnostic <<<"$fixture"
-  echo "ENTRY-POLICY fixture=$name $diagnostic result=REJECTED"
-done
-
-echo "Entry manifest, TSS snapshot, final-ELF paths, and negative fixtures passed"
+echo "Entry manifest, TSS snapshot, and final-ELF paths passed"

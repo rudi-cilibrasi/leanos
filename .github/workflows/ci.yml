@@ -121,6 +121,8 @@ jobs:
             build/boot/preemption.serial.log
             build/boot/double-fault.serial.log
             build/boot/entry-adversarial.serial.log
+            build/boot/entry-policy-report.txt
+            build/boot/entry-policy-fixtures.log
             build/boot/return-corruption-*.serial.log
             build/boot/return-*-policy.log
             build/boot/leanos-0.1.0-x86_64-return-*.iso

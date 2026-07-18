@@ -97,9 +97,10 @@ version-one oracle with valid syscall, user page fault, timer, and diagnostic
 records plus wrong binding, error shape, length, alignment, origin, stack,
 nested-latch, and AC/DF fixtures. `scripts/check-entry-policy.sh` enumerates the
 final-ELF entry paths and requires cleanup, shared authorization, the typed
-handler, and latch completion in that order. It also names the bounded
-one-field descriptor, path, and TSS fixture matrix and its required diagnostics.
-At boot, `check_entry_manifest`
+handler, and latch completion in that order. `scripts/test-entry-policy.sh`
+applies bounded one-field descriptor, path, error-shape, and TSS mutations to
+controlled source snapshots and requires the production checker to reject each
+with its vector and field/path diagnostic. At boot, `check_entry_manifest`
 decodes every present IDT entry and the relevant TSS stack pointers and rejects
 unmanifested present gates.
 
