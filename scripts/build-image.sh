@@ -116,6 +116,7 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-adversarial.h"' \
   -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
 
+cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 ./scripts/check-entry-stack-budget.sh | tee "$build/entry-stack-budget.txt"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -c boot/boot.S -o "$build/boot.o"
@@ -381,6 +382,9 @@ if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   echo "error: kernel ELF has no valid Multiboot2 header" >&2
   exit 1
 fi
+nm -n "$build/leanos.elf" >"$build/entry-stack-symbols.txt"
+objdump -d --no-show-raw-insn "$build/leanos.elf" \
+  >"$build/entry-stack-disassembly.txt"
 ./scripts/check-image-policy.sh "$build/leanos.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"

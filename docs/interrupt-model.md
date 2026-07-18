@@ -149,10 +149,16 @@ canonical top symbol, TSS assignment, and reviewed unmapping instruction.
 
 The image compiler now emits `.su` reports for the handwritten and generated C
 objects. `scripts/entry-stack-callgraph.tsv` records the reviewed boot-reachable
-ordinary-entry paths, including the architectural/stub prefix and a 4 KiB
-safety margin. `scripts/check-entry-stack-budget.sh` rejects missing or dynamic
-usage, unresolved indirect edges, cycles in a path, and any total above the
-16 KiB usable interval; its machine-readable report is retained with the image.
+ordinary-entry paths, their user/kernel origin, hardware-error shape, and a
+4 KiB safety margin. `scripts/check-entry-stack-budget.sh` derives the prefix
+from those frame fields and the counted 15-register assembly save bank, then
+rejects a changed save count, missing or dynamic usage, unresolved indirect
+edges, cycles in a path, or any total above the 16 KiB usable interval. Its
+machine-readable report is retained with the image. In particular, a CPL3
+syscall or timer prefix is 176 bytes (40-byte hardware frame, 120-byte save
+bank, and 16-byte normalizer), rather than a manually entered constant.
+CI also retains the exact reviewed call-graph snapshot, raw compiler `.su`
+files, sorted final-ELF symbols, and final disassembly beside that report.
 This is compiler- and call-graph-checking evidence, not a proof of GCC, the
 generated C, assembly, or the final machine path.
 
