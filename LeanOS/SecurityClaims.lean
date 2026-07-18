@@ -132,6 +132,23 @@ theorem composite_gate_data_send_preserves_runtimeWellFormed
     state handleWord word0 word1 hstate hmode
   simpa [FailStop.operationReply] using hsent
 
+/-- SC-COMPOSITE-GATE-RECEIVE-WF: accepted data receipt preserves the complete
+runtime invariant and exposes the exact sender and payload selected by the
+kernel-confined endpoint transition. -/
+theorem composite_gate_data_receive_preserves_runtimeWellFormed
+    state handleWord sender word0 word1
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hdelivered : FailStop.operationReply state (.ipc (.receive handleWord)) =
+      .ipc (.syscall (.delivered sender word0 word1))) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.ipc (.receive handleWord))).state ∧
+      (FailStop.gate state (.ipc (.receive handleWord))).result =
+        .completed (.ipc (.syscall (.delivered sender word0 word1))) := by
+  apply FailStop.gate_ipc_receive_accepted_preserves_runtimeWellFormed
+    state handleWord sender word0 word1 hstate hmode
+  simpa [FailStop.operationReply] using hdelivered
+
 /-- SC-COMPOSITE-GATE-CONTRACT: every completed public gate step identifies
 the running latch, exact typed reply, and exact composite post-state; both
 gate-level rejection classes and every classified nonfatal subsystem rejection
