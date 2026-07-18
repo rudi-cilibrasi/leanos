@@ -45,6 +45,7 @@ return_corruptions=(
   'stale-context:10:user-return-code'
   'post-validation-mutation:11:user-return-noncanonical'
   'blocking-context-canary:12:register-canary'
+  'capability-reuse-generation:13:capability-reuse-generation'
 )
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: LEANOS_VERSION must be MAJOR.MINOR.PATCH" >&2

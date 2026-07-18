@@ -33,6 +33,7 @@ specs=(
   'stale-context:user-return-code'
   'post-validation-mutation:user-return-noncanonical'
   'blocking-context-canary:register-canary'
+  'capability-reuse-generation:capability-reuse-generation'
 )
 
 for spec in "${specs[@]}"; do
@@ -57,17 +58,31 @@ for spec in "${specs[@]}"; do
     echo "error: fixture '$fixture' exited $status instead of typed guest failure 35" >&2
     exit 1
   }
-  grep -Fxq "LEANOS/9 RETURN fixture=${fixture} stage=outgoing-frame result=INJECTED" \
-    "$log" || {
-    echo "error: fixture '$fixture' lacked its outgoing-frame injection record" >&2
-    exit 1
-  }
+  if [[ "$fixture" == capability-reuse-generation ]]; then
+    grep -Fxq "LEANOS/9 CAPREUSE fixture=${fixture} stage=word-boundary result=INJECTED" \
+      "$log" || {
+      echo "error: fixture '$fixture' lacked its word-boundary injection record" >&2
+      exit 1
+    }
+  else
+    grep -Fxq "LEANOS/9 RETURN fixture=${fixture} stage=outgoing-frame result=INJECTED" \
+      "$log" || {
+      echo "error: fixture '$fixture' lacked its outgoing-frame injection record" >&2
+      exit 1
+    }
+  fi
   grep -Fxq "LEANOS/3 FINAL status=FAIL reason=${reason}" "$log" || {
     echo "error: fixture '$fixture' lacked typed rejection reason '$reason'" >&2
     exit 1
   }
-  if grep -Eq '^LEANOS/5 ENTRY|^LEANOS/5 FINAL status=PASS' "$log"; then
+  if [[ "$fixture" != capability-reuse-generation ]] &&
+      grep -Eq '^LEANOS/5 ENTRY|^LEANOS/5 FINAL status=PASS' "$log"; then
     echo "error: fixture '$fixture' reached CPL3 or normal completion" >&2
+    exit 1
+  fi
+  if [[ "$fixture" == capability-reuse-generation ]] &&
+      grep -Eq '^LEANOS/9 CAPREUSE status=PASS|^LEANOS/10 FINAL status=PASS' "$log"; then
+    echo "error: fixture '$fixture' reached capability-reuse completion" >&2
     exit 1
   fi
 done

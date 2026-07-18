@@ -326,6 +326,7 @@ static const char *return_corruption_name(uint64_t mode) {
     case 10: return "stale-context";
     case 11: return "post-validation-mutation";
     case 12: return "blocking-context-canary";
+    case 13: return "capability-reuse-generation";
     default: return "none";
     }
 }
@@ -337,6 +338,7 @@ static void inject_return_corruption(uint64_t *saved) {
     uint64_t mode = return_corruption_mode;
     if (mode == 0) return;
     if (mode == 12 && !(current_subject == 2 && blocking_ipc_step == 4)) return;
+    if (mode == 13) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
     serial_puts(" stage=outgoing-frame result=INJECTED\n");
@@ -685,9 +687,14 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         return 3 * 65536;
     }
     if (capability_reuse_step == 1 && current_subject == 2 && number == 11) {
-        if (leanos_capability_reuse_demo(2, 1, arg0, arg1, arg2) !=
+        uint64_t checked_word = arg0;
+#if LEANOS_RETURN_CORRUPTION_MODE == 13
+        serial_puts("LEANOS/9 CAPREUSE fixture=capability-reuse-generation stage=word-boundary result=INJECTED\n");
+        checked_word = 3 * 65536 + (arg0 & 0xffffu);
+#endif
+        if (leanos_capability_reuse_demo(2, 1, checked_word, arg1, arg2) !=
             oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_STALE_GENERATION].expected)
-            fail("capability-reuse-stale");
+            fail("capability-reuse-generation");
         capability_reuse_step = 2;
         serial_puts("LEANOS/9 CAPREUSE event=stale-replay subject=2 handle=131072 rejected=1\n");
         serial_puts("LEANOS/9 CAPREUSE event=unchanged endpoint=11 mailbox=empty result=PASS\n");
