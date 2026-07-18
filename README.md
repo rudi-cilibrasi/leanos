@@ -19,8 +19,10 @@ claim. In particular, the compiled path crosses a trusted, unproved boundary:
 
 ```mermaid
 flowchart TB
-    M["Lean executable models"] --> T["Theorem statements<br/>and proof terms"]
-    T --> K["Lean elaborator<br/>and kernel"]
+    M["Lean executable models"] --> T["Lean theorem statements<br/>and proof source"]
+    T --> E["Lean elaborator"]
+    E --> R["Elaborated proof terms"]
+    R --> K["Lean kernel<br/>proof-term checker"]
     K --> P["Lean-proved<br/>model properties"]
 
     M --> G
@@ -40,12 +42,15 @@ flowchart TB
     classDef trusted fill:#fff3cd,stroke:#9a6700,color:#111
     class P proved
     class O tested
-    class G,B,Q trusted
+    class K,G,B,Q trusted
 ```
 
 The dashed edge marks the missing model-to-binary refinement theorem; it does
-not turn the QEMU observations into proof. The trusted nodes identify
-components whose correctness is assumed when interpreting the tested path.
+not turn the QEMU observations into proof. Trusted coloring covers both the
+Lean kernel assumed to check elaborated proof terms soundly and the unproved
+implementation/execution path whose correctness is assumed when interpreting
+the tested observations. The elaborator constructs proof terms, but the kernel
+rechecks those terms rather than trusting the elaborator's result directly.
 
 ### QEMU-tested behavior
 
