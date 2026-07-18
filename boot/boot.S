@@ -560,6 +560,9 @@ isr6:
     mov $6, %edi
     mov 128(%rsp), %rsi
     call extended_state_denial_handler
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    jmp extended_state_restore_peer
+#endif
     ud2
 .global isr7
 isr7:
@@ -570,6 +573,21 @@ isr7:
     mov $7, %edi
     mov 128(%rsp), %rsi
     call extended_state_denial_handler
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+extended_state_restore_peer:
+    cmp $2, %rax
+    jne 1f
+    lea initial_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    call complete_interrupt_entry
+    mov $3, %esi
+    jmp user_return_epilogue
+1:
+#endif
     ud2
 .global isr80
 isr80:
@@ -854,6 +872,11 @@ user_a_entry:
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    /* CR0.EM/TS must deliver #NM before this can modify the shared x87 bank. */
+    fld1
+    ud2
+#endif
 #ifdef LEANOS_ENTRY_ADVERSARIAL
     int $14
     int $32
@@ -927,6 +950,18 @@ user_a_stack_top:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    /* The peer enters only through the common validated return path. */
+    movabs $B_INITIAL_R12, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %rax
+    cmp %rax, %r13
+    jne 2f
+    mov $13, %rax
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_PREEMPTION_SCENARIO
     cmp $B_INITIAL_RAX, %rax
     jne 2f

@@ -28,6 +28,7 @@ fi
 build="$repo_root/build/boot"
 iso_root="$build/iso"
 preemption_iso_root="$build/iso-preemption"
+extended_state_iso_root="$build/iso-extended-state"
 df_iso_root="$build/iso-double-fault"
 df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 entry_adversarial_iso_root="$build/iso-entry-adversarial"
@@ -53,11 +54,13 @@ if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 rm -rf "$build"
-mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" "$df_iso_root/boot/grub" \
+mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
+  "$extended_state_iso_root/boot/grub" "$df_iso_root/boot/grub" \
   "$df_negative_iso_root/boot/grub" "$entry_adversarial_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-double-fault.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-guard.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-entry-adversarial.h"
@@ -109,6 +112,10 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
   -c boot/kernel.c -o "$build/kernel-preemption.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
+  -c boot/kernel.c -o "$build/kernel-extended-state.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -DLEANOS_DF_MAP_GUARD=1 \
@@ -122,6 +129,9 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_PREEMPTION_SCENARIO=1 \
   -c boot/boot.S -o "$build/boot-preemption.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -c boot/boot.S -o "$build/boot-extended-state.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_RESTORE_FIXTURE=1 \
   -c boot/boot.S -o "$build/boot-return-restore-fixture.o"
@@ -162,6 +172,13 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-extended-state-prelink.map" \
+  -o "$build/leanos-extended-state-prelink.elf" "$build/boot-extended-state.o" \
+  "$build/kernel-extended-state.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
   -o "$build/leanos-double-fault-prelink.elf" "$build/boot.o" \
   "$build/kernel-double-fault.o" "$build/KernelTransition.o" \
@@ -186,6 +203,8 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-preemption-prelink.elf" \
   "$build/boot-page-plan-preemption.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-prelink.elf" \
+  "$build/boot-page-plan-extended-state.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-prelink.elf" \
   "$build/boot-page-plan-double-fault.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-guard-prelink.elf" \
@@ -198,6 +217,10 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -DLEANOS_PREEMPTION_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
   -c boot/kernel.c -o "$build/kernel-preemption.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
+  -c boot/kernel.c -o "$build/kernel-extended-state.o"
 if nm "$build/kernel.o" | grep -Eq \
     'return_corruption_mode|return_corruption_name|inject_return_corruption'; then
   echo "error: normal kernel object contains return-corruption fixture code" >&2
@@ -236,6 +259,13 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-preemption.map" \
   -o "$build/leanos-preemption.elf" "$build/boot-preemption.o" \
   "$build/kernel-preemption.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-extended-state.map" \
+  -o "$build/leanos-extended-state.elf" "$build/boot-extended-state.o" \
+  "$build/kernel-extended-state.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o"
@@ -299,6 +329,13 @@ cmp "$build/boot-page-plan.h" "$build/boot-page-plan.final.h" || {
 cmp "$build/boot-page-plan-preemption.h" \
   "$build/boot-page-plan-preemption.final.h" || {
   echo "error: preemption boot page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state.elf" \
+  "$build/boot-page-plan-extended-state.final.h"
+cmp "$build/boot-page-plan-extended-state.h" \
+  "$build/boot-page-plan-extended-state.final.h" || {
+  echo "error: extended-state boot page-table plan drifted after final link" >&2
   exit 1
 }
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
@@ -387,6 +424,7 @@ if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
 fi
 ./scripts/check-image-policy.sh "$build/leanos.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
+./scripts/check-image-policy.sh "$build/leanos-extended-state.elf"
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
 ./scripts/test-extended-state-policy.sh "$build/leanos.elf"
@@ -428,6 +466,8 @@ cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-preemption.elf" "$preemption_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$preemption_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-extended-state.elf" "$extended_state_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$extended_state_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-double-fault.elf" "$df_iso_root/boot/leanos.elf"
 cp boot/grub-double-fault.cfg "$df_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-double-fault-guard-mapped.elf" \
@@ -439,6 +479,7 @@ printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
   > "$iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$preemption_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$extended_state_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
 for spec in "${return_corruptions[@]}"; do
@@ -458,6 +499,10 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-preemption.iso" "$preemption_iso_root" -- \
   -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-extended-state.iso" \
+  "$extended_state_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-double-fault.iso" "$df_iso_root" -- \
@@ -481,8 +526,10 @@ for spec in "${return_corruptions[@]}"; do
 done
 sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-preemption.iso" \
+  "$build/leanos-${version}-x86_64-extended-state.iso" \
   "$build/leanos-${version}-x86_64-double-fault.iso" "$build/leanos.elf" \
   "$build/leanos-preemption.elf" "$build/leanos-preemption.map" \
+  "$build/leanos-extended-state.elf" "$build/leanos-extended-state.map" \
   "$build/leanos-double-fault.elf" \
   "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
   "$build/leanos-double-fault-guard-mapped.elf" \

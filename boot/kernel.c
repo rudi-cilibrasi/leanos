@@ -787,12 +787,10 @@ static void privilege_init(void) {
     load_tss();
 }
 
-/* Vector 6/7 now traverse the shared normalized entry boundary and the bounded
-   generated cleanup/peer decision.  Machine cleanup and restored-frame
-   publication remain deliberately terminal until the common return path is
-   wired to consume that decision. */
-__attribute__((noreturn)) void extended_state_denial_handler(uint64_t vector,
-                                                              uint64_t saved_cs) {
+/* Vector 6/7 traverse the shared normalized entry boundary and bounded
+   generated cleanup/peer decision.  The dedicated denial scenario publishes
+   the selected fresh peer through the sole validated user-return path. */
+uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs) {
     if ((vector != 6 && vector != 7) || saved_cs != 0x23)
         fail("extended-state-denial-binding");
     uint64_t cr3;
@@ -806,7 +804,17 @@ __attribute__((noreturn)) void extended_state_denial_handler(uint64_t vector,
     if (leanos_extended_state_denial_demo(mode, vector, current_subject,
             current_subject, current_subject) != 0x100 + peer)
         fail("extended-state-denial-model");
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    if (current_subject != 1 || peer != 2)
+        fail("extended-state-denial-scenario-binding");
+    current_subject = peer;
+    serial_puts("LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=");
+    serial_u64(vector);
+    serial_puts(" instruction=x87 bank-write=prevented cleanup=complete peer=2\n");
+    return peer;
+#else
     fail("extended-state-denial-dispatch-unpublished");
+#endif
 }
 
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
@@ -815,6 +823,22 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    if (current_subject == 2 && number == 13) {
+        uint64_t cr0, cr4, cr3;
+        __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+        __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        const uint64_t required = (1ull << 3) | (1ull << 2) | (1ull << 1);
+        const uint64_t forbidden = (1ull << 18) | (1ull << 10) | (1ull << 9);
+        if ((cr0 & required) != required || (cr4 & forbidden) != 0 ||
+            cr3 != (uint64_t)page_map_level_4_b)
+            fail("extended-state-denial-peer-controls");
+        serial_puts("LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n");
+        serial_puts("LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1\n");
+        finish(0x10);
+    }
+#endif
     if (capability_reuse_state == 0 && current_subject == 2 && number == 10) {
         uint64_t got = leanos_capability_reuse_demo(
             capability_reuse_state, 1, arg0, arg1, arg2);
@@ -1178,7 +1202,9 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
-#ifdef LEANOS_PREEMPTION_SCENARIO
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    serial_puts("LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
+#elif defined(LEANOS_PREEMPTION_SCENARIO)
     serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 #else
     serial_puts("LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\n");
@@ -1224,7 +1250,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts("LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS\n");
     check_cross_bank_negative();
     check_initial_b_frame_negative();
-#ifdef LEANOS_PREEMPTION_SCENARIO
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    current_subject = 1;
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    serial_puts("LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=x87 expected-vector=7\n");
+    enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_PREEMPTION_SCENARIO)
     arm_timer();
     enter_user(user_a_entry, user_a_stack_top);
 #else

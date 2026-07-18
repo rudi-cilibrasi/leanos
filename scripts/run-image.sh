@@ -5,7 +5,9 @@ qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
 limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
-if [[ "$scenario" == preemption ]]; then
+if [[ "$scenario" == extended-state ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-extended-state.iso"
+elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
 elif [[ "$scenario" == entry-adversarial ]]; then
   default_image="build/boot/leanos-${version}-x86_64-entry-adversarial.iso"
@@ -29,7 +31,9 @@ expected="$(mktemp)"; without_allocation="$(mktemp)"
 trap 'rm -f "$expected" "$without_allocation"' EXIT
 corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
 [[ -f "$corpus" ]] || { echo "error: oracle corpus '$corpus' not found" >&2; exit 1; }
-if [[ "$scenario" == preemption ]]; then
+if [[ "$scenario" == extended-state ]]; then
+  echo 'LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts' > "$expected"
+elif [[ "$scenario" == preemption ]]; then
   echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap' > "$expected"
 else
   echo 'LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap' > "$expected"
@@ -46,7 +50,13 @@ printf '%s\n' \
   'LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS' \
   'LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS' \
   'LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS' >> "$expected"
-if [[ "$scenario" == preemption ]]; then
+if [[ "$scenario" == extended-state ]]; then
+printf '%s\n' \
+  'LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=x87 expected-vector=7' \
+  'LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=7 instruction=x87 bank-write=prevented cleanup=complete peer=2' \
+  'LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved' \
+  'LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1' >> "$expected"
+elif [[ "$scenario" == preemption ]]; then
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
   'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' \

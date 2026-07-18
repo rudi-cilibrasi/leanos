@@ -169,8 +169,13 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
   echo "error: resumable context A does not occupy the reviewed 160-byte image" >&2
   exit 1
 }
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 7 ]]
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 8 ]] || {
+  echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
+}
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S
+grep -Fq 'extended_state_restore_peer:' boot/boot.S
+grep -Fq 'call complete_interrupt_entry' boot/boot.S
+grep -Fq 'jmp user_return_epilogue' boot/boot.S
 grep -Fq 'cmp $0xbeef, %rax' boot/boot.S
 grep -Fq 'cmp $0xcafe, %rax' boot/boot.S
 grep -Fq 'lea saved_context_b(%rip), %rsi' boot/boot.S
