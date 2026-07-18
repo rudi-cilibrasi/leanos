@@ -197,8 +197,10 @@ The accepted boot-reservation manifest now carries distinct
 initialization rejects non-adjacency or overlap with page tables, descriptor
 tables, the separate double-fault stack reservation, or embedded user images;
 the enclosing loaded-image reservation intentionally contains both. Forced
-overflow through IST1 remains future integration work.
-No stable security claim is advertised for this checkpoint.
+overflow through IST1 remains future integration work. The stable
+`SC-PRIVILEGE-ENTRY-STACK` claim covers only accepted authorization in this
+Lean layout/budget model. [ADR 0010](adr/0010-guarded-privilege-entry-stack.md)
+records the separate checked machine evidence and its trusted boundary.
 
 ## Proof, tests, and trusted assumptions
 
