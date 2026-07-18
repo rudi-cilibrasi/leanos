@@ -14,6 +14,39 @@ models, while QEMU tests selected compiled integration paths.
 
 ## Current status
 
+The evidence paths meet in the repository, but they do not carry the same
+claim. In particular, the compiled path crosses a trusted, unproved boundary:
+
+```mermaid
+flowchart TB
+    M["Lean executable models"] --> T["Theorem statements<br/>and proof terms"]
+    T --> K["Lean elaborator<br/>and kernel"]
+    K --> P["Lean-proved<br/>model properties"]
+
+    M --> G
+    subgraph TCB["Trusted / unproved implementation and execution boundary"]
+        direction TB
+        G["Lean code generation<br/>and generated C"]
+        B["Runtime shim, handwritten C/assembly,<br/>compiler, linker, and boot chain"]
+        Q["QEMU/TCG and assumed<br/>x86-64/device semantics"]
+        G --> B --> Q
+    end
+
+    Q --> O["QEMU-tested<br/>finite scenario observations"]
+    P -. "no refinement theorem" .-> O
+
+    classDef proved fill:#d5f5e3,stroke:#18794e,color:#111
+    classDef tested fill:#dbeafe,stroke:#2563eb,color:#111
+    classDef trusted fill:#fff3cd,stroke:#9a6700,color:#111
+    class P proved
+    class O tested
+    class G,B,Q trusted
+```
+
+The dashed edge marks the missing model-to-binary refinement theorem; it does
+not turn the QEMU observations into proof. The trusted nodes identify
+components whose correctness is assumed when interpreting the tested path.
+
 ### QEMU-tested behavior
 
 The CI image boots headlessly on a single emulated x86-64 `q35` CPU under TCG.
