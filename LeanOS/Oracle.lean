@@ -155,9 +155,13 @@ def vectors : List Vector := [
   capabilityReuse "capability-reuse.fresh-generation" 2 1 (3 * 65536) 0xCAFE 0xBEEF,
   capabilityReuse "capability-reuse.wrong-subject" 2 0 (3 * 65536) 0xCAFE 0xBEEF,
   capabilityReuse "capability-reuse.malformed-generation" 2 1 18446744073709551615
-    0xCAFE 0xBEEF]
+    0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.wrong-kind" 3 1 (4 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.generation-exhausted" 4 1 0 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.boundary-payload" 2 1 (3 * 65536)
+    18446744073709551615 18446744073709551615]
 
-theorem corpus_shape : vectors.length = 81 := by decide
+theorem corpus_shape : vectors.length = 84 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -199,7 +203,9 @@ theorem blocking_ipc_scenario_agrees :
 theorem capability_reuse_scenario_agrees :
     (vectors[75]).expected = 1 ∧ (vectors[76]).expected = 0 ∧
     (vectors[77]).expected = 0 ∧ (vectors[78]).expected = 1 ∧
-    (vectors[79]).expected = 0 ∧ (vectors[80]).expected = 0 := by
+    (vectors[79]).expected = 0 ∧ (vectors[80]).expected = 0 ∧
+    (vectors[81]).expected = 0 ∧ (vectors[82]).expected = 0 ∧
+    (vectors[83]).expected = 1 := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=
