@@ -6,6 +6,7 @@ import LeanOS.X86PageTable
 import LeanOS.Syscall
 import LeanOS.FailStop
 import LeanOS.InterruptEntry
+import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 
 /-! # Stable security-claim contract
@@ -375,6 +376,19 @@ theorem user_return_rejection_failstop state request reason proposals
       FailStop.runOperations next proposals = next := by
   exact FailStop.rejected_user_return_composite_atomicity state request reason proposals
     hmode harmed hlive hrejected
+
+/-- SC-EXTENDED-STATE-DENIAL: a contained unsupported extended-state event is
+confined to the authoritative current subject and requires the exact accepted
+fail-closed control policy and live address-space binding. -/
+theorem extended_state_denial_confined state event subject
+    (h : (ExtendedState.classify state event).result = .denied subject) :
+    subject = state.currentSubject ∧
+      ExtendedState.Denied state.features state.controls ∧
+      event.origin = .user ∧
+      event.normalizedSubject = state.currentSubject ∧
+      event.normalizedAddressSpace = state.activeAddressSpace ∧
+      ExtendedState.ContextBound state := by
+  exact ExtendedState.denied_subject_confined state event subject h
 
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps

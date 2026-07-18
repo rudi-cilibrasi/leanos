@@ -221,6 +221,12 @@ pair each bounded subject-local slot with its never-reused capability identity,
 so clearing or replacing a slot cannot make an old handle authorize the new
 occupant.
 
+The finite [user extended-state denial model](docs/extended-state-denial.md)
+requires an explicit fail-closed CR0/CR4 policy before modeled user return and
+confines typed x87/MMX/SIMD denial to the authoritative current subject. Machine
+control-state normalization and exception delivery remain trusted integration
+work rather than theorem claims.
+
 The physical-frame allocator reference model and its representation,
 complexity, initialization assumptions, proved invariants, and capability
 ownership boundary are documented in
