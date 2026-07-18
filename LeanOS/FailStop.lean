@@ -2154,6 +2154,46 @@ def runOperations (state : CompositeState) : List Operation → CompositeState
   | [] => state
   | operation :: rest => runOperations (gate state operation).state rest
 
+/-- The local proof obligation contributed by one public operation to the
+universal runtime-preservation theorem.  Keeping this predicate independent of
+a particular pre-state lets operation-family proofs be registered once and
+then composed over arbitrary mixed traces. -/
+def OperationPreservesRuntimeWellFormed (operation : Operation) : Prop :=
+  ∀ state, RuntimeWellFormed state →
+    RuntimeWellFormed (gate state operation).state
+
+/-- Per-operation preservation composes over the actual sequential gate.  This
+is the reusable induction boundary for the universal theorem: after every
+`Operation` constructor satisfies `OperationPreservesRuntimeWellFormed`, every
+finite mixed runtime trace preserves the global invariant without unfolding
+`runOperations` in each operation-family proof. -/
+theorem runOperations_preserves_runtimeWellFormed state operations
+    (hstate : RuntimeWellFormed state)
+    (hoperations : ∀ operation, operation ∈ operations →
+      OperationPreservesRuntimeWellFormed operation) :
+    RuntimeWellFormed (runOperations state operations) := by
+  induction operations generalizing state with
+  | nil => simpa [runOperations] using hstate
+  | cons operation rest ih =>
+      simp only [runOperations]
+      apply ih
+      · exact hoperations operation (by simp)
+          state hstate
+      · intro candidate hmember
+        exact hoperations candidate (by simp [hmember])
+
+/-- The two fully covered control constructors discharge the new reusable
+operation obligation directly. -/
+theorem selectUserReturn_operationPreservesRuntimeWellFormed purpose :
+    OperationPreservesRuntimeWellFormed (.selectUserReturn purpose) := by
+  intro state hstate
+  exact gate_selectUserReturn_preserves_runtimeWellFormed state purpose hstate
+
+theorem restart_operationPreservesRuntimeWellFormed :
+    OperationPreservesRuntimeWellFormed .restart := by
+  intro state hstate
+  exact gate_restart_preserves_runtimeWellFormed state hstate
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
