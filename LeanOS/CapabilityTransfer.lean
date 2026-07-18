@@ -1031,90 +1031,142 @@ theorem offer_accepted_preserves_wellFormed state caller endpointSlot sourceSlot
     (haccepted : (offer state caller endpointSlot sourceSlot payload rights).result = .accepted) :
     WellFormed (offer state caller endpointSlot sourceSlot payload rights).state := by
   rcases hstate with ⟨hendpoint, hpending⟩
-  simp only [offer] at haccepted ⊢
-  split at haccepted ⊢ <;> try contradiction
-  next endpointCap hendpointLookup =>
-    split at haccepted ⊢ <;> try contradiction
-    split at haccepted ⊢ <;> try contradiction
-    split at haccepted ⊢ <;> try contradiction
-    split at haccepted ⊢ <;> try contradiction
-    split at haccepted ⊢ <;> try contradiction
-    split at haccepted ⊢ <;> try contradiction
-    next source hsourceLookup =>
-      split at haccepted ⊢ <;> try contradiction
-      split at haccepted ⊢ <;> try contradiction
-      split at haccepted ⊢ <;> try contradiction
-      cases haccepted
-      simp only [record]
-      constructor
-      · rcases hendpoint with ⟨hcaps, hissued, hmail, hdead, hhistory⟩
-        have hsourceSlot : state.capabilities.slots caller sourceSlot = some source :=
-          Capability.lookup_found_slot state.capabilities caller sourceSlot source hsourceLookup
-        refine ⟨reserve_preserves_capabilityWellFormed state.capabilities source rights
-            hcaps ⟨caller, sourceSlot, hsourceSlot⟩ (by simp_all) (by simp_all), ?_, ?_, ?_, ?_⟩
-        · simpa using hissued
-        · intro object envelope hmailbox
-          by_cases heq : object = endpointCap.object
-          · subst object
-            simp [EndpointIPC.setOption] at hmailbox
-            rcases hmailbox with rfl
-            refine ⟨by simp_all, by simp_all, rfl, ?_⟩
-            simp [EndpointIPC.appendHistory]
-          · have hold := hmail object envelope (by
-                  simpa [EndpointIPC.setOption, heq] using hmailbox)
-            simpa [EndpointIPC.appendHistory, heq] using hold
-        · intro object hnotLive
-          by_cases heq : object = endpointCap.object
-          · subst object
-            exact False.elim (hnotLive (by simp_all))
-          · simpa [EndpointIPC.setOption, heq] using hdead object hnotLive
-        · intro object envelope hin
-          by_cases heq : object = endpointCap.object
-          · subst object
-            simp [EndpointIPC.appendHistory] at hin
-            rcases hin with hin | hin
-            · exact hhistory endpointCap.object envelope hin
-            · simpa using hin
-          · exact hhistory object envelope (by
-                  simpa [EndpointIPC.appendHistory, heq] using hin)
-      · intro endpoint transfer hnextPending
-        by_cases heq : endpoint = endpointCap.object
-        · subst endpoint
-          simp [setPending] at hnextPending
-          rcases hnextPending with rfl
-          have hendpointSlot := Capability.lookup_found_slot state.capabilities caller
-            endpointSlot endpointCap hendpointLookup
-          have hsourceSlot := Capability.lookup_found_slot state.capabilities caller
-            sourceSlot source hsourceLookup
-          have hendpointFacts := hendpoint.1.1 caller endpointSlot endpointCap hendpointSlot
-          have hsourceFacts := hendpoint.1.1 caller sourceSlot source hsourceSlot
-          refine ⟨⟨{ endpoint := endpointCap.object, sender := caller, payload }, ?_, rfl, rfl⟩,
-            ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-          · simp [EndpointIPC.setOption]
-          · exact hsourceFacts.2.1
-          · exact hsourceFacts.2.2.1
-          · simpa using ‹Capability.rightsValid source.kind rights = true›
-          · simp
-          · exact ⟨source.parent, source.rights, hsourceFacts.2.2.2.2.2.1,
-              by simpa using ‹Capability.rightsSubset rights source.rights = true›⟩
-          · exact hsourceFacts.2.2.2.2.1
-          · exact Nat.lt_succ_self _
-          · intro subject slot cap hslot heqIdentity
-            have hold := hendpoint.1.3 subject slot cap hslot caller sourceSlot source
-              hsourceSlot heqIdentity
-            exact Nat.not_lt_of_ge (Nat.le_of_eq hold.2) hsourceFacts.2.2.2.2.1
-          · intro other otherTransfer hother hidentity
-            by_cases hotherEq : other = endpointCap.object
-            · exact hotherEq
-            · simp [setPending, hotherEq] at hother
-              have hold := hpending other otherTransfer hother
-              exact False.elim (Nat.ne_of_lt hold.2.2.2.2.2.2.2.1 hidentity)
-        · have hold := hpending endpoint transfer (by
-                simpa [setPending, heq] using hnextPending)
-          rcases hold with ⟨⟨envelope, hmailbox, henvelope⟩, hrest⟩
-          refine ⟨⟨envelope, ?_, henvelope⟩, ?_⟩
-          · simpa [EndpointIPC.setOption, heq] using hmailbox
-          · simpa [Nat.ne_of_lt hrest.2.2.2.2.2.2.1] using hrest
+  cases hendpointLookup : Capability.lookup state.capabilities caller endpointSlot with
+  | invalidSubject => simp [offer, hendpointLookup, reject] at haccepted
+  | staleSlot => simp [offer, hendpointLookup, reject] at haccepted
+  | found endpointCap =>
+    by_cases hkind : endpointCap.kind != .endpoint
+    · simp [offer, hendpointLookup, hkind, reject] at haccepted
+    · by_cases hsend : !endpointCap.rights.send
+      · simp [offer, hendpointLookup, hkind, hsend, reject] at haccepted
+      · by_cases hobject : state.capabilities.objects endpointCap.object != true
+        · simp [offer, hendpointLookup, hkind, hsend, hobject, reject] at haccepted
+        · by_cases hendpointKind :
+              state.capabilities.kinds endpointCap.object != some .endpoint
+          · simp [offer, hendpointLookup, hkind, hsend, hobject, hendpointKind,
+              reject] at haccepted
+          · by_cases hfull : (state.mailbox endpointCap.object).isSome
+            · simp [offer, hendpointLookup, hkind, hsend, hobject, hendpointKind,
+                hfull, reject] at haccepted
+            · cases hsourceLookup :
+                Capability.lookup state.capabilities caller sourceSlot with
+              | invalidSubject =>
+                  simp [offer, hendpointLookup, hkind, hsend, hobject, hendpointKind,
+                    hfull, hsourceLookup, reject] at haccepted
+              | staleSlot =>
+                  simp [offer, hendpointLookup, hkind, hsend, hobject, hendpointKind,
+                    hfull, hsourceLookup, reject] at haccepted
+              | found source =>
+                by_cases hgrant : !source.rights.grant
+                · simp [offer, hendpointLookup, hkind, hsend, hobject, hendpointKind,
+                    hfull, hsourceLookup, hgrant, reject] at haccepted
+                · by_cases hvalid : !Capability.rightsValid source.kind rights
+                  · simp [offer, hendpointLookup, hkind, hsend, hobject, hendpointKind,
+                      hfull, hsourceLookup, hgrant, hvalid, reject] at haccepted
+                  · by_cases hsubset : !Capability.rightsSubset rights source.rights
+                    · simp [offer, hendpointLookup, hkind, hsend, hobject,
+                        hendpointKind, hfull, hsourceLookup, hgrant, hvalid, hsubset,
+                        reject] at haccepted
+                    · simp only [offer, hendpointLookup, hkind, hsend, hobject,
+                        hendpointKind, hfull, hsourceLookup, hgrant, hvalid, hsubset,
+                        Bool.false_eq_true, ↓reduceIte] at haccepted ⊢
+                      cases haccepted
+                      simp only [record]
+                      constructor
+                      · rcases hendpoint with ⟨hcaps, hissued, hmail, hdead, hhistory⟩
+                        have hsourceSlot : state.capabilities.slots caller sourceSlot = some source :=
+                          Capability.lookup_found_slot state.capabilities caller sourceSlot source
+                            hsourceLookup
+                        refine ⟨reserve_preserves_capabilityWellFormed state.capabilities source
+                            rights hcaps ⟨caller, sourceSlot, hsourceSlot⟩
+                            (by simp_all) (by simp_all), ?_, ?_, ?_, ?_⟩
+                        · simpa using hissued
+                        · intro object envelope hmailbox
+                          by_cases heq : object = endpointCap.object
+                          · subst object
+                            simp [EndpointIPC.setOption] at hmailbox
+                            rcases hmailbox with rfl
+                            refine ⟨by simp_all, by simp_all, rfl, ?_⟩
+                            simp [EndpointIPC.appendHistory]
+                          · have hold := hmail object envelope (by
+                                  simpa [EndpointIPC.setOption, heq] using hmailbox)
+                            simpa [EndpointIPC.appendHistory, heq] using hold
+                        · intro object hnotLive
+                          by_cases heq : object = endpointCap.object
+                          · subst object
+                            exact False.elim (hnotLive (by simp_all))
+                          · simpa [EndpointIPC.setOption, heq] using hdead object hnotLive
+                        · intro object envelope hin
+                          by_cases heq : object = endpointCap.object
+                          · subst object
+                            simp [EndpointIPC.appendHistory] at hin
+                            rcases hin with hin | hin
+                            · exact hhistory endpointCap.object envelope hin
+                            · subst envelope
+                              rfl
+                          · exact hhistory object envelope (by
+                                  simpa [EndpointIPC.appendHistory, heq] using hin)
+                      · intro endpoint transfer hnextPending
+                        by_cases heq : endpoint = endpointCap.object
+                        · subst endpoint
+                          simp [setPending] at hnextPending
+                          rcases hnextPending with rfl
+                          have hendpointSlot := Capability.lookup_found_slot
+                            state.capabilities caller endpointSlot endpointCap hendpointLookup
+                          have hsourceSlot := Capability.lookup_found_slot state.capabilities caller
+                            sourceSlot source hsourceLookup
+                          have hendpointFacts :=
+                            hendpoint.1.1 caller endpointSlot endpointCap hendpointSlot
+                          have hsourceFacts :=
+                            hendpoint.1.1 caller sourceSlot source hsourceSlot
+                          refine ⟨⟨{ endpoint := endpointCap.object, sender := caller, payload },
+                            ?_, rfl, rfl⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                          · simp [EndpointIPC.setOption]
+                          · exact hsourceFacts.2.1
+                          · exact hsourceFacts.2.2.1
+                          · simpa using hvalid
+                          · simp
+                          · exact ⟨source.parent, source.rights,
+                              by simpa [Nat.ne_of_lt hsourceFacts.2.2.2.2.1] using
+                                hsourceFacts.2.2.2.2.2.1,
+                              by simpa using hsubset⟩
+                          · exact hsourceFacts.2.2.2.2.1
+                          · exact Nat.lt_succ_self _
+                          · intro subject slot cap hslot heqIdentity
+                            have hcapFacts := hendpoint.1.1 subject slot cap hslot
+                            exact Nat.ne_of_lt hcapFacts.2.2.2.2.1 heqIdentity
+                          · intro other otherTransfer hother hidentity
+                            by_cases hotherEq : other = endpointCap.object
+                            · exact hotherEq
+                            · simp [setPending, hotherEq] at hother
+                              have hold := hpending other otherTransfer hother
+                              exact False.elim
+                                (Nat.ne_of_lt hold.2.2.2.2.2.2.2.1 hidentity)
+                        · have hold := hpending endpoint transfer (by
+                                simpa [setPending, heq] using hnextPending)
+                          rcases hold with ⟨⟨envelope, hmailbox, henvelope⟩, hrest⟩
+                          refine ⟨⟨envelope, ?_, henvelope⟩, ?_⟩
+                          · simpa [EndpointIPC.setOption, heq] using hmailbox
+                          · rcases hrest with ⟨hobjectLive, hobjectKind, hrightsValid,
+                              hderivation, hparent, hparentLt, hidentityLt, hslots,
+                              hpendingUnique⟩
+                            refine ⟨hobjectLive, hobjectKind, hrightsValid, ?_, ?_, hparentLt,
+                              Nat.lt_succ_of_lt hidentityLt, hslots, ?_⟩
+                            · simpa [Nat.ne_of_lt hidentityLt] using hderivation
+                            · rcases hparent with
+                                ⟨parentParent, parentRights, hparentEntry, hparentRights⟩
+                              exact ⟨parentParent, parentRights,
+                                by simpa [Nat.ne_of_lt (Nat.lt_trans hparentLt hidentityLt)] using
+                                  hparentEntry,
+                                hparentRights⟩
+                            · intro other otherTransfer hother hidentity
+                              by_cases hotherEq : other = endpointCap.object
+                              · subst other
+                                simp [setPending] at hother
+                                rcases hother with rfl
+                                exact False.elim (Nat.ne_of_lt hidentityLt hidentity.symm)
+                              · exact hpendingUnique other otherTransfer
+                                  (by simpa [setPending, hotherEq] using hother) hidentity
 
 /-- The canonical word boundary inherits whole-transfer preservation from the
 raw accepted offer selected after both authority-bearing handles resolve. -/
@@ -1129,10 +1181,10 @@ theorem offerWords_accepted_preserves_wellFormed state caller endpointWord sourc
       payload rights haccepted
   have hpreserved := offer_accepted_preserves_wellFormed state caller endpoint.handle.slot
     source.handle.slot payload rights hstate hraw
-  simp only [offerWords, hendpoint, hsource]
-  split
-  · contradiction
-  · exact hpreserved
+  by_cases hgeneration : state.capabilities.nextIdentity = 0 ∨
+      CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity
+  · simp [offerWords, hendpoint, hsource, hgeneration, reject] at haccepted
+  · simpa [offerWords, hendpoint, hsource, hgeneration] using hpreserved
 
 set_option maxHeartbeats 800000 in
 theorem accept_rejected_unchanged state caller endpointSlot destinationSlot reason
@@ -1245,8 +1297,7 @@ theorem accept_preserves_wellFormed state caller endpointSlot destinationSlot
           rcases hold with ⟨⟨prior, hpriorMailbox, hpriorEndpoint, hpriorSender⟩, hrest⟩
           have hne : endpoint ≠ endpointCap.object := by
             intro heq
-            subst endpoint
-            rw [hpriorEndpoint, hpending] at holdPending
+            rw [heq, hpending] at holdPending
             contradiction
           refine ⟨⟨prior, ?_, hpriorEndpoint, hpriorSender⟩, ?_⟩
           · simpa [deliverData, record, EndpointIPC.setOption, hne] using hpriorMailbox
