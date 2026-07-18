@@ -180,12 +180,24 @@ binding retains the exact normalized frame and authoritative layout, with
 `remaining + required = usable`. This is a modeled fact; the C adapter and
 final binary correspondence remain checked evidence.
 
+The accepted normal and preemption images additionally paint the unused
+ordinary-entry stack before the first CPL3 dispatch. At each scenario's final
+accepted checkpoint they scan upward from the lower bound, require at least
+the 4 KiB static safety margin to remain untouched, and emit a bounded
+`ENTRY-HIGH-WATER` record. The runner validates the arithmetic and retains the
+record as a CI artifact. The blocking-IPC image records the exercised syscall
+path; the preemption image records the cumulative timer/context-switch
+scenario. This diagnostic can miss writes that reproduce the paint word and
+does not isolate every transitive call or replace the final-ELF/compiler gate.
+User-page-fault and kernel-diagnostic path-specific observations remain future
+integration work.
+
 The accepted boot-reservation manifest now carries distinct
 `.ordinaryEntryGuard` and `.ordinaryEntryStack` identities. Allocator
 initialization rejects non-adjacency or overlap with page tables, descriptor
 tables, the separate double-fault stack reservation, or embedded user images;
-the enclosing loaded-image reservation intentionally contains both. High-water
-observations and forced overflow through IST1 remain future integration work.
+the enclosing loaded-image reservation intentionally contains both. Forced
+overflow through IST1 remains future integration work.
 No stable security claim is advertised for this checkpoint.
 
 ## Proof, tests, and trusted assumptions

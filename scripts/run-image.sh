@@ -14,6 +14,7 @@ else
 fi
 image="${1:-$default_image}"
 log="${LEANOS_SERIAL_LOG:-build/boot/serial.log}"
+high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 and coreutils=9.4-3ubuntu6.2" >&2; exit 1; }; done
 [[ "$limit" =~ ^[1-9][0-9]*$ ]] || { echo "error: timeout must be a positive integer" >&2; exit 1; }
@@ -128,5 +129,25 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
   fi
 done
 sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
+if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
+  expected_high_water_path="syscall"
+  [[ "$scenario" == preemption ]] && expected_high_water_path="timer-context-switch"
+  mkdir -p "$(dirname "$high_water_artifact")"
+  grep '^LEANOS/11 ENTRY-HIGH-WATER ' "$log" > "$high_water_artifact" || {
+    echo "failure_class=entry-stack-high-water: observation missing" >&2; exit 1;
+  }
+  mapfile -t high_water_lines < "$high_water_artifact"
+  if [[ ${#high_water_lines[@]} -ne 1 ||
+        ! "${high_water_lines[0]}" =~ ^LEANOS/11\ ENTRY-HIGH-WATER\ path=${expected_high_water_path}\ observed-bytes=([0-9]+)\ usable-bytes=16384\ margin-bytes=([0-9]+)\ authority=diagnostic\ result=PASS$ ]]; then
+    echo "failure_class=entry-stack-high-water: malformed or duplicate observation" >&2
+    exit 1
+  fi
+  observed="${BASH_REMATCH[1]}"; margin="${BASH_REMATCH[2]}"
+  if (( observed < 176 || observed + margin != 16384 || margin < 4096 )); then
+    echo "failure_class=entry-stack-high-water: invalid observed bound" >&2
+    exit 1
+  fi
+  sed -i '/^LEANOS\/11 ENTRY-HIGH-WATER /d' "$without_allocation"
+fi
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
 echo "LeanOS boot smoke test passed; guest success and complete protocol observed; serial log: $log"

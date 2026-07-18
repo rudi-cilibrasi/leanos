@@ -121,6 +121,9 @@ static unsigned blocking_ipc_step;
 static unsigned capability_reuse_state;
 static unsigned supervisor_probe;
 static volatile unsigned ordinary_entry_active;
+#ifdef LEANOS_ENTRY_HIGH_WATER
+static uint64_t entry_stack_high_water_pattern = UINT64_C(0x6c65616e6f735741);
+#endif
 #ifdef LEANOS_ENTRY_ADVERSARIAL
 static unsigned entry_adversarial_step;
 #endif
@@ -135,6 +138,11 @@ static void arm_timer(void);
 static uint64_t stack_marker(uint64_t stack_pointer);
 static void check_cross_bank_negative(void);
 static void check_initial_b_frame_negative(void);
+#ifdef LEANOS_ENTRY_HIGH_WATER
+static void initialize_entry_stack_high_water(void);
+static __attribute__((noinline)) void report_entry_stack_high_water(
+    const char *path);
+#endif
 
 static uint64_t idt_target(const struct idt_entry *entry) {
     return entry->low | (uint64_t)entry->middle << 16 | (uint64_t)entry->high << 32;
@@ -763,6 +771,9 @@ static void privilege_init(void) {
     tss.rsp0 = (uint64_t)__entry_stack_end;
     tss.ist[0] = (uint64_t)__df_ist_stack_end;
     tss.iomap = sizeof(tss);
+#ifdef LEANOS_ENTRY_HIGH_WATER
+    initialize_entry_stack_high_water();
+#endif
     *(uint64_t *)__df_ist_stack_start = 0xd0b1efa17badc0deull;
     *(uint64_t *)((uint64_t)__df_ist_stack_end - 128u) =
         0x15a1c0decafef00dull;
@@ -781,6 +792,35 @@ static void privilege_init(void) {
     __asm__ volatile ("lidt %0" : : "m"(idtr));
     load_tss();
 }
+
+#ifdef LEANOS_ENTRY_HIGH_WATER
+/* This painted-stack scan is deliberately diagnostic rather than
+   authoritative.  The final-ELF/compiler budget gate remains the acceptance
+   criterion; normal QEMU runs retain this bounded observation as evidence
+   that the exercised path stayed above the declared safety margin. */
+static void initialize_entry_stack_high_water(void) {
+    volatile uint64_t *cursor = (volatile uint64_t *)__entry_stack_start;
+    volatile uint64_t *past = (volatile uint64_t *)__entry_stack_end;
+    while (cursor < past) *cursor++ = entry_stack_high_water_pattern;
+}
+
+static __attribute__((noinline)) void report_entry_stack_high_water(
+    const char *path) {
+    volatile uint64_t *cursor = (volatile uint64_t *)__entry_stack_start;
+    volatile uint64_t *past = (volatile uint64_t *)__entry_stack_end;
+    while (cursor < past && *cursor == entry_stack_high_water_pattern) ++cursor;
+    uint64_t used = (uint64_t)__entry_stack_end - (uint64_t)cursor;
+    uint64_t usable = (uint64_t)__entry_stack_end -
+        (uint64_t)__entry_stack_start;
+    if (used < 176 || used > usable || usable - used < 4096)
+        fail("entry-stack-high-water");
+    serial_puts("LEANOS/11 ENTRY-HIGH-WATER path="); serial_puts(path);
+    serial_puts(" observed-bytes="); serial_u64(used);
+    serial_puts(" usable-bytes="); serial_u64(usable);
+    serial_puts(" margin-bytes="); serial_u64(usable - used);
+    serial_puts(" authority=diagnostic result=PASS\n");
+}
+#endif
 
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                          uint64_t arg2, uint64_t saved_cs,
@@ -949,6 +989,9 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if (got != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_DELIVER_B].expected || arg2 != 1)
             fail("blocking-ipc-model-delivery");
         serial_puts("LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\n");
+#ifdef LEANOS_ENTRY_HIGH_WATER
+        report_entry_stack_high_water("syscall");
+#endif
         serial_puts("LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1\n");
         finish(0x10);
     }
@@ -966,6 +1009,9 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             saved_context_a[16] != 0x23 || saved_context_a[19] != 0x1b ||
             saved_context_b[16] != 0x23 || saved_context_b[19] != 0x1b)
             fail("saved-context");
+#ifdef LEANOS_ENTRY_HIGH_WATER
+        report_entry_stack_high_water("timer-context-switch");
+#endif
         serial_puts("LEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate\n");
         serial_puts("LEANOS/5 FINAL status=PASS ticks=2\n");
         finish(0x10);
