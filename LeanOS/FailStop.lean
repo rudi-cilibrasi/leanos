@@ -475,6 +475,20 @@ def CompositeState.Coherent (state : CompositeState) : Prop :=
   (∀ object envelope, state.ipc.endpoints.mailbox object = some envelope →
     state.lifecycle.capabilities.subjects envelope.sender = true)
 
+/-- The global invariant advertised by the composite runtime boundary.  It
+collects every invariant represented in `CompositeState`; cross-view equality
+is explicit rather than inferred from repair after a transition. -/
+def RuntimeWellFormed (state : CompositeState) : Prop :=
+  state.Coherent ∧
+  WellFormed state.execution ∧
+  SubjectLifecycle.WellFormed state.lifecycle ∧
+  Capability.WellFormed state.capabilities ∧
+  VirtualMapping.LifecycleWellFormed state.virtualMemory ∧
+  IPCSyscall.WellFormed state.ipc ∧
+  Scheduler.WellFormed state.scheduler ∧
+  Preemption.WellFormed state.preemption ∧
+  (state.execution.returnAuthorityArmed = true → state.ReturnPlanLive = true)
+
 private def restrictMappings (lifecycle : SubjectLifecycle.State)
     (mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
       Option VirtualMapping.Mapping) :=
@@ -606,9 +620,9 @@ inductive Operation where
   | interrupt (frame : Interrupt.HardwareFrame)
   | selectUserReturn (purpose : Interrupt.ReturnPurpose)
   | userReturn (request : Interrupt.UserReturnRequest)
-  | syscall (context : Syscall.TrustedContext) (call : Syscall.UntrustedCall)
+  | syscall (call : Syscall.UntrustedCall)
   | preempt (frame : Interrupt.HardwareFrame)
-  | ipc (context : IPCSyscall.TrustedContext) (call : IPCSyscall.Call)
+  | ipc (call : IPCSyscall.Call)
   | capabilityCopy (actor source destination destinationSlot : Nat)
       (rights : Capability.Rights)
   | capabilityRevoke (actor authoritySlot victim victimSlot : Nat)
@@ -621,13 +635,61 @@ inductive Operation where
   | scheduleRemove (subject : Nat)
   | scheduleNext | scheduleYield | scheduleTick | terminateCurrent | restart
 
+inductive UserReturnReply where
+  | accepted
+  | fatal (record : HaltRecord)
+  | alreadyHalted (record : HaltRecord)
+  deriving DecidableEq, Repr
+
+inductive OperationReply where
+  | interrupt (action : EntryAction)
+  | returnSelection (armed : Bool)
+  | userReturn (reply : UserReturnReply)
+  | syscall (reply : Syscall.Reply)
+  | preempt (action : EntryAction)
+  | ipc (reply : IPCSyscall.Reply)
+  | capability (result : Capability.Result)
+  | map (result : VirtualMapping.Result VirtualMapping.MapError)
+  | unmap (result : VirtualMapping.Result VirtualMapping.UnmapError)
+  | createSubject (result : SubjectLifecycle.Result SubjectLifecycle.CreateError)
+  | terminateSubject (result : SubjectLifecycle.Result SubjectLifecycle.TerminateError)
+  | scheduler (result : Scheduler.Result)
+  | restarted
+  deriving DecidableEq, Repr
+
 inductive GateResult where
-  | accepted | rejectedBusy | rejectedHalted (record : HaltRecord)
+  | completed (reply : OperationReply)
+  | rejectedBusy
+  | rejectedHalted (record : HaltRecord)
   deriving DecidableEq, Repr
 
 structure GateOutcome where
   state : CompositeState
   result : GateResult
+
+/-- The public operation vocabulary carries only untrusted scalar call data.
+Privileged identity is projected from the authoritative execution latch. -/
+def CompositeState.syscallContext (state : CompositeState) : Syscall.TrustedContext :=
+  { caller := state.execution.core.context.currentSubject
+    activeAddressSpace := state.execution.core.context.activeAddressSpace }
+
+def CompositeState.ipcContext (state : CompositeState) : IPCSyscall.TrustedContext :=
+  { caller := state.execution.core.context.currentSubject
+    activeAddressSpace := state.execution.core.context.activeAddressSpace }
+
+@[simp] theorem syscallContext_caller (state : CompositeState) :
+    state.syscallContext.caller = state.execution.core.context.currentSubject := rfl
+
+@[simp] theorem syscallContext_addressSpace (state : CompositeState) :
+    state.syscallContext.activeAddressSpace =
+      state.execution.core.context.activeAddressSpace := rfl
+
+@[simp] theorem ipcContext_caller (state : CompositeState) :
+    state.ipcContext.caller = state.execution.core.context.currentSubject := rfl
+
+@[simp] theorem ipcContext_addressSpace (state : CompositeState) :
+    state.ipcContext.activeAddressSpace =
+      state.execution.core.context.activeAddressSpace := rfl
 
 private def applyOperation (state : CompositeState) : Operation → CompositeState
   | .interrupt frame =>
@@ -641,8 +703,8 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
         if state.ReturnPlanLive then state.execution
         else { state.execution with returnAuthorityArmed := false }
       { state with execution := (completeUserReturn execution request).state }
-  | .syscall context call =>
-      let virtualMemory := (Syscall.dispatch state.virtualMemory context call).state
+  | .syscall call =>
+      let virtualMemory := (Syscall.dispatch state.virtualMemory state.syscallContext call).state
       let installed := installLifecycle { state with virtualMemory }
         (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
       selectLiveReturnAuthority installed .syscallResume
@@ -657,7 +719,8 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
           let scheduled := installScheduler { entered with preemption } preemption.scheduler
           selectLiveReturnAuthority scheduled .schedulerRestore
       | _ => entered
-  | .ipc context call => { state with ipc := (IPCSyscall.dispatch state.ipc context call).state }
+  | .ipc call =>
+      { state with ipc := (IPCSyscall.dispatch state.ipc state.ipcContext call).state }
   | .capabilityCopy actor source destination destinationSlot rights =>
       installCapabilities state
         (Capability.copy state.capabilities actor source destination destinationSlot rights).state
@@ -692,6 +755,48 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
       installScheduler state (Scheduler.terminateCurrent state.scheduler).state
   | .restart => state
 
+/-- Exact typed observation of the subsystem transition selected by an
+operation.  Unlike the former generic `accepted`, this cannot erase an
+operation-specific rejection. -/
+private def operationReply (state : CompositeState) : Operation → OperationReply
+  | .interrupt frame => .interrupt (dispatchHardware state.execution frame).action
+  | .selectUserReturn purpose =>
+      .returnSelection (selectLiveReturnAuthority state purpose).execution.returnAuthorityArmed
+  | .userReturn request =>
+      let execution :=
+        if state.ReturnPlanLive then state.execution
+        else { state.execution with returnAuthorityArmed := false }
+      match (completeUserReturn execution request).action with
+      | .accepted _ => .userReturn .accepted
+      | .fatal record => .userReturn (.fatal record)
+      | .alreadyHalted record => .userReturn (.alreadyHalted record)
+  | .syscall call => .syscall (Syscall.dispatch state.virtualMemory state.syscallContext call).reply
+  | .preempt frame => .preempt (dispatchHardware state.execution frame).action
+  | .ipc call => .ipc (IPCSyscall.dispatch state.ipc state.ipcContext call).reply
+  | .capabilityCopy actor source destination destinationSlot rights =>
+      .capability
+        (Capability.copy state.capabilities actor source destination destinationSlot rights).result
+  | .capabilityRevoke actor authoritySlot victim victimSlot =>
+      .capability
+        (Capability.revoke state.capabilities actor authoritySlot victim victimSlot).result
+  | .capabilityRevokeSubtree actor authoritySlot victim victimSlot =>
+      .capability
+        (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).result
+  | .map actor slot addressSpace page permissions =>
+      .map (VirtualMapping.map state.virtualMemory actor slot addressSpace page permissions).result
+  | .unmap actor addressSpace page =>
+      .unmap (VirtualMapping.unmap state.virtualMemory actor addressSpace page).result
+  | .createSubject subject => .createSubject (SubjectLifecycle.create state.lifecycle subject).result
+  | .terminateSubject subject =>
+      .terminateSubject (SubjectLifecycle.terminate state.lifecycle subject).result
+  | .scheduleAdd subject => .scheduler (Scheduler.add state.scheduler subject).result
+  | .scheduleRemove subject => .scheduler (Scheduler.remove state.scheduler subject).result
+  | .scheduleNext => .scheduler (Scheduler.selectNext state.scheduler).result
+  | .scheduleYield => .scheduler (Scheduler.yield state.scheduler).result
+  | .scheduleTick => .scheduler (Scheduler.tick state.scheduler).result
+  | .terminateCurrent => .scheduler (Scheduler.terminateCurrent state.scheduler).result
+  | .restart => .restarted
+
 /-- A contained user fault is published to both scheduler views in the same
 composite step, so neither can select from the pre-termination lifecycle. -/
 theorem interrupt_synchronizes_lifecycle state frame :
@@ -714,9 +819,26 @@ theorem preempt_fatal_latches state frame reason
 subsystem transition internally. -/
 def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
   match state.execution.mode with
-  | .running => { state := applyOperation state operation, result := .accepted }
+  | .running =>
+      { state := applyOperation state operation, result := .completed (operationReply state operation) }
   | .handling _ => { state, result := .rejectedBusy }
   | .halted record => { state, result := .rejectedHalted record }
+
+/-- A completed syscall exposes exactly the reply produced under the
+kernel-selected caller and address space. -/
+theorem syscall_result_sound state call
+    (hmode : state.execution.mode = .running) :
+    (gate state (.syscall call)).result =
+      .completed (.syscall (Syscall.dispatch state.virtualMemory state.syscallContext call).reply) :=
+  by simp [gate, hmode, operationReply]
+
+/-- A completed IPC call likewise uses only the execution latch's identity;
+there is no public constructor capable of supplying another trusted context. -/
+theorem ipc_result_sound state call
+    (hmode : state.execution.mode = .running) :
+    (gate state (.ipc call)).result =
+      .completed (.ipc (IPCSyscall.dispatch state.ipc state.ipcContext call).reply) :=
+  by simp [gate, hmode, operationReply]
 
 /-- Initial dispatch is also represented by a typed composite step; syscall
 and timer paths reselect only after their final context update. -/
@@ -847,7 +969,7 @@ theorem rejected_user_return_composite_atomicity state request reason proposals
 
 theorem halted_never_accepts state record operation
     (hmode : state.execution.mode = .halted record) :
-    (gate state operation).result ≠ .accepted := by
+    ∀ reply, (gate state operation).result ≠ .completed reply := by
   simp [gate, hmode]
 
 /-- Terminal non-resumption over the complete typed composite step: no
@@ -855,7 +977,8 @@ subsystem transition is accepted and no component of the terminal state can
 change. -/
 theorem halted_terminal_non_resumption state record operation
     (hmode : state.execution.mode = .halted record) :
-    (gate state operation).state = state ∧ (gate state operation).result ≠ .accepted := by
+    (gate state operation).state = state ∧
+      ∀ reply, (gate state operation).result ≠ .completed reply := by
   simp [gate, hmode]
 
 theorem fatal_atomicity state frame reason
@@ -1008,11 +1131,10 @@ example (state : CompositeState) (record : HaltRecord)
 
 example (state : CompositeState) (record : HaltRecord)
     (hhalted : state.execution.mode = .halted record)
-    (syscallContext : Syscall.TrustedContext) (syscall : Syscall.UntrustedCall)
-    (ipcContext : IPCSyscall.TrustedContext) (ipc : IPCSyscall.Call)
+    (syscall : Syscall.UntrustedCall) (ipc : IPCSyscall.Call)
     (frame : Interrupt.HardwareFrame) :
     runOperations state [
-      .syscall syscallContext syscall, .preempt frame, .ipc ipcContext ipc,
+      .syscall syscall, .preempt frame, .ipc ipc,
       .capabilityRevoke 0 0 1 0, .unmap 0 0 0, .terminateSubject 0] = state := by
   simp [runOperations, gate, hhalted]
 

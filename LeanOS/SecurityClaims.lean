@@ -304,9 +304,6 @@ private def returnWitnessSyscallRequest : Interrupt.UserReturnRequest :=
     hardware := returnWitnessSyscallFrame
     purpose := .syscallResume }
 
-private def returnWitnessSyscallContext : Syscall.TrustedContext :=
-  { caller := 1, activeAddressSpace := 1 }
-
 private def returnWitnessSyscallCall : Syscall.UntrustedCall :=
   { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 }
 
@@ -318,7 +315,7 @@ theorem user_return_composite_entry_witness :
     let entered := (FailStop.gate returnWitnessComposite
       (.interrupt returnWitnessSyscallFrame)).state
     let called := (FailStop.gate entered
-      (.syscall returnWitnessSyscallContext returnWitnessSyscallCall)).state
+      (.syscall returnWitnessSyscallCall)).state
     called.ReturnPlanLive = true ∧
       called.execution.returnAuthorityArmed = true ∧
       (FailStop.gate called (.userReturn returnWitnessSyscallRequest)).state = called := by
