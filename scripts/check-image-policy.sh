@@ -158,6 +158,7 @@ grep -Fq 'fixture=wrong-cr3 root=A level=cr3' boot/kernel.c
 grep -q ' T leanos_ipc_demo$' <<<"$symbols"
 grep -q ' T leanos_preemption_demo$' <<<"$symbols"
 grep -q ' T leanos_blocking_ipc_demo$' <<<"$symbols"
+grep -q ' T leanos_capability_reuse_demo$' <<<"$symbols"
 grep -q ' B saved_context_a$' <<<"$symbols"
 grep -q ' B saved_context_b$' <<<"$symbols"
 grep -q ' R initial_context_b$' <<<"$symbols"
