@@ -511,6 +511,10 @@ isr80_cld:
     mov 128(%rsp), %r8
     mov 136(%rsp), %r9
     call syscall_handler
+    cmp $0xbeef, %rax
+    je 8f
+    cmp $0xcafe, %rax
+    je 9f
     cmp $0xfeed, %rax
     jne 7f
     movq $user_b_entry, 120(%rsp)
@@ -520,6 +524,54 @@ isr80_cld:
     xor %rax, %rax
 7:
     mov %rax, 112(%rsp)
+    mov $2, %esi
+    jmp user_return_epilogue
+8:  /* B blocked: preserve its exact continuation and dispatch fresh A. */
+    mov %rsp, %rsi
+    lea saved_context_b(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    mov saved_context_b+120(%rip), %rax
+    mov %rax, saved_context_b_original_rip(%rip)
+    mov saved_context_b+136(%rip), %rax
+    mov %rax, saved_context_b_original_flags(%rip)
+    mov saved_context_b+144(%rip), %rax
+    mov %rax, saved_context_b_original_rsp(%rip)
+    xor %eax, %eax
+    mov %rsp, %rdi
+    mov $15, %ecx
+    rep stosq
+    movq $user_a_entry, 120(%rsp)
+    movq $0x23, 128(%rsp)
+    movq $0x202, 136(%rsp)
+    movq $user_a_stack_top, 144(%rsp)
+    movq $0x1b, 152(%rsp)
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_a(%rip), %rsi
+    mov saved_context_owner_b(%rip), %rdx
+    call switch_complete
+    mov $2, %esi
+    jmp user_return_epilogue
+9:  /* A's send woke B: preserve A and restore B's blocked continuation. */
+    mov %rsp, %rsi
+    lea saved_context_a(%rip), %rdi
+    mov $20, %ecx
+    rep movsq
+    lea saved_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $0x4c45414e, 112(%rsp)
+    movq $0x4f53, 104(%rsp)
+    movq $1, 96(%rsp)
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    mov %rsp, %rdi
+    mov saved_context_owner_b(%rip), %rsi
+    mov saved_context_owner_a(%rip), %rdx
+    call switch_complete
     mov $2, %esi
     jmp user_return_epilogue
 .global isr14
@@ -739,6 +791,7 @@ user_a_entry:
     jne user_copy_fail
     cmpb $0xc3, user_a_stack+4113(%rip)
     jne user_copy_fail
+#ifdef LEANOS_PREEMPTION_SCENARIO
     mov $1, %rax
     xor %rbx, %rbx
     xor %rcx, %rcx
@@ -757,6 +810,12 @@ user_a_entry:
     cmp %rax, %r13
     jne user_copy_fail
     mov $5, %rax
+#else
+    mov $8, %rax
+    mov $0x4c45414e, %rbx
+    mov $0x4f53, %rcx
+    xor %rdx, %rdx
+#endif
     int $0x80
     ud2
 user_copy_fail:
@@ -775,7 +834,7 @@ user_a_stack_top:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
-    /* Reaching syscall 2 certifies that no A register survived dispatch. */
+#ifdef LEANOS_PREEMPTION_SCENARIO
     cmp $B_INITIAL_RAX, %rax
     jne 2f
     cmp $B_INITIAL_RBX, %rbx
@@ -808,15 +867,74 @@ user_b_entry:
     movabs $B_INITIAL_R13, %rax
     cmp %rax, %r13
     jne 2f
+#endif
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
+#ifdef LEANOS_PREEMPTION_SCENARIO
     mov $2, %rax
     xor %rbx, %rbx
     xor %rcx, %rcx
     xor %rdx, %rdx
+#else
+    mov $7, %rax
+    xor %rbx, %rbx
+    xor %rcx, %rcx
+    mov $B_INITIAL_RDX, %rdx
+    mov $B_INITIAL_RBP, %rbp
+    mov $B_INITIAL_RSI, %rsi
+    mov $B_INITIAL_RDI, %rdi
+    mov $B_INITIAL_R8, %r8
+    mov $B_INITIAL_R9, %r9
+    mov $B_INITIAL_R10, %r10
+    mov $B_INITIAL_R11, %r11
+    movabs $B_INITIAL_R12, %r12
+    movabs $B_INITIAL_R13, %r13
+    mov $B_INITIAL_R14, %r14
+    mov $B_INITIAL_R15, %r15
+#endif
     int $0x80
+#ifndef LEANOS_PREEMPTION_SCENARIO
+    cmp $0x4c45414e, %rax
+    jne 2f
+    cmp $0x4f53, %rbx
+    jne 2f
+    cmp $1, %rcx
+    jne 2f
+    cmp $B_INITIAL_RDX, %rdx
+    jne 2f
+    cmp $B_INITIAL_RBP, %rbp
+    jne 2f
+    cmp $B_INITIAL_RSI, %rsi
+    jne 2f
+    cmp $B_INITIAL_RDI, %rdi
+    jne 2f
+    cmp $B_INITIAL_R8, %r8
+    jne 2f
+    cmp $B_INITIAL_R9, %r9
+    jne 2f
+    cmp $B_INITIAL_R10, %r10
+    jne 2f
+    cmp $B_INITIAL_R11, %r11
+    jne 2f
+    cmp $B_INITIAL_R14, %r14
+    jne 2f
+    cmp $B_INITIAL_R15, %r15
+    jne 2f
+    movabs $B_INITIAL_R12, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %rax
+    cmp %rax, %r13
+    jne 2f
+    mov $0x4c45414e, %rbx
+    mov $1, %rdx
+    mov $0x4f53, %rcx
+    mov $9, %rax
+    int $0x80
+#else
 1:  jmp 1b
+#endif
 2:  mov $3, %rax
     int $0x80
 3:  jmp 3b

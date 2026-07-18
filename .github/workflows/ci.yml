@@ -79,6 +79,9 @@ jobs:
           mkdir -p build/ci
           ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
           ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-smoke.log
+          LEANOS_BOOT_SCENARIO=preemption \
+            LEANOS_SERIAL_LOG=build/boot/preemption.serial.log \
+            ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-preemption.log
           ./scripts/run-return-corruptions.sh 2>&1 | tee build/ci/qemu-return-corruptions.log
           LEANOS_SERIAL_LOG=build/boot/double-fault.serial.log \
             ./scripts/run-double-fault.sh 2>&1 | tee build/ci/qemu-double-fault.log
@@ -95,16 +98,22 @@ jobs:
           name: leanos-boot-${{ github.sha }}
           path: |
             build/boot/leanos-0.1.0-x86_64.iso
+            build/boot/leanos-0.1.0-x86_64-preemption.iso
             build/boot/leanos-0.1.0-x86_64-double-fault.iso
             build/boot/leanos.elf
+            build/boot/leanos-preemption.elf
             build/boot/leanos-double-fault.elf
             build/boot/leanos.map
+            build/boot/leanos-preemption.map
             build/boot/leanos-double-fault.map
             build/boot/leanos-prelink.map
             build/boot/boot-page-plan.h
             build/boot/boot-page-plan.final.h
+            build/boot/boot-page-plan-preemption.h
+            build/boot/boot-page-plan-preemption.final.h
             build/boot/SHA256SUMS
             build/boot/serial.log
+            build/boot/preemption.serial.log
             build/boot/double-fault.serial.log
             build/boot/return-corruption-*.serial.log
             build/boot/return-*-policy.log

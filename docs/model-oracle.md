@@ -4,8 +4,8 @@
 freestanding adapter: `KernelTransition.bootTransition` and
 `Syscall.syscallDemo`, `IPCSyscall.ipcDemo`, and
 `Preemption.preemptionDemo`, `Preemption.resumableDemo`, and
-`BootAllocation.check`, and `Interrupt.userReturnDemo`. Its stable
-fifty-three-vector order covers accepted calls,
+`BootAllocation.check`, `Interrupt.userReturnDemo`, and
+`BlockingIPC.blockingIpcDemo`. Its stable 75-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -44,7 +44,10 @@ integration evidence, not exhaustive exploration, semantic refinement,
 verified compilation, or proof about the final binary. Corpus extraction, Lean
 code generation, the C compiler, ABI, C/assembly glue, linker, serial checker,
 QEMU, firmware, and hardware semantics remain trusted. New boot-reachable
-adapters must extend the versioned corpus and its model-agreement checks.
+adapters must extend the versioned corpus and its model-agreement checks. The
+blocking-IPC vectors are also consumed by the guest's block, send/wake,
+dispatch, and delivery gates, so payload words cannot select the trusted caller
+or active address space.
 
 The return adapter uses one bounded synthetic subject/address-space fixture.
 Its five scalar words encode a kernel-owned purpose/context mode, RIP, RSP,

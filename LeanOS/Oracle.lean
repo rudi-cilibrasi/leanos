@@ -4,6 +4,7 @@ import LeanOS.IPCSyscall
 import LeanOS.Preemption
 import LeanOS.BootAllocation
 import LeanOS.Interrupt
+import LeanOS.BlockingIPC
 
 /-!
 # Bounded scalar boundary oracle
@@ -56,6 +57,12 @@ private def bootAllocation (id : String) (magic infoBytes entryBytes selected fl
 private def userReturn (id : String) (mode rip rsp selectors flags : UInt64) : Vector :=
   { id, adapter := "Interrupt.userReturn", words := [mode, rip, rsp, selectors, flags],
     expected := Interrupt.userReturnModelExpected mode rip rsp selectors flags }
+
+private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt64) : Vector :=
+  { id, adapter := "BlockingIPC.scalar", words := [phase, operation, caller, word0, word1],
+    expected := if 10 ≤ operation then
+      BlockingIPC.blockingIpcModelRejection phase operation caller word0 word1
+    else BlockingIPC.blockingIpcDemo phase operation caller word0 word1 }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -118,9 +125,27 @@ def vectors : List Vector := [
   userReturn "user-return.code-outside-subject" 1 0x401000 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.stack-outside-subject" 1 0x400100 0x501001 0x1b0023 0x202,
   userReturn "user-return.diagnostic-recovery" 5 0x400100 0x500ff8 0x1b0023 0x202,
-  userReturn "user-return.validate-then-mutate" 13 0x400100 0x500ff8 0x1b0023 0x202]
+  userReturn "user-return.validate-then-mutate" 13 0x400100 0x500ff8 0x1b0023 0x202,
+  blockingIPC "blocking-ipc.block-b" 0 1 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.send-wake-b" 1 2 1 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.dispatch-b" 2 3 1 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.deliver-b" 3 4 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.wrong-caller" 1 2 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.wrong-phase" 0 2 1 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.forged-payload" 3 4 2 0 0x4f53,
+  blockingIPC "blocking-ipc.empty-wrong-subject" 0 10 9 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.missing-receive" 0 11 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.missing-send" 1 12 1 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.stale-endpoint" 0 13 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.full-wait-queue" 0 14 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.full-ready-queue" 1 15 1 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.duplicate-block" 0 16 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.duplicate-wake" 1 17 1 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.wrong-endpoint" 0 18 2 0x4c45414e 0x4f53,
+  blockingIPC "blocking-ipc.forged-sender" 3 19 2 1 0x4f53,
+  blockingIPC "blocking-ipc.cancel-before-send" 1 20 1 0x4c45414e 0x4f53]
 
-theorem corpus_shape : vectors.length = 57 := by decide
+theorem corpus_shape : vectors.length = 75 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -146,7 +171,17 @@ theorem resumable_scenario_agrees :
 theorem user_return_scenario_agrees :
     (vectors[29]).expected = 1 ∧ (vectors[30]).expected = 1 ∧
     (vectors[31]).expected = 1 ∧ (vectors[32]).expected = 1 ∧
-    (vectors.drop 33).all (fun vector => vector.expected = 0) = true := by
+    ((vectors.drop 33).take 24).all (fun vector => vector.expected = 0) = true := by
+  native_decide
+
+theorem blocking_ipc_scenario_agrees :
+    (vectors[57]).expected = BlockingIPC.encodeBootEvent 1 1 1 1 0 ∧
+    (vectors[58]).expected = BlockingIPC.encodeBootEvent 2 2 1 1 0 ∧
+    (vectors[59]).expected = BlockingIPC.encodeBootEvent 3 3 2 2 0 ∧
+    (vectors[60]).expected = BlockingIPC.encodeBootEvent 4 4 2 2 1 ∧
+    (vectors[61]).expected = 0 ∧ (vectors[62]).expected = 0 ∧
+    (vectors[63]).expected = 0 ∧
+    (vectors.drop 64).all (fun vector => vector.expected ≠ 0) = true := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

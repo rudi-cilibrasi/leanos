@@ -164,6 +164,10 @@ nonblocking mailboxes with trusted sender provenance, never-reused endpoint
 identities, and complete destruction cleanup. Its precise proof boundary and
 exclusions are documented in [`docs/endpoint-ipc.md`](docs/endpoint-ipc.md).
 
+The [blocking-IPC boot slice](docs/adr/0009-blocking-ipc-boot.md) exercises a
+causal B-block, A-send/wake, trusted redispatch, and exact delivery across the
+Lean adapter, hosted oracle, generated freestanding code, and QEMU.
+
 The bounded [capability-transfer model](docs/capability-transfer.md) attaches
 at most one sealed, attenuated descendant to an endpoint envelope and installs
 it atomically on receipt without interpreting payload words as authority.

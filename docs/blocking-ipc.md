@@ -33,7 +33,11 @@ wall-clock, fairness, SMP, timeout, priority, or deadlock-freedom guarantee.
 The Lean theorems concern this executable state machine. The executable
 counterexamples record why split check/sleep and unreserved wakeup are unsafe.
 Compilation and QEMU are integration evidence only; generated code, the boot
-path, the compiler, and hardware remain outside this proof boundary.
+path, the compiler, and hardware remain outside this proof boundary. The
+fixed-width `blockingIpcDemo` boundary encodes the one reviewed B-block,
+A-send/wake, B-dispatch, and exact-delivery scenario. Its theorem connects each
+accepted scalar result to the composite transition; it does not prove the C or
+assembly bridge refines that transition.
 
 Userspace-facing blocking receive and send use `receiveOrBlockWord` and
 `sendWord`. Both consume the canonical 16-bit-slot/48-bit-generation opaque
@@ -43,4 +47,4 @@ raw-slot transitions remain internal model operations after this shared check.
 
 Operations scan a bounded capability-slot function when checking receive
 authority and filter bounded queues during cleanup. FIFO block/wake is linear
-in the represented list length. No boot adapter is claimed by this model.
+in the represented list length.

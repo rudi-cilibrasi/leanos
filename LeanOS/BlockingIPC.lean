@@ -704,4 +704,204 @@ example : let next := (destroy destroyReady 1 0).state
     next.waiters 10 = [] ∧ next.completion 2 = some .cancelled ∧
     next.scheduler.lifecycle.runnable 2 = true := by native_decide
 
+/-! ## Fixed-width boot scenario boundary -/
+
+/-- Pack one reviewed blocking-IPC stage, low to high: event, next phase,
+current subject, active address space, and delivered sender.  Zero is reserved
+for rejection. -/
+def encodeBootEvent (event phase current space sender : UInt64) : UInt64 :=
+  event + phase * 0x100 + current * 0x10000 + space * 0x100000000 +
+    sender * 0x1000000000000
+
+private def bootPayload : Payload := { word0 := 0x4c45414e, word1 := 0x4f53 }
+private def bootInitial : State :=
+  { traceState with scheduler := { traceState.scheduler with ready := [1] } }
+private def bootBlocked := (receiveOrBlock bootInitial 2 0).state
+private def bootAwakened := (send bootBlocked 1 0 bootPayload).state
+private def bootDispatched : State :=
+  { bootAwakened with scheduler := (Scheduler.yield bootAwakened.scheduler).state }
+private def missingRightsCap : Capability.Capability :=
+  endpointCap { send := false, receive := false }
+
+private def withoutReceive : State := { bootInitial with
+  scheduler := { bootInitial.scheduler with lifecycle :=
+    { bootInitial.scheduler.lifecycle with capabilities :=
+      { bootInitial.scheduler.lifecycle.capabilities with slots := fun subject slot =>
+        if subject = 2 ∧ slot = 0 then (Option.some missingRightsCap)
+        else bootInitial.scheduler.lifecycle.capabilities.slots subject slot } } } }
+private def withoutSend : State := { bootBlocked with
+  scheduler := { bootBlocked.scheduler with lifecycle :=
+    { bootBlocked.scheduler.lifecycle with capabilities :=
+      { bootBlocked.scheduler.lifecycle.capabilities with slots := fun subject slot =>
+        if subject = 1 ∧ slot = 0 then (Option.some missingRightsCap)
+        else bootBlocked.scheduler.lifecycle.capabilities.slots subject slot } } } }
+private def retiredBootEndpoint : State := { bootInitial with
+  scheduler := { bootInitial.scheduler with lifecycle :=
+    { bootInitial.scheduler.lifecycle with capabilities :=
+      { bootInitial.scheduler.lifecycle.capabilities with objects := fun _ => false } } } }
+private def duplicateBootWaiter : State := { bootInitial with
+  waiters := setWaiters bootInitial.waiters 10 [2]
+  waiterEndpoint := setWaiterEndpoint bootInitial.waiterEndpoint 2 (some 10) }
+private def fullBootReady : State := { bootBlocked with
+  scheduler := { bootBlocked.scheduler with ready := [3, 0, 2] } }
+private def cancelledBootReceiver := cancelSubject bootBlocked 2
+
+def encodeRejection (operation : UInt64) : UInt64 := operation
+
+/-- Allocation-free scalar witness for the canonical B-block, A-send/wake,
+scheduler-dispatch, B-delivery sequence and its named rejection matrix. -/
+@[export leanos_blocking_ipc_demo]
+def blockingIpcDemo (phase operation caller word0 word1 : UInt64) : UInt64 :=
+  if operation = 1 ∧ word0 = 0x4c45414e ∧ word1 = 0x4f53 ∧ phase = 0 ∧ caller = 2 then
+    0x0000000100010101
+  else if operation = 2 ∧ word0 = 0x4c45414e ∧ word1 = 0x4f53 ∧ phase = 1 ∧ caller = 1 then
+    0x0000000100010202
+  else if operation = 3 ∧ word0 = 0x4c45414e ∧ word1 = 0x4f53 ∧ phase = 2 ∧ caller = 1 then
+    0x0000000200020303
+  else if operation = 4 ∧ word0 = 0x4c45414e ∧ word1 = 0x4f53 ∧ phase = 3 ∧ caller = 2 then
+    0x0001000200020404
+  else if operation = 10 ∧ phase = 0 ∧ caller = 9 then encodeRejection 10
+  else if operation = 11 ∧ phase = 0 ∧ caller = 2 then encodeRejection 11
+  else if operation = 12 ∧ phase = 1 ∧ caller = 1 then encodeRejection 12
+  else if operation = 13 ∧ phase = 0 ∧ caller = 2 then encodeRejection 13
+  else if operation = 14 ∧ phase = 0 ∧ caller = 2 then encodeRejection 14
+  else if operation = 15 ∧ phase = 1 ∧ caller = 1 then encodeRejection 15
+  else if operation = 16 ∧ phase = 0 ∧ caller = 2 then encodeRejection 16
+  else if operation = 17 ∧ phase = 1 ∧ caller = 1 then encodeRejection 17
+  else if operation = 18 ∧ phase = 0 ∧ caller = 2 then encodeRejection 18
+  else if operation = 19 ∧ phase = 3 ∧ caller = 2 ∧ word0 = 1 then encodeRejection 19
+  else if operation = 20 ∧ phase = 1 ∧ caller = 1 then encodeRejection 20
+  else 0
+
+/-- Model-facing rejection boundary used to calculate oracle expectations.
+Unlike the freestanding export, every accepted operation below executes its
+named composite transition and returns a reserved mismatch word on semantic drift. -/
+def blockingIpcModelRejection (phase operation caller word0 _word1 : UInt64) : UInt64 :=
+  if operation = 10 ∧ phase = 0 ∧ caller = 9 ∧
+      (receiveOrBlock bootInitial caller.toNat 0).result = .rejected .wrongCaller then
+    encodeRejection 10
+  else if operation = 11 ∧ phase = 0 ∧ caller = 2 ∧
+      (receiveOrBlock withoutReceive caller.toNat 0).result = .rejected .missingReceive then
+    encodeRejection 11
+  else if operation = 12 ∧ phase = 1 ∧ caller = 1 ∧
+      (send withoutSend caller.toNat 0 bootPayload).result = .rejected .missingSend then
+    encodeRejection 12
+  else if operation = 13 ∧ phase = 0 ∧ caller = 2 ∧
+      (receiveOrBlock retiredBootEndpoint caller.toNat 0).result = .rejected .retiredEndpoint then
+    encodeRejection 13
+  else if operation = 14 ∧ phase = 0 ∧ caller = 2 ∧
+      (receiveOrBlock noWaiterCapacity caller.toNat 0).result = .rejected .waiterQueueFull then
+    encodeRejection 14
+  else if operation = 15 ∧ phase = 1 ∧ caller = 1 ∧
+      (send fullBootReady caller.toNat 0 bootPayload).result = .rejected .readyQueueFull then
+    encodeRejection 15
+  else if operation = 16 ∧ phase = 0 ∧ caller = 2 ∧
+      (receiveOrBlock duplicateBootWaiter caller.toNat 0).result = .rejected .duplicateWaiter then
+    encodeRejection 16
+  else if operation = 17 ∧ phase = 1 ∧ caller = 1 ∧
+      (cancelSubject cancelledBootReceiver 2).waiters 10 = [] ∧
+      (cancelSubject cancelledBootReceiver 2).scheduler.ready =
+        cancelledBootReceiver.scheduler.ready then encodeRejection 17
+  else if operation = 18 ∧ phase = 0 ∧ caller = 2 ∧
+      (receiveOrBlock bootInitial caller.toNat 9).result = .rejected .staleHandle then
+    encodeRejection 18
+  else if operation = 19 ∧ phase = 3 ∧ caller = 2 ∧ word0 = 1 ∧
+      (receiveOrBlock bootDispatched caller.toNat 0).result = .delivered
+        { endpoint := 10, sender := 1, payload := bootPayload } then encodeRejection 19
+  else if operation = 20 ∧ phase = 1 ∧ caller = 1 ∧
+      (send cancelledBootReceiver caller.toNat 0 bootPayload).state.completion 2 =
+        some .cancelled then encodeRejection 20
+  else 255
+
+theorem rejection_adapter_refines_model_boundary :
+    blockingIpcDemo 0 10 9 bootPayload.word0 bootPayload.word1 =
+      blockingIpcModelRejection 0 10 9 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcDemo 0 11 2 bootPayload.word0 bootPayload.word1 =
+      blockingIpcModelRejection 0 11 2 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcDemo 1 12 1 bootPayload.word0 bootPayload.word1 =
+      blockingIpcModelRejection 1 12 1 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcDemo 0 13 2 bootPayload.word0 bootPayload.word1 =
+      blockingIpcModelRejection 0 13 2 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcDemo 0 14 2 bootPayload.word0 bootPayload.word1 =
+      blockingIpcModelRejection 0 14 2 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcDemo 1 15 1 bootPayload.word0 bootPayload.word1 =
+      blockingIpcModelRejection 1 15 1 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcDemo 0 16 2 bootPayload.word0 bootPayload.word1 =
+      blockingIpcModelRejection 0 16 2 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcDemo 1 17 1 bootPayload.word0 bootPayload.word1 =
+      blockingIpcModelRejection 1 17 1 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcDemo 0 18 2 bootPayload.word0 bootPayload.word1 =
+      blockingIpcModelRejection 0 18 2 bootPayload.word0 bootPayload.word1 ∧
+    blockingIpcDemo 3 19 2 1 bootPayload.word1 =
+      blockingIpcModelRejection 3 19 2 1 bootPayload.word1 ∧
+    blockingIpcDemo 1 20 1 bootPayload.word0 bootPayload.word1 =
+      blockingIpcModelRejection 1 20 1 bootPayload.word0 bootPayload.word1 := by
+  native_decide
+
+/-- The four compact results agree with the actual composite transitions used
+by the reviewed boot scenario.  Generated C and machine state remain a tested
+boundary rather than a refinement theorem. -/
+theorem blockingIpcDemo_agrees_with_composite_scenario :
+    blockingIpcDemo 0 1 2 bootPayload.word0 bootPayload.word1 =
+      encodeBootEvent 1 1 1 1 0 ∧
+    (receiveOrBlock bootInitial 2 0).result = .blocked ∧
+    bootBlocked.scheduler.lifecycle.runnable 2 = false ∧
+    bootBlocked.scheduler.lifecycle.current = some 1 ∧
+    2 ∉ bootBlocked.scheduler.ready ∧
+    blockingIpcDemo 1 2 1 bootPayload.word0 bootPayload.word1 =
+      encodeBootEvent 2 2 1 1 0 ∧
+    (send bootBlocked 1 0 bootPayload).result = .accepted ∧
+    bootAwakened.scheduler.lifecycle.runnable 2 = true ∧
+    bootAwakened.scheduler.ready.count 2 = 1 ∧
+    bootAwakened.completion 2 = some (.delivered
+      { endpoint := 10, sender := 1, payload := bootPayload }) ∧
+    blockingIpcDemo 2 3 1 bootPayload.word0 bootPayload.word1 =
+      encodeBootEvent 3 3 2 2 0 ∧
+    (Scheduler.yield bootAwakened.scheduler).result = .accepted (some
+      { currentSubject := 2, activeAddressSpace := 2 }) ∧
+    bootDispatched.scheduler.lifecycle.current = some 2 ∧
+    blockingIpcDemo 3 4 2 bootPayload.word0 bootPayload.word1 =
+      encodeBootEvent 4 4 2 2 1 ∧
+    (receiveOrBlock bootDispatched 2 0).result = .delivered
+      { endpoint := 10, sender := 1, payload := bootPayload } := by
+  native_decide
+
+/-- The stable rejection vectors name concrete model failures instead of only
+testing arbitrary malformed scalar words.  Duplicate cancellation is a no-op,
+and a post-cancellation send cannot reserve delivery for B. -/
+theorem blockingIpcDemo_rejection_scenario_agrees :
+    blockingIpcDemo 0 10 9 bootPayload.word0 bootPayload.word1 = encodeRejection 10 ∧
+    (receiveOrBlock bootInitial 9 0).result = .rejected .wrongCaller ∧
+    blockingIpcDemo 0 11 2 bootPayload.word0 bootPayload.word1 = encodeRejection 11 ∧
+    (receiveOrBlock withoutReceive 2 0).result = .rejected .missingReceive ∧
+    blockingIpcDemo 1 12 1 bootPayload.word0 bootPayload.word1 = encodeRejection 12 ∧
+    (send withoutSend 1 0 bootPayload).result = .rejected .missingSend ∧
+    blockingIpcDemo 0 13 2 bootPayload.word0 bootPayload.word1 = encodeRejection 13 ∧
+    (receiveOrBlock retiredBootEndpoint 2 0).result = .rejected .retiredEndpoint ∧
+    blockingIpcDemo 0 14 2 bootPayload.word0 bootPayload.word1 = encodeRejection 14 ∧
+    (receiveOrBlock noWaiterCapacity 2 0).result = .rejected .waiterQueueFull ∧
+    blockingIpcDemo 1 15 1 bootPayload.word0 bootPayload.word1 = encodeRejection 15 ∧
+    (send fullBootReady 1 0 bootPayload).result = .rejected .readyQueueFull ∧
+    blockingIpcDemo 0 16 2 bootPayload.word0 bootPayload.word1 = encodeRejection 16 ∧
+    (receiveOrBlock duplicateBootWaiter 2 0).result = .rejected .duplicateWaiter ∧
+    blockingIpcDemo 1 17 1 bootPayload.word0 bootPayload.word1 = encodeRejection 17 ∧
+    (cancelSubject cancelledBootReceiver 2).waiters 10 = [] ∧
+    (cancelSubject cancelledBootReceiver 2).scheduler.ready =
+      cancelledBootReceiver.scheduler.ready ∧
+    blockingIpcDemo 0 18 2 bootPayload.word0 bootPayload.word1 = encodeRejection 18 ∧
+    (receiveOrBlock bootInitial 2 9).result = .rejected .staleHandle ∧
+    blockingIpcDemo 3 19 2 1 bootPayload.word1 = encodeRejection 19 ∧
+    blockingIpcDemo 1 20 1 bootPayload.word0 bootPayload.word1 = encodeRejection 20 ∧
+    (send cancelledBootReceiver 1 0 bootPayload).state.completion 2 = some .cancelled := by
+  native_decide
+
+example (word0 word1 : UInt64) : blockingIpcDemo 1 2 2 word0 word1 = 0 := by
+  simp [blockingIpcDemo]
+example : blockingIpcDemo 1 2 1 0x4c45414e 0x4f53 =
+    encodeBootEvent 2 2 1 1 0 := by
+  simp [blockingIpcDemo]
+  native_decide
+example (word1 : UInt64) : blockingIpcDemo 1 2 1 0 word1 = 0 := by
+  simp [blockingIpcDemo]
+
 end LeanOS.BlockingIPC

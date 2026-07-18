@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include "corpus.h"
-#if defined(LEANOS_DF_MAP_GUARD)
+#if defined(LEANOS_BOOT_PAGE_PLAN_HEADER)
+#include LEANOS_BOOT_PAGE_PLAN_HEADER
+#elif defined(LEANOS_DF_MAP_GUARD)
 #include "boot-page-plan-guard.h"
 #elif defined(LEANOS_DOUBLE_FAULT_PROBE)
 #include "boot-page-plan-double-fault.h"
@@ -21,6 +23,8 @@ extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t,
                                              uint64_t, uint64_t);
 extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t,
                                         uint64_t, uint64_t);
+extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t,
+                                         uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -106,6 +110,7 @@ static uint8_t entry_stack[16384] __attribute__((aligned(16)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
 static unsigned timer_accepted;
+static unsigned blocking_ipc_step;
 static unsigned supervisor_probe;
 static uint8_t copy_buffer[16];
 static unsigned copy_step;
@@ -317,6 +322,7 @@ static const char *return_corruption_name(uint64_t mode) {
     case 9: return "stale-cr3";
     case 10: return "stale-context";
     case 11: return "post-validation-mutation";
+    case 12: return "blocking-context-canary";
     default: return "none";
     }
 }
@@ -327,6 +333,7 @@ static const char *return_corruption_name(uint64_t mode) {
 static void inject_return_corruption(uint64_t *saved) {
     uint64_t mode = return_corruption_mode;
     if (mode == 0) return;
+    if (mode == 12 && !(current_subject == 2 && blocking_ipc_step == 4)) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
     serial_puts(" stage=outgoing-frame result=INJECTED\n");
@@ -340,10 +347,13 @@ static void inject_return_corruption(uint64_t *saved) {
     case 7: saved[17] |= 1ull << 18; break;
     case 8: saved[17] |= 1ull << 10; break;
     case 9:
-        __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_b) : "memory");
+        __asm__ volatile ("mov %0, %%cr3" : :
+            "r"(current_subject == 1 ? page_map_level_4_b : page_map_level_4_a) :
+            "memory");
         break;
-    case 10: current_subject = 2; break;
+    case 10: current_subject = current_subject == 1 ? 2 : 1; break;
     case 11: break;
+    case 12: saved[7] ^= 1; break;
     default: fail("user-return-fixture-mode");
     }
 }
@@ -589,11 +599,14 @@ static void replay_oracle(void) {
                 : v->adapter == 4
                     ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
                         v->words[3], v->words[4])
-                    : v->adapter == 5
+                : v->adapter == 5
                         ? leanos_boot_allocation_check(v->words[0], v->words[1], v->words[2],
                             v->words[3], v->words[4])
-                        : leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
-                            v->words[3], v->words[4]);
+                        : v->adapter == 6
+                            ? leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
+                                v->words[3], v->words[4])
+                            : leanos_blocking_ipc_demo(v->words[0], v->words[1], v->words[2],
+                                v->words[3], v->words[4]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -653,6 +666,15 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+    if (blocking_ipc_step == 0 && current_subject == 2 && number == 7) {
+        uint64_t got = leanos_blocking_ipc_demo(0, 1, 2, 0x4c45414e, 0x4f53);
+        if (got != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_BLOCK_B].expected)
+            fail("blocking-ipc-model-block");
+        blocking_ipc_step = 1;
+        current_subject = 1;
+        serial_puts("LEANOS/10 IPC event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS\n");
+        return 0xbeef;
+    }
     if (current_subject == 1 && number == 4) {
         if ((saved_flags & (1u << 10)) == 0) fail("copy-df-not-set");
         uint64_t start = arg1;
@@ -692,6 +714,26 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if (preemption_step == 1) return 0;
         if (preemption_step == 6) return 1;
         fail("resume-probe-state");
+    }
+    if (blocking_ipc_step == 2 && current_subject == 1 && number == 8) {
+        uint64_t sent = leanos_blocking_ipc_demo(1, 2, 1, arg0, arg1);
+        uint64_t dispatched = leanos_blocking_ipc_demo(2, 3, 1, arg0, arg1);
+        if (sent != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_SEND_WAKE_B].expected ||
+            dispatched != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_DISPATCH_B].expected)
+            fail("blocking-ipc-model-send");
+        blocking_ipc_step = 3;
+        current_subject = 2;
+        serial_puts("LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1\n");
+        serial_puts("LEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS\n");
+        return 0xcafe;
+    }
+    if (blocking_ipc_step == 4 && current_subject == 2 && number == 9) {
+        uint64_t got = leanos_blocking_ipc_demo(3, 4, 2, arg0, arg1);
+        if (got != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_DELIVER_B].expected || arg2 != 1)
+            fail("blocking-ipc-model-delivery");
+        serial_puts("LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\n");
+        serial_puts("LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1\n");
+        finish(0x10);
     }
     if (preemption_step == 6 && current_subject == 1 && number == 5) {
         if (timer_accepted != 2 || saved_context_a[3] != 0xa11ca11ca11ca11cull ||
@@ -787,6 +829,24 @@ static void check_resumable_witness(uint64_t leg, const uint64_t *target,
 }
 
 void switch_complete(uint64_t *target, uint64_t target_owner, uint64_t saved_owner) {
+    if (current_subject == 1 && blocking_ipc_step == 1) {
+        check_selected_root_a();
+        if (target_owner != 1 || saved_owner != 2) fail("blocking-ipc-switch-a-owner");
+        check_original_frame(saved_context_b, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        blocking_ipc_step = 2;
+        serial_puts("LEANOS/10 IPC event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1\n");
+        return;
+    }
+    if (current_subject == 2 && blocking_ipc_step == 3) {
+        check_selected_root_b();
+        if (target_owner != 2 || saved_owner != 1) fail("blocking-ipc-switch-b-owner");
+        check_original_frame(target, saved_context_b_original_rip,
+            saved_context_b_original_flags, saved_context_b_original_rsp, 2);
+        blocking_ipc_step = 4;
+        serial_puts("LEANOS/10 IPC event=dispatch subject=2 address-space=2 reservation=owned trusted=1\n");
+        return;
+    }
     if (current_subject == 2 && preemption_step == 2 && timer_accepted == 1) {
         check_selected_root_b();
         check_initial_b_frame(target);
@@ -874,7 +934,11 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
+#ifdef LEANOS_PREEMPTION_SCENARIO
     serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
+#else
+    serial_puts("LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\n");
+#endif
 
     check_boot_page_tables();
 
@@ -912,7 +976,15 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts("LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS\n");
     check_cross_bank_negative();
     check_initial_b_frame_negative();
+#ifdef LEANOS_PREEMPTION_SCENARIO
     arm_timer();
     enter_user(user_a_entry, user_a_stack_top);
+#else
+    current_subject = 2;
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_b) : "memory");
+    check_selected_root_b();
+    serial_puts("LEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10\n");
+    enter_user(user_b_entry, user_b_stack_top);
+#endif
     fail("iret-returned");
 }
