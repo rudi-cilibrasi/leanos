@@ -118,19 +118,27 @@ theorem composite_gate_sealed_receive_preserves_runtimeWellFormed
 
 /-- SC-COMPOSITE-GATE-CONTRACT: every completed public gate step identifies
 the running latch, exact typed reply, and exact composite post-state; both
-gate-level rejection classes preserve the complete state. -/
+gate-level rejection classes and every classified nonfatal subsystem rejection
+preserve the complete state. -/
 theorem composite_gate_typed_result_contract state operation :
     (∀ reply, (FailStop.gate state operation).result = .completed reply →
       state.execution.mode = .running ∧
         reply = FailStop.operationReply state operation ∧
         (FailStop.gate state operation).state = FailStop.applyOperation state operation) ∧
-    (((FailStop.gate state operation).result = .rejectedBusy ∨
+    ((((FailStop.gate state operation).result = .rejectedBusy ∨
       ∃ record, (FailStop.gate state operation).result = .rejectedHalted record) →
-      (FailStop.gate state operation).state = state) := by
+      (FailStop.gate state operation).state = state) ∧
+    (∀ reply, (FailStop.gate state operation).result = .completed reply →
+      FailStop.SubsystemRejection state operation reply →
+      (FailStop.gate state operation).state = state)) := by
   constructor
   · intro reply hcompleted
     exact FailStop.gate_completed_sound state operation reply hcompleted
+  constructor
   · exact FailStop.gate_mode_rejection_atomicity state operation
+  · intro reply hcompleted hrejected
+    exact FailStop.gate_subsystem_rejection_atomicity state operation reply
+      hcompleted hrejected
 
 /-- SC-COMPOSITE-CONTROL-WF: both running control operations preserve the
 complete invariant, including the exact sealed-transfer and resumable states. -/
@@ -373,7 +381,37 @@ private def returnWitnessSyscallRequest : Interrupt.UserReturnRequest :=
     purpose := .syscallResume }
 
 private def returnWitnessSyscallCall : Syscall.UntrustedCall :=
+  { number := 2, arg0 := 100, arg1 := 0, arg2 := 0 }
+
+private def returnWitnessRejectedCall : Syscall.UntrustedCall :=
   { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 }
+
+/-- Non-vacuity witness for the composite gate contract: an unknown syscall
+is classified as a typed subsystem rejection and preserves the literal
+composite pre-state. -/
+theorem composite_subsystem_rejection_reachable_witness :
+    (FailStop.gate returnWitnessComposite
+        (.syscall returnWitnessRejectedCall)).result =
+      .completed (.syscall (.rejected (.decode .unknownSyscall))) ∧
+    FailStop.SubsystemRejection returnWitnessComposite
+      (.syscall returnWitnessRejectedCall)
+      (.syscall (.rejected (.decode .unknownSyscall))) ∧
+    (FailStop.gate returnWitnessComposite
+        (.syscall returnWitnessRejectedCall)).state = returnWitnessComposite := by
+  have hresult :
+      (FailStop.gate returnWitnessComposite
+          (.syscall returnWitnessRejectedCall)).result =
+        .completed (.syscall (.rejected (.decode .unknownSyscall))) := by
+    native_decide
+  have hrejected :
+      FailStop.SubsystemRejection returnWitnessComposite
+        (.syscall returnWitnessRejectedCall)
+        (.syscall (.rejected (.decode .unknownSyscall))) :=
+    .syscall returnWitnessRejectedCall (.decode .unknownSyscall) (by native_decide)
+  exact ⟨hresult, hrejected,
+    FailStop.gate_subsystem_rejection_atomicity returnWitnessComposite
+      (.syscall returnWitnessRejectedCall)
+      (.syscall (.rejected (.decode .unknownSyscall))) hresult hrejected⟩
 
 set_option maxRecDepth 100000 in
 /-- Concrete typed composite trace: syscall entry clears old authority, the

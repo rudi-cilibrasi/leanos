@@ -859,10 +859,13 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
         else { state.execution with returnAuthorityArmed := false }
       { state with execution := (completeUserReturn execution request).state }
   | .syscall call =>
-      let virtualMemory := (Syscall.dispatch state.virtualMemory state.syscallContext call).state
-      let installed := installLifecycle { state with virtualMemory }
-        (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
-      selectLiveReturnAuthority installed .syscallResume
+      let outcome := Syscall.dispatch state.virtualMemory state.syscallContext call
+      match outcome.reply with
+      | .rejected _ => state
+      | .accepted =>
+          let installed := installLifecycle { state with virtualMemory := outcome.state }
+            (lifecycleFromVirtualMemory state.lifecycle outcome.state)
+          selectLiveReturnAuthority installed .syscallResume
   | .preempt frame =>
       let entry := dispatchHardware state.execution frame
       let entered := installLifecycle { state with execution := entry.state }
@@ -875,7 +878,15 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
           selectLiveReturnAuthority scheduled .schedulerRestore
       | _ => entered
   | .ipc call =>
-      (dispatchIPC state call).state
+      let outcome := dispatchIPC state call
+      match outcome.reply with
+      | .sealedTransferPending => state
+      | .syscall (.sendHandleRejected _) => state
+      | .syscall (.sendRejected _) => state
+      | .syscall (.receiveHandleRejected _) => state
+      | .syscall (.receiveRejected _) => state
+      | .syscall .sent => outcome.state
+      | .syscall (.delivered _ _ _) => outcome.state
   | .resumePreempt frame registers =>
       let outcome := ResumablePreemption.switch state.resumable state.execution.core
         frame registers
@@ -885,46 +896,84 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       else
         installResumable state outcome.state
   | .transferOffer endpointWord sourceWord sourceKind payload rights =>
-      installTransfers state
-        (CapabilityTransfer.offerWords state.transfers
-          state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
-          payload rights).state
+      let outcome := CapabilityTransfer.offerWords state.transfers
+        state.execution.core.context.currentSubject endpointWord sourceWord sourceKind payload rights
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted => installTransfers state outcome.state
   | .transferAccept endpointWord destinationSlot =>
-      installTransfers state
-        (CapabilityTransfer.acceptWord state.transfers
-          state.execution.core.context.currentSubject endpointWord destinationSlot).state
+      let outcome := CapabilityTransfer.acceptWord state.transfers
+        state.execution.core.context.currentSubject endpointWord destinationSlot
+      match outcome.result with
+      | .rejected _ => state
+      | .delivered _ => installTransfers state outcome.state
   | .capabilityCopy actor source destination destinationSlot rights =>
-      installCapabilities state
-        (Capability.copy state.capabilities actor source destination destinationSlot rights).state
+      let outcome := Capability.copy state.capabilities actor source destination destinationSlot rights
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted => installCapabilities state outcome.state
   | .capabilityRevoke actor authoritySlot victim victimSlot =>
-      installCapabilities state
-        (Capability.revoke state.capabilities actor authoritySlot victim victimSlot).state
+      let outcome := Capability.revoke state.capabilities actor authoritySlot victim victimSlot
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted => installCapabilities state outcome.state
   | .capabilityRevokeSubtree actor authoritySlot victim victimSlot =>
-      installCapabilities state
-        (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).state
+      let outcome := Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted => installCapabilities state outcome.state
   | .map actor slot addressSpace page permissions =>
-      let virtualMemory :=
-        (VirtualMapping.map state.virtualMemory actor slot addressSpace page permissions).state
-      installLifecycle { state with virtualMemory }
-        (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
+      let outcome := VirtualMapping.map state.virtualMemory actor slot addressSpace page permissions
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted => installLifecycle { state with virtualMemory := outcome.state }
+          (lifecycleFromVirtualMemory state.lifecycle outcome.state)
   | .unmap actor addressSpace page =>
-      let virtualMemory :=
-        (VirtualMapping.unmap state.virtualMemory actor addressSpace page).state
-      installLifecycle { state with virtualMemory }
-        (lifecycleFromVirtualMemory state.lifecycle virtualMemory)
+      let outcome := VirtualMapping.unmap state.virtualMemory actor addressSpace page
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted => installLifecycle { state with virtualMemory := outcome.state }
+          (lifecycleFromVirtualMemory state.lifecycle outcome.state)
   | .createSubject subject =>
-      installLifecycle state (SubjectLifecycle.create state.lifecycle subject).state
+      let outcome := SubjectLifecycle.create state.lifecycle subject
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted => installLifecycle state outcome.state
   | .terminateSubject subject =>
-      installLifecycle state (SubjectLifecycle.terminate state.lifecycle subject).state
+      let outcome := SubjectLifecycle.terminate state.lifecycle subject
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted => installLifecycle state outcome.state
   | .scheduleAdd subject =>
-      installScheduler state (Scheduler.add state.scheduler subject).state
+      let outcome := Scheduler.add state.scheduler subject
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted _ => installScheduler state outcome.state
   | .scheduleRemove subject =>
-      installScheduler state (Scheduler.remove state.scheduler subject).state
-  | .scheduleNext => installScheduler state (Scheduler.selectNext state.scheduler).state
-  | .scheduleYield => installScheduler state (Scheduler.yield state.scheduler).state
-  | .scheduleTick => installScheduler state (Scheduler.tick state.scheduler).state
+      let outcome := Scheduler.remove state.scheduler subject
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted _ => installScheduler state outcome.state
+  | .scheduleNext =>
+      let outcome := Scheduler.selectNext state.scheduler
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted _ => installScheduler state outcome.state
+  | .scheduleYield =>
+      let outcome := Scheduler.yield state.scheduler
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted _ => installScheduler state outcome.state
+  | .scheduleTick =>
+      let outcome := Scheduler.tick state.scheduler
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted _ => installScheduler state outcome.state
   | .terminateCurrent =>
-      installScheduler state (Scheduler.terminateCurrent state.scheduler).state
+      let outcome := Scheduler.terminateCurrent state.scheduler
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted _ => installScheduler state outcome.state
   | .restart => state
 
 /-- Exact typed observation of the subsystem transition selected by an
@@ -981,6 +1030,82 @@ def operationReply (state : CompositeState) : Operation → OperationReply
   | .scheduleTick => .scheduler (Scheduler.tick state.scheduler).result
   | .terminateCurrent => .scheduler (Scheduler.terminateCurrent state.scheduler).result
   | .restart => .restarted
+
+/-- Evidence that one operation produced one of the finite, ordinary typed
+subsystem rejections.  Fatal entry/return results and busy/terminal gate
+rejections are deliberately separate. -/
+inductive SubsystemRejection (state : CompositeState) : Operation → OperationReply → Prop
+  | syscall call reason
+      (h : (Syscall.dispatch state.virtualMemory state.syscallContext call).reply = .rejected reason) :
+      SubsystemRejection state (.syscall call) (.syscall (.rejected reason))
+  | ipcSendHandle call reason
+      (h : (dispatchIPC state call).reply = .syscall (.sendHandleRejected reason)) :
+      SubsystemRejection state (.ipc call) (.ipc (.syscall (.sendHandleRejected reason)))
+  | ipcSend call reason
+      (h : (dispatchIPC state call).reply = .syscall (.sendRejected reason)) :
+      SubsystemRejection state (.ipc call) (.ipc (.syscall (.sendRejected reason)))
+  | ipcReceiveHandle call reason
+      (h : (dispatchIPC state call).reply = .syscall (.receiveHandleRejected reason)) :
+      SubsystemRejection state (.ipc call) (.ipc (.syscall (.receiveHandleRejected reason)))
+  | ipcReceive call reason
+      (h : (dispatchIPC state call).reply = .syscall (.receiveRejected reason)) :
+      SubsystemRejection state (.ipc call) (.ipc (.syscall (.receiveRejected reason)))
+  | ipcSealed call (h : (dispatchIPC state call).reply = .sealedTransferPending) :
+      SubsystemRejection state (.ipc call) (.ipc .sealedTransferPending)
+  | transferOffer endpointWord sourceWord sourceKind payload rights reason
+      (h : (CapabilityTransfer.offerWords state.transfers
+        state.execution.core.context.currentSubject endpointWord sourceWord sourceKind payload rights).result =
+          .rejected reason) :
+      SubsystemRejection state (.transferOffer endpointWord sourceWord sourceKind payload rights)
+        (.transferOffer (.rejected reason))
+  | transferAccept endpointWord destinationSlot reason deliveredWord
+      (hresult : (CapabilityTransfer.acceptWord state.transfers
+        state.execution.core.context.currentSubject endpointWord destinationSlot).result = .rejected reason)
+      (hword : (CapabilityTransfer.acceptWord state.transfers
+        state.execution.core.context.currentSubject endpointWord destinationSlot).deliveredWord = deliveredWord) :
+      SubsystemRejection state (.transferAccept endpointWord destinationSlot)
+        (.transferAccept (.rejected reason) deliveredWord)
+  | capabilityCopy actor source destination destinationSlot rights reason
+      (h : (Capability.copy state.capabilities actor source destination destinationSlot rights).result =
+        .rejected reason) :
+      SubsystemRejection state (.capabilityCopy actor source destination destinationSlot rights)
+        (.capability (.rejected reason))
+  | capabilityRevoke actor authoritySlot victim victimSlot reason
+      (h : (Capability.revoke state.capabilities actor authoritySlot victim victimSlot).result =
+        .rejected reason) :
+      SubsystemRejection state (.capabilityRevoke actor authoritySlot victim victimSlot)
+        (.capability (.rejected reason))
+  | capabilityRevokeSubtree actor authoritySlot victim victimSlot reason
+      (h : (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).result =
+        .rejected reason) :
+      SubsystemRejection state (.capabilityRevokeSubtree actor authoritySlot victim victimSlot)
+        (.capability (.rejected reason))
+  | map actor slot addressSpace page permissions reason
+      (h : (VirtualMapping.map state.virtualMemory actor slot addressSpace page permissions).result =
+        .rejected reason) :
+      SubsystemRejection state (.map actor slot addressSpace page permissions) (.map (.rejected reason))
+  | unmap actor addressSpace page reason
+      (h : (VirtualMapping.unmap state.virtualMemory actor addressSpace page).result = .rejected reason) :
+      SubsystemRejection state (.unmap actor addressSpace page) (.unmap (.rejected reason))
+  | createSubject subject reason
+      (h : (SubjectLifecycle.create state.lifecycle subject).result = .rejected reason) :
+      SubsystemRejection state (.createSubject subject) (.createSubject (.rejected reason))
+  | terminateSubject subject reason
+      (h : (SubjectLifecycle.terminate state.lifecycle subject).result = .rejected reason) :
+      SubsystemRejection state (.terminateSubject subject) (.terminateSubject (.rejected reason))
+  | scheduleAdd subject reason (h : (Scheduler.add state.scheduler subject).result = .rejected reason) :
+      SubsystemRejection state (.scheduleAdd subject) (.scheduler (.rejected reason))
+  | scheduleRemove subject reason
+      (h : (Scheduler.remove state.scheduler subject).result = .rejected reason) :
+      SubsystemRejection state (.scheduleRemove subject) (.scheduler (.rejected reason))
+  | scheduleNext reason (h : (Scheduler.selectNext state.scheduler).result = .rejected reason) :
+      SubsystemRejection state .scheduleNext (.scheduler (.rejected reason))
+  | scheduleYield reason (h : (Scheduler.yield state.scheduler).result = .rejected reason) :
+      SubsystemRejection state .scheduleYield (.scheduler (.rejected reason))
+  | scheduleTick reason (h : (Scheduler.tick state.scheduler).result = .rejected reason) :
+      SubsystemRejection state .scheduleTick (.scheduler (.rejected reason))
+  | terminateCurrent reason (h : (Scheduler.terminateCurrent state.scheduler).result = .rejected reason) :
+      SubsystemRejection state .terminateCurrent (.scheduler (.rejected reason))
 
 /-- A contained user fault is published to both scheduler views in the same
 composite step, so neither can select from the pre-termination lifecycle. -/
@@ -1068,6 +1193,17 @@ theorem gate_completed_sound state operation reply
   | running => simp [gate, hmode] at hcompleted ⊢; simp [gate, hmode, hcompleted]
   | handling active => simp [gate, hmode] at hcompleted
   | halted record => simp [gate, hmode] at hcompleted
+
+/-- Every typed nonfatal subsystem rejection is globally atomic.  The theorem
+is intentionally quantified over the finite composite reply classification:
+adding a new rejection constructor does not gain this claim until its
+`applyOperation` branch explicitly returns the identical pre-state. -/
+theorem gate_subsystem_rejection_atomicity state operation reply
+    (hresult : (gate state operation).result = .completed reply)
+    (hrejected : SubsystemRejection state operation reply) :
+    (gate state operation).state = state := by
+  have hmode := (gate_completed_sound state operation reply hresult).1
+  cases hrejected <;> simp_all [gate, applyOperation]
 
 /-- Return-authority selection is a complete running-operation preservation
 slice: it changes only the execution projection, arms authority only after the
