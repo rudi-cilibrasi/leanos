@@ -12,6 +12,7 @@ import LeanOS.Interrupt
 import LeanOS.InterruptEntry
 import LeanOS.Example
 import LeanOS.FrameAllocator
+import LeanOS.FrameBudget
 import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.KernelTransition
