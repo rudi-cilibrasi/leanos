@@ -36,9 +36,12 @@ grep -Fq 'cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0
   "$kernel_source" || {
   echo "error: extended-state field=evidence-record missing" >&2; exit 1;
 }
-grep -Fq 'leanos_extended_state_denial_demo(mode, vector, current_subject,' \
+grep -Fq 'leanos_extended_state_denial_demo(policy, mode, vector, current_subject,' \
   "$kernel_source" || {
   echo "error: extended-state field=runtime-adapter missing" >&2; exit 1;
+}
+grep -Fq 'uint64_t policy = extended_state_features_accepted &&' "$kernel_source" || {
+  echo "error: extended-state field=live-policy-gate missing" >&2; exit 1;
 }
 grep -Fq ': "a"(1u), "c"(0u));' "$kernel_source" || {
   echo "error: extended-state field=cpuid-leaf1 missing" >&2; exit 1;

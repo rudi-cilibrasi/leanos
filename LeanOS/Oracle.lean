@@ -76,11 +76,11 @@ private def interruptEntry (id : String) (descriptor frame stack context cleanup
   { id, adapter := "Interrupt.entry", words := [descriptor, frame, stack, context, cleanup],
     expected := InterruptEntry.entryModelExpected descriptor frame stack context cleanup }
 
-private def extendedState (id : String) (mode vector current active normalized : UInt64) :
+private def extendedState (id : String) (policy mode vector current active normalized : UInt64) :
     Vector :=
   { id, adapter := "ExtendedState.denialDispatch",
-    words := [mode, vector, current, active, normalized],
-    expected := ExtendedState.denialDispatchModel mode vector current active normalized }
+    words := [policy, mode, vector, current, active, normalized],
+    expected := ExtendedState.denialMachineGateModel policy mode vector current active normalized }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -195,13 +195,13 @@ def vectors : List Vector := [
   interruptEntry "entry.nested" 32896 291 0x800000 257 7,
   interruptEntry "entry.ac-uncleared" 32896 291 0x800000 257 2,
   interruptEntry "entry.df-uncleared" 32896 291 0x800000 257 1,
-  extendedState "extended-state.dispatch-peer" 0 7 1 1 1,
-  extendedState "extended-state.policy-mismatch" 1 7 1 1 1,
-  extendedState "extended-state.kernel-origin" 2 7 1 1 1,
-  extendedState "extended-state.dispatch-invariant" 3 7 1 1 1,
-  extendedState "extended-state.idle" 4 7 1 1 1,
-  extendedState "extended-state.stale-binding" 0 7 1 1 2,
-  extendedState "extended-state.dispatch-peer-ud" 6 6 1 1 1]
+  extendedState "extended-state.dispatch-peer" 1 0 7 1 1 1,
+  extendedState "extended-state.policy-mismatch" 0 0 7 1 1 1,
+  extendedState "extended-state.kernel-origin" 1 2 7 1 1 1,
+  extendedState "extended-state.dispatch-invariant" 1 3 7 1 1 1,
+  extendedState "extended-state.idle" 1 4 7 1 1 1,
+  extendedState "extended-state.stale-binding" 1 0 7 1 1 2,
+  extendedState "extended-state.dispatch-peer-ud" 1 6 6 1 1 1]
 
 theorem corpus_shape : vectors.length = 112 := by decide
 theorem boot_decoder_roundtrip_cold :

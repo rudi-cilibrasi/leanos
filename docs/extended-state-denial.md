@@ -137,6 +137,12 @@ retain exact serial and final-ELF evidence. The x87/MMX attempts take typed #NM
 and the deliberately OS-disabled SSE/SSE2/AVX attempts take typed #UD; each must
 trap before its selected shared bank changes, retire A through the same
 normalized cleanup, and restore B through the common validated return path.
-Final work still needs refinement of the global wrapper to the
-generated/machine gate, broader handler/runner negative fixtures, and the
-remaining threat-model/TCB inventory updates.
+The generated denial adapter now carries a leading fail-closed policy word.
+The machine endpoint derives that word from the accepted boot CPUID contract
+and a fresh CR0/CR4 read at exception time; only the exact live value one may
+publish cleanup/peer selection.  An all-input Lean theorem refines this scalar
+prefix to the global wrapper's policy-latch and validator order.  This is a
+refinement of the bounded policy decision, not of generated C, machine cleanup,
+exception delivery, or the final binary.  Final work still needs broader
+handler/runner negative fixtures and the remaining threat-model/TCB inventory
+updates.

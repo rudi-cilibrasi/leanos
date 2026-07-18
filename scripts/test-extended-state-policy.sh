@@ -41,6 +41,9 @@ omit_live_snapshot() {
 omit_cpuid_snapshot() {
   sed -i 's/: "a"(1u), "c"(0u));/: "a"(2u), "c"(0u));/' "$tmp/kernel.c"
 }
+bypass_live_policy_gate() {
+  sed -i 's/extended_state_features_accepted &&/(1 == 1) \&\&/' "$tmp/kernel.c"
+}
 add_clts() {
   sed -i '/^normalize_extended_state_cr0:/a\    clts' "$tmp/boot.S"
 }
@@ -61,6 +64,7 @@ run_fixture inherited-cr0 'field=cr0-normalization' inherit_cr0
 run_fixture inherited-cr4 'field=cr4-normalization' inherit_cr4
 run_fixture missing-live-snapshot 'field=live-cr4-snapshot' omit_live_snapshot
 run_fixture missing-cpuid-snapshot 'field=cpuid-leaf1' omit_cpuid_snapshot
+run_fixture bypassed-live-policy-gate 'field=live-policy-gate' bypass_live_policy_gate
 run_fixture unauthorized-clts 'field=unauthorized-enable-or-restore source' add_clts
 run_fixture unauthorized-fxrstor 'field=unauthorized-enable-or-restore source' add_fxrstor
 run_fixture unauthorized-xrstor 'field=unauthorized-enable-or-restore source' add_xrstor

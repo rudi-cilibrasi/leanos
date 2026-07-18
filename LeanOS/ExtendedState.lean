@@ -503,8 +503,10 @@ theorem dispatchDenied_fatal_atomic state event reason
 
 The adapter encodes the bounded runtime decision used by the C entry endpoint:
 zero is fatal, one is idle after cleanup, and `0x100 + subject` is the exact
-kernel-selected peer.  `mode` injects one reviewed policy/runtime corruption;
-the vector and normalized bindings remain explicit inputs. -/
+kernel-selected peer.  The leading policy word is derived from the live CPUID
+and CR0/CR4 snapshot: only one means that the global denial wrapper may publish.
+`mode` injects one reviewed policy/runtime corruption; the vector and normalized
+bindings remain explicit inputs. -/
 
 def denialDispatchModel (mode vector current active normalized : UInt64) : UInt64 :=
   if mode = 1 then 0
@@ -515,13 +517,53 @@ def denialDispatchModel (mode vector current active normalized : UInt64) : UInt6
   else if mode = 4 then 1
   else 0x100 + (if current = 1 then 2 else 1)
 
-@[export leanos_extended_state_denial_demo]
-def denialDispatchDemo (mode vector current active normalized : UInt64) : UInt64 :=
-  denialDispatchModel mode vector current active normalized
+/-- Scalar image of the global policy prefix.  This is deliberately separate
+from the cleanup decision so the generated endpoint cannot publish a peer when
+its live policy snapshot is stale or already fatal. -/
+def denialMachineGateModel (policy mode vector current active normalized : UInt64) : UInt64 :=
+  if policy = 1 then denialDispatchModel mode vector current active normalized else 0
 
-theorem denialDispatchDemo_agrees mode vector current active normalized :
-    denialDispatchDemo mode vector current active normalized =
-      denialDispatchModel mode vector current active normalized := rfl
+/-- Encode the model-level global wrapper latch and live validator into the
+single fixed-width word consumed by the generated machine gate. -/
+def compositePolicyCode (state : CompositeRuntimeState) : UInt64 :=
+  if state.policyHalted then 2
+  else if validatePolicy state.features state.controls then 1
+  else 0
+
+/-- All-input refinement of the generated scalar policy prefix to the global
+wrapper's exact latch/validator order.  The underlying cleanup scalar remains
+the finite tested boundary documented above. -/
+theorem denialMachineGate_refines_composite_policy_all_inputs
+    (state : CompositeRuntimeState) mode vector current active normalized :
+    denialMachineGateModel (compositePolicyCode state) mode vector current active normalized =
+      if state.policyHalted then 0
+      else if validatePolicy state.features state.controls then
+        denialDispatchModel mode vector current active normalized
+      else 0 := by
+  cases hhalted : state.policyHalted <;>
+    cases hpolicy : validatePolicy state.features state.controls <;>
+    simp [denialMachineGateModel, compositePolicyCode, hhalted, hpolicy]
+
+theorem denialMachineGate_policy_mismatch_fails_closed
+    policy mode vector current active normalized
+    (hpolicy : policy ≠ 1) :
+    denialMachineGateModel policy mode vector current active normalized = 0 := by
+  simp [denialMachineGateModel, hpolicy]
+
+theorem denialMachineGate_live_policy_publishes_exact_dispatch
+    mode vector current active normalized :
+    denialMachineGateModel 1 mode vector current active normalized =
+      denialDispatchModel mode vector current active normalized := by
+  simp [denialMachineGateModel]
+
+@[export leanos_extended_state_denial_demo]
+def denialDispatchDemo (policy mode vector current active normalized : UInt64) : UInt64 :=
+  denialMachineGateModel policy mode vector current active normalized
+
+theorem denialDispatchDemo_refines_machine_gate_all_inputs
+    policy mode vector current active normalized :
+    denialDispatchDemo policy mode vector current active normalized =
+      denialMachineGateModel policy mode vector current active normalized := rfl
 
 /-! Executable non-vacuity and adversarial cases for the finite model. -/
 

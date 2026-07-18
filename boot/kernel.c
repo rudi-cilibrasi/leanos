@@ -29,7 +29,7 @@ extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t);
 extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_extended_state_denial_demo(uint64_t, uint64_t, uint64_t,
-                                                   uint64_t, uint64_t);
+                                                   uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -122,6 +122,7 @@ static unsigned timer_accepted;
 static unsigned blocking_ipc_step;
 static unsigned capability_reuse_state;
 static unsigned supervisor_probe;
+static unsigned extended_state_features_accepted;
 static volatile unsigned ordinary_entry_active;
 #ifdef LEANOS_ENTRY_ADVERSARIAL
 static unsigned entry_adversarial_step;
@@ -161,6 +162,7 @@ static void record_extended_state_cpuid(void) {
     const uint32_t avx = (leaf_c >> 28) & 1u;
     if (!x87 || !mmx || !sse || !sse2 || !xsave || !avx || osxsave)
         fail("extended-state-cpuid-contract");
+    extended_state_features_accepted = 1;
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     serial_puts("LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS\n");
 #endif
@@ -754,7 +756,7 @@ static void replay_oracle(void) {
                                         ? leanos_entry_demo(v->words[0], v->words[1], v->words[2],
                                             v->words[3], v->words[4])
                                         : leanos_extended_state_denial_demo(v->words[0], v->words[1],
-                                            v->words[2], v->words[3], v->words[4]);
+                                            v->words[2], v->words[3], v->words[4], v->words[5]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -828,9 +830,16 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs) {
         current_subject == 2 ? (uint64_t)page_map_level_4_b : 0;
     if (expected_cr3 == 0 || cr3 != expected_cr3)
         fail("extended-state-denial-binding");
+    uint64_t cr0, cr4;
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    const uint64_t required_cr0 = (1ull << 3) | (1ull << 2) | (1ull << 1);
+    const uint64_t forbidden_cr4 = (1ull << 18) | (1ull << 10) | (1ull << 9);
+    uint64_t policy = extended_state_features_accepted &&
+        (cr0 & required_cr0) == required_cr0 && (cr4 & forbidden_cr4) == 0;
     uint64_t mode = vector == 6 ? 6 : 0;
     uint64_t peer = current_subject == 1 ? 2 : 1;
-    if (leanos_extended_state_denial_demo(mode, vector, current_subject,
+    if (leanos_extended_state_denial_demo(policy, mode, vector, current_subject,
             current_subject, current_subject) != 0x100 + peer)
         fail("extended-state-denial-model");
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
