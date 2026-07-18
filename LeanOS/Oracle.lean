@@ -201,11 +201,11 @@ theorem blocking_ipc_scenario_agrees :
   native_decide
 
 theorem capability_reuse_scenario_agrees :
-    (vectors[75]).expected = 1 ∧ (vectors[76]).expected = 0 ∧
-    (vectors[77]).expected = 0 ∧ (vectors[78]).expected = 1 ∧
-    (vectors[79]).expected = 0 ∧ (vectors[80]).expected = 0 ∧
-    (vectors[81]).expected = 0 ∧ (vectors[82]).expected = 0 ∧
-    (vectors[83]).expected = 1 := by
+    (vectors[75]).expected = 11 ∧ (vectors[76]).expected = 8 ∧
+    (vectors[77]).expected = 8 ∧ (vectors[78]).expected = 5 ∧
+    (vectors[79]).expected = 8 ∧ (vectors[80]).expected = 8 ∧
+    (vectors[81]).expected = 8 ∧ (vectors[82]).expected = 0 ∧
+    (vectors[83]).expected = 5 := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

@@ -87,21 +87,48 @@ def phaseState (phase : UInt64) : EndpointIPC.State :=
   else if phase = 3 then wrongKindState
   else reusedState
 
+private def encodeOutcome (outcome : EndpointIPC.Outcome EndpointIPC.SendError)
+    (message : EndpointIPC.Payload) : UInt64 :=
+  let accepted := match outcome.result with
+    | .accepted => 1
+    | .rejected _ => 0
+  let original := if outcome.state.mailbox 10 =
+      some { endpoint := 10, sender := 1, payload := message } then 2 else 0
+  let replacement := if outcome.state.mailbox 11 =
+      some { endpoint := 11, sender := 1, payload := message } then 4 else 0
+  let replacementEmpty := if outcome.state.mailbox 11 = none then 8 else 0
+  accepted + original + replacement + replacementEmpty
+
 def modelExpected (phase caller word word0 word1 : UInt64) : UInt64 :=
   if phase = 4 then
     match (EndpointIPC.create exhaustedState 12 1 1).result with
-    | .accepted => 1
+    | .accepted => 16
     | .rejected _ => 0
   else
-    let outcome := sendWord (phaseState phase) caller.toNat word { word0, word1 }
-    match outcome.result with
-    | .accepted => 1
-    | .rejected _ => 0
+    let message := { word0, word1 }
+    encodeOutcome (sendWord (phaseState phase) caller.toNat word message) message
+
+/-- Allocation-free scalar implementation of the encoded reuse transition.
+Unlike an accept list, it decodes every input word into its slot and generation,
+then applies the phase's live-generation state before encoding observable result
+and mailbox facts. -/
+def capabilityReuseScalar (phase caller word : UInt64) : UInt64 :=
+  if phase = 4 then 0
+  else
+    let slot := word % 65536
+    let generation := word / 65536
+    let liveGeneration := if phase = 0 then 2 else if phase = 2 then 3 else 0
+    let accepted := caller = 1 && slot = 0 && liveGeneration != 0 &&
+      generation = liveGeneration
+    let acceptedBit := if accepted then 1 else 0
+    let original := if phase = 0 && accepted then 2 else 0
+    let replacement := if phase = 2 && accepted then 4 else 0
+    let replacementEmpty := if phase != 2 || !accepted then 8 else 0
+    acceptedBit + original + replacement + replacementEmpty
 
 @[export leanos_capability_reuse_demo]
 def capabilityReuseDemo (phase caller word _word0 _word1 : UInt64) : UInt64 :=
-  if (phase = 0 && caller = 1 && word = 2 * 65536) ||
-      (phase = 2 && caller = 1 && word = 3 * 65536) then 1 else 0
+  capabilityReuseScalar phase caller word
 
 theorem exported_adapter_refines_bounded_sequence :
     capabilityReuseDemo 0 1 staleWord payload.word0 payload.word1 =
@@ -174,11 +201,11 @@ theorem current_word_targets_replacement :
   native_decide
 
 theorem adapter_sequence_agrees :
-    capabilityReuseDemo 0 1 staleWord payload.word0 payload.word1 = 1 ∧
-    capabilityReuseDemo 1 1 staleWord payload.word0 payload.word1 = 0 ∧
-    capabilityReuseDemo 2 1 staleWord payload.word0 payload.word1 = 0 ∧
-    capabilityReuseDemo 2 0 currentWord payload.word0 payload.word1 = 0 ∧
-    capabilityReuseDemo 2 1 currentWord payload.word0 payload.word1 = 1 := by
+    capabilityReuseDemo 0 1 staleWord payload.word0 payload.word1 = 11 ∧
+    capabilityReuseDemo 1 1 staleWord payload.word0 payload.word1 = 8 ∧
+    capabilityReuseDemo 2 1 staleWord payload.word0 payload.word1 = 8 ∧
+    capabilityReuseDemo 2 0 currentWord payload.word0 payload.word1 = 8 ∧
+    capabilityReuseDemo 2 1 currentWord payload.word0 payload.word1 = 5 := by
   native_decide
 
 end LeanOS.CapabilityReuse
