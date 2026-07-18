@@ -113,7 +113,7 @@ static unsigned preemption_step;
 uint64_t current_subject = 1;
 static unsigned timer_accepted;
 static unsigned blocking_ipc_step;
-static unsigned capability_reuse_step;
+static unsigned capability_reuse_state;
 static unsigned supervisor_probe;
 static uint8_t copy_buffer[16];
 static unsigned copy_step;
@@ -674,43 +674,99 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
-    if (capability_reuse_step == 0 && current_subject == 2 && number == 10) {
-        if (leanos_capability_reuse_demo(0, 1, arg0, arg1, arg2) !=
-                oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_INITIAL].expected ||
-            leanos_capability_reuse_demo(1, 1, arg0, arg1, arg2) !=
-                oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_CLEARED_SLOT].expected)
+    if (capability_reuse_state == 0 && current_subject == 2 && number == 10) {
+        uint64_t got = leanos_capability_reuse_demo(
+            capability_reuse_state, 1, arg0, arg1, arg2);
+        uint64_t event = got & 0xffu;
+        uint64_t next_state = (got >> 8) & 0xffu;
+        uint64_t evidence = (got >> 16) & 0xffu;
+        uint64_t slot = (got >> 24) & 0xffffu;
+        uint64_t generation = (got >> 40) & 0xffffu;
+        uint64_t endpoint = (got >> 56) & 0xffu;
+        uint64_t checked_word = generation * 65536u + slot;
+        if (got != oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_INITIAL].expected ||
+            event != 1 || next_state != 1 || evidence != 11 || checked_word != arg0)
             fail("capability-reuse-initial");
-        capability_reuse_step = 1;
-        serial_puts("LEANOS/9 CAPREUSE event=initial subject=2 handle=131072 endpoint=10 accepted=1\n");
-        serial_puts("LEANOS/9 CAPREUSE event=clear slot=0 old-generation=2 result=PASS\n");
-        serial_puts("LEANOS/9 CAPREUSE event=install slot=0 generation=3 endpoint=11 result=PASS\n");
-        return 3 * 65536;
+        capability_reuse_state = next_state;
+        serial_puts("LEANOS/9 CAPREUSE event=initial subject="); serial_u64(current_subject);
+        serial_puts(" handle="); serial_u64(checked_word);
+        serial_puts(" endpoint="); serial_u64(endpoint);
+        serial_puts(" accepted="); serial_u64(evidence & 1u); serial_putc('\n');
+
+        got = leanos_capability_reuse_demo(
+            capability_reuse_state, 1, arg0, arg1, arg2);
+        event = got & 0xffu;
+        next_state = (got >> 8) & 0xffu;
+        evidence = (got >> 16) & 0xffu;
+        slot = (got >> 24) & 0xffffu;
+        uint64_t fresh_generation = (got >> 40) & 0xffffu;
+        endpoint = (got >> 56) & 0xffu;
+        uint64_t fresh_word = fresh_generation * 65536u + slot;
+        if (got != oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_CLEARED_SLOT].expected ||
+            event != 2 || next_state != 2 || evidence != 15)
+            fail("capability-reuse-replace");
+        capability_reuse_state = next_state;
+        serial_puts("LEANOS/9 CAPREUSE event=clear slot="); serial_u64(checked_word & 0xffffu);
+        serial_puts(" old-generation="); serial_u64(checked_word / 65536u);
+        serial_puts(" result="); serial_puts((evidence & 1u) ? "PASS\n" : "FAIL\n");
+        serial_puts("LEANOS/9 CAPREUSE event=install slot="); serial_u64(slot);
+        serial_puts(" generation="); serial_u64(fresh_generation);
+        serial_puts(" endpoint="); serial_u64(endpoint);
+        serial_puts(" result="); serial_puts((evidence & 14u) == 14u ? "PASS\n" : "FAIL\n");
+        return fresh_word;
     }
-    if (capability_reuse_step == 1 && current_subject == 2 && number == 11) {
+    if (capability_reuse_state == 2 && current_subject == 2 && number == 11) {
         uint64_t checked_word = arg0;
 #if LEANOS_RETURN_CORRUPTION_MODE == 13
         serial_puts("LEANOS/9 CAPREUSE fixture=capability-reuse-generation stage=word-boundary result=INJECTED\n");
         checked_word = 3 * 65536 + (arg0 & 0xffffu);
 #endif
-        if (leanos_capability_reuse_demo(2, 1, checked_word, arg1, arg2) !=
-            oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_STALE_GENERATION].expected)
+        uint64_t got = leanos_capability_reuse_demo(
+            capability_reuse_state, 1, checked_word, arg1, arg2);
+        uint64_t event = got & 0xffu;
+        uint64_t next_state = (got >> 8) & 0xffu;
+        uint64_t evidence = (got >> 16) & 0xffu;
+        uint64_t slot = (got >> 24) & 0xffffu;
+        uint64_t generation = (got >> 40) & 0xffffu;
+        uint64_t endpoint = (got >> 56) & 0xffu;
+        uint64_t returned_word = generation * 65536u + slot;
+        if (got != oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_STALE_GENERATION].expected ||
+            event != 3 || next_state != 3 || evidence != 8 || returned_word != checked_word)
             fail("capability-reuse-generation");
-        capability_reuse_step = 2;
-        serial_puts("LEANOS/9 CAPREUSE event=stale-replay subject=2 handle=131072 rejected=1\n");
-        serial_puts("LEANOS/9 CAPREUSE event=unchanged endpoint=11 mailbox=empty result=PASS\n");
+        capability_reuse_state = next_state;
+        serial_puts("LEANOS/9 CAPREUSE event=stale-replay subject="); serial_u64(current_subject);
+        serial_puts(" handle="); serial_u64(returned_word);
+        serial_puts(" rejected="); serial_u64((evidence & 1u) == 0); serial_putc('\n');
+        serial_puts("LEANOS/9 CAPREUSE event=unchanged endpoint="); serial_u64(endpoint);
+        serial_puts(" mailbox="); serial_puts((evidence & 8u) ? "empty" : "changed");
+        serial_puts(" result="); serial_puts((evidence & 8u) ? "PASS\n" : "FAIL\n");
         return 0;
     }
-    if (capability_reuse_step == 2 && current_subject == 2 && number == 12) {
-        if (leanos_capability_reuse_demo(2, 1, arg0, arg1, arg2) !=
-            oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_FRESH_GENERATION].expected)
+    if (capability_reuse_state == 3 && current_subject == 2 && number == 12) {
+        uint64_t got = leanos_capability_reuse_demo(
+            capability_reuse_state, 1, arg0, arg1, arg2);
+        uint64_t event = got & 0xffu;
+        uint64_t next_state = (got >> 8) & 0xffu;
+        uint64_t evidence = (got >> 16) & 0xffu;
+        uint64_t slot = (got >> 24) & 0xffffu;
+        uint64_t generation = (got >> 40) & 0xffffu;
+        uint64_t endpoint = (got >> 56) & 0xffu;
+        uint64_t returned_word = generation * 65536u + slot;
+        if (got != oracle_vectors[ORACLE_INDEX_CAPABILITY_REUSE_FRESH_GENERATION].expected ||
+            event != 4 || next_state != 4 || evidence != 5 || returned_word != arg0)
             fail("capability-reuse-fresh");
-        capability_reuse_step = 3;
-        serial_puts("LEANOS/9 CAPREUSE event=fresh subject=2 handle=196608 endpoint=11 accepted=1\n");
-        serial_puts("LEANOS/9 CAPREUSE status=PASS stale-effects=0 fresh-effects=1\n");
-        return 1;
+        capability_reuse_state = next_state;
+        serial_puts("LEANOS/9 CAPREUSE event=fresh subject="); serial_u64(current_subject);
+        serial_puts(" handle="); serial_u64(returned_word);
+        serial_puts(" endpoint="); serial_u64(endpoint);
+        serial_puts(" accepted="); serial_u64(evidence & 1u); serial_putc('\n');
+        serial_puts("LEANOS/9 CAPREUSE status=PASS stale-effects=");
+        serial_u64((evidence & 8u) != 0);
+        serial_puts(" fresh-effects="); serial_u64((evidence & 4u) != 0); serial_putc('\n');
+        return evidence & 1u;
     }
     if (blocking_ipc_step == 0 && current_subject == 2 && number == 7) {
-        if (capability_reuse_step != 3) fail("capability-reuse-missing");
+        if (capability_reuse_state != 4) fail("capability-reuse-missing");
         uint64_t got = leanos_blocking_ipc_demo(0, 1, 2, 0x4c45414e, 0x4f53);
         if (got != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_BLOCK_B].expected)
             fail("blocking-ipc-model-block");

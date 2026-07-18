@@ -152,16 +152,17 @@ def vectors : List Vector := [
   capabilityReuse "capability-reuse.initial" 0 1 (2 * 65536) 0xCAFE 0xBEEF,
   capabilityReuse "capability-reuse.cleared-slot" 1 1 (2 * 65536) 0xCAFE 0xBEEF,
   capabilityReuse "capability-reuse.stale-generation" 2 1 (2 * 65536) 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.fresh-generation" 2 1 (3 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.fresh-generation" 3 1 (3 * 65536) 0xCAFE 0xBEEF,
   capabilityReuse "capability-reuse.wrong-subject" 2 0 (3 * 65536) 0xCAFE 0xBEEF,
   capabilityReuse "capability-reuse.malformed-generation" 2 1 18446744073709551615
     0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.wrong-kind" 3 1 (4 * 65536) 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.generation-exhausted" 4 1 0 0xCAFE 0xBEEF,
-  capabilityReuse "capability-reuse.boundary-payload" 2 1 (3 * 65536)
+  capabilityReuse "capability-reuse.wrong-kind" 4 1 (4 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.invalid-state-five" 5 1 (3 * 65536) 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.generation-exhausted" 6 1 0 0xCAFE 0xBEEF,
+  capabilityReuse "capability-reuse.boundary-payload" 3 1 (3 * 65536)
     18446744073709551615 18446744073709551615]
 
-theorem corpus_shape : vectors.length = 84 := by decide
+theorem corpus_shape : vectors.length = 85 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -201,11 +202,22 @@ theorem blocking_ipc_scenario_agrees :
   native_decide
 
 theorem capability_reuse_scenario_agrees :
-    (vectors[75]).expected = 11 ∧ (vectors[76]).expected = 8 ∧
-    (vectors[77]).expected = 8 ∧ (vectors[78]).expected = 5 ∧
-    (vectors[79]).expected = 8 ∧ (vectors[80]).expected = 8 ∧
-    (vectors[81]).expected = 8 ∧ (vectors[82]).expected = 0 ∧
-    (vectors[83]).expected = 5 := by
+    (vectors[75]).expected = CapabilityReuse.encodeScenarioEvent 1 1 11
+      CapabilityReuse.staleHandle 10 ∧
+    (vectors[76]).expected = CapabilityReuse.encodeScenarioEvent 2 2 15
+      CapabilityReuse.currentHandle 11 ∧
+    (vectors[77]).expected = CapabilityReuse.encodeScenarioEvent 3 3 8
+      CapabilityReuse.staleHandle 11 ∧
+    (vectors[78]).expected = CapabilityReuse.encodeScenarioEvent 4 4 5
+      CapabilityReuse.currentHandle 11 ∧
+    (vectors[79]).expected = 0 ∧ (vectors[80]).expected = 0 ∧
+    (vectors[81]).expected = CapabilityReuse.encodeScenarioEvent 5 0 8
+      { slot := 0, identity := 4 } 7 ∧
+    (vectors[82]).expected = 0 ∧
+    (vectors[83]).expected = CapabilityReuse.encodeScenarioEvent 6 0 1
+      { slot := 1, identity := 0 } 12 ∧
+    (vectors[84]).expected = CapabilityReuse.encodeScenarioEvent 4 4 5
+      CapabilityReuse.currentHandle 11 := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=
