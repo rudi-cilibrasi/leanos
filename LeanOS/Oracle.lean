@@ -170,6 +170,8 @@ def vectors : List Vector := [
   capabilityReuse "capability-reuse.boundary-payload" 3 1 (3 * 65536)
     18446744073709551615 18446744073709551615,
   interruptEntry "entry.syscall" 32896 291 0x800000 257 3,
+  interruptEntry "entry.user-invalid-opcode" 1542 291 0x800000 257 3,
+  interruptEntry "entry.user-device-not-available" 1799 291 0x800000 257 3,
   interruptEntry "entry.user-page-fault" 69134 291 0x800000 257 3,
   interruptEntry "entry.timer" 8224 291 0x800000 257 3,
   interruptEntry "entry.kernel-diagnostic" 69134 8 0x800000 257 3,
@@ -187,7 +189,7 @@ def vectors : List Vector := [
   interruptEntry "entry.ac-uncleared" 32896 291 0x800000 257 2,
   interruptEntry "entry.df-uncleared" 32896 291 0x800000 257 1]
 
-theorem corpus_shape : vectors.length = 103 := by decide
+theorem corpus_shape : vectors.length = 105 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -247,8 +249,8 @@ theorem capability_reuse_scenario_agrees :
   native_decide
 
 theorem interrupt_entry_scenario_agrees :
-    ((vectors.drop 86).take 4).all (fun vector => vector.expected ≠ 0) = true ∧
-    (vectors.drop 90).all (fun vector => vector.expected = 0) = true := by
+    ((vectors.drop 86).take 6).all (fun vector => vector.expected ≠ 0) = true ∧
+    (vectors.drop 92).all (fun vector => vector.expected = 0) = true := by
   native_decide
 
 private def interruptEntryAdapterAgrees (vector : Vector) : Bool :=

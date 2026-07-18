@@ -40,6 +40,8 @@ extern void run_wp_probe(void);
 extern void run_smep_probe(void);
 extern void enter_user(void *, void *);
 extern void isr80(void);
+extern void isr6(void);
+extern void isr7(void);
 extern void isr8(void);
 extern void isr13(void);
 extern void isr14(void);
@@ -150,7 +152,9 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     if ((flags & ((1ull << 10) | (1ull << 18))) != 0)
         fail("entry-privileged-state");
     uint64_t expected_error, dpl, purpose;
-    if (vector == 14) { expected_error = 1; dpl = 0; purpose = 1; }
+    if (vector == 6) { expected_error = 0; dpl = 0; purpose = 4; }
+    else if (vector == 7) { expected_error = 0; dpl = 0; purpose = 5; }
+    else if (vector == 14) { expected_error = 1; dpl = 0; purpose = 1; }
     else if (vector == 32) { expected_error = 0; dpl = 0; purpose = 2; }
     else if (vector == 128) { expected_error = 0; dpl = 3; purpose = 3; }
     else fail("entry-vector");
@@ -183,6 +187,7 @@ void complete_interrupt_entry(void) {
 static void check_entry_manifest(void) {
     struct expected_gate { unsigned vector; void (*target)(void); uint8_t ist, attr; };
     static const struct expected_gate expected[] = {
+        { 6, isr6, 0, 0x8e }, { 7, isr7, 0, 0x8e },
         { 8, isr8, 1, 0x8e }, { 13, isr13, 0, 0x8e },
         { 14, isr14, 0, 0x8e }, { 32, isr32, 0, 0x8e },
         { 128, isr80, 0, 0xee }
@@ -203,7 +208,7 @@ static void check_entry_manifest(void) {
     if (tss.rsp0 != (uint64_t)(entry_stack + sizeof(entry_stack)) ||
         tss.ist[0] != (uint64_t)__df_ist_stack_end)
         fail("entry-tss-mismatch");
-    serial_puts("LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
+    serial_puts("LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
 }
 
 #ifdef LEANOS_ENTRY_ADVERSARIAL
@@ -760,6 +765,8 @@ static void privilege_init(void) {
     *(uint64_t *)((uint64_t)__df_ist_stack_end - 128u) =
         0x15a1c0decafef00dull;
     set_gate(8, isr8, 1, 0x8e);
+    set_gate(6, isr6, 0, 0x8e);
+    set_gate(7, isr7, 0, 0x8e);
     set_gate(13, isr13, 0, 0x8e);
     set_gate(14, isr14, 0, 0x8e);
     set_gate(32, isr32, 0, 0x8e);
@@ -773,6 +780,16 @@ static void privilege_init(void) {
     struct descriptor idtr = { sizeof(idt) - 1, (uint64_t)idt };
     __asm__ volatile ("lidt %0" : : "m"(idtr));
     load_tss();
+}
+
+/* Vector 6/7 now traverse the shared normalized entry boundary.  Until the
+   lifecycle cleanup/peer-dispatch adapter is composed, reaching this endpoint
+   is deliberately terminal rather than resuming the faulting subject. */
+__attribute__((noreturn)) void extended_state_denial_handler(uint64_t vector,
+                                                              uint64_t saved_cs) {
+    if ((vector != 6 && vector != 7) || saved_cs != 0x23)
+        fail("extended-state-denial-binding");
+    fail("extended-state-denial-uncomposed");
 }
 
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,

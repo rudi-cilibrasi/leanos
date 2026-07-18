@@ -13,7 +13,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
   status=$?
   set -e
-  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
+  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
   sed -i \
     -e 's/schedule=one-shot-pit/schedule=bounded-two-shot-pit/' \
     -e 's/mode=one-shot origin=cpl3/mode=bounded-one-shot sequence=1 origin=cpl3/' \
@@ -27,7 +27,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
   status=$?
   set -e
-  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
+  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
   sed -i \
     -e 's|LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc|' \
     -e '/^LEANOS\/5 /d' \

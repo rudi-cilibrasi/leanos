@@ -551,6 +551,26 @@ df_guard_mapped_record_end:
     call authorize_interrupt_entry
     add $16, %rsp
 .endm
+.global isr6
+isr6:
+    clac
+    cld
+    SAVE
+    NORMALIZE_ENTRY 6, 0, 144
+    mov $6, %edi
+    mov 128(%rsp), %rsi
+    call extended_state_denial_handler
+    ud2
+.global isr7
+isr7:
+    clac
+    cld
+    SAVE
+    NORMALIZE_ENTRY 7, 0, 144
+    mov $7, %edi
+    mov 128(%rsp), %rsi
+    call extended_state_denial_handler
+    ud2
 .global isr80
 isr80:
 .global isr80_clac

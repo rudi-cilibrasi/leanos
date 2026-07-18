@@ -71,7 +71,7 @@ grep -Fq 'set_gate(8, isr8, 1, 0x8e);' boot/kernel.c
 grep -Fq 'set_gate(13, isr13, 0, 0x8e);' boot/kernel.c
 grep -Fq 'movl $0, page_table_a(%eax)' boot/boot.S
 grep -Fq 'movl $0, page_table_b(%eax)' boot/boot.S
-stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr8>:/,/<isr80>:/p')"
+stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr8>:/,/<isr6>:/p')"
 [[ -n "$stub_disassembly" ]] || {
   echo "error: could not isolate vector-8 disassembly" >&2
   exit 1
@@ -116,8 +116,8 @@ grep -Fq 'or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax' bo
 grep -Fq 'bts $20, %rax' boot/boot.S
 grep -Fq 'bts $21, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]
-[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 10 ]]
-[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 11 ]]
+[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 12 ]]
+[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 13 ]]
 for symbol in smap_copy_from_cld smap_copy_from_stac smap_copy_from_clac \
   smap_copy_to_cld smap_copy_to_stac \
   smap_copy_to_clac smap_omit_cleanup_probe_stac smap_force_clac \

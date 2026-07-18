@@ -68,10 +68,20 @@ policy checker binds the two named normalization sites to their reviewed
 instructions. These are inspected and QEMU-tested machine-boundary facts, not
 proof that the processor implements the Lean control-state model.
 
+## Shared entry integration
+
+Vectors 6 and 7 are now user-only interrupt gates in the same bounded entry
+manifest and trap-frame normalizer as page fault, timer, and syscall entry.
+Their assembly stubs clear AC/DF, save only the modeled GPR frame, and call the
+shared kernel-owned authorization adapter before any denial operation.  A
+same-privilege kernel #UD/#NM cannot normalize as a contained event.  The
+current post-normalization endpoint is intentionally fail-stop until lifecycle
+cleanup and peer dispatch are composed; this checkpoint does not claim a
+successful contained machine denial.
+
 ## Remaining integration
 
-The next checkpoint must extend the shared entry manifest with reviewed vector
-6/7 descriptors and normalization, and compose user denial with issue #101's
+The next checkpoint must compose normalized user denial with issue #101's
 authoritative cleanup/peer-dispatch path.
 Issues #104 and #105 must then carry this predicate through the global runtime
 and generated stateful boundary. Final work also needs source/final-ELF policy
