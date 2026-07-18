@@ -746,12 +746,12 @@ inductive Operation where
       (sourceKind : Capability.ObjectKind) (payload : EndpointIPC.Payload)
       (rights : Capability.Rights)
   | transferAccept (endpointWord : UInt64) (destinationSlot : Nat)
-  | capabilityCopy (actor source destination destinationSlot : Nat)
+  | capabilityCopy (source destination destinationSlot : Nat)
       (rights : Capability.Rights)
-  | capabilityRevoke (actor authoritySlot victim victimSlot : Nat)
-  | capabilityRevokeSubtree (actor authoritySlot victim victimSlot : Nat)
-  | map (actor slot addressSpace page : Nat) (permissions : VirtualMapping.Permissions)
-  | unmap (actor addressSpace page : Nat)
+  | capabilityRevoke (authoritySlot victim victimSlot : Nat)
+  | capabilityRevokeSubtree (authoritySlot victim victimSlot : Nat)
+  | map (slot page : Nat) (permissions : VirtualMapping.Permissions)
+  | unmap (page : Nat)
   | createSubject (subject : Nat)
   | terminateSubject (subject : Nat)
   | scheduleAdd (subject : Nat)
@@ -925,29 +925,36 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       match outcome.result with
       | .rejected _ => state
       | .delivered _ => installTransfers state outcome.state
-  | .capabilityCopy actor source destination destinationSlot rights =>
-      let outcome := Capability.copy state.capabilities actor source destination destinationSlot rights
+  | .capabilityCopy source destination destinationSlot rights =>
+      let outcome := Capability.copy state.capabilities
+        state.execution.core.context.currentSubject source destination destinationSlot rights
       match outcome.result with
       | .rejected _ => state
       | .accepted => installCapabilities state outcome.state
-  | .capabilityRevoke actor authoritySlot victim victimSlot =>
-      let outcome := Capability.revoke state.capabilities actor authoritySlot victim victimSlot
+  | .capabilityRevoke authoritySlot victim victimSlot =>
+      let outcome := Capability.revoke state.capabilities
+        state.execution.core.context.currentSubject authoritySlot victim victimSlot
       match outcome.result with
       | .rejected _ => state
       | .accepted => installCapabilities state outcome.state
-  | .capabilityRevokeSubtree actor authoritySlot victim victimSlot =>
-      let outcome := Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot
+  | .capabilityRevokeSubtree authoritySlot victim victimSlot =>
+      let outcome := Capability.revokeSubtree state.capabilities
+        state.execution.core.context.currentSubject authoritySlot victim victimSlot
       match outcome.result with
       | .rejected _ => state
       | .accepted => installCapabilities state outcome.state
-  | .map actor slot addressSpace page permissions =>
-      let outcome := VirtualMapping.map state.virtualMemory actor slot addressSpace page permissions
+  | .map slot page permissions =>
+      let outcome := VirtualMapping.map state.virtualMemory
+        state.execution.core.context.currentSubject slot
+        state.execution.core.context.activeAddressSpace page permissions
       match outcome.result with
       | .rejected _ => state
       | .accepted => installLifecycle { state with virtualMemory := outcome.state }
           (lifecycleFromVirtualMemory state.lifecycle outcome.state)
-  | .unmap actor addressSpace page =>
-      let outcome := VirtualMapping.unmap state.virtualMemory actor addressSpace page
+  | .unmap page =>
+      let outcome := VirtualMapping.unmap state.virtualMemory
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page
       match outcome.result with
       | .rejected _ => state
       | .accepted => installLifecycle { state with virtualMemory := outcome.state }
@@ -1025,19 +1032,24 @@ def operationReply (state : CompositeState) : Operation → OperationReply
       let outcome := CapabilityTransfer.acceptWord state.transfers
         state.execution.core.context.currentSubject endpointWord destinationSlot
       .transferAccept outcome.result outcome.deliveredWord
-  | .capabilityCopy actor source destination destinationSlot rights =>
+  | .capabilityCopy source destination destinationSlot rights =>
       .capability
-        (Capability.copy state.capabilities actor source destination destinationSlot rights).result
-  | .capabilityRevoke actor authoritySlot victim victimSlot =>
+        (Capability.copy state.capabilities state.execution.core.context.currentSubject
+          source destination destinationSlot rights).result
+  | .capabilityRevoke authoritySlot victim victimSlot =>
       .capability
-        (Capability.revoke state.capabilities actor authoritySlot victim victimSlot).result
-  | .capabilityRevokeSubtree actor authoritySlot victim victimSlot =>
+        (Capability.revoke state.capabilities state.execution.core.context.currentSubject
+          authoritySlot victim victimSlot).result
+  | .capabilityRevokeSubtree authoritySlot victim victimSlot =>
       .capability
-        (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).result
-  | .map actor slot addressSpace page permissions =>
-      .map (VirtualMapping.map state.virtualMemory actor slot addressSpace page permissions).result
-  | .unmap actor addressSpace page =>
-      .unmap (VirtualMapping.unmap state.virtualMemory actor addressSpace page).result
+        (Capability.revokeSubtree state.capabilities state.execution.core.context.currentSubject
+          authoritySlot victim victimSlot).result
+  | .map slot page permissions =>
+      .map (VirtualMapping.map state.virtualMemory state.execution.core.context.currentSubject slot
+        state.execution.core.context.activeAddressSpace page permissions).result
+  | .unmap page =>
+      .unmap (VirtualMapping.unmap state.virtualMemory state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page).result
   | .createSubject subject => .createSubject (SubjectLifecycle.create state.lifecycle subject).result
   | .terminateSubject subject =>
       .terminateSubject (SubjectLifecycle.terminate state.lifecycle subject).result
@@ -1083,28 +1095,29 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
         state.execution.core.context.currentSubject endpointWord destinationSlot).deliveredWord = deliveredWord) :
       SubsystemRejection state (.transferAccept endpointWord destinationSlot)
         (.transferAccept (.rejected reason) deliveredWord)
-  | capabilityCopy actor source destination destinationSlot rights reason
-      (h : (Capability.copy state.capabilities actor source destination destinationSlot rights).result =
-        .rejected reason) :
-      SubsystemRejection state (.capabilityCopy actor source destination destinationSlot rights)
+  | capabilityCopy source destination destinationSlot rights reason
+      (h : (Capability.copy state.capabilities state.execution.core.context.currentSubject
+        source destination destinationSlot rights).result = .rejected reason) :
+      SubsystemRejection state (.capabilityCopy source destination destinationSlot rights)
         (.capability (.rejected reason))
-  | capabilityRevoke actor authoritySlot victim victimSlot reason
-      (h : (Capability.revoke state.capabilities actor authoritySlot victim victimSlot).result =
-        .rejected reason) :
-      SubsystemRejection state (.capabilityRevoke actor authoritySlot victim victimSlot)
+  | capabilityRevoke authoritySlot victim victimSlot reason
+      (h : (Capability.revoke state.capabilities state.execution.core.context.currentSubject
+        authoritySlot victim victimSlot).result = .rejected reason) :
+      SubsystemRejection state (.capabilityRevoke authoritySlot victim victimSlot)
         (.capability (.rejected reason))
-  | capabilityRevokeSubtree actor authoritySlot victim victimSlot reason
-      (h : (Capability.revokeSubtree state.capabilities actor authoritySlot victim victimSlot).result =
-        .rejected reason) :
-      SubsystemRejection state (.capabilityRevokeSubtree actor authoritySlot victim victimSlot)
+  | capabilityRevokeSubtree authoritySlot victim victimSlot reason
+      (h : (Capability.revokeSubtree state.capabilities state.execution.core.context.currentSubject
+        authoritySlot victim victimSlot).result = .rejected reason) :
+      SubsystemRejection state (.capabilityRevokeSubtree authoritySlot victim victimSlot)
         (.capability (.rejected reason))
-  | map actor slot addressSpace page permissions reason
-      (h : (VirtualMapping.map state.virtualMemory actor slot addressSpace page permissions).result =
-        .rejected reason) :
-      SubsystemRejection state (.map actor slot addressSpace page permissions) (.map (.rejected reason))
-  | unmap actor addressSpace page reason
-      (h : (VirtualMapping.unmap state.virtualMemory actor addressSpace page).result = .rejected reason) :
-      SubsystemRejection state (.unmap actor addressSpace page) (.unmap (.rejected reason))
+  | map slot page permissions reason
+      (h : (VirtualMapping.map state.virtualMemory state.execution.core.context.currentSubject slot
+        state.execution.core.context.activeAddressSpace page permissions).result = .rejected reason) :
+      SubsystemRejection state (.map slot page permissions) (.map (.rejected reason))
+  | unmap page reason
+      (h : (VirtualMapping.unmap state.virtualMemory state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page).result = .rejected reason) :
+      SubsystemRejection state (.unmap page) (.unmap (.rejected reason))
   | createSubject subject reason
       (h : (SubjectLifecycle.create state.lifecycle subject).result = .rejected reason) :
       SubsystemRejection state (.createSubject subject) (.createSubject (.rejected reason))
@@ -1330,6 +1343,26 @@ theorem ipc_result_sound state call
     (gate state (.ipc call)).result =
       .completed (.ipc (dispatchIPC state call).reply) :=
   by simp [gate, hmode, operationReply]
+
+/-- Capability authority is always evaluated for the live subject selected by
+the execution latch; the public operation has no actor field to vary. -/
+theorem capability_copy_result_sound state source destination destinationSlot rights
+    (hmode : state.execution.mode = .running) :
+    (gate state (.capabilityCopy source destination destinationSlot rights)).result =
+      .completed (.capability
+        (Capability.copy state.capabilities state.execution.core.context.currentSubject
+          source destination destinationSlot rights).result) := by
+  simp [gate, hmode, operationReply]
+
+/-- Mapping authority and the target address space are both projected from the
+live execution context rather than accepted as public scalar arguments. -/
+theorem map_result_sound state slot page permissions
+    (hmode : state.execution.mode = .running) :
+    (gate state (.map slot page permissions)).result =
+      .completed (.map
+        (VirtualMapping.map state.virtualMemory state.execution.core.context.currentSubject slot
+          state.execution.core.context.activeAddressSpace page permissions).result) := by
+  simp [gate, hmode, operationReply]
 
 /-- Initial dispatch is also represented by a typed composite step; syscall
 and timer paths reselect only after their final context update. -/
@@ -1626,7 +1659,7 @@ example (state : CompositeState) (record : HaltRecord)
     (frame : Interrupt.HardwareFrame) :
     runOperations state [
       .syscall syscall, .preempt frame, .ipc ipc,
-      .capabilityRevoke 0 0 1 0, .unmap 0 0 0, .terminateSubject 0] = state := by
+      .capabilityRevoke 0 1 0, .unmap 0, .terminateSubject 0] = state := by
   simp [runOperations, gate, hhalted]
 
 end LeanOS.FailStop
