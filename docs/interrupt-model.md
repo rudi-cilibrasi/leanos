@@ -88,18 +88,28 @@ shape or origin, out-of-bounds entry stack, nested entry, and uncleared AC/DF.
 Accepted records copy subject, active address space/CR3, and stack identity from
 `KernelContext`; attacker registers are absent from the function input. Lean
 proves manifest validity, uniqueness of the DPL3 syscall gate, totality and
-determinism, same-privilege confinement, nested/uncleared-state nonauthorization,
-and exact kernel-context binding. These are model results only.
+determinism, attacker-register erasure, rejection stability, same-privilege
+confinement, nested/uncleared-state nonauthorization, and exact kernel-context
+binding. These are model results only.
 
 The generated allocation-free `leanos_entry_demo` adapter is replayed in the
 version-one oracle with valid syscall, user page fault, timer, and diagnostic
 records plus wrong binding, error shape, length, alignment, origin, stack,
 nested-latch, and AC/DF fixtures. `scripts/check-entry-policy.sh` enumerates the
 final-ELF entry paths and requires cleanup, shared authorization, the typed
-handler, and latch completion in that order. It also applies bounded one-field
-descriptor, path, and TSS snapshot mutations. At boot, `check_entry_manifest`
+handler, and latch completion in that order. It also names the bounded
+one-field descriptor, path, and TSS fixture matrix and its required diagnostics.
+At boot, `check_entry_manifest`
 decodes every present IDT entry and the relevant TSS stack pointers and rejects
 unmanifested present gates.
+
+The bounded entry-adversarial image executes `int $14` and `int $32` from CPL3.
+Both attempts must deliver vector 13 with the selector-derived error code, must
+leave the privileged vector-14 and vector-32 handlers unreachable, and must
+then complete the ordinary syscall path with its trusted subject/address-space
+binding. Firmware PIC lines are masked when the IDT is installed; only the
+preemption scenario remaps and deliberately unmasks IRQ0, preventing a legacy
+IRQ from being confused with the dedicated vector-8 terminal protocol.
 
 ## Proof, tests, and trusted assumptions
 

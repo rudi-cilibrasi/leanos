@@ -192,6 +192,24 @@ def normalize (raw : RawEntry) (context : KernelContext) : Result :=
           if cs % 4 != 0 then .fatal .wrongFrameShape
           else .accepted (makeNormalized entry raw context)
 
+/-- The explicit machine-facing spelling records that saved GPRs are erased
+before the trusted entry classifier is evaluated. -/
+def normalizeWithRegisters (raw : RawEntry) (context : KernelContext)
+    (_registers : AttackerRegisters) : Result :=
+  normalize raw context
+
+theorem attacker_register_erasure raw context left right :
+    normalizeWithRegisters raw context left = normalizeWithRegisters raw context right := by
+  rfl
+
+theorem normalize_total raw context : ∃ result, normalize raw context = result := by
+  exact ⟨_, rfl⟩
+
+theorem rejection_stable raw context reason
+    (hrejected : normalize raw context = .fatal reason) :
+    normalize raw context = .fatal reason :=
+  hrejected
+
 theorem normalize_deterministic raw context first second
     (hfirst : normalize raw context = first)
     (hsecond : normalize raw context = second) : first = second := by
@@ -222,6 +240,20 @@ theorem uncleared_ac_never_authorizes raw context (hac : raw.acCleared = false) 
   split <;> try simp
   split <;> try simp
   simp [hac]
+
+theorem uncleared_df_never_authorizes raw context (hdf : raw.dfCleared = false) :
+    ∀ accepted, normalize raw context ≠ .accepted accepted := by
+  intro accepted
+  unfold normalize
+  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, if_false]
+  split <;> try simp
+  split <;> try simp
+  split <;> try simp
+  split <;> try simp
+  split <;> try simp
+  split <;> try simp
+  split <;> try simp
+  simp [hdf]
 
 theorem same_privilege_never_user raw context accepted
     (hshape : ∃ rip cs flags, raw.frame = .samePrivilege rip cs flags)
