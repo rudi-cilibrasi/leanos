@@ -5,7 +5,11 @@ qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
 limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
-if [[ "$scenario" == extended-state ]]; then
+extended_instruction=x87
+if [[ "$scenario" == extended-state-mmx ]]; then
+  extended_instruction=mmx
+  default_image="build/boot/leanos-${version}-x86_64-extended-state-mmx.iso"
+elif [[ "$scenario" == extended-state ]]; then
   default_image="build/boot/leanos-${version}-x86_64-extended-state.iso"
 elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
@@ -31,7 +35,7 @@ expected="$(mktemp)"; without_allocation="$(mktemp)"
 trap 'rm -f "$expected" "$without_allocation"' EXIT
 corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
 [[ -f "$corpus" ]] || { echo "error: oracle corpus '$corpus' not found" >&2; exit 1; }
-if [[ "$scenario" == extended-state ]]; then
+if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ]]; then
   echo 'LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts' > "$expected"
 elif [[ "$scenario" == preemption ]]; then
   echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap' > "$expected"
@@ -43,7 +47,7 @@ printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 echo 'LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' >> "$expected"
-if [[ "$scenario" == extended-state ]]; then
+if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ]]; then
   echo 'LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS' >> "$expected"
 fi
 printf '%s\n' \
@@ -53,10 +57,10 @@ printf '%s\n' \
   'LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS' \
   'LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS' \
   'LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS' >> "$expected"
-if [[ "$scenario" == extended-state ]]; then
+if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ]]; then
 printf '%s\n' \
-  'LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=x87 expected-vector=7' \
-  'LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=7 instruction=x87 bank-write=prevented cleanup=complete peer=2' \
+  "LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=${extended_instruction} expected-vector=7" \
+  "LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=7 instruction=${extended_instruction} bank-write=prevented cleanup=complete peer=2" \
   'LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved' \
   'LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1' >> "$expected"
 elif [[ "$scenario" == preemption ]]; then
@@ -141,8 +145,12 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
 done
 sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
-if [[ "$scenario" == extended-state ]]; then
-  snapshot="${LEANOS_EXTENDED_STATE_SNAPSHOT:-build/boot/extended-state-control-snapshot.txt}"
+if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ]]; then
+  default_snapshot="build/boot/extended-state-control-snapshot.txt"
+  if [[ "$extended_instruction" == mmx ]]; then
+    default_snapshot="build/boot/extended-state-mmx-control-snapshot.txt"
+  fi
+  snapshot="${LEANOS_EXTENDED_STATE_SNAPSHOT:-$default_snapshot}"
   mkdir -p "$(dirname "$snapshot")"
   grep -E '^LEANOS/(13 EXTENDED-STATE cpuid\.1\.|6 CONTROL )' "$log" > "$snapshot"
   [[ $(wc -l < "$snapshot") -eq 2 ]] || {

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 elf="${1:-build/boot/leanos.elf}"
+probe="${2:-}"
 boot_source="${LEANOS_EXTENDED_STATE_BOOT_SOURCE:-boot/boot.S}"
 kernel_source="${LEANOS_EXTENDED_STATE_KERNEL_SOURCE:-boot/kernel.c}"
 [[ -f "$elf" ]] || { echo "error: missing extended-state-policy ELF: $elf" >&2; exit 1; }
@@ -66,6 +67,19 @@ if grep -Eq 'mov[^"]*,[[:space:]]*%%cr(0|4)' "$kernel_source"; then
 fi
 
 disassembly="$(objdump -d --no-show-raw-insn "$elf")"
+if [[ "$probe" == x87 ]]; then
+  grep -Eq '[[:space:]]fld1([[:space:]]|$)' <<<"$disassembly" || {
+    echo "error: extended-state field=x87-probe final-elf" >&2; exit 1;
+  }
+elif [[ "$probe" == mmx ]]; then
+  grep -Eq '[[:space:]]pxor[[:space:]]+%mm0,%mm0([[:space:]]|$)' \
+    <<<"$disassembly" || {
+    echo "error: extended-state field=mmx-probe final-elf" >&2; exit 1;
+  }
+elif [[ -n "$probe" ]]; then
+  echo "error: extended-state field=probe-class unsupported=$probe" >&2
+  exit 1
+fi
 grep -Eq '[[:space:]]and[[:space:]]+\$0xfffbf9ff,%eax' <<<"$disassembly" || {
   echo "error: extended-state field=cr4-normalization final-elf" >&2; exit 1;
 }
@@ -84,4 +98,4 @@ fi
   echo "error: extended-state field=control-write-inventory final-elf" >&2; exit 1;
 }
 
-echo "Extended-state CPUID/CR0/CR4 derivation, live snapshot, and final-ELF policy passed"
+echo "Extended-state CPUID/CR0/CR4 derivation, live snapshot, and final-ELF policy passed${probe:+ probe=$probe}"

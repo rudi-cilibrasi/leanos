@@ -68,19 +68,22 @@ policy-mismatch, kernel-origin, stale-binding, and dispatch-invariant cases and
 replays the generated adapter in both hosted C and the boot image. These are
 finite model/boundary tests, not a refinement proof.
 
-The versioned emulator evidence matrix treats the dedicated two-subject denial
-image as a mandatory accepted-boot scenario. Its report binds the exact QEMU
-command, source revision, image and ELF hashes, and complete serial log. CI
-retains that ISO, ELF, link map, final page-table plans, serial transcript,
-final-ELF disassembly, decoded CPUID/control-state snapshot, and the
-extended-state policy verdict for 14 days.
+The versioned emulator evidence matrix treats dedicated x87 and MMX
+two-subject denial images as mandatory accepted-boot scenarios. Each report
+binds the exact QEMU command, source revision, image and ELF hashes, and
+complete serial log. CI retains both ISOs, ELFs, link maps, final page-table
+plans, serial transcripts, decoded CPUID/control-state snapshots, and
+extended-state policy verdicts for 14 days.
 
 The source and final-ELF policy gates also fix the reviewed CR0/CR4 write
 inventory and reject `clts`, `fxrstor`, and `xrstor`. Controlled fixtures add
 each forbidden instruction and an extra CR0 write to the source snapshot and
-must retain their typed rejection diagnostics. This protects the inspection
-gate from silent relaxation; it does not prove the disassembler or source scan
-complete for arbitrary instruction encodings.
+must retain their typed rejection diagnostics. The final-ELF gate additionally
+requires `fld1` in the x87 image and `pxor %mm0,%mm0` in the MMX image; a
+controlled class-swap fixture rejects each ELF under the other's expected
+probe. This protects the inspection gate from silent relaxation; it does not
+prove the disassembler or source scan complete for arbitrary instruction
+encodings.
 
 Still trusted and unproved are CPUID and control-register reads, instruction
 decoding, hardware exception priority and delivery, descriptor loads, assembly,
@@ -126,9 +129,11 @@ validated return path in the dedicated denial image.
 The machine endpoint now consumes the cleanup/dispatch result, retires A, and
 restores the scheduler-selected peer. The global model also carries the
 denied-state predicate around #104's authoritative operation vocabulary and
-proves single-step and finite-sequence preservation. The deterministic x87
-two-subject QEMU scenario is now release-blocking and its exact serial and
-final-ELF evidence are retained. Final work still needs representative
-MMX/SSE/AVX denial coverage, refinement of the global wrapper to the
+proves single-step and finite-sequence preservation. The deterministic x87 and
+MMX two-subject QEMU scenarios are now release-blocking and retain exact serial
+and final-ELF evidence. Both attempts must trap before their selected shared
+bank changes, retire A through the same normalized cleanup, and restore B
+through the common validated return path. Final work still needs representative
+SSE/SSE2/AVX denial coverage, refinement of the global wrapper to the
 generated/machine gate, broader handler/runner negative fixtures, and the
 remaining threat-model/TCB inventory updates.
