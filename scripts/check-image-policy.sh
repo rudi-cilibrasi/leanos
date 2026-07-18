@@ -115,8 +115,8 @@ grep -Fq 'or $((1 << 31) | (1 << 16)), %eax' boot/boot.S
 grep -Fq 'bts $20, %rax' boot/boot.S
 grep -Fq 'bts $21, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]
-[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 9 ]]
-[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 10 ]]
+[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 10 ]]
+[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 11 ]]
 for symbol in smap_copy_from_cld smap_copy_from_stac smap_copy_from_clac \
   smap_copy_to_cld smap_copy_to_stac \
   smap_copy_to_clac smap_omit_cleanup_probe_stac smap_force_clac \

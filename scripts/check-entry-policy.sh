@@ -39,7 +39,7 @@ check_path() {
     echo "error: vector=$vector path=stub violated=handler-before-cleanup-or-normalization" >&2
     exit 1
   }
-  grep -q 'call.*<complete_interrupt_entry>' <<<"$dis" || {
+  grep -Eq '(<complete_interrupt_entry>|user_return_epilogue)' <<<"$dis" || {
     echo "error: vector=$vector path=stub violated=entry-latch-not-completed" >&2; exit 1;
   }
   echo "ENTRY-POLICY vector=$vector target=$start_symbol cleanup=AC,DF normalize=shared handler=$handler result=PASS"
@@ -48,6 +48,14 @@ check_path() {
 check_path 128 isr80 isr14 syscall_handler
 check_path 14 isr14 isr32 page_fault_handler
 check_path 32 isr32 user_return_epilogue timer_handler
+epilogue_dis="$(objdump -d --no-show-raw-insn --start-address="$(address user_return_epilogue)" \
+  --stop-address="$(address user_return_iretq)" "$elf")"
+grep -q 'call.*<validate_user_return>' <<<"$epilogue_dis" || {
+  echo "error: ordinary entry path does not reach the reviewed return gate" >&2; exit 1;
+}
+grep -Fq 'if (ordinary_entry_active) ordinary_entry_active = 0;' boot/kernel.c || {
+  echo "error: reviewed return gate does not consume the entry latch" >&2; exit 1;
+}
 
 # Bounded one-field mutations of the decoded descriptor/TSS/path snapshot.
 # Each line names the same field diagnostic the production checker must emit.

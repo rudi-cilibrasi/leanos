@@ -7,6 +7,8 @@ version="${LEANOS_VERSION:-0.1.0}"
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
 if [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
+elif [[ "$scenario" == entry-adversarial ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-entry-adversarial.iso"
 else
   default_image="build/boot/leanos-${version}-x86_64.iso"
 fi
@@ -36,6 +38,7 @@ printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
+echo 'LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' >> "$expected"
 printf '%s\n' \
   'LEANOS/6 CONTROL cr0.wp=1 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready' \
   'LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS' \
@@ -66,6 +69,14 @@ printf '%s\n' \
   'LEANOS/10 IPC event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS' \
   'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
   'LEANOS/10 IPC event=dispatch subject=1 address-space=1 blocked-subject=2 trusted=1' \
+  >> "$expected"
+if [[ "$scenario" == entry-adversarial ]]; then
+printf '%s\n' \
+  'LEANOS/11 ENTRY-ADVERSARIAL attempted-vector=14 delivered=13 privileged-handler=unreached result=PASS' \
+  'LEANOS/11 ENTRY-ADVERSARIAL attempted-vector=32 delivered=13 privileged-handler=unreached result=PASS' \
+  >> "$expected"
+fi
+printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
   'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' \
   'LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1' \

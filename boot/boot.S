@@ -428,6 +428,33 @@ run_double_fault_probe:
    The guard-mapped negative image must take this path and must not claim #DF. */
 .global isr13
 isr13:
+#ifdef LEANOS_ENTRY_ADVERSARIAL
+    clac
+    cld
+    push %rax; push %rbx; push %rcx; push %rdx; push %rbp; push %rsi; push %rdi
+    push %r8; push %r9; push %r10; push %r11; push %r12; push %r13; push %r14; push %r15
+    sub $8, %rsp
+    mov 128(%rsp), %rdi
+    mov 136(%rsp), %rsi
+    mov 144(%rsp), %rdx
+    call entry_adversarial_gp_handler
+    mov %rax, 136(%rsp)
+    add $8, %rsp
+    /* Discard the #GP error word by shifting the five-word user frame into
+       the standard SAVE+iret layout consumed by the existing validator. */
+    mov 128(%rsp), %rax
+    mov %rax, 120(%rsp)
+    mov 136(%rsp), %rax
+    mov %rax, 128(%rsp)
+    mov 144(%rsp), %rax
+    mov %rax, 136(%rsp)
+    mov 152(%rsp), %rax
+    mov %rax, 144(%rsp)
+    mov 160(%rsp), %rax
+    mov %rax, 152(%rsp)
+    mov $2, %esi
+    jmp user_return_epilogue
+#else
     cli
     clac
     cld
@@ -437,6 +464,7 @@ isr13:
     outb %al, %dx
 6:  hlt
     jmp 6b
+#endif
 
 /* Vector 8 has a hardware error-code word.  This terminal stub uses no C ABI,
    calls, pushes, allocation, formatting, recovery path, or iretq. */
@@ -796,6 +824,10 @@ user_a_entry:
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
+#ifdef LEANOS_ENTRY_ADVERSARIAL
+    int $14
+    int $32
+#endif
     movb $0x5a, user_a_stack+4094(%rip)
     movb $0xa5, user_a_stack+4095(%rip)
     movb $0x3c, user_a_stack+4096(%rip)

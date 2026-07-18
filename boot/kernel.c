@@ -115,6 +115,9 @@ static unsigned timer_accepted;
 static unsigned blocking_ipc_step;
 static unsigned supervisor_probe;
 static volatile unsigned ordinary_entry_active;
+#ifdef LEANOS_ENTRY_ADVERSARIAL
+static unsigned entry_adversarial_step;
+#endif
 static uint8_t copy_buffer[16];
 static unsigned copy_step;
 static void finish(uint8_t value);
@@ -199,6 +202,21 @@ static void check_entry_manifest(void) {
         fail("entry-tss-mismatch");
     serial_puts("LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
 }
+
+#ifdef LEANOS_ENTRY_ADVERSARIAL
+uint64_t entry_adversarial_gp_handler(uint64_t error, uint64_t rip,
+                                      uint64_t saved_cs) {
+    static const uint64_t expected_error[] = { 14u * 8u + 2u, 32u * 8u + 2u };
+    if (saved_cs != 0x23 || entry_adversarial_step >= 2 ||
+        error != expected_error[entry_adversarial_step])
+        fail("entry-adversarial-gp");
+    serial_puts("LEANOS/11 ENTRY-ADVERSARIAL attempted-vector=");
+    serial_u64(entry_adversarial_step == 0 ? 14 : 32);
+    serial_puts(" delivered=13 privileged-handler=unreached result=PASS\n");
+    ++entry_adversarial_step;
+    return rip + 2;
+}
+#endif
 
 /* The arrays are emitted only after the linker-resolved Input is accepted by
    LeanOS.BootPageTablePlan.compile. The early assembly constructor remains
@@ -739,6 +757,11 @@ static void privilege_init(void) {
     set_gate(32, isr32, 0, 0x8e);
     set_gate(0x80, isr80, 0, 0xee);
     check_entry_manifest();
+    /* Firmware may leave legacy IRQ lines unmasked.  Keep asynchronous input
+       outside the ordinary-entry protocol until the preemption scenario has
+       remapped the PIC and deliberately armed its bounded timer. */
+    out8(0x21, 0xff);
+    out8(0xa1, 0xff);
     struct descriptor idtr = { sizeof(idt) - 1, (uint64_t)idt };
     __asm__ volatile ("lidt %0" : : "m"(idtr));
     load_tss();
