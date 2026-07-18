@@ -70,12 +70,13 @@ LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/ok.tsv" \
   LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$tmp/edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$tmp/fixture.elf" >"$tmp/elf-ok.log"
 grep -Fq $'fixture_root\troot' "$tmp/edges.tsv"
-grep -Fq 'path=ok final-elf-root=fixture_root reviewed-functions=2' "$tmp/elf-ok.log"
+grep -Fq 'path=ok final-elf-root=fixture_root reviewed-functions=2 reachable-functions=3' \
+  "$tmp/elf-ok.log"
 
 run_rejected_elf() {
   local name="$1" diagnostic="$2"
   if LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/$name.tsv" \
-      LEANOS_ENTRY_STACK_USABLE_BYTES=184 ./scripts/check-entry-stack-budget.sh \
+      LEANOS_ENTRY_STACK_USABLE_BYTES=192 ./scripts/check-entry-stack-budget.sh \
       "$tmp/fixture.elf" >"$tmp/$name-elf.log" 2>&1; then
     echo "error: final-ELF fixture '$name' unexpectedly passed" >&2; exit 1
   fi
@@ -84,8 +85,10 @@ run_rejected_elf() {
     cat "$tmp/$name-elf.log" >&2; exit 1
   }
 }
-printf 'detached\tkernel\t0\t0\tfixture_root\troot;detached\n' >"$tmp/detached.tsv"
+printf 'detached\tkernel\t0\t0\tfixture_root\troot;leaf;detached\n' >"$tmp/detached.tsv"
 run_rejected_elf detached 'final-elf-unreachable-function=detached'
+printf 'unreviewed\tkernel\t0\t0\tfixture_root\troot\n' >"$tmp/unreviewed.tsv"
+run_rejected_elf unreviewed 'final-elf-unreviewed-stack-usage=leaf'
 printf 'elf-indirect\tkernel\t0\t0\tindirect_root\troot\n' >"$tmp/elf-indirect.tsv"
 run_rejected_elf elf-indirect 'final-elf-indirect-edge=indirect_root:'
 echo 'entry-stack budget fixtures passed'

@@ -134,6 +134,22 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
     [[ "$(wc -l <"$tmp/reachable")" -eq "$before" ]] && break
   done
   IFS=';' read -ra chain <<<"$functions"
+  declare -A reviewed=()
+  reviewed[$elf_root]=1
+  for function_name in "${chain[@]}"; do
+    reviewed[$function_name]=1
+  done
+  while IFS=$'\t' read -r function_name instruction operand; do
+    echo "error: path=$path final-elf-indirect-edge=$function_name:$instruction $operand" >&2
+    exit 1
+  done < <(awk -F '\t' 'NR == FNR { reached[$1] = 1; next }
+      reached[$1] { print }' "$tmp/reachable" "$tmp/indirect")
+  while IFS= read -r function_name; do
+    if [[ -n "${usage[$function_name]+set}" && -z "${reviewed[$function_name]+set}" ]]; then
+      echo "error: path=$path final-elf-unreviewed-stack-usage=$function_name" >&2
+      exit 1
+    fi
+  done <"$tmp/reachable"
   for function_name in "$elf_root" "${chain[@]}"; do
     grep -Fxq "$function_name" "$tmp/symbols" || {
       echo "error: path=$path final-elf-missing-function=$function_name" >&2; exit 1;
@@ -142,14 +158,8 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
       echo "error: path=$path final-elf-unreachable-function=$function_name root=$elf_root" >&2
       exit 1
     }
-    if awk -F '\t' -v fn="$function_name" '$1 == fn { found = 1 } END { exit !found }' \
-        "$tmp/indirect"; then
-      edge="$(awk -F '\t' -v fn="$function_name" '$1 == fn { print $2 " " $3; exit }' \
-        "$tmp/indirect")"
-      echo "error: path=$path final-elf-indirect-edge=$function_name:$edge" >&2
-      exit 1
-    fi
   done
-  printf 'path=%s final-elf-root=%s reviewed-functions=%s extracted-edges=%s result=PASS\n' \
-    "$path" "$elf_root" "${#chain[@]}" "$(wc -l <"$tmp/edges")"
+  printf 'path=%s final-elf-root=%s reviewed-functions=%s reachable-functions=%s extracted-edges=%s result=PASS\n' \
+    "$path" "$elf_root" "${#chain[@]}" "$(wc -l <"$tmp/reachable")" \
+    "$(wc -l <"$tmp/edges")"
 done < "$manifest"
