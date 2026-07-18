@@ -1,4 +1,5 @@
 import LeanOS.MemoryLifecycle
+import LeanOS.CapabilityHandle
 
 /-!
 # Capability-bounded virtual mappings
@@ -142,7 +143,8 @@ def retireAddressSpace (state : Capability.State) (object : ObjectId) : Capabili
 def addressSpaceRootRights : Capability.Rights := { grant := true, revoke := true }
 
 inductive CreateError where
-  | invalidSubject | occupiedSlot | identifierAlreadyIssued | identifierLive
+  | invalidSubject | outOfRange | generationExhausted | occupiedSlot
+  | identifierAlreadyIssued | identifierLive
   deriving BEq, DecidableEq, Repr
 
 inductive DestroyError where
@@ -154,6 +156,11 @@ inductive DestroyError where
 def createAddressSpace (state : State) (addressSpace : AddressSpaceId)
     (subject : SubjectId) (slot : SlotId) : Outcome CreateError :=
   if state.memory.capabilities.subjects subject != true then reject state .invalidSubject
+  else if CapabilityHandle.slotReserved ≤ slot ∨
+      !Capability.slotInRange state.memory.capabilities subject slot then reject state .outOfRange
+  else if state.memory.capabilities.nextIdentity = 0 ∨
+      CapabilityHandle.generationReserved ≤ state.memory.capabilities.nextIdentity then
+    reject state .generationExhausted
   else if (state.memory.capabilities.slots subject slot).isSome then reject state .occupiedSlot
   else if state.issuedAddressSpace addressSpace || state.memory.issued addressSpace then
     reject state .identifierAlreadyIssued
@@ -541,6 +548,8 @@ theorem create_rejected_unchanged (state : State) addressSpace subject slot reas
   split <;> simp_all [reject]
   split <;> simp_all [reject]
   split <;> simp_all [reject]
+  split <;> simp_all [reject]
+  split <;> simp_all [reject]
 
 theorem destroy_rejected_unchanged (state : State) subject slot reason
     (h : (destroyAddressSpace state subject slot).result = .rejected reason) :
@@ -574,15 +583,23 @@ theorem created_fresh_empty_root (state : State) addressSpace subject slot
   split at h <;> try contradiction
   split at h <;> try contradiction
   split at h <;> try contradiction
+  split at h <;> try contradiction
+  split at h <;> try contradiction
   next hfresh =>
     have hboth : state.issuedAddressSpace addressSpace = false ∧
         state.memory.issued addressSpace = false := by
       simp_all
     split at h <;> try contradiction
     rcases hboth with ⟨haddress, hglobal⟩
+    have hslot : slot < CapabilityHandle.slotReserved := by
+      simp_all only [not_or, Nat.not_le]
+    have hgeneration :
+        state.memory.capabilities.nextIdentity < CapabilityHandle.generationReserved := by
+      simp_all only [not_or, Nat.not_le]
     simp_all [createAddressSpace, clearAddressSpaceMappings, setOwner, setIssuedAddressSpace,
       MemoryLifecycle.setIssued, Capability.installRoot, Capability.install, haddress, hglobal,
-      activateAddressSpace, MemoryLifecycle.setObject]
+      activateAddressSpace, MemoryLifecycle.setObject, Nat.not_le_of_lt hslot,
+      Nat.not_le_of_lt hgeneration]
 
 /-- Destruction retires the object, every capability naming it, its owner, and
 all of its mappings. -/
@@ -763,6 +780,18 @@ example : destroyed.result = .accepted := by native_decide
 example : translate destroyed.state 0 20 9 .read = .error .invalidAddressSpace := by rfl
 example : (createAddressSpace destroyed.state 20 0 1).result =
     .rejected .identifierAlreadyIssued := by native_decide
+
+private def exhaustedRootIdentity : State :=
+  { initial with memory :=
+      { initial.memory with capabilities :=
+          { initial.memory.capabilities with
+            nextIdentity := CapabilityHandle.generationReserved } } }
+
+example : (createAddressSpace exhaustedRootIdentity 20 0 1).result =
+    .rejected .generationExhausted := by native_decide
+
+example : (createAddressSpace initial 20 0 CapabilityHandle.slotReserved).result =
+    .rejected .outOfRange := by native_decide
 example : twoSpaces.result = .accepted := by native_decide
 example : firstDestroyed.state.owner 21 = some 1 := by native_decide
 example : (destroyAddressSpace delegatedAddressSpace 1 0).result = .rejected .notOwner := by

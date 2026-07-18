@@ -156,7 +156,7 @@ def HasAuthority (state : State) (subject : SubjectId) (object : ObjectId)
 inductive Denial where
   | invalidSubject | staleSlot | outOfRange | occupiedSlot | full | emptyRights
   | missingGrant | rightsNotSubset | missingRevoke | objectMismatch | kindMismatch
-  | invalidRights
+  | invalidRights | generationExhausted
   deriving DecidableEq, Repr
 
 inductive Result where
@@ -268,6 +268,28 @@ def copy (state : State) (actor : SubjectId) (source : SlotId)
           else reject state .rightsNotSubset
         else reject state .missingGrant
       else reject state .emptyRights
+
+/-- An accepted delegation installs the freshly allocated capability in the
+selected destination slot.  This theorem is the state-level bridge used by
+userspace word boundaries when returning the new generation-bound handle. -/
+theorem copy_accepted_installs (state : State) (actor : SubjectId) (source : SlotId)
+    (destination : SubjectId) (destinationSlot : SlotId) (requested : Rights)
+    (haccepted : (copy state actor source destination destinationSlot requested).result =
+      .accepted) :
+    ∃ capability,
+      (copy state actor source destination destinationSlot requested).state.slots
+          destination destinationSlot = some capability ∧
+      capability.identity = state.nextIdentity := by
+  unfold copy at haccepted ⊢
+  split at * <;> try contradiction
+  split at * <;> try contradiction
+  split at * <;> try contradiction
+  split at * <;> try contradiction
+  split at * <;> try contradiction
+  split at * <;> try contradiction
+  split at * <;> try contradiction
+  split at * <;> try contradiction
+  simp_all [install]
 
 /-- Compatibility name for the authoritative finite-space delegation operation. -/
 def copyBounded (state : State) (actor : SubjectId) (source : SlotId)

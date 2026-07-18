@@ -74,9 +74,10 @@ Holder-facing authority uses the canonical generation-bound resolver described
 in [capability handles](capability-handles.md). A numeric slot is an internal
 table coordinate, not a durable authority reference: issuance pairs it with the
 installed capability's append-only identity, and reuse of the coordinate never
-reuses that handle. Because the modeled identity is a natural number, this
-model has no wraparound; a future finite encoding must reject exhaustion before
-reuse.
+reuses that handle. The userspace encoding admits only generations below its
+reserved 48-bit maximum, so issuance must reject exhaustion before reuse. The
+internal graph retains natural-number identities and therefore has no modeled
+wraparound.
 
 Issue #71's future sealed in-flight transfers must use an atomic receive-side
 capacity check: a full receiver leaves both capability state and the message

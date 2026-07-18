@@ -19,8 +19,170 @@ structure Handle where
   identity : Nat
   deriving DecidableEq, Repr
 
+/-! ## Canonical fixed-width encoding
+
+The userspace word is divided into a 16-bit slot field and a 48-bit generation
+field.  The all-ones value of each field is reserved, as is generation zero.
+Consequently, allocation must stop before `generationReserved`; wrapping or
+reusing a generation is never an encoding policy.
+-/
+
+def slotRadix : Nat := 2 ^ 16
+def generationRadix : Nat := 2 ^ 48
+def slotReserved : Nat := slotRadix - 1
+def generationReserved : Nat := generationRadix - 1
+
+private theorem slotRadix_value : slotRadix = 65536 := by native_decide
+private theorem slotReserved_value : slotReserved = 65535 := by native_decide
+private theorem generationReserved_value : generationReserved = 281474976710655 := by
+  native_decide
+private theorem wordSpace : generationRadix * slotRadix = 2 ^ 64 := by native_decide
+
+def Encodable (handle : Handle) : Prop :=
+  handle.slot < slotReserved ∧ 0 < handle.identity ∧ handle.identity < generationReserved
+
+instance (handle : Handle) : Decidable (Encodable handle) := by
+  unfold Encodable
+  infer_instance
+
+inductive DecodeError where
+  | reservedSlot | reservedGeneration
+  deriving DecidableEq, Repr
+
+/-- Encode exactly the bounded, non-reserved handle domain. -/
+def encode (handle : Handle) : Option UInt64 :=
+  if Encodable handle then
+    some (UInt64.ofNat (handle.slot + handle.identity * slotRadix))
+  else none
+
+/-- Total decoder for the canonical 16/48 split.  Every rejected word names a
+reserved slot or generation; there is no truncating conversion to a raw slot. -/
+def decode (word : UInt64) : Except DecodeError Handle :=
+  let slot := word.toNat % slotRadix
+  let identity := word.toNat / slotRadix
+  if slot = slotReserved then .error .reservedSlot
+  else if identity = 0 ∨ identity = generationReserved then .error .reservedGeneration
+  else .ok { slot, identity }
+
+/-- Encoding a valid bounded handle and decoding its word is exact. -/
+theorem decode_encode (handle : Handle) (word : UInt64)
+    (hencode : encode handle = some word) : decode word = .ok handle := by
+  simp only [encode] at hencode
+  split at hencode
+  case isTrue hvalid =>
+    simp only [Option.some.injEq] at hencode
+    subst word
+    rcases hvalid with ⟨hslot, hpositive, hgeneration⟩
+    have hslotRadix : handle.slot < slotRadix := by
+      exact Nat.lt_trans hslot (by native_decide)
+    have hgenerationRadix : handle.identity < generationRadix := by
+      exact Nat.lt_trans hgeneration (by native_decide)
+    have hword : handle.slot + handle.identity * slotRadix < 2 ^ 64 := by
+      have hsum :
+          handle.slot + handle.identity * slotRadix <
+            (handle.identity + 1) * slotRadix := by
+        simpa [Nat.add_mul, Nat.add_comm] using
+          Nat.add_lt_add_right hslotRadix (handle.identity * slotRadix)
+      have hmul :
+          (handle.identity + 1) * slotRadix ≤ generationRadix * slotRadix :=
+        Nat.mul_le_mul_right slotRadix (Nat.succ_le_of_lt hgenerationRadix)
+      rw [wordSpace] at hmul
+      exact Nat.lt_of_lt_of_le hsum hmul
+    have htoNat :
+        (UInt64.ofNat (handle.slot + handle.identity * slotRadix)).toNat =
+          handle.slot + handle.identity * slotRadix := by
+      rw [UInt64.toNat_ofNat', Nat.mod_eq_of_lt hword]
+    have hmod :
+        (handle.slot + handle.identity * slotRadix) % slotRadix = handle.slot := by
+      rw [Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hslotRadix]
+    have hdiv :
+        (handle.slot + handle.identity * slotRadix) / slotRadix = handle.identity := by
+      rw [Nat.add_mul_div_right handle.slot handle.identity]
+      · rw [Nat.div_eq_of_lt hslotRadix, Nat.zero_add]
+      · simp [slotRadix]
+    have hnotSlot : handle.slot ≠ slotReserved := by
+      exact Nat.ne_of_lt hslot
+    have hnotGeneration : handle.identity ≠ generationReserved := by
+      exact Nat.ne_of_lt hgeneration
+    simp only [decode, htoNat]
+    rw [hmod, hdiv]
+    simp [hnotSlot, Nat.ne_of_gt hpositive, hnotGeneration]
+  case isFalse hinvalid => simp at hencode
+
+/-- Every successfully decoded word is the unique canonical encoding of the
+decoded handle.  Together with `decode_encode`, this makes acceptance exactly
+the image of `encode`, rather than merely proving examples reject. -/
+theorem encode_decode (word : UInt64) (handle : Handle)
+    (hdecode : decode word = .ok handle) : encode handle = some word := by
+  simp only [decode] at hdecode
+  split at hdecode <;> try contradiction
+  next hslot =>
+    split at hdecode <;> try contradiction
+    next hgeneration =>
+      injection hdecode with hhandle
+      subst handle
+      have hslotBound : word.toNat % slotRadix < slotRadix :=
+        Nat.mod_lt _ (by simp [slotRadix])
+      have hwordBound : word.toNat < generationRadix * slotRadix := by
+        rw [wordSpace]
+        exact word.toNat_lt
+      have hgenerationBound : word.toNat / slotRadix < generationRadix :=
+        Nat.div_lt_of_lt_mul (by simpa [Nat.mul_comm] using hwordBound)
+      have hencodable : Encodable
+          { slot := word.toNat % slotRadix, identity := word.toNat / slotRadix } := by
+        unfold Encodable
+        constructor
+        · rw [slotReserved_value] at hslot ⊢
+          rw [slotRadix_value] at hslotBound
+          exact Nat.lt_of_le_of_ne (Nat.le_pred_of_lt hslotBound) hslot
+        constructor
+        · exact Nat.pos_of_ne_zero (fun hzero => hgeneration (Or.inl hzero))
+        · rw [generationReserved_value]
+          have hradix : generationRadix = 281474976710656 := by native_decide
+          rw [hradix] at hgenerationBound
+          have hne : word.toNat / slotRadix ≠ 281474976710655 := by
+            intro heq
+            apply hgeneration
+            right
+            simpa [generationReserved_value] using heq
+          exact Nat.lt_of_le_of_ne (Nat.le_pred_of_lt hgenerationBound) hne
+      simp only [encode, if_pos hencodable, Option.some.injEq]
+      apply UInt64.toNat_inj.mp
+      rw [UInt64.toNat_ofNat']
+      have hrecompose :
+          word.toNat % slotRadix + word.toNat / slotRadix * slotRadix = word.toNat := by
+        simpa [Nat.mul_comm] using (Nat.mod_add_div word.toNat slotRadix)
+      rw [hrecompose, Nat.mod_eq_of_lt word.toNat_lt]
+
+/-- Canonical uniqueness: one accepted word cannot encode two handles. -/
+theorem encode_injective (first second : Handle) (word : UInt64)
+    (hfirst : encode first = some word) (hsecond : encode second = some word) :
+    first = second := by
+  have dfirst := decode_encode first word hfirst
+  have dsecond := decode_encode second word hsecond
+  rw [dfirst] at dsecond
+  exact Except.ok.inj dsecond
+
 inductive ResolveDenial where
   | invalidSubject | outOfRange | staleHandle | kindMismatch
+  deriving DecidableEq, Repr
+
+/-- Trusted entry/scheduler provenance.  It is intentionally not part of the
+untrusted handle word. -/
+structure TrustedCaller where
+  caller : SubjectId
+  deriving DecidableEq, Repr
+
+inductive WordResolveDenial where
+  | malformed (reason : DecodeError)
+  | denied (reason : ResolveDenial)
+  deriving DecidableEq, Repr
+
+/-- A successful userspace resolution keeps the canonical decoded handle next
+to the exact authority record selected by it. -/
+structure Resolution where
+  handle : Handle
+  capability : Capability
   deriving DecidableEq, Repr
 
 /-- The one canonical generation-aware capability resolver. -/
@@ -36,6 +198,17 @@ def resolve (state : State) (trustedSubject : SubjectId) (handle : Handle)
         else if state.objects capability.object != true then .error .staleHandle
         else if state.kinds capability.object != some expected then .error .kindMismatch
         else .ok capability
+
+/-- The reusable userspace boundary: decode one opaque word, then resolve only
+inside the capability space selected by trusted current-caller context. -/
+def resolveCurrent (state : State) (context : TrustedCaller) (word : UInt64)
+    (expected : ObjectKind) : Except WordResolveDenial Resolution :=
+  match decode word with
+  | .error reason => .error (.malformed reason)
+  | .ok handle =>
+      match resolve state context.caller handle expected with
+      | .error reason => .error (.denied reason)
+      | .ok capability => .ok { handle, capability }
 
 def issue (slot : SlotId) (capability : Capability) : Handle :=
   { slot, identity := capability.identity }
@@ -53,7 +226,170 @@ def copy (state : State) (actor : SubjectId) (source : Handle)
     (requested : Rights) : Outcome :=
   match resolve state actor source expected with
   | .error reason => reject state (denial reason)
-  | .ok _ => Capability.copy state actor source.slot destination destinationSlot requested
+  | .ok _ =>
+      if state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity then
+        reject state .generationExhausted
+      else if slotReserved ≤ destinationSlot then reject state .outOfRange
+      else Capability.copy state actor source.slot destination destinationSlot requested
+
+structure CopyWordOutcome where
+  state : State
+  result : Capability.Result
+  /-- Exact word naming the freshly installed destination capability. -/
+  freshWord : Option UInt64
+
+def rejectCopyWord (state : State) (reason : Denial) : CopyWordOutcome :=
+  { state, result := .rejected reason, freshWord := none }
+
+/-- Userspace delegation boundary. The source word cannot select the actor or
+destination subject and is decoded before the internal slot transition. -/
+def copyWord (state : State) (actor : SubjectId) (sourceWord : UInt64)
+    (expected : ObjectKind) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) : CopyWordOutcome :=
+  match resolveCurrent state { caller := actor } sourceWord expected with
+  | .error (.denied reason) => rejectCopyWord state (denial reason)
+  | .error (.malformed _) => rejectCopyWord state .staleSlot
+  | .ok source =>
+      if state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity then
+        rejectCopyWord state .generationExhausted
+      else if slotReserved ≤ destinationSlot then rejectCopyWord state .outOfRange
+      else
+        let copied := Capability.copy state actor source.handle.slot destination
+          destinationSlot requested
+        { state := copied.state
+          result := copied.result
+          freshWord := match copied.result with
+            | .accepted => encode { slot := destinationSlot, identity := state.nextIdentity }
+            | .rejected _ => none }
+
+/-- An accepted userspace copy records successful full-word resolution of the
+exact source authority before delegation. -/
+theorem copyWord_accepted_resolves state actor sourceWord expected destination
+    destinationSlot requested
+    (haccepted : (copyWord state actor sourceWord expected destination destinationSlot
+      requested).result = .accepted) :
+    ∃ source,
+      resolveCurrent state { caller := actor } sourceWord expected = .ok source ∧
+      (Capability.copy state actor source.handle.slot destination destinationSlot
+        requested).result = .accepted := by
+  cases hsource : resolveCurrent state { caller := actor } sourceWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [copyWord, hsource, rejectCopyWord] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [copyWord, hsource, rejectCopyWord] at haccepted
+  | ok source =>
+      by_cases hexhausted : state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity
+      · simp [copyWord, hsource, hexhausted, rejectCopyWord] at haccepted
+      · by_cases hslot : slotReserved ≤ destinationSlot
+        · simp [copyWord, hsource, hexhausted, hslot, rejectCopyWord] at haccepted
+        · exact ⟨source, rfl,
+            by simpa [copyWord, hsource, hexhausted, hslot] using haccepted⟩
+
+/-- Every accepted userspace copy allocates inside the canonical generation
+and slot domain, so the fresh destination authority has an encodable handle. -/
+theorem copyWord_accepted_fresh_handle_encodable state actor sourceWord expected destination
+    destinationSlot requested
+    (haccepted : (copyWord state actor sourceWord expected destination destinationSlot
+      requested).result = .accepted) :
+    ∃ word, encode { slot := destinationSlot, identity := state.nextIdentity } = some word := by
+  cases hsource : resolveCurrent state { caller := actor } sourceWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [copyWord, hsource, rejectCopyWord] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [copyWord, hsource, rejectCopyWord] at haccepted
+  | ok source =>
+      by_cases hexhausted : state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity
+      · simp [copyWord, hsource, hexhausted, rejectCopyWord] at haccepted
+      · by_cases hslot : slotReserved ≤ destinationSlot
+        · simp [copyWord, hsource, hexhausted, hslot, rejectCopyWord] at haccepted
+        · have hpositive : 0 < state.nextIdentity :=
+            Nat.pos_of_ne_zero (fun hzero => hexhausted (Or.inl hzero))
+          have hgeneration : state.nextIdentity < generationReserved :=
+            Nat.lt_of_not_ge (fun hge => hexhausted (Or.inr hge))
+          have hslot' : destinationSlot < slotReserved := Nat.lt_of_not_ge hslot
+          refine ⟨UInt64.ofNat (destinationSlot + state.nextIdentity * slotRadix), ?_⟩
+          simp [encode, Encodable, hslot', hpositive, hgeneration]
+
+/-- A successful userspace copy returns the exact canonical word for the
+fresh capability installed at the destination. -/
+theorem copyWord_accepted_returns_fresh_word state actor sourceWord expected destination
+    destinationSlot requested
+    (haccepted : (copyWord state actor sourceWord expected destination destinationSlot
+      requested).result = .accepted) :
+    (copyWord state actor sourceWord expected destination destinationSlot
+      requested).freshWord = encode { slot := destinationSlot, identity := state.nextIdentity } := by
+  cases hsource : resolveCurrent state { caller := actor } sourceWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason =>
+          simp [copyWord, hsource, rejectCopyWord] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [copyWord, hsource, rejectCopyWord] at haccepted
+  | ok source =>
+      by_cases hexhausted : state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity
+      · simp [copyWord, hsource, hexhausted, rejectCopyWord] at haccepted
+      · by_cases hslot : slotReserved ≤ destinationSlot
+        · simp [copyWord, hsource, hexhausted, hslot, rejectCopyWord] at haccepted
+        · have hcopy : (Capability.copy state actor source.handle.slot destination
+              destinationSlot requested).result = .accepted := by
+            simpa [copyWord, hsource, hexhausted, hslot] using haccepted
+          simp [copyWord, hsource, hexhausted, hslot, hcopy]
+
+/-- The word returned by an accepted userspace copy names the capability that
+was actually installed in the destination slot.  This couples the public
+result to post-state authority rather than only to the pre-state allocator. -/
+theorem copyWord_accepted_returns_installed_word state actor sourceWord expected destination
+    destinationSlot requested
+    (haccepted : (copyWord state actor sourceWord expected destination destinationSlot
+      requested).result = .accepted) :
+    ∃ word capability,
+      (copyWord state actor sourceWord expected destination destinationSlot
+        requested).freshWord = some word ∧
+      decode word = .ok { slot := destinationSlot, identity := capability.identity } ∧
+      (copyWord state actor sourceWord expected destination destinationSlot
+        requested).state.slots destination destinationSlot = some capability := by
+  cases hsource : resolveCurrent state { caller := actor } sourceWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [copyWord, hsource, rejectCopyWord] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [copyWord, hsource, rejectCopyWord] at haccepted
+  | ok source =>
+      by_cases hexhausted : state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity
+      · simp [copyWord, hsource, hexhausted, rejectCopyWord] at haccepted
+      · by_cases hslot : slotReserved ≤ destinationSlot
+        · simp [copyWord, hsource, hexhausted, hslot, rejectCopyWord] at haccepted
+        · have hcopy : (Capability.copy state actor source.handle.slot destination
+              destinationSlot requested).result = .accepted := by
+            simpa [copyWord, hsource, hexhausted, hslot] using haccepted
+          rcases LeanOS.Capability.copy_accepted_installs state actor source.handle.slot destination
+              destinationSlot requested hcopy with ⟨capability, hinstalled, hidentity⟩
+          have hpositive : 0 < state.nextIdentity :=
+            Nat.pos_of_ne_zero (fun hzero => hexhausted (Or.inl hzero))
+          have hgeneration : state.nextIdentity < generationReserved :=
+            Nat.lt_of_not_ge (fun hge => hexhausted (Or.inr hge))
+          have hslot' : destinationSlot < slotReserved := Nat.lt_of_not_ge hslot
+          let word := UInt64.ofNat (destinationSlot + state.nextIdentity * slotRadix)
+          have hencode : encode { slot := destinationSlot, identity := state.nextIdentity } =
+              some word := by
+            simp [word, encode, Encodable, hslot', hpositive, hgeneration]
+          have hdecode := decode_encode
+            { slot := destinationSlot, identity := state.nextIdentity } word hencode
+          refine ⟨word, capability, ?_, ?_, ?_⟩
+          · simp [copyWord, hsource, hexhausted, hslot, hcopy, hencode]
+          · simpa [hidentity] using hdecode
+          · simpa [copyWord, hsource, hexhausted, hslot, hcopy] using hinstalled
+
+/-- A malformed or denied copy word is state preserving. -/
+theorem copyWord_resolution_rejected_unchanged state actor sourceWord expected
+    destination destinationSlot requested reason
+    (hresolve : resolveCurrent state { caller := actor } sourceWord expected = .error reason) :
+    (copyWord state actor sourceWord expected destination destinationSlot requested).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [copyWord, hresolve, rejectCopyWord]
+  | denied resolveReason => cases resolveReason <;> simp [copyWord, hresolve, rejectCopyWord]
 
 /-- Holder-facing direct revocation checks both the authority and selected
 victim generations before invoking the atomic raw-slot transition. -/
@@ -65,6 +401,69 @@ def revoke (state : State) (actor : SubjectId) (authority : Handle)
     | .error reason => reject state (denial reason)
     | .ok _ => Capability.revoke state actor authority.slot victim target.slot
 
+/-- Userspace direct-revocation boundary. Both authority-consuming words are
+decoded in kernel-selected capability spaces before atomic revocation. -/
+def revokeWords (state : State) (actor : SubjectId) (authorityWord : UInt64)
+    (expected : ObjectKind) (victim : SubjectId) (targetWord : UInt64) : Outcome :=
+  match resolveCurrent state { caller := actor } authorityWord expected with
+  | .error (.denied reason) => reject state (denial reason)
+  | .error (.malformed _) => reject state .staleSlot
+  | .ok authority =>
+      match resolveCurrent state { caller := victim } targetWord expected with
+      | .error (.denied reason) => reject state (denial reason)
+      | .error (.malformed _) => reject state .staleSlot
+      | .ok target => Capability.revoke state actor authority.handle.slot victim target.handle.slot
+
+/-- Acceptance at the userspace direct-revocation boundary records successful
+full-word resolution of both the authority and selected victim generation. -/
+theorem revokeWords_accepted_resolves state actor authorityWord expected victim targetWord
+    (haccepted : (revokeWords state actor authorityWord expected victim targetWord).result =
+      .accepted) :
+    ∃ authority target,
+      resolveCurrent state { caller := actor } authorityWord expected = .ok authority ∧
+      resolveCurrent state { caller := victim } targetWord expected = .ok target ∧
+      (Capability.revoke state actor authority.handle.slot victim target.handle.slot).result =
+        .accepted := by
+  cases hauthority : resolveCurrent state { caller := actor } authorityWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [revokeWords, hauthority, reject] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [revokeWords, hauthority, reject] at haccepted
+  | ok authority =>
+      cases htarget : resolveCurrent state { caller := victim } targetWord expected with
+      | error reason =>
+          cases reason with
+          | malformed decodeReason =>
+              simp [revokeWords, hauthority, htarget, reject] at haccepted
+          | denied resolveReason =>
+              cases resolveReason <;>
+                simp [revokeWords, hauthority, htarget, reject] at haccepted
+      | ok target =>
+          exact ⟨authority, target, rfl, rfl,
+            by simpa [revokeWords, hauthority, htarget] using haccepted⟩
+
+/-- A malformed or denied direct-revocation authority word is state preserving. -/
+theorem revokeWords_authority_rejected_unchanged state actor authorityWord expected victim
+    targetWord reason
+    (hresolve : resolveCurrent state { caller := actor } authorityWord expected = .error reason) :
+    (revokeWords state actor authorityWord expected victim targetWord).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [revokeWords, hresolve, reject]
+  | denied resolveReason => cases resolveReason <;> simp [revokeWords, hresolve, reject]
+
+/-- Once authority resolves, a malformed or denied direct-revocation target
+word still preserves state and cannot reach the raw slot transition. -/
+theorem revokeWords_target_rejected_unchanged state actor authorityWord expected victim
+    targetWord authority reason
+    (hauthority : resolveCurrent state { caller := actor } authorityWord expected = .ok authority)
+    (htarget : resolveCurrent state { caller := victim } targetWord expected = .error reason) :
+    (revokeWords state actor authorityWord expected victim targetWord).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [revokeWords, hauthority, htarget, reject]
+  | denied resolveReason =>
+      cases resolveReason <;> simp [revokeWords, hauthority, htarget, reject]
+
 /-- Holder-facing transitive revocation has the same generation checks. -/
 def revokeSubtree (state : State) (actor : SubjectId) (authority : Handle)
     (expected : ObjectKind) (victim : SubjectId) (target : Handle) : Outcome :=
@@ -73,6 +472,73 @@ def revokeSubtree (state : State) (actor : SubjectId) (authority : Handle)
   | .ok _ => match resolve state victim target expected with
     | .error reason => reject state (denial reason)
     | .ok _ => Capability.revokeSubtree state actor authority.slot victim target.slot
+
+/-- Userspace transitive-revocation boundary with the same two-word checks. -/
+def revokeSubtreeWords (state : State) (actor : SubjectId) (authorityWord : UInt64)
+    (expected : ObjectKind) (victim : SubjectId) (targetWord : UInt64) : Outcome :=
+  match resolveCurrent state { caller := actor } authorityWord expected with
+  | .error (.denied reason) => reject state (denial reason)
+  | .error (.malformed _) => reject state .staleSlot
+  | .ok authority =>
+      match resolveCurrent state { caller := victim } targetWord expected with
+      | .error (.denied reason) => reject state (denial reason)
+      | .error (.malformed _) => reject state .staleSlot
+      | .ok target =>
+          Capability.revokeSubtree state actor authority.handle.slot victim target.handle.slot
+
+/-- Acceptance at the userspace transitive-revocation boundary records
+successful full-word resolution of both the authority and lineage root. -/
+theorem revokeSubtreeWords_accepted_resolves state actor authorityWord expected victim targetWord
+    (haccepted :
+      (revokeSubtreeWords state actor authorityWord expected victim targetWord).result =
+        .accepted) :
+    ∃ authority target,
+      resolveCurrent state { caller := actor } authorityWord expected = .ok authority ∧
+      resolveCurrent state { caller := victim } targetWord expected = .ok target ∧
+      (Capability.revokeSubtree state actor authority.handle.slot victim target.handle.slot).result =
+        .accepted := by
+  cases hauthority : resolveCurrent state { caller := actor } authorityWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason =>
+          simp [revokeSubtreeWords, hauthority, reject] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;>
+            simp [revokeSubtreeWords, hauthority, reject] at haccepted
+  | ok authority =>
+      cases htarget : resolveCurrent state { caller := victim } targetWord expected with
+      | error reason =>
+          cases reason with
+          | malformed decodeReason =>
+              simp [revokeSubtreeWords, hauthority, htarget, reject] at haccepted
+          | denied resolveReason =>
+              cases resolveReason <;>
+                simp [revokeSubtreeWords, hauthority, htarget, reject] at haccepted
+      | ok target =>
+          exact ⟨authority, target, rfl, rfl,
+            by simpa [revokeSubtreeWords, hauthority, htarget] using haccepted⟩
+
+/-- A malformed or denied transitive-revocation authority word is state preserving. -/
+theorem revokeSubtreeWords_authority_rejected_unchanged state actor authorityWord expected
+    victim targetWord reason
+    (hresolve : resolveCurrent state { caller := actor } authorityWord expected = .error reason) :
+    (revokeSubtreeWords state actor authorityWord expected victim targetWord).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [revokeSubtreeWords, hresolve, reject]
+  | denied resolveReason =>
+      cases resolveReason <;> simp [revokeSubtreeWords, hresolve, reject]
+
+/-- Once authority resolves, a malformed or denied transitive-revocation
+lineage-root word preserves state and cannot reach raw subtree clearing. -/
+theorem revokeSubtreeWords_target_rejected_unchanged state actor authorityWord expected victim
+    targetWord authority reason
+    (hauthority : resolveCurrent state { caller := actor } authorityWord expected = .ok authority)
+    (htarget : resolveCurrent state { caller := victim } targetWord expected = .error reason) :
+    (revokeSubtreeWords state actor authorityWord expected victim targetWord).state = state := by
+  cases reason with
+  | malformed decodeReason => simp [revokeSubtreeWords, hauthority, htarget, reject]
+  | denied resolveReason =>
+      cases resolveReason <;> simp [revokeSubtreeWords, hauthority, htarget, reject]
 
 /-- A handle freshly issued for the capability currently installed in a live,
 in-range slot resolves to exactly that capability. -/
@@ -104,6 +570,35 @@ theorem resolve_sound (state : State) (trustedSubject : SubjectId) (handle : Han
   split at hresolve <;> try simp_all
   split at hresolve <;> try simp_all
   split at hresolve <;> simp_all
+
+theorem resolveCurrent_sound (state : State) (context : TrustedCaller) (word : UInt64)
+    (expected : ObjectKind) (resolution : Resolution)
+    (hresolve : resolveCurrent state context word expected = .ok resolution) :
+      decode word = .ok resolution.handle ∧
+      state.subjects context.caller = true ∧
+      slotInRange state context.caller resolution.handle.slot = true ∧
+      state.slots context.caller resolution.handle.slot = some resolution.capability ∧
+      resolution.capability.identity = resolution.handle.identity ∧
+      resolution.capability.kind = expected ∧
+      state.objects resolution.capability.object = true ∧
+      state.kinds resolution.capability.object = some expected := by
+  rcases resolution with ⟨expectedHandle, expectedCapability⟩
+  cases hdecode : decode word with
+  | error reason => simp [resolveCurrent, hdecode] at hresolve
+  | ok handle =>
+      cases hresolved : resolve state context.caller handle expected with
+      | error reason => simp [resolveCurrent, hdecode, hresolved] at hresolve
+      | ok found =>
+          have heq : ({ handle, capability := found } : Resolution) =
+              { handle := expectedHandle, capability := expectedCapability } := by
+            simpa [resolveCurrent, hdecode, hresolved] using hresolve
+          have hhandle : handle = expectedHandle := congrArg Resolution.handle heq
+          have hcapability : found = expectedCapability :=
+            congrArg Resolution.capability heq
+          subst expectedHandle
+          subst expectedCapability
+          exact ⟨rfl,
+            resolve_sound state context.caller handle expected found hresolved⟩
 
 /-- Clearing a slot permanently invalidates its old handle at that point. -/
 theorem clear_denies_handle (state : State) (subject : SubjectId) (handle : Handle)
@@ -187,6 +682,7 @@ private def demoState : State :=
       if subject = 0 && slot = 0 then some demoCapability else none }
 
 private def demoHandle : Handle := issue 0 demoCapability
+private def demoWord : UInt64 := 12 * 65536
 
 /-- Deliberately unsafe historical behavior, retained only as a negative
 regression: resolving a raw slot cannot distinguish two generations. -/
@@ -215,5 +711,111 @@ example :
       resolve reused 0 demoHandle .memory = .error .staleHandle := by
   dsimp
   constructor <;> rfl
+
+-- Canonical fixed-width vectors and malformed/reserved negative cases.
+example : encode demoHandle = some demoWord := by native_decide
+example : decode demoWord = .ok demoHandle := by rfl
+example : decode 0 = .error .reservedGeneration := by rfl
+example : decode (12 * 65536 + 65535) = .error .reservedSlot := by rfl
+example : decode ((281474976710655 : UInt64) * 65536) =
+    .error .reservedGeneration := by rfl
+example : encode { slot := 0, identity := generationReserved } = none := by native_decide
+example : encode { slot := slotReserved, identity := 12 } = none := by native_decide
+
+-- The decoded word is resolved only in the capability space named by trusted
+-- current-caller context; neither changing generation bits nor reusing the
+-- same word under another caller can select authority.
+example : resolveCurrent demoState { caller := 0 } demoWord .memory =
+    .ok { handle := demoHandle, capability := demoCapability } := by
+  rfl
+example : resolveCurrent demoState { caller := 1 } demoWord .memory =
+    .error (.denied .staleHandle) := by rfl
+example : resolveCurrent demoState { caller := 0 } (13 * 65536) .memory =
+    .error (.denied .staleHandle) := by rfl
+example : resolveCurrent demoState { caller := 0 } (12 * 65536 + 65535) .memory =
+    .error (.malformed .reservedSlot) := by rfl
+
+-- Capability copy/revoke userspace adapters share the same decoder rather than
+-- recovering a raw slot by masking or truncation.
+example :
+    let source : Capability :=
+      { demoCapability with rights := { read := true, grant := true } }
+    let state := install demoState 0 0 source
+    (copyWord state 0 demoWord .memory 1 0 (oneRight .read)).result = .accepted ∧
+      (copyWord state 0 demoWord .memory 1 0 (oneRight .read)).freshWord =
+        some (UInt64.ofNat (13 * 65536)) := by
+  native_decide
+example :
+    let replacement : Capability :=
+      { object := 8, kind := .memory, rights := oneRight .read, identity := 13 }
+    let reused := install (clear demoState 0 0) 0 0 replacement
+    (copyWord reused 0 demoWord .memory 1 0 (oneRight .read)).result =
+        .rejected .staleSlot ∧
+      (copyWord reused 0 demoWord .memory 1 0 (oneRight .read)).state.slots 1 0 = none := by
+  native_decide
+example :
+    (copyWord demoState 0 (12 * 65536 + 65535) .memory 1 0 (oneRight .read)).result =
+        .rejected .staleSlot ∧
+      (copyWord demoState 0 (12 * 65536 + 65535) .memory 1 0
+        (oneRight .read)).state.slots 1 0 = none := by
+  native_decide
+
+private def demoExhausted : State := { demoState with nextIdentity := generationReserved }
+
+-- Userspace issuance fails closed before either reserved field can appear in a
+-- fresh handle, even when the raw capability transition would reject later.
+example :
+    (copyWord demoExhausted 0 demoWord .memory 1 0 (oneRight .read)).result =
+      .rejected .generationExhausted := by
+  native_decide
+example :
+    (copyWord demoState 0 demoWord .memory 1 slotReserved (oneRight .read)).result =
+      .rejected .outOfRange := by
+  native_decide
+
+private def demoRevoker : Capability :=
+  { demoCapability with rights := { read := true, grant := true, revoke := true } }
+
+private def demoRevocationRoot : State := install demoState 0 0 demoRevoker
+
+private def demoRevocationState : State :=
+  (Capability.copy demoRevocationRoot 0 0 1 0 (oneRight .read)).state
+
+private def demoTargetWord : UInt64 := 13 * 65536
+
+-- Direct and transitive revocation both accept the complete current words and
+-- remove the generation selected by the target word.
+example :
+    (revokeWords demoRevocationState 0 demoWord .memory 1 demoTargetWord).result =
+        .accepted ∧
+      (revokeWords demoRevocationState 0 demoWord .memory 1 demoTargetWord).state.slots 1 0 =
+        none := by
+  native_decide
+example :
+    (revokeSubtreeWords demoRevocationState 0 demoWord .memory 1 demoTargetWord).result =
+        .accepted ∧
+      (revokeSubtreeWords demoRevocationState 0 demoWord .memory 1 demoTargetWord).state.slots
+          1 0 = none := by
+  native_decide
+
+private def demoReusedTarget : State :=
+  install (clear demoRevocationState 1 0) 1 0
+    { object := 8, kind := .memory, rights := oneRight .read, identity := 14 }
+
+-- Replaying the cleared target generation and supplying a reserved authority
+-- word are state-preserving denials at both revocation boundaries.
+example :
+    (revokeWords demoReusedTarget 0 demoWord .memory 1 demoTargetWord).result =
+        .rejected .staleSlot ∧
+      (revokeWords demoReusedTarget 0 demoWord .memory 1 demoTargetWord).state.slots 1 0 =
+        demoReusedTarget.slots 1 0 := by
+  native_decide
+example :
+    let malformedAuthority := demoWord + 65535
+    (revokeSubtreeWords demoRevocationState 0 malformedAuthority .memory 1 demoTargetWord).result =
+        .rejected .staleSlot ∧
+      (revokeSubtreeWords demoRevocationState 0 malformedAuthority .memory 1
+        demoTargetWord).state.slots 1 0 = demoRevocationState.slots 1 0 := by
+  native_decide
 
 end LeanOS.CapabilityHandle

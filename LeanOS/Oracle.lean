@@ -63,9 +63,9 @@ def vectors : List Vector := [
   boot "boot.ready-reject" 1 1,
   boot "boot.bad-state" 2 1,
   boot "boot.bad-command" 0 18446744073709551615,
-  syscall "syscall.accept" 0 0 7 1,
+  syscall "syscall.accept" 0 (12 * 65536) 7 1,
   syscall "syscall.unknown" 99 0 0 0,
-  syscall "syscall.bad-permission" 0 0 7 4,
+  syscall "syscall.bad-permission" 0 (12 * 65536) 7 4,
   syscall "syscall.boundary" 18446744073709551615 18446744073709551615
     18446744073709551615 18446744073709551615,
   ipc "ipc.sender-receive-denied" 1 4 1279607118 20307,

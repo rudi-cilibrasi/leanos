@@ -11,17 +11,23 @@ The initial scalar vocabulary is intentionally small:
 
 | Number | Operation | Arguments |
 | --- | --- | --- |
-| `0` | map | capability slot, virtual page, permission bits (`1` read, `2` write, `3` both) |
+| `0` | map | capability handle, virtual page, permission bits (`1` read, `2` write, `3` both) |
 | `1` | unmap | virtual page, followed by two zero words |
 | `2` | access check | virtual page, access (`0` read or `1` write), then zero |
 
 All other numbers, permission bitsets, access values, and nonzero reserved
-arguments produce typed decoding errors. Scalar conversion is total. The
-dispatcher routes decoded operations to `VirtualMapping`; it does not
-reimplement capability, ownership, lifetime, or allocator policy. Access-check
-success returns no frame or kernel object identifier, so a return value does
-not itself become authority. New calls must be added explicitly: there is no
-default privileged operation.
+arguments produce typed decoding errors. The map capability argument uses the
+canonical 16-bit-slot/48-bit-generation encoding from
+`LeanOS.CapabilityHandle`. Before `VirtualMapping.map` receives the decoded
+slot, `CapabilityHandle.resolveCurrent` checks that the complete opaque
+`UInt64` names the exact live memory capability in the trusted caller's
+capability space. Reserved encodings, wrong generations, wrong kinds, retired
+objects, and capabilities belonging to another trusted caller produce typed
+handle denials without changing state. Scalar conversion is total. The
+dispatcher does not reimplement ownership, lifetime, or allocator policy.
+Access-check success returns no frame or kernel object identifier, so a return
+value does not itself become authority. New calls must be added explicitly:
+there is no default privileged operation.
 
 Machine-checked theorems prove deterministic, unambiguous decoding; preservation
 of the complete lifecycle/mapping invariant for every dispatch; complete-state
@@ -29,9 +35,16 @@ preservation on every rejection; unchanged capability state and therefore
 pre-state provenance for every subject's post-state authority; and complete
 state preservation when a caller tries to operate in another owner's active
 address space. Executable adversarial traces cover forged context via argument
-words, unknown syscall numbers, malformed permissions, stale capability slots,
-cross-address-space map and unmap attempts, a valid map/access path, and replay
-after address-space destruction.
+words, unknown syscall numbers, malformed permissions, malformed and stale
+generation-bound map handles, cross-address-space map and unmap attempts, a
+valid map/access path, and replay after address-space destruction.
+
+The allocation-free `syscallDemo` export keeps one fixed accepted witness for
+this contract, now using the canonical generation-bound map word. A
+machine-checked agreement theorem connects that witness to the migrated
+dispatcher, and hosted and QEMU oracle replay check the generated scalar
+adapter. This remains integration evidence, not proof of compiler, runtime, or
+binary refinement.
 
 The trusted-context values are assumptions of this model. A future entry path
 must derive them from protected kernel execution state; this model does not
