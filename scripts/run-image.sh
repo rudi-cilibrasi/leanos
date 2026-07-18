@@ -4,7 +4,13 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$repo_root"
 qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
 limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
-image="${1:-build/boot/leanos-${version}-x86_64.iso}"
+scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
+if [[ "$scenario" == preemption ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
+else
+  default_image="build/boot/leanos-${version}-x86_64.iso"
+fi
+image="${1:-$default_image}"
 log="${LEANOS_SERIAL_LOG:-build/boot/serial.log}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 and coreutils=9.4-3ubuntu6.2" >&2; exit 1; }; done
@@ -21,7 +27,11 @@ expected="$(mktemp)"; without_allocation="$(mktemp)"
 trap 'rm -f "$expected" "$without_allocation"' EXIT
 corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
 [[ -f "$corpus" ]] || { echo "error: oracle corpus '$corpus' not found" >&2; exit 1; }
-echo 'LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap' > "$expected"
+if [[ "$scenario" == preemption ]]; then
+  echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap' > "$expected"
+else
+  echo 'LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap' > "$expected"
+fi
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
@@ -32,7 +42,25 @@ printf '%s\n' \
   'LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS' \
   'LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS' \
   'LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS' \
-  'LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS' \
+  'LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS' >> "$expected"
+if [[ "$scenario" == preemption ]]; then
+printf '%s\n' \
+  'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
+  'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' \
+  'LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0' \
+  'LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=1 origin=cpl3 accepted=1' \
+  'LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin' \
+  'LEANOS/8 PAGING root=B selected=1 result=PASS' \
+  'LEANOS/5 SWITCH subject=2 address-space=2 cr3=switched stack=initial contexts=separate' \
+  'LEANOS/5 SYSCALL subject=2 caller=2 address-space=2 authorized=1 canaries=preserved' \
+  'LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=2 origin=cpl3 accepted=1' \
+  'LEANOS/5 CONTEXT old-subject=2 old-address-space=2 new-subject=1 new-address-space=1 policy=round-robin' \
+  'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
+  'LEANOS/5 SWITCH subject=1 address-space=1 cr3=switched stack=resumed contexts=separate' \
+  'LEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate' \
+  'LEANOS/5 FINAL status=PASS ticks=2' >> "$expected"
+else
+printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
   'LEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10' \
   'LEANOS/10 IPC event=block subject=2 endpoint=10 empty=1 runnable=0 result=PASS' \
@@ -46,6 +74,7 @@ printf '%s\n' \
   'LEANOS/10 IPC event=dispatch subject=2 address-space=2 reservation=owned trusted=1' \
   'LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1' \
   'LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1' >> "$expected"
+fi
 if [[ $status -eq 124 || $status -eq 137 ]]; then echo "failure_class=timeout: QEMU exceeded ${limit}s wall limit" >&2; exit 1; fi
 if [[ $status -eq 35 ]]; then echo "failure_class=guest-error: guest emitted failure signal" >&2; exit 1; fi
 if [[ $status -ne 33 ]]; then echo "failure_class=qemu-error: QEMU exit status $status (expected 33)" >&2; exit 1; fi

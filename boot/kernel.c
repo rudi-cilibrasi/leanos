@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include "corpus.h"
-#if defined(LEANOS_DF_MAP_GUARD)
+#if defined(LEANOS_BOOT_PAGE_PLAN_HEADER)
+#include LEANOS_BOOT_PAGE_PLAN_HEADER
+#elif defined(LEANOS_DF_MAP_GUARD)
 #include "boot-page-plan-guard.h"
 #elif defined(LEANOS_DOUBLE_FAULT_PROBE)
 #include "boot-page-plan-double-fault.h"
@@ -929,7 +931,11 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
+#ifdef LEANOS_PREEMPTION_SCENARIO
+    serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
+#else
     serial_puts("LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\n");
+#endif
 
     check_boot_page_tables();
 
@@ -967,10 +973,15 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts("LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS\n");
     check_cross_bank_negative();
     check_initial_b_frame_negative();
+#ifdef LEANOS_PREEMPTION_SCENARIO
+    arm_timer();
+    enter_user(user_a_entry, user_a_stack_top);
+#else
     current_subject = 2;
     __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_b) : "memory");
     check_selected_root_b();
     serial_puts("LEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10\n");
     enter_user(user_b_entry, user_b_stack_top);
+#endif
     fail("iret-returned");
 }

@@ -79,6 +79,9 @@ jobs:
           mkdir -p build/ci
           ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
           ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-smoke.log
+          LEANOS_BOOT_SCENARIO=preemption \
+            LEANOS_SERIAL_LOG=build/boot/preemption.serial.log \
+            ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-preemption.log
           ./scripts/run-return-corruptions.sh 2>&1 | tee build/ci/qemu-return-corruptions.log
           LEANOS_SERIAL_LOG=build/boot/double-fault.serial.log \
             ./scripts/run-double-fault.sh 2>&1 | tee build/ci/qemu-double-fault.log

@@ -7,6 +7,20 @@ memory_mib=128
 for ((i=1; i<=$#; ++i)); do
   if [[ "${!i}" == -m ]]; then next=$((i + 1)); memory_mib="${!next%M}"; fi
 done
+if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
+      "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == preemption ]]; then
+  set +e
+  LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
+  status=$?
+  set -e
+  sed -i \
+    -e 's/schedule=one-shot-pit/schedule=bounded-two-shot-pit/' \
+    -e 's/mode=one-shot origin=cpl3/mode=bounded-one-shot sequence=1 origin=cpl3/' \
+    -e 's/stack=restored ticks-masked=1/stack=initial contexts=separate/' \
+    -e 's|LEANOS/5 FINAL status=PASS ticks=1|LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=2 origin=cpl3 accepted=1\nLEANOS/5 CONTEXT old-subject=2 old-address-space=2 new-subject=1 new-address-space=1 policy=round-robin\nLEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\nLEANOS/5 SWITCH subject=1 address-space=1 cr3=switched stack=resumed contexts=separate\nLEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate\nLEANOS/5 FINAL status=PASS ticks=2|' \
+    "$log"
+  exit "$status"
+fi
 if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   set +e
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
@@ -35,6 +49,24 @@ omit-block|old-handoff|wrong-context|missing-wake|duplicate-wake|stolen-delivery
     duplicate-wake) sed -i '/event=wake/p' "$log" ;;
     stolen-delivery) sed -i 's/event=deliver receiver=2/event=deliver receiver=1/' "$log" ;;
     forged-pass) sed -i '/^LEANOS\/10 IPC/d' "$log" ;;
+  esac
+  exit 33
+  ;;
+esac
+case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
+missing-second-tick|fresh-restart|cross-restored|stale-resume-cr3|corrupt-stack|corrupt-flags|corrupt-selectors)
+  mode="${LEANOS_QEMU_FIXTURE_MODE}"
+  set +e
+  LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
+  set -e
+  case "$mode" in
+    missing-second-tick) sed -i '/sequence=2/d' "$log" ;;
+    fresh-restart) sed -i 's/frame=original/frame=fresh/' "$log" ;;
+    cross-restored) sed -i 's/RESUME subject=1 caller=1/RESUME subject=2 caller=2/' "$log" ;;
+    stale-resume-cr3) sed -i 's/root=A selected=1 resumed=1/root=B selected=1 resumed=1/' "$log" ;;
+    corrupt-stack) sed -i 's/frame=original canaries=preserved/frame=original stack=corrupt/' "$log" ;;
+    corrupt-flags) sed -i 's/frame=original canaries=preserved/frame=original flags=corrupt/' "$log" ;;
+    corrupt-selectors) sed -i 's/frame=original canaries=preserved/frame=original selectors=corrupt/' "$log" ;;
   esac
   exit 33
   ;;

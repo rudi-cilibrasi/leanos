@@ -791,10 +791,31 @@ user_a_entry:
     jne user_copy_fail
     cmpb $0xc3, user_a_stack+4113(%rip)
     jne user_copy_fail
+#ifdef LEANOS_PREEMPTION_SCENARIO
+    mov $1, %rax
+    xor %rbx, %rbx
+    xor %rcx, %rcx
+    xor %rdx, %rdx
+    movabs $0xa11ca11ca11ca11c, %r12
+    movabs $0xa22da22da22da22d, %r13
+    int $0x80
+1:  mov $6, %rax
+    int $0x80
+    test %rax, %rax
+    jz 1b
+    movabs $0xa11ca11ca11ca11c, %rax
+    cmp %rax, %r12
+    jne user_copy_fail
+    movabs $0xa22da22da22da22d, %rax
+    cmp %rax, %r13
+    jne user_copy_fail
+    mov $5, %rax
+#else
     mov $8, %rax
     mov $0x4c45414e, %rbx
     mov $0x4f53, %rcx
     xor %rdx, %rdx
+#endif
     int $0x80
     ud2
 user_copy_fail:
@@ -813,14 +834,53 @@ user_a_stack_top:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+#ifdef LEANOS_PREEMPTION_SCENARIO
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    cmp $B_INITIAL_RCX, %rcx
+    jne 2f
+    cmp $B_INITIAL_RDX, %rdx
+    jne 2f
+    cmp $B_INITIAL_RBP, %rbp
+    jne 2f
+    cmp $B_INITIAL_RSI, %rsi
+    jne 2f
+    cmp $B_INITIAL_RDI, %rdi
+    jne 2f
+    cmp $B_INITIAL_R8, %r8
+    jne 2f
+    cmp $B_INITIAL_R9, %r9
+    jne 2f
+    cmp $B_INITIAL_R10, %r10
+    jne 2f
+    cmp $B_INITIAL_R11, %r11
+    jne 2f
+    cmp $B_INITIAL_R14, %r14
+    jne 2f
+    cmp $B_INITIAL_R15, %r15
+    jne 2f
+    movabs $B_INITIAL_R12, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %rax
+    cmp %rax, %r13
+    jne 2f
+#endif
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
+#ifdef LEANOS_PREEMPTION_SCENARIO
+    mov $2, %rax
+#else
     mov $7, %rax
+#endif
     xor %rbx, %rbx
     xor %rcx, %rcx
     xor %rdx, %rdx
     int $0x80
+#ifndef LEANOS_PREEMPTION_SCENARIO
     cmp $0x4c45414e, %rax
     jne 2f
     cmp $0x4f53, %rbx
@@ -832,6 +892,9 @@ user_b_entry:
     mov $0x4f53, %rcx
     mov $9, %rax
     int $0x80
+#else
+1:  jmp 1b
+#endif
 2:  mov $3, %rax
     int $0x80
 3:  jmp 3b

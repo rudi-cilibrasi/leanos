@@ -15,6 +15,8 @@ lake build leanos-boot-plan
 
 ./scripts/test-run-image.sh
 
+./scripts/test-run-preemption-image.sh
+
 ./scripts/test-run-double-fault.sh
 
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
