@@ -1301,27 +1301,31 @@ theorem gate_subsystem_rejection_preserves_runtimeWellFormed state operation rep
     hresult hrejected
   exact ⟨by simpa [hatomic] using hstate, hatomic⟩
 
-/-- Return-authority selection is a complete running-operation preservation
-slice: it changes only the execution projection, arms authority only after the
-live-plan check, and leaves the authoritative #71/#74 states exact. -/
+/-- Return-authority selection is a complete operation-family preservation
+slice.  In running mode it changes only the execution projection and arms
+authority only after the live-plan check; busy and halted modes retain the
+exact authoritative #71/#74 states without invoking the selector. -/
 theorem gate_selectUserReturn_preserves_runtimeWellFormed state purpose
-    (hstate : RuntimeWellFormed state)
-    (hmode : state.execution.mode = .running) :
+    (hstate : RuntimeWellFormed state) :
     RuntimeWellFormed (gate state (.selectUserReturn purpose)).state := by
-  rcases hstate with
-    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
-      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
-  have hselected := selectLiveReturnAuthority_execution_wellFormed state purpose hexecution
-  have harmed := selectLiveReturnAuthority_armed_implies_live state purpose
-  simp only [gate, hmode, applyOperation]
-  rw [selectLiveReturnAuthority_eq_execution_update]
-  refine ⟨?_, hselected, hlifecycle, hcapabilities, hvirtual, hipc,
-    hscheduler, hpreemption, hresumable, htransfers, ?_, ?_⟩
-  · simpa [CompositeState.Coherent] using hcoherent
-  · simpa using hhalted
-  · intro harmedSelected
-    have hliveSelected := harmed (by simpa using harmedSelected)
-    simpa [CompositeState.ReturnPlanLive] using hliveSelected
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      rcases hstate with
+        ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+          hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
+      have hselected := selectLiveReturnAuthority_execution_wellFormed state purpose hexecution
+      have harmed := selectLiveReturnAuthority_armed_implies_live state purpose
+      simp only [gate, hmode, applyOperation]
+      rw [selectLiveReturnAuthority_eq_execution_update]
+      refine ⟨?_, hselected, hlifecycle, hcapabilities, hvirtual, hipc,
+        hscheduler, hpreemption, hresumable, htransfers, ?_, ?_⟩
+      · simpa [CompositeState.Coherent] using hcoherent
+      · simpa using hhalted
+      · intro harmedSelected
+        have hliveSelected := harmed (by simpa using harmedSelected)
+        simpa [CompositeState.ReturnPlanLive] using hliveSelected
 
 /-- An accepted outgoing user return is a complete accepted-operation slice:
 the runtime invariant forces its armed authority to refer to the live mapping

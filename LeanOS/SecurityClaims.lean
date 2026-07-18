@@ -180,16 +180,16 @@ theorem composite_gate_typed_result_contract state operation :
       exact (FailStop.gate_subsystem_rejection_preserves_runtimeWellFormed
         state operation reply hstate hcompleted hrejected).1
 
-/-- SC-COMPOSITE-CONTROL-WF: both running control operations preserve the
-complete invariant, including the exact sealed-transfer and resumable states. -/
+/-- SC-COMPOSITE-CONTROL-WF: both control operations preserve the complete
+invariant in every execution mode, including the exact sealed-transfer and
+resumable states retained by busy and halted gate rejection. -/
 theorem composite_gate_control_preserves_runtimeWellFormed state purpose
-    (hstate : FailStop.RuntimeWellFormed state)
-    (hmode : state.execution.mode = .running) :
+    (hstate : FailStop.RuntimeWellFormed state) :
     FailStop.RuntimeWellFormed
         (FailStop.gate state (.selectUserReturn purpose)).state ∧
       FailStop.RuntimeWellFormed (FailStop.gate state .restart).state := by
   exact ⟨FailStop.gate_selectUserReturn_preserves_runtimeWellFormed state purpose
-      hstate hmode,
+      hstate,
     FailStop.gate_restart_preserves_runtimeWellFormed state hstate⟩
 
 /-- SC-INTERRUPT-ENTRY-BINDING: every normalized record constructor copies
