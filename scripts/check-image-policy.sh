@@ -5,6 +5,7 @@ elf="${1:-build/boot/leanos.elf}"
 [[ -f "$elf" ]] || { echo "error: missing ELF: $elf" >&2; exit 1; }
 symbols="$(nm "$elf")"
 ./scripts/check-entry-policy.sh "$elf"
+./scripts/check-extended-state-policy.sh "$elf"
 
 flags() {
   readelf -SW "$elf" | awk -v section="$1" \
@@ -111,7 +112,7 @@ for symbol in enable_smep run_wp_probe wp_probe_instruction wp_probe_recovered \
     echo "error: supervisor-control evidence symbol missing: $symbol" >&2; exit 1;
   }
 done
-grep -Fq 'or $((1 << 31) | (1 << 16)), %eax' boot/boot.S
+grep -Fq 'or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax' boot/boot.S
 grep -Fq 'bts $20, %rax' boot/boot.S
 grep -Fq 'bts $21, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]

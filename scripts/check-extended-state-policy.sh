@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+elf="${1:-build/boot/leanos.elf}"
+boot_source="${LEANOS_EXTENDED_STATE_BOOT_SOURCE:-boot/boot.S}"
+kernel_source="${LEANOS_EXTENDED_STATE_KERNEL_SOURCE:-boot/kernel.c}"
+[[ -f "$elf" ]] || { echo "error: missing extended-state-policy ELF: $elf" >&2; exit 1; }
+[[ -f "$boot_source" && -f "$kernel_source" ]] || {
+  echo "error: missing extended-state-policy source snapshot" >&2; exit 1;
+}
+
+symbols="$(nm "$elf")"
+for symbol in normalize_extended_state_cr0 normalize_extended_state_cr4; do
+  grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+    echo "error: extended-state field=symbol missing=$symbol" >&2; exit 1;
+  }
+done
+
+grep -Fq 'and $~((1 << 9) | (1 << 10) | (1 << 18)), %eax' "$boot_source" || {
+  echo "error: extended-state field=cr4-normalization inherited-or-enabled" >&2; exit 1;
+}
+grep -Fq 'or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax' \
+  "$boot_source" || {
+  echo "error: extended-state field=cr0-normalization inherited-or-relaxed" >&2; exit 1;
+}
+grep -Fq 'const uint64_t forbidden_cr4 = (1ull << 18) | (1ull << 10) | (1ull << 9);' \
+  "$kernel_source" || {
+  echo "error: extended-state field=live-cr4-snapshot missing" >&2; exit 1;
+}
+grep -Fq 'const uint64_t required_cr0 = (1ull << 16) | (1ull << 3) |' \
+  "$kernel_source" || {
+  echo "error: extended-state field=live-cr0-snapshot missing" >&2; exit 1;
+}
+grep -Fq 'cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0' \
+  "$kernel_source" || {
+  echo "error: extended-state field=evidence-record missing" >&2; exit 1;
+}
+
+disassembly="$(objdump -d --no-show-raw-insn "$elf")"
+grep -Eq '[[:space:]]and[[:space:]]+\$0xfffbf9ff,%eax' <<<"$disassembly" || {
+  echo "error: extended-state field=cr4-normalization final-elf" >&2; exit 1;
+}
+grep -Eq '[[:space:]]or[[:space:]]+\$0x8001000e,%eax' <<<"$disassembly" || {
+  echo "error: extended-state field=cr0-normalization final-elf" >&2; exit 1;
+}
+if grep -Eiq '[[:space:]](clts|fxrstor|xrstor)(64)?([[:space:]]|$)' <<<"$disassembly"; then
+  echo "error: extended-state field=unauthorized-enable-or-restore final-elf" >&2
+  exit 1
+fi
+
+echo "Extended-state CR0/CR4 derivation, live snapshot, and final-ELF policy passed"

@@ -1164,11 +1164,15 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     uint64_t cr0, cr4;
     __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
     __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
-    if ((cr0 & (1ull << 16)) == 0 || (cr4 & (1ull << 20)) == 0 ||
-        (cr4 & (1ull << 21)) == 0) {
+    const uint64_t required_cr0 = (1ull << 16) | (1ull << 3) |
+        (1ull << 2) | (1ull << 1);
+    const uint64_t forbidden_cr4 = (1ull << 18) | (1ull << 10) | (1ull << 9);
+    if ((cr0 & required_cr0) != required_cr0 ||
+        (cr4 & forbidden_cr4) != 0 ||
+        (cr4 & (1ull << 20)) == 0 || (cr4 & (1ull << 21)) == 0) {
         fail("supervisor-controls");
     }
-    serial_puts("LEANOS/6 CONTROL cr0.wp=1 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready\n");
+    serial_puts("LEANOS/6 CONTROL cr0.wp=1 cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready\n");
     supervisor_probe = 1;
     run_wp_probe();
     if (supervisor_probe != 2) fail("wp-no-fault");

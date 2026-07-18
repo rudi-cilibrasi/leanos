@@ -167,7 +167,13 @@ multiboot_entry:
     movl $0, page_table_b+4(%eax)
 #endif
 
+    /* Derive the denial policy instead of inheriting firmware/GRUB state.
+       PAE remains enabled for long mode; OSFXSR, OSXMMEXCPT, and OSXSAVE are
+       cleared so no legacy SIMD or XSAVE-managed state is OS-enabled. */
+.global normalize_extended_state_cr4
+normalize_extended_state_cr4:
     mov %cr4, %eax
+    and $~((1 << 9) | (1 << 10) | (1 << 18)), %eax
     or $(1 << 5), %eax
     mov %eax, %cr4
     mov $page_map_level_4_a, %eax
@@ -176,9 +182,13 @@ multiboot_entry:
     rdmsr
     or $((1 << 8) | (1 << 11)), %eax
     wrmsr
-    /* Construction is complete before paging and supervisor write protection. */
+    /* Construction is complete before paging and supervisor write protection.
+       EM/MP/TS are explicitly set so x87/MMX use reaches the denial path once
+       its reviewed exception gates are installed. */
+.global normalize_extended_state_cr0
+normalize_extended_state_cr0:
     mov %cr0, %eax
-    or $((1 << 31) | (1 << 16)), %eax
+    or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax
     mov %eax, %cr0
     lgdt gdt64_pointer
     ljmp $0x08, $long_mode_entry

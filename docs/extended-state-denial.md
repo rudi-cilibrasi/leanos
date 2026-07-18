@@ -57,11 +57,22 @@ decoding, hardware exception priority and delivery, descriptor loads, assembly,
 generated code, the compiler/linker, firmware/GRUB state, and the final binary.
 No QEMU claim is made by this checkpoint.
 
+## Boot control-state integration
+
+The early 32-bit boot path now derives the denial controls before enabling
+long mode. It sets CR0.EM, CR0.MP, and CR0.TS, clears CR4.OSFXSR,
+CR4.OSXMMEXCPT, and CR4.OSXSAVE, and retains the required PAE setting. After
+the exception table and supervisor controls are installed, the guest rereads
+CR0/CR4 and rejects any mismatch before a user return. The final-ELF/source
+policy checker binds the two named normalization sites to their reviewed
+instructions. These are inspected and QEMU-tested machine-boundary facts, not
+proof that the processor implements the Lean control-state model.
+
 ## Remaining integration
 
 The next checkpoint must extend the shared entry manifest with reviewed vector
-6/7 descriptors and normalization, normalize the controls during boot, and
-compose user denial with issue #101's authoritative cleanup/peer-dispatch path.
+6/7 descriptors and normalization, and compose user denial with issue #101's
+authoritative cleanup/peer-dispatch path.
 Issues #104 and #105 must then carry this predicate through the global runtime
 and generated stateful boundary. Final work also needs source/final-ELF policy
 checks, negative fixtures, a two-subject QEMU scenario, preserved snapshots and
