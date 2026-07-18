@@ -1271,6 +1271,20 @@ theorem gate_subsystem_rejection_atomicity state operation reply
   have hmode := (gate_completed_sound state operation reply hresult).1
   cases hrejected <;> simp_all [gate, applyOperation]
 
+/-- Every finite nonfatal subsystem rejection preserves the complete runtime
+invariant because the composite gate publishes the literal pre-state.  This
+lifts rejection atomicity to the global preservation boundary uniformly over
+syscall, IPC, transfer, capability, mapping, lifecycle, and scheduler errors. -/
+theorem gate_subsystem_rejection_preserves_runtimeWellFormed state operation reply
+    (hstate : RuntimeWellFormed state)
+    (hresult : (gate state operation).result = .completed reply)
+    (hrejected : SubsystemRejection state operation reply) :
+    RuntimeWellFormed (gate state operation).state ∧
+      (gate state operation).state = state := by
+  have hatomic := gate_subsystem_rejection_atomicity state operation reply
+    hresult hrejected
+  exact ⟨by simpa [hatomic] using hstate, hatomic⟩
+
 /-- Return-authority selection is a complete running-operation preservation
 slice: it changes only the execution projection, arms authority only after the
 live-plan check, and leaves the authoritative #71/#74 states exact. -/

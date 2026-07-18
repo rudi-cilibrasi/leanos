@@ -119,7 +119,8 @@ theorem composite_gate_sealed_receive_preserves_runtimeWellFormed
 /-- SC-COMPOSITE-GATE-CONTRACT: every completed public gate step identifies
 the running latch, exact typed reply, and exact composite post-state; both
 gate-level rejection classes and every classified nonfatal subsystem rejection
-preserve the complete state. -/
+preserve the complete state, and every classified rejection preserves the
+global invariant whenever the pre-state satisfies it. -/
 theorem composite_gate_typed_result_contract state operation :
     (∀ reply, (FailStop.gate state operation).result = .completed reply →
       state.execution.mode = .running ∧
@@ -130,15 +131,21 @@ theorem composite_gate_typed_result_contract state operation :
       (FailStop.gate state operation).state = state) ∧
     (∀ reply, (FailStop.gate state operation).result = .completed reply →
       FailStop.SubsystemRejection state operation reply →
-      (FailStop.gate state operation).state = state)) := by
+      (FailStop.gate state operation).state = state ∧
+        (FailStop.RuntimeWellFormed state →
+          FailStop.RuntimeWellFormed (FailStop.gate state operation).state))) := by
   constructor
   · intro reply hcompleted
     exact FailStop.gate_completed_sound state operation reply hcompleted
   constructor
   · exact FailStop.gate_mode_rejection_atomicity state operation
   · intro reply hcompleted hrejected
-    exact FailStop.gate_subsystem_rejection_atomicity state operation reply
-      hcompleted hrejected
+    constructor
+    · exact FailStop.gate_subsystem_rejection_atomicity state operation reply
+        hcompleted hrejected
+    · intro hstate
+      exact (FailStop.gate_subsystem_rejection_preserves_runtimeWellFormed
+        state operation reply hstate hcompleted hrejected).1
 
 /-- SC-COMPOSITE-CONTROL-WF: both running control operations preserve the
 complete invariant, including the exact sealed-transfer and resumable states. -/
