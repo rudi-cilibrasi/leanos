@@ -337,6 +337,51 @@ theorem copyWord_accepted_returns_fresh_word state actor sourceWord expected des
             simpa [copyWord, hsource, hexhausted, hslot] using haccepted
           simp [copyWord, hsource, hexhausted, hslot, hcopy]
 
+/-- The word returned by an accepted userspace copy names the capability that
+was actually installed in the destination slot.  This couples the public
+result to post-state authority rather than only to the pre-state allocator. -/
+theorem copyWord_accepted_returns_installed_word state actor sourceWord expected destination
+    destinationSlot requested
+    (haccepted : (copyWord state actor sourceWord expected destination destinationSlot
+      requested).result = .accepted) :
+    ∃ word capability,
+      (copyWord state actor sourceWord expected destination destinationSlot
+        requested).freshWord = some word ∧
+      decode word = .ok { slot := destinationSlot, identity := capability.identity } ∧
+      (copyWord state actor sourceWord expected destination destinationSlot
+        requested).state.slots destination destinationSlot = some capability := by
+  cases hsource : resolveCurrent state { caller := actor } sourceWord expected with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason => simp [copyWord, hsource, rejectCopyWord] at haccepted
+      | denied resolveReason =>
+          cases resolveReason <;> simp [copyWord, hsource, rejectCopyWord] at haccepted
+  | ok source =>
+      by_cases hexhausted : state.nextIdentity = 0 ∨ generationReserved ≤ state.nextIdentity
+      · simp [copyWord, hsource, hexhausted, rejectCopyWord] at haccepted
+      · by_cases hslot : slotReserved ≤ destinationSlot
+        · simp [copyWord, hsource, hexhausted, hslot, rejectCopyWord] at haccepted
+        · have hcopy : (Capability.copy state actor source.handle.slot destination
+              destinationSlot requested).result = .accepted := by
+            simpa [copyWord, hsource, hexhausted, hslot] using haccepted
+          rcases LeanOS.Capability.copy_accepted_installs state actor source.handle.slot destination
+              destinationSlot requested hcopy with ⟨capability, hinstalled, hidentity⟩
+          have hpositive : 0 < state.nextIdentity :=
+            Nat.pos_of_ne_zero (fun hzero => hexhausted (Or.inl hzero))
+          have hgeneration : state.nextIdentity < generationReserved :=
+            Nat.lt_of_not_ge (fun hge => hexhausted (Or.inr hge))
+          have hslot' : destinationSlot < slotReserved := Nat.lt_of_not_ge hslot
+          let word := UInt64.ofNat (destinationSlot + state.nextIdentity * slotRadix)
+          have hencode : encode { slot := destinationSlot, identity := state.nextIdentity } =
+              some word := by
+            simp [word, encode, Encodable, hslot', hpositive, hgeneration]
+          have hdecode := decode_encode
+            { slot := destinationSlot, identity := state.nextIdentity } word hencode
+          refine ⟨word, capability, ?_, ?_, ?_⟩
+          · simp [copyWord, hsource, hexhausted, hslot, hcopy, hencode]
+          · simpa [hidentity] using hdecode
+          · simpa [copyWord, hsource, hexhausted, hslot, hcopy] using hinstalled
+
 /-- A malformed or denied copy word is state preserving. -/
 theorem copyWord_resolution_rejected_unchanged state actor sourceWord expected
     destination destinationSlot requested reason
