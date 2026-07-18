@@ -985,7 +985,14 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
         state.execution.core.context.activeAddressSpace page
       match outcome.result with
       | .rejected _ => state
-      | .accepted => installLifecycle { state with virtualMemory := outcome.state }
+      | .accepted =>
+          let translations := TLB.invalidatePage
+            { state.resumable.translations with virtual := outcome.state }
+            state.execution.core.context.activeAddressSpace page
+          installLifecycle
+            { state with
+              virtualMemory := outcome.state
+              resumable := { state.resumable with translations } }
           (lifecycleFromVirtualMemory state.lifecycle outcome.state)
   | .createSubject subject =>
       let outcome := SubjectLifecycle.create state.lifecycle subject
@@ -1506,6 +1513,50 @@ theorem map_result_sound state slot page permissions
         (VirtualMapping.map state.virtualMemory state.execution.core.context.currentSubject slot
           state.execution.core.context.activeAddressSpace page permissions).result) := by
   simp [gate, hmode, operationReply]
+
+/-- An accepted unmap updates the authoritative virtual-memory projection and
+invalidates the matching entry in the owned resumable-context TLB before the
+new lifecycle is published.  The composite synchronization step cannot retain
+a cached translation for the removed page, and the bounded-cache invariant is
+preserved. -/
+theorem gate_unmap_accepted_invalidates_tlb state page next
+    (hmode : state.execution.mode = .running)
+    (haccepted : VirtualMapping.unmap state.virtualMemory
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page =
+        { state := next, result := .accepted })
+    (htlb : TLB.Coherent state.resumable.translations) :
+    (gate state (.unmap page)).result = .completed (.unmap .accepted) ∧
+      (gate state (.unmap page)).state.Coherent ∧
+      TLB.Coherent (gate state (.unmap page)).state.resumable.translations ∧
+      ∀ context, TLB.lookup
+        (gate state (.unmap page)).state.resumable.translations.entries
+        { addressSpace := state.execution.core.context.activeAddressSpace, page }
+        context = none := by
+  have hcoherent :
+      (installLifecycle
+        { state with
+          virtualMemory := next
+          resumable := { state.resumable with
+            translations := TLB.invalidatePage
+              { state.resumable.translations with virtual := next }
+              state.execution.core.context.activeAddressSpace page } }
+        (lifecycleFromVirtualMemory state.lifecycle next)).Coherent :=
+    installLifecycle_coherent _ _
+  constructor
+  · simp [gate, hmode, operationReply, haccepted]
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted] using hcoherent
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted, installLifecycle,
+      TLB.Coherent, TLB.invalidatePage] using
+        (TLB.invalidate_page_preserves_coherent state.resumable.translations
+          state.execution.core.context.activeAddressSpace page htlb)
+  · intro context
+    simpa [gate, hmode, applyOperation, haccepted, installLifecycle,
+      TLB.invalidatePage] using
+      (TLB.invalidate_page_absent state.resumable.translations.entries
+        { addressSpace := state.execution.core.context.activeAddressSpace, page } context)
 
 /-- Initial dispatch is also represented by a typed composite step; syscall
 and timer paths reselect only after their final context update. -/
