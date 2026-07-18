@@ -244,6 +244,12 @@ never-reused object identifiers to prove safe release and reuse; its lifetime
 rule, machine-checked guarantees, executable attacks, and limits are documented
 in [`docs/memory-lifecycle.md`](docs/memory-lifecycle.md).
 
+Fixed boot-admitted [per-subject frame budgets](docs/frame-budgets.md) partition
+eligible allocator frames, charge allocation to trusted kernel context, preserve
+credit exactly across release and termination, and prove that a peer with an
+available commitment can allocate independently of another subject's exhaustion.
+Capability delegation does not transfer or duplicate the original charge.
+
 The executable virtual-mapping model adds subject-owned address spaces,
 capability-bounded read/write mappings, live translation checks, and stale
 mapping invalidation. Its policy, proved scope, examples, and limitations are
