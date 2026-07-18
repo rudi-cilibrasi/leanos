@@ -1677,6 +1677,87 @@ theorem gate_transferOffer_accepted_preserves_transferWellFormed state endpointW
       sourceKind payload rights hstate.2.2.2.2.2.2.2.2.2.1 haccepted
   · simp [gate, hmode, operationReply, applyOperation, haccepted]
 
+/-- An accepted public transfer receipt preserves the authoritative capability
+invariant and reports the exact provenance-bearing envelope and installed
+generation word.  This closes the capability-store slice needed before the
+stronger whole-runtime publication theorem for `installTransfers`. -/
+theorem gate_transferAccept_delivered_preserves_capabilityWellFormed state endpointWord
+    destinationSlot envelope
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hdelivered : (CapabilityTransfer.acceptWord state.transfers
+      state.execution.core.context.currentSubject endpointWord destinationSlot).result =
+        .delivered envelope) :
+    Capability.WellFormed
+        (CapabilityTransfer.acceptWord state.transfers
+          state.execution.core.context.currentSubject endpointWord destinationSlot).state.capabilities ∧
+      (gate state (.transferAccept endpointWord destinationSlot)).result =
+        .completed (.transferAccept (.delivered envelope)
+          (CapabilityTransfer.acceptWord state.transfers
+            state.execution.core.context.currentSubject endpointWord
+            destinationSlot).deliveredWord) := by
+  have htransfer := hstate.2.2.2.2.2.2.2.2.2.1
+  cases hendpoint : CapabilityHandle.resolveCurrent state.transfers.capabilities
+      { caller := state.execution.core.context.currentSubject }
+      endpointWord .endpoint with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason =>
+          simp [CapabilityTransfer.acceptWord, hendpoint,
+            CapabilityTransfer.rejectAccept] at hdelivered
+      | denied resolveReason =>
+          cases resolveReason <;>
+            simp [CapabilityTransfer.acceptWord, hendpoint,
+              CapabilityTransfer.rejectAccept] at hdelivered
+  | ok endpoint =>
+      cases hpending : state.transfers.pending endpoint.capability.object with
+      | none =>
+          have hpreserved := CapabilityTransfer.accept_preserves_capabilityWellFormed
+            state.transfers state.execution.core.context.currentSubject endpoint.handle.slot
+            destinationSlot htransfer
+          constructor
+          · simpa [CapabilityTransfer.acceptWord, hendpoint, hpending] using hpreserved
+          · simp [gate, hmode, operationReply, applyOperation, hdelivered]
+      | some transfer =>
+          by_cases hslot : CapabilityHandle.slotReserved ≤ destinationSlot
+          · simp [CapabilityTransfer.acceptWord, hendpoint, hpending, hslot,
+              CapabilityTransfer.rejectAccept] at hdelivered
+          · by_cases hexhausted : transfer.identity = 0 ∨
+                CapabilityHandle.generationReserved ≤ transfer.identity
+            · simp [CapabilityTransfer.acceptWord, hendpoint, hpending, hslot, hexhausted,
+                CapabilityTransfer.rejectAccept] at hdelivered
+            · have hpreserved := CapabilityTransfer.accept_preserves_capabilityWellFormed
+                  state.transfers state.execution.core.context.currentSubject endpoint.handle.slot
+                  destinationSlot htransfer
+              constructor
+              · simpa [CapabilityTransfer.acceptWord, hendpoint, hpending, hslot, hexhausted]
+                  using hpreserved
+              · simp [gate, hmode, operationReply, applyOperation, hdelivered]
+
+/-- The complete sealed-transfer invariant, not only its embedded capability
+store, survives every delivered public receipt.  The composite reply remains
+paired with the exact state and generation word that produced it. -/
+theorem gate_transferAccept_delivered_preserves_transferWellFormed state endpointWord
+    destinationSlot envelope
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hdelivered : (CapabilityTransfer.acceptWord state.transfers
+      state.execution.core.context.currentSubject endpointWord destinationSlot).result =
+        .delivered envelope) :
+    CapabilityTransfer.WellFormed
+        (CapabilityTransfer.acceptWord state.transfers
+          state.execution.core.context.currentSubject endpointWord destinationSlot).state ∧
+      (gate state (.transferAccept endpointWord destinationSlot)).result =
+        .completed (.transferAccept (.delivered envelope)
+          (CapabilityTransfer.acceptWord state.transfers
+            state.execution.core.context.currentSubject endpointWord
+            destinationSlot).deliveredWord) := by
+  constructor
+  · exact CapabilityTransfer.acceptWord_preserves_wellFormed state.transfers
+      state.execution.core.context.currentSubject endpointWord destinationSlot
+      hstate.2.2.2.2.2.2.2.2.2.1
+  · simp [gate, hmode, operationReply, applyOperation, hdelivered]
+
 /-- Busy and terminal rejection are invariant-preserving for every operation;
 neither path invokes a synchronization helper or a subsystem transition. -/
 theorem gate_rejected_mode_preserves_runtimeWellFormed state operation
