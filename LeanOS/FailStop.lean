@@ -1425,6 +1425,106 @@ theorem gate_terminateCurrent_accepted_sound state context next
   rw [haccepted] at hpreserved
   simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
 
+/-- Accepted capability copying publishes the exact fresh capability state to
+every consumer.  The composite reply cannot report success while lifecycle,
+IPC, scheduler, mapping, or saved-context projections retain the old registry. -/
+theorem gate_capabilityCopy_accepted_synchronizes state source destination destinationSlot
+    rights next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Capability.copy state.capabilities
+      state.execution.core.context.currentSubject source destination destinationSlot rights =
+        { state := next, result := .accepted })
+    (hwellFormed : Capability.WellFormed state.capabilities) :
+    (gate state (.capabilityCopy source destination destinationSlot rights)).result =
+        .completed (.capability .accepted) ∧
+      let published :=
+        (gate state (.capabilityCopy source destination destinationSlot rights)).state
+      published.Coherent ∧
+        published.capabilities = next ∧
+        published.lifecycle.capabilities = next ∧
+        published.execution.core.lifecycle.capabilities = next ∧
+        published.virtualMemory.memory.capabilities = next ∧
+        published.ipc.endpoints.capabilities = next ∧
+        published.scheduler.lifecycle.capabilities = next ∧
+        published.preemption.scheduler.lifecycle.capabilities = next ∧
+        published.resumable.scheduler.lifecycle.capabilities = next ∧
+        published.transfers.capabilities = next ∧
+        Capability.WellFormed published.capabilities := by
+  have hpreserved := Capability.copy_preserves_wellFormed state.capabilities
+    state.execution.core.context.currentSubject source destination destinationSlot rights hwellFormed
+  rw [haccepted] at hpreserved
+  have hcoherent : (installCapabilities state next).Coherent := by
+    simpa [installCapabilities] using installLifecycle_coherent state
+      { state.lifecycle with capabilities := next }
+  rcases installCapabilities_synchronizes_consumers state next with
+    ⟨hcapabilities, hlifecycle, hexecution, hmemory, hipc, hscheduler,
+      hpreemption, hresumable, htransfers⟩
+  have hpublished : Capability.WellFormed (installCapabilities state next).capabilities := by
+    rw [hcapabilities]
+    exact hpreserved
+  constructor
+  · simp [gate, hmode, operationReply, haccepted]
+  · simpa [gate, hmode, applyOperation, haccepted] using
+      And.intro hcoherent
+        (And.intro hcapabilities
+          (And.intro hlifecycle
+            (And.intro hexecution
+              (And.intro hmemory
+                (And.intro hipc
+                  (And.intro hscheduler
+                    (And.intro hpreemption
+                      (And.intro hresumable
+                        (And.intro htransfers hpublished)))))))))
+
+/-- Accepted single-slot revocation is synchronized with every capability
+consumer and retains the exact well-formed subsystem post-state. -/
+theorem gate_capabilityRevoke_accepted_synchronizes state authoritySlot victim victimSlot next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Capability.revoke state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot =
+        { state := next, result := .accepted })
+    (hwellFormed : Capability.WellFormed state.capabilities) :
+    (gate state (.capabilityRevoke authoritySlot victim victimSlot)).result =
+        .completed (.capability .accepted) ∧
+      let published :=
+        (gate state (.capabilityRevoke authoritySlot victim victimSlot)).state
+      published.Coherent ∧
+        published.capabilities = next ∧
+        published.lifecycle.capabilities = next ∧
+        published.execution.core.lifecycle.capabilities = next ∧
+        published.virtualMemory.memory.capabilities = next ∧
+        published.ipc.endpoints.capabilities = next ∧
+        published.scheduler.lifecycle.capabilities = next ∧
+        published.preemption.scheduler.lifecycle.capabilities = next ∧
+        published.resumable.scheduler.lifecycle.capabilities = next ∧
+        published.transfers.capabilities = next ∧
+        Capability.WellFormed published.capabilities := by
+  have hpreserved := Capability.revoke_preserves_wellFormed state.capabilities
+    state.execution.core.context.currentSubject authoritySlot victim victimSlot hwellFormed
+  rw [haccepted] at hpreserved
+  have hcoherent : (installCapabilities state next).Coherent := by
+    simpa [installCapabilities] using installLifecycle_coherent state
+      { state.lifecycle with capabilities := next }
+  rcases installCapabilities_synchronizes_consumers state next with
+    ⟨hcapabilities, hlifecycle, hexecution, hmemory, hipc, hscheduler,
+      hpreemption, hresumable, htransfers⟩
+  have hpublished : Capability.WellFormed (installCapabilities state next).capabilities := by
+    rw [hcapabilities]
+    exact hpreserved
+  constructor
+  · simp [gate, hmode, operationReply, haccepted]
+  · simpa [gate, hmode, applyOperation, haccepted] using
+      And.intro hcoherent
+        (And.intro hcapabilities
+          (And.intro hlifecycle
+            (And.intro hexecution
+              (And.intro hmemory
+                (And.intro hipc
+                  (And.intro hscheduler
+                    (And.intro hpreemption
+                      (And.intro hresumable
+                        (And.intro htransfers hpublished)))))))))
+
 /-- Accepted subtree revocation is published atomically across every
 capability consumer.  The exact authoritative post-state remains well formed,
 and the synchronization step establishes the composite coherence equalities
