@@ -97,21 +97,28 @@ command -v objdump >/dev/null 2>&1 || { echo "error: missing required tool 'objd
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 nm -n "$elf" | awk 'NF >= 3 { print $3 }' | sort -u >"$tmp/symbols"
-objdump -d --no-show-raw-insn "$elf" | awk -v indirect="$tmp/indirect" '
+objdump -d --no-show-raw-insn "$elf" | awk \
+    -v indirect="$tmp/indirect" -v pushes="$tmp/pushes" '
   /^[[:xdigit:]]+[[:space:]]+<[^>]+>:/ {
     caller = $2; gsub(/[<>:]/, "", caller); next
   }
+  caller != "" && $2 ~ /^push(q)?$/ { count[caller]++ }
   caller != "" && $2 ~ /^(callq?|jmpq?)$/ {
     target = $NF
     if (target ~ /^<[^>]+>$/) {
       gsub(/[<>]/, "", target); sub(/\+0x.*/, "", target)
-      if (caller != target) print caller "\t" target
+      # Ignore jumps to a local basic block in the same symbol, but retain a
+      # direct self-call: the former is ordinary control flow and the latter
+      # is recursion that invalidates finite stack accounting.
+      if (caller != target || $2 ~ /^callq?$/) print caller "\t" target
     } else if ($3 ~ /^\*/) {
       print caller "\t" $2 "\t" $3 >> indirect
     }
   }
+  END { for (function_name in count) print function_name "\t" count[function_name] > pushes }
 ' | sort -u >"$tmp/edges"
 touch "$tmp/indirect"
+touch "$tmp/pushes"
 if [[ -n "$elf_edges_output" ]]; then
   cp "$tmp/edges" "$elf_edges_output"
 fi
@@ -120,6 +127,12 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
   [[ -n "$path" && "${path:0:1}" != '#' ]] || continue
   grep -Fxq "$elf_root" "$tmp/symbols" || {
     echo "error: path=$path final-elf-missing-root=$elf_root" >&2; exit 1;
+  }
+  elf_save_count="$(awk -F '\t' -v root="$elf_root" \
+    '$1 == root { print $2; found = 1 } END { if (!found) print 0 }' "$tmp/pushes")"
+  [[ "$elf_save_count" -eq "$save_count" ]] || {
+    echo "error: path=$path final-elf-save-register-count=$elf_save_count expected=$save_count root=$elf_root" >&2
+    exit 1
   }
   printf '%s\n' "$elf_root" >"$tmp/reachable"
   : >"$tmp/reachable.next"
@@ -133,6 +146,33 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
     : >"$tmp/reachable.next"
     [[ "$(wc -l <"$tmp/reachable")" -eq "$before" ]] && break
   done
+  cycle_node="$(awk -F '\t' '
+    function visit(node, count, child_index, target, children) {
+      state[node] = 1
+      count = split(outgoing[node], children, "\034")
+      for (child_index = 1; child_index <= count; child_index++) {
+        target = children[child_index]
+        if (target == "") continue
+        if (state[target] == 1) { cycle = target; return 1 }
+        if (state[target] == 0 && visit(target)) return 1
+      }
+      state[node] = 2
+      return 0
+    }
+    NR == FNR { reached[$1] = 1; next }
+    ($1 in reached) && ($2 in reached) {
+      outgoing[$1] = outgoing[$1] "\034" $2
+    }
+    END {
+      for (node in reached) {
+        if (state[node] == 0 && visit(node)) { print cycle; exit }
+      }
+    }
+  ' "$tmp/reachable" "$tmp/edges")"
+  [[ -z "$cycle_node" ]] || {
+    echo "error: path=$path final-elf-recursion-cycle=$cycle_node root=$elf_root" >&2
+    exit 1
+  }
   IFS=';' read -ra chain <<<"$functions"
   declare -A reviewed=()
   reviewed[$elf_root]=1
@@ -159,7 +199,7 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
       exit 1
     }
   done
-  printf 'path=%s final-elf-root=%s reviewed-functions=%s reachable-functions=%s extracted-edges=%s result=PASS\n' \
-    "$path" "$elf_root" "${#chain[@]}" "$(wc -l <"$tmp/reachable")" \
+  printf 'path=%s final-elf-root=%s save-register-pushes=%s reviewed-functions=%s reachable-functions=%s extracted-edges=%s result=PASS\n' \
+    "$path" "$elf_root" "$elf_save_count" "${#chain[@]}" "$(wc -l <"$tmp/reachable")" \
     "$(wc -l <"$tmp/edges")"
 done < "$manifest"

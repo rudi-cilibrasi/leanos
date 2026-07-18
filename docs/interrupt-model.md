@@ -163,12 +163,15 @@ After the final link, the gate extracts direct and tail-call edges from the ELF,
 requires every reviewed stack contributor to be retained and reachable from
 its named entry stub, rejects indirect transfers anywhere in that reachable
 closure, and rejects every transitively reachable compiler-reported function
-that the reviewed manifest does not account for.
+that the reviewed manifest does not account for. It also counts the expanded
+register-save pushes in each final entry-stub disassembly and rejects direct or
+mutual recursion cycles in the final reachable graph. Targeted ELF fixtures
+remove one save push and introduce a two-function cycle so these gates cannot
+be satisfied by the reviewed source manifest alone.
 The extracted edges and final-ELF verdict are retained as checking evidence,
 not a proof of GCC, generated C, assembly, or the final machine path.
 
-Distinct reservation-manifest identities, final-disassembly push-count checks,
-high-water observations, and forced
+Distinct reservation-manifest identities, high-water observations, and forced
 overflow through IST1 remain future integration work. No stable security claim
 is advertised for this checkpoint.
 
