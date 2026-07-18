@@ -4,6 +4,7 @@ set -euo pipefail
 elf="${1:-build/boot/leanos.elf}"
 mmx_elf="${2:-}"
 sse_elf="${3:-}"
+sse2_elf="${4:-}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -85,7 +86,15 @@ if [[ -n "$sse_elf" ]]; then
   check_probe_mismatch "$sse_elf" sse x87
   check_probe_mismatch "$sse_elf" sse mmx
 fi
-if [[ -n "$mmx_elf" || -n "$sse_elf" ]]; then
+if [[ -n "$sse2_elf" ]]; then
+  check_probe_mismatch "$elf" x87 sse2
+  check_probe_mismatch "$mmx_elf" mmx sse2
+  check_probe_mismatch "$sse_elf" sse sse2
+  check_probe_mismatch "$sse2_elf" sse2 x87
+  check_probe_mismatch "$sse2_elf" sse2 mmx
+  check_probe_mismatch "$sse2_elf" sse2 sse
+fi
+if [[ -n "$mmx_elf" || -n "$sse_elf" || -n "$sse2_elf" ]]; then
   echo "EXTENDED-STATE fixture=probe-class-swap field=probe-class final-elf result=REJECTED"
 fi
 

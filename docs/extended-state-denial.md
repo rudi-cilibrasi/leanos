@@ -68,10 +68,10 @@ policy-mismatch, kernel-origin, stale-binding, and dispatch-invariant cases and
 replays the generated adapter in both hosted C and the boot image. These are
 finite model/boundary tests, not a refinement proof.
 
-The versioned emulator evidence matrix treats dedicated x87, MMX, and SSE
+The versioned emulator evidence matrix treats dedicated x87, MMX, SSE, and SSE2
 two-subject denial images as mandatory accepted-boot scenarios. Each report
 binds the exact QEMU command, source revision, image and ELF hashes, and
-complete serial log. CI retains all three ISOs, ELFs, link maps, final page-table
+complete serial log. CI retains all four ISOs, ELFs, link maps, final page-table
 plans, serial transcripts, decoded CPUID/control-state snapshots, and
 extended-state policy verdicts for 14 days.
 
@@ -80,8 +80,9 @@ inventory and reject `clts`, `fxrstor`, and `xrstor`. Controlled fixtures add
 each forbidden instruction and an extra CR0 write to the source snapshot and
 must retain their typed rejection diagnostics. The final-ELF gate additionally
 requires `fld1` in the x87 image, `pxor %mm0,%mm0` in the MMX image, and
-`xorps %xmm0,%xmm0` in the SSE image; controlled class-swap fixtures reject
-each ELF under every other expected probe. This protects the inspection gate
+`xorps %xmm0,%xmm0` in the SSE image, and `pxor %xmm0,%xmm0` in the SSE2 image;
+controlled class-swap fixtures reject each ELF under every other expected probe.
+This protects the inspection gate
 from silent relaxation; it does not prove the disassembler or source scan
 complete for arbitrary instruction encodings.
 
@@ -130,11 +131,11 @@ The machine endpoint now consumes the cleanup/dispatch result, retires A, and
 restores the scheduler-selected peer. The global model also carries the
 denied-state predicate around #104's authoritative operation vocabulary and
 proves single-step and finite-sequence preservation. The deterministic x87,
-MMX, and SSE two-subject QEMU scenarios are now release-blocking and retain
+MMX, SSE, and SSE2 two-subject QEMU scenarios are now release-blocking and retain
 exact serial and final-ELF evidence. The x87/MMX attempts take typed #NM and
-the deliberately OS-disabled SSE attempt takes typed #UD; each must trap before
+the deliberately OS-disabled SSE/SSE2 attempts take typed #UD; each must trap before
 its selected shared bank changes, retire A through the same normalized cleanup,
 and restore B through the common validated return path. Final work still needs
-representative SSE2/AVX denial coverage, refinement of the global wrapper to the
+representative AVX denial coverage, refinement of the global wrapper to the
 generated/machine gate, broader handler/runner negative fixtures, and the
 remaining threat-model/TCB inventory updates.

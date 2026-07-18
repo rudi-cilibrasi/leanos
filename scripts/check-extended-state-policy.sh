@@ -81,6 +81,11 @@ elif [[ "$probe" == sse ]]; then
     <<<"$disassembly" || {
     echo "error: extended-state field=sse-probe final-elf" >&2; exit 1;
   }
+elif [[ "$probe" == sse2 ]]; then
+  grep -Eq '[[:space:]]pxor[[:space:]]+%xmm0,%xmm0([[:space:]]|$)' \
+    <<<"$disassembly" || {
+    echo "error: extended-state field=sse2-probe final-elf" >&2; exit 1;
+  }
 elif [[ -n "$probe" ]]; then
   echo "error: extended-state field=probe-class unsupported=$probe" >&2
   exit 1
