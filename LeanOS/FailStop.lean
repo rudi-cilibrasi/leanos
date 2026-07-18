@@ -632,6 +632,23 @@ private def installCapabilities (state : CompositeState)
     (capabilities : Capability.State) : CompositeState :=
   installLifecycle state { state.lifecycle with capabilities }
 
+/-- Capability publication has one authoritative result and updates every
+consumer in the same composite step.  In particular, legacy scheduler and
+preemption views cannot retain the pre-revocation registry while IPC or the
+resumable-context path observes the new one. -/
+theorem installCapabilities_synchronizes_consumers state capabilities :
+    let next := installCapabilities state capabilities
+    next.capabilities = capabilities ∧
+      next.lifecycle.capabilities = capabilities ∧
+      next.execution.core.lifecycle.capabilities = capabilities ∧
+      next.virtualMemory.memory.capabilities = capabilities ∧
+      next.ipc.endpoints.capabilities = capabilities ∧
+      next.scheduler.lifecycle.capabilities = capabilities ∧
+      next.preemption.scheduler.lifecycle.capabilities = capabilities ∧
+      next.resumable.scheduler.lifecycle.capabilities = capabilities ∧
+      next.transfers.capabilities = capabilities := by
+  simp [installCapabilities, installLifecycle, synchronizeMemory]
+
 private def installScheduler (state : CompositeState)
     (scheduler : Scheduler.State) : CompositeState :=
   installLifecycle { state with scheduler, preemption := { state.preemption with scheduler } }
@@ -1400,6 +1417,59 @@ theorem gate_terminateCurrent_accepted_sound state context next
     state.scheduler hwellFormed
   rw [haccepted] at hpreserved
   simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+
+/-- Accepted subtree revocation is published atomically across every
+capability consumer.  The exact authoritative post-state remains well formed,
+and the synchronization step establishes the composite coherence equalities
+instead of leaving scheduler, IPC, or saved-context views stale. -/
+theorem gate_capabilityRevokeSubtree_accepted_synchronizes state authoritySlot victim victimSlot
+    next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Capability.revokeSubtree state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot =
+        { state := next, result := .accepted })
+    (hwellFormed : Capability.WellFormed state.capabilities) :
+    (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).result =
+        .completed (.capability .accepted) ∧
+      let published :=
+        (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).state
+      published.Coherent ∧
+        published.capabilities = next ∧
+        published.lifecycle.capabilities = next ∧
+        published.execution.core.lifecycle.capabilities = next ∧
+        published.virtualMemory.memory.capabilities = next ∧
+        published.ipc.endpoints.capabilities = next ∧
+        published.scheduler.lifecycle.capabilities = next ∧
+        published.preemption.scheduler.lifecycle.capabilities = next ∧
+        published.resumable.scheduler.lifecycle.capabilities = next ∧
+        published.transfers.capabilities = next ∧
+        Capability.WellFormed published.capabilities := by
+  have hpreserved := Capability.revokeSubtree_preserves_wellFormed
+    state.capabilities state.execution.core.context.currentSubject authoritySlot victim victimSlot
+    hwellFormed
+  rw [haccepted] at hpreserved
+  have hcoherent : (installCapabilities state next).Coherent := by
+    simpa [installCapabilities] using installLifecycle_coherent state
+      { state.lifecycle with capabilities := next }
+  rcases installCapabilities_synchronizes_consumers state next with
+    ⟨hcapabilities, hlifecycle, hexecution, hmemory, hipc, hscheduler,
+      hpreemption, hresumable, htransfers⟩
+  have hpublished : Capability.WellFormed (installCapabilities state next).capabilities := by
+    rw [hcapabilities]
+    exact hpreserved
+  constructor
+  · simp [gate, hmode, operationReply, haccepted]
+  · simpa [gate, hmode, applyOperation, haccepted] using
+      And.intro hcoherent
+        (And.intro hcapabilities
+          (And.intro hlifecycle
+            (And.intro hexecution
+              (And.intro hmemory
+                (And.intro hipc
+                  (And.intro hscheduler
+                    (And.intro hpreemption
+                      (And.intro hresumable
+                        (And.intro htransfers hpublished)))))))))
 
 /-- A completed syscall exposes exactly the reply produced under the
 kernel-selected caller and address space. -/
