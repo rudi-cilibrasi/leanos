@@ -2,6 +2,8 @@ import LeanOS.Interrupt
 import LeanOS.BootPageTablePlan
 import LeanOS.IPCSyscall
 import LeanOS.Preemption
+import LeanOS.CapabilityTransfer
+import LeanOS.ResumablePreemption
 
 /-!
 # Irreversible exception fail-stop model
@@ -390,6 +392,10 @@ structure CompositeState where
   ipc : IPCSyscall.State
   capabilities : Capability.State
   lifecycle : SubjectLifecycle.State
+  /-- The exact authoritative context-bank model completed by issue #74. -/
+  resumable : ResumablePreemption.State
+  /-- The exact authoritative sealed-transfer model completed by issue #71. -/
+  transfers : CapabilityTransfer.State
 
 /-- A compiled return plan refines the active live virtual-memory view exactly
 at the two leaves used by the return gate.  The live object bindings must name
@@ -465,8 +471,11 @@ def CompositeState.Coherent (state : CompositeState) : Prop :=
   state.preemption.scheduler = state.scheduler ∧
   state.capabilities = state.lifecycle.capabilities ∧
   state.virtualMemory.memory.capabilities = state.lifecycle.capabilities ∧
-  state.ipc.virtualMemory.memory.capabilities = state.lifecycle.capabilities ∧
+  state.ipc.virtualMemory = state.virtualMemory ∧
   state.ipc.endpoints.capabilities = state.lifecycle.capabilities ∧
+  state.resumable.scheduler = state.scheduler ∧
+  state.resumable.translations.virtual = state.virtualMemory ∧
+  state.transfers.toEndpointState = state.ipc.endpoints ∧
   (∀ subject, state.lifecycle.current = some subject →
     state.execution.core.context.currentSubject = subject ∧
     state.execution.core.context.activeAddressSpace = subject) ∧
@@ -487,6 +496,9 @@ def RuntimeWellFormed (state : CompositeState) : Prop :=
   IPCSyscall.WellFormed state.ipc ∧
   Scheduler.WellFormed state.scheduler ∧
   Preemption.WellFormed state.preemption ∧
+  ResumablePreemption.WellFormed state.resumable ∧
+  CapabilityTransfer.WellFormed state.transfers ∧
+  (state.resumable.halted = true ↔ ∃ record, state.execution.mode = .halted record) ∧
   (state.execution.returnAuthorityArmed = true → state.ReturnPlanLive = true)
 
 private def restrictMappings (lifecycle : SubjectLifecycle.State)
@@ -533,10 +545,9 @@ private def installLifecycle (state : CompositeState)
     memory := synchronizeMemory lifecycle state.virtualMemory.memory
     owner := lifecycle.addressOwner
     mappings := restrictMappings lifecycle state.virtualMemory.mappings }
-  let ipcVirtualMemory := { state.ipc.virtualMemory with
-    memory := synchronizeMemory lifecycle state.ipc.virtualMemory.memory
-    owner := lifecycle.addressOwner
-    mappings := restrictMappings lifecycle state.ipc.virtualMemory.mappings }
+  let endpoints := { state.ipc.endpoints with
+    capabilities := lifecycle.capabilities
+    mailbox := restrictMailboxes lifecycle state.ipc.endpoints.mailbox }
   { state with
     execution := { state.execution with
       core := { state.execution.core with lifecycle, context }
@@ -545,12 +556,14 @@ private def installLifecycle (state : CompositeState)
     preemption := { state.preemption with scheduler }
     virtualMemory
     ipc := { state.ipc with
-      virtualMemory := ipcVirtualMemory
-      endpoints := { state.ipc.endpoints with
-        capabilities := lifecycle.capabilities
-        mailbox := restrictMailboxes lifecycle state.ipc.endpoints.mailbox } }
+      virtualMemory
+      endpoints }
     capabilities := lifecycle.capabilities
-    lifecycle }
+    lifecycle
+    resumable := { state.resumable with
+      scheduler
+      translations := { state.resumable.translations with virtual := virtualMemory } }
+    transfers := { state.transfers with toEndpointState := endpoints } }
 
 private def installCapabilities (state : CompositeState)
     (capabilities : Capability.State) : CompositeState :=
@@ -560,6 +573,29 @@ private def installScheduler (state : CompositeState)
     (scheduler : Scheduler.State) : CompositeState :=
   installLifecycle { state with scheduler, preemption := { state.preemption with scheduler } }
     scheduler.lifecycle
+
+/-- Publish the exact #74 context-bank state through every legacy projection.
+The context list, TLB entries, and terminal latch are retained verbatim. -/
+private def installResumable (state : CompositeState)
+    (resumable : ResumablePreemption.State) : CompositeState :=
+  installLifecycle
+    { state with
+      scheduler := resumable.scheduler
+      preemption := { state.preemption with scheduler := resumable.scheduler }
+      virtualMemory := resumable.translations.virtual
+      resumable }
+    resumable.scheduler.lifecycle
+
+/-- Publish the exact #71 capability/mailbox state through every consumer of
+the shared capability registry.  Pending sealed descendants and their trace
+remain owned solely by `CapabilityTransfer.State`. -/
+private def installTransfers (state : CompositeState)
+    (transfers : CapabilityTransfer.State) : CompositeState :=
+  installLifecycle
+    { state with
+      ipc := { state.ipc with endpoints := transfers.toEndpointState }
+      transfers }
+    { state.lifecycle with capabilities := transfers.capabilities }
 
 private def lifecycleFromVirtualMemory (lifecycle : SubjectLifecycle.State)
     (virtualMemory : VirtualMapping.State) : SubjectLifecycle.State :=
@@ -623,6 +659,12 @@ inductive Operation where
   | syscall (call : Syscall.UntrustedCall)
   | preempt (frame : Interrupt.HardwareFrame)
   | ipc (call : IPCSyscall.Call)
+  | resumePreempt (frame : Interrupt.HardwareFrame)
+      (registers : ResumablePreemption.Registers)
+  | transferOffer (endpointWord sourceWord : UInt64)
+      (sourceKind : Capability.ObjectKind) (payload : EndpointIPC.Payload)
+      (rights : Capability.Rights)
+  | transferAccept (endpointWord : UInt64) (destinationSlot : Nat)
   | capabilityCopy (actor source destination destinationSlot : Nat)
       (rights : Capability.Rights)
   | capabilityRevoke (actor authoritySlot victim victimSlot : Nat)
@@ -641,13 +683,26 @@ inductive UserReturnReply where
   | alreadyHalted (record : HaltRecord)
   deriving DecidableEq, Repr
 
+/-- Composite IPC observation.  A data-only receive must not consume a
+mailbox that carries a sealed capability descendant; that mailbox is reserved
+for `transferAccept`, which installs the descendant atomically. -/
+inductive CompositeIPCReply where
+  | syscall (reply : IPCSyscall.Reply)
+  | sealedTransferPending
+  deriving DecidableEq, Repr
+
 inductive OperationReply where
   | interrupt (action : EntryAction)
   | returnSelection (armed : Bool)
   | userReturn (reply : UserReturnReply)
   | syscall (reply : Syscall.Reply)
   | preempt (action : EntryAction)
-  | ipc (reply : IPCSyscall.Reply)
+  | ipc (reply : CompositeIPCReply)
+  | resume (restored : Option ResumablePreemption.Context)
+      (error : Option ResumablePreemption.Error)
+  | transferOffer (result : CapabilityTransfer.Result CapabilityTransfer.OfferError)
+  | transferAccept (result : CapabilityTransfer.AcceptResult)
+      (deliveredWord : Option UInt64)
   | capability (result : Capability.Result)
   | map (result : VirtualMapping.Result VirtualMapping.MapError)
   | unmap (result : VirtualMapping.Result VirtualMapping.UnmapError)
@@ -691,6 +746,41 @@ def CompositeState.ipcContext (state : CompositeState) : IPCSyscall.TrustedConte
     state.ipcContext.activeAddressSpace =
       state.execution.core.context.activeAddressSpace := rfl
 
+private structure CompositeIPCOutcome where
+  state : CompositeState
+  reply : CompositeIPCReply
+
+private def installIPC (state : CompositeState) (ipc : IPCSyscall.State) : CompositeState :=
+  { state with
+    ipc
+    transfers := { state.transfers with toEndpointState := ipc.endpoints } }
+
+/-- Invoke data-only IPC through the sealed-transfer authority boundary.  A
+receive aimed at a tagged mailbox is rejected before the embedded endpoint
+transition can consume either the envelope or its attachment metadata. -/
+private def dispatchIPC (state : CompositeState) (call : IPCSyscall.Call) :
+    CompositeIPCOutcome :=
+  match call with
+  | .send handleWord word0 word1 =>
+      let outcome := IPCSyscall.dispatch state.ipc state.ipcContext
+        (.send handleWord word0 word1)
+      { state := installIPC state outcome.state, reply := .syscall outcome.reply }
+  | .receive handleWord =>
+      match CapabilityHandle.resolveCurrent state.transfers.capabilities
+          { caller := state.execution.core.context.currentSubject }
+          handleWord .endpoint with
+      | .ok endpoint =>
+          match state.transfers.pending endpoint.capability.object with
+          | some _ => { state, reply := .sealedTransferPending }
+          | none =>
+              let outcome := IPCSyscall.dispatch state.ipc state.ipcContext
+                (.receive handleWord)
+              { state := installIPC state outcome.state, reply := .syscall outcome.reply }
+      | .error _ =>
+          let outcome := IPCSyscall.dispatch state.ipc state.ipcContext
+            (.receive handleWord)
+          { state := installIPC state outcome.state, reply := .syscall outcome.reply }
+
 private def applyOperation (state : CompositeState) : Operation → CompositeState
   | .interrupt frame =>
       let entry := dispatchHardware state.execution frame
@@ -720,7 +810,24 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
           selectLiveReturnAuthority scheduled .schedulerRestore
       | _ => entered
   | .ipc call =>
-      { state with ipc := (IPCSyscall.dispatch state.ipc state.ipcContext call).state }
+      (dispatchIPC state call).state
+  | .resumePreempt frame registers =>
+      let outcome := ResumablePreemption.switch state.resumable state.execution.core
+        frame registers
+      if outcome.state.halted then
+        let entry := dispatchHardware state.execution frame
+        installResumable { state with execution := entry.state } outcome.state
+      else
+        installResumable state outcome.state
+  | .transferOffer endpointWord sourceWord sourceKind payload rights =>
+      installTransfers state
+        (CapabilityTransfer.offerWords state.transfers
+          state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+          payload rights).state
+  | .transferAccept endpointWord destinationSlot =>
+      installTransfers state
+        (CapabilityTransfer.acceptWord state.transfers
+          state.execution.core.context.currentSubject endpointWord destinationSlot).state
   | .capabilityCopy actor source destination destinationSlot rights =>
       installCapabilities state
         (Capability.copy state.capabilities actor source destination destinationSlot rights).state
@@ -772,7 +879,20 @@ private def operationReply (state : CompositeState) : Operation → OperationRep
       | .alreadyHalted record => .userReturn (.alreadyHalted record)
   | .syscall call => .syscall (Syscall.dispatch state.virtualMemory state.syscallContext call).reply
   | .preempt frame => .preempt (dispatchHardware state.execution frame).action
-  | .ipc call => .ipc (IPCSyscall.dispatch state.ipc state.ipcContext call).reply
+  | .ipc call => .ipc (dispatchIPC state call).reply
+  | .resumePreempt frame registers =>
+      let outcome := ResumablePreemption.switch state.resumable state.execution.core
+        frame registers
+      .resume outcome.restored outcome.error
+  | .transferOffer endpointWord sourceWord sourceKind payload rights =>
+      .transferOffer
+        (CapabilityTransfer.offerWords state.transfers
+          state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+          payload rights).result
+  | .transferAccept endpointWord destinationSlot =>
+      let outcome := CapabilityTransfer.acceptWord state.transfers
+        state.execution.core.context.currentSubject endpointWord destinationSlot
+      .transferAccept outcome.result outcome.deliveredWord
   | .capabilityCopy actor source destination destinationSlot rights =>
       .capability
         (Capability.copy state.capabilities actor source destination destinationSlot rights).result
@@ -815,6 +935,29 @@ theorem preempt_fatal_latches state frame reason
       (dispatchHardware state.execution frame).state.mode := by
   simp [applyOperation, hfatal, installLifecycle]
 
+/-- A data-only receive cannot consume the envelope paired with a sealed
+descendant.  The composite reply identifies the required transfer operation,
+and every authoritative projection remains byte-for-byte unchanged. -/
+theorem ipc_receive_preserves_sealed_transfer state handleWord endpoint transfer
+    (hresolve : CapabilityHandle.resolveCurrent state.transfers.capabilities
+      { caller := state.execution.core.context.currentSubject }
+      handleWord .endpoint = .ok endpoint)
+    (hpending : state.transfers.pending endpoint.capability.object = some transfer) :
+    dispatchIPC state (.receive handleWord) =
+      { state, reply := .sealedTransferPending } := by
+  simp [dispatchIPC, hresolve, hpending]
+
+/-- Fatal resumable entry latches both the exact #74 state and the composite
+execution mode in one transition.  It can therefore no longer leave the
+runtime apparently running with a terminal context bank. -/
+theorem resumePreempt_halted_latches state frame registers
+    (hhalted : (ResumablePreemption.switch state.resumable state.execution.core
+      frame registers).state.halted = true) :
+    let next := applyOperation state (.resumePreempt frame registers)
+    next.resumable.halted = true ∧
+      next.execution.mode = (dispatchHardware state.execution frame).state.mode := by
+  simp [applyOperation, hhalted, installResumable, installLifecycle]
+
 /-- The sole composite step computes the post-state by invoking the typed
 subsystem transition internally. -/
 def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
@@ -823,6 +966,34 @@ def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
       { state := applyOperation state operation, result := .completed (operationReply state operation) }
   | .handling _ => { state, result := .rejectedBusy }
   | .halted record => { state, result := .rejectedHalted record }
+
+/-- The guarded sealed-mailbox rejection is a genuine composite gate
+preservation step: it retains the full global runtime invariant, rather than
+repairing one projection after consuming the envelope. -/
+theorem gate_sealed_receive_preserves_runtimeWellFormed state handleWord endpoint transfer
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hresolve : CapabilityHandle.resolveCurrent state.transfers.capabilities
+      { caller := state.execution.core.context.currentSubject }
+      handleWord .endpoint = .ok endpoint)
+    (hpending : state.transfers.pending endpoint.capability.object = some transfer) :
+    RuntimeWellFormed (gate state (.ipc (.receive handleWord))).state ∧
+      (gate state (.ipc (.receive handleWord))).result =
+        .completed (.ipc .sealedTransferPending) := by
+  have hguard := ipc_receive_preserves_sealed_transfer state handleWord endpoint transfer
+    hresolve hpending
+  simp [gate, hmode, applyOperation, operationReply, hguard, hstate]
+
+/-- Busy and terminal rejection are invariant-preserving for every operation;
+neither path invokes a synchronization helper or a subsystem transition. -/
+theorem gate_rejected_mode_preserves_runtimeWellFormed state operation
+    (hstate : RuntimeWellFormed state)
+    (hnotRunning : state.execution.mode ≠ .running) :
+    RuntimeWellFormed (gate state operation).state := by
+  cases hmode : state.execution.mode with
+  | running => exact False.elim (hnotRunning hmode)
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
 
 /-- A completed syscall exposes exactly the reply produced under the
 kernel-selected caller and address space. -/
@@ -837,7 +1008,7 @@ there is no public constructor capable of supplying another trusted context. -/
 theorem ipc_result_sound state call
     (hmode : state.execution.mode = .running) :
     (gate state (.ipc call)).result =
-      .completed (.ipc (IPCSyscall.dispatch state.ipc state.ipcContext call).reply) :=
+      .completed (.ipc (dispatchIPC state call).reply) :=
   by simp [gate, hmode, operationReply]
 
 /-- Initial dispatch is also represented by a typed composite step; syscall

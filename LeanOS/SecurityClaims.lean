@@ -96,6 +96,25 @@ theorem failstop_halted_suffix_absorbing state record proposals
     FailStop.runOperations state proposals = state := by
   exact FailStop.halted_suffix_absorbing state record proposals hmode
 
+/-- SC-COMPOSITE-GATE-WF: the sealed-mailbox rejection path of the public
+composite gate preserves the complete runtime invariant and exposes the typed
+reason that callers must use capability-transfer acceptance instead.  This is
+the first operation-specific preservation slice of the global gate contract. -/
+theorem composite_gate_sealed_receive_preserves_runtimeWellFormed
+    state handleWord endpoint transfer
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hresolve : CapabilityHandle.resolveCurrent state.transfers.capabilities
+      { caller := state.execution.core.context.currentSubject }
+      handleWord .endpoint = .ok endpoint)
+    (hpending : state.transfers.pending endpoint.capability.object = some transfer) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.ipc (.receive handleWord))).state ∧
+      (FailStop.gate state (.ipc (.receive handleWord))).result =
+        .completed (.ipc .sealedTransferPending) := by
+  exact FailStop.gate_sealed_receive_preserves_runtimeWellFormed state handleWord
+    endpoint transfer hstate hmode hresolve hpending
+
 /-- SC-USER-RETURN-CONFINEMENT: an accepted return attests the complete
 kernel-selected frame/context tuple and its privilege-critical fields. -/
 theorem user_return_context_confinement request attested
@@ -288,13 +307,23 @@ private def returnWitnessEndpoints : EndpointIPC.State :=
 private def returnWitnessComposite : FailStop.CompositeState :=
   let scheduler : Scheduler.State :=
     { lifecycle := returnWitnessLifecycle, ready := [], capacity := 0 }
+  let resumable : ResumablePreemption.State :=
+    { scheduler
+      contexts := []
+      capacity := 0
+      translations := { virtual := returnWitnessVirtualMemory, active := some 1, entries := [] } }
+  let transfers : CapabilityTransfer.State :=
+    { toEndpointState := returnWitnessEndpoints
+      pending := fun _ => none }
   { execution := returnWitnessBase
     scheduler
     preemption := { scheduler, timerArmed := false, acceptedTicks := 1 }
     virtualMemory := returnWitnessVirtualMemory
     ipc := { virtualMemory := returnWitnessVirtualMemory, endpoints := returnWitnessEndpoints }
     capabilities := returnWitnessLifecycle.capabilities
-    lifecycle := returnWitnessLifecycle }
+    lifecycle := returnWitnessLifecycle
+    resumable
+    transfers }
 
 private def returnWitnessSyscallFrame : Interrupt.HardwareFrame :=
   { returnWitnessRequest.hardware with vector := 128 }
