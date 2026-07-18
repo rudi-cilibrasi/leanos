@@ -33,20 +33,17 @@ df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 entry_adversarial_iso_root="$build/iso-entry-adversarial"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
-return_corruptions=(
-  'kernel-selector:1:user-return-selector'
-  'wrong-stack-selector:2:user-return-selector'
-  'noncanonical-rip:3:user-return-noncanonical'
-  'noncanonical-rsp:4:user-return-noncanonical'
-  'outside-code:5:user-return-code'
-  'outside-stack:6:user-return-stack'
-  'flags-ac:7:user-return-flags'
-  'flags-df:8:user-return-flags'
-  'stale-cr3:9:user-return-cr3'
-  'stale-context:10:user-return-code'
-  'post-validation-mutation:11:user-return-noncanonical'
-  'blocking-context-canary:12:register-canary'
-)
+matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
+[[ -f "$matrix" ]] || { echo "error: evidence matrix '$matrix' not found" >&2; exit 1; }
+return_corruptions=()
+while IFS=$'\t' read -r _id runner _class _timeout _image _elf _log \
+    fixture mode reason; do
+  [[ "$runner" == return ]] || continue
+  return_corruptions+=("${fixture}:${mode}:${reason}")
+done < "$matrix"
+[[ ${#return_corruptions[@]} -gt 0 ]] || {
+  echo "error: evidence matrix has no return-corruption scenarios" >&2; exit 1;
+}
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: LEANOS_VERSION must be MAJOR.MINOR.PATCH" >&2
   exit 1

@@ -7,6 +7,9 @@ qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
 limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
+build="${LEANOS_BOOT_DIR:-build/boot}"
+selected="${LEANOS_RETURN_CORRUPTION_FIXTURE:-}"
+matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
 command -v "$qemu" >/dev/null 2>&1 || {
   echo "error: missing required tool '$qemu'" >&2; exit 1;
 }
@@ -20,25 +23,28 @@ command -v timeout >/dev/null 2>&1 || {
   echo "error: memory must be 64 or 128 MiB" >&2; exit 1;
 }
 
-specs=(
-  'kernel-selector:user-return-selector'
-  'wrong-stack-selector:user-return-selector'
-  'noncanonical-rip:user-return-noncanonical'
-  'noncanonical-rsp:user-return-noncanonical'
-  'outside-code:user-return-code'
-  'outside-stack:user-return-stack'
-  'flags-ac:user-return-flags'
-  'flags-df:user-return-flags'
-  'stale-cr3:user-return-cr3'
-  'stale-context:user-return-code'
-  'post-validation-mutation:user-return-noncanonical'
-  'blocking-context-canary:register-canary'
-)
+[[ -f "$matrix" ]] || { echo "error: evidence matrix '$matrix' not found" >&2; exit 1; }
+specs=()
+while IFS=$'\t' read -r _id runner _class _timeout _image _elf _log \
+    fixture _mode reason; do
+  [[ "$runner" == return ]] || continue
+  if [[ -z "$selected" || "$fixture" == "$selected" ]]; then
+    specs+=("${fixture}:${reason}")
+  fi
+done < "$matrix"
+if [[ ${#specs[@]} -eq 0 ]]; then
+  echo "error: unknown or missing return-corruption fixture '${selected:-<all>}'" >&2
+  exit 1
+fi
 
 for spec in "${specs[@]}"; do
   IFS=: read -r fixture reason <<<"$spec"
-  image="build/boot/leanos-${version}-x86_64-return-${fixture}.iso"
-  log="build/boot/return-corruption-${fixture}.serial.log"
+  image="$build/leanos-${version}-x86_64-return-${fixture}.iso"
+  if [[ -n "$selected" && -n "${LEANOS_SERIAL_LOG:-}" ]]; then
+    log="$LEANOS_SERIAL_LOG"
+  else
+    log="$build/return-corruption-${fixture}.serial.log"
+  fi
   [[ -f "$image" ]] || {
     echo "error: missing return-corruption image '$image'" >&2; exit 1;
   }
@@ -46,6 +52,10 @@ for spec in "${specs[@]}"; do
   command=("$qemu" -machine q35,accel=tcg -cpu max -smp 1 -m "${memory_mib}M"
     -display none -monitor none -serial "file:$log" -no-reboot -no-shutdown
     -nic none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -cdrom "$image")
+  qemu_version="$($qemu --version 2>&1 | head -n 1 || true)"
+  printf 'QEMU version: %s\nQEMU command:' "${qemu_version:-unknown}" >&2
+  printf ' %q' "${command[@]}" >&2
+  printf '\nSerial log: %s\n' "$log" >&2
   set +e
   timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"
   status=$?
