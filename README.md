@@ -14,6 +14,44 @@ models, while QEMU tests selected compiled integration paths.
 
 ## Current status
 
+The evidence paths meet in the repository, but they do not carry the same
+claim. In particular, the compiled path crosses a trusted, unproved boundary:
+
+```mermaid
+flowchart TB
+    M["Lean executable models"] --> T["Lean theorem statements<br/>and proof source"]
+    T --> E["Lean elaborator"]
+    E --> R["Elaborated proof terms"]
+    R --> K["Lean kernel<br/>proof-term checker"]
+    K --> P["Lean-proved<br/>model properties"]
+
+    M --> G
+    subgraph TCB["Trusted / unproved implementation and execution boundary"]
+        direction TB
+        G["Lean code generation<br/>and generated C"]
+        B["Runtime shim, handwritten C/assembly,<br/>compiler, linker, and boot chain"]
+        Q["QEMU/TCG and assumed<br/>x86-64/device semantics"]
+        G --> B --> Q
+    end
+
+    Q --> O["QEMU-tested<br/>finite scenario observations"]
+    P -. "no refinement theorem" .-> O
+
+    classDef proved fill:#d5f5e3,stroke:#18794e,color:#111
+    classDef tested fill:#dbeafe,stroke:#2563eb,color:#111
+    classDef trusted fill:#fff3cd,stroke:#9a6700,color:#111
+    class P proved
+    class O tested
+    class K,G,B,Q trusted
+```
+
+The dashed edge marks the missing model-to-binary refinement theorem; it does
+not turn the QEMU observations into proof. Trusted coloring covers both the
+Lean kernel assumed to check elaborated proof terms soundly and the unproved
+implementation/execution path whose correctness is assumed when interpreting
+the tested observations. The elaborator constructs proof terms, but the kernel
+rechecks those terms rather than trusting the elaborator's result directly.
+
 ### QEMU-tested behavior
 
 The CI image boots headlessly on a single emulated x86-64 `q35` CPU under TCG.
