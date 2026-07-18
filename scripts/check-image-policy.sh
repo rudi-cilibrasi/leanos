@@ -3,6 +3,7 @@ set -euo pipefail
 
 elf="${1:-build/boot/leanos.elf}"
 [[ -f "$elf" ]] || { echo "error: missing ELF: $elf" >&2; exit 1; }
+./scripts/check-entry-stack-layout.sh "$elf" >/dev/null
 symbols="$(nm "$elf")"
 ./scripts/check-entry-policy.sh "$elf"
 
@@ -38,7 +39,7 @@ for symbol in isr8 isr8_clac isr8_cld isr13 run_double_fault_probe \
     exit 1
   }
 done
-for section in .df_ist_guard .df_ist_stack .entry_stack_guard .entry_stack; do
+for section in .df_ist_guard .df_ist_stack; do
   [[ "$(flags "$section")" == *A* && "$(flags "$section")" == *W* && \
      "$(flags "$section")" != *X* ]] || {
     echo "error: $section must be allocated, writable, and non-executable" >&2
@@ -63,20 +64,6 @@ stack_end="$(symbol_address __df_ist_stack_end)"
 [[ $((guard_end - guard_start)) -eq 4096 && $((guard_end)) -eq $((stack_start)) && \
    $((stack_end - stack_start)) -eq 16384 && $((stack_start % 4096)) -eq 0 ]] || {
   echo "error: double-fault guard/IST1 bounds are not one page plus 16 KiB" >&2
-  exit 1
-}
-entry_guard_start="$(symbol_address __entry_stack_guard_start)"
-entry_guard_end="$(symbol_address __entry_stack_guard_end)"
-entry_stack_start="$(symbol_address __entry_stack_start)"
-entry_stack_end="$(symbol_address __entry_stack_end)"
-entry_stack_symbol="$(symbol_address entry_stack)"
-[[ $((entry_guard_end - entry_guard_start)) -eq 4096 && \
-   $((entry_guard_end)) -eq $((entry_stack_start)) && \
-   $((entry_stack_end - entry_stack_start)) -eq 16384 && \
-   $((entry_guard_start % 4096)) -eq 0 && \
-   $((entry_stack_end % 16)) -eq 0 && \
-   $((entry_stack_symbol)) -eq $((entry_stack_start)) ]] || {
-  echo "error: ordinary-entry guard/stack bounds are not one page plus 16 KiB" >&2
   exit 1
 }
 grep -Fq 'tss.rsp0 = (uint64_t)__entry_stack_end;' boot/kernel.c

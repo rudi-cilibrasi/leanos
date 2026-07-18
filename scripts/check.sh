@@ -21,6 +21,8 @@ lake build leanos-boot-plan
 
 ./scripts/test-entry-stack-budget.sh
 
+./scripts/test-entry-stack-layout.sh
+
 ./scripts/test-emulator-evidence.py
 
 ./scripts/run-emulator-evidence.py check
