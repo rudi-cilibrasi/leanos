@@ -78,21 +78,8 @@ jobs:
           set -o pipefail
           mkdir -p build/ci
           ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
-          ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-smoke.log
-          LEANOS_BOOT_SCENARIO=entry-adversarial \
-            LEANOS_SERIAL_LOG=build/boot/entry-adversarial.serial.log \
-            ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-entry-adversarial.log
-          LEANOS_BOOT_SCENARIO=preemption \
-            LEANOS_SERIAL_LOG=build/boot/preemption.serial.log \
-            ./scripts/run-image.sh 2>&1 | tee build/ci/qemu-preemption.log
-          ./scripts/run-return-corruptions.sh 2>&1 | tee build/ci/qemu-return-corruptions.log
-          LEANOS_SERIAL_LOG=build/boot/double-fault.serial.log \
-            ./scripts/run-double-fault.sh 2>&1 | tee build/ci/qemu-double-fault.log
-          LEANOS_EXPECT_GUARD_MAPPED=1 \
-            LEANOS_SERIAL_LOG=build/boot/double-fault-guard-mapped.serial.log \
-            ./scripts/run-double-fault.sh \
-              build/boot/leanos-0.1.0-x86_64-double-fault-guard-mapped.iso \
-              2>&1 | tee build/ci/qemu-double-fault-guard-mapped.log
+          ./scripts/run-emulator-evidence.py run \
+            2>&1 | tee build/ci/emulator-evidence.log
 
       - name: Preserve reproducibility artifacts
         if: always()
@@ -128,8 +115,12 @@ jobs:
             build/boot/leanos-0.1.0-x86_64-return-*.iso
             build/boot/leanos-return-*.elf
             build/boot/leanos-return-*.map
+            build/boot/leanos-0.1.0-x86_64-double-fault-guard-mapped.iso
+            build/boot/leanos-double-fault-guard-mapped.elf
+            build/boot/double-fault-guard-mapped.serial.log
             build/boot/corpus.tsv
             build/oracle/host-results.txt
+            build/evidence/*
             build/ci/*.log
             build/ci/tool-versions.txt
           if-no-files-found: warn

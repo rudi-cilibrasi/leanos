@@ -408,21 +408,25 @@ The pull-request workflow uses only these repository-owned entry points:
 ./scripts/check-markdown.sh
 ./scripts/check.sh
 ./scripts/build-image.sh
-./scripts/run-image.sh
+./scripts/record-tool-versions.sh
+./scripts/run-emulator-evidence.py run
 ```
 
 The first command requires Node.js/npm. Image building and QEMU prerequisites,
 the exact Ubuntu 24.04 package versions used in CI, and emulator resource bounds
 are listed in [the boot-image guide](docs/boot-image.md). CI first runs the
-Markdown and complete Lean proof-integrity gates, then builds and boots the
-image without KVM. It retains the ISO, debug ELF, symbol map, checksums, pinned
-tool versions, and serial log for 14 days, including available diagnostics from
-failed runs. Controlled negative fixtures ensure theorem, compiler, serial
-protocol, guest-signal, and timeout failures cannot pass.
+Markdown and complete Lean proof-integrity gates, then builds once and executes
+the versioned mandatory emulator matrix without KVM. The matrix is the sole
+release-blocking QEMU inventory for pull requests and tags. CI retains images,
+debug ELFs, symbol maps, checksums, pinned tool versions, serial logs, exact
+commands, and the machine-readable evidence report for 14 days, including
+available diagnostics from failed runs. Controlled negative fixtures ensure
+theorem, compiler, matrix-inventory, artifact-hash, serial-protocol,
+guest-signal, and timeout failures cannot pass.
 
-Tags matching `vMAJOR.MINOR.PATCH` additionally run the exact proof, build, and
-QEMU gates, require a byte-identical double build, and publish experimental
-release artifacts with checksums and GitHub provenance. The version policy,
+Tags matching `vMAJOR.MINOR.PATCH` additionally run that same matrix, require a
+byte-identical double build, and publish its evidence manifest with checksums
+and GitHub provenance. The version policy,
 artifact inventory, trusted-boundary warning, and download verification
 commands are in [the boot-image guide](docs/boot-image.md).
 

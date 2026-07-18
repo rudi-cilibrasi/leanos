@@ -100,10 +100,29 @@ boot protocol or model, and major increments may change the target or research
 scope. This policy is not a stability or support guarantee.
 
 The tag workflow runs the repository-owned Markdown, complete Lean
-proof-integrity, deterministic-build, image-build, and QEMU scripts before it
-can publish. It releases the ISO, debug ELF, symbol map, exact serial log,
-source revision, deterministic toolchain manifest, experimental notes, and
-SHA-256 manifest. The full Git commit is also stored as `/boot/SOURCE_REVISION`
+proof-integrity, deterministic-build, image-build, and shared emulator-evidence
+matrix before it can publish. `scripts/emulator-evidence-matrix.tsv` is the
+versioned, reviewable inventory used by both pull-request and tag CI. Each row
+names a unique scenario, its existing transcript-validating runner, expected
+integration-evidence class, timeout, image and ELF, serial log, and fixture
+metadata. New security-relevant QEMU work must register here; a reviewed matrix
+version change is required to alter the mandatory release inventory.
+
+`EMULATOR_EVIDENCE.json` binds every passing row to the full source revision,
+matrix and tool-inventory hashes, QEMU version and exact command, runner result,
+and hashes of the tested ISO, ELF, serial log, and command log. Packaging reruns
+the verifier against the unchanged build tree and refuses missing, stale,
+failed, reordered, or differently hashed evidence. The publishing job receives
+only the already-gated bundle and alone has `contents`, OIDC, and attestation
+write permissions.
+
+Public assets include the default and preemption images, their debug files,
+representative accepted/fail-stop serial logs, the matrix, compact evidence
+manifest, source revision, deterministic toolchain manifest, experimental
+notes, and SHA-256 manifest. All scenario images, serial logs, and command logs
+remain workflow artifacts for 14 days; controlled-negative images are not
+permanent release assets because their hashes and results are bound by the
+public manifest. The full Git commit is also stored as `/boot/SOURCE_REVISION`
 inside the ISO; no wall-clock build timestamp is embedded. GitHub's ephemeral
 workflow token publishes the release, and OIDC-backed GitHub artifact
 attestations provide provenance without a long-lived secret.
@@ -117,11 +136,14 @@ gh attestation verify --repo rudi-cilibrasi/leanos \
 cat SOURCE_REVISION
 ```
 
-Repeat `gh attestation verify` for the ELF, map, log, revision, toolchain, notes,
-and checksum manifest. Compare `SOURCE_REVISION` with the tag using
+Repeat `gh attestation verify` for the ELF, map, logs, evidence manifest and
+matrix, revision, toolchain, notes, and checksum manifest. Compare
+`SOURCE_REVISION` with the tag using
 `git rev-list -n 1 v0.1.0`. The attestation establishes where GitHub Actions
 built an artifact and the checksums detect changed bytes; neither proves the
-binary implements the Lean model. The release's `RELEASE_NOTES.md` explicitly
+binary implements the Lean model. Matrix result classes describe deterministic
+integration behavior across trusted boundaries; none is a Lean proof or binary
+refinement theorem. The release's `RELEASE_NOTES.md` explicitly
 enumerates the experimental status, TCB, and unproved model-to-binary boundary.
 
 ## Trusted boundary

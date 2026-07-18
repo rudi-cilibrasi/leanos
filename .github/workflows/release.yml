@@ -9,14 +9,10 @@ permissions:
   contents: read
 
 jobs:
-  release:
-    name: Prove, reproduce, boot, and release
+  gate:
+    name: Prove, reproduce, and collect release evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
     steps:
       - name: Check out tagged source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -56,13 +52,49 @@ jobs:
       - name: Run exact image build and QEMU smoke gates
         run: |
           ./scripts/build-image.sh
-          ./scripts/run-image.sh
-          LEANOS_BOOT_SCENARIO=preemption \
-            LEANOS_SERIAL_LOG=build/boot/preemption.serial.log \
-            ./scripts/run-image.sh
+          ./scripts/record-tool-versions.sh
+          ./scripts/run-emulator-evidence.py run
 
       - name: Package release evidence
         run: ./scripts/package-release.sh "$GITHUB_REF_NAME"
+
+      - name: Preserve emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-tag-evidence-${{ github.sha }}
+          path: |
+            build/boot/*.serial.log
+            build/boot/*.iso
+            build/boot/*.elf
+            build/evidence/*
+            build/ci/*.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stage gated release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-release-${{ github.sha }}
+          path: build/release/*
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Attest and publish gated evidence
+    needs: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download gated release bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: leanos-release-${{ github.sha }}
+          path: build/release
 
       - name: Attest release artifacts
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
