@@ -66,6 +66,41 @@ Executable traces cover user and kernel page faults, an unexpected vector,
 timer delivery, valid return, wrong-origin syscall entry, malformed selectors
 and flags, and nested entry.
 
+## Inbound entry manifest and normalization
+
+`LeanOS.InterruptEntry` defines the complete ordinary boot manifest: vector 14
+is a DPL0 interrupt gate with a hardware error word and user-fault or supervisor
+diagnostic purpose; vector 32 is a DPL0 interrupt gate without an error word;
+and vector 128 is the sole DPL3 interrupt gate and has syscall purpose. All use
+selector `0x08`, IST0, and interrupt-gate masking. Vector 8 remains owned by the
+separate terminal IST1 protocol, and vector 13 remains its bounded probe gate.
+
+Raw frames have two distinct constructors. A privilege-changing frame contains
+RIP, CS, RFLAGS, RSP, and SS. A same-privilege frame contains only RIP, CS, and
+RFLAGS; normalization cannot read or synthesize absent RSP/SS fields. Origin is
+derived from the reviewed CS/CPL rule together with that constructor, never
+from saved registers or user-looking words at later offsets. A kernel vector-14
+frame becomes `diagnosticRecovery`, never user containment.
+
+The total normalizer rejects a duplicate or unsupported manifest, unbound
+vector/stub, wrong error convention, truncated or misaligned frame, wrong raw
+shape or origin, out-of-bounds entry stack, nested entry, and uncleared AC/DF.
+Accepted records copy subject, active address space/CR3, and stack identity from
+`KernelContext`; attacker registers are absent from the function input. Lean
+proves manifest validity, uniqueness of the DPL3 syscall gate, totality and
+determinism, same-privilege confinement, nested/uncleared-state nonauthorization,
+and exact kernel-context binding. These are model results only.
+
+The generated allocation-free `leanos_entry_demo` adapter is replayed in the
+version-one oracle with valid syscall, user page fault, timer, and diagnostic
+records plus wrong binding, error shape, length, alignment, origin, stack,
+nested-latch, and AC/DF fixtures. `scripts/check-entry-policy.sh` enumerates the
+final-ELF entry paths and requires cleanup, shared authorization, the typed
+handler, and latch completion in that order. It also applies bounded one-field
+descriptor, path, and TSS snapshot mutations. At boot, `check_entry_manifest`
+decodes every present IDT entry and the relevant TSS stack pointers and rejects
+unmanifested present gates.
+
 ## Proof, tests, and trusted assumptions
 
 The proved claims apply only to the Lean transition model: deterministic vector
@@ -74,8 +109,8 @@ subject-lifecycle model, invariant preservation, and rejection of malformed
 returns. Compilation and execution of examples test the executable model; they
 do not prove the machine boundary.
 
-Hardware construction and decoding of the trap frame and flags, IDT and TSS
-descriptors, kernel-stack selection, interrupt masking, assembly save/restore,
+Hardware construction of the trap frame, IDT/TSS loads, kernel-stack selection,
+interrupt masking, assembly save/restore,
 CR3/TLB operations, `iretq`, canonical-address and region checks, page tables,
 generated code, compiler, QEMU, and x86-64 semantics remain trusted. This model
 slice adds no `unsafe`, `extern`, FFI, axiom, or constant declaration. The boot

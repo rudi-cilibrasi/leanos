@@ -196,6 +196,10 @@ timer, and syscall vector vocabulary, proves origin-sensitive dispatch and
 whole-subject user-fault containment, and records the unproved x86 entry and
 return boundary.
 
+The bounded inbound entry manifest and total trap-frame normalizer bind those
+ordinary gates to explicit x86 raw shapes and kernel-owned subject, address
+space, CR3, stack, purpose, and nested-entry state before a boot handler runs.
+
 The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,
 bounded double-fault escalation, and one absorbing gate for every modeled
 post-fatal mutation and context-restoration path.

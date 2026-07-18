@@ -4,6 +4,7 @@ set -euo pipefail
 elf="${1:-build/boot/leanos.elf}"
 [[ -f "$elf" ]] || { echo "error: missing ELF: $elf" >&2; exit 1; }
 symbols="$(nm "$elf")"
+./scripts/check-entry-policy.sh "$elf"
 
 flags() {
   readelf -SW "$elf" | awk -v section="$1" \

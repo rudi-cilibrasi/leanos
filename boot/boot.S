@@ -257,8 +257,10 @@ page_table_b:
     .skip 4096 * PAGE_TABLE_COUNT
 page_table_b_end:
 .align 16
+.global boot_stack
 boot_stack:
     .skip 16384
+.global boot_stack_top
 boot_stack_top:
 
 .section .df_ist.guard,"aw",@nobits
@@ -495,6 +497,22 @@ df_guard_mapped_record_end:
     pop %r15; pop %r14; pop %r13; pop %r12; pop %r11; pop %r10; pop %r9; pop %r8
     pop %rdi; pop %rsi; pop %rbp; pop %rdx; pop %rcx; pop %rbx; pop %rax
 .endm
+/* All ordinary gates execute this protocol after AC/DF cleanup and SAVE.
+   No operation-specific handler reads the architectural frame until the
+   kernel-owned manifest adapter has authorized its vector/stub/shape/context. */
+.macro NORMALIZE_ENTRY vector, has_error, cs_offset
+    /* No-error entries arrive 16-byte aligned after SAVE.  Reserve both an
+       explicit dummy error slot and padding so the C call remains aligned. */
+    sub $16, %rsp
+    movq $0, (%rsp)
+    movq $0, 8(%rsp)
+    mov $\vector, %edi
+    mov $\has_error, %esi
+    mov %rsp, %rdx
+    mov \cs_offset(%rsp), %rcx
+    call authorize_interrupt_entry
+    add $16, %rsp
+.endm
 .global isr80
 isr80:
 .global isr80_clac
@@ -504,6 +522,7 @@ isr80_clac:
 isr80_cld:
     cld
     SAVE
+    NORMALIZE_ENTRY 128, 0, 144
     mov 112(%rsp), %rdi
     mov 104(%rsp), %rsi
     mov 96(%rsp), %rdx
@@ -584,11 +603,22 @@ isr14_cld:
     cld
     SAVE
     sub $8, %rsp
+    movq $0, (%rsp)
+    mov $14, %edi
+    mov $1, %esi
+    mov %rsp, %rdx
+    mov 144(%rsp), %rcx
+    call authorize_interrupt_entry
     mov 128(%rsp), %rdi
     mov 136(%rsp), %rsi
     mov 144(%rsp), %rdx
     mov %cr2, %rcx
     call page_fault_handler
+    sub $16, %rsp
+    mov %rax, 8(%rsp)
+    call complete_interrupt_entry
+    mov 8(%rsp), %rax
+    add $16, %rsp
     mov %rax, 136(%rsp)
 .global diagnostic_return_restore
 diagnostic_return_restore:
@@ -666,6 +696,7 @@ isr32_clac:
 isr32_cld:
     cld
     SAVE
+    NORMALIZE_ENTRY 32, 0, 144
     mov 128(%rsp), %rdi
     call timer_handler
     cmp $2, %rax

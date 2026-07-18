@@ -25,6 +25,7 @@ extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t,
                                         uint64_t, uint64_t);
 extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t,
                                          uint64_t, uint64_t);
+extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -58,6 +59,7 @@ extern char __boot_image_start[], __boot_image_end[];
 extern char __df_ist_stack_start[], __df_ist_stack_end[];
 extern char __df_ist_guard_start[], __df_ist_guard_end[];
 extern char __kernel_text_start[], __kernel_text_end[];
+extern char boot_stack[], boot_stack_top[];
 extern char __user_a_text_start[], __user_a_text_end[];
 extern char __user_a_stack_start[], __user_a_stack_end[];
 extern char __user_b_text_start[], __user_b_text_end[];
@@ -112,6 +114,7 @@ uint64_t current_subject = 1;
 static unsigned timer_accepted;
 static unsigned blocking_ipc_step;
 static unsigned supervisor_probe;
+static volatile unsigned ordinary_entry_active;
 static uint8_t copy_buffer[16];
 static unsigned copy_step;
 static void finish(uint8_t value);
@@ -123,6 +126,79 @@ static void arm_timer(void);
 static uint64_t stack_marker(uint64_t stack_pointer);
 static void check_cross_bank_negative(void);
 static void check_initial_b_frame_negative(void);
+
+static uint64_t idt_target(const struct idt_entry *entry) {
+    return entry->low | (uint64_t)entry->middle << 16 | (uint64_t)entry->high << 32;
+}
+
+/* Trusted machine adapter for LeanOS.InterruptEntry.normalize. `vector` is an
+   immediate in the installed stub, never a saved GPR.  This routine owns the
+   stateful authorization latch; any rejection reaches the absorbing halt. */
+void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
+                               uint64_t frame_address, uint64_t saved_cs) {
+    uint64_t flags, cr3;
+    __asm__ volatile ("pushfq; pop %0" : "=r"(flags) : : "memory");
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if (ordinary_entry_active) fail("entry-nested");
+    ordinary_entry_active = 1;
+    if ((flags & ((1ull << 10) | (1ull << 18))) != 0)
+        fail("entry-privileged-state");
+    uint64_t expected_error, dpl, purpose;
+    if (vector == 14) { expected_error = 1; dpl = 0; purpose = 1; }
+    else if (vector == 32) { expected_error = 0; dpl = 0; purpose = 2; }
+    else if (vector == 128) { expected_error = 0; dpl = 3; purpose = 3; }
+    else fail("entry-vector");
+    if (has_error != expected_error) fail("entry-error-shape");
+    unsigned user = (saved_cs & 3u) == 3u;
+    if (!user && vector != 14) fail("entry-origin");
+    if (user && saved_cs != 0x23) fail("entry-user-selector");
+    if (!user && (saved_cs & 3u) != 0) fail("entry-kernel-selector");
+    uint64_t first = user ? (uint64_t)entry_stack : (uint64_t)boot_stack;
+    uint64_t past = user ? (uint64_t)(entry_stack + sizeof(entry_stack)) :
+                           (uint64_t)boot_stack_top;
+    uint64_t bytes = user ? 40 : 24;
+    if (frame_address < first || frame_address + bytes > past)
+        fail("entry-stack-bounds");
+    if (user && (frame_address & 15u) != 0) fail("entry-stack-alignment");
+    uint64_t descriptor = vector | vector << 8 | has_error << 16;
+    uint64_t frame = saved_cs | (uint64_t)user << 8;
+    uint64_t context = current_subject | current_subject << 8 | (cr3 >> 12) << 16;
+    if (leanos_entry_demo(descriptor, frame, 0x800000, context, 3) == 0)
+        fail("entry-model-rejected");
+    (void)dpl;
+    (void)purpose;
+}
+
+void complete_interrupt_entry(void) {
+    if (!ordinary_entry_active) fail("entry-complete-unarmed");
+    ordinary_entry_active = 0;
+}
+
+static void check_entry_manifest(void) {
+    struct expected_gate { unsigned vector; void (*target)(void); uint8_t ist, attr; };
+    static const struct expected_gate expected[] = {
+        { 8, isr8, 1, 0x8e }, { 13, isr13, 0, 0x8e },
+        { 14, isr14, 0, 0x8e }, { 32, isr32, 0, 0x8e },
+        { 128, isr80, 0, 0xee }
+    };
+    for (unsigned vector = 0; vector < 256; ++vector) {
+        const struct expected_gate *want = 0;
+        for (unsigned i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i)
+            if (expected[i].vector == vector) want = &expected[i];
+        if (!want) {
+            if (idt[vector].attributes & 0x80u) fail("entry-extra-present-gate");
+            continue;
+        }
+        if (idt_target(&idt[vector]) != (uint64_t)want->target ||
+            idt[vector].selector != 0x08 || idt[vector].ist != want->ist ||
+            idt[vector].attributes != want->attr || idt[vector].zero != 0)
+            fail("entry-descriptor-mismatch");
+    }
+    if (tss.rsp0 != (uint64_t)(entry_stack + sizeof(entry_stack)) ||
+        tss.ist[0] != (uint64_t)__df_ist_stack_end)
+        fail("entry-tss-mismatch");
+    serial_puts("LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
+}
 
 /* The arrays are emitted only after the linker-resolved Input is accepted by
    LeanOS.BootPageTablePlan.compile. The early assembly constructor remains
@@ -395,6 +471,10 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
     if (rsp < (uint64_t)stack_first || rsp > (uint64_t)stack_last)
         fail("user-return-stack");
     if (cr3 != (uint64_t)expected_cr3) fail("user-return-cr3");
+    /* Accepted ordinary entries remain armed through handler dispatch and
+       context selection.  Clear only in this final validated return gate;
+       initial boot dispatch is intentionally unarmed. */
+    if (ordinary_entry_active) ordinary_entry_active = 0;
 }
 
 static __attribute__((noreturn)) void handoff_fail(const char *reason) {
@@ -605,8 +685,11 @@ static void replay_oracle(void) {
                         : v->adapter == 6
                             ? leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
                                 v->words[3], v->words[4])
-                            : leanos_blocking_ipc_demo(v->words[0], v->words[1], v->words[2],
-                                v->words[3], v->words[4]);
+                            : v->adapter == 7
+                                ? leanos_blocking_ipc_demo(v->words[0], v->words[1], v->words[2],
+                                    v->words[3], v->words[4])
+                                : leanos_entry_demo(v->words[0], v->words[1], v->words[2],
+                                    v->words[3], v->words[4]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -655,6 +738,7 @@ static void privilege_init(void) {
     set_gate(14, isr14, 0, 0x8e);
     set_gate(32, isr32, 0, 0x8e);
     set_gate(0x80, isr80, 0, 0xee);
+    check_entry_manifest();
     struct descriptor idtr = { sizeof(idt) - 1, (uint64_t)idt };
     __asm__ volatile ("lidt %0" : : "m"(idtr));
     load_tss();
