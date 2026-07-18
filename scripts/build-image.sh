@@ -32,6 +32,7 @@ extended_state_iso_root="$build/iso-extended-state"
 extended_state_mmx_iso_root="$build/iso-extended-state-mmx"
 extended_state_sse_iso_root="$build/iso-extended-state-sse"
 extended_state_sse2_iso_root="$build/iso-extended-state-sse2"
+extended_state_avx_iso_root="$build/iso-extended-state-avx"
 df_iso_root="$build/iso-double-fault"
 df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 entry_adversarial_iso_root="$build/iso-entry-adversarial"
@@ -61,6 +62,7 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$extended_state_iso_root/boot/grub" "$extended_state_mmx_iso_root/boot/grub" \
   "$extended_state_sse_iso_root/boot/grub" \
   "$extended_state_sse2_iso_root/boot/grub" \
+  "$extended_state_avx_iso_root/boot/grub" \
   "$df_iso_root/boot/grub" \
   "$df_negative_iso_root/boot/grub" "$entry_adversarial_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
@@ -151,6 +153,10 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -DLEANOS_EXTENDED_STATE_SSE2_PROBE=1 \
   -c boot/boot.S -o "$build/boot-extended-state-sse2.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -DLEANOS_EXTENDED_STATE_AVX_PROBE=1 \
+  -c boot/boot.S -o "$build/boot-extended-state-avx.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_RESTORE_FIXTURE=1 \
   -c boot/boot.S -o "$build/boot-return-restore-fixture.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
@@ -221,6 +227,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-extended-state-avx-prelink.map" \
+  -o "$build/leanos-extended-state-avx-prelink.elf" \
+  "$build/boot-extended-state-avx.o" "$build/kernel-extended-state.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
   -o "$build/leanos-double-fault-prelink.elf" "$build/boot.o" \
   "$build/kernel-double-fault.o" "$build/KernelTransition.o" \
@@ -266,6 +280,13 @@ cmp "$build/boot-page-plan-extended-state.h" \
 cmp "$build/boot-page-plan-extended-state.h" \
   "$build/boot-page-plan-extended-state-sse2.h" || {
   echo "error: SSE2 probe changed the shared extended-state page-table plan" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-avx-prelink.elf" \
+  "$build/boot-page-plan-extended-state-avx.h"
+cmp "$build/boot-page-plan-extended-state.h" \
+  "$build/boot-page-plan-extended-state-avx.h" || {
+  echo "error: AVX probe changed the shared extended-state page-table plan" >&2
   exit 1
 }
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-prelink.elf" \
@@ -352,6 +373,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-sse2.map" \
   -o "$build/leanos-extended-state-sse2.elf" \
   "$build/boot-extended-state-sse2.o" "$build/kernel-extended-state.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-extended-state-avx.map" \
+  -o "$build/leanos-extended-state-avx.elf" \
+  "$build/boot-extended-state-avx.o" "$build/kernel-extended-state.o" \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
@@ -446,6 +475,13 @@ cmp "$build/boot-page-plan-extended-state.h" \
   echo "error: SSE2 extended-state page-table plan drifted after final link" >&2
   exit 1
 }
+./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-avx.elf" \
+  "$build/boot-page-plan-extended-state-avx.final.h"
+cmp "$build/boot-page-plan-extended-state.h" \
+  "$build/boot-page-plan-extended-state-avx.final.h" || {
+  echo "error: AVX extended-state page-table plan drifted after final link" >&2
+  exit 1
+}
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos-double-fault.map \
   -o build/boot/leanos-double-fault.elf build/boot/boot.o \
@@ -536,6 +572,7 @@ fi
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-mmx.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-sse.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-sse2.elf"
+./scripts/check-image-policy.sh "$build/leanos-extended-state-avx.elf"
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state.elf" \
@@ -546,6 +583,8 @@ objdump -d --no-show-raw-insn "$build/leanos-extended-state-sse.elf" \
   > "$build/extended-state-sse.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state-sse2.elf" \
   > "$build/extended-state-sse2.disassembly.txt"
+objdump -d --no-show-raw-insn "$build/leanos-extended-state-avx.elf" \
+  > "$build/extended-state-avx.disassembly.txt"
 ./scripts/check-extended-state-policy.sh "$build/leanos-extended-state.elf" x87 \
   | tee "$build/extended-state-policy-report.txt"
 ./scripts/check-extended-state-policy.sh "$build/leanos-extended-state-mmx.elf" mmx \
@@ -554,10 +593,13 @@ objdump -d --no-show-raw-insn "$build/leanos-extended-state-sse2.elf" \
   | tee "$build/extended-state-sse-policy-report.txt"
 ./scripts/check-extended-state-policy.sh "$build/leanos-extended-state-sse2.elf" sse2 \
   | tee "$build/extended-state-sse2-policy-report.txt"
+./scripts/check-extended-state-policy.sh "$build/leanos-extended-state-avx.elf" avx \
+  | tee "$build/extended-state-avx-policy-report.txt"
 ./scripts/test-extended-state-policy.sh "$build/leanos-extended-state.elf" \
   "$build/leanos-extended-state-mmx.elf" \
   "$build/leanos-extended-state-sse.elf" \
-  "$build/leanos-extended-state-sse2.elf"
+  "$build/leanos-extended-state-sse2.elf" \
+  "$build/leanos-extended-state-avx.elf"
 ./scripts/check-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-report.txt"
 ./scripts/test-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-fixtures.log"
 
@@ -607,6 +649,9 @@ cp boot/grub.cfg "$extended_state_sse_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-extended-state-sse2.elf" \
   "$extended_state_sse2_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$extended_state_sse2_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-extended-state-avx.elf" \
+  "$extended_state_avx_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$extended_state_avx_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-double-fault.elf" "$df_iso_root/boot/leanos.elf"
 cp boot/grub-double-fault.cfg "$df_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-double-fault-guard-mapped.elf" \
@@ -622,6 +667,7 @@ cp "$build/SOURCE_REVISION" "$extended_state_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_mmx_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_sse_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_sse2_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$extended_state_avx_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
 for spec in "${return_corruptions[@]}"; do
@@ -659,6 +705,10 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   "$extended_state_sse2_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
 grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-extended-state-avx.iso" \
+  "$extended_state_avx_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-double-fault.iso" "$df_iso_root" -- \
   -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
@@ -684,6 +734,7 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-extended-state-mmx.iso" \
   "$build/leanos-${version}-x86_64-extended-state-sse.iso" \
   "$build/leanos-${version}-x86_64-extended-state-sse2.iso" \
+  "$build/leanos-${version}-x86_64-extended-state-avx.iso" \
   "$build/leanos-${version}-x86_64-double-fault.iso" "$build/leanos.elf" \
   "$build/leanos-preemption.elf" "$build/leanos-preemption.map" \
   "$build/leanos-extended-state.elf" "$build/leanos-extended-state.map" \
@@ -693,6 +744,8 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-extended-state-sse.map" \
   "$build/leanos-extended-state-sse2.elf" \
   "$build/leanos-extended-state-sse2.map" \
+  "$build/leanos-extended-state-avx.elf" \
+  "$build/leanos-extended-state-avx.map" \
   "$build/leanos-double-fault.elf" \
   "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
   "$build/leanos-double-fault-guard-mapped.elf" \

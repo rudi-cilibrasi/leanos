@@ -1,5 +1,5 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	22
+# mandatory-count	23
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
@@ -8,6 +8,7 @@ extended-state-denial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-extended-sta
 extended-state-denial-mmx	boot	accepted-boot	30	leanos-@VERSION@-x86_64-extended-state-mmx.iso	leanos-extended-state-mmx.elf	extended-state-mmx.serial.log	extended-state-mmx	-	-
 extended-state-denial-sse	boot	accepted-boot	30	leanos-@VERSION@-x86_64-extended-state-sse.iso	leanos-extended-state-sse.elf	extended-state-sse.serial.log	extended-state-sse	-	-
 extended-state-denial-sse2	boot	accepted-boot	30	leanos-@VERSION@-x86_64-extended-state-sse2.iso	leanos-extended-state-sse2.elf	extended-state-sse2.serial.log	extended-state-sse2	-	-
+extended-state-denial-avx	boot	accepted-boot	30	leanos-@VERSION@-x86_64-extended-state-avx.iso	leanos-extended-state-avx.elf	extended-state-avx.serial.log	extended-state-avx	-	-
 return-kernel-selector	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-kernel-selector.iso	leanos-return-kernel-selector.elf	return-corruption-kernel-selector.serial.log	kernel-selector	1	user-return-selector
 return-wrong-stack-selector	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-wrong-stack-selector.iso	leanos-return-wrong-stack-selector.elf	return-corruption-wrong-stack-selector.serial.log	wrong-stack-selector	2	user-return-selector
 return-noncanonical-rip	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-noncanonical-rip.iso	leanos-return-noncanonical-rip.elf	return-corruption-noncanonical-rip.serial.log	noncanonical-rip	3	user-return-noncanonical

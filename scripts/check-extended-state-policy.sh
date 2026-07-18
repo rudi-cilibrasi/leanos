@@ -47,6 +47,9 @@ grep -Fq 'cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave
   "$kernel_source" || {
   echo "error: extended-state field=cpuid-evidence missing" >&2; exit 1;
 }
+grep -Fq 'vxorps %ymm0, %ymm0, %ymm0' "$boot_source" || {
+  echo "error: extended-state field=avx-probe source" >&2; exit 1;
+}
 if grep -Eiq '^[[:space:]]*(clts|fxrstor|xrstor)(64)?([[:space:]]|$)' "$boot_source" ||
    grep -Eiq '"[[:space:]]*(clts|fxrstor|xrstor)(64)?([[:space:]]|"|$)' "$kernel_source"; then
   echo "error: extended-state field=unauthorized-enable-or-restore source" >&2
@@ -85,6 +88,11 @@ elif [[ "$probe" == sse2 ]]; then
   grep -Eq '[[:space:]]pxor[[:space:]]+%xmm0,%xmm0([[:space:]]|$)' \
     <<<"$disassembly" || {
     echo "error: extended-state field=sse2-probe final-elf" >&2; exit 1;
+  }
+elif [[ "$probe" == avx ]]; then
+  grep -Eq '[[:space:]]vxorps[[:space:]]+%ymm0,%ymm0,%ymm0([[:space:]]|$)' \
+    <<<"$disassembly" || {
+    echo "error: extended-state field=avx-probe final-elf" >&2; exit 1;
   }
 elif [[ -n "$probe" ]]; then
   echo "error: extended-state field=probe-class unsupported=$probe" >&2

@@ -875,7 +875,9 @@ user_a_entry:
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     /* Each dedicated image must deny before modifying its selected shared
        extended-state bank. */
-#ifdef LEANOS_EXTENDED_STATE_SSE2_PROBE
+#ifdef LEANOS_EXTENDED_STATE_AVX_PROBE
+    vxorps %ymm0, %ymm0, %ymm0
+#elif defined(LEANOS_EXTENDED_STATE_SSE2_PROBE)
     pxor %xmm0, %xmm0
 #elif defined(LEANOS_EXTENDED_STATE_SSE_PROBE)
     xorps %xmm0, %xmm0
@@ -959,7 +961,9 @@ user_a_stack_top:
 .section .rodata,"a",@progbits
 .global extended_state_probe_class
 extended_state_probe_class:
-#ifdef LEANOS_EXTENDED_STATE_SSE2_PROBE
+#ifdef LEANOS_EXTENDED_STATE_AVX_PROBE
+    .quad 4
+#elif defined(LEANOS_EXTENDED_STATE_SSE2_PROBE)
     .quad 3
 #elif defined(LEANOS_EXTENDED_STATE_SSE_PROBE)
     .quad 2

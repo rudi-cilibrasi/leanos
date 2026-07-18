@@ -93,6 +93,7 @@ jobs:
             build/boot/leanos-0.1.0-x86_64-extended-state-mmx.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-sse.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-sse2.iso
+            build/boot/leanos-0.1.0-x86_64-extended-state-avx.iso
             build/boot/leanos-0.1.0-x86_64-double-fault.iso
             build/boot/leanos-0.1.0-x86_64-entry-adversarial.iso
             build/boot/leanos.elf
@@ -101,6 +102,7 @@ jobs:
             build/boot/leanos-extended-state-mmx.elf
             build/boot/leanos-extended-state-sse.elf
             build/boot/leanos-extended-state-sse2.elf
+            build/boot/leanos-extended-state-avx.elf
             build/boot/leanos-double-fault.elf
             build/boot/leanos-entry-adversarial.elf
             build/boot/leanos.map
@@ -109,6 +111,7 @@ jobs:
             build/boot/leanos-extended-state-mmx.map
             build/boot/leanos-extended-state-sse.map
             build/boot/leanos-extended-state-sse2.map
+            build/boot/leanos-extended-state-avx.map
             build/boot/leanos-double-fault.map
             build/boot/leanos-prelink.map
             build/boot/boot-page-plan.h
@@ -120,6 +123,7 @@ jobs:
             build/boot/boot-page-plan-extended-state-mmx.final.h
             build/boot/boot-page-plan-extended-state-sse.final.h
             build/boot/boot-page-plan-extended-state-sse2.final.h
+            build/boot/boot-page-plan-extended-state-avx.final.h
             build/boot/SHA256SUMS
             build/boot/serial.log
             build/boot/preemption.serial.log
@@ -127,6 +131,7 @@ jobs:
             build/boot/extended-state-mmx.serial.log
             build/boot/extended-state-sse.serial.log
             build/boot/extended-state-sse2.serial.log
+            build/boot/extended-state-avx.serial.log
             build/boot/double-fault.serial.log
             build/boot/entry-adversarial.serial.log
             build/boot/entry-policy-report.txt
@@ -135,14 +140,17 @@ jobs:
             build/boot/extended-state-mmx.disassembly.txt
             build/boot/extended-state-sse.disassembly.txt
             build/boot/extended-state-sse2.disassembly.txt
+            build/boot/extended-state-avx.disassembly.txt
             build/boot/extended-state-policy-report.txt
             build/boot/extended-state-mmx-policy-report.txt
             build/boot/extended-state-sse-policy-report.txt
             build/boot/extended-state-sse2-policy-report.txt
+            build/boot/extended-state-avx-policy-report.txt
             build/boot/extended-state-control-snapshot.txt
             build/boot/extended-state-mmx-control-snapshot.txt
             build/boot/extended-state-sse-control-snapshot.txt
             build/boot/extended-state-sse2-control-snapshot.txt
+            build/boot/extended-state-avx-control-snapshot.txt
             build/boot/return-corruption-*.serial.log
             build/boot/return-*-policy.log
             build/boot/leanos-0.1.0-x86_64-return-*.iso

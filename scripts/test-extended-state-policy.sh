@@ -5,6 +5,7 @@ elf="${1:-build/boot/leanos.elf}"
 mmx_elf="${2:-}"
 sse_elf="${3:-}"
 sse2_elf="${4:-}"
+avx_elf="${5:-}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -52,6 +53,9 @@ add_xrstor() {
 add_cr0_write() {
   sed -i '/^normalize_extended_state_cr0:/a\    mov %eax, %cr0' "$tmp/boot.S"
 }
+omit_avx_probe() {
+  sed -i 's/vxorps %ymm0, %ymm0, %ymm0/nop/' "$tmp/boot.S"
+}
 
 run_fixture inherited-cr0 'field=cr0-normalization' inherit_cr0
 run_fixture inherited-cr4 'field=cr4-normalization' inherit_cr4
@@ -61,6 +65,7 @@ run_fixture unauthorized-clts 'field=unauthorized-enable-or-restore source' add_
 run_fixture unauthorized-fxrstor 'field=unauthorized-enable-or-restore source' add_fxrstor
 run_fixture unauthorized-xrstor 'field=unauthorized-enable-or-restore source' add_xrstor
 run_fixture unauthorized-cr0-write 'field=control-write-inventory source' add_cr0_write
+run_fixture missing-avx-probe 'field=avx-probe source' omit_avx_probe
 
 check_probe_mismatch() {
   local image="$1" actual="$2" expected="$3"
@@ -94,7 +99,17 @@ if [[ -n "$sse2_elf" ]]; then
   check_probe_mismatch "$sse2_elf" sse2 mmx
   check_probe_mismatch "$sse2_elf" sse2 sse
 fi
-if [[ -n "$mmx_elf" || -n "$sse_elf" || -n "$sse2_elf" ]]; then
+if [[ -n "$avx_elf" ]]; then
+  check_probe_mismatch "$elf" x87 avx
+  check_probe_mismatch "$mmx_elf" mmx avx
+  check_probe_mismatch "$sse_elf" sse avx
+  check_probe_mismatch "$sse2_elf" sse2 avx
+  check_probe_mismatch "$avx_elf" avx x87
+  check_probe_mismatch "$avx_elf" avx mmx
+  check_probe_mismatch "$avx_elf" avx sse
+  check_probe_mismatch "$avx_elf" avx sse2
+fi
+if [[ -n "$mmx_elf" || -n "$sse_elf" || -n "$sse2_elf" || -n "$avx_elf" ]]; then
   echo "EXTENDED-STATE fixture=probe-class-swap field=probe-class final-elf result=REJECTED"
 fi
 
