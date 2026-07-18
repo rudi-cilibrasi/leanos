@@ -112,6 +112,37 @@ binding. Firmware PIC lines are masked when the IDT is installed; only the
 preemption scenario remaps and deliberately unmasks IRQ0, preventing a legacy
 IRQ from being confused with the dedicated vector-8 terminal protocol.
 
+## Ordinary entry-stack layout and budget contract
+
+`LeanOS.PrivilegeEntryStack` introduces the model vocabulary shared by the
+ordinary entry manifest. Byte ranges are half-open. The usable stack grows
+downward from one 16-byte-aligned exclusive `stackTop`; a one-page lower guard
+must be adjacent, absent, and disjoint from every supplied reserved interval.
+Accepted usable leaves are supervisor-writable, non-user, and non-executable.
+The model uses natural-number addresses below the 64-bit address limit, so its
+checked subtraction cannot model machine-word wraparound.
+
+Every manifest entry uses one `BudgetRequest`. Its fixed contribution accounts
+for the three- or five-word hardware frame, the optional hardware error word,
+the fifteen-register save bank, and the stub's dummy/alignment slots. The
+machine-derived boot-reachable C/generated call contribution, return-validator
+contribution, and safety margin remain explicit inputs; the model does not
+assign operations or boot scenarios private limits. `checkedRemaining` mints a
+remaining-budget fact only when the complete request fits the usable interval.
+Lean proves the subtraction equation, exact accepted stack identity and bounds,
+and that both accepted and fatal results retain the exact inbound composite
+state. An insufficient request is a typed atomic fatal result and cannot
+authorize an operation handler or return.
+
+The executable witnesses use zero machine-derived contribution solely to check
+the common fixed protocol for syscall, timer, user-page-fault, and supervisor
+diagnostic purposes. They are not a concrete production budget. Linker-owned
+ordinary guard/stack sections, page-table-plan and reservation identities,
+compiler `.su` reports, the reviewed call graph, assembly/disassembly cost
+checks, high-water observations, and forced overflow through IST1 remain future
+integration work and trusted/checked evidence rather than theorem claims. No
+stable security claim is advertised for this checkpoint.
+
 ## Proof, tests, and trusted assumptions
 
 The proved claims apply only to the Lean transition model: deterministic vector
