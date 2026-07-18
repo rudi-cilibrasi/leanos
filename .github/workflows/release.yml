@@ -57,6 +57,9 @@ jobs:
         run: |
           ./scripts/build-image.sh
           ./scripts/run-image.sh
+          LEANOS_BOOT_SCENARIO=preemption \
+            LEANOS_SERIAL_LOG=build/boot/preemption.serial.log \
+            ./scripts/run-image.sh
 
       - name: Package release evidence
         run: ./scripts/package-release.sh "$GITHUB_REF_NAME"
