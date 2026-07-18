@@ -19,6 +19,10 @@ lake build leanos-boot-plan
 
 ./scripts/test-run-double-fault.sh
 
+./scripts/test-emulator-evidence.py
+
+./scripts/run-emulator-evidence.py check
+
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
   experiments/freestanding-boundary/Boundary.lean
 lake env lean -DwarningAsError=true -R experiments/hosted-boundary \

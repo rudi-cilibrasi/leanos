@@ -5,6 +5,7 @@ import LeanOS.FrameBudget
 import LeanOS.X86PageTable
 import LeanOS.Syscall
 import LeanOS.FailStop
+import LeanOS.InterruptEntry
 import LeanOS.ScheduledObservation
 
 /-! # Stable security-claim contract
@@ -142,6 +143,16 @@ theorem composite_gate_control_preserves_runtimeWellFormed state purpose
   exact ⟨FailStop.gate_selectUserReturn_preserves_runtimeWellFormed state purpose
       hstate hmode,
     FailStop.gate_restart_preserves_runtimeWellFormed state hstate⟩
+
+/-- SC-INTERRUPT-ENTRY-BINDING: every normalized record constructor copies
+authority-bearing context fields from the kernel-owned input. -/
+theorem interrupt_entry_context_binding entry raw context :
+    (InterruptEntry.makeNormalized entry raw context).currentSubject = context.currentSubject ∧
+    (InterruptEntry.makeNormalized entry raw context).activeAddressSpace =
+      context.activeAddressSpace ∧
+    (InterruptEntry.makeNormalized entry raw context).activeCr3 = context.activeCr3 ∧
+    (InterruptEntry.makeNormalized entry raw context).stackIdentity = context.stackIdentity := by
+  exact InterruptEntry.makeNormalized_binds_context entry raw context
 
 /-- SC-USER-RETURN-CONFINEMENT: an accepted return attests the complete
 kernel-selected frame/context tuple and its privilege-critical fields. -/

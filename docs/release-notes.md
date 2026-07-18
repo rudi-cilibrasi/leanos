@@ -5,6 +5,13 @@ or a claim of binary-level verification. The Lean proof gate establishes
 model-level theorems and rejects unapproved proof and trusted-code escapes.
 Compilation and the QEMU smoke test provide tested integration behavior only.
 
+The release-blocking QEMU evidence is recorded in `EMULATOR_EVIDENCE.json`
+against the versioned `EMULATOR_EVIDENCE_MATRIX.tsv`. The manifest binds the
+tested source revision, tool inventory, exact QEMU commands, expected result
+classes, and hashes of every mandatory scenario's image, ELF, serial log, and
+runner log. Controlled-rejection and fail-stop entries are integration tests,
+not Lean proofs or claims of compiler or binary refinement.
+
 The trusted computing base and unproved boundary include Lean code generation,
 generated C, GCC, GNU assembler and linker, GRUB, the boot assembly and C shim,
 the linker script, SeaBIOS, QEMU, x86-64 hardware semantics, Multiboot2, the

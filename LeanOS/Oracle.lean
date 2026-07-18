@@ -4,6 +4,7 @@ import LeanOS.IPCSyscall
 import LeanOS.Preemption
 import LeanOS.BootAllocation
 import LeanOS.Interrupt
+import LeanOS.InterruptEntry
 import LeanOS.BlockingIPC
 
 /-!
@@ -63,6 +64,11 @@ private def blockingIPC (id : String) (phase operation caller word0 word1 : UInt
     expected := if 10 ≤ operation then
       BlockingIPC.blockingIpcModelRejection phase operation caller word0 word1
     else BlockingIPC.blockingIpcDemo phase operation caller word0 word1 }
+
+private def interruptEntry (id : String) (descriptor frame stack context cleanup : UInt64) :
+    Vector :=
+  { id, adapter := "Interrupt.entry", words := [descriptor, frame, stack, context, cleanup],
+    expected := InterruptEntry.entryModelExpected descriptor frame stack context cleanup }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -143,9 +149,26 @@ def vectors : List Vector := [
   blockingIPC "blocking-ipc.duplicate-wake" 1 17 1 0x4c45414e 0x4f53,
   blockingIPC "blocking-ipc.wrong-endpoint" 0 18 2 0x4c45414e 0x4f53,
   blockingIPC "blocking-ipc.forged-sender" 3 19 2 1 0x4f53,
-  blockingIPC "blocking-ipc.cancel-before-send" 1 20 1 0x4c45414e 0x4f53]
+  blockingIPC "blocking-ipc.cancel-before-send" 1 20 1 0x4c45414e 0x4f53,
+  interruptEntry "entry.syscall" 32896 291 0x800000 257 3,
+  interruptEntry "entry.user-page-fault" 69134 291 0x800000 257 3,
+  interruptEntry "entry.timer" 8224 291 0x800000 257 3,
+  interruptEntry "entry.kernel-diagnostic" 69134 8 0x800000 257 3,
+  interruptEntry "entry.wrong-stub" 32640 291 0x800000 257 3,
+  interruptEntry "entry.wrong-dpl-vector" 32846 291 0x800000 257 3,
+  interruptEntry "entry.missing-error" 3598 291 0x800000 257 3,
+  interruptEntry "entry.spurious-error" 98464 291 0x800000 257 3,
+  interruptEntry "entry.truncated" 32896 803 0x800000 257 3,
+  interruptEntry "entry.misaligned" 32896 291 0x800008 257 3,
+  interruptEntry "entry.forged-user-words-kernel-shape" 32896 35 0x800000 257 3,
+  interruptEntry "entry.unexpected-user-shape" 69134 264 0x800000 257 3,
+  interruptEntry "entry.stack-low" 32896 291 0x7ffff0 257 3,
+  interruptEntry "entry.stack-high" 32896 291 0x803ff0 257 3,
+  interruptEntry "entry.nested" 32896 291 0x800000 257 7,
+  interruptEntry "entry.ac-uncleared" 32896 291 0x800000 257 2,
+  interruptEntry "entry.df-uncleared" 32896 291 0x800000 257 1]
 
-theorem corpus_shape : vectors.length = 75 := by decide
+theorem corpus_shape : vectors.length = 92 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -181,7 +204,22 @@ theorem blocking_ipc_scenario_agrees :
     (vectors[60]).expected = BlockingIPC.encodeBootEvent 4 4 2 2 1 ∧
     (vectors[61]).expected = 0 ∧ (vectors[62]).expected = 0 ∧
     (vectors[63]).expected = 0 ∧
-    (vectors.drop 64).all (fun vector => vector.expected ≠ 0) = true := by
+    ((vectors.drop 64).take 11).all (fun vector => vector.expected ≠ 0) = true := by
+  native_decide
+
+theorem interrupt_entry_scenario_agrees :
+    ((vectors.drop 75).take 4).all (fun vector => vector.expected ≠ 0) = true ∧
+    (vectors.drop 79).all (fun vector => vector.expected = 0) = true := by
+  native_decide
+
+private def interruptEntryAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "Interrupt.entry", [descriptor, frame, stack, context, cleanup] =>
+      InterruptEntry.entryDemo descriptor frame stack context cleanup = vector.expected
+  | _, _ => true
+
+theorem interrupt_entry_adapter_agrees_with_model :
+    vectors.all interruptEntryAdapterAgrees = true := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

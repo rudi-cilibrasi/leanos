@@ -30,22 +30,20 @@ iso_root="$build/iso"
 preemption_iso_root="$build/iso-preemption"
 df_iso_root="$build/iso-double-fault"
 df_negative_iso_root="$build/iso-double-fault-guard-mapped"
+entry_adversarial_iso_root="$build/iso-entry-adversarial"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
-return_corruptions=(
-  'kernel-selector:1:user-return-selector'
-  'wrong-stack-selector:2:user-return-selector'
-  'noncanonical-rip:3:user-return-noncanonical'
-  'noncanonical-rsp:4:user-return-noncanonical'
-  'outside-code:5:user-return-code'
-  'outside-stack:6:user-return-stack'
-  'flags-ac:7:user-return-flags'
-  'flags-df:8:user-return-flags'
-  'stale-cr3:9:user-return-cr3'
-  'stale-context:10:user-return-code'
-  'post-validation-mutation:11:user-return-noncanonical'
-  'blocking-context-canary:12:register-canary'
-)
+matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
+[[ -f "$matrix" ]] || { echo "error: evidence matrix '$matrix' not found" >&2; exit 1; }
+return_corruptions=()
+while IFS=$'\t' read -r _id runner _class _timeout _image _elf _log \
+    fixture mode reason; do
+  [[ "$runner" == return ]] || continue
+  return_corruptions+=("${fixture}:${mode}:${reason}")
+done < "$matrix"
+[[ ${#return_corruptions[@]} -gt 0 ]] || {
+  echo "error: evidence matrix has no return-corruption scenarios" >&2; exit 1;
+}
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: LEANOS_VERSION must be MAJOR.MINOR.PATCH" >&2
   exit 1
@@ -56,12 +54,13 @@ if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 rm -rf "$build"
 mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" "$df_iso_root/boot/grub" \
-  "$df_negative_iso_root/boot/grub"
+  "$df_negative_iso_root/boot/grub" "$entry_adversarial_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-double-fault.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-guard.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-entry-adversarial.h"
 
 # C generation resolves project imports through Lake's compiled module path.
 # Build them here because image jobs and clean checkouts cannot rely on a
@@ -73,6 +72,7 @@ lake env lean --c="$build/IPCSyscall.c" LeanOS/IPCSyscall.lean
 lake env lean --c="$build/Preemption.c" LeanOS/Preemption.lean
 lake env lean --c="$build/BootAllocation.c" LeanOS/BootAllocation.lean
 lake env lean --c="$build/Interrupt.c" LeanOS/Interrupt.lean
+lake env lean --c="$build/InterruptEntry.c" LeanOS/InterruptEntry.lean
 lake env lean --c="$build/BlockingIPC.c" LeanOS/BlockingIPC.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
@@ -92,6 +92,8 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -o "$build/BootAllocation.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Interrupt.c" \
   -o "$build/Interrupt.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/InterruptEntry.c" \
+  -o "$build/InterruptEntry.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/BlockingIPC.c" \
   -o "$build/BlockingIPC.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
@@ -105,6 +107,10 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -DLEANOS_DF_MAP_GUARD=1 \
   -c boot/kernel.c -o "$build/kernel-double-fault-guard-mapped.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_ENTRY_ADVERSARIAL=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-adversarial.h"' \
+  -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -c boot/boot.S -o "$build/boot.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
@@ -128,6 +134,9 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_DF_MAP_GUARD=1 \
   -c boot/boot.S -o "$build/boot-df-guard-mapped.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_ENTRY_ADVERSARIAL=1 \
+  -c boot/boot.S -o "$build/boot-entry-adversarial.o"
 
 # The first link fixes every symbol address while using a same-sized plan
 # placeholder. Lean then accepts the linker-resolved Input and emits the exact
@@ -137,26 +146,32 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-prelink.map" \
   -o "$build/leanos-prelink.elf" "$build/boot.o" "$build/kernel.o" \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
   "$build/BlockingIPC.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-preemption-prelink.map" \
   -o "$build/leanos-preemption-prelink.elf" "$build/boot-preemption.o" \
   "$build/kernel-preemption.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
-  "$build/Interrupt.o" "$build/BlockingIPC.o"
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
   -o "$build/leanos-double-fault-prelink.elf" "$build/boot.o" \
   "$build/kernel-double-fault.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/BlockingIPC.o"
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-entry-adversarial-prelink.map" \
+  -o "$build/leanos-entry-adversarial-prelink.elf" "$build/boot-entry-adversarial.o" \
+  "$build/kernel-entry-adversarial.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-guard-prelink.map" \
   -o "$build/leanos-guard-prelink.elf" "$build/boot-df-guard-mapped.o" \
   "$build/kernel-double-fault-guard-mapped.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/BlockingIPC.o"
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-prelink.elf" \
   "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-preemption-prelink.elf" \
@@ -165,6 +180,8 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/boot-page-plan-double-fault.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-guard-prelink.elf" \
   "$build/boot-page-plan-guard.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-entry-adversarial-prelink.elf" \
+  "$build/boot-page-plan-entry-adversarial.h"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
   -o "$build/kernel.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -187,19 +204,29 @@ done
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -DLEANOS_DF_MAP_GUARD=1 \
   -c boot/kernel.c -o "$build/kernel-double-fault-guard-mapped.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_ENTRY_ADVERSARIAL=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-adversarial.h"' \
+  -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
 
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
   -o build/boot/leanos.elf build/boot/boot.o build/boot/kernel.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
-  build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o \
+  build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
   build/boot/BlockingIPC.o
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-entry-adversarial.map" \
+  -o "$build/leanos-entry-adversarial.elf" "$build/boot-entry-adversarial.o" \
+  "$build/kernel-entry-adversarial.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-preemption.map" \
   -o "$build/leanos-preemption.elf" "$build/boot-preemption.o" \
   "$build/kernel-preemption.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
-  "$build/Interrupt.o" "$build/BlockingIPC.o"
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o"
 
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture mode _reason <<<"$spec"
@@ -212,7 +239,7 @@ for spec in "${return_corruptions[@]}"; do
     -o "$build/leanos-return-${fixture}-prelink.elf" "$boot_object" \
     "$build/kernel-return-${fixture}.o" "$build/KernelTransition.o" \
     "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-    "$build/BootAllocation.o" "$build/Interrupt.o" "$build/BlockingIPC.o"
+    "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o"
   ./scripts/generate-boot-page-plan.sh "$build/leanos-return-${fixture}-prelink.elf" \
     "$build/boot-page-plan-return-${fixture}.h"
   "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -224,7 +251,7 @@ for spec in "${return_corruptions[@]}"; do
     -o "$build/leanos-return-${fixture}.elf" "$boot_object" \
     "$build/kernel-return-${fixture}.o" "$build/KernelTransition.o" \
     "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-    "$build/BootAllocation.o" "$build/Interrupt.o" "$build/BlockingIPC.o"
+    "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o"
   ./scripts/generate-boot-page-plan.sh "$build/leanos-return-${fixture}.elf" \
     "$build/boot-page-plan-return-${fixture}.final.h"
   cmp "$build/boot-page-plan-return-${fixture}.h" \
@@ -265,14 +292,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -o build/boot/leanos-double-fault.elf build/boot/boot.o \
   build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
   build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
-  build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/BlockingIPC.o
+  build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o build/boot/BlockingIPC.o
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
   -o build/boot/leanos-double-fault-guard-mapped.elf \
   build/boot/boot-df-guard-mapped.o \
   build/boot/kernel-double-fault-guard-mapped.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
-  build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o \
+  build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
   build/boot/BlockingIPC.o
 
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
@@ -286,6 +313,13 @@ cmp "$build/boot-page-plan-double-fault.h" \
   "$build/boot-page-plan-guard.final.h"
 cmp "$build/boot-page-plan-guard.h" "$build/boot-page-plan-guard.final.h" || {
   echo "error: guard-mapped boot page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-entry-adversarial.elf" \
+  "$build/boot-page-plan-entry-adversarial.final.h"
+cmp "$build/boot-page-plan-entry-adversarial.h" \
+  "$build/boot-page-plan-entry-adversarial.final.h" || {
+  echo "error: entry-adversarial page-table plan drifted after final link" >&2
   exit 1
 }
 
@@ -331,6 +365,9 @@ fi
 ./scripts/check-image-policy.sh "$build/leanos.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
+./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
+./scripts/check-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-report.txt"
+./scripts/test-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-fixtures.log"
 
 for fixture in restore branch indirect initial-indirect; do
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
@@ -338,7 +375,7 @@ for fixture in restore branch indirect initial-indirect; do
     -o "$build/leanos-return-${fixture}-fixture.elf" \
     "$build/boot-return-${fixture}-fixture.o" "$build/kernel.o" \
     "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
     "$build/BlockingIPC.o"
   if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}-fixture.elf" \
       >"$build/return-${fixture}-fixture.log" 2>&1; then
@@ -372,11 +409,14 @@ cp boot/grub-double-fault.cfg "$df_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-double-fault-guard-mapped.elf" \
   "$df_negative_iso_root/boot/leanos.elf"
 cp boot/grub-double-fault.cfg "$df_negative_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-entry-adversarial.elf" "$entry_adversarial_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$entry_adversarial_iso_root/boot/grub/grub.cfg"
 printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
   > "$iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$preemption_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   fixture_root="$build/iso-return-${fixture}"
@@ -403,6 +443,10 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
   "$df_negative_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-entry-adversarial.iso" \
+  "$entry_adversarial_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   grub-mkrescue -d /usr/lib/grub/i386-pc \
@@ -418,6 +462,8 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-double-fault.elf" \
   "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
   "$build/leanos-double-fault-guard-mapped.elf" \
+  "$build/leanos-${version}-x86_64-entry-adversarial.iso" \
+  "$build/leanos-entry-adversarial.elf" \
   > "$build/SHA256SUMS"
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
