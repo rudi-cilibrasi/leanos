@@ -47,6 +47,7 @@ extern void isr32(void);
 extern void run_double_fault_probe(void);
 extern char user_a_entry[], user_a_stack_top[];
 extern char user_a_stack[];
+extern char user_a_fault_instruction[], user_a_fault_recovered[];
 extern char user_b_entry[];
 extern char user_b_stack[], user_b_stack_top[];
 extern uint64_t saved_context_a[], saved_context_b[];
@@ -1167,6 +1168,14 @@ static void arm_timer(void) {
 
 uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
                             uint64_t fault_address) {
+    if ((saved_cs & 3u) == 3u && error == 5u &&
+        rip == (uint64_t)user_a_fault_instruction && fault_address == 0u) {
+#ifdef LEANOS_ENTRY_HIGH_WATER
+        report_entry_stack_high_water("user-page-fault");
+#endif
+        serial_puts("LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS\n");
+        return (uint64_t)user_a_fault_recovered;
+    }
     if (supervisor_probe == 1 && (saved_cs & 3u) == 0u && error == 3u &&
         rip == (uint64_t)wp_probe_instruction &&
         fault_address == (uint64_t)wp_probe_target) {

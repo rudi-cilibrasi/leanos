@@ -45,13 +45,16 @@ page-table plans, live-page decoding, the reviewed unmapping instruction, final
 ELF direct/tail-call reachability, assembly push counts, and compiler `.su`
 reports. CI retains the raw reports, reviewed call graph, per-path budget and
 margin, ELF symbols, disassembly, extracted edges, and final-ELF verdict. Normal
-and preemption QEMU runs retain bounded stack-paint high-water records for the
-exercised syscall and timer/context-switch paths.
+and preemption QEMU runs retain bounded stack-paint high-water records for a
+real recovered CPL3 page fault and for the exercised syscall or
+timer/context-switch path.
 
 High-water painting is diagnostic only: a write matching the paint word can be
-missed, the scan is not path-isolated, and user-page-fault and kernel-diagnostic
-observations are not yet present. It neither contributes authority nor replaces
-the static gate. Controlled ordinary-stack exhaustion through IST1, including
+missed and the scan is cumulative rather than path-isolated. Kernel-origin
+diagnostic faults remain on the active boot stack rather than switching through
+`rsp0`, so this ordinary-stack evidence makes no claim about their high-water
+use. It neither contributes authority nor replaces the static gate. Controlled
+ordinary-stack exhaustion through IST1, including
 the required adversarial runner rejections and terminal evidence, remains future
 integration work.
 

@@ -51,6 +51,7 @@ if [[ "$scenario" == preemption ]]; then
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
   'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' \
+  'LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS' \
   'LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0' \
   'LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=1 origin=cpl3 accepted=1' \
   'LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin' \
@@ -87,6 +88,7 @@ fi
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
   'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' \
+  'LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS' \
   'LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1' \
   'LEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
@@ -130,23 +132,29 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
 done
 sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
 if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
-  expected_high_water_path="syscall"
-  [[ "$scenario" == preemption ]] && expected_high_water_path="timer-context-switch"
+  final_high_water_path="syscall"
+  [[ "$scenario" == preemption ]] && final_high_water_path="timer-context-switch"
   mkdir -p "$(dirname "$high_water_artifact")"
   grep '^LEANOS/11 ENTRY-HIGH-WATER ' "$log" > "$high_water_artifact" || {
     echo "failure_class=entry-stack-high-water: observation missing" >&2; exit 1;
   }
   mapfile -t high_water_lines < "$high_water_artifact"
-  if [[ ${#high_water_lines[@]} -ne 1 ||
-        ! "${high_water_lines[0]}" =~ ^LEANOS/11\ ENTRY-HIGH-WATER\ path=${expected_high_water_path}\ observed-bytes=([0-9]+)\ usable-bytes=16384\ margin-bytes=([0-9]+)\ authority=diagnostic\ result=PASS$ ]]; then
-    echo "failure_class=entry-stack-high-water: malformed or duplicate observation" >&2
+  if [[ ${#high_water_lines[@]} -ne 2 ]]; then
+    echo "failure_class=entry-stack-high-water: missing or duplicate observation" >&2
     exit 1
   fi
-  observed="${BASH_REMATCH[1]}"; margin="${BASH_REMATCH[2]}"
-  if (( observed < 176 || observed + margin != 16384 || margin < 4096 )); then
-    echo "failure_class=entry-stack-high-water: invalid observed bound" >&2
-    exit 1
-  fi
+  expected_high_water_paths=(user-page-fault "$final_high_water_path")
+  for ((i = 0; i < 2; ++i)); do
+    if [[ ! "${high_water_lines[i]}" =~ ^LEANOS/11\ ENTRY-HIGH-WATER\ path=${expected_high_water_paths[i]}\ observed-bytes=([0-9]+)\ usable-bytes=16384\ margin-bytes=([0-9]+)\ authority=diagnostic\ result=PASS$ ]]; then
+      echo "failure_class=entry-stack-high-water: malformed or reordered observation" >&2
+      exit 1
+    fi
+    observed="${BASH_REMATCH[1]}"; margin="${BASH_REMATCH[2]}"
+    if (( observed < 176 || observed + margin != 16384 || margin < 4096 )); then
+      echo "failure_class=entry-stack-high-water: invalid observed bound" >&2
+      exit 1
+    fi
+  done
   sed -i '/^LEANOS\/11 ENTRY-HIGH-WATER /d' "$without_allocation"
 fi
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi

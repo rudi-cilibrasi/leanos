@@ -184,13 +184,15 @@ The accepted normal and preemption images additionally paint the unused
 ordinary-entry stack before the first CPL3 dispatch. At each scenario's final
 accepted checkpoint they scan upward from the lower bound, require at least
 the 4 KiB static safety margin to remain untouched, and emit a bounded
-`ENTRY-HIGH-WATER` record. The runner validates the arithmetic and retains the
-record as a CI artifact. The blocking-IPC image records the exercised syscall
-path; the preemption image records the cumulative timer/context-switch
-scenario. This diagnostic can miss writes that reproduce the paint word and
-does not isolate every transitive call or replace the final-ELF/compiler gate.
-User-page-fault and kernel-diagnostic path-specific observations remain future
-integration work.
+`ENTRY-HIGH-WATER` record. Both images first exercise a CPL3 read of the
+supervisor-only zero page and record the resulting error-code-5 vector-14 path
+before recovery; their final records cover the blocking-IPC syscall or the
+cumulative timer/context-switch scenario. The runner requires both records in
+order, validates their arithmetic, and retains them as a CI artifact. This
+diagnostic can miss writes that reproduce the paint word, is cumulative rather
+than path-isolated, and does not replace the final-ELF/compiler gate. A
+kernel-origin diagnostic path does not switch through `rsp0`; a separate
+boot-stack high-water observation is therefore not claimed here.
 
 The accepted boot-reservation manifest now carries distinct
 `.ordinaryEntryGuard` and `.ordinaryEntryStack` identities. Allocator

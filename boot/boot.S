@@ -864,6 +864,14 @@ user_a_entry:
     jne user_copy_fail
     cmpb $0xc3, user_a_stack+4113(%rip)
     jne user_copy_fail
+    /* Exercise the admitted CPL3 protection-fault frame before continuing the
+       scenario.  Page zero is present supervisor-only in root A, so this read
+       deterministically raises #PF with error code 5. */
+.global user_a_fault_instruction
+user_a_fault_instruction:
+    mov 0, %rax
+.global user_a_fault_recovered
+user_a_fault_recovered:
 #ifdef LEANOS_PREEMPTION_SCENARIO
     mov $1, %rax
     xor %rbx, %rbx
