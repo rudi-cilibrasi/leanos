@@ -53,6 +53,12 @@ Proved in Lean for this finite model:
   selected subject's kernel-owned saved context; and
 - policy, binding, or dispatch inconsistency changes only the absorbing halt
   latch, without publishing partial cleanup.
+- the exact denied-state predicate wraps the authoritative composite gate, so
+  every modeled interrupt, return, syscall, preemption, IPC, capability,
+  mapping, lifecycle, and scheduler operation preserves it; a live mismatch
+  halts before publishing any subsystem change; and
+- every finite sequence of those composite operations preserves the predicate,
+  while an accepted user return itself implies the live denied policy.
 
 Executable `native_decide` cases cover an accepted policy and user #NM,
 unexpected vector, kernel origin, stale subject binding, cleared CR0.TS,
@@ -95,10 +101,12 @@ dispatch.
 
 ## Remaining integration
 
-The machine endpoint must consume the cleanup/dispatch result, retire A, restore
-the scheduler-selected peer through the common validated return path, and add
-the deterministic two-subject QEMU denial scenario. Issues #104 and #105 must
-carry the denied-state predicate through the global runtime. Final work also
-needs complete unauthorized-instruction source/final-ELF checks and negative
+The machine endpoint now consumes the cleanup/dispatch result, retires A, and
+restores the scheduler-selected peer. The global model also carries the
+denied-state predicate around #104's authoritative operation vocabulary and
+proves single-step and finite-sequence preservation. Final work still needs
+the deterministic two-subject QEMU denial scenario, refinement of the global
+wrapper to the generated/machine gate, complete unauthorized-instruction
+source/final-ELF checks and negative
 fixtures, preserved control/CPUID snapshots and disassembly, exact serial
 evidence, and documentation of the pinned QEMU CPU contract.

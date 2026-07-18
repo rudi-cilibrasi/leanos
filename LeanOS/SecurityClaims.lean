@@ -400,6 +400,14 @@ theorem extended_state_denial_cleanup_nonresumable machine subject :
       ResumablePreemption.contextFor cleaned.contexts subject = none := by
   exact ExtendedState.denial_cleanup_cannot_resume machine subject
 
+/-- SC-EXTENDED-STATE-GLOBAL: every finite sequence of authoritative composite
+operations preserves the exact denied-state predicate. -/
+theorem extended_state_global_runtime_preservation state operations
+    (hinvariant : ExtendedState.CompositePolicyInvariant state) :
+    ExtendedState.CompositePolicyInvariant
+      (ExtendedState.runComposite state operations) := by
+  exact ExtendedState.runComposite_preserves_policy state operations hinvariant
+
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps
     (hlow : ScheduledObservation.LowEquiv observer left right)
