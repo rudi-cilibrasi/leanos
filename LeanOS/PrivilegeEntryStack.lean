@@ -134,6 +134,54 @@ structure AcceptedBudget where
   purpose : Purpose
   deriving BEq, DecidableEq, Repr
 
+/-- The single handoff record consumed after entry normalization.  The
+normalizer owns the frame/context fields; this module adds only facts minted by
+the checked stack-budget contract.  Keeping the complete interval and its
+exclusive top in the record prevents later handlers from reconstructing a
+private stack policy. -/
+structure BudgetedNormalizedFrame where
+  frame : NormalizedFrame
+  stackIdentity : UInt64
+  stackFirst : Nat
+  stackPastLast : Nat
+  stackTop : Nat
+  requiredBytes : Nat
+  remainingBytes : Nat
+  deriving BEq, DecidableEq, Repr
+
+/-- Bind a normalized entry to its checked budget only when both records name
+the same ordinary stack and entry purpose.  The budget must already have been
+minted by `authorize`; this function cannot manufacture remaining capacity. -/
+def bindNormalizedBudget (frame : NormalizedFrame) (budget : AcceptedBudget) :
+    Option BudgetedNormalizedFrame :=
+  if frame.stackIdentity != budget.stackIdentity || frame.purpose != budget.purpose then none
+  else some
+    { frame
+      stackIdentity := budget.stackIdentity
+      stackFirst := budget.stackFirst
+      stackPastLast := budget.stackPastLast
+      stackTop := budget.stackTop
+      requiredBytes := budget.requiredBytes
+      remainingBytes := budget.remainingBytes }
+
+theorem bindNormalizedBudget_sound frame budget bound
+    (hbound : bindNormalizedBudget frame budget = some bound) :
+    bound.frame = frame ∧
+      bound.frame.stackIdentity = bound.stackIdentity ∧
+      bound.frame.purpose = budget.purpose ∧
+      bound.stackIdentity = budget.stackIdentity ∧
+      bound.stackFirst = budget.stackFirst ∧
+      bound.stackPastLast = budget.stackPastLast ∧
+      bound.stackTop = budget.stackTop ∧
+      bound.requiredBytes = budget.requiredBytes ∧
+      bound.remainingBytes = budget.remainingBytes := by
+  unfold bindNormalizedBudget at hbound
+  split at hbound
+  · contradiction
+  · rename_i hmatches
+    cases hbound
+    simp_all
+
 /-- Both outcomes carry the exact inbound composite state.  Budget rejection
 does not authorize an operation handler, a return epilogue, or any state edit. -/
 inductive Result (State : Type) where
@@ -199,6 +247,31 @@ theorem accepted_budget_sound (State : Type) layout reserved request (state : St
   have hsound := checkedRemaining_sound _ _ _ hremaining
   simp_all
 
+theorem accepted_normalized_budget_fits (State : Type) layout reserved request (state : State)
+    budget (acceptedState : State) frame bound
+    (hauthorized : authorize layout reserved request state =
+      .accepted budget acceptedState)
+    (hbound : bindNormalizedBudget frame budget = some bound) :
+    acceptedState = state ∧
+      bound.frame = frame ∧
+      bound.stackIdentity = layout.stackIdentity ∧
+      bound.stackFirst = layout.usable.first ∧
+      bound.stackPastLast = layout.usable.pastLast ∧
+      bound.stackTop = layout.stackTop ∧
+      bound.remainingBytes + bound.requiredBytes = usableBytes layout := by
+  have hauthorize := accepted_budget_sound State layout reserved request state budget
+    acceptedState hauthorized
+  have hbinding := bindNormalizedBudget_sound frame budget bound hbound
+  rcases hauthorize with
+    ⟨hstate, hid, hfirst, hpast, htop, _hrequired, hremaining⟩
+  rcases hbinding with
+    ⟨hframe, _hframeIdentity, _hpurpose, hbudgetId, hbudgetFirst,
+      hbudgetPast, hbudgetTop, hbudgetRequired, hbudgetRemaining⟩
+  refine ⟨hstate, hframe, hbudgetId.trans hid, hbudgetFirst.trans hfirst,
+    hbudgetPast.trans hpast, hbudgetTop.trans htop, ?_⟩
+  rw [hbudgetRemaining, hbudgetRequired]
+  exact hremaining
+
 theorem accepted_contract_conditions (State : Type) layout reserved request (state : State)
     budget (acceptedState : State)
     (haccepted : authorize layout reserved request state = .accepted budget acceptedState) :
@@ -250,7 +323,41 @@ private def requestFor (entry : ManifestEntry) (frame : RawFrame) : BudgetReques
     returnValidationBytes := 0
     safetyMarginBytes := 0 }
 
+private def sampleNormalized : NormalizedFrame :=
+  { vector := 128
+    purpose := .syscall
+    origin := .user
+    errorCode := none
+    rip := 0
+    cs := 0x23
+    flags := 0x202
+    userRsp := some 0
+    userSs := some 0x1b
+    currentSubject := 1
+    activeAddressSpace := 1
+    activeCr3 := 0x1000
+    stackIdentity := 1 }
+
+private def sampleBudget : AcceptedBudget :=
+  { stackIdentity := 1
+    stackFirst := 0x800000
+    stackPastLast := 0x804000
+    stackTop := 0x804000
+    requiredBytes := 176
+    remainingBytes := 16208
+    purpose := .syscall }
+
 example : layoutValid sampleLayout [] = true := by native_decide
+
+example : ∃ bound, bindNormalizedBudget sampleNormalized sampleBudget = some bound ∧
+    bound.stackTop = 0x804000 ∧ bound.remainingBytes = 16208 := by
+  native_decide
+
+example : bindNormalizedBudget { sampleNormalized with stackIdentity := 2 }
+    sampleBudget = none := by native_decide
+
+example : bindNormalizedBudget { sampleNormalized with purpose := .timer }
+    sampleBudget = none := by native_decide
 
 example : ∀ entry ∈ manifest,
     ∃ frame, authorize sampleLayout [] (requestFor entry frame) () =

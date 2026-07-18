@@ -171,6 +171,15 @@ be satisfied by the reviewed source manifest alone.
 The extracted edges and final-ELF verdict are retained as checking evidence,
 not a proof of GCC, generated C, assembly, or the final machine path.
 
+The model-level handoff now uses `BudgetedNormalizedFrame` to bind the one
+normalized interrupt record to the budget minted by `authorize`. The binding
+accepts only matching stack identities and entry purposes, and carries the
+half-open usable bounds, canonical exclusive top, required bytes, and checked
+remaining bytes into the handler-facing record. Lean proves that an accepted
+binding retains the exact normalized frame and authoritative layout, with
+`remaining + required = usable`. This is a modeled fact; the C adapter and
+final binary correspondence remain checked evidence.
+
 The accepted boot-reservation manifest now carries distinct
 `.ordinaryEntryGuard` and `.ordinaryEntryStack` identities. Allocator
 initialization rejects non-adjacency or overlap with page tables, descriptor
