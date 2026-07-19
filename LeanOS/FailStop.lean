@@ -784,6 +784,17 @@ private def installScheduler (state : CompositeState)
   installLifecycle { state with scheduler, preemption := { state.preemption with scheduler } }
     scheduler.lifecycle
 
+/-- Publish a queue-only admission without invoking lifecycle cleanup.  An
+accepted `Scheduler.add` retains the lifecycle exactly, so the only consumers
+that must observe the new ready queue are the scheduler, legacy preemption,
+and authoritative resumable-context bank. -/
+private def installSchedulerAdmission (state : CompositeState)
+    (scheduler : Scheduler.State) : CompositeState :=
+  { state with
+    scheduler
+    preemption := { state.preemption with scheduler }
+    resumable := { state.resumable with scheduler } }
+
 /-- Installing an authoritative scheduler retains its queue and capacity
 exactly; only the lifecycle shared with the other projections is republished. -/
 @[simp] theorem installScheduler_scheduler state scheduler :
@@ -1265,7 +1276,7 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       let outcome := Scheduler.add state.scheduler subject
       match outcome.result with
       | .rejected _ => state
-      | .accepted _ => installScheduler state outcome.state
+      | .accepted _ => installSchedulerAdmission state outcome.state
   | .scheduleRemove subject =>
       let outcome := ResumablePreemption.remove state.resumable subject
       match outcome.result with
@@ -2167,7 +2178,8 @@ theorem gate_scheduleAdd_accepted_sound state subject context next
       Scheduler.WellFormed (gate state (.scheduleAdd subject)).state.scheduler := by
   have hpreserved := Scheduler.add_preserves_wellFormed state.scheduler subject hwellFormed
   rw [haccepted] at hpreserved
-  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+  simp [gate, hmode, operationReply, applyOperation, haccepted,
+    installSchedulerAdmission, hpreserved]
 
 /-- An accepted dispatch likewise cannot be paired with a repaired or
 caller-selected scheduler: the composite projection is exactly the state that
@@ -4263,13 +4275,119 @@ theorem gate_scheduleAdd_accepted_runtimeWellFormed_requires_staged_context
       simp
   have hreadyPublished :
       subject ∈ (gate state (.scheduleAdd subject)).state.resumable.scheduler.ready := by
-    simpa [gate, hmode, applyOperation, haccepted, installScheduler,
-      installLifecycle] using hready
+    simpa [gate, hmode, applyOperation, haccepted, installSchedulerAdmission] using hready
   rcases hpost with
     ⟨_, _, _, _, _, _, _, _, hresumable, _, _, _⟩
   have hagreement := hresumable.2.2.2.2.2.1.1 subject hreadyPublished
-  simpa [gate, hmode, applyOperation, haccepted, installScheduler,
-    installLifecycle] using hagreement
+  simpa [gate, hmode, applyOperation, haccepted, installSchedulerAdmission] using hagreement
+
+/-- Queue admission retains the authoritative lifecycle and appends exactly
+the admitted subject.  These small projections keep the composite proof from
+depending on the validation order inside `Scheduler.add`. -/
+private theorem schedulerAdd_accepted_projections state subject context next
+    (haccepted : Scheduler.add state subject =
+      { state := next, result := .accepted context }) :
+    next.lifecycle = state.lifecycle ∧ next.ready = state.ready ++ [subject] := by
+  simp only [Scheduler.add] at haccepted
+  split at haccepted <;> try simp_all [Scheduler.reject]
+  split at haccepted <;> try simp_all [Scheduler.reject]
+  split at haccepted <;> try simp_all [Scheduler.reject]
+  next addressSpace hspace =>
+    split at haccepted <;> try simp_all [Scheduler.reject]
+    split at haccepted <;> try simp_all [Scheduler.reject]
+    rcases haccepted with ⟨rfl, rfl⟩
+    exact ⟨rfl, rfl⟩
+
+/-- Accepted queue admission preserves the complete runtime invariant when
+the subject's kernel-owned initial context was staged before admission.  The
+narrow publication step changes no lifecycle, resource, mailbox, translation,
+or execution projection and adds the staged context owner to the ready queue
+observed by both scheduler consumers. -/
+theorem gate_scheduleAdd_accepted_preserves_runtimeWellFormed
+    state subject context next saved
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : Scheduler.add state.scheduler subject =
+      { state := next, result := .accepted context })
+    (hsaved : saved ∈ state.resumable.contexts ∧ saved.owner = subject) :
+    RuntimeWellFormed (gate state (.scheduleAdd subject)).state ∧
+      (gate state (.scheduleAdd subject)).result =
+        .completed (.scheduler (.accepted context)) := by
+  rcases hstate with
+    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
+  rcases hcoherent with
+    ⟨hexecutionCoherent, hschedulerCoherent, hpreemptionCoherent,
+      hcapabilitiesCoherent, hvirtualCapabilitiesCoherent, hipcVirtualCoherent,
+      hipcCapabilitiesCoherent, hresumableSchedulerCoherent,
+      hresumableVirtualCoherent, htransfersCoherent, hauthorityCoherent,
+      hdeadMailbox, hliveSender⟩
+  obtain ⟨hlifecycleNext, hreadyNext⟩ :=
+    schedulerAdd_accepted_projections state.scheduler subject context next haccepted
+  have hscheduler' : Scheduler.WellFormed next := by
+    have hold := Scheduler.add_preserves_wellFormed state.scheduler subject hscheduler
+    simpa [haccepted] using hold
+  have hresumable' : ResumablePreemption.WellFormed
+      { state.resumable with scheduler := next } := by
+    rcases hresumable with
+      ⟨_hscheduler, hcapacity, hunique, hvalid, habsent,
+        ⟨hreadyContexts, hsuspendedReady, _hpeer⟩,
+        htranslation, hvirtualAgreement, hkinds, htlb⟩
+    rw [hresumableSchedulerCoherent] at hreadyContexts hsuspendedReady
+    refine ⟨hscheduler', hcapacity, hunique, ?_, ?_, ?_, ?_, ?_, ?_, htlb⟩
+    · intro candidate hcandidate
+      have hold := hvalid candidate hcandidate
+      simpa [ResumablePreemption.validContext, hlifecycleNext,
+        hresumableSchedulerCoherent] using hold
+    · intro current hcurrent
+      apply habsent current
+      simpa [hlifecycleNext, hresumableSchedulerCoherent] using hcurrent
+    · refine ⟨?_, ?_, ?_⟩
+      · intro candidate hmember
+        rw [hreadyNext] at hmember
+        rcases List.mem_append.mp hmember with hold | hold
+        · exact hreadyContexts candidate hold
+        · simp only [List.mem_singleton] at hold
+          subst candidate
+          exact ⟨saved, hsaved.1, hsaved.2⟩
+      · intro candidate hcandidate hsuspended
+        rw [hreadyNext]
+        exact List.mem_append_left _ (hsuspendedReady candidate hcandidate hsuspended)
+      · intro _hcurrent
+        rw [hreadyNext]
+        simp
+    · rcases htranslation with ⟨howner, hactive⟩
+      refine ⟨?_, ?_⟩
+      · simpa [hlifecycleNext, hresumableSchedulerCoherent] using howner
+      · simpa [hlifecycleNext, hresumableSchedulerCoherent] using hactive
+    · rcases hvirtualAgreement with ⟨hcapabilities, hwellFormed⟩
+      exact ⟨by simpa [hlifecycleNext, hresumableSchedulerCoherent] using hcapabilities,
+        hwellFormed⟩
+    · rcases hkinds with ⟨hmemory, hendpoint⟩
+      refine ⟨?_, ?_⟩
+      · intro object owner frame howned
+        have hold := hmemory object owner frame (by
+          simpa [hlifecycleNext, hresumableSchedulerCoherent] using howned)
+        simpa [hlifecycleNext, hresumableSchedulerCoherent] using hold
+      · intro object owner howned
+        have hold := hendpoint object owner (by
+          simpa [hlifecycleNext, hresumableSchedulerCoherent] using howned)
+        simpa [hlifecycleNext, hresumableSchedulerCoherent] using hold
+  have hcoherent' : (installSchedulerAdmission state next).Coherent := by
+    simp only [installSchedulerAdmission, CompositeState.Coherent]
+    refine ⟨hexecutionCoherent, ?_, trivial, hcapabilitiesCoherent,
+      hvirtualCapabilitiesCoherent, hipcVirtualCoherent,
+      hipcCapabilitiesCoherent, trivial, hresumableVirtualCoherent,
+      htransfersCoherent, hauthorityCoherent, hdeadMailbox, hliveSender⟩
+    rw [hlifecycleNext, hschedulerCoherent]
+  have hpreemption' : Preemption.WellFormed
+      { state.preemption with scheduler := next } :=
+    ⟨hscheduler', hpreemption.2⟩
+  constructor
+  · simp only [gate, hmode, applyOperation, haccepted]
+    exact ⟨hcoherent', hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+      hscheduler', hpreemption', hresumable', htransfers, hhalted, hlive⟩
+  · simp [gate, hmode, operationReply, haccepted]
 
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
