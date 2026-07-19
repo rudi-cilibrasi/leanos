@@ -163,6 +163,17 @@ theorem composite_gate_transferOffer_preserves_runtimeWellFormed
   exact FailStop.transferOffer_operationPreservesRuntimeWellFormed endpointWord sourceWord
     sourceKind payload rights state hstate
 
+/-- SC-COMPOSITE-TRANSFER-ACCEPT-WF: every canonical sealed-transfer receipt,
+including malformed/stale handle and slot rejections as well as successful
+authority installation, preserves the complete global runtime invariant. -/
+theorem composite_gate_transferAccept_preserves_runtimeWellFormed
+    state endpointWord destinationSlot
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+      (FailStop.gate state (.transferAccept endpointWord destinationSlot)).state := by
+  exact FailStop.transferAccept_operationPreservesRuntimeWellFormed endpointWord
+    destinationSlot state hstate
+
 /-- SC-COMPOSITE-GATE-CONTRACT: every completed public gate step identifies
 the running latch, exact typed reply, and exact composite post-state; both
 gate-level rejection classes and every classified nonfatal subsystem rejection
@@ -331,6 +342,7 @@ private def registeredMixedTrace : List FailStop.Operation :=
   [.syscall { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 },
    .ipc (.receive 0),
    .transferOffer 0 0 .memory { word0 := 0, word1 := 0 } { read := true },
+   .transferAccept 0 0,
    .capabilityCopy 0 1 0 { read := true },
    .capabilityRevoke 0 1 0,
    .capabilityRevokeSubtree 0 1 0,
@@ -346,13 +358,15 @@ private theorem registeredMixedTrace_registered operation
     (hmember : operation ∈ registeredMixedTrace) :
     FailStop.RuntimeTraceOperation operation := by
   simp [registeredMixedTrace] at hmember
-  rcases hmember with h | h | h | h | h | h | h | h | h | h | h | h | h
+  rcases hmember with h | h | h | h | h | h | h | h | h | h | h | h | h | h
   · subst operation
     exact .syscall _
   · subst operation
     exact .ipc _
   · subst operation
     exact .transferOffer _ _ _ _ _
+  · subst operation
+    exact .transferAccept _ _
   · subst operation
     exact .capabilityCopy _ _ _ _
   · subst operation

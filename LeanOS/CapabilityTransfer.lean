@@ -1684,6 +1684,71 @@ theorem acceptWord_delivered_preserves_registry_and_authority state caller endpo
               simpa [acceptWord, hendpoint, hpending, hslot, hexhausted] using
                 accept_delivered_preserves_registry_and_authority state caller
                   endpoint.handle.slot destinationSlot envelope hraw
+
+set_option maxHeartbeats 800000 in
+/-- Receipt never manufactures a mailbox.  Both data-only and sealed receipt
+clear exactly the selected endpoint, while every rejection is unchanged. -/
+theorem accept_mailbox_provenance state caller endpointSlot destinationSlot object envelope
+    (hmailbox :
+      (accept state caller endpointSlot destinationSlot).state.mailbox object = some envelope) :
+    state.mailbox object = some envelope := by
+  simp only [accept] at hmailbox
+  split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+  next endpointCap hlookup =>
+    split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+    split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+    split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+    split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+    split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+    next foundEnvelope hselectedMailbox =>
+      split at hmailbox
+      next hpending =>
+        by_cases heq : object = endpointCap.object
+        · subst object
+          simp [deliverData, record, EndpointIPC.setOption] at hmailbox
+        · simpa [deliverData, record, EndpointIPC.setOption, heq] using hmailbox
+      next transfer hpending =>
+        split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+        split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+        split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+        split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+        split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+        split at hmailbox <;> try simpa [rejectAccept] using hmailbox
+        next =>
+          by_cases heq : object = endpointCap.object
+          · subst object
+            simp [deliver, record, EndpointIPC.setOption] at hmailbox
+          · simpa [deliver, record, EndpointIPC.setOption, heq] using hmailbox
+
+/-- The generation-checked userspace receipt boundary inherits mailbox
+provenance from the raw receipt after handle and generation validation. -/
+theorem acceptWord_mailbox_provenance state caller endpointWord destinationSlot object envelope
+    (hmailbox :
+      (acceptWord state caller endpointWord destinationSlot).state.mailbox object = some envelope) :
+    state.mailbox object = some envelope := by
+  cases hendpoint : CapabilityHandle.resolveCurrent state.capabilities
+      { caller } endpointWord .endpoint with
+  | error reason =>
+      cases reason with
+      | malformed decodeReason =>
+          simpa [acceptWord, hendpoint, rejectAccept] using hmailbox
+      | denied resolveReason =>
+          cases resolveReason <;> simpa [acceptWord, hendpoint, rejectAccept] using hmailbox
+  | ok endpoint =>
+      cases hpending : state.pending endpoint.capability.object with
+      | none =>
+          exact accept_mailbox_provenance state caller endpoint.handle.slot destinationSlot
+            object envelope (by simpa [acceptWord, hendpoint, hpending] using hmailbox)
+      | some transfer =>
+          by_cases hslot : CapabilityHandle.slotReserved ≤ destinationSlot
+          · simpa [acceptWord, hendpoint, hpending, hslot, rejectAccept] using hmailbox
+          · by_cases hexhausted : transfer.identity = 0 ∨
+                CapabilityHandle.generationReserved ≤ transfer.identity
+            · simpa [acceptWord, hendpoint, hpending, hslot, hexhausted,
+                rejectAccept] using hmailbox
+            · exact accept_mailbox_provenance state caller endpoint.handle.slot
+                destinationSlot object envelope (by
+                  simpa [acceptWord, hendpoint, hpending, hslot, hexhausted] using hmailbox)
 /-- Successful receipt consumes exactly its mailbox and installs its sealed
 identity in the trusted caller's chosen slot. -/
 theorem delivered_installs_exactly_once state caller endpointSlot destinationSlot envelope
