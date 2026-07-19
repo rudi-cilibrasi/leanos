@@ -28,6 +28,8 @@ extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t,
 extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t);
 extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_extended_state_denial_demo(uint64_t, uint64_t, uint64_t,
+                                                   uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -40,13 +42,20 @@ extern void run_wp_probe(void);
 extern void run_smep_probe(void);
 extern void enter_user(void *, void *);
 extern void isr80(void);
+extern void isr6(void);
+extern void isr7(void);
 extern void isr8(void);
 extern void isr13(void);
 extern void isr14(void);
 extern void isr32(void);
 extern void run_double_fault_probe(void);
 extern char user_a_entry[], user_a_stack_top[];
+extern const uint64_t extended_state_probe_class;
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+extern const uint8_t user_a_extended_state_probe[];
+#endif
 extern char user_a_stack[];
+extern char user_a_fault_instruction[], user_a_fault_recovered[];
 extern char user_b_entry[];
 extern char user_b_stack[], user_b_stack_top[];
 extern uint64_t saved_context_a[], saved_context_b[];
@@ -60,6 +69,8 @@ extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
 extern char __df_ist_stack_start[], __df_ist_stack_end[];
 extern char __df_ist_guard_start[], __df_ist_guard_end[];
+extern char __entry_stack_guard_start[], __entry_stack_guard_end[];
+extern char __entry_stack_start[], __entry_stack_end[];
 extern char __kernel_text_start[], __kernel_text_end[];
 extern char boot_stack[], boot_stack_top[];
 extern char __user_a_text_start[], __user_a_text_end[];
@@ -110,14 +121,32 @@ struct __attribute__((packed)) tss64 {
 };
 static struct idt_entry idt[256] __attribute__((aligned(16)));
 static struct tss64 tss;
-static uint8_t entry_stack[16384] __attribute__((aligned(16)));
+static uint8_t entry_stack[16384]
+    __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
+/* Concrete image of the bounded state consumed and published by
+   ExtendedState.dispatchDenied.  Bits are indexed by subject identity. */
+struct extended_state_authority {
+    uint64_t live;
+    uint64_t ready;
+    uint64_t current;
+    uint64_t contexts;
+    uint64_t active;
+};
+static struct extended_state_authority extended_state_authority = {
+    (1ull << 1) | (1ull << 2), 1ull << 2, 1, 1ull << 2, 1
+};
+uint64_t extended_state_selected_cr3;
 static unsigned timer_accepted;
 static unsigned blocking_ipc_step;
 static unsigned capability_reuse_state;
 static unsigned supervisor_probe;
+static unsigned extended_state_features_accepted;
 static volatile unsigned ordinary_entry_active;
+#ifdef LEANOS_ENTRY_HIGH_WATER
+static uint64_t entry_stack_high_water_pattern = UINT64_C(0x6c65616e6f735741);
+#endif
 #ifdef LEANOS_ENTRY_ADVERSARIAL
 static unsigned entry_adversarial_step;
 #endif
@@ -132,6 +161,40 @@ static void arm_timer(void);
 static uint64_t stack_marker(uint64_t stack_pointer);
 static void check_cross_bank_negative(void);
 static void check_initial_b_frame_negative(void);
+#ifdef LEANOS_ENTRY_HIGH_WATER
+static void initialize_entry_stack_high_water(void);
+static __attribute__((noinline)) void report_entry_stack_high_water(
+    const char *path);
+#endif
+
+static void record_extended_state_cpuid(void) {
+    uint32_t max_leaf, unused_b, unused_c, unused_d;
+    __asm__ volatile ("cpuid"
+        : "=a"(max_leaf), "=b"(unused_b), "=c"(unused_c), "=d"(unused_d)
+        : "a"(0u), "c"(0u));
+    if (max_leaf < 1u)
+        fail("extended-state-cpuid-leaf");
+
+    uint32_t leaf_a, leaf_b, leaf_c, leaf_d;
+    __asm__ volatile ("cpuid"
+        : "=a"(leaf_a), "=b"(leaf_b), "=c"(leaf_c), "=d"(leaf_d)
+        : "a"(1u), "c"(0u));
+    (void)leaf_a;
+    (void)leaf_b;
+    const uint32_t x87 = (leaf_d >> 0) & 1u;
+    const uint32_t mmx = (leaf_d >> 23) & 1u;
+    const uint32_t sse = (leaf_d >> 25) & 1u;
+    const uint32_t sse2 = (leaf_d >> 26) & 1u;
+    const uint32_t xsave = (leaf_c >> 26) & 1u;
+    const uint32_t osxsave = (leaf_c >> 27) & 1u;
+    const uint32_t avx = (leaf_c >> 28) & 1u;
+    if (!x87 || !mmx || !sse || !sse2 || !xsave || !avx || osxsave)
+        fail("extended-state-cpuid-contract");
+    extended_state_features_accepted = 1;
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    serial_puts("LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS\n");
+#endif
+}
 
 static uint64_t idt_target(const struct idt_entry *entry) {
     return entry->low | (uint64_t)entry->middle << 16 | (uint64_t)entry->high << 32;
@@ -150,7 +213,9 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     if ((flags & ((1ull << 10) | (1ull << 18))) != 0)
         fail("entry-privileged-state");
     uint64_t expected_error, dpl, purpose;
-    if (vector == 14) { expected_error = 1; dpl = 0; purpose = 1; }
+    if (vector == 6) { expected_error = 0; dpl = 0; purpose = 4; }
+    else if (vector == 7) { expected_error = 0; dpl = 0; purpose = 5; }
+    else if (vector == 14) { expected_error = 1; dpl = 0; purpose = 1; }
     else if (vector == 32) { expected_error = 0; dpl = 0; purpose = 2; }
     else if (vector == 128) { expected_error = 0; dpl = 3; purpose = 3; }
     else fail("entry-vector");
@@ -159,8 +224,8 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     if (!user && vector != 14) fail("entry-origin");
     if (user && saved_cs != 0x23) fail("entry-user-selector");
     if (!user && (saved_cs & 3u) != 0) fail("entry-kernel-selector");
-    uint64_t first = user ? (uint64_t)entry_stack : (uint64_t)boot_stack;
-    uint64_t past = user ? (uint64_t)(entry_stack + sizeof(entry_stack)) :
+    uint64_t first = user ? (uint64_t)__entry_stack_start : (uint64_t)boot_stack;
+    uint64_t past = user ? (uint64_t)__entry_stack_end :
                            (uint64_t)boot_stack_top;
     uint64_t bytes = user ? 40 : 24;
     if (frame_address < first || frame_address + bytes > past)
@@ -183,6 +248,7 @@ void complete_interrupt_entry(void) {
 static void check_entry_manifest(void) {
     struct expected_gate { unsigned vector; void (*target)(void); uint8_t ist, attr; };
     static const struct expected_gate expected[] = {
+        { 6, isr6, 0, 0x8e }, { 7, isr7, 0, 0x8e },
         { 8, isr8, 1, 0x8e }, { 13, isr13, 0, 0x8e },
         { 14, isr14, 0, 0x8e }, { 32, isr32, 0, 0x8e },
         { 128, isr80, 0, 0xee }
@@ -200,10 +266,10 @@ static void check_entry_manifest(void) {
             idt[vector].attributes != want->attr || idt[vector].zero != 0)
             fail("entry-descriptor-mismatch");
     }
-    if (tss.rsp0 != (uint64_t)(entry_stack + sizeof(entry_stack)) ||
+    if (tss.rsp0 != (uint64_t)__entry_stack_end ||
         tss.ist[0] != (uint64_t)__df_ist_stack_end)
         fail("entry-tss-mismatch");
-    serial_puts("LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
+    serial_puts("LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
 }
 
 #ifdef LEANOS_ENTRY_ADVERSARIAL
@@ -346,6 +412,10 @@ static void check_live_page_table_mutations(void) {
         guard * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
         "pt", guard);
 #endif
+    uint64_t entry_guard = boot_page(__entry_stack_guard_start);
+    expect_live_mutation_rejected("entry-guard-mapping", &page_table_b[entry_guard],
+        entry_guard * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
+        "pt", entry_guard);
     expect_live_mutation_rejected("omitted-mapping", &page_table_b[user_text],
         0, "pt", user_text);
 
@@ -466,8 +536,10 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
     inject_return_corruption((uint64_t *)saved);
 #endif
     uint64_t rip = saved[15], cs = saved[16], flags = saved[17];
-    uint64_t rsp = saved[18], ss = saved[19], cr3;
+    uint64_t rsp = saved[18], ss = saved[19], cr0, cr3, cr4;
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
     const char *code_first, *code_last, *stack_first, *stack_last;
     const uint64_t *expected_cr3;
     if (current_subject == 1) {
@@ -494,6 +566,15 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
     if (rsp < (uint64_t)stack_first || rsp > (uint64_t)stack_last)
         fail("user-return-stack");
     if (cr3 != (uint64_t)expected_cr3) fail("user-return-cr3");
+    const uint64_t required_cr0 = (1ull << 16) | (1ull << 3) |
+        (1ull << 2) | (1ull << 1);
+    const uint64_t required_cr4 = (1ull << 20) | (1ull << 21);
+    const uint64_t forbidden_cr4 = (1ull << 22) | (1ull << 18) |
+        (1ull << 10) | (1ull << 9);
+    if ((cr0 & required_cr0) != required_cr0 ||
+        (cr4 & required_cr4) != required_cr4 ||
+        (cr4 & forbidden_cr4) != 0)
+        fail("extended-state-denial-peer-controls");
     /* Accepted ordinary entries remain armed through handler dispatch and
        context selection.  Clear only in this final validated return gate;
        initial boot dispatch is intentionally unarmed. */
@@ -714,8 +795,11 @@ static void replay_oracle(void) {
                                 : v->adapter == 8
                                     ? leanos_capability_reuse_demo(v->words[0], v->words[1],
                                         v->words[2], v->words[3], v->words[4])
-                                    : leanos_entry_demo(v->words[0], v->words[1], v->words[2],
-                                        v->words[3], v->words[4]);
+                                    : v->adapter == 9
+                                        ? leanos_entry_demo(v->words[0], v->words[1], v->words[2],
+                                            v->words[3], v->words[4])
+                                        : leanos_extended_state_denial_demo(v->words[0], v->words[1],
+                                            v->words[2], v->words[3], v->words[4], v->words[5]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -753,13 +837,18 @@ static void privilege_init(void) {
         (0x89ull << 40) | (((limit >> 16) & 0xfu) << 48) |
         (((base >> 24) & 0xffu) << 56);
     gdt64[6] = base >> 32;
-    tss.rsp0 = (uint64_t)(entry_stack + sizeof(entry_stack));
+    tss.rsp0 = (uint64_t)__entry_stack_end;
     tss.ist[0] = (uint64_t)__df_ist_stack_end;
     tss.iomap = sizeof(tss);
+#ifdef LEANOS_ENTRY_HIGH_WATER
+    initialize_entry_stack_high_water();
+#endif
     *(uint64_t *)__df_ist_stack_start = 0xd0b1efa17badc0deull;
     *(uint64_t *)((uint64_t)__df_ist_stack_end - 128u) =
         0x15a1c0decafef00dull;
     set_gate(8, isr8, 1, 0x8e);
+    set_gate(6, isr6, 0, 0x8e);
+    set_gate(7, isr7, 0, 0x8e);
     set_gate(13, isr13, 0, 0x8e);
     set_gate(14, isr14, 0, 0x8e);
     set_gate(32, isr32, 0, 0x8e);
@@ -775,12 +864,137 @@ static void privilege_init(void) {
     load_tss();
 }
 
+#ifdef LEANOS_ENTRY_HIGH_WATER
+/* This painted-stack scan is deliberately diagnostic rather than
+   authoritative.  The final-ELF/compiler budget gate remains the acceptance
+   criterion; normal QEMU runs retain this bounded observation as evidence
+   that the exercised path stayed above the declared safety margin. */
+static void initialize_entry_stack_high_water(void) {
+    volatile uint64_t *cursor = (volatile uint64_t *)__entry_stack_start;
+    volatile uint64_t *past = (volatile uint64_t *)__entry_stack_end;
+    while (cursor < past) *cursor++ = entry_stack_high_water_pattern;
+}
+
+static __attribute__((noinline)) void report_entry_stack_high_water(
+    const char *path) {
+    volatile uint64_t *cursor = (volatile uint64_t *)__entry_stack_start;
+    volatile uint64_t *past = (volatile uint64_t *)__entry_stack_end;
+    while (cursor < past && *cursor == entry_stack_high_water_pattern) ++cursor;
+    uint64_t used = (uint64_t)__entry_stack_end - (uint64_t)cursor;
+    uint64_t usable = (uint64_t)__entry_stack_end -
+        (uint64_t)__entry_stack_start;
+    if (used < 176 || used > usable || usable - used < 4096)
+        fail("entry-stack-high-water");
+    serial_puts("LEANOS/11 ENTRY-HIGH-WATER path="); serial_puts(path);
+    serial_puts(" observed-bytes="); serial_u64(used);
+    serial_puts(" usable-bytes="); serial_u64(usable);
+    serial_puts(" margin-bytes="); serial_u64(usable - used);
+    serial_puts(" authority=diagnostic result=PASS\n");
+}
+#endif
+/* Vector 6/7 traverse the shared normalized entry boundary and bounded
+   generated cleanup/peer decision.  The dedicated denial scenario publishes
+   the selected fresh peer through the sole validated user-return path. */
+uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
+                                       uint64_t saved_rip) {
+    if ((vector != 6 && vector != 7) || saved_cs != 0x23)
+        fail("extended-state-denial-binding");
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    if (saved_rip != (uint64_t)user_a_extended_state_probe)
+        fail("extended-state-denial-probe-rip");
+#else
+    (void)saved_rip;
+#endif
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    uint64_t expected_cr3 = current_subject == 1 ? (uint64_t)page_map_level_4_a :
+        current_subject == 2 ? (uint64_t)page_map_level_4_b : 0;
+    if (expected_cr3 == 0 || cr3 != expected_cr3)
+        fail("extended-state-denial-binding");
+    uint64_t cr0, cr4;
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    const uint64_t required_cr0 = (1ull << 3) | (1ull << 2) | (1ull << 1);
+    const uint64_t forbidden_cr4 =
+        (1ull << 22) | (1ull << 18) | (1ull << 10) | (1ull << 9);
+    uint64_t policy = extended_state_features_accepted &&
+        (cr0 & required_cr0) == required_cr0 && (cr4 & forbidden_cr4) == 0;
+    uint64_t mode = vector == 6 ? 6 : 0;
+    const uint64_t initial_live = (1ull << 1) | (1ull << 2);
+    if (extended_state_authority.live != initial_live ||
+        extended_state_authority.ready != (1ull << 2) ||
+        extended_state_authority.current != current_subject ||
+        extended_state_authority.contexts != (1ull << 2) ||
+        extended_state_authority.active != current_subject)
+        fail("extended-state-denial-authority-prestate");
+    uint64_t transition = leanos_extended_state_denial_demo(policy, mode, vector,
+        extended_state_authority.current, extended_state_authority.active,
+        extended_state_authority.current);
+    if ((transition & 0xffffffffffffff00ull) != 0x3f00000000000100ull)
+        fail("extended-state-denial-model");
+    uint64_t peer = transition & 0xffu;
+    if (peer != 2 || (extended_state_authority.ready & (1ull << peer)) == 0 ||
+        (extended_state_authority.contexts & (1ull << peer)) == 0)
+        fail("extended-state-denial-authority-selection");
+    extended_state_authority.live &= ~(1ull << current_subject);
+    extended_state_authority.ready &= ~((1ull << current_subject) | (1ull << peer));
+    extended_state_authority.contexts &= ~((1ull << current_subject) | (1ull << peer));
+    extended_state_authority.current = peer;
+    extended_state_authority.active = peer;
+    if (extended_state_authority.live != (1ull << peer) ||
+        extended_state_authority.ready != 0 || extended_state_authority.contexts != 0 ||
+        extended_state_authority.current != peer || extended_state_authority.active != peer)
+        fail("extended-state-denial-authority-poststate");
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    if (current_subject != 1 || peer != 2)
+        fail("extended-state-denial-scenario-binding");
+    if (extended_state_probe_class > 4)
+        fail("extended-state-denial-probe-class");
+    uint64_t expected_vector = extended_state_probe_class >= 2 ? 6 : 7;
+    if (vector != expected_vector)
+        fail("extended-state-denial-probe-vector");
+    current_subject = peer;
+    extended_state_selected_cr3 = (uint64_t)page_map_level_4_b;
+    serial_puts("LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=");
+    serial_u64(vector);
+    serial_puts(" instruction=");
+    serial_puts(extended_state_probe_class == 0 ? "x87" :
+        extended_state_probe_class == 1 ? "mmx" :
+        extended_state_probe_class == 2 ? "sse" :
+        extended_state_probe_class == 3 ? "sse2" : "avx");
+    serial_puts(" bank-write=prevented cleanup=complete peer=2\n");
+    return (uint64_t)initial_context_b;
+#else
+    fail("extended-state-denial-dispatch-unpublished");
+#endif
+}
+
 uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                          uint64_t arg2, uint64_t saved_cs,
                          uint64_t saved_flags) {
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    if (current_subject == 2 && number == 13) {
+#ifdef LEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE
+        serial_puts("LEANOS/13 EXTENDED-STATE event=peer-cpl3-entry subject=2\n");
+#endif
+        uint64_t cr0, cr4, cr3;
+        __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+        __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        const uint64_t required = (1ull << 3) | (1ull << 2) | (1ull << 1);
+        const uint64_t forbidden_peer_cr4 = (1ull << 22) | (1ull << 18) |
+            (1ull << 10) | (1ull << 9);
+        if ((cr0 & required) != required || (cr4 & forbidden_peer_cr4) != 0 ||
+            cr3 != (uint64_t)page_map_level_4_b)
+            fail("extended-state-denial-peer-controls");
+        serial_puts("LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n");
+        serial_puts("LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1\n");
+        finish(0x10);
+    }
+#endif
     if (capability_reuse_state == 0 && current_subject == 2 && number == 10) {
         uint64_t got = leanos_capability_reuse_demo(
             capability_reuse_state, 1, arg0, arg1, arg2);
@@ -942,6 +1156,9 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if (got != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_DELIVER_B].expected || arg2 != 1)
             fail("blocking-ipc-model-delivery");
         serial_puts("LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\n");
+#ifdef LEANOS_ENTRY_HIGH_WATER
+        report_entry_stack_high_water("syscall");
+#endif
         serial_puts("LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1\n");
         finish(0x10);
     }
@@ -959,6 +1176,9 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             saved_context_a[16] != 0x23 || saved_context_a[19] != 0x1b ||
             saved_context_b[16] != 0x23 || saved_context_b[19] != 0x1b)
             fail("saved-context");
+#ifdef LEANOS_ENTRY_HIGH_WATER
+        report_entry_stack_high_water("timer-context-switch");
+#endif
         serial_puts("LEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate\n");
         serial_puts("LEANOS/5 FINAL status=PASS ticks=2\n");
         finish(0x10);
@@ -1114,6 +1334,14 @@ static void arm_timer(void) {
 
 uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
                             uint64_t fault_address) {
+    if ((saved_cs & 3u) == 3u && error == 5u &&
+        rip == (uint64_t)user_a_fault_instruction && fault_address == 0u) {
+#ifdef LEANOS_ENTRY_HIGH_WATER
+        report_entry_stack_high_water("user-page-fault");
+#endif
+        serial_puts("LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS\n");
+        return (uint64_t)user_a_fault_recovered;
+    }
     if (supervisor_probe == 1 && (saved_cs & 3u) == 0u && error == 3u &&
         rip == (uint64_t)wp_probe_instruction &&
         fault_address == (uint64_t)wp_probe_target) {
@@ -1144,7 +1372,9 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
-#ifdef LEANOS_PREEMPTION_SCENARIO
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    serial_puts("LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
+#elif defined(LEANOS_PREEMPTION_SCENARIO)
     serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 #else
     serial_puts("LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\n");
@@ -1164,11 +1394,17 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     uint64_t cr0, cr4;
     __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
     __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
-    if ((cr0 & (1ull << 16)) == 0 || (cr4 & (1ull << 20)) == 0 ||
-        (cr4 & (1ull << 21)) == 0) {
+    const uint64_t required_cr0 = (1ull << 16) | (1ull << 3) |
+        (1ull << 2) | (1ull << 1);
+    const uint64_t forbidden_cr4 =
+        (1ull << 22) | (1ull << 18) | (1ull << 10) | (1ull << 9);
+    if ((cr0 & required_cr0) != required_cr0 ||
+        (cr4 & forbidden_cr4) != 0 ||
+        (cr4 & (1ull << 20)) == 0 || (cr4 & (1ull << 21)) == 0) {
         fail("supervisor-controls");
     }
-    serial_puts("LEANOS/6 CONTROL cr0.wp=1 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready\n");
+    record_extended_state_cpuid();
+    serial_puts("LEANOS/6 CONTROL cr0.wp=1 cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.pke=0 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready\n");
     supervisor_probe = 1;
     run_wp_probe();
     if (supervisor_probe != 2) fail("wp-no-fault");
@@ -1186,7 +1422,20 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts("LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS\n");
     check_cross_bank_negative();
     check_initial_b_frame_negative();
-#ifdef LEANOS_PREEMPTION_SCENARIO
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    current_subject = 1;
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    if (extended_state_probe_class > 4)
+        fail("extended-state-probe-class");
+    serial_puts("LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=");
+    serial_puts(extended_state_probe_class == 0 ? "x87" :
+        extended_state_probe_class == 1 ? "mmx" :
+        extended_state_probe_class == 2 ? "sse" :
+        extended_state_probe_class == 3 ? "sse2" : "avx");
+    serial_puts(extended_state_probe_class >= 2 ?
+        " expected-vector=6\n" : " expected-vector=7\n");
+    enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_PREEMPTION_SCENARIO)
     arm_timer();
     enter_user(user_a_entry, user_a_stack_top);
 #else

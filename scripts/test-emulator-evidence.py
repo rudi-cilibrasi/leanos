@@ -100,6 +100,83 @@ def run_fixtures() -> None:
             "mandatory inventory count differs",
         )
 
+        missing_entry_overflow = tmp / "missing-entry-overflow.tsv"
+        mutate_matrix(
+            missing_entry_overflow,
+            lambda lines: [
+                line for line in lines if not line.startswith("entry-stack-overflow\t")
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_entry_overflow),
+            "mandatory inventory count differs",
+        )
+
+        missing_extended_state = tmp / "missing-extended-state.tsv"
+        mutate_matrix(
+            missing_extended_state,
+            lambda lines: [
+                line for line in lines
+                if not line.startswith("extended-state-denial\t")
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_extended_state),
+            "mandatory inventory count differs",
+        )
+
+        missing_extended_state_sse = tmp / "missing-extended-state-sse.tsv"
+        mutate_matrix(
+            missing_extended_state_sse,
+            lambda lines: [
+                line for line in lines
+                if not line.startswith("extended-state-denial-sse\t")
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_extended_state_sse),
+            "mandatory inventory count differs",
+        )
+
+        missing_extended_state_sse2 = tmp / "missing-extended-state-sse2.tsv"
+        mutate_matrix(
+            missing_extended_state_sse2,
+            lambda lines: [
+                line for line in lines
+                if not line.startswith("extended-state-denial-sse2\t")
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_extended_state_sse2),
+            "mandatory inventory count differs",
+        )
+
+        missing_extended_state_avx = tmp / "missing-extended-state-avx.tsv"
+        mutate_matrix(
+            missing_extended_state_avx,
+            lambda lines: [
+                line for line in lines
+                if not line.startswith("extended-state-denial-avx\t")
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_extended_state_avx),
+            "mandatory inventory count differs",
+        )
+
+        missing_peer_pke = tmp / "missing-peer-pke.tsv"
+        mutate_matrix(
+            missing_peer_pke,
+            lambda lines: [
+                line for line in lines
+                if not line.startswith("extended-state-peer-pke\t")
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_peer_pke),
+            "mandatory inventory count differs",
+        )
+
         wrong_class = tmp / "wrong-class.tsv"
         mutate_matrix(
             wrong_class,

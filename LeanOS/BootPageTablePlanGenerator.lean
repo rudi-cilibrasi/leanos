@@ -26,6 +26,10 @@ structure Layout where
   guardEnd : Nat
   dfStackStart : Nat
   dfStackEnd : Nat
+  entryGuardStart : Nat
+  entryGuardEnd : Nat
+  entryStackStart : Nat
+  entryStackEnd : Nat
   rootA : Nat
   pdptA : Nat
   pdA : Nat
@@ -46,7 +50,7 @@ structure Layout where
   userBStackStart : Nat
   userBStackEnd : Nat
 
-def expectedArgumentCount : Nat := 27
+def expectedArgumentCount : Nat := 31
 
 def parseNat (value : String) : Except String Nat :=
   match value.toNat? with
@@ -63,13 +67,15 @@ def parseLayout (args : List String) : Except String Layout := do
     kernelTextStart := valueAt 2, kernelTextEnd := valueAt 3,
     guardStart := valueAt 4, guardEnd := valueAt 5,
     dfStackStart := valueAt 6, dfStackEnd := valueAt 7,
-    rootA := valueAt 8, pdptA := valueAt 9, pdA := valueAt 10, ptA := valueAt 11,
-    rootB := valueAt 12, pdptB := valueAt 13, pdB := valueAt 14, ptB := valueAt 15,
-    tableEnd := valueAt 16, stackStart := valueAt 17, stackEnd := valueAt 18,
-    userATextStart := valueAt 19, userATextEnd := valueAt 20,
-    userAStackStart := valueAt 21, userAStackEnd := valueAt 22,
-    userBTextStart := valueAt 23, userBTextEnd := valueAt 24,
-    userBStackStart := valueAt 25, userBStackEnd := valueAt 26 }
+    entryGuardStart := valueAt 8, entryGuardEnd := valueAt 9,
+    entryStackStart := valueAt 10, entryStackEnd := valueAt 11,
+    rootA := valueAt 12, pdptA := valueAt 13, pdA := valueAt 14, ptA := valueAt 15,
+    rootB := valueAt 16, pdptB := valueAt 17, pdB := valueAt 18, ptB := valueAt 19,
+    tableEnd := valueAt 20, stackStart := valueAt 21, stackEnd := valueAt 22,
+    userATextStart := valueAt 23, userATextEnd := valueAt 24,
+    userAStackStart := valueAt 25, userAStackEnd := valueAt 26,
+    userBTextStart := valueAt 27, userBTextEnd := valueAt 28,
+    userBStackStart := valueAt 29, userBStackEnd := valueAt 30 }
 
 def firstPage (address : Nat) : Nat := address / pageBytes
 def endPage (address : Nat) : Nat := (address + pageBytes - 1) / pageBytes
@@ -80,7 +86,8 @@ structure PageClass where
   owner : Owner
 
 def pageClass (layout : Layout) (space : Space) (page : Nat) : Option PageClass :=
-  if pageIn page layout.guardStart layout.guardEnd then none
+  if pageIn page layout.guardStart layout.guardEnd ||
+      pageIn page layout.entryGuardStart layout.entryGuardEnd then none
   else if space == .subjectA && pageIn page layout.userATextStart layout.userATextEnd then
     some ⟨.userText, .subjectA⟩
   else if space == .subjectA && pageIn page layout.userAStackStart layout.userAStackEnd then
@@ -96,6 +103,7 @@ def pageClass (layout : Layout) (space : Space) (page : Nat) : Option PageClass 
   else if pageIn page layout.rootA layout.tableEnd then
     some ⟨.pageTables, .supervisor⟩
   else if pageIn page layout.dfStackStart layout.dfStackEnd ||
+      pageIn page layout.entryStackStart layout.entryStackEnd ||
       pageIn page layout.stackStart layout.stackEnd then
     some ⟨.kernelStack, .supervisor⟩
   else some ⟨.kernelData, .supervisor⟩
@@ -121,7 +129,11 @@ def reservationResult (layout : Layout) : Option BootReservation.Result :=
      { identity := .descriptorTables, start := layout.bootStart,
        length := pageBytes, lifetime := .permanent },
      { identity := .kernelStacks, start := layout.dfStackStart,
-       length := layout.stackEnd - layout.dfStackStart, lifetime := .permanent },
+       length := layout.dfStackEnd - layout.dfStackStart, lifetime := .permanent },
+     { identity := .ordinaryEntryGuard, start := layout.entryGuardStart,
+       length := layout.entryGuardEnd - layout.entryGuardStart, lifetime := .permanent },
+     { identity := .ordinaryEntryStack, start := layout.entryStackStart,
+       length := layout.entryStackEnd - layout.entryStackStart, lifetime := .permanent },
      { identity := .embeddedUsers, start := layout.userATextStart,
        length := layout.bootEnd - layout.userATextStart, lifetime := .permanent },
      { identity := .multibootInfo, start := layout.bootStart,

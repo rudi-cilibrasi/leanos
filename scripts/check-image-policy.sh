@@ -3,8 +3,10 @@ set -euo pipefail
 
 elf="${1:-build/boot/leanos.elf}"
 [[ -f "$elf" ]] || { echo "error: missing ELF: $elf" >&2; exit 1; }
+./scripts/check-entry-stack-layout.sh "$elf" >/dev/null
 symbols="$(nm "$elf")"
 ./scripts/check-entry-policy.sh "$elf"
+./scripts/check-extended-state-policy.sh "$elf"
 
 flags() {
   readelf -SW "$elf" | awk -v section="$1" \
@@ -21,7 +23,8 @@ done
 for symbol in __boot_image_start __boot_image_end __kernel_text_start __kernel_text_end __user_a_text_start \
   __user_a_text_end __user_a_stack_start __user_a_stack_end \
   __user_b_text_start __user_b_text_end __user_b_stack_start \
-  __user_b_stack_end entry_stack page_table_a page_table_b \
+  __user_b_stack_end entry_stack __entry_stack_guard_start \
+  __entry_stack_guard_end __entry_stack_start __entry_stack_end page_table_a page_table_b \
   page_map_level_4_a page_directory_pointer_a page_directory_a \
   page_map_level_4_b page_directory_pointer_b page_directory_b; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
@@ -64,13 +67,15 @@ stack_end="$(symbol_address __df_ist_stack_end)"
   echo "error: double-fault guard/IST1 bounds are not one page plus 16 KiB" >&2
   exit 1
 }
+grep -Fq 'tss.rsp0 = (uint64_t)__entry_stack_end;' boot/kernel.c
 grep -Fq 'tss.ist[0] = (uint64_t)__df_ist_stack_end;' boot/kernel.c
 [[ "$(grep -Ec 'set_gate\([^,]+,[^,]+, 1,' boot/kernel.c)" -eq 1 ]]
 grep -Fq 'set_gate(8, isr8, 1, 0x8e);' boot/kernel.c
 grep -Fq 'set_gate(13, isr13, 0, 0x8e);' boot/kernel.c
 grep -Fq 'movl $0, page_table_a(%eax)' boot/boot.S
 grep -Fq 'movl $0, page_table_b(%eax)' boot/boot.S
-stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr8>:/,/<isr80>:/p')"
+[[ "$(grep -Fc 'mov $__entry_stack_guard_start, %eax' boot/boot.S)" -eq 1 ]]
+stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr8>:/,/<isr6>:/p')"
 [[ -n "$stub_disassembly" ]] || {
   echo "error: could not isolate vector-8 disassembly" >&2
   exit 1
@@ -111,12 +116,12 @@ for symbol in enable_smep run_wp_probe wp_probe_instruction wp_probe_recovered \
     echo "error: supervisor-control evidence symbol missing: $symbol" >&2; exit 1;
   }
 done
-grep -Fq 'or $((1 << 31) | (1 << 16)), %eax' boot/boot.S
+grep -Fq 'or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax' boot/boot.S
 grep -Fq 'bts $20, %rax' boot/boot.S
 grep -Fq 'bts $21, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]
-[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 10 ]]
-[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 11 ]]
+[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 12 ]]
+[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 13 ]]
 for symbol in smap_copy_from_cld smap_copy_from_stac smap_copy_from_clac \
   smap_copy_to_cld smap_copy_to_stac \
   smap_copy_to_clac smap_omit_cleanup_probe_stac smap_force_clac \
@@ -168,8 +173,13 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
   echo "error: resumable context A does not occupy the reviewed 160-byte image" >&2
   exit 1
 }
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 7 ]]
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 8 ]] || {
+  echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
+}
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S
+grep -Fq 'extended_state_restore_peer:' boot/boot.S
+grep -Fq 'call complete_interrupt_entry' boot/boot.S
+grep -Fq 'jmp user_return_epilogue' boot/boot.S
 grep -Fq 'cmp $0xbeef, %rax' boot/boot.S
 grep -Fq 'cmp $0xcafe, %rax' boot/boot.S
 grep -Fq 'lea saved_context_b(%rip), %rsi' boot/boot.S

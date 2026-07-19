@@ -221,6 +221,14 @@ pair each bounded subject-local slot with its never-reused capability identity,
 so clearing or replacing a slot cannot make an old handle authorize the new
 occupant.
 
+The finite [user extended-state denial model](docs/extended-state-denial.md)
+requires an explicit fail-closed CR0/CR4 policy before modeled user return and
+confines typed x87/MMX/SIMD denial to the authoritative current subject. Its
+cleanup transition reuses the scheduler, lifecycle, mapping/TLB, and resumable
+context state, then selects only a kernel-owned peer context or typed idle.
+Machine exception delivery and cleanup/restore remain trusted integration work
+rather than theorem claims.
+
 The physical-frame allocator reference model and its representation,
 complexity, initialization assumptions, proved invariants, and capability
 ownership boundary are documented in
@@ -295,7 +303,8 @@ writes.
 The [subject-lifecycle model](docs/subject-lifecycle.md) gives subjects
 never-reused identities and defines atomic termination cleanup across held
 capabilities, exclusively owned memory, address spaces, endpoints, pending
-provenance, and runnable/current state.
+provenance, and runnable/current state. Its creation operation publishes a
+fresh identity; it does not inherit or duplicate another subject's state.
 
 The bounded [model-oracle corpus](docs/model-oracle.md) is evaluated in Lean
 and replayed through hosted generated code and every boot-reachable adapter.
@@ -460,6 +469,13 @@ commands are in [the boot-image guide](docs/boot-image.md).
 - move policy into isolated user-space services;
 - explore verified storage, networking, and recovery components; and
 - add hardware-backed test lanes without weakening deterministic QEMU CI.
+
+Process duplication is deliberately excluded from this roadmap. LeanOS does
+not promise `fork()`, a fork syscall, or a clone-like operation with implicit
+inheritance. [ADR 0010](docs/adr/0010-defer-fork.md) defines the whole-kernel
+readiness gate. Any future implementation must begin with a new architecture
+issue that closes every item in that gate before defining a model, ABI,
+adapter, or boot path.
 
 ## Contributing
 

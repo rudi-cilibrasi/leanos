@@ -5,7 +5,26 @@ qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
 limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
-if [[ "$scenario" == preemption ]]; then
+extended_instruction=x87
+extended_vector=7
+if [[ "$scenario" == extended-state-avx ]]; then
+  extended_instruction=avx
+  extended_vector=6
+  default_image="build/boot/leanos-${version}-x86_64-extended-state-avx.iso"
+elif [[ "$scenario" == extended-state-sse2 ]]; then
+  extended_instruction=sse2
+  extended_vector=6
+  default_image="build/boot/leanos-${version}-x86_64-extended-state-sse2.iso"
+elif [[ "$scenario" == extended-state-sse ]]; then
+  extended_instruction=sse
+  extended_vector=6
+  default_image="build/boot/leanos-${version}-x86_64-extended-state-sse.iso"
+elif [[ "$scenario" == extended-state-mmx ]]; then
+  extended_instruction=mmx
+  default_image="build/boot/leanos-${version}-x86_64-extended-state-mmx.iso"
+elif [[ "$scenario" == extended-state ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-extended-state.iso"
+elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
 elif [[ "$scenario" == entry-adversarial ]]; then
   default_image="build/boot/leanos-${version}-x86_64-entry-adversarial.iso"
@@ -14,6 +33,7 @@ else
 fi
 image="${1:-$default_image}"
 log="${LEANOS_SERIAL_LOG:-build/boot/serial.log}"
+high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 and coreutils=9.4-3ubuntu6.2" >&2; exit 1; }; done
 [[ "$limit" =~ ^[1-9][0-9]*$ ]] || { echo "error: timeout must be a positive integer" >&2; exit 1; }
@@ -29,7 +49,11 @@ expected="$(mktemp)"; without_allocation="$(mktemp)"
 trap 'rm -f "$expected" "$without_allocation"' EXIT
 corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
 [[ -f "$corpus" ]] || { echo "error: oracle corpus '$corpus' not found" >&2; exit 1; }
-if [[ "$scenario" == preemption ]]; then
+if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
+      "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||
+      "$scenario" == extended-state-avx ]]; then
+  echo 'LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts' > "$expected"
+elif [[ "$scenario" == preemption ]]; then
   echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap' > "$expected"
 else
   echo 'LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap' > "$expected"
@@ -38,18 +62,32 @@ printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
-echo 'LEANOS/11 ENTRY-MANIFEST ordinary=3 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' >> "$expected"
+echo 'LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' >> "$expected"
+if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
+      "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||
+      "$scenario" == extended-state-avx ]]; then
+  echo 'LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS' >> "$expected"
+fi
 printf '%s\n' \
-  'LEANOS/6 CONTROL cr0.wp=1 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready' \
+  'LEANOS/6 CONTROL cr0.wp=1 cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.pke=0 cr4.smep=1 cr4.smap=1 ac=0 stage=exception-path-ready' \
   'LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS' \
   'LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS' \
   'LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS' \
   'LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS' \
   'LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS' >> "$expected"
-if [[ "$scenario" == preemption ]]; then
+if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
+      "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||
+      "$scenario" == extended-state-avx ]]; then
+printf '%s\n' \
+  "LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=${extended_instruction} expected-vector=${extended_vector}" \
+  "LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=${extended_vector} instruction=${extended_instruction} bank-write=prevented cleanup=complete peer=2" \
+  'LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved' \
+  'LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1' >> "$expected"
+elif [[ "$scenario" == preemption ]]; then
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
   'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' \
+  'LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS' \
   'LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0' \
   'LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=1 origin=cpl3 accepted=1' \
   'LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin' \
@@ -86,6 +124,7 @@ fi
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
   'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' \
+  'LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS' \
   'LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1' \
   'LEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
@@ -113,7 +152,8 @@ paging_specs=(
   'flip-present B pt' 'flip-user B pt' 'flip-writable B pt'
   'flip-nx B pt' 'wrong-frame B pt' 'ancestor-pointer B pml4'
   'ancestor-flags B pdpt' 'swapped-user-leaves B pt'
-  'extra-mapping B pt' 'omitted-mapping B pt' 'wrong-cr3 A cr3'
+  'extra-mapping B pt' 'entry-guard-mapping B pt'
+  'omitted-mapping B pt' 'wrong-cr3 A cr3'
 )
 if [[ ${#paging_fixtures[@]} -ne ${#paging_specs[@]} ]]; then
   echo "failure_class=page-table-fixtures: complete live-mutation matrix not observed" >&2
@@ -127,5 +167,52 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
   fi
 done
 sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
+if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
+  final_high_water_path="syscall"
+  [[ "$scenario" == preemption ]] && final_high_water_path="timer-context-switch"
+  mkdir -p "$(dirname "$high_water_artifact")"
+  grep '^LEANOS/11 ENTRY-HIGH-WATER ' "$log" > "$high_water_artifact" || {
+    echo "failure_class=entry-stack-high-water: observation missing" >&2; exit 1;
+  }
+  mapfile -t high_water_lines < "$high_water_artifact"
+  if [[ ${#high_water_lines[@]} -ne 2 ]]; then
+    echo "failure_class=entry-stack-high-water: missing or duplicate observation" >&2
+    exit 1
+  fi
+  expected_high_water_paths=(user-page-fault "$final_high_water_path")
+  for ((i = 0; i < 2; ++i)); do
+    if [[ ! "${high_water_lines[i]}" =~ ^LEANOS/11\ ENTRY-HIGH-WATER\ path=${expected_high_water_paths[i]}\ observed-bytes=([0-9]+)\ usable-bytes=16384\ margin-bytes=([0-9]+)\ authority=diagnostic\ result=PASS$ ]]; then
+      echo "failure_class=entry-stack-high-water: malformed or reordered observation" >&2
+      exit 1
+    fi
+    observed="${BASH_REMATCH[1]}"; margin="${BASH_REMATCH[2]}"
+    if (( observed < 176 || observed + margin != 16384 || margin < 4096 )); then
+      echo "failure_class=entry-stack-high-water: invalid observed bound" >&2
+      exit 1
+    fi
+  done
+  sed -i '/^LEANOS\/11 ENTRY-HIGH-WATER /d' "$without_allocation"
+fi
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
+if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
+      "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||
+      "$scenario" == extended-state-avx ]]; then
+  default_snapshot="build/boot/extended-state-control-snapshot.txt"
+  if [[ "$extended_instruction" == mmx ]]; then
+    default_snapshot="build/boot/extended-state-mmx-control-snapshot.txt"
+  elif [[ "$extended_instruction" == sse ]]; then
+    default_snapshot="build/boot/extended-state-sse-control-snapshot.txt"
+  elif [[ "$extended_instruction" == sse2 ]]; then
+    default_snapshot="build/boot/extended-state-sse2-control-snapshot.txt"
+  elif [[ "$extended_instruction" == avx ]]; then
+    default_snapshot="build/boot/extended-state-avx-control-snapshot.txt"
+  fi
+  snapshot="${LEANOS_EXTENDED_STATE_SNAPSHOT:-$default_snapshot}"
+  mkdir -p "$(dirname "$snapshot")"
+  grep -E '^LEANOS/(13 EXTENDED-STATE cpuid\.1\.|6 CONTROL )' "$log" > "$snapshot"
+  [[ $(wc -l < "$snapshot") -eq 2 ]] || {
+    echo "failure_class=extended-state-snapshot: decoded CPUID/control snapshot incomplete" >&2
+    exit 1
+  }
+fi
 echo "LeanOS boot smoke test passed; guest success and complete protocol observed; serial log: $log"

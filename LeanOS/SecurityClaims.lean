@@ -6,6 +6,8 @@ import LeanOS.X86PageTable
 import LeanOS.Syscall
 import LeanOS.FailStop
 import LeanOS.InterruptEntry
+import LeanOS.PrivilegeEntryStack
+import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 
 /-! # Stable security-claim contract
@@ -219,6 +221,28 @@ theorem interrupt_entry_context_binding entry raw context :
     (InterruptEntry.makeNormalized entry raw context).activeCr3 = context.activeCr3 ∧
     (InterruptEntry.makeNormalized entry raw context).stackIdentity = context.stackIdentity := by
   exact InterruptEntry.makeNormalized_binds_context entry raw context
+
+/-- SC-PRIVILEGE-ENTRY-STACK: accepted ordinary-entry stack authorization
+names the valid guarded layout exactly and carries a checked byte remainder
+without changing the modeled composite state. -/
+theorem privilege_entry_stack_budget_sound (State : Type)
+    layout reserved request (state : State) budget (acceptedState : State)
+    (haccepted : PrivilegeEntryStack.authorize layout reserved request state =
+      .accepted budget acceptedState) :
+    PrivilegeEntryStack.layoutValid layout reserved = true ∧
+      acceptedState = state ∧
+      budget.stackIdentity = layout.stackIdentity ∧
+      budget.stackFirst = layout.usable.first ∧
+      budget.stackPastLast = layout.usable.pastLast ∧
+      budget.stackTop = layout.stackTop ∧
+      budget.remainingBytes + budget.requiredBytes =
+        PrivilegeEntryStack.usableBytes layout := by
+  have hconditions := PrivilegeEntryStack.accepted_contract_conditions State
+    layout reserved request state budget acceptedState haccepted
+  have hbudget := PrivilegeEntryStack.accepted_budget_sound State layout reserved
+    request state budget acceptedState haccepted
+  exact ⟨hconditions.1, hbudget.1, hbudget.2.1, hbudget.2.2.1,
+    hbudget.2.2.2.1, hbudget.2.2.2.2.1, hbudget.2.2.2.2.2.2⟩
 
 /-- SC-USER-RETURN-CONFINEMENT: an accepted return attests the complete
 kernel-selected frame/context tuple and its privilege-critical fields. -/
@@ -525,6 +549,37 @@ theorem user_return_rejection_failstop state request reason proposals
       FailStop.runOperations next proposals = next := by
   exact FailStop.rejected_user_return_composite_atomicity state request reason proposals
     hmode harmed hlive hrejected
+
+/-- SC-EXTENDED-STATE-DENIAL: a contained unsupported extended-state event is
+confined to the authoritative current subject and requires the exact accepted
+fail-closed control policy and live address-space binding. -/
+theorem extended_state_denial_confined state event subject
+    (h : (ExtendedState.classify state event).result = .denied subject) :
+    subject = state.currentSubject ∧
+      ExtendedState.Denied state.features state.controls ∧
+      event.origin = .user ∧
+      event.normalizedSubject = state.currentSubject ∧
+      event.normalizedAddressSpace = state.activeAddressSpace ∧
+      ExtendedState.ContextBound state := by
+  exact ExtendedState.denied_subject_confined state event subject h
+
+/-- SC-EXTENDED-STATE-CLEANUP: authoritative denial cleanup removes every
+live scheduler and resumable-context reference to the faulting subject. -/
+theorem extended_state_denial_cleanup_nonresumable machine subject :
+    let cleaned := ResumablePreemption.cleanupSubject machine subject
+    cleaned.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      subject ∉ cleaned.scheduler.ready ∧
+      cleaned.scheduler.lifecycle.current ≠ some subject ∧
+      ResumablePreemption.contextFor cleaned.contexts subject = none := by
+  exact ExtendedState.denial_cleanup_cannot_resume machine subject
+
+/-- SC-EXTENDED-STATE-GLOBAL: every finite sequence of authoritative composite
+operations preserves the exact denied-state predicate. -/
+theorem extended_state_global_runtime_preservation state operations
+    (hinvariant : ExtendedState.CompositePolicyInvariant state) :
+    ExtendedState.CompositePolicyInvariant
+      (ExtendedState.runComposite state operations) := by
+  exact ExtendedState.runComposite_preserves_policy state operations hinvariant
 
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps
