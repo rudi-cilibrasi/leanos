@@ -72,6 +72,26 @@ theorem contextFor_erase_self contexts subject :
     contextFor (eraseContext contexts subject) subject = none := by
   simp [contextFor, eraseContext, List.find?_eq_none]
 
+theorem contextFor_erase_other contexts subject other (hne : other ≠ subject) :
+    contextFor (eraseContext contexts subject) other = contextFor contexts other := by
+  induction contexts with
+  | nil => simp [contextFor, eraseContext]
+  | cons context contexts ih =>
+      by_cases howner : context.owner = subject
+      · have hother : context.owner ≠ other := by grind
+        rw [show eraseContext (context :: contexts) subject =
+          eraseContext contexts subject by simp [eraseContext, howner]]
+        rw [show contextFor (context :: contexts) other =
+          contextFor contexts other by simp [contextFor, hother]]
+        exact ih
+      · rw [show eraseContext (context :: contexts) subject =
+          context :: eraseContext contexts subject by simp [eraseContext, howner]]
+        by_cases hother : context.owner = other
+        · simp [contextFor, hother]
+        · have hotherBool : (context.owner == other) = false := by simp [hother]
+          simp only [contextFor, List.find?_cons, hotherBool]
+          simpa only [contextFor] using ih
+
 /-- Saving a context installs exactly its kernel-owned slot. -/
 theorem contextFor_save_consume contexts saved destination :
     contextFor (saved :: eraseContext contexts destination) saved.owner = some saved := by

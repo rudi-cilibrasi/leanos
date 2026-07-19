@@ -382,6 +382,7 @@ private theorem fatal_state_eq_halt state entry
 private theorem dispatched_is_authoritative_transition state entry context
     (h : (dispatch state entry).action = .dispatch context) :
     ∃ faulting trusted,
+      state.scheduler.lifecycle.current = some faulting ∧
       (Scheduler.selectNext
           (ResumablePreemption.cleanupSubject state faulting).scheduler).result =
         .accepted (some trusted) ∧
@@ -429,6 +430,59 @@ theorem dispatch_uses_survivor_head state entry context
   all_goals split at h <;> try simp_all [halt, reject]
   all_goals split at h <;> try simp_all [halt, reject]
   all_goals grind [Scheduler.selectNext, Scheduler.ownsAddressSpace, Scheduler.reject]
+
+/-- Dispatch consumes the selected survivor's context but leaves every third
+subject's suspended context byte-for-byte unchanged.  The two inequalities
+name the only context-bank slots removed by the composite transition: the
+faulting current subject and the scheduler-selected survivor. -/
+theorem dispatch_preserves_unselected_context state entry selected faulting other saved
+    (hdispatch : (dispatch state entry).action = .dispatch selected)
+    (hcurrent : state.scheduler.lifecycle.current = some faulting)
+    (hsaved : ResumablePreemption.contextFor state.contexts other = some saved)
+    (hotherFaulting : other ≠ faulting)
+    (hotherSelected : other ≠ selected.owner) :
+    ResumablePreemption.contextFor
+      (dispatch state entry).state.contexts other = some saved := by
+  obtain ⟨actualFaulting, trusted, hactualCurrent, _, hselected, hstate⟩ :=
+    dispatched_is_authoritative_transition state entry selected hdispatch
+  have hfaulting : actualFaulting = faulting := by grind
+  subst actualFaulting
+  rw [hstate]
+  rw [ResumablePreemption.contextFor_erase_other _ _ _ hotherSelected]
+  rw [show (ResumablePreemption.cleanupSubject state faulting).contexts =
+      ResumablePreemption.eraseContext state.contexts faulting by
+    rfl]
+  rw [ResumablePreemption.contextFor_erase_other _ _ _ hotherFaulting]
+  exact hsaved
+
+/-- Cleanup and scheduler selection leave lifecycle resources owned by a third
+subject unchanged.  These hypotheses cover the ownership branches that may be
+removed by `SubjectLifecycle.terminateState`; selection itself changes only
+the current subject and ready queue. -/
+theorem dispatch_preserves_unrelated_resources state entry selected faulting owner
+    memoryObject frame addressSpace page endpoint
+    (hdispatch : (dispatch state entry).action = .dispatch selected)
+    (hcurrent : state.scheduler.lifecycle.current = some faulting)
+    (hmemory : state.scheduler.lifecycle.ownedMemory memoryObject = some (owner, frame))
+    (haddress : state.scheduler.lifecycle.addressOwner addressSpace = some owner)
+    (hendpoint : state.scheduler.lifecycle.endpointOwner endpoint = some owner)
+    (hframe : state.scheduler.lifecycle.frameOwner frame = some owner)
+    (howner : owner ≠ faulting) :
+    let next := (dispatch state entry).state.scheduler.lifecycle
+    next.ownedMemory memoryObject = some (owner, frame) ∧
+      next.addressOwner addressSpace = some owner ∧
+      next.mapping addressSpace page = state.scheduler.lifecycle.mapping addressSpace page ∧
+      next.endpointOwner endpoint = some owner ∧
+      next.frameOwner frame = some owner := by
+  obtain ⟨actualFaulting, trusted, hactualCurrent, hselected, hcontext, hstate⟩ :=
+    dispatched_is_authoritative_transition state entry selected hdispatch
+  have hfaulting : actualFaulting = faulting := by grind
+  subst actualFaulting
+  rw [hstate]
+  simp [ResumablePreemption.cleanupSubject, Scheduler.selectNext,
+    Scheduler.reject, SubjectLifecycle.terminateState, hmemory, haddress,
+    hendpoint, hframe, howner] at hselected ⊢
+  grind
 
 /-- Idle is exposed only after cleanup and an actually empty survivor queue. -/
 private theorem selectNext_none_eq scheduler
@@ -790,7 +844,7 @@ theorem dispatch_preserves_wellFormed state entry
       rw [hnext]
       exact ResumablePreemption.cleanupSubject_preserves_wellFormed state faulting hstate
   | dispatch context =>
-      obtain ⟨faulting, trusted, hselected, hcontext, hnext⟩ :=
+      obtain ⟨faulting, trusted, _, hselected, hcontext, hnext⟩ :=
         dispatched_is_authoritative_transition state entry context haction
       rw [hnext]
       exact consumeSelected_preserves_wellFormed _ trusted context
