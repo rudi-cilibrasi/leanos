@@ -212,6 +212,15 @@ theorem composite_gate_syscall_preserves_runtimeWellFormed state call
     FailStop.RuntimeWellFormed (FailStop.gate state (.syscall call)).state := by
   exact FailStop.syscall_operationPreservesRuntimeWellFormed call state hstate
 
+/-- SC-COMPOSITE-SCHEDULER-ADMISSION-WF: queue admission is total over public
+subject identifiers, rejects a missing kernel-owned context atomically, and
+preserves the complete runtime invariant for every typed result. -/
+theorem composite_gate_schedulerAdmission_preserves_runtimeWellFormed state subject
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+      (FailStop.gate state (.scheduleAdd subject)).state := by
+  exact FailStop.scheduleAdd_operationPreservesRuntimeWellFormed subject state hstate
+
 /-- SC-INTERRUPT-ENTRY-BINDING: every normalized record constructor copies
 authority-bearing context fields from the kernel-owned input. -/
 theorem interrupt_entry_context_binding entry raw context :

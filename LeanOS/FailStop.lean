@@ -795,6 +795,82 @@ private def installSchedulerAdmission (state : CompositeState)
     preemption := { state.preemption with scheduler }
     resumable := { state.resumable with scheduler } }
 
+/-- Admit a runnable subject only when its kernel-owned initial context is
+already staged.  The raw scheduler owns queue policy; this composite wrapper
+owns the additional context-bank obligation needed by `RuntimeWellFormed`. -/
+private def schedulerAdmission (state : CompositeState)
+    (subject : Scheduler.SubjectId) : Scheduler.Outcome :=
+  match Scheduler.add state.scheduler subject with
+  | { result := .rejected reason, .. } => Scheduler.reject state.scheduler reason
+  | { state := scheduler, result := .accepted context } =>
+      match ResumablePreemption.contextFor state.resumable.contexts subject with
+      | none => Scheduler.reject state.scheduler .noResumableContext
+      | some _ => { state := scheduler, result := .accepted context }
+
+theorem schedulerAdmission_rejected_unchanged state subject reason
+    (hrejected : (schedulerAdmission state subject).result = .rejected reason) :
+    (schedulerAdmission state subject).state = state.scheduler := by
+  unfold schedulerAdmission at hrejected ⊢
+  generalize hadd : Scheduler.add state.scheduler subject = outcome at hrejected ⊢
+  cases outcome with
+  | mk scheduler result =>
+      cases result with
+      | rejected actual => simp [Scheduler.reject]
+      | accepted context =>
+          cases hcontext : ResumablePreemption.contextFor
+              state.resumable.contexts subject <;>
+            simp_all [Scheduler.reject]
+
+theorem schedulerAdmission_accepted_exact state subject context next
+    (haccepted : schedulerAdmission state subject =
+      { state := next, result := .accepted context }) :
+    Scheduler.add state.scheduler subject =
+        { state := next, result := .accepted context } ∧
+      ∃ saved, saved ∈ state.resumable.contexts ∧ saved.owner = subject := by
+  unfold schedulerAdmission at haccepted
+  generalize hadd : Scheduler.add state.scheduler subject = outcome at haccepted
+  cases outcome with
+  | mk scheduler result =>
+      cases result with
+      | rejected reason => simp [Scheduler.reject] at haccepted
+      | accepted actual =>
+          cases hcontext : ResumablePreemption.contextFor
+              state.resumable.contexts subject with
+          | none => simp [hcontext, Scheduler.reject] at haccepted
+          | some saved =>
+              simp only [hcontext] at haccepted
+              injection haccepted with hnext hresult
+              subst next
+              cases hresult
+              refine ⟨rfl, saved, ?_, ?_⟩
+              · exact List.mem_of_find?_eq_some hcontext
+              · exact ResumablePreemption.contextFor_owner
+                  state.resumable.contexts subject saved hcontext
+
+theorem schedulerAdmission_eq_add_of_staged state subject saved
+    (hsaved : saved ∈ state.resumable.contexts ∧ saved.owner = subject) :
+    schedulerAdmission state subject = Scheduler.add state.scheduler subject := by
+  have hsome : ResumablePreemption.contextFor state.resumable.contexts subject ≠ none := by
+    intro hnone
+    rw [ResumablePreemption.contextFor, List.find?_eq_none] at hnone
+    exact hnone saved hsaved.1 (by simp [hsaved.2])
+  unfold schedulerAdmission
+  generalize hadd : Scheduler.add state.scheduler subject = outcome
+  cases outcome with
+  | mk scheduler result =>
+      cases result with
+      | rejected reason =>
+          have hstate := Scheduler.add_rejected_unchanged state.scheduler subject reason
+            (by simp [hadd])
+          have hscheduler : scheduler = state.scheduler := by
+            rw [← hstate, hadd]
+          simp [hadd, hscheduler, Scheduler.reject]
+      | accepted context =>
+          cases hcontext : ResumablePreemption.contextFor
+              state.resumable.contexts subject with
+          | none => exact False.elim (hsome hcontext)
+          | some actual => simp [hadd, hcontext]
+
 /-- Installing an authoritative scheduler retains its queue and capacity
 exactly; only the lifecycle shared with the other projections is republished. -/
 @[simp] theorem installScheduler_scheduler state scheduler :
@@ -1273,7 +1349,7 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
           installResumable state
             (ResumablePreemption.cleanupSubject state.resumable subject)
   | .scheduleAdd subject =>
-      let outcome := Scheduler.add state.scheduler subject
+      let outcome := schedulerAdmission state subject
       match outcome.result with
       | .rejected _ => state
       | .accepted _ => installSchedulerAdmission state outcome.state
@@ -1357,7 +1433,7 @@ def operationReply (state : CompositeState) : Operation → OperationReply
   | .createSubject subject => .createSubject (SubjectLifecycle.create state.lifecycle subject).result
   | .terminateSubject subject =>
       .terminateSubject (SubjectLifecycle.terminate state.lifecycle subject).result
-  | .scheduleAdd subject => .scheduler (Scheduler.add state.scheduler subject).result
+  | .scheduleAdd subject => .scheduler (schedulerAdmission state subject).result
   | .scheduleRemove subject =>
       .scheduleRemove (ResumablePreemption.remove state.resumable subject).result
   | .scheduleNext => .scheduler (Scheduler.selectNext state.scheduler).result
@@ -1429,7 +1505,8 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
   | terminateSubject subject reason
       (h : (SubjectLifecycle.terminate state.lifecycle subject).result = .rejected reason) :
       SubsystemRejection state (.terminateSubject subject) (.terminateSubject (.rejected reason))
-  | scheduleAdd subject reason (h : (Scheduler.add state.scheduler subject).result = .rejected reason) :
+  | scheduleAdd subject reason
+      (h : (schedulerAdmission state subject).result = .rejected reason) :
       SubsystemRejection state (.scheduleAdd subject) (.scheduler (.rejected reason))
   | scheduleRemove subject reason
       (h : (ResumablePreemption.remove state.resumable subject).result = .rejected reason) :
@@ -2169,15 +2246,17 @@ reply is the scheduler's accepted reply, its scheduler projection is the exact
 subsystem post-state, and that projection remains well formed. -/
 theorem gate_scheduleAdd_accepted_sound state subject context next
     (hmode : state.execution.mode = .running)
-    (haccepted : Scheduler.add state.scheduler subject =
+    (haccepted : schedulerAdmission state subject =
       { state := next, result := .accepted context })
     (hwellFormed : Scheduler.WellFormed state.scheduler) :
     (gate state (.scheduleAdd subject)).result =
         .completed (.scheduler (.accepted context)) ∧
       (gate state (.scheduleAdd subject)).state.scheduler = next ∧
       Scheduler.WellFormed (gate state (.scheduleAdd subject)).state.scheduler := by
+  obtain ⟨hadd, _hsaved⟩ := schedulerAdmission_accepted_exact
+    state subject context next haccepted
   have hpreserved := Scheduler.add_preserves_wellFormed state.scheduler subject hwellFormed
-  rw [haccepted] at hpreserved
+  rw [hadd] at hpreserved
   simp [gate, hmode, operationReply, applyOperation, haccepted,
     installSchedulerAdmission, hpreserved]
 
@@ -4249,37 +4328,15 @@ theorem createSubject_operationPreservesRuntimeWellFormed subject :
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.createSubject subject) hstate hmode
 
-/-- A raw scheduler insertion cannot establish the resumable-context side of
-the composite invariant by itself.  If its published post-state is globally
-well formed, the inserted subject's saved context must already have been
-staged in the pre-state.  This is the precise integration obligation for the
-future complete `scheduleAdd` operation-family proof: admission must either
-require such a context or atomically construct one. -/
+/-- Composite queue admission can report success only when the inserted
+subject's kernel-owned context was already staged in the pre-state. -/
 theorem gate_scheduleAdd_accepted_runtimeWellFormed_requires_staged_context
     state subject context next
-    (hmode : state.execution.mode = .running)
-    (haccepted : Scheduler.add state.scheduler subject =
+    (_hmode : state.execution.mode = .running)
+    (haccepted : schedulerAdmission state subject =
       { state := next, result := .accepted context }) :
-    RuntimeWellFormed (gate state (.scheduleAdd subject)).state →
-      ∃ saved, saved ∈ state.resumable.contexts ∧ saved.owner = subject := by
-  intro hpost
-  have hready : subject ∈ next.ready := by
-    simp only [Scheduler.add] at haccepted
-    split at haccepted <;> try simp_all [Scheduler.reject]
-    split at haccepted <;> try simp_all [Scheduler.reject]
-    split at haccepted <;> try simp_all [Scheduler.reject]
-    next addressSpace haddressSpace =>
-      split at haccepted <;> try simp_all [Scheduler.reject]
-      split at haccepted <;> try simp_all [Scheduler.reject]
-      rcases haccepted with ⟨rfl, rfl⟩
-      simp
-  have hreadyPublished :
-      subject ∈ (gate state (.scheduleAdd subject)).state.resumable.scheduler.ready := by
-    simpa [gate, hmode, applyOperation, haccepted, installSchedulerAdmission] using hready
-  rcases hpost with
-    ⟨_, _, _, _, _, _, _, _, hresumable, _, _, _⟩
-  have hagreement := hresumable.2.2.2.2.2.1.1 subject hreadyPublished
-  simpa [gate, hmode, applyOperation, haccepted, installSchedulerAdmission] using hagreement
+    ∃ saved, saved ∈ state.resumable.contexts ∧ saved.owner = subject := by
+  exact (schedulerAdmission_accepted_exact state subject context next haccepted).2
 
 /-- Queue admission retains the authoritative lifecycle and appends exactly
 the admitted subject.  These small projections keep the composite proof from
@@ -4313,6 +4370,9 @@ theorem gate_scheduleAdd_accepted_preserves_runtimeWellFormed
     RuntimeWellFormed (gate state (.scheduleAdd subject)).state ∧
       (gate state (.scheduleAdd subject)).result =
         .completed (.scheduler (.accepted context)) := by
+  have hadmission : schedulerAdmission state subject =
+      { state := next, result := .accepted context } := by
+    rw [schedulerAdmission_eq_add_of_staged state subject saved hsaved, haccepted]
   rcases hstate with
     ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
       hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
@@ -4384,10 +4444,47 @@ theorem gate_scheduleAdd_accepted_preserves_runtimeWellFormed
       { state.preemption with scheduler := next } :=
     ⟨hscheduler', hpreemption.2⟩
   constructor
-  · simp only [gate, hmode, applyOperation, haccepted]
+  · simp only [gate, hmode, applyOperation, hadmission]
     exact ⟨hcoherent', hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
       hscheduler', hpreemption', hresumable', htransfers, hhalted, hlive⟩
-  · simp [gate, hmode, operationReply, haccepted]
+  · simp [gate, hmode, operationReply, hadmission]
+
+/-- Negative admission regression: an otherwise accepted raw insertion cannot
+cross the composite gate without its kernel-owned resumable context. -/
+theorem scheduleAdd_missing_context_rejected_atomic state subject context next
+    (hmode : state.execution.mode = .running)
+    (hadd : Scheduler.add state.scheduler subject =
+      { state := next, result := .accepted context })
+    (hmissing : ResumablePreemption.contextFor state.resumable.contexts subject = none) :
+    (gate state (.scheduleAdd subject)).result =
+        .completed (.scheduler (.rejected .noResumableContext)) ∧
+      (gate state (.scheduleAdd subject)).state = state := by
+  simp [gate, hmode, operationReply, applyOperation, schedulerAdmission,
+    hadd, hmissing, Scheduler.reject]
+
+/-- Queue admission is a complete public operation family: raw scheduler
+rejections and missing-context integration failures are atomic, while every
+reported success publishes the exact staged context owner to both scheduler
+consumers and preserves the complete runtime invariant. -/
+theorem scheduleAdd_operationPreservesRuntimeWellFormed subject :
+    OperationPreservesRuntimeWellFormed (.scheduleAdd subject) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hadmission : schedulerAdmission state subject with
+    | mk next result =>
+        cases result with
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.scheduleAdd subject) (.scheduler (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hadmission])
+              (.scheduleAdd subject reason (by simp [hadmission]))).1
+        | accepted context =>
+            obtain ⟨hadd, saved, hmember, howner⟩ :=
+              schedulerAdmission_accepted_exact state subject context next hadmission
+            exact (gate_scheduleAdd_accepted_preserves_runtimeWellFormed
+              state subject context next saved hstate hmode hadd ⟨hmember, howner⟩).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.scheduleAdd subject) hstate hmode
 
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
