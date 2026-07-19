@@ -90,6 +90,10 @@ def dispatch (state : ResumablePreemption.State)
                         selected.state.lifecycle.capabilities.subjects context.owner != true ||
                         selected.state.lifecycle.runnable context.owner != true ||
                         selected.state.lifecycle.addressOwner context.addressSpace !=
+                          some context.owner ||
+                        state.translations.virtual.owner context.addressSpace !=
+                          some context.owner ||
+                        cleaned.translations.virtual.owner context.addressSpace !=
                           some context.owner then
                       reject state .staleContext
                     else
@@ -176,7 +180,8 @@ theorem dispatched_context_safe state entry context
     let next := (dispatch state entry).state
     next.scheduler.lifecycle.capabilities.subjects context.owner = true ∧
       next.scheduler.lifecycle.runnable context.owner = true ∧
-      next.scheduler.lifecycle.addressOwner context.addressSpace = some context.owner := by
+      next.scheduler.lifecycle.addressOwner context.addressSpace = some context.owner ∧
+      next.translations.virtual.owner context.addressSpace = some context.owner := by
   generalize hd : dispatch state entry = outcome at h ⊢
   cases outcome with
   | mk next action =>
@@ -194,6 +199,7 @@ theorem dispatched_context_safe state entry context
     all_goals split at hd <;> try simp_all [halt, reject]
     all_goals split at hd <;> try simp_all [halt, reject]
     all_goals rcases hd with ⟨rfl, rfl⟩
+    all_goals simp_all [TLB.switch]
     all_goals grind
 
 /-- The cleanup primitive used by every successful branch removes both live
@@ -840,6 +846,17 @@ private def traceAlreadyTerminated : ResumablePreemption.State :=
         addressOwner := fun subject => if subject = 1 then some 1 else none
         runnable := fun _ => false } } }
 
+/-- Keep lifecycle ownership coherent while corrupting only the survivor's
+authoritative virtual owner projection.  Dispatch must reject before exposing
+the cleaned state. -/
+private def traceStaleSurvivorVirtualOwner : ResumablePreemption.State :=
+  { traceMultiState with
+    translations := { traceMultiState.translations with
+      virtual := { traceMultiState.translations.virtual with
+        owner := fun addressSpace =>
+          if addressSpace = 2 then some 3
+          else traceMultiState.translations.virtual.owner addressSpace } } }
+
 example : (dispatch traceMultiState traceEntry).action = .dispatch traceSurvivorContext := by
   native_decide
 
@@ -957,6 +974,16 @@ example : (dispatch traceAlreadyTerminated traceEntry).action = .rejected .stale
   constructor
   · native_decide
   · exact rejected_unchanged _ _ .staleCurrent (by native_decide)
+
+/-- A survivor whose lifecycle owner is valid but whose virtual owner
+projection names another subject is not eligible for dispatch. -/
+example : (dispatch traceStaleSurvivorVirtualOwner traceEntry).action =
+      .rejected .staleContext ∧
+    (dispatch traceStaleSurvivorVirtualOwner traceEntry).state =
+      traceStaleSurvivorVirtualOwner := by
+  constructor
+  · native_decide
+  · exact rejected_unchanged _ _ .staleContext (by native_decide)
 
 /-- Regression witness: after cleanup an attacker-chosen context lookup can
 name subject 3 even though the deterministic ready head is subject 2.  The

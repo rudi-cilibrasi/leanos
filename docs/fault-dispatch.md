@@ -47,7 +47,8 @@ identity remains retired and cannot be selected again.
 
 `Scheduler.selectNext` is the only survivor selector. A survivor must already be
 live, runnable, queued, address-space-owned, and represented by a valid
-kernel-owned context. Dispatch consumes exactly that context. Later queue
+kernel-owned context whose address space has the same authoritative virtual
+owner. Dispatch consumes exactly that context. Later queue
 positions retain their order and context bytes, and unrelated capability,
 memory, mapping, frame, and endpoint state is unchanged. Waiter and in-flight
 capability-transfer cleanup are not represented by this state and remain an
@@ -64,7 +65,8 @@ the complete `ResumablePreemption.WellFormed` invariant for every result.
 Executable model regressions cover one survivor, multiple survivors, no
 survivor, stale current identity, wrong active address space, wrong purpose,
 already-terminated current identity with a stale owner binding, a truncated raw
-user frame made fatal by the normalizer, a kernel-origin page fault, unsupported
+user frame made fatal by the normalizer, a survivor with a mismatched virtual
+owner projection, a kernel-origin page fault, unsupported
 vector, nested entry, already-halted state, and exact assertions that those
 terminal causes remain distinguishable while preserving authoritative stores;
 unrelated authority/memory/mapping/IPC state, and the
