@@ -1001,7 +1001,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             fault_authority.resources != 0x030201 ||
             fault_authority.peer_canary != UINT64_C(0xb2b2cafe51a7e55e))
             fail("fault-peer-state");
-        serial_puts("LEANOS/14 PEER subject=2 address-space=2 stack=owned canaries=preserved resources=unchanged result=PASS\n");
+        serial_puts("LEANOS/14 PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
         serial_puts("LEANOS/14 FINAL status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop\n");
         finish(0x10);
     }

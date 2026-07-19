@@ -12,7 +12,8 @@ invoke() {
 }
 invoke success >/dev/null 2>&1
 for mode in fault-direct-call fault-old-recovery fault-stale-cr3 \
-  fault-cleanup-missing fault-peer-corrupt fault-forged-pass fault-kernel-relabeled; do
+  fault-cleanup-missing fault-return-unvalidated fault-peer-corrupt \
+  fault-forged-pass fault-kernel-relabeled; do
   set +e; invoke "$mode" >"$tmp/$mode.output" 2>&1; status=$?; set -e
   [[ $status -ne 0 ]] && grep -q 'failure_class=serial-protocol' "$tmp/$mode.output" || {
     cat "$tmp/$mode.output" >&2; exit 1;

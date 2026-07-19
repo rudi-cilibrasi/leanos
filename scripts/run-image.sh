@@ -95,7 +95,7 @@ printf '%s\n' \
   'LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS' \
   'LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
-  'LEANOS/14 PEER subject=2 address-space=2 stack=owned canaries=preserved resources=unchanged result=PASS' \
+  'LEANOS/14 PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS' \
   'LEANOS/14 FINAL status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop' >> "$expected"
 elif [[ "$scenario" == preemption ]]; then
 printf '%s\n' \

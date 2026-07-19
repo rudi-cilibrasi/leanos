@@ -27,13 +27,13 @@ LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 sub
 LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS
 LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS
 LEANOS/8 PAGING root=B selected=1 result=PASS
-LEANOS/14 PEER subject=2 address-space=2 stack=owned canaries=preserved resources=unchanged result=PASS
+LEANOS/14 PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS
 LEANOS/14 FINAL status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop
 EOF
   exit "$status"
 fi
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-fault-direct-call|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-peer-corrupt|fault-forged-pass|fault-kernel-relabeled)
+fault-direct-call|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-return-unvalidated|fault-peer-corrupt|fault-forged-pass|fault-kernel-relabeled)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
@@ -43,6 +43,7 @@ fault-direct-call|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault
     fault-old-recovery) sed -i '/^LEANOS\/14 TERMINATE /d; /^LEANOS\/14 DISPATCH /d' "$log" ;;
     fault-stale-cr3) sed -i 's/subject=2 address-space=2 source/subject=2 address-space=1 source/' "$log" ;;
     fault-cleanup-missing) sed -i 's/resumable=0/resumable=1/' "$log" ;;
+    fault-return-unvalidated) sed -i 's/ return=validated//' "$log" ;;
     fault-peer-corrupt) sed -i 's/canaries=preserved/canaries=corrupt/' "$log" ;;
     fault-forged-pass) sed -i '/^LEANOS\/14 FAULT-ENTRY /d; /^LEANOS\/14 TERMINATE /d' "$log" ;;
     fault-kernel-relabeled) sed -i 's/origin=cpl3/origin=kernel/' "$log" ;;
