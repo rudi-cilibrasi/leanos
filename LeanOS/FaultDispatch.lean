@@ -191,6 +191,46 @@ theorem cleanup_nonresumption state subject :
   ⟨ResumablePreemption.cleanup_removes_context state subject,
     ResumablePreemption.cleanup_terminates_subject state subject⟩
 
+/-- A survivor-dispatch outcome carries the cleanup boundary into the returned
+state: the faulting subject is dead, absent from the ready queue and current
+slot, and has no resumable context. -/
+theorem dispatched_nonresumption state entry context
+    (hdispatch : (dispatch state entry).action = .dispatch context) :
+    ∃ faulting,
+      (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
+          faulting = false ∧
+        faulting ∉ (dispatch state entry).state.scheduler.ready ∧
+        (dispatch state entry).state.scheduler.lifecycle.current ≠ some faulting ∧
+        ResumablePreemption.contextFor
+          (dispatch state entry).state.contexts faulting = none := by
+  generalize hd : dispatch state entry = outcome at hdispatch ⊢
+  cases outcome with
+  | mk next action =>
+    simp only at hdispatch ⊢
+    subst action
+    simp only [dispatch] at hd
+    split at hd <;> try simp_all [halt, reject]
+    split at hd <;> try simp_all [halt, reject]
+    all_goals split at hd <;> try simp_all [halt, reject]
+    all_goals split at hd <;> try simp_all [halt, reject]
+    all_goals split at hd <;> try simp_all [halt, reject]
+    all_goals split at hd <;> try simp_all [halt, reject]
+    all_goals split at hd <;> try simp_all [halt, reject]
+    all_goals split at hd <;> try simp_all [halt, reject]
+    all_goals split at hd <;> try simp_all [halt, reject]
+    all_goals split at hd <;> try simp_all [halt, reject]
+    all_goals rcases hd with ⟨rfl, rfl⟩
+    all_goals
+      let faulting := state.scheduler.lifecycle.current.getD 0
+      have hdead := ResumablePreemption.cleanup_terminates_subject state faulting
+      have habsent := ResumablePreemption.cleanup_removes_scheduler_membership state faulting
+      have hcontext := ResumablePreemption.cleanup_removes_context state faulting
+      refine ⟨faulting, ?_⟩
+      simp_all only [Option.getD_some]
+      grind [Scheduler.selectNext, Scheduler.reject,
+        ResumablePreemption.eraseContext, ResumablePreemption.contextFor,
+        List.find?_eq_none]
+
 private theorem cleanupCurrent_preserves_coreWellFormed state subject
     (hstate : ResumablePreemption.WellFormed state)
     (hcurrent : state.scheduler.lifecycle.current = some subject) :
@@ -276,5 +316,41 @@ theorem idle_is_clean_empty state entry
     have hselected := selectNext_none_eq _ (by assumption)
     simp_all [hselected]
     grind [Scheduler.selectNext, Scheduler.reject]
+
+/-- The idle success branch has the same non-resumption boundary as survivor
+dispatch; an empty queue never turns the terminated subject into a fallback. -/
+theorem idle_nonresumption state entry
+    (hidle : (dispatch state entry).action = .idle) :
+    ∃ faulting,
+      (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
+          faulting = false ∧
+        faulting ∉ (dispatch state entry).state.scheduler.ready ∧
+        (dispatch state entry).state.scheduler.lifecycle.current ≠ some faulting ∧
+        ResumablePreemption.contextFor
+          (dispatch state entry).state.contexts faulting = none := by
+  rcases idle_is_clean_empty state entry hidle with
+    ⟨faulting, hstate, _, _⟩
+  rw [hstate]
+  exact ⟨faulting,
+    ResumablePreemption.cleanup_terminates_subject state faulting,
+    (ResumablePreemption.cleanup_removes_scheduler_membership state faulting).1,
+    (ResumablePreemption.cleanup_removes_scheduler_membership state faulting).2,
+    ResumablePreemption.cleanup_removes_context state faulting⟩
+
+/-- Every successful composite result excludes resumption of the subject that
+faulted, regardless of whether the deterministic scheduler finds a survivor. -/
+theorem successful_nonresumption state entry
+    (hsuccess : (dispatch state entry).action = .idle ∨
+      ∃ context, (dispatch state entry).action = .dispatch context) :
+    ∃ faulting,
+      (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
+          faulting = false ∧
+        faulting ∉ (dispatch state entry).state.scheduler.ready ∧
+        (dispatch state entry).state.scheduler.lifecycle.current ≠ some faulting ∧
+        ResumablePreemption.contextFor
+          (dispatch state entry).state.contexts faulting = none := by
+  rcases hsuccess with hidle | ⟨context, hdispatch⟩
+  · exact idle_nonresumption state entry hidle
+  · exact dispatched_nonresumption state entry context hdispatch
 
 end LeanOS.FaultDispatch
