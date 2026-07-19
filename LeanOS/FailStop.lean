@@ -3713,6 +3713,29 @@ theorem terminateSubject_accepted_cleans_runtime_references state subject lifecy
   simp only [installResumable, installLifecycle]
   exact ⟨trivial, hdead, hscheduler.1, hscheduler.2, hcontext⟩
 
+/-- Accepted lifecycle termination cannot by itself justify the global runtime
+invariant when it removes the final queued peer of a different current
+subject.  Any complete termination operation must therefore enforce the same
+resumable-peer condition as `ResumablePreemption.remove`, or atomically choose
+a new current subject.  This theorem records that integration obligation at
+the public gate boundary rather than hiding it behind synchronization. -/
+theorem gate_terminateSubject_accepted_runtimeWellFormed_requires_resumable_peer
+    state subject
+    (hmode : state.execution.mode = .running)
+    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted) :
+    RuntimeWellFormed (gate state (.terminateSubject subject)).state →
+      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.lifecycle.current.isSome →
+      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.ready ≠ [] := by
+  intro hpost hcurrent
+  rcases hpost with ⟨_, _, _, _, _, _, _, _, hresumable, _, _, _⟩
+  have hcurrentPost :
+      (gate state (.terminateSubject subject)).state.resumable.scheduler.lifecycle.current.isSome := by
+    simpa [gate, hmode, applyOperation, haccepted, installResumable,
+      installLifecycle] using hcurrent
+  have hpeer := hresumable.2.2.2.2.2.1.2.2 hcurrentPost
+  simpa [gate, hmode, applyOperation, haccepted, installResumable,
+    installLifecycle] using hpeer
+
 /-! ### Scheduler rejection preservation
 
 The raw accepted dispatch/yield/tick operations do not yet own the resumable
