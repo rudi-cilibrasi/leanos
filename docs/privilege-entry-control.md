@@ -106,12 +106,14 @@ record the CPU/MSR snapshot, raw vector-6 denial, unreachable alternate target,
 complete attacker cleanup, validated peer return, survivor canaries, exact
 serial transcript, command, image, ELF, and hashes as tested evidence.
 
-One controlled QEMU image sets EFER.SCE after the boot read-back and immediately
-before the first outbound validation. The production return gate rereads the
-live tuple, emits the typed `fast-entry-efer-readback` terminal result, and no
-CPL3 entry or successful final record is accepted. This negative image is
-deliberately outside the production write inventory and is labeled controlled
-rejection evidence rather than an accepted control configuration.
+Controlled QEMU images mutate EFER.SCE or IA32_LSTAR after the boot read-back
+and immediately before the first outbound validation. The LSTAR case installs
+the user-A text address as a stale alternate target while SCE remains denied.
+The production return gate rereads the live tuple, emits the typed
+`fast-entry-efer-readback` or `fast-entry-target-readback` terminal result, and
+no CPL3 entry or successful final record is accepted. These negative images
+are deliberately outside the production write inventory and are labeled
+controlled rejection evidence rather than accepted control configurations.
 
 The repository-owned runner fixtures reject a missing entry manifest or control
 snapshot, wrong vector/error shape, stale binding, unexpected target execution,
@@ -119,6 +121,6 @@ policy relaxation, attacker-selected survivor, kernel-origin containment,
 direct handler entry, partial or reordered output, reset, triple fault, and
 hang. Each successful probe also preserves a three-record CPU/CPUID/MSR/control
 snapshot beside the exact serial log. The remaining machine checkpoints are
-additional controlled target-MSR build/guest mutations and the final
-global-invariant composition requested by follow-on #104. Those
+controlled mutations of the other target MSRs and the final global-invariant
+composition requested by follow-on #104. Those
 results must be labeled checked/tested evidence, not Lean proof.

@@ -69,6 +69,17 @@ REQUIRED_FAST_ENTRY_ROWS = {
         "mode": "14",
         "reason": "fast-entry-efer-readback",
     },
+    "return-fast-entry-lstar-relaxation": {
+        "runner": "return",
+        "result_class": "controlled-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-fast-entry-lstar-relaxation.iso",
+        "elf": "leanos-return-fast-entry-lstar-relaxation.elf",
+        "serial_log": "return-corruption-fast-entry-lstar-relaxation.serial.log",
+        "scenario": "fast-entry-lstar-relaxation",
+        "mode": "15",
+        "reason": "fast-entry-target-readback",
+    },
 }
 
 

@@ -1,5 +1,5 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	28
+# mandatory-count	29
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
@@ -26,6 +26,7 @@ return-post-validation-mutation	return	controlled-rejection	30	leanos-@VERSION@-
 return-blocking-context-canary	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-blocking-context-canary.iso	leanos-return-blocking-context-canary.elf	return-corruption-blocking-context-canary.serial.log	blocking-context-canary	12	register-canary
 return-capability-reuse-generation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-capability-reuse-generation.iso	leanos-return-capability-reuse-generation.elf	return-corruption-capability-reuse-generation.serial.log	capability-reuse-generation	13	capability-reuse-generation
 return-fast-entry-sce-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-sce-relaxation.iso	leanos-return-fast-entry-sce-relaxation.elf	return-corruption-fast-entry-sce-relaxation.serial.log	fast-entry-sce-relaxation	14	fast-entry-efer-readback
+return-fast-entry-lstar-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-lstar-relaxation.iso	leanos-return-fast-entry-lstar-relaxation.elf	return-corruption-fast-entry-lstar-relaxation.serial.log	fast-entry-lstar-relaxation	15	fast-entry-target-readback
 double-fault	double-fault	fail-stop	30	leanos-@VERSION@-x86_64-double-fault.iso	leanos-double-fault.elf	double-fault.serial.log	double-fault	-	-
 entry-stack-overflow	entry-stack-overflow	fail-stop	30	leanos-@VERSION@-x86_64-entry-stack-overflow.iso	leanos-entry-stack-overflow.elf	entry-stack-overflow.serial.log	entry-stack-overflow	-	-
 double-fault-guard-mapped	double-fault-guard	controlled-rejection	30	leanos-@VERSION@-x86_64-double-fault-guard-mapped.iso	leanos-double-fault-guard-mapped.elf	double-fault-guard-mapped.serial.log	double-fault-guard-mapped	-	-

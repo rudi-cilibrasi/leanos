@@ -541,15 +541,16 @@ for spec in "${return_corruptions[@]}"; do
       "$build/return-${fixture}-policy.log" || {
       echo "error: post-validation fixture lacked policy diagnostic" >&2; exit 1;
     }
-  elif [[ "$fixture" == fast-entry-sce-relaxation ]]; then
+  elif [[ "$fixture" == fast-entry-sce-relaxation ||
+      "$fixture" == fast-entry-lstar-relaxation ]]; then
     if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}.elf" \
         >"$build/return-${fixture}-policy.log" 2>&1; then
-      echo "error: SCE-relaxation policy fixture unexpectedly passed" >&2
+      echo "error: fast-entry relaxation policy fixture unexpectedly passed" >&2
       exit 1
     fi
     grep -Fq 'fast-entry final-ELF write inventory drifted' \
       "$build/return-${fixture}-policy.log" || {
-      echo "error: SCE-relaxation fixture lacked write-inventory diagnostic" >&2
+      echo "error: fast-entry relaxation fixture lacked write-inventory diagnostic" >&2
       exit 1
     }
   else

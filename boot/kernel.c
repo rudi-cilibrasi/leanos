@@ -551,6 +551,9 @@ static const char *return_corruption_name(uint64_t mode) {
 #if LEANOS_RETURN_CORRUPTION_MODE == 14
     case 14: return "fast-entry-sce-relaxation";
 #endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 15
+    case 15: return "fast-entry-lstar-relaxation";
+#endif
     default: return "none";
     }
 }
@@ -566,7 +569,7 @@ static void inject_return_corruption(uint64_t *saved) {
     if (mode == 13) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
-    serial_puts(mode == 14
+    serial_puts(mode == 14 || mode == 15
         ? " stage=machine-control result=INJECTED\n"
         : " stage=outgoing-frame result=INJECTED\n");
     switch (mode) {
@@ -594,6 +597,15 @@ static void inject_return_corruption(uint64_t *saved) {
         low |= 1u;
         __asm__ volatile ("wrmsr" : : "a"(low), "d"(high),
             "c"(UINT32_C(0xc0000080)) : "memory");
+        break;
+    }
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 15
+    case 15: {
+        const uint64_t target = (uint64_t)user_a_entry;
+        __asm__ volatile ("wrmsr" : : "a"((uint32_t)target),
+            "d"((uint32_t)(target >> 32)), "c"(UINT32_C(0xc0000082)) :
+            "memory");
         break;
     }
 #endif
