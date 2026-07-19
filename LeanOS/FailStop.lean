@@ -899,6 +899,107 @@ private def schedulerAdmission (state : CompositeState)
       | none => Scheduler.reject state.scheduler .noResumableContext
       | some _ => { state := scheduler, result := .accepted context }
 
+/-- Raw scheduler selection has no context-restore payload.  Empty selection
+is a genuine no-op success, but selecting a subject must be performed through
+the resumable switch operation that consumes its kernel-owned context. -/
+private def schedulerDispatch (state : CompositeState) : Scheduler.Outcome :=
+  match Scheduler.selectNext state.scheduler with
+  | { result := .rejected reason, .. } => Scheduler.reject state.scheduler reason
+  | { state := scheduler, result := .accepted none } =>
+      { state := scheduler, result := .accepted none }
+  | { result := .accepted (some _), .. } =>
+      Scheduler.reject state.scheduler .noResumableContext
+
+/-- Voluntary yield cannot cross the composite boundary without an outgoing
+register/frame payload.  The resumable preemption operation owns that atomic
+save/select/restore step. -/
+private def schedulerYield (state : CompositeState) : Scheduler.Outcome :=
+  match Scheduler.yield state.scheduler with
+  | { result := .rejected reason, .. } => Scheduler.reject state.scheduler reason
+  | { result := .accepted _, .. } =>
+      Scheduler.reject state.scheduler .noResumableContext
+
+/-- A raw tick has the same missing-save obligation as raw yield. -/
+private def schedulerTick (state : CompositeState) : Scheduler.Outcome :=
+  match Scheduler.tick state.scheduler with
+  | { result := .rejected reason, .. } => Scheduler.reject state.scheduler reason
+  | { result := .accepted _, .. } =>
+      Scheduler.reject state.scheduler .noResumableContext
+
+theorem schedulerDispatch_rejected_unchanged state reason
+    (hrejected : (schedulerDispatch state).result = .rejected reason) :
+    (schedulerDispatch state).state = state.scheduler := by
+  unfold schedulerDispatch at hrejected ⊢
+  generalize hselect : Scheduler.selectNext state.scheduler = outcome at hrejected ⊢
+  cases outcome with
+  | mk scheduler result =>
+      cases result with
+      | rejected actual => simp [Scheduler.reject]
+      | accepted context =>
+          cases context with
+          | none => simp at hrejected
+          | some selected => simp [Scheduler.reject]
+
+theorem schedulerDispatch_accepted_none_unchanged state
+    (haccepted : (schedulerDispatch state).result = .accepted none) :
+    (schedulerDispatch state).state = state.scheduler := by
+  unfold schedulerDispatch at haccepted ⊢
+  generalize hselect : Scheduler.selectNext state.scheduler = outcome at haccepted ⊢
+  cases outcome with
+  | mk scheduler result =>
+      cases result with
+      | rejected reason => simp [Scheduler.reject] at haccepted
+      | accepted context =>
+          cases context with
+          | some selected => simp [Scheduler.reject] at haccepted
+          | none =>
+              have hraw : scheduler = state.scheduler := by
+                simp only [Scheduler.selectNext] at hselect
+                split at hselect <;> simp_all [Scheduler.reject]
+                next => split at hselect <;> simp_all [Scheduler.reject]
+              exact hraw
+
+theorem schedulerDispatch_accepted_is_none state context
+    (haccepted : (schedulerDispatch state).result = .accepted context) :
+    context = none := by
+  unfold schedulerDispatch at haccepted
+  generalize hselect : Scheduler.selectNext state.scheduler = outcome at haccepted
+  cases outcome with
+  | mk scheduler result =>
+      cases result with
+      | rejected reason => simp [Scheduler.reject] at haccepted
+      | accepted actual => cases actual <;> simp_all [Scheduler.reject]
+
+theorem schedulerYield_rejected_unchanged state reason
+    (hrejected : (schedulerYield state).result = .rejected reason) :
+    (schedulerYield state).state = state.scheduler := by
+  unfold schedulerYield at hrejected ⊢
+  generalize hyield : Scheduler.yield state.scheduler = outcome at hrejected ⊢
+  cases outcome with
+  | mk scheduler result => cases result <;> simp [Scheduler.reject]
+
+theorem schedulerYield_ne_accepted state context :
+    (schedulerYield state).result ≠ .accepted context := by
+  unfold schedulerYield
+  generalize hyield : Scheduler.yield state.scheduler = outcome
+  cases outcome with
+  | mk scheduler result => cases result <;> simp [Scheduler.reject]
+
+theorem schedulerTick_rejected_unchanged state reason
+    (hrejected : (schedulerTick state).result = .rejected reason) :
+    (schedulerTick state).state = state.scheduler := by
+  unfold schedulerTick at hrejected ⊢
+  generalize htick : Scheduler.tick state.scheduler = outcome at hrejected ⊢
+  cases outcome with
+  | mk scheduler result => cases result <;> simp [Scheduler.reject]
+
+theorem schedulerTick_ne_accepted state context :
+    (schedulerTick state).result ≠ .accepted context := by
+  unfold schedulerTick
+  generalize htick : Scheduler.tick state.scheduler = outcome
+  cases outcome with
+  | mk scheduler result => cases result <;> simp [Scheduler.reject]
+
 theorem schedulerAdmission_rejected_unchanged state subject reason
     (hrejected : (schedulerAdmission state subject).result = .rejected reason) :
     (schedulerAdmission state subject).state = state.scheduler := by
@@ -1504,18 +1605,18 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       | .rejected _ => state
       | .accepted _ => installSchedulerRemoval state outcome.state
   | .scheduleNext =>
-      let outcome := Scheduler.selectNext state.scheduler
+      let outcome := schedulerDispatch state
       match outcome.result with
       | .rejected _ => state
       | .accepted none => state
       | .accepted (some _) => installScheduler state outcome.state
   | .scheduleYield =>
-      let outcome := Scheduler.yield state.scheduler
+      let outcome := schedulerYield state
       match outcome.result with
       | .rejected _ => state
       | .accepted _ => installScheduler state outcome.state
   | .scheduleTick =>
-      let outcome := Scheduler.tick state.scheduler
+      let outcome := schedulerTick state
       match outcome.result with
       | .rejected _ => state
       | .accepted _ => installScheduler state outcome.state
@@ -1583,9 +1684,9 @@ def operationReply (state : CompositeState) : Operation → OperationReply
   | .scheduleAdd subject => .scheduler (schedulerAdmission state subject).result
   | .scheduleRemove subject =>
       .scheduleRemove (ResumablePreemption.remove state.resumable subject).result
-  | .scheduleNext => .scheduler (Scheduler.selectNext state.scheduler).result
-  | .scheduleYield => .scheduler (Scheduler.yield state.scheduler).result
-  | .scheduleTick => .scheduler (Scheduler.tick state.scheduler).result
+  | .scheduleNext => .scheduler (schedulerDispatch state).result
+  | .scheduleYield => .scheduler (schedulerYield state).result
+  | .scheduleTick => .scheduler (schedulerTick state).result
   | .terminateCurrent => .scheduler (Scheduler.terminateCurrent state.scheduler).result
   | .restart => .restarted
 
@@ -1660,11 +1761,11 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
   | scheduleRemove subject reason
       (h : (ResumablePreemption.remove state.resumable subject).result = .rejected reason) :
       SubsystemRejection state (.scheduleRemove subject) (.scheduleRemove (.rejected reason))
-  | scheduleNext reason (h : (Scheduler.selectNext state.scheduler).result = .rejected reason) :
+  | scheduleNext reason (h : (schedulerDispatch state).result = .rejected reason) :
       SubsystemRejection state .scheduleNext (.scheduler (.rejected reason))
-  | scheduleYield reason (h : (Scheduler.yield state.scheduler).result = .rejected reason) :
+  | scheduleYield reason (h : (schedulerYield state).result = .rejected reason) :
       SubsystemRejection state .scheduleYield (.scheduler (.rejected reason))
-  | scheduleTick reason (h : (Scheduler.tick state.scheduler).result = .rejected reason) :
+  | scheduleTick reason (h : (schedulerTick state).result = .rejected reason) :
       SubsystemRejection state .scheduleTick (.scheduler (.rejected reason))
   | terminateCurrent reason (h : (Scheduler.terminateCurrent state.scheduler).result = .rejected reason) :
       SubsystemRejection state .terminateCurrent (.scheduler (.rejected reason))
@@ -2777,29 +2878,25 @@ theorem gate_scheduleAdd_accepted_sound state subject context next
   simp [gate, hmode, operationReply, applyOperation, haccepted,
     installSchedulerAdmission, hpreserved]
 
-/-- An accepted dispatch likewise cannot be paired with a repaired or
-caller-selected scheduler: the composite projection is exactly the state that
-produced the typed dispatch context, and its invariant is preserved. -/
+/-- The only accepted raw dispatch is empty selection, whose exact scheduler
+post-state is the unchanged authoritative scheduler. -/
 theorem gate_scheduleNext_accepted_sound state context next
     (hmode : state.execution.mode = .running)
-    (haccepted : Scheduler.selectNext state.scheduler =
+    (haccepted : schedulerDispatch state =
       { state := next, result := .accepted context })
     (hwellFormed : Scheduler.WellFormed state.scheduler) :
     (gate state .scheduleNext).result =
         .completed (.scheduler (.accepted context)) ∧
       (gate state .scheduleNext).state.scheduler = next ∧
       Scheduler.WellFormed (gate state .scheduleNext).state.scheduler := by
-  have hpreserved := Scheduler.selectNext_preserves_wellFormed state.scheduler hwellFormed
-  rw [haccepted] at hpreserved
-  cases context with
-  | none =>
-      have hnext : next = state.scheduler := by
-        simp only [Scheduler.selectNext] at haccepted
-        split at haccepted <;> simp_all [Scheduler.reject]
-        next => split at haccepted <;> simp_all [Scheduler.reject]
-      simp [gate, hmode, operationReply, applyOperation, haccepted, hnext, hwellFormed]
-  | some context =>
-      simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+  have hnone : context = none := schedulerDispatch_accepted_is_none state context (by
+    simp [haccepted])
+  subst context
+  have hnext : next = state.scheduler := by
+    have hold := schedulerDispatch_accepted_none_unchanged state (by simp [haccepted])
+    simpa [haccepted] using hold
+  subst next
+  simp [gate, hmode, operationReply, applyOperation, haccepted, hwellFormed]
 
 /-- Accepted queue removal publishes the exact resumable-aware cleanup result,
 including saved-context consumption and active-translation invalidation. -/
@@ -2819,35 +2916,31 @@ theorem gate_scheduleRemove_accepted_sound state subject context next
   simp [gate, hmode, operationReply, applyOperation, haccepted,
     installSchedulerRemoval, hpreserved]
 
-/-- An accepted voluntary yield retains the exact round-robin post-state;
-composite synchronization cannot repair or replace the scheduler result. -/
+/-- Raw voluntary yield has no accepted composite result because it carries no
+outgoing context payload.  This theorem records that unreachable contract. -/
 theorem gate_scheduleYield_accepted_sound state context next
-    (hmode : state.execution.mode = .running)
-    (haccepted : Scheduler.yield state.scheduler =
+    (_hmode : state.execution.mode = .running)
+    (haccepted : schedulerYield state =
       { state := next, result := .accepted context })
-    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (_hwellFormed : Scheduler.WellFormed state.scheduler) :
     (gate state .scheduleYield).result =
         .completed (.scheduler (.accepted context)) ∧
       (gate state .scheduleYield).state.scheduler = next ∧
       Scheduler.WellFormed (gate state .scheduleYield).state.scheduler := by
-  have hpreserved := Scheduler.yield_preserves_wellFormed state.scheduler hwellFormed
-  rw [haccepted] at hpreserved
-  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+  exact False.elim ((schedulerYield_ne_accepted state context) (by simp [haccepted]))
 
-/-- A successful timer scheduling step is the exact accepted tick transition
-and retains the scheduler invariant after all shared projections are updated. -/
+/-- Raw timer tick likewise has no accepted composite result; resumable timer
+switching is owned by the save/select/restore operation. -/
 theorem gate_scheduleTick_accepted_sound state context next
-    (hmode : state.execution.mode = .running)
-    (haccepted : Scheduler.tick state.scheduler =
+    (_hmode : state.execution.mode = .running)
+    (haccepted : schedulerTick state =
       { state := next, result := .accepted context })
-    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (_hwellFormed : Scheduler.WellFormed state.scheduler) :
     (gate state .scheduleTick).result =
         .completed (.scheduler (.accepted context)) ∧
       (gate state .scheduleTick).state.scheduler = next ∧
       Scheduler.WellFormed (gate state .scheduleTick).state.scheduler := by
-  have hpreserved := Scheduler.tick_preserves_wellFormed state.scheduler hwellFormed
-  rw [haccepted] at hpreserved
-  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+  exact False.elim ((schedulerTick_ne_accepted state context) (by simp [haccepted]))
 
 /-- Accepted current-subject termination exposes the exact scheduler cleanup
 state, including its filtered queue and terminated lifecycle, and proves that
@@ -4728,25 +4821,21 @@ success while preserving every runtime projection byte-for-byte. -/
 theorem scheduleNext_accepted_none_preserves_runtimeWellFormed state
     (hstate : RuntimeWellFormed state)
     (hmode : state.execution.mode = .running)
-    (haccepted : (Scheduler.selectNext state.scheduler).result = .accepted none) :
+    (haccepted : (schedulerDispatch state).result = .accepted none) :
     RuntimeWellFormed (gate state .scheduleNext).state ∧
       (gate state .scheduleNext).state = state ∧
       (gate state .scheduleNext).result =
         .completed (.scheduler (.accepted none)) := by
-  have hunchanged : (Scheduler.selectNext state.scheduler).state = state.scheduler := by
-    simp only [Scheduler.selectNext] at haccepted ⊢
-    split at haccepted <;> simp_all [Scheduler.reject]
-    next => split at haccepted <;> simp_all [Scheduler.reject]
+  have hunchanged := schedulerDispatch_accepted_none_unchanged state haccepted
   simp [gate, hmode, applyOperation, operationReply, haccepted, hunchanged, hstate]
 
 theorem scheduleNext_rejected_preserves_runtimeWellFormed state reason
     (hstate : RuntimeWellFormed state)
-    (hrejected : (Scheduler.selectNext state.scheduler).result = .rejected reason) :
+    (hrejected : (schedulerDispatch state).result = .rejected reason) :
     RuntimeWellFormed (gate state .scheduleNext).state ∧
       (gate state .scheduleNext).state = state := by
   by_cases hmode : state.execution.mode = .running
-  · have hunchanged := Scheduler.select_rejected_unchanged
-      state.scheduler reason hrejected
+  · have hunchanged := schedulerDispatch_rejected_unchanged state reason hrejected
     simp [gate, hmode, applyOperation, hrejected, hunchanged, hstate]
   · have hpreserved := gate_rejected_mode_preserves_runtimeWellFormed
       state .scheduleNext hstate hmode
@@ -4757,12 +4846,11 @@ theorem scheduleNext_rejected_preserves_runtimeWellFormed state reason
 
 theorem scheduleYield_rejected_preserves_runtimeWellFormed state reason
     (hstate : RuntimeWellFormed state)
-    (hrejected : (Scheduler.yield state.scheduler).result = .rejected reason) :
+    (hrejected : (schedulerYield state).result = .rejected reason) :
     RuntimeWellFormed (gate state .scheduleYield).state ∧
       (gate state .scheduleYield).state = state := by
   by_cases hmode : state.execution.mode = .running
-  · have hunchanged := Scheduler.yield_rejected_unchanged
-      state.scheduler reason hrejected
+  · have hunchanged := schedulerYield_rejected_unchanged state reason hrejected
     simp [gate, hmode, applyOperation, hrejected, hunchanged, hstate]
   · have hpreserved := gate_rejected_mode_preserves_runtimeWellFormed
       state .scheduleYield hstate hmode
@@ -4773,12 +4861,11 @@ theorem scheduleYield_rejected_preserves_runtimeWellFormed state reason
 
 theorem scheduleTick_rejected_preserves_runtimeWellFormed state reason
     (hstate : RuntimeWellFormed state)
-    (hrejected : (Scheduler.tick state.scheduler).result = .rejected reason) :
+    (hrejected : (schedulerTick state).result = .rejected reason) :
     RuntimeWellFormed (gate state .scheduleTick).state ∧
       (gate state .scheduleTick).state = state := by
   by_cases hmode : state.execution.mode = .running
-  · have hunchanged := Scheduler.tick_rejected_unchanged
-      state.scheduler reason hrejected
+  · have hunchanged := schedulerTick_rejected_unchanged state reason hrejected
     simp [gate, hmode, applyOperation, hrejected, hunchanged, hstate]
   · have hpreserved := gate_rejected_mode_preserves_runtimeWellFormed
       state .scheduleTick hstate hmode
@@ -5297,6 +5384,71 @@ theorem scheduleAdd_operationPreservesRuntimeWellFormed subject :
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.scheduleAdd subject) hstate hmode
 
+/-- Raw dispatch is a complete operation family at the composite boundary:
+empty selection succeeds without mutation, while a selection that would need
+context restoration is rejected atomically. -/
+theorem scheduleNext_operationPreservesRuntimeWellFormed :
+    OperationPreservesRuntimeWellFormed .scheduleNext := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hdispatch : schedulerDispatch state with
+    | mk next result =>
+        cases result with
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              .scheduleNext (.scheduler (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hdispatch])
+              (.scheduleNext reason (by simp [hdispatch]))).1
+        | accepted context =>
+            have hnone := schedulerDispatch_accepted_is_none state context (by
+              simp [hdispatch])
+            subst context
+            exact (scheduleNext_accepted_none_preserves_runtimeWellFormed
+              state hstate hmode (by simp [hdispatch])).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      .scheduleNext hstate hmode
+
+/-- Raw yield cannot mutate without the outgoing saved context, so every
+running result is a typed atomic rejection and every non-running result is
+absorbed by the outer gate. -/
+theorem scheduleYield_operationPreservesRuntimeWellFormed :
+    OperationPreservesRuntimeWellFormed .scheduleYield := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hyield : schedulerYield state with
+    | mk next result =>
+        cases result with
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              .scheduleYield (.scheduler (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hyield])
+              (.scheduleYield reason (by simp [hyield]))).1
+        | accepted context =>
+            exact False.elim ((schedulerYield_ne_accepted state context) (by
+              simp [hyield]))
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      .scheduleYield hstate hmode
+
+/-- Raw tick is confined to the same atomic missing-save rejection as yield;
+timer-driven switching is provided by `resumePreempt`. -/
+theorem scheduleTick_operationPreservesRuntimeWellFormed :
+    OperationPreservesRuntimeWellFormed .scheduleTick := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases htick : schedulerTick state with
+    | mk next result =>
+        cases result with
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              .scheduleTick (.scheduler (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, htick])
+              (.scheduleTick reason (by simp [htick]))).1
+        | accepted context =>
+            exact False.elim ((schedulerTick_ne_accepted state context) (by
+              simp [htick]))
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      .scheduleTick hstate hmode
+
 /-! ### Registered mixed runtime traces
 
 The constructors below are exactly the operation families whose accepted and
@@ -5328,6 +5480,9 @@ inductive RuntimeTraceOperation : Operation → Prop where
   | terminateSubject subject : RuntimeTraceOperation (.terminateSubject subject)
   | scheduleAdd subject : RuntimeTraceOperation (.scheduleAdd subject)
   | scheduleRemove subject : RuntimeTraceOperation (.scheduleRemove subject)
+  | scheduleNext : RuntimeTraceOperation .scheduleNext
+  | scheduleYield : RuntimeTraceOperation .scheduleYield
+  | scheduleTick : RuntimeTraceOperation .scheduleTick
   | restart : RuntimeTraceOperation .restart
 
 /-- Every operation admitted to the registered mixed-trace surface has a
@@ -5364,6 +5519,9 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
       exact terminateSubject_operationPreservesRuntimeWellFormed subject
   | scheduleAdd subject => exact scheduleAdd_operationPreservesRuntimeWellFormed subject
   | scheduleRemove subject => exact scheduleRemove_operationPreservesRuntimeWellFormed subject
+  | scheduleNext => exact scheduleNext_operationPreservesRuntimeWellFormed
+  | scheduleYield => exact scheduleYield_operationPreservesRuntimeWellFormed
+  | scheduleTick => exact scheduleTick_operationPreservesRuntimeWellFormed
   | restart => exact restart_operationPreservesRuntimeWellFormed
 
 /-- Arbitrary finite interleavings of all currently registered runtime
