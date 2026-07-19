@@ -2616,6 +2616,49 @@ theorem gate_scheduleRemove_accepted_queued_requires_context_cleanup
     simp [SubjectLifecycle.setBool] at hrunnable
   · simp_all [Scheduler.reject]
 
+/-- Removing the current subject through the raw scheduler transition also
+cannot preserve the composite invariant by itself.  The pre-state's
+translation agreement names the current subject as the active address space,
+while scheduler removal clears `current` without switching or invalidating
+that translation projection.  A complete current-subject removal must
+therefore perform translation cleanup atomically with scheduler cleanup. -/
+theorem gate_scheduleRemove_accepted_current_requires_translation_cleanup
+    state subject context next
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hcurrent : state.scheduler.lifecycle.current = some subject)
+    (haccepted : Scheduler.remove state.scheduler subject =
+      { state := next, result := .accepted context }) :
+    ¬ RuntimeWellFormed (gate state (.scheduleRemove subject)).state := by
+  intro hpost
+  rcases hstate with
+    ⟨hcoherent, _, _, _, _, _, _, _, hresumable, _, _, _⟩
+  rcases hresumable with
+    ⟨_, _, _, _, _, _, htranslation, _, _, _⟩
+  have hresumableCurrent :
+      state.resumable.scheduler.lifecycle.current = some subject := by
+    rw [hcoherent.2.2.2.2.2.2.2.1]
+    exact hcurrent
+  have hactive : state.resumable.translations.active = some subject := by
+    simpa [ResumablePreemption.TranslationAgreement, hresumableCurrent] using
+      htranslation.2
+  have hnextCurrent : next.lifecycle.current = none := by
+    have haccepted' := haccepted
+    simp only [Scheduler.remove] at haccepted'
+    split at haccepted'
+    · rcases haccepted' with ⟨rfl, rfl⟩
+      simp
+    · simp_all [Scheduler.reject]
+  rcases hpost with
+    ⟨_, _, _, _, _, _, _, _, hresumablePost, _, _, _⟩
+  rcases hresumablePost with
+    ⟨_, _, _, _, _, _, htranslationPost, _, _, _⟩
+  have hactiveNone : state.resumable.translations.active = none := by
+    simpa [ResumablePreemption.TranslationAgreement, gate, hmode,
+      applyOperation, haccepted, installScheduler, installLifecycle,
+      hnextCurrent] using htranslationPost.2
+  simp_all
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
