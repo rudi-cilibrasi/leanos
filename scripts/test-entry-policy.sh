@@ -45,9 +45,15 @@ omitted_fast_entry_cpuid() { sed -i 's/check_fast_entry_cpuid();/\/\* omitted fi
 wrong_fast_entry_vendor() { sed -i 's/0x68747541/0x68747542/' "$tmp/kernel.c"; }
 missing_fast_entry_long_mode() { sed -i 's/(leaf_d >> 29)/(leaf_d >> 28)/' "$tmp/kernel.c"; }
 extra_fast_entry_write() { sed -i '/normalize_fast_entry_sysenter_eip_write:/a\    wrmsr' "$tmp/boot.S"; }
-stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/a\    mov $user_a_text, %eax' "$tmp/boot.S"; }
-noncanonical_lstar() { sed -i '/normalize_fast_entry_lstar_write:/a\    mov $0x00008000, %edx' "$tmp/boot.S"; }
-non_denying_sysenter() { sed -i '/normalize_fast_entry_sysenter_cs_write:/a\    mov $1, %eax' "$tmp/boot.S"; }
+relocated_fast_entry_write() {
+  sed -i '/normalize_fast_entry_lstar_write:/{n;s/wrmsr/nop/}; /normalize_fast_entry_sysenter_eip_write:/i\    wrmsr' "$tmp/boot.S"
+}
+relocated_fast_entry_read() {
+  sed -i '/read_fast_entry_lstar:/{n;s/rdmsr/nop/}; /\.global enable_smep/i\    rdmsr' "$tmp/boot.S"
+}
+stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $user_a_text, %eax' "$tmp/boot.S"; }
+noncanonical_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $0x00008000, %edx' "$tmp/boot.S"; }
+non_denying_sysenter() { sed -i '/normalize_fast_entry_sysenter_cs_write:/i\    mov $1, %eax' "$tmp/boot.S"; }
 omitted_return_readback() { sed -i '/^void validate_user_return/,/^}/ s/check_fast_entry_control();/\/\* omitted return fixture \*\//' "$tmp/kernel.c"; }
 
 run_fixture wrong-target 'vector=14 field=target-or-dpl' wrong_target
@@ -70,6 +76,8 @@ run_fixture omitted-fast-entry-cpuid 'fast-entry CPUID contract is not boot-reac
 run_fixture wrong-fast-entry-vendor 'fast-entry CPUID contract drifted' wrong_fast_entry_vendor
 run_fixture missing-fast-entry-long-mode 'fast-entry CPUID contract drifted' missing_fast_entry_long_mode
 run_fixture extra-fast-entry-write 'fast-entry control write inventory drifted' extra_fast_entry_write
+run_fixture relocated-fast-entry-write 'fast-entry wrmsr site drifted' relocated_fast_entry_write
+run_fixture relocated-fast-entry-read 'fast-entry rdmsr site drifted' relocated_fast_entry_read
 run_fixture stale-lstar 'fast-entry target write recipe can introduce nonzero state' stale_lstar
 run_fixture noncanonical-lstar 'fast-entry target write recipe can introduce nonzero state' noncanonical_lstar
 run_fixture non-denying-sysenter 'fast-entry target write recipe can introduce nonzero state' non_denying_sysenter

@@ -10,6 +10,7 @@ boot_source="${LEANOS_ENTRY_BOOT_SOURCE:-boot/boot.S}"
 }
 
 symbols="$(nm "$elf")"
+control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 for symbol in isr6 isr7 isr14 isr32 isr80 authorize_interrupt_entry \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
   page_fault_handler timer_handler entry_stack boot_stack boot_stack_top \
@@ -18,6 +19,20 @@ for symbol in isr6 isr7 isr14 isr32 isr80 authorize_interrupt_entry \
     echo "error: entry manifest symbol missing: $symbol" >&2; exit 1;
   }
 done
+
+require_fast_entry_site() {
+  local symbol="$1" opcode="$2" source_site elf_site
+  source_site="$(sed -n "/^${symbol}:$/{n;p;q;}" "$boot_source")"
+  [[ "$source_site" =~ ^[[:space:]]*${opcode}[[:space:]]*$ ]] || {
+    echo "error: fast-entry ${opcode} site drifted: ${symbol}" >&2
+    exit 1
+  }
+  elf_site="$(sed -n "/<${symbol}>:/{n;p;q;}" <<<"$control_disassembly")"
+  [[ "$elf_site" =~ ^[[:space:]]*[[:xdigit:]]+:[[:space:]]+${opcode}([[:space:]]|$) ]] || {
+    echo "error: fast-entry final-ELF ${opcode} site drifted: ${symbol}" >&2
+    exit 1
+  }
+}
 
 # Fast-entry state must be produced by the reviewed early writes and consumed
 # by one explicit read-back inventory before any user return.  The labels keep
@@ -32,6 +47,17 @@ for symbol in normalize_fast_entry_efer_write normalize_fast_entry_star_write \
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: fast-entry control symbol missing: $symbol" >&2; exit 1;
   }
+done
+for symbol in normalize_fast_entry_efer_write normalize_fast_entry_star_write \
+  normalize_fast_entry_lstar_write normalize_fast_entry_cstar_write \
+  normalize_fast_entry_sfmask_write normalize_fast_entry_sysenter_cs_write \
+  normalize_fast_entry_sysenter_esp_write normalize_fast_entry_sysenter_eip_write; do
+  require_fast_entry_site "$symbol" wrmsr
+done
+for symbol in read_fast_entry_efer read_fast_entry_star read_fast_entry_lstar \
+  read_fast_entry_cstar read_fast_entry_sfmask read_fast_entry_sysenter_cs \
+  read_fast_entry_sysenter_esp read_fast_entry_sysenter_eip; do
+  require_fast_entry_site "$symbol" rdmsr
 done
 [[ "$(grep -Ec '^[[:space:]]+wrmsr$' "$boot_source")" -eq 8 ]] || {
   echo "error: fast-entry control write inventory drifted" >&2; exit 1;
@@ -81,7 +107,6 @@ for contract in \
     echo "error: fast-entry CPUID contract drifted field=$contract" >&2; exit 1;
   }
 done
-control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 [[ "$(grep -Ec '[[:space:]]cpuid([[:space:]]|$)' <<<"$control_disassembly")" -ge 6 ]] || {
   echo "error: fast-entry CPUID snapshot missing from final ELF" >&2; exit 1;
 }
