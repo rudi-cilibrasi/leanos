@@ -44,6 +44,15 @@ omit_cpuid_snapshot() {
 bypass_live_policy_gate() {
   sed -i 's/extended_state_features_accepted &&/(1 == 1) \&\&/' "$tmp/kernel.c"
 }
+bypass_handler_origin() {
+  sed -i 's/saved_cs != 0x23/0/' "$tmp/kernel.c"
+}
+bypass_handler_address_space() {
+  sed -i 's/expected_cr3 == 0 || cr3 != expected_cr3/0/' "$tmp/kernel.c"
+}
+bypass_handler_probe_vector() {
+  sed -i 's/if (vector != expected_vector)/if (0)/' "$tmp/kernel.c"
+}
 add_clts() {
   sed -i '/^normalize_extended_state_cr0:/a\    clts' "$tmp/boot.S"
 }
@@ -65,6 +74,9 @@ run_fixture inherited-cr4 'field=cr4-normalization' inherit_cr4
 run_fixture missing-live-snapshot 'field=live-cr4-snapshot' omit_live_snapshot
 run_fixture missing-cpuid-snapshot 'field=cpuid-leaf1' omit_cpuid_snapshot
 run_fixture bypassed-live-policy-gate 'field=live-policy-gate' bypass_live_policy_gate
+run_fixture bypassed-handler-origin 'field=handler-origin-binding' bypass_handler_origin
+run_fixture bypassed-handler-address-space 'field=handler-address-space-binding' bypass_handler_address_space
+run_fixture bypassed-handler-probe-vector 'field=handler-probe-vector' bypass_handler_probe_vector
 run_fixture unauthorized-clts 'field=unauthorized-enable-or-restore source' add_clts
 run_fixture unauthorized-fxrstor 'field=unauthorized-enable-or-restore source' add_fxrstor
 run_fixture unauthorized-xrstor 'field=unauthorized-enable-or-restore source' add_xrstor

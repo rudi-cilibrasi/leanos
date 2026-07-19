@@ -43,6 +43,24 @@ grep -Fq 'leanos_extended_state_denial_demo(policy, mode, vector, current_subjec
 grep -Fq 'uint64_t policy = extended_state_features_accepted &&' "$kernel_source" || {
   echo "error: extended-state field=live-policy-gate missing" >&2; exit 1;
 }
+grep -Fq 'if ((vector != 6 && vector != 7) || saved_cs != 0x23)' \
+  "$kernel_source" || {
+  echo "error: extended-state field=handler-origin-binding missing" >&2; exit 1;
+}
+grep -Fq 'uint64_t expected_cr3 = current_subject == 1 ? (uint64_t)page_map_level_4_a :' \
+  "$kernel_source" || {
+  echo "error: extended-state field=handler-address-space-binding missing" >&2; exit 1;
+}
+grep -Fq 'if (expected_cr3 == 0 || cr3 != expected_cr3)' "$kernel_source" || {
+  echo "error: extended-state field=handler-address-space-binding missing" >&2; exit 1;
+}
+grep -Fq 'uint64_t expected_vector = extended_state_probe_class >= 2 ? 6 : 7;' \
+  "$kernel_source" || {
+  echo "error: extended-state field=handler-probe-vector missing" >&2; exit 1;
+}
+grep -Fq 'if (vector != expected_vector)' "$kernel_source" || {
+  echo "error: extended-state field=handler-probe-vector missing" >&2; exit 1;
+}
 grep -Fq ': "a"(1u), "c"(0u));' "$kernel_source" || {
   echo "error: extended-state field=cpuid-leaf1 missing" >&2; exit 1;
 }

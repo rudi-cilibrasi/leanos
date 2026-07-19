@@ -93,6 +93,15 @@ generated code, the compiler/linker, firmware/GRUB state, and the final binary.
 The QEMU scenario is tested evidence for one pinned emulator configuration; it
 does not turn any of those boundaries into proved properties.
 
+The handler boundary is narrower than “vector 6/7 arrived.” Its policy gate
+requires a saved CPL3 selector, derives expected CR3 from the protected current
+subject, compares that root with live CR3, and derives the allowed #NM/#UD
+vector from the reviewed probe class. Controlled fixtures independently remove
+each binding and must fail with a typed diagnostic. Entry fixtures also swap
+each vector target, remove AC cleanup, or call the denial handler before shared
+normalization. These source mutations test the inspection gates; they do not
+establish completeness for arbitrary C, assembly, or machine transformations.
+
 ## Boot control-state integration
 
 The early 32-bit boot path now derives the denial controls before enabling
@@ -143,6 +152,8 @@ and a fresh CR0/CR4 read at exception time; only the exact live value one may
 publish cleanup/peer selection.  An all-input Lean theorem refines this scalar
 prefix to the global wrapper's policy-latch and validator order.  This is a
 refinement of the bounded policy decision, not of generated C, machine cleanup,
-exception delivery, or the final binary.  Final work still needs broader
-handler/runner negative fixtures and the remaining threat-model/TCB inventory
-updates.
+exception delivery, or the final binary. The TCB inventory explicitly includes
+the CPUID/control snapshot, vector 6/7 entry and cleanup assembly, generated
+scalar adapter, probe decoder, peer restore, evidence runner, QEMU/TCG, and
+assumed exception semantics. A future per-subject save/restore design must
+supersede this denial record rather than silently relaxing it.

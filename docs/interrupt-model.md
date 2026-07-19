@@ -2,7 +2,9 @@
 
 `LeanOS.Interrupt` is a small total, sequential model for vectors 14 (page
 fault), 32 (timer), and 128 (the existing `int 0x80` syscall relationship).
-Every other vector is a typed fatal outcome. Nested entry is disabled: an
+The companion `LeanOS.ExtendedState` classifier owns the admitted user-only
+vector 6 (#UD) and vector 7 (#NM) denial cases; they are not generic recoverable
+exceptions. Every other vector is a typed fatal outcome. Nested entry is disabled: an
 entry while the trusted `entryActive` flag is set is fatal.
 
 The hardware-supplied frame contains the vector, error code, saved privilege,
@@ -130,6 +132,11 @@ bounded C validator and shared assembly epilogue. Final-ELF inspection permits
 only that CPL3 `iretq` plus the separately classified diagnostic CPL0 recovery
 site, and rejects calls or context changes between validation and consumption.
 The C adapter and inspection are integration evidence, not refinement proofs.
+For vectors 6/7, the saved selector, live CR3, protected current subject,
+expected probe vector, generated denial result, cleanup publication, and peer
+return are additional trusted machine operations. Controlled source fixtures
+remove those bindings or reorder the handler before cleanup/normalization and
+require typed policy rejection.
 The shared generated-model oracle derives expected return results from
 `validateUserReturn`, proves pointwise agreement with the allocation-free
 adapter for every corpus vector, and replays those vectors through hosted
