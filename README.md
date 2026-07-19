@@ -316,6 +316,14 @@ timer, and syscall vector vocabulary, proves origin-sensitive dispatch and
 whole-subject user-fault containment, and records the unproved x86 entry and
 return boundary.
 
+The atomic [user-fault dispatch model](docs/fault-dispatch.md) composes the
+normalized CPL3 page-fault record with the authoritative lifecycle, scheduler,
+resumable-context, mapping, and TLB state. It terminates exactly the kernel-owned
+current subject and returns either the deterministic survivor context or typed
+idle without exposing partial cleanup. Terminal outcomes retain the exact
+typed inbound rejection cause, with separate kernel-origin and already-halted
+classes, while changing only the halt latch.
+
 The bounded inbound entry manifest and total trap-frame normalizer bind those
 ordinary gates to explicit x86 raw shapes and kernel-owned subject, address
 space, CR3, stack, purpose, and nested-entry state before a boot handler runs.
