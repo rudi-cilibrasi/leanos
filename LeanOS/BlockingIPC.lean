@@ -67,6 +67,7 @@ def WellFormed (state : State) : Prop :=
     authorizedReceive state subject endpoint ∧
     state.scheduler.lifecycle.capabilities.subjects subject = true ∧
     state.scheduler.lifecycle.runnable subject = false ∧
+    Scheduler.ownsAddressSpace state.scheduler subject ≠ none ∧
     state.scheduler.lifecycle.current ≠ some subject ∧ subject ∉ state.scheduler.ready) ∧
   (∀ e₁ e₂ subject, subject ∈ state.waiters e₁ → subject ∈ state.waiters e₂ → e₁ = e₂)
   ∧ (∀ endpoint subject, subject ∈ state.waiters endpoint ↔
@@ -74,7 +75,8 @@ def WellFormed (state : State) : Prop :=
   ∧ (∀ endpoint envelope, state.mailbox endpoint = some envelope →
     state.scheduler.lifecycle.capabilities.objects endpoint = true ∧
     state.scheduler.lifecycle.capabilities.kinds endpoint = some .endpoint ∧
-    envelope.endpoint = endpoint ∧ state.waiters endpoint = [])
+    envelope.endpoint = endpoint ∧ state.waiters endpoint = []) ∧
+  Capability.WellFormed state.scheduler.lifecycle.capabilities
 
 inductive Error where
   | noCurrent | wrongCaller | staleHandle | wrongKind | missingReceive | missingSend
@@ -530,27 +532,447 @@ They retain the authoritative blocking invariant, but do not by themselves
 discharge the composite resumable-context obligation: publishing a block must
 also save the outgoing caller and consume the selected destination context. -/
 
-set_option maxHeartbeats 500000 in
-set_option maxRecDepth 100000 in
+private theorem setCompletion_preserves_wellFormed state subject value
+    (hwf : WellFormed state) :
+    WellFormed { state with completion := setCompletion state.completion subject value } := by
+  exact hwf
+
+private theorem clearMailbox_preserves_wellFormed state endpoint
+    (hwf : WellFormed state) :
+    WellFormed { state with mailbox := setMailbox state.mailbox endpoint none } := by
+  rcases hwf with ⟨hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcaps⟩
+  refine ⟨hscheduler, hqueues, hwaiters, hunique, hindex, ?_, hcaps⟩
+  intro candidate envelope hmail
+  by_cases heq : candidate = endpoint
+  · subst candidate
+    simp [setMailbox] at hmail
+  · exact hmailbox candidate envelope (by simpa [setMailbox, heq] using hmail)
+
+private theorem storeMailbox_preserves_wellFormed state endpoint envelope
+    (hwf : WellFormed state)
+    (hlive : state.scheduler.lifecycle.capabilities.objects endpoint = true)
+    (hkind : state.scheduler.lifecycle.capabilities.kinds endpoint = some .endpoint)
+    (hendpoint : envelope.endpoint = endpoint)
+    (hempty : state.waiters endpoint = []) :
+    WellFormed { state with
+      mailbox := setMailbox state.mailbox endpoint (some envelope) } := by
+  rcases hwf with ⟨hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcaps⟩
+  refine ⟨hscheduler, hqueues, hwaiters, hunique, hindex, ?_, hcaps⟩
+  intro candidate actual hmail
+  by_cases heq : candidate = endpoint
+  · subst candidate
+    simp [setMailbox] at hmail
+    subst actual
+    exact ⟨hlive, hkind, hendpoint, hempty⟩
+  · exact hmailbox candidate actual (by simpa [setMailbox, heq] using hmail)
+
+private theorem blockState_preserves_wellFormed state endpoint caller
+    (hwf : WellFormed state)
+    (hcurrent : state.scheduler.lifecycle.current = some caller)
+    (hauthorized : authorizedReceive state caller endpoint)
+    (hnotWaiting : allWaiters state caller = false)
+    (hroom : (state.waiters endpoint).length < state.waiterCapacity)
+    (hempty : state.mailbox endpoint = none) :
+    WellFormed (blockState state endpoint caller) := by
+  rcases hwf with ⟨hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcaps⟩
+  have hcurrentProperties := hscheduler.2.2.2.2 caller hcurrent
+  have hnoindex : state.waiterEndpoint caller = none := by
+    simpa [allWaiters] using hnotWaiting
+  have hnotInWaiters (candidate : ObjectId) : caller ∉ state.waiters candidate := by
+    intro hmember
+    have := (hindex candidate caller).mp hmember
+    simp [hnoindex] at this
+  have hscheduler' : Scheduler.WellFormed (blockState state endpoint caller).scheduler := by
+    rcases hscheduler with ⟨hlifecycle, hreadyNodup, hreadyCapacity,
+      hreadyProperties, hcurrentProperty⟩
+    rcases hlifecycle with ⟨hissued, hmemory, haddress, hendpoint, hrunnable, hcurrentLive⟩
+    refine ⟨?_, hreadyNodup, hreadyCapacity, ?_, ?_⟩
+    · refine ⟨hissued, hmemory, haddress, hendpoint, ?_, ?_⟩
+      · intro subject hruns
+        by_cases heq : subject = caller
+        · subst subject
+          simp [blockState, SubjectLifecycle.setBool] at hruns
+        · apply hrunnable subject
+          simpa [blockState, SubjectLifecycle.setBool, heq] using hruns
+      · intro subject hselected
+        simp [blockState] at hselected
+    · intro subject hready
+      rcases hreadyProperties subject hready with ⟨hlive, hruns, howns⟩
+      have hne : subject ≠ caller := by
+        intro heq
+        subst subject
+        exact hcurrentProperties.2.2.2 hready
+      exact ⟨hlive, by simpa [blockState, SubjectLifecycle.setBool, hne],
+        by simpa [Scheduler.ownsAddressSpace, blockState] using howns⟩
+    · intro subject hselected
+      simp [blockState] at hselected
+  refine ⟨hscheduler', ?_, ?_, ?_, ?_, ?_, hcaps⟩
+  · intro candidate
+    by_cases heq : candidate = endpoint
+    · subst candidate
+      constructor
+      · simpa [blockState, setWaiters, List.nodup_append] using
+          And.intro (hqueues endpoint).1
+            (fun subject hmember heq =>
+              hnotInWaiters endpoint (by simpa [heq] using hmember))
+      · simp [blockState, setWaiters]
+        omega
+    · simpa [blockState, setWaiters, heq] using hqueues candidate
+  · intro candidate subject hmember
+    by_cases heq : candidate = endpoint
+    · subst candidate
+      simp [blockState, setWaiters] at hmember
+      rcases hmember with hold | hcaller
+      · have hne : subject ≠ caller := by
+          intro hsubject
+          subst subject
+          exact hnotInWaiters endpoint hold
+        rcases hwaiters endpoint subject hold with
+          ⟨hliveEndpoint, hauthority, hlive, hblocked, howns, _, hnotReady⟩
+        exact ⟨hliveEndpoint, hauthority, hlive,
+          by simpa [blockState, SubjectLifecycle.setBool, hne],
+          by simpa [Scheduler.ownsAddressSpace, blockState] using howns,
+          by simp [blockState], hnotReady⟩
+      · subst subject
+        exact ⟨hauthorized.choose_spec.choose_spec.2.2.2.2, hauthorized,
+          hcurrentProperties.1, by simp [blockState, SubjectLifecycle.setBool],
+          by simpa [Scheduler.ownsAddressSpace, blockState] using hcurrentProperties.2.2.1,
+          by simp [blockState], hcurrentProperties.2.2.2⟩
+    · have hold : subject ∈ state.waiters candidate := by
+        simpa [blockState, setWaiters, heq] using hmember
+      have hne : subject ≠ caller := by
+        intro hsubject
+        subst subject
+        exact hnotInWaiters candidate hold
+      rcases hwaiters candidate subject hold with
+        ⟨hliveEndpoint, hauthority, hlive, hblocked, howns, _, hnotReady⟩
+      exact ⟨hliveEndpoint, hauthority, hlive,
+        by simpa [blockState, SubjectLifecycle.setBool, hne],
+        by simpa [Scheduler.ownsAddressSpace, blockState] using howns,
+        by simp [blockState], hnotReady⟩
+  · intro first second subject hfirst hsecond
+    by_cases hsubject : subject = caller
+    · subst subject
+      have firstEq : first = endpoint := by
+        by_cases heq : first = endpoint
+        · exact heq
+        · exact False.elim
+            (hnotInWaiters first (by simpa [blockState, setWaiters, heq] using hfirst))
+      have secondEq : second = endpoint := by
+        by_cases heq : second = endpoint
+        · exact heq
+        · exact False.elim
+            (hnotInWaiters second (by simpa [blockState, setWaiters, heq] using hsecond))
+      exact firstEq.trans secondEq.symm
+    · have oldMember (candidate) (hmember :
+          subject ∈ (blockState state endpoint caller).waiters candidate) :
+          subject ∈ state.waiters candidate := by
+        by_cases heq : candidate = endpoint
+        · subst candidate
+          simpa [blockState, setWaiters, hsubject] using hmember
+        · simpa [blockState, setWaiters, heq] using hmember
+      exact hunique first second subject (oldMember first hfirst) (oldMember second hsecond)
+  · intro candidate subject
+    by_cases hsubject : subject = caller
+    · subst subject
+      by_cases heq : candidate = endpoint
+      · subst candidate
+        simp [blockState, setWaiters, setWaiterEndpoint, hnotInWaiters endpoint]
+      · simp [blockState, setWaiters, setWaiterEndpoint, heq, Ne.symm heq,
+          hnotInWaiters candidate]
+    · by_cases heq : candidate = endpoint
+      · subst candidate
+        simpa [blockState, setWaiters, setWaiterEndpoint, hsubject] using
+          hindex endpoint subject
+      · simpa [blockState, setWaiters, setWaiterEndpoint, hsubject, heq] using
+          hindex candidate subject
+  · intro candidate envelope hmail
+    have hmailOld : state.mailbox candidate = some envelope := by
+      simpa [blockState] using hmail
+    have hold := hmailbox candidate envelope hmailOld
+    have hne : candidate ≠ endpoint := by
+      intro heq
+      subst candidate
+      rw [hempty] at hmailOld
+      simp at hmailOld
+    simpa [blockState, setWaiters, hne] using hold
+
+private theorem selectNext_preserves_wellFormed state
+    (hwf : WellFormed state) :
+    WellFormed { state with scheduler := (Scheduler.selectNext state.scheduler).state } := by
+  rcases hwf with ⟨hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcaps⟩
+  have hscheduler' := Scheduler.selectNext_preserves_wellFormed state.scheduler hscheduler
+  cases hcurrent : state.scheduler.lifecycle.current with
+  | some current =>
+      simpa [Scheduler.selectNext, hcurrent, Scheduler.reject] using
+        (show WellFormed state from
+          ⟨hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcaps⟩)
+  | none =>
+      cases hready : state.scheduler.ready with
+      | nil =>
+          simpa [Scheduler.selectNext, hcurrent, hready] using
+            (show WellFormed state from
+              ⟨hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcaps⟩)
+      | cons selected rest =>
+          cases hspace : Scheduler.ownsAddressSpace state.scheduler selected with
+          | none =>
+              simpa [Scheduler.selectNext, hcurrent, hready, hspace, Scheduler.reject] using
+                (show WellFormed state from
+                  ⟨hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcaps⟩)
+          | some addressSpace =>
+              have hselected : (Scheduler.selectNext state.scheduler).state =
+                  { state.scheduler with ready := rest, lifecycle :=
+                    { state.scheduler.lifecycle with current := some selected } } := by
+                simp [Scheduler.selectNext, hcurrent, hready, hspace]
+              rw [hselected] at hscheduler' ⊢
+              refine ⟨hscheduler', hqueues, ?_, hunique, hindex, hmailbox, hcaps⟩
+              intro endpoint subject hmember
+              rcases hwaiters endpoint subject hmember with
+                ⟨hliveEndpoint, hauthority, hlive, hblocked, howns, _, hnotReady⟩
+              refine ⟨hliveEndpoint, hauthority, hlive, hblocked, ?_, ?_, ?_⟩
+              · simpa [Scheduler.ownsAddressSpace] using howns
+              · intro heq
+                have : subject = selected := Option.some.inj heq.symm
+                subst subject
+                exact hnotReady (by simp [hready])
+              · intro hmem
+                exact hnotReady (by simp [hready, hmem])
+
+private theorem wakeState_preserves_wellFormed state endpoint receiver rest envelope
+    (hwf : WellFormed state)
+    (hqueue : state.waiters endpoint = receiver :: rest)
+    (hroom : state.scheduler.ready.length < state.scheduler.capacity) :
+    WellFormed (wakeState state endpoint receiver envelope) := by
+  rcases hwf with ⟨hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcaps⟩
+  have hreceiverMember : receiver ∈ state.waiters endpoint := by simp [hqueue]
+  rcases hwaiters endpoint receiver hreceiverMember with
+    ⟨hliveEndpoint, hreceiverAuthority, hreceiverLive, hreceiverBlocked,
+      hreceiverOwns, hreceiverNotCurrent, hreceiverNotReady⟩
+  have hscheduler' : Scheduler.WellFormed
+      (wakeState state endpoint receiver envelope).scheduler := by
+    rcases hscheduler with ⟨hlifecycle, hreadyNodup, hreadyCapacity,
+      hreadyProperties, hcurrentProperties⟩
+    rcases hlifecycle with ⟨hissued, hmemory, haddress, hendpoint, hrunnable, hcurrentLive⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · refine ⟨hissued, hmemory, haddress, hendpoint, ?_, hcurrentLive⟩
+      intro subject hruns
+      by_cases heq : subject = receiver
+      · subst subject
+        exact hreceiverLive
+      · apply hrunnable subject
+        simpa [wakeState, SubjectLifecycle.setBool, heq] using hruns
+    · simpa [wakeState, List.nodup_append] using
+        And.intro hreadyNodup (fun subject hmember heq =>
+          hreceiverNotReady (by simpa [heq] using hmember))
+    · simp [wakeState]
+      omega
+    · intro subject hready
+      simp [wakeState] at hready
+      rcases hready with hold | hreceiver
+      · rcases hreadyProperties subject hold with ⟨hlive, hruns, howns⟩
+        have hne : subject ≠ receiver := by
+          intro heq
+          subst subject
+          exact hreceiverNotReady hold
+        exact ⟨hlive, by simpa [wakeState, SubjectLifecycle.setBool, hne],
+          by simpa [wakeState, Scheduler.ownsAddressSpace] using howns⟩
+      · subst subject
+        exact ⟨hreceiverLive, by simp [wakeState, SubjectLifecycle.setBool],
+          by simpa [wakeState, Scheduler.ownsAddressSpace] using hreceiverOwns⟩
+    · intro subject hcurrent
+      rcases hcurrentProperties subject hcurrent with ⟨hlive, hruns, howns, hnotReady⟩
+      have hne : subject ≠ receiver := by
+        intro heq
+        subst subject
+        exact hreceiverNotCurrent hcurrent
+      exact ⟨hlive, by simpa [wakeState, SubjectLifecycle.setBool, hne],
+        by simpa [wakeState, Scheduler.ownsAddressSpace] using howns,
+        by simp [wakeState, hnotReady, hne]⟩
+  have hreceiverOnly (candidate : ObjectId)
+      (hmember : receiver ∈ state.waiters candidate) : candidate = endpoint :=
+    hunique candidate endpoint receiver hmember hreceiverMember
+  have oldMember (candidate subject)
+      (hmember : subject ∈ (wakeState state endpoint receiver envelope).waiters candidate) :
+      subject ∈ state.waiters candidate := by
+    by_cases heq : candidate = endpoint
+    · subst candidate
+      have : subject ∈ rest := by
+        simpa [wakeState, setWaiters, hqueue] using hmember
+      rw [hqueue]
+      simp [this]
+    · simpa [wakeState, setWaiters, heq] using hmember
+  have remainingNe (candidate subject)
+      (hmember : subject ∈ (wakeState state endpoint receiver envelope).waiters candidate) :
+      subject ≠ receiver := by
+    intro heq
+    subst subject
+    have hc := hreceiverOnly candidate (oldMember candidate receiver hmember)
+    subst candidate
+    have : receiver ∈ rest := by
+      simpa [wakeState, setWaiters, hqueue] using hmember
+    have hnodup := (hqueues endpoint).1
+    rw [hqueue] at hnodup
+    cases hnodup with
+    | cons hnotMember _ => exact hnotMember receiver this rfl
+  refine ⟨hscheduler', ?_, ?_, ?_, ?_, ?_, hcaps⟩
+  · intro candidate
+    by_cases heq : candidate = endpoint
+    · subst candidate
+      have hold := hqueues endpoint
+      rw [hqueue] at hold
+      simpa [wakeState, setWaiters, hqueue] using
+        (show rest.Nodup ∧ rest.length ≤ state.waiterCapacity from
+          ⟨hold.1.tail, Nat.le_trans (by simp) hold.2⟩)
+    · simpa [wakeState, setWaiters, heq] using hqueues candidate
+  · intro candidate subject hmember
+    have hold := oldMember candidate subject hmember
+    have hne := remainingNe candidate subject hmember
+    rcases hwaiters candidate subject hold with
+      ⟨hlive, hauthority, hsubjectLive, hblocked, howns, hnotCurrent, hnotReady⟩
+    exact ⟨hlive, by simpa [authorizedReceive, wakeState] using hauthority,
+      hsubjectLive, by simpa [wakeState, SubjectLifecycle.setBool, hne],
+      by simpa [wakeState, Scheduler.ownsAddressSpace] using howns, hnotCurrent,
+      by simp [wakeState, hnotReady, hne]⟩
+  · intro first second subject hfirst hsecond
+    exact hunique first second subject (oldMember first subject hfirst)
+      (oldMember second subject hsecond)
+  · intro candidate subject
+    by_cases hsubject : subject = receiver
+    · subst subject
+      constructor
+      · intro hmember
+        exact False.elim (remainingNe candidate receiver hmember rfl)
+      · simp [wakeState, setWaiterEndpoint]
+    · by_cases heq : candidate = endpoint
+      · subst candidate
+        constructor
+        · intro hmember
+          have hrest : subject ∈ rest := by
+            simpa [wakeState, setWaiters, hqueue] using hmember
+          have hold : subject ∈ state.waiters endpoint := by
+            rw [hqueue]
+            simp [hrest]
+          have hindexed := (hindex endpoint subject).mp hold
+          simpa [wakeState, setWaiterEndpoint, hsubject] using hindexed
+        · intro hindexed
+          have hindexedOld : state.waiterEndpoint subject = some endpoint := by
+            simpa [wakeState, setWaiterEndpoint, hsubject] using hindexed
+          have hold := (hindex endpoint subject).mpr hindexedOld
+          have hrest : subject ∈ rest := by
+            rw [hqueue] at hold
+            simpa [hsubject] using hold
+          simpa [wakeState, setWaiters, hqueue] using hrest
+      · simpa [wakeState, setWaiters, setWaiterEndpoint, heq, hsubject] using
+          hindex candidate subject
+  · intro candidate actual hmail
+    have hmailOld : state.mailbox candidate = some actual := by
+      simpa [wakeState] using hmail
+    rcases hmailbox candidate actual hmailOld with ⟨hlive, hkind, hend, hempty⟩
+    have hne : candidate ≠ endpoint := by
+      intro heq
+      have : state.waiters endpoint = [] := by simpa [heq] using hempty
+      rw [hqueue] at this
+      simp at this
+    refine ⟨hlive, hkind, hend, ?_⟩
+    simpa [wakeState, setWaiters, hne] using hempty
+
 theorem receiveOrBlock_preserves_wellFormed state caller slot
     (hwf : WellFormed state) :
     WellFormed (receiveOrBlock state caller slot).state := by
-  unfold receiveOrBlock
-  split <;> simp_all (config := { maxSteps := 3000000 }) [rejectReceive, WellFormed,
-    authorizedReceive, setCompletion, setMailbox, allWaiters, blockState, setWaiters,
-    setWaiterEndpoint, Scheduler.WellFormed, Scheduler.ownsAddressSpace,
-    SubjectLifecycle.WellFormed, SubjectLifecycle.setBool] <;> grind
+  simp only [receiveOrBlock]
+  split
+  · exact hwf
+  next hcaller =>
+    have hcurrent : state.scheduler.lifecycle.current = some caller := by
+      simpa using hcaller
+    split <;> try exact hwf
+    next cap hlookup =>
+      split <;> try exact hwf
+      split <;> try exact hwf
+      split <;> try exact hwf
+      split
+      next envelope => exact setCompletion_preserves_wellFormed state caller none hwf
+      next => exact setCompletion_preserves_wellFormed state caller none hwf
+      next =>
+        split
+        next envelope => exact clearMailbox_preserves_wellFormed state cap.object hwf
+        next hmailbox =>
+          split <;> try exact hwf
+          split <;> try exact hwf
+          next hnotWaiting hcapacity =>
+            have hroom : (state.waiters cap.object).length < state.waiterCapacity := by omega
+            have hauthorized : authorizedReceive state caller cap.object := by
+              refine ⟨slot, cap, Capability.lookup_found_slot _ _ _ _ hlookup, rfl, ?_⟩
+              simp_all
+            have hblocked := blockState_preserves_wellFormed state cap.object caller hwf
+              hcurrent hauthorized (by simpa using hnotWaiting) hroom hmailbox
+            split
+            · exact hwf
+            next scheduled hscheduler =>
+              have hselected := selectNext_preserves_wellFormed
+                (blockState state cap.object caller) hblocked
+              simpa [hscheduler] using hselected
 
-set_option maxHeartbeats 500000 in
-set_option maxRecDepth 100000 in
 theorem send_preserves_wellFormed state caller slot payload
     (hwf : WellFormed state) :
     WellFormed (send state caller slot payload).state := by
-  unfold send
-  split <;> simp_all (config := { maxSteps := 3000000 }) [reject, WellFormed,
-    authorizedReceive, wakeState, setWaiters, setWaiterEndpoint, setCompletion,
-    setMailbox, Scheduler.WellFormed, Scheduler.ownsAddressSpace,
-    SubjectLifecycle.WellFormed, SubjectLifecycle.setBool] <;> grind
+  simp only [send]
+  split <;> try exact hwf
+  split <;> try exact hwf
+  next cap hlookup =>
+    split <;> try exact hwf
+    split <;> try exact hwf
+    split <;> try exact hwf
+    split
+    next hqueue =>
+      split <;> try exact hwf
+      next hmailbox =>
+        have hslot := Capability.lookup_found_slot
+          state.scheduler.lifecycle.capabilities caller slot cap hlookup
+        have hcap := hwf.2.2.2.2.2.2.1 caller slot cap hslot
+        have hkind :
+            state.scheduler.lifecycle.capabilities.kinds cap.object = some .endpoint := by
+          simpa [show cap.kind = .endpoint by simp_all] using hcap.2.2.1
+        exact storeMailbox_preserves_wellFormed state cap.object
+          { endpoint := cap.object, sender := caller, payload } hwf hcap.2.1 hkind rfl hqueue
+    next receiver rest hqueue =>
+      split <;> try exact hwf
+      next hcapacity =>
+        exact wakeState_preserves_wellFormed state cap.object receiver rest
+          { endpoint := cap.object, sender := caller, payload } hwf hqueue (by omega)
+
+/-- A delivered receive only consumes completion or mailbox data; it cannot
+change the unique waiter index. -/
+theorem receive_delivered_waiterEndpoint_unchanged state caller slot envelope
+    (hresult : (receiveOrBlock state caller slot).result = .delivered envelope) :
+    (receiveOrBlock state caller slot).state.waiterEndpoint = state.waiterEndpoint := by
+  unfold receiveOrBlock at hresult ⊢
+  split <;> simp_all [rejectReceive, blockState, setWaiterEndpoint] <;> grind
+  all_goals split at hresult ⊢ <;>
+    simp_all [rejectReceive, blockState, setWaiterEndpoint]
+
+/-- A successful block publishes exactly one waiter-index entry. -/
+theorem receive_blocked_waiterEndpoint_exact state caller slot
+    (hresult : (receiveOrBlock state caller slot).result = .blocked) :
+    ∃ endpoint, (receiveOrBlock state caller slot).state.waiterEndpoint =
+      setWaiterEndpoint state.waiterEndpoint caller (some endpoint) := by
+  unfold receiveOrBlock at hresult ⊢
+  split <;> simp_all [rejectReceive, blockState, setWaiterEndpoint] <;> grind
+
+/-- Accepted send exposes exactly the waiter-index projection needed by the
+typed blocked-context bank: empty-mailbox sends preserve it, while wakes clear
+the selected FIFO receiver. -/
+theorem send_accepted_waiterEndpoint_exact state caller slot payload
+    (hresult : (send state caller slot payload).result = .accepted) :
+    ∃ endpoint, endpointOf state caller slot = some endpoint ∧
+      match state.waiters endpoint with
+      | [] => (send state caller slot payload).state.waiterEndpoint = state.waiterEndpoint
+      | receiver :: _ => (send state caller slot payload).state.waiterEndpoint =
+          setWaiterEndpoint state.waiterEndpoint receiver none := by
+  unfold send endpointOf at hresult ⊢
+  split <;> simp_all [reject, wakeState, setWaiterEndpoint] <;> grind
+  all_goals split at hresult ⊢ <;>
+    simp_all [rejectReceive, blockState, setWaiterEndpoint]
 
 theorem receiveOrBlockWord_preserves_wellFormed state caller word
     (hwf : WellFormed state) :
@@ -576,10 +998,9 @@ theorem cancelSubject_ready_length_le_capacity state subject
   simp only [cancelSubject]
   split
   · exact hcapacity
-  · dsimp
-    split
+  · split
     · exact hcapacity
-    · split <;> simp_all
+    · split <;> simp_all <;> omega
 
 theorem cancelSubject_full_ready_unchanged state subject endpoint
     (hwaiter : state.waiterEndpoint subject = some endpoint)
@@ -594,18 +1015,18 @@ theorem cancelSubjectTyped_rejected_unchanged state subject reason
     (cancelSubjectTyped state subject).state = state := by
   simp only [cancelSubjectTyped] at hrejected ⊢
   split
-  · simp at hrejected
-  · dsimp
-    split <;> simp_all
+  · rfl
+  · split <;> simp_all
 
 theorem cancelSubjectTyped_cancelled_exact state subject
     (hcancelled : (cancelSubjectTyped state subject).result = .cancelled) :
     (cancelSubjectTyped state subject).state = cancelSubject state subject := by
   simp only [cancelSubjectTyped] at hcancelled ⊢
   split
-  · simp at hcancelled
-  · dsimp
-    split <;> simp_all
+  · rename_i heq
+    rw [heq] at hcancelled
+    simp at hcancelled
+  · split <;> simp_all
 
 theorem wake_reserves_exact_envelope state endpoint receiver envelope :
     (wakeState state endpoint receiver envelope).completion receiver =
@@ -659,6 +1080,7 @@ theorem wellFormed_waiter_properties state endpoint subject (hwf : WellFormed st
       authorizedReceive state subject endpoint ∧
       state.scheduler.lifecycle.capabilities.subjects subject = true ∧
       state.scheduler.lifecycle.runnable subject = false ∧
+      Scheduler.ownsAddressSpace state.scheduler subject ≠ none ∧
       state.scheduler.lifecycle.current ≠ some subject ∧
       subject ∉ state.scheduler.ready :=
   hwf.2.2.1 endpoint subject hmember
