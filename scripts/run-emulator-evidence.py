@@ -92,6 +92,25 @@ REQUIRED_FAST_ENTRY_ROWS = {
         "reason": "fast-entry-target-readback",
     },
 }
+for mechanism, mode in (
+    ("star", "17"),
+    ("cstar", "18"),
+    ("sfmask", "19"),
+    ("sysenter-cs", "20"),
+    ("sysenter-esp", "21"),
+):
+    scenario = f"fast-entry-{mechanism}-relaxation"
+    REQUIRED_FAST_ENTRY_ROWS[f"return-{scenario}"] = {
+        "runner": "return",
+        "result_class": "controlled-rejection",
+        "timeout": "30",
+        "image": f"leanos-@VERSION@-x86_64-return-{scenario}.iso",
+        "elf": f"leanos-return-{scenario}.elf",
+        "serial_log": f"return-corruption-{scenario}.serial.log",
+        "scenario": scenario,
+        "mode": mode,
+        "reason": "fast-entry-target-readback",
+    }
 
 
 class EvidenceError(RuntimeError):

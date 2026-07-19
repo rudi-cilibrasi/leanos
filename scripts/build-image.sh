@@ -543,7 +543,12 @@ for spec in "${return_corruptions[@]}"; do
     }
   elif [[ "$fixture" == fast-entry-sce-relaxation ||
       "$fixture" == fast-entry-lstar-relaxation ||
-      "$fixture" == fast-entry-sysenter-eip-relaxation ]]; then
+      "$fixture" == fast-entry-sysenter-eip-relaxation ||
+      "$fixture" == fast-entry-star-relaxation ||
+      "$fixture" == fast-entry-cstar-relaxation ||
+      "$fixture" == fast-entry-sfmask-relaxation ||
+      "$fixture" == fast-entry-sysenter-cs-relaxation ||
+      "$fixture" == fast-entry-sysenter-esp-relaxation ]]; then
     if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}.elf" \
         >"$build/return-${fixture}-policy.log" 2>&1; then
       echo "error: fast-entry relaxation policy fixture unexpectedly passed" >&2

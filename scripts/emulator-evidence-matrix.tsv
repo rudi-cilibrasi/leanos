@@ -1,5 +1,5 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	30
+# mandatory-count	35
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
@@ -28,6 +28,11 @@ return-capability-reuse-generation	return	controlled-rejection	30	leanos-@VERSIO
 return-fast-entry-sce-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-sce-relaxation.iso	leanos-return-fast-entry-sce-relaxation.elf	return-corruption-fast-entry-sce-relaxation.serial.log	fast-entry-sce-relaxation	14	fast-entry-efer-readback
 return-fast-entry-lstar-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-lstar-relaxation.iso	leanos-return-fast-entry-lstar-relaxation.elf	return-corruption-fast-entry-lstar-relaxation.serial.log	fast-entry-lstar-relaxation	15	fast-entry-target-readback
 return-fast-entry-sysenter-eip-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-sysenter-eip-relaxation.iso	leanos-return-fast-entry-sysenter-eip-relaxation.elf	return-corruption-fast-entry-sysenter-eip-relaxation.serial.log	fast-entry-sysenter-eip-relaxation	16	fast-entry-target-readback
+return-fast-entry-star-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-star-relaxation.iso	leanos-return-fast-entry-star-relaxation.elf	return-corruption-fast-entry-star-relaxation.serial.log	fast-entry-star-relaxation	17	fast-entry-target-readback
+return-fast-entry-cstar-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-cstar-relaxation.iso	leanos-return-fast-entry-cstar-relaxation.elf	return-corruption-fast-entry-cstar-relaxation.serial.log	fast-entry-cstar-relaxation	18	fast-entry-target-readback
+return-fast-entry-sfmask-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-sfmask-relaxation.iso	leanos-return-fast-entry-sfmask-relaxation.elf	return-corruption-fast-entry-sfmask-relaxation.serial.log	fast-entry-sfmask-relaxation	19	fast-entry-target-readback
+return-fast-entry-sysenter-cs-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-sysenter-cs-relaxation.iso	leanos-return-fast-entry-sysenter-cs-relaxation.elf	return-corruption-fast-entry-sysenter-cs-relaxation.serial.log	fast-entry-sysenter-cs-relaxation	20	fast-entry-target-readback
+return-fast-entry-sysenter-esp-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-sysenter-esp-relaxation.iso	leanos-return-fast-entry-sysenter-esp-relaxation.elf	return-corruption-fast-entry-sysenter-esp-relaxation.serial.log	fast-entry-sysenter-esp-relaxation	21	fast-entry-target-readback
 double-fault	double-fault	fail-stop	30	leanos-@VERSION@-x86_64-double-fault.iso	leanos-double-fault.elf	double-fault.serial.log	double-fault	-	-
 entry-stack-overflow	entry-stack-overflow	fail-stop	30	leanos-@VERSION@-x86_64-entry-stack-overflow.iso	leanos-entry-stack-overflow.elf	entry-stack-overflow.serial.log	entry-stack-overflow	-	-
 double-fault-guard-mapped	double-fault-guard	controlled-rejection	30	leanos-@VERSION@-x86_64-double-fault-guard-mapped.iso	leanos-double-fault-guard-mapped.elf	double-fault-guard-mapped.serial.log	double-fault-guard-mapped	-	-

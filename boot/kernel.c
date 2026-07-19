@@ -557,6 +557,21 @@ static const char *return_corruption_name(uint64_t mode) {
 #if LEANOS_RETURN_CORRUPTION_MODE == 16
     case 16: return "fast-entry-sysenter-eip-relaxation";
 #endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 17
+    case 17: return "fast-entry-star-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 18
+    case 18: return "fast-entry-cstar-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 19
+    case 19: return "fast-entry-sfmask-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 20
+    case 20: return "fast-entry-sysenter-cs-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 21
+    case 21: return "fast-entry-sysenter-esp-relaxation";
+#endif
     default: return "none";
     }
 }
@@ -572,7 +587,7 @@ static void inject_return_corruption(uint64_t *saved) {
     if (mode == 13) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
-    serial_puts(mode == 14 || mode == 15 || mode == 16
+    serial_puts(mode >= 14 && mode <= 21
         ? " stage=machine-control result=INJECTED\n"
         : " stage=outgoing-frame result=INJECTED\n");
     switch (mode) {
@@ -617,6 +632,42 @@ static void inject_return_corruption(uint64_t *saved) {
         const uint64_t target = (uint64_t)user_a_entry;
         __asm__ volatile ("wrmsr" : : "a"((uint32_t)target),
             "d"((uint32_t)(target >> 32)), "c"(UINT32_C(0x176)) :
+            "memory");
+        break;
+    }
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 17
+    case 17:
+        __asm__ volatile ("wrmsr" : : "a"(UINT32_C(0x8)), "d"(0),
+            "c"(UINT32_C(0xc0000081)) : "memory");
+        break;
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 18
+    case 18: {
+        const uint64_t target = (uint64_t)user_a_entry;
+        __asm__ volatile ("wrmsr" : : "a"((uint32_t)target),
+            "d"((uint32_t)(target >> 32)), "c"(UINT32_C(0xc0000083)) :
+            "memory");
+        break;
+    }
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 19
+    case 19:
+        __asm__ volatile ("wrmsr" : : "a"(UINT32_C(0x200)), "d"(0),
+            "c"(UINT32_C(0xc0000084)) : "memory");
+        break;
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 20
+    case 20:
+        __asm__ volatile ("wrmsr" : : "a"(UINT32_C(0x8)), "d"(0),
+            "c"(UINT32_C(0x174)) : "memory");
+        break;
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 21
+    case 21: {
+        const uint64_t target = (uint64_t)user_a_stack;
+        __asm__ volatile ("wrmsr" : : "a"((uint32_t)target),
+            "d"((uint32_t)(target >> 32)), "c"(UINT32_C(0x175)) :
             "memory");
         break;
     }

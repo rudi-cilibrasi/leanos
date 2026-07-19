@@ -106,10 +106,12 @@ record the CPU/MSR snapshot, raw vector-6 denial, unreachable alternate target,
 complete attacker cleanup, validated peer return, survivor canaries, exact
 serial transcript, command, image, ELF, and hashes as tested evidence.
 
-Controlled QEMU images mutate EFER.SCE, IA32_LSTAR, or IA32_SYSENTER_EIP after
-the boot read-back and immediately before the first outbound validation. The
-target cases install the user-A text address as a stale alternate target while
-SCE remains denied and the selected long-mode contract remains unchanged.
+Controlled QEMU images independently mutate every modeled live fast-entry
+control after the boot read-back and immediately before the first outbound
+validation: EFER.SCE, STAR, LSTAR, CSTAR, SFMASK, and the SYSENTER CS, ESP, and
+EIP fields. Target and stack cases install user-A addresses as stale values;
+the remaining cases install small nonzero policy values while the selected
+long-mode contract remains unchanged.
 The production return gate rereads the live tuple, emits the typed
 `fast-entry-efer-readback` or `fast-entry-target-readback` terminal result, and
 no CPL3 entry or successful final record is accepted. These negative images

@@ -264,6 +264,25 @@ def run_fixtures() -> None:
             "return-fast-entry-sysenter-eip-relaxation",
         )
 
+        missing_complete_live_inventory = tmp / "missing-complete-live-inventory.tsv"
+        mutate_matrix(
+            missing_complete_live_inventory,
+            lambda lines: [
+                line.replace(
+                    "return-fast-entry-sysenter-esp-relaxation",
+                    "return-fast-entry-sysenter-esp-relaxation-replacement",
+                )
+                if line.startswith("return-fast-entry-sysenter-esp-relaxation\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_complete_live_inventory),
+            "mandatory fast-entry scenario is absent: "
+            "return-fast-entry-sysenter-esp-relaxation",
+        )
+
         wrong_class = tmp / "wrong-class.tsv"
         mutate_matrix(
             wrong_class,
