@@ -177,6 +177,36 @@ def run_fixtures() -> None:
             "mandatory inventory count differs",
         )
 
+        missing_fast_entry = tmp / "missing-fast-entry.tsv"
+        mutate_matrix(
+            missing_fast_entry,
+            lambda lines: [
+                line.replace("fast-entry-syscall", "fast-entry-syscall-replacement")
+                if line.startswith("fast-entry-syscall\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_fast_entry),
+            "mandatory fast-entry scenario is absent: fast-entry-syscall",
+        )
+
+        drifted_fast_entry = tmp / "drifted-fast-entry.tsv"
+        mutate_matrix(
+            drifted_fast_entry,
+            lambda lines: [
+                line.replace("\t30\t", "\t31\t", 1)
+                if line.startswith("fast-entry-sysenter\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(drifted_fast_entry),
+            "mandatory fast-entry scenario fast-entry-sysenter has unexpected timeout",
+        )
+
         wrong_class = tmp / "wrong-class.tsv"
         mutate_matrix(
             wrong_class,

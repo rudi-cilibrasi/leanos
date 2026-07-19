@@ -35,6 +35,30 @@ RUNNER_RESULT_CLASSES = {
     "entry-stack-overflow": "fail-stop",
     "double-fault-guard": "controlled-rejection",
 }
+REQUIRED_FAST_ENTRY_ROWS = {
+    "fast-entry-syscall": {
+        "runner": "boot",
+        "result_class": "accepted-boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fast-entry-syscall.iso",
+        "elf": "leanos-fast-entry-syscall.elf",
+        "serial_log": "fast-entry-syscall.serial.log",
+        "scenario": "fast-entry-syscall",
+        "mode": "-",
+        "reason": "-",
+    },
+    "fast-entry-sysenter": {
+        "runner": "boot",
+        "result_class": "accepted-boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fast-entry-sysenter.iso",
+        "elf": "leanos-fast-entry-sysenter.elf",
+        "serial_log": "fast-entry-sysenter.serial.log",
+        "scenario": "fast-entry-sysenter",
+        "mode": "-",
+        "reason": "-",
+    },
+}
 
 
 class EvidenceError(RuntimeError):
@@ -143,6 +167,20 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
         raise EvidenceError(
             f"mandatory inventory count differs: declared {mandatory_count}, found {len(rows)}"
         )
+
+    rows_by_id = {row["id"]: row for row in rows}
+    for scenario_id, expected in REQUIRED_FAST_ENTRY_ROWS.items():
+        row = rows_by_id.get(scenario_id)
+        if row is None:
+            raise EvidenceError(
+                f"mandatory fast-entry scenario is absent: {scenario_id}"
+            )
+        for key, value in expected.items():
+            if row[key] != value:
+                raise EvidenceError(
+                    f"mandatory fast-entry scenario {scenario_id} has "
+                    f"unexpected {key} {row[key]!r}"
+                )
 
     serials = [row["serial_log"] for row in rows]
     if len(serials) != len(set(serials)):
