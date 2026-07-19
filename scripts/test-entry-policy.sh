@@ -39,6 +39,9 @@ ud_before_normalize() { sed -i '/NORMALIZE_ENTRY 6, 0/i\    call extended_state_
 nm_before_normalize() { sed -i '/NORMALIZE_ENTRY 7, 0/i\    call extended_state_denial_handler' "$tmp/boot.S"; }
 c_before_normalize() { sed -i '/NORMALIZE_ENTRY 128, 0/i\    call syscall_handler' "$tmp/boot.S"; }
 wrong_tss_stack() { sed -i 's/tss.rsp0 = (uint64_t)__entry_stack_end;/tss.rsp0 = (uint64_t)boot_stack_top;/' "$tmp/kernel.c"; }
+inherited_sce() { sed -i 's/and \$~1, %eax/nop/' "$tmp/boot.S"; }
+omitted_fast_entry_readback() { sed -i 's/check_fast_entry_control();/\/\* omitted fixture \*\//' "$tmp/kernel.c"; }
+extra_fast_entry_write() { sed -i '/normalize_fast_entry_sysenter_eip_write:/a\    wrmsr' "$tmp/boot.S"; }
 
 run_fixture wrong-target 'vector=14 field=target-or-dpl' wrong_target
 run_fixture wrong-ud-target 'vector=6 field=target-or-dpl' wrong_ud_target
@@ -54,5 +57,8 @@ run_fixture ud-handler-before-normalize 'vector=6 path=denial' ud_before_normali
 run_fixture nm-handler-before-normalize 'vector=7 path=denial' nm_before_normalize
 run_fixture c-before-normalize 'vector=128 path=normalization' c_before_normalize
 run_fixture wrong-tss-stack 'vector=128 field=tss.rsp0' wrong_tss_stack
+run_fixture inherited-sce 'fast-entry control does not clear EFER.SCE' inherited_sce
+run_fixture omitted-fast-entry-readback 'fast-entry control read-back is not boot-reachable' omitted_fast_entry_readback
+run_fixture extra-fast-entry-write 'fast-entry control write inventory drifted' extra_fast_entry_write
 
 echo "Controlled entry descriptor, TSS, and path fixtures passed"

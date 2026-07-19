@@ -12,11 +12,50 @@ boot_source="${LEANOS_ENTRY_BOOT_SOURCE:-boot/boot.S}"
 symbols="$(nm "$elf")"
 for symbol in isr6 isr7 isr14 isr32 isr80 authorize_interrupt_entry \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
-  page_fault_handler timer_handler entry_stack boot_stack boot_stack_top; do
+  page_fault_handler timer_handler entry_stack boot_stack boot_stack_top \
+  normalize_fast_entry_msrs read_fast_entry_msrs; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: entry manifest symbol missing: $symbol" >&2; exit 1;
   }
 done
+
+# Fast-entry state must be produced by the reviewed early writes and consumed
+# by one explicit read-back inventory before any user return.  The labels keep
+# each privileged instruction reviewable in the final ELF.
+for symbol in normalize_fast_entry_efer_write normalize_fast_entry_star_write \
+  normalize_fast_entry_lstar_write normalize_fast_entry_cstar_write \
+  normalize_fast_entry_sfmask_write normalize_fast_entry_sysenter_cs_write \
+  normalize_fast_entry_sysenter_esp_write normalize_fast_entry_sysenter_eip_write \
+  read_fast_entry_efer read_fast_entry_star read_fast_entry_lstar \
+  read_fast_entry_cstar read_fast_entry_sfmask read_fast_entry_sysenter_cs \
+  read_fast_entry_sysenter_esp read_fast_entry_sysenter_eip; do
+  grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+    echo "error: fast-entry control symbol missing: $symbol" >&2; exit 1;
+  }
+done
+[[ "$(grep -Ec '^[[:space:]]+wrmsr$' "$boot_source")" -eq 8 ]] || {
+  echo "error: fast-entry control write inventory drifted" >&2; exit 1;
+}
+[[ "$(grep -Ec '^[[:space:]]+rdmsr$' "$boot_source")" -eq 9 ]] || {
+  echo "error: fast-entry control read inventory drifted" >&2; exit 1;
+}
+grep -Fq 'and $~1, %eax' "$boot_source" || {
+  echo "error: fast-entry control does not clear EFER.SCE" >&2; exit 1;
+}
+grep -Fq 'check_fast_entry_control();' "$kernel_source" || {
+  echo "error: fast-entry control read-back is not boot-reachable" >&2; exit 1;
+}
+control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"
+[[ "$(grep -Ec '[[:space:]]wrmsr$' <<<"$control_disassembly")" -eq 8 ]] || {
+  echo "error: fast-entry final-ELF write inventory drifted" >&2; exit 1;
+}
+[[ "$(grep -Ec '[[:space:]]rdmsr$' <<<"$control_disassembly")" -eq 9 ]] || {
+  echo "error: fast-entry final-ELF read inventory drifted" >&2; exit 1;
+}
+if grep -Eq '[[:space:]](syscall|sysenter|sysretq?|sysexit)([[:space:]]|$)' \
+    <<<"$control_disassembly"; then
+  echo "error: unauthorized fast-entry opcode in final ELF" >&2; exit 1
+fi
 
 [[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 8 ]] || {
   echo "error: vector=77 field=present violated=unexpected-installed-gate-count" >&2; exit 1;

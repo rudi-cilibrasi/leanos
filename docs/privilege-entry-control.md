@@ -30,8 +30,12 @@ the exact policy so a stale legacy-mode target cannot be accepted if the mode
 contract changes. See the
 [AMD64 system-programming manual](https://docs.amd.com/v/u/en-US/24593_3.44_APM_Vol2)
 and the [QEMU system-emulation documentation](https://www.qemu.org/docs/master/system/introduction.html).
-The machine stage must pin and retain the exact QEMU version, command, CPUID
-projection, and MSR snapshot; documentation does not replace that evidence.
+The boot assembly now realizes the modeled MSR recipe before entering long
+mode. After the shared vector-6/7 exception gates and TSS are installed,
+`check_fast_entry_control` rereads the complete modeled MSR tuple before the
+first CPL3 return. It compares EFER through the explicit SCE/LME/LMA/NXE mask
+and requires exact zero values for every target register. This is checked
+machine behavior, not proof that the hardware implements the model.
 
 `enabled` gives the finite authorization view. The
 `accepted_exactly_int80` theorem proves that, for every accepted control state,
@@ -50,8 +54,10 @@ from its authorization input; `attacker_payload_erasure` proves arbitrary
 scalar payload words cannot change the result.
 
 For the selected AMD long-mode contract, representative raw SYSCALL and
-SYSENTER attempts both require vector 6 (`#UD`). The model does not yet claim
-that the image has installed and exercised that shared gate for this policy.
+SYSENTER attempts both require vector 6 (`#UD`). The image installs vector 6
+through the existing shared normalizer, and the final-ELF entry-policy check
+retains that exact stub/descriptor path. Raw fast-system-call probes are not
+yet routed through a policy-specific denial handler or exercised end to end.
 A kernel-origin event, stale live controls, unexpected vector or error shape,
 ordinary `int 0x80` relabeled as denial, alternate CPL0 target execution,
 user-owned entry stack, or stale subject/address-space/CR3 binding becomes a
@@ -77,10 +83,16 @@ decoding or exception priority/delivery, IDT/TSS loads, assembly cleanup,
 generated C, compiler/linker output, QEMU/TCG, firmware/GRUB state, hardware,
 or final-binary refinement.
 
-The remaining machine checkpoint must normalize and reread the real MSRs;
-extend the shared inbound manifest only for the exact denial gate; route denial
-through authoritative termination and peer restore; gate the sole `iretq`
-epilogue on the live tuple; add the fixed-width shared-oracle adapter; inventory
-all MSR and fast-entry opcodes; and add raw SYSCALL/SYSENTER QEMU peer-survival
-scenarios plus controlled build, guest, and runner negatives. Those results
-must be labeled checked/tested evidence, not Lean proof.
+The final-ELF policy currently requires the eight reviewed writes, nine
+reviewed reads, their labeled sites, and no SYSCALL, SYSENTER, SYSRET, or
+SYSEXIT opcode. Controlled fixtures reject inherited SCE, an omitted readback,
+and an extra MSR write. The normal QEMU image boots successfully with the
+runtime readback enabled; that finite observation does not establish raw
+alternate-instruction behavior.
+
+The remaining machine checkpoints must tie the selected CPUID/vendor snapshot
+to the policy, route raw denials through authoritative termination and peer
+restore, gate the sole `iretq` epilogue on the live tuple, add the fixed-width
+shared-oracle adapter, and add raw SYSCALL/SYSENTER QEMU peer-survival scenarios
+plus the remaining controlled build, guest, and runner negatives. Those
+results must be labeled checked/tested evidence, not Lean proof.

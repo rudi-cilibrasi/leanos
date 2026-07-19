@@ -32,6 +32,7 @@ extern uint64_t leanos_extended_state_denial_demo(uint64_t, uint64_t, uint64_t,
                                                    uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
+extern void read_fast_entry_msrs(uint64_t state[8]);
 extern void enable_smep(void);
 extern void run_smap_probe(void);
 extern void smap_copy_from(void *, const void *, uint64_t);
@@ -194,6 +195,22 @@ static void record_extended_state_cpuid(void) {
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     serial_puts("LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS\n");
 #endif
+}
+
+/* Read back every modeled fast-entry MSR after the exception manifest is live
+   and before the first CPL3 return.  EFER is compared through the complete
+   model mask; all target registers must exactly match the kernel-written
+   denial state. */
+static void check_fast_entry_control(void) {
+    uint64_t state[8];
+    read_fast_entry_msrs(state);
+    const uint64_t efer_model_mask = (1ull << 0) | (1ull << 8) |
+        (1ull << 10) | (1ull << 11);
+    const uint64_t efer_denied = (1ull << 8) | (1ull << 10) | (1ull << 11);
+    if ((state[0] & efer_model_mask) != efer_denied)
+        fail("fast-entry-efer-readback");
+    for (unsigned i = 1; i < 8; ++i)
+        if (state[i] != 0) fail("fast-entry-target-readback");
 }
 
 static uint64_t idt_target(const struct idt_entry *entry) {
@@ -1387,6 +1404,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     replay_oracle();
 
     privilege_init();
+    check_fast_entry_control();
 #ifdef LEANOS_DOUBLE_FAULT_PROBE
     run_double_fault_probe();
 #endif
