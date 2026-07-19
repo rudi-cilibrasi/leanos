@@ -680,7 +680,14 @@ private def returnWitnessComposite : FailStop.CompositeState :=
     capabilities := returnWitnessLifecycle.capabilities
     lifecycle := returnWitnessLifecycle
     resumable
-    transfers }
+    transfers
+    blockingIPC :=
+      { scheduler
+        mailbox := fun _ => none
+        waiters := fun _ => []
+        waiterEndpoint := fun _ => none
+        waiterCapacity := 0
+        completion := fun _ => none } }
 
 private def returnWitnessSyscallFrame : Interrupt.HardwareFrame :=
   { returnWitnessRequest.hardware with vector := 128 }

@@ -1,6 +1,7 @@
 import LeanOS.Interrupt
 import LeanOS.BootPageTablePlan
 import LeanOS.IPCSyscall
+import LeanOS.BlockingIPC
 import LeanOS.Preemption
 import LeanOS.CapabilityTransfer
 import LeanOS.ResumablePreemption
@@ -442,6 +443,9 @@ structure CompositeState where
   resumable : ResumablePreemption.State
   /-- The exact authoritative sealed-transfer model completed by issue #71. -/
   transfers : CapabilityTransfer.State
+  /-- Authoritative blocking endpoint state.  Its scheduler is published back
+  to every composite scheduler projection by `publishBlockingIPC`. -/
+  blockingIPC : BlockingIPC.State
 
 /-- A compiled return plan refines the active live virtual-memory view exactly
 at the two leaves used by the return gate.  The live object bindings must name
@@ -660,7 +664,14 @@ def bootRuntime (plan : BootPageTablePlan.Plan) : CompositeState :=
     capabilities := bootCapabilities
     lifecycle := bootLifecycle
     resumable
-    transfers := { toEndpointState := bootEndpoints, pending := fun _ => none } }
+    transfers := { toEndpointState := bootEndpoints, pending := fun _ => none }
+    blockingIPC :=
+      { scheduler
+        mailbox := fun _ => none
+        waiters := fun _ => []
+        waiterEndpoint := fun _ => none
+        waiterCapacity := 0
+        completion := fun _ => none } }
 
 /-- A successfully compiled bounded boot plan produces a concrete global
 invariant witness.  Boot does not synthesize a live subject or trusted return
@@ -875,6 +886,218 @@ private def installScheduler (state : CompositeState)
     (scheduler : Scheduler.State) : CompositeState :=
   installLifecycle { state with scheduler, preemption := { state.preemption with scheduler } }
     scheduler.lifecycle
+
+/-! ## Authoritative blocking-IPC publication
+
+`BlockingIPC.State` owns the waiter queues, completion reservations, and the
+scheduler transition that blocks or wakes a subject.  The older data-only IPC
+projection remains present while sealed-transfer composition is migrated, but
+it is not used to decide blocking behavior. -/
+
+/-- The blocking store and all composite scheduler views name one scheduler.
+The waiter/index and completion laws remain owned by `BlockingIPC.WellFormed`
+rather than being duplicated here. -/
+def CompositeState.BlockingIPCCoherent (state : CompositeState) : Prop :=
+  state.blockingIPC.scheduler = state.scheduler ∧
+  state.blockingIPC.scheduler.lifecycle = state.lifecycle
+
+/-- Strengthened runtime predicate for the authoritative blocking-IPC slice. -/
+def BlockingRuntimeWellFormed (state : CompositeState) : Prop :=
+  RuntimeWellFormed state ∧
+  BlockingIPC.WellFormed state.blockingIPC ∧
+  state.BlockingIPCCoherent
+
+/-- The boot-produced runtime also initializes the authoritative blocking
+store with empty waiter/completion indexes over the same scheduler. -/
+theorem bootRuntime_blockingRuntimeWellFormed input plan
+    (hcompiled : BootPageTablePlan.compile input = .ok plan) :
+    BlockingRuntimeWellFormed (bootRuntime plan) := by
+  refine ⟨bootRuntime_runtimeWellFormed input plan hcompiled, ?_, ?_⟩
+  · simp [bootRuntime, BlockingIPC.WellFormed, Scheduler.WellFormed,
+      SubjectLifecycle.WellFormed, Capability.WellFormed,
+      Capability.SlotsWellFormed, Capability.DerivationsWellFormed,
+      Capability.LiveIdentitiesUnique, Capability.SlotSpacesWellFormed,
+      BlockingIPC.authorizedReceive, bootLifecycle, bootCapabilities]
+  · simp [CompositeState.BlockingIPCCoherent, bootRuntime]
+
+/-- Publish the complete blocking store first, then synchronize its scheduler
+and lifecycle to every overlapping composite projection.  Waiters and reserved
+completions are copied literally; they are never reconstructed by filtering. -/
+def publishBlockingIPC (state : CompositeState)
+    (blockingIPC : BlockingIPC.State) : CompositeState :=
+  installScheduler { state with blockingIPC } blockingIPC.scheduler
+
+@[simp] theorem publishBlockingIPC_blockingIPC state blockingIPC :
+    (publishBlockingIPC state blockingIPC).blockingIPC = blockingIPC := by
+  rfl
+
+@[simp] theorem publishBlockingIPC_scheduler state blockingIPC :
+    (publishBlockingIPC state blockingIPC).scheduler = blockingIPC.scheduler := by
+  rfl
+
+@[simp] theorem publishBlockingIPC_waiters state blockingIPC endpoint :
+    (publishBlockingIPC state blockingIPC).blockingIPC.waiters endpoint =
+      blockingIPC.waiters endpoint := by
+  rfl
+
+@[simp] theorem publishBlockingIPC_waiterEndpoint state blockingIPC subject :
+    (publishBlockingIPC state blockingIPC).blockingIPC.waiterEndpoint subject =
+      blockingIPC.waiterEndpoint subject := by
+  rfl
+
+@[simp] theorem publishBlockingIPC_completion state blockingIPC subject :
+    (publishBlockingIPC state blockingIPC).blockingIPC.completion subject =
+      blockingIPC.completion subject := by
+  rfl
+
+theorem publishBlockingIPC_coherent state blockingIPC :
+    (publishBlockingIPC state blockingIPC).BlockingIPCCoherent := by
+  simp [CompositeState.BlockingIPCCoherent, publishBlockingIPC,
+    installScheduler, installLifecycle]
+
+/-- A published wake retains the exact reserved envelope and makes the same
+receiver runnable in the scheduler observed by the rest of the composite. -/
+theorem publishBlockingIPC_wake_coherent state blockingIPC endpoint receiver envelope :
+    let next := publishBlockingIPC state
+      (BlockingIPC.wakeState blockingIPC endpoint receiver envelope)
+    next.blockingIPC.completion receiver = some (.delivered envelope) ∧
+      next.scheduler.lifecycle.runnable receiver = true ∧
+      next.blockingIPC.scheduler = next.scheduler := by
+  simp [BlockingIPC.wake_reserves_exact_envelope,
+    BlockingIPC.wake_marks_receiver_runnable]
+
+inductive BlockingIPCCall where
+  | receive (handleWord : UInt64)
+  | send (handleWord word0 word1 : UInt64)
+  deriving DecidableEq, Repr
+
+/-- Finite public observation of a blocking transition.  Receive retains the
+dependency's typed `delivered`/`blocked`/rejected result; send distinguishes a
+mailbox enqueue from the successful wake of one FIFO receiver. -/
+inductive CompositeBlockingIPCReply where
+  | receive (result : BlockingIPC.WordReceiveResult)
+  | sendHandleRejected (reason : CapabilityHandle.WordResolveDenial)
+  | sendRejected (reason : BlockingIPC.Error)
+  | sent
+  | woke (receiver : BlockingIPC.SubjectId)
+  deriving DecidableEq, Repr
+
+structure CompositeBlockingIPCOutcome where
+  state : CompositeState
+  reply : CompositeBlockingIPCReply
+
+/-- Total authoritative blocking dispatcher.  Caller identity is projected
+from the execution latch.  On success the dependency's scheduler is published
+atomically with its waiter/completion state; every typed rejection returns the
+identical composite state. -/
+def dispatchBlockingIPC (state : CompositeState)
+    (call : BlockingIPCCall) : CompositeBlockingIPCOutcome :=
+  let caller := state.execution.core.context.currentSubject
+  match call with
+  | .receive handleWord =>
+      let outcome := BlockingIPC.receiveOrBlockWord state.blockingIPC caller handleWord
+      match outcome.result with
+      | .handleRejected reason => { state, reply := .receive (.handleRejected reason) }
+      | .completed (.rejected reason) =>
+          { state, reply := .receive (.completed (.rejected reason)) }
+      | .completed result =>
+          { state := publishBlockingIPC state outcome.state
+            reply := .receive (.completed result) }
+  | .send handleWord word0 word1 =>
+      let payload : BlockingIPC.Payload := { word0, word1 }
+      let outcome := BlockingIPC.sendWord state.blockingIPC caller handleWord payload
+      match outcome.result with
+      | .handleRejected reason => { state, reply := .sendHandleRejected reason }
+      | .completed (.rejected reason) => { state, reply := .sendRejected reason }
+      | .completed .accepted =>
+          let reply :=
+            match CapabilityHandle.resolveCurrent
+                state.blockingIPC.scheduler.lifecycle.capabilities
+                { caller } handleWord .endpoint with
+            | .error _ => CompositeBlockingIPCReply.sent
+            | .ok resolution =>
+                match state.blockingIPC.waiters resolution.capability.object with
+                | [] => .sent
+                | receiver :: _ => .woke receiver
+          { state := publishBlockingIPC state outcome.state, reply }
+
+/-- A dependency-level block is surfaced as `blocked`, and the exact state
+containing the waiter registration and scheduler selection is published. -/
+theorem dispatchBlockingIPC_blocked_exact state handleWord
+    (hblocked : (BlockingIPC.receiveOrBlockWord state.blockingIPC
+      state.execution.core.context.currentSubject handleWord).result =
+        .completed .blocked) :
+    dispatchBlockingIPC state (.receive handleWord) =
+      { state := publishBlockingIPC state
+          (BlockingIPC.receiveOrBlockWord state.blockingIPC
+            state.execution.core.context.currentSubject handleWord).state
+        reply := .receive (.completed .blocked) } := by
+  simp [dispatchBlockingIPC, hblocked]
+
+/-- An accepted send to a nonempty FIFO queue reports the exact receiver that
+the dependency wakes and publishes the matching completion/scheduler state. -/
+theorem dispatchBlockingIPC_woke_exact state handleWord word0 word1 resolution receiver rest
+    (hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject }
+      handleWord .endpoint = .ok resolution)
+    (hwaiters : state.blockingIPC.waiters resolution.capability.object =
+      receiver :: rest)
+    (haccepted : (BlockingIPC.sendWord state.blockingIPC
+      state.execution.core.context.currentSubject handleWord { word0, word1 }).result =
+        .completed .accepted) :
+    dispatchBlockingIPC state (.send handleWord word0 word1) =
+      { state := publishBlockingIPC state
+          (BlockingIPC.sendWord state.blockingIPC
+            state.execution.core.context.currentSubject handleWord { word0, word1 }).state
+        reply := .woke receiver } := by
+  simp [dispatchBlockingIPC, haccepted, hresolve, hwaiters]
+
+/-- Every authoritative blocking transition leaves the blocking scheduler and
+the composite scheduler equal, including all typed rejection paths. -/
+theorem dispatchBlockingIPC_scheduler_coherent state call
+    (hcoherent : state.BlockingIPCCoherent) :
+    (dispatchBlockingIPC state call).state.BlockingIPCCoherent := by
+  rcases hcoherent with ⟨hscheduler, hlifecycle⟩
+  cases call with
+  | receive handleWord =>
+      cases hresult : (BlockingIPC.receiveOrBlockWord state.blockingIPC
+        state.execution.core.context.currentSubject handleWord).result with
+      | handleRejected reason =>
+          simpa [dispatchBlockingIPC, hresult] using
+            (show state.BlockingIPCCoherent from ⟨hscheduler, hlifecycle⟩)
+      | completed result =>
+          cases result with
+          | rejected reason =>
+              simpa [dispatchBlockingIPC, hresult] using
+                (show state.BlockingIPCCoherent from ⟨hscheduler, hlifecycle⟩)
+          | delivered envelope =>
+              simpa [dispatchBlockingIPC, hresult] using
+                publishBlockingIPC_coherent state
+                  (BlockingIPC.receiveOrBlockWord state.blockingIPC
+                    state.execution.core.context.currentSubject handleWord).state
+          | blocked =>
+              simpa [dispatchBlockingIPC, hresult] using
+                publishBlockingIPC_coherent state
+                  (BlockingIPC.receiveOrBlockWord state.blockingIPC
+                    state.execution.core.context.currentSubject handleWord).state
+  | send handleWord word0 word1 =>
+      cases hresult : (BlockingIPC.sendWord state.blockingIPC
+        state.execution.core.context.currentSubject handleWord { word0, word1 }).result with
+      | handleRejected reason =>
+          simpa [dispatchBlockingIPC, hresult] using
+            (show state.BlockingIPCCoherent from ⟨hscheduler, hlifecycle⟩)
+      | completed result =>
+          cases result with
+          | rejected reason =>
+              simpa [dispatchBlockingIPC, hresult] using
+                (show state.BlockingIPCCoherent from ⟨hscheduler, hlifecycle⟩)
+          | accepted =>
+              simpa [dispatchBlockingIPC, hresult] using
+                publishBlockingIPC_coherent state
+                  (BlockingIPC.sendWord state.blockingIPC
+                    state.execution.core.context.currentSubject handleWord
+                    { word0, word1 }).state
 
 /-- Publish a queue-only admission without invoking lifecycle cleanup.  An
 accepted `Scheduler.add` retains the lifecycle exactly, so the only consumers
