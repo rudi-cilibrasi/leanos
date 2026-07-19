@@ -121,6 +121,8 @@ LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/ok.tsv" \
 grep -Fq $'fixture_root\troot' "$tmp/edges.tsv"
 grep -Fq 'path=ok final-elf-root=fixture_root save-register-pushes=15 reviewed-functions=2 reachable-functions=3' \
   "$tmp/elf-ok.log"
+grep -Fq 'assembly-functions=1 root-assembly-bytes=136 assembly-bytes=0 call-return-bytes=16 total=208 margin=0' \
+  "$tmp/elf-ok.log"
 
 run_rejected_elf() {
   local name="$1" diagnostic="$2"
@@ -145,5 +147,6 @@ run_rejected_elf elf-push-count 'final-elf-save-register-count=14 expected=15 ro
 printf 'elf-cycle\tkernel\t0\t0\tcycle_root\tcycle_a;cycle_b\n' >"$tmp/elf-cycle.tsv"
 run_rejected_elf elf-cycle 'final-elf-recursion-cycle='
 printf 'elf-assembly-over\tkernel\t0\t0\tassembly_over_root\troot;leaf\n' >"$tmp/elf-assembly-over.tsv"
-run_rejected_elf elf-assembly-over 'final-elf-entry-stack over budget'
+run_rejected_elf elf-assembly-over \
+  'final-elf-entry-stack over budget by 172 byte(s) total=472 usable=300 assembly=256 call-returns=24'
 echo 'entry-stack budget fixtures passed'

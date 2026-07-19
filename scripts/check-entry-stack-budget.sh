@@ -108,13 +108,24 @@ objdump -d --no-show-raw-insn "$elf" | awk \
     -v indirect="$tmp/indirect" -v pushes="$tmp/pushes" \
     -v assembly="$tmp/assembly" -v unsupported="$tmp/unsupported" \
     -v calls="$tmp/calls" '
+  function unsigned_immediate(value, index_, digit, result) {
+    if (value !~ /^0[xX]/) return value + 0
+    result = 0
+    value = tolower(substr(value, 3))
+    for (index_ = 1; index_ <= length(value); index_++) {
+      digit = index("0123456789abcdef", substr(value, index_, 1)) - 1
+      if (digit < 0) return -1
+      result = result * 16 + digit
+    }
+    return result
+  }
   /^[[:xdigit:]]+[[:space:]]+<[^>]+>:/ {
     caller = $2; gsub(/[<>:]/, "", caller); present[caller] = 1; next
   }
   caller != "" && $2 ~ /^push/ { count[caller]++; allocation[caller] += 8 }
-  caller != "" && $2 ~ /^sub(q)?$/ && $3 ~ /^\$(0x[[:xdigit:]]+|[0-9]+),%rsp$/ {
+  caller != "" && $2 ~ /^sub(q)?$/ && $3 ~ /^\$(0[xX][[:xdigit:]]+|[0-9]+),%rsp$/ {
     operand = $3; sub(/^\$/, "", operand); sub(/,%rsp$/, "", operand)
-    allocation[caller] += operand + 0
+    allocation[caller] += unsigned_immediate(operand)
   }
   caller != "" && $2 ~ /^(and|andq|enter|lea|leaq|mov|movq)$/ && $3 ~ /,%rsp$/ {
     print caller "\t" $2 "\t" $3 >> unsupported
@@ -218,6 +229,7 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
   done <"$tmp/reachable"
   assembly_bytes=0
   assembly_functions=0
+  root_assembly_bytes=0
   while IFS= read -r function_name; do
     [[ -z "${usage[$function_name]+set}" ]] || continue
     assembly_cost="$(awk -F '\t' -v name="$function_name" \
@@ -233,6 +245,7 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
     }
     if [[ "$function_name" == "$elf_root" ]]; then
       modeled_root_bytes=$((save_count * 8 + normalization_bytes))
+      root_assembly_bytes="$assembly_cost"
       (( assembly_cost >= modeled_root_bytes )) || {
         echo "error: path=$path final-elf-root-stack-allocation=$assembly_cost expected-at-least=$modeled_root_bytes root=$elf_root" >&2
         exit 1
@@ -261,8 +274,8 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
       exit 1
     }
   done
-  printf 'path=%s final-elf-root=%s save-register-pushes=%s reviewed-functions=%s reachable-functions=%s assembly-functions=%s assembly-bytes=%s call-return-bytes=%s total=%s margin=%s extracted-edges=%s result=PASS\n' \
+  printf 'path=%s final-elf-root=%s save-register-pushes=%s reviewed-functions=%s reachable-functions=%s assembly-functions=%s root-assembly-bytes=%s assembly-bytes=%s call-return-bytes=%s total=%s margin=%s extracted-edges=%s result=PASS\n' \
     "$path" "$elf_root" "$elf_save_count" "${#chain[@]}" "$(wc -l <"$tmp/reachable")" \
-    "$assembly_functions" "$assembly_bytes" "$call_bytes" "$final_total" "$final_margin" \
+    "$assembly_functions" "$root_assembly_bytes" "$assembly_bytes" "$call_bytes" "$final_total" "$final_margin" \
     "$(wc -l <"$tmp/edges")"
 done < "$manifest"
