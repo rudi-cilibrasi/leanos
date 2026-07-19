@@ -602,6 +602,32 @@ theorem copy_preserves_wellFormed (state : State) (actor : SubjectId)
             simpa [install, htarget] using hspaces subject slot hout
       · simpa [reject]
 
+/-- Delegation is monotonic for authority already present in the source state.
+The accepted branch installs into a slot proved empty, so every old witness
+remains available; every rejected branch returns the literal pre-state. -/
+theorem copy_preserves_authority (state : State) (actor : SubjectId)
+    (source : SlotId) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) (subject : SubjectId) (object : ObjectId) (right : Right)
+    (hauthority : HasAuthority state subject object right) :
+    HasAuthority (copy state actor source destination destinationSlot requested).state
+      subject object right := by
+  rcases hauthority with ⟨slot, capability, hslot, hobject, hright⟩
+  simp only [copy]
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  next copied hlookup hlive hinRange hempty hrights hgrant hsubset =>
+    refine ⟨slot, capability, ?_, hobject, hright⟩
+    by_cases htarget : subject = destination ∧ slot = destinationSlot
+    · rcases htarget with ⟨rfl, rfl⟩
+      rw [hslot] at hempty
+      simp at hempty
+    · simpa [install, htarget] using hslot
+
 theorem revoke_preserves_wellFormed (state : State) (actor : SubjectId)
     (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
     (hstate : WellFormed state) :
