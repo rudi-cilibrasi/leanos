@@ -1273,7 +1273,8 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       let outcome := Scheduler.selectNext state.scheduler
       match outcome.result with
       | .rejected _ => state
-      | .accepted _ => installScheduler state outcome.state
+      | .accepted none => state
+      | .accepted (some _) => installScheduler state outcome.state
   | .scheduleYield =>
       let outcome := Scheduler.yield state.scheduler
       match outcome.result with
@@ -2180,7 +2181,15 @@ theorem gate_scheduleNext_accepted_sound state context next
       Scheduler.WellFormed (gate state .scheduleNext).state.scheduler := by
   have hpreserved := Scheduler.selectNext_preserves_wellFormed state.scheduler hwellFormed
   rw [haccepted] at hpreserved
-  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+  cases context with
+  | none =>
+      have hnext : next = state.scheduler := by
+        simp only [Scheduler.selectNext] at haccepted
+        split at haccepted <;> simp_all [Scheduler.reject]
+        next => split at haccepted <;> simp_all [Scheduler.reject]
+      simp [gate, hmode, operationReply, applyOperation, haccepted, hnext, hwellFormed]
+  | some context =>
+      simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
 
 /-- Accepted queue removal publishes the exact resumable-aware cleanup result,
 including saved-context consumption and active-translation invalidation. -/
@@ -3678,6 +3687,24 @@ transition is literally unchanged, and the composite gate publishes no
 synchronization repair.  Stating these facts at the public gate boundary keeps
 the accepted context-publication obligation explicit while allowing rejected
 scheduler traces to compose with the already-covered operation families. -/
+
+/-- Empty dispatch is the accepted scheduler case that needs no resumable
+context publication: `selectNext` returns `accepted none` only when it retains
+the exact scheduler state.  The composite gate therefore reports the typed
+success while preserving every runtime projection byte-for-byte. -/
+theorem scheduleNext_accepted_none_preserves_runtimeWellFormed state
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (Scheduler.selectNext state.scheduler).result = .accepted none) :
+    RuntimeWellFormed (gate state .scheduleNext).state ∧
+      (gate state .scheduleNext).state = state ∧
+      (gate state .scheduleNext).result =
+        .completed (.scheduler (.accepted none)) := by
+  have hunchanged : (Scheduler.selectNext state.scheduler).state = state.scheduler := by
+    simp only [Scheduler.selectNext] at haccepted ⊢
+    split at haccepted <;> simp_all [Scheduler.reject]
+    next => split at haccepted <;> simp_all [Scheduler.reject]
+  simp [gate, hmode, applyOperation, operationReply, haccepted, hunchanged, hstate]
 
 theorem scheduleNext_rejected_preserves_runtimeWellFormed state reason
     (hstate : RuntimeWellFormed state)
