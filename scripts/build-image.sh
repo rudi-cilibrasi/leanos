@@ -128,6 +128,7 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -c boot/kernel.c -o "$build/kernel-extended-state.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state-peer-pke.h"' \
   -c boot/kernel.c -o "$build/kernel-extended-state-peer-pke.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -332,6 +333,7 @@ cmp "$build/boot-page-plan-extended-state.h" \
   -c boot/kernel.c -o "$build/kernel-extended-state.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state-peer-pke.h"' \
   -c boot/kernel.c -o "$build/kernel-extended-state-peer-pke.o"
 if nm "$build/kernel.o" | grep -Eq \

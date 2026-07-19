@@ -64,6 +64,10 @@ omit_peer_cr4_pke_validation() {
   sed -i '/const uint64_t forbidden_peer_cr4 =/s/(1ull << 22) | //' \
     "$tmp/kernel.c"
 }
+omit_final_return_control_validation() {
+  sed -i 's/(cr4 & required_cr4) != required_cr4 ||/(1 == 0) ||/' \
+    "$tmp/kernel.c"
+}
 add_clts() {
   sed -i '/^normalize_extended_state_cr0:/a\    clts' "$tmp/boot.S"
 }
@@ -94,6 +98,7 @@ run_fixture bypassed-handler-address-space 'field=handler-address-space-binding'
 run_fixture bypassed-handler-probe-vector 'field=handler-probe-vector' bypass_handler_probe_vector
 run_fixture bypassed-handler-probe-rip 'field=handler-probe-rip' bypass_handler_probe_rip
 run_fixture missing-peer-cr4-pke-validation 'field=peer-cr4-pke-validation' omit_peer_cr4_pke_validation
+run_fixture missing-final-return-control-validation 'field=final-return-control-validation' omit_final_return_control_validation
 run_fixture unauthorized-clts 'field=unauthorized-enable-or-restore source' add_clts
 run_fixture unauthorized-lmsw 'field=unauthorized-enable-or-restore source' add_lmsw
 run_fixture unauthorized-fxrstor 'field=unauthorized-enable-or-restore source' add_fxrstor

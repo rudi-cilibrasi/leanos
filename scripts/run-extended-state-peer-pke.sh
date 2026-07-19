@@ -46,8 +46,8 @@ grep -Fq 'LEANOS/13 EXTENDED-STATE event=deny subject=1' "$log" || {
   echo "error: peer-PKE image did not reach authoritative peer dispatch" >&2
   exit 1
 }
-if grep -Eq '^LEANOS/13 EXTENDED-STATE event=peer|^LEANOS/13 FINAL status=PASS' "$log"; then
-  echo "error: peer-PKE image published peer or final success after forbidden PKE" >&2
+if grep -Eq '^LEANOS/13 EXTENDED-STATE event=peer-cpl3-entry|^LEANOS/13 EXTENDED-STATE event=peer |^LEANOS/13 FINAL status=PASS' "$log"; then
+  echo "error: peer-PKE image entered CPL3 or published success after forbidden PKE" >&2
   exit 1
 fi
 echo "Extended-state peer-return PKE rejection passed"

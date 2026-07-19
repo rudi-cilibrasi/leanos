@@ -37,6 +37,10 @@ grep -Fq 'const uint64_t forbidden_peer_cr4 = (1ull << 22) | (1ull << 18) |' "$k
 grep -Fq '(cr4 & forbidden_peer_cr4) != 0' "$kernel_source" || {
   echo "error: extended-state field=peer-cr4-pke-validation missing" >&2; exit 1;
 }
+grep -Fq '(cr4 & required_cr4) != required_cr4 ||' "$kernel_source" &&
+grep -Fq 'fail("extended-state-denial-peer-controls");' "$kernel_source" || {
+  echo "error: extended-state field=final-return-control-validation missing" >&2; exit 1;
+}
 grep -Fq 'const uint64_t required_cr0 = (1ull << 16) | (1ull << 3) |' \
   "$kernel_source" || {
   echo "error: extended-state field=live-cr0-snapshot missing" >&2; exit 1;

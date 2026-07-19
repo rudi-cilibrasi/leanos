@@ -520,8 +520,10 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
     inject_return_corruption((uint64_t *)saved);
 #endif
     uint64_t rip = saved[15], cs = saved[16], flags = saved[17];
-    uint64_t rsp = saved[18], ss = saved[19], cr3;
+    uint64_t rsp = saved[18], ss = saved[19], cr0, cr3, cr4;
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
     const char *code_first, *code_last, *stack_first, *stack_last;
     const uint64_t *expected_cr3;
     if (current_subject == 1) {
@@ -548,6 +550,15 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
     if (rsp < (uint64_t)stack_first || rsp > (uint64_t)stack_last)
         fail("user-return-stack");
     if (cr3 != (uint64_t)expected_cr3) fail("user-return-cr3");
+    const uint64_t required_cr0 = (1ull << 16) | (1ull << 3) |
+        (1ull << 2) | (1ull << 1);
+    const uint64_t required_cr4 = (1ull << 20) | (1ull << 21);
+    const uint64_t forbidden_cr4 = (1ull << 22) | (1ull << 18) |
+        (1ull << 10) | (1ull << 9);
+    if ((cr0 & required_cr0) != required_cr0 ||
+        (cr4 & required_cr4) != required_cr4 ||
+        (cr4 & forbidden_cr4) != 0)
+        fail("extended-state-denial-peer-controls");
     /* Accepted ordinary entries remain armed through handler dispatch and
        context selection.  Clear only in this final validated return gate;
        initial boot dispatch is intentionally unarmed. */
@@ -919,6 +930,9 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     }
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     if (current_subject == 2 && number == 13) {
+#ifdef LEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE
+        serial_puts("LEANOS/13 EXTENDED-STATE event=peer-cpl3-entry subject=2\n");
+#endif
         uint64_t cr0, cr4, cr3;
         __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
         __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
