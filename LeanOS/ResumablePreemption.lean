@@ -790,6 +790,18 @@ theorem cleanup_terminates_subject state subject :
   simp [cleanupSubject, retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
     SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool]
 
+theorem cleanup_marks_subject_not_runnable state subject :
+    (cleanupSubject state subject).scheduler.lifecycle.runnable subject = false := by
+  simpa [cleanupSubject] using
+    SubjectLifecycle.terminated_not_runnable state.scheduler.lifecycle subject
+
+theorem cleanup_removes_owned_address_space state subject addressSpace
+    (howner : state.scheduler.lifecycle.addressOwner addressSpace = some subject) :
+    (cleanupSubject state subject).scheduler.lifecycle.addressOwner addressSpace = none := by
+  simpa [cleanupSubject] using
+    SubjectLifecycle.terminated_address_spaces_removed
+      state.scheduler.lifecycle subject addressSpace howner
+
 /-- Every address-space object owned by the terminated subject is retired from
 both lifecycle projections rather than merely becoming ownerless. -/
 theorem cleanup_retires_owned_address_space state subject addressSpace

@@ -589,9 +589,68 @@ theorem successful_faulting_live_runnable state entry
   all_goals (try split at hsuccess) <;> try simp_all [halt, reject]
   all_goals grind
 
+/-- Both successful branches expose the complete lifecycle and virtual-mapping
+cleanup boundary. Every address space owned by the faulting subject in the
+pre-state loses its owner and every mapping in that space. -/
+theorem successful_cleanup_complete state entry
+    (hsuccess : (dispatch state entry).action = .idle ∨
+      ∃ context, (dispatch state entry).action = .dispatch context) :
+    ∃ faulting,
+      state.scheduler.lifecycle.current = some faulting ∧
+        (dispatch state entry).state.scheduler.lifecycle.runnable faulting = false ∧
+        ∀ addressSpace,
+          state.scheduler.lifecycle.addressOwner addressSpace = some faulting →
+            (dispatch state entry).state.scheduler.lifecycle.addressOwner addressSpace = none ∧
+            ∀ page,
+              (dispatch state entry).state.translations.virtual.mappings
+                addressSpace page = none := by
+  rcases hsuccess with hidle | ⟨context, hdispatch⟩
+  · rcases idle_is_clean_empty state entry hidle with
+      ⟨faulting, hcurrent, hstate, _, _⟩
+    refine ⟨faulting, hcurrent, ?_, ?_⟩
+    · rw [hstate]
+      exact ResumablePreemption.cleanup_marks_subject_not_runnable state faulting
+    · intro addressSpace howner
+      rw [hstate]
+      exact ⟨ResumablePreemption.cleanup_removes_owned_address_space
+          state faulting addressSpace howner,
+        fun page => ResumablePreemption.cleanup_removes_owned_space_mappings
+          state faulting addressSpace page howner⟩
+  · obtain ⟨faulting, trusted, hcurrent, hselected, _, hstate⟩ :=
+      dispatched_is_authoritative_transition state entry context hdispatch
+    let cleaned := ResumablePreemption.cleanupSubject state faulting
+    have hrunnable :
+        (Scheduler.selectNext cleaned.scheduler).state.lifecycle.runnable =
+          cleaned.scheduler.lifecycle.runnable := by
+      grind [Scheduler.selectNext, Scheduler.reject]
+    have haddressOwner :
+        (Scheduler.selectNext cleaned.scheduler).state.lifecycle.addressOwner =
+          cleaned.scheduler.lifecycle.addressOwner := by
+      grind [Scheduler.selectNext, Scheduler.reject]
+    refine ⟨faulting, hcurrent, ?_, ?_⟩
+    · rw [hstate]
+      change (Scheduler.selectNext cleaned.scheduler).state.lifecycle.runnable faulting = false
+      rw [hrunnable]
+      exact ResumablePreemption.cleanup_marks_subject_not_runnable state faulting
+    · intro addressSpace howner
+      rw [hstate]
+      constructor
+      · change (Scheduler.selectNext cleaned.scheduler).state.lifecycle.addressOwner
+          addressSpace = none
+        rw [haddressOwner]
+        exact ResumablePreemption.cleanup_removes_owned_address_space
+          state faulting addressSpace howner
+      · intro page
+        change (TLB.switch cleaned.translations context.addressSpace).virtual.mappings
+          addressSpace page = none
+        simpa [TLB.switch] using
+          ResumablePreemption.cleanup_removes_owned_space_mappings
+            state faulting addressSpace page howner
+
 /-- Every successful composite result excludes resumption of the live,
 runnable subject that faulted, regardless of whether the deterministic
-scheduler finds a survivor. -/
+scheduler finds a survivor. It also exposes removal of the runnable bit and
+every pre-fault-owned address space and mapping. -/
 theorem successful_nonresumption state entry
     (hsuccess : (dispatch state entry).action = .idle ∨
       ∃ context, (dispatch state entry).action = .dispatch context) :
@@ -601,23 +660,38 @@ theorem successful_nonresumption state entry
         state.scheduler.lifecycle.runnable faulting = true ∧
         (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
           faulting = false ∧
+        (dispatch state entry).state.scheduler.lifecycle.runnable faulting = false ∧
         faulting ∉ (dispatch state entry).state.scheduler.ready ∧
         (dispatch state entry).state.scheduler.lifecycle.current ≠ some faulting ∧
         ResumablePreemption.contextFor
-          (dispatch state entry).state.contexts faulting = none := by
+          (dispatch state entry).state.contexts faulting = none ∧
+        ∀ addressSpace,
+          state.scheduler.lifecycle.addressOwner addressSpace = some faulting →
+            (dispatch state entry).state.scheduler.lifecycle.addressOwner addressSpace = none ∧
+            ∀ page,
+              (dispatch state entry).state.translations.virtual.mappings
+                addressSpace page = none := by
   rcases successful_faulting_live_runnable state entry hsuccess with
     ⟨liveFaulting, hliveCurrent, hlive, hrunnable⟩
+  rcases successful_cleanup_complete state entry hsuccess with
+    ⟨cleanedFaulting, hcleanedCurrent, hnotRunnable, hspaces⟩
   rcases hsuccess with hidle | ⟨context, hdispatch⟩
   · rcases idle_nonresumption state entry hidle with
       ⟨faulting, hfaulting, hdead, habsent, hcurrent, hcontext⟩
     have : liveFaulting = faulting := by simp_all
     subst liveFaulting
-    exact ⟨faulting, hfaulting, hlive, hrunnable, hdead, habsent, hcurrent, hcontext⟩
+    have : cleanedFaulting = faulting := by simp_all
+    subst cleanedFaulting
+    exact ⟨faulting, hfaulting, hlive, hrunnable, hdead, hnotRunnable,
+      habsent, hcurrent, hcontext, hspaces⟩
   · rcases dispatched_nonresumption state entry context hdispatch with
       ⟨faulting, hfaulting, hdead, habsent, hcurrent, hcontext⟩
     have : liveFaulting = faulting := by simp_all
     subst liveFaulting
-    exact ⟨faulting, hfaulting, hlive, hrunnable, hdead, habsent, hcurrent, hcontext⟩
+    have : cleanedFaulting = faulting := by simp_all
+    subst cleanedFaulting
+    exact ⟨faulting, hfaulting, hlive, hrunnable, hdead, hnotRunnable,
+      habsent, hcurrent, hcontext, hspaces⟩
 
 /-! Executable regressions for the invariant boundary closed by this slice:
 one queued survivor becomes the sole current subject, while no survivor yields
@@ -788,6 +862,22 @@ private def traceMultiState : ResumablePreemption.State :=
       active := some 1
       entries := [] } }
 
+/-- A non-vacuous fault-owned mapping fixture: address space 1 and its page-4
+mapping belong to the current subject before dispatch. -/
+private def traceFaultOwnedMapping : ResumablePreemption.State :=
+  { traceMultiState with
+    scheduler := { traceMultiState.scheduler with
+      lifecycle := { traceMultiState.scheduler.lifecycle with
+        mapping := fun space page =>
+          if space = 1 && page = 4 then some 1
+          else traceMultiState.scheduler.lifecycle.mapping space page } }
+    translations := { traceMultiState.translations with
+      virtual := { traceMultiState.translations.virtual with
+        mappings := fun space page =>
+          if space = 1 && page = 4 then
+            some { object := 1, permissions := { read := true } }
+          else traceMultiState.translations.virtual.mappings space page } } }
+
 private def traceStaleCurrent : InterruptEntry.Result :=
   match traceEntry with
   | .accepted frame => .accepted { frame with currentSubject := 3 }
@@ -858,6 +948,18 @@ private def traceStaleSurvivorVirtualOwner : ResumablePreemption.State :=
           else traceMultiState.translations.virtual.owner addressSpace } } }
 
 example : (dispatch traceMultiState traceEntry).action = .dispatch traceSurvivorContext := by
+  native_decide
+
+/-- Successful dispatch clears both the runnable projection and a real
+pre-fault mapping in every address space owned by the terminated subject. -/
+example :
+    traceFaultOwnedMapping.translations.virtual.mappings 1 4 =
+        some { object := 1, permissions := { read := true } } ∧
+      (dispatch traceFaultOwnedMapping traceEntry).action =
+        .dispatch traceSurvivorContext ∧
+      (dispatch traceFaultOwnedMapping traceEntry).state.scheduler.lifecycle.runnable 1 = false ∧
+      (dispatch traceFaultOwnedMapping traceEntry).state.scheduler.lifecycle.addressOwner 1 = none ∧
+      (dispatch traceFaultOwnedMapping traceEntry).state.translations.virtual.mappings 1 4 = none := by
   native_decide
 
 /-- The FIFO survivor at position two and its unrelated authority, mapping,

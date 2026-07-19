@@ -58,7 +58,8 @@ explicit composition dependency rather than a second cleanup rule here.
 
 Lean proves totality, determinism, attacker-payload independence, atomic
 rejection, fatal-store preservation and halt absorption, successful
-non-resumption, exact FIFO survivor selection, survivor context/resource
+non-resumption (including a cleared runnable bit and universal removal of every
+pre-fault-owned address space and mapping), exact FIFO survivor selection, survivor context/resource
 preservation, dispatch safety, empty-queue idle behavior, and preservation of
 the complete `ResumablePreemption.WellFormed` invariant for every result.
 
@@ -69,15 +70,16 @@ user frame made fatal by the normalizer, a survivor with a mismatched virtual
 owner projection, a kernel-origin page fault, unsupported
 vector, nested entry, already-halted state, and exact assertions that those
 terminal causes remain distinguishable while preserving authoritative stores;
-unrelated authority/memory/mapping/IPC state, and the
+clearing of the faulting subject's runnable bit and a nonempty owned mapping;
+unrelated authority/memory/mapping/IPC state; and the
 unsafe split pattern in which an attacker chooses a context after separate
 cleanup.
 
-The stable `SC-FAULT-DISPATCH-NONRESUMPTION` claim is intentionally narrower
-than this supporting theorem inventory: it advertises that every successful
-composite result began with a live, runnable kernel-selected current subject
-and removes that subject from live identity, the ready queue, the current slot,
-and the resumable bank.
+The stable `SC-FAULT-DISPATCH-NONRESUMPTION` claim advertises that every
+successful composite result began with a live, runnable kernel-selected current
+subject and removes that subject from live and runnable identity, the ready
+queue, the current slot, the resumable bank, and every address space and mapping
+that it owned in the pre-state.
 
 ## Progress scope and trusted boundary
 
