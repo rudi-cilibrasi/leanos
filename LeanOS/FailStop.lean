@@ -986,6 +986,20 @@ structure CompositeBlockingIPCOutcome where
   state : CompositeState
   reply : CompositeBlockingIPCReply
 
+/-- The finite blocking-IPC replies that denote an ordinary, nonfatal
+rejection.  Keeping this classifier separate from successful delivery,
+blocking, enqueue, and wake replies prevents a generic wrapper from treating a
+state-changing success as a rejection (or vice versa). -/
+inductive CompositeBlockingIPCRejection : CompositeBlockingIPCReply → Prop
+  | receiveHandle reason :
+      CompositeBlockingIPCRejection (.receive (.handleRejected reason))
+  | receive reason :
+      CompositeBlockingIPCRejection (.receive (.completed (.rejected reason)))
+  | sendHandle reason :
+      CompositeBlockingIPCRejection (.sendHandleRejected reason)
+  | send reason :
+      CompositeBlockingIPCRejection (.sendRejected reason)
+
 /-- Total authoritative blocking dispatcher.  Caller identity is projected
 from the execution latch.  On success the dependency's scheduler is published
 atomically with its waiter/completion state; every typed rejection returns the
@@ -1020,6 +1034,51 @@ def dispatchBlockingIPC (state : CompositeState)
                 | [] => .sent
                 | receiver :: _ => .woke receiver
           { state := publishBlockingIPC state outcome.state, reply }
+
+/-- Every ordinary blocking-IPC rejection is globally atomic.  In particular,
+the composite boundary does not publish dependency-local cleanup performed
+while observing a cancelled completion; callers see the exact pre-state until
+a successful operation consumes or replaces that authoritative completion. -/
+theorem dispatchBlockingIPC_rejection_atomic state call reply
+    (hrejected : CompositeBlockingIPCRejection reply)
+    (hreply : (dispatchBlockingIPC state call).reply = reply) :
+    (dispatchBlockingIPC state call).state = state := by
+  cases call with
+  | receive handleWord =>
+      cases hresult : (BlockingIPC.receiveOrBlockWord state.blockingIPC
+          state.execution.core.context.currentSubject handleWord).result with
+      | handleRejected reason => simp [dispatchBlockingIPC, hresult]
+      | completed result =>
+          cases result with
+          | rejected reason => simp [dispatchBlockingIPC, hresult]
+          | delivered envelope =>
+              cases hrejected <;> simp [dispatchBlockingIPC, hresult] at hreply
+          | blocked =>
+              cases hrejected <;> simp [dispatchBlockingIPC, hresult] at hreply
+  | send handleWord word0 word1 =>
+      cases hresult : (BlockingIPC.sendWord state.blockingIPC
+          state.execution.core.context.currentSubject handleWord { word0, word1 }).result with
+      | handleRejected reason => simp [dispatchBlockingIPC, hresult]
+      | completed result =>
+          cases result with
+          | rejected reason => simp [dispatchBlockingIPC, hresult]
+          | accepted =>
+              cases hresolve : CapabilityHandle.resolveCurrent
+                  state.blockingIPC.scheduler.lifecycle.capabilities
+                  { caller := state.execution.core.context.currentSubject }
+                  handleWord .endpoint with
+              | error reason =>
+                  cases hrejected <;>
+                    simp [dispatchBlockingIPC, hresult, hresolve] at hreply
+              | ok resolution =>
+                  cases hwaiters : state.blockingIPC.waiters
+                      resolution.capability.object with
+                  | nil =>
+                      cases hrejected <;>
+                        simp [dispatchBlockingIPC, hresult, hresolve, hwaiters] at hreply
+                  | cons receiver rest =>
+                      cases hrejected <;>
+                        simp [dispatchBlockingIPC, hresult, hresolve, hwaiters] at hreply
 
 /-- A dependency-level block is surfaced as `blocked`, and the exact state
 containing the waiter registration and scheduler selection is published. -/
