@@ -98,8 +98,8 @@ grep -Fq 'cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave
 grep -Fq 'vxorps %ymm0, %ymm0, %ymm0' "$boot_source" || {
   echo "error: extended-state field=avx-probe source" >&2; exit 1;
 }
-if grep -Eiq '^[[:space:]]*(clts|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|$)' "$boot_source" ||
-   grep -Eiq '"[[:space:]]*(clts|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|"|$)' "$kernel_source"; then
+if grep -Eiq '^[[:space:]]*(clts|lmsw|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|$)' "$boot_source" ||
+   grep -Eiq '"[[:space:]]*(clts|lmsw|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|"|$)' "$kernel_source"; then
   echo "error: extended-state field=unauthorized-enable-or-restore source" >&2
   exit 1
 fi
@@ -119,7 +119,7 @@ fi
 
 disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 denied_instructions="$(grep -Ei \
-  '^[[:space:]]*[0-9a-f]+:[[:space:]]+((f[a-z0-9]+|x(save|rstor)[a-z0-9]*|x(get|set)bv|v?(ld|st)mxcsr|emms|femms|vzero(upper|all))([[:space:]]|$)|[^#]*%(st([[:space:],]|\([0-7]\))|mm[0-7]|xmm[0-9]+|ymm[0-9]+|zmm[0-9]+))' \
+  '^[[:space:]]*[0-9a-f]+:[[:space:]]+((lmsw|f[a-z0-9]+|x(save|rstor)[a-z0-9]*|x(get|set)bv|v?(ld|st)mxcsr|emms|femms|vzero(upper|all))([[:space:]]|$)|[^#]*%(st([[:space:],]|\([0-7]\))|mm[0-7]|xmm[0-9]+|ymm[0-9]+|zmm[0-9]+))' \
   <<<"$disassembly" || true)"
 if [[ -z "$probe_address" ]]; then
   [[ -z "$denied_instructions" ]] || {
@@ -170,7 +170,7 @@ grep -Eq '[[:space:]]or[[:space:]]+\$0x8001000e,%eax' <<<"$disassembly" || {
 [[ $(grep -Ec '[[:space:]]cpuid([[:space:]]|$)' <<<"$disassembly") -ge 2 ]] || {
   echo "error: extended-state field=cpuid-snapshot final-elf" >&2; exit 1;
 }
-if grep -Eiq '[[:space:]](clts|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|$)' <<<"$disassembly"; then
+if grep -Eiq '[[:space:]](clts|lmsw|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|$)' <<<"$disassembly"; then
   echo "error: extended-state field=unauthorized-enable-or-restore final-elf" >&2
   exit 1
 fi

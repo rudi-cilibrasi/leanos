@@ -60,6 +60,9 @@ bypass_handler_probe_rip() {
 add_clts() {
   sed -i '/^normalize_extended_state_cr0:/a\    clts' "$tmp/boot.S"
 }
+add_lmsw() {
+  sed -i '/^normalize_extended_state_cr0:/a\    lmsw %ax' "$tmp/boot.S"
+}
 add_fxrstor() {
   sed -i '/^normalize_extended_state_cr0:/a\    fxrstor (%eax)' "$tmp/boot.S"
 }
@@ -83,6 +86,7 @@ run_fixture bypassed-handler-address-space 'field=handler-address-space-binding'
 run_fixture bypassed-handler-probe-vector 'field=handler-probe-vector' bypass_handler_probe_vector
 run_fixture bypassed-handler-probe-rip 'field=handler-probe-rip' bypass_handler_probe_rip
 run_fixture unauthorized-clts 'field=unauthorized-enable-or-restore source' add_clts
+run_fixture unauthorized-lmsw 'field=unauthorized-enable-or-restore source' add_lmsw
 run_fixture unauthorized-fxrstor 'field=unauthorized-enable-or-restore source' add_fxrstor
 run_fixture unauthorized-xrstor 'field=unauthorized-enable-or-restore source' add_xrstor
 run_fixture unauthorized-cr0-write 'field=control-write-inventory source' add_cr0_write
@@ -174,6 +178,7 @@ if [[ -n "$sse_elf" ]]; then
   check_denied_mutation extra-xsave64 '\x48\x0f\xae\x20'
   check_denied_mutation extra-xsetbv '\x0f\x01\xd1'
   check_denied_mutation extra-vldmxcsr '\xc5\xf8\xae\x10'
+  check_denied_mutation extra-lmsw '\x0f\x01\xf0'
 fi
 
 echo "Controlled extended-state boot-policy fixtures passed"
