@@ -69,8 +69,9 @@ cleanup.
 
 The stable `SC-FAULT-DISPATCH-NONRESUMPTION` claim is intentionally narrower
 than this supporting theorem inventory: it advertises that every successful
-composite result removes the kernel-selected pre-state current subject from
-live identity, the ready queue, the current slot, and the resumable bank.
+composite result began with a live, runnable kernel-selected current subject
+and removes that subject from live identity, the ready queue, the current slot,
+and the resumable bank.
 
 ## Progress scope and trusted boundary
 

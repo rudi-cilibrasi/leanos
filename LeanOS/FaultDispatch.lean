@@ -555,24 +555,58 @@ theorem idle_nonresumption state entry
     (ResumablePreemption.cleanup_removes_scheduler_membership state faulting).2,
     ResumablePreemption.cleanup_removes_context state faulting⟩
 
-/-- Every successful composite result excludes resumption of the subject that
-faulted, regardless of whether the deterministic scheduler finds a survivor. -/
+/-- A successful branch can only start from the authoritative current subject
+being live and runnable.  Exposing these facts keeps the stable termination
+claim non-vacuous even if the entry gate is later refactored. -/
+theorem successful_faulting_live_runnable state entry
+    (hsuccess : (dispatch state entry).action = .idle ∨
+      ∃ context, (dispatch state entry).action = .dispatch context) :
+    ∃ faulting,
+      state.scheduler.lifecycle.current = some faulting ∧
+        state.scheduler.lifecycle.capabilities.subjects faulting = true ∧
+        state.scheduler.lifecycle.runnable faulting = true := by
+  simp only [dispatch] at hsuccess ⊢
+  split at hsuccess <;> try simp_all [halt, reject]
+  split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals (try split at hsuccess) <;> try simp_all [halt, reject]
+  all_goals (try split at hsuccess) <;> try simp_all [halt, reject]
+  all_goals (try split at hsuccess) <;> try simp_all [halt, reject]
+  all_goals grind
+
+/-- Every successful composite result excludes resumption of the live,
+runnable subject that faulted, regardless of whether the deterministic
+scheduler finds a survivor. -/
 theorem successful_nonresumption state entry
     (hsuccess : (dispatch state entry).action = .idle ∨
       ∃ context, (dispatch state entry).action = .dispatch context) :
     ∃ faulting,
       state.scheduler.lifecycle.current = some faulting ∧
+        state.scheduler.lifecycle.capabilities.subjects faulting = true ∧
+        state.scheduler.lifecycle.runnable faulting = true ∧
         (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
           faulting = false ∧
         faulting ∉ (dispatch state entry).state.scheduler.ready ∧
         (dispatch state entry).state.scheduler.lifecycle.current ≠ some faulting ∧
         ResumablePreemption.contextFor
           (dispatch state entry).state.contexts faulting = none := by
+  rcases successful_faulting_live_runnable state entry hsuccess with
+    ⟨liveFaulting, hliveCurrent, hlive, hrunnable⟩
   rcases hsuccess with hidle | ⟨context, hdispatch⟩
-  · exact idle_nonresumption state entry hidle
+  · rcases idle_nonresumption state entry hidle with
+      ⟨faulting, hfaulting, hdead, habsent, hcurrent, hcontext⟩
+    have : liveFaulting = faulting := by simp_all
+    subst liveFaulting
+    exact ⟨faulting, hfaulting, hlive, hrunnable, hdead, habsent, hcurrent, hcontext⟩
   · rcases dispatched_nonresumption state entry context hdispatch with
       ⟨faulting, hfaulting, hdead, habsent, hcurrent, hcontext⟩
-    exact ⟨faulting, hfaulting, hdead, habsent, hcurrent, hcontext⟩
+    have : liveFaulting = faulting := by simp_all
+    subst liveFaulting
+    exact ⟨faulting, hfaulting, hlive, hrunnable, hdead, habsent, hcurrent, hcontext⟩
 
 /-! Executable regressions for the invariant boundary closed by this slice:
 one queued survivor becomes the sole current subject, while no survivor yields

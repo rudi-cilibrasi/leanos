@@ -433,13 +433,16 @@ theorem extended_state_global_runtime_preservation state operations
   exact ExtendedState.runComposite_preserves_policy state operations hinvariant
 
 /-- SC-FAULT-DISPATCH-NONRESUMPTION: every successful atomic user-fault
-transition removes the kernel-selected faulting subject from live identity,
-the ready queue, the current slot, and the authoritative resumable bank. -/
+transition starts from a live, runnable kernel-selected subject and removes it
+from live identity, the ready queue, the current slot, and the authoritative
+resumable bank. -/
 theorem fault_dispatch_success_nonresumption state entry
     (hsuccess : (FaultDispatch.dispatch state entry).action = .idle ∨
       ∃ context, (FaultDispatch.dispatch state entry).action = .dispatch context) :
     ∃ faulting,
       state.scheduler.lifecycle.current = some faulting ∧
+        state.scheduler.lifecycle.capabilities.subjects faulting = true ∧
+        state.scheduler.lifecycle.runnable faulting = true ∧
         (FaultDispatch.dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
           faulting = false ∧
         faulting ∉ (FaultDispatch.dispatch state entry).state.scheduler.ready ∧
