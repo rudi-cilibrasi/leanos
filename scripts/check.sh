@@ -119,6 +119,18 @@ for fixture in WeakenedAuthorityClaim DroppedSeparationClaim; do
   fi
 done
 
+for fixture in DMAEmptyInventory DMAWeakenedBusMaster DMADroppedFunction DMARuntimeEnable; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: DMA quarantine fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -q "tests/negative/${fixture}.lean.*error:" "$negative_log"; then
+    echo "error: DMA quarantine fixture ${fixture} lacked a Lean diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
 if lake env lean tests/negative/VacuousClaimSetup.lean >"$negative_log" 2>&1; then
   echo "error: vacuous security-claim fixture unexpectedly type-checked" >&2
   exit 1
