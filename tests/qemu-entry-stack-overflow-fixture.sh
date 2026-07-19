@@ -17,7 +17,7 @@ case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
   missing) : > "$log"; exit 37 ;;
   partial) echo "${terminal% return=none}" > "$log"; exit 37 ;;
   duplicate) printf '%s\n%s\n' "$terminal" "$terminal" > "$log"; exit 37 ;;
-  reordered) echo 'LEANOS/10 ENTRY-HIGH-WATER path=syscall used=1 usable=16384 margin=16383 status=PASS' > "$log"; echo "$terminal" >> "$log"; exit 37 ;;
+  reordered) echo 'LEANOS/11 ENTRY-HIGH-WATER path=syscall observed-bytes=512 usable-bytes=16384 margin-bytes=15872 authority=diagnostic result=PASS' > "$log"; echo "$terminal" >> "$log"; exit 37 ;;
   wrong-vector) echo "${terminal/vector=8/vector=14}" > "$log"; exit 37 ;;
   wrong-ist) echo "${terminal/ist=1/ist=0}" > "$log"; exit 37 ;;
   wrong-rsp) echo "${terminal/rsp=in-range/rsp=out-of-range}" > "$log"; exit 37 ;;

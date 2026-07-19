@@ -64,7 +64,7 @@ if [[ "$(grep -Fxc "$terminal" "$log")" -ne 1 ]]; then
   exit 1
 fi
 if [[ "$(grep -c '^LEANOS/11 ENTRY-STACK-OVERFLOW ' "$log")" -ne 1 ]] ||
-   grep -Eq 'LEANOS/11 ENTRY-STACK-OVERFLOW .*status=(PASS|FAIL)|LEANOS/[0-9]+ FINAL |LEANOS/10 ENTRY-HIGH-WATER ' "$log"; then
+   grep -Eq 'LEANOS/11 ENTRY-STACK-OVERFLOW .*status=(PASS|FAIL)|LEANOS/[0-9]+ FINAL |LEANOS/11 ENTRY-HIGH-WATER ' "$log"; then
   echo "failure_class=terminal-record: duplicate, forged, handler, or post-terminal record observed" >&2
   exit 1
 fi
