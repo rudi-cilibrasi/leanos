@@ -74,8 +74,10 @@ one transaction. It rejects stale kernel bindings without changing state,
 requires the selected current subject to remain live and runnable, applies
 whole-subject cleanup only to that kernel-owned subject, and returns either the
 exact deterministic survivor context or typed idle. Every inbound normalizer
-`.fatal` result, kernel-origin faults, and already-halted state set or retain
-the absorbing halt latch without exposing cleanup. Its proofs and traces do not refine x86 delivery,
+`.fatal reason` result, kernel-origin fault, and already-halted state sets or
+retains the absorbing halt latch without exposing cleanup. Inbound failures retain the
+exact `InterruptEntry.RejectReason`; kernel-origin and already-halted outcomes
+use distinct fatal tags. Its proofs and traces do not refine x86 delivery,
 the normalizer, machine context restore, or the final binary.
 
 ## Inbound entry manifest and normalization

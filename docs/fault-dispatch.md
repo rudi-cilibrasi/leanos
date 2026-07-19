@@ -22,16 +22,19 @@ The observable action is exactly one of:
   head and its live subject-owned address space becomes active;
 - `idle`, only after cleanup leaves the ready queue empty;
 - a typed, state-preserving `rejected reason`; or
-- `fatal`, which changes only the irreversible halt latch.
+- `fatal reason`, which preserves either the exact typed inbound
+  `InterruptEntry.RejectReason`, the distinct `kernelOrigin` class, or the
+  `alreadyHalted` class while changing only the irreversible halt latch.
 
 The transition does not expose the intermediate cleaned state. Missing or stale
 survivor contexts, stale current/address-space bindings, and wrong purpose
 reject to the complete pre-state. Every `.fatal` result from the inbound
 normalizer is terminal, including malformed frames, uncleared entry flags,
-unsupported vectors, and nested entry; kernel page faults and an already-set
-halt latch are terminal as well. Fatal results retain the complete
-scheduler/lifecycle, context bank, mapping, and translation state while setting
-the latch.
+unsupported vectors, and nested entry, and its typed cause remains observable
+as `FatalReason.entry reason`. Kernel page faults and an already-set halt latch
+remain distinct as `kernelOrigin` and `alreadyHalted`. Fatal results retain the
+complete scheduler/lifecycle, context bank, mapping, and translation state while
+setting the latch.
 
 ## Cleanup and survivor boundary
 
@@ -62,8 +65,9 @@ Executable model regressions cover one survivor, multiple survivors, no
 survivor, stale current identity, wrong active address space, wrong purpose,
 already-terminated current identity with a stale owner binding, a truncated raw
 user frame made fatal by the normalizer, a kernel-origin page fault, unsupported
-vector, nested entry, already-halted state, unrelated
-authority/memory/mapping/IPC state, and the
+vector, nested entry, already-halted state, and exact assertions that those
+terminal causes remain distinguishable while preserving authoritative stores;
+unrelated authority/memory/mapping/IPC state, and the
 unsafe split pattern in which an attacker chooses a context after separate
 cleanup.
 

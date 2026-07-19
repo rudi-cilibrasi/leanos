@@ -31,9 +31,10 @@ same termination state on exactly the kernel-owned current subject, then removes
 that subject's ready-queue and resumable-context references before selecting a
 survivor. No intermediate cleanup state is observable: stale bindings and
 missing or stale survivor contexts return the complete pre-state, while every
-inbound normalizer fatal result changes only the halt latch. Unrelated
-survivor capability, memory, mapping, frame, endpoint, and suspended-context
-state remains unchanged. Waiter and in-flight transfer cleanup are outside this
+inbound normalizer fatal result preserves its typed cause and changes only the
+halt latch. Kernel-origin and already-halted outcomes remain separately tagged.
+Unrelated survivor capability, memory, mapping, frame, endpoint, and
+suspended-context state remains unchanged. Waiter and in-flight transfer cleanup are outside this
 composition state and are not claimed here.
 
 Termination clears the subject's installed slots, so every holder-visible

@@ -36,7 +36,8 @@ faulting identity is the live, runnable kernel-owned current subject in the
 pre-state. The successful result removes that identity from liveness, current
 and ready scheduler state, and the authoritative resumable bank. Supporting source
 theorems separately establish totality, determinism, invariant preservation,
-FIFO survivor safety, rejection atomicity, and fatal halt-latch absorption; the
+FIFO survivor safety, rejection atomicity, and typed fatal-cause preservation
+with halt-latch absorption; the
 stable claim does not silently promote those model properties into a
 normalizer-to-machine or final-binary refinement statement. The exact cleanup,
 progress, and trusted boundaries are documented in
