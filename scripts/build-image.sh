@@ -33,6 +33,7 @@ extended_state_mmx_iso_root="$build/iso-extended-state-mmx"
 extended_state_sse_iso_root="$build/iso-extended-state-sse"
 extended_state_sse2_iso_root="$build/iso-extended-state-sse2"
 extended_state_avx_iso_root="$build/iso-extended-state-avx"
+extended_state_peer_pke_iso_root="$build/iso-extended-state-peer-pke"
 df_iso_root="$build/iso-double-fault"
 df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 entry_adversarial_iso_root="$build/iso-entry-adversarial"
@@ -63,12 +64,14 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$extended_state_sse_iso_root/boot/grub" \
   "$extended_state_sse2_iso_root/boot/grub" \
   "$extended_state_avx_iso_root/boot/grub" \
+  "$extended_state_peer_pke_iso_root/boot/grub" \
   "$df_iso_root/boot/grub" \
   "$df_negative_iso_root/boot/grub" "$entry_adversarial_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state-peer-pke.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-double-fault.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-guard.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-entry-adversarial.h"
@@ -124,6 +127,10 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
   -c boot/kernel.c -o "$build/kernel-extended-state.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state-peer-pke.h"' \
+  -c boot/kernel.c -o "$build/kernel-extended-state-peer-pke.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -DLEANOS_DF_MAP_GUARD=1 \
@@ -156,6 +163,13 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
   -DLEANOS_EXTENDED_STATE_AVX_PROBE=1 \
   -c boot/boot.S -o "$build/boot-extended-state-avx.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1 \
+  -c boot/boot.S -o "$build/boot-extended-state-peer-pke.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -c boot/peer-pke-fixture.S \
+  -o "$build/peer-pke-fixture.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_RESTORE_FIXTURE=1 \
   -c boot/boot.S -o "$build/boot-return-restore-fixture.o"
@@ -235,6 +249,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-extended-state-peer-pke-prelink.map" \
+  -o "$build/leanos-extended-state-peer-pke-prelink.elf" \
+  "$build/boot-extended-state-peer-pke.o" "$build/peer-pke-fixture.o" \
+  "$build/kernel-extended-state-peer-pke.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
   -o "$build/leanos-double-fault-prelink.elf" "$build/boot.o" \
   "$build/kernel-double-fault.o" "$build/KernelTransition.o" \
@@ -289,6 +311,9 @@ cmp "$build/boot-page-plan-extended-state.h" \
   echo "error: AVX probe changed the shared extended-state page-table plan" >&2
   exit 1
 }
+./scripts/generate-boot-page-plan.sh \
+  "$build/leanos-extended-state-peer-pke-prelink.elf" \
+  "$build/boot-page-plan-extended-state-peer-pke.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-prelink.elf" \
   "$build/boot-page-plan-double-fault.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-guard-prelink.elf" \
@@ -305,6 +330,10 @@ cmp "$build/boot-page-plan-extended-state.h" \
   -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
   -c boot/kernel.c -o "$build/kernel-extended-state.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state-peer-pke.h"' \
+  -c boot/kernel.c -o "$build/kernel-extended-state-peer-pke.o"
 if nm "$build/kernel.o" | grep -Eq \
     'return_corruption_mode|return_corruption_name|inject_return_corruption'; then
   echo "error: normal kernel object contains return-corruption fixture code" >&2
@@ -385,6 +414,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-extended-state-peer-pke.map" \
+  -o "$build/leanos-extended-state-peer-pke.elf" \
+  "$build/boot-extended-state-peer-pke.o" "$build/peer-pke-fixture.o" \
+  "$build/kernel-extended-state-peer-pke.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture mode _reason <<<"$spec"
@@ -452,6 +489,13 @@ cmp "$build/boot-page-plan-preemption.h" \
 cmp "$build/boot-page-plan-extended-state.h" \
   "$build/boot-page-plan-extended-state.final.h" || {
   echo "error: extended-state boot page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-peer-pke.elf" \
+  "$build/boot-page-plan-extended-state-peer-pke.final.h"
+cmp "$build/boot-page-plan-extended-state-peer-pke.h" \
+  "$build/boot-page-plan-extended-state-peer-pke.final.h" || {
+  echo "error: peer-PKE boot page-table plan drifted after final link" >&2
   exit 1
 }
 ./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-mmx.elf" \
@@ -652,6 +696,9 @@ cp boot/grub.cfg "$extended_state_sse2_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-extended-state-avx.elf" \
   "$extended_state_avx_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$extended_state_avx_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-extended-state-peer-pke.elf" \
+  "$extended_state_peer_pke_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$extended_state_peer_pke_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-double-fault.elf" "$df_iso_root/boot/leanos.elf"
 cp boot/grub-double-fault.cfg "$df_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-double-fault-guard-mapped.elf" \
@@ -668,6 +715,8 @@ cp "$build/SOURCE_REVISION" "$extended_state_mmx_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_sse_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_sse2_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_avx_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" \
+  "$extended_state_peer_pke_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
 for spec in "${return_corruptions[@]}"; do
@@ -709,6 +758,10 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   "$extended_state_avx_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
 grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-extended-state-peer-pke.iso" \
+  "$extended_state_peer_pke_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-double-fault.iso" "$df_iso_root" -- \
   -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
@@ -735,6 +788,7 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-extended-state-sse.iso" \
   "$build/leanos-${version}-x86_64-extended-state-sse2.iso" \
   "$build/leanos-${version}-x86_64-extended-state-avx.iso" \
+  "$build/leanos-${version}-x86_64-extended-state-peer-pke.iso" \
   "$build/leanos-${version}-x86_64-double-fault.iso" "$build/leanos.elf" \
   "$build/leanos-preemption.elf" "$build/leanos-preemption.map" \
   "$build/leanos-extended-state.elf" "$build/leanos-extended-state.map" \
@@ -746,6 +800,8 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-extended-state-sse2.map" \
   "$build/leanos-extended-state-avx.elf" \
   "$build/leanos-extended-state-avx.map" \
+  "$build/leanos-extended-state-peer-pke.elf" \
+  "$build/leanos-extended-state-peer-pke.map" \
   "$build/leanos-double-fault.elf" \
   "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
   "$build/leanos-double-fault-guard-mapped.elf" \

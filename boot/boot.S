@@ -588,6 +588,9 @@ extended_state_restore_peer:
     je 1f
     mov %rax, %cr3
     call complete_interrupt_entry
+#ifdef LEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE
+    call extended_state_peer_pke_inject
+#endif
     mov $3, %esi
     jmp user_return_epilogue
 1:

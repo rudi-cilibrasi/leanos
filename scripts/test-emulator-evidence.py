@@ -152,6 +152,19 @@ def run_fixtures() -> None:
             "mandatory inventory count differs",
         )
 
+        missing_peer_pke = tmp / "missing-peer-pke.tsv"
+        mutate_matrix(
+            missing_peer_pke,
+            lambda lines: [
+                line for line in lines
+                if not line.startswith("extended-state-peer-pke\t")
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_peer_pke),
+            "mandatory inventory count differs",
+        )
+
         wrong_class = tmp / "wrong-class.tsv"
         mutate_matrix(
             wrong_class,

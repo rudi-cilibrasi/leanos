@@ -125,6 +125,14 @@ decoded feature line together with the live CR0/CR4 line in
 `extended-state-control-snapshot.txt`; this is reproducible evidence for the
 pinned emulator contract, not a general hardware or CPUID theorem.
 
+The mandatory emulator matrix also builds a controlled peer-PKE image. It
+sets and reads back CR4.PKE immediately before subject B enters the common
+return path. Pinned QEMU must terminate with
+`extended-state-denial-peer-controls` after authoritative denial/dispatch and
+before any peer or final success record. This is an explicit test-only control
+mutation; production images remain subject to the three-write control
+inventory.
+
 ## Shared entry integration
 
 Vectors 6 and 7 are now user-only interrupt gates in the same bounded entry
