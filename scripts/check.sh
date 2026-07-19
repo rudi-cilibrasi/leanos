@@ -107,7 +107,8 @@ if ! grep -q 'declaration uses `sorry`' "$negative_log"; then
   exit 1
 fi
 
-for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlockingIPC; do
+for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlockingIPC \
+    CallerSuppliedCompositeContext; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
