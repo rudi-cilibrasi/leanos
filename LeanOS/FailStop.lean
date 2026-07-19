@@ -3736,6 +3736,36 @@ theorem gate_terminateSubject_accepted_runtimeWellFormed_requires_resumable_peer
   simpa [gate, hmode, applyOperation, haccepted, installResumable,
     installLifecycle] using hpeer
 
+/-- The peer condition exposed by the public termination gate is sufficient
+for preservation of both scheduler projections.  This closes the accepted
+termination scheduler slice without claiming that the remaining resource
+projections already satisfy the complete composite invariant. -/
+theorem gate_terminateSubject_accepted_preserves_schedulerWellFormed
+    state subject
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted)
+    (hreadyPeer :
+      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.lifecycle.current.isSome →
+      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.ready ≠ []) :
+    Scheduler.WellFormed
+        (gate state (.terminateSubject subject)).state.scheduler ∧
+      Preemption.WellFormed
+        (gate state (.terminateSubject subject)).state.preemption := by
+  have hcleanup := ResumablePreemption.cleanupSubject_preserves_wellFormed
+    state.resumable subject hstate.2.2.2.2.2.2.2.2.1 hreadyPeer
+  have hscheduler := hcleanup.1
+  have hpreemption := hstate.2.2.2.2.2.2.2.1
+  refine ⟨?_, ?_⟩
+  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
+      installLifecycle] using hscheduler
+  · rcases hpreemption with ⟨_, hticks⟩
+    refine ⟨?_, ?_⟩
+    · simpa [gate, hmode, applyOperation, haccepted, installResumable,
+        installLifecycle] using hscheduler
+    · simpa [gate, hmode, applyOperation, haccepted, installResumable,
+        installLifecycle] using hticks
+
 /-! ### Scheduler rejection preservation
 
 The raw accepted dispatch/yield/tick operations do not yet own the resumable
