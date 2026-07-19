@@ -221,6 +221,33 @@ theorem composite_gate_schedulerAdmission_preserves_runtimeWellFormed state subj
       (FailStop.gate state (.scheduleAdd subject)).state := by
   exact FailStop.scheduleAdd_operationPreservesRuntimeWellFormed subject state hstate
 
+/-- SC-COMPOSITE-BOOT-WF: every successfully compiled bounded boot page-table
+plan produces an idle composite runtime satisfying the complete global
+invariant before any subject or trusted return identity is admitted. -/
+theorem composite_boot_runtime_wellFormed input plan
+    (hcompiled : BootPageTablePlan.compile input = .ok plan) :
+    FailStop.RuntimeWellFormed (FailStop.bootRuntime plan) := by
+  exact FailStop.bootRuntime_runtimeWellFormed input plan hcompiled
+
+set_option maxRecDepth 100000 in
+/-- Concrete non-vacuity witness: the repository's accepted bounded sample
+boot input reaches the globally well-formed initial composite runtime. -/
+theorem composite_boot_runtime_reachable_witness :
+    match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+    | .ok plan => FailStop.RuntimeWellFormed (FailStop.bootRuntime plan)
+    | .error _ => False := by
+  generalize hresult : BootPageTablePlan.compile BootPageTablePlan.sampleInput = result
+  cases result with
+  | error reason =>
+      have hsuccess :
+          (match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+            | .ok _ => true
+            | .error _ => false) = true := by
+        native_decide
+      simp [hresult] at hsuccess
+  | ok plan =>
+      exact FailStop.bootRuntime_runtimeWellFormed BootPageTablePlan.sampleInput plan hresult
+
 /-- SC-INTERRUPT-ENTRY-BINDING: every normalized record constructor copies
 authority-bearing context fields from the kernel-owned input. -/
 theorem interrupt_entry_context_binding entry raw context :

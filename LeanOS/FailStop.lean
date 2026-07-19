@@ -589,6 +589,98 @@ def RuntimeWellFormed (state : CompositeState) : Prop :=
   (state.resumable.halted = true ↔ ∃ record, state.execution.mode = .halted record) ∧
   (state.execution.returnAuthorityArmed = true → state.ReturnPlanLive = true)
 
+/-! ## Boot-produced initial runtime -/
+
+private def bootCapabilities : Capability.State :=
+  { subjects := fun _ => false
+    objects := fun _ => false
+    kinds := fun _ => none
+    slots := fun _ _ => none }
+
+private def bootLifecycle : SubjectLifecycle.State :=
+  { capabilities := bootCapabilities
+    issuedSubjects := fun _ => false
+    ownedMemory := fun _ => none
+    addressOwner := fun _ => none
+    mapping := fun _ _ => none
+    endpointOwner := fun _ => none
+    mailbox := fun _ => none
+    frameOwner := fun _ => none
+    freeFrame := fun _ => false
+    runnable := fun _ => false
+    current := none }
+
+private def bootMemory : MemoryLifecycle.State :=
+  { capabilities := bootCapabilities
+    allocator := { frames := [], status := fun _ => .reserved }
+    binding := fun _ => none
+    issued := fun _ => false }
+
+private def bootVirtualMemory : VirtualMapping.State :=
+  { memory := bootMemory
+    owner := fun _ => none
+    mappings := fun _ _ => none
+    issuedAddressSpace := fun _ => false }
+
+private def bootEndpoints : EndpointIPC.State :=
+  { capabilities := bootCapabilities
+    allocator := bootMemory.allocator
+    binding := bootMemory.binding
+    issued := bootMemory.issued
+    issuedAddressSpace := fun _ => false
+    mailbox := fun _ => none
+    sendHistory := fun _ => [] }
+
+/-- The bounded state published after the boot page-table compiler succeeds,
+before any subject is admitted.  The compiled plan is retained as evidence for
+later return selection, but cannot arm a return until authoritative lifecycle,
+mapping, scheduler, and resumable-context state has been installed. -/
+def bootRuntime (plan : BootPageTablePlan.Plan) : CompositeState :=
+  let scheduler : Scheduler.State :=
+    { lifecycle := bootLifecycle, ready := [], capacity := 0 }
+  let resumable : ResumablePreemption.State :=
+    { scheduler
+      contexts := []
+      capacity := 0
+      translations := { virtual := bootVirtualMemory, active := none, entries := [] } }
+  { execution :=
+      { core :=
+          { lifecycle := bootLifecycle
+            context :=
+              { currentSubject := 0
+                activeAddressSpace := 0
+                kernelStack := 0
+                entryActive := false } }
+        mode := .running
+        returnPlan := some plan }
+    scheduler
+    preemption := { scheduler, timerArmed := false, acceptedTicks := 1 }
+    virtualMemory := bootVirtualMemory
+    ipc := { virtualMemory := bootVirtualMemory, endpoints := bootEndpoints }
+    capabilities := bootCapabilities
+    lifecycle := bootLifecycle
+    resumable
+    transfers := { toEndpointState := bootEndpoints, pending := fun _ => none } }
+
+/-- A successfully compiled bounded boot plan produces a concrete global
+invariant witness.  Boot does not synthesize a live subject or trusted return
+identity: those remain disabled until later checked runtime admission. -/
+theorem bootRuntime_runtimeWellFormed input plan
+    (_hcompiled : BootPageTablePlan.compile input = .ok plan) :
+    RuntimeWellFormed (bootRuntime plan) := by
+  simp [RuntimeWellFormed, bootRuntime, CompositeState.Coherent, WellFormed,
+    Interrupt.WellFormed, SubjectLifecycle.WellFormed, Capability.WellFormed,
+    Capability.SlotsWellFormed, Capability.DerivationsWellFormed,
+    Capability.LiveIdentitiesUnique, Capability.SlotSpacesWellFormed,
+    VirtualMapping.LifecycleWellFormed, VirtualMapping.WellFormed,
+    MemoryLifecycle.WellFormed, IPCSyscall.WellFormed, EndpointIPC.WellFormed,
+    Scheduler.WellFormed, Preemption.WellFormed, ResumablePreemption.WellFormed,
+    ResumablePreemption.ReadyContextAgreement,
+    ResumablePreemption.TranslationAgreement, ResumablePreemption.VirtualAgreement,
+    ResumablePreemption.ResourceKindAgreement, CapabilityTransfer.WellFormed,
+    TLB.Coherent, CompositeState.ReturnPlanLive, bootCapabilities, bootLifecycle,
+    bootMemory, bootVirtualMemory, bootEndpoints]
+
 private def restrictMappings (lifecycle : SubjectLifecycle.State)
     (mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
       Option VirtualMapping.Mapping) :=
