@@ -733,9 +733,9 @@ private def traceHardwareFrame : Interrupt.HardwareFrame :=
 
 private def traceRegisters : ResumablePreemption.Registers :=
   { accumulator := 0
-    base := 0
-    count := 0
-    data := 0
+    base := 0xb2b2cafe51a7e55e
+    count := 0x030201
+    data := 0x51a7
     source := 0
     destination := 0
     basePointer := 0
@@ -1128,28 +1128,56 @@ theorem dispatch_preserves_wellFormed state entry
 /-! A fixed-width boundary for the first boot containment scenario.  The
 machine passes only values already bound by the normalized entry record and
 the kernel-owned bounded scheduler/context bank.  The result packs action in
-the low byte, selected subject/address space in the next two bytes, and the
-five cleanup witnesses (live, runnable, current, queued, resumable) in bits
-24--28.  Bit 63 distinguishes typed fail-stop from nonfatal rejection. -/
+  the low byte, selected subject/address space in the next two bytes, the five
+  cleanup witnesses (live, runnable, current, queued, resumable) in bits
+  24--28, and the preserved survivor context/authority witness in bit 29.
+  Bit 63 distinguishes typed fail-stop from nonfatal rejection.  Entry class
+  4 is the bounded malformed-frame fixture emitted by the normalizer. -/
 
-def faultDispatchDemo (vector origin current active ready contextOwner : UInt64) : UInt64 :=
+def faultDispatchDemo (vector entryClass current active ready contextOwner : UInt64) : UInt64 :=
   if vector != 14 then 0x8000000000000002
-  else if origin != 3 then 0x8000000000000001
+  else if entryClass = 4 then 0x8000000000000002
+  else if entryClass != 3 then 0x8000000000000001
   else if current != 1 || active != 1 then 0
   else if ready = 0 then 1
-  else if ready = 2 && contextOwner = 2 then 0x000000001f020202
+  else if ready = 2 && contextOwner = 2 then 0x000000003f020202
   else 0
 
 @[export leanos_fault_dispatch_demo]
 def faultDispatchDemoExport (vector origin current active ready contextOwner : UInt64) : UInt64 :=
   faultDispatchDemo vector origin current active ready contextOwner
 
-def encodeBootOutcome (outcome : Outcome) : UInt64 :=
+private def bootCleanupWitness (before : ResumablePreemption.State)
+    (outcome : Outcome) : UInt64 :=
+  match before.scheduler.lifecycle.current with
+  | none => 0
+  | some faulting =>
+      (if outcome.state.scheduler.lifecycle.capabilities.subjects faulting = false then
+        0x01000000 else 0) +
+      (if outcome.state.scheduler.lifecycle.runnable faulting = false then 0x02000000 else 0) +
+      (if outcome.state.scheduler.lifecycle.current != some faulting then 0x04000000 else 0) +
+      (if outcome.state.scheduler.ready.contains faulting = false then 0x08000000 else 0) +
+      (if ResumablePreemption.contextFor outcome.state.contexts faulting = none then
+        0x10000000 else 0)
+
+private def bootPeerWitness (before : ResumablePreemption.State)
+    (outcome : Outcome) : UInt64 :=
+  match outcome.action with
+  | .dispatch context =>
+      if ResumablePreemption.contextFor before.contexts context.owner = some context ∧
+          outcome.state.scheduler.lifecycle.capabilities.subjects context.owner = true ∧
+          outcome.state.scheduler.lifecycle.runnable context.owner = true ∧
+          outcome.state.scheduler.lifecycle.addressOwner context.addressSpace =
+            some context.owner then 0x20000000 else 0
+  | _ => 0
+
+def encodeBootOutcome (before : ResumablePreemption.State) (outcome : Outcome) : UInt64 :=
   match outcome.action with
   | .idle => 1
   | .dispatch context =>
       2 + UInt64.ofNat context.owner * 0x100 +
-        UInt64.ofNat context.addressSpace * 0x10000 + 0x1f000000
+        UInt64.ofNat context.addressSpace * 0x10000 +
+        bootCleanupWitness before outcome + bootPeerWitness before outcome
   | .rejected _ => 0
   | .fatal .kernelOrigin => 0x8000000000000001
   | .fatal _ => 0x8000000000000002
@@ -1157,7 +1185,7 @@ def encodeBootOutcome (outcome : Outcome) : UInt64 :=
 /-- Independently evaluated expectation for the shared oracle.  Each scalar
 fixture selects a concrete input to the authoritative composite transition;
 the exported adapter is not used to compute this expected word. -/
-def faultDispatchModelExpected (vector origin current active ready contextOwner : UInt64) : UInt64 :=
+def faultDispatchModelExpected (vector entryClass current active ready contextOwner : UInt64) : UInt64 :=
   let state :=
     if current = 0 then traceAlreadyTerminated
     else if ready = 0 then traceState false
@@ -1165,22 +1193,30 @@ def faultDispatchModelExpected (vector origin current active ready contextOwner 
     else traceStaleSurvivorVirtualOwner
   let entry :=
     if vector != 14 then (.fatal .unsupportedVector : InterruptEntry.Result)
-    else if origin != 3 then InterruptEntry.normalize traceRawKernelFault traceKernelContext
+    else if entryClass = 4 then
+      InterruptEntry.normalize traceMalformedUserFault traceKernelContext
+    else if entryClass != 3 then InterruptEntry.normalize traceRawKernelFault traceKernelContext
     else match traceEntry with
       | .accepted frame => .accepted { frame with
           currentSubject := current.toNat, activeAddressSpace := active.toNat }
       | other => other
-  encodeBootOutcome (dispatch state entry)
+  encodeBootOutcome state (dispatch state entry)
 
 theorem faultDispatchDemo_accepts_composite :
     faultDispatchDemo 14 3 1 1 2 2 =
-      encodeBootOutcome (dispatch (traceState true) traceEntry) := by
+      encodeBootOutcome (traceState true) (dispatch (traceState true) traceEntry) := by
   native_decide
 
 theorem faultDispatchDemo_kernel_origin_fail_stop :
     faultDispatchDemo 14 0 1 1 2 2 =
-      encodeBootOutcome (dispatch (traceState true)
+      encodeBootOutcome (traceState true) (dispatch (traceState true)
         (InterruptEntry.normalize traceRawKernelFault traceKernelContext)) := by
+  native_decide
+
+theorem faultDispatchDemo_malformed_frame_fail_stop :
+    faultDispatchDemo 14 4 1 1 2 2 =
+      encodeBootOutcome (traceState true) (dispatch (traceState true)
+        (InterruptEntry.normalize traceMalformedUserFault traceKernelContext)) := by
   native_decide
 
 end LeanOS.FaultDispatch

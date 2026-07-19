@@ -11,11 +11,26 @@ invoke() {
   ./scripts/run-image.sh "$tmp/image.iso"
 }
 invoke success >/dev/null 2>&1
-for mode in fault-direct-call fault-old-recovery fault-stale-cr3 \
-  fault-cleanup-missing fault-return-unvalidated fault-peer-corrupt \
-  fault-forged-pass fault-kernel-relabeled; do
+for spec in \
+  'fault-direct-call serial-protocol' \
+  'fault-old-recovery serial-protocol' \
+  'fault-stale-cr3 serial-protocol' \
+  'fault-cleanup-missing serial-protocol' \
+  'fault-a-queued serial-protocol' \
+  'fault-attacker-selection serial-protocol' \
+  'fault-return-unvalidated serial-protocol' \
+  'fault-peer-corrupt serial-protocol' \
+  'fault-peer-cleaned serial-protocol' \
+  'fault-forged-pass serial-protocol' \
+  'fault-reordered serial-protocol' \
+  'fault-kernel-relabeled serial-protocol' \
+  'fault-global-fail guest-error' \
+  'hang timeout' \
+  'reset qemu-error' \
+  'triple-fault qemu-error'; do
+  read -r mode class <<< "$spec"
   set +e; invoke "$mode" >"$tmp/$mode.output" 2>&1; status=$?; set -e
-  [[ $status -ne 0 ]] && grep -q 'failure_class=serial-protocol' "$tmp/$mode.output" || {
+  [[ $status -ne 0 ]] && grep -q "failure_class=$class" "$tmp/$mode.output" || {
     cat "$tmp/$mode.output" >&2; exit 1;
   }
 done

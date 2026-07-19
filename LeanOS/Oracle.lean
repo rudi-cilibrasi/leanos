@@ -21,6 +21,7 @@ it is differential integration evidence, not a refinement theorem.
 namespace LeanOS.Oracle
 
 open LeanOS
+set_option maxRecDepth 2048
 
 structure Vector where
   id : String
@@ -212,14 +213,16 @@ def vectors : List Vector := [
   extendedState "extended-state.dispatch-peer-ud" 1 6 6 1 1 1,
   faultDispatch "fault-dispatch.accept-a-to-b" 14 3 1 1 2 2,
   faultDispatch "fault-dispatch.kernel-origin" 14 0 1 1 2 2,
+  faultDispatch "fault-dispatch.malformed-frame" 14 4 1 1 2 2,
   faultDispatch "fault-dispatch.wrong-vector" 13 3 1 1 2 2,
   faultDispatch "fault-dispatch.stale-current" 14 3 3 1 2 2,
   faultDispatch "fault-dispatch.wrong-address-space" 14 3 1 3 2 2,
   faultDispatch "fault-dispatch.empty-ready" 14 3 1 1 0 0,
   faultDispatch "fault-dispatch.already-terminated" 14 3 0 1 2 2,
-  faultDispatch "fault-dispatch.stale-context" 14 3 1 1 2 3]
+  faultDispatch "fault-dispatch.stale-context" 14 3 1 1 2 3,
+  faultDispatch "fault-dispatch.peer-context-resource-witness" 14 3 1 1 2 2]
 
-theorem corpus_shape : vectors.length = 120 := by decide
+theorem corpus_shape : vectors.length = 122 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide

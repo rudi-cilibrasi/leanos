@@ -4,13 +4,16 @@
 freestanding adapter: `KernelTransition.bootTransition` and
 `Syscall.syscallDemo`, `IPCSyscall.ipcDemo`, and
 `Preemption.preemptionDemo`, `Preemption.resumableDemo`, and
-`BootAllocation.check`, `Interrupt.userReturnDemo`, and
-`BlockingIPC.blockingIpcDemo`, and `CapabilityReuse.capabilityReuseDemo`. Its
-stable 84-vector order covers accepted calls,
+`BootAllocation.check`, `Interrupt.userReturnDemo`,
+`InterruptEntry.entryDemo`, `BlockingIPC.blockingIpcDemo`,
+`CapabilityReuse.capabilityReuseDemo`, `ExtendedState.denialDispatchDemo`, and
+`FaultDispatch.faultDispatchDemo`. Its stable 122-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
-and adversarial return frames and contexts. The Lean
+and adversarial return frames and contexts. The fault-dispatch records include
+typed kernel-origin and malformed-frame fail-stop cases, stale authoritative
+bindings, empty dispatch, and an accepted peer-context/resource witness. The Lean
 checks evaluate every expected result from
 the adapter definition and connect the accepted and rejected examples to the
 source models.

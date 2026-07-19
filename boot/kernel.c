@@ -1377,11 +1377,12 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
         serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS\n");
         uint64_t result = leanos_fault_dispatch_demo(14, saved_cs & 3u,
             fault_authority.current, 1, 2, 2);
-        if (result != UINT64_C(0x000000001f020202))
+        if (result != UINT64_C(0x000000003f020202))
             fail("fault-model-dispatch");
         uint64_t selected = (result >> 8) & 0xffu;
         uint64_t address_space = (result >> 16) & 0xffu;
         uint64_t cleanup = (result >> 24) & 0x1fu;
+        uint64_t peer_witness = (result >> 29) & 1u;
         fault_authority.live &= ~(1ull << 1);
         fault_authority.runnable &= ~(1ull << 1);
         fault_authority.current = selected;
@@ -1389,7 +1390,7 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
         fault_authority.contexts &= ~(1ull << 2);
         current_subject = selected;
         serial_puts("LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
-        if (cleanup != 0x1fu || selected != 2 || address_space != 2)
+        if (cleanup != 0x1fu || peer_witness != 1 || selected != 2 || address_space != 2)
             fail("fault-model-encoding");
         serial_puts("LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
         return 2;

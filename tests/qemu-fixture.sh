@@ -33,7 +33,7 @@ EOF
   exit "$status"
 fi
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-fault-direct-call|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-return-unvalidated|fault-peer-corrupt|fault-forged-pass|fault-kernel-relabeled)
+fault-direct-call|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-a-queued|fault-attacker-selection|fault-return-unvalidated|fault-peer-corrupt|fault-peer-cleaned|fault-forged-pass|fault-reordered|fault-kernel-relabeled|fault-global-fail)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
@@ -43,10 +43,22 @@ fault-direct-call|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault
     fault-old-recovery) sed -i '/^LEANOS\/14 TERMINATE /d; /^LEANOS\/14 DISPATCH /d' "$log" ;;
     fault-stale-cr3) sed -i 's/subject=2 address-space=2 source/subject=2 address-space=1 source/' "$log" ;;
     fault-cleanup-missing) sed -i 's/resumable=0/resumable=1/' "$log" ;;
+    fault-a-queued) sed -i 's/queued=0/queued=1/' "$log" ;;
+    fault-attacker-selection) sed -i 's/DISPATCH subject=2/DISPATCH subject=3/' "$log" ;;
     fault-return-unvalidated) sed -i 's/ return=validated//' "$log" ;;
     fault-peer-corrupt) sed -i 's/canaries=preserved/canaries=corrupt/' "$log" ;;
+    fault-peer-cleaned) sed -i 's/resources=unchanged/resources=changed/' "$log" ;;
     fault-forged-pass) sed -i '/^LEANOS\/14 FAULT-ENTRY /d; /^LEANOS\/14 TERMINATE /d' "$log" ;;
+    fault-reordered)
+      sed -i -e 's/^LEANOS\/14 TERMINATE /LEANOS\/14 __SWAP__ /' \
+        -e 's/^LEANOS\/14 DISPATCH /LEANOS\/14 TERMINATE /' \
+        -e 's/^LEANOS\/14 __SWAP__ /LEANOS\/14 DISPATCH /' "$log"
+      ;;
     fault-kernel-relabeled) sed -i 's/origin=cpl3/origin=kernel/' "$log" ;;
+    fault-global-fail)
+      sed -i 's/^LEANOS\/14 FINAL .*/LEANOS\/14 FINAL status=FAIL reason=kernel-fault/' "$log"
+      exit 35
+      ;;
   esac
   exit 33
   ;;
