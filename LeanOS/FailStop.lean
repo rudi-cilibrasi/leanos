@@ -3669,6 +3669,80 @@ theorem ipc_operationPreservesRuntimeWellFormed call :
   | receive handleWord =>
       exact ipcReceive_operationPreservesRuntimeWellFormed handleWord
 
+/-! ### Scheduler rejection preservation
+
+The raw accepted dispatch/yield/tick operations do not yet own the resumable
+context-bank update needed to satisfy `RuntimeWellFormed`.  Their typed
+rejections, however, are complete operation-level slices: the scheduler
+transition is literally unchanged, and the composite gate publishes no
+synchronization repair.  Stating these facts at the public gate boundary keeps
+the accepted context-publication obligation explicit while allowing rejected
+scheduler traces to compose with the already-covered operation families. -/
+
+theorem scheduleNext_rejected_preserves_runtimeWellFormed state reason
+    (hstate : RuntimeWellFormed state)
+    (hrejected : (Scheduler.selectNext state.scheduler).result = .rejected reason) :
+    RuntimeWellFormed (gate state .scheduleNext).state ∧
+      (gate state .scheduleNext).state = state := by
+  by_cases hmode : state.execution.mode = .running
+  · have hunchanged := Scheduler.select_rejected_unchanged
+      state.scheduler reason hrejected
+    simp [gate, hmode, applyOperation, hrejected, hunchanged, hstate]
+  · have hpreserved := gate_rejected_mode_preserves_runtimeWellFormed
+      state .scheduleNext hstate hmode
+    cases hactual : state.execution.mode with
+    | running => exact False.elim (hmode hactual)
+    | handling active => exact ⟨hpreserved, by simp [gate, hactual]⟩
+    | halted record => exact ⟨hpreserved, by simp [gate, hactual]⟩
+
+theorem scheduleYield_rejected_preserves_runtimeWellFormed state reason
+    (hstate : RuntimeWellFormed state)
+    (hrejected : (Scheduler.yield state.scheduler).result = .rejected reason) :
+    RuntimeWellFormed (gate state .scheduleYield).state ∧
+      (gate state .scheduleYield).state = state := by
+  by_cases hmode : state.execution.mode = .running
+  · have hunchanged := Scheduler.yield_rejected_unchanged
+      state.scheduler reason hrejected
+    simp [gate, hmode, applyOperation, hrejected, hunchanged, hstate]
+  · have hpreserved := gate_rejected_mode_preserves_runtimeWellFormed
+      state .scheduleYield hstate hmode
+    cases hactual : state.execution.mode with
+    | running => exact False.elim (hmode hactual)
+    | handling active => exact ⟨hpreserved, by simp [gate, hactual]⟩
+    | halted record => exact ⟨hpreserved, by simp [gate, hactual]⟩
+
+theorem scheduleTick_rejected_preserves_runtimeWellFormed state reason
+    (hstate : RuntimeWellFormed state)
+    (hrejected : (Scheduler.tick state.scheduler).result = .rejected reason) :
+    RuntimeWellFormed (gate state .scheduleTick).state ∧
+      (gate state .scheduleTick).state = state := by
+  by_cases hmode : state.execution.mode = .running
+  · have hunchanged := Scheduler.tick_rejected_unchanged
+      state.scheduler reason hrejected
+    simp [gate, hmode, applyOperation, hrejected, hunchanged, hstate]
+  · have hpreserved := gate_rejected_mode_preserves_runtimeWellFormed
+      state .scheduleTick hstate hmode
+    cases hactual : state.execution.mode with
+    | running => exact False.elim (hmode hactual)
+    | handling active => exact ⟨hpreserved, by simp [gate, hactual]⟩
+    | halted record => exact ⟨hpreserved, by simp [gate, hactual]⟩
+
+theorem terminateCurrent_rejected_preserves_runtimeWellFormed state reason
+    (hstate : RuntimeWellFormed state)
+    (hrejected : (Scheduler.terminateCurrent state.scheduler).result = .rejected reason) :
+    RuntimeWellFormed (gate state .terminateCurrent).state ∧
+      (gate state .terminateCurrent).state = state := by
+  by_cases hmode : state.execution.mode = .running
+  · have hunchanged := Scheduler.terminateCurrent_rejected_unchanged
+      state.scheduler reason hrejected
+    simp [gate, hmode, applyOperation, hrejected, hunchanged, hstate]
+  · have hpreserved := gate_rejected_mode_preserves_runtimeWellFormed
+      state .terminateCurrent hstate hmode
+    cases hactual : state.execution.mode with
+    | running => exact False.elim (hmode hactual)
+    | handling active => exact ⟨hpreserved, by simp [gate, hactual]⟩
+    | halted record => exact ⟨hpreserved, by simp [gate, hactual]⟩
+
 /-- Resumable-aware scheduler removal closes the cleanup obligation exposed by
 the raw scheduler transition.  Saved context and active translation cleanup
 are published with the scheduler post-state, while the no-peer case is a typed,
