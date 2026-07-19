@@ -229,6 +229,14 @@ context state, then selects only a kernel-owned peer context or typed idle.
 Machine exception delivery and cleanup/restore remain trusted integration work
 rather than theorem claims.
 
+The finite [fast privilege-entry control model](docs/privilege-entry-control.md)
+admits only the manifest-backed `int 0x80` system-call mechanism, requires a
+kernel-produced and read-back EFER/fast-entry-MSR denial tuple, composes the
+extended-state control snapshot, and confines normalized raw alternate-entry
+denials to the authoritative current subject. CPUID/MSR access, instruction and
+exception semantics, assembly, QEMU, and the final binary remain trusted or
+tested boundaries rather than theorem claims.
+
 The physical-frame allocator reference model and its representation,
 complexity, initialization assumptions, proved invariants, and capability
 ownership boundary are documented in
