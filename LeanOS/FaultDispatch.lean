@@ -7,8 +7,8 @@ import LeanOS.ResumablePreemption
 This is the first composition slice between the normalized inbound interrupt
 contract and the authoritative scheduler/context-bank state.  A valid user
 page fault terminates the kernel-selected current subject and selects the next
-context in one total transition.  Kernel and terminal entry failures halt;
-malformed nonterminal inputs reject without exposing cleanup.
+context in one total transition. Kernel faults and every inbound `.fatal`
+result halt; stale authoritative bindings reject without exposing cleanup.
 -/
 namespace LeanOS.FaultDispatch
 

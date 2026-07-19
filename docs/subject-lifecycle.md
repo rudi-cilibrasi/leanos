@@ -29,9 +29,9 @@ subject, repeated termination, and identifier replay.
 The atomic [user-fault dispatch composition](fault-dispatch.md) invokes this
 same termination state on exactly the kernel-owned current subject, then removes
 that subject's ready-queue and resumable-context references before selecting a
-survivor. No intermediate cleanup state is observable: stale bindings,
-malformed nonterminal inputs, and missing or stale survivor contexts return the
-complete pre-state, while terminal inputs change only the halt latch. Unrelated
+survivor. No intermediate cleanup state is observable: stale bindings and
+missing or stale survivor contexts return the complete pre-state, while every
+inbound normalizer fatal result changes only the halt latch. Unrelated
 survivor capability, memory, mapping, frame, endpoint, and suspended-context
 state remains unchanged. Waiter and in-flight transfer cleanup are outside this
 composition state and are not claimed here.
