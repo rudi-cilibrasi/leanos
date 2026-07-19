@@ -68,6 +68,16 @@ Executable traces cover user and kernel page faults, an unexpected vector,
 timer delivery, valid return, wrong-origin syscall entry, malformed selectors
 and flags, and nested entry.
 
+The later [`LeanOS.FaultDispatch`](fault-dispatch.md) composition consumes the
+normalized vector-14 result and the authoritative resumable scheduler state as
+one transaction. It rejects malformed nonterminal input and stale kernel
+bindings without changing state, applies whole-subject cleanup only to the
+kernel-owned current subject, and returns either the exact deterministic
+survivor context or typed idle. Kernel-origin faults, unsupported vectors,
+nested entry, and already-halted state set or retain the absorbing halt latch
+without exposing cleanup. Its proofs and traces do not refine x86 delivery,
+the normalizer, machine context restore, or the final binary.
+
 ## Inbound entry manifest and normalization
 
 `LeanOS.InterruptEntry` defines the complete ordinary boot manifest: vector 14

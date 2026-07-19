@@ -154,6 +154,27 @@ theorem nested_is_fatal state (hrunning : state.halted = false) :
     dispatch state (.fatal .nested) = halt state := by
   simp [dispatch, hrunning, terminalEntryFailure]
 
+/-- Entry failures that are not part of the terminal policy reject before any
+authoritative scheduler, lifecycle, context, or translation state is exposed. -/
+theorem malformed_entry_rejects_atomically state reason
+    (hrunning : state.halted = false)
+    (hnonterminal : terminalEntryFailure reason = false) :
+    dispatch state (.fatal reason) = reject state (.malformedEntry reason) := by
+  simp [dispatch, hrunning, hnonterminal]
+
+/-- Unsupported vectors and nested entry are the inbound terminal class. -/
+theorem terminal_entry_failure_is_fatal state reason
+    (hrunning : state.halted = false)
+    (hterminal : terminalEntryFailure reason = true) :
+    dispatch state (.fatal reason) = halt state := by
+  simp [dispatch, hrunning, hterminal]
+
+/-- Once the resumable layer projects the repository fail-stop latch, no later
+fault-dispatch input can resume, reject back to a caller, or expose cleanup. -/
+theorem already_halted_absorbing state entry (hhalted : state.halted = true) :
+    dispatch state entry = halt state := by
+  simp [dispatch, hhalted]
+
 /-- A dispatched context is exactly the deterministic scheduler selection and
 is live, runnable, and address-space-owned in the post-state. -/
 theorem dispatched_context_safe state entry context
@@ -378,6 +399,17 @@ private theorem fatal_state_eq_halt state entry
   all_goals split <;> try simp_all [halt, reject]
   all_goals split <;> try simp_all [halt, reject]
   all_goals split <;> simp_all [halt, reject]
+
+/-- Every fatal composite result changes only the irreversible latch.  In
+particular, it cannot publish partial subject cleanup or a return context. -/
+theorem fatal_atomicity state entry
+    (h : (dispatch state entry).action = .fatal) :
+    (dispatch state entry).state.halted = true ∧
+      (dispatch state entry).state.scheduler = state.scheduler ∧
+      (dispatch state entry).state.contexts = state.contexts ∧
+      (dispatch state entry).state.translations = state.translations := by
+  rw [fatal_state_eq_halt state entry h]
+  exact halt_preserves_authoritative_stores state
 
 private theorem dispatched_is_authoritative_transition state entry context
     (h : (dispatch state entry).action = .dispatch context) :
@@ -737,10 +769,38 @@ private def traceWrongPurpose : InterruptEntry.Result :=
   | .accepted frame => .accepted { frame with purpose := .timer }
   | other => other
 
-private def traceKernelFault : InterruptEntry.Result :=
-  match traceEntry with
-  | .accepted frame => .accepted { frame with origin := .kernel, cs := 0x08 }
-  | other => other
+private def traceKernelContext : InterruptEntry.KernelContext :=
+  { currentSubject := 1
+    activeAddressSpace := 1
+    activeCr3 := 0
+    stackIdentity := 1
+    stackFirst := 0x800000
+    stackPastLast := 0x804000
+    entryActive := false }
+
+private def traceRawUserFault : InterruptEntry.RawEntry :=
+  { boundVector := 14
+    boundStub := 14
+    errorCode := some 0
+    frame := .privilegeChange 0x400100 0x23 0x202 0x500ff8 0x1b
+    frameBytes := 40
+    frameAddress := 0x800000
+    acCleared := true
+    dfCleared := true }
+
+private def traceMalformedUserFault : InterruptEntry.RawEntry :=
+  { traceRawUserFault with frameBytes := 32 }
+
+private def traceRawKernelFault : InterruptEntry.RawEntry :=
+  { traceRawUserFault with
+    frame := .samePrivilege 0x100000 0x08 0x202
+    frameBytes := 24 }
+
+private def traceUnsupportedEntry : InterruptEntry.RawEntry :=
+  { traceRawKernelFault with boundVector := 13, boundStub := 13, errorCode := none }
+
+private def traceNestedContext : InterruptEntry.KernelContext :=
+  { traceKernelContext with entryActive := true }
 
 private def traceAlreadyTerminated : ResumablePreemption.State :=
   { traceState false with scheduler := { (traceState false).scheduler with
@@ -793,25 +853,63 @@ example : (dispatch traceMultiState (.fatal .wrongFrameShape)).action =
   · native_decide
   · exact rejected_unchanged _ _ (.malformedEntry .wrongFrameShape) (by native_decide)
 
-example : (dispatch traceMultiState traceKernelFault).action = .fatal ∧
-    (dispatch traceMultiState traceKernelFault).state.halted = true ∧
-    (dispatch traceMultiState traceKernelFault).state.scheduler = traceMultiState.scheduler := by
-  have haction : (dispatch traceMultiState traceKernelFault).action = .fatal := by
-    native_decide
-  refine ⟨haction, ?_⟩
-  rw [fatal_state_eq_halt _ _ haction]
-  exact ⟨(halt_preserves_authoritative_stores _).1,
-    (halt_preserves_authoritative_stores _).2.1⟩
+/-- A truncated user frame is rejected by the inbound normalizer and the
+composite transition preserves every authoritative store. -/
+example : InterruptEntry.normalize traceMalformedUserFault traceKernelContext =
+      .fatal .truncated ∧
+    dispatch traceMultiState
+        (InterruptEntry.normalize traceMalformedUserFault traceKernelContext) =
+      reject traceMultiState (.malformedEntry .truncated) := by
+  have hnormalized : InterruptEntry.normalize traceMalformedUserFault traceKernelContext =
+      .fatal .truncated := by native_decide
+  refine ⟨hnormalized, ?_⟩
+  rw [hnormalized]
+  exact malformed_entry_rejects_atomically _ _ (by native_decide) (by native_decide)
 
-example : (dispatch traceMultiState (.fatal .nested)).action = .fatal ∧
-    (dispatch traceMultiState (.fatal .nested)).state.halted = true ∧
-    (dispatch traceMultiState (.fatal .nested)).state.scheduler = traceMultiState.scheduler := by
-  have haction : (dispatch traceMultiState (.fatal .nested)).action = .fatal := by
+/-- A normalized same-privilege page fault is terminal and cannot publish
+cleanup before the halt latch is set. -/
+example : (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawKernelFault traceKernelContext)).action = .fatal ∧
+    (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawKernelFault traceKernelContext)).state.halted = true ∧
+    (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawKernelFault traceKernelContext)).state.scheduler =
+        traceMultiState.scheduler := by
+  have haction : (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawKernelFault traceKernelContext)).action = .fatal := by
     native_decide
   refine ⟨haction, ?_⟩
-  rw [fatal_state_eq_halt _ _ haction]
-  exact ⟨(halt_preserves_authoritative_stores _).1,
-    (halt_preserves_authoritative_stores _).2.1⟩
+  exact ⟨(fatal_atomicity _ _ haction).1, (fatal_atomicity _ _ haction).2.1⟩
+
+/-- Nested normalization is terminal and preserves the pre-fault scheduler. -/
+example : (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawUserFault traceNestedContext)).action = .fatal ∧
+    (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawUserFault traceNestedContext)).state.halted = true ∧
+    (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawUserFault traceNestedContext)).state.scheduler =
+        traceMultiState.scheduler := by
+  have haction : (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawUserFault traceNestedContext)).action = .fatal := by
+    native_decide
+  refine ⟨haction, ?_⟩
+  exact ⟨(fatal_atomicity _ _ haction).1, (fatal_atomicity _ _ haction).2.1⟩
+
+/-- An unsupported vector follows the distinct terminal entry class. -/
+example : (dispatch traceMultiState
+    (InterruptEntry.normalize traceUnsupportedEntry traceKernelContext)).action = .fatal := by
+  native_decide
+
+/-- An already-halted state absorbs an otherwise valid user-fault entry without
+changing scheduler, lifecycle, context-bank, or translation state. -/
+example :
+    let halted := { traceMultiState with halted := true }
+    (dispatch halted traceEntry).action = .fatal ∧
+      (dispatch halted traceEntry).state.halted = true ∧
+      (dispatch halted traceEntry).state.scheduler = halted.scheduler ∧
+      (dispatch halted traceEntry).state.contexts = halted.contexts ∧
+      (dispatch halted traceEntry).state.translations = halted.translations := by
+  simp [dispatch, halt]
 
 example : (dispatch traceAlreadyTerminated traceEntry).action = .rejected .staleAddressSpace ∧
     (dispatch traceAlreadyTerminated traceEntry).state = traceAlreadyTerminated := by

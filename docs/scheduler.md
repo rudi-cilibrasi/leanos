@@ -14,6 +14,14 @@ atomic cleanup and also filters every queue occurrence. Removal atomically
 removes every occurrence, clears a matching current subject, and marks it not
 runnable. Rejected operations preserve the complete scheduler state.
 
+[`LeanOS.FaultDispatch`](fault-dispatch.md) is the atomic user-fault consumer of
+this policy. It first validates the normalized fault against the kernel-owned
+current subject and active address space, then cleans that subject and invokes
+`selectNext` exactly once. A nonempty post-cleanup queue dispatches its FIFO head
+with that subject's owned resumable context; an empty queue returns typed idle.
+Later queue positions and contexts remain ordered and unchanged. The composite
+transition never accepts a caller-selected subject, address space, or context.
+
 The well-formedness predicate composes lifecycle well-formedness with queue
 uniqueness and capacity, live/runnable membership agreement, current-subject
 validity, and address-space ownership. Lean proves successful dispatch returns
@@ -30,6 +38,12 @@ continuously runnable queued subject is selected in fewer than `capacity`
 steps. This is not wall-clock, blocking-resource, interrupt-delivery, or
 system-wide liveness, and it does not apply while runnable subjects are added
 without bound.
+
+Fault dispatch makes only the one-step claim that an already-queued valid head
+is returned in the same composite transition. It adds no fairness, delivery,
+deadlock-freedom, or real-time guarantee. This remains a Lean model property;
+context restore, CR3/TLB instructions, compiler behavior, and hardware are not
+refined by the scheduler or fault-dispatch proofs.
 
 Executable Lean traces cover empty, single/multiple selection, repeated ticks,
 cooperative yield, current termination, stale identity, duplicate enqueue, and
