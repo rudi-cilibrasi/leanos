@@ -1055,8 +1055,30 @@ that could retain a retired sender, endpoint, or carried object.  The final
 empty in-flight store, so IPC and transfer consumers cannot drift. -/
 private def installTerminatedResumable (state : CompositeState)
     (resumable : ResumablePreemption.State) : CompositeState :=
-  let published := installResumable state resumable
-  installTransfers published (CapabilityTransfer.cancelAllOffers published.transfers)
+  let lifecycle := resumable.scheduler.lifecycle
+  let context := match lifecycle.current with
+    | some subject => { state.execution.core.context with
+        currentSubject := subject, activeAddressSpace := subject }
+    | none => state.execution.core.context
+  let endpoints := { state.ipc.endpoints with
+    capabilities := lifecycle.capabilities
+    mailbox := restrictMailboxes lifecycle state.ipc.endpoints.mailbox }
+  let transfers := CapabilityTransfer.cancelAllOffers
+    { state.transfers with toEndpointState := endpoints }
+  { state with
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle, context }
+      returnAuthorityArmed := false }
+    scheduler := resumable.scheduler
+    preemption := { state.preemption with scheduler := resumable.scheduler }
+    virtualMemory := resumable.translations.virtual
+    ipc := { state.ipc with
+      virtualMemory := resumable.translations.virtual
+      endpoints := transfers.toEndpointState }
+    capabilities := lifecycle.capabilities
+    lifecycle
+    resumable
+    transfers }
 
 /-- Publish a mapping-only transition without running the general lifecycle
 synchronizer.  Map and unmap preserve the memory registry and address-space
@@ -4536,6 +4558,159 @@ theorem gate_terminateSubject_accepted_preserves_resumableContextBank
       installTransfers, installResumable, installLifecycle,
       ResumablePreemption.ReadyContextAgreement] using hready
 
+/-- Accepted subject termination is one complete runtime operation family:
+authoritative lifecycle/resource/context cleanup and sealed-offer cancellation
+are published atomically through every duplicated consumer. -/
+theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
+    state subject
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted) :
+    RuntimeWellFormed (gate state (.terminateSubject subject)).state := by
+  let cleaned := ResumablePreemption.cleanupSubject state.resumable subject
+  have hcleanup := ResumablePreemption.cleanupSubject_preserves_wellFormed
+    state.resumable subject hstate.2.2.2.2.2.2.2.2.1
+  change ResumablePreemption.WellFormed cleaned at hcleanup
+  rcases hstate with
+    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
+  rcases hcoherent with
+    ⟨hexecutionCoherent, hschedulerCoherent, hpreemptionCoherent,
+      hcapabilitiesCoherent, hvirtualCapabilitiesCoherent, hipcVirtualCoherent,
+      hipcCapabilitiesCoherent, hresumableSchedulerCoherent,
+      hresumableVirtualCoherent, htransfersCoherent, hauthorityCoherent,
+      hdeadMailbox, hliveSender⟩
+  let endpoints : EndpointIPC.State :=
+    { state.ipc.endpoints with
+      capabilities := cleaned.scheduler.lifecycle.capabilities
+      mailbox := restrictMailboxes cleaned.scheduler.lifecycle state.ipc.endpoints.mailbox }
+  have hcleanVirtual := hcleanup.2.2.2.2.2.2.2.1
+  have hcleanCapabilities : Capability.WellFormed
+      cleaned.scheduler.lifecycle.capabilities := by
+    rw [← hcleanVirtual.1]
+    exact hcleanVirtual.2.2.1
+  have hendpoint : EndpointIPC.WellFormed endpoints := by
+    rcases hipc.2 with ⟨_oldCapabilities, hissued, hmailbox, _hdead, hhistory⟩
+    refine ⟨by simpa [endpoints] using hcleanCapabilities, ?_, ?_, ?_, hhistory⟩
+    · intro object hlive hkind
+      have holdLive := ResumablePreemption.cleanup_live_object_was_live
+        state.resumable subject object hlive
+      have holdKind := ResumablePreemption.cleanup_object_kind_was_kind
+        state.resumable subject object .endpoint hkind
+      rw [hresumableSchedulerCoherent, hschedulerCoherent,
+        ← hipcCapabilitiesCoherent] at holdLive holdKind
+      exact hissued object holdLive holdKind
+    · intro object envelope hnext
+      cases hold : state.ipc.endpoints.mailbox object with
+      | none => simp [endpoints, restrictMailboxes, hold] at hnext
+      | some actual =>
+          have hfacts := hnext
+          have holdMailbox := hmailbox object actual hold
+          simp [endpoints, restrictMailboxes, hold] at hfacts
+          rcases hfacts with ⟨⟨hlive, _hliveSender⟩, rfl⟩
+          obtain ⟨_holdLive, holdKind, hendpoint, hhistoryMember⟩ := holdMailbox
+          exact ⟨by simpa [endpoints] using hlive,
+            ResumablePreemption.cleanup_live_object_preserves_kind
+              state.resumable subject object .endpoint hlive (by
+                rw [hresumableSchedulerCoherent, hschedulerCoherent,
+                  ← hipcCapabilitiesCoherent]
+                exact holdKind),
+            hendpoint, hhistoryMember⟩
+    · intro object hretired
+      by_cases hlive : cleaned.scheduler.lifecycle.capabilities.objects object = true
+      · exact False.elim (hretired (by simpa [endpoints] using hlive))
+      · cases hmail : state.ipc.endpoints.mailbox object <;>
+          simp [endpoints, restrictMailboxes, hlive, hmail]
+  let transferBase : CapabilityTransfer.State :=
+    { state.transfers with toEndpointState := endpoints }
+  let transfers := CapabilityTransfer.cancelAllOffers transferBase
+  have htransfer : CapabilityTransfer.WellFormed transfers := by
+    apply CapabilityTransfer.cancelAllOffers_preserves_wellFormed
+    exact hendpoint
+  have hfinalDead : ∀ object,
+      cleaned.scheduler.lifecycle.capabilities.objects object ≠ true →
+        transfers.mailbox object = none := by
+    intro object hretired
+    exact htransfer.1.2.2.2.1 object (by simpa [transfers, transferBase, endpoints] using hretired)
+  have hfinalSender : ∀ object envelope, transfers.mailbox object = some envelope →
+      cleaned.scheduler.lifecycle.capabilities.subjects envelope.sender = true := by
+    intro object envelope hmail
+    cases hpending : state.transfers.pending object with
+    | some transfer =>
+        simp [transfers, transferBase, CapabilityTransfer.cancelAllOffers,
+          CapabilityTransfer.cancelWhere, hpending] at hmail
+    | none =>
+        cases hold : state.ipc.endpoints.mailbox object with
+        | none =>
+            simp [transfers, transferBase, endpoints, CapabilityTransfer.cancelAllOffers,
+              CapabilityTransfer.cancelWhere, restrictMailboxes, hpending, hold] at hmail
+        | some actual =>
+            simp [transfers, transferBase, endpoints, CapabilityTransfer.cancelAllOffers,
+              CapabilityTransfer.cancelWhere, restrictMailboxes, hpending, hold] at hmail
+            rcases hmail with ⟨⟨_hlive, hsender⟩, heq⟩
+            cases heq
+            exact hsender
+  have hfinalAuthority : ∀ candidate, cleaned.scheduler.lifecycle.current = some candidate →
+      (match cleaned.scheduler.lifecycle.current with
+        | some subject => { state.execution.core.context with
+            currentSubject := subject, activeAddressSpace := subject }
+        | none => state.execution.core.context).currentSubject = candidate ∧
+      (match cleaned.scheduler.lifecycle.current with
+        | some subject => { state.execution.core.context with
+            currentSubject := subject, activeAddressSpace := subject }
+        | none => state.execution.core.context).activeAddressSpace = candidate := by
+    intro candidate hcurrent
+    simp [hcurrent]
+  simp only [gate, hmode, applyOperation, haccepted]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simpa [installTerminatedResumable, CompositeState.Coherent,
+      transfers, transferBase, endpoints] using
+        And.intro hcleanVirtual.1
+          (And.intro hfinalAuthority (And.intro hfinalDead hfinalSender))
+  · rcases hexecution with ⟨_hexecutionCore, _hbound, hmodeWellFormed⟩
+    refine ⟨hcleanup.1.1, by simp [installTerminatedResumable], ?_⟩
+    simp [hmode] at hmodeWellFormed
+    simp only [installTerminatedResumable, hmode]
+    change (match cleaned.scheduler.lifecycle.current with
+      | some subject => { state.execution.core.context with
+          currentSubject := subject, activeAddressSpace := subject }
+      | none => state.execution.core.context).entryActive = false
+    cases hcurrent : cleaned.scheduler.lifecycle.current <;>
+      simpa [hcurrent] using hmodeWellFormed
+  · simpa [installTerminatedResumable] using hcleanup.1.1
+  · simpa [installTerminatedResumable] using hcleanCapabilities
+  · simpa [installTerminatedResumable] using hcleanVirtual.2
+  · exact ⟨by simpa [installTerminatedResumable] using hcleanVirtual.2,
+      by simpa [installTerminatedResumable, transfers, transferBase, endpoints] using htransfer.1⟩
+  · simpa [installTerminatedResumable] using hcleanup.1
+  · exact ⟨by simpa [installTerminatedResumable] using hcleanup.1, hpreemption.2⟩
+  · simpa [installTerminatedResumable] using hcleanup
+  · simpa [installTerminatedResumable, transfers, transferBase, endpoints] using htransfer
+  · simpa [installTerminatedResumable, cleaned,
+      ResumablePreemption.cleanupSubject] using hhalted
+  · simp [installTerminatedResumable]
+
+/-- Every public subject-termination request preserves the global invariant:
+never-issued/already-dead subjects reject atomically, while acceptance performs
+the complete lifecycle, resource, context, mailbox, and transfer cleanup. -/
+theorem terminateSubject_operationPreservesRuntimeWellFormed subject :
+    OperationPreservesRuntimeWellFormed (.terminateSubject subject) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hterminate : SubjectLifecycle.terminate state.lifecycle subject with
+    | mk next result =>
+        cases result with
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.terminateSubject subject) (.terminateSubject (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hterminate])
+              (.terminateSubject subject reason (by simp [hterminate]))).1
+        | accepted =>
+            exact gate_terminateSubject_accepted_preserves_runtimeWellFormed
+              state subject hstate hmode (by simp [hterminate])
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.terminateSubject subject) hstate hmode
+
 /-! ### Scheduler rejection preservation
 
 The raw accepted dispatch/yield/tick operations do not yet own the resumable
@@ -5127,9 +5302,8 @@ theorem scheduleAdd_operationPreservesRuntimeWellFormed subject :
 The constructors below are exactly the operation families whose accepted and
 rejected results have complete global-preservation proofs.  Keeping this as a
 syntactic predicate makes the current mixed-trace boundary reviewable: adding
-an operation requires its family theorem, while the still-open interrupt,
-preemption and termination mutations cannot enter the
-advertised trace theorem accidentally. -/
+an operation requires its family theorem, while the still-open interrupt and
+preemption mutations cannot enter the advertised trace theorem accidentally. -/
 
 inductive RuntimeTraceOperation : Operation → Prop where
   | selectUserReturn purpose : RuntimeTraceOperation (.selectUserReturn purpose)
@@ -5151,6 +5325,7 @@ inductive RuntimeTraceOperation : Operation → Prop where
   | map slot page permissions : RuntimeTraceOperation (.map slot page permissions)
   | unmap page : RuntimeTraceOperation (.unmap page)
   | createSubject subject : RuntimeTraceOperation (.createSubject subject)
+  | terminateSubject subject : RuntimeTraceOperation (.terminateSubject subject)
   | scheduleAdd subject : RuntimeTraceOperation (.scheduleAdd subject)
   | scheduleRemove subject : RuntimeTraceOperation (.scheduleRemove subject)
   | restart : RuntimeTraceOperation .restart
@@ -5185,6 +5360,8 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
       exact map_operationPreservesRuntimeWellFormed slot page permissions
   | unmap page => exact unmap_operationPreservesRuntimeWellFormed page
   | createSubject subject => exact createSubject_operationPreservesRuntimeWellFormed subject
+  | terminateSubject subject =>
+      exact terminateSubject_operationPreservesRuntimeWellFormed subject
   | scheduleAdd subject => exact scheduleAdd_operationPreservesRuntimeWellFormed subject
   | scheduleRemove subject => exact scheduleRemove_operationPreservesRuntimeWellFormed subject
   | restart => exact restart_operationPreservesRuntimeWellFormed

@@ -984,6 +984,47 @@ theorem cleanup_terminates_subject state subject :
   simp [cleanupSubject, retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
     SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool]
 
+/-- Cleanup only retires capability identities; every subject or object still
+live afterward was live in the authoritative pre-state. -/
+theorem cleanup_live_subject_was_live state subject candidate
+    (hlive : (cleanupSubject state subject).scheduler.lifecycle.capabilities.subjects
+      candidate = true) :
+    state.scheduler.lifecycle.capabilities.subjects candidate = true := by
+  simp [cleanupSubject, retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
+    SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool] at hlive
+  exact hlive.2
+
+theorem cleanup_live_object_was_live state subject object
+    (hlive : (cleanupSubject state subject).scheduler.lifecycle.capabilities.objects
+      object = true) :
+    state.scheduler.lifecycle.capabilities.objects object = true := by
+  simp only [cleanupSubject, retireOwnedAddressSpaces] at hlive
+  split at hlive
+  · simp at hlive
+  · simp [SubjectLifecycle.terminateState,
+      SubjectLifecycle.terminatedCapabilities] at hlive
+    exact hlive.2
+
+theorem cleanup_object_kind_was_kind state subject object kind
+    (hkind : (cleanupSubject state subject).scheduler.lifecycle.capabilities.kinds
+      object = some kind) :
+    state.scheduler.lifecycle.capabilities.kinds object = some kind := by
+  simp only [cleanupSubject, retireOwnedAddressSpaces] at hkind
+  split at hkind
+  · simp at hkind
+  · simp [SubjectLifecycle.terminateState,
+      SubjectLifecycle.terminatedCapabilities] at hkind
+    exact hkind.2
+
+theorem cleanup_live_object_preserves_kind state subject object kind
+    (hlive : (cleanupSubject state subject).scheduler.lifecycle.capabilities.objects
+      object = true)
+    (hkind : state.scheduler.lifecycle.capabilities.kinds object = some kind) :
+    (cleanupSubject state subject).scheduler.lifecycle.capabilities.kinds object = some kind := by
+  simp [cleanupSubject, retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
+    SubjectLifecycle.terminatedCapabilities] at hlive ⊢
+  simp_all
+
 theorem cleanup_marks_subject_not_runnable state subject :
     (cleanupSubject state subject).scheduler.lifecycle.runnable subject = false := by
   simpa [cleanupSubject] using

@@ -630,6 +630,28 @@ def cancelAllOffers (state : State) : State :=
     (cancelAllOffers state).capabilities = state.capabilities := by
   rfl
 
+/-- Bulk cancellation is a monotone mailbox restriction: it retains the
+endpoint registry and history, removes every pending sealed descendant, and
+can only clear an existing mailbox. -/
+theorem cancelAllOffers_preserves_wellFormed state
+    (hstate : EndpointIPC.WellFormed state.toEndpointState) :
+    WellFormed (cancelAllOffers state) := by
+  rcases hstate with ⟨hcapabilities, hissued, hmailbox, hdead, hhistory⟩
+  refine ⟨⟨hcapabilities, hissued, ?_, ?_, hhistory⟩, ?_⟩
+  · intro object envelope hnext
+    apply hmailbox object envelope
+    cases hpending : state.pending object with
+    | none => simpa [cancelAllOffers, cancelWhere, hpending] using hnext
+    | some transfer =>
+        simp [cancelAllOffers, cancelWhere, hpending] at hnext
+  · intro object hretired
+    cases hpending : state.pending object with
+    | none =>
+        simpa [cancelAllOffers, cancelWhere, hpending] using hdead object hretired
+    | some transfer => simp [cancelAllOffers, cancelWhere, hpending]
+  · intro endpoint transfer hpending
+    simp at hpending
+
 /-- Sender-offer cancellation changes exactly those pending records whose
 trusted sender is the selected subject. -/
 theorem cancelSenderOffers_pending state subject endpoint transfer

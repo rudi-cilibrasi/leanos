@@ -298,9 +298,19 @@ theorem composite_gate_schedulerAdmission_preserves_runtimeWellFormed state subj
       (FailStop.gate state (.scheduleAdd subject)).state := by
   exact FailStop.scheduleAdd_operationPreservesRuntimeWellFormed subject state hstate
 
+/-- SC-COMPOSITE-TERMINATION-WF: every subject identifier is a total public
+termination request. Rejections are atomic; acceptance retires the subject's
+resources and removes all scheduler, context, mailbox, and sealed-transfer
+references while preserving the complete runtime invariant. -/
+theorem composite_gate_termination_preserves_runtimeWellFormed state subject
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+      (FailStop.gate state (.terminateSubject subject)).state := by
+  exact FailStop.terminateSubject_operationPreservesRuntimeWellFormed subject state hstate
+
 /-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of the
 registered control, syscall, IPC/sealed-transfer-offer,
-capability-copy/revocation, mapping, subject-creation, and resumable-aware
+capability-copy/revocation, mapping, subject-lifecycle, and resumable-aware
 scheduler operations preserve the complete runtime invariant for every
 accepted or typed-rejected result. -/
 theorem composite_registered_mixed_trace_preserves_runtimeWellFormed
@@ -352,6 +362,7 @@ private def registeredMixedTrace : List FailStop.Operation :=
    .createSubject 1,
    .scheduleAdd 1,
    .scheduleRemove 1,
+   .terminateSubject 1,
    .selectUserReturn .initialDispatch,
    .restart]
 
@@ -359,7 +370,7 @@ private theorem registeredMixedTrace_registered operation
     (hmember : operation ∈ registeredMixedTrace) :
     FailStop.RuntimeTraceOperation operation := by
   simp [registeredMixedTrace] at hmember
-  rcases hmember with h | h | h | h | h | h | h | h | h | h | h | h | h | h
+  rcases hmember with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h
   · subst operation
     exact .syscall _
   · subst operation
@@ -385,6 +396,8 @@ private theorem registeredMixedTrace_registered operation
   · subst operation
     exact .scheduleRemove _
   · subst operation
+    exact .terminateSubject _
+  · subst operation
     exact .selectUserReturn _
   · subst operation
     exact .restart
@@ -393,7 +406,7 @@ set_option maxRecDepth 100000 in
 /-- Concrete non-vacuity for the registered mixed-trace contract: the accepted
 repository boot plan runs a finite trace containing attacker-controlled
 syscall/IPC/sealed-transfer/capability-copy/revocation/mapping words, lifecycle
-creation, resumable-aware scheduler cleanup, return selection, and restart
+creation/termination, resumable-aware scheduler cleanup, return selection, and restart
 while retaining the global invariant. -/
 theorem composite_registered_mixed_trace_reachable_witness :
     match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
