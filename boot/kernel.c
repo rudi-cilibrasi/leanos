@@ -924,8 +924,9 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
         __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
         const uint64_t required = (1ull << 3) | (1ull << 2) | (1ull << 1);
-        const uint64_t forbidden = (1ull << 18) | (1ull << 10) | (1ull << 9);
-        if ((cr0 & required) != required || (cr4 & forbidden) != 0 ||
+        const uint64_t forbidden_peer_cr4 = (1ull << 22) | (1ull << 18) |
+            (1ull << 10) | (1ull << 9);
+        if ((cr0 & required) != required || (cr4 & forbidden_peer_cr4) != 0 ||
             cr3 != (uint64_t)page_map_level_4_b)
             fail("extended-state-denial-peer-controls");
         serial_puts("LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n");

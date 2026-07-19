@@ -29,9 +29,13 @@ grep -Fq 'or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax' \
   "$boot_source" || {
   echo "error: extended-state field=cr0-normalization inherited-or-relaxed" >&2; exit 1;
 }
-grep -Fq '(1ull << 22) | (1ull << 18) | (1ull << 10) | (1ull << 9);' \
-  "$kernel_source" || {
+grep -Fq 'const uint64_t forbidden_cr4 =' "$kernel_source" &&
+grep -Fq '(cr4 & forbidden_cr4) == 0' "$kernel_source" || {
   echo "error: extended-state field=live-cr4-snapshot missing" >&2; exit 1;
+}
+grep -Fq 'const uint64_t forbidden_peer_cr4 = (1ull << 22) | (1ull << 18) |' "$kernel_source" &&
+grep -Fq '(cr4 & forbidden_peer_cr4) != 0' "$kernel_source" || {
+  echo "error: extended-state field=peer-cr4-pke-validation missing" >&2; exit 1;
 }
 grep -Fq 'const uint64_t required_cr0 = (1ull << 16) | (1ull << 3) |' \
   "$kernel_source" || {
