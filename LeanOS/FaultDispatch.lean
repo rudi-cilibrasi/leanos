@@ -618,6 +618,164 @@ example : (dispatch (traceState false) traceEntry).action = .idle ∧
       (dispatch (traceState false) traceEntry).state.contexts 1 = none := by
   native_decide
 
+/-! Mixed adversarial traces exercise the rejection/fatal boundary without
+sharing partially cleaned state with the successful traces above. -/
+
+private def traceThirdContext : ResumablePreemption.Context :=
+  { traceSurvivorContext with owner := 3, addressSpace := 3 }
+
+private def traceMultiCapabilities : Capability.State :=
+  { subjects := fun subject => subject = 1 || subject = 2 || subject = 3
+    objects := fun object => object = 1 || object = 2 || object = 3
+    kinds := fun object =>
+      if object = 1 || object = 2 || object = 3 then some .addressSpace else none
+    slots := fun holder slot =>
+      if holder = 3 && slot = 7 then
+        some { object := 3, kind := .addressSpace, rights := { grant := true } }
+      else none }
+
+private def traceMultiLifecycle : SubjectLifecycle.State :=
+  { capabilities := traceMultiCapabilities
+    issuedSubjects := fun subject => subject = 1 || subject = 2 || subject = 3
+    ownedMemory := fun object => if object = 30 then some (3, 50) else none
+    addressOwner := fun space =>
+      if space = 1 || space = 2 || space = 3 then some space else none
+    mapping := fun space page => if space = 3 && page = 9 then some 30 else none
+    endpointOwner := fun endpoint => if endpoint = 40 then some 3 else none
+    mailbox := fun _ => none
+    frameOwner := fun frame => if frame = 50 then some 3 else none
+    freeFrame := fun frame => frame != 50
+    runnable := fun subject => subject = 1 || subject = 2 || subject = 3
+    current := some 1 }
+
+private def traceMultiState : ResumablePreemption.State :=
+  let lifecycle := traceMultiLifecycle
+  { scheduler := { lifecycle, ready := [2, 3], capacity := 3 }
+    contexts := [traceSurvivorContext, traceThirdContext]
+    capacity := 3
+    translations := {
+      virtual := {
+        memory := {
+          capabilities := traceMultiCapabilities
+          allocator := { frames := [50], status := fun frame =>
+            if frame = 50 then .owned 30 else .free }
+          binding := fun object => if object = 30 then some 50 else none
+          issued := fun object => object = 1 || object = 2 || object = 3 || object = 30 }
+        owner := lifecycle.addressOwner
+        mappings := fun space page => if space = 3 && page = 9 then
+          some { object := 30, permissions := { read := true } } else none
+        issuedAddressSpace := fun space => space = 1 || space = 2 || space = 3 }
+      active := some 1
+      entries := [] } }
+
+private def traceStaleCurrent : InterruptEntry.Result :=
+  match traceEntry with
+  | .accepted frame => .accepted { frame with currentSubject := 3 }
+  | other => other
+
+private def traceWrongAddressSpace : InterruptEntry.Result :=
+  match traceEntry with
+  | .accepted frame => .accepted { frame with activeAddressSpace := 3 }
+  | other => other
+
+private def traceWrongPurpose : InterruptEntry.Result :=
+  match traceEntry with
+  | .accepted frame => .accepted { frame with purpose := .timer }
+  | other => other
+
+private def traceKernelFault : InterruptEntry.Result :=
+  match traceEntry with
+  | .accepted frame => .accepted { frame with origin := .kernel, cs := 0x08 }
+  | other => other
+
+private def traceAlreadyTerminated : ResumablePreemption.State :=
+  { traceState false with scheduler := { (traceState false).scheduler with
+      lifecycle := { (traceState false).scheduler.lifecycle with
+        capabilities := { (traceState false).scheduler.lifecycle.capabilities with
+          subjects := fun _ => false }
+        addressOwner := fun _ => none
+        runnable := fun _ => false } } }
+
+example : (dispatch traceMultiState traceEntry).action = .dispatch traceSurvivorContext := by
+  native_decide
+
+/-- The FIFO survivor at position two and its unrelated authority, mapping,
+frame, endpoint, and suspended context survive dispatch of the head. -/
+example :
+    (dispatch traceMultiState traceEntry).state.scheduler.ready = [3] ∧
+      ResumablePreemption.contextFor
+        (dispatch traceMultiState traceEntry).state.contexts 3 = some traceThirdContext ∧
+      (dispatch traceMultiState traceEntry).state.scheduler.lifecycle.capabilities.slots 3 7 =
+        traceMultiState.scheduler.lifecycle.capabilities.slots 3 7 ∧
+      (dispatch traceMultiState traceEntry).state.scheduler.lifecycle.ownedMemory 30 = some (3, 50) ∧
+      (dispatch traceMultiState traceEntry).state.scheduler.lifecycle.mapping 3 9 = some 30 ∧
+      (dispatch traceMultiState traceEntry).state.scheduler.lifecycle.endpointOwner 40 = some 3 ∧
+      (dispatch traceMultiState traceEntry).state.scheduler.lifecycle.frameOwner 50 = some 3 := by
+  native_decide
+
+example : (dispatch traceMultiState traceStaleCurrent).action = .rejected .staleCurrent ∧
+    (dispatch traceMultiState traceStaleCurrent).state = traceMultiState := by
+  constructor
+  · native_decide
+  · exact rejected_unchanged _ _ .staleCurrent (by native_decide)
+
+example : (dispatch traceMultiState traceWrongAddressSpace).action =
+    .rejected .staleAddressSpace ∧
+    (dispatch traceMultiState traceWrongAddressSpace).state = traceMultiState := by
+  constructor
+  · native_decide
+  · exact rejected_unchanged _ _ .staleAddressSpace (by native_decide)
+
+example : (dispatch traceMultiState traceWrongPurpose).action = .rejected .wrongPurpose ∧
+    (dispatch traceMultiState traceWrongPurpose).state = traceMultiState := by
+  constructor
+  · native_decide
+  · exact rejected_unchanged _ _ .wrongPurpose (by native_decide)
+
+example : (dispatch traceMultiState (.fatal .wrongFrameShape)).action =
+    .rejected (.malformedEntry .wrongFrameShape) ∧
+    (dispatch traceMultiState (.fatal .wrongFrameShape)).state = traceMultiState := by
+  constructor
+  · native_decide
+  · exact rejected_unchanged _ _ (.malformedEntry .wrongFrameShape) (by native_decide)
+
+example : (dispatch traceMultiState traceKernelFault).action = .fatal ∧
+    (dispatch traceMultiState traceKernelFault).state.halted = true ∧
+    (dispatch traceMultiState traceKernelFault).state.scheduler = traceMultiState.scheduler := by
+  have haction : (dispatch traceMultiState traceKernelFault).action = .fatal := by
+    native_decide
+  refine ⟨haction, ?_⟩
+  rw [fatal_state_eq_halt _ _ haction]
+  exact ⟨(halt_preserves_authoritative_stores _).1,
+    (halt_preserves_authoritative_stores _).2.1⟩
+
+example : (dispatch traceMultiState (.fatal .nested)).action = .fatal ∧
+    (dispatch traceMultiState (.fatal .nested)).state.halted = true ∧
+    (dispatch traceMultiState (.fatal .nested)).state.scheduler = traceMultiState.scheduler := by
+  have haction : (dispatch traceMultiState (.fatal .nested)).action = .fatal := by
+    native_decide
+  refine ⟨haction, ?_⟩
+  rw [fatal_state_eq_halt _ _ haction]
+  exact ⟨(halt_preserves_authoritative_stores _).1,
+    (halt_preserves_authoritative_stores _).2.1⟩
+
+example : (dispatch traceAlreadyTerminated traceEntry).action = .rejected .staleAddressSpace ∧
+    (dispatch traceAlreadyTerminated traceEntry).state = traceAlreadyTerminated := by
+  constructor
+  · native_decide
+  · exact rejected_unchanged _ _ .staleAddressSpace (by native_decide)
+
+/-- Regression witness: after cleanup an attacker-chosen context lookup can
+name subject 3 even though the deterministic ready head is subject 2.  The
+composite transition cannot exhibit that substitution. -/
+example :
+    ResumablePreemption.contextFor
+        (ResumablePreemption.cleanupSubject traceMultiState 1).contexts 3 =
+      some traceThirdContext ∧
+      (dispatch traceMultiState traceEntry).action = .dispatch traceSurvivorContext ∧
+      (dispatch traceMultiState traceEntry).action ≠ .dispatch traceThirdContext := by
+  native_decide
+
 /-- The atomic fault transition preserves the complete authoritative runtime
 invariant on every result.  In the survivor branch, selecting the ready head
 makes it current while consuming exactly its saved context; every unrelated
