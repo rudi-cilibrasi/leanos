@@ -80,6 +80,17 @@ REQUIRED_FAST_ENTRY_ROWS = {
         "mode": "15",
         "reason": "fast-entry-target-readback",
     },
+    "return-fast-entry-sysenter-eip-relaxation": {
+        "runner": "return",
+        "result_class": "controlled-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-fast-entry-sysenter-eip-relaxation.iso",
+        "elf": "leanos-return-fast-entry-sysenter-eip-relaxation.elf",
+        "serial_log": "return-corruption-fast-entry-sysenter-eip-relaxation.serial.log",
+        "scenario": "fast-entry-sysenter-eip-relaxation",
+        "mode": "16",
+        "reason": "fast-entry-target-readback",
+    },
 }
 
 

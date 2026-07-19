@@ -542,7 +542,8 @@ for spec in "${return_corruptions[@]}"; do
       echo "error: post-validation fixture lacked policy diagnostic" >&2; exit 1;
     }
   elif [[ "$fixture" == fast-entry-sce-relaxation ||
-      "$fixture" == fast-entry-lstar-relaxation ]]; then
+      "$fixture" == fast-entry-lstar-relaxation ||
+      "$fixture" == fast-entry-sysenter-eip-relaxation ]]; then
     if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}.elf" \
         >"$build/return-${fixture}-policy.log" 2>&1; then
       echo "error: fast-entry relaxation policy fixture unexpectedly passed" >&2

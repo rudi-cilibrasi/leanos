@@ -243,6 +243,27 @@ def run_fixtures() -> None:
             "mandatory fast-entry scenario is absent: return-fast-entry-lstar-relaxation",
         )
 
+        missing_fast_entry_sysenter_mutation = (
+            tmp / "missing-fast-entry-sysenter-mutation.tsv"
+        )
+        mutate_matrix(
+            missing_fast_entry_sysenter_mutation,
+            lambda lines: [
+                line.replace(
+                    "return-fast-entry-sysenter-eip-relaxation",
+                    "return-fast-entry-sysenter-eip-relaxation-replacement",
+                )
+                if line.startswith("return-fast-entry-sysenter-eip-relaxation\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_fast_entry_sysenter_mutation),
+            "mandatory fast-entry scenario is absent: "
+            "return-fast-entry-sysenter-eip-relaxation",
+        )
+
         wrong_class = tmp / "wrong-class.tsv"
         mutate_matrix(
             wrong_class,
