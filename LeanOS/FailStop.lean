@@ -2544,6 +2544,44 @@ theorem gate_scheduleAdd_accepted_runtimeWellFormed_requires_staged_context
   simpa [gate, hmode, applyOperation, haccepted, installScheduler,
     installLifecycle] using hagreement
 
+/-- Removing a queued subject through the raw scheduler transition cannot by
+itself preserve the composite invariant: the pre-state's ready/context
+agreement supplies a saved context for that subject, while removal makes the
+subject non-runnable without consuming that context.  A complete scheduler
+removal operation must therefore perform resumable-context cleanup atomically
+with queue removal. -/
+theorem gate_scheduleRemove_accepted_queued_requires_context_cleanup
+    state subject context next
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hqueued : subject ∈ state.scheduler.ready)
+    (haccepted : Scheduler.remove state.scheduler subject =
+      { state := next, result := .accepted context }) :
+    ¬ RuntimeWellFormed (gate state (.scheduleRemove subject)).state := by
+  intro hpost
+  rcases hstate with
+    ⟨hcoherent, _, _, _, _, _, _, _, hresumable, _, _, _⟩
+  have hqueuedResumable : subject ∈ state.resumable.scheduler.ready := by
+    rw [hcoherent.2.2.2.2.2.2.2.1]
+    exact hqueued
+  obtain ⟨saved, hsaved, howner⟩ :=
+    hresumable.2.2.2.2.2.1.1 subject hqueuedResumable
+  rcases hpost with
+    ⟨_, _, _, _, _, _, _, _, hresumablePost, _, _, _⟩
+  have hsavedPost : saved ∈
+      (gate state (.scheduleRemove subject)).state.resumable.contexts := by
+    simpa [gate, hmode, applyOperation, haccepted, installScheduler,
+      installLifecycle] using hsaved
+  have hvalid := hresumablePost.2.2.2.1 saved hsavedPost
+  have hrunnable : next.lifecycle.runnable subject = true := by
+    simpa [gate, hmode, applyOperation, haccepted, installScheduler,
+      installLifecycle, howner] using hvalid.2.2.2.1
+  simp only [Scheduler.remove] at haccepted
+  split at haccepted
+  · rcases haccepted with ⟨rfl, rfl⟩
+    simp [SubjectLifecycle.setBool] at hrunnable
+  · simp_all [Scheduler.reject]
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
