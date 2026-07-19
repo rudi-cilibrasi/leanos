@@ -2076,6 +2076,40 @@ theorem gate_capabilityCopy_accepted_synchronizes state source destination desti
                       (And.intro hresumable
                         (And.intro htransfers hpublished)))))))))
 
+/-- Creating a fresh subject publishes the exact accepted lifecycle through
+every lifecycle and capability consumer in one coherent gate step.  The
+lifecycle invariant is proved for the published state, rather than merely for
+the private `SubjectLifecycle.create` result. -/
+theorem gate_createSubject_accepted_synchronizes state subject next
+    (hmode : state.execution.mode = .running)
+    (haccepted : SubjectLifecycle.create state.lifecycle subject =
+      { state := next, result := .accepted })
+    (hwellFormed : SubjectLifecycle.WellFormed state.lifecycle) :
+    (gate state (.createSubject subject)).result =
+        .completed (.createSubject .accepted) ∧
+      let published := (gate state (.createSubject subject)).state
+      published.Coherent ∧
+        published.lifecycle = next ∧
+        published.execution.core.lifecycle = next ∧
+        published.scheduler.lifecycle = next ∧
+        published.preemption.scheduler.lifecycle = next ∧
+        published.resumable.scheduler.lifecycle = next ∧
+        published.capabilities = next.capabilities ∧
+        published.virtualMemory.memory.capabilities = next.capabilities ∧
+        published.ipc.endpoints.capabilities = next.capabilities ∧
+        published.transfers.capabilities = next.capabilities ∧
+        SubjectLifecycle.WellFormed published.lifecycle := by
+  have hpreserved := SubjectLifecycle.create_preserves_wellFormed
+    state.lifecycle subject hwellFormed
+  rw [haccepted] at hpreserved
+  have hcoherent : (installLifecycle state next).Coherent :=
+    installLifecycle_coherent state next
+  constructor
+  · simp [gate, hmode, operationReply, haccepted]
+  · simpa [gate, hmode, applyOperation, haccepted, installLifecycle,
+      synchronizeMemory] using
+      And.intro hcoherent hpreserved
+
 /-- Accepted single-slot revocation is synchronized with every capability
 consumer and retains the exact well-formed subsystem post-state. -/
 theorem gate_capabilityRevoke_accepted_synchronizes state authoritySlot victim victimSlot next
