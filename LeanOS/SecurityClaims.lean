@@ -215,11 +215,11 @@ theorem composite_gate_authority_confinement state
             rights).result) ∧
     (FailStop.gate state (.capabilityRevoke authoritySlot victim victimSlot)).result =
         .completed (.capability
-          (Capability.revoke state.capabilities
+          (Capability.revokeRuntimeSafe state.capabilities
             state.execution.core.context.currentSubject authoritySlot victim victimSlot).result) ∧
     (FailStop.gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).result =
         .completed (.capability
-          (Capability.revokeSubtree state.capabilities
+          (Capability.revokeSubtreeRuntimeSafe state.capabilities
             state.execution.core.context.currentSubject authoritySlot victim victimSlot).result) ∧
     (FailStop.gate state (.map slot page permissions)).result =
         .completed (.map
@@ -275,9 +275,9 @@ theorem composite_gate_schedulerAdmission_preserves_runtimeWellFormed state subj
   exact FailStop.scheduleAdd_operationPreservesRuntimeWellFormed subject state hstate
 
 /-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of the
-registered control, syscall, IPC, capability-copy, mapping, subject-creation,
-and resumable-aware scheduler operations preserve the complete runtime
-invariant for every accepted or typed-rejected result. -/
+registered control, syscall, IPC, capability-copy/revocation, mapping,
+subject-creation, and resumable-aware scheduler operations preserve the
+complete runtime invariant for every accepted or typed-rejected result. -/
 theorem composite_registered_mixed_trace_preserves_runtimeWellFormed
     state operations
     (hstate : FailStop.RuntimeWellFormed state)
@@ -318,6 +318,8 @@ private def registeredMixedTrace : List FailStop.Operation :=
   [.syscall { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 },
    .ipc (.receive 0),
    .capabilityCopy 0 1 0 { read := true },
+   .capabilityRevoke 0 1 0,
+   .capabilityRevokeSubtree 0 1 0,
    .map 0 0 { read := true },
    .unmap 0,
    .createSubject 1,
@@ -330,16 +332,38 @@ private theorem registeredMixedTrace_registered operation
     (hmember : operation ∈ registeredMixedTrace) :
     FailStop.RuntimeTraceOperation operation := by
   simp [registeredMixedTrace] at hmember
-  rcases hmember with h | h | h | h | h | h | h | h | h | h
-  all_goals subst operation
-  all_goals constructor
+  rcases hmember with h | h | h | h | h | h | h | h | h | h | h | h
+  · subst operation
+    exact .syscall _
+  · subst operation
+    exact .ipc _
+  · subst operation
+    exact .capabilityCopy _ _ _ _
+  · subst operation
+    exact .capabilityRevoke _ _ _
+  · subst operation
+    exact .capabilityRevokeSubtree _ _ _
+  · subst operation
+    exact .map _ _ _
+  · subst operation
+    exact .unmap _
+  · subst operation
+    exact .createSubject _
+  · subst operation
+    exact .scheduleAdd _
+  · subst operation
+    exact .scheduleRemove _
+  · subst operation
+    exact .selectUserReturn _
+  · subst operation
+    exact .restart
 
 set_option maxRecDepth 100000 in
 /-- Concrete non-vacuity for the registered mixed-trace contract: the accepted
 repository boot plan runs a finite trace containing attacker-controlled
-syscall/IPC/capability/mapping words, lifecycle creation, resumable-aware
-scheduler cleanup, return selection, and restart while retaining the global
-invariant. -/
+syscall/IPC/capability-copy/revocation/mapping words, lifecycle creation,
+resumable-aware scheduler cleanup, return selection, and restart while
+retaining the global invariant. -/
 theorem composite_registered_mixed_trace_reachable_witness :
     match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
     | .ok plan => FailStop.RuntimeWellFormed

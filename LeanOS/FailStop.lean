@@ -1403,13 +1403,13 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       | .rejected _ => state
       | .accepted => installCopiedCapabilities state outcome.state
   | .capabilityRevoke authoritySlot victim victimSlot =>
-      let outcome := Capability.revoke state.capabilities
+      let outcome := Capability.revokeRuntimeSafe state.capabilities
         state.execution.core.context.currentSubject authoritySlot victim victimSlot
       match outcome.result with
       | .rejected _ => state
       | .accepted => installCopiedCapabilities state outcome.state
   | .capabilityRevokeSubtree authoritySlot victim victimSlot =>
-      let outcome := Capability.revokeSubtree state.capabilities
+      let outcome := Capability.revokeSubtreeRuntimeSafe state.capabilities
         state.execution.core.context.currentSubject authoritySlot victim victimSlot
       match outcome.result with
       | .rejected _ => state
@@ -1516,11 +1516,13 @@ def operationReply (state : CompositeState) : Operation → OperationReply
           source destination destinationSlot rights).result
   | .capabilityRevoke authoritySlot victim victimSlot =>
       .capability
-        (Capability.revoke state.capabilities state.execution.core.context.currentSubject
+        (Capability.revokeRuntimeSafe state.capabilities
+          state.execution.core.context.currentSubject
           authoritySlot victim victimSlot).result
   | .capabilityRevokeSubtree authoritySlot victim victimSlot =>
       .capability
-        (Capability.revokeSubtree state.capabilities state.execution.core.context.currentSubject
+        (Capability.revokeSubtreeRuntimeSafe state.capabilities
+          state.execution.core.context.currentSubject
           authoritySlot victim victimSlot).result
   | .map slot page permissions =>
       .map (VirtualMapping.map state.virtualMemory state.execution.core.context.currentSubject slot
@@ -1580,12 +1582,14 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
       SubsystemRejection state (.capabilityCopy source destination destinationSlot rights)
         (.capability (.rejected reason))
   | capabilityRevoke authoritySlot victim victimSlot reason
-      (h : (Capability.revoke state.capabilities state.execution.core.context.currentSubject
+      (h : (Capability.revokeRuntimeSafe state.capabilities
+        state.execution.core.context.currentSubject
         authoritySlot victim victimSlot).result = .rejected reason) :
       SubsystemRejection state (.capabilityRevoke authoritySlot victim victimSlot)
         (.capability (.rejected reason))
   | capabilityRevokeSubtree authoritySlot victim victimSlot reason
-      (h : (Capability.revokeSubtree state.capabilities state.execution.core.context.currentSubject
+      (h : (Capability.revokeSubtreeRuntimeSafe state.capabilities
+        state.execution.core.context.currentSubject
         authoritySlot victim victimSlot).result = .rejected reason) :
       SubsystemRejection state (.capabilityRevokeSubtree authoritySlot victim victimSlot)
         (.capability (.rejected reason))
@@ -3036,7 +3040,7 @@ theorem gate_createSubject_accepted_synchronizes state subject next
 consumer and retains the exact well-formed subsystem post-state. -/
 theorem gate_capabilityRevoke_accepted_synchronizes state authoritySlot victim victimSlot next
     (hmode : state.execution.mode = .running)
-    (haccepted : Capability.revoke state.capabilities
+    (haccepted : Capability.revokeRuntimeSafe state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot =
         { state := next, result := .accepted })
     (hcoherent : state.Coherent)
@@ -3056,12 +3060,14 @@ theorem gate_capabilityRevoke_accepted_synchronizes state authoritySlot victim v
         published.resumable.scheduler.lifecycle.capabilities = next ∧
         published.transfers.capabilities = next ∧
         Capability.WellFormed published.capabilities := by
+  have hraw := (Capability.revokeRuntimeSafe_accepted_raw state.capabilities
+    state.execution.core.context.currentSubject authoritySlot victim victimSlot next haccepted).1
   have hpreserved := Capability.revoke_preserves_wellFormed state.capabilities
     state.execution.core.context.currentSubject authoritySlot victim victimSlot hwellFormed
-  rw [haccepted] at hpreserved
+  rw [hraw] at hpreserved
   have hmetadata := Capability.revoke_preserves_metadata state.capabilities
     state.execution.core.context.currentSubject authoritySlot victim victimSlot
-  rw [haccepted] at hmetadata
+  rw [hraw] at hmetadata
   have hcoherent' : (installCopiedCapabilities state next).Coherent := by
     rcases hcoherent with
       ⟨hexecution, hscheduler, hpreemption, hcapabilities, hvirtualCapabilities,
@@ -3108,7 +3114,7 @@ instead of leaving scheduler, IPC, or saved-context views stale. -/
 theorem gate_capabilityRevokeSubtree_accepted_synchronizes state authoritySlot victim victimSlot
     next
     (hmode : state.execution.mode = .running)
-    (haccepted : Capability.revokeSubtree state.capabilities
+    (haccepted : Capability.revokeSubtreeRuntimeSafe state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot =
         { state := next, result := .accepted })
     (hcoherent : state.Coherent)
@@ -3128,13 +3134,15 @@ theorem gate_capabilityRevokeSubtree_accepted_synchronizes state authoritySlot v
         published.resumable.scheduler.lifecycle.capabilities = next ∧
         published.transfers.capabilities = next ∧
         Capability.WellFormed published.capabilities := by
+  have hraw := (Capability.revokeSubtreeRuntimeSafe_accepted_raw state.capabilities
+    state.execution.core.context.currentSubject authoritySlot victim victimSlot next haccepted).1
   have hpreserved := Capability.revokeSubtree_preserves_wellFormed
     state.capabilities state.execution.core.context.currentSubject authoritySlot victim victimSlot
     hwellFormed
-  rw [haccepted] at hpreserved
+  rw [hraw] at hpreserved
   have hmetadata := Capability.revokeSubtree_preserves_metadata state.capabilities
     state.execution.core.context.currentSubject authoritySlot victim victimSlot
-  rw [haccepted] at hmetadata
+  rw [hraw] at hmetadata
   have hcoherent' : (installCopiedCapabilities state next).Coherent := by
     rcases hcoherent with
       ⟨hexecution, hscheduler, hpreemption, hcapabilities, hvirtualCapabilities,
@@ -3182,23 +3190,27 @@ theorem gate_capabilityRevoke_accepted_preserves_runtimeWellFormed state authori
     victimSlot next
     (hstate : RuntimeWellFormed state)
     (hmode : state.execution.mode = .running)
-    (haccepted : Capability.revoke state.capabilities
+    (haccepted : Capability.revokeRuntimeSafe state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot =
-        { state := next, result := .accepted })
-    (hauthority : RuntimeAuthorityPreserved state.capabilities next) :
+        { state := next, result := .accepted }) :
     RuntimeWellFormed
         (gate state (.capabilityRevoke authoritySlot victim victimSlot)).state ∧
       (gate state (.capabilityRevoke authoritySlot victim victimSlot)).result =
         .completed (.capability .accepted) := by
+  obtain ⟨hraw, _hsafe⟩ := Capability.revokeRuntimeSafe_accepted_raw state.capabilities
+    state.execution.core.context.currentSubject authoritySlot victim victimSlot next haccepted
+  have hauthority : RuntimeAuthorityPreserved state.capabilities next :=
+    Capability.revokeRuntimeSafe_accepted_preserves_critical_authority state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot next haccepted
   have hmetadata := Capability.revoke_preserves_metadata state.capabilities
     state.execution.core.context.currentSubject authoritySlot victim victimSlot
-  rw [haccepted] at hmetadata
+  rw [hraw] at hmetadata
   rcases hmetadata with
     ⟨hsubjects, hobjects, hkinds, _hcapacity, hnextIdentity, hderivations⟩
   have hwellFormed : Capability.WellFormed next := by
     have hold := Capability.revoke_preserves_wellFormed state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot hstate.2.2.2.1
-    simpa [haccepted] using hold
+    simpa [hraw] using hold
   have hslots : ∀ subject slot capability,
       next.slots subject slot = some capability →
         state.capabilities.slots subject slot = some capability := by
@@ -3206,7 +3218,7 @@ theorem gate_capabilityRevoke_accepted_preserves_runtimeWellFormed state authori
     have hold := Capability.revoke_slot_survives state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot
       subject slot capability
-    rw [haccepted] at hold
+    rw [hraw] at hold
     exact hold hslot
   constructor
   · simp only [gate, hmode, applyOperation, haccepted]
@@ -3221,23 +3233,29 @@ theorem gate_capabilityRevokeSubtree_accepted_preserves_runtimeWellFormed state 
     victim victimSlot next
     (hstate : RuntimeWellFormed state)
     (hmode : state.execution.mode = .running)
-    (haccepted : Capability.revokeSubtree state.capabilities
+    (haccepted : Capability.revokeSubtreeRuntimeSafe state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot =
-        { state := next, result := .accepted })
-    (hauthority : RuntimeAuthorityPreserved state.capabilities next) :
+        { state := next, result := .accepted }) :
     RuntimeWellFormed
         (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).state ∧
       (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).result =
         .completed (.capability .accepted) := by
+  obtain ⟨hraw, _hsafe⟩ := Capability.revokeSubtreeRuntimeSafe_accepted_raw
+    state.capabilities state.execution.core.context.currentSubject authoritySlot victim victimSlot
+    next haccepted
+  have hauthority : RuntimeAuthorityPreserved state.capabilities next :=
+    Capability.revokeSubtreeRuntimeSafe_accepted_preserves_critical_authority state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot next
+      hstate.2.2.2.1 haccepted
   have hmetadata := Capability.revokeSubtree_preserves_metadata state.capabilities
     state.execution.core.context.currentSubject authoritySlot victim victimSlot
-  rw [haccepted] at hmetadata
+  rw [hraw] at hmetadata
   rcases hmetadata with
     ⟨hsubjects, hobjects, hkinds, _hcapacity, hnextIdentity, hderivations⟩
   have hwellFormed : Capability.WellFormed next := by
     have hold := Capability.revokeSubtree_preserves_wellFormed state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot hstate.2.2.2.1
-    simpa [haccepted] using hold
+    simpa [hraw] using hold
   have hslots : ∀ subject slot capability,
       next.slots subject slot = some capability →
         state.capabilities.slots subject slot = some capability := by
@@ -3245,7 +3263,7 @@ theorem gate_capabilityRevokeSubtree_accepted_preserves_runtimeWellFormed state 
     have hold := Capability.revokeSubtree_slot_survives state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot
       subject slot capability
-    rw [haccepted] at hold
+    rw [hraw] at hold
     exact hold hslot
   constructor
   · simp only [gate, hmode, applyOperation, haccepted]
@@ -3259,7 +3277,7 @@ theorem gate_capabilityRevoke_rejected_atomic state authoritySlot victim victimS
     (hstate : RuntimeWellFormed state)
     (hresult : (gate state (.capabilityRevoke authoritySlot victim victimSlot)).result =
       .completed (.capability (.rejected reason)))
-    (hrejected : (Capability.revoke state.capabilities
+    (hrejected : (Capability.revokeRuntimeSafe state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot).result =
         .rejected reason) :
     (gate state (.capabilityRevoke authoritySlot victim victimSlot)).state = state ∧
@@ -3277,7 +3295,7 @@ theorem gate_capabilityRevokeSubtree_rejected_atomic state authoritySlot victim 
     (hstate : RuntimeWellFormed state)
     (hresult : (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).result =
       .completed (.capability (.rejected reason)))
-    (hrejected : (Capability.revokeSubtree state.capabilities
+    (hrejected : (Capability.revokeSubtreeRuntimeSafe state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot).result =
         .rejected reason) :
     (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).state = state ∧
@@ -3358,11 +3376,11 @@ theorem authority_operations_result_sound state
             rights).result) ∧
     (gate state (.capabilityRevoke authoritySlot victim victimSlot)).result =
         .completed (.capability
-          (Capability.revoke state.capabilities
+          (Capability.revokeRuntimeSafe state.capabilities
             state.execution.core.context.currentSubject authoritySlot victim victimSlot).result) ∧
     (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).result =
         .completed (.capability
-          (Capability.revokeSubtree state.capabilities
+          (Capability.revokeSubtreeRuntimeSafe state.capabilities
             state.execution.core.context.currentSubject authoritySlot victim victimSlot).result) ∧
     (gate state (.map slot page permissions)).result =
         .completed (.map
@@ -3559,6 +3577,57 @@ theorem capabilityCopy_operationPreservesRuntimeWellFormed source destination
                 (by simp [hcopy]))).1
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.capabilityCopy source destination destinationSlot rights) hstate hmode
+
+/-- Fail-closed direct revocation is a complete operation family.  The
+runtime-safe adapter converts any attempt to remove authority required by live
+resources into a typed atomic rejection; every accepted removal supplies the
+authority-preservation fact needed by the global invariant. -/
+theorem capabilityRevoke_operationPreservesRuntimeWellFormed authoritySlot victim victimSlot :
+    OperationPreservesRuntimeWellFormed
+      (.capabilityRevoke authoritySlot victim victimSlot) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hrevoke : Capability.revokeRuntimeSafe state.capabilities
+        state.execution.core.context.currentSubject authoritySlot victim victimSlot with
+    | mk next result =>
+        cases result with
+        | accepted =>
+            exact (gate_capabilityRevoke_accepted_preserves_runtimeWellFormed state
+              authoritySlot victim victimSlot next hstate hmode hrevoke).1
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.capabilityRevoke authoritySlot victim victimSlot)
+              (.capability (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hrevoke])
+              (.capabilityRevoke authoritySlot victim victimSlot reason
+                (by simp [hrevoke]))).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.capabilityRevoke authoritySlot victim victimSlot) hstate hmode
+
+/-- Transitive revocation uses the same fail-closed publication rule while
+clearing every descendant admitted by the capability lineage model. -/
+theorem capabilityRevokeSubtree_operationPreservesRuntimeWellFormed authoritySlot victim
+    victimSlot :
+    OperationPreservesRuntimeWellFormed
+      (.capabilityRevokeSubtree authoritySlot victim victimSlot) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hrevoke : Capability.revokeSubtreeRuntimeSafe state.capabilities
+        state.execution.core.context.currentSubject authoritySlot victim victimSlot with
+    | mk next result =>
+        cases result with
+        | accepted =>
+            exact (gate_capabilityRevokeSubtree_accepted_preserves_runtimeWellFormed state
+              authoritySlot victim victimSlot next hstate hmode hrevoke).1
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.capabilityRevokeSubtree authoritySlot victim victimSlot)
+              (.capability (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hrevoke])
+              (.capabilityRevokeSubtree authoritySlot victim victimSlot reason
+                (by simp [hrevoke]))).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.capabilityRevokeSubtree authoritySlot victim victimSlot) hstate hmode
 
 /-- Every raw call that decodes to an access check contributes one complete
 operation-family obligation: successful translation is the accepted
@@ -4242,16 +4311,15 @@ theorem capabilityRevoke_then_scheduleRemove_preserves_runtimeWellFormed state a
     victim victimSlot capabilities subject
     (hstate : RuntimeWellFormed state)
     (hmode : state.execution.mode = .running)
-    (haccepted : Capability.revoke state.capabilities
+    (haccepted : Capability.revokeRuntimeSafe state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot =
-        { state := capabilities, result := .accepted })
-    (hauthority : RuntimeAuthorityPreserved state.capabilities capabilities) :
+        { state := capabilities, result := .accepted }) :
     RuntimeWellFormed (runOperations state
       [.capabilityRevoke authoritySlot victim victimSlot, .scheduleRemove subject]) := by
   simp only [runOperations]
   apply scheduleRemove_operationPreservesRuntimeWellFormed subject
   exact (gate_capabilityRevoke_accepted_preserves_runtimeWellFormed state authoritySlot victim
-    victimSlot capabilities hstate hmode haccepted hauthority).1
+    victimSlot capabilities hstate hmode haccepted).1
 
 /-- Transitive lineage revocation has the same scheduler/lifecycle composition
 boundary: all capability consumers observe the accepted subtree post-state
@@ -4260,16 +4328,15 @@ theorem capabilityRevokeSubtree_then_scheduleRemove_preserves_runtimeWellFormed 
     authoritySlot victim victimSlot capabilities subject
     (hstate : RuntimeWellFormed state)
     (hmode : state.execution.mode = .running)
-    (haccepted : Capability.revokeSubtree state.capabilities
+    (haccepted : Capability.revokeSubtreeRuntimeSafe state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot =
-        { state := capabilities, result := .accepted })
-    (hauthority : RuntimeAuthorityPreserved state.capabilities capabilities) :
+        { state := capabilities, result := .accepted }) :
     RuntimeWellFormed (runOperations state
       [.capabilityRevokeSubtree authoritySlot victim victimSlot, .scheduleRemove subject]) := by
   simp only [runOperations]
   apply scheduleRemove_operationPreservesRuntimeWellFormed subject
   exact (gate_capabilityRevokeSubtree_accepted_preserves_runtimeWellFormed state authoritySlot
-    victim victimSlot capabilities hstate hmode haccepted hauthority).1
+    victim victimSlot capabilities hstate hmode haccepted).1
 
 /-- Creating a fresh subject only promotes its monotonic lifecycle identity;
 all existing resource, scheduler, context-bank, mailbox, and translation
@@ -4641,8 +4708,8 @@ The constructors below are exactly the operation families whose accepted and
 rejected results have complete global-preservation proofs.  Keeping this as a
 syntactic predicate makes the current mixed-trace boundary reviewable: adding
 an operation requires its family theorem, while the still-open interrupt,
-preemption, transfer, revocation, and termination mutations cannot enter the
-advertised trace theorem accidentally. -/
+preemption, transfer, and termination mutations cannot enter the advertised
+trace theorem accidentally. -/
 
 inductive RuntimeTraceOperation : Operation → Prop where
   | selectUserReturn purpose : RuntimeTraceOperation (.selectUserReturn purpose)
@@ -4652,6 +4719,10 @@ inductive RuntimeTraceOperation : Operation → Prop where
   | capabilityCopy source destination destinationSlot rights :
       RuntimeTraceOperation
         (.capabilityCopy source destination destinationSlot rights)
+  | capabilityRevoke authoritySlot victim victimSlot :
+      RuntimeTraceOperation (.capabilityRevoke authoritySlot victim victimSlot)
+  | capabilityRevokeSubtree authoritySlot victim victimSlot :
+      RuntimeTraceOperation (.capabilityRevokeSubtree authoritySlot victim victimSlot)
   | map slot page permissions : RuntimeTraceOperation (.map slot page permissions)
   | unmap page : RuntimeTraceOperation (.unmap page)
   | createSubject subject : RuntimeTraceOperation (.createSubject subject)
@@ -4674,6 +4745,12 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
   | capabilityCopy source destination destinationSlot rights =>
       exact capabilityCopy_operationPreservesRuntimeWellFormed
         source destination destinationSlot rights
+  | capabilityRevoke authoritySlot victim victimSlot =>
+      exact capabilityRevoke_operationPreservesRuntimeWellFormed
+        authoritySlot victim victimSlot
+  | capabilityRevokeSubtree authoritySlot victim victimSlot =>
+      exact capabilityRevokeSubtree_operationPreservesRuntimeWellFormed
+        authoritySlot victim victimSlot
   | map slot page permissions =>
       exact map_operationPreservesRuntimeWellFormed slot page permissions
   | unmap page => exact unmap_operationPreservesRuntimeWellFormed page
