@@ -11,9 +11,10 @@ The transition consumes `InterruptEntry.Result` plus one
 `ResumablePreemption.State`. An accepted containment path requires a normalized
 vector-14, CPL3, `userFault` record with a hardware error word and saved user
 RSP/SS. The record's subject and address space must equal the kernel-owned
-current subject, and the lifecycle, virtual-memory, and active-translation
-projections must all own that same address space. Fault address, error payload,
-saved registers, and arbitrary caller payloads never select either subject.
+current subject. That subject must still be live and runnable, and the
+lifecycle, virtual-memory, and active-translation projections must all own that
+same address space. Fault address, error payload, saved registers, and arbitrary
+caller payloads never select either subject.
 
 The observable action is exactly one of:
 
@@ -24,11 +25,13 @@ The observable action is exactly one of:
 - `fatal`, which changes only the irreversible halt latch.
 
 The transition does not expose the intermediate cleaned state. Missing or stale
-survivor contexts, stale current/address-space bindings, wrong purpose, and
-nonterminal malformed entry results reject to the complete pre-state. Kernel
-page faults, unsupported vectors, nested entry, and an already-set halt latch
-are terminal. Fatal results retain the complete scheduler/lifecycle, context
-bank, mapping, and translation state while setting the latch.
+survivor contexts, stale current/address-space bindings, and wrong purpose
+reject to the complete pre-state. Every `.fatal` result from the inbound
+normalizer is terminal, including malformed frames, uncleared entry flags,
+unsupported vectors, and nested entry; kernel page faults and an already-set
+halt latch are terminal as well. Fatal results retain the complete
+scheduler/lifecycle, context bank, mapping, and translation state while setting
+the latch.
 
 ## Cleanup and survivor boundary
 
@@ -57,9 +60,10 @@ the complete `ResumablePreemption.WellFormed` invariant for every result.
 
 Executable model regressions cover one survivor, multiple survivors, no
 survivor, stale current identity, wrong active address space, wrong purpose,
-already-terminated current identity, a truncated raw user frame rejected by the
-normalizer, a kernel-origin page fault, unsupported vector, nested entry,
-already-halted state, unrelated authority/memory/mapping/IPC state, and the
+already-terminated current identity with a stale owner binding, a truncated raw
+user frame made fatal by the normalizer, a kernel-origin page fault, unsupported
+vector, nested entry, already-halted state, unrelated
+authority/memory/mapping/IPC state, and the
 unsafe split pattern in which an attacker chooses a context after separate
 cleanup.
 

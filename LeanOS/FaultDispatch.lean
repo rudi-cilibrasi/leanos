@@ -38,10 +38,6 @@ def reject (state : ResumablePreemption.State) (reason : RejectReason) : Outcome
 def halt (state : ResumablePreemption.State) : Outcome :=
   { state := { state with halted := true }, action := .fatal }
 
-def terminalEntryFailure : InterruptEntry.RejectReason → Bool
-  | .unsupportedVector | .nested => true
-  | _ => false
-
 def validUserFault (frame : InterruptEntry.NormalizedFrame) : Bool :=
   frame.vector = 14 && frame.purpose = .userFault && frame.origin = .user &&
     frame.errorCode.isSome && frame.cs % 4 = 3 && frame.userRsp.isSome &&
@@ -55,16 +51,17 @@ def dispatch (state : ResumablePreemption.State)
     (entry : InterruptEntry.Result) : Outcome :=
   if state.halted then halt state
   else match entry with
-  | .fatal reason =>
-      if terminalEntryFailure reason then halt state
-      else reject state (.malformedEntry reason)
+  | .fatal _reason => halt state
   | .accepted frame =>
       if frame.origin = .kernel then halt state
       else if !validUserFault frame then reject state .wrongPurpose
       else match state.scheduler.lifecycle.current with
       | none => reject state .staleCurrent
       | some current =>
-          if frame.currentSubject != current then reject state .staleCurrent
+          if frame.currentSubject != current ||
+              state.scheduler.lifecycle.capabilities.subjects current != true ||
+              state.scheduler.lifecycle.runnable current != true then
+            reject state .staleCurrent
           else if frame.activeAddressSpace != current ||
               state.scheduler.lifecycle.addressOwner current != some current ||
               state.translations.active != some current ||
@@ -152,22 +149,14 @@ theorem kernel_origin_is_fatal state frame
 
 theorem nested_is_fatal state (hrunning : state.halted = false) :
     dispatch state (.fatal .nested) = halt state := by
-  simp [dispatch, hrunning, terminalEntryFailure]
+  simp [dispatch, hrunning]
 
-/-- Entry failures that are not part of the terminal policy reject before any
-authoritative scheduler, lifecycle, context, or translation state is exposed. -/
-theorem malformed_entry_rejects_atomically state reason
-    (hrunning : state.halted = false)
-    (hnonterminal : terminalEntryFailure reason = false) :
-    dispatch state (.fatal reason) = reject state (.malformedEntry reason) := by
-  simp [dispatch, hrunning, hnonterminal]
-
-/-- Unsupported vectors and nested entry are the inbound terminal class. -/
-theorem terminal_entry_failure_is_fatal state reason
-    (hrunning : state.halted = false)
-    (hterminal : terminalEntryFailure reason = true) :
+/-- Every failure emitted by the inbound normalizer is terminal.  This keeps
+the composite consumer aligned with the normalizer's fail-stop contract. -/
+theorem entry_failure_is_fatal state reason
+    (hrunning : state.halted = false) :
     dispatch state (.fatal reason) = halt state := by
-  simp [dispatch, hrunning, hterminal]
+  simp [dispatch, hrunning]
 
 /-- Once the resumable layer projects the repository fail-stop latch, no later
 fault-dispatch input can resume, reject back to a caller, or expose cleanup. -/
@@ -807,7 +796,9 @@ private def traceAlreadyTerminated : ResumablePreemption.State :=
       lifecycle := { (traceState false).scheduler.lifecycle with
         capabilities := { (traceState false).scheduler.lifecycle.capabilities with
           subjects := fun _ => false }
-        addressOwner := fun _ => none
+        -- Retain an adversarial stale owner binding: liveness, rather than
+        -- address ownership alone, must reject the dead current subject.
+        addressOwner := fun subject => if subject = 1 then some 1 else none
         runnable := fun _ => false } } }
 
 example : (dispatch traceMultiState traceEntry).action = .dispatch traceSurvivorContext := by
@@ -847,24 +838,27 @@ example : (dispatch traceMultiState traceWrongPurpose).action = .rejected .wrong
   · exact rejected_unchanged _ _ .wrongPurpose (by native_decide)
 
 example : (dispatch traceMultiState (.fatal .wrongFrameShape)).action =
-    .rejected (.malformedEntry .wrongFrameShape) ∧
-    (dispatch traceMultiState (.fatal .wrongFrameShape)).state = traceMultiState := by
-  constructor
-  · native_decide
-  · exact rejected_unchanged _ _ (.malformedEntry .wrongFrameShape) (by native_decide)
+    .fatal ∧
+    (dispatch traceMultiState (.fatal .wrongFrameShape)).state.halted = true ∧
+    (dispatch traceMultiState (.fatal .wrongFrameShape)).state.scheduler =
+      traceMultiState.scheduler := by
+  have haction : (dispatch traceMultiState (.fatal .wrongFrameShape)).action = .fatal := by
+    native_decide
+  exact ⟨haction, (fatal_atomicity _ _ haction).1,
+    (fatal_atomicity _ _ haction).2.1⟩
 
-/-- A truncated user frame is rejected by the inbound normalizer and the
-composite transition preserves every authoritative store. -/
+/-- A truncated user frame is fatal at the inbound normalizer boundary; the
+composite consumer sets the halt latch while preserving authoritative stores. -/
 example : InterruptEntry.normalize traceMalformedUserFault traceKernelContext =
       .fatal .truncated ∧
     dispatch traceMultiState
         (InterruptEntry.normalize traceMalformedUserFault traceKernelContext) =
-      reject traceMultiState (.malformedEntry .truncated) := by
+      halt traceMultiState := by
   have hnormalized : InterruptEntry.normalize traceMalformedUserFault traceKernelContext =
       .fatal .truncated := by native_decide
   refine ⟨hnormalized, ?_⟩
   rw [hnormalized]
-  exact malformed_entry_rejects_atomically _ _ (by native_decide) (by native_decide)
+  exact entry_failure_is_fatal _ _ (by native_decide)
 
 /-- A normalized same-privilege page fault is terminal and cannot publish
 cleanup before the halt latch is set. -/
@@ -911,11 +905,13 @@ example :
       (dispatch halted traceEntry).state.translations = halted.translations := by
   simp [dispatch, halt]
 
-example : (dispatch traceAlreadyTerminated traceEntry).action = .rejected .staleAddressSpace ∧
+/-- A dead current subject is rejected even if an attacker preserves a stale
+address-owner binding that would pass the address-space checks by itself. -/
+example : (dispatch traceAlreadyTerminated traceEntry).action = .rejected .staleCurrent ∧
     (dispatch traceAlreadyTerminated traceEntry).state = traceAlreadyTerminated := by
   constructor
   · native_decide
-  · exact rejected_unchanged _ _ .staleAddressSpace (by native_decide)
+  · exact rejected_unchanged _ _ .staleCurrent (by native_decide)
 
 /-- Regression witness: after cleanup an attacker-chosen context lookup can
 name subject 3 even though the deterministic ready head is subject 2.  The
