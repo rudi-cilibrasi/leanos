@@ -1405,6 +1405,31 @@ inductive OperationReply where
   | restarted
   deriving DecidableEq, Repr
 
+/-- Total classification of ordinary, nonfatal composite rejections.  This is
+defined on the public reply itself, so a refinement boundary can decide the
+class without manufacturing an operation-specific proof witness.  Entry and
+user-return failures are excluded: they are transactional or fatal results,
+not state-preserving subsystem rejections. -/
+def OperationReply.isNonfatalRejection : OperationReply → Bool
+  | .syscall (.rejected _) => true
+  | .ipc (.syscall (.sendHandleRejected _)) => true
+  | .ipc (.syscall (.sendRejected _)) => true
+  | .ipc (.syscall (.receiveHandleRejected _)) => true
+  | .ipc (.syscall (.receiveRejected _)) => true
+  | .ipc .sealedTransferPending => true
+  | .resume _ (some .fatalEntry) => false
+  | .resume _ (some _) => true
+  | .transferOffer (.rejected _) => true
+  | .transferAccept (.rejected _) _ => true
+  | .capability (.rejected _) => true
+  | .map (.rejected _) => true
+  | .unmap (.rejected _) => true
+  | .createSubject (.rejected _) => true
+  | .terminateSubject (.rejected _) => true
+  | .scheduleRemove (.rejected _) => true
+  | .scheduler (.rejected _) => true
+  | _ => false
+
 inductive GateResult where
   | completed (reply : OperationReply)
   | rejectedBusy
@@ -1939,6 +1964,182 @@ theorem gate_subsystem_rejection_preserves_runtimeWellFormed state operation rep
       (gate state operation).state = state := by
   have hatomic := gate_subsystem_rejection_atomicity state operation reply
     hresult hrejected
+  exact ⟨by simpa [hatomic] using hstate, hatomic⟩
+
+private theorem classified_rejection_is_subsystem state operation
+    (hrejected : (operationReply state operation).isNonfatalRejection = true) :
+    SubsystemRejection state operation (operationReply state operation) := by
+  cases operation with
+  | interrupt frame | selectUserReturn purpose | restart =>
+      simp [operationReply, OperationReply.isNonfatalRejection] at hrejected
+  | userReturn request =>
+      simp only [operationReply] at hrejected
+      split at hrejected <;> simp [OperationReply.isNonfatalRejection] at hrejected
+  | syscall call =>
+      cases hreply : (Syscall.dispatch state.virtualMemory state.syscallContext call).reply with
+      | accepted => simp [operationReply, hreply, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hreply] using SubsystemRejection.syscall call reason hreply
+  | ipc call =>
+      cases hreply : (dispatchIPC state call).reply with
+      | sealedTransferPending =>
+          simpa [operationReply, hreply] using SubsystemRejection.ipcSealed call hreply
+      | syscall reply =>
+          cases reply with
+          | sent | delivered sender word0 word1 =>
+              simp [operationReply, hreply, OperationReply.isNonfatalRejection] at hrejected
+          | sendHandleRejected reason =>
+              simpa [operationReply, hreply] using
+                SubsystemRejection.ipcSendHandle call reason hreply
+          | sendRejected reason =>
+              simpa [operationReply, hreply] using
+                SubsystemRejection.ipcSend call reason hreply
+          | receiveHandleRejected reason =>
+              simpa [operationReply, hreply] using
+                SubsystemRejection.ipcReceiveHandle call reason hreply
+          | receiveRejected reason =>
+              simpa [operationReply, hreply] using
+                SubsystemRejection.ipcReceive call reason hreply
+  | resumePreempt frame registers =>
+      cases herror : (ResumablePreemption.switch state.resumable state.execution.core
+          frame registers).error with
+      | none => simp [operationReply, herror, OperationReply.isNonfatalRejection] at hrejected
+      | some reason =>
+          cases reason <;>
+            simp_all [operationReply, OperationReply.isNonfatalRejection,
+              ResumablePreemption.rejected_exposes_no_restore]
+          all_goals
+            apply SubsystemRejection.resumePreempt <;> simp_all
+  | transferOffer endpointWord sourceWord sourceKind payload rights =>
+      cases hresult : (CapabilityTransfer.offerWords state.transfers
+          state.execution.core.context.currentSubject endpointWord sourceWord sourceKind payload rights).result with
+      | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using SubsystemRejection.transferOffer
+            endpointWord sourceWord sourceKind payload rights reason hresult
+  | transferAccept endpointWord destinationSlot =>
+      cases hresult : (CapabilityTransfer.acceptWord state.transfers
+          state.execution.core.context.currentSubject endpointWord destinationSlot).result with
+      | delivered envelope =>
+          simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using SubsystemRejection.transferAccept
+            endpointWord destinationSlot reason _ hresult rfl
+  | capabilityCopy source destination destinationSlot rights =>
+      cases hresult : (Capability.copy state.capabilities
+          state.execution.core.context.currentSubject source destination destinationSlot rights).result with
+      | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using SubsystemRejection.capabilityCopy
+            source destination destinationSlot rights reason hresult
+  | capabilityRevoke authoritySlot victim victimSlot =>
+      cases hresult : (Capability.revokeRuntimeSafe state.capabilities
+          state.execution.core.context.currentSubject authoritySlot victim victimSlot).result with
+      | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using SubsystemRejection.capabilityRevoke
+            authoritySlot victim victimSlot reason hresult
+  | capabilityRevokeSubtree authoritySlot victim victimSlot =>
+      cases hresult : (Capability.revokeSubtreeRuntimeSafe state.capabilities
+          state.execution.core.context.currentSubject authoritySlot victim victimSlot).result with
+      | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using SubsystemRejection.capabilityRevokeSubtree
+            authoritySlot victim victimSlot reason hresult
+  | map slot page permissions =>
+      cases hresult : (VirtualMapping.map state.virtualMemory
+          state.execution.core.context.currentSubject slot
+          state.execution.core.context.activeAddressSpace page permissions).result with
+      | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using
+            SubsystemRejection.map slot page permissions reason hresult
+  | unmap page =>
+      cases hresult : (VirtualMapping.unmap state.virtualMemory
+          state.execution.core.context.currentSubject state.execution.core.context.activeAddressSpace
+          page).result with
+      | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using SubsystemRejection.unmap page reason hresult
+  | createSubject subject =>
+      cases hresult : (SubjectLifecycle.create state.lifecycle subject).result with
+      | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using
+            SubsystemRejection.createSubject subject reason hresult
+  | terminateSubject subject =>
+      cases hresult : (SubjectLifecycle.terminate state.lifecycle subject).result with
+      | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using
+            SubsystemRejection.terminateSubject subject reason hresult
+  | scheduleAdd subject =>
+      cases hresult : (schedulerAdmission state subject).result with
+      | accepted context => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using
+            SubsystemRejection.scheduleAdd subject reason hresult
+  | scheduleRemove subject =>
+      cases hresult : (ResumablePreemption.remove state.resumable subject).result with
+      | accepted context => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using
+            SubsystemRejection.scheduleRemove subject reason hresult
+  | scheduleNext =>
+      cases hresult : (schedulerDispatch state).result with
+      | accepted context => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using SubsystemRejection.scheduleNext reason hresult
+  | scheduleYield =>
+      cases hresult : (schedulerYield state).result with
+      | accepted context => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using SubsystemRejection.scheduleYield reason hresult
+  | scheduleTick =>
+      cases hresult : (schedulerTick state).result with
+      | accepted context => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using SubsystemRejection.scheduleTick reason hresult
+  | terminateCurrent =>
+      cases hresult : (Scheduler.terminateCurrent state.scheduler).result with
+      | accepted context => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using
+            SubsystemRejection.terminateCurrent reason hresult
+
+/-- The total public reply classifier is sufficient to obtain global rejection
+atomicity.  Unlike `gate_subsystem_rejection_atomicity`, callers do not need to
+construct a matching `SubsystemRejection` witness: every reply constructor is
+classified here, and every classified rejection returns the literal pre-state. -/
+theorem gate_classified_rejection_atomicity state operation
+    (hmode : state.execution.mode = .running)
+    (hrejected : (operationReply state operation).isNonfatalRejection = true) :
+    (gate state operation).result = .completed (operationReply state operation) ∧
+      (gate state operation).state = state := by
+  refine ⟨by simp [gate, hmode], ?_⟩
+  exact gate_subsystem_rejection_atomicity state operation
+    (operationReply state operation) (by simp [gate, hmode])
+    (classified_rejection_is_subsystem state operation hrejected)
+
+/-- Classified subsystem rejection is globally atomic even when the outer
+execution latch is busy or already halted; those modes reject before invoking
+the classified subsystem transition. -/
+theorem gate_classified_rejection_global_atomicity state operation
+    (hrejected : (operationReply state operation).isNonfatalRejection = true) :
+    (gate state operation).state = state := by
+  cases hmode : state.execution.mode with
+  | running => exact (gate_classified_rejection_atomicity state operation hmode hrejected).2
+  | handling active => simp [gate, hmode]
+  | halted record => simp [gate, hmode]
+
+/-- A total classified rejection also preserves the complete composite
+invariant, as a direct consequence of byte-for-byte state preservation. -/
+theorem gate_classified_rejection_preserves_runtimeWellFormed state operation
+    (hstate : RuntimeWellFormed state)
+    (hrejected : (operationReply state operation).isNonfatalRejection = true) :
+    RuntimeWellFormed (gate state operation).state ∧
+      (gate state operation).state = state := by
+  have hatomic := gate_classified_rejection_global_atomicity state operation hrejected
   exact ⟨by simpa [hatomic] using hstate, hatomic⟩
 
 /-- Every ordinary resumable-preemption error is exposed as its exact typed

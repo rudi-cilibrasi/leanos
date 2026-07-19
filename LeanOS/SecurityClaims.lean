@@ -185,19 +185,24 @@ theorem composite_gate_typed_result_contract state operation :
       state.execution.mode = .running ∧
         reply = FailStop.operationReply state operation ∧
         (FailStop.gate state operation).state = FailStop.applyOperation state operation) ∧
-    ((((FailStop.gate state operation).result = .rejectedBusy ∨
+    (((FailStop.gate state operation).result = .rejectedBusy ∨
       ∃ record, (FailStop.gate state operation).result = .rejectedHalted record) →
       (FailStop.gate state operation).state = state) ∧
     (∀ reply, (FailStop.gate state operation).result = .completed reply →
       FailStop.SubsystemRejection state operation reply →
       (FailStop.gate state operation).state = state ∧
         (FailStop.RuntimeWellFormed state →
-          FailStop.RuntimeWellFormed (FailStop.gate state operation).state))) := by
+          FailStop.RuntimeWellFormed (FailStop.gate state operation).state)) ∧
+    ((FailStop.operationReply state operation).isNonfatalRejection = true →
+      (FailStop.gate state operation).state = state ∧
+        (FailStop.RuntimeWellFormed state →
+          FailStop.RuntimeWellFormed (FailStop.gate state operation).state)) := by
   constructor
   · intro reply hcompleted
     exact FailStop.gate_completed_sound state operation reply hcompleted
   constructor
   · exact FailStop.gate_mode_rejection_atomicity state operation
+  constructor
   · intro reply hcompleted hrejected
     constructor
     · exact FailStop.gate_subsystem_rejection_atomicity state operation reply
@@ -205,6 +210,12 @@ theorem composite_gate_typed_result_contract state operation :
     · intro hstate
       exact (FailStop.gate_subsystem_rejection_preserves_runtimeWellFormed
         state operation reply hstate hcompleted hrejected).1
+  · intro hrejected
+    constructor
+    · exact FailStop.gate_classified_rejection_global_atomicity state operation hrejected
+    · intro hstate
+      exact (FailStop.gate_classified_rejection_preserves_runtimeWellFormed
+        state operation hstate hrejected).1
 
 /-- SC-COMPOSITE-AUTHORITY-CONFINEMENT: every public authority-bearing
 operation reports the exact subsystem result computed for the current subject
@@ -695,6 +706,8 @@ theorem composite_subsystem_rejection_reachable_witness :
     FailStop.SubsystemRejection returnWitnessComposite
       (.syscall returnWitnessRejectedCall)
       (.syscall (.rejected (.decode .unknownSyscall))) ∧
+    (FailStop.operationReply returnWitnessComposite
+      (.syscall returnWitnessRejectedCall)).isNonfatalRejection = true ∧
     (FailStop.gate returnWitnessComposite
         (.syscall returnWitnessRejectedCall)).state = returnWitnessComposite := by
   have hresult :
@@ -707,10 +720,13 @@ theorem composite_subsystem_rejection_reachable_witness :
         (.syscall returnWitnessRejectedCall)
         (.syscall (.rejected (.decode .unknownSyscall))) :=
     .syscall returnWitnessRejectedCall (.decode .unknownSyscall) (by native_decide)
-  exact ⟨hresult, hrejected,
-    FailStop.gate_subsystem_rejection_atomicity returnWitnessComposite
-      (.syscall returnWitnessRejectedCall)
-      (.syscall (.rejected (.decode .unknownSyscall))) hresult hrejected⟩
+  have hclassified :
+      (FailStop.operationReply returnWitnessComposite
+        (.syscall returnWitnessRejectedCall)).isNonfatalRejection = true := by
+    native_decide
+  exact ⟨hresult, hrejected, hclassified,
+    FailStop.gate_classified_rejection_global_atomicity returnWitnessComposite
+      (.syscall returnWitnessRejectedCall) hclassified⟩
 
 set_option maxRecDepth 100000 in
 /-- Concrete typed composite trace: syscall entry clears old authority, the
