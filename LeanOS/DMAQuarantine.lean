@@ -211,6 +211,31 @@ def ValidationResult.reason : ValidationResult → Option RejectReason
   | .accepted _ => none
   | .rejected reason => some reason
 
+def rejectReasonTag : RejectReason → UInt64
+  | .staleSnapshotVersion => 1
+  | .wrongTopology => 2
+  | .tooManyFunctions => 3
+  | .noncanonical => 4
+  | .inventoryMismatch => 5
+  | .unreadableFunction => 6
+  | .assignmentForbidden => 7
+  | .busMasterEnabled => 8
+
+theorem rejectReasonTag_injective : Function.Injective rejectReasonTag := by
+  intro first second hequal
+  cases first <;> cases second <;> simp [rejectReasonTag] at hequal ⊢
+
+/-- Canonical one-word validation-result encoding paired with `encodeSnapshot`
+by the later stateful corpus.  Zero denotes acceptance; typed rejections use
+stable nonzero tags. -/
+def encodeValidationResult : ValidationResult → List UInt64
+  | .accepted _ => [0]
+  | .rejected reason => [rejectReasonTag reason]
+
+@[simp] theorem encodeValidationResult_length result :
+    (encodeValidationResult result).length = 1 := by
+  cases result <;> rfl
+
 def validate (snapshot : Snapshot) : ValidationResult :=
   if hversion : snapshot.version = snapshotVersion then
     if htopology : snapshot.topologyVersion = q35TopologyVersion then
@@ -271,6 +296,20 @@ theorem accepted_accounts_every_manifest_entry (accepted : AcceptedSnapshot)
             function accepted.snapshot.functions hfind
         exact LawfulBEq.eq_of_beq hp
       exact ⟨function, hmember, hbdf, by simpa [hfind] using hfound⟩
+
+/-- Every present function accepted from the hardware snapshot has a known
+manifest BDF, and that BDF occurs exactly once in the accepted inventory. -/
+theorem accepted_present_known_exactly_once (accepted : AcceptedSnapshot)
+    (function : FunctionState) (hmember : function ∈ accepted.snapshot.functions)
+    (_hpresent : function.status = .present) :
+    (findManifest function.bdf).isSome = true ∧
+      exactlyOnce function.bdf accepted.snapshot.functions = true := by
+  have hcanonical := accepted.canonicalAccepted
+  simp only [canonical, Bool.and_eq_true, List.all_eq_true] at hcanonical
+  have hfunction := hcanonical.2 function hmember
+  have hunique := hcanonical.1.1.2
+  simp only [uniqueBDFs, List.all_eq_true] at hunique
+  exact ⟨hfunction.2, hunique function hmember⟩
 
 theorem accepted_unassigned_busMaster_disabled (accepted : AcceptedSnapshot)
     (function : FunctionState) (hmember : function ∈ accepted.snapshot.functions)
@@ -463,6 +502,9 @@ def q35Runtime : RuntimeState :=
   ⟨q35Accepted, q35Snapshot, zeroMemoryProjection, .running⟩
 
 example : (validate q35Snapshot).isAccepted = true := by native_decide
+example : encodeValidationResult (validate q35Snapshot) = [0] := by native_decide
+example : encodeValidationResult (validate { q35Snapshot with version := 0 }) = [1] := by
+  native_decide
 example : q35Functions[2]!.status = .absent := by native_decide
 example : (validate q35OptionalNetworkPresentSnapshot).isAccepted = true := by native_decide
 example : (encodeSnapshot q35Snapshot).map List.length = some snapshotWords := by native_decide

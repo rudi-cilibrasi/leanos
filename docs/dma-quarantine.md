@@ -22,16 +22,21 @@ then sixteen 12-word slots. Each occupied slot contains an occupancy tag, BDF,
 vendor/device/class identity, read-status tag, full Command word, assignment
 tag, bridge bit, and multifunction bit. Empty tail slots are all zero. More
 than sixteen records reject instead of truncating. `accepted_encoding_fixed_width`
-proves the length of every successful encoding. This is the quarantine-owned
-input for issue #105's later composite-state codec; it is not a second runtime
-dispatcher.
+proves the length of every successful snapshot encoding.
+`encodeValidationResult` supplies the paired canonical one-word result: zero
+means accepted and stable tags 1 through 8 identify each typed rejection.
+`encodeValidationResult_length` proves that result width. These are the
+quarantine-owned inputs for issue #105's later composite-state codec; they are
+not a second runtime dispatcher.
 
 ## Proved claim
 
 `AcceptedSnapshot` carries canonical accounting and a nonempty quarantine
 invariant. `accepted_accounts_every_manifest_entry` exposes exact accounting,
-and `accepted_unassigned_busMaster_disabled` proves the deny-all control fact
-for every present function.
+`accepted_present_known_exactly_once` shows that each accepted present function
+has a manifest BDF occurring exactly once, and
+`accepted_unassigned_busMaster_disabled` proves the deny-all control fact for
+every present function.
 
 `DeviceContract` is the explicit boundary assumption: if a modeled
 device-originated step changes memory, the named function is present, assigned,
