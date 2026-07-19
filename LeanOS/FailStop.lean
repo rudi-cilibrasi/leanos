@@ -2343,6 +2343,27 @@ theorem syscallAccess_operationPreservesRuntimeWellFormed call page access
           (.syscall call reason hreply)).1
   · exact gate_rejected_mode_preserves_runtimeWellFormed state (.syscall call) hstate hmode
 
+/-- Every call rejected by the fixed-width decoder is a complete preservation
+family, independently of the attacker-controlled words that failed decoding.
+The decoder error is surfaced as the exact typed syscall reply and the
+composite gate publishes the literal pre-state.  This closes malformed and
+unknown syscall numbers at the reusable operation-registration boundary rather
+than requiring mixed-trace proofs to reason about them individually. -/
+theorem syscallDecodeRejected_operationPreservesRuntimeWellFormed call reason
+    (hdecode : Syscall.decode call = .error reason) :
+    OperationPreservesRuntimeWellFormed (.syscall call) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · have hreply :
+        (Syscall.dispatch state.virtualMemory state.syscallContext call).reply =
+          .rejected (.decode reason) := by
+      simp [Syscall.dispatch, hdecode]
+    exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+      (.syscall call) (.syscall (.rejected (.decode reason))) hstate
+      (by simp [gate, hmode, operationReply, hreply])
+      (.syscall call (.decode reason) hreply)).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state (.syscall call) hstate hmode
+
 private theorem dispatchIPC_send_classifies state handleWord word0 word1 :
     (dispatchIPC state (.send handleWord word0 word1)).reply = .syscall .sent ∨
       (∃ reason, (dispatchIPC state (.send handleWord word0 word1)).reply =
