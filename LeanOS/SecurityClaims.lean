@@ -182,6 +182,59 @@ theorem composite_gate_typed_result_contract state operation :
       exact (FailStop.gate_subsystem_rejection_preserves_runtimeWellFormed
         state operation reply hstate hcompleted hrejected).1
 
+/-- SC-COMPOSITE-AUTHORITY-CONFINEMENT: every public authority-bearing
+operation reports the exact subsystem result computed for the current subject
+and, where applicable, the active address space selected by the execution
+latch.  No operation argument supplies either privileged identity. -/
+theorem composite_gate_authority_confinement state
+    syscallCall ipcCall endpointWord sourceWord sourceKind payload rights
+    source destination destinationSlot authoritySlot victim victimSlot slot page permissions
+    (hmode : state.execution.mode = .running) :
+    (FailStop.gate state (.syscall syscallCall)).result =
+        .completed (.syscall
+          (Syscall.dispatch state.virtualMemory state.syscallContext syscallCall).reply) ∧
+    (FailStop.gate state (.ipc ipcCall)).result =
+        .completed (.ipc (FailStop.authoritativeIPCReply state ipcCall)) ∧
+    (FailStop.gate state
+        (.transferOffer endpointWord sourceWord sourceKind payload rights)).result =
+        .completed (.transferOffer
+          (CapabilityTransfer.offerWords state.transfers
+            state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+            payload rights).result) ∧
+    (FailStop.gate state (.transferAccept endpointWord destinationSlot)).result =
+        .completed (.transferAccept
+          (CapabilityTransfer.acceptWord state.transfers
+            state.execution.core.context.currentSubject endpointWord destinationSlot).result
+          (CapabilityTransfer.acceptWord state.transfers
+            state.execution.core.context.currentSubject endpointWord destinationSlot).deliveredWord) ∧
+    (FailStop.gate state
+        (.capabilityCopy source destination destinationSlot rights)).result =
+        .completed (.capability
+          (Capability.copy state.capabilities
+            state.execution.core.context.currentSubject source destination destinationSlot
+            rights).result) ∧
+    (FailStop.gate state (.capabilityRevoke authoritySlot victim victimSlot)).result =
+        .completed (.capability
+          (Capability.revoke state.capabilities
+            state.execution.core.context.currentSubject authoritySlot victim victimSlot).result) ∧
+    (FailStop.gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).result =
+        .completed (.capability
+          (Capability.revokeSubtree state.capabilities
+            state.execution.core.context.currentSubject authoritySlot victim victimSlot).result) ∧
+    (FailStop.gate state (.map slot page permissions)).result =
+        .completed (.map
+          (VirtualMapping.map state.virtualMemory
+            state.execution.core.context.currentSubject slot
+            state.execution.core.context.activeAddressSpace page permissions).result) ∧
+    (FailStop.gate state (.unmap page)).result =
+        .completed (.unmap
+          (VirtualMapping.unmap state.virtualMemory
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page).result) := by
+  exact FailStop.authority_operations_result_sound state syscallCall ipcCall endpointWord
+    sourceWord sourceKind payload rights source destination destinationSlot authoritySlot victim
+    victimSlot slot page permissions hmode
+
 /-- SC-COMPOSITE-CONTROL-WF: both control operations preserve the complete
 invariant in every execution mode, including the exact sealed-transfer and
 resumable states retained by busy and halted gate rejection. -/

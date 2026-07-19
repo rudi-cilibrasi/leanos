@@ -1309,6 +1309,12 @@ private def dispatchIPC (state : CompositeState) (call : IPCSyscall.Call) :
             (.receive handleWord)
           { state := installIPC state outcome.state, reply := .syscall outcome.reply }
 
+/-- Public observation of IPC after the composite sealed-transfer guard and
+authoritative caller/address-space projection have been applied. -/
+def authoritativeIPCReply (state : CompositeState) (call : IPCSyscall.Call) :
+    CompositeIPCReply :=
+  (dispatchIPC state call).reply
+
 /-- Exact composite post-state selected by one typed operation.  This is public
 so refinement layers can state that their adapter agrees with the gate. -/
 def applyOperation (state : CompositeState) : Operation → CompositeState
@@ -3318,6 +3324,57 @@ theorem map_result_sound state slot page permissions
         (VirtualMapping.map state.virtualMemory state.execution.core.context.currentSubject slot
           state.execution.core.context.activeAddressSpace page permissions).result) := by
   simp [gate, hmode, operationReply]
+
+/-- Every public operation that can consult or change capability authority is
+confined to the subject selected by the execution latch.  The operation data
+can choose handles, slots, rights, pages, and payload words, but it cannot
+supply an actor or active address space: each typed reply is the exact result
+of the named subsystem transition under the authoritative kernel identity. -/
+theorem authority_operations_result_sound state
+    syscallCall ipcCall endpointWord sourceWord sourceKind payload rights
+    source destination destinationSlot authoritySlot victim victimSlot slot page permissions
+    (hmode : state.execution.mode = .running) :
+    (gate state (.syscall syscallCall)).result =
+        .completed (.syscall
+          (Syscall.dispatch state.virtualMemory state.syscallContext syscallCall).reply) ∧
+    (gate state (.ipc ipcCall)).result =
+        .completed (.ipc (authoritativeIPCReply state ipcCall)) ∧
+    (gate state
+        (.transferOffer endpointWord sourceWord sourceKind payload rights)).result =
+        .completed (.transferOffer
+          (CapabilityTransfer.offerWords state.transfers
+            state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+            payload rights).result) ∧
+    (gate state (.transferAccept endpointWord destinationSlot)).result =
+        .completed (.transferAccept
+          (CapabilityTransfer.acceptWord state.transfers
+            state.execution.core.context.currentSubject endpointWord destinationSlot).result
+          (CapabilityTransfer.acceptWord state.transfers
+            state.execution.core.context.currentSubject endpointWord destinationSlot).deliveredWord) ∧
+    (gate state (.capabilityCopy source destination destinationSlot rights)).result =
+        .completed (.capability
+          (Capability.copy state.capabilities
+            state.execution.core.context.currentSubject source destination destinationSlot
+            rights).result) ∧
+    (gate state (.capabilityRevoke authoritySlot victim victimSlot)).result =
+        .completed (.capability
+          (Capability.revoke state.capabilities
+            state.execution.core.context.currentSubject authoritySlot victim victimSlot).result) ∧
+    (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).result =
+        .completed (.capability
+          (Capability.revokeSubtree state.capabilities
+            state.execution.core.context.currentSubject authoritySlot victim victimSlot).result) ∧
+    (gate state (.map slot page permissions)).result =
+        .completed (.map
+          (VirtualMapping.map state.virtualMemory
+            state.execution.core.context.currentSubject slot
+            state.execution.core.context.activeAddressSpace page permissions).result) ∧
+    (gate state (.unmap page)).result =
+        .completed (.unmap
+          (VirtualMapping.unmap state.virtualMemory
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page).result) := by
+  simp [gate, hmode, operationReply, authoritativeIPCReply]
 
 /-- Accepted mapping publishes only the changed mapping projection.  Memory,
 address-space ownership, endpoint state, and every unrelated runtime resource
