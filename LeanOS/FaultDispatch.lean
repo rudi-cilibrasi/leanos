@@ -699,22 +699,29 @@ idle.  Neither result retains the faulting subject's resumable slot. -/
 
 private def traceCapabilities (survivor : Bool) : Capability.State :=
   { subjects := fun subject => subject = 1 || (survivor && subject = 2)
-    objects := fun object => object = 1 || (survivor && object = 2)
+    objects := fun object => object = 1 ||
+      (survivor && (object = 2 || object = 20 || object = 30))
     kinds := fun object =>
-      if object = 1 || (survivor && object = 2) then some .addressSpace else none
-    slots := fun _ _ => none }
+      if object = 1 || (survivor && object = 2) then some .addressSpace
+      else if survivor && object = 20 then some .memory
+      else if survivor && object = 30 then some .endpoint
+      else none
+    slots := fun holder slot =>
+      if survivor && holder = 2 && slot = 7 then
+        some { object := 20, kind := .memory, rights := { read := true } }
+      else none }
 
 private def traceLifecycle (survivor : Bool) : SubjectLifecycle.State :=
   { capabilities := traceCapabilities survivor
     issuedSubjects := fun subject => subject = 1 || (survivor && subject = 2)
-    ownedMemory := fun _ => none
+    ownedMemory := fun object => if survivor && object = 20 then some (2, 40) else none
     addressOwner := fun space =>
       if space = 1 || (survivor && space = 2) then some space else none
-    mapping := fun _ _ => none
-    endpointOwner := fun _ => none
+    mapping := fun space page => if survivor && space = 2 && page = 9 then some 20 else none
+    endpointOwner := fun endpoint => if survivor && endpoint = 30 then some 2 else none
     mailbox := fun _ => none
-    frameOwner := fun _ => none
-    freeFrame := fun _ => true
+    frameOwner := fun frame => if survivor && frame = 40 then some 2 else none
+    freeFrame := fun frame => !(survivor && frame = 40)
     runnable := fun subject => subject = 1 || (survivor && subject = 2)
     current := some 1 }
 
@@ -733,9 +740,9 @@ private def traceHardwareFrame : Interrupt.HardwareFrame :=
 
 private def traceRegisters : ResumablePreemption.Registers :=
   { accumulator := 0
-    base := 0
-    count := 0
-    data := 0
+    base := 0xb2b2cafe51a7e55e
+    count := 0x030201
+    data := 0x51a7
     source := 0
     destination := 0
     basePointer := 0
@@ -768,11 +775,15 @@ private def traceState (survivor : Bool) : ResumablePreemption.State :=
       virtual := {
         memory := {
           capabilities
-          allocator := { frames := [], status := fun _ => .free }
-          binding := fun _ => none
-          issued := fun object => object = 1 || (survivor && object = 2) }
+          allocator := {
+            frames := if survivor then [40] else []
+            status := fun frame => if survivor && frame = 40 then .owned 20 else .free }
+          binding := fun object => if survivor && object = 20 then some 40 else none
+          issued := fun object => object = 1 ||
+            (survivor && (object = 2 || object = 20 || object = 30)) }
         owner := lifecycle.addressOwner
-        mappings := fun _ _ => none
+        mappings := fun space page => if survivor && space = 2 && page = 9 then
+          some { object := 20, permissions := { read := true } } else none
         issuedAddressSpace := fun space => space = 1 || (survivor && space = 2) }
       active := some 1
       entries := [] } }
@@ -795,6 +806,24 @@ private def traceEntry : InterruptEntry.Result :=
 
 example : (dispatch (traceState true) traceEntry).action =
     .dispatch traceSurvivorContext := by native_decide
+
+/-- The selected peer fixture owns resources in every lifecycle cleanup class,
+and dispatch preserves them independently of its complete saved context. -/
+example :
+    let next := (dispatch (traceState true) traceEntry).state
+    ResumablePreemption.contextFor (traceState true).contexts 2 =
+        some traceSurvivorContext ∧
+      (traceState true).scheduler.lifecycle.capabilities.slots 2 7 =
+        some { object := 20, kind := .memory, rights := { read := true } } ∧
+      next.scheduler.lifecycle.capabilities.slots 2 7 =
+        (traceState true).scheduler.lifecycle.capabilities.slots 2 7 ∧
+      next.scheduler.lifecycle.ownedMemory 20 = some (2, 40) ∧
+      next.scheduler.lifecycle.mapping 2 9 = some 20 ∧
+      next.scheduler.lifecycle.endpointOwner 30 = some 2 ∧
+      next.scheduler.lifecycle.frameOwner 40 = some 2 ∧
+      next.translations.virtual.mappings 2 9 =
+        some { object := 20, permissions := { read := true } } := by
+  native_decide
 
 example :
     (dispatch (traceState true) traceEntry).state.scheduler.lifecycle.current = some 2 ∧
@@ -1124,5 +1153,132 @@ theorem dispatch_preserves_wellFormed state entry
   | fatal reason =>
       rw [fatal_state_eq_halt state entry reason haction]
       simpa [halt, ResumablePreemption.wellFormed_set_halted] using hstate
+
+/-! A fixed-width boundary for the first boot containment scenario.  The
+machine passes only values already bound by the normalized entry record and
+the kernel-owned bounded scheduler/context bank.  The result packs action in
+  the low byte, selected subject/address space in the next two bytes, the five
+  cleanup witnesses (live, runnable, current, queued, resumable) in bits
+  24--28, preserved survivor frame/register context in bit 29, preserved
+  capability authority in bit 30, and preserved memory/mapping/endpoint/frame
+  resources in bit 31.
+  Bit 63 distinguishes typed fail-stop from nonfatal rejection.  Entry class
+  4 is the bounded malformed-frame fixture emitted by the normalizer. -/
+
+def faultDispatchDemo (vector entryClass current active ready contextOwner : UInt64) : UInt64 :=
+  if vector != 14 then 0x8000000000000002
+  else if entryClass = 4 then 0x8000000000000002
+  else if entryClass != 3 then 0x8000000000000001
+  else if current != 1 || active != 1 then 0
+  else if ready = 0 then 1
+  else if ready = 2 && contextOwner = 2 then 0x00000000ff020202
+  else 0
+
+@[export leanos_fault_dispatch_demo]
+def faultDispatchDemoExport (vector origin current active ready contextOwner : UInt64) : UInt64 :=
+  faultDispatchDemo vector origin current active ready contextOwner
+
+private def bootCleanupWitness (before : ResumablePreemption.State)
+    (outcome : Outcome) : UInt64 :=
+  match before.scheduler.lifecycle.current with
+  | none => 0
+  | some faulting =>
+      (if outcome.state.scheduler.lifecycle.capabilities.subjects faulting = false then
+        0x01000000 else 0) +
+      (if outcome.state.scheduler.lifecycle.runnable faulting = false then 0x02000000 else 0) +
+      (if outcome.state.scheduler.lifecycle.current != some faulting then 0x04000000 else 0) +
+      (if outcome.state.scheduler.ready.contains faulting = false then 0x08000000 else 0) +
+      (if ResumablePreemption.contextFor outcome.state.contexts faulting = none then
+        0x10000000 else 0)
+
+private def bootPeerContextWitness (before : ResumablePreemption.State)
+    (outcome : Outcome) : UInt64 :=
+  match outcome.action with
+  | .dispatch context =>
+      if ResumablePreemption.contextFor before.contexts context.owner = some context ∧
+          outcome.state.scheduler.lifecycle.capabilities.subjects context.owner = true ∧
+          outcome.state.scheduler.lifecycle.runnable context.owner = true ∧
+          outcome.state.scheduler.lifecycle.addressOwner context.addressSpace =
+            some context.owner then 0x20000000 else 0
+  | _ => 0
+
+private def bootPeerCapabilityWitness (before : ResumablePreemption.State)
+    (outcome : Outcome) : UInt64 :=
+  match outcome.action with
+  | .dispatch context =>
+      if before.scheduler.lifecycle.capabilities.slots context.owner 7 =
+            some { object := 20, kind := .memory, rights := { read := true } } ∧
+          outcome.state.scheduler.lifecycle.capabilities.slots context.owner 7 =
+            before.scheduler.lifecycle.capabilities.slots context.owner 7 then
+        0x40000000 else 0
+  | _ => 0
+
+private def bootPeerResourceWitness (before : ResumablePreemption.State)
+    (outcome : Outcome) : UInt64 :=
+  match outcome.action with
+  | .dispatch context =>
+      if before.scheduler.lifecycle.ownedMemory 20 = some (context.owner, 40) ∧
+          outcome.state.scheduler.lifecycle.ownedMemory 20 = some (context.owner, 40) ∧
+          before.scheduler.lifecycle.mapping context.addressSpace 9 = some 20 ∧
+          outcome.state.scheduler.lifecycle.mapping context.addressSpace 9 = some 20 ∧
+          before.scheduler.lifecycle.endpointOwner 30 = some context.owner ∧
+          outcome.state.scheduler.lifecycle.endpointOwner 30 = some context.owner ∧
+          before.scheduler.lifecycle.frameOwner 40 = some context.owner ∧
+          outcome.state.scheduler.lifecycle.frameOwner 40 = some context.owner ∧
+          before.translations.virtual.mappings context.addressSpace 9 =
+            some { object := 20, permissions := { read := true } } ∧
+          outcome.state.translations.virtual.mappings context.addressSpace 9 =
+            before.translations.virtual.mappings context.addressSpace 9 then
+        0x80000000 else 0
+  | _ => 0
+
+def encodeBootOutcome (before : ResumablePreemption.State) (outcome : Outcome) : UInt64 :=
+  match outcome.action with
+  | .idle => 1
+  | .dispatch context =>
+      2 + UInt64.ofNat context.owner * 0x100 +
+        UInt64.ofNat context.addressSpace * 0x10000 +
+        bootCleanupWitness before outcome + bootPeerContextWitness before outcome +
+        bootPeerCapabilityWitness before outcome + bootPeerResourceWitness before outcome
+  | .rejected _ => 0
+  | .fatal .kernelOrigin => 0x8000000000000001
+  | .fatal _ => 0x8000000000000002
+
+/-- Independently evaluated expectation for the shared oracle.  Each scalar
+fixture selects a concrete input to the authoritative composite transition;
+the exported adapter is not used to compute this expected word. -/
+def faultDispatchModelExpected (vector entryClass current active ready contextOwner : UInt64) : UInt64 :=
+  let state :=
+    if current = 0 then traceAlreadyTerminated
+    else if ready = 0 then traceState false
+    else if contextOwner = 2 then traceState true
+    else traceStaleSurvivorVirtualOwner
+  let entry :=
+    if vector != 14 then (.fatal .unsupportedVector : InterruptEntry.Result)
+    else if entryClass = 4 then
+      InterruptEntry.normalize traceMalformedUserFault traceKernelContext
+    else if entryClass != 3 then InterruptEntry.normalize traceRawKernelFault traceKernelContext
+    else match traceEntry with
+      | .accepted frame => .accepted { frame with
+          currentSubject := current.toNat, activeAddressSpace := active.toNat }
+      | other => other
+  encodeBootOutcome state (dispatch state entry)
+
+theorem faultDispatchDemo_accepts_composite :
+    faultDispatchDemo 14 3 1 1 2 2 =
+      encodeBootOutcome (traceState true) (dispatch (traceState true) traceEntry) := by
+  native_decide
+
+theorem faultDispatchDemo_kernel_origin_fail_stop :
+    faultDispatchDemo 14 0 1 1 2 2 =
+      encodeBootOutcome (traceState true) (dispatch (traceState true)
+        (InterruptEntry.normalize traceRawKernelFault traceKernelContext)) := by
+  native_decide
+
+theorem faultDispatchDemo_malformed_frame_fail_stop :
+    faultDispatchDemo 14 4 1 1 2 2 =
+      encodeBootOutcome (traceState true) (dispatch (traceState true)
+        (InterruptEntry.normalize traceMalformedUserFault traceKernelContext)) := by
+  native_decide
 
 end LeanOS.FaultDispatch

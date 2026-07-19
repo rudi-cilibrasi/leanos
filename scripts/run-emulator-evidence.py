@@ -434,9 +434,11 @@ def verify_report(
 
 def check_workflows() -> None:
     parse_matrix(DEFAULT_MATRIX)
+    workflow_contents: dict[str, str] = {}
     for relative in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
         path = ROOT / relative
         content = path.read_text(encoding="utf-8")
+        workflow_contents[relative] = content
         count = content.count("./scripts/run-emulator-evidence.py run")
         if count != 1:
             raise EvidenceError(
@@ -449,6 +451,36 @@ def check_workflows() -> None:
         ):
             if bypass in content:
                 raise EvidenceError(f"{relative} bypasses the shared emulator matrix with {bypass}")
+    containment_artifacts = (
+        "build/boot/leanos-0.1.0-x86_64-fault-containment.iso",
+        "build/boot/leanos-fault-containment.elf",
+        "build/boot/leanos-fault-containment.map",
+        "build/boot/boot-page-plan-fault-containment.h",
+        "build/boot/boot-page-plan-fault-containment.final.h",
+        "build/boot/fault-containment.disassembly.txt",
+        "build/boot/fault-containment.serial.log",
+        "build/boot/corpus.tsv",
+        "build/oracle/host-results.txt",
+        "build/evidence/*",
+    )
+    ci_content = workflow_contents[".github/workflows/ci.yml"]
+    missing = [artifact for artifact in containment_artifacts if artifact not in ci_content]
+    if missing:
+        raise EvidenceError(
+            "CI does not retain complete fault-containment evidence: "
+            + ", ".join(missing)
+        )
+    release_diagnostics = workflow_contents[".github/workflows/release.yml"]
+    for artifact in (
+        "build/boot/*.map",
+        "build/boot/*.disassembly.txt",
+        "build/boot/boot-page-plan*.h",
+        "build/oracle/host-results.txt",
+    ):
+        if artifact not in release_diagnostics:
+            raise EvidenceError(
+                f"release diagnostics do not retain mandatory evidence pattern {artifact}"
+            )
     package = (ROOT / "scripts/package-release.sh").read_text(encoding="utf-8")
     if "run-emulator-evidence.py verify" not in package:
         raise EvidenceError("package-release.sh does not verify shared emulator evidence")

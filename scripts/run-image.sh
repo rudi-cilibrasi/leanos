@@ -26,6 +26,8 @@ elif [[ "$scenario" == extended-state ]]; then
   default_image="build/boot/leanos-${version}-x86_64-extended-state.iso"
 elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
+elif [[ "$scenario" == fault-containment ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-fault-containment.iso"
 elif [[ "$scenario" == entry-adversarial ]]; then
   default_image="build/boot/leanos-${version}-x86_64-entry-adversarial.iso"
 else
@@ -55,6 +57,8 @@ if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
   echo 'LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts' > "$expected"
 elif [[ "$scenario" == preemption ]]; then
   echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap' > "$expected"
+elif [[ "$scenario" == fault-containment ]]; then
+  echo 'LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap' > "$expected"
 else
   echo 'LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap' > "$expected"
 fi
@@ -83,6 +87,16 @@ printf '%s\n' \
   "LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=${extended_vector} instruction=${extended_instruction} bank-write=prevented cleanup=complete peer=2" \
   'LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved' \
   'LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1' >> "$expected"
+elif [[ "$scenario" == fault-containment ]]; then
+printf '%s\n' \
+  'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
+  'LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned' \
+  'LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS' \
+  'LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS' \
+  'LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS' \
+  'LEANOS/8 PAGING root=B selected=1 result=PASS' \
+  'LEANOS/14 PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS' \
+  'LEANOS/14 FINAL status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop' >> "$expected"
 elif [[ "$scenario" == preemption ]]; then
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
