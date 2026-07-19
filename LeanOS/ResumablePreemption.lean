@@ -1,5 +1,6 @@
 import LeanOS.Preemption
 import LeanOS.TLB
+import LeanOS.ResumableContext
 
 /-!
 # Bounded resumable preemption
@@ -18,35 +19,9 @@ set_option linter.unusedSimpArgs false
 abbrev SubjectId := Scheduler.SubjectId
 abbrev AddressSpaceId := Scheduler.AddressSpaceId
 
-structure Registers where
-  accumulator : UInt64
-  base : UInt64
-  count : UInt64
-  data : UInt64
-  source : UInt64
-  destination : UInt64
-  basePointer : UInt64
-  r8 : UInt64
-  r9 : UInt64
-  r10 : UInt64
-  r11 : UInt64
-  r12 : UInt64
-  r13 : UInt64
-  r14 : UInt64
-  r15 : UInt64
-  deriving BEq, DecidableEq, Repr
-
-inductive ContextKind where | initial | suspended
-  deriving BEq, DecidableEq, Repr
-
-/-- Ownership fields are kernel metadata, never copied from user registers. -/
-structure Context where
-  owner : SubjectId
-  addressSpace : AddressSpaceId
-  frame : Interrupt.HardwareFrame
-  registers : Registers
-  kind : ContextKind
-  deriving DecidableEq, Repr
+abbrev Registers := ResumableContext.Registers
+abbrev ContextKind := ResumableContext.ContextKind
+abbrev Context := ResumableContext.Context
 
 structure State where
   scheduler : Scheduler.State
