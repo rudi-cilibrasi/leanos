@@ -232,14 +232,11 @@ theorem dispatched_nonresumption state entry context
         List.find?_eq_none]
 
 private theorem cleanupCurrent_preserves_coreWellFormed state subject
-    (hstate : ResumablePreemption.WellFormed state)
-    (hcurrent : state.scheduler.lifecycle.current = some subject) :
+    (hstate : ResumablePreemption.WellFormed state) :
     ResumablePreemption.CleanupCoreWellFormed
       (ResumablePreemption.cleanupSubject state subject) := by
   exact ResumablePreemption.cleanupSubject_preserves_coreWellFormed
-    state subject hstate (by
-      simp [ResumablePreemption.cleanupSubject, SubjectLifecycle.terminateState,
-        hcurrent])
+    state subject hstate
 
 /-- Fault dispatch preserves the scheduler/lifecycle invariant and the bounded
 no-PCID translation-cache invariant as one composite transition. -/
@@ -263,12 +260,156 @@ theorem dispatch_preserves_scheduler_and_tlb state entry
   all_goals (try split) <;> try simp_all [halt, reject]
   all_goals
     have hcore := cleanupCurrent_preserves_coreWellFormed state
-      (state.scheduler.lifecycle.current.getD 0) hstate (by simp_all)
+      (state.scheduler.lifecycle.current.getD 0) hstate
     simp_all
     rcases hcore with ⟨hcleanScheduler, _, _, _, _, _, _, hcleanTlb⟩
     constructor
     · exact Scheduler.selectNext_preserves_wellFormed _ hcleanScheduler
     · first | exact hcleanTlb | exact TLB.switch_coherent _ _
+
+private theorem consumeSelected_preserves_wellFormed state trusted context
+    (hstate : ResumablePreemption.WellFormed state)
+    (hselected : (Scheduler.selectNext state.scheduler).result =
+      .accepted (some trusted))
+    (hcontext : ResumablePreemption.contextFor state.contexts
+      trusted.currentSubject = some context) :
+    ResumablePreemption.WellFormed
+      { state with
+        scheduler := (Scheduler.selectNext state.scheduler).state
+        contexts := ResumablePreemption.eraseContext state.contexts context.owner
+        translations := TLB.switch state.translations context.addressSpace } := by
+  rcases hstate with
+    ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hagreement,
+      htranslations, hvirtual, hkinds, htlb⟩
+  have hcontextOwner := ResumablePreemption.contextFor_owner _ _ _ hcontext
+  simp only [Scheduler.selectNext] at hselected
+  split at hselected <;> try simp_all [Scheduler.reject]
+  split at hselected <;> try simp_all [Scheduler.reject]
+  all_goals
+    have hcontextMem := List.mem_of_find?_eq_some hcontext
+    have hcontextValid := hvalid context hcontextMem
+    have hcontextSpace : context.addressSpace = trusted.activeAddressSpace := by
+      simp only [ResumablePreemption.validContext] at hcontextValid
+      grind [Scheduler.ownsAddressSpace]
+    have hpostScheduler := Scheduler.selectNext_preserves_wellFormed
+      state.scheduler hscheduler
+    have hpostCurrent :
+        (Scheduler.selectNext state.scheduler).state.lifecycle.current =
+          some trusted.currentSubject := by
+      grind [Scheduler.selectNext, Scheduler.reject]
+    have hcapabilityProjection :
+        (Scheduler.selectNext state.scheduler).state.lifecycle.capabilities =
+          state.scheduler.lifecycle.capabilities := by
+      grind [Scheduler.selectNext, Scheduler.reject]
+    have hrunnable :
+        (Scheduler.selectNext state.scheduler).state.lifecycle.runnable =
+          state.scheduler.lifecycle.runnable := by
+      grind [Scheduler.selectNext, Scheduler.reject]
+    have haddressOwner :
+        (Scheduler.selectNext state.scheduler).state.lifecycle.addressOwner =
+          state.scheduler.lifecycle.addressOwner := by
+      grind [Scheduler.selectNext, Scheduler.reject]
+    have hownedMemory :
+        (Scheduler.selectNext state.scheduler).state.lifecycle.ownedMemory =
+          state.scheduler.lifecycle.ownedMemory := by
+      grind [Scheduler.selectNext, Scheduler.reject]
+    have hendpointOwner :
+        (Scheduler.selectNext state.scheduler).state.lifecycle.endpointOwner =
+          state.scheduler.lifecycle.endpointOwner := by
+      grind [Scheduler.selectNext, Scheduler.reject]
+    have hselectedSpace : trusted.activeAddressSpace = trusted.currentSubject := by
+      grind [Scheduler.ownsAddressSpace]
+    refine ⟨hpostScheduler, ?_, ?_,
+      ?_, ?_, ?_, ?_, ?_, ?_, TLB.switch_coherent _ _⟩
+    · exact Nat.le_trans (List.length_filter_le _ _) hcapacity
+    · exact hunique.filter _
+    · intro retained hretained
+      have hold := hvalid retained (List.mem_filter.mp hretained).1
+      simpa [ResumablePreemption.validContext, TLB.switch, hcapabilityProjection,
+        hrunnable, haddressOwner] using hold
+    · intro candidate hcurrent
+      have hc : candidate = trusted.currentSubject := by grind
+      subst candidate
+      exact ResumablePreemption.contextFor_erase_self _ _
+    · refine ⟨?_, ?_⟩
+      · intro queued hqueued
+        have hqueuedOld : queued ∈ state.scheduler.ready := by
+          simp [Scheduler.selectNext] at hqueued
+          simp_all
+        obtain ⟨saved, hsaved, howner⟩ := hagreement.1 queued hqueuedOld
+        have hne : saved.owner ≠ trusted.currentSubject := by
+          intro heq
+          have hnotReady := hpostScheduler.2.2.2.2 trusted.currentSubject
+            hpostCurrent |>.2.2.2
+          apply hnotReady
+          have hqueuedEq : queued = trusted.currentSubject := by
+            rw [← howner, heq]
+          simpa [hqueuedEq] using hqueued
+        exact ⟨saved, by
+          simp [ResumablePreemption.eraseContext, hsaved, hne], howner⟩
+      · intro retained hretained hsuspended
+        have holdMem := (List.mem_filter.mp hretained).1
+        have holdReady := hagreement.2 retained holdMem hsuspended
+        have hne : retained.owner ≠ trusted.currentSubject := by
+          simpa using (List.mem_filter.mp hretained).2
+        grind [Scheduler.selectNext, Scheduler.reject]
+    · rcases htranslations with ⟨howner, hactive⟩
+      constructor
+      · simpa [TLB.switch, haddressOwner] using howner
+      · simp [TLB.switch, hpostCurrent, hcontextSpace, hselectedSpace]
+    · rcases hvirtual with ⟨hvirtualCapabilities, hvirtualWellFormed⟩
+      exact ⟨by simpa [TLB.switch, hcapabilityProjection] using hvirtualCapabilities,
+        by simpa [TLB.switch] using hvirtualWellFormed⟩
+    · simpa [ResumablePreemption.ResourceKindAgreement, TLB.switch,
+        hcapabilityProjection, hownedMemory, hendpointOwner] using hkinds
+
+private theorem fatal_state_eq_halt state entry
+    (h : (dispatch state entry).action = .fatal) :
+    (dispatch state entry).state = (halt state).state := by
+  simp only [dispatch] at h ⊢
+  split <;> try simp_all [halt, reject]
+  split <;> try simp_all [halt, reject]
+  all_goals split <;> try simp_all [halt, reject]
+  all_goals split <;> try simp_all [halt, reject]
+  all_goals split <;> try simp_all [halt, reject]
+  all_goals split <;> try simp_all [halt, reject]
+  all_goals split <;> try simp_all [halt, reject]
+  all_goals split <;> try simp_all [halt, reject]
+  all_goals split <;> try simp_all [halt, reject]
+  all_goals split <;> try simp_all [halt, reject]
+  all_goals split <;> simp_all [halt, reject]
+
+private theorem dispatched_is_authoritative_transition state entry context
+    (h : (dispatch state entry).action = .dispatch context) :
+    ∃ faulting trusted,
+      (Scheduler.selectNext
+          (ResumablePreemption.cleanupSubject state faulting).scheduler).result =
+        .accepted (some trusted) ∧
+      ResumablePreemption.contextFor
+          (ResumablePreemption.cleanupSubject state faulting).contexts
+          trusted.currentSubject = some context ∧
+      (dispatch state entry).state =
+        { ResumablePreemption.cleanupSubject state faulting with
+          scheduler := (Scheduler.selectNext
+            (ResumablePreemption.cleanupSubject state faulting).scheduler).state
+          contexts := ResumablePreemption.eraseContext
+            (ResumablePreemption.cleanupSubject state faulting).contexts context.owner
+          translations := TLB.switch
+            (ResumablePreemption.cleanupSubject state faulting).translations
+            context.addressSpace } := by
+  simp only [dispatch] at h ⊢
+  split at h <;> try simp_all [halt, reject]
+  split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals rcases h with ⟨rfl⟩
+  all_goals grind
 
 /-- A successful dispatch consumes exactly the post-cleanup FIFO head. -/
 theorem dispatch_uses_survivor_head state entry context
@@ -352,5 +493,151 @@ theorem successful_nonresumption state entry
   rcases hsuccess with hidle | ⟨context, hdispatch⟩
   · exact idle_nonresumption state entry hidle
   · exact dispatched_nonresumption state entry context hdispatch
+
+/-! Executable regressions for the invariant boundary closed by this slice:
+one queued survivor becomes the sole current subject, while no survivor yields
+idle.  Neither result retains the faulting subject's resumable slot. -/
+
+private def traceCapabilities (survivor : Bool) : Capability.State :=
+  { subjects := fun subject => subject = 1 || (survivor && subject = 2)
+    objects := fun object => object = 1 || (survivor && object = 2)
+    kinds := fun object =>
+      if object = 1 || (survivor && object = 2) then some .addressSpace else none
+    slots := fun _ _ => none }
+
+private def traceLifecycle (survivor : Bool) : SubjectLifecycle.State :=
+  { capabilities := traceCapabilities survivor
+    issuedSubjects := fun subject => subject = 1 || (survivor && subject = 2)
+    ownedMemory := fun _ => none
+    addressOwner := fun space =>
+      if space = 1 || (survivor && space = 2) then some space else none
+    mapping := fun _ _ => none
+    endpointOwner := fun _ => none
+    mailbox := fun _ => none
+    frameOwner := fun _ => none
+    freeFrame := fun _ => true
+    runnable := fun subject => subject = 1 || (survivor && subject = 2)
+    current := some 1 }
+
+private def traceHardwareFrame : Interrupt.HardwareFrame :=
+  { vector := 14
+    errorCode := 0
+    savedPrivilege := .user
+    instructionPointer := 0x400200
+    stackPointer := 0x500ff8
+    codeSelector := 0x23
+    stackSelector := 0x1b
+    flags := 0x202
+    canonicalInstructionPointer := true
+    canonicalStackPointer := true
+    flagsAllowed := true }
+
+private def traceRegisters : ResumablePreemption.Registers :=
+  { accumulator := 0
+    base := 0
+    count := 0
+    data := 0
+    source := 0
+    destination := 0
+    basePointer := 0
+    r8 := 0
+    r9 := 0
+    r10 := 0
+    r11 := 0
+    r12 := 0
+    r13 := 0
+    r14 := 0
+    r15 := 0 }
+
+private def traceSurvivorContext : ResumablePreemption.Context :=
+  { owner := 2
+    addressSpace := 2
+    frame := traceHardwareFrame
+    registers := traceRegisters
+    kind := .suspended }
+
+private def traceState (survivor : Bool) : ResumablePreemption.State :=
+  let lifecycle := traceLifecycle survivor
+  let capabilities := traceCapabilities survivor
+  { scheduler := {
+      lifecycle
+      ready := if survivor then [2] else []
+      capacity := 2 }
+    contexts := if survivor then [traceSurvivorContext] else []
+    capacity := 2
+    translations := {
+      virtual := {
+        memory := {
+          capabilities
+          allocator := { frames := [], status := fun _ => .free }
+          binding := fun _ => none
+          issued := fun object => object = 1 || (survivor && object = 2) }
+        owner := lifecycle.addressOwner
+        mappings := fun _ _ => none
+        issuedAddressSpace := fun space => space = 1 || (survivor && space = 2) }
+      active := some 1
+      entries := [] } }
+
+private def traceEntry : InterruptEntry.Result :=
+  .accepted {
+    vector := 14
+    purpose := .userFault
+    origin := .user
+    errorCode := some 0
+    rip := 0x400100
+    cs := 0x23
+    flags := 0x202
+    userRsp := some 0x500ff8
+    userSs := some 0x1b
+    currentSubject := 1
+    activeAddressSpace := 1
+    activeCr3 := 0
+    stackIdentity := 1 }
+
+example : (dispatch (traceState true) traceEntry).action =
+    .dispatch traceSurvivorContext := by native_decide
+
+example :
+    (dispatch (traceState true) traceEntry).state.scheduler.lifecycle.current = some 2 ∧
+      (dispatch (traceState true) traceEntry).state.scheduler.ready = [] ∧
+      (dispatch (traceState true) traceEntry).state.scheduler.lifecycle.capabilities.subjects 1 =
+        false ∧
+      ResumablePreemption.contextFor
+        (dispatch (traceState true) traceEntry).state.contexts 1 = none := by
+  native_decide
+
+example : (dispatch (traceState false) traceEntry).action = .idle ∧
+    (dispatch (traceState false) traceEntry).state.scheduler.lifecycle.current = none ∧
+    (dispatch (traceState false) traceEntry).state.scheduler.ready = [] ∧
+    ResumablePreemption.contextFor
+      (dispatch (traceState false) traceEntry).state.contexts 1 = none := by
+  native_decide
+
+/-- The atomic fault transition preserves the complete authoritative runtime
+invariant on every result.  In the survivor branch, selecting the ready head
+makes it current while consuming exactly its saved context; every unrelated
+context and all cleanup-preserved lifecycle/virtual projections remain
+unchanged. -/
+theorem dispatch_preserves_wellFormed state entry
+    (hstate : ResumablePreemption.WellFormed state) :
+    ResumablePreemption.WellFormed (dispatch state entry).state := by
+  cases haction : (dispatch state entry).action with
+  | idle =>
+      obtain ⟨faulting, hnext, _, _⟩ := idle_is_clean_empty state entry haction
+      rw [hnext]
+      exact ResumablePreemption.cleanupSubject_preserves_wellFormed state faulting hstate
+  | dispatch context =>
+      obtain ⟨faulting, trusted, hselected, hcontext, hnext⟩ :=
+        dispatched_is_authoritative_transition state entry context haction
+      rw [hnext]
+      exact consumeSelected_preserves_wellFormed _ trusted context
+        (ResumablePreemption.cleanupSubject_preserves_wellFormed state faulting hstate)
+        hselected hcontext
+  | rejected reason =>
+      rw [rejected_unchanged state entry reason haction]
+      exact hstate
+  | fatal =>
+      rw [fatal_state_eq_halt state entry haction]
+      simpa [halt, ResumablePreemption.wellFormed_set_halted] using hstate
 
 end LeanOS.FaultDispatch
