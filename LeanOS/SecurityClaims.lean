@@ -274,6 +274,19 @@ theorem composite_gate_schedulerAdmission_preserves_runtimeWellFormed state subj
       (FailStop.gate state (.scheduleAdd subject)).state := by
   exact FailStop.scheduleAdd_operationPreservesRuntimeWellFormed subject state hstate
 
+/-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of the
+registered control, syscall, IPC, capability-copy, mapping, subject-creation,
+and resumable-aware scheduler operations preserve the complete runtime
+invariant for every accepted or typed-rejected result. -/
+theorem composite_registered_mixed_trace_preserves_runtimeWellFormed
+    state operations
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hoperations : ∀ operation, operation ∈ operations →
+      FailStop.RuntimeTraceOperation operation) :
+    FailStop.RuntimeWellFormed (FailStop.runOperations state operations) := by
+  exact FailStop.runRuntimeTrace_preserves_runtimeWellFormed
+    state operations hstate hoperations
+
 /-- SC-COMPOSITE-BOOT-WF: every successfully compiled bounded boot page-table
 plan produces an idle composite runtime satisfying the complete global
 invariant before any subject or trusted return identity is admitted. -/
@@ -300,6 +313,52 @@ theorem composite_boot_runtime_reachable_witness :
       simp [hresult] at hsuccess
   | ok plan =>
       exact FailStop.bootRuntime_runtimeWellFormed BootPageTablePlan.sampleInput plan hresult
+
+private def registeredMixedTrace : List FailStop.Operation :=
+  [.syscall { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 },
+   .ipc (.receive 0),
+   .capabilityCopy 0 1 0 { read := true },
+   .map 0 0 { read := true },
+   .unmap 0,
+   .createSubject 1,
+   .scheduleAdd 1,
+   .scheduleRemove 1,
+   .selectUserReturn .initialDispatch,
+   .restart]
+
+private theorem registeredMixedTrace_registered operation
+    (hmember : operation ∈ registeredMixedTrace) :
+    FailStop.RuntimeTraceOperation operation := by
+  simp [registeredMixedTrace] at hmember
+  rcases hmember with h | h | h | h | h | h | h | h | h | h
+  all_goals subst operation
+  all_goals constructor
+
+set_option maxRecDepth 100000 in
+/-- Concrete non-vacuity for the registered mixed-trace contract: the accepted
+repository boot plan runs a finite trace containing attacker-controlled
+syscall/IPC/capability/mapping words, lifecycle creation, resumable-aware
+scheduler cleanup, return selection, and restart while retaining the global
+invariant. -/
+theorem composite_registered_mixed_trace_reachable_witness :
+    match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+    | .ok plan => FailStop.RuntimeWellFormed
+        (FailStop.runOperations (FailStop.bootRuntime plan) registeredMixedTrace)
+    | .error _ => False := by
+  generalize hresult : BootPageTablePlan.compile BootPageTablePlan.sampleInput = result
+  cases result with
+  | error reason =>
+      have hsuccess :
+          (match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+            | .ok _ => true
+            | .error _ => false) = true := by
+        native_decide
+      simp [hresult] at hsuccess
+  | ok plan =>
+      apply composite_registered_mixed_trace_preserves_runtimeWellFormed
+      · exact FailStop.bootRuntime_runtimeWellFormed
+          BootPageTablePlan.sampleInput plan hresult
+      · exact registeredMixedTrace_registered
 
 /-- SC-INTERRUPT-ENTRY-BINDING: every normalized record constructor copies
 authority-bearing context fields from the kernel-owned input. -/

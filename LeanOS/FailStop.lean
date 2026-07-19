@@ -4635,6 +4635,67 @@ theorem scheduleAdd_operationPreservesRuntimeWellFormed subject :
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.scheduleAdd subject) hstate hmode
 
+/-! ### Registered mixed runtime traces
+
+The constructors below are exactly the operation families whose accepted and
+rejected results have complete global-preservation proofs.  Keeping this as a
+syntactic predicate makes the current mixed-trace boundary reviewable: adding
+an operation requires its family theorem, while the still-open interrupt,
+preemption, transfer, revocation, and termination mutations cannot enter the
+advertised trace theorem accidentally. -/
+
+inductive RuntimeTraceOperation : Operation → Prop where
+  | selectUserReturn purpose : RuntimeTraceOperation (.selectUserReturn purpose)
+  | userReturn request : RuntimeTraceOperation (.userReturn request)
+  | syscall call : RuntimeTraceOperation (.syscall call)
+  | ipc call : RuntimeTraceOperation (.ipc call)
+  | capabilityCopy source destination destinationSlot rights :
+      RuntimeTraceOperation
+        (.capabilityCopy source destination destinationSlot rights)
+  | map slot page permissions : RuntimeTraceOperation (.map slot page permissions)
+  | unmap page : RuntimeTraceOperation (.unmap page)
+  | createSubject subject : RuntimeTraceOperation (.createSubject subject)
+  | scheduleAdd subject : RuntimeTraceOperation (.scheduleAdd subject)
+  | scheduleRemove subject : RuntimeTraceOperation (.scheduleRemove subject)
+  | restart : RuntimeTraceOperation .restart
+
+/-- Every operation admitted to the registered mixed-trace surface has a
+complete one-step preservation proof for all of its typed results. -/
+theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
+    (hoperation : RuntimeTraceOperation operation) :
+    OperationPreservesRuntimeWellFormed operation := by
+  cases hoperation with
+  | selectUserReturn purpose =>
+      exact selectUserReturn_operationPreservesRuntimeWellFormed purpose
+  | userReturn request =>
+      exact userReturn_operationPreservesRuntimeWellFormed request
+  | syscall call => exact syscall_operationPreservesRuntimeWellFormed call
+  | ipc call => exact ipc_operationPreservesRuntimeWellFormed call
+  | capabilityCopy source destination destinationSlot rights =>
+      exact capabilityCopy_operationPreservesRuntimeWellFormed
+        source destination destinationSlot rights
+  | map slot page permissions =>
+      exact map_operationPreservesRuntimeWellFormed slot page permissions
+  | unmap page => exact unmap_operationPreservesRuntimeWellFormed page
+  | createSubject subject => exact createSubject_operationPreservesRuntimeWellFormed subject
+  | scheduleAdd subject => exact scheduleAdd_operationPreservesRuntimeWellFormed subject
+  | scheduleRemove subject => exact scheduleRemove_operationPreservesRuntimeWellFormed subject
+  | restart => exact restart_operationPreservesRuntimeWellFormed
+
+/-- Arbitrary finite interleavings of all currently registered runtime
+families preserve the global invariant.  Calls and handles remain arbitrary,
+so each family contributes both its accepted and typed-rejection paths; halted
+suffixes are covered by the same theorem because the outer gate is absorbing. -/
+theorem runRuntimeTrace_preserves_runtimeWellFormed state operations
+    (hstate : RuntimeWellFormed state)
+    (hoperations : ∀ operation, operation ∈ operations →
+      RuntimeTraceOperation operation) :
+    RuntimeWellFormed (runOperations state operations) := by
+  apply runOperations_preserves_runtimeWellFormed state operations hstate
+  intro operation hmember
+  exact runtimeTraceOperation_preserves_runtimeWellFormed operation
+    (hoperations operation hmember)
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
