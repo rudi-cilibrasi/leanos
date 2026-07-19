@@ -1049,6 +1049,15 @@ private def installTransfers (state : CompositeState)
       translations := { state.resumable.translations with virtual := virtualMemory } }
     transfers }
 
+/-- Publish authoritative subject cleanup and discard every sealed transfer
+that could retain a retired sender, endpoint, or carried object.  The final
+`installTransfers` call republishes the canceled mailbox together with the
+empty in-flight store, so IPC and transfer consumers cannot drift. -/
+private def installTerminatedResumable (state : CompositeState)
+    (resumable : ResumablePreemption.State) : CompositeState :=
+  let published := installResumable state resumable
+  installTransfers published (CapabilityTransfer.cancelAllOffers published.transfers)
+
 /-- Publish a mapping-only transition without running the general lifecycle
 synchronizer.  Map and unmap preserve the memory registry and address-space
 owners, so rebuilding those projections would be both unnecessary and capable
@@ -1460,7 +1469,7 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       match outcome.result with
       | .rejected _ => state
       | .accepted =>
-          installResumable state
+          installTerminatedResumable state
             (ResumablePreemption.cleanupSubject state.resumable subject)
   | .scheduleAdd subject =>
       let outcome := schedulerAdmission state subject
@@ -4435,7 +4444,8 @@ that retires the subject identity. -/
 
 /-- Typed acceptance of subject termination exposes the cleanup facts needed
 by every future operation-family preservation proof: the subject is dead,
-cannot remain current or queued, and has no resumable context. -/
+cannot remain current or queued, has no resumable context, and no in-flight
+sealed descendant survives the lifecycle teardown. -/
 theorem terminateSubject_accepted_cleans_runtime_references state subject lifecycle
     (hmode : state.execution.mode = .running)
     (haccepted : SubjectLifecycle.terminate state.lifecycle subject =
@@ -4448,7 +4458,9 @@ theorem terminateSubject_accepted_cleans_runtime_references state subject lifecy
       (gate state (.terminateSubject subject)).state.scheduler.lifecycle.current ≠
           some subject ∧
       ResumablePreemption.contextFor
-          (gate state (.terminateSubject subject)).state.resumable.contexts subject = none := by
+          (gate state (.terminateSubject subject)).state.resumable.contexts subject = none ∧
+      (∀ endpoint,
+        (gate state (.terminateSubject subject)).state.transfers.pending endpoint = none) := by
   have hdead := ResumablePreemption.cleanup_terminates_subject
     state.resumable subject
   have hscheduler := ResumablePreemption.cleanup_removes_scheduler_membership
@@ -4456,8 +4468,10 @@ theorem terminateSubject_accepted_cleans_runtime_references state subject lifecy
   have hcontext := ResumablePreemption.cleanup_removes_context
     state.resumable subject
   simp only [gate, hmode, operationReply, applyOperation, haccepted]
-  simp only [installResumable, installLifecycle]
-  exact ⟨trivial, hdead, hscheduler.1, hscheduler.2, hcontext⟩
+  simp only [installTerminatedResumable, installTransfers, installResumable,
+    installLifecycle]
+  exact ⟨trivial, hdead, hscheduler.1, hscheduler.2, hcontext,
+    CapabilityTransfer.cancelAllOffers_pending _⟩
 
 /-- Accepted termination preserves both scheduler projections, including when
 cleanup leaves a lone current subject with no queued peer.  Such a state is
@@ -4476,14 +4490,14 @@ theorem gate_terminateSubject_accepted_preserves_schedulerWellFormed
   have hscheduler := hcleanup.1
   have hpreemption := hstate.2.2.2.2.2.2.2.1
   refine ⟨?_, ?_⟩
-  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
-      installLifecycle] using hscheduler
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+      installTransfers, installResumable, installLifecycle] using hscheduler
   · rcases hpreemption with ⟨_, hticks⟩
     refine ⟨?_, ?_⟩
-    · simpa [gate, hmode, applyOperation, haccepted, installResumable,
-        installLifecycle] using hscheduler
-    · simpa [gate, hmode, applyOperation, haccepted, installResumable,
-        installLifecycle] using hticks
+    · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+        installTransfers, installResumable, installLifecycle] using hscheduler
+    · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+        installTransfers, installResumable, installLifecycle] using hticks
 
 /-- Accepted termination preserves the saved-context bank's capacity,
 uniqueness, validity, current-subject exclusion, and ready-queue agreement,
@@ -4509,16 +4523,18 @@ theorem gate_terminateSubject_accepted_preserves_resumableContextBank
     ⟨_, hcapacity, hunique, hvalid, habsent, hready, _, _, _, _⟩
   simp only
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
-  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
-      installLifecycle] using hcapacity
-  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
-      installLifecycle] using hunique
-  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
-      installLifecycle, ResumablePreemption.validContext] using hvalid
-  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
-      installLifecycle] using habsent
-  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
-      installLifecycle, ResumablePreemption.ReadyContextAgreement] using hready
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+      installTransfers, installResumable, installLifecycle] using hcapacity
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+      installTransfers, installResumable, installLifecycle] using hunique
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+      installTransfers, installResumable, installLifecycle,
+      ResumablePreemption.validContext] using hvalid
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+      installTransfers, installResumable, installLifecycle] using habsent
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+      installTransfers, installResumable, installLifecycle,
+      ResumablePreemption.ReadyContextAgreement] using hready
 
 /-! ### Scheduler rejection preservation
 

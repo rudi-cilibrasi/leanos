@@ -613,6 +613,23 @@ ownership and scheduling state is deliberately not embedded in this model. -/
 def cancelSenderOffers (state : State) (subject : SubjectId) : State :=
   cancelWhere state (fun transfer => transfer.sender = subject)
 
+/-- A lifecycle teardown may retire the sender, endpoint, or transferred
+object in one step.  Canceling the bounded in-flight store wholesale gives
+that transition a simple atomic boundary: no sealed descendant survives with
+authority into the retired lifecycle, while derivation history remains
+append-only in the capability store. -/
+def cancelAllOffers (state : State) : State :=
+  cancelWhere state (fun _ => true)
+
+@[simp] theorem cancelAllOffers_pending state endpoint :
+    (cancelAllOffers state).pending endpoint = none := by
+  cases hpending : state.pending endpoint <;>
+    simp [cancelAllOffers, cancelWhere, hpending]
+
+@[simp] theorem cancelAllOffers_capabilities state :
+    (cancelAllOffers state).capabilities = state.capabilities := by
+  rfl
+
 /-- Sender-offer cancellation changes exactly those pending records whose
 trusted sender is the selected subject. -/
 theorem cancelSenderOffers_pending state subject endpoint transfer
