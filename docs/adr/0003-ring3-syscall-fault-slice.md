@@ -85,6 +85,13 @@ witnesses.  The ordinary image and its transcript are unchanged.  A
 kernel-origin page fault still bypasses containment and enters the existing
 typed terminal path; vector 8 remains the distinct double-fault/IST purpose.
 
+The mandatory emulator-evidence row retains the containment ISO, ELF, link
+map, generated page-table plans, full disassembly, exact serial transcript,
+runner command log and exit status.  CI also retains the shared oracle corpus
+and hosted generated-C result beside that scenario-specific evidence.  These
+are inspectable integration artifacts across trusted boundaries, not a proof
+of the generated C, linked image, exception delivery, or QEMU execution.
+
 The Lean theorem and oracle concern the bounded model and adapter inputs.  Raw
 x86 delivery, the entry stack, assembly context copy, CR3 load, generated C,
 compiler/linker, final return validation, QEMU, firmware, and the host evidence

@@ -722,6 +722,8 @@ LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-stack-overflow.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
+objdump -d --no-show-raw-insn "$build/leanos-fault-containment.elf" \
+  > "$build/fault-containment.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state.elf" \
   > "$build/extended-state.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state-mmx.elf" \

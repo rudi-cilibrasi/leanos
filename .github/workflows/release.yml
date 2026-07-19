@@ -67,6 +67,13 @@ jobs:
             build/boot/*.serial.log
             build/boot/*.iso
             build/boot/*.elf
+            build/boot/*.map
+            build/boot/*.disassembly.txt
+            build/boot/boot-page-plan*.h
+            build/boot/SHA256SUMS
+            build/boot/SOURCE_REVISION
+            build/boot/corpus.tsv
+            build/oracle/host-results.txt
             build/evidence/*
             build/ci/*.txt
           if-no-files-found: warn
