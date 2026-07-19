@@ -65,11 +65,12 @@ grep -Fq 'assembly-save-register-count=14 expected=15' "$tmp/changed-save.log"
 cat >"$tmp/fixture.S" <<'EOF'
 .text
 .globl fixture_root, root, leaf, detached, indirect_root, short_root
-.globl cycle_root, cycle_a, cycle_b
+.globl cycle_root, cycle_a, cycle_b, assembly_over_root, assembly_over_helper
 fixture_root:
 .rept 15
 push %rax
 .endr
+sub $16, %rsp
 call root
 ret
 root: call leaf; ret
@@ -79,27 +80,42 @@ indirect_root:
 .rept 15
 push %rax
 .endr
+sub $16, %rsp
 call *%rax
 ret
 short_root:
 .rept 14
 push %rax
 .endr
+sub $16, %rsp
 call root
 ret
 cycle_root:
 .rept 15
 push %rax
 .endr
+sub $16, %rsp
 call cycle_a
 ret
 cycle_a: call cycle_b; ret
 cycle_b: call cycle_a; ret
+assembly_over_root:
+.rept 15
+push %rax
+.endr
+sub $16, %rsp
+call root
+call assembly_over_helper
+ret
+assembly_over_helper:
+sub $256, %rsp
+add $256, %rsp
+ret
 EOF
 gcc -c "$tmp/fixture.S" -o "$tmp/fixture.o"
 ld --build-id=none -o "$tmp/fixture.elf" -e fixture_root "$tmp/fixture.o"
 LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/ok.tsv" \
-  LEANOS_ENTRY_STACK_USABLE_BYTES=192 \
+  LEANOS_ENTRY_STACK_USABLE_BYTES=208 \
   LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$tmp/edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$tmp/fixture.elf" >"$tmp/elf-ok.log"
 grep -Fq $'fixture_root\troot' "$tmp/edges.tsv"
@@ -109,7 +125,7 @@ grep -Fq 'path=ok final-elf-root=fixture_root save-register-pushes=15 reviewed-f
 run_rejected_elf() {
   local name="$1" diagnostic="$2"
   if LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/$name.tsv" \
-      LEANOS_ENTRY_STACK_USABLE_BYTES=200 ./scripts/check-entry-stack-budget.sh \
+      LEANOS_ENTRY_STACK_USABLE_BYTES=300 ./scripts/check-entry-stack-budget.sh \
       "$tmp/fixture.elf" >"$tmp/$name-elf.log" 2>&1; then
     echo "error: final-ELF fixture '$name' unexpectedly passed" >&2; exit 1
   fi
@@ -128,4 +144,6 @@ printf 'elf-push-count\tkernel\t0\t0\tshort_root\troot;leaf\n' >"$tmp/elf-push-c
 run_rejected_elf elf-push-count 'final-elf-save-register-count=14 expected=15 root=short_root'
 printf 'elf-cycle\tkernel\t0\t0\tcycle_root\tcycle_a;cycle_b\n' >"$tmp/elf-cycle.tsv"
 run_rejected_elf elf-cycle 'final-elf-recursion-cycle='
+printf 'elf-assembly-over\tkernel\t0\t0\tassembly_over_root\troot;leaf\n' >"$tmp/elf-assembly-over.tsv"
+run_rejected_elf elf-assembly-over 'final-elf-entry-stack over budget'
 echo 'entry-stack budget fixtures passed'

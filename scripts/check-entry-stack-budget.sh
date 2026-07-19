@@ -31,6 +31,7 @@ mapfile -t reports < <(find "$report_dir" -maxdepth 1 -type f -name '*.su' -prin
 
 declare -A usage=()
 declare -A usage_kind=()
+declare -A static_total=()
 while IFS=$'\t' read -r location bytes qualifier extra; do
   [[ -n "$location" ]] || continue
   function_name="${location##*:}"
@@ -90,6 +91,7 @@ while IFS=$'\t' read -r path origin hardware_error safety elf_root functions ext
   }
   printf 'path=%s prefix=%s compiler=%s safety=%s total=%s usable=%s margin=%s\n' \
     "$path" "$prefix" "$((total - prefix - safety))" "$safety" "$total" "$usable_bytes" "$margin"
+  static_total[$path]="$total"
   paths=$((paths + 1))
 done < "$manifest"
 (( paths > 0 )) || { echo "error: entry-stack call graph has no paths" >&2; exit 1; }
@@ -103,11 +105,20 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 nm -n "$elf" | awk 'NF >= 3 { print $3 }' | sort -u >"$tmp/symbols"
 objdump -d --no-show-raw-insn "$elf" | awk \
-    -v indirect="$tmp/indirect" -v pushes="$tmp/pushes" '
+    -v indirect="$tmp/indirect" -v pushes="$tmp/pushes" \
+    -v assembly="$tmp/assembly" -v unsupported="$tmp/unsupported" \
+    -v calls="$tmp/calls" '
   /^[[:xdigit:]]+[[:space:]]+<[^>]+>:/ {
-    caller = $2; gsub(/[<>:]/, "", caller); next
+    caller = $2; gsub(/[<>:]/, "", caller); present[caller] = 1; next
   }
-  caller != "" && $2 ~ /^push(q)?$/ { count[caller]++ }
+  caller != "" && $2 ~ /^push/ { count[caller]++; allocation[caller] += 8 }
+  caller != "" && $2 ~ /^sub(q)?$/ && $3 ~ /^\$(0x[[:xdigit:]]+|[0-9]+),%rsp$/ {
+    operand = $3; sub(/^\$/, "", operand); sub(/,%rsp$/, "", operand)
+    allocation[caller] += operand + 0
+  }
+  caller != "" && $2 ~ /^(and|andq|enter|lea|leaq|mov|movq)$/ && $3 ~ /,%rsp$/ {
+    print caller "\t" $2 "\t" $3 >> unsupported
+  }
   caller != "" && $2 ~ /^(callq?|jmpq?)$/ {
     target = $NF
     if (target ~ /^<[^>]+>$/) {
@@ -115,15 +126,25 @@ objdump -d --no-show-raw-insn "$elf" | awk \
       # Ignore jumps to a local basic block in the same symbol, but retain a
       # direct self-call: the former is ordinary control flow and the latter
       # is recursion that invalidates finite stack accounting.
-      if (caller != target || $2 ~ /^callq?$/) print caller "\t" target
+      if (caller != target || $2 ~ /^callq?$/) {
+        print caller "\t" target
+        if ($2 ~ /^callq?$/) print caller "\t" target >> calls
+      }
     } else if ($3 ~ /^\*/) {
       print caller "\t" $2 "\t" $3 >> indirect
     }
   }
-  END { for (function_name in count) print function_name "\t" count[function_name] > pushes }
+  END {
+    for (function_name in count) print function_name "\t" count[function_name] > pushes
+    for (function_name in present)
+      print function_name "\t" (allocation[function_name] + 0) > assembly
+  }
 ' | sort -u >"$tmp/edges"
 touch "$tmp/indirect"
 touch "$tmp/pushes"
+touch "$tmp/assembly"
+touch "$tmp/unsupported"
+touch "$tmp/calls"
 if [[ -n "$elf_edges_output" ]]; then
   cp "$tmp/edges" "$elf_edges_output"
 fi
@@ -195,6 +216,42 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
       exit 1
     fi
   done <"$tmp/reachable"
+  assembly_bytes=0
+  assembly_functions=0
+  while IFS= read -r function_name; do
+    [[ -z "${usage[$function_name]+set}" ]] || continue
+    assembly_cost="$(awk -F '\t' -v name="$function_name" \
+      '$1 == name { print $2; found = 1 } END { if (!found) exit 1 }' "$tmp/assembly")" || {
+      echo "error: path=$path final-elf-unaccounted-assembly=$function_name" >&2
+      exit 1
+    }
+    unsupported_instruction="$(awk -F '\t' -v name="$function_name" \
+      '$1 == name { print $2 " " $3; exit }' "$tmp/unsupported")"
+    [[ -z "$unsupported_instruction" ]] || {
+      echo "error: path=$path final-elf-unsupported-stack-mutation=$function_name:$unsupported_instruction" >&2
+      exit 1
+    }
+    if [[ "$function_name" == "$elf_root" ]]; then
+      modeled_root_bytes=$((save_count * 8 + normalization_bytes))
+      (( assembly_cost >= modeled_root_bytes )) || {
+        echo "error: path=$path final-elf-root-stack-allocation=$assembly_cost expected-at-least=$modeled_root_bytes root=$elf_root" >&2
+        exit 1
+      }
+      assembly_cost=$((assembly_cost - modeled_root_bytes))
+    fi
+    assembly_bytes=$((assembly_bytes + assembly_cost))
+    assembly_functions=$((assembly_functions + 1))
+  done <"$tmp/reachable"
+  reachable_calls="$(awk -F '\t' 'NR == FNR { reached[$1] = 1; next }
+      reached[$1] && reached[$2] { count++ } END { print count + 0 }' \
+      "$tmp/reachable" "$tmp/calls")"
+  call_bytes=$((reachable_calls * 8))
+  final_total=$((static_total[$path] + assembly_bytes + call_bytes))
+  final_margin=$((usable_bytes - final_total))
+  (( final_margin >= 0 )) || {
+    echo "error: path=$path final-elf-entry-stack over budget by $((-final_margin)) byte(s) total=$final_total usable=$usable_bytes assembly=$assembly_bytes call-returns=$call_bytes" >&2
+    exit 1
+  }
   for function_name in "$elf_root" "${chain[@]}"; do
     grep -Fxq "$function_name" "$tmp/symbols" || {
       echo "error: path=$path final-elf-missing-function=$function_name" >&2; exit 1;
@@ -204,7 +261,8 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
       exit 1
     }
   done
-  printf 'path=%s final-elf-root=%s save-register-pushes=%s reviewed-functions=%s reachable-functions=%s extracted-edges=%s result=PASS\n' \
+  printf 'path=%s final-elf-root=%s save-register-pushes=%s reviewed-functions=%s reachable-functions=%s assembly-functions=%s assembly-bytes=%s call-return-bytes=%s total=%s margin=%s extracted-edges=%s result=PASS\n' \
     "$path" "$elf_root" "$elf_save_count" "${#chain[@]}" "$(wc -l <"$tmp/reachable")" \
+    "$assembly_functions" "$assembly_bytes" "$call_bytes" "$final_total" "$final_margin" \
     "$(wc -l <"$tmp/edges")"
 done < "$manifest"
