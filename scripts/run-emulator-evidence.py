@@ -19,12 +19,20 @@ DEFAULT_BUILD = ROOT / "build/boot"
 DEFAULT_OUTPUT = ROOT / "build/evidence/emulator-evidence.json"
 DEFAULT_TOOLS = ROOT / "build/ci/tool-versions.txt"
 RESULT_CLASSES = {"accepted-boot", "controlled-rejection", "fail-stop"}
-RUNNERS = {"boot", "return", "peer-pke", "double-fault", "double-fault-guard"}
+RUNNERS = {
+    "boot",
+    "return",
+    "peer-pke",
+    "double-fault",
+    "entry-stack-overflow",
+    "double-fault-guard",
+}
 RUNNER_RESULT_CLASSES = {
     "boot": "accepted-boot",
     "return": "controlled-rejection",
     "peer-pke": "controlled-rejection",
     "double-fault": "fail-stop",
+    "entry-stack-overflow": "fail-stop",
     "double-fault-guard": "controlled-rejection",
 }
 
@@ -173,6 +181,8 @@ def scenario_invocation(
         command = ["./scripts/run-extended-state-peer-pke.sh", str(paths["image"])]
     elif row["runner"] == "double-fault":
         command = ["./scripts/run-double-fault.sh", str(paths["image"])]
+    elif row["runner"] == "entry-stack-overflow":
+        command = ["./scripts/run-entry-stack-overflow.sh", str(paths["image"])]
     else:
         environment["LEANOS_EXPECT_GUARD_MAPPED"] = "1"
         command = ["./scripts/run-double-fault.sh", str(paths["image"])]
@@ -435,6 +445,7 @@ def check_workflows() -> None:
         for bypass in (
             "./scripts/run-image.sh", "./scripts/run-return-corruptions.sh",
             "./scripts/run-double-fault.sh",
+            "./scripts/run-entry-stack-overflow.sh",
         ):
             if bypass in content:
                 raise EvidenceError(f"{relative} bypasses the shared emulator matrix with {bypass}")

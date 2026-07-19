@@ -167,6 +167,15 @@ multiboot_entry:
     movl $0, page_table_b+4(%eax)
 #endif
 
+    /* The linker-owned page immediately below the ordinary CPL3 entry stack
+       is absent in every live address space. */
+    mov $__entry_stack_guard_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    movl $0, page_table_a(%eax)
+    movl $0, page_table_a+4(%eax)
+    movl $0, page_table_b(%eax)
+    movl $0, page_table_b+4(%eax)
     /* Derive the denial policy instead of inheriting firmware/GRUB state.
        PAE remains enabled for long mode; OSFXSR, OSXMMEXCPT, OSXSAVE, and PKE
        are cleared so no legacy SIMD, XSAVE, or unsaved PKRU state is exposed. */
@@ -412,7 +421,15 @@ run_double_fault_probe:
     cli
     clac
     cld
+#ifdef LEANOS_ENTRY_STACK_OVERFLOW_PROBE
+    movabs $0xe17a57ac10a0be11, %rax
+    mov %rax, __entry_stack_start(%rip)
+    movabs $0xad1ace1757acbeef, %rax
+    mov %rax, __entry_stack_end-8(%rip)
+    mov $__entry_stack_guard_end, %rsp
+#else
     mov $__df_ist_guard_end, %rsp
+#endif
     mov $0xffff, %eax
     mov %ax, %ds
 1:  hlt
@@ -500,7 +517,17 @@ isr8_cld:
     movabs $0x15a1c0decafef00d, %rax
     cmp %rax, __df_ist_stack_end-128(%rip)
     jne 3f
+#ifdef LEANOS_ENTRY_STACK_OVERFLOW_PROBE
+    movabs $0xe17a57ac10a0be11, %rax
+    cmp %rax, __entry_stack_start(%rip)
+    jne 3f
+    movabs $0xad1ace1757acbeef, %rax
+    cmp %rax, __entry_stack_end-8(%rip)
+    jne 3f
+    DF_SERIAL entry_stack_overflow_record, entry_stack_overflow_record_end-entry_stack_overflow_record
+#else
     DF_SERIAL df_success_record, df_success_record_end-df_success_record
+#endif
     mov $0x12, %al
     mov $0xf4, %dx
     outb %al, %dx
@@ -518,6 +545,9 @@ isr8_cld:
 df_success_record:
     .ascii "LEANOS/8 TERMINAL reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none\n"
 df_success_record_end:
+entry_stack_overflow_record:
+    .ascii "LEANOS/11 ENTRY-STACK-OVERFLOW reason=guard-crossing vector=8 error=0 ist=1 rsp=in-range canaries=intact guard=unmapped adjacent=intact handler=none return=none\n"
+entry_stack_overflow_record_end:
 df_failure_record:
     .ascii "LEANOS/8 TERMINAL reason=double-fault evidence=invalid status=FAIL\n"
 df_failure_record_end:
@@ -576,6 +606,7 @@ isr7:
     mov 120(%rsp), %rdx
     call extended_state_denial_handler
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    jmp extended_state_restore_peer
 extended_state_restore_peer:
     test %rax, %rax
     je 1f
@@ -928,6 +959,14 @@ user_a_extended_state_probe:
     jne user_copy_fail
     cmpb $0xc3, user_a_stack+4113(%rip)
     jne user_copy_fail
+    /* Exercise the admitted CPL3 protection-fault frame before continuing the
+       scenario.  Page zero is present supervisor-only in root A, so this read
+       deterministically raises #PF with error code 5. */
+.global user_a_fault_instruction
+user_a_fault_instruction:
+    mov 0, %rax
+.global user_a_fault_recovered
+user_a_fault_recovered:
 #ifdef LEANOS_PREEMPTION_SCENARIO
     mov $1, %rax
     xor %rbx, %rbx

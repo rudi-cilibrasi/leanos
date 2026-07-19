@@ -36,6 +36,7 @@ extended_state_avx_iso_root="$build/iso-extended-state-avx"
 extended_state_peer_pke_iso_root="$build/iso-extended-state-peer-pke"
 df_iso_root="$build/iso-double-fault"
 df_negative_iso_root="$build/iso-double-fault-guard-mapped"
+entry_overflow_iso_root="$build/iso-entry-stack-overflow"
 entry_adversarial_iso_root="$build/iso-entry-adversarial"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
@@ -66,13 +67,15 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$extended_state_avx_iso_root/boot/grub" \
   "$extended_state_peer_pke_iso_root/boot/grub" \
   "$df_iso_root/boot/grub" \
-  "$df_negative_iso_root/boot/grub" "$entry_adversarial_iso_root/boot/grub"
+  "$df_negative_iso_root/boot/grub" "$entry_overflow_iso_root/boot/grub" \
+  "$entry_adversarial_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state-peer-pke.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-double-fault.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-entry-overflow.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-guard.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-entry-adversarial.h"
 
@@ -93,6 +96,7 @@ lake env lean --c="$build/ExtendedState.c" LeanOS/ExtendedState.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
+  -fstack-usage
   -fdebug-prefix-map="$repo_root"=. -ffile-prefix-map="$repo_root"=.
   -fdebug-prefix-map="$lean_prefix"=/lean-toolchain
   -ffile-prefix-map="$lean_prefix"=/lean-toolchain -g3 -O2)
@@ -116,10 +120,11 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -o "$build/CapabilityReuse.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/ExtendedState.c" \
   -o "$build/ExtendedState.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_PREEMPTION_SCENARIO=1 \
+  -DLEANOS_PREEMPTION_SCENARIO=1 -DLEANOS_ENTRY_HIGH_WATER=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
   -c boot/kernel.c -o "$build/kernel-preemption.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -140,6 +145,11 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -DLEANOS_ENTRY_ADVERSARIAL=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-adversarial.h"' \
   -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
+
+cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
+cp scripts/entry-stack-extended-callgraph.tsv \
+  "$build/entry-stack-extended-callgraph.tsv"
+./scripts/check-entry-stack-budget.sh | tee "$build/entry-stack-budget.txt"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -c boot/boot.S -o "$build/boot.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
@@ -189,6 +199,9 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_DF_MAP_GUARD=1 \
   -c boot/boot.S -o "$build/boot-df-guard-mapped.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_ENTRY_STACK_OVERFLOW_PROBE=1 \
+  -c boot/boot.S -o "$build/boot-entry-stack-overflow.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_ENTRY_ADVERSARIAL=1 \
   -c boot/boot.S -o "$build/boot-entry-adversarial.o"
@@ -265,6 +278,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
   "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-entry-stack-overflow-prelink.map" \
+  -o "$build/leanos-entry-stack-overflow-prelink.elf" \
+  "$build/boot-entry-stack-overflow.o" "$build/kernel-double-fault.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+  "$build/ExtendedState.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-entry-adversarial-prelink.map" \
   -o "$build/leanos-entry-adversarial-prelink.elf" "$build/boot-entry-adversarial.o" \
   "$build/kernel-entry-adversarial.o" "$build/KernelTransition.o" "$build/Syscall.o" \
@@ -317,14 +338,17 @@ cmp "$build/boot-page-plan-extended-state.h" \
   "$build/boot-page-plan-extended-state-peer-pke.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-prelink.elf" \
   "$build/boot-page-plan-double-fault.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-entry-stack-overflow-prelink.elf" \
+  "$build/boot-page-plan-entry-overflow.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-guard-prelink.elf" \
   "$build/boot-page-plan-guard.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-entry-adversarial-prelink.elf" \
   "$build/boot-page-plan-entry-adversarial.h"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror -c boot/kernel.c \
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_PREEMPTION_SCENARIO=1 \
+  -DLEANOS_PREEMPTION_SCENARIO=1 -DLEANOS_ENTRY_HIGH_WATER=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
   -c boot/kernel.c -o "$build/kernel-preemption.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -349,6 +373,10 @@ for spec in "${return_corruptions[@]}"; do
 done
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_DOUBLE_FAULT_PROBE=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-overflow.h"' \
+  -c boot/kernel.c -o "$build/kernel-entry-stack-overflow.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -DLEANOS_DF_MAP_GUARD=1 \
   -c boot/kernel.c -o "$build/kernel-double-fault-guard-mapped.o"
@@ -536,6 +564,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
   build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-entry-stack-overflow.map" \
+  -o "$build/leanos-entry-stack-overflow.elf" \
+  "$build/boot-entry-stack-overflow.o" "$build/kernel-entry-stack-overflow.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+  "$build/ExtendedState.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
   -o build/boot/leanos-double-fault-guard-mapped.elf \
   build/boot/boot-df-guard-mapped.o \
@@ -549,6 +585,13 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
 cmp "$build/boot-page-plan-double-fault.h" \
   "$build/boot-page-plan-double-fault.final.h" || {
   echo "error: double-fault boot page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-entry-stack-overflow.elf" \
+  "$build/boot-page-plan-entry-overflow.final.h"
+cmp "$build/boot-page-plan-entry-overflow.h" \
+  "$build/boot-page-plan-entry-overflow.final.h" || {
+  echo "error: entry-stack overflow page-table plan drifted after final link" >&2
   exit 1
 }
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-guard-mapped.elf" \
@@ -612,6 +655,20 @@ if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   echo "error: kernel ELF has no valid Multiboot2 header" >&2
   exit 1
 fi
+nm -n "$build/leanos.elf" >"$build/entry-stack-symbols.txt"
+objdump -d --no-show-raw-insn "$build/leanos.elf" \
+  >"$build/entry-stack-disassembly.txt"
+LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-final-elf-edges.tsv" \
+  ./scripts/check-entry-stack-budget.sh "$build/leanos.elf" \
+  | tee "$build/entry-stack-final-elf.txt"
+LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
+  LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-extended-final-elf-edges.tsv" \
+  ./scripts/check-entry-stack-budget.sh "$build/leanos-extended-state.elf" \
+  | tee "$build/entry-stack-extended-final-elf.txt"
+LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
+  LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-extended-state-peer-pke-final-elf-edges.tsv" \
+  ./scripts/check-entry-stack-budget.sh "$build/leanos-extended-state-peer-pke.elf" \
+  | tee "$build/entry-stack-extended-state-peer-pke-final-elf.txt"
 ./scripts/check-image-policy.sh "$build/leanos.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state.elf"
@@ -620,6 +677,7 @@ fi
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-sse2.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-avx.elf"
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
+./scripts/check-image-policy.sh "$build/leanos-entry-stack-overflow.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state.elf" \
   > "$build/extended-state.disassembly.txt"
@@ -706,6 +764,8 @@ cp boot/grub-double-fault.cfg "$df_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-double-fault-guard-mapped.elf" \
   "$df_negative_iso_root/boot/leanos.elf"
 cp boot/grub-double-fault.cfg "$df_negative_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-entry-stack-overflow.elf" "$entry_overflow_iso_root/boot/leanos.elf"
+cp boot/grub-double-fault.cfg "$entry_overflow_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-entry-adversarial.elf" "$entry_adversarial_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$entry_adversarial_iso_root/boot/grub/grub.cfg"
 printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
@@ -720,6 +780,7 @@ cp "$build/SOURCE_REVISION" "$extended_state_avx_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" \
   "$extended_state_peer_pke_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$entry_overflow_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
@@ -772,6 +833,10 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   "$df_negative_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
 grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-entry-stack-overflow.iso" \
+  "$entry_overflow_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-entry-adversarial.iso" \
   "$entry_adversarial_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
@@ -807,6 +872,8 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-double-fault.elf" \
   "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
   "$build/leanos-double-fault-guard-mapped.elf" \
+  "$build/leanos-${version}-x86_64-entry-stack-overflow.iso" \
+  "$build/leanos-entry-stack-overflow.elf" \
   "$build/leanos-${version}-x86_64-entry-adversarial.iso" \
   "$build/leanos-entry-adversarial.elf" \
   > "$build/SHA256SUMS"

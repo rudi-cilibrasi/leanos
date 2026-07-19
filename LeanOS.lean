@@ -12,6 +12,7 @@ import LeanOS.ExtendedState
 import LeanOS.IPCSyscall
 import LeanOS.Interrupt
 import LeanOS.InterruptEntry
+import LeanOS.PrivilegeEntryStack
 import LeanOS.Example
 import LeanOS.FrameAllocator
 import LeanOS.FrameBudget

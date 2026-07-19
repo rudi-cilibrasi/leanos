@@ -55,6 +55,7 @@ extern const uint64_t extended_state_probe_class;
 extern const uint8_t user_a_extended_state_probe[];
 #endif
 extern char user_a_stack[];
+extern char user_a_fault_instruction[], user_a_fault_recovered[];
 extern char user_b_entry[];
 extern char user_b_stack[], user_b_stack_top[];
 extern uint64_t saved_context_a[], saved_context_b[];
@@ -68,6 +69,8 @@ extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
 extern char __df_ist_stack_start[], __df_ist_stack_end[];
 extern char __df_ist_guard_start[], __df_ist_guard_end[];
+extern char __entry_stack_guard_start[], __entry_stack_guard_end[];
+extern char __entry_stack_start[], __entry_stack_end[];
 extern char __kernel_text_start[], __kernel_text_end[];
 extern char boot_stack[], boot_stack_top[];
 extern char __user_a_text_start[], __user_a_text_end[];
@@ -118,7 +121,8 @@ struct __attribute__((packed)) tss64 {
 };
 static struct idt_entry idt[256] __attribute__((aligned(16)));
 static struct tss64 tss;
-static uint8_t entry_stack[16384] __attribute__((aligned(16)));
+static uint8_t entry_stack[16384]
+    __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
 /* Concrete image of the bounded state consumed and published by
@@ -140,6 +144,9 @@ static unsigned capability_reuse_state;
 static unsigned supervisor_probe;
 static unsigned extended_state_features_accepted;
 static volatile unsigned ordinary_entry_active;
+#ifdef LEANOS_ENTRY_HIGH_WATER
+static uint64_t entry_stack_high_water_pattern = UINT64_C(0x6c65616e6f735741);
+#endif
 #ifdef LEANOS_ENTRY_ADVERSARIAL
 static unsigned entry_adversarial_step;
 #endif
@@ -154,6 +161,11 @@ static void arm_timer(void);
 static uint64_t stack_marker(uint64_t stack_pointer);
 static void check_cross_bank_negative(void);
 static void check_initial_b_frame_negative(void);
+#ifdef LEANOS_ENTRY_HIGH_WATER
+static void initialize_entry_stack_high_water(void);
+static __attribute__((noinline)) void report_entry_stack_high_water(
+    const char *path);
+#endif
 
 static void record_extended_state_cpuid(void) {
     uint32_t max_leaf, unused_b, unused_c, unused_d;
@@ -212,8 +224,8 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     if (!user && vector != 14) fail("entry-origin");
     if (user && saved_cs != 0x23) fail("entry-user-selector");
     if (!user && (saved_cs & 3u) != 0) fail("entry-kernel-selector");
-    uint64_t first = user ? (uint64_t)entry_stack : (uint64_t)boot_stack;
-    uint64_t past = user ? (uint64_t)(entry_stack + sizeof(entry_stack)) :
+    uint64_t first = user ? (uint64_t)__entry_stack_start : (uint64_t)boot_stack;
+    uint64_t past = user ? (uint64_t)__entry_stack_end :
                            (uint64_t)boot_stack_top;
     uint64_t bytes = user ? 40 : 24;
     if (frame_address < first || frame_address + bytes > past)
@@ -254,7 +266,7 @@ static void check_entry_manifest(void) {
             idt[vector].attributes != want->attr || idt[vector].zero != 0)
             fail("entry-descriptor-mismatch");
     }
-    if (tss.rsp0 != (uint64_t)(entry_stack + sizeof(entry_stack)) ||
+    if (tss.rsp0 != (uint64_t)__entry_stack_end ||
         tss.ist[0] != (uint64_t)__df_ist_stack_end)
         fail("entry-tss-mismatch");
     serial_puts("LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
@@ -400,6 +412,10 @@ static void check_live_page_table_mutations(void) {
         guard * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
         "pt", guard);
 #endif
+    uint64_t entry_guard = boot_page(__entry_stack_guard_start);
+    expect_live_mutation_rejected("entry-guard-mapping", &page_table_b[entry_guard],
+        entry_guard * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
+        "pt", entry_guard);
     expect_live_mutation_rejected("omitted-mapping", &page_table_b[user_text],
         0, "pt", user_text);
 
@@ -821,9 +837,12 @@ static void privilege_init(void) {
         (0x89ull << 40) | (((limit >> 16) & 0xfu) << 48) |
         (((base >> 24) & 0xffu) << 56);
     gdt64[6] = base >> 32;
-    tss.rsp0 = (uint64_t)(entry_stack + sizeof(entry_stack));
+    tss.rsp0 = (uint64_t)__entry_stack_end;
     tss.ist[0] = (uint64_t)__df_ist_stack_end;
     tss.iomap = sizeof(tss);
+#ifdef LEANOS_ENTRY_HIGH_WATER
+    initialize_entry_stack_high_water();
+#endif
     *(uint64_t *)__df_ist_stack_start = 0xd0b1efa17badc0deull;
     *(uint64_t *)((uint64_t)__df_ist_stack_end - 128u) =
         0x15a1c0decafef00dull;
@@ -845,6 +864,34 @@ static void privilege_init(void) {
     load_tss();
 }
 
+#ifdef LEANOS_ENTRY_HIGH_WATER
+/* This painted-stack scan is deliberately diagnostic rather than
+   authoritative.  The final-ELF/compiler budget gate remains the acceptance
+   criterion; normal QEMU runs retain this bounded observation as evidence
+   that the exercised path stayed above the declared safety margin. */
+static void initialize_entry_stack_high_water(void) {
+    volatile uint64_t *cursor = (volatile uint64_t *)__entry_stack_start;
+    volatile uint64_t *past = (volatile uint64_t *)__entry_stack_end;
+    while (cursor < past) *cursor++ = entry_stack_high_water_pattern;
+}
+
+static __attribute__((noinline)) void report_entry_stack_high_water(
+    const char *path) {
+    volatile uint64_t *cursor = (volatile uint64_t *)__entry_stack_start;
+    volatile uint64_t *past = (volatile uint64_t *)__entry_stack_end;
+    while (cursor < past && *cursor == entry_stack_high_water_pattern) ++cursor;
+    uint64_t used = (uint64_t)__entry_stack_end - (uint64_t)cursor;
+    uint64_t usable = (uint64_t)__entry_stack_end -
+        (uint64_t)__entry_stack_start;
+    if (used < 176 || used > usable || usable - used < 4096)
+        fail("entry-stack-high-water");
+    serial_puts("LEANOS/11 ENTRY-HIGH-WATER path="); serial_puts(path);
+    serial_puts(" observed-bytes="); serial_u64(used);
+    serial_puts(" usable-bytes="); serial_u64(usable);
+    serial_puts(" margin-bytes="); serial_u64(usable - used);
+    serial_puts(" authority=diagnostic result=PASS\n");
+}
+#endif
 /* Vector 6/7 traverse the shared normalized entry boundary and bounded
    generated cleanup/peer decision.  The dedicated denial scenario publishes
    the selected fresh peer through the sole validated user-return path. */
@@ -1109,6 +1156,9 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if (got != oracle_vectors[ORACLE_INDEX_BLOCKING_IPC_DELIVER_B].expected || arg2 != 1)
             fail("blocking-ipc-model-delivery");
         serial_puts("LEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\n");
+#ifdef LEANOS_ENTRY_HIGH_WATER
+        report_entry_stack_high_water("syscall");
+#endif
         serial_puts("LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1\n");
         finish(0x10);
     }
@@ -1126,6 +1176,9 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             saved_context_a[16] != 0x23 || saved_context_a[19] != 0x1b ||
             saved_context_b[16] != 0x23 || saved_context_b[19] != 0x1b)
             fail("saved-context");
+#ifdef LEANOS_ENTRY_HIGH_WATER
+        report_entry_stack_high_water("timer-context-switch");
+#endif
         serial_puts("LEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate\n");
         serial_puts("LEANOS/5 FINAL status=PASS ticks=2\n");
         finish(0x10);
@@ -1281,6 +1334,14 @@ static void arm_timer(void) {
 
 uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
                             uint64_t fault_address) {
+    if ((saved_cs & 3u) == 3u && error == 5u &&
+        rip == (uint64_t)user_a_fault_instruction && fault_address == 0u) {
+#ifdef LEANOS_ENTRY_HIGH_WATER
+        report_entry_stack_high_water("user-page-fault");
+#endif
+        serial_puts("LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS\n");
+        return (uint64_t)user_a_fault_recovered;
+    }
     if (supervisor_probe == 1 && (saved_cs & 3u) == 0u && error == 3u &&
         rip == (uint64_t)wp_probe_instruction &&
         fault_address == (uint64_t)wp_probe_target) {

@@ -14,12 +14,12 @@ open LeanOS FrameAllocator BootMemoryMap
 
 inductive Identity where
   | lowMemory | loadedImage | pageTables | descriptorTables | kernelStacks
-  | embeddedUsers | multibootInfo
+  | ordinaryEntryGuard | ordinaryEntryStack | embeddedUsers | multibootInfo
   deriving BEq, DecidableEq, Repr
 
 def requiredIdentities : List Identity :=
   [.lowMemory, .loadedImage, .pageTables, .descriptorTables, .kernelStacks,
-   .embeddedUsers, .multibootInfo]
+   .ordinaryEntryGuard, .ordinaryEntryStack, .embeddedUsers, .multibootInfo]
 
 inductive Lifetime where | permanent | bootstrap
   deriving BEq, DecidableEq, Repr
@@ -41,7 +41,7 @@ structure Interval where
 
 inductive Error where
   | missingIdentity | duplicateIdentity | zeroLength | addressOverflow
-  | outsidePhysicalLimit | tooManyReservations | inconsistentImage
+  | outsidePhysicalLimit | tooManyReservations | inconsistentImage | ordinaryEntryOverlap
   | emptyOutput | normalizationInvariant | allocatorRejected
   deriving BEq, DecidableEq, Repr
 
@@ -76,6 +76,27 @@ def validateManifest (manifest : List Reservation) : Except Error (List Interval
           interval.firstFrame + interval.frameCount ≤ loaded.firstFrame + loaded.frameCount)
   then throw .inconsistentImage
   pure intervals
+
+def Interval.disjoint (left right : Interval) : Bool :=
+  left.firstFrame + left.frameCount ≤ right.firstFrame ||
+    right.firstFrame + right.frameCount ≤ left.firstFrame
+
+def ordinaryEntryPeer : Identity → Bool
+  | .pageTables | .descriptorTables | .kernelStacks | .embeddedUsers => true
+  | _ => false
+
+/-- The ordinary-entry identities are exact adjacent frame intervals. They may
+overlap the enclosing loaded-image reservation, but not independently owned
+page tables, descriptors, other kernel stacks, or embedded user images. -/
+def ordinaryEntrySeparated (intervals : List Interval) : Bool :=
+  match intervals.find? (·.identity == .ordinaryEntryGuard),
+      intervals.find? (·.identity == .ordinaryEntryStack) with
+  | some guard, some stack =>
+      guard.firstFrame + guard.frameCount = stack.firstFrame &&
+        guard.disjoint stack && intervals.all fun interval =>
+          !ordinaryEntryPeer interval.identity ||
+            (guard.disjoint interval && stack.disjoint interval)
+  | _, _ => false
 
 def Interval.contains (interval : Interval) (frame : Nat) : Bool :=
   interval.firstFrame ≤ frame && frame < interval.firstFrame + interval.frameCount
@@ -117,6 +138,7 @@ structure Result where
   disjoint : pairwiseDisjoint regions = true
   precedence : reservationPrecedence intervals regions = true
   firmwareSound : usableSound firmware.entries regions = true
+  ordinaryEntrySeparation : ordinaryEntrySeparated intervals = true
   allocator : State
   allocatorInit : FrameAllocator.init regions = .ok allocator
   reservationsExcluded : reservationsNonfree intervals allocator = true
@@ -130,14 +152,16 @@ def initializeAllocator (handoff : Handoff) (manifest : List Reservation) : Exce
     if hdisjoint : pairwiseDisjoint regions then
       if hprecedence : reservationPrecedence intervals regions then
         if hsound : usableSound firmware.entries regions then
-          match hinit : FrameAllocator.init regions with
-          | .error _ => throw .allocatorRejected
-          | .ok allocator =>
-            if hexcluded : reservationsNonfree intervals allocator then
-              have hnonempty' : regions.isEmpty = false := Bool.eq_false_iff.mpr hnonempty
-              pure ⟨firmware, intervals, regions, hnonempty', hshape, hdisjoint, hprecedence,
-                hsound, allocator, hinit, hexcluded⟩
-            else throw .normalizationInvariant
+          if hentry : ordinaryEntrySeparated intervals then
+            match hinit : FrameAllocator.init regions with
+            | .error _ => throw .allocatorRejected
+            | .ok allocator =>
+              if hexcluded : reservationsNonfree intervals allocator then
+                have hnonempty' : regions.isEmpty = false := Bool.eq_false_iff.mpr hnonempty
+                pure ⟨firmware, intervals, regions, hnonempty', hshape, hdisjoint, hprecedence,
+                  hsound, hentry, allocator, hinit, hexcluded⟩
+              else throw .normalizationInvariant
+          else throw .ordinaryEntryOverlap
         else throw .normalizationInvariant
       else throw .normalizationInvariant
     else throw .normalizationInvariant
@@ -162,6 +186,11 @@ theorem accepted_reservation_precedence (handoff : Handoff) (manifest : List Res
 theorem accepted_preserves_usable_soundness (handoff : Handoff) (manifest : List Reservation)
     (result : Result) (_h : initializeAllocator handoff manifest = .ok result) :
     usableSound result.firmware.entries result.regions = true := result.firmwareSound
+
+theorem accepted_separates_ordinary_entry (handoff : Handoff)
+    (manifest : List Reservation) (result : Result)
+    (_h : initializeAllocator handoff manifest = .ok result) :
+    ordinaryEntrySeparated result.intervals = true := result.ordinaryEntrySeparation
 
 /-- Initialization makes every frame in every checked reservation non-free;
 the state is published only after this executable invariant succeeds. -/
@@ -231,6 +260,10 @@ def sampleManifest : List Reservation :=
      lifetime := .permanent },
    { identity := .kernelStacks, start := 5 * pageBytes, length := pageBytes,
      lifetime := .permanent },
+   { identity := .ordinaryEntryGuard, start := 8 * pageBytes, length := pageBytes,
+     lifetime := .permanent },
+   { identity := .ordinaryEntryStack, start := 9 * pageBytes, length := pageBytes,
+     lifetime := .permanent },
    { identity := .embeddedUsers, start := 6 * pageBytes, length := 2 * pageBytes,
      lifetime := .permanent },
    { identity := .multibootInfo, start := pageBytes + 17, length := pageBytes,
@@ -249,13 +282,17 @@ def consumedLayout : Handoff := mkHandoff
 
 def twoSidedManifest : List Reservation :=
   [{ identity := .lowMemory, start := 0, length := pageBytes, lifetime := .permanent },
-   { identity := .loadedImage, start := 3 * pageBytes, length := 6 * pageBytes,
+   { identity := .loadedImage, start := 3 * pageBytes, length := 7 * pageBytes,
      lifetime := .permanent },
    { identity := .pageTables, start := 3 * pageBytes, length := pageBytes,
      lifetime := .permanent },
    { identity := .descriptorTables, start := 4 * pageBytes, length := pageBytes,
      lifetime := .permanent },
    { identity := .kernelStacks, start := 5 * pageBytes, length := pageBytes,
+     lifetime := .permanent },
+   { identity := .ordinaryEntryGuard, start := 8 * pageBytes, length := pageBytes,
+     lifetime := .permanent },
+   { identity := .ordinaryEntryStack, start := 9 * pageBytes, length := pageBytes,
      lifetime := .permanent },
    { identity := .embeddedUsers, start := 6 * pageBytes, length := 2 * pageBytes,
      lifetime := .permanent },
@@ -266,7 +303,13 @@ def twoSidedLayout : Handoff := mkHandoff
   [{ base := 0, length := 14 * pageBytes, kind := .usable }]
 
 example : (initializeAllocator layout sampleManifest).isOk = true := by native_decide
+example : ordinaryEntrySeparated (validateManifest sampleManifest).toOption.get! = true := by
+  native_decide
 example : (validateManifest (sampleManifest.drop 1)).isOk = false := by native_decide
+example : (initializeAllocator layout (sampleManifest.map fun reservation =>
+    if reservation.identity == .ordinaryEntryStack then
+      { reservation with start := 7 * pageBytes }
+    else reservation)).isOk = false := by native_decide
 example : (validateManifest
     ({ identity := .lowMemory, start := 0, length := 0, lifetime := .permanent } ::
       sampleManifest.tail)).isOk = false := by native_decide
@@ -282,9 +325,7 @@ example : (initializeAllocator consumedLayout sampleManifest).toOption.map (·.r
 example : (initializeAllocator twoSidedLayout twoSidedManifest).toOption.map (·.regions) =
     some [{ start := 0, count := 1, kind := .reserved },
       { start := 1, count := 2, kind := .usable },
-      { start := 3, count := 6, kind := .reserved },
-      { start := 9, count := 1, kind := .usable },
-      { start := 10, count := 2, kind := .reserved },
+      { start := 3, count := 9, kind := .reserved },
       { start := 12, count := 2, kind := .usable }] := by native_decide
 
 def truncatedImageManifest : List Reservation :=
@@ -293,9 +334,9 @@ def truncatedImageManifest : List Reservation :=
       { reservation with length := 7 * pageBytes }
     else reservation
 
-/-- Omitting the final loaded-image page makes frame 9 allocatable. -/
-example : ((initializeAllocator layout truncatedImageManifest).toOption.bind fun result =>
-    (allocate result.allocator 7).toOption.map (·.frame)) = some 9 := by native_decide
+/-- Omitting the final loaded-image page can no longer strand the separately
+identified ordinary-entry stack outside its enclosing image reservation. -/
+example : (initializeAllocator layout truncatedImageManifest).isOk = false := by native_decide
 
 /-- Allowing firmware to win makes the first boot-owned low-memory frame allocatable. -/
 example : ((FrameAllocator.init [{ start := 0, count := 12, kind := .usable }]).toOption.bind

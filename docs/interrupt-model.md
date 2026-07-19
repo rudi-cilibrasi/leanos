@@ -114,6 +114,114 @@ binding. Firmware PIC lines are masked when the IDT is installed; only the
 preemption scenario remaps and deliberately unmasks IRQ0, preventing a legacy
 IRQ from being confused with the dedicated vector-8 terminal protocol.
 
+## Ordinary entry-stack layout and budget contract
+
+`LeanOS.PrivilegeEntryStack` introduces the model vocabulary shared by the
+ordinary entry manifest. Byte ranges are half-open. The usable stack grows
+downward from one 16-byte-aligned exclusive `stackTop`; a one-page lower guard
+must be adjacent, absent, and disjoint from every supplied reserved interval.
+Accepted usable leaves are supervisor-writable, non-user, and non-executable.
+The model uses natural-number addresses below the 64-bit address limit, so its
+checked subtraction cannot model machine-word wraparound.
+
+Every manifest entry uses one `BudgetRequest`. Its fixed contribution accounts
+for the three- or five-word hardware frame, the optional hardware error word,
+the fifteen-register save bank, and the stub's dummy/alignment slots. The
+machine-derived boot-reachable C/generated call contribution, return-validator
+contribution, and safety margin remain explicit inputs; the model does not
+assign operations or boot scenarios private limits. `checkedRemaining` mints a
+remaining-budget fact only when the complete request fits the usable interval.
+Lean proves the subtraction equation, exact accepted stack identity and bounds,
+and that both accepted and fatal results retain the exact inbound composite
+state. An insufficient request is a typed atomic fatal result and cannot
+authorize an operation handler or return.
+
+The executable witnesses use zero machine-derived contribution solely to check
+the common fixed protocol for syscall, timer, user-page-fault, and supervisor
+diagnostic purposes. They are not a concrete production budget. The concrete
+image now places the ordinary stack in a page-aligned linker-owned 16 KiB
+`.entry_stack` interval immediately above a 4 KiB `.entry_stack_guard`; both
+ranges are half-open, and `TSS.rsp0` receives the linker's exclusive
+`__entry_stack_end`. The accepted linker-resolved page-table plan classifies
+the usable pages as supervisor-only writable/NX stack leaves and emits no leaf
+for the guard in either root. Early assembly removes that leaf from both live
+tables, while the guest decoder rejects a controlled attempt to restore it.
+Final-ELF policy checks bind the section flags, exact adjacency and sizes,
+canonical top symbol, TSS assignment, and reviewed unmapping instruction.
+
+The image compiler now emits `.su` reports for the handwritten and generated C
+objects. `scripts/entry-stack-callgraph.tsv` records the reviewed boot-reachable
+ordinary-entry paths, their user/kernel origin, hardware-error shape, and a
+4 KiB safety margin. `scripts/check-entry-stack-budget.sh` derives the prefix
+from those frame fields and the counted 15-register assembly save bank, then
+rejects a changed save count, missing or dynamic usage, unresolved indirect
+edges, cycles in a path, or any total above the 16 KiB usable interval. Its
+machine-readable report is retained with the image. In particular, a CPL3
+syscall or timer prefix is 176 bytes (40-byte hardware frame, 120-byte save
+bank, and 16-byte normalizer), rather than a manually entered constant.
+When scenario-specific compilation produces multiple static `.su` records for
+one function, the gate conservatively charges the largest reported usage;
+inconsistent static/dynamic qualifiers remain rejected.
+The extended-state image has a companion reviewed call graph for vectors 6
+and 7 through peer restoration and the sole user-return validator, so both the
+ordinary fail-stop build and the accepted denial scenario receive final-ELF
+reachability and stack-budget checks.
+CI also retains the exact reviewed call-graph snapshot, raw compiler `.su`
+files, sorted final-ELF symbols, and final disassembly beside that report.
+After the final link, the gate extracts direct and tail-call edges from the ELF,
+requires every reviewed stack contributor to be retained and reachable from
+its named entry stub, rejects indirect transfers anywhere in that reachable
+closure, and rejects every transitively reachable compiler-reported function
+that the reviewed manifest does not account for. It also counts the expanded
+register-save pushes in each final entry-stub disassembly and rejects direct or
+mutual recursion cycles in the final reachable graph. Targeted ELF fixtures
+remove one save push and introduce a two-function cycle so these gates cannot
+be satisfied by the reviewed source manifest alone.
+The extracted edges and final-ELF verdict are retained as checking evidence,
+not a proof of GCC, generated C, assembly, or the final machine path.
+
+The model-level handoff now uses `BudgetedNormalizedFrame` to bind the one
+normalized interrupt record to the budget minted by `authorize`. The binding
+accepts only matching stack identities and entry purposes, and carries the
+half-open usable bounds, canonical exclusive top, required bytes, and checked
+remaining bytes into the handler-facing record. Lean proves that an accepted
+binding retains the exact normalized frame and authoritative layout, with
+`remaining + required = usable`. This is a modeled fact; the C adapter and
+final binary correspondence remain checked evidence.
+
+The accepted normal and preemption images additionally paint the unused
+ordinary-entry stack before the first CPL3 dispatch. At each scenario's final
+accepted checkpoint they scan upward from the lower bound, require at least
+the 4 KiB static safety margin to remain untouched, and emit a bounded
+`ENTRY-HIGH-WATER` record. Both images first exercise a CPL3 read of the
+supervisor-only zero page and record the resulting error-code-5 vector-14 path
+before recovery; their final records cover the blocking-IPC syscall or the
+cumulative timer/context-switch scenario. The runner requires both records in
+order, validates their path identities and arithmetic, and retains them as a
+CI artifact. Targeted runner fixtures reject a missing, duplicate, reordered,
+mislabeled, or arithmetically inconsistent observation. This
+diagnostic can miss writes that reproduce the paint word, is cumulative rather
+than path-isolated, and does not replace the final-ELF/compiler gate. A
+kernel-origin diagnostic path does not switch through `rsp0`; a separate
+boot-stack high-water observation is therefore not claimed here.
+
+The accepted boot-reservation manifest now carries distinct
+`.ordinaryEntryGuard` and `.ordinaryEntryStack` identities. Allocator
+initialization rejects non-adjacency or overlap with page tables, descriptor
+tables, the separate double-fault stack reservation, or embedded user images;
+the enclosing loaded-image reservation intentionally contains both. A separate
+deterministic image places `RSP` at the ordinary guard boundary before raising
+a real exception. Delivery crosses the absent guard and escalates to vector 8
+on IST1. Its terminal record requires the IST1 range and canaries, both
+ordinary-stack boundary canaries, the absent guard, no ordinary handler, and no
+return. The shared evidence matrix retains that image, ELF, map, and serial log;
+adversarial runner fixtures reject a direct-handler claim, mapped guard, stale
+`rsp0`, adjacent write, partial or reordered output, reset, triple fault, and
+hang. This is checked x86/QEMU evidence rather than a refinement proof. The stable
+`SC-PRIVILEGE-ENTRY-STACK` claim covers only accepted authorization in this
+Lean layout/budget model. [ADR 0010](adr/0010-guarded-privilege-entry-stack.md)
+records the separate checked machine evidence and its trusted boundary.
+
 ## Proof, tests, and trusted assumptions
 
 The proved claims apply only to the Lean transition model: deterministic vector

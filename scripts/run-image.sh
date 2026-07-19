@@ -33,6 +33,7 @@ else
 fi
 image="${1:-$default_image}"
 log="${LEANOS_SERIAL_LOG:-build/boot/serial.log}"
+high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 and coreutils=9.4-3ubuntu6.2" >&2; exit 1; }; done
 [[ "$limit" =~ ^[1-9][0-9]*$ ]] || { echo "error: timeout must be a positive integer" >&2; exit 1; }
@@ -86,6 +87,7 @@ elif [[ "$scenario" == preemption ]]; then
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
   'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' \
+  'LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS' \
   'LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0' \
   'LEANOS/5 TIMER vector=32 source=pit mode=bounded-one-shot sequence=1 origin=cpl3 accepted=1' \
   'LEANOS/5 CONTEXT old-subject=1 old-address-space=1 new-subject=2 new-address-space=2 policy=round-robin' \
@@ -122,6 +124,7 @@ fi
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
   'LEANOS/6 COPY direction=out length=4 cross-page=0 validated=1 user-df=1 kernel-df=cleared destination=verified-by-cpl3 ac=cleared result=PASS' \
+  'LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS' \
   'LEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1' \
   'LEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
@@ -149,7 +152,8 @@ paging_specs=(
   'flip-present B pt' 'flip-user B pt' 'flip-writable B pt'
   'flip-nx B pt' 'wrong-frame B pt' 'ancestor-pointer B pml4'
   'ancestor-flags B pdpt' 'swapped-user-leaves B pt'
-  'extra-mapping B pt' 'omitted-mapping B pt' 'wrong-cr3 A cr3'
+  'extra-mapping B pt' 'entry-guard-mapping B pt'
+  'omitted-mapping B pt' 'wrong-cr3 A cr3'
 )
 if [[ ${#paging_fixtures[@]} -ne ${#paging_specs[@]} ]]; then
   echo "failure_class=page-table-fixtures: complete live-mutation matrix not observed" >&2
@@ -163,6 +167,32 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
   fi
 done
 sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
+if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
+  final_high_water_path="syscall"
+  [[ "$scenario" == preemption ]] && final_high_water_path="timer-context-switch"
+  mkdir -p "$(dirname "$high_water_artifact")"
+  grep '^LEANOS/11 ENTRY-HIGH-WATER ' "$log" > "$high_water_artifact" || {
+    echo "failure_class=entry-stack-high-water: observation missing" >&2; exit 1;
+  }
+  mapfile -t high_water_lines < "$high_water_artifact"
+  if [[ ${#high_water_lines[@]} -ne 2 ]]; then
+    echo "failure_class=entry-stack-high-water: missing or duplicate observation" >&2
+    exit 1
+  fi
+  expected_high_water_paths=(user-page-fault "$final_high_water_path")
+  for ((i = 0; i < 2; ++i)); do
+    if [[ ! "${high_water_lines[i]}" =~ ^LEANOS/11\ ENTRY-HIGH-WATER\ path=${expected_high_water_paths[i]}\ observed-bytes=([0-9]+)\ usable-bytes=16384\ margin-bytes=([0-9]+)\ authority=diagnostic\ result=PASS$ ]]; then
+      echo "failure_class=entry-stack-high-water: malformed or reordered observation" >&2
+      exit 1
+    fi
+    observed="${BASH_REMATCH[1]}"; margin="${BASH_REMATCH[2]}"
+    if (( observed < 176 || observed + margin != 16384 || margin < 4096 )); then
+      echo "failure_class=entry-stack-high-water: invalid observed bound" >&2
+      exit 1
+    fi
+  done
+  sed -i '/^LEANOS\/11 ENTRY-HIGH-WATER /d' "$without_allocation"
+fi
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
 if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
       "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||

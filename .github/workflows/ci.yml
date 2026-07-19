@@ -96,6 +96,7 @@ jobs:
             build/boot/leanos-0.1.0-x86_64-extended-state-avx.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-peer-pke.iso
             build/boot/leanos-0.1.0-x86_64-double-fault.iso
+            build/boot/leanos-0.1.0-x86_64-entry-stack-overflow.iso
             build/boot/leanos-0.1.0-x86_64-entry-adversarial.iso
             build/boot/leanos.elf
             build/boot/leanos-preemption.elf
@@ -106,6 +107,8 @@ jobs:
             build/boot/leanos-extended-state-avx.elf
             build/boot/leanos-extended-state-peer-pke.elf
             build/boot/leanos-double-fault.elf
+            build/boot/leanos-entry-stack-overflow.elf
+            build/boot/leanos-entry-stack-overflow.map
             build/boot/leanos-entry-adversarial.elf
             build/boot/leanos.map
             build/boot/leanos-preemption.map
@@ -138,9 +141,21 @@ jobs:
             build/boot/extended-state-avx.serial.log
             build/boot/extended-state-peer-pke.serial.log
             build/boot/double-fault.serial.log
+            build/boot/entry-stack-overflow.serial.log
             build/boot/entry-adversarial.serial.log
             build/boot/entry-policy-report.txt
             build/boot/entry-policy-fixtures.log
+            build/boot/entry-stack-budget.txt
+            build/boot/entry-stack-callgraph.tsv
+            build/boot/entry-stack-extended-callgraph.tsv
+            build/boot/entry-stack-symbols.txt
+            build/boot/entry-stack-disassembly.txt
+            build/boot/entry-stack-final-elf.txt
+            build/boot/entry-stack-final-elf-edges.tsv
+            build/boot/entry-stack-extended-final-elf.txt
+            build/boot/entry-stack-extended-final-elf-edges.tsv
+            build/boot/entry-stack-high-water-*.txt
+            build/boot/*.su
             build/boot/extended-state.disassembly.txt
             build/boot/extended-state-mmx.disassembly.txt
             build/boot/extended-state-sse.disassembly.txt

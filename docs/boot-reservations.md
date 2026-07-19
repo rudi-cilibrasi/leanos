@@ -8,16 +8,24 @@ or duplicate identities, out-of-policy physical addresses, and inconsistent
 containment before any allocator state is returned.
 
 The vocabulary covers low-memory policy, the complete loaded ELF/BSS image,
-page tables, descriptor tables (GDT/IDT/TSS), kernel and privilege-entry
-stacks, embedded user images/stacks, and the live Multiboot2 information block.
+page tables, descriptor tables (GDT/IDT/TSS), other kernel stacks, the ordinary
+privilege-entry guard and usable stack as distinct identities, embedded user
+images/stacks, and the live Multiboot2 information block.
 The overlapping in-image entries make the reviewable inventory explicit. The
 Multiboot2 entry is bootstrap-lifetime data; this slice conservatively keeps it
 reserved. Reclamation requires a separate proved transition after its last
 reader.
 
+Allocator initialization additionally requires the ordinary-entry guard to be
+immediately below the ordinary-entry stack after frame rounding. Both must be
+disjoint from page-table, descriptor-table, other-kernel-stack, and embedded-user
+reservations. They intentionally remain contained by the enclosing loaded-image
+reservation, which is an inventory parent rather than an independent object.
+
 The Lean model proves deterministic initialization and carries checked
 witnesses for nonempty normalized output, unconditional reservation precedence,
-the normalized firmware map's usable-frame soundness, and allocator acceptance. The allocator theorem
+ordinary-entry separation, the normalized firmware map's usable-frame soundness,
+and allocator acceptance. The allocator theorem
 shows a successful allocation selected an initially free frame; precedence
 therefore excludes every manifested reservation. Executable examples cover an
 image inside usable RAM, touching/overlapping reservations, an unaligned

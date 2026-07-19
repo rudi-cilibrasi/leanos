@@ -38,7 +38,7 @@ branch_ud_cleanup() { sed -i '/^isr6:/,/^\.global isr7/ s/^[[:space:]]*clac$/   
 ud_before_normalize() { sed -i '/NORMALIZE_ENTRY 6, 0/i\    call extended_state_denial_handler' "$tmp/boot.S"; }
 nm_before_normalize() { sed -i '/NORMALIZE_ENTRY 7, 0/i\    call extended_state_denial_handler' "$tmp/boot.S"; }
 c_before_normalize() { sed -i '/NORMALIZE_ENTRY 128, 0/i\    call syscall_handler' "$tmp/boot.S"; }
-wrong_tss_stack() { sed -i 's/tss.rsp0 = (uint64_t)(entry_stack + sizeof(entry_stack));/tss.rsp0 = (uint64_t)boot_stack_top;/' "$tmp/kernel.c"; }
+wrong_tss_stack() { sed -i 's/tss.rsp0 = (uint64_t)__entry_stack_end;/tss.rsp0 = (uint64_t)boot_stack_top;/' "$tmp/kernel.c"; }
 
 run_fixture wrong-target 'vector=14 field=target-or-dpl' wrong_target
 run_fixture wrong-ud-target 'vector=6 field=target-or-dpl' wrong_ud_target

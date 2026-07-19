@@ -6,6 +6,7 @@ import LeanOS.X86PageTable
 import LeanOS.Syscall
 import LeanOS.FailStop
 import LeanOS.InterruptEntry
+import LeanOS.PrivilegeEntryStack
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 
@@ -107,6 +108,28 @@ theorem interrupt_entry_context_binding entry raw context :
     (InterruptEntry.makeNormalized entry raw context).activeCr3 = context.activeCr3 ∧
     (InterruptEntry.makeNormalized entry raw context).stackIdentity = context.stackIdentity := by
   exact InterruptEntry.makeNormalized_binds_context entry raw context
+
+/-- SC-PRIVILEGE-ENTRY-STACK: accepted ordinary-entry stack authorization
+names the valid guarded layout exactly and carries a checked byte remainder
+without changing the modeled composite state. -/
+theorem privilege_entry_stack_budget_sound (State : Type)
+    layout reserved request (state : State) budget (acceptedState : State)
+    (haccepted : PrivilegeEntryStack.authorize layout reserved request state =
+      .accepted budget acceptedState) :
+    PrivilegeEntryStack.layoutValid layout reserved = true ∧
+      acceptedState = state ∧
+      budget.stackIdentity = layout.stackIdentity ∧
+      budget.stackFirst = layout.usable.first ∧
+      budget.stackPastLast = layout.usable.pastLast ∧
+      budget.stackTop = layout.stackTop ∧
+      budget.remainingBytes + budget.requiredBytes =
+        PrivilegeEntryStack.usableBytes layout := by
+  have hconditions := PrivilegeEntryStack.accepted_contract_conditions State
+    layout reserved request state budget acceptedState haccepted
+  have hbudget := PrivilegeEntryStack.accepted_budget_sound State layout reserved
+    request state budget acceptedState haccepted
+  exact ⟨hconditions.1, hbudget.1, hbudget.2.1, hbudget.2.2.1,
+    hbudget.2.2.2.1, hbudget.2.2.2.2.1, hbudget.2.2.2.2.2.2⟩
 
 /-- SC-USER-RETURN-CONFINEMENT: an accepted return attests the complete
 kernel-selected frame/context tuple and its privilege-critical fields. -/
