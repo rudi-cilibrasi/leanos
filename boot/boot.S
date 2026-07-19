@@ -606,6 +606,7 @@ isr7:
     mov 120(%rsp), %rdx
     call extended_state_denial_handler
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    jmp extended_state_restore_peer
 extended_state_restore_peer:
     test %rax, %rax
     je 1f

@@ -35,12 +35,17 @@ while IFS=$'\t' read -r location bytes qualifier extra; do
   [[ -n "$location" ]] || continue
   function_name="${location##*:}"
   [[ "$bytes" =~ ^[0-9]+$ ]] || continue
-  if [[ -n "${usage[$function_name]+set}" && "${usage[$function_name]}" != "$bytes" ]]; then
-    echo "error: function=$function_name has variant stack usage ${usage[$function_name]} and $bytes" >&2
-    exit 1
+  if [[ -n "${usage[$function_name]+set}" && "${usage[$function_name]}" -gt "$bytes" ]]; then
+    bytes="${usage[$function_name]}"
   fi
   usage[$function_name]="$bytes"
-  usage_kind[$function_name]="${qualifier:-unknown}${extra:+,$extra}"
+  report_kind="${qualifier:-unknown}${extra:+,$extra}"
+  if [[ -n "${usage_kind[$function_name]+set}" &&
+        "${usage_kind[$function_name]}" != "$report_kind" ]]; then
+    usage_kind[$function_name]="variant"
+  else
+    usage_kind[$function_name]="$report_kind"
+  fi
 done < <(cat "${reports[@]}")
 
 paths=0

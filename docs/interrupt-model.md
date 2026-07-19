@@ -159,6 +159,13 @@ edges, cycles in a path, or any total above the 16 KiB usable interval. Its
 machine-readable report is retained with the image. In particular, a CPL3
 syscall or timer prefix is 176 bytes (40-byte hardware frame, 120-byte save
 bank, and 16-byte normalizer), rather than a manually entered constant.
+When scenario-specific compilation produces multiple static `.su` records for
+one function, the gate conservatively charges the largest reported usage;
+inconsistent static/dynamic qualifiers remain rejected.
+The extended-state image has a companion reviewed call graph for vectors 6
+and 7 through peer restoration and the sole user-return validator, so both the
+ordinary fail-stop build and the accepted denial scenario receive final-ELF
+reachability and stack-budget checks.
 CI also retains the exact reviewed call-graph snapshot, raw compiler `.su`
 files, sorted final-ELF symbols, and final disassembly beside that report.
 After the final link, the gate extracts direct and tail-call edges from the ELF,

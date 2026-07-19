@@ -147,6 +147,8 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
+cp scripts/entry-stack-extended-callgraph.tsv \
+  "$build/entry-stack-extended-callgraph.tsv"
 ./scripts/check-entry-stack-budget.sh | tee "$build/entry-stack-budget.txt"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -c boot/boot.S -o "$build/boot.o"
@@ -281,7 +283,8 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/boot-entry-stack-overflow.o" "$build/kernel-double-fault.o" \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
-  "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o"
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+  "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-entry-adversarial-prelink.map" \
   -o "$build/leanos-entry-adversarial-prelink.elf" "$build/boot-entry-adversarial.o" \
@@ -566,7 +569,8 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/boot-entry-stack-overflow.o" "$build/kernel-entry-stack-overflow.o" \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
-  "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o"
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+  "$build/ExtendedState.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
   -o build/boot/leanos-double-fault-guard-mapped.elf \
@@ -657,6 +661,10 @@ objdump -d --no-show-raw-insn "$build/leanos.elf" \
 LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos.elf" \
   | tee "$build/entry-stack-final-elf.txt"
+LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
+  LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-extended-final-elf-edges.tsv" \
+  ./scripts/check-entry-stack-budget.sh "$build/leanos-extended-state.elf" \
+  | tee "$build/entry-stack-extended-final-elf.txt"
 ./scripts/check-image-policy.sh "$build/leanos.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state.elf"

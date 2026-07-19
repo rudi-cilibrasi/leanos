@@ -37,11 +37,17 @@ run_rejected unknown 'missing-stack-usage=missing'
 printf 'fixture.c:6:1:dynamic_leaf\t16\tdynamic,bounded\n' >>"$tmp/usage.su"
 printf 'dynamic\tkernel\t0\t0\tfixture_root\troot;dynamic_leaf\n' >"$tmp/dynamic.tsv"
 run_rejected dynamic 'function=dynamic_leaf stack-usage=dynamic,bounded'
+printf '%s\n' \
+  $'fixture.c:7:1:variant_kind\t8\tstatic' \
+  $'variant.c:2:1:variant_kind\t16\tdynamic,bounded' >>"$tmp/usage.su"
+printf 'variant-kind\tkernel\t0\t0\tfixture_root\tvariant_kind\n' >"$tmp/variant-kind.tsv"
+run_rejected variant-kind 'function=variant_kind stack-usage=variant'
 
+printf 'variant.c:1:1:leaf\t24\tstatic\n' >>"$tmp/usage.su"
 printf 'ok\tkernel\t0\t0\tfixture_root\troot;leaf\n' >"$tmp/ok.tsv"
 LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/ok.tsv" \
-  LEANOS_ENTRY_STACK_USABLE_BYTES=184 ./scripts/check-entry-stack-budget.sh >"$tmp/ok.log"
-grep -Fq 'path=ok prefix=160 compiler=24 safety=0 total=184 usable=184 margin=0' "$tmp/ok.log"
+  LEANOS_ENTRY_STACK_USABLE_BYTES=192 ./scripts/check-entry-stack-budget.sh >"$tmp/ok.log"
+grep -Fq 'path=ok prefix=160 compiler=32 safety=0 total=192 usable=192 margin=0' "$tmp/ok.log"
 
 awk 'BEGIN { inside = 0; changed = 0 }
   /^[.]macro SAVE$/ { inside = 1 }
@@ -93,7 +99,7 @@ EOF
 gcc -c "$tmp/fixture.S" -o "$tmp/fixture.o"
 ld --build-id=none -o "$tmp/fixture.elf" -e fixture_root "$tmp/fixture.o"
 LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/ok.tsv" \
-  LEANOS_ENTRY_STACK_USABLE_BYTES=184 \
+  LEANOS_ENTRY_STACK_USABLE_BYTES=192 \
   LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$tmp/edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$tmp/fixture.elf" >"$tmp/elf-ok.log"
 grep -Fq $'fixture_root\troot' "$tmp/edges.tsv"
@@ -103,7 +109,7 @@ grep -Fq 'path=ok final-elf-root=fixture_root save-register-pushes=15 reviewed-f
 run_rejected_elf() {
   local name="$1" diagnostic="$2"
   if LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/$name.tsv" \
-      LEANOS_ENTRY_STACK_USABLE_BYTES=192 ./scripts/check-entry-stack-budget.sh \
+      LEANOS_ENTRY_STACK_USABLE_BYTES=200 ./scripts/check-entry-stack-budget.sh \
       "$tmp/fixture.elf" >"$tmp/$name-elf.log" 2>&1; then
     echo "error: final-ELF fixture '$name' unexpectedly passed" >&2; exit 1
   fi
