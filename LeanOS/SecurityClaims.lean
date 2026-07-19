@@ -192,6 +192,24 @@ theorem composite_gate_control_preserves_runtimeWellFormed state purpose
       hstate,
     FailStop.gate_restart_preserves_runtimeWellFormed state hstate⟩
 
+/-- SC-COMPOSITE-MAPPING-WF: both kernel-confined raw mapping operations
+preserve the complete runtime invariant in every execution mode. -/
+theorem composite_gate_mapping_preserves_runtimeWellFormed state slot page permissions
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.map slot page permissions)).state ∧
+      FailStop.RuntimeWellFormed (FailStop.gate state (.unmap page)).state := by
+  exact ⟨FailStop.map_operationPreservesRuntimeWellFormed slot page permissions state hstate,
+    FailStop.unmap_operationPreservesRuntimeWellFormed page state hstate⟩
+
+/-- SC-COMPOSITE-SYSCALL-WF: every attacker-controlled fixed-width syscall
+tuple preserves the complete runtime invariant; privileged caller and address
+space selection remain projections of the authoritative execution state. -/
+theorem composite_gate_syscall_preserves_runtimeWellFormed state call
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed (FailStop.gate state (.syscall call)).state := by
+  exact FailStop.syscall_operationPreservesRuntimeWellFormed call state hstate
+
 /-- SC-INTERRUPT-ENTRY-BINDING: every normalized record constructor copies
 authority-bearing context fields from the kernel-owned input. -/
 theorem interrupt_entry_context_binding entry raw context :

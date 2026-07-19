@@ -750,12 +750,27 @@ private def installTransfers (state : CompositeState)
       transfers }
     { state.lifecycle with capabilities := transfers.capabilities }
 
-private def lifecycleFromVirtualMemory (lifecycle : SubjectLifecycle.State)
-    (virtualMemory : VirtualMapping.State) : SubjectLifecycle.State :=
-  { lifecycle with
-    capabilities := virtualMemory.memory.capabilities
-    addressOwner := virtualMemory.owner
+/-- Publish a mapping-only transition without running the general lifecycle
+synchronizer.  Map and unmap preserve the memory registry and address-space
+owners, so rebuilding those projections would be both unnecessary and capable
+of hiding an invalid pre-state. -/
+private def installVirtualMemory (state : CompositeState)
+    (virtualMemory : VirtualMapping.State) (translations : TLB.State) : CompositeState :=
+  let lifecycle := { state.lifecycle with
     mapping := fun space page => (virtualMemory.mappings space page).map (·.object) }
+  let scheduler := { state.scheduler with lifecycle }
+  { state with
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle }
+      returnAuthorityArmed := false }
+    scheduler
+    preemption := { state.preemption with scheduler }
+    virtualMemory
+    ipc := { state.ipc with virtualMemory }
+    lifecycle
+    resumable := { state.resumable with
+      scheduler
+      translations := { translations with virtual := virtualMemory } } }
 
 theorem installLifecycle_coherent state lifecycle :
     (installLifecycle state lifecycle).Coherent := by
@@ -773,6 +788,81 @@ theorem installLifecycle_coherent state lifecycle :
         simp [hsource] at hmailbox
         rw [← hmailbox.2]
         exact hmailbox.1.2
+
+private theorem installVirtualMemory_preserves_runtimeWellFormed state virtualMemory translations
+    (hstate : RuntimeWellFormed state)
+    (hmemory : virtualMemory.memory = state.virtualMemory.memory)
+    (howner : virtualMemory.owner = state.virtualMemory.owner)
+    (hvirtual : VirtualMapping.LifecycleWellFormed virtualMemory)
+    (htlb : TLB.Coherent translations)
+    (hactive : translations.active = state.resumable.translations.active) :
+    RuntimeWellFormed (installVirtualMemory state virtualMemory translations) := by
+  rcases hstate with
+    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, _hvirtual, hipc,
+      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
+  rcases hcoherent with
+    ⟨hexecutionCoherent, hschedulerCoherent, hpreemptionCoherent,
+      hcapabilitiesCoherent, hvirtualCapabilitiesCoherent,
+      hipcVirtualCoherent, hipcCapabilitiesCoherent,
+      hresumableSchedulerCoherent, hresumableVirtualCoherent,
+      htransfersCoherent, hauthorityCoherent, hdeadMailbox, hliveSender⟩
+  have hcapabilitiesVirtual : virtualMemory.memory.capabilities = state.lifecycle.capabilities := by
+    rw [hmemory, hvirtualCapabilitiesCoherent]
+  have hownerLifecycle : virtualMemory.owner = state.lifecycle.addressOwner := by
+    have hold := hresumable.2.2.2.2.2.2.1.1
+    rw [hresumableVirtualCoherent, hresumableSchedulerCoherent,
+      hschedulerCoherent] at hold
+    rw [howner]
+    exact hold
+  rcases hexecution with ⟨_hcore, hbound, hmode⟩
+  have hlifecycle' : SubjectLifecycle.WellFormed
+      { state.lifecycle with
+        mapping := fun space page => (virtualMemory.mappings space page).map (·.object) } := by
+    simpa [SubjectLifecycle.WellFormed] using hlifecycle
+  rcases hscheduler with ⟨_hschedulerLifecycle, hreadyNodup, hreadyCapacity,
+    hreadyValid, hcurrentValid⟩
+  simp only [Scheduler.ownsAddressSpace] at hreadyValid hcurrentValid
+  rw [hschedulerCoherent] at hreadyValid hcurrentValid
+  have hscheduler' : Scheduler.WellFormed
+      { state.scheduler with lifecycle :=
+        { state.lifecycle with
+          mapping := fun space page => (virtualMemory.mappings space page).map (·.object) } } := by
+    refine ⟨hlifecycle', hreadyNodup, hreadyCapacity, ?_, ?_⟩
+    · simpa [Scheduler.ownsAddressSpace] using hreadyValid
+    · simpa [Scheduler.ownsAddressSpace] using hcurrentValid
+  refine ⟨?_, ?_, ?_, hcapabilities, hvirtual, ?_, ?_, ?_, ?_, htransfers, ?_, ?_⟩
+  · refine ⟨rfl, rfl, rfl, hcapabilitiesCoherent, ?_, rfl, ?_, rfl, rfl,
+      htransfersCoherent, ?_, hdeadMailbox, hliveSender⟩
+    · exact hcapabilitiesVirtual
+    · exact hipcCapabilitiesCoherent
+    · exact hauthorityCoherent
+  · exact ⟨hlifecycle', by simp [installVirtualMemory], hmode⟩
+  · exact hlifecycle'
+  · exact ⟨hvirtual, hipc.2⟩
+  · exact hscheduler'
+  · rcases hpreemption with ⟨_, hticks⟩
+    exact ⟨hscheduler', hticks⟩
+  · rcases hresumable with
+      ⟨_, hcapacity, hunique, hvalid, habsent, hagreement,
+        htranslation, _hvirtualAgreement, hkinds, _htlb⟩
+    simp only [ResumablePreemption.validContext] at hvalid
+    simp only [ResumablePreemption.ReadyContextAgreement] at hagreement
+    simp only [ResumablePreemption.TranslationAgreement] at htranslation
+    rw [hresumableSchedulerCoherent, hschedulerCoherent] at hvalid habsent hagreement htranslation
+    simp only [ResumablePreemption.ResourceKindAgreement] at hkinds
+    rw [hresumableSchedulerCoherent, hschedulerCoherent] at hkinds
+    refine ⟨?_, hcapacity, hunique, ?_, ?_, ?_, ?_, ?_, ?_, htlb⟩
+    · exact hscheduler'
+    · simpa [installVirtualMemory, ResumablePreemption.validContext,
+        hownerLifecycle] using hvalid
+    · simpa [installVirtualMemory] using habsent
+    · simpa [installVirtualMemory, ResumablePreemption.ReadyContextAgreement] using hagreement
+    · refine ⟨hownerLifecycle, ?_⟩
+      simpa [installVirtualMemory, hactive] using htranslation.2
+    · exact ⟨hcapabilitiesVirtual, hvirtual⟩
+    · simpa [installVirtualMemory, ResumablePreemption.ResourceKindAgreement] using hkinds
+  · simpa [installVirtualMemory] using hhalted
+  · simp [installVirtualMemory]
 
 theorem installLifecycle_clears_retired_mailbox state lifecycle object
     (hdead : lifecycle.capabilities.objects object ≠ true) :
@@ -965,9 +1055,15 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
               -- Translation checks do not mutate virtual memory; do not run a
               -- synchronization helper that could mask an invalid pre-state.
               selectLiveReturnAuthority state .syscallResume
+          | .ok (.unmap page) =>
+              let translations := TLB.invalidatePage
+                { state.resumable.translations with virtual := outcome.state }
+                state.execution.core.context.activeAddressSpace page
+              let installed := installVirtualMemory state outcome.state translations
+              selectLiveReturnAuthority installed .syscallResume
           | _ =>
-              let installed := installLifecycle { state with virtualMemory := outcome.state }
-                (lifecycleFromVirtualMemory state.lifecycle outcome.state)
+              let translations := { state.resumable.translations with virtual := outcome.state }
+              let installed := installVirtualMemory state outcome.state translations
               selectLiveReturnAuthority installed .syscallResume
   | .preempt frame =>
       let entry := dispatchHardware state.execution frame
@@ -1034,8 +1130,9 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
         state.execution.core.context.activeAddressSpace page permissions
       match outcome.result with
       | .rejected _ => state
-      | .accepted => installLifecycle { state with virtualMemory := outcome.state }
-          (lifecycleFromVirtualMemory state.lifecycle outcome.state)
+      | .accepted =>
+          installVirtualMemory state outcome.state
+            { state.resumable.translations with virtual := outcome.state }
   | .unmap page =>
       let outcome := VirtualMapping.unmap state.virtualMemory
         state.execution.core.context.currentSubject
@@ -1046,11 +1143,7 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
           let translations := TLB.invalidatePage
             { state.resumable.translations with virtual := outcome.state }
             state.execution.core.context.activeAddressSpace page
-          installLifecycle
-            { state with
-              virtualMemory := outcome.state
-              resumable := { state.resumable with translations } }
-          (lifecycleFromVirtualMemory state.lifecycle outcome.state)
+          installVirtualMemory state outcome.state translations
   | .createSubject subject =>
       let outcome := SubjectLifecycle.create state.lifecycle subject
       match outcome.result with
@@ -2272,6 +2365,39 @@ theorem map_result_sound state slot page permissions
           state.execution.core.context.activeAddressSpace page permissions).result) := by
   simp [gate, hmode, operationReply]
 
+/-- Accepted mapping publishes only the changed mapping projection.  Memory,
+address-space ownership, endpoint state, and every unrelated runtime resource
+remain the authoritative pre-state, while all mapping consumers observe the
+exact subsystem post-state. -/
+theorem gate_map_accepted_preserves_runtimeWellFormed state slot page permissions next
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : VirtualMapping.map state.virtualMemory
+      state.execution.core.context.currentSubject slot
+      state.execution.core.context.activeAddressSpace page permissions =
+        { state := next, result := .accepted }) :
+    RuntimeWellFormed (gate state (.map slot page permissions)).state ∧
+      (gate state (.map slot page permissions)).result = .completed (.map .accepted) := by
+  have hmemory := VirtualMapping.map_memory state.virtualMemory
+    state.execution.core.context.currentSubject slot
+    state.execution.core.context.activeAddressSpace page permissions
+  have howner := VirtualMapping.map_owner state.virtualMemory
+    state.execution.core.context.currentSubject slot
+    state.execution.core.context.activeAddressSpace page permissions
+  have hvirtual := VirtualMapping.map_preserves_lifecycleWellFormed
+    state.virtualMemory state.execution.core.context.currentSubject slot
+    state.execution.core.context.activeAddressSpace page permissions hstate.2.2.2.2.1
+  rw [haccepted] at hmemory howner hvirtual
+  let translations : TLB.State := { state.resumable.translations with virtual := next }
+  have htlb : TLB.Coherent translations := by
+    simpa [translations, TLB.Coherent] using
+      hstate.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+  have hpreserved := installVirtualMemory_preserves_runtimeWellFormed
+    state next translations hstate hmemory howner hvirtual htlb rfl
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted, translations] using hpreserved
+  · simp [gate, hmode, operationReply, haccepted]
+
 /-- An accepted unmap updates the authoritative virtual-memory projection and
 invalidates the matching entry in the owned resumable-context TLB before the
 new lifecycle is published.  The composite synchronization step cannot retain
@@ -2283,36 +2409,52 @@ theorem gate_unmap_accepted_invalidates_tlb state page next
       state.execution.core.context.currentSubject
       state.execution.core.context.activeAddressSpace page =
         { state := next, result := .accepted })
-    (htlb : TLB.Coherent state.resumable.translations) :
+    (hstate : RuntimeWellFormed state) :
     (gate state (.unmap page)).result = .completed (.unmap .accepted) ∧
+      RuntimeWellFormed (gate state (.unmap page)).state ∧
       (gate state (.unmap page)).state.Coherent ∧
       TLB.Coherent (gate state (.unmap page)).state.resumable.translations ∧
       ∀ context, TLB.lookup
         (gate state (.unmap page)).state.resumable.translations.entries
         { addressSpace := state.execution.core.context.activeAddressSpace, page }
         context = none := by
-  have hcoherent :
-      (installLifecycle
-        { state with
-          virtualMemory := next
-          resumable := { state.resumable with
-            translations := TLB.invalidatePage
-              { state.resumable.translations with virtual := next }
-              state.execution.core.context.activeAddressSpace page } }
-        (lifecycleFromVirtualMemory state.lifecycle next)).Coherent :=
-    installLifecycle_coherent _ _
+  have hmemory : next.memory = state.virtualMemory.memory := by
+    have h := VirtualMapping.unmap_memory state.virtualMemory
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page
+    rw [haccepted] at h
+    exact h
+  have howner : next.owner = state.virtualMemory.owner := by
+    have h := VirtualMapping.unmap_owner state.virtualMemory
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page
+    rw [haccepted] at h
+    exact h
+  have hvirtual := VirtualMapping.unmap_preserves_lifecycleWellFormed
+    state.virtualMemory state.execution.core.context.currentSubject
+    state.execution.core.context.activeAddressSpace page hstate.2.2.2.2.1
+  rw [haccepted] at hvirtual
+  let translations := TLB.invalidatePage
+    { state.resumable.translations with virtual := next }
+    state.execution.core.context.activeAddressSpace page
+  have htlb : TLB.Coherent translations := by
+    exact TLB.invalidate_page_preserves_coherent
+      { state.resumable.translations with virtual := next }
+      state.execution.core.context.activeAddressSpace page hstate.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+  have hpreserved := installVirtualMemory_preserves_runtimeWellFormed
+    state next translations hstate hmemory howner hvirtual htlb rfl
   constructor
   · simp [gate, hmode, operationReply, haccepted]
   constructor
-  · simpa [gate, hmode, applyOperation, haccepted] using hcoherent
+  · simpa [gate, hmode, applyOperation, haccepted, translations] using hpreserved
   constructor
-  · simpa [gate, hmode, applyOperation, haccepted, installLifecycle,
-      TLB.Coherent, TLB.invalidatePage] using
-        (TLB.invalidate_page_preserves_coherent state.resumable.translations
-          state.execution.core.context.activeAddressSpace page htlb)
+  · simpa [gate, hmode, applyOperation, haccepted, translations] using hpreserved.1
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted, installVirtualMemory,
+      translations, TLB.Coherent] using htlb
   · intro context
-    simpa [gate, hmode, applyOperation, haccepted, installLifecycle,
-      TLB.invalidatePage] using
+    simpa [gate, hmode, applyOperation, haccepted, installVirtualMemory,
+      translations, TLB.invalidatePage] using
       (TLB.invalidate_page_absent state.resumable.translations.entries
         { addressSpace := state.execution.core.context.activeAddressSpace, page } context)
 
@@ -2421,6 +2563,179 @@ theorem syscallDecodeRejected_operationPreservesRuntimeWellFormed call reason
       (by simp [gate, hmode, operationReply, hreply])
       (.syscall call (.decode reason) hreply)).1
   · exact gate_rejected_mode_preserves_runtimeWellFormed state (.syscall call) hstate hmode
+
+theorem map_operationPreservesRuntimeWellFormed slot page permissions :
+    OperationPreservesRuntimeWellFormed (.map slot page permissions) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hmap : VirtualMapping.map state.virtualMemory
+        state.execution.core.context.currentSubject slot
+        state.execution.core.context.activeAddressSpace page permissions with
+    | mk next result =>
+        cases result with
+        | accepted =>
+            exact (gate_map_accepted_preserves_runtimeWellFormed state slot page permissions
+              next hstate hmode hmap).1
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.map slot page permissions) (.map (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hmap])
+              (.map slot page permissions reason (by simp [hmap]))).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.map slot page permissions) hstate hmode
+
+theorem unmap_operationPreservesRuntimeWellFormed page :
+    OperationPreservesRuntimeWellFormed (.unmap page) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hunmap : VirtualMapping.unmap state.virtualMemory
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page with
+    | mk next result =>
+        cases result with
+        | accepted =>
+            exact (gate_unmap_accepted_invalidates_tlb state page next hmode hunmap hstate).2.1
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.unmap page) (.unmap (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hunmap])
+              (.unmap page reason (by simp [hunmap]))).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state (.unmap page) hstate hmode
+
+/-- Accepted userspace mapping reuses the raw mapping publication proof after
+the generation-bound handle resolves.  The only additional mutation is live
+return-authority selection on the already well-formed composite state. -/
+theorem syscallMap_operationPreservesRuntimeWellFormed call handleWord page permissions
+    (hdecode : Syscall.decode call = .ok (.map handleWord page permissions)) :
+    OperationPreservesRuntimeWellFormed (.syscall call) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hreply : (Syscall.dispatch state.virtualMemory state.syscallContext call).reply with
+    | rejected reason =>
+        exact (gate_subsystem_rejection_preserves_runtimeWellFormed state (.syscall call)
+          (.syscall (.rejected reason)) hstate
+          (by simp [gate, hmode, operationReply, hreply])
+          (.syscall call reason hreply)).1
+    | accepted =>
+        cases hresolve : CapabilityHandle.resolveCurrent state.virtualMemory.memory.capabilities
+            { caller := state.syscallContext.caller } handleWord .memory with
+        | error denial =>
+            simp only [CompositeState.syscallContext] at hresolve
+            simp [Syscall.dispatch, hdecode, Syscall.dispatchDecoded, hresolve,
+              CompositeState.syscallContext] at hreply
+        | ok resolution =>
+            simp only [CompositeState.syscallContext] at hresolve
+            cases hmap : (VirtualMapping.map state.virtualMemory state.syscallContext.caller
+                resolution.handle.slot state.syscallContext.activeAddressSpace page permissions).result with
+            | rejected reason =>
+                simp only [CompositeState.syscallContext] at hmap
+                simp [Syscall.dispatch, hdecode, Syscall.dispatchDecoded, hresolve, hmap,
+                  CompositeState.syscallContext] at hreply
+            | accepted =>
+                simp only [CompositeState.syscallContext] at hmap
+                let next := (VirtualMapping.map state.virtualMemory state.syscallContext.caller
+                  resolution.handle.slot state.syscallContext.activeAddressSpace page permissions).state
+                have hmemory : next.memory = state.virtualMemory.memory := by
+                  exact VirtualMapping.map_memory _ _ _ _ _ _
+                have howner : next.owner = state.virtualMemory.owner := by
+                  exact VirtualMapping.map_owner _ _ _ _ _ _
+                have hvirtual : VirtualMapping.LifecycleWellFormed next :=
+                  VirtualMapping.map_preserves_lifecycleWellFormed _ _ _ _ _ _
+                    hstate.2.2.2.2.1
+                let translations : TLB.State :=
+                  { state.resumable.translations with virtual := next }
+                have htlb : TLB.Coherent translations := by
+                  simpa [translations, TLB.Coherent] using
+                    hstate.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+                have hinstalled := installVirtualMemory_preserves_runtimeWellFormed
+                  state next translations hstate hmemory howner hvirtual htlb rfl
+                have hselectedGate := gate_selectUserReturn_preserves_runtimeWellFormed
+                  (installVirtualMemory state next translations) .syscallResume hinstalled
+                have hselected : RuntimeWellFormed
+                    (selectLiveReturnAuthority (installVirtualMemory state next translations)
+                      .syscallResume) := by
+                  simpa [gate, applyOperation, installVirtualMemory, hmode] using hselectedGate
+                have houtcome : Syscall.dispatch state.virtualMemory state.syscallContext call =
+                    { state := next, reply := .accepted } := by
+                  simp [Syscall.dispatch, hdecode, Syscall.dispatchDecoded, hresolve, hmap,
+                    CompositeState.syscallContext, next]
+                simpa [gate, hmode, applyOperation, houtcome, hdecode,
+                  next, translations] using hselected
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state (.syscall call) hstate hmode
+
+theorem syscallUnmap_operationPreservesRuntimeWellFormed call page
+    (hdecode : Syscall.decode call = .ok (.unmap page)) :
+    OperationPreservesRuntimeWellFormed (.syscall call) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hreply : (Syscall.dispatch state.virtualMemory state.syscallContext call).reply with
+    | rejected reason =>
+        exact (gate_subsystem_rejection_preserves_runtimeWellFormed state (.syscall call)
+          (.syscall (.rejected reason)) hstate
+          (by simp [gate, hmode, operationReply, hreply])
+          (.syscall call reason hreply)).1
+    | accepted =>
+        cases hunmap : (VirtualMapping.unmap state.virtualMemory state.syscallContext.caller
+            state.syscallContext.activeAddressSpace page).result with
+        | rejected reason =>
+            simp only [CompositeState.syscallContext] at hunmap
+            simp [Syscall.dispatch, hdecode, Syscall.dispatchDecoded, hunmap,
+              CompositeState.syscallContext] at hreply
+        | accepted =>
+            simp only [CompositeState.syscallContext] at hunmap
+            let next := (VirtualMapping.unmap state.virtualMemory state.syscallContext.caller
+              state.syscallContext.activeAddressSpace page).state
+            have hmemory : next.memory = state.virtualMemory.memory :=
+              VirtualMapping.unmap_memory _ _ _ _
+            have howner : next.owner = state.virtualMemory.owner :=
+              VirtualMapping.unmap_owner _ _ _ _
+            have hvirtual : VirtualMapping.LifecycleWellFormed next :=
+              VirtualMapping.unmap_preserves_lifecycleWellFormed _ _ _ _ hstate.2.2.2.2.1
+            let translations := TLB.invalidatePage
+              { state.resumable.translations with virtual := next }
+              state.syscallContext.activeAddressSpace page
+            have htlb : TLB.Coherent translations := by
+              exact TLB.invalidate_page_preserves_coherent _ _ _
+                hstate.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+            have hinstalled := installVirtualMemory_preserves_runtimeWellFormed
+              state next translations hstate hmemory howner hvirtual htlb rfl
+            have hselectedGate := gate_selectUserReturn_preserves_runtimeWellFormed
+              (installVirtualMemory state next translations) .syscallResume hinstalled
+            have hselected : RuntimeWellFormed
+                (selectLiveReturnAuthority (installVirtualMemory state next translations)
+                  .syscallResume) := by
+              simpa [gate, applyOperation, installVirtualMemory, hmode] using hselectedGate
+            have houtcome : Syscall.dispatch state.virtualMemory state.syscallContext call =
+                { state := next, reply := .accepted } := by
+              simp [Syscall.dispatch, hdecode, Syscall.dispatchDecoded, hunmap,
+                CompositeState.syscallContext, next]
+            simpa [gate, hmode, applyOperation, houtcome, hdecode,
+              next, translations] using hselected
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state (.syscall call) hstate hmode
+
+/-- Every raw syscall word tuple now satisfies the universal composite
+preservation obligation: decoder denial, map, unmap, and access exhaust the
+finite decoded vocabulary. -/
+theorem syscall_operationPreservesRuntimeWellFormed call :
+    OperationPreservesRuntimeWellFormed (.syscall call) := by
+  cases hdecode : Syscall.decode call with
+  | error reason => exact syscallDecodeRejected_operationPreservesRuntimeWellFormed call reason hdecode
+  | ok operation =>
+      cases operation with
+      | map handleWord page permissions =>
+          exact syscallMap_operationPreservesRuntimeWellFormed call handleWord page permissions hdecode
+      | unmap page => exact syscallUnmap_operationPreservesRuntimeWellFormed call page hdecode
+      | access page access => exact syscallAccess_operationPreservesRuntimeWellFormed call page access hdecode
+
+/-- Arbitrary finite mixtures of accepted and rejected raw syscalls preserve
+the global runtime invariant through the actual sequential composite gate. -/
+theorem runSyscalls_preserves_runtimeWellFormed state (calls : List Syscall.UntrustedCall)
+    (hstate : RuntimeWellFormed state) :
+    RuntimeWellFormed (runOperations state (calls.map Operation.syscall)) := by
+  apply runOperations_preserves_runtimeWellFormed state _ hstate
+  intro operation hmember
+  obtain ⟨call, _hcall, rfl⟩ := List.mem_map.mp hmember
+  exact syscall_operationPreservesRuntimeWellFormed call
 
 private theorem dispatchIPC_send_classifies state handleWord word0 word1 :
     (dispatchIPC state (.send handleWord word0 word1)).reply = .syscall .sent ∨
