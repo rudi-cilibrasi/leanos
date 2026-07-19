@@ -346,6 +346,7 @@ inductive PublicOperation where
 
 inductive RuntimeResult where
   | continued | fatal (reason : FatalReason) | alreadyHalted (reason : FatalReason)
+  deriving BEq, DecidableEq, Repr
 
 structure RuntimeOutcome where
   state : RuntimeState
@@ -432,7 +433,38 @@ def q35Functions : List FunctionState :=
 
 def q35Snapshot : Snapshot := ⟨snapshotVersion, q35TopologyVersion, q35Functions⟩
 
+def q35OptionalNetworkPresentFunctions : List FunctionState :=
+  q35Functions.set 2 (presentFunction q35Manifest[2]!)
+
+def q35OptionalNetworkPresentSnapshot : Snapshot :=
+  { q35Snapshot with functions := q35OptionalNetworkPresentFunctions }
+
+def q35CommandBitFlipSnapshot : Snapshot :=
+  { q35Snapshot with functions :=
+      q35Functions.set 0 { q35Functions[0]! with command := 1 } }
+
+def q35Accepted : AcceptedSnapshot where
+  snapshot := q35Snapshot
+  versionAccepted := by native_decide
+  topologyAccepted := by native_decide
+  canonicalAccepted := by native_decide
+  accountedAccepted := by native_decide
+  quarantineAccepted := by native_decide
+
+def zeroMemoryProjection : MemoryProjection where
+  physicalMemory := fun _ => 0
+  allocatorOwnership := fun _ => none
+  pageTableFrames := fun _ => 0
+  kernelOwnedFrames := fun _ => 0
+  kernelState := fun _ => 0
+  subjectVisible := fun _ _ => 0
+
+def q35Runtime : RuntimeState :=
+  ⟨q35Accepted, q35Snapshot, zeroMemoryProjection, .running⟩
+
 example : (validate q35Snapshot).isAccepted = true := by native_decide
+example : q35Functions[2]!.status = .absent := by native_decide
+example : (validate q35OptionalNetworkPresentSnapshot).isAccepted = true := by native_decide
 example : (encodeSnapshot q35Snapshot).map List.length = some snapshotWords := by native_decide
 example : (validate { q35Snapshot with version := 0 }).reason = some .staleSnapshotVersion := by
   native_decide
@@ -450,7 +482,30 @@ example :
 example :
     let first := q35Functions.head!
     (validate { q35Snapshot with functions :=
+      { first with identity := { first.identity with vendor := 0xffff } } ::
+        q35Functions.tail }).reason = some .inventoryMismatch := by native_decide
+example :
+    let first := q35Functions.head!
+    (validate { q35Snapshot with functions :=
+      { first with identity := { first.identity with device := 0xffff } } ::
+        q35Functions.tail }).reason = some .inventoryMismatch := by native_decide
+example :
+    let first := q35Functions.head!
+    (validate { q35Snapshot with functions :=
+      { first with identity := { first.identity with classCode := 0xffffff } } ::
+        q35Functions.tail }).reason = some .inventoryMismatch := by native_decide
+example :
+    let first := q35Functions.head!
+    (validate { q35Snapshot with functions :=
       { first with status := .unreadable } :: q35Functions.tail }).reason =
+      some .unreadableFunction := by native_decide
+example :
+    let first := q35Functions.head!
+    let unreadableAllOnes : FunctionState :=
+      ⟨first.bdf, identity 0xffff 0xffff 0xffffff, .unreadable, 0xffffffffffffffff,
+        first.assignment, first.bridge, first.multifunction⟩
+    (validate { q35Snapshot with functions :=
+      unreadableAllOnes :: q35Functions.tail }).reason =
       some .unreadableFunction := by native_decide
 example :
     let bridge := q35Functions[3]!
@@ -467,6 +522,12 @@ example :
     let modified : FunctionState := { vga with command := 4 }
     (validate { q35Snapshot with functions :=
       (q35Functions.set 1 modified) }).reason = some .busMasterEnabled := by native_decide
+example :
+    let network := q35OptionalNetworkPresentFunctions[2]!
+    let modified : FunctionState := { network with command := 4 }
+    (validate { q35OptionalNetworkPresentSnapshot with functions :=
+      (q35OptionalNetworkPresentFunctions.set 2 modified) }).reason =
+      some .busMasterEnabled := by native_decide
 example :
     let sata := q35Functions[4]!
     let modified : FunctionState := { sata with command := 4 }
@@ -490,5 +551,9 @@ example :
     (validate { q35Snapshot with functions :=
       (q35Functions.set 4 modified) }).reason =
       some .assignmentForbidden := by native_decide
+
+example : (validate q35CommandBitFlipSnapshot).isAccepted = true := by native_decide
+example : (runtimeGate q35Runtime (.observeControl q35CommandBitFlipSnapshot)).result =
+    .fatal .controlSnapshotChanged := by native_decide
 
 end LeanOS.DMAQuarantine
