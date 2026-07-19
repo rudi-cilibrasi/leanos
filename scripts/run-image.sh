@@ -233,5 +233,14 @@ if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
     echo "failure_class=extended-state-snapshot: decoded CPUID/control snapshot incomplete" >&2
     exit 1
   }
+elif [[ "$scenario" == fast-entry-syscall || "$scenario" == fast-entry-sysenter ]]; then
+  snapshot="${LEANOS_FAST_ENTRY_SNAPSHOT:-build/boot/fast-entry-control-snapshot-${extended_instruction}.txt}"
+  mkdir -p "$(dirname "$snapshot")"
+  grep -E '^LEANOS/(14 FAST-ENTRY cpu\.|13 EXTENDED-STATE cpuid\.1\.|6 CONTROL )' \
+    "$log" > "$snapshot"
+  [[ $(wc -l < "$snapshot") -eq 3 ]] || {
+    echo "failure_class=fast-entry-snapshot: decoded CPUID/MSR/control snapshot incomplete" >&2
+    exit 1
+  }
 fi
 echo "LeanOS boot smoke test passed; guest success and complete protocol observed; serial log: $log"

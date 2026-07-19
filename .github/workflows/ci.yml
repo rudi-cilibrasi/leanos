@@ -95,6 +95,8 @@ jobs:
             build/boot/leanos-0.1.0-x86_64-extended-state-sse2.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-avx.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-peer-pke.iso
+            build/boot/leanos-0.1.0-x86_64-fast-entry-syscall.iso
+            build/boot/leanos-0.1.0-x86_64-fast-entry-sysenter.iso
             build/boot/leanos-0.1.0-x86_64-double-fault.iso
             build/boot/leanos-0.1.0-x86_64-entry-stack-overflow.iso
             build/boot/leanos-0.1.0-x86_64-entry-adversarial.iso
@@ -106,6 +108,8 @@ jobs:
             build/boot/leanos-extended-state-sse2.elf
             build/boot/leanos-extended-state-avx.elf
             build/boot/leanos-extended-state-peer-pke.elf
+            build/boot/leanos-fast-entry-syscall.elf
+            build/boot/leanos-fast-entry-sysenter.elf
             build/boot/leanos-double-fault.elf
             build/boot/leanos-entry-stack-overflow.elf
             build/boot/leanos-entry-stack-overflow.map
@@ -118,6 +122,8 @@ jobs:
             build/boot/leanos-extended-state-sse2.map
             build/boot/leanos-extended-state-avx.map
             build/boot/leanos-extended-state-peer-pke.map
+            build/boot/leanos-fast-entry-syscall.map
+            build/boot/leanos-fast-entry-sysenter.map
             build/boot/leanos-double-fault.map
             build/boot/leanos-prelink.map
             build/boot/boot-page-plan.h
@@ -131,6 +137,8 @@ jobs:
             build/boot/boot-page-plan-extended-state-sse2.final.h
             build/boot/boot-page-plan-extended-state-avx.final.h
             build/boot/boot-page-plan-extended-state-peer-pke.final.h
+            build/boot/boot-page-plan-fast-entry-syscall.final.h
+            build/boot/boot-page-plan-fast-entry-sysenter.final.h
             build/boot/SHA256SUMS
             build/boot/serial.log
             build/boot/preemption.serial.log
@@ -140,6 +148,8 @@ jobs:
             build/boot/extended-state-sse2.serial.log
             build/boot/extended-state-avx.serial.log
             build/boot/extended-state-peer-pke.serial.log
+            build/boot/fast-entry-syscall.serial.log
+            build/boot/fast-entry-sysenter.serial.log
             build/boot/double-fault.serial.log
             build/boot/entry-stack-overflow.serial.log
             build/boot/entry-adversarial.serial.log
@@ -171,6 +181,10 @@ jobs:
             build/boot/extended-state-sse-control-snapshot.txt
             build/boot/extended-state-sse2-control-snapshot.txt
             build/boot/extended-state-avx-control-snapshot.txt
+            build/boot/fast-entry-control-snapshot-syscall.txt
+            build/boot/fast-entry-control-snapshot-sysenter.txt
+            build/boot/fast-entry-syscall-policy-report.txt
+            build/boot/fast-entry-sysenter-policy-report.txt
             build/boot/return-corruption-*.serial.log
             build/boot/return-*-policy.log
             build/boot/leanos-0.1.0-x86_64-return-*.iso

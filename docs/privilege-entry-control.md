@@ -105,8 +105,12 @@ record the CPU/MSR snapshot, raw vector-6 denial, unreachable alternate target,
 complete attacker cleanup, validated peer return, survivor canaries, exact
 serial transcript, command, image, ELF, and hashes as tested evidence.
 
-The remaining machine checkpoints are the broader controlled guest/runner
-negative inventory (wrong vector/error shape, stale binding, unexpected target,
-policy relaxation, partial/reordered output, reset, triple fault, and hang) and
-the final global-invariant composition requested by follow-on #104. Those
+The repository-owned runner fixtures reject a missing entry manifest or control
+snapshot, wrong vector/error shape, stale binding, unexpected target execution,
+policy relaxation, attacker-selected survivor, kernel-origin containment,
+direct handler entry, partial or reordered output, reset, triple fault, and
+hang. Each successful probe also preserves a three-record CPU/CPUID/MSR/control
+snapshot beside the exact serial log. The remaining machine checkpoints are
+additional controlled build/guest mutations and the final global-invariant
+composition requested by follow-on #104. Those
 results must be labeled checked/tested evidence, not Lean proof.

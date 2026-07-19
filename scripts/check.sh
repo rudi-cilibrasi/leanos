@@ -17,6 +17,8 @@ lake build leanos-boot-plan
 
 ./scripts/test-run-extended-state-image.sh
 
+./scripts/test-run-fast-entry-image.sh
+
 ./scripts/test-run-preemption-image.sh
 
 ./scripts/test-run-double-fault.sh
