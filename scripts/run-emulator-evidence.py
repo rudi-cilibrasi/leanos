@@ -19,10 +19,18 @@ DEFAULT_BUILD = ROOT / "build/boot"
 DEFAULT_OUTPUT = ROOT / "build/evidence/emulator-evidence.json"
 DEFAULT_TOOLS = ROOT / "build/ci/tool-versions.txt"
 RESULT_CLASSES = {"accepted-boot", "controlled-rejection", "fail-stop"}
-RUNNERS = {"boot", "return", "double-fault", "entry-stack-overflow", "double-fault-guard"}
+RUNNERS = {
+    "boot",
+    "return",
+    "peer-pke",
+    "double-fault",
+    "entry-stack-overflow",
+    "double-fault-guard",
+}
 RUNNER_RESULT_CLASSES = {
     "boot": "accepted-boot",
     "return": "controlled-rejection",
+    "peer-pke": "controlled-rejection",
     "double-fault": "fail-stop",
     "entry-stack-overflow": "fail-stop",
     "double-fault-guard": "controlled-rejection",
@@ -168,6 +176,9 @@ def scenario_invocation(
         environment["LEANOS_BOOT_DIR"] = str(build_dir)
         environment["LEANOS_RETURN_CORRUPTION_FIXTURE"] = row["scenario"]
         command = ["./scripts/run-return-corruptions.sh"]
+    elif row["runner"] == "peer-pke":
+        environment["LEANOS_BOOT_DIR"] = str(build_dir)
+        command = ["./scripts/run-extended-state-peer-pke.sh", str(paths["image"])]
     elif row["runner"] == "double-fault":
         command = ["./scripts/run-double-fault.sh", str(paths["image"])]
     elif row["runner"] == "entry-stack-overflow":

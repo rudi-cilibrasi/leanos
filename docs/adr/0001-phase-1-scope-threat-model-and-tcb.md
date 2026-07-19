@@ -89,6 +89,9 @@ Phase 1 does not model or claim resistance to:
   resource-exhaustion beyond the smoke-test timeout;
 - DMA, devices other than the selected emulated console/exit path, networking,
   storage, interrupts, SMP, concurrency, userspace, or hostile physical access;
+- complete architectural-state isolation: Phase 2 denies representative x87,
+  MMX, SSE, SSE2, and AVX use but does not enumerate every XSAVE component,
+  opcode, exception-priority interaction, or physical CPU;
 - binary reproducibility until it is separately measured, or correspondence
   between machine code and Lean semantics beyond tested boundary behavior; or
 - memory safety, capability safety, isolation, information-flow security,
@@ -139,6 +142,7 @@ corresponding implementation issues.
 | Lean runtime and generated C/native code, if selected | Implements allocation, initialization, exceptions, and execution outside the proved model | Runtime or code-generation faults can violate boundary behavior | Issue #4 experiment and ADR 0002 |
 | Boot assembly and foreign C/Rust, if selected | Establishes CPU state and bridges firmware, ABI, runtime, serial, and exit interfaces | ABI or memory errors can forge output, corrupt state, or crash | Issue #4/#6 source and tests |
 | Interrupt descriptor/frame adapter | Loads the IDT/TSS, clears AC/DF, selects entry stacks, decodes x86 frame words, and bridges the generated manifest oracle | A descriptor, shape, bounds, latch, or ABI mismatch can authorize the wrong handler/context | `LeanOS.InterruptEntry`, `scripts/check-entry-policy.sh`, runtime snapshot, and QEMU logs |
+| Extended-state denial boundary | Reads CPUID and CR0/CR4, normalizes controls, routes vectors 6/7, invokes the generated scalar gate, decodes the selected probe, cleans up A, and restores B | A stale snapshot, wrong vector/binding, incomplete opcode inventory, or restore bug can expose shared processor state or misclassify a kernel fault | `LeanOS.ExtendedState`, `docs/extended-state-denial.md`, policy reports, decoded snapshots, and five QEMU transcripts |
 | Compiler, assembler, linker, and linker script | Translate and lay out the executable; no verified compilation claim is made | The image may not correspond to reviewed source | Pinned versions, map file, and build logs |
 | GRUB 2 and Multiboot2 implementation | Loads the image and passes boot information | It can load or initialize the wrong bytes/state | Pinned package/artifact and boot test |
 | SeaBIOS | Initializes the emulated platform and starts GRUB | It can alter platform state or fail before the kernel boundary | Version reported with the QEMU build |

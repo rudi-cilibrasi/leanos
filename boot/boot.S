@@ -176,8 +176,13 @@ multiboot_entry:
     movl $0, page_table_a+4(%eax)
     movl $0, page_table_b(%eax)
     movl $0, page_table_b+4(%eax)
-
+    /* Derive the denial policy instead of inheriting firmware/GRUB state.
+       PAE remains enabled for long mode; OSFXSR, OSXMMEXCPT, OSXSAVE, and PKE
+       are cleared so no legacy SIMD, XSAVE, or unsaved PKRU state is exposed. */
+.global normalize_extended_state_cr4
+normalize_extended_state_cr4:
     mov %cr4, %eax
+    and $~((1 << 9) | (1 << 10) | (1 << 18) | (1 << 22)), %eax
     or $(1 << 5), %eax
     mov %eax, %cr4
     mov $page_map_level_4_a, %eax
@@ -186,9 +191,13 @@ multiboot_entry:
     rdmsr
     or $((1 << 8) | (1 << 11)), %eax
     wrmsr
-    /* Construction is complete before paging and supervisor write protection. */
+    /* Construction is complete before paging and supervisor write protection.
+       EM/MP/TS are explicitly set so x87/MMX use reaches the denial path once
+       its reviewed exception gates are installed. */
+.global normalize_extended_state_cr0
+normalize_extended_state_cr0:
     mov %cr0, %eax
-    or $((1 << 31) | (1 << 16)), %eax
+    or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax
     mov %eax, %cr0
     lgdt gdt64_pointer
     ljmp $0x08, $long_mode_entry
@@ -572,6 +581,51 @@ df_guard_mapped_record_end:
     call authorize_interrupt_entry
     add $16, %rsp
 .endm
+.global isr6
+isr6:
+    clac
+    cld
+    SAVE
+    NORMALIZE_ENTRY 6, 0, 144
+    mov $6, %edi
+    mov 128(%rsp), %rsi
+    mov 120(%rsp), %rdx
+    call extended_state_denial_handler
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    jmp extended_state_restore_peer
+#endif
+    ud2
+.global isr7
+isr7:
+    clac
+    cld
+    SAVE
+    NORMALIZE_ENTRY 7, 0, 144
+    mov $7, %edi
+    mov 128(%rsp), %rsi
+    mov 120(%rsp), %rdx
+    call extended_state_denial_handler
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+extended_state_restore_peer:
+    test %rax, %rax
+    je 1f
+    mov %rax, %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    mov extended_state_selected_cr3(%rip), %rax
+    test %rax, %rax
+    je 1f
+    mov %rax, %cr3
+    call complete_interrupt_entry
+#ifdef LEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE
+    call extended_state_peer_pke_inject
+#endif
+    mov $3, %esi
+    jmp user_return_epilogue
+1:
+#endif
+    ud2
 .global isr80
 isr80:
 .global isr80_clac
@@ -855,6 +909,25 @@ user_a_entry:
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    /* Each dedicated image must deny before modifying its selected shared
+       extended-state bank.  The exported label is the sole RIP accepted by
+       the denial handler and the final-ELF instruction allowlist. */
+.global user_a_extended_state_probe
+user_a_extended_state_probe:
+#ifdef LEANOS_EXTENDED_STATE_AVX_PROBE
+    vxorps %ymm0, %ymm0, %ymm0
+#elif defined(LEANOS_EXTENDED_STATE_SSE2_PROBE)
+    pxor %xmm0, %xmm0
+#elif defined(LEANOS_EXTENDED_STATE_SSE_PROBE)
+    xorps %xmm0, %xmm0
+#elif defined(LEANOS_EXTENDED_STATE_MMX_PROBE)
+    pxor %mm0, %mm0
+#else
+    fld1
+#endif
+    ud2
+#endif
 #ifdef LEANOS_ENTRY_ADVERSARIAL
     int $14
     int $32
@@ -933,9 +1006,36 @@ user_a_stack:
 .global user_a_stack_top
 user_a_stack_top:
 
+.section .rodata,"a",@progbits
+.global extended_state_probe_class
+extended_state_probe_class:
+#ifdef LEANOS_EXTENDED_STATE_AVX_PROBE
+    .quad 4
+#elif defined(LEANOS_EXTENDED_STATE_SSE2_PROBE)
+    .quad 3
+#elif defined(LEANOS_EXTENDED_STATE_SSE_PROBE)
+    .quad 2
+#elif defined(LEANOS_EXTENDED_STATE_MMX_PROBE)
+    .quad 1
+#else
+    .quad 0
+#endif
+
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    /* The peer enters only through the common validated return path. */
+    movabs $B_INITIAL_R12, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %rax
+    cmp %rax, %r13
+    jne 2f
+    mov $13, %rax
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_PREEMPTION_SCENARIO
     cmp $B_INITIAL_RAX, %rax
     jne 2f
