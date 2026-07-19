@@ -63,6 +63,56 @@ def contextFor (contexts : List Context) (subject : SubjectId) : Option Context 
 def eraseContext (contexts : List Context) (subject : SubjectId) : List Context :=
   contexts.filter (fun context => context.owner != subject)
 
+/-- Remove one subject from the runnable scheduler view and its resumable
+projections in the same state change.  The active translation follows the
+authoritative scheduler current subject, and a saved context for the removed
+subject is consumed rather than retained for a non-runnable owner. -/
+def removeState (state : State) (subject : SubjectId)
+    (scheduler : Scheduler.State) : State :=
+  { state with
+    scheduler
+    contexts := eraseContext state.contexts subject
+    translations := { state.translations with active := scheduler.lifecycle.current } }
+
+inductive RemoveError where
+  | scheduler (reason : Scheduler.Error)
+  | noResumablePeer
+  deriving DecidableEq, Repr
+
+inductive RemoveResult where
+  | accepted (context : Option Scheduler.TrustedContext := none)
+  | rejected (reason : RemoveError)
+  deriving DecidableEq, Repr
+
+structure RemoveOutcome where
+  state : State
+  result : RemoveResult
+
+/-- Total resumable-aware scheduler removal.  Removing the final queued peer
+while a different subject remains current is rejected because that state has
+no destination context for the next timer tick. -/
+def remove (state : State) (subject : SubjectId) : RemoveOutcome :=
+  match Scheduler.remove state.scheduler subject with
+  | { result := .rejected reason, .. } =>
+      { state, result := .rejected (.scheduler reason) }
+  | { state := scheduler, result := .accepted context } =>
+      let next := removeState state subject scheduler
+      if _hpeer : next.scheduler.lifecycle.current.isSome → next.scheduler.ready ≠ [] then
+        { state := next, result := .accepted context }
+      else
+        { state, result := .rejected .noResumablePeer }
+
+theorem remove_rejected_unchanged state subject reason
+    (hrejected : (remove state subject).result = .rejected reason) :
+    (remove state subject).state = state := by
+  cases houtcome : Scheduler.remove state.scheduler subject with
+  | mk scheduler result =>
+      cases result with
+      | rejected schedulerReason => simp [remove, houtcome]
+      | accepted context =>
+          simp only [remove, houtcome] at hrejected ⊢
+          split <;> simp_all
+
 theorem contextFor_owner contexts subject context
     (h : contextFor contexts subject = some context) :
     context.owner = subject := by
@@ -141,6 +191,150 @@ def WellFormed (state : State) : Prop :=
     VirtualAgreement state ∧
     ResourceKindAgreement state ∧
     TLB.Coherent state.translations
+
+theorem remove_accepted_exact state subject context
+    (haccepted : (remove state subject).result = .accepted context) :
+    ∃ scheduler,
+      Scheduler.remove state.scheduler subject =
+        { state := scheduler, result := .accepted context } ∧
+      (remove state subject).state = removeState state subject scheduler ∧
+      ((removeState state subject scheduler).scheduler.lifecycle.current.isSome →
+        (removeState state subject scheduler).scheduler.ready ≠ []) := by
+  cases houtcome : Scheduler.remove state.scheduler subject with
+  | mk scheduler result =>
+      cases result with
+      | rejected reason => simp [remove, houtcome] at haccepted
+      | accepted actual =>
+          simp only [remove, houtcome] at haccepted ⊢
+          split at haccepted
+          · injection haccepted with heq
+            subst actual
+            refine ⟨scheduler, rfl, ?_, by assumption⟩
+            rw [dif_pos (by assumption)]
+          · simp at haccepted
+
+/-- An accepted result exposes both cleanup effects required by the composite
+runtime invariant; neither is inferred later from a repaired projection. -/
+theorem remove_accepted_cleans_context_and_translation state subject context
+    (haccepted : (remove state subject).result = .accepted context) :
+    contextFor (remove state subject).state.contexts subject = none ∧
+      (remove state subject).state.translations.active =
+        (remove state subject).state.scheduler.lifecycle.current := by
+  obtain ⟨scheduler, _hscheduler, hstate, _hpeer⟩ :=
+    remove_accepted_exact state subject context haccepted
+  rw [hstate]
+  exact ⟨contextFor_erase_self state.contexts subject, rfl⟩
+
+/-- Accepted removal preserves the complete context-bank invariant: scheduler
+membership, the removed saved context, and the active translation are changed
+atomically, while rejection of a stranded-current state is handled by
+`remove` before publication. -/
+theorem remove_preserves_wellFormed state subject
+    (hstate : WellFormed state) :
+    WellFormed (remove state subject).state := by
+  cases hresult : (remove state subject).result with
+  | rejected reason =>
+      rw [remove_rejected_unchanged state subject reason hresult]
+      exact hstate
+  | accepted context =>
+      obtain ⟨scheduler, hschedulerOutcome, hstateEq, hpeer⟩ :=
+        remove_accepted_exact state subject context hresult
+      have hschedulerEq : scheduler =
+          { state.scheduler with
+            ready := state.scheduler.ready.filter (· ≠ subject)
+            lifecycle := { state.scheduler.lifecycle with
+              runnable := SubjectLifecycle.setBool
+                state.scheduler.lifecycle.runnable subject false
+              current := if state.scheduler.lifecycle.current = some subject then none
+                else state.scheduler.lifecycle.current } } := by
+        simp only [Scheduler.remove] at hschedulerOutcome
+        split at hschedulerOutcome
+        · simp_all
+        · simp_all [Scheduler.reject]
+      subst scheduler
+      rw [hstateEq]
+      rcases hstate with
+        ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hagreement,
+          htranslations, hvirtual, hkinds, htlb⟩
+      have hscheduler' := Scheduler.remove_preserves_wellFormed
+        state.scheduler subject hscheduler
+      rw [hschedulerOutcome] at hscheduler'
+      refine ⟨hscheduler', ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · exact Nat.le_trans (List.length_filter_le _ _) hcapacity
+      · exact hunique.filter (fun saved => saved.owner != subject)
+      · intro saved hsaved
+        have hsavedOld := (List.mem_filter.mp hsaved).1
+        have hownerNe : saved.owner ≠ subject := by
+          simpa using (List.mem_filter.mp hsaved).2
+        rcases hvalid saved hsavedOld with
+          ⟨hframe, hspace, hlive, hrunnable, howner⟩
+        refine ⟨hframe, hspace, ?_, ?_, ?_⟩
+        all_goals
+          simp only [removeState]
+          simp only [Scheduler.remove] at hschedulerOutcome
+          split at hschedulerOutcome
+          · rcases hschedulerOutcome with ⟨rfl, rfl⟩
+            simp [SubjectLifecycle.setBool, hownerNe, hlive, hrunnable, howner]
+          · simp_all [Scheduler.reject]
+      · intro current hcurrent
+        apply List.find?_eq_none.mpr
+        intro saved hsaved
+        have hsavedOld := (List.mem_filter.mp hsaved).1
+        have hownerNe : saved.owner ≠ subject := by
+          simpa using (List.mem_filter.mp hsaved).2
+        have hcurrentOld : state.scheduler.lifecycle.current = some current := by
+          simp only [removeState] at hcurrent
+          split at hcurrent
+          · simp at hcurrent
+          · exact hcurrent
+        have hold := List.find?_eq_none.mp (habsent current hcurrentOld) saved hsavedOld
+        simpa using hold
+      · refine ⟨?_, ?_, hpeer⟩
+        · intro queued hqueued
+          have hqueuedOld : queued ∈ state.scheduler.ready := by
+            simp only [removeState] at hqueued
+            simp only [Scheduler.remove] at hschedulerOutcome
+            split at hschedulerOutcome
+            · rcases hschedulerOutcome with ⟨rfl, rfl⟩
+              exact (List.mem_filter.mp hqueued).1
+            · simp_all [Scheduler.reject]
+          have hqueuedNe : queued ≠ subject := by
+            simp only [removeState] at hqueued
+            simp only [Scheduler.remove] at hschedulerOutcome
+            split at hschedulerOutcome
+            · rcases hschedulerOutcome with ⟨rfl, rfl⟩
+              simpa using (List.mem_filter.mp hqueued).2
+            · simp_all [Scheduler.reject]
+          obtain ⟨saved, hsaved, howner⟩ := hagreement.1 queued hqueuedOld
+          refine ⟨saved, ?_, howner⟩
+          simp [removeState, eraseContext, hsaved, howner, hqueuedNe]
+        · intro saved hsaved hsuspended
+          have hsavedOld := (List.mem_filter.mp hsaved).1
+          have hownerNe : saved.owner ≠ subject := by
+            simpa using (List.mem_filter.mp hsaved).2
+          have hreadyOld := hagreement.2.1 saved hsavedOld hsuspended
+          simp only [removeState]
+          simp only [Scheduler.remove] at hschedulerOutcome
+          split at hschedulerOutcome
+          · rcases hschedulerOutcome with ⟨rfl, rfl⟩
+            simp [hreadyOld, hownerNe]
+          · simp_all [Scheduler.reject]
+      · constructor
+        · simpa [removeState] using htranslations.1
+        · simp only [removeState]
+          by_cases hcurrent : state.scheduler.lifecycle.current = some subject
+          · simp [hcurrent]
+          · cases hold : state.scheduler.lifecycle.current with
+            | none => simp [hcurrent, hold]
+            | some current =>
+                have hne : current ≠ subject := by
+                  intro heq
+                  subst current
+                  exact hcurrent hold
+                simp [hcurrent, hold, hne]
+      · simpa [VirtualAgreement, removeState] using hvirtual
+      · simpa [ResourceKindAgreement, removeState] using hkinds
+      · simpa [TLB.Coherent, removeState] using htlb
 
 theorem wellFormed_set_halted state halted :
     WellFormed { state with halted := halted } ↔ WellFormed state := by

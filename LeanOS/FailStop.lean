@@ -720,6 +720,25 @@ private def installResumable (state : CompositeState)
       resumable }
     resumable.scheduler.lifecycle
 
+/-- Publish a resumable-aware scheduler removal without rebuilding unrelated
+resource projections.  `ResumablePreemption.remove` changes only runnable/current
+scheduler fields, the removed saved context, and the active translation. -/
+private def installSchedulerRemoval (state : CompositeState)
+    (resumable : ResumablePreemption.State) : CompositeState :=
+  let lifecycle := resumable.scheduler.lifecycle
+  let context := match lifecycle.current with
+    | some subject => { state.execution.core.context with
+        currentSubject := subject, activeAddressSpace := subject }
+    | none => state.execution.core.context
+  { state with
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle, context }
+      returnAuthorityArmed := false }
+    scheduler := resumable.scheduler
+    preemption := { state.preemption with scheduler := resumable.scheduler }
+    lifecycle
+    resumable }
+
 /-- Publish the exact #71 capability/mailbox state through every consumer of
 the shared capability registry.  Pending sealed descendants and their trace
 remain owned solely by `CapabilityTransfer.State`. -/
@@ -842,6 +861,7 @@ inductive OperationReply where
   | unmap (result : VirtualMapping.Result VirtualMapping.UnmapError)
   | createSubject (result : SubjectLifecycle.Result SubjectLifecycle.CreateError)
   | terminateSubject (result : SubjectLifecycle.Result SubjectLifecycle.TerminateError)
+  | scheduleRemove (result : ResumablePreemption.RemoveResult)
   | scheduler (result : Scheduler.Result)
   | restarted
   deriving DecidableEq, Repr
@@ -1047,10 +1067,10 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       | .rejected _ => state
       | .accepted _ => installScheduler state outcome.state
   | .scheduleRemove subject =>
-      let outcome := Scheduler.remove state.scheduler subject
+      let outcome := ResumablePreemption.remove state.resumable subject
       match outcome.result with
       | .rejected _ => state
-      | .accepted _ => installScheduler state outcome.state
+      | .accepted _ => installSchedulerRemoval state outcome.state
   | .scheduleNext =>
       let outcome := Scheduler.selectNext state.scheduler
       match outcome.result with
@@ -1126,7 +1146,8 @@ def operationReply (state : CompositeState) : Operation → OperationReply
   | .terminateSubject subject =>
       .terminateSubject (SubjectLifecycle.terminate state.lifecycle subject).result
   | .scheduleAdd subject => .scheduler (Scheduler.add state.scheduler subject).result
-  | .scheduleRemove subject => .scheduler (Scheduler.remove state.scheduler subject).result
+  | .scheduleRemove subject =>
+      .scheduleRemove (ResumablePreemption.remove state.resumable subject).result
   | .scheduleNext => .scheduler (Scheduler.selectNext state.scheduler).result
   | .scheduleYield => .scheduler (Scheduler.yield state.scheduler).result
   | .scheduleTick => .scheduler (Scheduler.tick state.scheduler).result
@@ -1199,8 +1220,8 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
   | scheduleAdd subject reason (h : (Scheduler.add state.scheduler subject).result = .rejected reason) :
       SubsystemRejection state (.scheduleAdd subject) (.scheduler (.rejected reason))
   | scheduleRemove subject reason
-      (h : (Scheduler.remove state.scheduler subject).result = .rejected reason) :
-      SubsystemRejection state (.scheduleRemove subject) (.scheduler (.rejected reason))
+      (h : (ResumablePreemption.remove state.resumable subject).result = .rejected reason) :
+      SubsystemRejection state (.scheduleRemove subject) (.scheduleRemove (.rejected reason))
   | scheduleNext reason (h : (Scheduler.selectNext state.scheduler).result = .rejected reason) :
       SubsystemRejection state .scheduleNext (.scheduler (.rejected reason))
   | scheduleYield reason (h : (Scheduler.yield state.scheduler).result = .rejected reason) :
@@ -1963,20 +1984,23 @@ theorem gate_scheduleNext_accepted_sound state context next
   rw [haccepted] at hpreserved
   simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
 
-/-- Accepted queue removal publishes the scheduler's exact lifecycle cleanup
-through the composite synchronization boundary and preserves its invariant. -/
+/-- Accepted queue removal publishes the exact resumable-aware cleanup result,
+including saved-context consumption and active-translation invalidation. -/
 theorem gate_scheduleRemove_accepted_sound state subject context next
     (hmode : state.execution.mode = .running)
-    (haccepted : Scheduler.remove state.scheduler subject =
+    (haccepted : ResumablePreemption.remove state.resumable subject =
       { state := next, result := .accepted context })
-    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (hwellFormed : ResumablePreemption.WellFormed state.resumable) :
     (gate state (.scheduleRemove subject)).result =
-        .completed (.scheduler (.accepted context)) ∧
-      (gate state (.scheduleRemove subject)).state.scheduler = next ∧
-      Scheduler.WellFormed (gate state (.scheduleRemove subject)).state.scheduler := by
-  have hpreserved := Scheduler.remove_preserves_wellFormed state.scheduler subject hwellFormed
+        .completed (.scheduleRemove (.accepted context)) ∧
+      (gate state (.scheduleRemove subject)).state.resumable = next ∧
+      ResumablePreemption.WellFormed
+        (gate state (.scheduleRemove subject)).state.resumable := by
+  have hpreserved := ResumablePreemption.remove_preserves_wellFormed
+    state.resumable subject hwellFormed
   rw [haccepted] at hpreserved
-  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+  simp [gate, hmode, operationReply, applyOperation, haccepted,
+    installSchedulerRemoval, hpreserved]
 
 /-- An accepted voluntary yield retains the exact round-robin post-state;
 composite synchronization cannot repair or replace the scheduler result. -/
@@ -2544,6 +2568,104 @@ theorem ipc_operationPreservesRuntimeWellFormed call :
   | receive handleWord =>
       exact ipcReceive_operationPreservesRuntimeWellFormed handleWord
 
+/-- Resumable-aware scheduler removal closes the cleanup obligation exposed by
+the raw scheduler transition.  Saved context and active translation cleanup
+are published with the scheduler post-state, while the no-peer case is a typed,
+state-preserving rejection. -/
+theorem scheduleRemove_operationPreservesRuntimeWellFormed subject :
+    OperationPreservesRuntimeWellFormed (.scheduleRemove subject) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hremove : ResumablePreemption.remove state.resumable subject with
+    | mk next result =>
+        cases result with
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.scheduleRemove subject) (.scheduleRemove (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hremove])
+              (.scheduleRemove subject reason (by simp [hremove]))).1
+        | accepted context =>
+            rcases hstate with
+              ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+                hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
+            rcases hcoherent with
+              ⟨hexecutionCoherent, hschedulerCoherent, hpreemptionCoherent,
+                hcapabilitiesCoherent, hvirtualCapabilitiesCoherent,
+                hipcVirtualCoherent, hipcCapabilitiesCoherent,
+                hresumableSchedulerCoherent, hresumableVirtualCoherent,
+                htransfersCoherent, hauthorityCoherent, hdeadMailbox, hliveSender⟩
+            have hresumable' := ResumablePreemption.remove_preserves_wellFormed
+              state.resumable subject hresumable
+            rw [hremove] at hresumable'
+            rcases ResumablePreemption.remove_accepted_exact state.resumable subject context
+                (by simp [hremove]) with
+              ⟨scheduler, hschedulerRemove, hnext, hpeer⟩
+            rw [hremove] at hnext
+            change next = ResumablePreemption.removeState
+              state.resumable subject scheduler at hnext
+            subst next
+            have hschedulerRemove' : Scheduler.remove state.scheduler subject =
+                { state := scheduler, result := .accepted context } := by
+              rw [← hresumableSchedulerCoherent]
+              exact hschedulerRemove
+            have hschedulerCapabilities :
+                scheduler.lifecycle.capabilities = state.lifecycle.capabilities := by
+              simp only [Scheduler.remove] at hschedulerRemove'
+              split at hschedulerRemove'
+              · rcases hschedulerRemove' with ⟨rfl, rfl⟩
+                exact hschedulerCoherent ▸ rfl
+              · simp_all [Scheduler.reject]
+            have hvirtualProjection :
+                (ResumablePreemption.removeState state.resumable subject scheduler).translations.virtual =
+                  state.virtualMemory := by
+              simpa [ResumablePreemption.removeState] using hresumableVirtualCoherent
+            have hcoherent' :
+                (installSchedulerRemoval state
+                  (ResumablePreemption.removeState state.resumable subject scheduler)).Coherent := by
+              refine ⟨rfl, rfl, rfl, ?_, ?_, hipcVirtualCoherent, ?_, rfl,
+                hvirtualProjection, htransfersCoherent, ?_, ?_, ?_⟩
+              · simp only [installSchedulerRemoval, ResumablePreemption.removeState]
+                rw [hcapabilitiesCoherent, hschedulerCapabilities]
+              · simp only [installSchedulerRemoval, ResumablePreemption.removeState]
+                rw [hvirtualCapabilitiesCoherent, hschedulerCapabilities]
+              · simp only [installSchedulerRemoval, ResumablePreemption.removeState]
+                rw [hipcCapabilitiesCoherent, hschedulerCapabilities]
+              · intro current hcurrent
+                simp only [installSchedulerRemoval, ResumablePreemption.removeState] at hcurrent ⊢
+                cases hschedulerCurrent : scheduler.lifecycle.current with
+                | none => simp [hschedulerCurrent] at hcurrent
+                | some actual =>
+                    simp [hschedulerCurrent] at hcurrent
+                    subst current
+                    simp [hschedulerCurrent]
+              · simp only [installSchedulerRemoval, ResumablePreemption.removeState]
+                rw [hschedulerCapabilities]
+                exact hdeadMailbox
+              · simp only [installSchedulerRemoval, ResumablePreemption.removeState]
+                rw [hschedulerCapabilities]
+                exact hliveSender
+            simp only [gate, hmode, applyOperation, hremove]
+            refine ⟨hcoherent', ?_, ?_, ?_, ?_, ?_, ?_, ?_, hresumable', ?_, ?_, ?_⟩
+            · rcases hexecution with ⟨hexecutionCore, _hbound, hmodeWellFormed⟩
+              refine ⟨?_, by simp [installSchedulerRemoval], ?_⟩
+              · simpa [Interrupt.WellFormed, installSchedulerRemoval] using
+                  hresumable'.1.1
+              · cases hschedulerCurrent : scheduler.lifecycle.current <;>
+                  simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+                    hschedulerCurrent] using hmodeWellFormed
+            · exact hresumable'.1.1
+            · exact hcapabilities
+            · exact hvirtual
+            · exact hipc
+            · exact hresumable'.1
+            · rcases hpreemption with ⟨_, hticks⟩
+              exact ⟨hresumable'.1, hticks⟩
+            · exact htransfers
+            · simpa [installSchedulerRemoval, ResumablePreemption.removeState] using hhalted
+            · simp [installSchedulerRemoval]
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.scheduleRemove subject) hstate hmode
+
 /-- A raw scheduler insertion cannot establish the resumable-context side of
 the composite invariant by itself.  If its published post-state is globally
 well formed, the inserted subject's saved context must already have been
@@ -2577,112 +2699,6 @@ theorem gate_scheduleAdd_accepted_runtimeWellFormed_requires_staged_context
   have hagreement := hresumable.2.2.2.2.2.1.1 subject hreadyPublished
   simpa [gate, hmode, applyOperation, haccepted, installScheduler,
     installLifecycle] using hagreement
-
-/-- Removing a queued subject through the raw scheduler transition cannot by
-itself preserve the composite invariant: the pre-state's ready/context
-agreement supplies a saved context for that subject, while removal makes the
-subject non-runnable without consuming that context.  A complete scheduler
-removal operation must therefore perform resumable-context cleanup atomically
-with queue removal. -/
-theorem gate_scheduleRemove_accepted_queued_requires_context_cleanup
-    state subject context next
-    (hstate : RuntimeWellFormed state)
-    (hmode : state.execution.mode = .running)
-    (hqueued : subject ∈ state.scheduler.ready)
-    (haccepted : Scheduler.remove state.scheduler subject =
-      { state := next, result := .accepted context }) :
-    ¬ RuntimeWellFormed (gate state (.scheduleRemove subject)).state := by
-  intro hpost
-  rcases hstate with
-    ⟨hcoherent, _, _, _, _, _, _, _, hresumable, _, _, _⟩
-  have hqueuedResumable : subject ∈ state.resumable.scheduler.ready := by
-    rw [hcoherent.2.2.2.2.2.2.2.1]
-    exact hqueued
-  obtain ⟨saved, hsaved, howner⟩ :=
-    hresumable.2.2.2.2.2.1.1 subject hqueuedResumable
-  rcases hpost with
-    ⟨_, _, _, _, _, _, _, _, hresumablePost, _, _, _⟩
-  have hsavedPost : saved ∈
-      (gate state (.scheduleRemove subject)).state.resumable.contexts := by
-    simpa [gate, hmode, applyOperation, haccepted, installScheduler,
-      installLifecycle] using hsaved
-  have hvalid := hresumablePost.2.2.2.1 saved hsavedPost
-  have hrunnable : next.lifecycle.runnable subject = true := by
-    simpa [gate, hmode, applyOperation, haccepted, installScheduler,
-      installLifecycle, howner] using hvalid.2.2.2.1
-  simp only [Scheduler.remove] at haccepted
-  split at haccepted
-  · rcases haccepted with ⟨rfl, rfl⟩
-    simp [SubjectLifecycle.setBool] at hrunnable
-  · simp_all [Scheduler.reject]
-
-/-- Removing the current subject through the raw scheduler transition also
-cannot preserve the composite invariant by itself.  The pre-state's
-translation agreement names the current subject as the active address space,
-while scheduler removal clears `current` without switching or invalidating
-that translation projection.  A complete current-subject removal must
-therefore perform translation cleanup atomically with scheduler cleanup. -/
-theorem gate_scheduleRemove_accepted_current_requires_translation_cleanup
-    state subject context next
-    (hstate : RuntimeWellFormed state)
-    (hmode : state.execution.mode = .running)
-    (hcurrent : state.scheduler.lifecycle.current = some subject)
-    (haccepted : Scheduler.remove state.scheduler subject =
-      { state := next, result := .accepted context }) :
-    ¬ RuntimeWellFormed (gate state (.scheduleRemove subject)).state := by
-  intro hpost
-  rcases hstate with
-    ⟨hcoherent, _, _, _, _, _, _, _, hresumable, _, _, _⟩
-  rcases hresumable with
-    ⟨_, _, _, _, _, _, htranslation, _, _, _⟩
-  have hresumableCurrent :
-      state.resumable.scheduler.lifecycle.current = some subject := by
-    rw [hcoherent.2.2.2.2.2.2.2.1]
-    exact hcurrent
-  have hactive : state.resumable.translations.active = some subject := by
-    simpa [ResumablePreemption.TranslationAgreement, hresumableCurrent] using
-      htranslation.2
-  have hnextCurrent : next.lifecycle.current = none := by
-    have haccepted' := haccepted
-    simp only [Scheduler.remove] at haccepted'
-    split at haccepted'
-    · rcases haccepted' with ⟨rfl, rfl⟩
-      simp
-    · simp_all [Scheduler.reject]
-  rcases hpost with
-    ⟨_, _, _, _, _, _, _, _, hresumablePost, _, _, _⟩
-  rcases hresumablePost with
-    ⟨_, _, _, _, _, _, htranslationPost, _, _, _⟩
-  have hactiveNone : state.resumable.translations.active = none := by
-    simpa [ResumablePreemption.TranslationAgreement, gate, hmode,
-      applyOperation, haccepted, installScheduler, installLifecycle,
-      hnextCurrent] using htranslationPost.2
-  simp_all
-
-/-- Every accepted raw scheduler removal exposes one of the two resumable-state
-cleanup obligations above.  Scheduler acceptance means the subject was either
-current or queued; the current case requires translation invalidation, while
-the queued case requires saved-context consumption.  Consequently the raw
-operation can never be registered as a globally invariant-preserving operation
-until both cleanups are published atomically with the scheduler post-state. -/
-theorem gate_scheduleRemove_accepted_requires_atomic_resumable_cleanup
-    state subject context next
-    (hstate : RuntimeWellFormed state)
-    (hmode : state.execution.mode = .running)
-    (haccepted : Scheduler.remove state.scheduler subject =
-      { state := next, result := .accepted context }) :
-    ¬ RuntimeWellFormed (gate state (.scheduleRemove subject)).state := by
-  by_cases hcurrent : state.scheduler.lifecycle.current = some subject
-  · exact gate_scheduleRemove_accepted_current_requires_translation_cleanup
-      state subject context next hstate hmode hcurrent haccepted
-  · apply gate_scheduleRemove_accepted_queued_requires_context_cleanup
-      state subject context next hstate hmode
-    · have haccepted' := haccepted
-      simp only [Scheduler.remove] at haccepted'
-      split at haccepted'
-      · simp_all
-      · simp_all [Scheduler.reject]
-    · exact haccepted
 
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
