@@ -701,6 +701,82 @@ theorem copy_preserves_absent_identity (state : State) (actor : SubjectId)
     · apply habsent subject slot capability
       simpa [install, htarget] using hslot
 
+/-- Single-slot revocation changes only the live slot projection.  Registry,
+allocation-frontier, derivation-history, and bounded-space metadata remain
+exactly unchanged. -/
+theorem revoke_preserves_metadata (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId) :
+    let next := (revoke state actor authoritySlot victim victimSlot).state
+    next.subjects = state.subjects ∧
+      next.objects = state.objects ∧
+      next.kinds = state.kinds ∧
+      next.slotCapacity = state.slotCapacity ∧
+      next.nextIdentity = state.nextIdentity ∧
+      next.derivations = state.derivations := by
+  simp only [revoke]
+  split <;> try simp [reject]
+  next authority =>
+    split <;> try simp
+    split <;> try simp
+    next target =>
+      split <;> simp [clear]
+
+/-- Every capability surviving direct revocation occupied the same slot in the
+pre-state.  This projection is reusable for sealed-identity disjointness. -/
+theorem revoke_slot_survives (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
+    (subject : SubjectId) (slot : SlotId) (capability : Capability)
+    (hslot : (revoke state actor authoritySlot victim victimSlot).state.slots subject slot =
+      some capability) :
+    state.slots subject slot = some capability := by
+  simp only [revoke] at hslot
+  split at hslot <;> try simpa [reject] using hslot
+  next authority =>
+    split at hslot <;> try simpa [reject] using hslot
+    split at hslot <;> try simpa [reject] using hslot
+    next target =>
+      split at hslot
+      · by_cases htarget : subject = victim ∧ slot = victimSlot
+        · simp [clear, htarget] at hslot
+        · simpa [clear, htarget] using hslot
+      · simpa [reject] using hslot
+
+/-- Subtree revocation retains every non-slot component exactly. -/
+theorem revokeSubtree_preserves_metadata (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId) :
+    let next := (revokeSubtree state actor authoritySlot victim victimSlot).state
+    next.subjects = state.subjects ∧
+      next.objects = state.objects ∧
+      next.kinds = state.kinds ∧
+      next.slotCapacity = state.slotCapacity ∧
+      next.nextIdentity = state.nextIdentity ∧
+      next.derivations = state.derivations := by
+  simp only [revokeSubtree]
+  split <;> try simp [reject]
+  next authority =>
+    split <;> try simp
+    split <;> try simp
+    next target =>
+      split <;> simp [clearSubtree]
+
+/-- Every capability surviving subtree revocation occupied the same slot in
+the pre-state. -/
+theorem revokeSubtree_slot_survives (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
+    (subject : SubjectId) (slot : SlotId) (capability : Capability)
+    (hslot : (revokeSubtree state actor authoritySlot victim victimSlot).state.slots
+      subject slot = some capability) :
+    state.slots subject slot = some capability := by
+  simp only [revokeSubtree] at hslot
+  split at hslot <;> try simpa [reject] using hslot
+  next authority =>
+    split at hslot <;> try simpa [reject] using hslot
+    split at hslot <;> try simpa [reject] using hslot
+    next target _ =>
+      split at hslot
+      · exact clearSubtree_slot_survives state target.identity subject slot capability hslot
+      · simpa [reject] using hslot
+
 theorem revoke_preserves_wellFormed (state : State) (actor : SubjectId)
     (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
     (hstate : WellFormed state) :
