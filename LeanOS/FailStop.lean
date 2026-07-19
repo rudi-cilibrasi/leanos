@@ -1258,7 +1258,9 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       let outcome := SubjectLifecycle.terminate state.lifecycle subject
       match outcome.result with
       | .rejected _ => state
-      | .accepted => installLifecycle state outcome.state
+      | .accepted =>
+          installResumable state
+            (ResumablePreemption.cleanupSubject state.resumable subject)
   | .scheduleAdd subject =>
       let outcome := Scheduler.add state.scheduler subject
       match outcome.result with
@@ -3677,6 +3679,39 @@ theorem ipc_operationPreservesRuntimeWellFormed call :
       exact ipcSend_operationPreservesRuntimeWellFormed handleWord word0 word1
   | receive handleWord =>
       exact ipcReceive_operationPreservesRuntimeWellFormed handleWord
+
+/-! ### Accepted termination cleanup
+
+Subject termination is published through the authoritative resumable cleanup,
+not through lifecycle synchronization alone.  Consequently the accepted gate
+step removes every scheduler and saved-context reference in the same mutation
+that retires the subject identity. -/
+
+/-- Typed acceptance of subject termination exposes the cleanup facts needed
+by every future operation-family preservation proof: the subject is dead,
+cannot remain current or queued, and has no resumable context. -/
+theorem terminateSubject_accepted_cleans_runtime_references state subject lifecycle
+    (hmode : state.execution.mode = .running)
+    (haccepted : SubjectLifecycle.terminate state.lifecycle subject =
+      { state := lifecycle, result := .accepted }) :
+    (gate state (.terminateSubject subject)).result =
+        .completed (.terminateSubject .accepted) ∧
+      (gate state (.terminateSubject subject)).state.lifecycle.capabilities.subjects
+          subject = false ∧
+      subject ∉ (gate state (.terminateSubject subject)).state.scheduler.ready ∧
+      (gate state (.terminateSubject subject)).state.scheduler.lifecycle.current ≠
+          some subject ∧
+      ResumablePreemption.contextFor
+          (gate state (.terminateSubject subject)).state.resumable.contexts subject = none := by
+  have hdead := ResumablePreemption.cleanup_terminates_subject
+    state.resumable subject
+  have hscheduler := ResumablePreemption.cleanup_removes_scheduler_membership
+    state.resumable subject
+  have hcontext := ResumablePreemption.cleanup_removes_context
+    state.resumable subject
+  simp only [gate, hmode, operationReply, applyOperation, haccepted]
+  simp only [installResumable, installLifecycle]
+  exact ⟨trivial, hdead, hscheduler.1, hscheduler.2, hcontext⟩
 
 /-! ### Scheduler rejection preservation
 
