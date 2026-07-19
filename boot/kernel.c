@@ -30,6 +30,8 @@ extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t,
 extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_extended_state_denial_demo(uint64_t, uint64_t, uint64_t,
                                                    uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_fault_dispatch_demo(uint64_t, uint64_t, uint64_t,
+                                            uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void enable_smep(void);
@@ -152,6 +154,15 @@ static unsigned entry_adversarial_step;
 #endif
 static uint8_t copy_buffer[16];
 static unsigned copy_step;
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+struct fault_containment_authority {
+    uint64_t live, runnable, current, ready, contexts;
+    uint64_t resources, peer_canary;
+};
+static struct fault_containment_authority fault_authority = {
+    6, 6, 1, 4, 4, 0x030201, UINT64_C(0xb2b2cafe51a7e55e)
+};
+#endif
 static void finish(uint8_t value);
 static __attribute__((noreturn)) void fail(const char *reason);
 static void serial_puts(const char *text);
@@ -798,8 +809,13 @@ static void replay_oracle(void) {
                                     : v->adapter == 9
                                         ? leanos_entry_demo(v->words[0], v->words[1], v->words[2],
                                             v->words[3], v->words[4])
-                                        : leanos_extended_state_denial_demo(v->words[0], v->words[1],
-                                            v->words[2], v->words[3], v->words[4], v->words[5]);
+                                        : v->adapter == 10
+                                            ? leanos_extended_state_denial_demo(v->words[0],
+                                                v->words[1], v->words[2], v->words[3],
+                                                v->words[4], v->words[5])
+                                            : leanos_fault_dispatch_demo(v->words[0], v->words[1],
+                                                v->words[2], v->words[3], v->words[4],
+                                                v->words[5]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -975,6 +991,21 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+    if (number == 14 && current_subject == 2) {
+        check_selected_root_b();
+        if (arg0 != UINT64_C(0xb2b2cafe51a7e55e) || arg1 != 0x030201 ||
+            arg2 != 0x51a7 || fault_authority.live != 4 ||
+            fault_authority.runnable != 4 || fault_authority.current != 2 ||
+            fault_authority.ready != 0 || fault_authority.contexts != 0 ||
+            fault_authority.resources != 0x030201 ||
+            fault_authority.peer_canary != UINT64_C(0xb2b2cafe51a7e55e))
+            fail("fault-peer-state");
+        serial_puts("LEANOS/14 PEER subject=2 address-space=2 stack=owned canaries=preserved resources=unchanged result=PASS\n");
+        serial_puts("LEANOS/14 FINAL status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop\n");
+        finish(0x10);
+    }
+#endif
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     if (current_subject == 2 && number == 13) {
 #ifdef LEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE
@@ -1334,6 +1365,36 @@ static void arm_timer(void) {
 
 uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
                             uint64_t fault_address) {
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+    if ((saved_cs & 3u) == 3u && error == 5u &&
+        rip == (uint64_t)user_a_fault_instruction && fault_address == 0u) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        if (current_subject != 1 || cr3 != (uint64_t)page_map_level_4_a ||
+            fault_authority.current != 1 || fault_authority.ready != 4 ||
+            fault_authority.contexts != 4)
+            fail("fault-authority-binding");
+        serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS\n");
+        uint64_t result = leanos_fault_dispatch_demo(14, saved_cs & 3u,
+            fault_authority.current, 1, 2, 2);
+        if (result != UINT64_C(0x000000001f020202))
+            fail("fault-model-dispatch");
+        uint64_t selected = (result >> 8) & 0xffu;
+        uint64_t address_space = (result >> 16) & 0xffu;
+        uint64_t cleanup = (result >> 24) & 0x1fu;
+        fault_authority.live &= ~(1ull << 1);
+        fault_authority.runnable &= ~(1ull << 1);
+        fault_authority.current = selected;
+        fault_authority.ready = 0;
+        fault_authority.contexts &= ~(1ull << 2);
+        current_subject = selected;
+        serial_puts("LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+        if (cleanup != 0x1fu || selected != 2 || address_space != 2)
+            fail("fault-model-encoding");
+        serial_puts("LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
+        return 2;
+    }
+#endif
     if ((saved_cs & 3u) == 3u && error == 5u &&
         rip == (uint64_t)user_a_fault_instruction && fault_address == 0u) {
 #ifdef LEANOS_ENTRY_HIGH_WATER
@@ -1374,6 +1435,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     serial_puts("LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
+#elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
+    serial_puts("LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 #else
@@ -1434,6 +1497,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         extended_state_probe_class == 3 ? "sse2" : "avx");
     serial_puts(extended_state_probe_class >= 2 ?
         " expected-vector=6\n" : " expected-vector=7\n");
+    enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
+    current_subject = 1;
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    check_selected_root_a();
+    serial_puts("LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     arm_timer();

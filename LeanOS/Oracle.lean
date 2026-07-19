@@ -8,6 +8,7 @@ import LeanOS.InterruptEntry
 import LeanOS.BlockingIPC
 import LeanOS.CapabilityReuse
 import LeanOS.ExtendedState
+import LeanOS.FaultDispatch
 
 /-!
 # Bounded scalar boundary oracle
@@ -81,6 +82,13 @@ private def extendedState (id : String) (policy mode vector current active norma
   { id, adapter := "ExtendedState.denialDispatch",
     words := [policy, mode, vector, current, active, normalized],
     expected := ExtendedState.denialMachineGateModel policy mode vector current active normalized }
+
+private def faultDispatch (id : String) (vector origin current active ready context : UInt64) :
+    Vector :=
+  { id, adapter := "FaultDispatch.scalar",
+    words := [vector, origin, current, active, ready, context],
+    expected := FaultDispatch.faultDispatchModelExpected
+      vector origin current active ready context }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -201,9 +209,17 @@ def vectors : List Vector := [
   extendedState "extended-state.dispatch-invariant" 1 3 7 1 1 1,
   extendedState "extended-state.idle" 1 4 7 1 1 1,
   extendedState "extended-state.stale-binding" 1 0 7 1 1 2,
-  extendedState "extended-state.dispatch-peer-ud" 1 6 6 1 1 1]
+  extendedState "extended-state.dispatch-peer-ud" 1 6 6 1 1 1,
+  faultDispatch "fault-dispatch.accept-a-to-b" 14 3 1 1 2 2,
+  faultDispatch "fault-dispatch.kernel-origin" 14 0 1 1 2 2,
+  faultDispatch "fault-dispatch.wrong-vector" 13 3 1 1 2 2,
+  faultDispatch "fault-dispatch.stale-current" 14 3 3 1 2 2,
+  faultDispatch "fault-dispatch.wrong-address-space" 14 3 1 3 2 2,
+  faultDispatch "fault-dispatch.empty-ready" 14 3 1 1 0 0,
+  faultDispatch "fault-dispatch.already-terminated" 14 3 0 1 2 2,
+  faultDispatch "fault-dispatch.stale-context" 14 3 1 1 2 3]
 
-theorem corpus_shape : vectors.length = 112 := by decide
+theorem corpus_shape : vectors.length = 120 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -285,6 +301,20 @@ theorem extended_state_dispatch_scenario_agrees :
     (vectors[109]).expected = 1 ∧
     (vectors[110]).expected = 0 ∧
     (vectors[111]).expected = 0x3f00000000000102 := by
+  native_decide
+
+private def faultDispatchAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "FaultDispatch.scalar", [rawVector, origin, current, active, ready, context] =>
+      FaultDispatch.faultDispatchDemo rawVector origin current active ready context =
+        vector.expected
+  | _, _ => true
+
+/-- Every bounded fault/dispatch vector couples the allocation-free exported
+adapter to an expectation evaluated by the authoritative normalized-entry,
+lifecycle-cleanup, scheduler-selection, context-bank, and TLB transition. -/
+theorem fault_dispatch_adapter_agrees_with_model :
+    vectors.all faultDispatchAdapterAgrees = true := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

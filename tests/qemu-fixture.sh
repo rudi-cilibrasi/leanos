@@ -8,6 +8,49 @@ for ((i=1; i<=$#; ++i)); do
   if [[ "${!i}" == -m ]]; then next=$((i + 1)); memory_mib="${!next%M}"; fi
 done
 if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
+      "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == fault-containment ]]; then
+  set +e
+  LEANOS_BOOT_SCENARIO=blocking-ipc LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
+  status=$?
+  set -e
+  sed -i \
+    -e 's|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap|LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap|' \
+    -e '/^LEANOS\/9 /d' -e '/^LEANOS\/10 /d' \
+    -e '/^LEANOS\/6 COPY /d' -e '/^LEANOS\/11 USER-FAULT /d' \
+    -e '/^LEANOS\/11 ENTRY-HIGH-WATER /d' \
+    -e '/^LEANOS\/8 PAGING root=B selected=1 result=PASS$/d' \
+    -e '/^LEANOS\/8 PAGING root=A selected=1 resumed=1 result=PASS$/d' "$log"
+  cat >> "$log" <<'EOF'
+LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS
+LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned
+LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS
+LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS
+LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS
+LEANOS/8 PAGING root=B selected=1 result=PASS
+LEANOS/14 PEER subject=2 address-space=2 stack=owned canaries=preserved resources=unchanged result=PASS
+LEANOS/14 FINAL status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop
+EOF
+  exit "$status"
+fi
+case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
+fault-direct-call|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-peer-corrupt|fault-forged-pass|fault-kernel-relabeled)
+  mode="${LEANOS_QEMU_FIXTURE_MODE}"
+  set +e
+  LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
+  set -e
+  case "$mode" in
+    fault-direct-call) sed -i 's/direct-call=0/direct-call=1/' "$log" ;;
+    fault-old-recovery) sed -i '/^LEANOS\/14 TERMINATE /d; /^LEANOS\/14 DISPATCH /d' "$log" ;;
+    fault-stale-cr3) sed -i 's/subject=2 address-space=2 source/subject=2 address-space=1 source/' "$log" ;;
+    fault-cleanup-missing) sed -i 's/resumable=0/resumable=1/' "$log" ;;
+    fault-peer-corrupt) sed -i 's/canaries=preserved/canaries=corrupt/' "$log" ;;
+    fault-forged-pass) sed -i '/^LEANOS\/14 FAULT-ENTRY /d; /^LEANOS\/14 TERMINATE /d' "$log" ;;
+    fault-kernel-relabeled) sed -i 's/origin=cpl3/origin=kernel/' "$log" ;;
+  esac
+  exit 33
+  ;;
+esac
+if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
       "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == preemption ]]; then
   set +e
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"

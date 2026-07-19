@@ -1125,4 +1125,62 @@ theorem dispatch_preserves_wellFormed state entry
       rw [fatal_state_eq_halt state entry reason haction]
       simpa [halt, ResumablePreemption.wellFormed_set_halted] using hstate
 
+/-! A fixed-width boundary for the first boot containment scenario.  The
+machine passes only values already bound by the normalized entry record and
+the kernel-owned bounded scheduler/context bank.  The result packs action in
+the low byte, selected subject/address space in the next two bytes, and the
+five cleanup witnesses (live, runnable, current, queued, resumable) in bits
+24--28.  Bit 63 distinguishes typed fail-stop from nonfatal rejection. -/
+
+def faultDispatchDemo (vector origin current active ready contextOwner : UInt64) : UInt64 :=
+  if vector != 14 then 0x8000000000000002
+  else if origin != 3 then 0x8000000000000001
+  else if current != 1 || active != 1 then 0
+  else if ready = 0 then 1
+  else if ready = 2 && contextOwner = 2 then 0x000000001f020202
+  else 0
+
+@[export leanos_fault_dispatch_demo]
+def faultDispatchDemoExport (vector origin current active ready contextOwner : UInt64) : UInt64 :=
+  faultDispatchDemo vector origin current active ready contextOwner
+
+def encodeBootOutcome (outcome : Outcome) : UInt64 :=
+  match outcome.action with
+  | .idle => 1
+  | .dispatch context =>
+      2 + UInt64.ofNat context.owner * 0x100 +
+        UInt64.ofNat context.addressSpace * 0x10000 + 0x1f000000
+  | .rejected _ => 0
+  | .fatal .kernelOrigin => 0x8000000000000001
+  | .fatal _ => 0x8000000000000002
+
+/-- Independently evaluated expectation for the shared oracle.  Each scalar
+fixture selects a concrete input to the authoritative composite transition;
+the exported adapter is not used to compute this expected word. -/
+def faultDispatchModelExpected (vector origin current active ready contextOwner : UInt64) : UInt64 :=
+  let state :=
+    if current = 0 then traceAlreadyTerminated
+    else if ready = 0 then traceState false
+    else if contextOwner = 2 then traceState true
+    else traceStaleSurvivorVirtualOwner
+  let entry :=
+    if vector != 14 then (.fatal .unsupportedVector : InterruptEntry.Result)
+    else if origin != 3 then InterruptEntry.normalize traceRawKernelFault traceKernelContext
+    else match traceEntry with
+      | .accepted frame => .accepted { frame with
+          currentSubject := current.toNat, activeAddressSpace := active.toNat }
+      | other => other
+  encodeBootOutcome (dispatch state entry)
+
+theorem faultDispatchDemo_accepts_composite :
+    faultDispatchDemo 14 3 1 1 2 2 =
+      encodeBootOutcome (dispatch (traceState true) traceEntry) := by
+  native_decide
+
+theorem faultDispatchDemo_kernel_origin_fail_stop :
+    faultDispatchDemo 14 0 1 1 2 2 =
+      encodeBootOutcome (dispatch (traceState true)
+        (InterruptEntry.normalize traceRawKernelFault traceKernelContext)) := by
+  native_decide
+
 end LeanOS.FaultDispatch
