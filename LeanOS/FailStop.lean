@@ -5678,6 +5678,212 @@ theorem gate_resumePreempt_nonfatal_preserves_runtimeWellFormed state frame regi
     hstate hmode hnext hcapabilities hvirtual hhalted
   simpa [gate, hmode, applyOperation, hhalted] using hpublished
 
+private theorem resumeSwitch_halted_requires_fatal_dispatch state frame registers
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hhalted : (ResumablePreemption.switch state.resumable state.execution.core
+      frame registers).state.halted = true) :
+    ∃ reason, (Interrupt.dispatchHardware state.execution.core frame).action =
+      .fatal reason := by
+  have hresumable : state.resumable.halted = false := by
+    cases hvalue : state.resumable.halted with
+    | false => rfl
+    | true =>
+        obtain ⟨record, hrecord⟩ := hstate.2.2.2.2.2.2.2.2.2.2.1.mp hvalue
+        rw [hmode] at hrecord
+        contradiction
+  simp only [ResumablePreemption.switch, hresumable, Bool.false_eq_true, if_false]
+    at hhalted
+  generalize hdispatch : Interrupt.dispatchHardware state.execution.core frame = outcome
+    at hhalted
+  cases outcome with
+  | mk next action =>
+      cases action with
+      | fatal reason =>
+          exact ⟨reason, rfl⟩
+      | contained subject =>
+          simp [ResumablePreemption.reject, hresumable] at hhalted
+      | timer =>
+          simp only at hhalted
+          split at hhalted <;> try simp_all [ResumablePreemption.reject]
+          all_goals split at hhalted <;> try simp_all [ResumablePreemption.reject]
+          all_goals split at hhalted <;> try simp_all [ResumablePreemption.reject]
+          all_goals split at hhalted <;> try simp_all [ResumablePreemption.reject]
+          all_goals split at hhalted <;> try simp_all [ResumablePreemption.reject]
+          all_goals split at hhalted <;> try simp_all [ResumablePreemption.reject]
+          all_goals split at hhalted <;> try simp_all [ResumablePreemption.reject]
+          all_goals split at hhalted <;> try simp_all [ResumablePreemption.reject]
+          all_goals split at hhalted <;> try simp_all [ResumablePreemption.reject]
+          all_goals split at hhalted <;> try simp_all [ResumablePreemption.reject]
+          all_goals split at hhalted <;> simp_all [ResumablePreemption.reject]
+      | syscall =>
+          simp [ResumablePreemption.reject, hresumable] at hhalted
+      | rejected reason =>
+          simp [ResumablePreemption.reject, hresumable] at hhalted
+
+private theorem resumeSwitch_halted_state_eq state frame registers
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hhalted : (ResumablePreemption.switch state.resumable state.execution.core
+      frame registers).state.halted = true) :
+    (ResumablePreemption.switch state.resumable state.execution.core frame registers).state =
+      { state.resumable with halted := true } := by
+  obtain ⟨reason, hfatal⟩ := resumeSwitch_halted_requires_fatal_dispatch
+    state frame registers hstate hmode hhalted
+  have hresumable : state.resumable.halted = false := by
+    cases hvalue : state.resumable.halted with
+    | false => rfl
+    | true =>
+        obtain ⟨record, hrecord⟩ := hstate.2.2.2.2.2.2.2.2.2.2.1.mp hvalue
+        rw [hmode] at hrecord
+        contradiction
+  simp [ResumablePreemption.switch, hresumable, hfatal, ResumablePreemption.halt]
+
+private theorem fatalInterrupt_dispatchHardware_halts execution frame reason
+    (hmode : execution.mode = .running)
+    (hentry : execution.core.context.entryActive = false)
+    (hfatal : (Interrupt.dispatchHardware execution.core frame).action = .fatal reason) :
+    ∃ record, (dispatchHardware execution frame).state.mode = .halted record := by
+  simp only [dispatchHardware, hmode, beginEntry, finishEntry, activeEntry]
+  have hprepared :
+      { execution.core with context :=
+        { execution.core.context with entryActive := false } } = execution.core := by
+    cases hcore : execution.core with
+    | mk lifecycle context =>
+        cases hcontext : context with
+        | mk current space stack active => simp_all
+  rw [hprepared]
+  generalize hdispatch : Interrupt.dispatchHardware execution.core frame = outcome
+    at hfatal ⊢
+  cases outcome with
+  | mk next action =>
+      cases action <;> simp_all [halt]
+
+private theorem installResumable_fatal_preserves_runtimeWellFormed state entry
+    (hstate : RuntimeWellFormed state)
+    (hentry : WellFormed entry)
+    (hentryMode : ∃ record, entry.mode = .halted record) :
+    RuntimeWellFormed
+      (installResumable { state with execution := entry }
+        { state.resumable with halted := true }) := by
+  rcases hstate with
+    ⟨hcoherent, _hexecution, hlifecycle, hcapabilityWellFormed,
+      hvirtualWellFormed, hipc, hschedulerWellFormed, hpreemption, _hresumable,
+      htransfers, _hterminal, _hlive⟩
+  rcases hcoherent with
+    ⟨hexecutionLifecycle, hschedulerLifecycle, hpreemptionScheduler,
+      hcapabilitiesLifecycle, hmemoryCapabilities, hipcVirtual,
+      hipcCapabilities, hresumableScheduler, htranslationVirtual,
+      htransferEndpoints, hauthority, hdeadMailbox, hliveSender⟩
+  rcases hentry with ⟨_hentryCore, _hentryBound, hentryWellFormed⟩
+  obtain ⟨record, hrecord⟩ := hentryMode
+  have hentryExecution : WellFormed
+      { entry with
+        core := { entry.core with
+          lifecycle := state.resumable.scheduler.lifecycle
+          context := match state.resumable.scheduler.lifecycle.current with
+            | some subject => { entry.core.context with
+                currentSubject := subject, activeAddressSpace := subject }
+            | none => entry.core.context }
+        returnAuthorityArmed := false } := by
+    refine ⟨?_, by simp, ?_⟩
+    · simpa [Interrupt.WellFormed, hresumableScheduler, hschedulerLifecycle] using
+        hlifecycle
+    · rw [hrecord]
+      cases hcurrent : state.resumable.scheduler.lifecycle.current <;>
+        simpa [hcurrent, hrecord] using hentryWellFormed
+  have hipc' : IPCSyscall.WellFormed
+      { state.ipc with virtualMemory := state.virtualMemory } := by
+    rw [← hipcVirtual]
+    exact hipc
+  have hcoherent' :
+      (installResumable { state with execution := entry }
+        { state.resumable with halted := true }).Coherent := by
+    simp [CompositeState.Coherent, installResumable, hresumableScheduler,
+      htranslationVirtual, hschedulerLifecycle, hcapabilitiesLifecycle, hmemoryCapabilities,
+      hipcCapabilities, htransferEndpoints, hdeadMailbox, hliveSender]
+    refine ⟨?_, ?_, ?_⟩
+    · intro subject hcurrent
+      simp [hcurrent]
+    · intro object hdead
+      exact hdeadMailbox object (by simpa [hschedulerLifecycle] using hdead)
+    · intro object envelope hmailbox
+      exact hliveSender object envelope hmailbox
+  refine ⟨hcoherent', ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, htransfers, ?_, ?_⟩
+  · simpa [installResumable] using hentryExecution
+  · simpa [installResumable, hresumableScheduler, hschedulerLifecycle] using hlifecycle
+  · simpa [installResumable, hresumableScheduler, hschedulerLifecycle,
+      hcapabilitiesLifecycle] using
+      hcapabilityWellFormed
+  · simpa [installResumable, htranslationVirtual] using hvirtualWellFormed
+  · simpa [installResumable, htranslationVirtual] using hipc'
+  · simpa [installResumable, hresumableScheduler] using hschedulerWellFormed
+  · simpa [installResumable, hresumableScheduler, Preemption.WellFormed] using
+      (And.intro hschedulerWellFormed hpreemption.2)
+  · simpa [installResumable] using
+      (ResumablePreemption.wellFormed_set_halted state.resumable true).2 _hresumable
+  · simp [installResumable, hrecord]
+  · simp [installResumable]
+
+/-- A resumable-model fatal entry latches the same typed composite fail-stop
+mode while freezing the scheduler, context bank, translations, IPC, and
+authority projections. -/
+theorem gate_resumePreempt_fatal_preserves_runtimeWellFormed state frame registers
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hhalted : (ResumablePreemption.switch state.resumable state.execution.core
+      frame registers).state.halted = true) :
+    RuntimeWellFormed (gate state (.resumePreempt frame registers)).state := by
+  obtain ⟨reason, hfatal⟩ := resumeSwitch_halted_requires_fatal_dispatch
+    state frame registers hstate hmode hhalted
+  have hentryActive : state.execution.core.context.entryActive = false := by
+    simpa [hmode] using hstate.2.1.2.2
+  have hentryMode := fatalInterrupt_dispatchHardware_halts state.execution frame reason
+    hmode hentryActive hfatal
+  have hentryWellFormed : WellFormed (dispatchHardware state.execution frame).state := by
+    rcases hstate.2.1 with ⟨hlifecycle, hbound, hmodeWellFormed⟩
+    simp only [hmode] at hmodeWellFormed
+    simp only [dispatchHardware, hmode, beginEntry, finishEntry, activeEntry]
+    unfold Interrupt.dispatchHardware
+    cases hvector : Interrupt.decodeVector frame.vector with
+    | none => simpa [hvector, halt, WellFormed, Interrupt.WellFormed] using hlifecycle
+    | some vector =>
+        cases vector with
+        | pageFault =>
+            cases frame.savedPrivilege with
+            | kernel =>
+                simpa [hvector, halt, WellFormed, Interrupt.WellFormed] using hlifecycle
+            | user =>
+                simpa [hvector, WellFormed, Interrupt.WellFormed] using
+                  SubjectLifecycle.terminateState_preserves_wellFormed
+                    state.execution.core.lifecycle
+                    state.execution.core.context.currentSubject hlifecycle
+        | timer => simpa [hvector, WellFormed, Interrupt.WellFormed] using hlifecycle
+        | syscall =>
+            cases frame.savedPrivilege <;>
+              simpa [hvector, WellFormed, Interrupt.WellFormed] using hlifecycle
+  have hnext := resumeSwitch_halted_state_eq state frame registers hstate hmode hhalted
+  have hpublished := installResumable_fatal_preserves_runtimeWellFormed state
+    (dispatchHardware state.execution frame).state
+    hstate hentryWellFormed hentryMode
+  simpa [gate, hmode, applyOperation, hhalted, hnext] using hpublished
+
+/-- Resumable preemption is now a complete composite operation family:
+successful switches, typed nonfatal rejection, fatal latching, and outer-gate
+absorption all preserve the global runtime invariant. -/
+theorem resumePreempt_operationPreservesRuntimeWellFormed frame registers :
+    OperationPreservesRuntimeWellFormed (.resumePreempt frame registers) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hhalted : (ResumablePreemption.switch state.resumable
+        state.execution.core frame registers).state.halted
+    · exact gate_resumePreempt_nonfatal_preserves_runtimeWellFormed
+        state frame registers hstate hmode hhalted
+    · exact gate_resumePreempt_fatal_preserves_runtimeWellFormed
+        state frame registers hstate hmode hhalted
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.resumePreempt frame registers) hstate hmode
+
 /-! ### Registered mixed runtime traces
 
 The constructors below are exactly the operation families whose accepted and
@@ -5691,6 +5897,8 @@ inductive RuntimeTraceOperation : Operation → Prop where
   | userReturn request : RuntimeTraceOperation (.userReturn request)
   | syscall call : RuntimeTraceOperation (.syscall call)
   | ipc call : RuntimeTraceOperation (.ipc call)
+  | resumePreempt frame registers :
+      RuntimeTraceOperation (.resumePreempt frame registers)
   | transferOffer endpointWord sourceWord sourceKind payload rights :
       RuntimeTraceOperation
         (.transferOffer endpointWord sourceWord sourceKind payload rights)
@@ -5726,6 +5934,8 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
       exact userReturn_operationPreservesRuntimeWellFormed request
   | syscall call => exact syscall_operationPreservesRuntimeWellFormed call
   | ipc call => exact ipc_operationPreservesRuntimeWellFormed call
+  | resumePreempt frame registers =>
+      exact resumePreempt_operationPreservesRuntimeWellFormed frame registers
   | transferOffer endpointWord sourceWord sourceKind payload rights =>
       exact transferOffer_operationPreservesRuntimeWellFormed endpointWord sourceWord
         sourceKind payload rights
