@@ -2659,6 +2659,31 @@ theorem gate_scheduleRemove_accepted_current_requires_translation_cleanup
       hnextCurrent] using htranslationPost.2
   simp_all
 
+/-- Every accepted raw scheduler removal exposes one of the two resumable-state
+cleanup obligations above.  Scheduler acceptance means the subject was either
+current or queued; the current case requires translation invalidation, while
+the queued case requires saved-context consumption.  Consequently the raw
+operation can never be registered as a globally invariant-preserving operation
+until both cleanups are published atomically with the scheduler post-state. -/
+theorem gate_scheduleRemove_accepted_requires_atomic_resumable_cleanup
+    state subject context next
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : Scheduler.remove state.scheduler subject =
+      { state := next, result := .accepted context }) :
+    ¬ RuntimeWellFormed (gate state (.scheduleRemove subject)).state := by
+  by_cases hcurrent : state.scheduler.lifecycle.current = some subject
+  · exact gate_scheduleRemove_accepted_current_requires_translation_cleanup
+      state subject context next hstate hmode hcurrent haccepted
+  · apply gate_scheduleRemove_accepted_queued_requires_context_cleanup
+      state subject context next hstate hmode
+    · have haccepted' := haccepted
+      simp only [Scheduler.remove] at haccepted'
+      split at haccepted'
+      · simp_all
+      · simp_all [Scheduler.reject]
+    · exact haccepted
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
