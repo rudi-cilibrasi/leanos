@@ -59,10 +59,14 @@ from its authorization input; `attacker_payload_erasure` proves arbitrary
 scalar payload words cannot change the result.
 
 For the selected AMD long-mode contract, representative raw SYSCALL and
-SYSENTER attempts both require vector 6 (`#UD`). The image installs vector 6
-through the existing shared normalizer, and the final-ELF entry-policy check
-retains that exact stub/descriptor path. Raw fast-system-call probes are not
-yet routed through a policy-specific denial handler or exercised end to end.
+SYSENTER attempts both require vector 6 (`#UD`). Dedicated images execute each
+raw two-byte opcode at the single allowlisted CPL3 probe site. Both exceptions
+cross the shared vector-6 normalizer, bind the hardware frame to the protected
+current subject/CR3/ordinary entry stack, and invoke the fixed-width privilege
+entry classifier. A typed denial then reuses the authoritative cleanup and
+fresh-peer selection boundary: subject A is removed, subject B's kernel-owned
+context is restored under root B, and B reaches CPL3 only through the sole
+validated `iretq` epilogue.
 A kernel-origin event, stale live controls, unexpected vector or error shape,
 ordinary `int 0x80` relabeled as denial, alternate CPL0 target execution,
 user-owned entry stack, or stale subject/address-space/CR3 binding becomes a
@@ -72,7 +76,10 @@ name only the authoritative current subject. The completed
 cannot retain that subject as live, queued, current, or resumable.
 
 `armUserReturn` rejects unless the recorded and live tuple are identical and
-accepted. The composite wrapper applies the same prefix to every
+accepted. The machine return validator now rereads the complete MSR denial
+tuple at every use of the sole outbound gate, after validating the extended
+controls and immediately before the existing entry latch is consumed. The
+composite wrapper applies the same prefix to every
 `FailStop.Operation`; operations cannot carry or rewrite the controls.
 `runComposite_preserves_policy` proves the exact policy survives every finite
 nonfatal authoritative operation sequence, while mismatch is latched before
@@ -88,15 +95,18 @@ decoding or exception priority/delivery, IDT/TSS loads, assembly cleanup,
 generated C, compiler/linker output, QEMU/TCG, firmware/GRUB state, hardware,
 or final-binary refinement.
 
-The final-ELF policy currently requires the eight reviewed writes, nine
-reviewed reads, their labeled sites, and no SYSCALL, SYSENTER, SYSRET, or
-SYSEXIT opcode. Controlled fixtures reject inherited SCE, an omitted readback,
-and an extra MSR write. The normal QEMU image boots successfully with the
-runtime readback enabled; that finite observation does not establish raw
-alternate-instruction behavior.
+The final-ELF policy requires the eight reviewed writes, nine reviewed reads,
+their labeled sites, and no SYSCALL, SYSENTER, SYSRET, or SYSEXIT opcode in
+production images. Each deliberate probe image contains exactly one expected
+SYSCALL or SYSENTER instruction at the exported probe label and rejects every
+other fast-entry opcode. Controlled fixtures reject inherited SCE, an omitted
+boot or return-gate readback, and an extra MSR write. The two QEMU scenarios
+record the CPU/MSR snapshot, raw vector-6 denial, unreachable alternate target,
+complete attacker cleanup, validated peer return, survivor canaries, exact
+serial transcript, command, image, ELF, and hashes as tested evidence.
 
-The remaining machine checkpoints must route raw denials through authoritative
-termination and peer restore, gate the sole `iretq` epilogue on the live tuple,
-and add raw SYSCALL/SYSENTER QEMU peer-survival scenarios plus the remaining
-controlled build, guest, and runner negatives. Those
+The remaining machine checkpoints are the broader controlled guest/runner
+negative inventory (wrong vector/error shape, stale binding, unexpected target,
+policy relaxation, partial/reordered output, reset, triple fault, and hang) and
+the final global-invariant composition requested by follow-on #104. Those
 results must be labeled checked/tested evidence, not Lean proof.

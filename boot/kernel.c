@@ -632,6 +632,9 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
         (cr4 & required_cr4) != required_cr4 ||
         (cr4 & forbidden_cr4) != 0)
         fail("extended-state-denial-peer-controls");
+    /* Re-read the complete kernel-produced fast-entry denial tuple at the
+       sole outbound gate.  A post-boot relaxation cannot reach iretq. */
+    check_fast_entry_control();
     /* Accepted ordinary entries remain armed through handler dispatch and
        context selection.  Clear only in this final validated return gate;
        initial boot dispatch is intentionally unarmed. */
@@ -981,7 +984,6 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
         (1ull << 22) | (1ull << 18) | (1ull << 10) | (1ull << 9);
     uint64_t policy = extended_state_features_accepted &&
         (cr0 & required_cr0) == required_cr0 && (cr4 & forbidden_cr4) == 0;
-    uint64_t mode = vector == 6 ? 6 : 0;
     const uint64_t initial_live = (1ull << 1) | (1ull << 2);
     if (extended_state_authority.live != initial_live ||
         extended_state_authority.ready != (1ull << 2) ||
@@ -989,12 +991,30 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
         extended_state_authority.contexts != (1ull << 2) ||
         extended_state_authority.active != current_subject)
         fail("extended-state-denial-authority-prestate");
-    uint64_t transition = leanos_extended_state_denial_demo(policy, mode, vector,
-        extended_state_authority.current, extended_state_authority.active,
-        extended_state_authority.current);
-    if ((transition & 0xffffffffffffff00ull) != 0x3f00000000000100ull)
-        fail("extended-state-denial-model");
-    uint64_t peer = transition & 0xffu;
+    uint64_t peer;
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    if (extended_state_probe_class >= 5) {
+        if (vector != 6 || !policy)
+            fail("fast-entry-denial-vector");
+        uint64_t event = extended_state_probe_class == 5 ? 2 : 3;
+        uint64_t transition = leanos_privilege_entry_control_demo(
+            1, 0, event, vector, extended_state_authority.current,
+            extended_state_authority.active);
+        if (transition != 0xd001)
+            fail("fast-entry-denial-model");
+        peer = 2;
+    } else {
+#endif
+        uint64_t mode = vector == 6 ? 6 : 0;
+        uint64_t transition = leanos_extended_state_denial_demo(policy, mode, vector,
+            extended_state_authority.current, extended_state_authority.active,
+            extended_state_authority.current);
+        if ((transition & 0xffffffffffffff00ull) != 0x3f00000000000100ull)
+            fail("extended-state-denial-model");
+        peer = transition & 0xffu;
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    }
+#endif
     if (peer != 2 || (extended_state_authority.ready & (1ull << peer)) == 0 ||
         (extended_state_authority.contexts & (1ull << peer)) == 0)
         fail("extended-state-denial-authority-selection");
@@ -1010,21 +1030,27 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     if (current_subject != 1 || peer != 2)
         fail("extended-state-denial-scenario-binding");
-    if (extended_state_probe_class > 4)
+    if (extended_state_probe_class > 6)
         fail("extended-state-denial-probe-class");
     uint64_t expected_vector = extended_state_probe_class >= 2 ? 6 : 7;
     if (vector != expected_vector)
         fail("extended-state-denial-probe-vector");
     current_subject = peer;
     extended_state_selected_cr3 = (uint64_t)page_map_level_4_b;
-    serial_puts("LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=");
+    serial_puts(extended_state_probe_class >= 5
+        ? "LEANOS/14 FAST-ENTRY event=deny subject=1 vector="
+        : "LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=");
     serial_u64(vector);
     serial_puts(" instruction=");
     serial_puts(extended_state_probe_class == 0 ? "x87" :
         extended_state_probe_class == 1 ? "mmx" :
         extended_state_probe_class == 2 ? "sse" :
-        extended_state_probe_class == 3 ? "sse2" : "avx");
-    serial_puts(" bank-write=prevented cleanup=complete peer=2\n");
+        extended_state_probe_class == 3 ? "sse2" :
+        extended_state_probe_class == 4 ? "avx" :
+        extended_state_probe_class == 5 ? "syscall" : "sysenter");
+    serial_puts(extended_state_probe_class >= 5
+        ? " alternate-target=unreached cleanup=complete peer=2\n"
+        : " bank-write=prevented cleanup=complete peer=2\n");
     return (uint64_t)initial_context_b;
 #else
     fail("extended-state-denial-dispatch-unpublished");
@@ -1052,8 +1078,12 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if ((cr0 & required) != required || (cr4 & forbidden_peer_cr4) != 0 ||
             cr3 != (uint64_t)page_map_level_4_b)
             fail("extended-state-denial-peer-controls");
-        serial_puts("LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n");
-        serial_puts("LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1\n");
+        serial_puts(extended_state_probe_class >= 5
+            ? "LEANOS/14 FAST-ENTRY event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n"
+            : "LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n");
+        serial_puts(extended_state_probe_class >= 5
+            ? "LEANOS/14 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 alternate-target=0\n"
+            : "LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1\n");
         finish(0x10);
     }
 #endif
@@ -1435,7 +1465,9 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
-    serial_puts("LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
+    serial_puts(extended_state_probe_class >= 5
+        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off\n"
+        : "LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 #else
@@ -1451,6 +1483,10 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     privilege_init();
     check_fast_entry_cpuid();
     check_fast_entry_control();
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    if (extended_state_probe_class >= 5)
+        serial_puts("LEANOS/14 FAST-ENTRY cpu.vendor=AuthenticAMD mode=long64 syscall=1 sysenter=1 efer.sce=0 star=0 lstar=0 cstar=0 sfmask=0 sysenter.cs=0 sysenter.esp=0 sysenter.eip=0 writes=complete readback=exact result=PASS\n");
+#endif
 #ifdef LEANOS_DOUBLE_FAULT_PROBE
     run_double_fault_probe();
 #endif
@@ -1489,13 +1525,17 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     current_subject = 1;
     __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
-    if (extended_state_probe_class > 4)
+    if (extended_state_probe_class > 6)
         fail("extended-state-probe-class");
-    serial_puts("LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=");
+    serial_puts(extended_state_probe_class >= 5
+        ? "LEANOS/14 FAST-ENTRY event=enter subject=1 address-space=1 instruction="
+        : "LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=");
     serial_puts(extended_state_probe_class == 0 ? "x87" :
         extended_state_probe_class == 1 ? "mmx" :
         extended_state_probe_class == 2 ? "sse" :
-        extended_state_probe_class == 3 ? "sse2" : "avx");
+        extended_state_probe_class == 3 ? "sse2" :
+        extended_state_probe_class == 4 ? "avx" :
+        extended_state_probe_class == 5 ? "syscall" : "sysenter");
     serial_puts(extended_state_probe_class >= 2 ?
         " expected-vector=6\n" : " expected-vector=7\n");
     enter_user(user_a_entry, user_a_stack_top);

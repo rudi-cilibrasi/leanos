@@ -69,9 +69,28 @@ control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 [[ "$(grep -Ec '[[:space:]]rdmsr$' <<<"$control_disassembly")" -eq 9 ]] || {
   echo "error: fast-entry final-ELF read inventory drifted" >&2; exit 1;
 }
-if grep -Eq '[[:space:]](syscall|sysenter|sysretq?|sysexit)([[:space:]]|$)' \
-    <<<"$control_disassembly"; then
-  echo "error: unauthorized fast-entry opcode in final ELF" >&2; exit 1
+fast_probe="${LEANOS_FAST_ENTRY_PROBE:-}"
+if [[ -z "$fast_probe" ]]; then
+  if grep -Eq '[[:space:]](syscall|sysenter|sysretq?|sysexit)([[:space:]]|$)' \
+      <<<"$control_disassembly"; then
+    echo "error: unauthorized fast-entry opcode in final ELF" >&2; exit 1
+  fi
+elif [[ "$fast_probe" == syscall || "$fast_probe" == sysenter ]]; then
+  [[ "$(grep -Ec "[[:space:]]${fast_probe}([[:space:]]|$)" <<<"$control_disassembly")" -eq 1 ]] || {
+    echo "error: deliberate $fast_probe probe inventory drifted" >&2; exit 1;
+  }
+  other=syscall; [[ "$fast_probe" == syscall ]] && other=sysenter
+  if grep -Eq "[[:space:]](${other}|sysretq?|sysexit)([[:space:]]|$)" \
+      <<<"$control_disassembly"; then
+    echo "error: unauthorized fast-entry opcode in probe ELF" >&2; exit 1
+  fi
+  probe_dis="$(objdump -d --no-show-raw-insn "$elf" | sed -n \
+    '/<user_a_extended_state_probe>:/,/^$/p')"
+  grep -Eq "[[:space:]]${fast_probe}([[:space:]]|$)" <<<"$probe_dis" || {
+    echo "error: deliberate $fast_probe opcode is outside its reviewed probe site" >&2; exit 1;
+  }
+else
+  echo "error: unknown LEANOS_FAST_ENTRY_PROBE '$fast_probe'" >&2; exit 1
 fi
 
 [[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 8 ]] || {
@@ -185,6 +204,10 @@ grep -q 'call.*<validate_user_return>' <<<"$epilogue_dis" || {
 }
 grep -Fq 'if (ordinary_entry_active) ordinary_entry_active = 0;' "$kernel_source" || {
   echo "error: reviewed return gate does not consume the entry latch" >&2; exit 1;
+}
+return_source="$(sed -n '/^void validate_user_return/,/^}/p' "$kernel_source")"
+grep -Fq 'check_fast_entry_control();' <<<"$return_source" || {
+  echo "error: reviewed return gate omits live fast-entry read-back" >&2; exit 1;
 }
 
 echo "Entry manifest, TSS snapshot, and final-ELF paths passed"

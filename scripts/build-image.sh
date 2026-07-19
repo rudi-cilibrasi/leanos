@@ -34,6 +34,8 @@ extended_state_sse_iso_root="$build/iso-extended-state-sse"
 extended_state_sse2_iso_root="$build/iso-extended-state-sse2"
 extended_state_avx_iso_root="$build/iso-extended-state-avx"
 extended_state_peer_pke_iso_root="$build/iso-extended-state-peer-pke"
+fast_entry_syscall_iso_root="$build/iso-fast-entry-syscall"
+fast_entry_sysenter_iso_root="$build/iso-fast-entry-sysenter"
 df_iso_root="$build/iso-double-fault"
 df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 entry_overflow_iso_root="$build/iso-entry-stack-overflow"
@@ -66,6 +68,8 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$extended_state_sse2_iso_root/boot/grub" \
   "$extended_state_avx_iso_root/boot/grub" \
   "$extended_state_peer_pke_iso_root/boot/grub" \
+  "$fast_entry_syscall_iso_root/boot/grub" \
+  "$fast_entry_sysenter_iso_root/boot/grub" \
   "$df_iso_root/boot/grub" \
   "$df_negative_iso_root/boot/grub" "$entry_overflow_iso_root/boot/grub" \
   "$entry_adversarial_iso_root/boot/grub"
@@ -182,6 +186,14 @@ cp scripts/entry-stack-extended-callgraph.tsv \
   -DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1 \
   -c boot/boot.S -o "$build/boot-extended-state-peer-pke.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -DLEANOS_FAST_ENTRY_SYSCALL_PROBE=1 \
+  -c boot/boot.S -o "$build/boot-fast-entry-syscall.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
+  -DLEANOS_FAST_ENTRY_SYSENTER_PROBE=1 \
+  -c boot/boot.S -o "$build/boot-fast-entry-sysenter.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -c boot/peer-pke-fixture.S \
   -o "$build/peer-pke-fixture.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
@@ -273,6 +285,16 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
   "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+for mechanism in syscall sysenter; do
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-fast-entry-${mechanism}-prelink.map" \
+    -o "$build/leanos-fast-entry-${mechanism}-prelink.elf" \
+    "$build/boot-fast-entry-${mechanism}.o" "$build/kernel-extended-state.o" \
+    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+    "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+done
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
   -o "$build/leanos-double-fault-prelink.elf" "$build/boot.o" \
@@ -339,6 +361,16 @@ cmp "$build/boot-page-plan-extended-state.h" \
 ./scripts/generate-boot-page-plan.sh \
   "$build/leanos-extended-state-peer-pke-prelink.elf" \
   "$build/boot-page-plan-extended-state-peer-pke.h"
+for mechanism in syscall sysenter; do
+  ./scripts/generate-boot-page-plan.sh \
+    "$build/leanos-fast-entry-${mechanism}-prelink.elf" \
+    "$build/boot-page-plan-fast-entry-${mechanism}.h"
+  cmp "$build/boot-page-plan-extended-state.h" \
+    "$build/boot-page-plan-fast-entry-${mechanism}.h" || {
+    echo "error: fast-entry $mechanism probe changed the shared page-table plan" >&2
+    exit 1
+  }
+done
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-prelink.elf" \
   "$build/boot-page-plan-double-fault.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-entry-stack-overflow-prelink.elf" \
@@ -455,6 +487,16 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
   "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+for mechanism in syscall sysenter; do
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-fast-entry-${mechanism}.map" \
+    -o "$build/leanos-fast-entry-${mechanism}.elf" \
+    "$build/boot-fast-entry-${mechanism}.o" "$build/kernel-extended-state.o" \
+    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+    "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+done
 
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture mode _reason <<<"$spec"
@@ -531,6 +573,15 @@ cmp "$build/boot-page-plan-extended-state-peer-pke.h" \
   echo "error: peer-PKE boot page-table plan drifted after final link" >&2
   exit 1
 }
+for mechanism in syscall sysenter; do
+  ./scripts/generate-boot-page-plan.sh "$build/leanos-fast-entry-${mechanism}.elf" \
+    "$build/boot-page-plan-fast-entry-${mechanism}.final.h"
+  cmp "$build/boot-page-plan-extended-state.h" \
+    "$build/boot-page-plan-fast-entry-${mechanism}.final.h" || {
+    echo "error: fast-entry $mechanism page-table plan drifted after final link" >&2
+    exit 1
+  }
+done
 ./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-mmx.elf" \
   "$build/boot-page-plan-extended-state-mmx.final.h"
 cmp "$build/boot-page-plan-extended-state.h" \
@@ -683,6 +734,13 @@ LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-sse.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-sse2.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-avx.elf"
+for mechanism in syscall sysenter; do
+  LEANOS_FAST_ENTRY_PROBE="$mechanism" \
+    ./scripts/check-image-policy.sh "$build/leanos-fast-entry-${mechanism}.elf"
+  LEANOS_FAST_ENTRY_PROBE="$mechanism" \
+    ./scripts/check-entry-policy.sh "$build/leanos-fast-entry-${mechanism}.elf" \
+    | tee "$build/fast-entry-${mechanism}-policy-report.txt"
+done
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-stack-overflow.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
@@ -766,6 +824,11 @@ cp boot/grub.cfg "$extended_state_avx_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-extended-state-peer-pke.elf" \
   "$extended_state_peer_pke_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$extended_state_peer_pke_iso_root/boot/grub/grub.cfg"
+for mechanism in syscall sysenter; do
+  fixture_root="$build/iso-fast-entry-${mechanism}"
+  cp "$build/leanos-fast-entry-${mechanism}.elf" "$fixture_root/boot/leanos.elf"
+  cp boot/grub.cfg "$fixture_root/boot/grub/grub.cfg"
+done
 cp "$build/leanos-double-fault.elf" "$df_iso_root/boot/leanos.elf"
 cp boot/grub-double-fault.cfg "$df_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-double-fault-guard-mapped.elf" \
@@ -786,6 +849,8 @@ cp "$build/SOURCE_REVISION" "$extended_state_sse2_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_avx_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" \
   "$extended_state_peer_pke_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$fast_entry_syscall_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$fast_entry_sysenter_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_overflow_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
@@ -831,6 +896,12 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-extended-state-peer-pke.iso" \
   "$extended_state_peer_pke_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
+for mechanism in syscall sysenter; do
+  grub-mkrescue -d /usr/lib/grub/i386-pc \
+    -o "$build/leanos-${version}-x86_64-fast-entry-${mechanism}.iso" \
+    "$build/iso-fast-entry-${mechanism}" -- -volume_date uuid 2000010100000000 \
+    -volume_date all_file_dates 2000010100000000 >/dev/null
+done
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-double-fault.iso" "$df_iso_root" -- \
   -volume_date uuid 2000010100000000 \
@@ -876,6 +947,12 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-extended-state-avx.map" \
   "$build/leanos-extended-state-peer-pke.elf" \
   "$build/leanos-extended-state-peer-pke.map" \
+  "$build/leanos-${version}-x86_64-fast-entry-syscall.iso" \
+  "$build/leanos-fast-entry-syscall.elf" \
+  "$build/leanos-fast-entry-syscall.map" \
+  "$build/leanos-${version}-x86_64-fast-entry-sysenter.iso" \
+  "$build/leanos-fast-entry-sysenter.elf" \
+  "$build/leanos-fast-entry-sysenter.map" \
   "$build/leanos-double-fault.elf" \
   "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
   "$build/leanos-double-fault-guard-mapped.elf" \

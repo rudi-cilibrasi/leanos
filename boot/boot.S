@@ -1014,7 +1014,11 @@ user_a_entry:
        the denial handler and the final-ELF instruction allowlist. */
 .global user_a_extended_state_probe
 user_a_extended_state_probe:
-#ifdef LEANOS_EXTENDED_STATE_AVX_PROBE
+#ifdef LEANOS_FAST_ENTRY_SYSCALL_PROBE
+    syscall
+#elif defined(LEANOS_FAST_ENTRY_SYSENTER_PROBE)
+    sysenter
+#elif defined(LEANOS_EXTENDED_STATE_AVX_PROBE)
     vxorps %ymm0, %ymm0, %ymm0
 #elif defined(LEANOS_EXTENDED_STATE_SSE2_PROBE)
     pxor %xmm0, %xmm0
@@ -1110,6 +1114,10 @@ user_a_stack_top:
 extended_state_probe_class:
 #ifdef LEANOS_EXTENDED_STATE_AVX_PROBE
     .quad 4
+#elif defined(LEANOS_FAST_ENTRY_SYSCALL_PROBE)
+    .quad 5
+#elif defined(LEANOS_FAST_ENTRY_SYSENTER_PROBE)
+    .quad 6
 #elif defined(LEANOS_EXTENDED_STATE_SSE2_PROBE)
     .quad 3
 #elif defined(LEANOS_EXTENDED_STATE_SSE_PROBE)
