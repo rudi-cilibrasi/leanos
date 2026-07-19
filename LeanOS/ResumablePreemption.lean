@@ -72,6 +72,26 @@ theorem contextFor_erase_self contexts subject :
     contextFor (eraseContext contexts subject) subject = none := by
   simp [contextFor, eraseContext, List.find?_eq_none]
 
+theorem contextFor_erase_other contexts subject other (hne : other ≠ subject) :
+    contextFor (eraseContext contexts subject) other = contextFor contexts other := by
+  induction contexts with
+  | nil => simp [contextFor, eraseContext]
+  | cons context contexts ih =>
+      by_cases howner : context.owner = subject
+      · have hother : context.owner ≠ other := by grind
+        rw [show eraseContext (context :: contexts) subject =
+          eraseContext contexts subject by simp [eraseContext, howner]]
+        rw [show contextFor (context :: contexts) other =
+          contextFor contexts other by simp [contextFor, hother]]
+        exact ih
+      · rw [show eraseContext (context :: contexts) subject =
+          context :: eraseContext contexts subject by simp [eraseContext, howner]]
+        by_cases hother : context.owner = other
+        · simp [contextFor, hother]
+        · have hotherBool : (context.owner == other) = false := by simp [hother]
+          simp only [contextFor, List.find?_cons, hotherBool]
+          simpa only [contextFor] using ih
+
 /-- Saving a context installs exactly its kernel-owned slot. -/
 theorem contextFor_save_consume contexts saved destination :
     contextFor (saved :: eraseContext contexts destination) saved.owner = some saved := by
@@ -87,13 +107,13 @@ def validContext (state : State) (context : Context) : Prop :=
 /-- Every queued subject has a restorable context, and every suspended context
 belongs to the ready queue.  An `.initial` context may be staged before its
 subject is first added to the queue; this is the only permitted non-ready bank
-entry.  A current subject needs a nonempty queue for a resumable timer tick. -/
+entry.  A lone current subject with an empty queue is valid: a timer tick then
+rejects atomically because there is no distinct destination to restore. -/
 def ReadyContextAgreement (state : State) : Prop :=
   (∀ subject, subject ∈ state.scheduler.ready →
     ∃ context, context ∈ state.contexts ∧ context.owner = subject) ∧
   (∀ context, context ∈ state.contexts →
-    context.kind = .suspended → context.owner ∈ state.scheduler.ready) ∧
-  (state.scheduler.lifecycle.current.isSome → state.scheduler.ready ≠ [])
+    context.kind = .suspended → context.owner ∈ state.scheduler.ready)
 
 /-- The modeled CR3 and page-table ownership view are projections of the same
 authoritative lifecycle used by the scheduler.  This prevents a switch from
@@ -406,6 +426,7 @@ its address space is exactly the scheduler-selected address space. -/
 theorem accepted_tick_has_restorable_destination state current selected
     (hstate : WellFormed state)
     (hcurrent : state.scheduler.lifecycle.current = some current)
+    (hready : state.scheduler.ready ≠ [])
     (hselected : (Scheduler.tick state.scheduler).result = .accepted (some selected)) :
     ∃ destination,
       contextFor state.contexts selected.currentSubject = some destination ∧
@@ -414,7 +435,7 @@ theorem accepted_tick_has_restorable_destination state current selected
       destination.addressSpace = selected.activeAddressSpace := by
   rcases hstate with ⟨_, _, _, hvalid, _, hagreement, _, _, _, _⟩
   rcases accepted_tick_rotates_ready state.scheduler current selected hcurrent
-      (hagreement.2.2 (by simp [hcurrent])) hselected with ⟨rest, hqueue, _⟩
+      hready hselected with ⟨rest, hqueue, _⟩
   obtain ⟨queued, hqueuedMem, hqueuedOwner⟩ :=
     hagreement.1 selected.currentSubject (by simp [hqueue])
   have hdestinationSome : (contextFor state.contexts selected.currentSubject).isSome := by
@@ -463,7 +484,14 @@ theorem switch_preserves_wellFormed state interruptState frame registers
       accepted_tick_facts state.scheduler current selected hcurrent hselected
     obtain ⟨rest, hqueue, hnextReady⟩ := accepted_tick_rotates_ready
       state.scheduler current selected hcurrent
-        (hagreement.2.2 (by simp [hcurrent])) hselected
+        (by
+          intro hnil
+          have hselectedCurrent : selected.currentSubject = current := by
+            simp [Scheduler.tick, Scheduler.yield, hcurrent, hnil,
+              Scheduler.selectNext, Scheduler.reject] at hselected
+            grind
+          rw [hselectedCurrent, hnone] at hdestination
+          contradiction) hselected
     have hselectedNe : selected.currentSubject ≠ current := by
       intro hequal
       rw [hequal, hnone] at hdestination
@@ -497,7 +525,7 @@ theorem switch_preserves_wellFormed state interruptState frame registers
       have : subject = selected.currentSubject := by grind
       subst subject
       simp [contextFor, eraseContext, Ne.symm hselectedNe]
-    · refine ⟨?_, ?_, ?_⟩
+    · refine ⟨?_, ?_⟩
       · intro subject hsubject
         rw [hnextReady] at hsubject
         have hcases : subject ∈ rest ∨ subject = current := by
@@ -536,15 +564,12 @@ theorem switch_preserves_wellFormed state interruptState frame registers
         · subst context
           simp [hnextReady]
         · have holdMem := (List.mem_filter.mp hretained).1
-          have holdReady := hagreement.2.1 context holdMem hsuspended
+          have holdReady := hagreement.2 context holdMem hsuspended
           have hnotSelected : context.owner ≠ selected.currentSubject := by
             simpa using (List.mem_filter.mp hretained).2
           rw [hqueue] at holdReady
           rw [hnextReady]
           simp_all
-      · intro _
-        rw [hnextReady]
-        simp
     · rcases htranslations with ⟨hownerProjection, hactiveProjection⟩
       constructor
       · simpa [TLB.switch, haddressOwner] using hownerProjection
@@ -764,6 +789,18 @@ theorem cleanup_terminates_subject state subject :
     (cleanupSubject state subject).scheduler.lifecycle.capabilities.subjects subject = false := by
   simp [cleanupSubject, retireOwnedAddressSpaces, SubjectLifecycle.terminateState,
     SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool]
+
+theorem cleanup_marks_subject_not_runnable state subject :
+    (cleanupSubject state subject).scheduler.lifecycle.runnable subject = false := by
+  simpa [cleanupSubject] using
+    SubjectLifecycle.terminated_not_runnable state.scheduler.lifecycle subject
+
+theorem cleanup_removes_owned_address_space state subject addressSpace
+    (howner : state.scheduler.lifecycle.addressOwner addressSpace = some subject) :
+    (cleanupSubject state subject).scheduler.lifecycle.addressOwner addressSpace = none := by
+  simpa [cleanupSubject] using
+    SubjectLifecycle.terminated_address_spaces_removed
+      state.scheduler.lifecycle subject addressSpace howner
 
 /-- Every address-space object owned by the terminated subject is retired from
 both lifecycle projections rather than merely becoming ownerless. -/
@@ -1046,16 +1083,13 @@ theorem cleanup_preserves_virtualAgreement state subject
   · rfl
   · exact cleanup_preserves_virtualLifecycleWellFormed state subject hstate
 
-/-- Cleanup preserves ready/context agreement whenever it leaves a queued
-destination for a still-current subject.  If cleanup removes the final peer,
-the resulting single runnable subject deliberately leaves the resumable-state
-domain: a timer tick has no distinct context to restore. -/
+/-- Cleanup preserves ready/context agreement.  Removing the final peer may
+leave a lone current subject; that state remains valid and a timer tick rejects
+atomically because it has no destination. -/
 theorem cleanup_preserves_readyContextAgreement state subject
-    (hstate : ReadyContextAgreement state)
-    (hpeer : (cleanupSubject state subject).scheduler.lifecycle.current.isSome →
-      (cleanupSubject state subject).scheduler.ready ≠ []) :
+    (hstate : ReadyContextAgreement state) :
     ReadyContextAgreement (cleanupSubject state subject) := by
-  refine ⟨?_, ?_, hpeer⟩
+  refine ⟨?_, ?_⟩
   · intro queued hqueued
     have hqueuedOld : queued ∈ state.scheduler.ready := by
       simpa [cleanupSubject] using (List.mem_filter.mp hqueued).1
@@ -1068,7 +1102,7 @@ theorem cleanup_preserves_readyContextAgreement state subject
     have hcontextOld := (List.mem_filter.mp hcontext).1
     have hownerNe : context.owner ≠ subject := by
       simpa using (List.mem_filter.mp hcontext).2
-    have hreadyOld := hstate.2.1 context hcontextOld hsuspended
+    have hreadyOld := hstate.2 context hcontextOld hsuspended
     simp [cleanupSubject, hreadyOld, hownerNe]
 
 /-- The cleanup properties derived here solely from the pre-state invariant.
@@ -1171,15 +1205,13 @@ and bounded TLB invariants derived from a well-formed pre-state.  This theorem
 intentionally makes no full `WellFormed` claim until virtual-lifecycle cleanup
 preservation is proved rather than assumed. -/
 theorem cleanupSubject_preserves_coreWellFormed state subject
-    (hstate : WellFormed state)
-    (hreadyPeer : (cleanupSubject state subject).scheduler.lifecycle.current.isSome →
-      (cleanupSubject state subject).scheduler.ready ≠ []) :
+    (hstate : WellFormed state) :
     CleanupCoreWellFormed (cleanupSubject state subject) := by
   rcases hstate with
     ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hagreement,
       _htranslations, _hvirtual, _hkinds, htlb⟩
   refine ⟨?_, ?_, ?_, ?_, ?_,
-    cleanup_preserves_readyContextAgreement state subject hagreement hreadyPeer,
+    cleanup_preserves_readyContextAgreement state subject hagreement,
     cleanup_preserves_translationAgreement state subject,
     ?_⟩
   · unfold Scheduler.WellFormed at hscheduler ⊢
@@ -1279,14 +1311,11 @@ theorem cleanupSubject_preserves_coreWellFormed state subject
   · exact Nat.le_trans (TLB.erase_space_length state.translations.entries subject) htlb
 
 /-- Subject cleanup preserves the full resumable-state invariant from pre-state
-facts alone.  The sole operational side condition says that cleanup must not
-leave a current subject without any resumable peer. -/
+facts alone, including when it leaves a lone current subject. -/
 theorem cleanupSubject_preserves_wellFormed state subject
-    (hstate : WellFormed state)
-    (hreadyPeer : (cleanupSubject state subject).scheduler.lifecycle.current.isSome →
-      (cleanupSubject state subject).scheduler.ready ≠ []) :
+    (hstate : WellFormed state) :
     WellFormed (cleanupSubject state subject) := by
-  have hcore := cleanupSubject_preserves_coreWellFormed state subject hstate hreadyPeer
+  have hcore := cleanupSubject_preserves_coreWellFormed state subject hstate
   rcases hcore with
     ⟨hscheduler, hcapacity, hunique, hvalid, habsent, hready,
       htranslations, htlb⟩

@@ -19,6 +19,7 @@ import LeanOS.FrameAllocator
 import LeanOS.FrameBudget
 import LeanOS.FrameScrub
 import LeanOS.FailStop
+import LeanOS.FaultDispatch
 import LeanOS.KernelTransition
 import LeanOS.MemoryLifecycle
 import LeanOS.Observation
