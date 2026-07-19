@@ -2430,6 +2430,18 @@ theorem ipcReceive_operationPreservesRuntimeWellFormed handleWord :
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.ipc (.receive handleWord)) hstate hmode
 
+/-- The public IPC constructor is now one complete universal-preservation
+family.  Call-shape case analysis is confined to this registration boundary;
+mixed traces can quantify over an arbitrary untrusted IPC call and reuse the
+generic `OperationPreservesRuntimeWellFormed` induction contract directly. -/
+theorem ipc_operationPreservesRuntimeWellFormed call :
+    OperationPreservesRuntimeWellFormed (.ipc call) := by
+  cases call with
+  | send handleWord word0 word1 =>
+      exact ipcSend_operationPreservesRuntimeWellFormed handleWord word0 word1
+  | receive handleWord =>
+      exact ipcReceive_operationPreservesRuntimeWellFormed handleWord
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
