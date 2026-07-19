@@ -1351,7 +1351,6 @@ inductive Operation where
   | selectUserReturn (purpose : Interrupt.ReturnPurpose)
   | userReturn (request : Interrupt.UserReturnRequest)
   | syscall (call : Syscall.UntrustedCall)
-  | preempt (frame : Interrupt.HardwareFrame)
   | ipc (call : IPCSyscall.Call)
   | resumePreempt (frame : Interrupt.HardwareFrame)
       (registers : ResumablePreemption.Registers)
@@ -1390,7 +1389,6 @@ inductive OperationReply where
   | returnSelection (armed : Bool)
   | userReturn (reply : UserReturnReply)
   | syscall (reply : Syscall.Reply)
-  | preempt (action : EntryAction)
   | ipc (reply : CompositeIPCReply)
   | resume (restored : Option ResumablePreemption.Context)
       (error : Option ResumablePreemption.Error)
@@ -1527,17 +1525,6 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
               let translations := { state.resumable.translations with virtual := outcome.state }
               let installed := installVirtualMemory state outcome.state translations
               selectLiveReturnAuthority installed .syscallResume
-  | .preempt frame =>
-      let entry := dispatchHardware state.execution frame
-      let entered := installLifecycle { state with execution := entry.state }
-        entry.state.core.lifecycle
-      match entry.action with
-      | .timer =>
-          let preemption :=
-            (Preemption.oneShotTick entered.preemption entered.execution.core frame).state
-          let scheduled := installScheduler { entered with preemption } preemption.scheduler
-          selectLiveReturnAuthority scheduled .schedulerRestore
-      | _ => entered
   | .ipc call =>
       let outcome := dispatchIPC state call
       match outcome.reply with
@@ -1672,7 +1659,6 @@ def operationReply (state : CompositeState) : Operation → OperationReply
       | .fatal record => .userReturn (.fatal record)
       | .alreadyHalted record => .userReturn (.alreadyHalted record)
   | .syscall call => .syscall (Syscall.dispatch state.virtualMemory state.syscallContext call).reply
-  | .preempt frame => .preempt (dispatchHardware state.execution frame).action
   | .ipc call => .ipc (dispatchIPC state call).reply
   | .resumePreempt frame registers =>
       let outcome := ResumablePreemption.switch state.resumable state.execution.core
@@ -1808,14 +1794,6 @@ theorem interrupt_contained_synchronizes_lifecycle state frame subject
       next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
   simp [applyOperation, hcontained, publishInterruptCleanup,
     installTerminatedResumable]
-
-/-- Preemption cannot reinterpret a fatal hardware frame as an accepted
-scheduler no-op: the authoritative entry path latches the same terminal mode. -/
-theorem preempt_fatal_latches state frame reason
-    (hfatal : (dispatchHardware state.execution frame).action = .fatal reason) :
-    (applyOperation state (.preempt frame)).execution.mode =
-      (dispatchHardware state.execution frame).state.mode := by
-  simp [applyOperation, hfatal, installLifecycle]
 
 /-- A data-only receive cannot consume the envelope paired with a sealed
 descendant.  The composite reply identifies the required transfer operation,
@@ -6186,13 +6164,13 @@ theorem interrupt_operationPreservesRuntimeWellFormed frame :
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.interrupt frame) hstate hmode
 
-/-! ### Registered mixed runtime traces
+/-! ### Complete runtime operation inventory
 
-The constructors below are exactly the operation families whose accepted and
-rejected results have complete global-preservation proofs.  Keeping this as a
-syntactic predicate makes the current mixed-trace boundary reviewable: adding
-an operation requires its family theorem, while still-open legacy preemption
-mutations cannot enter the advertised trace theorem accidentally. -/
+The constructors below inventory every operation family whose accepted and
+rejected results have complete global-preservation proofs.  The legacy
+scheduler-only preemption constructor has been retired in favor of
+`resumePreempt`, whose input carries the outgoing frame/register payload needed
+to update the authoritative context bank atomically. -/
 
 inductive RuntimeTraceOperation : Operation → Prop where
   | interrupt frame : RuntimeTraceOperation (.interrupt frame)
@@ -6269,6 +6247,55 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
   | terminateCurrent => exact terminateCurrent_operationPreservesRuntimeWellFormed
   | restart => exact restart_operationPreservesRuntimeWellFormed
 
+/-- The preservation inventory is complete: every public `Operation`
+constructor is represented by `RuntimeTraceOperation`.  This exhaustiveness
+lemma prevents a newly added operation from silently escaping the universal
+gate theorem below. -/
+theorem runtimeTraceOperation_complete operation :
+    RuntimeTraceOperation operation := by
+  cases operation with
+  | interrupt frame => exact .interrupt frame
+  | selectUserReturn purpose => exact .selectUserReturn purpose
+  | userReturn request => exact .userReturn request
+  | syscall call => exact .syscall call
+  | ipc call => exact .ipc call
+  | resumePreempt frame registers => exact .resumePreempt frame registers
+  | transferOffer endpointWord sourceWord sourceKind payload rights =>
+      exact .transferOffer endpointWord sourceWord sourceKind payload rights
+  | transferAccept endpointWord destinationSlot =>
+      exact .transferAccept endpointWord destinationSlot
+  | capabilityCopy source destination destinationSlot rights =>
+      exact .capabilityCopy source destination destinationSlot rights
+  | capabilityRevoke authoritySlot victim victimSlot =>
+      exact .capabilityRevoke authoritySlot victim victimSlot
+  | capabilityRevokeSubtree authoritySlot victim victimSlot =>
+      exact .capabilityRevokeSubtree authoritySlot victim victimSlot
+  | map slot page permissions => exact .map slot page permissions
+  | unmap page => exact .unmap page
+  | createSubject subject => exact .createSubject subject
+  | terminateSubject subject => exact .terminateSubject subject
+  | scheduleAdd subject => exact .scheduleAdd subject
+  | scheduleRemove subject => exact .scheduleRemove subject
+  | scheduleNext => exact .scheduleNext
+  | scheduleYield => exact .scheduleYield
+  | scheduleTick => exact .scheduleTick
+  | terminateCurrent => exact .terminateCurrent
+  | restart => exact .restart
+
+/-- Every public operation preserves the global runtime invariant for every
+typed result.  There is no registration premise and no excluded constructor. -/
+theorem operation_preserves_runtimeWellFormed operation :
+    OperationPreservesRuntimeWellFormed operation :=
+  runtimeTraceOperation_preserves_runtimeWellFormed operation
+    (runtimeTraceOperation_complete operation)
+
+/-- The total composite gate preserves `RuntimeWellFormed` for an arbitrary
+public operation, including attacker-controlled words and terminal modes. -/
+theorem gate_preserves_runtimeWellFormed state operation
+    (hstate : RuntimeWellFormed state) :
+    RuntimeWellFormed (gate state operation).state :=
+  operation_preserves_runtimeWellFormed operation state hstate
+
 /-- Arbitrary finite interleavings of all currently registered runtime
 families preserve the global invariant.  Calls and handles remain arbitrary,
 so each family contributes both its accepted and typed-rejection paths; halted
@@ -6282,6 +6309,16 @@ theorem runRuntimeTrace_preserves_runtimeWellFormed state operations
   intro operation hmember
   exact runtimeTraceOperation_preserves_runtimeWellFormed operation
     (hoperations operation hmember)
+
+/-- Arbitrary finite operation sequences preserve the global invariant.  This
+is the universal composite-gate preservation boundary: unlike the registered
+trace lemma, it has no per-member side condition. -/
+theorem runOperations_preserves_runtimeWellFormed_universally state operations
+    (hstate : RuntimeWellFormed state) :
+    RuntimeWellFormed (runOperations state operations) := by
+  apply runOperations_preserves_runtimeWellFormed state operations hstate
+  intro operation _hmember
+  exact operation_preserves_runtimeWellFormed operation
 
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
@@ -6569,7 +6606,7 @@ example (state : CompositeState) (record : HaltRecord)
     (syscall : Syscall.UntrustedCall) (ipc : IPCSyscall.Call)
     (frame : Interrupt.HardwareFrame) :
     runOperations state [
-      .syscall syscall, .preempt frame, .ipc ipc,
+      .syscall syscall, .interrupt frame, .ipc ipc,
       .capabilityRevoke 0 1 0, .unmap 0, .terminateSubject 0] = state := by
   simp [runOperations, gate, hhalted]
 

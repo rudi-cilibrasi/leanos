@@ -311,19 +311,15 @@ theorem composite_gate_termination_preserves_runtimeWellFormed state subject
   exact ⟨FailStop.terminateSubject_operationPreservesRuntimeWellFormed subject state hstate,
     FailStop.terminateCurrent_operationPreservesRuntimeWellFormed state hstate⟩
 
-/-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of registered
-inbound interrupts, control, syscall, IPC/sealed-transfer-offer,
-capability-copy/revocation, mapping, subject-lifecycle, and resumable-aware
-scheduler operations preserve the complete runtime invariant for every
-accepted or typed-rejected result. -/
-theorem composite_registered_mixed_trace_preserves_runtimeWellFormed
+/-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of every
+public operation preserve the complete runtime invariant for every accepted,
+typed-rejected, busy, halted, or fatal result. -/
+theorem composite_universal_mixed_trace_preserves_runtimeWellFormed
     state operations
-    (hstate : FailStop.RuntimeWellFormed state)
-    (hoperations : ∀ operation, operation ∈ operations →
-      FailStop.RuntimeTraceOperation operation) :
+    (hstate : FailStop.RuntimeWellFormed state) :
     FailStop.RuntimeWellFormed (FailStop.runOperations state operations) := by
-  exact FailStop.runRuntimeTrace_preserves_runtimeWellFormed
-    state operations hstate hoperations
+  exact FailStop.runOperations_preserves_runtimeWellFormed_universally
+    state operations hstate
 
 /-- SC-COMPOSITE-BOOT-WF: every successfully compiled bounded boot page-table
 plan produces an idle composite runtime satisfying the complete global
@@ -409,12 +405,12 @@ private theorem registeredMixedTrace_registered operation
     exact .restart
 
 set_option maxRecDepth 100000 in
-/-- Concrete non-vacuity for the registered mixed-trace contract: the accepted
+/-- Concrete non-vacuity for the universal mixed-trace contract: the accepted
 repository boot plan runs a finite trace containing attacker-controlled
 syscall/IPC/sealed-transfer/capability-copy/revocation/mapping words, lifecycle
 creation/termination, resumable-aware scheduler cleanup, return selection, and restart
 while retaining the global invariant. -/
-theorem composite_registered_mixed_trace_reachable_witness :
+theorem composite_universal_mixed_trace_reachable_witness :
     match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
     | .ok plan => FailStop.RuntimeWellFormed
         (FailStop.runOperations (FailStop.bootRuntime plan) registeredMixedTrace)
@@ -429,10 +425,9 @@ theorem composite_registered_mixed_trace_reachable_witness :
         native_decide
       simp [hresult] at hsuccess
   | ok plan =>
-      apply composite_registered_mixed_trace_preserves_runtimeWellFormed
-      · exact FailStop.bootRuntime_runtimeWellFormed
-          BootPageTablePlan.sampleInput plan hresult
-      · exact registeredMixedTrace_registered
+      apply composite_universal_mixed_trace_preserves_runtimeWellFormed
+      exact FailStop.bootRuntime_runtimeWellFormed
+        BootPageTablePlan.sampleInput plan hresult
 
 /-- SC-INTERRUPT-ENTRY-BINDING: every normalized record constructor copies
 authority-bearing context fields from the kernel-owned input. -/
