@@ -29,6 +29,13 @@ Access-check success returns no frame or kernel object identifier, so a return
 value does not itself become authority. New calls must be added explicitly:
 there is no default privileged operation.
 
+Process duplication is intentionally absent. There is no fork or ambiguous
+clone syscall, no number reserved for one, and unknown numbers continue to
+reject without changing state. Adding process duplication requires a new
+architecture issue that closes the whole-kernel readiness gate in
+[ADR 0010](adr/0010-defer-fork.md) before any model, ABI, adapter, or boot path
+is implemented.
+
 Machine-checked theorems prove deterministic, unambiguous decoding; preservation
 of the complete lifecycle/mapping invariant for every dispatch; complete-state
 preservation on every rejection; unchanged capability state and therefore
