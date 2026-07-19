@@ -428,6 +428,163 @@ theorem runComposite_preserves_policy state operations
           · exact hnext
           · exact hnext
 
+/-! ## Fixed-width generated boundary
+
+The six-word adapter below is the finite evidence boundary used by the hosted
+and boot oracle.  `cpuCode` selects the reviewed CPUID projection, while
+`controlCode` selects the canonical read-back or one deliberately corrupted
+field.  The remaining words select a validation/return/denial event and its
+normalized vector, subject, and CR3 binding.  These scalar decoders are test
+images of kernel-owned snapshots; they do not prove CPUID, MSR, or exception
+semantics.
+-/
+
+def canonicalCpuCode : UInt64 := 1
+def canonicalControlCode : UInt64 := 0
+
+private def controlCpu (code : UInt64) : CpuContract :=
+  if code = canonicalCpuCode then selectedCpu
+  else if code = 2 then { selectedCpu with vendor := .intel }
+  else if code = 3 then { selectedCpu with vendor := .unsupported }
+  else if code = 4 then { selectedCpu with mode := .protected32 }
+  else if code = 5 then { selectedCpu with mode := .compatibility }
+  else if code = 6 then { selectedCpu with syscallExposed := false }
+  else if code = 7 then { selectedCpu with sysenterExposed := false }
+  else { selectedCpu with vendor := .unsupported }
+
+private def controlMsrs (code : UInt64) : MsrState :=
+  if code = 1 then { deniedMsrs with eferSce := true }
+  else if code = 2 then { deniedMsrs with star := 0x8 }
+  else if code = 3 then { deniedMsrs with lstar := 0x400000 }
+  else if code = 4 then { deniedMsrs with cstar := 0x400000 }
+  else if code = 5 then { deniedMsrs with sfmask := 0x200 }
+  else if code = 6 then { deniedMsrs with sysenterCs := 0x8 }
+  else if code = 7 then { deniedMsrs with sysenterEsp := 0x800000 }
+  else if code = 8 then { deniedMsrs with sysenterEip := 0x400000 }
+  else deniedMsrs
+
+private def controlImage (cpuCode controlCode : UInt64) : ControlState :=
+  { acceptedControl with
+    cpu := controlCpu cpuCode
+    msrs := controlMsrs controlCode
+    boot :=
+      { writesComplete := controlCode != 9
+        readbackMatches := controlCode != 10 }
+    int80ManifestPresent := controlCode != 11
+    extendedControls := if controlCode = 12 then
+      { ExtendedState.deniedControls with cr0Ts := false }
+      else ExtendedState.deniedControls }
+
+private def adapterState (cpuCode controlCode eventCode : UInt64) : State :=
+  { control := controlImage cpuCode controlCode
+    currentSubject := 1
+    activeAddressSpace := 1
+    activeCr3 := 1
+    addressOwner := fun space => if space = 1 then some 1 else none
+    addressCr3 := fun space => if space = 1 then some 1 else none
+    halted := eventCode = 7 }
+
+private def adapterEvent (state : State) (eventCode vector normalizedSubject
+    normalizedCr3 : UInt64) : DenialEvent :=
+  let mechanism := if eventCode = 3 || eventCode = 5 then .sysenter
+    else if eventCode = 6 then .int80 else .syscall
+  { mechanism
+    vector := vector.toNat
+    errorCode := if eventCode = 11 then 1 else 0
+    origin := if eventCode = 4 || eventCode = 5 then .kernel else .user
+    normalizedSubject := normalizedSubject.toNat
+    normalizedAddressSpace := normalizedSubject.toNat
+    normalizedCr3 := normalizedCr3.toNat
+    stackIdentity := if eventCode = 10 then .userOwned else .ordinaryEntry
+    reachedAlternateTarget := eventCode = 9
+    liveControl := if eventCode = 8 then
+      { state.control with msrs := { state.control.msrs with eferSce := true } }
+      else state.control }
+
+private def fatalReasonCode : FatalReason → UInt64
+  | .policyMismatch => 1
+  | .liveControlMismatch => 2
+  | .ordinaryMechanism => 3
+  | .unexpectedVector => 4
+  | .unexpectedError => 5
+  | .kernelAttempt => 6
+  | .staleContext => 7
+  | .untrustedStack => 8
+  | .alternateTargetReached => 9
+
+private def encodeAdapterOutcome (outcome : Outcome) : UInt64 :=
+  match outcome.result with
+  | .denied subject => 0xd000 + UInt64.ofNat subject
+  | .returnAllowed subject => 0xa000 + UInt64.ofNat subject
+  | .fatal reason => 0xf000 + fatalReasonCode reason
+  | .alreadyFatal => 0xff00
+
+/-- Model-facing expectation used to derive every shared-corpus result.  This
+rich decoder deliberately remains separate from the exported scalar endpoint:
+it constructs the authoritative structures and function-valued context maps
+against which the finite corpus checks the generated boundary. -/
+def controlModelExpected (cpuCode controlCode eventCode vector normalizedSubject
+    normalizedCr3 : UInt64) : UInt64 :=
+  let state := adapterState cpuCode controlCode eventCode
+  if eventCode = 0 then if validate state.control then 1 else 0
+  else if eventCode = 1 then encodeAdapterOutcome (armUserReturn state state.control)
+  else encodeAdapterOutcome <| classify state <|
+    adapterEvent state eventCode vector normalizedSubject normalizedCr3
+
+/-- Allocation-free image of `validate (controlImage cpuCode controlCode)`.
+Codes above the named mutation range select the unmodified control image, just
+as `controlImage` does. -/
+private def scalarControlAccepted (cpuCode controlCode : UInt64) : Bool :=
+  cpuCode = canonicalCpuCode &&
+    (controlCode = canonicalControlCode || 12 < controlCode)
+
+/-- Allocation-free scalar decoder for hosted and freestanding linking.
+
+The ordering mirrors `armUserReturn` and `classify`: an already-fatal state is
+absorbing, policy/live-control failures precede event validation, and context
+binding is checked last.  It uses only fixed-width comparisons and arithmetic;
+the rich model above owns structure construction and supplies independent
+finite-corpus expectations. -/
+def controlScalar (cpuCode controlCode eventCode vector normalizedSubject
+    normalizedCr3 : UInt64) : UInt64 :=
+  if eventCode = 0 then
+    if scalarControlAccepted cpuCode controlCode then 1 else 0
+  else if eventCode = 1 then
+    if scalarControlAccepted cpuCode controlCode then 0xa001 else 0xf001
+  else if eventCode = 7 then 0xff00
+  else if !scalarControlAccepted cpuCode controlCode then 0xf001
+  else if eventCode = 8 then 0xf002
+  else if eventCode = 6 then 0xf003
+  else if vector != 6 then 0xf004
+  else if eventCode = 11 then 0xf005
+  else if eventCode = 4 || eventCode = 5 then 0xf006
+  else if eventCode = 9 then 0xf009
+  else if eventCode = 10 then 0xf008
+  else if normalizedSubject != 1 || normalizedCr3 != 1 then 0xf007
+  else 0xd001
+
+@[export leanos_privilege_entry_control_demo]
+def controlDemo (cpuCode controlCode eventCode vector normalizedSubject
+    normalizedCr3 : UInt64) : UInt64 :=
+  controlScalar cpuCode controlCode eventCode vector normalizedSubject normalizedCr3
+
+theorem controlDemo_refines_scalar_all_inputs cpuCode controlCode eventCode vector
+    normalizedSubject normalizedCr3 :
+    controlDemo cpuCode controlCode eventCode vector normalizedSubject normalizedCr3 =
+      controlScalar cpuCode controlCode eventCode vector normalizedSubject normalizedCr3 := rfl
+
+theorem canonical_control_adapter_accepts :
+    controlDemo canonicalCpuCode canonicalControlCode 0 0 0 0 = 1 := by
+  native_decide
+
+theorem contained_syscall_adapter_binds_authoritative_subject :
+    controlDemo canonicalCpuCode canonicalControlCode 2 6 1 1 = 0xd001 := by
+  native_decide
+
+theorem contained_sysenter_adapter_binds_authoritative_subject :
+    controlDemo canonicalCpuCode canonicalControlCode 3 6 1 1 = 0xd001 := by
+  native_decide
+
 /-- The completed lifecycle/context cleanup contract applies to the subject
 selected by the confinement theorem; it cannot leave that subject live,
 queued, current, or resumable. -/

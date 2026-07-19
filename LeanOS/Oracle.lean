@@ -8,6 +8,7 @@ import LeanOS.InterruptEntry
 import LeanOS.BlockingIPC
 import LeanOS.CapabilityReuse
 import LeanOS.ExtendedState
+import LeanOS.PrivilegeEntryControl
 
 /-!
 # Bounded scalar boundary oracle
@@ -20,6 +21,8 @@ it is differential integration evidence, not a refinement theorem.
 namespace LeanOS.Oracle
 
 open LeanOS
+
+set_option maxRecDepth 4096
 
 structure Vector where
   id : String
@@ -81,6 +84,12 @@ private def extendedState (id : String) (policy mode vector current active norma
   { id, adapter := "ExtendedState.denialDispatch",
     words := [policy, mode, vector, current, active, normalized],
     expected := ExtendedState.denialMachineGateModel policy mode vector current active normalized }
+
+private def privilegeEntryControl (id : String) (cpu control event vector normalized cr3 : UInt64) :
+    Vector :=
+  { id, adapter := "PrivilegeEntryControl.scalar",
+    words := [cpu, control, event, vector, normalized, cr3],
+    expected := PrivilegeEntryControl.controlModelExpected cpu control event vector normalized cr3 }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -201,9 +210,41 @@ def vectors : List Vector := [
   extendedState "extended-state.dispatch-invariant" 1 3 7 1 1 1,
   extendedState "extended-state.idle" 1 4 7 1 1 1,
   extendedState "extended-state.stale-binding" 1 0 7 1 1 2,
-  extendedState "extended-state.dispatch-peer-ud" 1 6 6 1 1 1]
+  extendedState "extended-state.dispatch-peer-ud" 1 6 6 1 1 1,
+  privilegeEntryControl "entry-control.accepted" 1 0 0 0 0 0,
+  privilegeEntryControl "entry-control.cpu-intel" 2 0 0 0 0 0,
+  privilegeEntryControl "entry-control.cpu-unsupported" 3 0 0 0 0 0,
+  privilegeEntryControl "entry-control.mode-protected32" 4 0 0 0 0 0,
+  privilegeEntryControl "entry-control.mode-compatibility" 5 0 0 0 0 0,
+  privilegeEntryControl "entry-control.syscall-unexposed" 6 0 0 0 0 0,
+  privilegeEntryControl "entry-control.sysenter-unexposed" 7 0 0 0 0 0,
+  privilegeEntryControl "entry-control.efer-sce-set" 1 1 0 0 0 0,
+  privilegeEntryControl "entry-control.star-mutated" 1 2 0 0 0 0,
+  privilegeEntryControl "entry-control.lstar-mutated" 1 3 0 0 0 0,
+  privilegeEntryControl "entry-control.cstar-mutated" 1 4 0 0 0 0,
+  privilegeEntryControl "entry-control.sfmask-mutated" 1 5 0 0 0 0,
+  privilegeEntryControl "entry-control.sysenter-cs-mutated" 1 6 0 0 0 0,
+  privilegeEntryControl "entry-control.sysenter-esp-mutated" 1 7 0 0 0 0,
+  privilegeEntryControl "entry-control.sysenter-eip-mutated" 1 8 0 0 0 0,
+  privilegeEntryControl "entry-control.writes-incomplete" 1 9 0 0 0 0,
+  privilegeEntryControl "entry-control.readback-mismatch" 1 10 0 0 0 0,
+  privilegeEntryControl "entry-control.manifest-missing" 1 11 0 0 0 0,
+  privilegeEntryControl "entry-control.extended-policy-relaxed" 1 12 0 0 0 0,
+  privilegeEntryControl "entry-control.return-accepted" 1 0 1 0 0 0,
+  privilegeEntryControl "entry-control.user-syscall-ud" 1 0 2 6 1 1,
+  privilegeEntryControl "entry-control.user-sysenter-ud" 1 0 3 6 1 1,
+  privilegeEntryControl "entry-control.user-syscall-gp" 1 0 2 13 1 1,
+  privilegeEntryControl "entry-control.kernel-syscall-ud" 1 0 4 6 1 1,
+  privilegeEntryControl "entry-control.stale-subject" 1 0 2 6 2 1,
+  privilegeEntryControl "entry-control.stale-cr3" 1 0 2 6 1 2,
+  privilegeEntryControl "entry-control.live-policy-relaxed" 1 0 8 6 1 1,
+  privilegeEntryControl "entry-control.alternate-target" 1 0 9 6 1 1,
+  privilegeEntryControl "entry-control.user-stack" 1 0 10 6 1 1,
+  privilegeEntryControl "entry-control.error-shape" 1 0 11 6 1 1,
+  privilegeEntryControl "entry-control.int80-as-denial" 1 0 6 128 1 1,
+  privilegeEntryControl "entry-control.post-fatal" 1 0 7 6 1 1]
 
-theorem corpus_shape : vectors.length = 112 := by decide
+theorem corpus_shape : vectors.length = 144 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -285,6 +326,35 @@ theorem extended_state_dispatch_scenario_agrees :
     (vectors[109]).expected = 1 ∧
     (vectors[110]).expected = 0 ∧
     (vectors[111]).expected = 0x3f00000000000102 := by
+  native_decide
+
+theorem privilege_entry_control_scenario_agrees :
+    (vectors[112]).expected = 1 ∧
+    ((vectors.drop 113).take 18).all (fun vector => vector.expected = 0) = true ∧
+    (vectors[131]).expected = 0xa001 ∧
+    (vectors[132]).expected = 0xd001 ∧
+    (vectors[133]).expected = 0xd001 ∧
+    ((vectors.drop 134).take 9).all (fun vector =>
+      vector.expected ≥ 0xf000) = true ∧
+    (vectors[143]).expected = 0xff00 := by
+  native_decide
+
+private def privilegeEntryControlAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "PrivilegeEntryControl.scalar", [cpu, control, event, vectorWord, normalized, cr3] =>
+      PrivilegeEntryControl.controlDemo cpu control event vectorWord normalized cr3 =
+        vector.expected
+  | _, _ => true
+
+/-- The entry-control differential corpus is exactly the final 32 vectors. -/
+theorem privilege_entry_control_corpus_shape :
+    ((vectors.drop 112).take 32).length = 32 := by
+  decide
+
+/-- Every entry-control scalar result agrees with the independently evaluated
+rich control model on the complete finite entry-control corpus. -/
+theorem privilege_entry_control_adapter_agrees_with_model :
+    ((vectors.drop 112).take 32).all privilegeEntryControlAdapterAgrees = true := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=
