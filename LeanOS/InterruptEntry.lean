@@ -3,7 +3,7 @@ import LeanOS.Interrupt
 /-!
 # Bounded x86-64 interrupt-entry manifest and frame normalization
 
-This module models the inbound boundary for the three ordinary gates used by
+This module models the inbound boundary for the five ordinary gates used by
 the boot image.  Vector 8 deliberately remains in the separate terminal IST
 protocol.  Descriptor loads, x86 frame construction, assembly, generated C,
 and the final binary are trusted/tested boundaries rather than theorem claims.
@@ -15,7 +15,9 @@ open LeanOS
 inductive GateType where | interrupt
   deriving DecidableEq, Repr
 
-inductive Purpose where | userFault | timer | syscall | diagnosticRecovery
+inductive Purpose where
+  | extendedUnavailable | extendedDenied
+  | userFault | timer | syscall | diagnosticRecovery
   deriving DecidableEq, Repr
 
 inductive OriginPolicy where | userOnly | userOrKernel
@@ -33,6 +35,10 @@ structure ManifestEntry where
   interruptsDisabled : Bool
   deriving DecidableEq, Repr
 
+def invalidOpcodeEntry : ManifestEntry :=
+  ⟨6, .interrupt, 0x08, 0, 0, false, .userOnly, .extendedUnavailable, true⟩
+def deviceNotAvailableEntry : ManifestEntry :=
+  ⟨7, .interrupt, 0x08, 0, 0, false, .userOnly, .extendedDenied, true⟩
 def pageFaultEntry : ManifestEntry :=
   ⟨14, .interrupt, 0x08, 0, 0, true, .userOrKernel, .userFault, true⟩
 def timerEntry : ManifestEntry :=
@@ -41,18 +47,20 @@ def syscallEntry : ManifestEntry :=
   ⟨128, .interrupt, 0x08, 3, 0, false, .userOnly, .syscall, true⟩
 
 /-- The complete ordinary-gate manifest.  Vector 8 is intentionally absent. -/
-def manifest : List ManifestEntry := [pageFaultEntry, timerEntry, syscallEntry]
+def manifest : List ManifestEntry :=
+  [invalidOpcodeEntry, deviceNotAvailableEntry, pageFaultEntry, timerEntry, syscallEntry]
 
 def entrySupported (entry : ManifestEntry) : Bool :=
   entry.gate = .interrupt && entry.selector = 0x08 && entry.ist = 0 &&
     entry.interruptsDisabled &&
-    ((entry = pageFaultEntry) || (entry = timerEntry) || (entry = syscallEntry))
+    ((entry = invalidOpcodeEntry) || (entry = deviceNotAvailableEntry) ||
+      (entry = pageFaultEntry) || (entry = timerEntry) || (entry = syscallEntry))
 
 def noDuplicateVectors (entries : List ManifestEntry) : Bool :=
   (entries.map (·.vector)).Nodup
 
 def validateManifest (entries : List ManifestEntry) : Bool :=
-  entries.length = 3 && noDuplicateVectors entries &&
+  entries.length = 5 && noDuplicateVectors entries &&
     entries.all entrySupported &&
     entries.filter (fun entry => entry.dpl = 3) = [syscallEntry]
 
@@ -60,8 +68,9 @@ theorem reviewed_manifest_valid : validateManifest manifest = true := by native_
 
 theorem only_syscall_is_dpl3 entry
     (hmember : entry ∈ manifest) (hdpl : entry.dpl = 3) : entry = syscallEntry := by
-  simp [manifest, pageFaultEntry, timerEntry, syscallEntry] at hmember
-  rcases hmember with rfl | rfl | rfl <;> simp_all [syscallEntry]
+  simp [manifest, invalidOpcodeEntry, deviceNotAvailableEntry, pageFaultEntry,
+    timerEntry, syscallEntry] at hmember
+  rcases hmember with rfl | rfl | rfl | rfl | rfl <;> simp_all [syscallEntry]
 
 inductive RawFrame where
   /-- CPL changed, so x86 supplied saved RSP and SS. -/
@@ -317,7 +326,8 @@ def entryDemo (descriptor frame stack context cleanup : UInt64) : UInt64 :=
   let truncated := frame / 512 % 2 = 1
   let descriptorAllowed :=
     stub = vector &&
-      ((vector = 14 && hasError) ||
+      (((vector = 6 || vector = 7) && !hasError) ||
+       (vector = 14 && hasError) ||
        (vector = 32 && !hasError) ||
        (vector = 128 && !hasError))
   let originAllowed :=

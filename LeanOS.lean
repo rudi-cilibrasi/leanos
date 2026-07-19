@@ -8,6 +8,7 @@ import LeanOS.BootAllocation
 import LeanOS.BootPageTablePlan
 import LeanOS.BlockingIPC
 import LeanOS.EndpointIPC
+import LeanOS.ExtendedState
 import LeanOS.IPCSyscall
 import LeanOS.Interrupt
 import LeanOS.InterruptEntry

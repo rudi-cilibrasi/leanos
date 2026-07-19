@@ -13,6 +13,12 @@ RIP, CS, RFLAGS, RSP, and SS. Selection comes only from the generated bounded
 `leanos_preemption_demo` result and protected `current_subject`, never from a
 user register or syscall word.
 
+That 160-byte format intentionally excludes x87, MMX, SSE, AVX, PKRU, and all
+other XSAVE-managed components, so it carries no extended-register isolation
+claim. `LeanOS.ExtendedState` instead denies representative x87/MMX/SSE/SSE2/AVX
+instructions until a later ADR defines clean images and exclusive per-subject
+ownership for every admitted component.
+
 The handler masks IRQ0 before EOI. A complete, kernel-owned 160-byte B image
 initializes every GPR and return-frame word rather than deriving B from A's
 saved image. Before reusing any register, B checks all fifteen distinct initial
@@ -56,3 +62,6 @@ CR3/TLB hardware semantics. The context-copy assembly, protected storage,
 PIT/PIC programming, C protocol state, compiler/linker/GRUB, serial checker,
 QEMU, and x86-64 semantics remain trusted. This no-PCID slice relies on CR3
 reload invalidation. No proof escape or new unchecked declaration is added.
+For that companion denial path, CPUID/control reads, #UD/#NM priority and
+delivery, probe decoding, generated-C execution, cleanup/restore assembly, and
+the serial evidence runner remain trusted or finitely tested.
