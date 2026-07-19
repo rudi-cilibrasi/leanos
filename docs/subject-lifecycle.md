@@ -4,6 +4,13 @@
 creation and termination. Subject identifiers have append-only issued history:
 once terminated, an identifier cannot become live again.
 
+Creation publishes a fresh live identity only. It has no parent/child
+relationship and does not inherit or copy capabilities, address spaces,
+mappings, resource budgets, scheduler state, pending IPC, fault state, or
+machine context. It therefore is not fork or an ambiguous clone substitute.
+Process duplication remains explicitly out of scope until a new architecture
+issue closes the readiness gate in [ADR 0010](adr/0010-defer-fork.md).
+
 Termination is atomic in the model. It removes every capability held by the
 subject; retires its exclusively owned memory and endpoint objects (including
 capabilities delegated to other subjects); frees owned frames; removes owned
