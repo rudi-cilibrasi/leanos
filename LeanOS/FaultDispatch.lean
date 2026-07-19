@@ -97,6 +97,17 @@ def dispatch (state : ResumablePreemption.State)
                           translations := TLB.switch cleaned.translations context.addressSpace }
                         action := .dispatch context }
 
+/-- Explicit attacker data is not consulted by fault cleanup or survivor
+selection. -/
+def dispatchWithPayload {Payload : Type} (state : ResumablePreemption.State)
+    (entry : InterruptEntry.Result) (_payload : Payload) : Outcome :=
+  dispatch state entry
+
+theorem attacker_payload_independent {Payload : Type} state entry
+    (left right : Payload) :
+    dispatchWithPayload state entry left = dispatchWithPayload state entry right := by
+  rfl
+
 theorem total state entry : ∃ outcome, dispatch state entry = outcome :=
   ⟨_, rfl⟩
 
@@ -179,5 +190,91 @@ theorem cleanup_nonresumption state subject :
         subject = false :=
   ⟨ResumablePreemption.cleanup_removes_context state subject,
     ResumablePreemption.cleanup_terminates_subject state subject⟩
+
+private theorem cleanupCurrent_preserves_coreWellFormed state subject
+    (hstate : ResumablePreemption.WellFormed state)
+    (hcurrent : state.scheduler.lifecycle.current = some subject) :
+    ResumablePreemption.CleanupCoreWellFormed
+      (ResumablePreemption.cleanupSubject state subject) := by
+  exact ResumablePreemption.cleanupSubject_preserves_coreWellFormed
+    state subject hstate (by
+      simp [ResumablePreemption.cleanupSubject, SubjectLifecycle.terminateState,
+        hcurrent])
+
+/-- Fault dispatch preserves the scheduler/lifecycle invariant and the bounded
+no-PCID translation-cache invariant as one composite transition. -/
+theorem dispatch_preserves_scheduler_and_tlb state entry
+    (hstate : ResumablePreemption.WellFormed state) :
+    Scheduler.WellFormed (dispatch state entry).state.scheduler ∧
+      TLB.Coherent (dispatch state entry).state.translations := by
+  have hparts := hstate
+  rcases hparts with ⟨hscheduler, _, _, _, _, _, _, _, _, htlb⟩
+  simp only [dispatch]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals (try split) <;> try simp_all [halt, reject]
+  all_goals
+    have hcore := cleanupCurrent_preserves_coreWellFormed state
+      (state.scheduler.lifecycle.current.getD 0) hstate (by simp_all)
+    simp_all
+    rcases hcore with ⟨hcleanScheduler, _, _, _, _, _, _, hcleanTlb⟩
+    constructor
+    · exact Scheduler.selectNext_preserves_wellFormed _ hcleanScheduler
+    · first | exact hcleanTlb | exact TLB.switch_coherent _ _
+
+/-- A successful dispatch consumes exactly the post-cleanup FIFO head. -/
+theorem dispatch_uses_survivor_head state entry context
+    (h : (dispatch state entry).action = .dispatch context) :
+    ∃ faulting rest,
+      (ResumablePreemption.cleanupSubject state faulting).scheduler.ready =
+        context.owner :: rest := by
+  simp only [dispatch] at h
+  split at h <;> try simp_all [halt, reject]
+  split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals grind [Scheduler.selectNext, Scheduler.ownsAddressSpace, Scheduler.reject]
+
+/-- Idle is exposed only after cleanup and an actually empty survivor queue. -/
+private theorem selectNext_none_eq scheduler
+    (h : (Scheduler.selectNext scheduler).result = .accepted none) :
+    Scheduler.selectNext scheduler = { state := scheduler, result := .accepted none } := by
+  grind [Scheduler.selectNext, Scheduler.reject]
+
+theorem idle_is_clean_empty state entry
+    (h : (dispatch state entry).action = .idle) :
+    ∃ faulting,
+      (dispatch state entry).state = ResumablePreemption.cleanupSubject state faulting ∧
+      (dispatch state entry).state.scheduler.ready = [] ∧
+      (dispatch state entry).state.scheduler.lifecycle.current = none := by
+  simp only [dispatch] at h ⊢
+  split at h <;> try simp_all [halt, reject]
+  split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
+  all_goals (try split at h) <;> try simp_all [halt, reject]
+  all_goals (try split at h) <;> try simp_all [halt, reject]
+  all_goals (try split at h) <;> try simp_all [halt, reject]
+  all_goals
+    have hselected := selectNext_none_eq _ (by assumption)
+    simp_all [hselected]
+    grind [Scheduler.selectNext, Scheduler.reject]
 
 end LeanOS.FaultDispatch
