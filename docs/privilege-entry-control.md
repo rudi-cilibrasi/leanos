@@ -123,7 +123,6 @@ snapshot, wrong vector/error shape, stale binding, unexpected target execution,
 policy relaxation, attacker-selected survivor, kernel-origin containment,
 direct handler entry, partial or reordered output, reset, triple fault, and
 hang. Each successful probe also preserves a three-record CPU/CPUID/MSR/control
-snapshot beside the exact serial log. The remaining machine checkpoints are
-controlled mutations of the other target MSRs and the final global-invariant
-composition requested by follow-on #104. Those
-results must be labeled checked/tested evidence, not Lean proof.
+snapshot beside the exact serial log. The final global-invariant composition
+remains assigned to follow-on #104. Its machine results must be labeled
+checked/tested evidence, not Lean proof.
