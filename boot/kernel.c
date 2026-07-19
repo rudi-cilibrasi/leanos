@@ -51,6 +51,9 @@ extern void isr32(void);
 extern void run_double_fault_probe(void);
 extern char user_a_entry[], user_a_stack_top[];
 extern const uint64_t extended_state_probe_class;
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+extern const uint8_t user_a_extended_state_probe[];
+#endif
 extern char user_a_stack[];
 extern char user_b_entry[];
 extern char user_b_stack[], user_b_stack_top[];
@@ -821,9 +824,16 @@ static void privilege_init(void) {
 /* Vector 6/7 traverse the shared normalized entry boundary and bounded
    generated cleanup/peer decision.  The dedicated denial scenario publishes
    the selected fresh peer through the sole validated user-return path. */
-uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs) {
+uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
+                                       uint64_t saved_rip) {
     if ((vector != 6 && vector != 7) || saved_cs != 0x23)
         fail("extended-state-denial-binding");
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    if (saved_rip != (uint64_t)user_a_extended_state_probe)
+        fail("extended-state-denial-probe-rip");
+#else
+    (void)saved_rip;
+#endif
     uint64_t cr3;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     uint64_t expected_cr3 = current_subject == 1 ? (uint64_t)page_map_level_4_a :

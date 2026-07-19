@@ -53,6 +53,10 @@ bypass_handler_address_space() {
 bypass_handler_probe_vector() {
   sed -i 's/if (vector != expected_vector)/if (0)/' "$tmp/kernel.c"
 }
+bypass_handler_probe_rip() {
+  sed -i 's/if (saved_rip != (uint64_t)user_a_extended_state_probe)/if (0)/' \
+    "$tmp/kernel.c"
+}
 add_clts() {
   sed -i '/^normalize_extended_state_cr0:/a\    clts' "$tmp/boot.S"
 }
@@ -77,6 +81,7 @@ run_fixture bypassed-live-policy-gate 'field=live-policy-gate' bypass_live_polic
 run_fixture bypassed-handler-origin 'field=handler-origin-binding' bypass_handler_origin
 run_fixture bypassed-handler-address-space 'field=handler-address-space-binding' bypass_handler_address_space
 run_fixture bypassed-handler-probe-vector 'field=handler-probe-vector' bypass_handler_probe_vector
+run_fixture bypassed-handler-probe-rip 'field=handler-probe-rip' bypass_handler_probe_rip
 run_fixture unauthorized-clts 'field=unauthorized-enable-or-restore source' add_clts
 run_fixture unauthorized-fxrstor 'field=unauthorized-enable-or-restore source' add_fxrstor
 run_fixture unauthorized-xrstor 'field=unauthorized-enable-or-restore source' add_xrstor
@@ -127,6 +132,24 @@ if [[ -n "$avx_elf" ]]; then
 fi
 if [[ -n "$mmx_elf" || -n "$sse_elf" || -n "$sse2_elf" || -n "$avx_elf" ]]; then
   echo "EXTENDED-STATE fixture=probe-class-swap field=probe-class final-elf result=REJECTED"
+fi
+
+if [[ -n "$sse_elf" ]]; then
+  objcopy --dump-section .user_a_text="$tmp/user-a.bin" "$sse_elf"
+  printf '\x0f\x57\xc9' | dd of="$tmp/user-a.bin" bs=1 seek=0 conv=notrunc status=none
+  cp "$sse_elf" "$tmp/extra-simd.elf"
+  objcopy --update-section .user_a_text="$tmp/user-a.bin" "$tmp/extra-simd.elf"
+  if ./scripts/check-extended-state-policy.sh "$tmp/extra-simd.elf" sse \
+      >"$tmp/extra-simd.log" 2>&1; then
+    echo "error: extra SIMD final-ELF mutation unexpectedly passed" >&2
+    exit 1
+  fi
+  grep -Fq 'field=denied-family final-elf allowlist' "$tmp/extra-simd.log" || {
+    echo "error: extra SIMD mutation lacked denied-family diagnostic" >&2
+    cat "$tmp/extra-simd.log" >&2
+    exit 1
+  }
+  echo "EXTENDED-STATE fixture=extra-simd field=denied-family final-elf result=REJECTED"
 fi
 
 echo "Controlled extended-state boot-policy fixtures passed"

@@ -17,6 +17,11 @@ for symbol in normalize_extended_state_cr0 normalize_extended_state_cr4; do
   }
 done
 
+probe_address="$(nm -n "$elf" | awk '$3 == "user_a_extended_state_probe" { print tolower($1) }')"
+if [[ -n "$probe_address" ]]; then
+  probe_address="$(printf '%x' "0x${probe_address}")"
+fi
+
 grep -Fq 'and $~((1 << 9) | (1 << 10) | (1 << 18)), %eax' "$boot_source" || {
   echo "error: extended-state field=cr4-normalization inherited-or-enabled" >&2; exit 1;
 }
@@ -61,6 +66,16 @@ grep -Fq 'uint64_t expected_vector = extended_state_probe_class >= 2 ? 6 : 7;' \
 grep -Fq 'if (vector != expected_vector)' "$kernel_source" || {
   echo "error: extended-state field=handler-probe-vector missing" >&2; exit 1;
 }
+grep -Fq 'if (saved_rip != (uint64_t)user_a_extended_state_probe)' \
+  "$kernel_source" || {
+  echo "error: extended-state field=handler-probe-rip missing" >&2; exit 1;
+}
+for stub in isr6 isr7; do
+  stub_path="$(sed -n "/^${stub}:/,/^\.global /p" "$boot_source")"
+  grep -Fq 'mov 120(%rsp), %rdx' <<<"$stub_path" || {
+    echo "error: extended-state field=handler-probe-rip stub=$stub" >&2; exit 1;
+  }
+done
 grep -Fq ': "a"(1u), "c"(0u));' "$kernel_source" || {
   echo "error: extended-state field=cpuid-leaf1 missing" >&2; exit 1;
 }
@@ -91,6 +106,21 @@ if grep -Eq 'mov[^"]*,[[:space:]]*%%cr(0|4)' "$kernel_source"; then
 fi
 
 disassembly="$(objdump -d --no-show-raw-insn "$elf")"
+denied_instructions="$(grep -Ei \
+  '^[[:space:]]*[0-9a-f]+:[[:space:]]+((f[a-z0-9]+|xsave|xrstor|fxsave|fxrstor|ldmxcsr|stmxcsr|emms|femms)([[:space:]]|$)|[^#]*%(st([[:space:],]|\([0-7]\))|mm[0-7]|xmm[0-9]+|ymm[0-9]+|zmm[0-9]+))' \
+  <<<"$disassembly" || true)"
+if [[ -z "$probe_address" ]]; then
+  [[ -z "$denied_instructions" ]] || {
+    echo "error: extended-state field=denied-family final-elf unauthorized" >&2
+    printf '%s\n' "$denied_instructions" >&2
+    exit 1
+  }
+elif [[ "$(wc -l <<<"$denied_instructions")" -ne 1 ]] ||
+     ! grep -Eiq "^[[:space:]]*0*${probe_address}:" <<<"$denied_instructions"; then
+  echo "error: extended-state field=denied-family final-elf allowlist" >&2
+  printf '%s\n' "$denied_instructions" >&2
+  exit 1
+fi
 if [[ "$probe" == x87 ]]; then
   grep -Eq '[[:space:]]fld1([[:space:]]|$)' <<<"$disassembly" || {
     echo "error: extended-state field=x87-probe final-elf" >&2; exit 1;

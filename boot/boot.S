@@ -559,6 +559,7 @@ isr6:
     NORMALIZE_ENTRY 6, 0, 144
     mov $6, %edi
     mov 128(%rsp), %rsi
+    mov 120(%rsp), %rdx
     call extended_state_denial_handler
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     jmp extended_state_restore_peer
@@ -572,6 +573,7 @@ isr7:
     NORMALIZE_ENTRY 7, 0, 144
     mov $7, %edi
     mov 128(%rsp), %rsi
+    mov 120(%rsp), %rdx
     call extended_state_denial_handler
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
 extended_state_restore_peer:
@@ -874,7 +876,10 @@ user_a_entry:
     mov %ax, %es
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     /* Each dedicated image must deny before modifying its selected shared
-       extended-state bank. */
+       extended-state bank.  The exported label is the sole RIP accepted by
+       the denial handler and the final-ELF instruction allowlist. */
+.global user_a_extended_state_probe
+user_a_extended_state_probe:
 #ifdef LEANOS_EXTENDED_STATE_AVX_PROBE
     vxorps %ymm0, %ymm0, %ymm0
 #elif defined(LEANOS_EXTENDED_STATE_SSE2_PROBE)
