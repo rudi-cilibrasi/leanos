@@ -303,7 +303,8 @@ writes.
 The [subject-lifecycle model](docs/subject-lifecycle.md) gives subjects
 never-reused identities and defines atomic termination cleanup across held
 capabilities, exclusively owned memory, address spaces, endpoints, pending
-provenance, and runnable/current state.
+provenance, and runnable/current state. Its creation operation publishes a
+fresh identity; it does not inherit or duplicate another subject's state.
 
 The bounded [model-oracle corpus](docs/model-oracle.md) is evaluated in Lean
 and replayed through hosted generated code and every boot-reachable adapter.
@@ -468,6 +469,13 @@ commands are in [the boot-image guide](docs/boot-image.md).
 - move policy into isolated user-space services;
 - explore verified storage, networking, and recovery components; and
 - add hardware-backed test lanes without weakening deterministic QEMU CI.
+
+Process duplication is deliberately excluded from this roadmap. LeanOS does
+not promise `fork()`, a fork syscall, or a clone-like operation with implicit
+inheritance. [ADR 0010](docs/adr/0010-defer-fork.md) defines the whole-kernel
+readiness gate. Any future implementation must begin with a new architecture
+issue that closes every item in that gate before defining a model, ABI,
+adapter, or boot path.
 
 ## Contributing
 
