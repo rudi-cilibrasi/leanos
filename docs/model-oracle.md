@@ -13,8 +13,10 @@ and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
 and adversarial return frames and contexts. The fault-dispatch records include
 typed kernel-origin and malformed-frame fail-stop cases, stale authoritative
-bindings, empty dispatch, and an accepted peer-context/resource witness. The Lean
-checks evaluate every expected result from
+bindings, empty dispatch, and an accepted peer-context/resource witness. The
+accepted word independently attests B's complete saved frame/register canaries,
+capability slot, owned memory and frame, mapping, and endpoint provenance after
+A's cleanup. The Lean checks evaluate every expected result from
 the adapter definition and connect the accepted and rejected examples to the
 source models.
 
