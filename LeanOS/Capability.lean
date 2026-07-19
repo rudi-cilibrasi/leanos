@@ -628,6 +628,79 @@ theorem copy_preserves_authority (state : State) (actor : SubjectId)
       simp at hempty
     · simpa [install, htarget] using hslot
 
+/-- Delegation changes only the capability-space contents and monotonic
+identity history.  The live subject/object registries, object kinds, and
+per-subject slot bounds remain byte-for-byte identical.  Composite
+publication proofs use this boundary to retain lifecycle and resource
+validity while separately proving facts about the newly installed slot. -/
+theorem copy_preserves_registries (state : State) (actor : SubjectId)
+    (source : SlotId) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) :
+    let next := (copy state actor source destination destinationSlot requested).state
+    next.subjects = state.subjects ∧
+      next.objects = state.objects ∧
+      next.kinds = state.kinds ∧
+      next.slotCapacity = state.slotCapacity := by
+  simp only [copy]
+  split <;> try simp [reject]
+  next capability =>
+    split <;> try simp_all
+    split <;> try simp_all
+    split <;> try simp_all
+    split <;> try simp_all
+    split <;> try simp_all
+    split <;> try simp_all
+    simp [install]
+
+/-- Copy appends one derivation record, so every older identity retains its
+exact provenance entry. -/
+theorem copy_preserves_derivation_of_lt (state : State) (actor : SubjectId)
+    (source : SlotId) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) (identity : Nat) (hidentity : identity < state.nextIdentity) :
+    (copy state actor source destination destinationSlot requested).state.derivations identity =
+      state.derivations identity := by
+  simp only [copy]
+  split <;> try rfl
+  next capability =>
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    simp [install, Nat.ne_of_lt hidentity]
+
+/-- A sealed identity below the allocation frontier remains absent from every
+live slot after copy.  The sole new slot receives the frontier identity, while
+all older slots are retained exactly. -/
+theorem copy_preserves_absent_identity (state : State) (actor : SubjectId)
+    (source : SlotId) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) (identity : Nat) (hidentity : identity < state.nextIdentity)
+    (habsent : ∀ subject slot capability,
+      state.slots subject slot = some capability → capability.identity ≠ identity) :
+    ∀ subject slot capability,
+      (copy state actor source destination destinationSlot requested).state.slots subject slot =
+        some capability → capability.identity ≠ identity := by
+  simp only [copy]
+  split <;> try exact habsent
+  next sourceCapability =>
+    split <;> try exact habsent
+    split <;> try exact habsent
+    split <;> try exact habsent
+    split <;> try exact habsent
+    split <;> try exact habsent
+    split <;> try exact habsent
+    intro subject slot capability hslot
+    by_cases htarget : subject = destination ∧ slot = destinationSlot
+    · rcases htarget with ⟨rfl, rfl⟩
+      have hcapability : capability.identity = state.nextIdentity := by
+        symm
+        simpa [install] using congrArg (fun found => found.map Capability.identity) hslot
+      rw [hcapability]
+      exact Nat.ne_of_gt hidentity
+    · apply habsent subject slot capability
+      simpa [install, htarget] using hslot
+
 theorem revoke_preserves_wellFormed (state : State) (actor : SubjectId)
     (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
     (hstate : WellFormed state) :
