@@ -150,6 +150,28 @@ if [[ -n "$sse_elf" ]]; then
     exit 1
   }
   echo "EXTENDED-STATE fixture=extra-simd field=denied-family final-elf result=REJECTED"
+
+  check_denied_mutation() {
+    local name="$1" bytes="$2"
+    objcopy --dump-section .user_a_text="$tmp/$name.bin" "$sse_elf"
+    printf '%b' "$bytes" | dd of="$tmp/$name.bin" bs=1 seek=0 conv=notrunc status=none
+    cp "$sse_elf" "$tmp/$name.elf"
+    objcopy --update-section .user_a_text="$tmp/$name.bin" "$tmp/$name.elf"
+    if ./scripts/check-extended-state-policy.sh "$tmp/$name.elf" sse \
+        >"$tmp/$name.log" 2>&1; then
+      echo "error: $name final-ELF mutation unexpectedly passed" >&2
+      exit 1
+    fi
+    grep -Fq 'field=denied-family final-elf allowlist' "$tmp/$name.log" || {
+      echo "error: $name mutation lacked denied-family diagnostic" >&2
+      cat "$tmp/$name.log" >&2
+      exit 1
+    }
+    echo "EXTENDED-STATE fixture=$name field=denied-family final-elf result=REJECTED"
+  }
+
+  check_denied_mutation extra-vzeroupper '\xc5\xf8\x77'
+  check_denied_mutation extra-xsave64 '\x48\x0f\xae\x20'
 fi
 
 echo "Controlled extended-state boot-policy fixtures passed"

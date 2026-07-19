@@ -278,13 +278,13 @@ theorem interrupt_entry_adapter_agrees_with_model :
   native_decide
 
 theorem extended_state_dispatch_scenario_agrees :
-    (vectors[105]).expected = 0x102 ∧
+    (vectors[105]).expected = 0x3f00000000000102 ∧
     (vectors[106]).expected = 0 ∧
     (vectors[107]).expected = 0 ∧
     (vectors[108]).expected = 0 ∧
     (vectors[109]).expected = 1 ∧
     (vectors[110]).expected = 0 ∧
-    (vectors[111]).expected = 0x102 := by
+    (vectors[111]).expected = 0x3f00000000000102 := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

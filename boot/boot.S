@@ -577,13 +577,15 @@ isr7:
     call extended_state_denial_handler
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
 extended_state_restore_peer:
-    cmp $2, %rax
-    jne 1f
-    lea initial_context_b(%rip), %rsi
+    test %rax, %rax
+    je 1f
+    mov %rax, %rsi
     mov %rsp, %rdi
     mov $20, %ecx
     rep movsq
-    movq $page_map_level_4_b, %rax
+    mov extended_state_selected_cr3(%rip), %rax
+    test %rax, %rax
+    je 1f
     mov %rax, %cr3
     call complete_interrupt_entry
     mov $3, %esi

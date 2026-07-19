@@ -41,10 +41,22 @@ grep -Fq 'cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0
   "$kernel_source" || {
   echo "error: extended-state field=evidence-record missing" >&2; exit 1;
 }
-grep -Fq 'leanos_extended_state_denial_demo(policy, mode, vector, current_subject,' \
+grep -Fq 'uint64_t transition = leanos_extended_state_denial_demo(policy, mode, vector,' \
   "$kernel_source" || {
   echo "error: extended-state field=runtime-adapter missing" >&2; exit 1;
 }
+for authoritative_publish in \
+  'extended_state_authority.live &= ~(1ull << current_subject);' \
+  'extended_state_authority.ready &= ~((1ull << current_subject) | (1ull << peer));' \
+  'extended_state_authority.contexts &= ~((1ull << current_subject) | (1ull << peer));' \
+  'extended_state_authority.current = peer;' \
+  'extended_state_authority.active = peer;' \
+  'extended_state_selected_cr3 = (uint64_t)page_map_level_4_b;' \
+  'return (uint64_t)initial_context_b;'; do
+  grep -Fq "$authoritative_publish" "$kernel_source" || {
+    echo "error: extended-state field=authoritative-dispatch missing" >&2; exit 1;
+  }
+done
 grep -Fq 'uint64_t policy = extended_state_features_accepted &&' "$kernel_source" || {
   echo "error: extended-state field=live-policy-gate missing" >&2; exit 1;
 }
@@ -86,8 +98,8 @@ grep -Fq 'cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave
 grep -Fq 'vxorps %ymm0, %ymm0, %ymm0' "$boot_source" || {
   echo "error: extended-state field=avx-probe source" >&2; exit 1;
 }
-if grep -Eiq '^[[:space:]]*(clts|fxrstor|xrstor)(64)?([[:space:]]|$)' "$boot_source" ||
-   grep -Eiq '"[[:space:]]*(clts|fxrstor|xrstor)(64)?([[:space:]]|"|$)' "$kernel_source"; then
+if grep -Eiq '^[[:space:]]*(clts|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|$)' "$boot_source" ||
+   grep -Eiq '"[[:space:]]*(clts|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|"|$)' "$kernel_source"; then
   echo "error: extended-state field=unauthorized-enable-or-restore source" >&2
   exit 1
 fi
@@ -107,7 +119,7 @@ fi
 
 disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 denied_instructions="$(grep -Ei \
-  '^[[:space:]]*[0-9a-f]+:[[:space:]]+((f[a-z0-9]+|xsave|xrstor|fxsave|fxrstor|ldmxcsr|stmxcsr|emms|femms)([[:space:]]|$)|[^#]*%(st([[:space:],]|\([0-7]\))|mm[0-7]|xmm[0-9]+|ymm[0-9]+|zmm[0-9]+))' \
+  '^[[:space:]]*[0-9a-f]+:[[:space:]]+((f[a-z0-9]+|xsave[a-z0-9]*|xrstor[a-z0-9]*|ldmxcsr|stmxcsr|emms|femms|vzero(upper|all))([[:space:]]|$)|[^#]*%(st([[:space:],]|\([0-7]\))|mm[0-7]|xmm[0-9]+|ymm[0-9]+|zmm[0-9]+))' \
   <<<"$disassembly" || true)"
 if [[ -z "$probe_address" ]]; then
   [[ -z "$denied_instructions" ]] || {
@@ -158,7 +170,7 @@ grep -Eq '[[:space:]]or[[:space:]]+\$0x8001000e,%eax' <<<"$disassembly" || {
 [[ $(grep -Ec '[[:space:]]cpuid([[:space:]]|$)' <<<"$disassembly") -ge 2 ]] || {
   echo "error: extended-state field=cpuid-snapshot final-elf" >&2; exit 1;
 }
-if grep -Eiq '[[:space:]](clts|fxrstor|xrstor)(64)?([[:space:]]|$)' <<<"$disassembly"; then
+if grep -Eiq '[[:space:]](clts|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|$)' <<<"$disassembly"; then
   echo "error: extended-state field=unauthorized-enable-or-restore final-elf" >&2
   exit 1
 fi

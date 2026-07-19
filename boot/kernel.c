@@ -121,6 +121,19 @@ static struct tss64 tss;
 static uint8_t entry_stack[16384] __attribute__((aligned(16)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
+/* Concrete image of the bounded state consumed and published by
+   ExtendedState.dispatchDenied.  Bits are indexed by subject identity. */
+struct extended_state_authority {
+    uint64_t live;
+    uint64_t ready;
+    uint64_t current;
+    uint64_t contexts;
+    uint64_t active;
+};
+static struct extended_state_authority extended_state_authority = {
+    (1ull << 1) | (1ull << 2), 1ull << 2, 1, 1ull << 2, 1
+};
+uint64_t extended_state_selected_cr3;
 static unsigned timer_accepted;
 static unsigned blocking_ipc_step;
 static unsigned capability_reuse_state;
@@ -848,10 +861,31 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
     uint64_t policy = extended_state_features_accepted &&
         (cr0 & required_cr0) == required_cr0 && (cr4 & forbidden_cr4) == 0;
     uint64_t mode = vector == 6 ? 6 : 0;
-    uint64_t peer = current_subject == 1 ? 2 : 1;
-    if (leanos_extended_state_denial_demo(policy, mode, vector, current_subject,
-            current_subject, current_subject) != 0x100 + peer)
+    const uint64_t initial_live = (1ull << 1) | (1ull << 2);
+    if (extended_state_authority.live != initial_live ||
+        extended_state_authority.ready != (1ull << 2) ||
+        extended_state_authority.current != current_subject ||
+        extended_state_authority.contexts != (1ull << 2) ||
+        extended_state_authority.active != current_subject)
+        fail("extended-state-denial-authority-prestate");
+    uint64_t transition = leanos_extended_state_denial_demo(policy, mode, vector,
+        extended_state_authority.current, extended_state_authority.active,
+        extended_state_authority.current);
+    if ((transition & 0xffffffffffffff00ull) != 0x3f00000000000100ull)
         fail("extended-state-denial-model");
+    uint64_t peer = transition & 0xffu;
+    if (peer != 2 || (extended_state_authority.ready & (1ull << peer)) == 0 ||
+        (extended_state_authority.contexts & (1ull << peer)) == 0)
+        fail("extended-state-denial-authority-selection");
+    extended_state_authority.live &= ~(1ull << current_subject);
+    extended_state_authority.ready &= ~((1ull << current_subject) | (1ull << peer));
+    extended_state_authority.contexts &= ~((1ull << current_subject) | (1ull << peer));
+    extended_state_authority.current = peer;
+    extended_state_authority.active = peer;
+    if (extended_state_authority.live != (1ull << peer) ||
+        extended_state_authority.ready != 0 || extended_state_authority.contexts != 0 ||
+        extended_state_authority.current != peer || extended_state_authority.active != peer)
+        fail("extended-state-denial-authority-poststate");
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     if (current_subject != 1 || peer != 2)
         fail("extended-state-denial-scenario-binding");
@@ -861,6 +895,7 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
     if (vector != expected_vector)
         fail("extended-state-denial-probe-vector");
     current_subject = peer;
+    extended_state_selected_cr3 = (uint64_t)page_map_level_4_b;
     serial_puts("LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=");
     serial_u64(vector);
     serial_puts(" instruction=");
@@ -869,7 +904,7 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
         extended_state_probe_class == 2 ? "sse" :
         extended_state_probe_class == 3 ? "sse2" : "avx");
     serial_puts(" bank-write=prevented cleanup=complete peer=2\n");
-    return peer;
+    return (uint64_t)initial_context_b;
 #else
     fail("extended-state-denial-dispatch-unpublished");
 #endif

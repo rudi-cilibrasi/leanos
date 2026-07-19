@@ -508,6 +508,111 @@ and CR0/CR4 snapshot: only one means that the global denial wrapper may publish.
 `mode` injects one reviewed policy/runtime corruption; the vector and normalized
 bindings remain explicit inputs. -/
 
+private def denialLifecycle (current : Nat) : SubjectLifecycle.State :=
+  { capabilities := {
+      subjects := fun subject => subject = 1 || subject = 2
+      objects := fun _ => false
+      kinds := fun _ => none
+      slots := fun _ _ => none }
+    issuedSubjects := fun subject => subject = 1 || subject = 2
+    ownedMemory := fun _ => none
+    addressOwner := fun space => if space = 1 || space = 2 then some space else none
+    mapping := fun _ _ => none
+    endpointOwner := fun _ => none
+    mailbox := fun _ => none
+    frameOwner := fun _ => none
+    freeFrame := fun _ => true
+    runnable := fun subject => subject = 1 || subject = 2
+    current := some current }
+
+private def denialFrame : Interrupt.HardwareFrame :=
+  { vector := 32
+    errorCode := 0
+    savedPrivilege := .user
+    instructionPointer := 0x400000
+    stackPointer := 0x800000
+    codeSelector := 0x23
+    stackSelector := 0x1b
+    flags := 0x202
+    canonicalInstructionPointer := true
+    canonicalStackPointer := true
+    flagsAllowed := true }
+
+private def denialRegisters : ResumablePreemption.Registers :=
+  { accumulator := 0x010001, base := 0x020002, count := 0x030003, data := 0x040004
+    source := 0x060006, destination := 0x070007, basePointer := 0x050005
+    r8 := 0x080008, r9 := 0x090009, r10 := 0x100010, r11 := 0x110011
+    r12 := 0xc0dec0dec0dec0de, r13 := 0x51a7e51a7e51a7e5
+    r14 := 0x140014, r15 := 0x150015 }
+
+private def denialContext (owner : Nat) : ResumablePreemption.Context :=
+  { owner, addressSpace := owner, frame := denialFrame, registers := denialRegisters,
+    kind := .initial }
+
+private def denialMachine (mode current active : Nat) : ResumablePreemption.State :=
+  let peer := if current = 1 then 2 else 1
+  let lifecycle := denialLifecycle current
+  let ready := if mode = 4 then [] else [peer]
+  let contexts := if mode = 3 then [] else [denialContext peer]
+  let virtual : VirtualMapping.State :=
+    { memory := {
+        capabilities := lifecycle.capabilities
+        allocator := { frames := [], status := fun _ => .free }
+        binding := fun _ => none
+        issued := fun _ => false }
+      owner := lifecycle.addressOwner
+      mappings := fun _ _ => none
+      issuedAddressSpace := fun space => space = 1 || space = 2 }
+  { scheduler := { lifecycle, ready, capacity := 2 }
+    contexts
+    capacity := 2
+    translations := { virtual, active := some active, entries := [] }
+    halted := mode = 1 }
+
+private def denialRuntime (mode current active : Nat) : RuntimeState :=
+  { features :=
+      { x87 := true, mmx := true, sse := true, sse2 := true, xsave := true, avx := true }
+    controls := deniedControls
+    machine := denialMachine mode current active }
+
+private def denialEvent (mode vector normalized : Nat) : Event :=
+  { instruction := if vector = 6 then .sse else .x87
+    vector
+    origin := if mode = 2 then .kernel else .user
+    normalizedSubject := normalized
+    normalizedAddressSpace := normalized }
+
+/-- The generated boundary encodes only a dispatch whose complete authoritative
+post-state certifies termination, scheduler removal, both context consumptions,
+and the selected address-space switch.  No peer number is synthesized outside
+`dispatchDenied`. -/
+private def encodeDenialOutcome (outcome : DispatchOutcome) : UInt64 :=
+  match outcome.result with
+  | .dispatched faulting restored =>
+      if outcome.state.machine.scheduler.lifecycle.capabilities.subjects faulting != false ||
+          outcome.state.machine.scheduler.ready.contains faulting ||
+          outcome.state.machine.scheduler.lifecycle.current != some restored.owner ||
+          ResumablePreemption.contextFor outcome.state.machine.contexts faulting != none ||
+          ResumablePreemption.contextFor outcome.state.machine.contexts restored.owner != none ||
+          outcome.state.machine.translations.active != some restored.addressSpace then 0
+      else 0x3f00000000000000 + 0x100 + UInt64.ofNat restored.owner
+  | .idle faulting =>
+      if outcome.state.machine.scheduler.lifecycle.capabilities.subjects faulting != false ||
+          outcome.state.machine.scheduler.ready.contains faulting ||
+          outcome.state.machine.scheduler.lifecycle.current != none ||
+          ResumablePreemption.contextFor outcome.state.machine.contexts faulting != none then 0
+      else 1
+  | .fatal _ | .alreadyFatal => 0
+
+private def authoritativeDenialCode
+    (mode vector current active normalized : UInt64) : UInt64 :=
+  encodeDenialOutcome <| dispatchDenied
+    (denialRuntime mode.toNat current.toNat active.toNat)
+    (denialEvent mode.toNat vector.toNat normalized.toNat)
+
+/-- Allocation-free scalar image consumed by the freestanding endpoint.  Its
+two publishable cases are checked below against the complete authoritative
+cleanup/selection/context-consumption/translation transition. -/
 def denialDispatchModel (mode vector current active normalized : UInt64) : UInt64 :=
   if mode = 1 then 0
   else if (mode = 6 && vector != 6) || (mode != 6 && vector != 7) then 0
@@ -515,7 +620,26 @@ def denialDispatchModel (mode vector current active normalized : UInt64) : UInt6
   else if normalized != current || active != current then 0
   else if mode = 3 then 0
   else if mode = 4 then 1
-  else 0x100 + (if current = 1 then 2 else 1)
+  else 0x3f00000000000000 + 0x100 + (if current = 1 then 2 else 1)
+
+/-- The two instruction/vector classes admitted by the image are exact scalar
+refinements of `dispatchDenied`, including `cleanupSubject`, `selectNext`,
+context erasure, and `TLB.switch`. -/
+theorem denialDispatchModel_nm_refines_authoritative :
+    denialDispatchModel 0 7 1 1 1 = authoritativeDenialCode 0 7 1 1 1 := by
+  native_decide
+
+theorem denialDispatchModel_ud_refines_authoritative :
+    denialDispatchModel 6 6 1 1 1 = authoritativeDenialCode 6 6 1 1 1 := by
+  native_decide
+
+theorem denialDispatchModel_corrupt_context_fails_closed :
+    denialDispatchModel 3 7 1 1 1 = authoritativeDenialCode 3 7 1 1 1 := by
+  native_decide
+
+theorem denialDispatchModel_empty_queue_refines_idle :
+    denialDispatchModel 4 7 1 1 1 = authoritativeDenialCode 4 7 1 1 1 := by
+  native_decide
 
 /-- Scalar image of the global policy prefix.  This is deliberately separate
 from the cleanup decision so the generated endpoint cannot publish a peer when
