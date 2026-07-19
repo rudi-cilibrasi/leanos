@@ -41,6 +41,9 @@ c_before_normalize() { sed -i '/NORMALIZE_ENTRY 128, 0/i\    call syscall_handle
 wrong_tss_stack() { sed -i 's/tss.rsp0 = (uint64_t)__entry_stack_end;/tss.rsp0 = (uint64_t)boot_stack_top;/' "$tmp/kernel.c"; }
 inherited_sce() { sed -i 's/and \$~1, %eax/nop/' "$tmp/boot.S"; }
 omitted_fast_entry_readback() { sed -i 's/check_fast_entry_control();/\/\* omitted fixture \*\//' "$tmp/kernel.c"; }
+omitted_fast_entry_cpuid() { sed -i 's/check_fast_entry_cpuid();/\/\* omitted fixture \*\//' "$tmp/kernel.c"; }
+wrong_fast_entry_vendor() { sed -i 's/0x68747541/0x68747542/' "$tmp/kernel.c"; }
+missing_fast_entry_long_mode() { sed -i 's/(leaf_d >> 29)/(leaf_d >> 28)/' "$tmp/kernel.c"; }
 extra_fast_entry_write() { sed -i '/normalize_fast_entry_sysenter_eip_write:/a\    wrmsr' "$tmp/boot.S"; }
 
 run_fixture wrong-target 'vector=14 field=target-or-dpl' wrong_target
@@ -59,6 +62,9 @@ run_fixture c-before-normalize 'vector=128 path=normalization' c_before_normaliz
 run_fixture wrong-tss-stack 'vector=128 field=tss.rsp0' wrong_tss_stack
 run_fixture inherited-sce 'fast-entry control does not clear EFER.SCE' inherited_sce
 run_fixture omitted-fast-entry-readback 'fast-entry control read-back is not boot-reachable' omitted_fast_entry_readback
+run_fixture omitted-fast-entry-cpuid 'fast-entry CPUID contract is not boot-reachable' omitted_fast_entry_cpuid
+run_fixture wrong-fast-entry-vendor 'fast-entry CPUID contract drifted' wrong_fast_entry_vendor
+run_fixture missing-fast-entry-long-mode 'fast-entry CPUID contract drifted' missing_fast_entry_long_mode
 run_fixture extra-fast-entry-write 'fast-entry control write inventory drifted' extra_fast_entry_write
 
 echo "Controlled entry descriptor, TSS, and path fixtures passed"

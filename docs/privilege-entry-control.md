@@ -32,10 +32,15 @@ contract changes. See the
 and the [QEMU system-emulation documentation](https://www.qemu.org/docs/master/system/introduction.html).
 The boot assembly now realizes the modeled MSR recipe before entering long
 mode. After the shared vector-6/7 exception gates and TSS are installed,
-`check_fast_entry_control` rereads the complete modeled MSR tuple before the
-first CPL3 return. It compares EFER through the explicit SCE/LME/LMA/NXE mask
-and requires exact zero values for every target register. This is checked
-machine behavior, not proof that the hardware implements the model.
+`check_fast_entry_cpuid` first requires the exact `AuthenticAMD` vendor string,
+basic CPUID leaf 1 with SEP/SYSENTER advertised, and extended leaf `0x80000001`
+with SYSCALL and long mode advertised. `check_fast_entry_control` then rereads
+the complete modeled MSR tuple before the first CPL3 return. It compares EFER
+through the explicit SCE/LME/LMA/NXE mask and requires exact zero values for
+every target register. Controlled source fixtures reject an omitted CPUID
+check, vendor drift, and long-mode feature drift. These are checked machine
+behaviors under the pinned QEMU contract, not proof that hardware implements
+the model or the cited instruction semantics.
 
 `enabled` gives the finite authorization view. The
 `accepted_exactly_int80` theorem proves that, for every accepted control state,
@@ -90,9 +95,8 @@ and an extra MSR write. The normal QEMU image boots successfully with the
 runtime readback enabled; that finite observation does not establish raw
 alternate-instruction behavior.
 
-The remaining machine checkpoints must tie the selected CPUID/vendor snapshot
-to the policy, route raw denials through authoritative termination and peer
-restore, gate the sole `iretq` epilogue on the live tuple, add the fixed-width
-shared-oracle adapter, and add raw SYSCALL/SYSENTER QEMU peer-survival scenarios
-plus the remaining controlled build, guest, and runner negatives. Those
+The remaining machine checkpoints must route raw denials through authoritative
+termination and peer restore, gate the sole `iretq` epilogue on the live tuple,
+and add raw SYSCALL/SYSENTER QEMU peer-survival scenarios plus the remaining
+controlled build, guest, and runner negatives. Those
 results must be labeled checked/tested evidence, not Lean proof.

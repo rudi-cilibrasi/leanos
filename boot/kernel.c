@@ -30,6 +30,8 @@ extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t,
 extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_extended_state_denial_demo(uint64_t, uint64_t, uint64_t,
                                                    uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_privilege_entry_control_demo(uint64_t, uint64_t, uint64_t,
+                                                     uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);
@@ -195,6 +197,44 @@ static void record_extended_state_cpuid(void) {
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     serial_puts("LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS\n");
 #endif
+}
+
+/* Bind the fast-entry denial recipe to the finite CPU projection modeled by
+   LeanOS.PrivilegeEntryControl.  These are trusted CPUID observations, not a
+   proof of instruction semantics: the selected QEMU contract must identify as
+   AMD, advertise legacy SYSENTER and SYSCALL, and advertise long mode before
+   its reviewed MSR denial tuple can authorize a user return. */
+static __attribute__((noinline)) void check_fast_entry_cpuid(void) {
+    uint32_t max_leaf, vendor_b, vendor_c, vendor_d;
+    __asm__ volatile ("cpuid"
+        : "=a"(max_leaf), "=b"(vendor_b), "=c"(vendor_c), "=d"(vendor_d)
+        : "a"(0u), "c"(0u));
+    if (max_leaf < 1u || vendor_b != UINT32_C(0x68747541) ||
+        vendor_d != UINT32_C(0x69746e65) ||
+        vendor_c != UINT32_C(0x444d4163))
+        fail("fast-entry-cpuid-vendor");
+
+    uint32_t leaf_a, leaf_b, leaf_c, leaf_d;
+    __asm__ volatile ("cpuid"
+        : "=a"(leaf_a), "=b"(leaf_b), "=c"(leaf_c), "=d"(leaf_d)
+        : "a"(1u), "c"(0u));
+    (void)leaf_a;
+    (void)leaf_b;
+    (void)leaf_c;
+    if (((leaf_d >> 11) & 1u) == 0u)
+        fail("fast-entry-cpuid-sysenter");
+
+    uint32_t max_extended;
+    __asm__ volatile ("cpuid"
+        : "=a"(max_extended), "=b"(leaf_b), "=c"(leaf_c), "=d"(leaf_d)
+        : "a"(UINT32_C(0x80000000)), "c"(0u));
+    if (max_extended < UINT32_C(0x80000001))
+        fail("fast-entry-cpuid-extended-leaf");
+    __asm__ volatile ("cpuid"
+        : "=a"(leaf_a), "=b"(leaf_b), "=c"(leaf_c), "=d"(leaf_d)
+        : "a"(UINT32_C(0x80000001)), "c"(0u));
+    if (((leaf_d >> 11) & 1u) == 0u || ((leaf_d >> 29) & 1u) == 0u)
+        fail("fast-entry-cpuid-syscall-long-mode");
 }
 
 /* Read back every modeled fast-entry MSR after the exception manifest is live
@@ -815,8 +855,13 @@ static void replay_oracle(void) {
                                     : v->adapter == 9
                                         ? leanos_entry_demo(v->words[0], v->words[1], v->words[2],
                                             v->words[3], v->words[4])
-                                        : leanos_extended_state_denial_demo(v->words[0], v->words[1],
-                                            v->words[2], v->words[3], v->words[4], v->words[5]);
+                                        : v->adapter == 10
+                                            ? leanos_extended_state_denial_demo(v->words[0],
+                                                v->words[1], v->words[2], v->words[3],
+                                                v->words[4], v->words[5])
+                                            : leanos_privilege_entry_control_demo(v->words[0],
+                                                v->words[1], v->words[2], v->words[3],
+                                                v->words[4], v->words[5]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -1404,6 +1449,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     replay_oracle();
 
     privilege_init();
+    check_fast_entry_cpuid();
     check_fast_entry_control();
 #ifdef LEANOS_DOUBLE_FAULT_PROBE
     run_double_fault_probe();

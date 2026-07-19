@@ -13,7 +13,7 @@ symbols="$(nm "$elf")"
 for symbol in isr6 isr7 isr14 isr32 isr80 authorize_interrupt_entry \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
   page_fault_handler timer_handler entry_stack boot_stack boot_stack_top \
-  normalize_fast_entry_msrs read_fast_entry_msrs; do
+  normalize_fast_entry_msrs read_fast_entry_msrs check_fast_entry_cpuid; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: entry manifest symbol missing: $symbol" >&2; exit 1;
   }
@@ -45,7 +45,24 @@ grep -Fq 'and $~1, %eax' "$boot_source" || {
 grep -Fq 'check_fast_entry_control();' "$kernel_source" || {
   echo "error: fast-entry control read-back is not boot-reachable" >&2; exit 1;
 }
+grep -Fq 'check_fast_entry_cpuid();' "$kernel_source" || {
+  echo "error: fast-entry CPUID contract is not boot-reachable" >&2; exit 1;
+}
+for contract in \
+  'vendor_b != UINT32_C(0x68747541)' \
+  'vendor_d != UINT32_C(0x69746e65)' \
+  'vendor_c != UINT32_C(0x444d4163)' \
+  '((leaf_d >> 11) & 1u) == 0u' \
+  'max_extended < UINT32_C(0x80000001)' \
+  '((leaf_d >> 29) & 1u) == 0u'; do
+  grep -Fq "$contract" "$kernel_source" || {
+    echo "error: fast-entry CPUID contract drifted field=$contract" >&2; exit 1;
+  }
+done
 control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"
+[[ "$(grep -Ec '[[:space:]]cpuid([[:space:]]|$)' <<<"$control_disassembly")" -ge 6 ]] || {
+  echo "error: fast-entry CPUID snapshot missing from final ELF" >&2; exit 1;
+}
 [[ "$(grep -Ec '[[:space:]]wrmsr$' <<<"$control_disassembly")" -eq 8 ]] || {
   echo "error: fast-entry final-ELF write inventory drifted" >&2; exit 1;
 }
