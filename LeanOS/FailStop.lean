@@ -1538,11 +1538,14 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
   | .resumePreempt frame registers =>
       let outcome := ResumablePreemption.switch state.resumable state.execution.core
         frame registers
-      if outcome.state.halted then
-        let entry := dispatchHardware state.execution frame
-        installResumable { state with execution := entry.state } outcome.state
-      else
-        installResumable state outcome.state
+      match outcome.error with
+      | some .fatalEntry =>
+          if outcome.state.halted then
+            let entry := dispatchHardware state.execution frame
+            installResumable { state with execution := entry.state } outcome.state
+          else state
+      | some _ => state
+      | none => installResumable state outcome.state
   | .transferOffer endpointWord sourceWord sourceKind payload rights =>
       let outcome := CapabilityTransfer.offerWords state.transfers
         state.execution.core.context.currentSubject endpointWord sourceWord sourceKind payload rights
@@ -1726,6 +1729,12 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
       SubsystemRejection state (.ipc call) (.ipc (.syscall (.receiveRejected reason)))
   | ipcSealed call (h : (dispatchIPC state call).reply = .sealedTransferPending) :
       SubsystemRejection state (.ipc call) (.ipc .sealedTransferPending)
+  | resumePreempt frame registers reason
+      (hnonfatal : reason ≠ .fatalEntry)
+      (herror : (ResumablePreemption.switch state.resumable state.execution.core
+        frame registers).error = some reason) :
+      SubsystemRejection state (.resumePreempt frame registers)
+        (.resume none (some reason))
   | transferOffer endpointWord sourceWord sourceKind payload rights reason
       (h : (CapabilityTransfer.offerWords state.transfers
         state.execution.core.context.currentSubject endpointWord sourceWord sourceKind payload rights).result =
@@ -1816,25 +1825,50 @@ theorem resumePreempt_halted_latches state frame registers
     let next := applyOperation state (.resumePreempt frame registers)
     next.resumable.halted = true ∧
       next.execution.mode = (dispatchHardware state.execution frame).state.mode := by
-  simp [applyOperation, hhalted, installResumable, installLifecycle]
+  have herror := ResumablePreemption.halted_reports_fatalEntry
+    state.resumable state.execution.core frame registers hhalted
+  simp [applyOperation, herror, hhalted, installResumable, installLifecycle]
 
 /-- Resumable save/select/restore republishes the scheduler-selected current
 subject as the only execution caller and active address space.  Incoming frame
 and register payloads therefore cannot leave the composite execution latch
 bound to the preemption victim after an accepted switch. -/
-theorem resumePreempt_synchronizes_current_context state frame registers :
+theorem resumePreempt_synchronizes_current_context state frame registers
+    (hcoherent : state.Coherent) :
     let next := applyOperation state (.resumePreempt frame registers)
     ∀ subject, next.scheduler.lifecycle.current = some subject →
       next.execution.core.context.currentSubject = subject ∧
       next.execution.core.context.activeAddressSpace = subject := by
+  rcases hcoherent with
+    ⟨_, hschedulerLifecycle, _, _, _, _, _, _, _, _, hcontext, _, _⟩
+  have hcontextScheduler : ∀ subject,
+      state.scheduler.lifecycle.current = some subject →
+        state.execution.core.context.currentSubject = subject ∧
+          state.execution.core.context.activeAddressSpace = subject := by
+    intro subject hcurrent
+    apply hcontext
+    rw [← hschedulerLifecycle]
+    exact hcurrent
   simp only [applyOperation]
   generalize hs : ResumablePreemption.switch state.resumable state.execution.core
     frame registers = outcome
-  cases hhalted : outcome.state.halted <;>
-    simp only [hhalted, Bool.false_eq_true, if_false, if_true, installResumable]
-  all_goals
+  cases herror : outcome.error with
+  | none =>
+    simp only [herror, installResumable]
     intro subject hcurrent
     simp [hcurrent]
+  | some reason =>
+    cases reason with
+    | fatalEntry =>
+      cases hhalted : outcome.state.halted <;>
+        simp only [herror, hhalted, Bool.false_eq_true, if_false, if_true,
+          installResumable]
+      · exact hcontextScheduler
+      · intro subject hcurrent
+        simp [hcurrent]
+    | nonTimer | malformedIncoming | noCurrent | contextMismatch | duplicateSave |
+        staleActiveSpace | bankFull | schedulerRejected | noDestination | staleDestination =>
+      simpa [herror] using hcontextScheduler
 
 /-- The sole composite step computes the post-state by invoking the typed
 subsystem transition internally. -/
@@ -1906,6 +1940,28 @@ theorem gate_subsystem_rejection_preserves_runtimeWellFormed state operation rep
   have hatomic := gate_subsystem_rejection_atomicity state operation reply
     hresult hrejected
   exact ⟨by simpa [hatomic] using hstate, hatomic⟩
+
+/-- Every ordinary resumable-preemption error is exposed as its exact typed
+reply and leaves the complete composite state byte-for-byte unchanged.  The
+distinguished `fatalEntry` error is excluded because it belongs to the
+absorbing fatal result class. -/
+theorem gate_resumePreempt_rejected_atomic state frame registers reason
+    (hmode : state.execution.mode = .running)
+    (hnonfatal : reason ≠ .fatalEntry)
+    (herror : (ResumablePreemption.switch state.resumable state.execution.core
+      frame registers).error = some reason) :
+    (gate state (.resumePreempt frame registers)).result =
+        .completed (.resume none (some reason)) ∧
+      (gate state (.resumePreempt frame registers)).state = state := by
+  have hrestored := ResumablePreemption.rejected_exposes_no_restore
+    state.resumable state.execution.core frame registers reason herror
+  have hresult : (gate state (.resumePreempt frame registers)).result =
+      .completed (.resume none (some reason)) := by
+    simp [gate, hmode, operationReply, herror, hrestored]
+  refine ⟨hresult, ?_⟩
+  exact gate_subsystem_rejection_atomicity state
+    (.resumePreempt frame registers) (.resume none (some reason)) hresult
+    (.resumePreempt frame registers reason hnonfatal herror)
 
 /-- Return-authority selection is a complete operation-family preservation
 slice.  In running mode it changes only the execution projection and arms
@@ -5766,7 +5822,11 @@ theorem gate_resumePreempt_nonfatal_preserves_runtimeWellFormed state frame regi
   have hpublished := installResumable_nonfatal_preserves_runtimeWellFormed state
     (ResumablePreemption.switch state.resumable state.execution.core frame registers).state
     hstate hmode hnext hcapabilities hvirtual hhalted
-  simpa [gate, hmode, applyOperation, hhalted] using hpublished
+  cases herror : (ResumablePreemption.switch state.resumable state.execution.core
+      frame registers).error with
+  | none => simpa [gate, hmode, applyOperation, herror] using hpublished
+  | some reason =>
+      cases reason <;> simp [gate, hmode, applyOperation, herror, hhalted, hstate]
 
 private theorem resumeSwitch_halted_requires_fatal_dispatch state frame registers
     (hstate : RuntimeWellFormed state)
@@ -6088,10 +6148,12 @@ theorem gate_resumePreempt_fatal_preserves_runtimeWellFormed state frame registe
             cases frame.savedPrivilege <;>
               simpa [hvector, WellFormed, Interrupt.WellFormed] using hlifecycle
   have hnext := resumeSwitch_halted_state_eq state frame registers hstate hmode hhalted
+  have herror := ResumablePreemption.halted_reports_fatalEntry
+    state.resumable state.execution.core frame registers hhalted
   have hpublished := installResumable_fatal_preserves_runtimeWellFormed state
     (dispatchHardware state.execution frame).state
     hstate hentryWellFormed hentryMode
-  simpa [gate, hmode, applyOperation, hhalted, hnext] using hpublished
+  simpa [gate, hmode, applyOperation, herror, hhalted, hnext] using hpublished
 
 /-- Resumable preemption is now a complete composite operation family:
 successful switches, typed nonfatal rejection, fatal latching, and outer-gate

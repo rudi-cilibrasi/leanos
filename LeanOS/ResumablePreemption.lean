@@ -462,6 +462,57 @@ theorem rejected_unchanged state interruptState frame registers reason
   all_goals split <;> simp_all [reject]
   all_goals split <;> simp_all [reject]
 
+/-- A terminal context-bank result always carries the distinguished fatal
+error.  Ordinary precondition failures use `reject`, which cannot set the
+halt latch. -/
+theorem halted_reports_fatalEntry state interruptState frame registers
+    (hhalted : (switch state interruptState frame registers).state.halted = true) :
+    (switch state interruptState frame registers).error = some .fatalEntry := by
+  simp only [switch] at hhalted ⊢
+  split <;> simp_all [reject, halt]
+  split <;> simp_all [reject, halt]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+  all_goals split <;> simp_all [reject]
+
 theorem rejected_exposes_no_restore state interruptState frame registers reason
     (h : (switch state interruptState frame registers).error = some reason) :
     (switch state interruptState frame registers).restored = none := by
