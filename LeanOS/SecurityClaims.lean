@@ -6,6 +6,7 @@ import LeanOS.X86PageTable
 import LeanOS.Syscall
 import LeanOS.FailStop
 import LeanOS.InterruptEntry
+import LeanOS.FaultDispatch
 import LeanOS.PrivilegeEntryStack
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
@@ -782,6 +783,34 @@ theorem extended_state_global_runtime_preservation state operations
     ExtendedState.CompositePolicyInvariant
       (ExtendedState.runComposite state operations) := by
   exact ExtendedState.runComposite_preserves_policy state operations hinvariant
+
+/-- SC-FAULT-DISPATCH-NONRESUMPTION: every successful atomic user-fault
+transition starts from a live, runnable kernel-selected subject and removes it
+from live/runnable identity, the ready queue, the current slot, the authoritative
+resumable bank, and every address space and mapping it owned. -/
+theorem fault_dispatch_success_nonresumption state entry
+    (hsuccess : (FaultDispatch.dispatch state entry).action = .idle ∨
+      ∃ context, (FaultDispatch.dispatch state entry).action = .dispatch context) :
+    ∃ faulting,
+      state.scheduler.lifecycle.current = some faulting ∧
+        state.scheduler.lifecycle.capabilities.subjects faulting = true ∧
+        state.scheduler.lifecycle.runnable faulting = true ∧
+        (FaultDispatch.dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
+          faulting = false ∧
+        (FaultDispatch.dispatch state entry).state.scheduler.lifecycle.runnable
+          faulting = false ∧
+        faulting ∉ (FaultDispatch.dispatch state entry).state.scheduler.ready ∧
+        (FaultDispatch.dispatch state entry).state.scheduler.lifecycle.current ≠ some faulting ∧
+        ResumablePreemption.contextFor
+          (FaultDispatch.dispatch state entry).state.contexts faulting = none ∧
+        ∀ addressSpace,
+          state.scheduler.lifecycle.addressOwner addressSpace = some faulting →
+            (FaultDispatch.dispatch state entry).state.scheduler.lifecycle.addressOwner
+                addressSpace = none ∧
+              ∀ page,
+                (FaultDispatch.dispatch state entry).state.translations.virtual.mappings
+                  addressSpace page = none := by
+  exact FaultDispatch.successful_nonresumption state entry hsuccess
 
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps

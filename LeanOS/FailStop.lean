@@ -1147,7 +1147,8 @@ private theorem installVirtualMemory_preserves_runtimeWellFormed state virtualMe
     simp only [ResumablePreemption.validContext] at hvalid
     simp only [ResumablePreemption.ReadyContextAgreement] at hagreement
     simp only [ResumablePreemption.TranslationAgreement] at htranslation
-    rw [hresumableSchedulerCoherent, hschedulerCoherent] at hvalid habsent hagreement htranslation
+    rw [hresumableSchedulerCoherent, hschedulerCoherent] at hvalid habsent htranslation
+    rw [hresumableSchedulerCoherent] at hagreement
     simp only [ResumablePreemption.ResourceKindAgreement] at hkinds
     rw [hresumableSchedulerCoherent, hschedulerCoherent] at hkinds
     refine ⟨?_, hcapacity, hunique, ?_, ?_, ?_, ?_, ?_, ?_, htlb⟩
@@ -4458,47 +4459,20 @@ theorem terminateSubject_accepted_cleans_runtime_references state subject lifecy
   simp only [installResumable, installLifecycle]
   exact ⟨trivial, hdead, hscheduler.1, hscheduler.2, hcontext⟩
 
-/-- Accepted lifecycle termination cannot by itself justify the global runtime
-invariant when it removes the final queued peer of a different current
-subject.  Any complete termination operation must therefore enforce the same
-resumable-peer condition as `ResumablePreemption.remove`, or atomically choose
-a new current subject.  This theorem records that integration obligation at
-the public gate boundary rather than hiding it behind synchronization. -/
-theorem gate_terminateSubject_accepted_runtimeWellFormed_requires_resumable_peer
-    state subject
-    (hmode : state.execution.mode = .running)
-    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted) :
-    RuntimeWellFormed (gate state (.terminateSubject subject)).state →
-      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.lifecycle.current.isSome →
-      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.ready ≠ [] := by
-  intro hpost hcurrent
-  rcases hpost with ⟨_, _, _, _, _, _, _, _, hresumable, _, _, _⟩
-  have hcurrentPost :
-      (gate state (.terminateSubject subject)).state.resumable.scheduler.lifecycle.current.isSome := by
-    simpa [gate, hmode, applyOperation, haccepted, installResumable,
-      installLifecycle] using hcurrent
-  have hpeer := hresumable.2.2.2.2.2.1.2.2 hcurrentPost
-  simpa [gate, hmode, applyOperation, haccepted, installResumable,
-    installLifecycle] using hpeer
-
-/-- The peer condition exposed by the public termination gate is sufficient
-for preservation of both scheduler projections.  This closes the accepted
-termination scheduler slice without claiming that the remaining resource
-projections already satisfy the complete composite invariant. -/
+/-- Accepted termination preserves both scheduler projections, including when
+cleanup leaves a lone current subject with no queued peer.  Such a state is
+well formed because the next resumable timer operation rejects atomically. -/
 theorem gate_terminateSubject_accepted_preserves_schedulerWellFormed
     state subject
     (hstate : RuntimeWellFormed state)
     (hmode : state.execution.mode = .running)
-    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted)
-    (hreadyPeer :
-      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.lifecycle.current.isSome →
-      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.ready ≠ []) :
+    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted) :
     Scheduler.WellFormed
         (gate state (.terminateSubject subject)).state.scheduler ∧
       Preemption.WellFormed
         (gate state (.terminateSubject subject)).state.preemption := by
   have hcleanup := ResumablePreemption.cleanupSubject_preserves_wellFormed
-    state.resumable subject hstate.2.2.2.2.2.2.2.2.1 hreadyPeer
+    state.resumable subject hstate.2.2.2.2.2.2.2.2.1
   have hscheduler := hcleanup.1
   have hpreemption := hstate.2.2.2.2.2.2.2.1
   refine ⟨?_, ?_⟩
@@ -4512,18 +4486,15 @@ theorem gate_terminateSubject_accepted_preserves_schedulerWellFormed
         installLifecycle] using hticks
 
 /-- Accepted termination preserves the saved-context bank's capacity,
-uniqueness, validity, current-subject exclusion, and ready-queue agreement
-under the same resumable-peer condition.  These are the context-specific
+uniqueness, validity, current-subject exclusion, and ready-queue agreement,
+including cleanup of the final queued peer.  These are the context-specific
 components of `ResumablePreemption.WellFormed`; the virtual-memory projection
 is deliberately left to the resource-cleanup integration slice. -/
 theorem gate_terminateSubject_accepted_preserves_resumableContextBank
     state subject
     (hstate : RuntimeWellFormed state)
     (hmode : state.execution.mode = .running)
-    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted)
-    (hreadyPeer :
-      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.lifecycle.current.isSome →
-      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.ready ≠ []) :
+    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted) :
     let next := (gate state (.terminateSubject subject)).state.resumable
     next.contexts.length ≤ next.capacity ∧
       next.contexts.Pairwise (fun first second => first.owner ≠ second.owner) ∧
@@ -4533,7 +4504,7 @@ theorem gate_terminateSubject_accepted_preserves_resumableContextBank
         ResumablePreemption.contextFor next.contexts candidate = none) ∧
       ResumablePreemption.ReadyContextAgreement next := by
   have hcleanup := ResumablePreemption.cleanupSubject_preserves_wellFormed
-    state.resumable subject hstate.2.2.2.2.2.2.2.2.1 hreadyPeer
+    state.resumable subject hstate.2.2.2.2.2.2.2.2.1
   rcases hcleanup with
     ⟨_, hcapacity, hunique, hvalid, habsent, hready, _, _, _, _⟩
   simp only
@@ -4930,7 +4901,7 @@ theorem createSubject_operationPreservesRuntimeWellFormed subject :
                 simp only [ResumablePreemption.ResourceKindAgreement] at hkinds
                 rw [hcoherent.2.2.2.2.2.2.2.1] at habsent hready htranslation hkinds
                 rw [hcoherent.2.2.2.2.2.2.2.2.1] at htranslation
-                rw [hcoherent.2.1] at habsent hready htranslation hkinds
+                rw [hcoherent.2.1] at habsent htranslation hkinds
                 refine ⟨hscheduler', hcapacity, hunique, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
                 · intro context hcontext
                   rcases hvalid context hcontext with
@@ -5043,7 +5014,7 @@ theorem gate_scheduleAdd_accepted_preserves_runtimeWellFormed
       { state.resumable with scheduler := next } := by
     rcases hresumable with
       ⟨_hscheduler, hcapacity, hunique, hvalid, habsent,
-        ⟨hreadyContexts, hsuspendedReady, _hpeer⟩,
+        ⟨hreadyContexts, hsuspendedReady⟩,
         htranslation, hvirtualAgreement, hkinds, htlb⟩
     rw [hresumableSchedulerCoherent] at hreadyContexts hsuspendedReady
     refine ⟨hscheduler', hcapacity, hunique, ?_, ?_, ?_, ?_, ?_, ?_, htlb⟩
@@ -5054,7 +5025,7 @@ theorem gate_scheduleAdd_accepted_preserves_runtimeWellFormed
     · intro current hcurrent
       apply habsent current
       simpa [hlifecycleNext, hresumableSchedulerCoherent] using hcurrent
-    · refine ⟨?_, ?_, ?_⟩
+    · refine ⟨?_, ?_⟩
       · intro candidate hmember
         rw [hreadyNext] at hmember
         rcases List.mem_append.mp hmember with hold | hold
@@ -5065,9 +5036,6 @@ theorem gate_scheduleAdd_accepted_preserves_runtimeWellFormed
       · intro candidate hcandidate hsuspended
         rw [hreadyNext]
         exact List.mem_append_left _ (hsuspendedReady candidate hcandidate hsuspended)
-      · intro _hcurrent
-        rw [hreadyNext]
-        simp
     · rcases htranslation with ⟨howner, hactive⟩
       refine ⟨?_, ?_⟩
       · simpa [hlifecycleNext, hresumableSchedulerCoherent] using howner

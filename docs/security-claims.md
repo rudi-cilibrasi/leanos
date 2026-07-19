@@ -40,8 +40,22 @@ remain excluded unless a separate refinement claim says otherwise.
 | SC-EXTENDED-STATE-DENIAL | `extended_state_denial_confined` | `ExtendedState.denied_subject_confined` | `ExtendedState.classify` | Contained typed denial from the finite classifier; exact accepted CR0/CR4 denial snapshot; coherent bounded CPUID projection; normalized user origin and live kernel-owned subject/address-space binding | Proved | CPUID/control-register reads, instruction decoding and exception priority/delivery, entry assembly, generated C, compiler/linker, QEMU, hardware, final-binary refinement |
 | SC-EXTENDED-STATE-CLEANUP | `extended_state_denial_cleanup_nonresumable` | `ExtendedState.denial_cleanup_cannot_resume` | `ExtendedState.dispatchDenied`, `ResumablePreemption.cleanupSubject`, `Scheduler.selectNext` | Typed contained denial; authoritative resumable-preemption lifecycle, ready queue, context bank, mapping and TLB projections | Proved | Normalized-entry-to-model refinement, generated adapter, machine cleanup/restore and CR3 writes, compiler/linker, QEMU, hardware |
 | SC-EXTENDED-STATE-GLOBAL | `extended_state_global_runtime_preservation` | `ExtendedState.runComposite_preserves_policy` | `ExtendedState.compositeGate`, `FailStop.gate` | Exact denied feature/control predicate before a finite sequence of authoritative interrupt, return, syscall, preemption, IPC, capability, mapping, lifecycle, or scheduler operations | Proved | Live CPUID/control-register reads, generated C, assembly, compiler/linker, QEMU, hardware, final-binary refinement |
+| SC-FAULT-DISPATCH-NONRESUMPTION | `fault_dispatch_success_nonresumption` | `FaultDispatch.successful_nonresumption` | `FaultDispatch.dispatch` over the authoritative scheduler, lifecycle, resumable-context, virtual-mapping, and TLB state | The total composite result is successful (`idle` or a scheduler-derived dispatch); the conclusion exposes that the pre-state current subject was live and runnable, then proves it dead and non-runnable, absent from scheduling/context state, and stripped of every pre-fault-owned address space and mapping | Proved | Normalized-entry-to-model refinement, waiter/in-flight-transfer cleanup, generated adapter, machine cleanup/restore and CR3 writes, compiler/linker, QEMU, hardware |
 | SC-SCHEDULED-ISOLATION | `scheduled_finite_trace_isolation` | `ScheduledObservation.finite_trace_lowEquiv` | Finite paired scheduled runs | Initial low-equivalence and equal declared public event projections | Proved | Timing, termination, public channels, binary refinement |
 <!-- claim-index:end -->
+
+`SC-FAULT-DISPATCH-NONRESUMPTION` concludes, rather than assumes, that the
+faulting identity is the live, runnable kernel-owned current subject in the
+pre-state. The successful result removes that identity from liveness, runnable,
+current and ready scheduler state, the authoritative resumable bank, and every
+address space and mapping that it owned before the fault. Supporting source
+theorems separately establish totality, determinism, invariant preservation,
+FIFO survivor safety, rejection atomicity, and typed fatal-cause preservation
+with halt-latch absorption; the
+stable claim does not silently promote those model properties into a
+normalizer-to-machine or final-binary refinement statement. The exact cleanup,
+progress, and trusted boundaries are documented in
+[the fault-dispatch model](fault-dispatch.md).
 
 ## Review workflow
 

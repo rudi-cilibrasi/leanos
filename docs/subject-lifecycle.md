@@ -26,6 +26,17 @@ and non-reuse of issued identity. Executable examples cover delegated
 authority, a live mapping, a pending message, termination of the current
 subject, repeated termination, and identifier replay.
 
+The atomic [user-fault dispatch composition](fault-dispatch.md) invokes this
+same termination state on exactly the kernel-owned current subject, then removes
+that subject's ready-queue and resumable-context references before selecting a
+survivor. No intermediate cleanup state is observable: stale bindings and
+missing or stale survivor contexts return the complete pre-state, while every
+inbound normalizer fatal result preserves its typed cause and changes only the
+halt latch. Kernel-origin and already-halted outcomes remain separately tagged.
+Unrelated survivor capability, memory, mapping, frame, endpoint, and
+suspended-context state remains unchanged. Waiter and in-flight transfer cleanup are outside this
+composition state and are not claimed here.
+
 Termination clears the subject's installed slots, so every holder-visible
 [generation-bound handle](capability-handles.md) for those slots becomes stale.
 Reusing the bounded slot later can issue only a handle carrying a different,
@@ -34,5 +45,8 @@ never-reused capability identity; the old handle therefore cannot revive.
 This is not executable ring-3 teardown and does not prove physical memory
 zeroization. The trusted caller is the kernel lifecycle operation itself;
 authorization policy for a future management capability is outside this first
-model. Concurrency, scheduling fairness, destructors, generated code, and the
-machine implementation remain outside the proved claim.
+model. The fault composition additionally assumes a normalized entry and
+coherent authoritative scheduler/context/mapping projections. Concurrency,
+scheduling fairness, destructors, generated code, machine exception delivery,
+context restore, and the machine implementation remain outside the proved
+claim.
