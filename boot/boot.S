@@ -168,12 +168,12 @@ multiboot_entry:
 #endif
 
     /* Derive the denial policy instead of inheriting firmware/GRUB state.
-       PAE remains enabled for long mode; OSFXSR, OSXMMEXCPT, and OSXSAVE are
-       cleared so no legacy SIMD or XSAVE-managed state is OS-enabled. */
+       PAE remains enabled for long mode; OSFXSR, OSXMMEXCPT, OSXSAVE, and PKE
+       are cleared so no legacy SIMD, XSAVE, or unsaved PKRU state is exposed. */
 .global normalize_extended_state_cr4
 normalize_extended_state_cr4:
     mov %cr4, %eax
-    and $~((1 << 9) | (1 << 10) | (1 << 18)), %eax
+    and $~((1 << 9) | (1 << 10) | (1 << 18) | (1 << 22)), %eax
     or $(1 << 5), %eax
     mov %eax, %cr4
     mov $page_map_level_4_a, %eax

@@ -19,6 +19,7 @@ exact live control snapshot before a user return can be armed:
 | CR4.OSFXSR | 0 | Do not OS-enable legacy SIMD state |
 | CR4.OSXMMEXCPT | 0 | Do not expose SIMD exception handling as an enabled facility |
 | CR4.OSXSAVE | 0 | Do not OS-enable XSAVE or AVX state |
+| CR4.PKE | 0 | Do not expose unsaved PKRU state to user subjects |
 | XCR0 | not read (`none`) | XCR0 has no modeled meaning while OSXSAVE is clear |
 
 The model rejects incoherent feature projections (SSE2 without SSE, or AVX
@@ -76,7 +77,7 @@ plans, serial transcripts, decoded CPUID/control-state snapshots, and
 extended-state policy verdicts for 14 days.
 
 The source and final-ELF policy gates also fix the reviewed CR0/CR4 write
-inventory and reject `clts`, `fxrstor`, and `xrstor`. Controlled fixtures add
+inventory and reject `clts`, `fxrstor`, `xrstor`, `rdpkru`, and `wrpkru`. Controlled fixtures add
 each forbidden instruction and an extra CR0 write to the source snapshot and
 must retain their typed rejection diagnostics. The final-ELF gate additionally
 requires `fld1` in the x87 image, `pxor %mm0,%mm0` in the MMX image, and
@@ -106,7 +107,9 @@ establish completeness for arbitrary C, assembly, or machine transformations.
 
 The early 32-bit boot path now derives the denial controls before enabling
 long mode. It sets CR0.EM, CR0.MP, and CR0.TS, clears CR4.OSFXSR,
-CR4.OSXMMEXCPT, and CR4.OSXSAVE, and retains the required PAE setting. After
+CR4.OSXMMEXCPT, CR4.OSXSAVE, and CR4.PKE, and retains the required PAE setting. PKRU
+instructions remain executable when OSXSAVE is clear, so clearing PKE is a
+separate fail-closed requirement. After
 the exception table and supervisor controls are installed, the guest rereads
 CR0/CR4 and rejects any mismatch before a user return. The final-ELF/source
 policy checker binds the two named normalization sites to their reviewed

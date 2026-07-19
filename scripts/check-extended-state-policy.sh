@@ -22,14 +22,14 @@ if [[ -n "$probe_address" ]]; then
   probe_address="$(printf '%x' "0x${probe_address}")"
 fi
 
-grep -Fq 'and $~((1 << 9) | (1 << 10) | (1 << 18)), %eax' "$boot_source" || {
+grep -Fq 'and $~((1 << 9) | (1 << 10) | (1 << 18) | (1 << 22)), %eax' "$boot_source" || {
   echo "error: extended-state field=cr4-normalization inherited-or-enabled" >&2; exit 1;
 }
 grep -Fq 'or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax' \
   "$boot_source" || {
   echo "error: extended-state field=cr0-normalization inherited-or-relaxed" >&2; exit 1;
 }
-grep -Fq 'const uint64_t forbidden_cr4 = (1ull << 18) | (1ull << 10) | (1ull << 9);' \
+grep -Fq '(1ull << 22) | (1ull << 18) | (1ull << 10) | (1ull << 9);' \
   "$kernel_source" || {
   echo "error: extended-state field=live-cr4-snapshot missing" >&2; exit 1;
 }
@@ -37,7 +37,7 @@ grep -Fq 'const uint64_t required_cr0 = (1ull << 16) | (1ull << 3) |' \
   "$kernel_source" || {
   echo "error: extended-state field=live-cr0-snapshot missing" >&2; exit 1;
 }
-grep -Fq 'cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0' \
+grep -Fq 'cr0.em=1 cr0.mp=1 cr0.ts=1 cr4.osfxsr=0 cr4.osxmmexcpt=0 cr4.osxsave=0 cr4.pke=0' \
   "$kernel_source" || {
   echo "error: extended-state field=evidence-record missing" >&2; exit 1;
 }
@@ -98,8 +98,8 @@ grep -Fq 'cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave
 grep -Fq 'vxorps %ymm0, %ymm0, %ymm0' "$boot_source" || {
   echo "error: extended-state field=avx-probe source" >&2; exit 1;
 }
-if grep -Eiq '^[[:space:]]*(clts|lmsw|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|$)' "$boot_source" ||
-   grep -Eiq '"[[:space:]]*(clts|lmsw|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|"|$)' "$kernel_source"; then
+if grep -Eiq '^[[:space:]]*(clts|lmsw|rdpkru|wrpkru|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|$)' "$boot_source" ||
+   grep -Eiq '"[[:space:]]*(clts|lmsw|rdpkru|wrpkru|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|"|$)' "$kernel_source"; then
   echo "error: extended-state field=unauthorized-enable-or-restore source" >&2
   exit 1
 fi
@@ -119,7 +119,7 @@ fi
 
 disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 denied_instructions="$(grep -Ei \
-  '^[[:space:]]*[0-9a-f]+:[[:space:]]+((lmsw|f[a-z0-9]+|x(save|rstor)[a-z0-9]*|x(get|set)bv|v?(ld|st)mxcsr|emms|femms|vzero(upper|all))([[:space:]]|$)|[^#]*%(st([[:space:],]|\([0-7]\))|mm[0-7]|xmm[0-9]+|ymm[0-9]+|zmm[0-9]+))' \
+  '^[[:space:]]*[0-9a-f]+:[[:space:]]+((lmsw|rdpkru|wrpkru|f[a-z0-9]+|x(save|rstor)[a-z0-9]*|x(get|set)bv|v?(ld|st)mxcsr|emms|femms|vzero(upper|all))([[:space:]]|$)|[^#]*%(st([[:space:],]|\([0-7]\))|mm[0-7]|xmm[0-9]+|ymm[0-9]+|zmm[0-9]+))' \
   <<<"$disassembly" || true)"
 if [[ -z "$probe_address" ]]; then
   [[ -z "$denied_instructions" ]] || {
@@ -161,7 +161,7 @@ elif [[ -n "$probe" ]]; then
   echo "error: extended-state field=probe-class unsupported=$probe" >&2
   exit 1
 fi
-grep -Eq '[[:space:]]and[[:space:]]+\$0xfffbf9ff,%eax' <<<"$disassembly" || {
+grep -Eq '[[:space:]]and[[:space:]]+\$0xffbbf9ff,%eax' <<<"$disassembly" || {
   echo "error: extended-state field=cr4-normalization final-elf" >&2; exit 1;
 }
 grep -Eq '[[:space:]]or[[:space:]]+\$0x8001000e,%eax' <<<"$disassembly" || {
@@ -170,7 +170,7 @@ grep -Eq '[[:space:]]or[[:space:]]+\$0x8001000e,%eax' <<<"$disassembly" || {
 [[ $(grep -Ec '[[:space:]]cpuid([[:space:]]|$)' <<<"$disassembly") -ge 2 ]] || {
   echo "error: extended-state field=cpuid-snapshot final-elf" >&2; exit 1;
 }
-if grep -Eiq '[[:space:]](clts|lmsw|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|$)' <<<"$disassembly"; then
+if grep -Eiq '[[:space:]](clts|lmsw|rdpkru|wrpkru|fxrstor(64)?|xrstor(s|s64|64)?)([[:space:]]|$)' <<<"$disassembly"; then
   echo "error: extended-state field=unauthorized-enable-or-restore final-elf" >&2
   exit 1
 fi

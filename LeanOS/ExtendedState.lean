@@ -39,6 +39,7 @@ structure ControlState where
   cr4Osfxsr : Bool
   cr4Osxmmexcpt : Bool
   cr4Osxsave : Bool
+  cr4Pke : Bool
   xcr0 : Option UInt64
   deriving BEq, DecidableEq, Repr
 
@@ -51,6 +52,7 @@ def deniedControls : ControlState :=
     cr4Osfxsr := false
     cr4Osxmmexcpt := false
     cr4Osxsave := false
+    cr4Pke := false
     xcr0 := none }
 
 def Denied (features : Features) (controls : ControlState) : Prop :=

@@ -33,10 +33,13 @@ inherit_cr0() {
   sed -i 's/or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax/or $((1 << 31) | (1 << 16)), %eax/' "$tmp/boot.S"
 }
 inherit_cr4() {
-  sed -i '/and $~((1 << 9) | (1 << 10) | (1 << 18)), %eax/d' "$tmp/boot.S"
+  sed -i '/and $~((1 << 9) | (1 << 10) | (1 << 18) | (1 << 22)), %eax/d' "$tmp/boot.S"
+}
+inherit_cr4_pke() {
+  sed -i 's/ | (1 << 22)//' "$tmp/boot.S"
 }
 omit_live_snapshot() {
-  sed -i '/const uint64_t forbidden_cr4 =/d' "$tmp/kernel.c"
+  sed -i '/const uint64_t forbidden_cr4 =/,+1d' "$tmp/kernel.c"
 }
 omit_cpuid_snapshot() {
   sed -i 's/: "a"(1u), "c"(0u));/: "a"(2u), "c"(0u));/' "$tmp/kernel.c"
@@ -78,6 +81,7 @@ omit_avx_probe() {
 
 run_fixture inherited-cr0 'field=cr0-normalization' inherit_cr0
 run_fixture inherited-cr4 'field=cr4-normalization' inherit_cr4
+run_fixture inherited-cr4-pke 'field=cr4-normalization' inherit_cr4_pke
 run_fixture missing-live-snapshot 'field=live-cr4-snapshot' omit_live_snapshot
 run_fixture missing-cpuid-snapshot 'field=cpuid-leaf1' omit_cpuid_snapshot
 run_fixture bypassed-live-policy-gate 'field=live-policy-gate' bypass_live_policy_gate
@@ -179,6 +183,8 @@ if [[ -n "$sse_elf" ]]; then
   check_denied_mutation extra-xsetbv '\x0f\x01\xd1'
   check_denied_mutation extra-vldmxcsr '\xc5\xf8\xae\x10'
   check_denied_mutation extra-lmsw '\x0f\x01\xf0'
+  check_denied_mutation extra-rdpkru '\x0f\x01\xee'
+  check_denied_mutation extra-wrpkru '\x0f\x01\xef'
 fi
 
 echo "Controlled extended-state boot-policy fixtures passed"
