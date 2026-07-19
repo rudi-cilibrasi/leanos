@@ -3767,6 +3767,43 @@ theorem scheduleRemove_operationPreservesRuntimeWellFormed subject :
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.scheduleRemove subject) hstate hmode
 
+/-- Accepted capability revocation composes with authoritative resumable-aware
+scheduler removal.  In particular, the scheduler/lifecycle cleanup step starts
+from the exact globally well-formed capability post-state rather than a stale
+pre-revocation projection. -/
+theorem capabilityRevoke_then_scheduleRemove_preserves_runtimeWellFormed state authoritySlot
+    victim victimSlot capabilities subject
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : Capability.revoke state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot =
+        { state := capabilities, result := .accepted })
+    (hauthority : RuntimeAuthorityPreserved state.capabilities capabilities) :
+    RuntimeWellFormed (runOperations state
+      [.capabilityRevoke authoritySlot victim victimSlot, .scheduleRemove subject]) := by
+  simp only [runOperations]
+  apply scheduleRemove_operationPreservesRuntimeWellFormed subject
+  exact (gate_capabilityRevoke_accepted_preserves_runtimeWellFormed state authoritySlot victim
+    victimSlot capabilities hstate hmode haccepted hauthority).1
+
+/-- Transitive lineage revocation has the same scheduler/lifecycle composition
+boundary: all capability consumers observe the accepted subtree post-state
+before resumable context and active-translation cleanup executes. -/
+theorem capabilityRevokeSubtree_then_scheduleRemove_preserves_runtimeWellFormed state
+    authoritySlot victim victimSlot capabilities subject
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : Capability.revokeSubtree state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot =
+        { state := capabilities, result := .accepted })
+    (hauthority : RuntimeAuthorityPreserved state.capabilities capabilities) :
+    RuntimeWellFormed (runOperations state
+      [.capabilityRevokeSubtree authoritySlot victim victimSlot, .scheduleRemove subject]) := by
+  simp only [runOperations]
+  apply scheduleRemove_operationPreservesRuntimeWellFormed subject
+  exact (gate_capabilityRevokeSubtree_accepted_preserves_runtimeWellFormed state authoritySlot
+    victim victimSlot capabilities hstate hmode haccepted hauthority).1
+
 /-- Creating a fresh subject only promotes its monotonic lifecycle identity;
 all existing resource, scheduler, context-bank, mailbox, and translation
 facts remain valid when the new lifecycle is published to their projections. -/
