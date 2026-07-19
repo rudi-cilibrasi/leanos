@@ -155,13 +155,9 @@ static unsigned entry_adversarial_step;
 static uint8_t copy_buffer[16];
 static unsigned copy_step;
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
-struct fault_containment_authority {
-    uint64_t live, runnable, current, ready, contexts;
-    uint64_t resources, peer_canary;
-};
-static struct fault_containment_authority fault_authority = {
-    6, 6, 1, 4, 4, 0x030201, UINT64_C(0xb2b2cafe51a7e55e)
-};
+/* Exact generated-adapter result retained across the checked peer restore.
+   This is an attestation, not a second mutable scheduler/lifecycle projection. */
+static uint64_t fault_dispatch_attestation;
 #endif
 static void finish(uint8_t value);
 static __attribute__((noreturn)) void fail(const char *reason);
@@ -995,11 +991,8 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if (number == 14 && current_subject == 2) {
         check_selected_root_b();
         if (arg0 != UINT64_C(0xb2b2cafe51a7e55e) || arg1 != 0x030201 ||
-            arg2 != 0x51a7 || fault_authority.live != 4 ||
-            fault_authority.runnable != 4 || fault_authority.current != 2 ||
-            fault_authority.ready != 0 || fault_authority.contexts != 0 ||
-            fault_authority.resources != 0x030201 ||
-            fault_authority.peer_canary != UINT64_C(0xb2b2cafe51a7e55e))
+            arg2 != 0x51a7 ||
+            fault_dispatch_attestation != UINT64_C(0x00000000ff020202))
             fail("fault-peer-state");
         serial_puts("LEANOS/14 PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
         serial_puts("LEANOS/14 FINAL status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop\n");
@@ -1371,12 +1364,12 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
         uint64_t cr3;
         __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
         if (current_subject != 1 || cr3 != (uint64_t)page_map_level_4_a ||
-            fault_authority.current != 1 || fault_authority.ready != 4 ||
-            fault_authority.contexts != 4)
+            saved_context_owner_b != 2 || !initial_b_frame_valid(initial_context_b))
             fail("fault-authority-binding");
         serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS\n");
         uint64_t result = leanos_fault_dispatch_demo(14, saved_cs & 3u,
-            fault_authority.current, 1, 2, 2);
+            current_subject, current_subject, saved_context_owner_b,
+            saved_context_owner_b);
         if (result != UINT64_C(0x00000000ff020202))
             fail("fault-model-dispatch");
         uint64_t selected = (result >> 8) & 0xffu;
@@ -1385,17 +1378,13 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
         uint64_t peer_context_witness = (result >> 29) & 1u;
         uint64_t peer_capability_witness = (result >> 30) & 1u;
         uint64_t peer_resource_witness = (result >> 31) & 1u;
-        fault_authority.live &= ~(1ull << 1);
-        fault_authority.runnable &= ~(1ull << 1);
-        fault_authority.current = selected;
-        fault_authority.ready = 0;
-        fault_authority.contexts &= ~(1ull << 2);
-        current_subject = selected;
-        serial_puts("LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
         if (cleanup != 0x1fu || peer_context_witness != 1 ||
             peer_capability_witness != 1 || peer_resource_witness != 1 ||
-            selected != 2 || address_space != 2)
+            selected != saved_context_owner_b || address_space != 2)
             fail("fault-model-encoding");
+        fault_dispatch_attestation = result;
+        current_subject = selected;
+        serial_puts("LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
         serial_puts("LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
         return 2;
     }

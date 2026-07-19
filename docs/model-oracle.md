@@ -16,7 +16,10 @@ typed kernel-origin and malformed-frame fail-stop cases, stale authoritative
 bindings, empty dispatch, and an accepted peer-context/resource witness. The
 accepted word independently attests B's complete saved frame/register canaries,
 capability slot, owned memory and frame, mapping, and endpoint provenance after
-A's cleanup. The Lean checks evaluate every expected result from
+A's cleanup. The containment guest retains that exact adapter word across B's
+checked context copy, CR3 switch, and common validated return instead of
+maintaining a parallel C live/runnable/queue/context/resource projection. The
+Lean checks evaluate every expected result from
 the adapter definition and connect the accepted and rejected examples to the
 source models.
 
