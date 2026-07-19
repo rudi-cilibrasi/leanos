@@ -1634,7 +1634,12 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       let outcome := Scheduler.terminateCurrent state.scheduler
       match outcome.result with
       | .rejected _ => state
-      | .accepted _ => installScheduler state outcome.state
+      | .accepted _ =>
+          match state.scheduler.lifecycle.current with
+          | none => state
+          | some subject =>
+              installTerminatedResumable state
+                (ResumablePreemption.cleanupSubject state.resumable subject)
   | .restart => state
 
 /-- Exact typed observation of the subsystem transition selected by an
@@ -2970,22 +2975,29 @@ theorem gate_scheduleTick_accepted_sound state context next
       Scheduler.WellFormed (gate state .scheduleTick).state.scheduler := by
   exact False.elim ((schedulerTick_ne_accepted state context) (by simp [haccepted]))
 
-/-- Accepted current-subject termination exposes the exact scheduler cleanup
-state, including its filtered queue and terminated lifecycle, and proves that
-the scheduler invariant survives the composite publication step. -/
+/-- Accepted current-subject termination identifies the kernel-selected victim
+and publishes the authoritative resumable cleanup for that subject.  This is
+deliberately stronger than exposing the raw scheduler post-state: owned address
+spaces, translations, mailboxes, transfers, and saved contexts are retired by
+the composite mutation too. -/
 theorem gate_terminateCurrent_accepted_sound state context next
     (hmode : state.execution.mode = .running)
     (haccepted : Scheduler.terminateCurrent state.scheduler =
       { state := next, result := .accepted context })
-    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (_hwellFormed : Scheduler.WellFormed state.scheduler) :
     (gate state .terminateCurrent).result =
         .completed (.scheduler (.accepted context)) ∧
-      (gate state .terminateCurrent).state.scheduler = next ∧
-      Scheduler.WellFormed (gate state .terminateCurrent).state.scheduler := by
-  have hpreserved := Scheduler.terminateCurrent_preserves_wellFormed
-    state.scheduler hwellFormed
-  rw [haccepted] at hpreserved
-  simp [gate, hmode, operationReply, applyOperation, haccepted, hpreserved]
+      ∃ subject, state.scheduler.lifecycle.current = some subject ∧
+        (gate state .terminateCurrent).state =
+          installTerminatedResumable state
+            (ResumablePreemption.cleanupSubject state.resumable subject) := by
+  cases hcurrent : state.scheduler.lifecycle.current with
+  | none => simp [Scheduler.terminateCurrent, hcurrent, Scheduler.reject] at haccepted
+  | some subject =>
+      constructor
+      · simp [gate, hmode, operationReply, haccepted]
+      · refine ⟨subject, rfl, ?_⟩
+        simp [gate, hmode, applyOperation, haccepted, hcurrent]
 
 /-- Accepted capability copying publishes the exact fresh capability state to
 every consumer.  The composite reply cannot report success while lifecycle,
@@ -4918,6 +4930,42 @@ theorem terminateCurrent_rejected_preserves_runtimeWellFormed state reason
     | handling active => exact ⟨hpreserved, by simp [gate, hactual]⟩
     | halted record => exact ⟨hpreserved, by simp [gate, hactual]⟩
 
+/-- Current-subject termination is the scheduler-selected spelling of the
+authoritative subject-cleanup operation.  On a coherent runtime both select
+the same live subject and publish the same lifecycle, resource, mailbox,
+translation, and saved-context cleanup; busy and halted modes remain absorbed
+by the outer gate. -/
+theorem terminateCurrent_operationPreservesRuntimeWellFormed :
+    OperationPreservesRuntimeWellFormed .terminateCurrent := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hcurrent : state.scheduler.lifecycle.current with
+    | none =>
+        have hrejected : (Scheduler.terminateCurrent state.scheduler).result =
+            .rejected .noCurrent := by
+          simp [Scheduler.terminateCurrent, hcurrent, Scheduler.reject]
+        exact (terminateCurrent_rejected_preserves_runtimeWellFormed
+          state .noCurrent hstate hrejected).1
+    | some subject =>
+        have hschedulerLifecycle : state.scheduler.lifecycle = state.lifecycle :=
+          hstate.1.2.1
+        have hlifecycleCurrent : state.lifecycle.current = some subject := by
+          rw [← hschedulerLifecycle]
+          exact hcurrent
+        have hsame :
+            (gate state .terminateCurrent).state =
+              (gate state (.terminateSubject subject)).state := by
+          cases hterminate : SubjectLifecycle.terminate state.lifecycle subject with
+          | mk lifecycle result =>
+              cases result <;>
+                simp [gate, hmode, applyOperation, Scheduler.terminateCurrent,
+                  Scheduler.reject, hcurrent, hschedulerLifecycle, hlifecycleCurrent,
+                  hterminate]
+        rw [hsame]
+        exact terminateSubject_operationPreservesRuntimeWellFormed subject state hstate
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      .terminateCurrent hstate hmode
+
 /-- Resumable-aware scheduler removal closes the cleanup obligation exposed by
 the raw scheduler transition.  Saved context and active translation cleanup
 are published with the scheduler post-state, while the no-peer case is a typed,
@@ -5920,6 +5968,7 @@ inductive RuntimeTraceOperation : Operation → Prop where
   | scheduleNext : RuntimeTraceOperation .scheduleNext
   | scheduleYield : RuntimeTraceOperation .scheduleYield
   | scheduleTick : RuntimeTraceOperation .scheduleTick
+  | terminateCurrent : RuntimeTraceOperation .terminateCurrent
   | restart : RuntimeTraceOperation .restart
 
 /-- Every operation admitted to the registered mixed-trace surface has a
@@ -5961,6 +6010,7 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
   | scheduleNext => exact scheduleNext_operationPreservesRuntimeWellFormed
   | scheduleYield => exact scheduleYield_operationPreservesRuntimeWellFormed
   | scheduleTick => exact scheduleTick_operationPreservesRuntimeWellFormed
+  | terminateCurrent => exact terminateCurrent_operationPreservesRuntimeWellFormed
   | restart => exact restart_operationPreservesRuntimeWellFormed
 
 /-- Arbitrary finite interleavings of all currently registered runtime

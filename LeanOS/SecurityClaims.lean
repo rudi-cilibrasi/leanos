@@ -305,8 +305,11 @@ references while preserving the complete runtime invariant. -/
 theorem composite_gate_termination_preserves_runtimeWellFormed state subject
     (hstate : FailStop.RuntimeWellFormed state) :
     FailStop.RuntimeWellFormed
-      (FailStop.gate state (.terminateSubject subject)).state := by
-  exact FailStop.terminateSubject_operationPreservesRuntimeWellFormed subject state hstate
+        (FailStop.gate state (.terminateSubject subject)).state ∧
+      FailStop.RuntimeWellFormed
+        (FailStop.gate state .terminateCurrent).state := by
+  exact ⟨FailStop.terminateSubject_operationPreservesRuntimeWellFormed subject state hstate,
+    FailStop.terminateCurrent_operationPreservesRuntimeWellFormed state hstate⟩
 
 /-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of the
 registered control, syscall, IPC/sealed-transfer-offer,
@@ -363,6 +366,7 @@ private def registeredMixedTrace : List FailStop.Operation :=
    .scheduleAdd 1,
    .scheduleRemove 1,
    .terminateSubject 1,
+   .terminateCurrent,
    .selectUserReturn .initialDispatch,
    .restart]
 
@@ -370,7 +374,7 @@ private theorem registeredMixedTrace_registered operation
     (hmember : operation ∈ registeredMixedTrace) :
     FailStop.RuntimeTraceOperation operation := by
   simp [registeredMixedTrace] at hmember
-  rcases hmember with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h
+  rcases hmember with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h
   · subst operation
     exact .syscall _
   · subst operation
@@ -397,6 +401,8 @@ private theorem registeredMixedTrace_registered operation
     exact .scheduleRemove _
   · subst operation
     exact .terminateSubject _
+  · subst operation
+    exact .terminateCurrent
   · subst operation
     exact .selectUserReturn _
   · subst operation
