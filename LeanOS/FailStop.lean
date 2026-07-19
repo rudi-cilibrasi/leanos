@@ -1097,13 +1097,23 @@ theorem installScheduler_synchronizes_consumers state scheduler :
 The context list, TLB entries, and terminal latch are retained verbatim. -/
 private def installResumable (state : CompositeState)
     (resumable : ResumablePreemption.State) : CompositeState :=
-  installLifecycle
-    { state with
-      scheduler := resumable.scheduler
-      preemption := { state.preemption with scheduler := resumable.scheduler }
-      virtualMemory := resumable.translations.virtual
-      resumable }
-    resumable.scheduler.lifecycle
+  let lifecycle := resumable.scheduler.lifecycle
+  let context := match lifecycle.current with
+    | some subject => { state.execution.core.context with
+        currentSubject := subject, activeAddressSpace := subject }
+    | none => state.execution.core.context
+  let virtualMemory := resumable.translations.virtual
+  { state with
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle, context }
+      returnAuthorityArmed := false }
+    scheduler := resumable.scheduler
+    preemption := { state.preemption with scheduler := resumable.scheduler }
+    virtualMemory
+    ipc := { state.ipc with virtualMemory }
+    capabilities := lifecycle.capabilities
+    lifecycle
+    resumable }
 
 /-- Publish a resumable-aware scheduler removal without rebuilding unrelated
 resource projections.  `ResumablePreemption.remove` changes only runnable/current
@@ -1810,6 +1820,24 @@ theorem resumePreempt_halted_latches state frame registers
     next.resumable.halted = true ∧
       next.execution.mode = (dispatchHardware state.execution frame).state.mode := by
   simp [applyOperation, hhalted, installResumable, installLifecycle]
+
+/-- Resumable save/select/restore republishes the scheduler-selected current
+subject as the only execution caller and active address space.  Incoming frame
+and register payloads therefore cannot leave the composite execution latch
+bound to the preemption victim after an accepted switch. -/
+theorem resumePreempt_synchronizes_current_context state frame registers :
+    let next := applyOperation state (.resumePreempt frame registers)
+    ∀ subject, next.scheduler.lifecycle.current = some subject →
+      next.execution.core.context.currentSubject = subject ∧
+      next.execution.core.context.activeAddressSpace = subject := by
+  simp only [applyOperation]
+  generalize hs : ResumablePreemption.switch state.resumable state.execution.core
+    frame registers = outcome
+  cases hhalted : outcome.state.halted <;>
+    simp only [hhalted, Bool.false_eq_true, if_false, if_true, installResumable]
+  all_goals
+    intro subject hcurrent
+    simp [hcurrent]
 
 /-- The sole composite step computes the post-state by invoking the typed
 subsystem transition internally. -/
@@ -5448,6 +5476,207 @@ theorem scheduleTick_operationPreservesRuntimeWellFormed :
               simp [htick]))
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       .scheduleTick hstate hmode
+
+private theorem schedulerSelectNext_preserves_capabilities scheduler :
+    (Scheduler.selectNext scheduler).state.lifecycle.capabilities =
+      scheduler.lifecycle.capabilities := by
+  unfold Scheduler.selectNext
+  split <;> try simp [Scheduler.reject]
+  all_goals split <;> simp [Scheduler.reject]
+
+private theorem schedulerTick_preserves_capabilities scheduler :
+    (Scheduler.tick scheduler).state.lifecycle.capabilities =
+      scheduler.lifecycle.capabilities := by
+  unfold Scheduler.tick Scheduler.yield
+  split
+  · simp [Scheduler.reject]
+  next subject hcurrent =>
+    split
+    · simp [Scheduler.reject]
+    · let staged : Scheduler.State :=
+        { scheduler with
+          ready := scheduler.ready ++ [subject]
+          lifecycle := { scheduler.lifecycle with current := none } }
+      generalize hselect : Scheduler.selectNext staged = outcome
+      cases outcome with
+      | mk next result =>
+          cases result with
+          | rejected reason => simp [Scheduler.reject]
+          | accepted context =>
+              have hcapabilities : next.lifecycle.capabilities =
+                  staged.lifecycle.capabilities := by
+                have hstate := congrArg
+                  (fun outcome => outcome.state.lifecycle.capabilities) hselect
+                rw [schedulerSelectNext_preserves_capabilities] at hstate
+                exact hstate.symm
+              simpa [staged] using hcapabilities
+
+private theorem resumeSwitch_preserves_capabilities (state : CompositeState) frame registers
+    (hcoherent : state.Coherent) :
+    ((ResumablePreemption.switch state.resumable state.execution.core frame registers).state.scheduler.lifecycle.capabilities) =
+      state.lifecycle.capabilities := by
+  have hprojection : state.resumable.scheduler.lifecycle.capabilities =
+      state.lifecycle.capabilities := by
+    rw [hcoherent.2.2.2.2.2.2.2.1, hcoherent.2.1]
+  simp only [ResumablePreemption.switch]
+  split <;> try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals
+    rw [schedulerTick_preserves_capabilities]
+    exact hprojection
+
+private theorem resumeSwitch_preserves_virtualMemory (state : CompositeState) frame registers
+    (hcoherent : state.Coherent) :
+    ((ResumablePreemption.switch state.resumable state.execution.core frame registers).state.translations.virtual) =
+      state.virtualMemory := by
+  have hprojection : state.resumable.translations.virtual = state.virtualMemory := by
+    exact hcoherent.2.2.2.2.2.2.2.2.1
+  simp only [ResumablePreemption.switch]
+  split <;> try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals split <;>
+    try simpa [ResumablePreemption.reject, ResumablePreemption.halt] using hprojection
+  all_goals simpa [TLB.switch] using hprojection
+
+private theorem resumeSwitch_halted_preserves_scheduler state interrupt frame registers
+    (hhalted : (ResumablePreemption.switch state interrupt frame registers).state.halted = true) :
+    (ResumablePreemption.switch state interrupt frame registers).state.scheduler =
+      state.scheduler := by
+  simp only [ResumablePreemption.switch] at hhalted ⊢
+  split <;> try simp_all [ResumablePreemption.reject]
+  split <;> try simp_all [ResumablePreemption.reject, ResumablePreemption.halt]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> simp_all [ResumablePreemption.reject]
+
+/-- Publishing a nonterminal save/select/restore result preserves every
+runtime projection.  The resumable model owns the scheduler and translation
+updates; this boundary republishes those authoritative views without changing
+capability authority, IPC mailboxes, or transfer state. -/
+private theorem installResumable_nonfatal_preserves_runtimeWellFormed state next
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hnext : ResumablePreemption.WellFormed next)
+    (hcapabilities : next.scheduler.lifecycle.capabilities =
+      state.lifecycle.capabilities)
+    (hvirtual : next.translations.virtual = state.virtualMemory)
+    (hhalted : next.halted = false) :
+    RuntimeWellFormed (installResumable state next) := by
+  rcases hstate with
+    ⟨hcoherent, hexecution, _hlifecycle, hcapabilityWellFormed,
+      hvirtualWellFormed, hipc, _hscheduler, hpreemption, _hresumable,
+      htransfers, _hterminal, _hlive⟩
+  rcases hcoherent with
+    ⟨_hexecutionLifecycle, hschedulerLifecycle, _hpreemptionScheduler,
+      hcapabilitiesLifecycle, hmemoryCapabilities, hipcVirtual,
+      hipcCapabilities, _hresumableScheduler, _htranslationVirtual,
+      htransferEndpoints, _hauthority, hdeadMailbox, hliveSender⟩
+  have hscheduler' : Scheduler.WellFormed next.scheduler := hnext.1
+  have hlifecycle' : SubjectLifecycle.WellFormed next.scheduler.lifecycle :=
+    hscheduler'.1
+  have hexecution' : WellFormed
+      { state.execution with
+        core := { state.execution.core with
+          lifecycle := next.scheduler.lifecycle
+          context := match next.scheduler.lifecycle.current with
+            | some subject => { state.execution.core.context with
+                currentSubject := subject, activeAddressSpace := subject }
+            | none => state.execution.core.context }
+        returnAuthorityArmed := false } := by
+    refine ⟨?_, by simp, ?_⟩
+    · exact hlifecycle'
+    · cases hcurrent : next.scheduler.lifecycle.current <;>
+        simpa [hcurrent, hmode] using hexecution.2.2
+  have hpreemption' : Preemption.WellFormed
+      { state.preemption with scheduler := next.scheduler } :=
+    ⟨hscheduler', hpreemption.2⟩
+  have hipc' : IPCSyscall.WellFormed
+      { state.ipc with virtualMemory := state.virtualMemory } := by
+    rw [← hipcVirtual]
+    exact hipc
+  have hcoherent' : (installResumable state next).Coherent := by
+    simp [CompositeState.Coherent, installResumable, hvirtual, hcapabilities,
+      hmemoryCapabilities, hipcCapabilities, htransferEndpoints,
+      hdeadMailbox, hliveSender]
+    refine ⟨?_, ?_, ?_⟩
+    · intro subject hcurrent
+      simp [hcurrent]
+    · intro object hdead
+      exact hdeadMailbox object (by simp [hdead])
+    · exact hliveSender
+  refine ⟨hcoherent', hexecution', hlifecycle', ?_, ?_, ?_, hscheduler',
+    hpreemption', hnext, htransfers, ?_, ?_⟩
+  · simpa [installResumable, hcapabilities, hcapabilitiesLifecycle] using
+      hcapabilityWellFormed
+  · simpa [installResumable, hvirtual] using hvirtualWellFormed
+  · simpa [installResumable, hvirtual] using hipc'
+  · simp [installResumable, hhalted, hmode]
+  · simp [installResumable]
+
+/-- Every nonfatal resumable preemption step preserves the complete global
+runtime invariant.  This includes successful save/select/restore as well as
+all typed, state-preserving precondition failures; attacker-controlled frame
+and register payloads cannot desynchronize the selected execution identity. -/
+theorem gate_resumePreempt_nonfatal_preserves_runtimeWellFormed state frame registers
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hhalted : (ResumablePreemption.switch state.resumable state.execution.core
+      frame registers).state.halted = false) :
+    RuntimeWellFormed (gate state (.resumePreempt frame registers)).state := by
+  have hnext := ResumablePreemption.switch_preserves_wellFormed
+    state.resumable state.execution.core frame registers
+      hstate.2.2.2.2.2.2.2.2.1
+  have hcapabilities := resumeSwitch_preserves_capabilities state frame registers
+    hstate.1
+  have hvirtual := resumeSwitch_preserves_virtualMemory state frame registers
+    hstate.1
+  have hpublished := installResumable_nonfatal_preserves_runtimeWellFormed state
+    (ResumablePreemption.switch state.resumable state.execution.core frame registers).state
+    hstate hmode hnext hcapabilities hvirtual hhalted
+  simpa [gate, hmode, applyOperation, hhalted] using hpublished
 
 /-! ### Registered mixed runtime traces
 
