@@ -61,6 +61,16 @@ read-back behavior of the Command register, QEMU/device obedience, generated C,
 assembly, compiler/linker behavior, and the final binary are not proved. QEMU
 inventory or future boot tests are integration evidence only.
 
+`scripts/check-q35-pci-construction.py` supplies a narrower integration
+checkpoint against the pinned QEMU 8.2.2 binary. It pauses the same q35/TCG,
+CPU, memory, vCPU, network, and debug-exit construction used by the image
+runner, exhaustively reads all 256 functions on manifest bus 0 through qtest's
+PCI configuration mechanism #1 interface, and rejects identity/class/header
+drift, missing or extra functions, or a set bus-master bit. Its versioned TSV
+is a construction-time QEMU observation before firmware runs. It is not the
+required post-firmware, pre-CPL3 guest read-back and therefore does not upgrade
+the model claim or close the boot-control dependency.
+
 Issue #104's authoritative composite invariant remains on its separate,
 unmerged dependency lane. Once that state lands, its exact `RuntimeWellFormed`
 and typed gate should embed `AcceptedSnapshot` and the unchanged control

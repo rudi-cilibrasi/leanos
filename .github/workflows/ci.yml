@@ -70,6 +70,11 @@ jobs:
       - name: Record tool versions
         run: ./scripts/record-tool-versions.sh
 
+      - name: Check q35 PCI construction inventory
+        run: |
+          ./scripts/check-q35-pci-construction.py \
+            --output build/evidence/q35-pci-construction.tsv
+
       - name: Verify image-build failures propagate
         run: ./scripts/test-build-image.sh
 
@@ -113,6 +118,7 @@ jobs:
             build/boot/leanos-entry-stack-overflow.map
             build/boot/leanos-entry-adversarial.elf
             build/boot/leanos.map
+            build/evidence/q35-pci-construction.tsv
             build/boot/leanos-preemption.map
             build/boot/leanos-fault-containment.map
             build/boot/leanos-extended-state.map
