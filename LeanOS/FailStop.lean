@@ -657,6 +657,72 @@ private def installCapabilities (state : CompositeState)
     (capabilities : Capability.State) : CompositeState :=
   installLifecycle state { state.lifecycle with capabilities }
 
+/-- Publish subject creation without rebuilding unrelated resources.  Creation
+only promotes the subject registry and issuance history, so memory bindings,
+mappings, mailboxes, saved contexts, and cached translations remain exact. -/
+private def installCreatedSubject (state : CompositeState)
+    (subject : SubjectLifecycle.SubjectId) : CompositeState :=
+  let lifecycle := (SubjectLifecycle.create state.lifecycle subject).state
+  let scheduler := { state.scheduler with lifecycle }
+  let preemption := { state.preemption with scheduler }
+  let virtualMemory := { state.virtualMemory with
+    memory := { state.virtualMemory.memory with capabilities := lifecycle.capabilities } }
+  let endpoints := { state.ipc.endpoints with capabilities := lifecycle.capabilities }
+  { state with
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle }
+      returnAuthorityArmed := false }
+    scheduler
+    preemption
+    virtualMemory
+    ipc := { state.ipc with virtualMemory, endpoints }
+    capabilities := lifecycle.capabilities
+    lifecycle
+    resumable := { state.resumable with
+      scheduler
+      translations := { state.resumable.translations with virtual := virtualMemory } }
+    transfers := { state.transfers with toEndpointState := endpoints } }
+
+@[simp] theorem createSubject_current lifecycle subject :
+    (SubjectLifecycle.create lifecycle subject).state.current = lifecycle.current := by
+  simp only [SubjectLifecycle.create]
+  split <;> try rfl
+  split <;> rfl
+
+@[simp] theorem createSubject_objects lifecycle subject :
+    (SubjectLifecycle.create lifecycle subject).state.capabilities.objects =
+      lifecycle.capabilities.objects := by
+  simp only [SubjectLifecycle.create]
+  split <;> try rfl
+  split <;> rfl
+
+theorem createSubject_preserves_live lifecycle subject candidate
+    (hlive : lifecycle.capabilities.subjects candidate = true) :
+    (SubjectLifecycle.create lifecycle subject).state.capabilities.subjects candidate = true := by
+  simp only [SubjectLifecycle.create]
+  split <;> try assumption
+  split <;> try assumption
+  simp only [SubjectLifecycle.setBool]
+  split <;> simp_all
+
+theorem installCreatedSubject_coherent state subject
+    (hstate : state.Coherent) :
+    (installCreatedSubject state subject).Coherent := by
+  rcases hstate with
+    ⟨hexecution, hscheduler, hpreemption, hcapabilities, hvirtualCapabilities,
+      hipcVirtual, hipcCapabilities, hresumableScheduler, hresumableVirtual,
+      htransfers, hauthority, hdeadMailbox, hliveSender⟩
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_, ?_⟩
+  · simpa [installCreatedSubject] using hauthority
+  · intro object hdead
+    apply hdeadMailbox object
+    simpa [installCreatedSubject] using hdead
+  · intro object envelope hmailbox
+    have hmailbox' : state.ipc.endpoints.mailbox object = some envelope := by
+      simpa [installCreatedSubject] using hmailbox
+    have hold := hliveSender object envelope hmailbox'
+    exact createSubject_preserves_live state.lifecycle subject envelope.sender hold
+
 /-- Capability publication has one authoritative result and updates every
 consumer in the same composite step.  In particular, legacy scheduler and
 preemption views cannot retain the pre-revocation registry while IPC or the
@@ -1148,7 +1214,7 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       let outcome := SubjectLifecycle.create state.lifecycle subject
       match outcome.result with
       | .rejected _ => state
-      | .accepted => installLifecycle state outcome.state
+      | .accepted => installCreatedSubject state subject
   | .terminateSubject subject =>
       let outcome := SubjectLifecycle.terminate state.lifecycle subject
       match outcome.result with
@@ -2201,6 +2267,7 @@ theorem gate_createSubject_accepted_synchronizes state subject next
     (hmode : state.execution.mode = .running)
     (haccepted : SubjectLifecycle.create state.lifecycle subject =
       { state := next, result := .accepted })
+    (hcoherent : state.Coherent)
     (hwellFormed : SubjectLifecycle.WellFormed state.lifecycle) :
     (gate state (.createSubject subject)).result =
         .completed (.createSubject .accepted) ∧
@@ -2219,13 +2286,12 @@ theorem gate_createSubject_accepted_synchronizes state subject next
   have hpreserved := SubjectLifecycle.create_preserves_wellFormed
     state.lifecycle subject hwellFormed
   rw [haccepted] at hpreserved
-  have hcoherent : (installLifecycle state next).Coherent :=
-    installLifecycle_coherent state next
+  have hpublishedCoherent : (installCreatedSubject state subject).Coherent :=
+    installCreatedSubject_coherent state subject hcoherent
   constructor
   · simp [gate, hmode, operationReply, haccepted]
-  · simpa [gate, hmode, applyOperation, haccepted, installLifecycle,
-      synchronizeMemory] using
-      And.intro hcoherent hpreserved
+  · simpa [gate, hmode, applyOperation, haccepted, installCreatedSubject] using
+      And.intro hpublishedCoherent hpreserved
 
 /-- Accepted single-slot revocation is synchronized with every capability
 consumer and retains the exact well-formed subsystem post-state. -/
@@ -2980,6 +3046,212 @@ theorem scheduleRemove_operationPreservesRuntimeWellFormed subject :
             · simp [installSchedulerRemoval]
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.scheduleRemove subject) hstate hmode
+
+/-- Creating a fresh subject only promotes its monotonic lifecycle identity;
+all existing resource, scheduler, context-bank, mailbox, and translation
+facts remain valid when the new lifecycle is published to their projections. -/
+theorem createSubject_operationPreservesRuntimeWellFormed subject :
+    OperationPreservesRuntimeWellFormed (.createSubject subject) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hcreate : SubjectLifecycle.create state.lifecycle subject with
+    | mk next result =>
+        cases result with
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.createSubject subject) (.createSubject (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hcreate])
+              (.createSubject subject reason (by simp [hcreate]))).1
+        | accepted =>
+            have hcreateDef := hcreate
+            simp only [SubjectLifecycle.create] at hcreateDef
+            split at hcreateDef <;> try simp_all [SubjectLifecycle.reject]
+            split at hcreateDef <;> try simp_all [SubjectLifecycle.reject]
+            next hlive hissued =>
+              rcases hcreateDef with ⟨rfl, rfl⟩
+              simp only [gate, hmode, applyOperation, hcreate]
+              rcases hstate with
+                ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+                  hscheduler, hpreemption, hresumable, htransfers, hhalted, hlivePlan⟩
+              have hlifecycle' := SubjectLifecycle.create_preserves_wellFormed
+                state.lifecycle subject hlifecycle
+              rw [hcreate] at hlifecycle'
+              have hcapabilitiesLifecycle :
+                  Capability.WellFormed state.lifecycle.capabilities := by
+                rw [← hcoherent.2.2.2.1]
+                exact hcapabilities
+              have hvirtualCapabilitiesCoherent :
+                  state.virtualMemory.memory.capabilities =
+                    state.lifecycle.capabilities := hcoherent.2.2.2.2.1
+              have hipcCapabilitiesCoherent :
+                  state.ipc.endpoints.capabilities =
+                    state.lifecycle.capabilities := hcoherent.2.2.2.2.2.2.1
+              have hcapabilities' : Capability.WellFormed
+                  (SubjectLifecycle.create state.lifecycle subject).state.capabilities := by
+                rw [hcreate]
+                rcases hcapabilitiesLifecycle with
+                  ⟨hslots, hderivations, hunique, hspaces⟩
+                refine ⟨?_, hderivations, hunique, hspaces⟩
+                intro holder slot capability hslot
+                have hold := hslots holder slot capability hslot
+                refine ⟨?_, hold.2⟩
+                simp only [SubjectLifecycle.setBool]
+                split <;> simp_all
+              have hvirtual' : VirtualMapping.LifecycleWellFormed
+                  (installCreatedSubject state subject).virtualMemory := by
+                rcases hvirtual with ⟨⟨hownerLive, hmappings⟩, _hvirtualCaps,
+                  haddressSpaces, hownedSpaces⟩
+                refine ⟨⟨?_, ?_⟩, ?_, ?_, ?_⟩
+                · intro addressSpace owner howner
+                  have hold := hownerLive addressSpace owner (by
+                    simpa [installCreatedSubject] using howner)
+                  rw [hvirtualCapabilitiesCoherent] at hold
+                  simpa [installCreatedSubject] using
+                    createSubject_preserves_live state.lifecycle subject owner hold
+                · intro addressSpace page mapping hmapping
+                  obtain ⟨owner, frame, howner, hpermissions, hbinding, hframe,
+                    hread, hwrite⟩ := hmappings addressSpace page mapping (by
+                      simpa [installCreatedSubject] using hmapping)
+                  refine ⟨owner, frame, ?_, hpermissions, ?_, hframe, ?_, ?_⟩
+                  · simpa [installCreatedSubject] using howner
+                  · simpa [installCreatedSubject] using hbinding
+                  · intro hpermission
+                    have hold := hread hpermission
+                    rw [hvirtualCapabilitiesCoherent] at hold
+                    simpa [installCreatedSubject, hcreate, Capability.HasAuthority] using hold
+                  · intro hpermission
+                    have hold := hwrite hpermission
+                    rw [hvirtualCapabilitiesCoherent] at hold
+                    simpa [installCreatedSubject, hcreate, Capability.HasAuthority] using hold
+                · simpa [installCreatedSubject, hcreate] using hcapabilities'
+                · intro addressSpace owner howner
+                  have hold := haddressSpaces addressSpace owner (by
+                    simpa [installCreatedSubject] using howner)
+                  rw [hvirtualCapabilitiesCoherent] at hold
+                  simpa [installCreatedSubject, hcreate, Capability.HasAuthority] using hold
+                · intro addressSpace hlive hkind
+                  have hliveOld :
+                      state.virtualMemory.memory.capabilities.objects addressSpace = true := by
+                    rw [hvirtualCapabilitiesCoherent]
+                    simpa [installCreatedSubject, hcreate] using hlive
+                  have hkindOld :
+                      state.virtualMemory.memory.capabilities.kinds addressSpace =
+                        some .addressSpace := by
+                    rw [hvirtualCapabilitiesCoherent]
+                    simpa [installCreatedSubject, hcreate] using hkind
+                  obtain ⟨owner, howner⟩ := hownedSpaces addressSpace
+                    hliveOld hkindOld
+                  exact ⟨owner, by simpa [installCreatedSubject] using howner⟩
+              have hipc' : IPCSyscall.WellFormed
+                  (installCreatedSubject state subject).ipc := by
+                rcases hipc with ⟨_virtual, hendpoints⟩
+                rcases hendpoints with
+                  ⟨_hendpointCaps, hissuedEndpoint, hmailbox, hdead, hhistory⟩
+                rw [hipcCapabilitiesCoherent] at hissuedEndpoint hmailbox hdead
+                refine ⟨hvirtual', ?_⟩
+                refine ⟨?_, ?_, ?_, ?_, ?_⟩
+                · simpa [installCreatedSubject, hcreate] using hcapabilities'
+                · simpa [installCreatedSubject, hcreate] using hissuedEndpoint
+                · simpa [installCreatedSubject, hcreate] using hmailbox
+                · simpa [installCreatedSubject, hcreate] using hdead
+                · simpa [installCreatedSubject] using hhistory
+              have hscheduler' : Scheduler.WellFormed
+                  (installCreatedSubject state subject).scheduler := by
+                rcases hscheduler with
+                  ⟨_hschedulerLifecycle, hreadyNodup, hreadyCapacity,
+                    hreadyValid, hcurrentValid⟩
+                simp only [Scheduler.ownsAddressSpace] at hreadyValid hcurrentValid
+                rw [hcoherent.2.1] at hreadyValid hcurrentValid
+                refine ⟨?_, hreadyNodup, hreadyCapacity, ?_, ?_⟩
+                · simpa [installCreatedSubject, hcreate] using hlifecycle'
+                · intro candidate hmember
+                  obtain ⟨hliveCandidate, hrunnable, howner⟩ :=
+                    hreadyValid candidate hmember
+                  refine ⟨?_, ?_, ?_⟩
+                  · exact createSubject_preserves_live state.lifecycle subject candidate
+                      hliveCandidate
+                  · simpa [installCreatedSubject, hcreate] using hrunnable
+                  · simpa [Scheduler.ownsAddressSpace, installCreatedSubject,
+                      hcreate] using howner
+                · intro candidate hcurrent
+                  obtain ⟨hliveCandidate, hrunnable, howner⟩ :=
+                    hcurrentValid candidate (by
+                      simpa [installCreatedSubject] using hcurrent)
+                  refine ⟨?_, ?_, ?_⟩
+                  · exact createSubject_preserves_live state.lifecycle subject candidate
+                      hliveCandidate
+                  · simpa [installCreatedSubject, hcreate] using hrunnable
+                  · simpa [Scheduler.ownsAddressSpace, installCreatedSubject,
+                      hcreate] using howner
+              have hpreemption' : Preemption.WellFormed
+                  (installCreatedSubject state subject).preemption := by
+                rcases hpreemption with ⟨_hscheduler, hticks⟩
+                refine ⟨hscheduler', ?_⟩
+                change state.preemption.acceptedTicks =
+                  if state.preemption.timerArmed then 0 else 1
+                exact hticks
+              have hresumableLifecycle :
+                  state.resumable.scheduler.lifecycle = state.lifecycle := by
+                rw [hcoherent.2.2.2.2.2.2.2.1, hcoherent.2.1]
+              have hresumable' : ResumablePreemption.WellFormed
+                  (installCreatedSubject state subject).resumable := by
+                rcases hresumable with
+                  ⟨_hscheduler, hcapacity, hunique, hvalid, habsent, hready,
+                    htranslation, _hvirtualAgreement, hkinds, htlb⟩
+                simp only [ResumablePreemption.ReadyContextAgreement] at hready
+                simp only [ResumablePreemption.TranslationAgreement] at htranslation
+                simp only [ResumablePreemption.ResourceKindAgreement] at hkinds
+                rw [hcoherent.2.2.2.2.2.2.2.1] at habsent hready htranslation hkinds
+                rw [hcoherent.2.2.2.2.2.2.2.2.1] at htranslation
+                rw [hcoherent.2.1] at habsent hready htranslation hkinds
+                refine ⟨hscheduler', hcapacity, hunique, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                · intro context hcontext
+                  rcases hvalid context hcontext with
+                    ⟨hframe, hspace, hliveOwner, hrunnable, howner⟩
+                  rw [hresumableLifecycle] at hliveOwner hrunnable howner
+                  refine ⟨hframe, hspace, ?_, ?_, ?_⟩
+                  · exact createSubject_preserves_live state.lifecycle subject context.owner
+                      hliveOwner
+                  · simpa [installCreatedSubject, hcreate] using hrunnable
+                  · simpa [installCreatedSubject, hcreate] using howner
+                · simpa [installCreatedSubject] using habsent
+                · simpa [ResumablePreemption.ReadyContextAgreement,
+                    installCreatedSubject] using hready
+                · simpa [ResumablePreemption.TranslationAgreement,
+                    installCreatedSubject, hcreate] using htranslation
+                · exact ⟨rfl, hvirtual'⟩
+                · simpa [ResumablePreemption.ResourceKindAgreement,
+                    installCreatedSubject, hcreate] using hkinds
+                · simpa [TLB.Coherent, installCreatedSubject] using htlb
+              have htransfers' : CapabilityTransfer.WellFormed
+                  (installCreatedSubject state subject).transfers := by
+                rcases htransfers with ⟨_hendpoints, hpending⟩
+                refine ⟨hipc'.2, ?_⟩
+                intro endpoint transfer hpendingNew
+                have hpendingOld : state.transfers.pending endpoint = some transfer := by
+                  simpa [installCreatedSubject] using hpendingNew
+                have hold := hpending endpoint transfer hpendingOld
+                rw [hcoherent.2.2.2.2.2.2.2.2.2.1] at hold
+                rw [hipcCapabilitiesCoherent] at hold
+                simpa [installCreatedSubject, hcreate] using hold
+              refine ⟨installCreatedSubject_coherent _ _ hcoherent, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+                ?_, ?_, ?_, ?_⟩
+              · rcases hexecution with ⟨_hexecutionCore, _hbound, hmodeWellFormed⟩
+                refine ⟨?_, by simp [installCreatedSubject], ?_⟩
+                · simpa [Interrupt.WellFormed, installCreatedSubject, hcreate] using hlifecycle'
+                · simpa [installCreatedSubject, hmode] using hmodeWellFormed
+              · simpa [installCreatedSubject, hcreate] using hlifecycle'
+              · simpa [installCreatedSubject, hcreate] using hcapabilities'
+              · exact hvirtual'
+              · exact hipc'
+              · exact hscheduler'
+              · exact hpreemption'
+              · exact hresumable'
+              · exact htransfers'
+              · simpa [installCreatedSubject] using hhalted
+              · simp [installCreatedSubject]
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.createSubject subject) hstate hmode
 
 /-- A raw scheduler insertion cannot establish the resumable-context side of
 the composite invariant by itself.  If its published post-state is globally
