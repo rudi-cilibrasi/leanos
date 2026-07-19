@@ -151,6 +151,18 @@ theorem composite_gate_data_receive_preserves_runtimeWellFormed
     state handleWord sender word0 word1 hstate hmode
   simpa [FailStop.operationReply] using hdelivered
 
+/-- SC-COMPOSITE-TRANSFER-OFFER-WF: every canonical sealed-transfer offer,
+including malformed/stale handle rejections and the accepted pending-mailbox
+mutation, preserves the complete global runtime invariant. -/
+theorem composite_gate_transferOffer_preserves_runtimeWellFormed
+    state endpointWord sourceWord sourceKind payload rights
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+      (FailStop.gate state
+        (.transferOffer endpointWord sourceWord sourceKind payload rights)).state := by
+  exact FailStop.transferOffer_operationPreservesRuntimeWellFormed endpointWord sourceWord
+    sourceKind payload rights state hstate
+
 /-- SC-COMPOSITE-GATE-CONTRACT: every completed public gate step identifies
 the running latch, exact typed reply, and exact composite post-state; both
 gate-level rejection classes and every classified nonfatal subsystem rejection
@@ -275,9 +287,10 @@ theorem composite_gate_schedulerAdmission_preserves_runtimeWellFormed state subj
   exact FailStop.scheduleAdd_operationPreservesRuntimeWellFormed subject state hstate
 
 /-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of the
-registered control, syscall, IPC, capability-copy/revocation, mapping,
-subject-creation, and resumable-aware scheduler operations preserve the
-complete runtime invariant for every accepted or typed-rejected result. -/
+registered control, syscall, IPC/sealed-transfer-offer,
+capability-copy/revocation, mapping, subject-creation, and resumable-aware
+scheduler operations preserve the complete runtime invariant for every
+accepted or typed-rejected result. -/
 theorem composite_registered_mixed_trace_preserves_runtimeWellFormed
     state operations
     (hstate : FailStop.RuntimeWellFormed state)
@@ -317,6 +330,7 @@ theorem composite_boot_runtime_reachable_witness :
 private def registeredMixedTrace : List FailStop.Operation :=
   [.syscall { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 },
    .ipc (.receive 0),
+   .transferOffer 0 0 .memory { word0 := 0, word1 := 0 } { read := true },
    .capabilityCopy 0 1 0 { read := true },
    .capabilityRevoke 0 1 0,
    .capabilityRevokeSubtree 0 1 0,
@@ -332,11 +346,13 @@ private theorem registeredMixedTrace_registered operation
     (hmember : operation ∈ registeredMixedTrace) :
     FailStop.RuntimeTraceOperation operation := by
   simp [registeredMixedTrace] at hmember
-  rcases hmember with h | h | h | h | h | h | h | h | h | h | h | h
+  rcases hmember with h | h | h | h | h | h | h | h | h | h | h | h | h
   · subst operation
     exact .syscall _
   · subst operation
     exact .ipc _
+  · subst operation
+    exact .transferOffer _ _ _ _ _
   · subst operation
     exact .capabilityCopy _ _ _ _
   · subst operation
@@ -361,9 +377,9 @@ private theorem registeredMixedTrace_registered operation
 set_option maxRecDepth 100000 in
 /-- Concrete non-vacuity for the registered mixed-trace contract: the accepted
 repository boot plan runs a finite trace containing attacker-controlled
-syscall/IPC/capability-copy/revocation/mapping words, lifecycle creation,
-resumable-aware scheduler cleanup, return selection, and restart while
-retaining the global invariant. -/
+syscall/IPC/sealed-transfer/capability-copy/revocation/mapping words, lifecycle
+creation, resumable-aware scheduler cleanup, return selection, and restart
+while retaining the global invariant. -/
 theorem composite_registered_mixed_trace_reachable_witness :
     match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
     | .ok plan => FailStop.RuntimeWellFormed

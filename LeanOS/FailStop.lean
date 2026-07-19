@@ -1028,11 +1028,26 @@ the shared capability registry.  Pending sealed descendants and their trace
 remain owned solely by `CapabilityTransfer.State`. -/
 private def installTransfers (state : CompositeState)
     (transfers : CapabilityTransfer.State) : CompositeState :=
-  installLifecycle
-    { state with
-      ipc := { state.ipc with endpoints := transfers.toEndpointState }
-      transfers }
-    { state.lifecycle with capabilities := transfers.capabilities }
+  let capabilities := transfers.capabilities
+  let lifecycle := { state.lifecycle with capabilities }
+  let scheduler := { state.scheduler with lifecycle }
+  let virtualMemory := { state.virtualMemory with
+    memory := { state.virtualMemory.memory with capabilities } }
+  let endpoints := transfers.toEndpointState
+  { state with
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle }
+      returnAuthorityArmed := false }
+    scheduler
+    preemption := { state.preemption with scheduler }
+    virtualMemory
+    ipc := { state.ipc with virtualMemory, endpoints }
+    capabilities
+    lifecycle
+    resumable := { state.resumable with
+      scheduler
+      translations := { state.resumable.translations with virtual := virtualMemory } }
+    transfers }
 
 /-- Publish a mapping-only transition without running the general lifecycle
 synchronizer.  Map and unmap preserve the memory registry and address-space
@@ -2250,6 +2265,171 @@ theorem gate_transferOffer_accepted_preserves_transferWellFormed state endpointW
       state.transfers state.execution.core.context.currentSubject endpointWord sourceWord
       sourceKind payload rights hstate.2.2.2.2.2.2.2.2.2.1 haccepted
   · simp [gate, hmode, operationReply, applyOperation, haccepted]
+
+/-- An accepted sealed-transfer offer is monotonic in the live authority
+registry.  Publishing its exact capability and endpoint post-state therefore
+preserves every composite consumer, while retaining the pending sealed
+descendant and mailbox as one atomic transfer state. -/
+theorem gate_transferOffer_accepted_preserves_runtimeWellFormed state endpointWord sourceWord
+    sourceKind payload rights
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (CapabilityTransfer.offerWords state.transfers
+      state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+      payload rights).result = .accepted) :
+    RuntimeWellFormed
+        (gate state (.transferOffer endpointWord sourceWord sourceKind payload rights)).state ∧
+      (gate state (.transferOffer endpointWord sourceWord sourceKind payload rights)).result =
+        .completed (.transferOffer .accepted) := by
+  let next := (CapabilityTransfer.offerWords state.transfers
+    state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+    payload rights).state
+  have htransfer : CapabilityTransfer.WellFormed next :=
+    CapabilityTransfer.offerWords_accepted_preserves_wellFormed state.transfers
+      state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+      payload rights hstate.2.2.2.2.2.2.2.2.2.1 haccepted
+  have hregistry := CapabilityTransfer.offerWords_accepted_preserves_authority_registry
+    state.transfers state.execution.core.context.currentSubject endpointWord sourceWord
+    sourceKind payload rights haccepted
+  change next.capabilities.subjects = state.transfers.capabilities.subjects ∧
+      next.capabilities.objects = state.transfers.capabilities.objects ∧
+      next.capabilities.kinds = state.transfers.capabilities.kinds ∧
+      next.capabilities.slots = state.transfers.capabilities.slots ∧
+      next.allocator = state.transfers.allocator ∧
+      next.binding = state.transfers.binding ∧
+      next.issued = state.transfers.issued ∧
+      next.issuedAddressSpace = state.transfers.issuedAddressSpace at hregistry
+  rcases hregistry with ⟨hsubjects, hobjects, hkinds, hslots, hallocator,
+    hbinding, hissued, hissuedSpace⟩
+  rcases hstate with
+    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+      hscheduler, hpreemption, hresumable, _htransfers, hhalted, hlive⟩
+  rcases hcoherent with
+    ⟨hexecutionCoherent, hschedulerCoherent, hpreemptionCoherent,
+      hcapabilitiesCoherent, hvirtualCapabilitiesCoherent, hipcVirtualCoherent,
+      hipcCapabilitiesCoherent, hresumableSchedulerCoherent,
+      hresumableVirtualCoherent, htransfersCoherent, hauthorityCoherent,
+      hdeadMailbox, hliveSender⟩
+  rw [htransfersCoherent] at hsubjects hobjects hkinds hslots hallocator hbinding
+  rw [htransfersCoherent] at hissued hissuedSpace
+  have hsubjectsLifecycle := hsubjects.trans
+    (congrArg Capability.State.subjects hipcCapabilitiesCoherent)
+  have hobjectsLifecycle := hobjects.trans
+    (congrArg Capability.State.objects hipcCapabilitiesCoherent)
+  have hkindsLifecycle := hkinds.trans
+    (congrArg Capability.State.kinds hipcCapabilitiesCoherent)
+  have hslotsLifecycle := hslots.trans
+    (congrArg Capability.State.slots hipcCapabilitiesCoherent)
+  have hsubjectsVirtual := hsubjectsLifecycle.trans
+    (congrArg Capability.State.subjects hvirtualCapabilitiesCoherent).symm
+  have hobjectsVirtual := hobjectsLifecycle.trans
+    (congrArg Capability.State.objects hvirtualCapabilitiesCoherent).symm
+  have hkindsVirtual := hkindsLifecycle.trans
+    (congrArg Capability.State.kinds hvirtualCapabilitiesCoherent).symm
+  have hslotsVirtual := hslotsLifecycle.trans
+    (congrArg Capability.State.slots hvirtualCapabilitiesCoherent).symm
+  have hcallerTransfer : state.transfers.capabilities.subjects
+      state.execution.core.context.currentSubject = true :=
+    CapabilityTransfer.offerWords_accepted_caller_live state.transfers
+      state.execution.core.context.currentSubject endpointWord sourceWord sourceKind payload rights
+      haccepted
+  have htransferCapabilitiesCoherent :
+      state.transfers.capabilities = state.lifecycle.capabilities := by
+    rw [htransfersCoherent, hipcCapabilitiesCoherent]
+  have hsenderTransfer : ∀ object envelope,
+      state.transfers.mailbox object = some envelope →
+        state.transfers.capabilities.subjects envelope.sender = true := by
+    intro object envelope hmailbox
+    rw [htransferCapabilitiesCoherent]
+    exact hliveSender object envelope (by simpa [htransfersCoherent] using hmailbox)
+  have hliveMailbox' :=
+    CapabilityTransfer.offerWords_accepted_preserves_live_mailbox_senders state.transfers
+      state.execution.core.context.currentSubject endpointWord sourceWord sourceKind payload rights
+      hcallerTransfer hsenderTransfer haccepted
+  have hcapabilities' : Capability.WellFormed next.capabilities := htransfer.1.1
+  have hlifecycle' : SubjectLifecycle.WellFormed
+      { state.lifecycle with capabilities := next.capabilities } := by
+    simpa [SubjectLifecycle.WellFormed, hsubjectsLifecycle] using hlifecycle
+  have hvirtual' : VirtualMapping.LifecycleWellFormed
+      { state.virtualMemory with
+        memory := { state.virtualMemory.memory with capabilities := next.capabilities } } := by
+    rcases hvirtual with ⟨hwell, _hcaps, hspaces, howned⟩
+    refine ⟨?_, hcapabilities', ?_, ?_⟩
+    · simpa [VirtualMapping.WellFormed, Capability.HasAuthority, hsubjectsVirtual,
+        hslotsVirtual]
+        using hwell
+    · simpa [Capability.HasAuthority, hobjectsVirtual, hkindsVirtual, hslotsVirtual]
+        using hspaces
+    · simpa [hobjectsVirtual, hkindsVirtual] using howned
+  have hipc' : IPCSyscall.WellFormed
+      { state.ipc with
+        virtualMemory := { state.virtualMemory with
+          memory := { state.virtualMemory.memory with capabilities := next.capabilities } }
+        endpoints := next.toEndpointState } := ⟨hvirtual', htransfer.1⟩
+  have hscheduler' : Scheduler.WellFormed
+      { state.scheduler with lifecycle :=
+        { state.lifecycle with capabilities := next.capabilities } } := by
+    rcases hscheduler with ⟨_, hnodup, hcapacity, hready, hcurrent⟩
+    refine ⟨hlifecycle', hnodup, hcapacity, ?_, ?_⟩
+    · simpa [Scheduler.ownsAddressSpace, hschedulerCoherent, hsubjectsLifecycle]
+        using hready
+    · simpa [Scheduler.ownsAddressSpace, hschedulerCoherent, hsubjectsLifecycle]
+        using hcurrent
+  have hpreemption' : Preemption.WellFormed
+      { state.preemption with scheduler :=
+        { state.scheduler with lifecycle :=
+          { state.lifecycle with capabilities := next.capabilities } } } :=
+    ⟨hscheduler', hpreemption.2⟩
+  have hresumable' : ResumablePreemption.WellFormed
+      { state.resumable with
+        scheduler := { state.scheduler with lifecycle :=
+          { state.lifecycle with capabilities := next.capabilities } }
+        translations := { state.resumable.translations with virtual :=
+          { state.virtualMemory with memory :=
+            { state.virtualMemory.memory with capabilities := next.capabilities } } } } := by
+    rcases hresumable with
+      ⟨_, hcapacity, hunique, hvalid, habsent, hready, htranslation,
+        _hvirtual, hresources, htlb⟩
+    refine ⟨hscheduler', hcapacity, hunique, ?_, ?_, ?_, ?_, ⟨rfl, hvirtual'⟩, ?_, ?_⟩
+    · simpa [ResumablePreemption.validContext, hresumableSchedulerCoherent,
+        hschedulerCoherent, hsubjectsLifecycle] using hvalid
+    · simpa [hresumableSchedulerCoherent, hschedulerCoherent] using habsent
+    · simpa [ResumablePreemption.ReadyContextAgreement, hresumableSchedulerCoherent,
+        hschedulerCoherent] using hready
+    · simpa [ResumablePreemption.TranslationAgreement, hresumableVirtualCoherent,
+        hresumableSchedulerCoherent, hschedulerCoherent] using htranslation
+    · simpa [ResumablePreemption.ResourceKindAgreement, hresumableSchedulerCoherent,
+        hschedulerCoherent, hkindsLifecycle] using hresources
+    · simpa [TLB.Coherent] using htlb
+  have hexecution' : WellFormed
+      { state.execution with
+        core := { state.execution.core with lifecycle :=
+          { state.lifecycle with capabilities := next.capabilities } }
+        returnAuthorityArmed := false } := by
+    rcases hexecution with ⟨_, _hbound, hmodeWellFormed⟩
+    refine ⟨?_, by simp, ?_⟩
+    · simpa [Interrupt.WellFormed] using hlifecycle'
+    · simpa using hmodeWellFormed
+  constructor
+  · simp only [gate, hmode, applyOperation, haccepted]
+    refine ⟨?_, hexecution', hlifecycle', hcapabilities', hvirtual', hipc',
+      hscheduler', hpreemption', hresumable', htransfer, ?_, ?_⟩
+    · simp [installTransfers, CompositeState.Coherent]
+      refine ⟨?_, ?_, ?_⟩
+      · intro subject hcurrent
+        exact hauthorityCoherent subject hcurrent
+      · intro object hfalse
+        apply htransfer.1.2.2.2.1 object
+        intro htrue
+        have hfalse' : next.capabilities.objects object = false := by
+          simpa [next] using hfalse
+        rw [htrue] at hfalse'
+        contradiction
+      · intro object envelope hmailbox
+        exact hliveMailbox' object envelope hmailbox
+    · simpa [installTransfers] using hhalted
+    · simp [installTransfers]
+  · simp [gate, hmode, operationReply, haccepted]
 
 /-- An accepted public transfer receipt preserves the authoritative capability
 invariant and reports the exact provenance-bearing envelope and installed
@@ -3989,6 +4169,33 @@ theorem ipc_operationPreservesRuntimeWellFormed call :
   | receive handleWord =>
       exact ipcReceive_operationPreservesRuntimeWellFormed handleWord
 
+/-- Every public sealed-transfer offer is now a complete composite operation
+family: authority/handle failures are typed atomic rejections, while success
+publishes the exact pending descendant and endpoint mailbox without weakening
+any runtime invariant. -/
+theorem transferOffer_operationPreservesRuntimeWellFormed endpointWord sourceWord sourceKind
+    payload rights :
+    OperationPreservesRuntimeWellFormed
+      (.transferOffer endpointWord sourceWord sourceKind payload rights) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hoffer : CapabilityTransfer.offerWords state.transfers
+        state.execution.core.context.currentSubject endpointWord sourceWord sourceKind payload rights with
+    | mk next result =>
+        cases result with
+        | accepted =>
+            exact (gate_transferOffer_accepted_preserves_runtimeWellFormed state endpointWord
+              sourceWord sourceKind payload rights hstate hmode (by simp [hoffer])).1
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.transferOffer endpointWord sourceWord sourceKind payload rights)
+              (.transferOffer (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hoffer])
+              (.transferOffer endpointWord sourceWord sourceKind payload rights reason
+                (by simp [hoffer]))).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.transferOffer endpointWord sourceWord sourceKind payload rights) hstate hmode
+
 /-! ### Accepted termination cleanup
 
 Subject termination is published through the authoritative resumable cleanup,
@@ -4708,14 +4915,17 @@ The constructors below are exactly the operation families whose accepted and
 rejected results have complete global-preservation proofs.  Keeping this as a
 syntactic predicate makes the current mixed-trace boundary reviewable: adding
 an operation requires its family theorem, while the still-open interrupt,
-preemption, transfer, and termination mutations cannot enter the advertised
-trace theorem accidentally. -/
+preemption, transfer-accept, and termination mutations cannot enter the
+advertised trace theorem accidentally. -/
 
 inductive RuntimeTraceOperation : Operation → Prop where
   | selectUserReturn purpose : RuntimeTraceOperation (.selectUserReturn purpose)
   | userReturn request : RuntimeTraceOperation (.userReturn request)
   | syscall call : RuntimeTraceOperation (.syscall call)
   | ipc call : RuntimeTraceOperation (.ipc call)
+  | transferOffer endpointWord sourceWord sourceKind payload rights :
+      RuntimeTraceOperation
+        (.transferOffer endpointWord sourceWord sourceKind payload rights)
   | capabilityCopy source destination destinationSlot rights :
       RuntimeTraceOperation
         (.capabilityCopy source destination destinationSlot rights)
@@ -4742,6 +4952,9 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
       exact userReturn_operationPreservesRuntimeWellFormed request
   | syscall call => exact syscall_operationPreservesRuntimeWellFormed call
   | ipc call => exact ipc_operationPreservesRuntimeWellFormed call
+  | transferOffer endpointWord sourceWord sourceKind payload rights =>
+      exact transferOffer_operationPreservesRuntimeWellFormed endpointWord sourceWord
+        sourceKind payload rights
   | capabilityCopy source destination destinationSlot rights =>
       exact capabilityCopy_operationPreservesRuntimeWellFormed
         source destination destinationSlot rights

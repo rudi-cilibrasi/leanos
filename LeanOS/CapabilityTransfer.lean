@@ -1186,6 +1186,119 @@ theorem offerWords_accepted_preserves_wellFormed state caller endpointWord sourc
   · simp [offerWords, hendpoint, hsource, hgeneration, reject] at haccepted
   · simpa [offerWords, hendpoint, hsource, hgeneration] using hpreserved
 
+/-- Reserving a sealed descendant changes only append-only identity metadata
+and the selected endpoint's mailbox/pending record.  In particular, it cannot
+create or retire a subject/object, change an object's kind, or install a live
+slot.  These projection laws let the composite gate publish an accepted offer
+without treating lifecycle synchronization as a repair step. -/
+theorem offerWords_accepted_preserves_authority_registry state caller endpointWord sourceWord
+    sourceKind payload rights
+    (haccepted : (offerWords state caller endpointWord sourceWord sourceKind
+      payload rights).result = .accepted) :
+    let next := (offerWords state caller endpointWord sourceWord sourceKind payload rights).state
+    next.capabilities.subjects = state.capabilities.subjects ∧
+      next.capabilities.objects = state.capabilities.objects ∧
+      next.capabilities.kinds = state.capabilities.kinds ∧
+      next.capabilities.slots = state.capabilities.slots ∧
+      next.allocator = state.allocator ∧
+      next.binding = state.binding ∧
+      next.issued = state.issued ∧
+      next.issuedAddressSpace = state.issuedAddressSpace := by
+  obtain ⟨endpoint, source, hendpoint, hsource, hraw⟩ :=
+    offerWords_accepted_resolves state caller endpointWord sourceWord sourceKind
+      payload rights haccepted
+  by_cases hgeneration : state.capabilities.nextIdentity = 0 ∨
+      CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity
+  · simp [offerWords, hendpoint, hsource, hgeneration, reject] at haccepted
+  · simp only [offerWords, hendpoint, hsource, hgeneration]
+    simp only [offer] at hraw ⊢
+    split at hraw <;> try contradiction
+    split at hraw <;> try contradiction
+    split at hraw <;> try contradiction
+    split at hraw <;> try contradiction
+    split at hraw <;> try contradiction
+    split at hraw <;> try contradiction
+    split at hraw <;> try contradiction
+    split at hraw <;> try contradiction
+    split at hraw <;> try contradiction
+    split at hraw <;> try contradiction
+    cases hraw
+    simp_all [record, setPending]
+
+/-- A successful offer introduces only a mailbox envelope whose sender is the
+trusted caller.  Every other mailbox retains its prior sender, so composite
+sender-liveness is preserved when the authoritative caller is live. -/
+theorem offerWords_accepted_preserves_live_mailbox_senders state caller endpointWord sourceWord
+    sourceKind payload rights
+    (hcaller : state.capabilities.subjects caller = true)
+    (hsenders : ∀ object envelope, state.mailbox object = some envelope →
+      state.capabilities.subjects envelope.sender = true)
+    (haccepted : (offerWords state caller endpointWord sourceWord sourceKind
+      payload rights).result = .accepted) :
+    ∀ object envelope,
+      (offerWords state caller endpointWord sourceWord sourceKind payload rights).state.mailbox
+          object = some envelope →
+        (offerWords state caller endpointWord sourceWord sourceKind payload rights).state.capabilities.subjects
+          envelope.sender = true := by
+  obtain ⟨endpoint, source, hendpoint, hsource, hraw⟩ :=
+    offerWords_accepted_resolves state caller endpointWord sourceWord sourceKind
+      payload rights haccepted
+  by_cases hgeneration : state.capabilities.nextIdentity = 0 ∨
+      CapabilityHandle.generationReserved ≤ state.capabilities.nextIdentity
+  · simp [offerWords, hendpoint, hsource, hgeneration, reject] at haccepted
+  · intro object envelope hmailbox
+    have hnext :
+        (offerWords state caller endpointWord sourceWord sourceKind payload rights).state =
+          (offer state caller endpoint.handle.slot source.handle.slot payload rights).state := by
+      simp [offerWords, hendpoint, hsource, hgeneration]
+    rw [hnext] at hmailbox ⊢
+    simp only [offer] at hraw
+    split at hraw <;> try contradiction
+    next endpointCap hendpointLookup =>
+      split at hraw <;> try contradiction
+      split at hraw <;> try contradiction
+      split at hraw <;> try contradiction
+      split at hraw <;> try contradiction
+      split at hraw <;> try contradiction
+      split at hraw <;> try contradiction
+      split at hraw <;> try contradiction
+      split at hraw <;> try contradiction
+      split at hraw <;> try contradiction
+      cases hraw
+      by_cases heq : object = endpointCap.object
+      · subst object
+        have henv :
+            ({ endpoint := endpointCap.object, sender := caller, payload } :
+              EndpointIPC.Envelope) = envelope := by
+          simp [offer, hendpointLookup, record, EndpointIPC.setOption, *] at hmailbox
+          exact hmailbox
+        rw [← henv]
+        simp [offer, hendpointLookup, record, *]
+      · have hold := hsenders object envelope (by
+          simp [offer, hendpointLookup, record, EndpointIPC.setOption, heq, *] at hmailbox
+          exact hmailbox)
+        simp [offer, hendpointLookup, record, *]
+
+theorem offerWords_accepted_caller_live state caller endpointWord sourceWord sourceKind
+    payload rights
+    (haccepted : (offerWords state caller endpointWord sourceWord sourceKind
+      payload rights).result = .accepted) :
+    state.capabilities.subjects caller = true := by
+  obtain ⟨endpoint, _source, hendpoint, _hsource, _hraw⟩ :=
+    offerWords_accepted_resolves state caller endpointWord sourceWord sourceKind
+      payload rights haccepted
+  simp only [CapabilityHandle.resolveCurrent] at hendpoint
+  split at hendpoint <;> try contradiction
+  next handle hdecode =>
+    cases hresolve : CapabilityHandle.resolve state.capabilities caller handle .endpoint with
+    | error reason => simp [hresolve] at hendpoint
+    | ok capability =>
+        simp only [hresolve] at hendpoint
+        simp only [CapabilityHandle.resolve] at hresolve
+        split at hresolve
+        · simp at hresolve
+        · simp_all
+
 set_option maxHeartbeats 800000 in
 theorem accept_rejected_unchanged state caller endpointSlot destinationSlot reason
     (h : (accept state caller endpointSlot destinationSlot).result = .rejected reason) :
