@@ -3766,6 +3766,44 @@ theorem gate_terminateSubject_accepted_preserves_schedulerWellFormed
     · simpa [gate, hmode, applyOperation, haccepted, installResumable,
         installLifecycle] using hticks
 
+/-- Accepted termination preserves the saved-context bank's capacity,
+uniqueness, validity, current-subject exclusion, and ready-queue agreement
+under the same resumable-peer condition.  These are the context-specific
+components of `ResumablePreemption.WellFormed`; the virtual-memory projection
+is deliberately left to the resource-cleanup integration slice. -/
+theorem gate_terminateSubject_accepted_preserves_resumableContextBank
+    state subject
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted)
+    (hreadyPeer :
+      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.lifecycle.current.isSome →
+      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler.ready ≠ []) :
+    let next := (gate state (.terminateSubject subject)).state.resumable
+    next.contexts.length ≤ next.capacity ∧
+      next.contexts.Pairwise (fun first second => first.owner ≠ second.owner) ∧
+      (∀ context, context ∈ next.contexts →
+        ResumablePreemption.validContext next context) ∧
+      (∀ candidate, next.scheduler.lifecycle.current = some candidate →
+        ResumablePreemption.contextFor next.contexts candidate = none) ∧
+      ResumablePreemption.ReadyContextAgreement next := by
+  have hcleanup := ResumablePreemption.cleanupSubject_preserves_wellFormed
+    state.resumable subject hstate.2.2.2.2.2.2.2.2.1 hreadyPeer
+  rcases hcleanup with
+    ⟨_, hcapacity, hunique, hvalid, habsent, hready, _, _, _, _⟩
+  simp only
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
+      installLifecycle] using hcapacity
+  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
+      installLifecycle] using hunique
+  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
+      installLifecycle, ResumablePreemption.validContext] using hvalid
+  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
+      installLifecycle] using habsent
+  · simpa [gate, hmode, applyOperation, haccepted, installResumable,
+      installLifecycle, ResumablePreemption.ReadyContextAgreement] using hready
+
 /-! ### Scheduler rejection preservation
 
 The raw accepted dispatch/yield/tick operations do not yet own the resumable
