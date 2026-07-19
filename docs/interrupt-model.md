@@ -200,8 +200,15 @@ The accepted boot-reservation manifest now carries distinct
 `.ordinaryEntryGuard` and `.ordinaryEntryStack` identities. Allocator
 initialization rejects non-adjacency or overlap with page tables, descriptor
 tables, the separate double-fault stack reservation, or embedded user images;
-the enclosing loaded-image reservation intentionally contains both. Forced
-overflow through IST1 remains future integration work. The stable
+the enclosing loaded-image reservation intentionally contains both. A separate
+deterministic image places `RSP` at the ordinary guard boundary before raising
+a real exception. Delivery crosses the absent guard and escalates to vector 8
+on IST1. Its terminal record requires the IST1 range and canaries, both
+ordinary-stack boundary canaries, the absent guard, no ordinary handler, and no
+return. The shared evidence matrix retains that image, ELF, map, and serial log;
+adversarial runner fixtures reject a direct-handler claim, mapped guard, stale
+`rsp0`, adjacent write, partial or reordered output, reset, triple fault, and
+hang. This is checked x86/QEMU evidence rather than a refinement proof. The stable
 `SC-PRIVILEGE-ENTRY-STACK` claim covers only accepted authorization in this
 Lean layout/budget model. [ADR 0010](adr/0010-guarded-privilege-entry-stack.md)
 records the separate checked machine evidence and its trusted boundary.

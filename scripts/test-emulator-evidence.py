@@ -100,6 +100,18 @@ def run_fixtures() -> None:
             "mandatory inventory count differs",
         )
 
+        missing_entry_overflow = tmp / "missing-entry-overflow.tsv"
+        mutate_matrix(
+            missing_entry_overflow,
+            lambda lines: [
+                line for line in lines if not line.startswith("entry-stack-overflow\t")
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_entry_overflow),
+            "mandatory inventory count differs",
+        )
+
         wrong_class = tmp / "wrong-class.tsv"
         mutate_matrix(
             wrong_class,

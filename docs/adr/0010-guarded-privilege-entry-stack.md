@@ -54,9 +54,14 @@ missed and the scan is cumulative rather than path-isolated. Kernel-origin
 diagnostic faults remain on the active boot stack rather than switching through
 `rsp0`, so this ordinary-stack evidence makes no claim about their high-water
 use. It neither contributes authority nor replaces the static gate. Controlled
-ordinary-stack exhaustion through IST1, including
-the required adversarial runner rejections and terminal evidence, remains future
-integration work.
+ordinary-stack exhaustion is checked by a separate image that positions `RSP`
+at the real unmapped ordinary guard and raises an exception. The resulting
+delivery fault escalates to vector 8 on IST1. The terminal protocol requires
+in-range IST1 evidence, intact IST1 and ordinary-stack boundary canaries, the
+absent guard, no ordinary handler, and no return. Adversarial runner fixtures
+reject direct-handler, mapped-guard, stale-`rsp0`, adjacent-write, partial,
+reordered, reset, triple-fault, and hang evidence. This observation relies on
+the trusted machine boundary and is not part of the Lean claim.
 
 ## Trusted computing base and claim limit
 
