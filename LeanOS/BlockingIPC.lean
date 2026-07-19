@@ -316,16 +316,39 @@ def cancelSubject (state : State) (subject : SubjectId) : State :=
   | none => state
   | some _ =>
     let live := state.scheduler.lifecycle.capabilities.subjects subject
-    { state with
-      waiters := removeWaiter state.waiters subject
-      waiterEndpoint := setWaiterEndpoint state.waiterEndpoint subject none
-      completion := setCompletion state.completion subject (some .cancelled)
-      scheduler := { state.scheduler with
-        ready := if live then state.scheduler.ready ++ [subject] else state.scheduler.ready
-        lifecycle := { state.scheduler.lifecycle with
-          runnable := if live then
-            SubjectLifecycle.setBool state.scheduler.lifecycle.runnable subject true
-          else state.scheduler.lifecycle.runnable } } }
+    if live && state.scheduler.capacity ≤ state.scheduler.ready.length then state
+    else
+      { state with
+        waiters := removeWaiter state.waiters subject
+        waiterEndpoint := setWaiterEndpoint state.waiterEndpoint subject none
+        completion := setCompletion state.completion subject (some .cancelled)
+        scheduler := { state.scheduler with
+          ready := if live then state.scheduler.ready ++ [subject] else state.scheduler.ready
+          lifecycle := { state.scheduler.lifecycle with
+            runnable := if live then
+              SubjectLifecycle.setBool state.scheduler.lifecycle.runnable subject true
+            else state.scheduler.lifecycle.runnable } } }
+
+inductive CancelResult where
+  | notWaiting | cancelled | rejected (reason : Error)
+  deriving DecidableEq, Repr
+
+structure CancelOutcome where
+  state : State
+  result : CancelResult
+
+/-- Waiter removal, cancellation reservation, and wakeup are one typed
+transition.  A live waiter cannot be detached unless the bounded ready queue
+can admit it; a full queue therefore rejects with the identical pre-state. -/
+def cancelSubjectTyped (state : State) (subject : SubjectId) : CancelOutcome :=
+  match state.waiterEndpoint subject with
+  | none => { state, result := .notWaiting }
+  | some _ =>
+      if state.scheduler.lifecycle.capabilities.subjects subject &&
+          state.scheduler.capacity ≤ state.scheduler.ready.length then
+        { state, result := .rejected .readyQueueFull }
+      else
+        { state := cancelSubject state subject, result := .cancelled }
 
 def cancelEndpoint (state : State) (endpoint : ObjectId) : State :=
   (state.waiters endpoint).foldl cancelSubject state
@@ -500,6 +523,90 @@ def terminate (state : State) (subject : SubjectId) : State :=
       lifecycle := lifecycle.state
       ready := state.scheduler.ready.filter (· ≠ subject) } } subject
 
+/-! ## Invariant preservation
+
+These total preservation laws are the dependency-local composition boundary.
+They retain the authoritative blocking invariant, but do not by themselves
+discharge the composite resumable-context obligation: publishing a block must
+also save the outgoing caller and consume the selected destination context. -/
+
+set_option maxHeartbeats 500000 in
+set_option maxRecDepth 100000 in
+theorem receiveOrBlock_preserves_wellFormed state caller slot
+    (hwf : WellFormed state) :
+    WellFormed (receiveOrBlock state caller slot).state := by
+  unfold receiveOrBlock
+  split <;> simp_all (config := { maxSteps := 3000000 }) [rejectReceive, WellFormed,
+    authorizedReceive, setCompletion, setMailbox, allWaiters, blockState, setWaiters,
+    setWaiterEndpoint, Scheduler.WellFormed, Scheduler.ownsAddressSpace,
+    SubjectLifecycle.WellFormed, SubjectLifecycle.setBool] <;> grind
+
+set_option maxHeartbeats 500000 in
+set_option maxRecDepth 100000 in
+theorem send_preserves_wellFormed state caller slot payload
+    (hwf : WellFormed state) :
+    WellFormed (send state caller slot payload).state := by
+  unfold send
+  split <;> simp_all (config := { maxSteps := 3000000 }) [reject, WellFormed,
+    authorizedReceive, wakeState, setWaiters, setWaiterEndpoint, setCompletion,
+    setMailbox, Scheduler.WellFormed, Scheduler.ownsAddressSpace,
+    SubjectLifecycle.WellFormed, SubjectLifecycle.setBool] <;> grind
+
+theorem receiveOrBlockWord_preserves_wellFormed state caller word
+    (hwf : WellFormed state) :
+    WellFormed (receiveOrBlockWord state caller word).state := by
+  unfold receiveOrBlockWord
+  split
+  · exact hwf
+  · exact receiveOrBlock_preserves_wellFormed state caller _ hwf
+
+theorem sendWord_preserves_wellFormed state caller word payload
+    (hwf : WellFormed state) :
+    WellFormed (sendWord state caller word payload).state := by
+  unfold sendWord
+  split
+  · exact hwf
+  · exact send_preserves_wellFormed state caller _ payload hwf
+
+/-- Cancellation never grows a full ready queue. -/
+theorem cancelSubject_ready_length_le_capacity state subject
+    (hcapacity : state.scheduler.ready.length ≤ state.scheduler.capacity) :
+    (cancelSubject state subject).scheduler.ready.length ≤
+      (cancelSubject state subject).scheduler.capacity := by
+  simp only [cancelSubject]
+  split
+  · exact hcapacity
+  · dsimp
+    split
+    · exact hcapacity
+    · split <;> simp_all
+
+theorem cancelSubject_full_ready_unchanged state subject endpoint
+    (hwaiter : state.waiterEndpoint subject = some endpoint)
+    (hfull : state.scheduler.ready.length = state.scheduler.capacity) :
+    (cancelSubject state subject).scheduler.ready = state.scheduler.ready := by
+  by_cases hlive : state.scheduler.lifecycle.capabilities.subjects subject = true
+  · simp [cancelSubject, hwaiter, hlive, hfull]
+  · simp [cancelSubject, hwaiter, hlive]
+
+theorem cancelSubjectTyped_rejected_unchanged state subject reason
+    (hrejected : (cancelSubjectTyped state subject).result = .rejected reason) :
+    (cancelSubjectTyped state subject).state = state := by
+  simp only [cancelSubjectTyped] at hrejected ⊢
+  split
+  · simp at hrejected
+  · dsimp
+    split <;> simp_all
+
+theorem cancelSubjectTyped_cancelled_exact state subject
+    (hcancelled : (cancelSubjectTyped state subject).result = .cancelled) :
+    (cancelSubjectTyped state subject).state = cancelSubject state subject := by
+  simp only [cancelSubjectTyped] at hcancelled ⊢
+  split
+  · simp at hcancelled
+  · dsimp
+    split <;> simp_all
+
 theorem wake_reserves_exact_envelope state endpoint receiver envelope :
     (wakeState state endpoint receiver envelope).completion receiver =
       some (.delivered envelope) := by
@@ -525,17 +632,26 @@ theorem wake_no_lost_wakeup state endpoint receiver envelope :
 
 theorem cancel_waiter_cleanup state endpoint subject
     (h : state.waiterEndpoint subject = some endpoint) :
+    (state.scheduler.lifecycle.capabilities.subjects subject = false ∨
+      state.scheduler.ready.length < state.scheduler.capacity) →
     (cancelSubject state subject).waiterEndpoint subject = none ∧
       (cancelSubject state subject).completion subject = some .cancelled ∧
       subject ∉ (cancelSubject state subject).waiters endpoint := by
-  simp [cancelSubject, h, setWaiterEndpoint, setCompletion, removeWaiter]
+  intro hroom
+  rcases hroom with hdead | hroom
+  · simp [cancelSubject, h, hdead, setWaiterEndpoint, setCompletion, removeWaiter]
+  · by_cases hlive : state.scheduler.lifecycle.capabilities.subjects subject = true
+    · simp [cancelSubject, h, hlive, Nat.not_le.mpr hroom, setWaiterEndpoint,
+        setCompletion, removeWaiter]
+    · simp [cancelSubject, h, hlive, setWaiterEndpoint, setCompletion, removeWaiter]
 
 theorem cancel_live_waiter_wakes state endpoint subject
     (hwait : state.waiterEndpoint subject = some endpoint)
-    (hlive : state.scheduler.lifecycle.capabilities.subjects subject = true) :
+    (hlive : state.scheduler.lifecycle.capabilities.subjects subject = true)
+    (hroom : state.scheduler.ready.length < state.scheduler.capacity) :
     (cancelSubject state subject).scheduler.lifecycle.runnable subject = true ∧
       subject ∈ (cancelSubject state subject).scheduler.ready := by
-  simp [cancelSubject, hwait, hlive, SubjectLifecycle.setBool]
+  simp [cancelSubject, hwait, hlive, Nat.not_le.mpr hroom, SubjectLifecycle.setBool]
 
 theorem wellFormed_waiter_properties state endpoint subject (hwf : WellFormed state)
     (hmember : subject ∈ state.waiters endpoint) :
