@@ -42,6 +42,28 @@ done
 grep -Fq 'and $~1, %eax' "$boot_source" || {
   echo "error: fast-entry control does not clear EFER.SCE" >&2; exit 1;
 }
+# After the EFER write, EAX/EDX must remain the reviewed zero pair through the
+# STAR/LSTAR/CSTAR/SFMASK and every SYSENTER write.  This source
+# gate complements the final-ELF instruction count by rejecting a stale,
+# noncanonical, or merely nonzero target value without pretending to execute
+# privileged MSR accesses on the host.
+target_write_recipe="$(sed -n \
+  '/^\.global normalize_fast_entry_efer_write$/,/^\.global normalize_extended_state_cr0$/p' \
+  "$boot_source")"
+[[ -n "$target_write_recipe" ]] || {
+  echo "error: fast-entry target write recipe is missing" >&2; exit 1;
+}
+unexpected_target_value_write="$(
+  grep -E '^[[:space:]]*[[:alnum:]]+[[:space:]].*,[[:space:]]*%(e|r)(ax|dx)[[:space:]]*$' \
+    <<<"$target_write_recipe" \
+  | grep -Ev '^[[:space:]]*xor %eax, %eax$|^[[:space:]]*xor %edx, %edx$' \
+  || true
+)"
+[[ -z "$unexpected_target_value_write" ]] || {
+  echo "error: fast-entry target write recipe can introduce nonzero state" >&2
+  echo "$unexpected_target_value_write" >&2
+  exit 1
+}
 grep -Fq 'check_fast_entry_control();' "$kernel_source" || {
   echo "error: fast-entry control read-back is not boot-reachable" >&2; exit 1;
 }

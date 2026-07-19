@@ -100,7 +100,8 @@ their labeled sites, and no SYSCALL, SYSENTER, SYSRET, or SYSEXIT opcode in
 production images. Each deliberate probe image contains exactly one expected
 SYSCALL or SYSENTER instruction at the exported probe label and rejects every
 other fast-entry opcode. Controlled fixtures reject inherited SCE, an omitted
-boot or return-gate readback, and an extra MSR write. The two QEMU scenarios
+boot or return-gate readback, an extra MSR write, stale or noncanonical LSTAR,
+and a non-denying SYSENTER control value. The two QEMU scenarios
 record the CPU/MSR snapshot, raw vector-6 denial, unreachable alternate target,
 complete attacker cleanup, validated peer return, survivor canaries, exact
 serial transcript, command, image, ELF, and hashes as tested evidence.
