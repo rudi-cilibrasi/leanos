@@ -7155,4 +7155,153 @@ example (state : CompositeState) (record : HaltRecord)
       .capabilityRevoke 0 1 0, .unmap 0, .terminateSubject 0] = state := by
   simp [runOperations, gate, hhalted]
 
+/-! ## Executable mixed-trace regressions
+
+These fixtures exercise the public composite boundaries rather than only the
+dependency-local transitions.  The arbitrary compiled plan and unrelated
+composite fields are deliberately parametric: evaluation can therefore depend
+only on the authoritative state selected by each operation. -/
+
+private def lifecycleEvidenceCreated (plan : BootPageTablePlan.Plan) : CompositeState :=
+  (gate (bootRuntime plan) (.createSubject 1)).state
+
+private def lifecycleEvidenceDuplicate (plan : BootPageTablePlan.Plan) : GateOutcome :=
+  gate (lifecycleEvidenceCreated plan) (.createSubject 1)
+
+private def lifecycleEvidenceTerminated (plan : BootPageTablePlan.Plan) : CompositeState :=
+  (gate (lifecycleEvidenceDuplicate plan).state (.terminateSubject 1)).state
+
+private def lifecycleEvidenceStaleTermination (plan : BootPageTablePlan.Plan) : GateOutcome :=
+  gate (lifecycleEvidenceTerminated plan) (.terminateSubject 1)
+
+/-- One executable trace contains accepted creation, an atomic duplicate
+rejection, accepted cross-subsystem cleanup, and an atomic stale-lifetime
+rejection.  Issuance remains monotonic while every live projection retires the
+subject. -/
+example (plan : BootPageTablePlan.Plan) :
+    (lifecycleEvidenceDuplicate plan).result =
+      .completed (.createSubject (.rejected .alreadyLive)) ∧
+    (lifecycleEvidenceStaleTermination plan).result =
+      .completed (.terminateSubject (.rejected .alreadyTerminated)) ∧
+    (lifecycleEvidenceTerminated plan).lifecycle.issuedSubjects 1 = true ∧
+    (lifecycleEvidenceTerminated plan).capabilities.subjects 1 = false ∧
+    (lifecycleEvidenceTerminated plan).scheduler.lifecycle.capabilities.subjects 1 = false ∧
+    (lifecycleEvidenceTerminated plan).blockingIPC.scheduler.lifecycle.capabilities.subjects 1 =
+      false := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> rfl
+
+private def blockingEvidenceCapability (rights : Capability.Rights) : Capability.Capability :=
+  { object := 10, kind := .endpoint, rights, identity := 1 }
+
+private def blockingEvidenceCapabilities : Capability.State :=
+  { subjects := fun subject => subject < 4
+    objects := fun object => object = 10
+    kinds := fun object => if object = 10 then some .endpoint else none
+    slots := fun subject slot =>
+      if slot != 0 then none
+      else if subject = 1 then some (blockingEvidenceCapability { send := true })
+      else if subject = 2 || subject = 3 then
+        some (blockingEvidenceCapability { receive := true })
+      else none }
+
+private def blockingEvidenceLifecycle (current : Option SubjectLifecycle.SubjectId) :
+    SubjectLifecycle.State :=
+  { capabilities := blockingEvidenceCapabilities
+    issuedSubjects := fun subject => subject < 4
+    ownedMemory := fun _ => none
+    addressOwner := fun space => if space < 4 then some space else none
+    mapping := fun _ _ => none
+    endpointOwner := fun object => if object = 10 then some 0 else none
+    mailbox := fun _ => none
+    frameOwner := fun _ => none
+    freeFrame := fun _ => true
+    runnable := fun subject => subject < 4
+    current }
+
+private def blockingEvidenceStore : BlockingIPC.State :=
+  { scheduler :=
+      { lifecycle := blockingEvidenceLifecycle (some 2), ready := [1, 3], capacity := 3 }
+    mailbox := fun _ => none
+    waiters := fun _ => []
+    waiterEndpoint := fun _ => none
+    waiterCapacity := 2
+    completion := fun _ => none }
+
+private def blockingEvidenceComposite (state : CompositeState) : CompositeState :=
+  { state with
+    execution := { state.execution with
+      core := { state.execution.core with
+        lifecycle := blockingEvidenceLifecycle (some 2)
+        context := { state.execution.core.context with
+          currentSubject := 2, activeAddressSpace := 2 } }
+      mode := .running }
+    scheduler := blockingEvidenceStore.scheduler
+    lifecycle := blockingEvidenceLifecycle (some 2)
+    blockingIPC := blockingEvidenceStore }
+
+private def blockingEvidenceBlocked (state : CompositeState) : CompositeBlockingIPCOutcome :=
+  dispatchBlockingIPC (blockingEvidenceComposite state) (.receive 0x0000000000010000)
+
+private def blockingEvidenceWoken (state : CompositeState) : CompositeBlockingIPCOutcome :=
+  dispatchBlockingIPC (blockingEvidenceBlocked state).state
+    (.send 0x0000000000010000 0xCAFE 0xBEEF)
+
+/-- The authoritative composite path blocks receiver 2, switches to sender 1,
+wakes exactly receiver 2, and reserves the exact delivered envelope. -/
+example (state : CompositeState) :
+    (blockingEvidenceBlocked state).reply = .receive (.completed .blocked) ∧
+    (blockingEvidenceBlocked state).state.execution.core.context.currentSubject = 1 ∧
+    (blockingEvidenceWoken state).reply = .woke 2 ∧
+    (blockingEvidenceWoken state).state.blockingIPC.waiters 10 = [] ∧
+    (blockingEvidenceWoken state).state.blockingIPC.completion 2 = some (.delivered
+      { endpoint := 10, sender := 1, payload := { word0 := 0xCAFE, word1 := 0xBEEF } }) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> rfl
+
+/-- Stale fixed-width handles are rejected before any blocking state is
+published. -/
+example (state : CompositeState) :
+    (dispatchBlockingIPC (blockingEvidenceComposite state)
+      (.receive 0x0000000000020000)).reply =
+        .receive (.handleRejected (.denied .staleHandle)) ∧
+    (dispatchBlockingIPC (blockingEvidenceComposite state)
+      (.receive 0x0000000000020000)).state = blockingEvidenceComposite state := by
+  constructor
+  · rfl
+  · apply dispatchBlockingIPC_rejection_atomic _ _ _
+    · exact .receiveHandle (.denied .staleHandle)
+    · rfl
+
+/-- Revocation-style cancellation after blocking wakes the receiver exactly
+once; subject termination instead removes it without making the dead identity
+runnable.  Both cleanup paths are republished through the authoritative
+composite scheduler boundary. -/
+example (state : CompositeState) :
+    let blocked := (blockingEvidenceBlocked state).state
+    let cancelled := publishBlockingIPC blocked (BlockingIPC.cancelSubject blocked.blockingIPC 2)
+    let terminated := publishBlockingIPC blocked (BlockingIPC.terminate blocked.blockingIPC 2)
+    cancelled.blockingIPC.waiters 10 = [] ∧
+      cancelled.blockingIPC.completion 2 = some .cancelled ∧
+      cancelled.scheduler.lifecycle.runnable 2 = true ∧
+      terminated.blockingIPC.waiters 10 = [] ∧
+      terminated.scheduler.lifecycle.capabilities.subjects 2 = false := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> rfl
+
+/-- A concrete kernel fault latches the runtime before a heterogeneous suffix;
+the stale handle, IPC, revoke, unmap, termination, and restart operations are
+all absorbed byte-for-byte. -/
+example (state : CompositeState) :
+    let running := { state with execution := { state.execution with mode := .running } }
+    let halted := (gate running (.interrupt (demoFrame 14 .kernel))).state
+    halted.execution.mode = .halted
+      { reason := .kernelFault
+        active := some (activeEntry (demoFrame 14 .kernel))
+        incomingVector := 14
+        incomingOrigin := .kernel } ∧
+    runOperations halted [
+      .ipc (.receive 0x0000000000020000),
+      .capabilityRevoke 0 2 0, .unmap 0, .terminateSubject 2, .restart] = halted := by
+  simp [gate, applyOperation, operationReply, dispatchHardware, beginEntry, finishEntry,
+    activeEntry, demoFrame, Interrupt.dispatchHardware, Interrupt.decodeVector, mapFatal,
+    halt, installResumable, runOperations]
+
 end LeanOS.FailStop
