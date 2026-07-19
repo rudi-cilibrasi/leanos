@@ -73,6 +73,12 @@ for spec in "${specs[@]}"; do
       echo "error: fixture '$fixture' lacked its word-boundary injection record" >&2
       exit 1
     }
+  elif [[ "$fixture" == fast-entry-sce-relaxation ]]; then
+    grep -Fxq "LEANOS/9 RETURN fixture=${fixture} stage=machine-control result=INJECTED" \
+      "$log" || {
+      echo "error: fixture '$fixture' lacked its machine-control injection record" >&2
+      exit 1
+    }
   else
     grep -Fxq "LEANOS/9 RETURN fixture=${fixture} stage=outgoing-frame result=INJECTED" \
       "$log" || {

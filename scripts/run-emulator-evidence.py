@@ -58,6 +58,17 @@ REQUIRED_FAST_ENTRY_ROWS = {
         "mode": "-",
         "reason": "-",
     },
+    "return-fast-entry-sce-relaxation": {
+        "runner": "return",
+        "result_class": "controlled-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-fast-entry-sce-relaxation.iso",
+        "elf": "leanos-return-fast-entry-sce-relaxation.elf",
+        "serial_log": "return-corruption-fast-entry-sce-relaxation.serial.log",
+        "scenario": "fast-entry-sce-relaxation",
+        "mode": "14",
+        "reason": "fast-entry-efer-readback",
+    },
 }
 
 

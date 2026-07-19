@@ -548,13 +548,17 @@ static const char *return_corruption_name(uint64_t mode) {
     case 11: return "post-validation-mutation";
     case 12: return "blocking-context-canary";
     case 13: return "capability-reuse-generation";
+#if LEANOS_RETURN_CORRUPTION_MODE == 14
+    case 14: return "fast-entry-sce-relaxation";
+#endif
     default: return "none";
     }
 }
 
-/* Controlled negative images corrupt the actual outgoing frame immediately
-   before the production validator reads it. Each image must terminate here,
-   before the first user instruction or iret completion can be observed. */
+/* Controlled negative images corrupt the outgoing frame or one protected
+   machine control immediately before the production validator reads it. Each
+   image must terminate here, before the first user instruction or iret
+   completion can be observed. */
 static void inject_return_corruption(uint64_t *saved) {
     uint64_t mode = return_corruption_mode;
     if (mode == 0) return;
@@ -562,7 +566,9 @@ static void inject_return_corruption(uint64_t *saved) {
     if (mode == 13) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
-    serial_puts(" stage=outgoing-frame result=INJECTED\n");
+    serial_puts(mode == 14
+        ? " stage=machine-control result=INJECTED\n"
+        : " stage=outgoing-frame result=INJECTED\n");
     switch (mode) {
     case 1: saved[16] = 0x08; break;
     case 2: saved[19] = 0x10; break;
@@ -580,6 +586,17 @@ static void inject_return_corruption(uint64_t *saved) {
     case 10: current_subject = current_subject == 1 ? 2 : 1; break;
     case 11: break;
     case 12: saved[7] ^= 1; break;
+#if LEANOS_RETURN_CORRUPTION_MODE == 14
+    case 14: {
+        uint32_t low, high;
+        __asm__ volatile ("rdmsr" : "=a"(low), "=d"(high)
+            : "c"(UINT32_C(0xc0000080)));
+        low |= 1u;
+        __asm__ volatile ("wrmsr" : : "a"(low), "d"(high),
+            "c"(UINT32_C(0xc0000080)) : "memory");
+        break;
+    }
+#endif
     default: fail("user-return-fixture-mode");
     }
 }

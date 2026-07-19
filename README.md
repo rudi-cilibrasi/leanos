@@ -65,9 +65,11 @@ partial log does not pass. The executable scenarios currently include:
   CR3 changes, a switch from A to B, and resumption of A's original frame;
 - boot-time memory-map validation, reservation, frame scrubbing and publication,
   live page-table checks, WP/SMEP/SMAP probes, and bounded user-copy checks;
-- a dedicated double-fault IST fail-stop probe and a mapped-guard negative; and
-- twelve deliberately corrupted user-return images that must fail with their
-  expected typed rejection before reaching CPL3.
+- a dedicated double-fault IST fail-stop probe and a mapped-guard negative;
+- a controlled fast-entry machine-state relaxation that must be caught by the
+  live outbound MSR read-back before CPL3; and
+- a bounded suite of deliberately corrupted user-return images that must fail
+  with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
 75-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by

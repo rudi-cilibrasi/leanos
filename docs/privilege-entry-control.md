@@ -106,12 +106,19 @@ record the CPU/MSR snapshot, raw vector-6 denial, unreachable alternate target,
 complete attacker cleanup, validated peer return, survivor canaries, exact
 serial transcript, command, image, ELF, and hashes as tested evidence.
 
+One controlled QEMU image sets EFER.SCE after the boot read-back and immediately
+before the first outbound validation. The production return gate rereads the
+live tuple, emits the typed `fast-entry-efer-readback` terminal result, and no
+CPL3 entry or successful final record is accepted. This negative image is
+deliberately outside the production write inventory and is labeled controlled
+rejection evidence rather than an accepted control configuration.
+
 The repository-owned runner fixtures reject a missing entry manifest or control
 snapshot, wrong vector/error shape, stale binding, unexpected target execution,
 policy relaxation, attacker-selected survivor, kernel-origin containment,
 direct handler entry, partial or reordered output, reset, triple fault, and
 hang. Each successful probe also preserves a three-record CPU/CPUID/MSR/control
 snapshot beside the exact serial log. The remaining machine checkpoints are
-additional controlled build/guest mutations and the final global-invariant
-composition requested by follow-on #104. Those
+additional controlled target-MSR build/guest mutations and the final
+global-invariant composition requested by follow-on #104. Those
 results must be labeled checked/tested evidence, not Lean proof.

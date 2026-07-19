@@ -207,6 +207,24 @@ def run_fixtures() -> None:
             "mandatory fast-entry scenario fast-entry-sysenter has unexpected timeout",
         )
 
+        missing_fast_entry_mutation = tmp / "missing-fast-entry-mutation.tsv"
+        mutate_matrix(
+            missing_fast_entry_mutation,
+            lambda lines: [
+                line.replace(
+                    "return-fast-entry-sce-relaxation",
+                    "return-fast-entry-sce-relaxation-replacement",
+                )
+                if line.startswith("return-fast-entry-sce-relaxation\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_fast_entry_mutation),
+            "mandatory fast-entry scenario is absent: return-fast-entry-sce-relaxation",
+        )
+
         wrong_class = tmp / "wrong-class.tsv"
         mutate_matrix(
             wrong_class,
