@@ -2510,6 +2510,40 @@ theorem ipc_operationPreservesRuntimeWellFormed call :
   | receive handleWord =>
       exact ipcReceive_operationPreservesRuntimeWellFormed handleWord
 
+/-- A raw scheduler insertion cannot establish the resumable-context side of
+the composite invariant by itself.  If its published post-state is globally
+well formed, the inserted subject's saved context must already have been
+staged in the pre-state.  This is the precise integration obligation for the
+future complete `scheduleAdd` operation-family proof: admission must either
+require such a context or atomically construct one. -/
+theorem gate_scheduleAdd_accepted_runtimeWellFormed_requires_staged_context
+    state subject context next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Scheduler.add state.scheduler subject =
+      { state := next, result := .accepted context }) :
+    RuntimeWellFormed (gate state (.scheduleAdd subject)).state →
+      ∃ saved, saved ∈ state.resumable.contexts ∧ saved.owner = subject := by
+  intro hpost
+  have hready : subject ∈ next.ready := by
+    simp only [Scheduler.add] at haccepted
+    split at haccepted <;> try simp_all [Scheduler.reject]
+    split at haccepted <;> try simp_all [Scheduler.reject]
+    split at haccepted <;> try simp_all [Scheduler.reject]
+    next addressSpace haddressSpace =>
+      split at haccepted <;> try simp_all [Scheduler.reject]
+      split at haccepted <;> try simp_all [Scheduler.reject]
+      rcases haccepted with ⟨rfl, rfl⟩
+      simp
+  have hreadyPublished :
+      subject ∈ (gate state (.scheduleAdd subject)).state.resumable.scheduler.ready := by
+    simpa [gate, hmode, applyOperation, haccepted, installScheduler,
+      installLifecycle] using hready
+  rcases hpost with
+    ⟨_, _, _, _, _, _, _, _, hresumable, _, _, _⟩
+  have hagreement := hresumable.2.2.2.2.2.1.1 subject hreadyPublished
+  simpa [gate, hmode, applyOperation, haccepted, installScheduler,
+    installLifecycle] using hagreement
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
