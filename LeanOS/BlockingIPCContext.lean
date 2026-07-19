@@ -202,6 +202,66 @@ theorem receive_preserves_wellFormed state caller slot saved
               · simp [setBlocked, heq] at hactual
                 exact hvalid subject actual hactual
 
+theorem send_preserves_wellFormed state caller slot payload
+    (hwf : WellFormed state) :
+    WellFormed (send state caller slot payload).state := by
+  rcases hwf with ⟨hipc, hagreement, hvalid⟩
+  unfold send
+  generalize hraw : BlockingIPC.send state.ipc caller slot payload = outcome
+  have hrawWf := BlockingIPC.send_preserves_wellFormed state.ipc caller slot payload hipc
+  rw [hraw] at hrawWf
+  cases outcome with
+  | mk next result =>
+      cases result with
+      | rejected reason => exact ⟨hipc, hagreement, hvalid⟩
+      | accepted =>
+          have hresult :
+              (BlockingIPC.send state.ipc caller slot payload).result = .accepted := by
+            rw [hraw]
+          obtain ⟨actualEndpoint, hactualEndpoint, hprojection⟩ :=
+            BlockingIPC.send_accepted_waiterEndpoint_exact
+              state.ipc caller slot payload hresult
+          rw [hraw] at hprojection
+          split
+          · exact ⟨hipc, hagreement, hvalid⟩
+          next endpoint hendpoint =>
+            rw [hendpoint] at hactualEndpoint
+            injection hactualEndpoint with heq
+            subst actualEndpoint
+            split
+            next hqueue =>
+              rw [hqueue] at hprojection
+              exact ⟨hrawWf, by
+                constructor
+                · intro subject
+                  rw [hprojection]
+                  exact hagreement subject
+                · exact hvalid⟩
+            next receiver rest hqueue =>
+              rw [hqueue] at hprojection
+              have hsome : (state.blocked receiver).isSome = true := by
+                rw [hagreement receiver]
+                have hindexed := (hipc.2.2.2.2.1 endpoint receiver).mp (by simp [hqueue])
+                simp [hindexed]
+              cases hsaved : state.blocked receiver with
+              | none => simp [hsaved] at hsome
+              | some saved =>
+                  refine ⟨hrawWf, ?_⟩
+                  constructor
+                  · intro subject
+                    rw [hprojection]
+                    by_cases heq : subject = receiver
+                    · subst subject
+                      simp [setBlocked, BlockingIPC.setWaiterEndpoint]
+                    · simpa [setBlocked, BlockingIPC.setWaiterEndpoint, heq] using
+                        hagreement subject
+                  · intro subject actual hactual
+                    by_cases heq : subject = receiver
+                    · subst subject
+                      simp [setBlocked] at hactual
+                    · apply hvalid subject actual
+                      simpa [setBlocked, heq] using hactual
+
 theorem receive_contextRejected_unchanged state caller slot saved reason
     (hrejected : (receiveOrBlock state caller slot saved).result =
       .contextRejected reason) :
@@ -282,6 +342,48 @@ theorem send_released_exact state caller slot payload saved
                 subst actual
                 exact ⟨endpoint, receiver, rest, hendpoint, hwaiters, hsaved,
                   rfl, by simp [setBlocked]⟩
+
+theorem cancel_preserves_wellFormed state subject
+    (hwf : WellFormed state) :
+    WellFormed (cancel state subject).state := by
+  rcases hwf with ⟨hipc, hagreement, hvalid⟩
+  unfold cancel
+  split
+  · exact ⟨hipc, hagreement, hvalid⟩
+  next endpoint hwaiter =>
+    split
+    · exact ⟨hipc, hagreement, hvalid⟩
+    next saved hsaved =>
+      generalize hraw : BlockingIPC.cancelSubjectTyped state.ipc subject = outcome
+      have hrawWf := BlockingIPC.cancelSubjectTyped_preserves_wellFormed state.ipc subject hipc
+      rw [hraw] at hrawWf
+      cases outcome with
+      | mk next result =>
+          cases result with
+          | rejected reason => exact ⟨hipc, hagreement, hvalid⟩
+          | notWaiting => exact ⟨hipc, hagreement, hvalid⟩
+          | cancelled =>
+              have hresult :
+                  (BlockingIPC.cancelSubjectTyped state.ipc subject).result = .cancelled := by
+                rw [hraw]
+              have hprojection := BlockingIPC.cancelSubjectTyped_cancelled_waiterEndpoint_exact
+                state.ipc subject hresult
+              rw [hraw] at hprojection
+              refine ⟨hrawWf, ?_⟩
+              constructor
+              · intro candidate
+                rw [hprojection]
+                by_cases heq : candidate = subject
+                · subst candidate
+                  simp [setBlocked, BlockingIPC.setWaiterEndpoint]
+                · simpa [setBlocked, BlockingIPC.setWaiterEndpoint, heq] using
+                    hagreement candidate
+              · intro candidate actual hactual
+                by_cases heq : candidate = subject
+                · subst candidate
+                  simp [setBlocked] at hactual
+                · apply hvalid candidate actual
+                  simpa [setBlocked, heq] using hactual
 
 theorem cancel_rejected_unchanged state subject
     (hrejected : (cancel state subject).result ≠ .cancelled ∧

@@ -876,6 +876,120 @@ private theorem wakeState_preserves_wellFormed state endpoint receiver rest enve
     refine ⟨hlive, hkind, hend, ?_⟩
     simpa [wakeState, setWaiters, hne] using hempty
 
+private theorem cancelSubject_room_preserves_wellFormed state subject endpoint
+    (hwf : WellFormed state)
+    (hwaiter : state.waiterEndpoint subject = some endpoint)
+    (hlive : state.scheduler.lifecycle.capabilities.subjects subject = true)
+    (hroom : state.scheduler.ready.length < state.scheduler.capacity) :
+    WellFormed (cancelSubject state subject) := by
+  rw [show cancelSubject state subject =
+      { state with
+        waiters := removeWaiter state.waiters subject
+        waiterEndpoint := setWaiterEndpoint state.waiterEndpoint subject none
+        completion := setCompletion state.completion subject (some .cancelled)
+        scheduler := { state.scheduler with
+          ready := state.scheduler.ready ++ [subject]
+          lifecycle := { state.scheduler.lifecycle with
+            runnable := SubjectLifecycle.setBool state.scheduler.lifecycle.runnable subject true } } } by
+    simp [cancelSubject, hwaiter, hlive, Nat.not_le.mpr hroom]]
+  rcases hwf with ⟨hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcaps⟩
+  have hmember := (hindex endpoint subject).mpr hwaiter
+  rcases hwaiters endpoint subject hmember with
+    ⟨_, _, _, _, howns, hnotCurrent, hnotReady⟩
+  have hscheduler' : Scheduler.WellFormed
+      { state.scheduler with
+        ready := state.scheduler.ready ++ [subject]
+        lifecycle := { state.scheduler.lifecycle with
+          runnable := SubjectLifecycle.setBool state.scheduler.lifecycle.runnable subject true } } := by
+    rcases hscheduler with ⟨hlifecycle, hreadyNodup, hreadyCapacity,
+      hreadyProperties, hcurrentProperties⟩
+    rcases hlifecycle with ⟨hissued, hmemory, haddress, hendpoint, hrunnable, hcurrentLive⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · refine ⟨hissued, hmemory, haddress, hendpoint, ?_, hcurrentLive⟩
+      intro candidate hruns
+      by_cases heq : candidate = subject
+      · subst candidate
+        exact hlive
+      · apply hrunnable candidate
+        simpa [SubjectLifecycle.setBool, heq] using hruns
+    · simpa [List.nodup_append] using
+        And.intro hreadyNodup (fun candidate hready heq =>
+          hnotReady (by simpa [heq] using hready))
+    · simp
+      omega
+    · intro candidate hready
+      simp at hready
+      rcases hready with hold | heq
+      · rcases hreadyProperties candidate hold with ⟨hcandidateLive, hruns, hcowns⟩
+        have hne : candidate ≠ subject := by
+          intro heq
+          subst candidate
+          exact hnotReady hold
+        exact ⟨hcandidateLive, by simpa [SubjectLifecycle.setBool, hne],
+          by simpa [Scheduler.ownsAddressSpace] using hcowns⟩
+      · subst candidate
+        exact ⟨hlive, by simp [SubjectLifecycle.setBool],
+          by simpa [Scheduler.ownsAddressSpace] using howns⟩
+    · intro candidate hcurrent
+      rcases hcurrentProperties candidate hcurrent with ⟨hcandidateLive, hruns, hcowns, hcnotReady⟩
+      have hne : candidate ≠ subject := by
+        intro heq
+        subst candidate
+        exact hnotCurrent hcurrent
+      exact ⟨hcandidateLive, by simpa [SubjectLifecycle.setBool, hne],
+        by simpa [Scheduler.ownsAddressSpace] using hcowns,
+        by simp [hcnotReady, hne]⟩
+  refine ⟨hscheduler', ?_, ?_, ?_, ?_, ?_, hcaps⟩
+  · intro candidate
+    exact ⟨(hqueues candidate).1.filter _,
+      Nat.le_trans (List.length_filter_le _ _) (hqueues candidate).2⟩
+  · intro candidate blocked hblocked
+    have hold : blocked ∈ state.waiters candidate ∧ blocked ≠ subject := by
+      simpa [removeWaiter] using hblocked
+    rcases hwaiters candidate blocked hold.1 with
+      ⟨hliveEndpoint, hauthority, hblockedLive, hblockedState, hblockedOwns,
+        hblockedNotCurrent, hblockedNotReady⟩
+    exact ⟨hliveEndpoint, hauthority, hblockedLive,
+      by simpa [SubjectLifecycle.setBool, hold.2],
+      by simpa [Scheduler.ownsAddressSpace] using hblockedOwns,
+      hblockedNotCurrent, by simp [hblockedNotReady, hold.2]⟩
+  · intro first second blocked hfirst hsecond
+    exact hunique first second blocked
+      (List.mem_filter.mp hfirst).1 (List.mem_filter.mp hsecond).1
+  · intro candidate blocked
+    by_cases heq : blocked = subject
+    · subst blocked
+      simp [removeWaiter, setWaiterEndpoint]
+    · simpa [removeWaiter, setWaiterEndpoint, heq] using hindex candidate blocked
+  · intro candidate envelope hmail
+    rcases hmailbox candidate envelope hmail with ⟨hliveEndpoint, hkind, hend, hempty⟩
+    exact ⟨hliveEndpoint, hkind, hend, by simp [removeWaiter, hempty]⟩
+
+theorem cancelSubjectTyped_preserves_wellFormed state subject
+    (hwf : WellFormed state) :
+    WellFormed (cancelSubjectTyped state subject).state := by
+  simp only [cancelSubjectTyped]
+  split
+  · exact hwf
+  next endpoint hwaiter =>
+    split
+    · exact hwf
+    next hcapacity =>
+      have hlive : state.scheduler.lifecycle.capabilities.subjects subject = true := by
+        have hmember := (hwf.2.2.2.2.1 endpoint subject).mpr hwaiter
+        exact (hwf.2.2.1 endpoint subject hmember).2.2.1
+      apply cancelSubject_room_preserves_wellFormed state subject endpoint hwf hwaiter hlive
+      simp [hlive] at hcapacity
+      omega
+
+theorem cancelSubjectTyped_cancelled_waiterEndpoint_exact state subject
+    (hresult : (cancelSubjectTyped state subject).result = .cancelled) :
+    (cancelSubjectTyped state subject).state.waiterEndpoint =
+      setWaiterEndpoint state.waiterEndpoint subject none := by
+  unfold cancelSubjectTyped cancelSubject at hresult ⊢
+  split <;> simp_all [setWaiterEndpoint]
+  split <;> simp_all [setWaiterEndpoint]
+
 theorem receiveOrBlock_preserves_wellFormed state caller slot
     (hwf : WellFormed state) :
     WellFormed (receiveOrBlock state caller slot).state := by
@@ -969,8 +1083,8 @@ theorem send_accepted_waiterEndpoint_exact state caller slot payload
       | [] => (send state caller slot payload).state.waiterEndpoint = state.waiterEndpoint
       | receiver :: _ => (send state caller slot payload).state.waiterEndpoint =
           setWaiterEndpoint state.waiterEndpoint receiver none := by
-  unfold send endpointOf at hresult ⊢
-  split <;> simp_all [reject, wakeState, setWaiterEndpoint] <;> grind
+  unfold send at hresult ⊢
+  split <;> simp_all [reject, wakeState, setWaiterEndpoint, endpointOf] <;> grind
   all_goals split at hresult ⊢ <;>
     simp_all [rejectReceive, blockState, setWaiterEndpoint]
 
