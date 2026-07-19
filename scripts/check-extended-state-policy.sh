@@ -119,7 +119,7 @@ fi
 
 disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 denied_instructions="$(grep -Ei \
-  '^[[:space:]]*[0-9a-f]+:[[:space:]]+((f[a-z0-9]+|xsave[a-z0-9]*|xrstor[a-z0-9]*|ldmxcsr|stmxcsr|emms|femms|vzero(upper|all))([[:space:]]|$)|[^#]*%(st([[:space:],]|\([0-7]\))|mm[0-7]|xmm[0-9]+|ymm[0-9]+|zmm[0-9]+))' \
+  '^[[:space:]]*[0-9a-f]+:[[:space:]]+((f[a-z0-9]+|x(save|rstor)[a-z0-9]*|x(get|set)bv|v?(ld|st)mxcsr|emms|femms|vzero(upper|all))([[:space:]]|$)|[^#]*%(st([[:space:],]|\([0-7]\))|mm[0-7]|xmm[0-9]+|ymm[0-9]+|zmm[0-9]+))' \
   <<<"$disassembly" || true)"
 if [[ -z "$probe_address" ]]; then
   [[ -z "$denied_instructions" ]] || {

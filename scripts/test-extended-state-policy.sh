@@ -172,6 +172,8 @@ if [[ -n "$sse_elf" ]]; then
 
   check_denied_mutation extra-vzeroupper '\xc5\xf8\x77'
   check_denied_mutation extra-xsave64 '\x48\x0f\xae\x20'
+  check_denied_mutation extra-xsetbv '\x0f\x01\xd1'
+  check_denied_mutation extra-vldmxcsr '\xc5\xf8\xae\x10'
 fi
 
 echo "Controlled extended-state boot-policy fixtures passed"
