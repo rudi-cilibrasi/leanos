@@ -197,7 +197,8 @@ slot, and has no resumable context. -/
 theorem dispatched_nonresumption state entry context
     (hdispatch : (dispatch state entry).action = .dispatch context) :
     ∃ faulting,
-      (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
+      state.scheduler.lifecycle.current = some faulting ∧
+        (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
           faulting = false ∧
         faulting ∉ (dispatch state entry).state.scheduler.ready ∧
         (dispatch state entry).state.scheduler.lifecycle.current ≠ some faulting ∧
@@ -225,7 +226,6 @@ theorem dispatched_nonresumption state entry context
       have hdead := ResumablePreemption.cleanup_terminates_subject state faulting
       have habsent := ResumablePreemption.cleanup_removes_scheduler_membership state faulting
       have hcontext := ResumablePreemption.cleanup_removes_context state faulting
-      refine ⟨faulting, ?_⟩
       simp_all only [Option.getD_some]
       grind [Scheduler.selectNext, Scheduler.reject,
         ResumablePreemption.eraseContext, ResumablePreemption.contextFor,
@@ -439,6 +439,7 @@ private theorem selectNext_none_eq scheduler
 theorem idle_is_clean_empty state entry
     (h : (dispatch state entry).action = .idle) :
     ∃ faulting,
+      state.scheduler.lifecycle.current = some faulting ∧
       (dispatch state entry).state = ResumablePreemption.cleanupSubject state faulting ∧
       (dispatch state entry).state.scheduler.ready = [] ∧
       (dispatch state entry).state.scheduler.lifecycle.current = none := by
@@ -463,16 +464,17 @@ dispatch; an empty queue never turns the terminated subject into a fallback. -/
 theorem idle_nonresumption state entry
     (hidle : (dispatch state entry).action = .idle) :
     ∃ faulting,
-      (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
+      state.scheduler.lifecycle.current = some faulting ∧
+        (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
           faulting = false ∧
         faulting ∉ (dispatch state entry).state.scheduler.ready ∧
         (dispatch state entry).state.scheduler.lifecycle.current ≠ some faulting ∧
         ResumablePreemption.contextFor
           (dispatch state entry).state.contexts faulting = none := by
   rcases idle_is_clean_empty state entry hidle with
-    ⟨faulting, hstate, _, _⟩
+    ⟨faulting, hcurrent, hstate, _, _⟩
   rw [hstate]
-  exact ⟨faulting,
+  exact ⟨faulting, hcurrent,
     ResumablePreemption.cleanup_terminates_subject state faulting,
     (ResumablePreemption.cleanup_removes_scheduler_membership state faulting).1,
     (ResumablePreemption.cleanup_removes_scheduler_membership state faulting).2,
@@ -484,7 +486,8 @@ theorem successful_nonresumption state entry
     (hsuccess : (dispatch state entry).action = .idle ∨
       ∃ context, (dispatch state entry).action = .dispatch context) :
     ∃ faulting,
-      (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
+      state.scheduler.lifecycle.current = some faulting ∧
+        (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
           faulting = false ∧
         faulting ∉ (dispatch state entry).state.scheduler.ready ∧
         (dispatch state entry).state.scheduler.lifecycle.current ≠ some faulting ∧
@@ -492,7 +495,9 @@ theorem successful_nonresumption state entry
           (dispatch state entry).state.contexts faulting = none := by
   rcases hsuccess with hidle | ⟨context, hdispatch⟩
   · exact idle_nonresumption state entry hidle
-  · exact dispatched_nonresumption state entry context hdispatch
+  · rcases dispatched_nonresumption state entry context hdispatch with
+      ⟨faulting, hfaulting, hdead, habsent, hcurrent, hcontext⟩
+    exact ⟨faulting, hfaulting, hdead, habsent, hcurrent, hcontext⟩
 
 /-! Executable regressions for the invariant boundary closed by this slice:
 one queued survivor becomes the sole current subject, while no survivor yields
@@ -623,7 +628,7 @@ theorem dispatch_preserves_wellFormed state entry
     ResumablePreemption.WellFormed (dispatch state entry).state := by
   cases haction : (dispatch state entry).action with
   | idle =>
-      obtain ⟨faulting, hnext, _, _⟩ := idle_is_clean_empty state entry haction
+      obtain ⟨faulting, _, hnext, _, _⟩ := idle_is_clean_empty state entry haction
       rw [hnext]
       exact ResumablePreemption.cleanupSubject_preserves_wellFormed state faulting hstate
   | dispatch context =>
