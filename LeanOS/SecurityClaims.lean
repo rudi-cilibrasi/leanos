@@ -311,8 +311,8 @@ theorem composite_gate_termination_preserves_runtimeWellFormed state subject
   exact ⟨FailStop.terminateSubject_operationPreservesRuntimeWellFormed subject state hstate,
     FailStop.terminateCurrent_operationPreservesRuntimeWellFormed state hstate⟩
 
-/-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of the
-registered control, syscall, IPC/sealed-transfer-offer,
+/-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of registered
+inbound interrupts, control, syscall, IPC/sealed-transfer-offer,
 capability-copy/revocation, mapping, subject-lifecycle, and resumable-aware
 scheduler operations preserve the complete runtime invariant for every
 accepted or typed-rejected result. -/

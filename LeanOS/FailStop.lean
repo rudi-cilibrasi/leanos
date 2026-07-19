@@ -1191,6 +1191,15 @@ private def installTerminatedResumable (state : CompositeState)
     resumable
     transfers }
 
+/-- Publish interrupt-driven subject cleanup through the same authoritative
+resumable/resource path as explicit termination, then close the kernel copy
+window as required by every completed inbound entry. -/
+private def publishInterruptCleanup (state : CompositeState)
+    (subject : Interrupt.SubjectId) : CompositeState :=
+  let cleaned := installTerminatedResumable state
+    (ResumablePreemption.cleanupSubject state.resumable subject)
+  { cleaned with execution := { cleaned.execution with copyOverride := false } }
+
 /-- Publish a mapping-only transition without running the general lifecycle
 synchronizer.  Map and unmap preserve the memory registry and address-space
 owners, so rebuilding those projections would be both unnecessary and capable
@@ -1478,8 +1487,13 @@ so refinement layers can state that their adapter agrees with the gate. -/
 def applyOperation (state : CompositeState) : Operation → CompositeState
   | .interrupt frame =>
       let entry := dispatchHardware state.execution frame
-      installLifecycle { state with execution := entry.state }
-        entry.state.core.lifecycle
+      match entry.action with
+      | .contained subject => publishInterruptCleanup state subject
+      | .fatal _ =>
+          installResumable { state with execution := entry.state }
+            { state.resumable with halted := true }
+      | .timer | .syscall | .rejected _ => { state with execution := entry.state }
+      | .alreadyHalted _ => state
   | .selectUserReturn purpose =>
       selectLiveReturnAuthority state purpose
   | .userReturn request =>
@@ -1787,13 +1801,13 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
 
 /-- A contained user fault is published to both scheduler views in the same
 composite step, so neither can select from the pre-termination lifecycle. -/
-theorem interrupt_synchronizes_lifecycle state frame :
+theorem interrupt_contained_synchronizes_lifecycle state frame subject
+    (hcontained : (dispatchHardware state.execution frame).action = .contained subject) :
     let next := applyOperation state (.interrupt frame)
     next.scheduler.lifecycle = next.execution.core.lifecycle ∧
       next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
-  simp only [applyOperation]
-  generalize hentry : dispatchHardware state.execution frame = entry
-  cases entry.action <;> simp [installLifecycle]
+  simp [applyOperation, hcontained, publishInterruptCleanup,
+    installTerminatedResumable]
 
 /-- Preemption cannot reinterpret a fatal hardware frame as an accepted
 scheduler no-op: the authoritative entry path latches the same terminal mode. -/
@@ -4035,6 +4049,26 @@ theorem gate_unmap_accepted_invalidates_tlb state page next
       (TLB.invalidate_page_absent state.resumable.translations.entries
         { addressSpace := state.execution.core.context.activeAddressSpace, page } context)
 
+private theorem dispatchHardware_running_returnAuthority_unarmed state frame
+    (hmode : state.mode = .running) :
+    (dispatchHardware state frame).state.returnAuthorityArmed = false := by
+  simp only [dispatchHardware, hmode, beginEntry, finishEntry, activeEntry]
+  generalize hdispatch : Interrupt.dispatchHardware
+    { state.core with context := { state.core.context with entryActive := false } }
+    frame = outcome
+  cases outcome with
+  | mk next action => cases action <;> simp [halt]
+
+private theorem dispatchHardware_running_not_alreadyHalted state frame record
+    (hmode : state.mode = .running) :
+    (dispatchHardware state frame).action ≠ .alreadyHalted record := by
+  simp only [dispatchHardware, hmode, beginEntry, finishEntry, activeEntry]
+  generalize hdispatch : Interrupt.dispatchHardware
+    { state.core with context := { state.core.context with entryActive := false } }
+    frame = outcome
+  cases outcome with
+  | mk next action => cases action <;> simp [halt]
+
 /-- Initial dispatch is also represented by a typed composite step; syscall
 and timer paths reselect only after their final context update. -/
 theorem select_user_return_is_reachable state purpose
@@ -4046,7 +4080,24 @@ theorem select_user_return_is_reachable state purpose
 theorem syscall_entry_leaves_return_unarmed state frame
     (hmode : state.execution.mode = .running) :
     (gate state (.interrupt frame)).state.execution.returnAuthorityArmed = false := by
-  simp [gate, hmode, applyOperation, installLifecycle]
+  have hunarmed := dispatchHardware_running_returnAuthority_unarmed
+    state.execution frame hmode
+  have hnotAlready record := dispatchHardware_running_not_alreadyHalted
+    state.execution frame record hmode
+  simp only [gate, hmode, applyOperation]
+  generalize hdispatch : dispatchHardware state.execution frame = entry at hunarmed
+  cases haction : entry.action with
+  | contained subject =>
+      simp [publishInterruptCleanup, installTerminatedResumable]
+  | fatal reason => simp [installResumable]
+  | timer => simpa using hunarmed
+  | syscall => simpa using hunarmed
+  | rejected reason => simpa using hunarmed
+  | alreadyHalted record =>
+      apply False.elim
+      apply hnotAlready record
+      rw [hdispatch]
+      exact haction
 
 def runOperations (state : CompositeState) : List Operation → CompositeState
   | [] => state
@@ -4691,15 +4742,16 @@ theorem gate_terminateSubject_accepted_preserves_resumableContextBank
       installTransfers, installResumable, installLifecycle,
       ResumablePreemption.ReadyContextAgreement] using hready
 
-/-- Accepted subject termination is one complete runtime operation family:
-authoritative lifecycle/resource/context cleanup and sealed-offer cancellation
-are published atomically through every duplicated consumer. -/
-theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
+/-- The authoritative resumable cleanup publisher preserves the full runtime
+invariant for every subject identifier.  This common boundary is used by both
+explicit termination and interrupt-contained user faults. -/
+private theorem installTerminatedResumable_cleanup_preserves_runtimeWellFormed
     state subject
     (hstate : RuntimeWellFormed state)
-    (hmode : state.execution.mode = .running)
-    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted) :
-    RuntimeWellFormed (gate state (.terminateSubject subject)).state := by
+    (hmode : state.execution.mode = .running) :
+    RuntimeWellFormed
+      (installTerminatedResumable state
+        (ResumablePreemption.cleanupSubject state.resumable subject)) := by
   let cleaned := ResumablePreemption.cleanupSubject state.resumable subject
   have hcleanup := ResumablePreemption.cleanupSubject_preserves_wellFormed
     state.resumable subject hstate.2.2.2.2.2.2.2.2.1
@@ -4794,7 +4846,6 @@ theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
         | none => state.execution.core.context).activeAddressSpace = candidate := by
     intro candidate hcurrent
     simp [hcurrent]
-  simp only [gate, hmode, applyOperation, haccepted]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · simpa [installTerminatedResumable, CompositeState.Coherent,
       transfers, transferBase, endpoints] using
@@ -4822,6 +4873,19 @@ theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
   · simpa [installTerminatedResumable, cleaned,
       ResumablePreemption.cleanupSubject] using hhalted
   · simp [installTerminatedResumable]
+
+/-- Accepted subject termination is one complete runtime operation family:
+authoritative lifecycle/resource/context cleanup and sealed-offer cancellation
+are published atomically through every duplicated consumer. -/
+theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
+    state subject
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted) :
+    RuntimeWellFormed (gate state (.terminateSubject subject)).state := by
+  have hpreserved := installTerminatedResumable_cleanup_preserves_runtimeWellFormed
+    state subject hstate hmode
+  simpa [gate, hmode, applyOperation, haccepted] using hpreserved
 
 /-- Every public subject-termination request preserves the global invariant:
 never-issued/already-dead subjects reject atomically, while acceptance performs
@@ -5807,6 +5871,141 @@ private theorem fatalInterrupt_dispatchHardware_halts execution frame reason
   | mk next action =>
       cases action <;> simp_all [halt]
 
+private theorem dispatchHardware_preserves_wellFormed_internal state frame
+    (hstate : WellFormed state) :
+    WellFormed (dispatchHardware state frame).state := by
+  rcases hstate with ⟨hlifecycle, hbound, hmodeWellFormed⟩
+  change SubjectLifecycle.WellFormed state.core.lifecycle at hlifecycle
+  cases hmode : state.mode with
+  | handling active =>
+      simp only [hmode] at hmodeWellFormed
+      simpa [dispatchHardware, hmode, halt, WellFormed, Interrupt.WellFormed] using
+        And.intro hlifecycle hmodeWellFormed.2
+  | halted record =>
+      simpa [dispatchHardware, hmode, WellFormed, Interrupt.WellFormed] using
+        And.intro hlifecycle (And.intro hbound hmodeWellFormed)
+  | running =>
+      simp only [hmode] at hmodeWellFormed
+      simp only [dispatchHardware, hmode, beginEntry, finishEntry, activeEntry]
+      unfold Interrupt.dispatchHardware
+      cases hvector : Interrupt.decodeVector frame.vector with
+      | none => simpa [hvector, halt, WellFormed, Interrupt.WellFormed] using hlifecycle
+      | some vector =>
+          cases vector with
+          | pageFault =>
+              cases frame.savedPrivilege with
+              | kernel =>
+                  simpa [hvector, halt, WellFormed, Interrupt.WellFormed] using hlifecycle
+              | user =>
+                  simpa [hvector, WellFormed, Interrupt.WellFormed] using
+                    SubjectLifecycle.terminateState_preserves_wellFormed
+                      state.core.lifecycle state.core.context.currentSubject hlifecycle
+          | timer => simpa [hvector, WellFormed, Interrupt.WellFormed] using hlifecycle
+          | syscall =>
+              cases frame.savedPrivilege <;>
+                simpa [hvector, WellFormed, Interrupt.WellFormed] using hlifecycle
+
+private theorem dispatchHardware_fatal_halts state frame reason
+    (hfatal : (dispatchHardware state frame).action = .fatal reason) :
+    ∃ record, (dispatchHardware state frame).state.mode = .halted record := by
+  cases hmode : state.mode with
+  | handling active =>
+      simp [dispatchHardware, hmode, halt] at hfatal ⊢
+  | halted record =>
+      simp [dispatchHardware, hmode] at hfatal
+  | running =>
+      simp only [dispatchHardware, hmode, beginEntry, finishEntry, activeEntry] at hfatal ⊢
+      generalize hdispatch : Interrupt.dispatchHardware
+        { state.core with context := { state.core.context with entryActive := false } }
+        frame = outcome at hfatal ⊢
+      cases outcome with
+      | mk next action => cases action <;> simp_all [halt]
+
+private theorem interruptDispatch_ordinary_state state frame
+    (hordinary : (Interrupt.dispatchHardware state frame).action = .timer ∨
+      (Interrupt.dispatchHardware state frame).action = .syscall ∨
+      ∃ reason, (Interrupt.dispatchHardware state frame).action = .rejected reason) :
+    (Interrupt.dispatchHardware state frame).state = state := by
+  unfold Interrupt.dispatchHardware at hordinary ⊢
+  by_cases hentry : state.context.entryActive
+  · simp [hentry] at hordinary
+  · simp only [hentry, Bool.false_eq_true, ↓reduceIte] at hordinary ⊢
+    cases hvector : Interrupt.decodeVector frame.vector with
+    | none => simp [hvector] at hordinary
+    | some vector =>
+        cases vector with
+        | pageFault =>
+            cases hprivilege : frame.savedPrivilege <;>
+              simp [hvector, hprivilege] at hordinary
+        | timer => simp [hvector]
+        | syscall =>
+            cases hprivilege : frame.savedPrivilege <;>
+              simp [hvector, hprivilege] at hordinary ⊢
+
+private theorem dispatchHardware_ordinary_state state frame
+    (hmode : state.mode = .running)
+    (hentry : state.core.context.entryActive = false)
+    (hordinary : (dispatchHardware state frame).action = .timer ∨
+      (dispatchHardware state frame).action = .syscall ∨
+      ∃ reason, (dispatchHardware state frame).action = .rejected reason) :
+    (dispatchHardware state frame).state =
+      { state with returnAuthorityArmed := false, copyOverride := false } := by
+  simp only [dispatchHardware, hmode, beginEntry, finishEntry, activeEntry] at hordinary ⊢
+  have hprepared :
+      { state.core with context := { state.core.context with entryActive := false } } =
+        state.core := by
+    cases hcore : state.core with
+    | mk lifecycle context =>
+        cases hcontext : context with
+        | mk current space stack active => simp_all
+  rw [hprepared] at hordinary ⊢
+  generalize hdispatch : Interrupt.dispatchHardware state.core frame = outcome
+    at hordinary ⊢
+  cases outcome with
+  | mk next action =>
+      cases action with
+      | fatal reason => simp [halt] at hordinary
+      | contained subject => simp at hordinary
+      | timer =>
+          have hcore := interruptDispatch_ordinary_state state.core frame
+            (Or.inl (by rw [hdispatch]))
+          simp_all
+      | syscall =>
+          have hcore := interruptDispatch_ordinary_state state.core frame
+            (Or.inr (Or.inl (by rw [hdispatch])))
+          simp_all
+      | rejected reason =>
+          have hcore := interruptDispatch_ordinary_state state.core frame
+            (Or.inr (Or.inr ⟨reason, by rw [hdispatch]⟩))
+          simp_all
+
+/-- Closing the kernel-owned copy window changes no component of the global
+runtime invariant. -/
+private theorem closeCopyWindow_preserves_runtimeWellFormed state
+    (hstate : RuntimeWellFormed state) :
+    RuntimeWellFormed
+      { state with execution := { state.execution with copyOverride := false } } := by
+  unfold RuntimeWellFormed CompositeState.Coherent WellFormed ReturnAuthorityBound
+    CompositeState.ReturnPlanLive at hstate ⊢
+  simpa using hstate
+
+/-- Completed ordinary inbound entry clears transient return and copy
+authority without changing any authoritative subsystem state. -/
+private theorem clearInboundAuthority_preserves_runtimeWellFormed state
+    (hstate : RuntimeWellFormed state) :
+    RuntimeWellFormed
+      { state with execution :=
+          { state.execution with returnAuthorityArmed := false, copyOverride := false } } := by
+  have hclosed := closeCopyWindow_preserves_runtimeWellFormed state hstate
+  unfold RuntimeWellFormed CompositeState.Coherent WellFormed at hclosed ⊢
+  rcases hclosed with
+    ⟨hcoherent, ⟨hcore, _hbound, hentry⟩, hlifecycle, hcapabilities,
+      hvirtual, hipc, hscheduler, hpreemption, hresumable, htransfers,
+      hterminal, _hlive⟩
+  exact ⟨hcoherent, ⟨hcore, by simp, hentry⟩, hlifecycle, hcapabilities,
+    hvirtual, hipc, hscheduler, hpreemption, hresumable, htransfers,
+    hterminal, by simp⟩
+
 private theorem installResumable_fatal_preserves_runtimeWellFormed state entry
     (hstate : RuntimeWellFormed state)
     (hentry : WellFormed entry)
@@ -5932,15 +6131,71 @@ theorem resumePreempt_operationPreservesRuntimeWellFormed frame registers :
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.resumePreempt frame registers) hstate hmode
 
+/-! ### Inbound interrupt preservation -/
+
+/-- Every normalized hardware frame is a complete composite operation family.
+Contained user faults reuse authoritative termination cleanup, fatal entry
+synchronizes both halt latches, and ordinary timer/syscall/rejection entry only
+closes transient return/copy authority.  No branch repairs an unrelated
+projection of an invalid pre-state. -/
+theorem interrupt_operationPreservesRuntimeWellFormed frame :
+    OperationPreservesRuntimeWellFormed (.interrupt frame) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · have hentryActive : state.execution.core.context.entryActive = false := by
+      simpa [hmode] using hstate.2.1.2.2
+    let entry := dispatchHardware state.execution frame
+    have hentryWellFormed : WellFormed entry.state := by
+      exact dispatchHardware_preserves_wellFormed_internal
+        state.execution frame hstate.2.1
+    cases haction : entry.action with
+    | contained subject =>
+        have hcleaned := installTerminatedResumable_cleanup_preserves_runtimeWellFormed
+          state subject hstate hmode
+        have hclosed := closeCopyWindow_preserves_runtimeWellFormed
+          (installTerminatedResumable state
+            (ResumablePreemption.cleanupSubject state.resumable subject)) hcleaned
+        simpa [gate, hmode, applyOperation, entry, haction, publishInterruptCleanup] using
+          hclosed
+    | fatal reason =>
+        have hentryMode : ∃ record, entry.state.mode = .halted record := by
+          apply dispatchHardware_fatal_halts state.execution frame reason
+          simpa [entry] using haction
+        have hpublished := installResumable_fatal_preserves_runtimeWellFormed
+          state entry.state hstate hentryWellFormed hentryMode
+        simpa [gate, hmode, applyOperation, entry, haction] using hpublished
+    | timer =>
+        have hordinary := dispatchHardware_ordinary_state state.execution frame
+          hmode hentryActive (Or.inl (by simpa [entry] using haction))
+        have hcleared := clearInboundAuthority_preserves_runtimeWellFormed state hstate
+        simpa [gate, hmode, applyOperation, entry, haction, hordinary] using hcleared
+    | syscall =>
+        have hordinary := dispatchHardware_ordinary_state state.execution frame
+          hmode hentryActive (Or.inr (Or.inl (by simpa [entry] using haction)))
+        have hcleared := clearInboundAuthority_preserves_runtimeWellFormed state hstate
+        simpa [gate, hmode, applyOperation, entry, haction, hordinary] using hcleared
+    | rejected reason =>
+        have hordinary := dispatchHardware_ordinary_state state.execution frame
+          hmode hentryActive (Or.inr (Or.inr ⟨reason, by simpa [entry] using haction⟩))
+        have hcleared := clearInboundAuthority_preserves_runtimeWellFormed state hstate
+        simpa [gate, hmode, applyOperation, entry, haction, hordinary] using hcleared
+    | alreadyHalted record =>
+        have hnotAlready := dispatchHardware_running_not_alreadyHalted
+          state.execution frame record hmode
+        exact False.elim (hnotAlready (by simpa [entry] using haction))
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.interrupt frame) hstate hmode
+
 /-! ### Registered mixed runtime traces
 
 The constructors below are exactly the operation families whose accepted and
 rejected results have complete global-preservation proofs.  Keeping this as a
 syntactic predicate makes the current mixed-trace boundary reviewable: adding
-an operation requires its family theorem, while the still-open interrupt and
-preemption mutations cannot enter the advertised trace theorem accidentally. -/
+an operation requires its family theorem, while still-open legacy preemption
+mutations cannot enter the advertised trace theorem accidentally. -/
 
 inductive RuntimeTraceOperation : Operation → Prop where
+  | interrupt frame : RuntimeTraceOperation (.interrupt frame)
   | selectUserReturn purpose : RuntimeTraceOperation (.selectUserReturn purpose)
   | userReturn request : RuntimeTraceOperation (.userReturn request)
   | syscall call : RuntimeTraceOperation (.syscall call)
@@ -5977,6 +6232,7 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
     (hoperation : RuntimeTraceOperation operation) :
     OperationPreservesRuntimeWellFormed operation := by
   cases hoperation with
+  | interrupt frame => exact interrupt_operationPreservesRuntimeWellFormed frame
   | selectUserReturn purpose =>
       exact selectUserReturn_operationPreservesRuntimeWellFormed purpose
   | userReturn request =>
