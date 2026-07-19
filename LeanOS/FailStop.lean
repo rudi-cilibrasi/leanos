@@ -940,9 +940,15 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       match outcome.reply with
       | .rejected _ => state
       | .accepted =>
-          let installed := installLifecycle { state with virtualMemory := outcome.state }
-            (lifecycleFromVirtualMemory state.lifecycle outcome.state)
-          selectLiveReturnAuthority installed .syscallResume
+          match Syscall.decode call with
+          | .ok (.access _ _) =>
+              -- Translation checks do not mutate virtual memory; do not run a
+              -- synchronization helper that could mask an invalid pre-state.
+              selectLiveReturnAuthority state .syscallResume
+          | _ =>
+              let installed := installLifecycle { state with virtualMemory := outcome.state }
+                (lifecycleFromVirtualMemory state.lifecycle outcome.state)
+              selectLiveReturnAuthority installed .syscallResume
   | .preempt frame =>
       let entry := dispatchHardware state.execution frame
       let entered := installLifecycle { state with execution := entry.state }
@@ -1451,6 +1457,27 @@ theorem gate_restart_preserves_runtimeWellFormed state
   | running => simpa [gate, hmode, applyOperation] using hstate
   | handling active => simpa [gate, hmode] using hstate
   | halted record => simpa [gate, hmode] using hstate
+
+/-- An accepted access-only syscall leaves virtual memory unchanged and only
+reselects return authority through the live-plan boundary.  Consequently the
+complete runtime invariant, not merely virtual-memory well-formedness, survives
+the accepted public operation and its reply is the exact typed success. -/
+theorem gate_syscall_access_accepted_preserves_runtimeWellFormed state call page access
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hdecode : Syscall.decode call = .ok (.access page access))
+    (haccepted : (Syscall.dispatch state.virtualMemory state.syscallContext call).reply =
+      .accepted) :
+    RuntimeWellFormed (gate state (.syscall call)).state ∧
+      (gate state (.syscall call)).result = .completed (.syscall .accepted) := by
+  have hselected := gate_selectUserReturn_preserves_runtimeWellFormed
+    state .syscallResume hstate
+  have hselected' :
+      RuntimeWellFormed (selectLiveReturnAuthority state .syscallResume) := by
+    simpa [gate, hmode, applyOperation] using hselected
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted, hdecode] using hselected'
+  · simp [gate, hmode, operationReply, haccepted]
 
 /-- The guarded sealed-mailbox rejection is a genuine composite gate
 preservation step: it retains the full global runtime invariant, rather than
@@ -2295,6 +2322,26 @@ theorem restart_operationPreservesRuntimeWellFormed :
     OperationPreservesRuntimeWellFormed .restart := by
   intro state hstate
   exact gate_restart_preserves_runtimeWellFormed state hstate
+
+/-- Every raw call that decodes to an access check contributes one complete
+operation-family obligation: successful translation is the accepted
+non-mutating slice above, while every translation failure is an ordinary
+state-preserving subsystem rejection. -/
+theorem syscallAccess_operationPreservesRuntimeWellFormed call page access
+    (hdecode : Syscall.decode call = .ok (.access page access)) :
+    OperationPreservesRuntimeWellFormed (.syscall call) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hreply : (Syscall.dispatch state.virtualMemory state.syscallContext call).reply with
+    | accepted =>
+        exact (gate_syscall_access_accepted_preserves_runtimeWellFormed state call page access
+          hstate hmode hdecode hreply).1
+    | rejected reason =>
+        exact (gate_subsystem_rejection_preserves_runtimeWellFormed state (.syscall call)
+          (.syscall (.rejected reason)) hstate
+          (by simp [gate, hmode, operationReply, hreply])
+          (.syscall call reason hreply)).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state (.syscall call) hstate hmode
 
 private theorem dispatchIPC_send_classifies state handleWord word0 word1 :
     (dispatchIPC state (.send handleWord word0 word1)).reply = .syscall .sent ∨
