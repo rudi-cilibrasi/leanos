@@ -22,8 +22,9 @@ be redirected into a kernel operation: with accepted, freshly matched controls
 it returns the typed modeled `#GP(0)` denial, and every path preserves the
 identical complete `DeviceState` projection.
 
-Trusted kernel dispatch adds one `Purpose`. `executeKernel` accepts only an
-exact `AuthorityKey` from this manifest:
+Trusted kernel dispatch adds one `Purpose`. `executeKernel` accepts only when
+the live controls authorize kernel privilege and an exact `AuthorityKey`
+appears in this manifest:
 
 | Purpose | Port(s) | Direction | Width |
 | --- | --- | --- | --- |
@@ -41,9 +42,10 @@ trusted purpose.
 
 `user_request_preserves_device_state` covers every user request, including
 malformed stored policy and stale live read-back paths.
-`kernel_acceptance_confined` exposes the exact manifest membership, accepted
-stored controls, fresh live-control equality, unchanged control state, and the
-precise device projection produced by the accepted request.
+`kernel_acceptance_confined` exposes the live kernel-privilege authorization,
+exact manifest membership, accepted stored controls, fresh live-control
+equality, unchanged control state, and the precise device projection produced
+by the accepted request.
 `kernel_rejection_preserves_device_state` proves complete device-state equality
 for every typed kernel rejection. The stable contract restates the user-denial
 and kernel-confinement results, and `policy_nonvacuous` exhibits both a serial

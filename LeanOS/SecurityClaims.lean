@@ -34,13 +34,15 @@ theorem direct_port_user_denial_preserves_devices state live request
   exact ⟨DirectPortIO.accepted_user_request_denied_gp state live request hpolicy hlive,
     DirectPortIO.user_request_preserves_device_state state live request⟩
 
-/-- SC-DIRECT-PORT-KERNEL-CONFINEMENT: a typed kernel acceptance requires the
-exact reviewed purpose/port/direction/width manifest key and fresh controls. -/
+/-- SC-DIRECT-PORT-KERNEL-CONFINEMENT: a typed kernel acceptance requires live
+kernel privilege, the exact reviewed purpose/port/direction/width manifest key,
+and fresh controls. -/
 theorem direct_port_kernel_operation_confined state live request
     (haccepted : (DirectPortIO.executeKernel state live request).result =
       .kernelAccepted) :
     DirectPortIO.AcceptedControls state.controls ∧
       live = state.controls ∧
+      DirectPortIO.privilegeAllows live .kernel = true ∧
       DirectPortIO.portManifest.contains request.key = true ∧
       (DirectPortIO.executeKernel state live request).state.controls = state.controls ∧
       (DirectPortIO.executeKernel state live request).state.devices =

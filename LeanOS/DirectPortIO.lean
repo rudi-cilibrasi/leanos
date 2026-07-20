@@ -168,17 +168,20 @@ def executeUser (state : State) (liveControls : Controls)
   else { state, result := .userDeniedGP }
 
 /-- Trusted kernel entry additionally supplies a purpose.  Acceptance requires
-the exact purpose/port/direction/width key in `portManifest`. -/
+kernel privilege and the exact purpose/port/direction/width key in
+`portManifest`. -/
 def executeKernel (state : State) (liveControls : Controls)
     (request : KernelRequest) : Outcome :=
   if _hpolicy : state.controls ≠ selectedControls then
     { state, result := .rejected .malformedPolicy }
   else if _hlive : liveControls ≠ state.controls then
     { state, result := .rejected .staleReadback }
-  else if _hauthorized : portManifest.contains request.key then
-    { state := { state with devices := applyKernel state.devices request }
-      result := .kernelAccepted }
-  else { state, result := .rejected .unauthorizedKernelOperation }
+  else if _hprivilege : privilegeAllows liveControls .kernel then
+    if _hauthorized : portManifest.contains request.key then
+      { state := { state with devices := applyKernel state.devices request }
+        result := .kernelAccepted }
+    else { state, result := .rejected .unauthorizedKernelOperation }
+  else { state, result := .rejected .malformedPolicy }
 
 theorem executeUser_total state live request :
     ∃ outcome, executeUser state live request = outcome := ⟨_, rfl⟩
@@ -229,6 +232,7 @@ theorem kernel_acceptance_confined state live request
     (haccepted : (executeKernel state live request).result = .kernelAccepted) :
     AcceptedControls state.controls ∧
       live = state.controls ∧
+      privilegeAllows live .kernel = true ∧
       portManifest.contains request.key = true ∧
       (executeKernel state live request).state.controls = state.controls ∧
       (executeKernel state live request).state.devices =
@@ -239,11 +243,17 @@ theorem kernel_acceptance_confined state live request
   split at haccepted <;> try contradiction
   rename_i hlive
   split at haccepted <;> try contradiction
+  rename_i hprivilege
+  split at haccepted <;> try contradiction
   rename_i hauthorized
   cases haccepted
   have hp : state.controls = selectedControls := by simp_all
   have hl : live = state.controls := by simp_all
-  simp [AcceptedControls, executeKernel, hp, hl, hauthorized]
+  have heval : executeKernel state live request =
+      { state := { state with devices := applyKernel state.devices request }
+        result := .kernelAccepted } := by
+    simp [executeKernel, hpolicy, hlive, hprivilege, hauthorized]
+  exact ⟨hp, hl, hprivilege, hauthorized, by simp [heval], by simp [heval]⟩
 
 /-- Every typed kernel rejection is atomic for the complete device state. -/
 theorem kernel_rejection_preserves_device_state state live request reason
@@ -253,9 +263,11 @@ theorem kernel_rejection_preserves_device_state state live request reason
   · simp [executeKernel, hpolicy]
   · by_cases hlive : live ≠ state.controls
     · simp [executeKernel, hpolicy, hlive]
-    · by_cases hauthorized : portManifest.contains request.key = true
-      · simp [executeKernel, hpolicy, hlive, hauthorized] at hrejected
-      · simp [executeKernel, hpolicy, hlive, hauthorized]
+    · by_cases hprivilege : privilegeAllows live .kernel = true
+      · by_cases hauthorized : portManifest.contains request.key = true
+        · simp [executeKernel, hpolicy, hlive, hprivilege, hauthorized] at hrejected
+        · simp [executeKernel, hpolicy, hlive, hprivilege, hauthorized]
+      · simp [executeKernel, hpolicy, hlive, hprivilege]
 
 private def zeroDevices : DeviceState := ⟨0, 0, 0, 0⟩
 
