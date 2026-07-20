@@ -12,6 +12,10 @@
 
 #define COM1 0x3f8u
 #define DEBUG_EXIT 0xf4u
+#define PCI_CONFIG_ADDRESS 0xcf8u
+#define PCI_CONFIG_DATA 0xcfcu
+#define PCI_COMMAND_BUS_MASTER (1u << 2)
+#define PCI_COMMAND_MODEL_MASK 0x07ffu
 
 extern uint64_t leanos_boot_transition(uint64_t state, uint64_t command);
 extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
@@ -906,6 +910,124 @@ static inline uint8_t in8(uint16_t port) {
     return value;
 }
 
+static inline void out16(uint16_t port, uint16_t value) {
+    __asm__ volatile ("outw %0, %1" : : "a"(value), "Nd"(port));
+}
+
+static inline void out32(uint16_t port, uint32_t value) {
+    __asm__ volatile ("outl %0, %1" : : "a"(value), "Nd"(port));
+}
+
+static inline uint32_t in32(uint16_t port) {
+    uint32_t value;
+    __asm__ volatile ("inl %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+struct pci_manifest_entry {
+    uint8_t device, function;
+    uint16_t vendor, product;
+    uint32_t class_code;
+    uint8_t required, multifunction;
+};
+
+/* This is the C rendering of DMAQuarantine.q35Manifest for topology version
+   0x0008_0002_0002. Configuration mechanism #1 and the behavior of these
+   devices remain trusted hardware/QEMU inputs; acceptance is integration
+   evidence and is not a refinement theorem for the Lean snapshot. */
+static const struct pci_manifest_entry q35_pci_manifest[] = {
+    { 0, 0, 0x8086, 0x29c0, 0x060000, 1, 0 },
+    { 1, 0, 0x1234, 0x1111, 0x030000, 1, 0 },
+    { 3, 0, 0x1af4, 0x1000, 0x020000, 0, 0 },
+    { 31, 0, 0x8086, 0x2918, 0x060100, 1, 1 },
+    { 31, 2, 0x8086, 0x2922, 0x010601, 1, 1 },
+    { 31, 3, 0x8086, 0x2930, 0x0c0500, 1, 1 },
+};
+
+static uint32_t pci_config_dword(uint8_t device, uint8_t function,
+                                 uint8_t offset) {
+    uint32_t address = UINT32_C(0x80000000) |
+        (uint32_t)device << 11 | (uint32_t)function << 8 | (offset & 0xfcu);
+    out32(PCI_CONFIG_ADDRESS, address);
+    return in32(PCI_CONFIG_DATA);
+}
+
+static void pci_config_command(uint8_t device, uint8_t function,
+                               uint16_t command) {
+    uint32_t address = UINT32_C(0x80000000) |
+        (uint32_t)device << 11 | (uint32_t)function << 8 | 0x04u;
+    out32(PCI_CONFIG_ADDRESS, address);
+    out16(PCI_CONFIG_DATA, command);
+}
+
+static const struct pci_manifest_entry *q35_manifest_entry(
+        uint8_t device, uint8_t function, unsigned *index) {
+    for (unsigned i = 0;
+         i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
+        if (q35_pci_manifest[i].device == device &&
+            q35_pci_manifest[i].function == function) {
+            *index = i;
+            return &q35_pci_manifest[i];
+        }
+    }
+    return 0;
+}
+
+/* Exhaustively account for all 256 functions on the manifest's finite bus,
+   clear bus mastering on every present function, and independently read back
+   each complete modeled Command word. This runs after firmware and before the
+   first CPL3 return. Missing/extra/changed/unreadable state is fatal. */
+static void quarantine_q35_pci_dma(void) {
+    unsigned seen = 0, present = 0, writes = 0, readbacks = 0;
+    for (unsigned device = 0; device < 32; ++device) {
+        for (unsigned function = 0; function < 8; ++function) {
+            uint32_t identity = pci_config_dword(device, function, 0x00);
+            uint16_t vendor = (uint16_t)identity;
+            if (vendor == UINT16_MAX) continue;
+
+            unsigned index = 0;
+            const struct pci_manifest_entry *entry =
+                q35_manifest_entry(device, function, &index);
+            if (!entry || (seen & (1u << index))) fail("dma-inventory");
+
+            uint16_t product = (uint16_t)(identity >> 16);
+            uint32_t class_code = pci_config_dword(device, function, 0x08) >> 8;
+            uint8_t header = (uint8_t)(pci_config_dword(
+                device, function, 0x0c) >> 16);
+            if (vendor != entry->vendor || product != entry->product ||
+                class_code != entry->class_code ||
+                ((header >> 7) & 1u) != entry->multifunction)
+                fail("dma-identity");
+
+            uint16_t command = (uint16_t)pci_config_dword(
+                device, function, 0x04);
+            pci_config_command(device, function,
+                (uint16_t)(command & ~PCI_COMMAND_BUS_MASTER));
+            ++writes;
+            command = (uint16_t)pci_config_dword(device, function, 0x04);
+            ++readbacks;
+            if ((command & PCI_COMMAND_BUS_MASTER) != 0 ||
+                (command & ~PCI_COMMAND_MODEL_MASK) != 0)
+                fail("dma-command-readback");
+            seen |= 1u << index;
+            ++present;
+        }
+    }
+
+    unsigned optional_absent = 0;
+    for (unsigned i = 0;
+         i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
+        if (seen & (1u << i)) continue;
+        if (q35_pci_manifest[i].required) fail("dma-required-missing");
+        ++optional_absent;
+    }
+    if (present == 0) fail("dma-empty-inventory");
+    if (present != 5 || optional_absent != 1 || writes != present ||
+        readbacks != present)
+        fail("dma-q35-nic-none");
+    serial_puts("LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 bus-master=disabled stage=pre-cpl3 result=PASS\n");
+}
+
 static void serial_init(void) {
     out8(COM1 + 1, 0x00);
     out8(COM1 + 3, 0x80);
@@ -1621,6 +1743,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
 #else
     serial_puts("LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap\n");
 #endif
+
+    quarantine_q35_pci_dma();
 
     check_boot_page_tables();
 

@@ -63,7 +63,7 @@ The proofs start after a complete hardware snapshot. PCI configuration reads,
 enumeration completeness, firmware initialization, architectural meaning and
 read-back behavior of the Command register, QEMU/device obedience, generated C,
 assembly, compiler/linker behavior, and the final binary are not proved. QEMU
-inventory or future boot tests are integration evidence only.
+inventory and boot tests are integration evidence only.
 
 `scripts/check-q35-pci-construction.py` supplies a narrower integration
 checkpoint against the pinned QEMU 8.2.2 binary. It pauses the same q35/TCG,
@@ -71,13 +71,34 @@ CPU, memory, vCPU, network, and debug-exit construction used by the image
 runner, exhaustively reads all 256 functions on manifest bus 0 through qtest's
 PCI configuration mechanism #1 interface, and rejects identity/class/header
 drift, missing or extra functions, or a set bus-master bit. Its versioned TSV
-is a construction-time QEMU observation before firmware runs. It is not the
-required post-firmware, pre-CPL3 guest read-back and therefore does not upgrade
-the model claim or close the boot-control dependency.
+is a construction-time QEMU observation before firmware runs.
+
+The guest now supplies the distinct post-firmware checkpoint. Immediately
+after its first serial boot record and before any CPL3 return, `boot/kernel.c`
+exhaustively reads all 256 functions on bus 0. It rejects any present BDF not
+in the same manifest, identity/class/header drift, or a missing required
+function. It writes the PCI Command register of every present function with
+bus mastering clear, then performs a separate read-back and rejects a set
+bus-master bit or any Command bit outside the model's 11-bit range. The exact
+`LEANOS/15 DMA` record is mandatory in `scripts/run-image.sh`; missing and
+forged records are negative runner fixtures. Thus the pinned emulator logs
+show five present functions, one absent optional network function, five writes,
+and five successful read-backs before CPL3.
+
+This adapter intentionally treats an all-ones vendor read as architectural
+absence. A missing required function is fatal; for the optional network slot,
+distinguishing genuine absence from an underlying read transport failure is a
+trusted configuration-mechanism/QEMU assumption. The exhaustive bus-0 bound,
+no-hotplug runner, firmware behavior, write effect, read-back freshness, and
+device obedience remain tested assumptions. The C manifest and the final
+binary are not proved to refine `q35Manifest`, so the boot checkpoint does not
+upgrade the Lean theorem into a hardware claim.
 
 Issue #104's authoritative composite invariant remains on its separate,
 unmerged dependency lane. Once that state lands, its exact `RuntimeWellFormed`
 and typed gate should embed `AcceptedSnapshot` and the unchanged control
 snapshot; this model intentionally does not fork a competing composite state.
-Issue #129's future boot-only PCI configuration access must likewise use its
-reviewed kernel port-purpose vocabulary.
+Issue #129 remains a separate direct-user-I/O policy lane and explicitly lists
+PCI configuration as a non-goal. When its final-ELF port inventory lands, it
+must classify this checkpoint's boot-only `0xcf8`/`0xcfc` mechanism accesses as
+one reviewed kernel purpose rather than treating them as ambient authority.
