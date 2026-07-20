@@ -976,7 +976,9 @@ static const struct pci_manifest_entry *q35_manifest_entry(
 /* Exhaustively account for all 256 functions on the manifest's finite bus,
    clear bus mastering on every present function, and independently read back
    each complete modeled Command word. This runs after firmware and before the
-   first CPL3 return. Missing/extra/changed/unreadable state is fatal. */
+   first CPL3 return. Missing required functions and extra or changed readable
+   functions are fatal; an all-ones vendor read is treated as absence, including
+   for the optional NIC slot, under the documented configuration-read assumption. */
 static void quarantine_q35_pci_dma(void) {
     unsigned seen = 0, present = 0, writes = 0, readbacks = 0;
     unsigned initially_bus_mastering = 0;
