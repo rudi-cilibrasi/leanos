@@ -199,6 +199,14 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
         .completed (.receive (.delivered envelope)) →
       FailStop.BlockingRuntimeWellFormed
         (FailStop.blockingGate state (.receive handleWord frame registers)).state) ∧
+    (∀ handleWord frame registers,
+      FailStop.BlockingRuntimeWellFormed state →
+      (FailStop.blockingGate state (.receive handleWord frame registers)).result =
+        .completed (.receive .blocked) →
+      (FailStop.blockingGate state
+        (.receive handleWord frame registers)).state.scheduler.lifecycle.current = none →
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.blockingGate state (.receive handleWord frame registers)).state) ∧
     (∀ handleWord word0 word1,
       FailStop.RuntimeWellFormed state →
       (FailStop.blockingGate state (.send handleWord word0 word1)).result =
@@ -233,6 +241,9 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
     fun handleWord frame registers envelope hglobal hcompleted =>
       FailStop.blockingGate_receive_delivered_preserves_blockingRuntimeWellFormed
         state handleWord frame registers envelope hglobal hcompleted,
+    fun handleWord frame registers hglobal hcompleted hidle =>
+      FailStop.blockingGate_receive_idle_block_preserves_blockingRuntimeWellFormed
+        state handleWord frame registers hglobal hcompleted hidle,
     fun handleWord word0 word1 hglobal hcompleted =>
       FailStop.blockingGate_send_sent_preserves_runtimeWellFormed
         state handleWord word0 word1 hglobal hcompleted,

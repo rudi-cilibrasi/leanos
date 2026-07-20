@@ -1216,6 +1216,127 @@ theorem publishBlockingIPCContext_sameScheduler_preserves_runtimeWellFormed
       hresumableUpdate] using hterminal
   · simp [publishBlockingIPCContext]
 
+/-- Publishing the terminal half of a block preserves the complete runtime
+invariant when no peer is ready.  The outgoing current subject is marked
+non-runnable and saved only in the blocking bank; the resumable bank therefore
+keeps its existing entries while the active translation is cleared. -/
+theorem publishBlockingIPCContext_idleBlock_preserves_runtimeWellFormed
+    state blocking caller
+    (hstate : RuntimeWellFormed state)
+    (hblocking : BlockingIPCContext.WellFormed blocking)
+    (hcurrent : state.scheduler.lifecycle.current = some caller)
+    (hready : state.scheduler.ready = [])
+    (hscheduler : blocking.ipc.scheduler =
+      { state.scheduler with
+        lifecycle := { state.scheduler.lifecycle with
+          runnable := SubjectLifecycle.setBool
+            state.scheduler.lifecycle.runnable caller false
+          current := none } }) :
+    RuntimeWellFormed (publishBlockingIPCContext state blocking) := by
+  rcases hstate with
+    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+      hschedulerWellFormed, hpreemption, hresumable, htransfers, hterminal,
+      hlive, hblockingCoherent⟩
+  rcases hcoherent with
+    ⟨hexecutionLifecycle, hschedulerLifecycle, hpreemptionScheduler,
+      hcapabilitiesLifecycle, hmemoryCapabilities, hipcVirtual,
+      hipcCapabilities, hresumableScheduler, htranslationVirtual,
+      htransferEndpoints, hauthority, hdeadMailbox, hliveSender⟩
+  rcases hresumable with
+    ⟨_hresumableSchedulerWellFormed, hcapacity, hunique, hvalid, habsent,
+      hreadyContexts, htranslation, hvirtualAgreement, hkinds, _htlb⟩
+  have hnextScheduler : Scheduler.WellFormed blocking.ipc.scheduler := hblocking.1.1
+  have hcallerAbsent :
+      ResumablePreemption.contextFor state.resumable.contexts caller = none :=
+    habsent caller (by simpa [hresumableScheduler] using hcurrent)
+  have hnoCallerContext : ∀ context ∈ state.resumable.contexts,
+      context.owner ≠ caller := by
+    intro context hcontext heq
+    subst caller
+    have hsome : (ResumablePreemption.contextFor
+        state.resumable.contexts context.owner).isSome := by
+      rw [ResumablePreemption.contextFor, List.find?_isSome]
+      exact ⟨context, hcontext, by simp⟩
+    simp [hcallerAbsent] at hsome
+  have hresumableNext : ResumablePreemption.WellFormed
+      (publishBlockingIPCContext state blocking).resumable := by
+    refine ⟨by simpa [publishBlockingIPCContext] using hnextScheduler,
+      by simpa [publishBlockingIPCContext] using hcapacity,
+      by simpa [publishBlockingIPCContext] using hunique, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · intro context hcontext
+      have hold := hvalid context (by simpa [publishBlockingIPCContext] using hcontext)
+      rcases hold with ⟨hframe, hspace, hlive, hrunnable, howner⟩
+      refine ⟨hframe, hspace, ?_, ?_, ?_⟩
+      · simpa [publishBlockingIPCContext, hscheduler, hresumableScheduler] using hlive
+      · have hne := hnoCallerContext context
+          (by simpa [publishBlockingIPCContext] using hcontext)
+        simpa [publishBlockingIPCContext, hscheduler, hresumableScheduler,
+          SubjectLifecycle.setBool, hne] using hrunnable
+      · simpa [publishBlockingIPCContext, hscheduler, hresumableScheduler] using howner
+    · intro subject hselected
+      simp [publishBlockingIPCContext, hscheduler] at hselected
+    · constructor
+      · intro subject hmember
+        simp [publishBlockingIPCContext, hscheduler, hready] at hmember
+      · intro context hcontext hsuspended
+        have hold := hreadyContexts.2 context
+          (by simpa [publishBlockingIPCContext] using hcontext) hsuspended
+        simp [hresumableScheduler, hready] at hold
+    · constructor
+      · simpa [publishBlockingIPCContext, hscheduler, hresumableScheduler] using
+          htranslation.1
+      · simp [publishBlockingIPCContext, hscheduler]
+    · rcases hvirtualAgreement with ⟨hcaps, hwf⟩
+      exact ⟨by simpa [publishBlockingIPCContext, hscheduler, hresumableScheduler] using hcaps,
+        by
+          simp only [publishBlockingIPCContext]
+          split <;> exact hwf⟩
+    · unfold ResumablePreemption.ResourceKindAgreement at hkinds ⊢
+      simpa [publishBlockingIPCContext, hscheduler, hresumableScheduler] using hkinds
+    · simp [publishBlockingIPCContext, hscheduler, TLB.Coherent]
+  have hnextLifecycle : SubjectLifecycle.WellFormed
+      blocking.ipc.scheduler.lifecycle := hnextScheduler.1
+  have hnextExecution : WellFormed
+      (publishBlockingIPCContext state blocking).execution := by
+    rcases hexecution with ⟨_, _, hmode⟩
+    exact ⟨by simpa [Interrupt.WellFormed, publishBlockingIPCContext] using hnextLifecycle,
+      by simp [publishBlockingIPCContext],
+      by simpa [publishBlockingIPCContext] using hmode⟩
+  have hnextPreemption : Preemption.WellFormed
+      (publishBlockingIPCContext state blocking).preemption := by
+    exact ⟨by simpa [publishBlockingIPCContext] using hnextScheduler,
+      by simpa [publishBlockingIPCContext] using hpreemption.2⟩
+  have hnextCoherent : (publishBlockingIPCContext state blocking).Coherent := by
+    unfold CompositeState.Coherent
+    refine ⟨rfl, rfl, rfl, ?_, ?_, ?_, ?_, rfl, ?_, ?_, ?_, ?_, ?_⟩
+    · simpa [publishBlockingIPCContext, hscheduler, hschedulerLifecycle] using
+        hcapabilitiesLifecycle
+    · simpa [publishBlockingIPCContext, hscheduler, hschedulerLifecycle] using
+        hmemoryCapabilities
+    · simpa [publishBlockingIPCContext] using hipcVirtual
+    · simpa [publishBlockingIPCContext, hscheduler, hschedulerLifecycle] using
+        hipcCapabilities
+    · simpa using htranslationVirtual
+    · simpa [publishBlockingIPCContext] using htransferEndpoints
+    · intro subject hselected
+      simp [publishBlockingIPCContext, hscheduler] at hselected
+    · intro object hdead
+      apply hdeadMailbox object
+      simpa [publishBlockingIPCContext, hscheduler, hschedulerLifecycle] using hdead
+    · intro object envelope hmailbox
+      have hold := hliveSender object envelope (by
+        simpa [publishBlockingIPCContext] using hmailbox)
+      simpa [publishBlockingIPCContext, hscheduler, hschedulerLifecycle] using hold
+  refine ⟨hnextCoherent, hnextExecution, hnextLifecycle, ?_, ?_, ?_, hnextScheduler,
+    hnextPreemption, hresumableNext, ?_, ?_, ?_,
+    publishBlockingIPCContext_coherent state blocking⟩
+  · simpa [publishBlockingIPCContext, hscheduler, hschedulerLifecycle] using hcapabilities
+  · simpa [publishBlockingIPCContext] using hvirtual
+  · simpa [publishBlockingIPCContext] using hipc
+  · simpa [publishBlockingIPCContext] using htransfers
+  · simpa [publishBlockingIPCContext] using hterminal
+  · simp [publishBlockingIPCContext]
+
 /-- Restore a released blocking context into the authoritative resumable bank
 before making its owner visible as ready.  Every check is finite and mirrors
 the corresponding `ResumablePreemption.WellFormed` obligation. -/
@@ -1938,6 +2059,101 @@ theorem dispatchBlockingReceive_delivered_preserves_runtimeWellFormed
                   simpa [dispatchBlockingReceive, hresolve, saved, houtcome] using
                     publishBlockingIPCContext_sameScheduler_preserves_runtimeWellFormed
                       state next hstate hscheduler hcurrent
+
+/-- A typed receive that reports a block into an idle scheduler preserves the
+complete runtime invariant.  The dependency result fixes the pre-block caller
+and exact scheduler mutation; observing no selected peer in the published
+post-state rules out the restoration branch. -/
+theorem dispatchBlockingReceive_idle_block_preserves_runtimeWellFormed
+    state handleWord frame registers
+    (hstate : BlockingRuntimeWellFormed state)
+    (hblocked :
+      (dispatchBlockingReceive state handleWord frame registers).reply = .blocked)
+    (hidle :
+      (dispatchBlockingReceive state handleWord frame registers).state.scheduler.lifecycle.current =
+        none) :
+    RuntimeWellFormed
+      (dispatchBlockingReceive state handleWord frame registers).state := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hblocked
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk next result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | delivered envelope =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | blocked =>
+                  by_cases hsome : next.ipc.scheduler.lifecycle.current.isSome = true
+                  · cases hrestore : restoreBlockingPeer state next with
+                    | error reason =>
+                        simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore] at hblocked
+                    | ok published =>
+                        obtain ⟨selected, destination, hselected, _, _, _, _, _, _, hcontext⟩ :=
+                          restoreBlockingPeer_exact state next published hrestore
+                        have hpublishedCurrent :
+                            published.scheduler.lifecycle.current = some selected := by
+                          rw [← (restoreBlockingPeer_blockingCoherent
+                            state next published hrestore).1]
+                          change published.blockingIPC.scheduler.lifecycle.current = some selected
+                          have hipc : published.blockingIPC = next.ipc := congrArg
+                            BlockingIPCContext.State.ipc hcontext
+                          rw [hipc]
+                          exact hselected
+                        simp only [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore] at hidle
+                        simp [hpublishedCurrent] at hidle
+                  · have hexact := BlockingIPCContext.receive_blocked_ipc_exact
+                      state.blockingIPCContext state.execution.core.context.currentSubject
+                      resolution.handle.slot saved (by simp [houtcome])
+                    have hnextIPC :
+                        next.ipc = (BlockingIPC.receiveOrBlock state.blockingIPC
+                          state.execution.core.context.currentSubject
+                          resolution.handle.slot).state := by
+                      have hold := hexact.1
+                      rw [houtcome] at hold
+                      simpa [CompositeState.blockingIPCContext] using hold
+                    have hnextIdle : next.ipc.scheduler.lifecycle.current = none := by
+                      cases hcurrent : next.ipc.scheduler.lifecycle.current <;>
+                        simp_all
+                    have hidleExact := BlockingIPC.receive_blocked_idle_scheduler_exact
+                      state.blockingIPC state.execution.core.context.currentSubject
+                      resolution.handle.slot hexact.2 (by simpa [hnextIPC] using hnextIdle)
+                    have hcurrent := BlockingIPC.receive_blocked_current
+                      state.blockingIPC state.execution.core.context.currentSubject
+                      resolution.handle.slot hexact.2
+                    have hcaller : state.scheduler.lifecycle.current =
+                        some state.execution.core.context.currentSubject := by
+                      simpa [hstate.1.blockingScheduler] using hcurrent
+                    have hscheduler : next.ipc.scheduler =
+                        { state.scheduler with
+                          lifecycle := { state.scheduler.lifecycle with
+                            runnable := SubjectLifecycle.setBool
+                              state.scheduler.lifecycle.runnable
+                              state.execution.core.context.currentSubject false
+                            current := none } } := by
+                      rw [hnextIPC, hidleExact.2, hstate.1.blockingScheduler]
+                    simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] using
+                      publishBlockingIPCContext_idleBlock_preserves_runtimeWellFormed
+                        state next state.execution.core.context.currentSubject hstate.1
+                        (by
+                          have hpreserved := BlockingIPCContext.receive_preserves_wellFormed
+                            state.blockingIPCContext
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot saved hstate.2
+                          simpa [houtcome] using hpreserved)
+                        hcaller (by simpa [hstate.1.blockingScheduler] using hidleExact.1)
+                        hscheduler
 
 theorem dispatchBlockingReceive_preserves_blockingWellFormed state handleWord frame registers
     (hstate : BlockingIPCContext.WellFormed state.blockingIPCContext) :
@@ -2995,6 +3211,41 @@ theorem blockingGate_receive_delivered_preserves_blockingRuntimeWellFormed
     exact hblocking
   exact (blockingGate_preserves_wellFormed state
     (.receive handleWord frame registers) ⟨hstate.2, hcoherent⟩).1
+
+/-- An accepted idle block at the outer typed gate preserves the integrated
+global runtime and blocking-context invariant.  The post-state observation
+that no peer was selected binds this claim to the terminal publication branch,
+not to a restored-peer handoff. -/
+theorem blockingGate_receive_idle_block_preserves_blockingRuntimeWellFormed
+    state handleWord frame registers
+    (hstate : BlockingRuntimeWellFormed state)
+    (hcompleted : (blockingGate state (.receive handleWord frame registers)).result =
+      .completed (.receive .blocked))
+    (hidle :
+      (blockingGate state (.receive handleWord frame registers)).state.scheduler.lifecycle.current =
+        none) :
+    BlockingRuntimeWellFormed
+      (blockingGate state (.receive handleWord frame registers)).state := by
+  have hsound := blockingGate_completed_sound state
+    (.receive handleWord frame registers) (.receive .blocked) hcompleted
+  have hblocked :
+      (dispatchBlockingReceive state handleWord frame registers).reply = .blocked := by
+    simpa [blockingOperationReply] using hsound.2.1.symm
+  have hidleDispatch :
+      (dispatchBlockingReceive state handleWord frame registers).state.scheduler.lifecycle.current =
+        none := by
+    rw [hsound.2.2] at hidle
+    simpa [applyBlockingOperation] using hidle
+  refine ⟨?_, ?_⟩
+  · rw [hsound.2.2]
+    simpa [applyBlockingOperation] using
+      dispatchBlockingReceive_idle_block_preserves_runtimeWellFormed
+        state handleWord frame registers hstate hblocked hidleDispatch
+  · have hcoherent : state.BlockingIPCCoherent := by
+      rcases hstate.1 with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
+      exact hblocking
+    exact (blockingGate_preserves_wellFormed state
+      (.receive handleWord frame registers) ⟨hstate.2, hcoherent⟩).1
 
 /-- Publish a queue-only admission without invoking lifecycle cleanup.  An
 accepted `Scheduler.add` retains the lifecycle exactly, so the only consumers

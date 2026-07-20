@@ -21,6 +21,15 @@ same transition. Termination removes the dead identity without requeuing it.
 Repeated cleanup is idempotent. Malformed stale waiters are removed by the
 same authority filter.
 
+The composite idle-block path is now part of the stable runtime claim. When a
+typed blocking receive completes as `blocked` and its published scheduler has
+no selected peer, the proof connects the dependency's exact caller and
+scheduler mutation to the composite publisher: the caller is non-runnable,
+the ready queue remains empty, the active translation is cleared, and both the
+global runtime invariant and waiter/saved-context agreement are preserved.
+This is specifically the idle terminal publication; immediate peer handoff
+and restoration remain a separate proof boundary.
+
 The typed blocked-context successor also exposes one atomic subject-termination
 publication law: after lifecycle termination accepts, the same composite
 post-state contains neither the dead subject's waiter index nor its suspended
