@@ -197,6 +197,17 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
     FailStop.blockingGate_rejection_atomic state operation,
     FailStop.blockingGate_completed_sound state operation⟩
 
+/-- SC-COMPOSITE-BLOCKING-REJECTION-WF: every finite ordinary denial at the
+typed blocking gate preserves the full composite runtime invariant because it
+returns the literal pre-state. -/
+theorem composite_blocking_gate_rejection_preserves_runtimeWellFormed state operation
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hrejected : FailStop.CompositeBlockingGateRejection
+      (FailStop.blockingGate state operation).result) :
+    FailStop.RuntimeWellFormed (FailStop.blockingGate state operation).state := by
+  exact FailStop.blockingGate_rejection_preserves_runtimeWellFormed
+    state operation hstate hrejected
+
 /-- Concrete non-vacuity for the outer blocking rejection classifier: the
 boot-produced empty waiter store classifies cancellation of subject `1` as an
 ordinary atomic `notWaiting` denial. -/

@@ -2116,6 +2116,18 @@ theorem blockingGate_rejection_atomic state operation
                     state subject reply hreply (by simp [houtcome])
                   simpa [houtcome] using hatomic
 
+/-- Every classified blocking-gate denial preserves the complete composite
+runtime invariant.  This is the global-invariant slice available before the
+mutating block, wake, and cancellation publishers are folded into
+`RuntimeWellFormed`: rejection is literal state identity, so no projection can
+drift while reporting an ordinary nonfatal denial. -/
+theorem blockingGate_rejection_preserves_runtimeWellFormed state operation
+    (hstate : RuntimeWellFormed state)
+    (hrejected : CompositeBlockingGateRejection (blockingGate state operation).result) :
+    RuntimeWellFormed (blockingGate state operation).state := by
+  rw [blockingGate_rejection_atomic state operation hrejected]
+  exact hstate
+
 /-- Every block, wake, cancel, typed rejection, and latch rejection preserves
 the authoritative waiter/context agreement and its scheduler projection. -/
 theorem blockingGate_preserves_wellFormed state operation
