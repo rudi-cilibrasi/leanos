@@ -1,5 +1,5 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	36
+# mandatory-count	39
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
@@ -34,6 +34,9 @@ return-fast-entry-cstar-relaxation	return	controlled-rejection	30	leanos-@VERSIO
 return-fast-entry-sfmask-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-sfmask-relaxation.iso	leanos-return-fast-entry-sfmask-relaxation.elf	return-corruption-fast-entry-sfmask-relaxation.serial.log	fast-entry-sfmask-relaxation	19	fast-entry-target-readback
 return-fast-entry-sysenter-cs-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-sysenter-cs-relaxation.iso	leanos-return-fast-entry-sysenter-cs-relaxation.elf	return-corruption-fast-entry-sysenter-cs-relaxation.serial.log	fast-entry-sysenter-cs-relaxation	20	fast-entry-target-readback
 return-fast-entry-sysenter-esp-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-fast-entry-sysenter-esp-relaxation.iso	leanos-return-fast-entry-sysenter-esp-relaxation.elf	return-corruption-fast-entry-sysenter-esp-relaxation.serial.log	fast-entry-sysenter-esp-relaxation	21	fast-entry-target-readback
+return-direct-port-bitmap-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-direct-port-bitmap-relaxation.iso	leanos-return-direct-port-bitmap-relaxation.elf	return-corruption-direct-port-bitmap-relaxation.serial.log	direct-port-bitmap-relaxation	22	direct-port-control-readback
+return-direct-port-limit-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-direct-port-limit-relaxation.iso	leanos-return-direct-port-limit-relaxation.elf	return-corruption-direct-port-limit-relaxation.serial.log	direct-port-limit-relaxation	23	direct-port-control-readback
+return-direct-port-granularity-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-direct-port-granularity-relaxation.iso	leanos-return-direct-port-granularity-relaxation.elf	return-corruption-direct-port-granularity-relaxation.serial.log	direct-port-granularity-relaxation	24	direct-port-control-readback
 double-fault	double-fault	fail-stop	30	leanos-@VERSION@-x86_64-double-fault.iso	leanos-double-fault.elf	double-fault.serial.log	double-fault	-	-
 entry-stack-overflow	entry-stack-overflow	fail-stop	30	leanos-@VERSION@-x86_64-entry-stack-overflow.iso	leanos-entry-stack-overflow.elf	entry-stack-overflow.serial.log	entry-stack-overflow	-	-
 double-fault-guard-mapped	double-fault-guard	controlled-rejection	30	leanos-@VERSION@-x86_64-double-fault-guard-mapped.iso	leanos-double-fault-guard-mapped.elf	double-fault-guard-mapped.serial.log	double-fault-guard-mapped	-	-

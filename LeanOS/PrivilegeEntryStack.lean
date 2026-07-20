@@ -387,12 +387,8 @@ example : ∀ entry ∈ manifest,
         () := by
   intro entry hentry
   simp [manifest] at hentry
-  rcases hentry with rfl | rfl | rfl | rfl | rfl
-  · exact ⟨.privilegeChange 0 0x23 0 0 0, by native_decide⟩
-  · exact ⟨.privilegeChange 0 0x23 0 0 0, by native_decide⟩
-  · exact ⟨.privilegeChange 0 0x23 0 0 0, by native_decide⟩
-  · exact ⟨.privilegeChange 0 0x23 0 0 0, by native_decide⟩
-  · exact ⟨.privilegeChange 0 0x23 0 0 0, by native_decide⟩
+  rcases hentry with rfl | rfl | rfl | rfl | rfl | rfl <;>
+    exact ⟨.privilegeChange 0 0x23 0 0 0, by native_decide⟩
 
 example :
     ∃ budget, authorize sampleLayout []

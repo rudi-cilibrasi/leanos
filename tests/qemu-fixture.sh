@@ -92,7 +92,8 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   status=$?
   set -e
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
-  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
+  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/12 ENTRY-MANIFEST ordinary=6 extended=6,7 auxiliary=1 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
+  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' "$log"
   sed -i \
     -e 's/schedule=one-shot-pit/schedule=bounded-two-shot-pit/' \
     -e 's/mode=one-shot origin=cpl3/mode=bounded-one-shot sequence=1 origin=cpl3/' \
@@ -108,7 +109,8 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   status=$?
   set -e
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
-  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
+  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/12 ENTRY-MANIFEST ordinary=6 extended=6,7 auxiliary=1 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
+  sed -i '/^LEANOS\/6 CONTROL/i LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' "$log"
   sed -i \
     -e 's|LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc|' \
     -e '/^LEANOS\/5 /d' \
@@ -117,7 +119,8 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
     -e '/^LEANOS\/6 COPY direction=out/a LEANOS/11 ENTRY-HIGH-WATER path=user-page-fault observed-bytes=496 usable-bytes=16384 margin-bytes=15888 authority=diagnostic result=PASS\nLEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS\nLEANOS/10 IPC event=send sender=1 endpoint=10 payload0=1279607118 payload1=20307 accepted=1\nLEANOS/10 IPC event=wake subject=2 ready-insertions=1 reserved=1 result=PASS\nLEANOS/8 PAGING root=B selected=1 result=PASS\nLEANOS/10 IPC event=dispatch subject=2 address-space=2 reservation=owned trusted=1\nLEANOS/10 IPC event=deliver receiver=2 endpoint=10 sender=1 payload0=1279607118 payload1=20307 exact=1 canaries=preserved\nLEANOS/11 ENTRY-HIGH-WATER path=syscall observed-bytes=512 usable-bytes=16384 margin-bytes=15872 authority=diagnostic result=PASS\nLEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1' \
     "$log"
   if [[ "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == entry-adversarial ]]; then
-    sed -i '/event=dispatch subject=1/a LEANOS/11 ENTRY-ADVERSARIAL attempted-vector=14 delivered=13 privileged-handler=unreached result=PASS\nLEANOS/11 ENTRY-ADVERSARIAL attempted-vector=32 delivered=13 privileged-handler=unreached result=PASS' "$log"
+    sed -i '/^LEANOS\/6 COPY direction=in/,/^LEANOS\/10 FINAL status=PASS/d' "$log"
+    sed -i '/event=dispatch subject=1/a LEANOS/11 ENTRY-ADVERSARIAL attempted-vector=14 delivered=13 privileged-handler=unreached result=PASS\nLEANOS/11 ENTRY-ADVERSARIAL attempted-vector=32 delivered=13 privileged-handler=unreached result=PASS\nLEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS\nLEANOS/16 DIRECT-PORT-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\nLEANOS/16 DIRECT-PORT-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\nLEANOS/8 PAGING root=B selected=1 result=PASS\nLEANOS/16 DIRECT-PORT-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\nLEANOS/16 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0' "$log"
   fi
   exit "$status"
 fi

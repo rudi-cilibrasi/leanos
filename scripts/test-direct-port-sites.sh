@@ -34,6 +34,22 @@ grep -Fq 'error: boot-only PCI configuration site classification drifted' \
   exit 1
 }
 
+if grep -q '^user_a_direct_port_probe' "$manifest"; then
+  sed 's/DirectPortIO.user-denial-probe/DirectPortIO.debug-exit/' \
+    "$manifest" >"$tmp/user-authority.tsv"
+  if ./scripts/check-direct-port-sites.py "$elf" "$tmp/user-authority.tsv" \
+      >"$tmp/user-authority.log" 2>&1; then
+    echo "error: user denial probe authority fixture unexpectedly passed" >&2
+    exit 1
+  fi
+  grep -Fq 'error: user direct-port denial probe has authority owner' \
+    "$tmp/user-authority.log" || {
+    cat "$tmp/user-authority.log" >&2
+    echo "error: user denial probe fixture lacked semantic diagnostic" >&2
+    exit 1
+  }
+fi
+
 cp boot/kernel.c "$tmp/pci-kernel.c"
 printf '\nstatic void unauthorized_port_call(void) { out32(0x80u, 0); }\n' \
   >>"$tmp/pci-kernel.c"
