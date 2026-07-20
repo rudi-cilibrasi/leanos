@@ -556,14 +556,26 @@ isr13:
 #ifdef LEANOS_ENTRY_ADVERSARIAL
     clac
     cld
+    /* This gate precedes the shared SAVE/NORMALIZE_ENTRY macro definitions.
+       Keep the equivalent has-error layout explicit: one padding word, the
+       15-register bank, then error/RIP/CS/RFLAGS/RSP/SS. */
     push %rax; push %rbx; push %rcx; push %rdx; push %rbp; push %rsi; push %rdi
     push %r8; push %r9; push %r10; push %r11; push %r12; push %r13; push %r14; push %r15
     sub $8, %rsp
+    movq $0, (%rsp)
+    mov $13, %edi
+    mov $1, %esi
+    mov %rsp, %rdx
+    mov 144(%rsp), %rcx
+    call authorize_interrupt_entry
     mov 128(%rsp), %rdi
     mov 136(%rsp), %rsi
     mov 144(%rsp), %rdx
     call entry_adversarial_gp_handler
+    cmp $2, %rax
+    je direct_port_restore_peer
     mov %rax, 136(%rsp)
+    call complete_interrupt_entry
     add $8, %rsp
     /* Discard the #GP error word by shifting the five-word user frame into
        the standard SAVE+iret layout consumed by the existing validator. */
@@ -578,6 +590,24 @@ isr13:
     mov 160(%rsp), %rax
     mov %rax, 152(%rsp)
     mov $2, %esi
+    jmp user_return_epilogue
+.global direct_port_restore_peer
+direct_port_restore_peer:
+    /* Drop the normalization word before installing the peer's exact
+       standard SAVE+iret context. */
+    add $8, %rsp
+    lea saved_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    /* A completed blocked syscall returns this typed peer-dispatch marker;
+       every unrelated saved register and the complete iret frame are copied
+       byte-for-byte from B's kernel-owned continuation. */
+    movq $0xd13, 112(%rsp)
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    call complete_interrupt_entry
+    mov $3, %esi
     jmp user_return_epilogue
 #else
     cli
@@ -1270,6 +1300,46 @@ user_b_entry:
 #endif
     int $0x80
 #ifndef LEANOS_PREEMPTION_SCENARIO
+#ifdef LEANOS_ENTRY_ADVERSARIAL
+    cmp $0xd13, %rax
+    jne 2f
+    test %rbx, %rbx
+    jne 2f
+    test %rcx, %rcx
+    jne 2f
+    cmp $B_INITIAL_RDX, %rdx
+    jne 2f
+    cmp $B_INITIAL_RBP, %rbp
+    jne 2f
+    cmp $B_INITIAL_RSI, %rsi
+    jne 2f
+    cmp $B_INITIAL_RDI, %rdi
+    jne 2f
+    cmp $B_INITIAL_R8, %r8
+    jne 2f
+    cmp $B_INITIAL_R9, %r9
+    jne 2f
+    cmp $B_INITIAL_R10, %r10
+    jne 2f
+    cmp $B_INITIAL_R11, %r11
+    jne 2f
+    cmp $B_INITIAL_R14, %r14
+    jne 2f
+    cmp $B_INITIAL_R15, %r15
+    jne 2f
+    movabs $B_INITIAL_R12, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %rax
+    cmp %rax, %r13
+    jne 2f
+    mov $15, %rax
+    movabs $0xb2b2d13e51a7e55e, %rbx
+    mov $0x030201, %rcx
+    mov $0x51a7, %rdx
+    int $0x80
+    ud2
+#else
     cmp $0x4c45414e, %rax
     jne 2f
     cmp $0x4f53, %rbx
@@ -1307,6 +1377,7 @@ user_b_entry:
     mov $0x4f53, %rcx
     mov $9, %rax
     int $0x80
+#endif
 #else
 1:  jmp 1b
 #endif

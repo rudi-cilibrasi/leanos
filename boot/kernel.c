@@ -163,6 +163,7 @@ static uint64_t entry_stack_high_water_pattern = UINT64_C(0x6c65616e6f735741);
 #endif
 #ifdef LEANOS_ENTRY_ADVERSARIAL
 static unsigned entry_adversarial_step;
+static uint64_t direct_port_fault_attestation;
 #endif
 static uint8_t copy_buffer[16];
 static unsigned copy_step;
@@ -290,6 +291,7 @@ static void check_direct_port_control(unsigned report) {
         ((low >> 32) & 0xff000000u) | (high << 32);
     if (limit != sizeof(tss) - 1 || base != (uint64_t)&tss ||
         ((low >> 40) & 0xfu) != 0xbu || ((low >> 47) & 1u) != 1u ||
+        ((low >> 55) & 1u) != 0u ||
         tss.iomap != sizeof(tss) || ((flags >> 12) & 3u) != 0)
         fail("direct-port-control-readback");
     if (report) {
@@ -316,6 +318,7 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     uint64_t expected_error, dpl, purpose;
     if (vector == 6) { expected_error = 0; dpl = 0; purpose = 4; }
     else if (vector == 7) { expected_error = 0; dpl = 0; purpose = 5; }
+    else if (vector == 13) { expected_error = 1; dpl = 0; purpose = 1; }
     else if (vector == 14) { expected_error = 1; dpl = 0; purpose = 1; }
     else if (vector == 32) { expected_error = 0; dpl = 0; purpose = 2; }
     else if (vector == 128) { expected_error = 0; dpl = 3; purpose = 3; }
@@ -335,7 +338,11 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     uint64_t descriptor = vector | vector << 8 | has_error << 16;
     uint64_t frame = saved_cs | (uint64_t)user << 8;
     uint64_t context = current_subject | current_subject << 8 | (cr3 >> 12) << 16;
-    if (leanos_entry_demo(descriptor, frame, 0x800000, context, 3) == 0)
+    /* Vector 13 is the reviewed direct-port denial gate. Its bounded user
+       operation is classified by DirectPortIO below; every other ordinary
+       gate must also match the generated InterruptEntry manifest. */
+    if (vector != 13 &&
+        leanos_entry_demo(descriptor, frame, 0x800000, context, 3) == 0)
         fail("entry-model-rejected");
     (void)dpl;
     (void)purpose;
@@ -389,9 +396,33 @@ uint64_t entry_adversarial_gp_handler(uint64_t error, uint64_t rip,
         if (leanos_direct_port_io_demo(0, 0, 0, 0xf4, 1, 0x11) !=
             UINT64_C(0x0144332211))
             fail("direct-port-model-denial");
+        if (blocking_ipc_step != 2 || saved_context_owner_b != 2 ||
+            saved_context_b[15] != saved_context_b_original_rip ||
+            saved_context_b[17] != saved_context_b_original_flags ||
+            saved_context_b[18] != saved_context_b_original_rsp ||
+            saved_context_b[16] != 0x23 || saved_context_b[19] != 0x1b)
+            fail("direct-port-peer-context");
+        /* DirectPortIO first types the architectural #GP(0) denial; the
+           canonical contained-user-fault class then reuses the existing
+           atomic cleanup/survivor-dispatch adapter. */
+        uint64_t result = leanos_fault_dispatch_demo(14, saved_cs & 3u,
+            current_subject, current_subject, saved_context_owner_b,
+            saved_context_owner_b);
+        if (result != UINT64_C(0x00000000ff020202))
+            fail("direct-port-fault-dispatch");
+        uint64_t selected = (result >> 8) & 0xffu;
+        uint64_t address_space = (result >> 16) & 0xffu;
+        uint64_t cleanup = (result >> 24) & 0x1fu;
+        if (selected != saved_context_owner_b || address_space != 2 ||
+            cleanup != 0x1fu || ((result >> 29) & 7u) != 7u)
+            fail("direct-port-fault-encoding");
+        direct_port_fault_attestation = result;
+        current_subject = selected;
         serial_puts("LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS\n");
+        serial_puts("LEANOS/16 DIRECT-PORT-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+        serial_puts("LEANOS/16 DIRECT-PORT-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
         ++entry_adversarial_step;
-        return rip + 1;
+        return 2;
     }
     if (error != expected_error[entry_adversarial_step])
         fail("entry-adversarial-gp");
@@ -637,6 +668,9 @@ static const char *return_corruption_name(uint64_t mode) {
 #if LEANOS_RETURN_CORRUPTION_MODE == 23
     case 23: return "direct-port-limit-relaxation";
 #endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 24
+    case 24: return "direct-port-granularity-relaxation";
+#endif
     default: return "none";
     }
 }
@@ -652,7 +686,7 @@ static void inject_return_corruption(uint64_t *saved) {
     if (mode == 13) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
-    serial_puts(mode >= 14 && mode <= 23
+    serial_puts(mode >= 14 && mode <= 24
         ? " stage=machine-control result=INJECTED\n"
         : " stage=outgoing-frame result=INJECTED\n");
     switch (mode) {
@@ -745,6 +779,11 @@ static void inject_return_corruption(uint64_t *saved) {
 #if LEANOS_RETURN_CORRUPTION_MODE == 23
     case 23:
         gdt64[5] = (gdt64[5] & ~UINT64_C(0xffff)) | (sizeof(tss) - 2);
+        break;
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 24
+    case 24:
+        gdt64[5] |= UINT64_C(1) << 55;
         break;
 #endif
     default: fail("user-return-fixture-mode");
@@ -1375,6 +1414,19 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_ENTRY_ADVERSARIAL
+    if (current_subject == 2 && number == 15) {
+        check_selected_root_b();
+        if (blocking_ipc_step != 2 || entry_adversarial_step != 3 ||
+            direct_port_fault_attestation != UINT64_C(0x00000000ff020202) ||
+            arg0 != UINT64_C(0xb2b2d13e51a7e55e) ||
+            arg1 != UINT64_C(0x030201) || arg2 != UINT64_C(0x51a7))
+            fail("direct-port-peer-state");
+        serial_puts("LEANOS/16 DIRECT-PORT-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
+        serial_puts("LEANOS/16 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0\n");
+        finish(0x10);
+    }
+#endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
     if (number == 14 && current_subject == 2) {
         check_selected_root_b();
