@@ -187,9 +187,15 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
       (FailStop.blockingGate state operation).state ∧
     (FailStop.CompositeBlockingGateRejection
         (FailStop.blockingGate state operation).result →
-      (FailStop.blockingGate state operation).state = state) := by
+      (FailStop.blockingGate state operation).state = state) ∧
+    (∀ reply, (FailStop.blockingGate state operation).result = .completed reply →
+      state.execution.mode = .running ∧
+        reply = FailStop.blockingOperationReply state operation ∧
+        (FailStop.blockingGate state operation).state =
+          FailStop.applyBlockingOperation state operation) := by
   exact ⟨FailStop.blockingGate_preserves_wellFormed state operation hstate,
-    FailStop.blockingGate_rejection_atomic state operation⟩
+    FailStop.blockingGate_rejection_atomic state operation,
+    FailStop.blockingGate_completed_sound state operation⟩
 
 /-- Concrete non-vacuity for the outer blocking rejection classifier: the
 boot-produced empty waiter store classifies cancellation of subject `1` as an

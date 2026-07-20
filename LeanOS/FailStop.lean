@@ -2003,6 +2003,29 @@ inductive CompositeBlockingGateRejection : CompositeBlockingGateResult → Prop 
   | cancel {reply} (hrejected : CompositeBlockingCancelRejection reply) :
       CompositeBlockingGateRejection (.completed (.cancel reply))
 
+/-- Exact composite post-state selected by one typed blocking operation.  This
+is public so a refinement layer cannot pair a successful blocking reply with a
+caller-selected or dependency-local post-state. -/
+def applyBlockingOperation (state : CompositeState) : CompositeBlockingOperation → CompositeState
+  | .receive handleWord frame registers =>
+      (dispatchBlockingReceive state handleWord frame registers).state
+  | .send handleWord word0 word1 =>
+      (dispatchBlockingSend state handleWord word0 word1).state
+  | .cancel subject =>
+      (dispatchBlockingCancel state subject).state
+
+/-- Exact typed observation selected by one blocking operation.  Successful
+delivery, blocking, enqueue, wake, and cancellation remain distinguishable
+from every finite dependency-local rejection. -/
+def blockingOperationReply (state : CompositeState) :
+    CompositeBlockingOperation → CompositeBlockingOperationReply
+  | .receive handleWord frame registers =>
+      .receive (dispatchBlockingReceive state handleWord frame registers).reply
+  | .send handleWord word0 word1 =>
+      .send (dispatchBlockingSend state handleWord word0 word1).reply
+  | .cancel subject =>
+      .cancel (dispatchBlockingCancel state subject).reply
+
 /-- Total typed blocking gate under the same irreversible execution latch as
 the ordinary composite gate.  No operation input carries caller identity,
 address-space identity, or a saved-context owner. -/
@@ -2012,16 +2035,29 @@ def blockingGate (state : CompositeState) (operation : CompositeBlockingOperatio
   | .handling _ => { state, result := .rejectedBusy }
   | .halted record => { state, result := .rejectedHalted record }
   | .running =>
-      match operation with
-      | .receive handleWord frame registers =>
-          let outcome := dispatchBlockingReceive state handleWord frame registers
-          { state := outcome.state, result := .completed (.receive outcome.reply) }
-      | .send handleWord word0 word1 =>
-          let outcome := dispatchBlockingSend state handleWord word0 word1
-          { state := outcome.state, result := .completed (.send outcome.reply) }
-      | .cancel subject =>
-          let outcome := dispatchBlockingCancel state subject
-          { state := outcome.state, result := .completed (.cancel outcome.reply) }
+      { state := applyBlockingOperation state operation
+        result := .completed (blockingOperationReply state operation) }
+
+theorem blockingGate_running_exact state operation
+    (hmode : state.execution.mode = .running) :
+    blockingGate state operation =
+      { state := applyBlockingOperation state operation
+        result := .completed (blockingOperationReply state operation) } := by
+  simp [blockingGate, hmode]
+
+/-- A completed blocking result proves that the execution latch was running
+and fixes both the exact typed dependency reply and exact composite post-state.
+Thus an IPC/context/scheduler rejection cannot be relabeled as a successful
+block, delivery, wake, or cancellation. -/
+theorem blockingGate_completed_sound state operation reply
+    (hcompleted : (blockingGate state operation).result = .completed reply) :
+    state.execution.mode = .running ∧
+      reply = blockingOperationReply state operation ∧
+      (blockingGate state operation).state = applyBlockingOperation state operation := by
+  cases hmode : state.execution.mode with
+  | running => simp [blockingGate, hmode] at hcompleted ⊢; simp [blockingGate, hmode, hcompleted]
+  | handling active => simp [blockingGate, hmode] at hcompleted
+  | halted record => simp [blockingGate, hmode] at hcompleted
 
 theorem blockingGate_mode_rejection_atomic state operation
     (hrejected : (blockingGate state operation).result = .rejectedBusy ∨
@@ -2052,7 +2088,8 @@ theorem blockingGate_rejection_atomic state operation
       | receive handleWord frame registers =>
           cases houtcome : dispatchBlockingReceive state handleWord frame registers with
           | mk next reply =>
-              simp only [blockingGate, hmode, houtcome] at hrejected ⊢
+              simp only [blockingGate, hmode, applyBlockingOperation,
+                blockingOperationReply, houtcome] at hrejected ⊢
               cases hrejected with
               | receive hreply =>
                   have hatomic := dispatchBlockingReceive_rejected_atomic
@@ -2061,7 +2098,8 @@ theorem blockingGate_rejection_atomic state operation
       | send handleWord word0 word1 =>
           cases houtcome : dispatchBlockingSend state handleWord word0 word1 with
           | mk next reply =>
-              simp only [blockingGate, hmode, houtcome] at hrejected ⊢
+              simp only [blockingGate, hmode, applyBlockingOperation,
+                blockingOperationReply, houtcome] at hrejected ⊢
               cases hrejected with
               | send hreply =>
                   have hatomic := dispatchBlockingSend_rejected_atomic
@@ -2070,7 +2108,8 @@ theorem blockingGate_rejection_atomic state operation
       | cancel subject =>
           cases houtcome : dispatchBlockingCancel state subject with
           | mk next reply =>
-              simp only [blockingGate, hmode, houtcome] at hrejected ⊢
+              simp only [blockingGate, hmode, applyBlockingOperation,
+                blockingOperationReply, houtcome] at hrejected ⊢
               cases hrejected with
               | cancel hreply =>
                   have hatomic := dispatchBlockingCancel_rejected_atomic
@@ -2088,15 +2127,15 @@ theorem blockingGate_preserves_wellFormed state operation
   | running =>
       cases operation with
       | receive handleWord frame registers =>
-          simpa [blockingGate, hmode] using
+          simpa [blockingGate, hmode, applyBlockingOperation] using
             dispatchBlockingReceive_preserves_wellFormed
               state handleWord frame registers hstate
       | send handleWord word0 word1 =>
-          simpa [blockingGate, hmode] using
+          simpa [blockingGate, hmode, applyBlockingOperation] using
             dispatchBlockingSend_preserves_wellFormed
               state handleWord word0 word1 hstate
       | cancel subject =>
-          simpa [blockingGate, hmode] using
+          simpa [blockingGate, hmode, applyBlockingOperation] using
             dispatchBlockingCancel_preserves_wellFormed state subject hstate
 
 /-- Publish a queue-only admission without invoking lifecycle cleanup.  An
