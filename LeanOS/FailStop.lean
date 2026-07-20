@@ -651,6 +651,14 @@ def RuntimeWellFormed (state : CompositeState) : Prop :=
   (state.execution.returnAuthorityArmed = true → state.ReturnPlanLive = true) ∧
   state.BlockingIPCCoherent
 
+/-- The blocking store observes the same authoritative lifecycle as every
+other runtime projection. -/
+theorem RuntimeWellFormed.blockingLifecycle {state : CompositeState}
+    (hstate : RuntimeWellFormed state) :
+    state.blockingIPC.scheduler.lifecycle = state.lifecycle := by
+  rcases hstate with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
+  exact hblocking.2
+
 /-! ## Boot-produced initial runtime -/
 
 private def bootCapabilities : Capability.State :=
@@ -2353,6 +2361,15 @@ private def installTerminatedResumable (state : CompositeState)
     transfers
     blockingIPC := { state.blockingIPC with scheduler := resumable.scheduler } }
 
+/-- Publish one explicit subject termination through both authoritative cleanup
+stores.  The blocking transition runs against the live pre-state, so it can
+remove the exact waiter/context pair before the resumable/resource publisher
+installs the same terminated lifecycle everywhere else. -/
+private def installTerminatedSubject (state : CompositeState)
+    (subject : BlockingIPC.SubjectId)
+    (resumable : ResumablePreemption.State) : CompositeState :=
+  installTerminatedResumable (publishTerminatedBlockingSubject state subject) resumable
+
 /-- Publish interrupt-driven subject cleanup through the same authoritative
 resumable/resource path as explicit termination, then close the kernel copy
 window as required by every completed inbound entry. -/
@@ -2795,7 +2812,7 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
       match outcome.result with
       | .rejected _ => state
       | .accepted =>
-          installTerminatedResumable state
+          installTerminatedSubject state subject
             (ResumablePreemption.cleanupSubject state.resumable subject)
   | .scheduleAdd subject =>
       let outcome := schedulerAdmission state subject
@@ -2831,7 +2848,7 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
           match state.scheduler.lifecycle.current with
           | none => state
           | some subject =>
-              installTerminatedResumable state
+              installTerminatedSubject state subject
                 (ResumablePreemption.cleanupSubject state.resumable subject)
   | .restart => state
 
@@ -4410,7 +4427,7 @@ theorem gate_terminateCurrent_accepted_sound state context next
         .completed (.scheduler (.accepted context)) ∧
       ∃ subject, state.scheduler.lifecycle.current = some subject ∧
         (gate state .terminateCurrent).state =
-          installTerminatedResumable state
+          installTerminatedSubject state subject
             (ResumablePreemption.cleanupSubject state.resumable subject) := by
   cases hcurrent : state.scheduler.lifecycle.current with
   | none => simp [Scheduler.terminateCurrent, hcurrent, Scheduler.reject] at haccepted
@@ -6061,6 +6078,7 @@ by every future operation-family preservation proof: the subject is dead,
 cannot remain current or queued, has no resumable context, and no in-flight
 sealed descendant survives the lifecycle teardown. -/
 theorem terminateSubject_accepted_cleans_runtime_references state subject lifecycle
+    (hstate : RuntimeWellFormed state)
     (hmode : state.execution.mode = .running)
     (haccepted : SubjectLifecycle.terminate state.lifecycle subject =
       { state := lifecycle, result := .accepted }) :
@@ -6073,6 +6091,8 @@ theorem terminateSubject_accepted_cleans_runtime_references state subject lifecy
           some subject ∧
       ResumablePreemption.contextFor
           (gate state (.terminateSubject subject)).state.resumable.contexts subject = none ∧
+      (gate state (.terminateSubject subject)).state.blockingIPC.waiterEndpoint subject = none ∧
+      (gate state (.terminateSubject subject)).state.blockingContexts subject = none ∧
       (∀ endpoint,
         (gate state (.terminateSubject subject)).state.transfers.pending endpoint = none) := by
   have hdead := ResumablePreemption.cleanup_terminates_subject
@@ -6081,10 +6101,19 @@ theorem terminateSubject_accepted_cleans_runtime_references state subject lifecy
     state.resumable subject
   have hcontext := ResumablePreemption.cleanup_removes_context
     state.resumable subject
+  have hblockingAccepted :
+      (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle subject).result =
+        .accepted := by
+    rw [hstate.blockingLifecycle]
+    simp [haccepted]
+  have hblockingClean := BlockingIPCContext.terminate_accepted_cleans_self
+    state.blockingIPCContext subject hblockingAccepted
   simp only [gate, hmode, operationReply, applyOperation, haccepted]
-  simp only [installTerminatedResumable, installTransfers, installResumable,
-    installLifecycle]
+  simp only [installTerminatedSubject, publishTerminatedBlockingSubject,
+    hblockingAccepted, installTerminatedResumable, installTransfers,
+    installResumable, installLifecycle]
   exact ⟨trivial, hdead, hscheduler.1, hscheduler.2, hcontext,
+    hblockingClean.1, hblockingClean.2,
     CapabilityTransfer.cancelAllOffers_pending _⟩
 
 /-- Accepted termination preserves both scheduler projections, including when
@@ -6103,15 +6132,23 @@ theorem gate_terminateSubject_accepted_preserves_schedulerWellFormed
     state.resumable subject hstate.2.2.2.2.2.2.2.2.1
   have hscheduler := hcleanup.1
   have hpreemption := hstate.2.2.2.2.2.2.2.1
+  have hblockingAccepted :
+      (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle subject).result =
+        .accepted := by
+    rw [hstate.blockingLifecycle]
+    exact haccepted
   refine ⟨?_, ?_⟩
-  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, installTerminatedResumable,
       installTransfers, installResumable, installLifecycle] using hscheduler
   · rcases hpreemption with ⟨_, hticks⟩
     refine ⟨?_, ?_⟩
-    · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+    · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+        publishTerminatedBlockingSubject, hblockingAccepted, installTerminatedResumable,
         installTransfers, installResumable, installLifecycle] using hscheduler
-    · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
-        installTransfers, installResumable, installLifecycle] using hticks
+    · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+        publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+        installTerminatedResumable] using hticks
 
 /-- Accepted termination preserves the saved-context bank's capacity,
 uniqueness, validity, current-subject exclusion, and ready-queue agreement,
@@ -6135,18 +6172,28 @@ theorem gate_terminateSubject_accepted_preserves_resumableContextBank
     state.resumable subject hstate.2.2.2.2.2.2.2.2.1
   rcases hcleanup with
     ⟨_, hcapacity, hunique, hvalid, habsent, hready, _, _, _, _⟩
+  have hblockingAccepted :
+      (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle subject).result =
+        .accepted := by
+    rw [hstate.blockingLifecycle]
+    exact haccepted
   simp only
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
-  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, installTerminatedResumable,
       installTransfers, installResumable, installLifecycle] using hcapacity
-  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, installTerminatedResumable,
       installTransfers, installResumable, installLifecycle] using hunique
-  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, installTerminatedResumable,
       installTransfers, installResumable, installLifecycle,
       ResumablePreemption.validContext] using hvalid
-  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, installTerminatedResumable,
       installTransfers, installResumable, installLifecycle] using habsent
-  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedResumable,
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, installTerminatedResumable,
       installTransfers, installResumable, installLifecycle,
       ResumablePreemption.ReadyContextAgreement] using hready
 
@@ -6293,7 +6340,55 @@ theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
     RuntimeWellFormed (gate state (.terminateSubject subject)).state := by
   have hpreserved := installTerminatedResumable_cleanup_preserves_runtimeWellFormed
     state subject hstate hmode
-  simpa [gate, hmode, applyOperation, haccepted] using hpreserved
+  have hblockingAccepted :
+      (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle subject).result =
+        .accepted := by
+    rw [hstate.blockingLifecycle]
+    exact haccepted
+  unfold RuntimeWellFormed at hpreserved ⊢
+  rcases hpreserved with
+    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive, hblocking⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable, CompositeState.Coherent] using hcoherent
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable, WellFormed] using hexecution
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable] using hlifecycle
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable] using hcapabilities
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable] using hvirtual
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable] using hipc
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable] using hscheduler
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable] using hpreemption
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable] using hresumable
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable] using htransfers
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable] using hhalted
+  · simp [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable, hlive]
+  · simp [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable, CompositeState.BlockingIPCCoherent, hblocking]
 
 /-- Every public subject-termination request preserves the global invariant:
 never-issued/already-dead subjects reject atomically, while acceptance performs
@@ -8188,6 +8283,9 @@ private def blockingContextEvidenceCancelled (state : CompositeState) :
     CompositeBlockingGateOutcome :=
   blockingGate (blockingContextEvidenceBlocked state).state (.cancel 2)
 
+private def blockingContextEvidenceTerminated (state : CompositeState) : GateOutcome :=
+  gate (blockingContextEvidenceBlocked state).state (.terminateSubject 2)
+
 /-- One mixed global blocking-gate trace first rejects a stale handle without
 mutation, then blocks subject 2, immediately restores scheduler-selected peer
 1 (including the modeled CR3 flush), and finally wakes subject 2 while
@@ -8206,6 +8304,18 @@ example (state : CompositeState) :
       (blockingContextEvidenceBlocked state).state.resumable.translations.active = some 1 ∧
       (blockingContextEvidenceBlocked state).state.resumable.translations.entries = [] := by
   exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+set_option maxHeartbeats 800000 in
+/-- Explicit global termination consumes the waiter and exact blocked context
+created by the public blocking gate; the dead subject is never requeued. -/
+example (state : CompositeState) :
+    (blockingContextEvidenceTerminated state).result =
+        .completed (.terminateSubject .accepted) ∧
+      (blockingContextEvidenceTerminated state).state.blockingIPC.waiterEndpoint 2 = none ∧
+      (blockingContextEvidenceTerminated state).state.blockingContexts 2 = none ∧
+      (blockingContextEvidenceTerminated state).state.scheduler.lifecycle.capabilities.subjects
+        2 = false := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
 
 /-- A mixed rejected-block-wake trace composes at the authoritative composite
 boundary.  The rejected prefix is atomic; both accepted suffix steps preserve

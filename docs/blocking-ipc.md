@@ -25,7 +25,11 @@ The typed blocked-context successor also exposes one atomic subject-termination
 publication law: after lifecycle termination accepts, the same composite
 post-state contains neither the dead subject's waiter index nor its suspended
 blocked context. A lifecycle rejection publishes nothing and returns the
-identical typed context and composite states. Terminating an endpoint owner still requires a broader
+identical typed context and composite states. The public explicit-termination
+gate and its scheduler-selected `terminateCurrent` spelling now use this
+publisher before committing resumable/resource cleanup, so waiter and blocked
+context absence are part of the same typed global result as lifecycle, ready
+queue, resumable-context, and transfer cleanup. Terminating an endpoint owner still requires a broader
 authority filter for other affected waiters before this predicate can be folded
 into the global runtime invariant.
 
