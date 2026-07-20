@@ -67,12 +67,14 @@ partial log does not pass. The executable scenarios currently include:
   typed composite dispatch contract and resumes B in B's owned address space;
 - boot-time memory-map validation, reservation, frame scrubbing and publication,
   live page-table checks, WP/SMEP/SMAP probes, and bounded user-copy checks;
-- a dedicated double-fault IST fail-stop probe and a mapped-guard negative; and
-- twelve deliberately corrupted user-return images that must fail with their
-  expected typed rejection before reaching CPL3.
+- a dedicated double-fault IST fail-stop probe and a mapped-guard negative;
+- a controlled fast-entry machine-state relaxation that must be caught by the
+  live outbound MSR read-back before CPL3; and
+- a bounded suite of deliberately corrupted user-return images that must fail
+  with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-122-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+154-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -238,6 +240,14 @@ allocator ownership, page-table or kernel-owned frames, kernel state, or any
 subject-visible bytes. PCI enumeration, Command-register semantics, QEMU and
 final-binary correspondence remain trusted/tested boundaries rather than proof
 claims.
+
+The finite [fast privilege-entry control model](docs/privilege-entry-control.md)
+admits only the manifest-backed `int 0x80` system-call mechanism, requires a
+kernel-produced and read-back EFER/fast-entry-MSR denial tuple, composes the
+extended-state control snapshot, and confines normalized raw alternate-entry
+denials to the authoritative current subject. CPUID/MSR access, instruction and
+exception semantics, assembly, QEMU, and the final binary remain trusted or
+tested boundaries rather than theorem claims.
 
 The physical-frame allocator reference model and its representation,
 complexity, initialization assumptions, proved invariants, and capability

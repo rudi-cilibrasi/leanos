@@ -73,6 +73,14 @@ request an unsupported operation. The attacker may try to omit, truncate, forge,
 or reorder guest serial messages; make the guest hang or crash; or make a
 host-side emulator process merely remain alive.
 
+The bounded Phase 2 machine attacker also controls CPL3 instruction bytes and
+saved general-purpose registers. In the fast-entry-denial slice it may execute
+raw `SYSCALL` or `SYSENTER`, attempt to exploit inherited SCE or stale target
+MSRs, and present words resembling a subject, CR3, stack, survivor, vector, or
+error code. Those words are not authority inputs. Only the hardware-derived
+frame plus protected current-subject, address-space, entry-stack, and live
+control state may produce a contained denial; any mismatch is fail-stop.
+
 The harness must reject those integration failures, and the transition must give
 invalid modeled input an explicit, state-preserving result. Untrusted pull-request
 code receives no repository write token or long-lived secret.
@@ -146,6 +154,7 @@ corresponding implementation issues.
 | Interrupt descriptor/frame adapter | Loads the IDT/TSS, clears AC/DF, selects entry stacks, decodes x86 frame words, and bridges the generated manifest oracle | A descriptor, shape, bounds, latch, or ABI mismatch can authorize the wrong handler/context | `LeanOS.InterruptEntry`, `scripts/check-entry-policy.sh`, runtime snapshot, and QEMU logs |
 | Extended-state denial boundary | Reads CPUID and CR0/CR4, normalizes controls, routes vectors 6/7, invokes the generated scalar gate, decodes the selected probe, cleans up A, and restores B | A stale snapshot, wrong vector/binding, incomplete opcode inventory, or restore bug can expose shared processor state or misclassify a kernel fault | `LeanOS.ExtendedState`, `docs/extended-state-denial.md`, policy reports, decoded snapshots, and five QEMU transcripts |
 | PCI snapshot and device-control boundary | Completely enumerates the selected q35 topology and gives the PCI Command bus-master bit its architectural effect assumed by the finite quarantine model | An omitted function, stale/read-back mismatch, firmware/device disobedience, or incorrect Command semantics can permit DMA despite a valid model result | `LeanOS.DMAQuarantine`, `docs/dma-quarantine.md`; future boot/QEMU evidence remains tested, not proved |
+| Fast privilege-entry denial boundary | Reads the selected AMD CPUID contract, writes and rereads EFER/STAR/SYSENTER MSRs, routes the exact vector-6 denial, invokes the scalar classifier, cleans up A, and restores B through the sole user-return gate | Inherited SCE, a stale target/stack, wrong exception semantics, a hidden fast-entry opcode, or stale binding can bypass the reviewed `int 0x80` entry or misclassify a kernel fault | `LeanOS.PrivilegeEntryControl`, `docs/privilege-entry-control.md`, hosted 32-vector corpus, final-ELF inventories, decoded snapshots, and two QEMU transcripts |
 | Compiler, assembler, linker, and linker script | Translate and lay out the executable; no verified compilation claim is made | The image may not correspond to reviewed source | Pinned versions, map file, and build logs |
 | GRUB 2 and Multiboot2 implementation | Loads the image and passes boot information | It can load or initialize the wrong bytes/state | Pinned package/artifact and boot test |
 | SeaBIOS | Initializes the emulated platform and starts GRUB | It can alter platform state or fail before the kernel boundary | Version reported with the QEMU build |

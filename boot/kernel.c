@@ -30,10 +30,13 @@ extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t,
 extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_extended_state_denial_demo(uint64_t, uint64_t, uint64_t,
                                                    uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_privilege_entry_control_demo(uint64_t, uint64_t, uint64_t,
+                                                     uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_fault_dispatch_demo(uint64_t, uint64_t, uint64_t,
                                             uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
+extern void read_fast_entry_msrs(uint64_t state[8]);
 extern void enable_smep(void);
 extern void run_smap_probe(void);
 extern void smap_copy_from(void *, const void *, uint64_t);
@@ -201,6 +204,60 @@ static void record_extended_state_cpuid(void) {
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     serial_puts("LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS\n");
 #endif
+}
+
+/* Bind the fast-entry denial recipe to the finite CPU projection modeled by
+   LeanOS.PrivilegeEntryControl.  These are trusted CPUID observations, not a
+   proof of instruction semantics: the selected QEMU contract must identify as
+   AMD, advertise legacy SYSENTER and SYSCALL, and advertise long mode before
+   its reviewed MSR denial tuple can authorize a user return. */
+static __attribute__((noinline)) void check_fast_entry_cpuid(void) {
+    uint32_t max_leaf, vendor_b, vendor_c, vendor_d;
+    __asm__ volatile ("cpuid"
+        : "=a"(max_leaf), "=b"(vendor_b), "=c"(vendor_c), "=d"(vendor_d)
+        : "a"(0u), "c"(0u));
+    if (max_leaf < 1u || vendor_b != UINT32_C(0x68747541) ||
+        vendor_d != UINT32_C(0x69746e65) ||
+        vendor_c != UINT32_C(0x444d4163))
+        fail("fast-entry-cpuid-vendor");
+
+    uint32_t leaf_a, leaf_b, leaf_c, leaf_d;
+    __asm__ volatile ("cpuid"
+        : "=a"(leaf_a), "=b"(leaf_b), "=c"(leaf_c), "=d"(leaf_d)
+        : "a"(1u), "c"(0u));
+    (void)leaf_a;
+    (void)leaf_b;
+    (void)leaf_c;
+    if (((leaf_d >> 11) & 1u) == 0u)
+        fail("fast-entry-cpuid-sysenter");
+
+    uint32_t max_extended;
+    __asm__ volatile ("cpuid"
+        : "=a"(max_extended), "=b"(leaf_b), "=c"(leaf_c), "=d"(leaf_d)
+        : "a"(UINT32_C(0x80000000)), "c"(0u));
+    if (max_extended < UINT32_C(0x80000001))
+        fail("fast-entry-cpuid-extended-leaf");
+    __asm__ volatile ("cpuid"
+        : "=a"(leaf_a), "=b"(leaf_b), "=c"(leaf_c), "=d"(leaf_d)
+        : "a"(UINT32_C(0x80000001)), "c"(0u));
+    if (((leaf_d >> 11) & 1u) == 0u || ((leaf_d >> 29) & 1u) == 0u)
+        fail("fast-entry-cpuid-syscall-long-mode");
+}
+
+/* Read back every modeled fast-entry MSR after the exception manifest is live
+   and before the first CPL3 return.  EFER is compared through the complete
+   model mask; all target registers must exactly match the kernel-written
+   denial state. */
+static void check_fast_entry_control(void) {
+    uint64_t state[8];
+    read_fast_entry_msrs(state);
+    const uint64_t efer_model_mask = (1ull << 0) | (1ull << 8) |
+        (1ull << 10) | (1ull << 11);
+    const uint64_t efer_denied = (1ull << 8) | (1ull << 10) | (1ull << 11);
+    if ((state[0] & efer_model_mask) != efer_denied)
+        fail("fast-entry-efer-readback");
+    for (unsigned i = 1; i < 8; ++i)
+        if (state[i] != 0) fail("fast-entry-target-readback");
 }
 
 static uint64_t idt_target(const struct idt_entry *entry) {
@@ -498,13 +555,38 @@ static const char *return_corruption_name(uint64_t mode) {
     case 11: return "post-validation-mutation";
     case 12: return "blocking-context-canary";
     case 13: return "capability-reuse-generation";
+#if LEANOS_RETURN_CORRUPTION_MODE == 14
+    case 14: return "fast-entry-sce-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 15
+    case 15: return "fast-entry-lstar-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 16
+    case 16: return "fast-entry-sysenter-eip-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 17
+    case 17: return "fast-entry-star-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 18
+    case 18: return "fast-entry-cstar-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 19
+    case 19: return "fast-entry-sfmask-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 20
+    case 20: return "fast-entry-sysenter-cs-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 21
+    case 21: return "fast-entry-sysenter-esp-relaxation";
+#endif
     default: return "none";
     }
 }
 
-/* Controlled negative images corrupt the actual outgoing frame immediately
-   before the production validator reads it. Each image must terminate here,
-   before the first user instruction or iret completion can be observed. */
+/* Controlled negative images corrupt the outgoing frame or one protected
+   machine control immediately before the production validator reads it. Each
+   image must terminate here, before the first user instruction or iret
+   completion can be observed. */
 static void inject_return_corruption(uint64_t *saved) {
     uint64_t mode = return_corruption_mode;
     if (mode == 0) return;
@@ -512,7 +594,9 @@ static void inject_return_corruption(uint64_t *saved) {
     if (mode == 13) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
-    serial_puts(" stage=outgoing-frame result=INJECTED\n");
+    serial_puts(mode >= 14 && mode <= 21
+        ? " stage=machine-control result=INJECTED\n"
+        : " stage=outgoing-frame result=INJECTED\n");
     switch (mode) {
     case 1: saved[16] = 0x08; break;
     case 2: saved[19] = 0x10; break;
@@ -530,6 +614,71 @@ static void inject_return_corruption(uint64_t *saved) {
     case 10: current_subject = current_subject == 1 ? 2 : 1; break;
     case 11: break;
     case 12: saved[7] ^= 1; break;
+#if LEANOS_RETURN_CORRUPTION_MODE == 14
+    case 14: {
+        uint32_t low, high;
+        __asm__ volatile ("rdmsr" : "=a"(low), "=d"(high)
+            : "c"(UINT32_C(0xc0000080)));
+        low |= 1u;
+        __asm__ volatile ("wrmsr" : : "a"(low), "d"(high),
+            "c"(UINT32_C(0xc0000080)) : "memory");
+        break;
+    }
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 15
+    case 15: {
+        const uint64_t target = (uint64_t)user_a_entry;
+        __asm__ volatile ("wrmsr" : : "a"((uint32_t)target),
+            "d"((uint32_t)(target >> 32)), "c"(UINT32_C(0xc0000082)) :
+            "memory");
+        break;
+    }
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 16
+    case 16: {
+        const uint64_t target = (uint64_t)user_a_entry;
+        __asm__ volatile ("wrmsr" : : "a"((uint32_t)target),
+            "d"((uint32_t)(target >> 32)), "c"(UINT32_C(0x176)) :
+            "memory");
+        break;
+    }
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 17
+    case 17:
+        __asm__ volatile ("wrmsr" : : "a"(UINT32_C(0x8)), "d"(0),
+            "c"(UINT32_C(0xc0000081)) : "memory");
+        break;
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 18
+    case 18: {
+        const uint64_t target = (uint64_t)user_a_entry;
+        __asm__ volatile ("wrmsr" : : "a"((uint32_t)target),
+            "d"((uint32_t)(target >> 32)), "c"(UINT32_C(0xc0000083)) :
+            "memory");
+        break;
+    }
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 19
+    case 19:
+        __asm__ volatile ("wrmsr" : : "a"(UINT32_C(0x200)), "d"(0),
+            "c"(UINT32_C(0xc0000084)) : "memory");
+        break;
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 20
+    case 20:
+        __asm__ volatile ("wrmsr" : : "a"(UINT32_C(0x8)), "d"(0),
+            "c"(UINT32_C(0x174)) : "memory");
+        break;
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 21
+    case 21: {
+        const uint64_t target = (uint64_t)user_a_stack;
+        __asm__ volatile ("wrmsr" : : "a"((uint32_t)target),
+            "d"((uint32_t)(target >> 32)), "c"(UINT32_C(0x175)) :
+            "memory");
+        break;
+    }
+#endif
     default: fail("user-return-fixture-mode");
     }
 }
@@ -582,6 +731,9 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
         (cr4 & required_cr4) != required_cr4 ||
         (cr4 & forbidden_cr4) != 0)
         fail("extended-state-denial-peer-controls");
+    /* Re-read the complete kernel-produced fast-entry denial tuple at the
+       sole outbound gate.  A post-boot relaxation cannot reach iretq. */
+    check_fast_entry_control();
     /* Accepted ordinary entries remain armed through handler dispatch and
        context selection.  Clear only in this final validated return gate;
        initial boot dispatch is intentionally unarmed. */
@@ -809,7 +961,11 @@ static void replay_oracle(void) {
                                             ? leanos_extended_state_denial_demo(v->words[0],
                                                 v->words[1], v->words[2], v->words[3],
                                                 v->words[4], v->words[5])
-                                            : leanos_fault_dispatch_demo(v->words[0], v->words[1],
+                                            : v->adapter == 11
+                                                ? leanos_privilege_entry_control_demo(v->words[0],
+                                                v->words[1], v->words[2], v->words[3],
+                                                v->words[4], v->words[5])
+                                                : leanos_fault_dispatch_demo(v->words[0], v->words[1],
                                                 v->words[2], v->words[3], v->words[4],
                                                 v->words[5]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
@@ -931,7 +1087,6 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
         (1ull << 22) | (1ull << 18) | (1ull << 10) | (1ull << 9);
     uint64_t policy = extended_state_features_accepted &&
         (cr0 & required_cr0) == required_cr0 && (cr4 & forbidden_cr4) == 0;
-    uint64_t mode = vector == 6 ? 6 : 0;
     const uint64_t initial_live = (1ull << 1) | (1ull << 2);
     if (extended_state_authority.live != initial_live ||
         extended_state_authority.ready != (1ull << 2) ||
@@ -939,12 +1094,30 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
         extended_state_authority.contexts != (1ull << 2) ||
         extended_state_authority.active != current_subject)
         fail("extended-state-denial-authority-prestate");
-    uint64_t transition = leanos_extended_state_denial_demo(policy, mode, vector,
-        extended_state_authority.current, extended_state_authority.active,
-        extended_state_authority.current);
-    if ((transition & 0xffffffffffffff00ull) != 0x3f00000000000100ull)
-        fail("extended-state-denial-model");
-    uint64_t peer = transition & 0xffu;
+    uint64_t peer;
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    if (extended_state_probe_class >= 5) {
+        if (vector != 6 || !policy)
+            fail("fast-entry-denial-vector");
+        uint64_t event = extended_state_probe_class == 5 ? 2 : 3;
+        uint64_t transition = leanos_privilege_entry_control_demo(
+            1, 0, event, vector, extended_state_authority.current,
+            extended_state_authority.active);
+        if (transition != 0xd001)
+            fail("fast-entry-denial-model");
+        peer = 2;
+    } else {
+#endif
+        uint64_t mode = vector == 6 ? 6 : 0;
+        uint64_t transition = leanos_extended_state_denial_demo(policy, mode, vector,
+            extended_state_authority.current, extended_state_authority.active,
+            extended_state_authority.current);
+        if ((transition & 0xffffffffffffff00ull) != 0x3f00000000000100ull)
+            fail("extended-state-denial-model");
+        peer = transition & 0xffu;
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    }
+#endif
     if (peer != 2 || (extended_state_authority.ready & (1ull << peer)) == 0 ||
         (extended_state_authority.contexts & (1ull << peer)) == 0)
         fail("extended-state-denial-authority-selection");
@@ -960,21 +1133,27 @@ uint64_t extended_state_denial_handler(uint64_t vector, uint64_t saved_cs,
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     if (current_subject != 1 || peer != 2)
         fail("extended-state-denial-scenario-binding");
-    if (extended_state_probe_class > 4)
+    if (extended_state_probe_class > 6)
         fail("extended-state-denial-probe-class");
     uint64_t expected_vector = extended_state_probe_class >= 2 ? 6 : 7;
     if (vector != expected_vector)
         fail("extended-state-denial-probe-vector");
     current_subject = peer;
     extended_state_selected_cr3 = (uint64_t)page_map_level_4_b;
-    serial_puts("LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=");
+    serial_puts(extended_state_probe_class >= 5
+        ? "LEANOS/14 FAST-ENTRY event=deny subject=1 vector="
+        : "LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=");
     serial_u64(vector);
     serial_puts(" instruction=");
     serial_puts(extended_state_probe_class == 0 ? "x87" :
         extended_state_probe_class == 1 ? "mmx" :
         extended_state_probe_class == 2 ? "sse" :
-        extended_state_probe_class == 3 ? "sse2" : "avx");
-    serial_puts(" bank-write=prevented cleanup=complete peer=2\n");
+        extended_state_probe_class == 3 ? "sse2" :
+        extended_state_probe_class == 4 ? "avx" :
+        extended_state_probe_class == 5 ? "syscall" : "sysenter");
+    serial_puts(extended_state_probe_class >= 5
+        ? " alternate-target=unreached cleanup=complete peer=2\n"
+        : " bank-write=prevented cleanup=complete peer=2\n");
     return (uint64_t)initial_context_b;
 #else
     fail("extended-state-denial-dispatch-unpublished");
@@ -1014,8 +1193,12 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if ((cr0 & required) != required || (cr4 & forbidden_peer_cr4) != 0 ||
             cr3 != (uint64_t)page_map_level_4_b)
             fail("extended-state-denial-peer-controls");
-        serial_puts("LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n");
-        serial_puts("LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1\n");
+        serial_puts(extended_state_probe_class >= 5
+            ? "LEANOS/14 FAST-ENTRY event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n"
+            : "LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved\n");
+        serial_puts(extended_state_probe_class >= 5
+            ? "LEANOS/14 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 alternate-target=0\n"
+            : "LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1\n");
         finish(0x10);
     }
 #endif
@@ -1428,7 +1611,9 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
-    serial_puts("LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
+    serial_puts(extended_state_probe_class >= 5
+        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off\n"
+        : "LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
     serial_puts("LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
@@ -1444,6 +1629,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     replay_oracle();
 
     privilege_init();
+    check_fast_entry_cpuid();
+    check_fast_entry_control();
+#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+    if (extended_state_probe_class >= 5)
+        serial_puts("LEANOS/14 FAST-ENTRY cpu.vendor=AuthenticAMD mode=long64 syscall=1 sysenter=1 efer.sce=0 star=0 lstar=0 cstar=0 sfmask=0 sysenter.cs=0 sysenter.esp=0 sysenter.eip=0 writes=complete readback=exact result=PASS\n");
+#endif
 #ifdef LEANOS_DOUBLE_FAULT_PROBE
     run_double_fault_probe();
 #endif
@@ -1482,13 +1673,17 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     current_subject = 1;
     __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
-    if (extended_state_probe_class > 4)
+    if (extended_state_probe_class > 6)
         fail("extended-state-probe-class");
-    serial_puts("LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=");
+    serial_puts(extended_state_probe_class >= 5
+        ? "LEANOS/14 FAST-ENTRY event=enter subject=1 address-space=1 instruction="
+        : "LEANOS/13 EXTENDED-STATE event=enter subject=1 address-space=1 instruction=");
     serial_puts(extended_state_probe_class == 0 ? "x87" :
         extended_state_probe_class == 1 ? "mmx" :
         extended_state_probe_class == 2 ? "sse" :
-        extended_state_probe_class == 3 ? "sse2" : "avx");
+        extended_state_probe_class == 3 ? "sse2" :
+        extended_state_probe_class == 4 ? "avx" :
+        extended_state_probe_class == 5 ? "syscall" : "sysenter");
     serial_puts(extended_state_probe_class >= 2 ?
         " expected-vector=6\n" : " expected-vector=7\n");
     enter_user(user_a_entry, user_a_stack_top);

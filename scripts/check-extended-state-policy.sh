@@ -3,6 +3,7 @@ set -euo pipefail
 
 elf="${1:-build/boot/leanos.elf}"
 probe="${2:-}"
+fast_probe="${LEANOS_FAST_ENTRY_PROBE:-}"
 boot_source="${LEANOS_EXTENDED_STATE_BOOT_SOURCE:-boot/boot.S}"
 kernel_source="${LEANOS_EXTENDED_STATE_KERNEL_SOURCE:-boot/kernel.c}"
 [[ -f "$elf" ]] || { echo "error: missing extended-state-policy ELF: $elf" >&2; exit 1; }
@@ -129,7 +130,17 @@ disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 denied_instructions="$(grep -Ei \
   '^[[:space:]]*[0-9a-f]+:[[:space:]]+((lmsw|rdpkru|wrpkru|f[a-z0-9]+|x(save|rstor)[a-z0-9]*|x(get|set)bv|v?(ld|st)mxcsr|emms|femms|vzero(upper|all))([[:space:]]|$)|[^#]*%(st([[:space:],]|\([0-7]\))|mm[0-7]|xmm[0-9]+|ymm[0-9]+|zmm[0-9]+))' \
   <<<"$disassembly" || true)"
-if [[ -z "$probe_address" ]]; then
+if [[ -n "$fast_probe" ]]; then
+  [[ "$fast_probe" == syscall || "$fast_probe" == sysenter ]] || {
+    echo "error: extended-state field=fast-probe unsupported=$fast_probe" >&2
+    exit 1
+  }
+  [[ -z "$denied_instructions" ]] || {
+    echo "error: extended-state field=denied-family final-elf unauthorized" >&2
+    printf '%s\n' "$denied_instructions" >&2
+    exit 1
+  }
+elif [[ -z "$probe_address" ]]; then
   [[ -z "$denied_instructions" ]] || {
     echo "error: extended-state field=denied-family final-elf unauthorized" >&2
     printf '%s\n' "$denied_instructions" >&2

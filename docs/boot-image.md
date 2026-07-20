@@ -20,6 +20,17 @@ from the documented toolchain. There are no repository-supplied binary blobs.
 
 ## Stable protocol and termination
 
+Version 14 adds two dedicated fast-entry-denial images. Subject A executes the
+single allowlisted raw `SYSCALL` or `SYSENTER` opcode under the selected AMD
+long-mode `-cpu max` contract. The exact transcript requires the kernel-owned
+CPUID/MSR/control snapshot, vector-6 zero-error denial, an observation that no
+alternate CPL0 target ran, complete cleanup of A, and restoration of B through
+the sole validated `iretq` path with its CR3, stack, registers, and resources
+intact.
+The scenarios are separate mandatory rows in
+`scripts/emulator-evidence-matrix.tsv`; neither observation establishes the
+architectural behavior on another QEMU version or physical CPU.
+
 Version 10 adds the scheduler-driven blocking-IPC slice in
 [ADR 0009](adr/0009-blocking-ipc-boot.md). The exact trace starts B in CPL3,
 records its empty receive and non-runnable state, dispatches A in A's address
@@ -127,6 +138,19 @@ inside the ISO; no wall-clock build timestamp is embedded. GitHub's ephemeral
 workflow token publishes the release, and OIDC-backed GitHub artifact
 attestations provide provenance without a long-lived secret.
 
+For the fast-entry rows, retained workflow evidence includes both probe ISOs,
+final ELFs and maps, final page-table plans, exact serial logs, decoded
+three-record CPU/CPUID/MSR/control snapshots, and final-ELF policy reports that
+inventory the eight `wrmsr` sites, nine `rdmsr` sites, and the sole deliberate
+probe opcode. The shared evidence directory binds the QEMU command and hashes;
+the hosted oracle results retain all 154 vectors, including the 32-vector
+entry-control corpus and 10-vector fault-dispatch corpus; and the entry-policy
+fixture log records controlled
+source/ELF rejection diagnostics. A missing artifact is visible because the CI
+upload uses named paths and the evidence packager rejects a missing or stale
+passing row. These files are reproducibility and inspection metadata, not
+proof of CPUID/MSR or exception semantics.
+
 After downloading every release asset into one directory, verify it with:
 
 ```sh
@@ -156,6 +180,10 @@ The following new code and assumptions are trusted, not proved:
 - `boot/kernel.c`, including the bounded Multiboot2 byte parser, physical-frame
   scrub, UART polling, port I/O, QEMU debug-exit behavior, serial formatting,
   and the manual `lean_uint64_dec_eq` implementation;
+- the fast-entry CPU/MSR bridge: CPUID vendor/feature decoding, privileged
+  `rdmsr`/`wrmsr`, EFER reserved-bit handling, the assumed AMD long-mode
+  `SYSCALL`/`SYSENTER` denial semantics and exception priority, vector-6 frame
+  construction, cleanup/restore code, and the final pre-`iretq` readback;
 - Lean code generation and generated C, GCC, GNU assembler/linker and linker
   garbage collection, the linker script, GRUB, SeaBIOS, QEMU, and the x86-64,
   Multiboot2, 16550 UART, and emulated-device contracts.

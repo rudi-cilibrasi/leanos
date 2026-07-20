@@ -35,6 +35,82 @@ RUNNER_RESULT_CLASSES = {
     "entry-stack-overflow": "fail-stop",
     "double-fault-guard": "controlled-rejection",
 }
+REQUIRED_FAST_ENTRY_ROWS = {
+    "fast-entry-syscall": {
+        "runner": "boot",
+        "result_class": "accepted-boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fast-entry-syscall.iso",
+        "elf": "leanos-fast-entry-syscall.elf",
+        "serial_log": "fast-entry-syscall.serial.log",
+        "scenario": "fast-entry-syscall",
+        "mode": "-",
+        "reason": "-",
+    },
+    "fast-entry-sysenter": {
+        "runner": "boot",
+        "result_class": "accepted-boot",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fast-entry-sysenter.iso",
+        "elf": "leanos-fast-entry-sysenter.elf",
+        "serial_log": "fast-entry-sysenter.serial.log",
+        "scenario": "fast-entry-sysenter",
+        "mode": "-",
+        "reason": "-",
+    },
+    "return-fast-entry-sce-relaxation": {
+        "runner": "return",
+        "result_class": "controlled-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-fast-entry-sce-relaxation.iso",
+        "elf": "leanos-return-fast-entry-sce-relaxation.elf",
+        "serial_log": "return-corruption-fast-entry-sce-relaxation.serial.log",
+        "scenario": "fast-entry-sce-relaxation",
+        "mode": "14",
+        "reason": "fast-entry-efer-readback",
+    },
+    "return-fast-entry-lstar-relaxation": {
+        "runner": "return",
+        "result_class": "controlled-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-fast-entry-lstar-relaxation.iso",
+        "elf": "leanos-return-fast-entry-lstar-relaxation.elf",
+        "serial_log": "return-corruption-fast-entry-lstar-relaxation.serial.log",
+        "scenario": "fast-entry-lstar-relaxation",
+        "mode": "15",
+        "reason": "fast-entry-target-readback",
+    },
+    "return-fast-entry-sysenter-eip-relaxation": {
+        "runner": "return",
+        "result_class": "controlled-rejection",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-return-fast-entry-sysenter-eip-relaxation.iso",
+        "elf": "leanos-return-fast-entry-sysenter-eip-relaxation.elf",
+        "serial_log": "return-corruption-fast-entry-sysenter-eip-relaxation.serial.log",
+        "scenario": "fast-entry-sysenter-eip-relaxation",
+        "mode": "16",
+        "reason": "fast-entry-target-readback",
+    },
+}
+for mechanism, mode in (
+    ("star", "17"),
+    ("cstar", "18"),
+    ("sfmask", "19"),
+    ("sysenter-cs", "20"),
+    ("sysenter-esp", "21"),
+):
+    scenario = f"fast-entry-{mechanism}-relaxation"
+    REQUIRED_FAST_ENTRY_ROWS[f"return-{scenario}"] = {
+        "runner": "return",
+        "result_class": "controlled-rejection",
+        "timeout": "30",
+        "image": f"leanos-@VERSION@-x86_64-return-{scenario}.iso",
+        "elf": f"leanos-return-{scenario}.elf",
+        "serial_log": f"return-corruption-{scenario}.serial.log",
+        "scenario": scenario,
+        "mode": mode,
+        "reason": "fast-entry-target-readback",
+    }
 
 
 class EvidenceError(RuntimeError):
@@ -143,6 +219,20 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
         raise EvidenceError(
             f"mandatory inventory count differs: declared {mandatory_count}, found {len(rows)}"
         )
+
+    rows_by_id = {row["id"]: row for row in rows}
+    for scenario_id, expected in REQUIRED_FAST_ENTRY_ROWS.items():
+        row = rows_by_id.get(scenario_id)
+        if row is None:
+            raise EvidenceError(
+                f"mandatory fast-entry scenario is absent: {scenario_id}"
+            )
+        for key, value in expected.items():
+            if row[key] != value:
+                raise EvidenceError(
+                    f"mandatory fast-entry scenario {scenario_id} has "
+                    f"unexpected {key} {row[key]!r}"
+                )
 
     serials = [row["serial_log"] for row in rows]
     if len(serials) != len(set(serials)):
