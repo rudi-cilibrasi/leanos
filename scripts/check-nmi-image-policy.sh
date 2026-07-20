@@ -28,6 +28,8 @@ end="$(address __nmi_ist_stack_end)"
 }
 grep -Fq 'tss.ist[1] = (uint64_t)__nmi_ist_stack_end;' boot/kernel.c
 grep -Fq 'set_gate(2, isr2, 2, 0x8e);' boot/kernel.c
+grep -Fq 'firmware does not deliver NMI before' docs/interrupt-model.md
+grep -Fq 'which begins only after `NMI-READY`' docs/interrupt-model.md
 stub="$(objdump -d "$elf" | sed -n '/<isr2>:/,/<isr13>:/p')"
 [[ -n "$stub" ]] || { echo "error: could not isolate vector-2 disassembly" >&2; exit 1; }
 if grep -Eq '\<(call|iretq|push)\>' <<<"$stub"; then

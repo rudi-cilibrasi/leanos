@@ -153,7 +153,11 @@ vector-8 IST1 machine protocol. The linker now owns a separate aligned 16 KiB
 IST2 interval, the TSS selects its exclusive upper bound, and the IDT installs
 only the reviewed vector-2 DPL0 interrupt gate for this terminal purpose. Boot
 loads the fully initialized TSS before installing the IST2 gate and publishing
-the IDT, so there is no live vector-2 descriptor that references the prior TSS.
+the kernel IDT, so the kernel's live vector-2 descriptor never references the
+prior TSS. This ordering does not cover the inherited bootloader IDT before the
+kernel `lidt`: the trusted boot contract assumes that firmware does not deliver
+NMI before `privilege_init` completes. That early window is outside the model
+and the QEMU monitor-injection evidence, which begins only after `NMI-READY`.
 
 `RawNmiFrame` always contains saved RIP, CS, RFLAGS, RSP, and SS. This includes
 a CPL0 interruption because the selected contract assumes an IST switch; it

@@ -365,9 +365,12 @@ ordinary handling step, freezes every modeled subsystem and enters the same
 absorbing halt latch without return, scheduling, or CR3 continuation. The boot
 image installs the matching DPL0 vector-2 gate and dedicated IST2 stack; a
 mandatory QEMU monitor-injection probe observes real delivery across IF=0 and
-the terminal assembly record. Delivery/blocking, frame construction, and the
-compiler/emulator path remain trusted tested boundaries rather than theorem
-claims.
+the terminal assembly record after the kernel reports `NMI-READY`. The boot
+contract explicitly assumes that firmware does not deliver NMI before
+`privilege_init` completes and the kernel publishes its IDT; the inherited
+bootloader IDT and that early window are outside the model and the QEMU probe.
+Delivery/blocking, frame construction, and the compiler/emulator path remain
+trusted tested boundaries rather than theorem claims.
 
 The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,
 bounded double-fault escalation, and one absorbing gate for every modeled
