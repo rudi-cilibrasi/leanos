@@ -233,6 +233,14 @@ context state, then selects only a kernel-owned peer context or typed idle.
 Machine exception delivery and cleanup/restore remain trusted integration work
 rather than theorem claims.
 
+The finite [PCI DMA-quarantine model](docs/dma-quarantine.md) validates a
+versioned q35 manifest and proves, under an explicit device-control contract,
+that a named present unassigned function cannot change physical memory,
+allocator ownership, page-table or kernel-owned frames, kernel state, or any
+subject-visible bytes. PCI enumeration, Command-register semantics, QEMU and
+final-binary correspondence remain trusted/tested boundaries rather than proof
+claims.
+
 The finite [fast privilege-entry control model](docs/privilege-entry-control.md)
 admits only the manifest-backed `int 0x80` system-call mechanism, requires a
 kernel-produced and read-back EFER/fast-entry-MSR denial tuple, composes the
