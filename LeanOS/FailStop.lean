@@ -9723,6 +9723,7 @@ theorem gate_preserves_blockingContextAgreement state operation
 blocking endpoint, scheduler, waiter, completion, or saved-context store. -/
 inductive BlockingStateNeutralOperation : Operation → Prop where
   | selectUserReturn purpose : BlockingStateNeutralOperation (.selectUserReturn purpose)
+  | userReturn request : BlockingStateNeutralOperation (.userReturn request)
   | restart : BlockingStateNeutralOperation .restart
 
 /-- A blocking-state-neutral ordinary step retains the complete typed blocking
@@ -9737,6 +9738,8 @@ theorem gate_blockingStateNeutral_preserves_blockingIPCContext state operation
       cases hoperation
       · simp only [gate, hmode, applyOperation, selectLiveReturnAuthority]
         split <;> rfl
+      · simp only [gate, hmode, applyOperation]
+        split <;> split <;> rfl
       · simp [gate, hmode, applyOperation]
 
 /-- The first readiness-free ordinary slice preserves the full blocking
@@ -9982,7 +9985,7 @@ theorem authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
   rw [authoritativeGate_blocking_state]
   exact blockingGate_preserves_blockingRuntimeWellFormed state operation hstate
 
-/-- Return selection and restart cross the successor gate
+/-- Return selection, completion, and restart cross the successor gate
 without weakening the full authoritative blocking invariant. -/
 theorem authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
     state operation (hoperation : BlockingStateNeutralOperation operation)
@@ -9992,6 +9995,16 @@ theorem authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellForm
   rw [authoritativeGate_ordinary_state]
   exact gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
     state operation hoperation hstate
+
+/-- Accepted and fatal return completion both retain the complete blocking
+runtime invariant, so a later blocking step needs no reconstructed readiness
+witness after crossing the return-control boundary. -/
+theorem authoritativeGate_userReturn_preserves_blockingRuntimeWellFormed
+    state request (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.userReturn request))).state := by
+  exact authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+    state (.userReturn request) (.userReturn request) hstate
 
 /-- Ordinary successor operations preserve the folded authoritative invariant
 without a blocking-scheduler premise. -/
