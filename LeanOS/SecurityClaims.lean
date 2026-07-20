@@ -204,7 +204,17 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
       (FailStop.blockingGate state (.send handleWord word0 word1)).result =
         .completed (.send .sent) →
       FailStop.RuntimeWellFormed
-        (FailStop.blockingGate state (.send handleWord word0 word1)).state) := by
+        (FailStop.blockingGate state (.send handleWord word0 word1)).state) ∧
+    (∀ handleWord word0 word1 saved,
+      (FailStop.blockingGate state (.send handleWord word0 word1)).result =
+        .completed (.send (.woke saved)) →
+      ResumablePreemption.validContext
+        (FailStop.blockingGate state (.send handleWord word0 word1)).state.resumable saved) ∧
+    (∀ subject saved,
+      (FailStop.blockingGate state (.cancel subject)).result =
+        .completed (.cancel (.cancelled saved)) →
+      ResumablePreemption.validContext
+        (FailStop.blockingGate state (.cancel subject)).state.resumable saved) := by
   exact ⟨FailStop.blockingGate_preserves_wellFormed state operation hstate,
     FailStop.blockingGate_rejection_atomic state operation,
     FailStop.blockingGate_completed_sound state operation,
@@ -213,7 +223,13 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
         state handleWord frame registers envelope hglobal hcompleted,
     fun handleWord word0 word1 hglobal hcompleted =>
       FailStop.blockingGate_send_sent_preserves_runtimeWellFormed
-        state handleWord word0 word1 hglobal hcompleted⟩
+        state handleWord word0 word1 hglobal hcompleted,
+    fun handleWord word0 word1 saved hcompleted =>
+      FailStop.blockingGate_send_woke_context_valid
+        state handleWord word0 word1 saved hcompleted,
+    fun subject saved hcompleted =>
+      FailStop.blockingGate_cancel_cancelled_context_valid
+        state subject saved hcompleted⟩
 
 /-- SC-COMPOSITE-BLOCKING-REJECTION-WF: every finite ordinary denial at the
 typed blocking gate preserves the full composite runtime invariant because it
