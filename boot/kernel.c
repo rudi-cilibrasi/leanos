@@ -318,7 +318,7 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     uint64_t expected_error, dpl, purpose;
     if (vector == 6) { expected_error = 0; dpl = 0; purpose = 4; }
     else if (vector == 7) { expected_error = 0; dpl = 0; purpose = 5; }
-    else if (vector == 13) { expected_error = 1; dpl = 0; purpose = 1; }
+    else if (vector == 13) { expected_error = 1; dpl = 0; purpose = 6; }
     else if (vector == 14) { expected_error = 1; dpl = 0; purpose = 1; }
     else if (vector == 32) { expected_error = 0; dpl = 0; purpose = 2; }
     else if (vector == 128) { expected_error = 0; dpl = 3; purpose = 3; }
@@ -338,11 +338,9 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     uint64_t descriptor = vector | vector << 8 | has_error << 16;
     uint64_t frame = saved_cs | (uint64_t)user << 8;
     uint64_t context = current_subject | current_subject << 8 | (cr3 >> 12) << 16;
-    /* Vector 13 is the reviewed direct-port denial gate. Its bounded user
-       operation is classified by DirectPortIO below; every other ordinary
-       gate must also match the generated InterruptEntry manifest. */
-    if (vector != 13 &&
-        leanos_entry_demo(descriptor, frame, 0x800000, context, 3) == 0)
+    /* Every ordinary gate, including the typed vector-13 direct-port denial,
+       must match the same generated InterruptEntry manifest. */
+    if (leanos_entry_demo(descriptor, frame, 0x800000, context, 3) == 0)
         fail("entry-model-rejected");
     (void)dpl;
     (void)purpose;
@@ -377,7 +375,7 @@ static void check_entry_manifest(void) {
     if (tss.rsp0 != (uint64_t)__entry_stack_end ||
         tss.ist[0] != (uint64_t)__df_ist_stack_end)
         fail("entry-tss-mismatch");
-    serial_puts("LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
+    serial_puts("LEANOS/12 ENTRY-MANIFEST ordinary=6 extended=6,7 auxiliary=1 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
 }
 
 #ifdef LEANOS_ENTRY_ADVERSARIAL

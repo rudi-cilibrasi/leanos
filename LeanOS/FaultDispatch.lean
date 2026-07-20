@@ -950,7 +950,7 @@ private def traceRawKernelFault : InterruptEntry.RawEntry :=
     frameBytes := 24 }
 
 private def traceUnsupportedEntry : InterruptEntry.RawEntry :=
-  { traceRawKernelFault with boundVector := 13, boundStub := 13, errorCode := none }
+  { traceRawKernelFault with boundVector := 15, boundStub := 15, errorCode := none }
 
 private def traceNestedContext : InterruptEntry.KernelContext :=
   { traceKernelContext with entryActive := true }

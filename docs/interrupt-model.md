@@ -96,12 +96,14 @@ the normalizer, machine context restore, or the final binary.
 
 ## Inbound entry manifest and normalization
 
-`LeanOS.InterruptEntry` defines the complete ordinary boot manifest: vector 14
-is a DPL0 interrupt gate with a hardware error word and user-fault or supervisor
+`LeanOS.InterruptEntry` defines the complete ordinary boot manifest: vector 13
+is a user-only DPL0 interrupt gate with a hardware error word and a typed
+general-protection/direct-port denial purpose; vector 14 is a DPL0 interrupt
+gate with a hardware error word and user-fault or supervisor
 diagnostic purpose; vector 32 is a DPL0 interrupt gate without an error word;
 and vector 128 is the sole DPL3 interrupt gate and has syscall purpose. All use
 selector `0x08`, IST0, and interrupt-gate masking. Vector 8 remains owned by the
-separate terminal IST1 protocol, and vector 13 remains its bounded probe gate.
+separate terminal IST1 protocol.
 
 Raw frames have two distinct constructors. A privilege-changing frame contains
 RIP, CS, RFLAGS, RSP, and SS. A same-privilege frame contains only RIP, CS, and
@@ -121,7 +123,8 @@ confinement, nested/uncleared-state nonauthorization, and exact kernel-context
 binding. These are model results only.
 
 The generated allocation-free `leanos_entry_demo` adapter is replayed in the
-version-one oracle with valid syscall, user page fault, timer, and diagnostic
+version-one oracle with valid syscall, user general-protection/direct-port,
+user page fault, timer, and diagnostic
 records plus wrong binding, error shape, length, alignment, origin, stack,
 nested-latch, and AC/DF fixtures. `scripts/check-entry-policy.sh` enumerates the
 final-ELF entry paths and requires cleanup, shared authorization, the typed

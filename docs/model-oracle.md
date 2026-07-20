@@ -8,7 +8,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `InterruptEntry.entryDemo`, `BlockingIPC.blockingIpcDemo`,
 `CapabilityReuse.capabilityReuseDemo`, `ExtendedState.denialDispatchDemo`,
 `PrivilegeEntryControl.controlDemo`, `FaultDispatch.faultDispatchDemo`, and
-`DirectPortIO.directPortIODemo`. Its stable 182-vector order covers accepted calls,
+`DirectPortIO.directPortIODemo`. Its stable 183-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -26,6 +26,11 @@ events, stale bindings, alternate-target/stack separation, and post-fatal
 absorption. The Lean checks evaluate every expected result from
 the adapter definition and connect the accepted and rejected examples to the
 source models.
+
+The interrupt-entry corpus also includes the user-only vector-13 hardware-error
+shape and its typed general-protection/direct-port purpose. This keeps the live
+denial gate on the same generated manifest classifier as the other ordinary
+entries.
 
 The final 28 direct-port records cover the selected live-control snapshot,
 every named control mutation, stale read-back, all input/output width classes,

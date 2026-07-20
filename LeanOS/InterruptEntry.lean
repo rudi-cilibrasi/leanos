@@ -3,7 +3,7 @@ import LeanOS.Interrupt
 /-!
 # Bounded x86-64 interrupt-entry manifest and frame normalization
 
-This module models the inbound boundary for the five ordinary gates used by
+This module models the inbound boundary for the six ordinary gates used by
 the boot image.  Vector 8 deliberately remains in the separate terminal IST
 protocol.  Descriptor loads, x86 frame construction, assembly, generated C,
 and the final binary are trusted/tested boundaries rather than theorem claims.
@@ -17,7 +17,7 @@ inductive GateType where | interrupt
 
 inductive Purpose where
   | extendedUnavailable | extendedDenied
-  | userFault | timer | syscall | diagnosticRecovery
+  | generalProtectionDirectPort | userFault | timer | syscall | diagnosticRecovery
   deriving DecidableEq, Repr
 
 inductive OriginPolicy where | userOnly | userOrKernel
@@ -39,6 +39,8 @@ def invalidOpcodeEntry : ManifestEntry :=
   ⟨6, .interrupt, 0x08, 0, 0, false, .userOnly, .extendedUnavailable, true⟩
 def deviceNotAvailableEntry : ManifestEntry :=
   ⟨7, .interrupt, 0x08, 0, 0, false, .userOnly, .extendedDenied, true⟩
+def generalProtectionEntry : ManifestEntry :=
+  ⟨13, .interrupt, 0x08, 0, 0, true, .userOnly, .generalProtectionDirectPort, true⟩
 def pageFaultEntry : ManifestEntry :=
   ⟨14, .interrupt, 0x08, 0, 0, true, .userOrKernel, .userFault, true⟩
 def timerEntry : ManifestEntry :=
@@ -48,19 +50,21 @@ def syscallEntry : ManifestEntry :=
 
 /-- The complete ordinary-gate manifest.  Vector 8 is intentionally absent. -/
 def manifest : List ManifestEntry :=
-  [invalidOpcodeEntry, deviceNotAvailableEntry, pageFaultEntry, timerEntry, syscallEntry]
+  [invalidOpcodeEntry, deviceNotAvailableEntry, generalProtectionEntry, pageFaultEntry,
+    timerEntry, syscallEntry]
 
 def entrySupported (entry : ManifestEntry) : Bool :=
   entry.gate = .interrupt && entry.selector = 0x08 && entry.ist = 0 &&
     entry.interruptsDisabled &&
     ((entry = invalidOpcodeEntry) || (entry = deviceNotAvailableEntry) ||
-      (entry = pageFaultEntry) || (entry = timerEntry) || (entry = syscallEntry))
+      (entry = generalProtectionEntry) || (entry = pageFaultEntry) ||
+      (entry = timerEntry) || (entry = syscallEntry))
 
 def noDuplicateVectors (entries : List ManifestEntry) : Bool :=
   (entries.map (·.vector)).Nodup
 
 def validateManifest (entries : List ManifestEntry) : Bool :=
-  entries.length = 5 && noDuplicateVectors entries &&
+  entries.length = 6 && noDuplicateVectors entries &&
     entries.all entrySupported &&
     entries.filter (fun entry => entry.dpl = 3) = [syscallEntry]
 
@@ -69,8 +73,17 @@ theorem reviewed_manifest_valid : validateManifest manifest = true := by native_
 theorem only_syscall_is_dpl3 entry
     (hmember : entry ∈ manifest) (hdpl : entry.dpl = 3) : entry = syscallEntry := by
   simp [manifest, invalidOpcodeEntry, deviceNotAvailableEntry, pageFaultEntry,
-    timerEntry, syscallEntry] at hmember
-  rcases hmember with rfl | rfl | rfl | rfl | rfl <;> simp_all [syscallEntry]
+    generalProtectionEntry, timerEntry, syscallEntry] at hmember
+  rcases hmember with rfl | rfl | rfl | rfl | rfl | rfl <;> simp_all [syscallEntry]
+
+/-- Vector 13 is a hardware-error, user-only gate whose manifest purpose is
+the typed direct-port general-protection denial path. -/
+theorem general_protection_manifest_binding :
+    generalProtectionEntry ∈ manifest ∧
+    generalProtectionEntry.hardwareError = true ∧
+    generalProtectionEntry.origins = .userOnly ∧
+    generalProtectionEntry.purpose = .generalProtectionDirectPort := by
+  native_decide
 
 inductive RawFrame where
   /-- CPL changed, so x86 supplied saved RSP and SS. -/
@@ -327,6 +340,7 @@ def entryDemo (descriptor frame stack context cleanup : UInt64) : UInt64 :=
   let descriptorAllowed :=
     stub = vector &&
       (((vector = 6 || vector = 7) && !hasError) ||
+       (vector = 13 && hasError) ||
        (vector = 14 && hasError) ||
        (vector = 32 && !hasError) ||
        (vector = 128 && !hasError))
