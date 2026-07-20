@@ -198,13 +198,22 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
       (FailStop.blockingGate state (.receive handleWord frame registers)).result =
         .completed (.receive (.delivered envelope)) →
       FailStop.BlockingRuntimeWellFormed
-        (FailStop.blockingGate state (.receive handleWord frame registers)).state) := by
+        (FailStop.blockingGate state (.receive handleWord frame registers)).state) ∧
+    (∀ handleWord word0 word1,
+      FailStop.RuntimeWellFormed state →
+      (FailStop.blockingGate state (.send handleWord word0 word1)).result =
+        .completed (.send .sent) →
+      FailStop.RuntimeWellFormed
+        (FailStop.blockingGate state (.send handleWord word0 word1)).state) := by
   exact ⟨FailStop.blockingGate_preserves_wellFormed state operation hstate,
     FailStop.blockingGate_rejection_atomic state operation,
     FailStop.blockingGate_completed_sound state operation,
     fun handleWord frame registers envelope hglobal hcompleted =>
       FailStop.blockingGate_receive_delivered_preserves_blockingRuntimeWellFormed
-        state handleWord frame registers envelope hglobal hcompleted⟩
+        state handleWord frame registers envelope hglobal hcompleted,
+    fun handleWord word0 word1 hglobal hcompleted =>
+      FailStop.blockingGate_send_sent_preserves_runtimeWellFormed
+        state handleWord word0 word1 hglobal hcompleted⟩
 
 /-- SC-COMPOSITE-BLOCKING-REJECTION-WF: every finite ordinary denial at the
 typed blocking gate preserves the full composite runtime invariant because it

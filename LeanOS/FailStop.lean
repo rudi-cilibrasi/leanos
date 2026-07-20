@@ -1957,6 +1957,67 @@ theorem dispatchBlockingSend_preserves_wellFormed state handleWord word0 word1
                           publishReleasedBlockingContext_blockingCoherent
                             state next saved published hrestore⟩
 
+/-- A successful mailbox-only blocking send preserves the complete global
+runtime invariant.  Unlike a wake, this mutation does not change the
+authoritative scheduler: it only publishes the exact mailbox post-state after
+the typed context boundary confirms that no blocked receiver was released. -/
+theorem dispatchBlockingSend_sent_preserves_runtimeWellFormed
+    state handleWord word0 word1
+    (hstate : RuntimeWellFormed state)
+    (hsent : (dispatchBlockingSend state handleWord word0 word1).reply = .sent) :
+    RuntimeWellFormed
+      (dispatchBlockingSend state handleWord word0 word1).state := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingSend, hresolve] at hsent
+  | ok resolution =>
+      let payload : BlockingIPC.Payload := { word0, word1 }
+      cases houtcome : BlockingIPCContext.send state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot payload with
+      | mk next result released =>
+          cases result with
+          | ipcRejected reason =>
+              simp [dispatchBlockingSend, hresolve, payload, houtcome] at hsent
+          | contextRejected reason =>
+              simp [dispatchBlockingSend, hresolve, payload, houtcome] at hsent
+          | accepted =>
+              cases released with
+              | some saved =>
+                  cases hrestore : publishReleasedBlockingContext state next saved <;>
+                    simp [dispatchBlockingSend, hresolve, payload, houtcome, hrestore] at hsent
+              | none =>
+                  have haccepted :
+                      (BlockingIPCContext.send state.blockingIPCContext
+                        state.execution.core.context.currentSubject resolution.handle.slot
+                        payload).result = .accepted := by
+                    simp [houtcome]
+                  have hunreleased :
+                      (BlockingIPCContext.send state.blockingIPCContext
+                        state.execution.core.context.currentSubject resolution.handle.slot
+                        payload).released = none := by
+                    simp [houtcome]
+                  have hscheduler : next.ipc.scheduler = state.scheduler := by
+                    have hsame :=
+                      BlockingIPCContext.send_accepted_unreleased_scheduler_unchanged
+                        state.blockingIPCContext state.execution.core.context.currentSubject
+                        resolution.handle.slot payload haccepted hunreleased
+                    rw [houtcome] at hsame
+                    simpa [CompositeState.blockingIPCContext, hstate.blockingScheduler] using hsame
+                  have hcurrent : state.scheduler.lifecycle.current.isSome = true := by
+                    have hrawAccepted :
+                        (BlockingIPC.send state.blockingIPC
+                          state.execution.core.context.currentSubject resolution.handle.slot
+                          payload).result = .accepted := by
+                      exact (BlockingIPCContext.send_accepted_ipc_exact
+                        state.blockingIPCContext state.execution.core.context.currentSubject
+                        resolution.handle.slot payload haccepted).2
+                    simp only [BlockingIPC.send] at hrawAccepted
+                    split at hrawAccepted <;> simp_all [BlockingIPC.reject]
+                  simpa [dispatchBlockingSend, hresolve, payload, houtcome] using
+                    publishBlockingIPCContext_sameScheduler_preserves_runtimeWellFormed
+                      state next hstate hscheduler hcurrent
+
 /-- A composite wake publishes the exact context consumed from the blocked
 bank and clears that receiver's entry atomically. -/
 theorem dispatchBlockingSend_woke_exact state handleWord word0 word1 saved
@@ -2245,6 +2306,25 @@ theorem blockingGate_receive_delivered_preserves_runtimeWellFormed
   simpa [applyBlockingOperation] using
     dispatchBlockingReceive_delivered_preserves_runtimeWellFormed
       state handleWord frame registers envelope hstate hdelivered
+
+/-- A completed mailbox-only send at the outer typed gate preserves the full
+global invariant and is tied to the exact dependency-local mutation. -/
+theorem blockingGate_send_sent_preserves_runtimeWellFormed
+    state handleWord word0 word1
+    (hstate : RuntimeWellFormed state)
+    (hcompleted : (blockingGate state (.send handleWord word0 word1)).result =
+      .completed (.send .sent)) :
+    RuntimeWellFormed
+      (blockingGate state (.send handleWord word0 word1)).state := by
+  have hsound := blockingGate_completed_sound state
+    (.send handleWord word0 word1) (.send .sent) hcompleted
+  have hsent :
+      (dispatchBlockingSend state handleWord word0 word1).reply = .sent := by
+    simpa [blockingOperationReply] using hsound.2.1.symm
+  rw [hsound.2.2]
+  simpa [applyBlockingOperation] using
+    dispatchBlockingSend_sent_preserves_runtimeWellFormed
+      state handleWord word0 word1 hstate hsent
 
 theorem blockingGate_mode_rejection_atomic state operation
     (hrejected : (blockingGate state operation).result = .rejectedBusy ∨

@@ -357,6 +357,50 @@ theorem send_rejected_unchanged state caller slot payload
             split <;> simp_all
             next receiver rest => split <;> simp_all
 
+/-- An accepted send that releases no blocked receiver is the mailbox-only
+case.  It leaves the authoritative scheduler unchanged, which lets the
+composite runtime publish the mailbox mutation without rebuilding scheduler
+or resumable-context projections. -/
+theorem send_accepted_unreleased_scheduler_unchanged state caller slot payload
+    (haccepted : (send state caller slot payload).result = .accepted)
+    (hunreleased : (send state caller slot payload).released = none) :
+    (send state caller slot payload).state.ipc.scheduler = state.ipc.scheduler := by
+  unfold send at haccepted hunreleased ⊢
+  generalize hraw : BlockingIPC.send state.ipc caller slot payload = outcome at haccepted hunreleased ⊢
+  cases outcome with
+  | mk next result =>
+      cases result with
+      | rejected reason => simp at haccepted
+      | accepted =>
+          split at * <;> try simp_all
+          next endpoint hendpoint =>
+            split at *
+            · grind [BlockingIPC.send, BlockingIPC.reject, BlockingIPC.endpointOf]
+            · split at hunreleased <;> simp_all
+
+/-- Every context-layer accepted send is the exact accepted raw IPC send. -/
+theorem send_accepted_ipc_exact state caller slot payload
+    (haccepted : (send state caller slot payload).result = .accepted) :
+    (send state caller slot payload).state.ipc =
+        (BlockingIPC.send state.ipc caller slot payload).state ∧
+      (BlockingIPC.send state.ipc caller slot payload).result = .accepted := by
+  unfold send at haccepted ⊢
+  generalize hraw : BlockingIPC.send state.ipc caller slot payload = outcome at haccepted ⊢
+  cases outcome with
+  | mk next result =>
+      cases result with
+      | rejected reason => simp at haccepted
+      | accepted =>
+          split at haccepted
+          · simp at haccepted
+          next endpoint hendpoint =>
+            split at haccepted
+            next hqueue => simp
+            next receiver rest hqueue =>
+              split at haccepted
+              · simp at haccepted
+              next saved hsaved => simp
+
 theorem send_released_exact state caller slot payload saved
     (hreleased : (send state caller slot payload).released = some saved) :
     ∃ endpoint receiver rest,
