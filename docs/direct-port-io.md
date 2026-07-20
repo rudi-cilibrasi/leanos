@@ -5,11 +5,15 @@ models the privilege-control fields relevant to the selected deny-all user
 configuration and a finite authority manifest for the serial console, legacy
 PIC, PIT, and `isa-debug-exit` devices.
 
-The accepted control snapshot has IOPL zero, TSS descriptor limit 103, I/O-map
-base 104, and no bitmap present within the descriptor. It also records that the
-kernel produced the configuration and that a separate read-back matched. This
-is the packed 104-byte TSS layout used by the selected target: the base is the
-first byte beyond the descriptor limit. It grants no modeled user port.
+The accepted control snapshot has IOPL zero, TSS descriptor limit 103 with
+descriptor granularity `G=0`, I/O-map base 104, and no bitmap present within
+the descriptor. It also records that the kernel produced the configuration and
+that a separate read-back matched. This is the packed 104-byte TSS layout used
+by the selected target: with byte granularity, the base is the first byte
+beyond the effective descriptor limit. A page-granular descriptor is rejected
+even when its raw 20-bit limit is 103, because scaling that limit would expose
+the following bytes as a live I/O bitmap. The accepted snapshot grants no
+modeled user port.
 `currentCpl` explicitly maps user origin to CPL3 and kernel origin to CPL0;
 `selected_controls_deny_user_cpl` proves the finite privilege view denies CPL3,
 while the separate manifest constrains the otherwise privileged CPL0 path.
@@ -88,3 +92,15 @@ control snapshots. TSS construction and loading, RFLAGS decoding, I/O-bitmap
 and privilege-check semantics, exception delivery, instruction execution,
 device behavior, handwritten C and assembly, generated code, compiler/linker
 output, QEMU, physical hardware, and final-binary refinement remain unproved.
+
+The executable CPL3 denial crosses the shared generated vector-13 manifest
+normalizer with its user-only hardware-error shape and typed
+general-protection purpose. The handler then binds `#GP(0)`, the reviewed
+instruction address, and the saved `DX`/`AL` operands before reaching
+the existing atomic fault-cleanup/survivor-dispatch adapter. It retires the
+faulting subject, restores the scheduler-selected peer's kernel-owned saved
+context under that peer's address space, and reaches the peer only through the
+validated user-return epilogue; the denied `OUT` instruction is never skipped
+or resumed. Dedicated negative images mutate the I/O-map base, raw descriptor
+limit, and descriptor granularity independently and must all fail at the live
+control read-back before CPL3 entry.

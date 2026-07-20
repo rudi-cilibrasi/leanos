@@ -28,6 +28,7 @@ run_fixture() {
 wrong_target() { sed -i 's/set_gate(14, isr14,/set_gate(14, isr32,/' "$tmp/kernel.c"; }
 wrong_ud_target() { sed -i 's/set_gate(6, isr6,/set_gate(6, isr7,/' "$tmp/kernel.c"; }
 wrong_nm_target() { sed -i 's/set_gate(7, isr7,/set_gate(7, isr6,/' "$tmp/kernel.c"; }
+wrong_gp_target() { sed -i 's/set_gate(13, isr13,/set_gate(13, isr14,/' "$tmp/kernel.c"; }
 page_fault_dpl3() { sed -i 's/set_gate(14, isr14, 0, 0x8e)/set_gate(14, isr14, 0, 0xee)/' "$tmp/kernel.c"; }
 timer_dpl3() { sed -i 's/set_gate(32, isr32, 0, 0x8e)/set_gate(32, isr32, 0, 0xee)/' "$tmp/kernel.c"; }
 extra_present() { sed -i '/set_gate(13, isr13/a\    set_gate(77, isr13, 0, 0x8e);' "$tmp/kernel.c"; }
@@ -38,6 +39,10 @@ branch_ud_cleanup() { sed -i '/^isr6:/,/^\.global isr7/ s/^[[:space:]]*clac$/   
 ud_before_normalize() { sed -i '/NORMALIZE_ENTRY 6, 0/i\    call extended_state_denial_handler' "$tmp/boot.S"; }
 nm_before_normalize() { sed -i '/NORMALIZE_ENTRY 7, 0/i\    call extended_state_denial_handler' "$tmp/boot.S"; }
 c_before_normalize() { sed -i '/NORMALIZE_ENTRY 128, 0/i\    call syscall_handler' "$tmp/boot.S"; }
+gp_before_normalize() { sed -i '/call authorize_interrupt_entry/i\    call entry_adversarial_gp_handler' "$tmp/boot.S"; }
+gp_model_bypass() {
+  sed -i 's/if (leanos_entry_demo(descriptor/if (vector != 13 \&\& leanos_entry_demo(descriptor/' "$tmp/kernel.c"
+}
 wrong_tss_stack() { sed -i 's/tss.rsp0 = (uint64_t)__entry_stack_end;/tss.rsp0 = (uint64_t)boot_stack_top;/' "$tmp/kernel.c"; }
 inherited_sce() { sed -i 's/and \$~1, %eax/nop/' "$tmp/boot.S"; }
 omitted_fast_entry_readback() { sed -i 's/check_fast_entry_control();/\/\* omitted fixture \*\//' "$tmp/kernel.c"; }
@@ -59,6 +64,7 @@ omitted_return_readback() { sed -i '/^void validate_user_return/,/^}/ s/check_fa
 run_fixture wrong-target 'vector=14 field=target-or-dpl' wrong_target
 run_fixture wrong-ud-target 'vector=6 field=target-or-dpl' wrong_ud_target
 run_fixture wrong-nm-target 'vector=7 field=target-or-dpl' wrong_nm_target
+run_fixture wrong-gp-target 'vector=13 field=target-or-dpl' wrong_gp_target
 run_fixture page-fault-dpl3 'vector=14 field=target-or-dpl' page_fault_dpl3
 run_fixture timer-dpl3 'vector=32 field=target-or-dpl' timer_dpl3
 run_fixture extra-present 'vector=77 field=present' extra_present
@@ -69,6 +75,8 @@ run_fixture branch-around-nm-cleanup 'vector=7 path=denial' branch_nm_cleanup
 run_fixture ud-handler-before-normalize 'vector=6 path=denial' ud_before_normalize
 run_fixture nm-handler-before-normalize 'vector=7 path=denial' nm_before_normalize
 run_fixture c-before-normalize 'vector=128 path=normalization' c_before_normalize
+run_fixture gp-handler-before-normalize 'vector=13 path=normalization' gp_before_normalize
+run_fixture gp-generated-model-bypass 'vector=13 path=generated-model' gp_model_bypass
 run_fixture wrong-tss-stack 'vector=128 field=tss.rsp0' wrong_tss_stack
 run_fixture inherited-sce 'fast-entry control does not clear EFER.SCE' inherited_sce
 run_fixture omitted-fast-entry-readback 'fast-entry control read-back is not boot-reachable' omitted_fast_entry_readback

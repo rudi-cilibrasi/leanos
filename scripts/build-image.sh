@@ -865,12 +865,15 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
   ((direct_port_images += 1))
 done < "$matrix"
-[[ "$direct_port_images" -eq 36 ]] || {
+[[ "$direct_port_images" -eq 39 ]] || {
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
   exit 1
 }
 ./scripts/test-direct-port-sites.sh "$build/leanos.elf" \
   | tee "$build/direct-port-sites-fixtures.log"
+./scripts/test-direct-port-sites.sh "$build/leanos-entry-adversarial.elf" \
+  scripts/direct-port-sites-entry-adversarial.tsv \
+  | tee -a "$build/direct-port-sites-fixtures.log"
 
 for fixture in restore branch indirect initial-indirect; do
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \

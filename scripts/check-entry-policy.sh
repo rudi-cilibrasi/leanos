@@ -11,7 +11,7 @@ boot_source="${LEANOS_ENTRY_BOOT_SOURCE:-boot/boot.S}"
 
 symbols="$(nm "$elf")"
 control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"
-for symbol in isr6 isr7 isr14 isr32 isr80 authorize_interrupt_entry \
+for symbol in isr6 isr7 isr13 isr14 isr32 isr80 authorize_interrupt_entry \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
   page_fault_handler timer_handler entry_stack boot_stack boot_stack_top \
   normalize_fast_entry_msrs read_fast_entry_msrs check_fast_entry_cpuid; do
@@ -149,6 +149,9 @@ grep -Fq 'set_gate(6, isr6, 0, 0x8e);' "$kernel_source" || {
 grep -Fq 'set_gate(7, isr7, 0, 0x8e);' "$kernel_source" || {
   echo "error: vector=7 field=target-or-dpl" >&2; exit 1;
 }
+grep -Fq 'set_gate(13, isr13, 0, 0x8e);' "$kernel_source" || {
+  echo "error: vector=13 field=target-or-dpl" >&2; exit 1;
+}
 grep -Fq 'set_gate(14, isr14, 0, 0x8e);' "$kernel_source" || {
   echo "error: vector=14 field=target-or-dpl" >&2; exit 1;
 }
@@ -163,6 +166,10 @@ grep -Fq 'set_gate(0x80, isr80, 0, 0xee);' "$kernel_source" || {
 }
 grep -Fq 'tss.rsp0 = (uint64_t)__entry_stack_end;' "$kernel_source" || {
   echo "error: vector=128 field=tss.rsp0" >&2; exit 1;
+}
+grep -Fq 'if (leanos_entry_demo(descriptor, frame, 0x800000, context, 3) == 0)' \
+    "$kernel_source" || {
+  echo "error: vector=13 path=generated-model" >&2; exit 1;
 }
 
 source_path="$(sed -n '/^isr80:/,/^\.global isr14/p' "$boot_source")"
@@ -195,6 +202,15 @@ for vector in 6 7; do
     echo "error: vector=$vector path=denial" >&2; exit 1;
   }
 done
+
+source_path="$(sed -n '/^isr13:/,/^\/\* Vector 8 has/p' "$boot_source")"
+source_cleanup="$(grep -n -m1 '^[[:space:]]*clac$' <<<"$source_path" | cut -d: -f1 || true)"
+source_normalize="$(grep -n -m1 'call authorize_interrupt_entry' <<<"$source_path" | cut -d: -f1 || true)"
+source_handler="$(grep -n -m1 'call entry_adversarial_gp_handler' <<<"$source_path" | cut -d: -f1 || true)"
+[[ -n "$source_cleanup" && -n "$source_normalize" && -n "$source_handler" &&
+   "$source_cleanup" -lt "$source_normalize" && "$source_normalize" -lt "$source_handler" ]] || {
+  echo "error: vector=13 path=normalization" >&2; exit 1;
+}
 
 address() { nm -n "$elf" | awk -v name="$1" '$3 == name { print "0x" $1 }'; }
 check_path() {
