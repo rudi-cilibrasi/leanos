@@ -160,6 +160,13 @@ def observe(executable: str) -> list[Function]:
 
 def validate(functions: list[Function]) -> None:
     observed = {(f.bus, f.device, f.function): f for f in functions}
+    if len(observed) != len(functions):
+        counts: dict[tuple[int, int, int], int] = {}
+        for function in functions:
+            bdf = (function.bus, function.device, function.function)
+            counts[bdf] = counts.get(bdf, 0) + 1
+        duplicates = sorted(bdf for bdf, count in counts.items() if count > 1)
+        raise RuntimeError(f"duplicate q35 functions: {duplicates}")
     if set(observed) != set(EXPECTED):
         missing = sorted(set(EXPECTED) - set(observed))
         extra = sorted(set(observed) - set(EXPECTED))

@@ -70,8 +70,10 @@ checkpoint against the pinned QEMU 8.2.2 binary. It pauses the same q35/TCG,
 CPU, memory, vCPU, network, and debug-exit construction used by the image
 runner, exhaustively reads all 256 functions on manifest bus 0 through qtest's
 PCI configuration mechanism #1 interface, and rejects identity/class/header
-drift, missing or extra functions, or a set bus-master bit. Its versioned TSV
-is a construction-time QEMU observation before firmware runs.
+drift, duplicate BDF observations, missing or extra functions, or a set
+bus-master bit. Focused negative regressions exercise each rejection class so
+dictionary construction cannot silently collapse a duplicate topology record.
+Its versioned TSV is a construction-time QEMU observation before firmware runs.
 
 The guest now supplies the distinct post-firmware checkpoint. Immediately
 after its first serial boot record and before any CPL3 return, `boot/kernel.c`
