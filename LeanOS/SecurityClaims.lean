@@ -268,6 +268,22 @@ theorem composite_authoritative_syscall_then_blocking_preserves_runtimeWellForme
   exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
     state (.syscall call) blocking (.syscall call) hstate
 
+/-- Every sealed capability-transfer offer retains the complete blocking
+precondition.  The pending descendant and tagged mailbox can therefore be
+published before an arbitrary block, wake, or cancellation without a separate
+readiness reconstruction. -/
+theorem composite_authoritative_transferOffer_then_blocking_preserves_runtimeWellFormed
+    state endpointWord sourceWord sourceKind payload rights blocking
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.transferOffer endpointWord sourceWord sourceKind payload rights))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.transferOffer endpointWord sourceWord sourceKind payload rights) blocking
+      (.transferOffer endpointWord sourceWord sourceKind payload rights) hstate
+
 /-- Raw scheduler selection without a kernel-owned save/restore payload is a
 blocking-state-neutral typed boundary.  Empty dispatch and every forced
 missing-context denial can therefore be followed immediately by an arbitrary

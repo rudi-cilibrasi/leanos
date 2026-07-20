@@ -10056,9 +10056,128 @@ theorem gate_syscall_preserves_blockingRuntimeWellFormed state call
                       simpa [gate, hmode, applyOperation, houtcome, hdecode,
                         next, translations] using hselected'
 
+/-- A sealed transfer offer retains the complete blocking precondition.
+Accepted offers allocate a pending descendant and publish its sealed mailbox,
+but preserve exactly the subject, object, kind, and live-slot registries used
+to validate every existing waiter.  Rejected offers and outer-latch denials
+are literal no-ops. -/
+theorem gate_transferOffer_preserves_blockingRuntimeWellFormed state endpointWord sourceWord
+    sourceKind payload rights (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed
+      (gate state (.transferOffer endpointWord sourceWord sourceKind payload rights)).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      let outcome := CapabilityTransfer.offerWords state.transfers
+        state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+        payload rights
+      cases hresult : outcome.result with
+      | rejected reason =>
+          simpa [gate, hmode, applyOperation, outcome, hresult] using hstate
+      | accepted =>
+          have haccepted :
+              (CapabilityTransfer.offerWords state.transfers
+                state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+                payload rights).result = .accepted := by
+            simpa [outcome] using hresult
+          have hglobal :=
+            (gate_transferOffer_accepted_preserves_runtimeWellFormed state endpointWord sourceWord
+              sourceKind payload rights hstate.1 hmode haccepted).1
+          refine ⟨hglobal, ?_⟩
+          let next := (CapabilityTransfer.offerWords state.transfers
+            state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+            payload rights).state
+          have htransfer : CapabilityTransfer.WellFormed next :=
+            CapabilityTransfer.offerWords_accepted_preserves_wellFormed state.transfers
+              state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+              payload rights hstate.1.2.2.2.2.2.2.2.2.2.1 haccepted
+          have hregistry :=
+            CapabilityTransfer.offerWords_accepted_preserves_authority_registry
+              state.transfers state.execution.core.context.currentSubject endpointWord sourceWord
+              sourceKind payload rights haccepted
+          change next.capabilities.subjects = state.transfers.capabilities.subjects ∧
+              next.capabilities.objects = state.transfers.capabilities.objects ∧
+              next.capabilities.kinds = state.transfers.capabilities.kinds ∧
+              next.capabilities.slots = state.transfers.capabilities.slots ∧
+              next.allocator = state.transfers.allocator ∧
+              next.binding = state.transfers.binding ∧
+              next.issued = state.transfers.issued ∧
+              next.issuedAddressSpace = state.transfers.issuedAddressSpace at hregistry
+          rcases hregistry with ⟨hsubjects, hobjects, hkinds, hslots, _⟩
+          rcases hstate.1.1 with
+            ⟨_, hschedulerLifecycle, _, _, _, _, hipcCapabilities, _, _,
+              htransferEndpoints, _⟩
+          have hbase : state.transfers.capabilities =
+              state.blockingIPC.scheduler.lifecycle.capabilities := by
+            calc
+              state.transfers.capabilities = state.ipc.endpoints.capabilities := by
+                exact congrArg (fun endpoints => endpoints.capabilities) htransferEndpoints
+              _ = state.lifecycle.capabilities := hipcCapabilities
+              _ = state.blockingIPC.scheduler.lifecycle.capabilities :=
+                congrArg SubjectLifecycle.State.capabilities hstate.1.blockingLifecycle.symm
+          have hsubjects' : next.capabilities.subjects =
+              state.blockingIPC.scheduler.lifecycle.capabilities.subjects :=
+            hsubjects.trans (congrArg Capability.State.subjects hbase)
+          have hobjects' : next.capabilities.objects =
+              state.blockingIPC.scheduler.lifecycle.capabilities.objects :=
+            hobjects.trans (congrArg Capability.State.objects hbase)
+          have hkinds' : next.capabilities.kinds =
+              state.blockingIPC.scheduler.lifecycle.capabilities.kinds :=
+            hkinds.trans (congrArg Capability.State.kinds hbase)
+          have hslots' : next.capabilities.slots =
+              state.blockingIPC.scheduler.lifecycle.capabilities.slots :=
+            hslots.trans (congrArg Capability.State.slots hbase)
+          rcases hstate.2 with ⟨hblocking, hagreement⟩
+          rcases hblocking with
+            ⟨_, hqueues, hwaiters, hunique, hindex, hmailbox, _⟩
+          rcases hglobal with ⟨_, _, _, _, _, _, hscheduler, _, _, _, _, _, _⟩
+          have hscheduler' : Scheduler.WellFormed
+              { state.scheduler with lifecycle :=
+                { state.lifecycle with capabilities := next.capabilities } } := by
+            simpa [gate, hmode, applyOperation, haccepted, installTransfers, next] using
+              hscheduler
+          have hblocking' : BlockingIPC.WellFormed
+              { state.blockingIPC with scheduler :=
+                { state.scheduler with lifecycle :=
+                  { state.lifecycle with capabilities := next.capabilities } } } := by
+            refine ⟨hscheduler', hqueues, ?_, hunique, hindex, ?_, htransfer.1.1⟩
+            · intro endpoint subject hmember
+              obtain ⟨hliveEndpoint, ⟨slot, capability, hslot, hobject, hkind,
+                hreceive, _⟩, hliveSubject, hrunnable, howner, hcurrent, hready⟩ :=
+                hwaiters endpoint subject hmember
+              refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+              · rw [hobjects']
+                exact hliveEndpoint
+              · refine ⟨slot, capability, ?_, hobject, hkind, hreceive, ?_⟩
+                · rw [hslots']
+                  exact hslot
+                · rw [hobjects']
+                  exact hliveEndpoint
+              · rw [hsubjects']
+                exact hliveSubject
+              · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler,
+                  hschedulerLifecycle] using hrunnable
+              · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler,
+                  hschedulerLifecycle, Scheduler.ownsAddressSpace] using howner
+              · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler,
+                  hschedulerLifecycle] using hcurrent
+              · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler] using hready
+            · intro endpoint envelope hmail
+              obtain ⟨hlive, hkind, henvelope, hempty⟩ := hmailbox endpoint envelope hmail
+              refine ⟨?_, ?_, henvelope, hempty⟩
+              · rw [hobjects']
+                exact hlive
+              · rw [hkinds']
+                exact hkind
+          simpa [gate, hmode, applyOperation, haccepted, installTransfers,
+            CompositeState.blockingIPCContext, BlockingIPCContext.ContextAgreement,
+            BlockingIPCContext.WellFormed, next] using And.intro hblocking' hagreement
+
 /-- Ordinary operations currently known to retain the complete blocking
 runtime invariant.  Neutral control/data-IPC steps keep the blocking state
-literal; raw and syscall mapping use the scheduler replacement law above. -/
+literal; raw and syscall mapping use the scheduler replacement law above;
+sealed offers preserve every registry observed by existing waiters. -/
 inductive BlockingRuntimePreservingOperation : Operation → Prop where
   | neutral {operation} (hoperation : BlockingStateNeutralOperation operation) :
       BlockingRuntimePreservingOperation operation
@@ -10066,6 +10185,9 @@ inductive BlockingRuntimePreservingOperation : Operation → Prop where
       BlockingRuntimePreservingOperation (.map slot page permissions)
   | unmap page : BlockingRuntimePreservingOperation (.unmap page)
   | syscall call : BlockingRuntimePreservingOperation (.syscall call)
+  | transferOffer endpointWord sourceWord sourceKind payload rights :
+      BlockingRuntimePreservingOperation
+        (.transferOffer endpointWord sourceWord sourceKind payload rights)
 
 theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
     state operation (hoperation : BlockingRuntimePreservingOperation operation)
@@ -10080,6 +10202,9 @@ theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
         state slot page permissions hstate
   | unmap page => exact gate_unmap_preserves_blockingRuntimeWellFormed state page hstate
   | syscall call => exact gate_syscall_preserves_blockingRuntimeWellFormed state call hstate
+  | transferOffer endpointWord sourceWord sourceKind payload rights =>
+      exact gate_transferOffer_preserves_blockingRuntimeWellFormed state endpointWord sourceWord
+        sourceKind payload rights hstate
 
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
@@ -10324,9 +10449,10 @@ theorem authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellForm
   exact gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
     state operation hoperation hstate
 
-/-- Control/data-IPC and raw mapping operations retain the stronger blocking
-precondition through the authoritative successor.  A following block, wake,
-or cancellation can therefore run without reconstructing waiter readiness. -/
+/-- Control/data-IPC, mapping, syscall, and sealed-offer operations retain the
+stronger blocking precondition through the authoritative successor.  A
+following block, wake, or cancellation can therefore run without
+reconstructing waiter readiness. -/
 theorem authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
     state operation (hoperation : BlockingRuntimePreservingOperation operation)
     (hstate : BlockingRuntimeWellFormed state) :
