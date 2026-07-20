@@ -22,6 +22,7 @@ LEANOS_QEMU_FIXTURE_MODE=legacy-success "$repo_root/tests/qemu-fixture.sh" "$@"
 status=$?
 set -e
 [[ $status -eq 33 ]] || exit "$status"
+sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
 
 sed -i \
   -e 's|LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap|LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts|' \

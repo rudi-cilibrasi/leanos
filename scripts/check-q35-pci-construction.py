@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Observe and check the pinned q35 PCI construction-time inventory.
 
-This is QEMU integration evidence, not a guest boot-time quarantine check.  It
+This is QEMU integration evidence, not the guest boot-time quarantine check. It
 uses qtest to perform PCI configuration mechanism #1 reads while the machine is
-paused before firmware runs.  The later guest read-back remains deliberately
-separate because it must use issue #129's reviewed boot-only port authority.
+paused before firmware runs. The distinct guest gate performs post-firmware
+Command-register writes and read-backs before CPL3; neither checkpoint is a
+refinement proof for the Lean model.
 """
 
 from __future__ import annotations
