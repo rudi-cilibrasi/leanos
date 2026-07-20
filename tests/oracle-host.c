@@ -19,6 +19,8 @@ extern uint64_t leanos_privilege_entry_control_demo(uint64_t, uint64_t, uint64_t
                                                      uint64_t, uint64_t);
 extern uint64_t leanos_fault_dispatch_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                             uint64_t, uint64_t);
+extern uint64_t leanos_direct_port_io_demo(uint64_t, uint64_t, uint64_t, uint64_t,
+                                            uint64_t, uint64_t);
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) { return left == right; }
 
 int main(void) {
@@ -58,9 +60,13 @@ int main(void) {
                                                 ? leanos_privilege_entry_control_demo(v->words[0],
                                                 v->words[1], v->words[2], v->words[3],
                                                 v->words[4], v->words[5])
-                                                : leanos_fault_dispatch_demo(v->words[0], v->words[1],
-                                                v->words[2], v->words[3], v->words[4],
-                                                v->words[5]);
+                                                : v->adapter == 12
+                                                    ? leanos_fault_dispatch_demo(v->words[0],
+                                                    v->words[1], v->words[2], v->words[3],
+                                                    v->words[4], v->words[5])
+                                                    : leanos_direct_port_io_demo(v->words[0],
+                                                    v->words[1], v->words[2], v->words[3],
+                                                    v->words[4], v->words[5]);
         if (got != v->expected) {
             fprintf(stderr, "oracle mismatch: %u %s expected=%llu got=%llu\n", i, v->id,
                 v->expected, (unsigned long long)got);

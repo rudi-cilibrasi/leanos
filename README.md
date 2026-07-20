@@ -74,7 +74,7 @@ partial log does not pass. The executable scenarios currently include:
   with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-154-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+182-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -242,6 +242,15 @@ firmware, clears bus mastering on every present function, and reads each
 Command register back before CPL3. PCI enumeration and Command-register
 semantics, QEMU/device obedience, the handwritten C adapter, and final-binary
 correspondence remain trusted/tested boundaries rather than proof claims.
+
+The bounded [direct-port-I/O authority model](docs/direct-port-io.md) separates
+untrusted port/value words from kernel-selected purpose, models the selected
+IOPL-zero and deny-all TSS I/O-map controls, and proves that user-origin
+requests preserve the identical complete device projection. Typed kernel
+acceptance is confined to exact serial, PIC, PIT, and debug-exit manifest keys
+including direction and width. TSS loading, x86 privilege and exception
+semantics, device behavior, generated code, and the final binary remain outside
+these model-level claims.
 
 The finite [fast privilege-entry control model](docs/privilege-entry-control.md)
 admits only the manifest-backed `int 0x80` system-call mechanism, requires a

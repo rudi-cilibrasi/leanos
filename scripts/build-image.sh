@@ -102,6 +102,7 @@ lake env lean --c="$build/CapabilityReuse.c" LeanOS/CapabilityReuse.lean
 lake env lean --c="$build/ExtendedState.c" LeanOS/ExtendedState.lean
 lake env lean --c="$build/PrivilegeEntryControl.c" LeanOS/PrivilegeEntryControl.lean
 lake env lean --c="$build/FaultDispatch.c" LeanOS/FaultDispatch.lean
+lake env lean --c="$build/DirectPortIO.c" LeanOS/DirectPortIO.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -133,6 +134,13 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -c "$build/PrivilegeEntryControl.c" -o "$build/PrivilegeEntryControl.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/FaultDispatch.c" \
   -o "$build/FaultDispatch.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/DirectPortIO.c" \
+  -o "$build/DirectPortIO.o"
+# Keep the existing bounded link inventory compact while retaining both
+# independently generated model adapters in every image variant.
+ld -r "$build/FaultDispatch.o" "$build/DirectPortIO.o" \
+  -o "$build/FaultDispatchAndDirectPortIO.o"
+mv "$build/FaultDispatchAndDirectPortIO.o" "$build/FaultDispatch.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel.o"
@@ -767,6 +775,10 @@ if ! grep -q ' T leanos_extended_state_denial_demo$' <<<"$symbols"; then
 fi
 if ! grep -q ' T leanos_privilege_entry_control_demo$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_privilege_entry_control_demo" >&2
+  exit 1
+fi
+if ! grep -q ' T leanos_direct_port_io_demo$' <<<"$symbols"; then
+  echo "error: generated image does not retain leanos_direct_port_io_demo" >&2
   exit 1
 fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then

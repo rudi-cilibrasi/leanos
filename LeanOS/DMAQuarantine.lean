@@ -371,6 +371,38 @@ theorem unowned_device_preserves_complete_projection
   cases heq
   exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
+/-- One modeled unowned-device attempt names a present manifest function and
+carries the explicit device-control contract for its before/after memory
+projection.  The accepted snapshot supplies unassigned ownership and the
+disabled bus-master bit; neither fact is hidden in the step relation. -/
+def UnownedDeviceStep (accepted : AcceptedSnapshot)
+    (before after : MemoryProjection) : Prop :=
+  ∃ target, DeviceContract accepted.snapshot target before after ∧
+    ∃ function ∈ accepted.snapshot.functions,
+      function.bdf = target ∧ function.status = .present
+
+/-- Every modeled step by an unowned function is a stutter on the complete
+memory projection, not merely on one selected frame or subject view. -/
+theorem unowned_device_step_unchanged
+    (step : UnownedDeviceStep accepted before after) : after = before := by
+  obtain ⟨target, hcontract, hknown⟩ := step
+  have hpreserved := unowned_device_preserves_complete_projection
+    accepted target before after hcontract hknown
+  rcases before with ⟨beforePhysical, beforeAllocator, beforePageTables,
+    beforeKernelFrames, beforeKernel, beforeSubjects⟩
+  rcases after with ⟨afterPhysical, afterAllocator, afterPageTables,
+    afterKernelFrames, afterKernel, afterSubjects⟩
+  simp only at hpreserved
+  rcases hpreserved with ⟨hphysical, hallocator, hpageTables,
+    hkernelFrames, hkernel, hsubjects⟩
+  cases hphysical
+  cases hallocator
+  cases hpageTables
+  cases hkernelFrames
+  cases hkernel
+  cases hsubjects
+  rfl
+
 /-! ## Runtime control continuity and typed fatal separation -/
 
 inductive FatalReason where
@@ -446,6 +478,41 @@ theorem nonfatal_runtime_preserves_quarantine state operation outcome
             subst outcome
             contradiction
 
+/-- A continuing public operation cannot publish a changed DMA runtime
+projection.  In particular, the public operation vocabulary has no constructor
+for choosing a BDF, assigning a function, or enabling bus mastering. -/
+theorem continued_runtime_state_unchanged state operation outcome
+    (hinvariant : RuntimeInvariant state)
+    (hgate : runtimeGate state operation = outcome)
+    (hcontinued : outcome.result = .continued) : outcome.state = state := by
+  rcases hinvariant with ⟨hmode, hobserved⟩
+  cases operation with
+  | ordinary =>
+      simp [runtimeGate, hmode] at hgate
+      subst outcome
+      rfl
+  | observeControl snapshot =>
+      simp only [runtimeGate, hmode] at hgate
+      cases hvalidation : validate snapshot with
+      | rejected reason =>
+          simp [hvalidation] at hgate
+          subst outcome
+          contradiction
+      | accepted next =>
+          by_cases heq : snapshot == state.accepted.snapshot
+          · simp [hvalidation, heq] at hgate
+            subst outcome
+            have hsnapshot : snapshot = state.accepted.snapshot :=
+              LawfulBEq.eq_of_beq heq
+            have hobservation : snapshot = state.observed := hsnapshot.trans hobserved.symm
+            rw [hobservation]
+            cases state
+            cases hmode
+            rfl
+          · simp [hvalidation, heq] at hgate
+            subst outcome
+            contradiction
+
 theorem changed_control_is_fatal state snapshot
     (hrunning : state.mode = .running)
     (hchanged : snapshot ≠ state.accepted.snapshot) :
@@ -464,6 +531,67 @@ theorem halted_absorbing state reason operation
     (hmode : state.mode = .halted reason) :
     runtimeGate state operation = ⟨state, .alreadyHalted reason⟩ := by
   simp [runtimeGate, hmode]
+
+/-! ## Finite nonfatal DMA traces
+
+This is deliberately the issue-local DMA projection, not the global composite
+state owned by issue #104.  A continuing public step must pass `runtimeGate`;
+a device step must supply `UnownedDeviceStep` and its trusted hardware
+contract. -/
+
+inductive QuarantineStep : RuntimeState → RuntimeState → Prop where
+  | control (state : RuntimeState) (operation : PublicOperation) (outcome : RuntimeOutcome)
+      (invariant : RuntimeInvariant state)
+      (gate : runtimeGate state operation = outcome)
+      (continued : outcome.result = .continued) :
+      QuarantineStep state outcome.state
+  | device (state : RuntimeState) (after : MemoryProjection)
+      (step : UnownedDeviceStep state.accepted state.memory after) :
+      QuarantineStep state { state with memory := after }
+
+/-- Every nonfatal control or unowned-device step leaves the complete DMA
+runtime projection identical. -/
+theorem quarantine_step_state_unchanged
+    (step : QuarantineStep before after) : after = before := by
+  cases step with
+  | control operation outcome hinvariant hgate hcontinued =>
+      exact continued_runtime_state_unchanged before operation outcome
+        hinvariant hgate hcontinued
+  | device afterMemory hdevice =>
+      have hmemory : afterMemory = before.memory := unowned_device_step_unchanged hdevice
+      simp [hmemory]
+
+inductive QuarantineTrace : RuntimeState → RuntimeState → Prop where
+  | refl (state : RuntimeState) : QuarantineTrace state state
+  | step (head : QuarantineStep before middle)
+      (tail : QuarantineTrace middle after) : QuarantineTrace before after
+
+/-- A finite mixed trace of continuing public steps and unowned-device attempts
+cannot change the issue-local runtime state. -/
+theorem quarantine_trace_state_unchanged
+    (trace : QuarantineTrace before after) : after = before := by
+  induction trace with
+  | refl => rfl
+  | step head _ ih =>
+      exact ih.trans (quarantine_step_state_unchanged head)
+
+/-- Finite-trace form of the advertised quarantine property: the live control
+invariant and quarantine remain true, and every complete memory projection is
+identical to its initial value. -/
+theorem nonfatal_trace_preserves_quarantine_and_memory
+    (hinvariant : RuntimeInvariant before)
+    (trace : QuarantineTrace before after) :
+    RuntimeInvariant after ∧ quarantine after.accepted.snapshot = true ∧
+      after.memory.physicalMemory = before.memory.physicalMemory ∧
+      after.memory.allocatorOwnership = before.memory.allocatorOwnership ∧
+      after.memory.pageTableFrames = before.memory.pageTableFrames ∧
+      after.memory.kernelOwnedFrames = before.memory.kernelOwnedFrames ∧
+      after.memory.kernelState = before.memory.kernelState ∧
+      after.memory.subjectVisible = before.memory.subjectVisible := by
+  have hequal : after = before := quarantine_trace_state_unchanged trace
+  subst after
+  exact ⟨hinvariant, before.accepted.quarantineAccepted,
+    rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-! ## Executable q35 vectors -/
 
@@ -620,5 +748,23 @@ example : (runtimeGate q35Runtime (.observeControl q35CommandBitFlipSnapshot)).r
     .fatal .controlSnapshotChanged := by native_decide
 example : (runtimeGate q35Runtime (.observeControl q35BusMasterBitFlipSnapshot)).result =
     .fatal .invalidControlSnapshot := by native_decide
+
+theorem q35_unowned_vga_step_nonvacuous :
+    UnownedDeviceStep q35Accepted zeroMemoryProjection zeroMemoryProjection := by
+  refine ⟨q35Functions[1]!.bdf, ?_, ?_⟩
+  · intro hchanged
+    exact (hchanged rfl).elim
+  · native_decide
+
+theorem q35_mixed_trace_nonvacuous :
+    ∃ middle, QuarantineStep q35Runtime middle ∧
+      QuarantineTrace middle q35Runtime := by
+  refine ⟨q35Runtime, ?_, ?_⟩
+  · exact QuarantineStep.control q35Runtime .ordinary
+      (runtimeGate q35Runtime .ordinary) ⟨rfl, rfl⟩ rfl rfl
+  · apply QuarantineTrace.step
+    · exact QuarantineStep.device q35Runtime zeroMemoryProjection
+        q35_unowned_vga_step_nonvacuous
+    · exact QuarantineTrace.refl q35Runtime
 
 end LeanOS.DMAQuarantine

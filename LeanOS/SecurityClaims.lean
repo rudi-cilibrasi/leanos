@@ -12,6 +12,7 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.DMAQuarantine
+import LeanOS.DirectPortIO
 
 /-! # Stable security-claim contract
 
@@ -20,6 +21,33 @@ implementation theorem's assumptions or conclusion therefore require an
 explicit change here and in `docs/security-claims.md`.
 -/
 namespace LeanOS.SecurityClaims
+
+/-- SC-DIRECT-PORT-USER-DENIAL: user-origin port/value words cannot select a
+kernel purpose or produce device mutation, and accepted controls produce the
+modeled `#GP(0)` denial. -/
+theorem direct_port_user_denial_preserves_devices state live request
+    (hpolicy : DirectPortIO.AcceptedControls state.controls)
+    (hlive : live = state.controls) :
+    DirectPortIO.executeUser state live request =
+        { state, result := .userDeniedGP } ∧
+      (DirectPortIO.executeUser state live request).state.devices = state.devices := by
+  exact ⟨DirectPortIO.accepted_user_request_denied_gp state live request hpolicy hlive,
+    DirectPortIO.user_request_preserves_device_state state live request⟩
+
+/-- SC-DIRECT-PORT-KERNEL-CONFINEMENT: a typed kernel acceptance requires live
+kernel privilege, the exact reviewed purpose/port/direction/width manifest key,
+and fresh controls. -/
+theorem direct_port_kernel_operation_confined state live request
+    (haccepted : (DirectPortIO.executeKernel state live request).result =
+      .kernelAccepted) :
+    DirectPortIO.AcceptedControls state.controls ∧
+      live = state.controls ∧
+      DirectPortIO.privilegeAllows live .kernel = true ∧
+      DirectPortIO.portManifest.contains request.key = true ∧
+      (DirectPortIO.executeKernel state live request).state.controls = state.controls ∧
+      (DirectPortIO.executeKernel state live request).state.devices =
+        DirectPortIO.applyKernel state.devices request := by
+  exact DirectPortIO.kernel_acceptance_confined state live request haccepted
 
 /-- SC-DMA-QUARANTINE: an accepted nonempty q35 quarantine plus the explicit
 bus-master device-control contract preserves every modeled memory projection. -/
@@ -38,11 +66,36 @@ theorem dma_quarantine_preserves_complete_projection
   exact DMAQuarantine.unowned_device_preserves_complete_projection accepted target before after
     hcontract hknown
 
+/-- SC-DMA-QUARANTINE-TRACE: every finite issue-local trace of continuing
+control operations and contracted unowned-device attempts preserves the live
+quarantine invariant and every modeled memory projection. -/
+theorem dma_quarantine_nonfatal_trace_preserves_complete_projection
+    (before after : DMAQuarantine.RuntimeState)
+    (hinvariant : DMAQuarantine.RuntimeInvariant before)
+    (trace : DMAQuarantine.QuarantineTrace before after) :
+    DMAQuarantine.RuntimeInvariant after ∧
+      DMAQuarantine.quarantine after.accepted.snapshot = true ∧
+      after.memory.physicalMemory = before.memory.physicalMemory ∧
+      after.memory.allocatorOwnership = before.memory.allocatorOwnership ∧
+      after.memory.pageTableFrames = before.memory.pageTableFrames ∧
+      after.memory.kernelOwnedFrames = before.memory.kernelOwnedFrames ∧
+      after.memory.kernelState = before.memory.kernelState ∧
+      after.memory.subjectVisible = before.memory.subjectVisible := by
+  exact DMAQuarantine.nonfatal_trace_preserves_quarantine_and_memory
+    hinvariant trace
+
 /-- The pinned q35 manifest has a concrete accepted, nonempty quarantine
 snapshot; SC-DMA-QUARANTINE is not discharged by an empty inventory. -/
 theorem dma_quarantine_q35_nonvacuous :
     (DMAQuarantine.validate DMAQuarantine.q35Snapshot).isAccepted = true := by
   native_decide
+
+/-- The finite-trace claim has a concrete nonempty mixed trace containing both
+a continuing public-control step and a named present VGA device attempt. -/
+theorem dma_quarantine_q35_trace_nonvacuous :
+    ∃ middle, DMAQuarantine.QuarantineStep DMAQuarantine.q35Runtime middle ∧
+      DMAQuarantine.QuarantineTrace middle DMAQuarantine.q35Runtime :=
+  DMAQuarantine.q35_mixed_trace_nonvacuous
 
 /-- SC-KERNEL-DET: the first modeled transition is deterministic. -/
 theorem kernel_transition_deterministic

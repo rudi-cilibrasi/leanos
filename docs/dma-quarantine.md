@@ -31,6 +31,18 @@ means accepted and stable tags 1 through 8 identify each typed rejection.
 quarantine-owned inputs for issue #105's later composite-state codec; they are
 not a second runtime dispatcher.
 
+`LeanOS.DMAQuarantineCorpus` makes the issue-local control boundary executable
+without importing or approximating #104's composite state. Each of its six
+version-one records contains the complete 421-word accepted/latest-snapshot
+and fatal-latch pre-state, the complete 211-word public operation, the complete
+post-state, and a one-word typed result. Two traces cover ordinary continuity,
+exact re-observation, a valid but changed Command bit, an invalid bus-master
+bit, and post-fatal absorption. Lean proves every field width, both result
+sequences, and adjacent-state continuity; the repository gate emits the corpus
+twice, checks deterministic byte equality, and independently checks its schema
+and chaining. This is a DMA control-projection corpus, not #105's future global
+runtime ABI or a serialization of the model's unbounded memory projection.
+
 ## Proved claim
 
 `AcceptedSnapshot` carries canonical accounting and a nonempty quarantine
@@ -57,6 +69,19 @@ preserves quarantine. A bit flip, otherwise valid changed snapshot, or invalid
 snapshot becomes typed fatal state, and the halted state absorbs every suffix;
 it is not relabeled as a contained user fault or an ordinary rejection.
 
+`UnownedDeviceStep` makes each modeled device attempt name a present function
+and carry the explicit `DeviceContract`; the accepted snapshot separately
+supplies unassigned ownership and a cleared bus-master bit. `QuarantineStep`
+then combines those attempts with only the continuing cases of `runtimeGate`.
+The finite `QuarantineTrace` theorem proves that every such mixed trace is a
+stutter on the complete issue-local runtime projection: the live control
+invariant, quarantine predicate, physical memory, allocator ownership,
+page-table frames, kernel-owned frames, kernel state, and all subject-visible
+bytes remain unchanged. The stable `SC-DMA-QUARANTINE-TRACE` wrapper advertises
+that finite-trace result separately from the original single-device-step claim.
+This trace is intentionally not the global composite runtime owned by issue #104
+and does not pre-empt that issue's state design.
+
 ## Trusted boundary and dependency
 
 The proofs start after a complete hardware snapshot. PCI configuration reads,
@@ -70,8 +95,10 @@ checkpoint against the pinned QEMU 8.2.2 binary. It pauses the same q35/TCG,
 CPU, memory, vCPU, network, and debug-exit construction used by the image
 runner, exhaustively reads all 256 functions on manifest bus 0 through qtest's
 PCI configuration mechanism #1 interface, and rejects identity/class/header
-drift, missing or extra functions, or a set bus-master bit. Its versioned TSV
-is a construction-time QEMU observation before firmware runs.
+drift, duplicate BDF observations, missing or extra functions, or a set
+bus-master bit. Focused negative regressions exercise each rejection class so
+dictionary construction cannot silently collapse a duplicate topology record.
+Its versioned TSV is a construction-time QEMU observation before firmware runs.
 
 The guest now supplies the distinct post-firmware checkpoint. Immediately
 after its first serial boot record and before any CPL3 return, `boot/kernel.c`
