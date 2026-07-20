@@ -9724,6 +9724,7 @@ blocking endpoint, scheduler, waiter, completion, or saved-context store. -/
 inductive BlockingStateNeutralOperation : Operation → Prop where
   | selectUserReturn purpose : BlockingStateNeutralOperation (.selectUserReturn purpose)
   | userReturn request : BlockingStateNeutralOperation (.userReturn request)
+  | ipc call : BlockingStateNeutralOperation (.ipc call)
   | restart : BlockingStateNeutralOperation .restart
 
 /-- A blocking-state-neutral ordinary step retains the complete typed blocking
@@ -9740,6 +9741,45 @@ theorem gate_blockingStateNeutral_preserves_blockingIPCContext state operation
         split <;> rfl
       · simp only [gate, hmode, applyOperation]
         split <;> split <;> rfl
+      · rename_i call
+        cases call with
+        | send handleWord word0 word1 =>
+            simp only [gate, hmode, applyOperation, dispatchIPC]
+            generalize hdispatch :
+              IPCSyscall.dispatch state.ipc state.ipcContext
+                (.send handleWord word0 word1) = outcome
+            cases outcome with
+            | mk ipc reply =>
+                cases reply <;>
+                  simp [hdispatch, installIPC, CompositeState.blockingIPCContext]
+        | receive handleWord =>
+            simp only [gate, hmode, applyOperation, dispatchIPC]
+            generalize hresolve :
+              CapabilityHandle.resolveCurrent state.transfers.capabilities
+                { caller := state.execution.core.context.currentSubject }
+                handleWord .endpoint = resolved
+            cases resolved with
+            | error reason =>
+                generalize hdispatch :
+                  IPCSyscall.dispatch state.ipc state.ipcContext
+                    (.receive handleWord) = outcome
+                cases outcome with
+                | mk ipc reply =>
+                    cases reply <;>
+                      simp [hresolve, hdispatch, installIPC,
+                        CompositeState.blockingIPCContext]
+            | ok endpoint =>
+                cases hpending : state.transfers.pending endpoint.capability.object with
+                | some envelope => simp [hresolve, hpending]
+                | none =>
+                    generalize hdispatch :
+                      IPCSyscall.dispatch state.ipc state.ipcContext
+                        (.receive handleWord) = outcome
+                    cases outcome with
+                    | mk ipc reply =>
+                        cases reply <;>
+                          simp [hresolve, hpending, hdispatch, installIPC,
+                            CompositeState.blockingIPCContext]
       · simp [gate, hmode, applyOperation]
 
 /-- The first readiness-free ordinary slice preserves the full blocking
