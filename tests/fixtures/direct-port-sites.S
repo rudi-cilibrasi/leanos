@@ -58,7 +58,11 @@ function conditional_port_path
 #endif
 
 function kernel_main
+#ifdef LEANOS_SKIPPED_QUARANTINE
+    jmp .Lafter_quarantine
+#endif
     call quarantine_q35_pci_dma
+.Lafter_quarantine:
     call enter_user
     ret
 .size kernel_main, .-kernel_main

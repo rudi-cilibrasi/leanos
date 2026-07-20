@@ -64,9 +64,12 @@ Every bootable ELF in the emulator evidence matrix is checked by
 The inventory binds every `in`, `out`, `ins*`, and `outs*` instruction to a named
 wrapper/site and reviewed owner. The C wrappers are deliberately not inlined so
 compiler duplication cannot turn one reviewed primitive into ambient,
-untracked authority. Semantic negative fixtures prove that an omitted
-opcode/site, a conditional-only opcode, a misclassified PCI wrapper, and
-runtime-handler reuse of a PCI helper make the policy fail.
+untracked authority. A separate source-operation manifest binds every shared
+byte-wrapper invocation to its caller, exact constant port, and matching
+serial, PIC, PIT, or debug-exit purpose. Semantic negative fixtures prove that
+an omitted opcode/site, a conditional-only opcode, an unauthorized `out8`
+caller, a misclassified PCI wrapper, and runtime-handler reuse of a PCI helper
+make the policy fail.
 
 PCI configuration ports and MMIO remain outside the ordinary direct-port
 manifest. The three width-specific wrappers used only with configuration
@@ -75,7 +78,10 @@ mechanism #1 ports `0xcf8` and `0xcfc` are classified separately as
 quarantine checkpoint rather than a widening of ordinary kernel direct-port
 authority. The optimized final-ELF call graph must bind those wrappers to the
 two PCI helpers, the helpers to `quarantine_q35_pci_dma`, and that checkpoint to
-`kernel_main` before its sole call to `enter_user`.
+`kernel_main`. An instruction-level control-flow graph additionally requires
+the quarantine call to be reachable from `kernel_main` entry and to dominate
+its sole call to `enter_user`; a skipped-quarantine fixture jumps over the
+earlier call and is rejected.
 
 The proofs begin after a trusted adapter supplies the complete stored and live
 control snapshots. TSS construction and loading, RFLAGS decoding, I/O-bitmap
