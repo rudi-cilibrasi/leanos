@@ -36,7 +36,7 @@ structure HaltRecord where
   active : Option ActiveEntry
   incomingVector : Nat
   incomingOrigin : Interrupt.Privilege
-  interruptedMode : InterruptEntry.InterruptedMode := .running
+  interruptedMode : Option InterruptEntry.InterruptedMode := none
   interruptedCr3 : Option UInt64 := none
   terminalStackIdentity : Option UInt64 := none
   deriving DecidableEq, Repr
@@ -224,7 +224,7 @@ private def latchNmi (state : State) (reason : FatalReason)
     (stackIdentity : Option UInt64) : EntryOutcome :=
   let record : HaltRecord :=
     { reason, active, incomingVector := vector, incomingOrigin := origin
-      interruptedMode := mode, interruptedCr3 := cr3
+      interruptedMode := some mode, interruptedCr3 := cr3
       terminalStackIdentity := stackIdentity }
   { state := { state with
       core := { state.core with
@@ -239,7 +239,7 @@ def acceptedNmiRecord (state : State) (event : InterruptEntry.NormalizedNmi) : H
     active := match state.mode with | .handling entry => some entry | _ => none
     incomingVector := event.vector.toNat
     incomingOrigin := event.origin
-    interruptedMode := event.interruptedMode
+    interruptedMode := some event.interruptedMode
     interruptedCr3 := some event.activeCr3
     terminalStackIdentity := some event.stackIdentity }
 
@@ -250,6 +250,7 @@ structure NmiTerminalWords where
   reason : UInt64
   incomingVector : UInt64
   incomingOrigin : UInt64
+  interruptedModePresent : UInt64
   interruptedMode : UInt64
   cr3Present : UInt64
   interruptedCr3 : UInt64
@@ -280,6 +281,8 @@ def encodeNmiTerminalRecord (record : HaltRecord) : Option NmiTerminalWords :=
       | some value => ((1 : UInt64), value) | none => ((0 : UInt64), 0)
     let (stackPresent, stackIdentity) := match record.terminalStackIdentity with
       | some value => ((1 : UInt64), value) | none => ((0 : UInt64), 0)
+    let (modePresent, mode) := match record.interruptedMode with
+      | some value => ((1 : UInt64), value.code) | none => ((0 : UInt64), 0)
     let activeWords := match record.active with
       | none => ((0 : UInt64), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
       | some active =>
@@ -291,7 +294,7 @@ def encodeNmiTerminalRecord (record : HaltRecord) : Option NmiTerminalWords :=
             if active.frame.canonicalStackPointer then (1 : UInt64) else 0,
             if active.frame.flagsAllowed then (1 : UInt64) else 0)
     some ⟨1, 1, UInt64.ofNat record.incomingVector, privilegeCode record.incomingOrigin,
-      record.interruptedMode.code, cr3Present, cr3, stackPresent, stackIdentity,
+      modePresent, mode, cr3Present, cr3, stackPresent, stackIdentity,
       activeWords.1, activeWords.2.1, activeWords.2.2.1, activeWords.2.2.2.1,
       activeWords.2.2.2.2.1, activeWords.2.2.2.2.2.1,
       activeWords.2.2.2.2.2.2.1, activeWords.2.2.2.2.2.2.2.1,
