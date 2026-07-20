@@ -67,6 +67,9 @@ extern const uint8_t user_a_extended_state_probe[];
 #endif
 extern char user_a_stack[];
 extern char user_a_fault_instruction[], user_a_fault_recovered[];
+#ifdef LEANOS_ENTRY_ADVERSARIAL
+extern char user_a_direct_port_probe[];
+#endif
 extern char user_b_entry[];
 extern char user_b_stack[], user_b_stack_top[];
 extern uint64_t saved_context_a[], saved_context_b[];
@@ -266,6 +269,34 @@ static void check_fast_entry_control(void) {
         if (state[i] != 0) fail("fast-entry-target-readback");
 }
 
+/* Read the descriptor selected by the live task register rather than trusting
+   only the C initializer.  x86 keeps hidden descriptor state after LTR, which
+   is part of the documented machine-semantics assumption; STR plus SGDT bind
+   the selected descriptor and the stored TSS image that can be reloaded. */
+static void check_direct_port_control(unsigned report) {
+    struct descriptor gdtr;
+    uint16_t task_selector;
+    uint64_t flags;
+    __asm__ volatile ("sgdt %0" : "=m"(gdtr));
+    __asm__ volatile ("str %0" : "=r"(task_selector));
+    __asm__ volatile ("pushfq; pop %0" : "=r"(flags) : : "memory");
+    if (task_selector != 0x28 || gdtr.base != (uint64_t)gdt64 ||
+        gdtr.limit < 0x37)
+        fail("direct-port-task-register");
+    const uint64_t low = *(const uint64_t *)(gdtr.base + task_selector);
+    const uint64_t high = *(const uint64_t *)(gdtr.base + task_selector + 8u);
+    const uint64_t limit = (low & 0xffffu) | ((low >> 32) & 0xf0000u);
+    const uint64_t base = ((low >> 16) & 0xffffffu) |
+        ((low >> 32) & 0xff000000u) | (high << 32);
+    if (limit != sizeof(tss) - 1 || base != (uint64_t)&tss ||
+        ((low >> 40) & 0xfu) != 0xbu || ((low >> 47) & 1u) != 1u ||
+        tss.iomap != sizeof(tss) || ((flags >> 12) & 3u) != 0)
+        fail("direct-port-control-readback");
+    if (report) {
+        serial_puts("LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS\n");
+    }
+}
+
 static uint64_t idt_target(const struct idt_entry *entry) {
     return entry->low | (uint64_t)entry->middle << 16 | (uint64_t)entry->high << 32;
 }
@@ -346,8 +377,23 @@ static void check_entry_manifest(void) {
 uint64_t entry_adversarial_gp_handler(uint64_t error, uint64_t rip,
                                       uint64_t saved_cs) {
     static const uint64_t expected_error[] = { 14u * 8u + 2u, 32u * 8u + 2u };
-    if (saved_cs != 0x23 || entry_adversarial_step >= 2 ||
-        error != expected_error[entry_adversarial_step])
+    if (saved_cs != 0x23 || entry_adversarial_step >= 3)
+        fail("entry-adversarial-gp");
+    if (entry_adversarial_step == 2) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        if (error != 0 || rip != (uint64_t)user_a_direct_port_probe ||
+            current_subject != 1 || cr3 != (uint64_t)page_map_level_4_a)
+            fail("direct-port-gp-binding");
+        check_direct_port_control(0);
+        if (leanos_direct_port_io_demo(0, 0, 0, 0xf4, 1, 0x11) !=
+            UINT64_C(0x0144332211))
+            fail("direct-port-model-denial");
+        serial_puts("LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS\n");
+        ++entry_adversarial_step;
+        return rip + 1;
+    }
+    if (error != expected_error[entry_adversarial_step])
         fail("entry-adversarial-gp");
     serial_puts("LEANOS/11 ENTRY-ADVERSARIAL attempted-vector=");
     serial_u64(entry_adversarial_step == 0 ? 14 : 32);
@@ -585,6 +631,12 @@ static const char *return_corruption_name(uint64_t mode) {
 #if LEANOS_RETURN_CORRUPTION_MODE == 21
     case 21: return "fast-entry-sysenter-esp-relaxation";
 #endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 22
+    case 22: return "direct-port-bitmap-relaxation";
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 23
+    case 23: return "direct-port-limit-relaxation";
+#endif
     default: return "none";
     }
 }
@@ -600,7 +652,7 @@ static void inject_return_corruption(uint64_t *saved) {
     if (mode == 13) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
-    serial_puts(mode >= 14 && mode <= 21
+    serial_puts(mode >= 14 && mode <= 23
         ? " stage=machine-control result=INJECTED\n"
         : " stage=outgoing-frame result=INJECTED\n");
     switch (mode) {
@@ -685,6 +737,16 @@ static void inject_return_corruption(uint64_t *saved) {
         break;
     }
 #endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 22
+    case 22:
+        tss.iomap = sizeof(tss) - 1;
+        break;
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 23
+    case 23:
+        gdt64[5] = (gdt64[5] & ~UINT64_C(0xffff)) | (sizeof(tss) - 2);
+        break;
+#endif
     default: fail("user-return-fixture-mode");
     }
 }
@@ -740,6 +802,7 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
     /* Re-read the complete kernel-produced fast-entry denial tuple at the
        sole outbound gate.  A post-boot relaxation cannot reach iretq. */
     check_fast_entry_control();
+    check_direct_port_control(0);
     /* Accepted ordinary entries remain armed through handler dispatch and
        context selection.  Clear only in this final validated return gate;
        initial boot dispatch is intentionally unarmed. */
@@ -1173,6 +1236,7 @@ static void privilege_init(void) {
     struct descriptor idtr = { sizeof(idt) - 1, (uint64_t)idt };
     __asm__ volatile ("lidt %0" : : "m"(idtr));
     load_tss();
+    check_direct_port_control(1);
 }
 
 #ifdef LEANOS_ENTRY_HIGH_WATER

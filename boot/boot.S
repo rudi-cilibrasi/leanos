@@ -1051,6 +1051,15 @@ user_a_extended_state_probe:
 #ifdef LEANOS_ENTRY_ADVERSARIAL
     int $14
     int $32
+    /* A write to isa-debug-exit would end QEMU immediately if CPL3 gained
+       ambient port authority.  The reviewed vector-13 probe must observe
+       #GP(0), attest the state-preserving model denial, and skip this one-byte
+       instruction before the original scenario can complete. */
+    mov $0xf4, %dx
+    mov $0x11, %al
+.global user_a_direct_port_probe
+user_a_direct_port_probe:
+    outb %al, %dx
 #endif
     movb $0x5a, user_a_stack+4094(%rip)
     movb $0xa5, user_a_stack+4095(%rip)

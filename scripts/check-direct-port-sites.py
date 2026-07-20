@@ -28,6 +28,7 @@ OWNERS = {
     "DirectPortIO.pic",
     "DirectPortIO.pit",
     "DirectPortIO.byte-wrapper",
+    "DirectPortIO.user-denial-probe",
     "DMAQuarantine.boot-pci-config",
 }
 BYTE_OWNERS = {
@@ -478,6 +479,25 @@ def main() -> int:
         if site.symbol in {"out16", "out32", "in32"} and \
                 owner != "DMAQuarantine.boot-pci-config":
             print(f"error: PCI configuration wrapper has wrong owner symbol={site.symbol}",
+                  file=sys.stderr)
+            return 1
+
+    # This site is attacker-origin evidence, not kernel debug-exit authority.
+    # Keep its exact instruction and ownership distinct from every trusted
+    # wrapper even in the one adversarial image that deliberately contains it.
+    denial_sites = {site for site, owner in manifest.items()
+                    if owner == "DirectPortIO.user-denial-probe"}
+    expected_denial_sites = {
+        Site("user_a_direct_port_probe", 0, "out", "%al,(%dx)")
+    }
+    if denial_sites and denial_sites != expected_denial_sites:
+        print("error: user direct-port denial probe classification drifted",
+              file=sys.stderr)
+        return 1
+    for site, owner in manifest.items():
+        if site.symbol == "user_a_direct_port_probe" and \
+                owner != "DirectPortIO.user-denial-probe":
+            print("error: user direct-port denial probe has authority owner",
                   file=sys.stderr)
             return 1
 
