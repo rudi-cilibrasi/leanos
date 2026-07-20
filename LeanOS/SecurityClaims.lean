@@ -254,6 +254,33 @@ theorem composite_authoritative_mapping_then_blocking_preserves_runtimeWellForme
   · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
       state (.unmap page) blocking (.unmap page) hstate
 
+/-- Raw scheduler selection without a kernel-owned save/restore payload is a
+blocking-state-neutral typed boundary.  Empty dispatch and every forced
+missing-context denial can therefore be followed immediately by an arbitrary
+authoritative blocking operation without a reconstructed readiness witness. -/
+theorem composite_authoritative_raw_scheduler_then_blocking_preserves_runtimeWellFormed
+    state blocking (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state (.ordinary .scheduleNext)).state
+          (.blocking blocking)).state ∧
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state (.ordinary .scheduleYield)).state
+          (.blocking blocking)).state ∧
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state (.ordinary .scheduleTick)).state
+          (.blocking blocking)).state := by
+  constructor
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state .scheduleNext blocking (.neutral .scheduleNext) hstate
+  constructor
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state .scheduleYield blocking (.neutral .scheduleYield) hstate
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state .scheduleTick blocking (.neutral .scheduleTick) hstate
+
 /-- The successor contract has a reachable classified rejection at the
 boot-produced empty waiter store, rather than being discharged vacuously. -/
 theorem composite_authoritative_gate_rejection_reachable_witness plan :

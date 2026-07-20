@@ -9834,6 +9834,9 @@ inductive BlockingStateNeutralOperation : Operation → Prop where
   | selectUserReturn purpose : BlockingStateNeutralOperation (.selectUserReturn purpose)
   | userReturn request : BlockingStateNeutralOperation (.userReturn request)
   | ipc call : BlockingStateNeutralOperation (.ipc call)
+  | scheduleNext : BlockingStateNeutralOperation .scheduleNext
+  | scheduleYield : BlockingStateNeutralOperation .scheduleYield
+  | scheduleTick : BlockingStateNeutralOperation .scheduleTick
   | restart : BlockingStateNeutralOperation .restart
 
 /-- A blocking-state-neutral ordinary step retains the complete typed blocking
@@ -9889,6 +9892,24 @@ theorem gate_blockingStateNeutral_preserves_blockingIPCContext state operation
                         cases reply <;>
                           simp [hresolve, hpending, hdispatch, installIPC,
                             CompositeState.blockingIPCContext]
+      · simp only [gate, hmode, applyOperation]
+        unfold schedulerDispatch
+        generalize Scheduler.selectNext state.scheduler = outcome
+        cases outcome with
+        | mk scheduler result =>
+            cases result with
+            | rejected reason => simp [Scheduler.reject]
+            | accepted selected => cases selected <;> simp [Scheduler.reject]
+      · simp only [gate, hmode, applyOperation]
+        unfold schedulerYield
+        generalize Scheduler.yield state.scheduler = outcome
+        cases outcome with
+        | mk scheduler result => cases result <;> simp [Scheduler.reject]
+      · simp only [gate, hmode, applyOperation]
+        unfold schedulerTick
+        generalize Scheduler.tick state.scheduler = outcome
+        cases outcome with
+        | mk scheduler result => cases result <;> simp [Scheduler.reject]
       · simp [gate, hmode, applyOperation]
 
 /-- The first readiness-free ordinary slice preserves the full blocking
