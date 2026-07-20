@@ -9632,6 +9632,182 @@ theorem halted_suffix_absorbing state record proposals
       rw [halted_gate_absorbing state record proposal hmode]
       exact ih state hmode
 
+/-! ## Authoritative ordinary/blocking gate successor
+
+The ordinary gate and the blocking gate were developed independently while
+their operation-specific preservation proofs were completed.  The vocabulary
+below is their migration boundary: it uses the same `CompositeState`, one
+execution latch, and one typed result family.  It deliberately does not claim
+that an ordinary mutation preserves `BlockingRuntimeWellFormed`; closing that
+remaining obligation is what will permit the two legacy gate entry points to
+be retired and arbitrary mixed traces to retain the strengthened invariant. -/
+
+/-- Every currently modeled runtime event admitted by the successor gate. -/
+inductive AuthoritativeOperation where
+  | ordinary (operation : Operation)
+  | blocking (operation : CompositeBlockingOperation)
+  deriving DecidableEq, Repr
+
+/-- Operation-specific observation retained by the successor gate. -/
+inductive AuthoritativeOperationReply where
+  | ordinary (reply : OperationReply)
+  | blocking (reply : CompositeBlockingOperationReply)
+  deriving DecidableEq, Repr
+
+inductive AuthoritativeGateResult where
+  | completed (reply : AuthoritativeOperationReply)
+  | rejectedBusy
+  | rejectedHalted (record : HaltRecord)
+  deriving DecidableEq, Repr
+
+structure AuthoritativeGateOutcome where
+  state : CompositeState
+  result : AuthoritativeGateResult
+
+def applyAuthoritativeOperation (state : CompositeState) :
+    AuthoritativeOperation → CompositeState
+  | .ordinary operation => applyOperation state operation
+  | .blocking operation => applyBlockingOperation state operation
+
+def authoritativeOperationReply (state : CompositeState) :
+    AuthoritativeOperation → AuthoritativeOperationReply
+  | .ordinary operation => .ordinary (operationReply state operation)
+  | .blocking operation => .blocking (blockingOperationReply state operation)
+
+/-- One total gate for both operation families.  Neither branch can bypass the
+shared busy/halted execution latch. -/
+def authoritativeGate (state : CompositeState) (operation : AuthoritativeOperation) :
+    AuthoritativeGateOutcome :=
+  match state.execution.mode with
+  | .running =>
+      { state := applyAuthoritativeOperation state operation
+        result := .completed (authoritativeOperationReply state operation) }
+  | .handling _ => { state, result := .rejectedBusy }
+  | .halted record => { state, result := .rejectedHalted record }
+
+theorem authoritativeGate_deterministic state operation first second
+    (hfirst : authoritativeGate state operation = first)
+    (hsecond : authoritativeGate state operation = second) : first = second := by
+  rw [hfirst] at hsecond
+  exact hsecond
+
+/-- Completion fixes the running latch, exact typed reply, and exact post-state
+for either embedded operation family. -/
+theorem authoritativeGate_completed_sound state operation reply
+    (hcompleted : (authoritativeGate state operation).result = .completed reply) :
+    state.execution.mode = .running ∧
+      reply = authoritativeOperationReply state operation ∧
+      (authoritativeGate state operation).state =
+        applyAuthoritativeOperation state operation := by
+  cases hmode : state.execution.mode with
+  | running =>
+      simp [authoritativeGate, hmode] at hcompleted ⊢
+      exact hcompleted.symm
+  | handling active => simp [authoritativeGate, hmode] at hcompleted
+  | halted record => simp [authoritativeGate, hmode] at hcompleted
+
+/-- Finite ordinary denials and finite blocking denials share one classifier.
+The terminal halted result is intentionally absent. -/
+inductive AuthoritativeGateRejection : AuthoritativeGateResult → Prop where
+  | busy : AuthoritativeGateRejection .rejectedBusy
+  | ordinary {reply} (hrejected : reply.isNonfatalRejection = true) :
+      AuthoritativeGateRejection (.completed (.ordinary reply))
+  | blocking {reply}
+      (hrejected : CompositeBlockingGateRejection (.completed reply)) :
+      AuthoritativeGateRejection (.completed (.blocking reply))
+
+/-- Every classified nonfatal denial is byte-for-byte atomic across every
+projection in the shared composite state. -/
+theorem authoritativeGate_rejection_atomic state operation
+    (hrejected : AuthoritativeGateRejection
+      (authoritativeGate state operation).result) :
+    (authoritativeGate state operation).state = state := by
+  cases hmode : state.execution.mode with
+  | handling active => simp [authoritativeGate, hmode]
+  | halted record =>
+      simp only [authoritativeGate, hmode] at hrejected
+      cases hrejected
+  | running =>
+      cases operation with
+      | ordinary operation =>
+          simp only [authoritativeGate, hmode, authoritativeOperationReply] at hrejected
+          cases hrejected with
+          | ordinary hreply =>
+              simpa [authoritativeGate, hmode, gate] using
+                gate_classified_rejection_global_atomicity state operation hreply
+      | blocking operation =>
+          simp only [authoritativeGate, hmode, authoritativeOperationReply] at hrejected
+          cases hrejected with
+          | blocking hreply =>
+              have hatomic := blockingGate_rejection_atomic state operation (by
+                simpa [blockingGate, hmode] using hreply)
+              simpa [authoritativeGate, hmode, blockingGate] using hatomic
+
+/-- Atomic denial retains even the strengthened waiter/context invariant. -/
+theorem authoritativeGate_rejection_preserves_blockingRuntimeWellFormed
+    state operation (hstate : BlockingRuntimeWellFormed state)
+    (hrejected : AuthoritativeGateRejection
+      (authoritativeGate state operation).result) :
+    BlockingRuntimeWellFormed (authoritativeGate state operation).state := by
+  rw [authoritativeGate_rejection_atomic state operation hrejected]
+  exact hstate
+
+/-- From the strengthened authoritative precondition, every successor-gate
+operation preserves the existing global `RuntimeWellFormed` invariant.  A
+blocking operation additionally retains the strengthened invariant by the next
+theorem; ordinary-operation preservation of that extra conjunct remains the
+mixed-trace proof obligation. -/
+theorem authoritativeGate_preserves_runtimeWellFormed state operation
+    (hstate : BlockingRuntimeWellFormed state) :
+    RuntimeWellFormed (authoritativeGate state operation).state := by
+  cases operation with
+  | ordinary operation =>
+      simpa [authoritativeGate, gate, applyAuthoritativeOperation] using
+        gate_preserves_runtimeWellFormed state operation hstate.1
+  | blocking operation =>
+      exact (by
+        simpa [authoritativeGate, blockingGate, applyAuthoritativeOperation] using
+          (blockingGate_preserves_blockingRuntimeWellFormed state operation hstate)).1
+
+/-- The embedded blocking family keeps the full authoritative waiter/context
+invariant through the successor gate for every typed result. -/
+theorem authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
+    state operation (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed
+      (authoritativeGate state (.blocking operation)).state := by
+  simpa [authoritativeGate, blockingGate, applyAuthoritativeOperation] using
+    blockingGate_preserves_blockingRuntimeWellFormed state operation hstate
+
+def runAuthoritativeOperations (state : CompositeState) :
+    List AuthoritativeOperation → CompositeState
+  | [] => state
+  | operation :: rest =>
+      runAuthoritativeOperations (authoritativeGate state operation).state rest
+
+/-- Fatal mode is a separate result class and absorbs arbitrary suffixes that
+mix ordinary operations with blocking delivery, sleep, wake, and cancellation. -/
+theorem authoritative_halted_suffix_absorbing state record operations
+    (hmode : state.execution.mode = .halted record) :
+    runAuthoritativeOperations state operations = state := by
+  induction operations generalizing state with
+  | nil => rfl
+  | cons operation rest ih =>
+      simp only [runAuthoritativeOperations]
+      have hgate : authoritativeGate state operation =
+          { state, result := .rejectedHalted record } := by
+        simp [authoritativeGate, hmode]
+      rw [hgate]
+      exact ih state hmode
+
+/-- Concrete reachability for the successor rejection class: the boot-produced
+empty waiter store rejects cancellation without mutation. -/
+theorem authoritativeGate_rejection_reachable_witness plan :
+    AuthoritativeGateRejection
+        (authoritativeGate (bootRuntime plan) (.blocking (.cancel 1))).result ∧
+      (authoritativeGate (bootRuntime plan) (.blocking (.cancel 1))).state =
+        bootRuntime plan := by
+  exact ⟨.blocking (.cancel .notWaiting), rfl⟩
+
 /-- Outgoing-return rejection is one atomic composite step: it records the
 typed terminal reason, changes no lifecycle/authority/scheduler/resource view,
 and absorbs every later typed operation. -/

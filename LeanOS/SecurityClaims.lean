@@ -125,6 +125,55 @@ theorem failstop_halted_suffix_absorbing state record proposals
     FailStop.runOperations state proposals = state := by
   exact FailStop.halted_suffix_absorbing state record proposals hmode
 
+/-- SC-COMPOSITE-AUTHORITATIVE-GATE: the successor gate embeds both ordinary
+and blocking operation families under one latch and typed reply.  Every step
+from the strengthened authoritative precondition preserves the global runtime
+invariant; every embedded blocking step preserves the additional waiter/context
+invariant; classified denial is atomic; and fatal mode absorbs arbitrary mixed
+suffixes. -/
+theorem composite_authoritative_gate_contract state operation
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+        (FailStop.authoritativeGate state operation).state ∧
+      (∀ reply,
+        (FailStop.authoritativeGate state operation).result = .completed reply →
+        state.execution.mode = .running ∧
+          reply = FailStop.authoritativeOperationReply state operation ∧
+          (FailStop.authoritativeGate state operation).state =
+            FailStop.applyAuthoritativeOperation state operation) ∧
+      (∀ rejection : FailStop.AuthoritativeGateRejection
+          (FailStop.authoritativeGate state operation).result,
+        (FailStop.authoritativeGate state operation).state = state) ∧
+      (∀ blocking,
+        operation = .blocking blocking →
+        FailStop.BlockingRuntimeWellFormed
+          (FailStop.authoritativeGate state operation).state) ∧
+      (∀ record suffix,
+        state.execution.mode = .halted record →
+        FailStop.runAuthoritativeOperations state suffix = state) := by
+  refine ⟨FailStop.authoritativeGate_preserves_runtimeWellFormed state operation hstate,
+    ?_, ?_, ?_, ?_⟩
+  · intro reply hcompleted
+    exact FailStop.authoritativeGate_completed_sound state operation reply hcompleted
+  · intro rejection
+    exact FailStop.authoritativeGate_rejection_atomic state operation rejection
+  · intro blocking hoperation
+    subst operation
+    exact FailStop.authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
+      state blocking hstate
+  · intro record suffix hmode
+    exact FailStop.authoritative_halted_suffix_absorbing state record suffix hmode
+
+/-- The successor contract has a reachable classified rejection at the
+boot-produced empty waiter store, rather than being discharged vacuously. -/
+theorem composite_authoritative_gate_rejection_reachable_witness plan :
+    FailStop.AuthoritativeGateRejection
+        (FailStop.authoritativeGate (FailStop.bootRuntime plan)
+          (.blocking (.cancel 1))).result ∧
+      (FailStop.authoritativeGate (FailStop.bootRuntime plan)
+        (.blocking (.cancel 1))).state = FailStop.bootRuntime plan := by
+  exact FailStop.authoritativeGate_rejection_reachable_witness plan
+
 /-- SC-COMPOSITE-GATE-WF: the sealed-mailbox rejection path of the public
 composite gate preserves the complete runtime invariant and exposes the typed
 reason that callers must use capability-transfer acceptance instead.  This is
