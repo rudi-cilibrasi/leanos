@@ -687,7 +687,8 @@ private def returnWitnessComposite : FailStop.CompositeState :=
         waiters := fun _ => []
         waiterEndpoint := fun _ => none
         waiterCapacity := 0
-        completion := fun _ => none } }
+        completion := fun _ => none }
+    blockingContexts := fun _ => none }
 
 private def returnWitnessSyscallFrame : Interrupt.HardwareFrame :=
   { returnWitnessRequest.hardware with vector := 128 }
