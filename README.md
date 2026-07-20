@@ -362,9 +362,11 @@ space, CR3, stack, purpose, and nested-entry state before a boot handler runs.
 A separate terminal vector-2 manifest models NMI snapshots on dedicated IST2
 and proves that an exact CPL3 or CPL0 event, including one observed during an
 ordinary handling step, freezes every modeled subsystem and enters the same
-absorbing halt latch without return, scheduling, or CR3 continuation. Physical
-NMI delivery/blocking, IST switching, frame construction, generated code, and
-the machine path remain trusted or future tested work rather than theorem
+absorbing halt latch without return, scheduling, or CR3 continuation. The boot
+image installs the matching DPL0 vector-2 gate and dedicated IST2 stack; a
+mandatory QEMU monitor-injection probe observes real delivery across IF=0 and
+the terminal assembly record. Delivery/blocking, frame construction, and the
+compiler/emulator path remain trusted tested boundaries rather than theorem
 claims.
 
 The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,

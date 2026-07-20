@@ -41,6 +41,7 @@ df_iso_root="$build/iso-double-fault"
 df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 entry_overflow_iso_root="$build/iso-entry-stack-overflow"
 entry_adversarial_iso_root="$build/iso-entry-adversarial"
+nmi_iso_root="$build/iso-nmi"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
@@ -74,7 +75,7 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$fast_entry_sysenter_iso_root/boot/grub" \
   "$df_iso_root/boot/grub" \
   "$df_negative_iso_root/boot/grub" "$entry_overflow_iso_root/boot/grub" \
-  "$entry_adversarial_iso_root/boot/grub"
+  "$entry_adversarial_iso_root/boot/grub" "$nmi_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
@@ -85,6 +86,7 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-entry-overflow.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-guard.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-entry-adversarial.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-nmi.h"
 
 # C generation resolves project imports through Lake's compiled module path.
 # Build them here because image jobs and clean checkouts cannot rely on a
@@ -170,6 +172,8 @@ mv "$build/FaultDispatchAndDirectPortIO.o" "$build/FaultDispatch.o"
   -DLEANOS_ENTRY_ADVERSARIAL=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-adversarial.h"' \
   -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_NMI_PROBE=1 -c boot/kernel.c -o "$build/kernel-nmi.o"
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
@@ -347,6 +351,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-nmi-prelink.map" \
+  -o "$build/leanos-nmi-prelink.elf" "$build/boot.o" \
+  "$build/kernel-nmi.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-guard-prelink.map" \
   -o "$build/leanos-guard-prelink.elf" "$build/boot-df-guard-mapped.o" \
   "$build/kernel-double-fault-guard-mapped.o" "$build/KernelTransition.o" \
@@ -410,6 +422,8 @@ done
   "$build/boot-page-plan-guard.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-entry-adversarial-prelink.elf" \
   "$build/boot-page-plan-entry-adversarial.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-nmi-prelink.elf" \
+  "$build/boot-page-plan-nmi.h"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel.o"
@@ -454,6 +468,10 @@ done
   -DLEANOS_ENTRY_ADVERSARIAL=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-adversarial.h"' \
   -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_NMI_PROBE=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-nmi.h"' \
+  -c boot/kernel.c -o "$build/kernel-nmi.o"
 
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
@@ -468,6 +486,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-nmi.map" \
+  -o "$build/leanos-nmi.elf" "$build/boot.o" "$build/kernel-nmi.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-preemption.map" \
   -o "$build/leanos-preemption.elf" "$build/boot-preemption.o" \
@@ -611,6 +637,12 @@ done
   "$build/boot-page-plan.final.h"
 cmp "$build/boot-page-plan.h" "$build/boot-page-plan.final.h" || {
   echo "error: linker-resolved boot page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-nmi.elf" \
+  "$build/boot-page-plan-nmi.final.h"
+cmp "$build/boot-page-plan-nmi.h" "$build/boot-page-plan-nmi.final.h" || {
+  echo "error: NMI probe boot page-table plan drifted after final link" >&2
   exit 1
 }
 ./scripts/generate-boot-page-plan.sh "$build/leanos-preemption.elf" \
@@ -817,6 +849,7 @@ done
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-stack-overflow.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
+./scripts/check-nmi-image-policy.sh "$build/leanos-nmi.elf"
 objdump -d --no-show-raw-insn "$build/leanos-fault-containment.elf" \
   > "$build/fault-containment.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state.elf" \
@@ -944,6 +977,8 @@ cp "$build/leanos-entry-stack-overflow.elf" "$entry_overflow_iso_root/boot/leano
 cp boot/grub-double-fault.cfg "$entry_overflow_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-entry-adversarial.elf" "$entry_adversarial_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$entry_adversarial_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-nmi.elf" "$nmi_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$nmi_iso_root/boot/grub/grub.cfg"
 printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
   > "$iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
@@ -961,6 +996,7 @@ cp "$build/SOURCE_REVISION" "$fast_entry_sysenter_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_overflow_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$nmi_iso_root/boot/SOURCE_REVISION"
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   fixture_root="$build/iso-return-${fixture}"
@@ -1029,6 +1065,10 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-entry-adversarial.iso" \
   "$entry_adversarial_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-nmi.iso" "$nmi_iso_root" -- \
+  -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   grub-mkrescue -d /usr/lib/grub/i386-pc \
@@ -1074,6 +1114,8 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-entry-stack-overflow.elf" \
   "$build/leanos-${version}-x86_64-entry-adversarial.iso" \
   "$build/leanos-entry-adversarial.elf" \
+  "$build/leanos-${version}-x86_64-nmi.iso" \
+  "$build/leanos-nmi.elf" "$build/leanos-nmi.map" \
   > "$build/SHA256SUMS"
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"

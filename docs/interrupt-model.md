@@ -149,10 +149,9 @@ Vector 2 is not added to the ordinary manifest. `InterruptEntry.terminalManifest
 contains exactly one DPL0 interrupt gate with selector `0x08`, no hardware error
 word, terminal-only purpose, and dedicated IST identity 2. The ordinary
 manifest cannot authorize that entry, and IST2 is distinct from the existing
-vector-8 IST1 machine protocol. The model currently fixes a bounded symbolic
-IST2 interval solely to make the normalized frame and result semantics exact;
-it does not claim that the boot linker, page tables, TSS, or IDT install that
-interval.
+vector-8 IST1 machine protocol. The linker now owns a separate aligned 16 KiB
+IST2 interval, the TSS selects its exclusive upper bound, and the IDT installs
+only the reviewed vector-2 DPL0 interrupt gate for this terminal purpose.
 
 `RawNmiFrame` always contains saved RIP, CS, RFLAGS, RSP, and SS. This includes
 a CPL0 interruption because the selected contract assumes an IST switch; it
@@ -193,8 +192,11 @@ mutations. Physical NMI delivery, blocking/coalescing, descriptor semantics,
 TSS/IST switching, frame construction, stack mapping, assembly, generated C,
 compiler/linker behavior, QEMU, firmware, and hardware remain trusted or future
 tested boundaries. The bounded classifier is now replayed through hosted
-generated C and the final ELF under QEMU, but no vector-2 gate, IST2 stack, or
-physical NMI scenario is installed by this slice.
+generated C and the final ELF under QEMU. A mandatory probe image additionally
+publishes a CPL0 `handling` boundary with IF clear; the evidence runner injects
+a real QEMU NMI, observes the five-word IST2 frame and one terminal record, and
+rejects any return or post-terminal output. This is integration evidence, not
+a proof of x86 delivery, coalescing, or emulator correctness.
 
 ## Ordinary entry-stack layout and budget contract
 

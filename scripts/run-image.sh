@@ -77,7 +77,7 @@ printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
-echo 'LEANOS/12 ENTRY-MANIFEST ordinary=6 extended=6,7 auxiliary=1 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' >> "$expected"
+echo 'LEANOS/17 ENTRY-MANIFEST ordinary=6 extended=6,7 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS' >> "$expected"
 echo 'LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' >> "$expected"
 if [[ "$scenario" == fast-entry-syscall || "$scenario" == fast-entry-sysenter ]]; then
   echo 'LEANOS/14 FAST-ENTRY cpu.vendor=AuthenticAMD mode=long64 syscall=1 sysenter=1 efer.sce=0 star=0 lstar=0 cstar=0 sfmask=0 sysenter.cs=0 sysenter.esp=0 sysenter.eip=0 writes=complete readback=exact result=PASS' >> "$expected"

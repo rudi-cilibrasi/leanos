@@ -47,8 +47,10 @@ the generated scalar boundary. Their ordered identifiers and codes are proved
 against `NmiRejectReason.runtimeInventory`; the compile-time-only invalid
 terminal manifest and a dropped stateful trace class are separate semantic
 negative fixtures. Hosted and boot replay both call the same generated
-`leanos_nmi_demo` symbol. This is generated-code/final-ELF/QEMU classifier
-evidence only: the image still does not install or exercise vector 2 or IST2.
+`leanos_nmi_demo` symbol. Separately, the terminal probe image installs vector
+2 on IST2 and uses QEMU monitor injection to observe real non-maskable delivery
+at an IF-clear CPL0 handling boundary; that machine observation does not turn
+the generated classifier agreement into a hardware-refinement proof.
 
 The resumable adapter executes both composite context-bank legs and packs the
 restored owner/address-space, logical stack marker, and r12 marker together
