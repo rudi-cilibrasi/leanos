@@ -152,6 +152,16 @@ theorem composite_gate_data_receive_preserves_runtimeWellFormed
     state handleWord sender word0 word1 hstate hmode
   simpa [FailStop.operationReply] using hdelivered
 
+/-- SC-COMPOSITE-BLOCKING-CONTEXT-WF: every typed block, wake, cancellation,
+ordinary rejection, and execution-latch rejection preserves the exact
+waiter/saved-context agreement.  Successful wake and cancellation additionally
+pass through the checked resumable-bank restoration boundary. -/
+theorem composite_blocking_gate_preserves_contextWellFormed state operation
+    (hstate : FailStop.BlockingReceiveWellFormed state) :
+    FailStop.BlockingReceiveWellFormed
+      (FailStop.blockingGate state operation).state := by
+  exact FailStop.blockingGate_preserves_wellFormed state operation hstate
+
 /-- SC-COMPOSITE-TRANSFER-OFFER-WF: every canonical sealed-transfer offer,
 including malformed/stale handle rejections and the accepted pending-mailbox
 mutation, preserves the complete global runtime invariant. -/

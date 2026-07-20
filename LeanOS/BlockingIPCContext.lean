@@ -28,6 +28,13 @@ def validSaved (caller : SubjectId) (saved : ResumableContext.Context) : Bool :=
   saved.owner == caller && saved.addressSpace == caller &&
     saved.kind == .suspended && Interrupt.validSavedUserFrame saved.frame
 
+/-- Small projection used by composite restoration proofs without unfolding
+the complete saved-context validator. -/
+theorem validSaved_owner caller saved
+    (hvalid : validSaved caller saved = true) : saved.owner = caller := by
+  simp only [validSaved, Bool.and_eq_true, beq_iff_eq] at hvalid
+  exact hvalid.1.1.1
+
 /-- The separate bank is an exact typed projection of the waiter index.  It
 contains no runnable-only entry: every waiter has one valid suspended context,
 and no non-waiter has a blocked context. -/
