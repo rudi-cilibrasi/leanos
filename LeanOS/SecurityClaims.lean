@@ -418,6 +418,83 @@ private def returnWitnessComposite : FailStop.CompositeState :=
     capabilities := returnWitnessLifecycle.capabilities
     lifecycle := returnWitnessLifecycle }
 
+private def nmiWitnessContext (mode : InterruptEntry.InterruptedMode) :
+    InterruptEntry.NmiContext :=
+  { currentSubject := 1
+    activeAddressSpace := 1
+    activeCr3 := 0xa000
+    stackIdentity := InterruptEntry.nmiStackIdentity
+    stackFirst := InterruptEntry.nmiStackFirst
+    stackPastLast := InterruptEntry.nmiStackPastLast
+    interruptedMode := mode }
+
+private def nmiWitnessRaw (origin : Interrupt.Privilege) : InterruptEntry.RawNmiEntry :=
+  let frame : InterruptEntry.RawNmiFrame :=
+    match origin with
+    | .user => ⟨0x64100, 0x23, 0x202, 0x65ff8, 0x1b, true, true⟩
+    | .kernel => ⟨0x101000, 0x08, 0x2, 0x700ff8, 0x10, true, true⟩
+  { descriptor := InterruptEntry.nmiEntry
+    boundStub := InterruptEntry.nmiVector
+    errorCode := none
+    frame
+    claimedOrigin := origin
+    frameBytes := 40
+    frameAddress := 0x903fd0
+    acCleared := true
+    dfCleared := true }
+
+/-- Concrete CPL3 and CPL0 raw snapshots both reach the reviewed terminal
+normalizer and then the absorbing composite transition. -/
+theorem nmi_user_kernel_nonvacuous :
+    let userContext := nmiWitnessContext .running
+    let kernelContext := nmiWitnessContext .running
+    let userRaw := nmiWitnessRaw .user
+    let kernelRaw := nmiWitnessRaw .kernel
+    let userEvent := InterruptEntry.makeNormalizedNmi userRaw userContext
+    let kernelEvent := InterruptEntry.makeNormalizedNmi kernelRaw kernelContext
+    InterruptEntry.normalizeNmi userRaw userContext 1 1 = .accepted userEvent ∧
+      InterruptEntry.normalizeNmi kernelRaw kernelContext 1 1 = .accepted kernelEvent ∧
+      ((FailStop.gate returnWitnessComposite (.nmi userRaw userContext)).state.execution.mode =
+        .halted (FailStop.acceptedNmiRecord returnWitnessComposite.execution userEvent)) ∧
+      ((FailStop.gate returnWitnessComposite (.nmi kernelRaw kernelContext)).state.execution.mode =
+        .halted (FailStop.acceptedNmiRecord returnWitnessComposite.execution kernelEvent)) := by
+  native_decide
+
+/-- SC-NMI-FAILSTOP: an exact normalized vector-2 terminal entry from running
+or any ordinary handling state freezes every business subsystem, clears return
+and copy authority, records the kernel-owned context/CR3, and absorbs every
+later typed operation. -/
+theorem nmi_terminal_failstop state raw context event proposals
+    (hmode : state.execution.mode = .running ∨
+      ∃ active, state.execution.mode = .handling active)
+    (hcontext : context.interruptedMode =
+      FailStop.interruptedModeOf state.execution.mode)
+    (haccepted : InterruptEntry.normalizeNmi raw context
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace = .accepted event) :
+    let next := (FailStop.gate state (.nmi raw context)).state
+    next.execution.mode =
+        .halted (FailStop.acceptedNmiRecord state.execution event) ∧
+      next.execution.core.lifecycle = state.execution.core.lifecycle ∧
+      next.execution.core.context.currentSubject =
+        state.execution.core.context.currentSubject ∧
+      next.execution.core.context.activeAddressSpace =
+        state.execution.core.context.activeAddressSpace ∧
+      next.execution.core.context.kernelStack =
+        state.execution.core.context.kernelStack ∧
+      next.execution.returnAuthority = state.execution.returnAuthority ∧
+      next.execution.returnAuthorityArmed = false ∧
+      next.execution.copyOverride = false ∧
+      next.scheduler = state.scheduler ∧
+      next.preemption = state.preemption ∧
+      next.virtualMemory = state.virtualMemory ∧
+      next.ipc = state.ipc ∧
+      next.capabilities = state.capabilities ∧
+      next.lifecycle = state.lifecycle ∧
+      FailStop.runOperations next proposals = next := by
+  exact FailStop.accepted_nmi_composite_atomicity state raw context event proposals
+    hmode hcontext haccepted
+
 private def returnWitnessSyscallFrame : Interrupt.HardwareFrame :=
   { returnWitnessRequest.hardware with vector := 128 }
 

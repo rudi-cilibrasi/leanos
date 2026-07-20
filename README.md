@@ -359,6 +359,14 @@ The bounded inbound entry manifest and total trap-frame normalizer bind those
 ordinary gates to explicit x86 raw shapes and kernel-owned subject, address
 space, CR3, stack, purpose, and nested-entry state before a boot handler runs.
 
+A separate terminal vector-2 manifest models NMI snapshots on dedicated IST2
+and proves that an exact CPL3 or CPL0 event, including one observed during an
+ordinary handling step, freezes every modeled subsystem and enters the same
+absorbing halt latch without return, scheduling, or CR3 continuation. Physical
+NMI delivery/blocking, IST switching, frame construction, generated code, and
+the machine path remain trusted or future tested work rather than theorem
+claims.
+
 The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,
 bounded double-fault escalation, and one absorbing gate for every modeled
 post-fatal mutation and context-restoration path.

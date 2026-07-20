@@ -4,9 +4,10 @@ import LeanOS.Interrupt
 # Bounded x86-64 interrupt-entry manifest and frame normalization
 
 This module models the inbound boundary for the six ordinary gates used by
-the boot image.  Vector 8 deliberately remains in the separate terminal IST
-protocol.  Descriptor loads, x86 frame construction, assembly, generated C,
-and the final binary are trusted/tested boundaries rather than theorem claims.
+the boot image and the separate terminal vector-2 contract.  Vector 8 remains
+in its own terminal IST1 machine protocol.  Descriptor loads, NMI delivery and
+blocking, x86 frame construction, IST switching, assembly, generated C, and
+the final binary are trusted/tested boundaries rather than theorem claims.
 -/
 namespace LeanOS.InterruptEntry
 
@@ -18,6 +19,7 @@ inductive GateType where | interrupt
 inductive Purpose where
   | extendedUnavailable | extendedDenied
   | generalProtection | userFault | timer | syscall | diagnosticRecovery
+  | terminalNmi
   deriving DecidableEq, Repr
 
 inductive OriginPolicy where | userOnly | userOrKernel
@@ -298,6 +300,262 @@ theorem same_privilege_never_user raw context accepted
   split at haccepted <;> try contradiction
   cases haccepted
   exact makeNormalized_same_privilege _ _ _ _ _ _ hshape
+
+/-! ## Separate terminal NMI manifest and IST-switch frame
+
+The ordinary manifest intentionally cannot accept vector 2.  An NMI uses a
+dedicated IST2 identity and an explicit five-word saved frame even when the
+interrupted CPL is zero.  The model consumes a normalized raw snapshot; x86
+delivery, NMI blocking/coalescing, and construction of that snapshot remain
+trusted machine assumptions. -/
+
+inductive InterruptedMode where
+  | running | handling | halted
+  deriving DecidableEq, Repr
+
+def nmiVector : UInt64 := 2
+def nmiIst : UInt64 := 2
+def nmiStackIdentity : UInt64 := 2
+def nmiStackFirst : UInt64 := 0x900000
+def nmiStackPastLast : UInt64 := 0x904000
+
+def nmiEntry : ManifestEntry :=
+  ⟨2, .interrupt, 0x08, 0, nmiIst, false, .userOrKernel, .terminalNmi, true⟩
+
+/-- Terminal entries are reviewed separately so extending them cannot make a
+vector ordinary-handler-authorized. -/
+def terminalManifest : List ManifestEntry := [nmiEntry]
+
+def terminalEntrySupported (entry : ManifestEntry) : Bool :=
+  entry = nmiEntry && entry.vector = nmiVector && entry.gate = .interrupt &&
+    entry.selector = 0x08 && entry.dpl = 0 && entry.ist = nmiIst &&
+    !entry.hardwareError && entry.origins = .userOrKernel &&
+    entry.purpose = .terminalNmi && entry.interruptsDisabled
+
+def validateTerminalManifest (entries : List ManifestEntry) : Bool :=
+  entries = terminalManifest && noDuplicateVectors entries && entries.all terminalEntrySupported
+
+theorem reviewed_terminal_manifest_valid :
+    validateTerminalManifest terminalManifest = true := by
+  native_decide
+
+theorem nmi_not_ordinary : nmiEntry ∉ manifest := by
+  native_decide
+
+/-- IST switching supplies saved SS/RSP for both admitted origins.  There is
+no same-privilege short form in this terminal contract. -/
+structure RawNmiFrame where
+  rip : UInt64
+  cs : UInt64
+  flags : UInt64
+  rsp : UInt64
+  ss : UInt64
+  canonicalRip : Bool
+  canonicalRsp : Bool
+  deriving DecidableEq, Repr
+
+structure RawNmiEntry where
+  descriptor : ManifestEntry
+  boundStub : UInt64
+  errorCode : Option UInt64
+  frame : RawNmiFrame
+  claimedOrigin : Interrupt.Privilege
+  frameBytes : UInt64
+  frameAddress : UInt64
+  acCleared : Bool
+  dfCleared : Bool
+  deriving DecidableEq, Repr
+
+/-- These fields are supplied by the trusted kernel/machine snapshot, not by
+the interrupted register bank.  The normalizer additionally checks the two
+identities also represented by the fail-stop state. -/
+structure NmiContext where
+  currentSubject : Interrupt.SubjectId
+  activeAddressSpace : Interrupt.AddressSpaceId
+  activeCr3 : UInt64
+  stackIdentity : UInt64
+  stackFirst : UInt64
+  stackPastLast : UInt64
+  interruptedMode : InterruptedMode
+  deriving DecidableEq, Repr
+
+structure NormalizedNmi where
+  vector : UInt64
+  purpose : Purpose
+  origin : Interrupt.Privilege
+  ist : UInt64
+  rip : UInt64
+  cs : UInt64
+  flags : UInt64
+  savedRsp : UInt64
+  savedSs : UInt64
+  currentSubject : Interrupt.SubjectId
+  activeAddressSpace : Interrupt.AddressSpaceId
+  activeCr3 : UInt64
+  stackIdentity : UInt64
+  interruptedMode : InterruptedMode
+  deriving DecidableEq, Repr
+
+inductive NmiRejectReason where
+  | invalidManifest | wrongDescriptor | wrongTarget | spuriousError
+  | wrongFrameBytes | misaligned | stackOutOfBounds | wrongStackIdentity
+  | wrongOrigin | wrongSelectors | noncanonical | privilegedStateNotCleared
+  | staleKernelContext
+  deriving DecidableEq, Repr
+
+inductive NmiResult where
+  | accepted (event : NormalizedNmi)
+  | fatal (reason : NmiRejectReason)
+  deriving DecidableEq, Repr
+
+def nmiFrameOrigin (frame : RawNmiFrame) : Interrupt.Privilege :=
+  if frame.cs % 4 = 3 then .user else .kernel
+
+def makeNormalizedNmi (raw : RawNmiEntry) (context : NmiContext) : NormalizedNmi :=
+  { vector := nmiVector
+    purpose := .terminalNmi
+    origin := nmiFrameOrigin raw.frame
+    ist := nmiIst
+    rip := raw.frame.rip
+    cs := raw.frame.cs
+    flags := raw.frame.flags
+    savedRsp := raw.frame.rsp
+    savedSs := raw.frame.ss
+    currentSubject := context.currentSubject
+    activeAddressSpace := context.activeAddressSpace
+    activeCr3 := context.activeCr3
+    stackIdentity := context.stackIdentity
+    interruptedMode := context.interruptedMode }
+
+/-- The first exact terminal-contract failure, or `none` for the sole accepted
+shape.  Keeping validation separate makes the result constructor auditable. -/
+def nmiRejection? (raw : RawNmiEntry) (context : NmiContext)
+    (expectedSubject : Interrupt.SubjectId)
+    (expectedAddressSpace : Interrupt.AddressSpaceId) : Option NmiRejectReason :=
+  if !validateTerminalManifest terminalManifest then some .invalidManifest
+  else if raw.descriptor != nmiEntry then some .wrongDescriptor
+  else if raw.boundStub != nmiVector then some .wrongTarget
+  else if raw.errorCode.isSome then some .spuriousError
+  else if raw.frameBytes != 40 then some .wrongFrameBytes
+  else if raw.frameAddress % 16 != 0 then some .misaligned
+  else if context.stackIdentity != nmiStackIdentity then some .wrongStackIdentity
+  else if context.stackFirst != nmiStackFirst ||
+      context.stackPastLast != nmiStackPastLast ||
+      raw.frameAddress < context.stackFirst ||
+      raw.frameAddress + raw.frameBytes < raw.frameAddress ||
+      raw.frameAddress + raw.frameBytes > context.stackPastLast then
+    some .stackOutOfBounds
+  else if nmiFrameOrigin raw.frame != raw.claimedOrigin then some .wrongOrigin
+  else if raw.claimedOrigin = .user then
+    if raw.frame.cs != 0x23 || raw.frame.ss != 0x1b then some .wrongSelectors
+    else if !raw.frame.canonicalRip || !raw.frame.canonicalRsp then some .noncanonical
+    else if !raw.acCleared || !raw.dfCleared then some .privilegedStateNotCleared
+    else if context.currentSubject != expectedSubject ||
+        context.activeAddressSpace != expectedAddressSpace then some .staleKernelContext
+    else none
+  else if raw.frame.cs != 0x08 || raw.frame.ss != 0x10 then some .wrongSelectors
+  else if !raw.frame.canonicalRip || !raw.frame.canonicalRsp then some .noncanonical
+  else if !raw.acCleared || !raw.dfCleared then some .privilegedStateNotCleared
+  else if context.currentSubject != expectedSubject ||
+      context.activeAddressSpace != expectedAddressSpace then some .staleKernelContext
+  else none
+
+/-- Total normalization of the reviewed terminal snapshot.  The explicit
+`expectedSubject` and `expectedAddressSpace` arguments come from the execution
+latch and prevent a detached trusted-context record from naming a peer. -/
+def normalizeNmi (raw : RawNmiEntry) (context : NmiContext)
+    (expectedSubject : Interrupt.SubjectId)
+    (expectedAddressSpace : Interrupt.AddressSpaceId) : NmiResult :=
+  match nmiRejection? raw context expectedSubject expectedAddressSpace with
+  | some reason => .fatal reason
+  | none => .accepted (makeNormalizedNmi raw context)
+
+def normalizeNmiWithRegisters (raw : RawNmiEntry) (context : NmiContext)
+    (expectedSubject : Interrupt.SubjectId)
+    (expectedAddressSpace : Interrupt.AddressSpaceId)
+    (_registers : AttackerRegisters) : NmiResult :=
+  normalizeNmi raw context expectedSubject expectedAddressSpace
+
+theorem nmi_attacker_register_erasure raw context subject addressSpace left right :
+    normalizeNmiWithRegisters raw context subject addressSpace left =
+      normalizeNmiWithRegisters raw context subject addressSpace right := by
+  rfl
+
+theorem normalizeNmi_total raw context subject addressSpace :
+    ∃ result, normalizeNmi raw context subject addressSpace = result := by
+  exact ⟨_, rfl⟩
+
+theorem normalizeNmi_deterministic raw context subject addressSpace first second
+    (hfirst : normalizeNmi raw context subject addressSpace = first)
+    (hsecond : normalizeNmi raw context subject addressSpace = second) : first = second := by
+  rw [hfirst] at hsecond
+  exact hsecond
+
+theorem accepted_nmi_exact raw context subject addressSpace event
+    (haccepted : normalizeNmi raw context subject addressSpace = .accepted event) :
+    event = makeNormalizedNmi raw context := by
+  unfold normalizeNmi at haccepted
+  split at haccepted <;> simp_all
+
+theorem accepted_nmi_has_no_rejection raw context subject addressSpace event
+    (haccepted : normalizeNmi raw context subject addressSpace = .accepted event) :
+    nmiRejection? raw context subject addressSpace = none ∧
+      event = makeNormalizedNmi raw context := by
+  cases hrejection : nmiRejection? raw context subject addressSpace with
+  | none => exact ⟨rfl, accepted_nmi_exact _ _ _ _ _ haccepted⟩
+  | some reason => simp [normalizeNmi, hrejection] at haccepted
+
+theorem makeNormalizedNmi_binds_terminal_contract raw context :
+    let event := makeNormalizedNmi raw context
+    event.vector = nmiVector ∧ event.purpose = .terminalNmi ∧ event.ist = nmiIst ∧
+      event.currentSubject = context.currentSubject ∧
+      event.activeAddressSpace = context.activeAddressSpace ∧
+      event.activeCr3 = context.activeCr3 ∧
+      event.stackIdentity = context.stackIdentity ∧
+      event.interruptedMode = context.interruptedMode := by
+  simp [makeNormalizedNmi]
+
+/-- A fixed-width encoding for the later stateful-corpus boundary.  Rejection
+codes are stable, and accepted fields occupy named words rather than a packed,
+attacker-selectable payload. -/
+structure NmiResultWords where
+  version : UInt64
+  result : UInt64
+  detail : UInt64
+  vector : UInt64
+  purpose : UInt64
+  origin : UInt64
+  ist : UInt64
+  interruptedMode : UInt64
+  subject : UInt64
+  addressSpace : UInt64
+  cr3 : UInt64
+  stackIdentity : UInt64
+  rip : UInt64
+  cs : UInt64
+  flags : UInt64
+  savedRsp : UInt64
+  savedSs : UInt64
+  deriving DecidableEq, Repr
+
+def NmiRejectReason.code : NmiRejectReason → UInt64
+  | .invalidManifest => 1 | .wrongDescriptor => 2 | .wrongTarget => 3
+  | .spuriousError => 4 | .wrongFrameBytes => 5 | .misaligned => 6
+  | .stackOutOfBounds => 7 | .wrongStackIdentity => 8 | .wrongOrigin => 9
+  | .wrongSelectors => 10 | .noncanonical => 11
+  | .privilegedStateNotCleared => 12 | .staleKernelContext => 13
+
+def InterruptedMode.code : InterruptedMode → UInt64
+  | .running => 0 | .handling => 1 | .halted => 2
+
+def encodeNmiResult : NmiResult → NmiResultWords
+  | .fatal reason =>
+      ⟨1, 0, reason.code, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0⟩
+  | .accepted event =>
+      ⟨1, 1, 0, event.vector, 1, if event.origin = .user then 1 else 0,
+        event.ist, event.interruptedMode.code, UInt64.ofNat event.currentSubject,
+        UInt64.ofNat event.activeAddressSpace, event.activeCr3, event.stackIdentity,
+        event.rip, event.cs, event.flags, event.savedRsp, event.savedSs⟩
 
 /-- Fixed-width oracle encoding.  Nonzero success words bind purpose, origin,
 subject, and address-space; zero is terminal rejection. -/

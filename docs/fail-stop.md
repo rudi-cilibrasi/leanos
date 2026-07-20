@@ -22,6 +22,22 @@ active entry, and incoming vector/origin diagnostics. Lifecycle, capabilities,
 mappings, scheduler identity, saved context, mailbox, and resources remain the
 pre-fault `core`; fatal atomicity proves that freeze.
 
+Vector 2 has a separate terminal path. `dispatchNmi` consumes only the exact
+accepted `InterruptEntry.normalizeNmi` result (or retains its typed rejection),
+and is admitted from both `running` and every `handling` state. It never calls
+ordinary entry completion, user-fault containment, scheduling, CR3/return
+selection, or an operation-specific handler. An accepted NMI records the
+prior mode plus the trusted normalized origin, active CR3, and IST2 identity;
+it preserves the current subject/address-space/kernel-stack projection and
+clears both return authority and the SMAP copy override. The composite theorem
+freezes every business subsystem and absorbs all later operations.
+
+If the state is already halted, another modeled NMI returns the identical
+record and cannot manufacture a later snapshot. This sequential rule assumes
+that a second physical NMI is blocked until architectural NMI return; no such
+return exists in the model. It is not a statement about arbitrary machine
+instruction interleavings or partially committed implementation mutations.
+
 The composite state places scheduler/preemption, syscall virtual memory, IPC,
 capability, mapping, and subject-lifecycle state under the same execution latch.
 `Operation` carries each subsystem's typed inputs, and `gate` invokes the real
@@ -48,7 +64,8 @@ Boot-only WP/SMEP recovery remains a pre-runtime diagnostic behavior outside
 this model. It must be disabled before subjects run and does not refine
 `halted`; production fatal entry has no clear or restart transition.
 
-These are Lean model proofs, not proof that x86 delivers an exception into the
-model. IDT/TSS/IST setup, assembly entry/exit, exception delivery, compiler,
-generated code, firmware, QEMU, and hardware remain trusted. No `unsafe`,
+These are Lean model proofs, not proof that x86 delivers an exception or NMI
+into the model. IDT/TSS/IST setup, NMI delivery/blocking/coalescing and frame
+construction, assembly entry/exit, exception delivery, compiler, generated
+code, firmware, QEMU, and hardware remain trusted. No `unsafe`,
 `extern`, FFI declaration, axiom, or constant is added.
