@@ -11,7 +11,7 @@ namespace LeanOS.DMAQuarantine
 def snapshotVersion : UInt64 := 1
 def q35TopologyVersion : UInt64 := 0x0008_0002_0002
 def maxFunctions : Nat := 16
-def functionWords : Nat := 12
+def functionWords : Nat := 13
 def snapshotWords : Nat := 2 + maxFunctions * functionWords
 
 structure BDF where
@@ -73,19 +73,25 @@ def commandCanonical (command : UInt64) : Bool := command < 0x800
 
 def assignmentTag : Assignment → UInt64
   | .unassigned => 0
-  | .kernelOwner owner => owner + 1
+  | .kernelOwner _ => 1
+
+def assignmentOwner : Assignment → UInt64
+  | .unassigned => 0
+  | .kernelOwner owner => owner
 
 def statusTag : ReadStatus → UInt64
   | .absent => 0
   | .present => 1
   | .unreadable => 2
 
-/-- Twelve 64-bit words per function.  Keeping fields separate avoids a
-truncating packed representation and reserves the final word as zero. -/
+/-- Thirteen 64-bit words per function.  Keeping the assignment tag and owner
+in separate words avoids making `kernelOwner UInt64.max` collide with the
+unassigned encoding through wrapping arithmetic. -/
 def encodeFunction (function : FunctionState) : List UInt64 :=
   [1, function.bdf.bus, function.bdf.device, function.bdf.function,
    function.identity.vendor, function.identity.device, function.identity.classCode,
    statusTag function.status, function.command, assignmentTag function.assignment,
+   assignmentOwner function.assignment,
    if function.bridge then 1 else 0, if function.multifunction then 1 else 0]
 
 def emptySlot : List UInt64 := List.replicate functionWords 0
@@ -331,14 +337,16 @@ structure MemoryProjection where
   kernelState : Nat → UInt64
   subjectVisible : Nat → Nat → UInt8
 
-/-- Trusted hardware rule: any device-originated change requires a present,
-assigned function whose observed Command register has bus mastering enabled.
-This is an assumption about the modeled device, not a theorem about PCI/QEMU. -/
+/-- Trusted hardware rule: any device-originated change by the named function
+requires that function to be present with its observed PCI Command bus-master
+bit enabled. Assignment is kernel policy, not a hardware precondition for DMA;
+acceptance separately proves that every present function is unassigned. This
+is an assumption about the modeled device, not a theorem about PCI/QEMU. -/
 def DeviceContract (snapshot : Snapshot) (target : BDF)
     (before after : MemoryProjection) : Prop :=
   before ≠ after → ∃ function ∈ snapshot.functions,
     function.bdf = target ∧ function.status = .present ∧
-      function.assignment ≠ .unassigned ∧ busMasterEnabled function = true
+      busMasterEnabled function = true
 
 /-- An unowned function in an accepted, nonempty quarantine cannot change any
 part of the complete modeled memory projection. -/
@@ -357,9 +365,9 @@ theorem unowned_device_preserves_complete_projection
   have heq : before = after := by
     apply Classical.byContradiction
     intro hne
-    obtain ⟨function, hmember, _hbdf, hpresent, hassigned, _hmaster⟩ := hcontract hne
+    obtain ⟨function, hmember, _hbdf, hpresent, hmaster⟩ := hcontract hne
     have hdisabled := accepted_unassigned_busMaster_disabled accepted function hmember hpresent
-    exact hassigned hdisabled.1
+    simp [hdisabled.2] at hmaster
   cases heq
   exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
@@ -482,6 +490,10 @@ def q35CommandBitFlipSnapshot : Snapshot :=
   { q35Snapshot with functions :=
       q35Functions.set 0 { q35Functions[0]! with command := 1 } }
 
+def q35BusMasterBitFlipSnapshot : Snapshot :=
+  { q35Snapshot with functions :=
+      q35Functions.set 1 { q35Functions[1]! with command := 4 } }
+
 def q35Accepted : AcceptedSnapshot where
   snapshot := q35Snapshot
   versionAccepted := by native_decide
@@ -508,6 +520,10 @@ example : encodeValidationResult (validate { q35Snapshot with version := 0 }) = 
 example : q35Functions[2]!.status = .absent := by native_decide
 example : (validate q35OptionalNetworkPresentSnapshot).isAccepted = true := by native_decide
 example : (encodeSnapshot q35Snapshot).map List.length = some snapshotWords := by native_decide
+example : encodeFunction
+    { q35Functions.head! with assignment := .kernelOwner 0xffffffffffffffff } ≠
+    encodeFunction { q35Functions.head! with assignment := .unassigned } := by
+  native_decide
 example : (validate { q35Snapshot with version := 0 }).reason = some .staleSnapshotVersion := by
   native_decide
 example : (validate { q35Snapshot with topologyVersion := 0 }).reason = some .wrongTopology := by
@@ -597,5 +613,7 @@ example :
 example : (validate q35CommandBitFlipSnapshot).isAccepted = true := by native_decide
 example : (runtimeGate q35Runtime (.observeControl q35CommandBitFlipSnapshot)).result =
     .fatal .controlSnapshotChanged := by native_decide
+example : (runtimeGate q35Runtime (.observeControl q35BusMasterBitFlipSnapshot)).result =
+    .fatal .invalidControlSnapshot := by native_decide
 
 end LeanOS.DMAQuarantine

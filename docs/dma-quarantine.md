@@ -17,10 +17,12 @@ unexpected, assigned, or bus-master-enabled records produce typed rejection.
 
 ## Canonical corpus encoding
 
-`encodeSnapshot` emits exactly 194 64-bit words: snapshot and topology version,
-then sixteen 12-word slots. Each occupied slot contains an occupancy tag, BDF,
+`encodeSnapshot` emits exactly 210 64-bit words: snapshot and topology version,
+then sixteen 13-word slots. Each occupied slot contains an occupancy tag, BDF,
 vendor/device/class identity, read-status tag, full Command word, assignment
-tag, bridge bit, and multifunction bit. Empty tail slots are all zero. More
+tag, assignment-owner word, bridge bit, and multifunction bit. Keeping the tag
+separate prevents the maximum owner identifier from wrapping into the
+unassigned encoding. Empty tail slots are all zero. More
 than sixteen records reject instead of truncating. `accepted_encoding_fixed_width`
 proves the length of every successful snapshot encoding.
 `encodeValidationResult` supplies the paired canonical one-word result: zero
@@ -39,9 +41,11 @@ has a manifest BDF occurring exactly once, and
 every present function.
 
 `DeviceContract` is the explicit boundary assumption: if a modeled
-device-originated step changes memory, the named function is present, assigned,
-and has bus mastering enabled. From an accepted snapshot and a named present
-function, `unowned_device_preserves_complete_projection` proves equality of the
+device-originated step changes memory, the named function is present and has
+bus mastering enabled. Assignment is kernel policy rather than a hardware
+precondition for DMA. From an accepted snapshot, which separately establishes
+that every present function is unassigned with bus mastering disabled, and a
+named present function, `unowned_device_preserves_complete_projection` proves equality of the
 entire physical-memory, allocator-ownership, page-table-frame,
 kernel-owned-frame, kernel-state, and per-subject-visible-byte projections.
 `q35Snapshot` is an executable accepted nonempty witness, so this result cannot

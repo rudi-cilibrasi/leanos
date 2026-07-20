@@ -21,7 +21,7 @@ explicit change here and in `docs/security-claims.md`.
 namespace LeanOS.SecurityClaims
 
 /-- SC-DMA-QUARANTINE: an accepted nonempty q35 quarantine plus the explicit
-device-control contract preserves every modeled memory projection. -/
+bus-master device-control contract preserves every modeled memory projection. -/
 theorem dma_quarantine_preserves_complete_projection
     (accepted : DMAQuarantine.AcceptedSnapshot) (target : DMAQuarantine.BDF)
     (before after : DMAQuarantine.MemoryProjection)
