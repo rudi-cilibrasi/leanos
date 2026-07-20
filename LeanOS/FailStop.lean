@@ -3607,6 +3607,156 @@ theorem blockingGate_receive_blocked_preserves_blockingRuntimeWellFormed
       exact blockingGate_receive_selected_block_preserves_blockingRuntimeWellFormed
         state handleWord frame registers selected hstate hcompleted hcurrent
 
+/-- The total typed blocking gate preserves the integrated global runtime and
+authoritative waiter/context invariant for every operation and every result.
+This closes the operation-specific inventory above: delivery, blocking,
+enqueue, wake, and cancellation use their exact success lemmas, while every
+finite denial and both execution-latch rejections are literal no-ops. -/
+theorem blockingGate_preserves_blockingRuntimeWellFormed state operation
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed (blockingGate state operation).state := by
+  have hcoherent : state.BlockingIPCCoherent := by
+    rcases hstate.1 with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
+    exact hblocking
+  cases hmode : state.execution.mode with
+  | handling entry => simpa [blockingGate, hmode] using hstate
+  | halted record => simpa [blockingGate, hmode] using hstate
+  | running =>
+      cases operation with
+      | receive handleWord frame registers =>
+          cases hreply : (dispatchBlockingReceive state handleWord frame registers).reply with
+          | handleRejected reason =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.receive handleWord frame registers)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.receive
+                    (CompositeBlockingReceiveRejection.handle reason))
+              rw [blockingGate_rejection_atomic state
+                (.receive handleWord frame registers) hrejected]
+              exact hstate
+          | contextRejected reason =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.receive handleWord frame registers)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.receive
+                    (CompositeBlockingReceiveRejection.context reason))
+              rw [blockingGate_rejection_atomic state
+                (.receive handleWord frame registers) hrejected]
+              exact hstate
+          | rejected reason =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.receive handleWord frame registers)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.receive
+                    (CompositeBlockingReceiveRejection.ipc reason))
+              rw [blockingGate_rejection_atomic state
+                (.receive handleWord frame registers) hrejected]
+              exact hstate
+          | switchRequired =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.receive handleWord frame registers)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.receive
+                    CompositeBlockingReceiveRejection.switchRequired)
+              rw [blockingGate_rejection_atomic state
+                (.receive handleWord frame registers) hrejected]
+              exact hstate
+          | delivered envelope =>
+              apply blockingGate_receive_delivered_preserves_blockingRuntimeWellFormed
+                state handleWord frame registers envelope hstate
+              simp [blockingGate, hmode, blockingOperationReply, hreply]
+          | blocked =>
+              apply blockingGate_receive_blocked_preserves_blockingRuntimeWellFormed
+                state handleWord frame registers hstate
+              simp [blockingGate, hmode, blockingOperationReply, hreply]
+      | send handleWord word0 word1 =>
+          cases hreply : (dispatchBlockingSend state handleWord word0 word1).reply with
+          | handleRejected reason =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.send handleWord word0 word1)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.send
+                    (CompositeBlockingSendRejection.handle reason))
+              rw [blockingGate_rejection_atomic state
+                (.send handleWord word0 word1) hrejected]
+              exact hstate
+          | contextRejected reason =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.send handleWord word0 word1)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.send
+                    (CompositeBlockingSendRejection.context reason))
+              rw [blockingGate_rejection_atomic state
+                (.send handleWord word0 word1) hrejected]
+              exact hstate
+          | restoreRejected reason =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.send handleWord word0 word1)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.send
+                    (CompositeBlockingSendRejection.restore reason))
+              rw [blockingGate_rejection_atomic state
+                (.send handleWord word0 word1) hrejected]
+              exact hstate
+          | rejected reason =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.send handleWord word0 word1)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.send
+                    (CompositeBlockingSendRejection.ipc reason))
+              rw [blockingGate_rejection_atomic state
+                (.send handleWord word0 word1) hrejected]
+              exact hstate
+          | sent =>
+              refine ⟨?_, ?_⟩
+              · apply blockingGate_send_sent_preserves_runtimeWellFormed
+                  state handleWord word0 word1 hstate.1
+                simp [blockingGate, hmode, blockingOperationReply, hreply]
+              · exact (blockingGate_preserves_wellFormed state
+                  (.send handleWord word0 word1) ⟨hstate.2, hcoherent⟩).1
+          | woke saved =>
+              apply blockingGate_send_woke_preserves_blockingRuntimeWellFormed
+                state handleWord word0 word1 saved hstate
+              simp [blockingGate, hmode, blockingOperationReply, hreply]
+      | cancel subject =>
+          cases hreply : (dispatchBlockingCancel state subject).reply with
+          | notWaiting =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.cancel subject)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.cancel
+                    CompositeBlockingCancelRejection.notWaiting)
+              rw [blockingGate_rejection_atomic state (.cancel subject) hrejected]
+              exact hstate
+          | contextRejected reason =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.cancel subject)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.cancel
+                    (CompositeBlockingCancelRejection.context reason))
+              rw [blockingGate_rejection_atomic state (.cancel subject) hrejected]
+              exact hstate
+          | restoreRejected reason =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.cancel subject)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.cancel
+                    (CompositeBlockingCancelRejection.restore reason))
+              rw [blockingGate_rejection_atomic state (.cancel subject) hrejected]
+              exact hstate
+          | rejected reason =>
+              have hrejected : CompositeBlockingGateRejection
+                  (blockingGate state (.cancel subject)).result := by
+                simpa [blockingGate, hmode, blockingOperationReply, hreply] using
+                  (CompositeBlockingGateRejection.cancel
+                    (CompositeBlockingCancelRejection.ipc reason))
+              rw [blockingGate_rejection_atomic state (.cancel subject) hrejected]
+              exact hstate
+          | cancelled saved =>
+              apply blockingGate_cancel_cancelled_preserves_blockingRuntimeWellFormed
+                state subject saved hstate
+              simp [blockingGate, hmode, blockingOperationReply, hreply]
+
 /-- Publish a queue-only admission without invoking lifecycle cleanup.  An
 accepted `Scheduler.add` retains the lifecycle exactly, so the only consumers
 that must observe the new ready queue are the scheduler, legacy preemption,

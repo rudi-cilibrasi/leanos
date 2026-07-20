@@ -177,7 +177,7 @@ theorem composite_gate_data_receive_preserves_runtimeWellFormed
     state handleWord sender word0 word1 hstate hmode
   simpa [FailStop.operationReply] using hdelivered
 
-/-- SC-COMPOSITE-BLOCKING-CONTEXT-WF: every typed block, wake, cancellation,
+/-- Every typed block, wake, cancellation,
 ordinary rejection, and execution-latch rejection preserves the exact
 waiter/saved-context agreement.  Successful wake and cancellation additionally
 pass through the checked resumable-bank restoration boundary. -/
@@ -280,6 +280,16 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
     fun subject saved hcompleted =>
       FailStop.blockingGate_cancel_cancelled_context_valid
         state subject saved hcompleted⟩
+
+/-- SC-COMPOSITE-BLOCKING-CONTEXT-WF: the complete typed blocking gate preserves the integrated global runtime
+and authoritative waiter/context invariant without requiring the caller to
+classify its result.  This supports SC-COMPOSITE-BLOCKING-CONTEXT-WF. -/
+theorem composite_blocking_gate_preserves_blockingRuntimeWellFormed state operation
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.blockingGate state operation).state := by
+  exact FailStop.blockingGate_preserves_blockingRuntimeWellFormed
+    state operation hstate
 
 /-- SC-COMPOSITE-BLOCKING-REJECTION-WF: every finite ordinary denial at the
 typed blocking gate preserves the full composite runtime invariant because it
