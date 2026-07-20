@@ -6,8 +6,9 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `Preemption.preemptionDemo`, `Preemption.resumableDemo`, and
 `BootAllocation.check`, `Interrupt.userReturnDemo`,
 `InterruptEntry.entryDemo`, `BlockingIPC.blockingIpcDemo`,
-`CapabilityReuse.capabilityReuseDemo`, `ExtendedState.denialDispatchDemo`, and
-`FaultDispatch.faultDispatchDemo`. Its stable 122-vector order covers accepted calls,
+`CapabilityReuse.capabilityReuseDemo`, `ExtendedState.denialDispatchDemo`,
+`PrivilegeEntryControl.controlDemo`, and `FaultDispatch.faultDispatchDemo`. Its
+stable 154-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -19,7 +20,10 @@ capability slot, owned memory and frame, mapping, and endpoint provenance after
 A's cleanup. The containment guest retains that exact adapter word across B's
 checked context copy, CR3 switch, and common validated return instead of
 maintaining a parallel C live/runnable/queue/context/resource projection. The
-Lean checks evaluate every expected result from
+32 entry-control records cover the canonical denial tuple, every modeled
+CPU/MSR/boot-evidence mutation, return authorization, user and kernel denial
+events, stale bindings, alternate-target/stack separation, and post-fatal
+absorption. The Lean checks evaluate every expected result from
 the adapter definition and connect the accepted and rejected examples to the
 source models.
 

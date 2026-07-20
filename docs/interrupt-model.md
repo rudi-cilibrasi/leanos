@@ -3,9 +3,14 @@
 `LeanOS.Interrupt` is a small total, sequential model for vectors 14 (page
 fault), 32 (timer), and 128 (the existing `int 0x80` syscall relationship).
 The companion `LeanOS.ExtendedState` classifier owns the admitted user-only
-vector 6 (#UD) and vector 7 (#NM) denial cases; they are not generic recoverable
-exceptions. Every other vector is a typed fatal outcome. Nested entry is disabled: an
-entry while the trusted `entryActive` flag is set is fatal.
+vector 6 (#UD) and vector 7 (#NM) extended-state denial cases. The separate
+`LeanOS.PrivilegeEntryControl` classifier also admits the exact vector-6,
+zero-error-code event produced by a raw `SYSCALL` or `SYSENTER` attempt under
+its accepted AMD long-mode denial contract. Neither classifier makes vector 6
+or 7 a generic recoverable exception: purpose, live controls, current subject,
+CR3, and ordinary-stack identity must match the kernel-owned expectation.
+Every other vector is a typed fatal outcome. Nested entry is disabled: an entry
+while the trusted `entryActive` flag is set is fatal.
 
 The hardware-supplied frame contains the vector, error code, saved privilege,
 instruction and stack state, selectors, flags, and explicit canonicality
@@ -39,6 +44,15 @@ normalizes scheduler identity from execution state, and takes the remaining
 policy from the bound record. It converts rejection into a
 typed absorbing halt record without changing lifecycle, authority, scheduling,
 IPC, or resource views.
+The machine implementation additionally rereads the complete fast-entry MSR
+denial tuple at this sole outbound gate, after the extended-state checks and
+immediately before consuming the entry latch. A mismatch cannot be repaired or
+treated as an ordinary return rejection: it enters the absorbing fail-stop
+path. The modeled composite operation wrapper carries no field that can rewrite
+the accepted entry-control snapshot, and its preservation theorem covers every
+registered nonfatal operation sequence. These are model and checked-machine
+facts respectively; there is no proof that `rdmsr`, the assembly epilogue, or
+the final ELF implements the model.
 Initial dispatch selects through the typed `selectUserReturn` gate operation;
 syscall and scheduler-return paths reselect automatically only after the final
 context update. Syscall classification itself stays unarmed, so an immediate
@@ -254,9 +268,14 @@ site, and rejects calls or context changes between validation and consumption.
 The C adapter and inspection are integration evidence, not refinement proofs.
 For vectors 6/7, the saved selector, live CR3, protected current subject,
 expected probe vector, generated denial result, cleanup publication, and peer
-return are additional trusted machine operations. Controlled source fixtures
-remove those bindings or reorder the handler before cleanup/normalization and
-require typed policy rejection.
+return are additional trusted machine operations. The fast-entry vector-6 path
+also trusts the selected CPU feature report, the complete EFER/STAR/SYSENTER
+MSR read/write semantics, the architectural claim that the disabled raw
+instructions fault before consuming an alternate CPL0 target or stack, and the
+single allowlisted probe opcode. Controlled source and runner fixtures remove
+those bindings, mutate the vector/error shape or controls, claim an unexpected
+target, or reorder the handler before cleanup/normalization and require typed
+policy rejection.
 The shared generated-model oracle derives expected return results from
 `validateUserReturn`, proves pointwise agreement with the allocation-free
 adapter for every corpus vector, and replays those vectors through hosted

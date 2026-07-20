@@ -7,7 +7,15 @@ version="${LEANOS_VERSION:-0.1.0}"
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
 extended_instruction=x87
 extended_vector=7
-if [[ "$scenario" == extended-state-avx ]]; then
+if [[ "$scenario" == fast-entry-syscall ]]; then
+  extended_instruction=syscall
+  extended_vector=6
+  default_image="build/boot/leanos-${version}-x86_64-fast-entry-syscall.iso"
+elif [[ "$scenario" == fast-entry-sysenter ]]; then
+  extended_instruction=sysenter
+  extended_vector=6
+  default_image="build/boot/leanos-${version}-x86_64-fast-entry-sysenter.iso"
+elif [[ "$scenario" == extended-state-avx ]]; then
   extended_instruction=avx
   extended_vector=6
   default_image="build/boot/leanos-${version}-x86_64-extended-state-avx.iso"
@@ -51,7 +59,9 @@ expected="$(mktemp)"; without_allocation="$(mktemp)"
 trap 'rm -f "$expected" "$without_allocation"' EXIT
 corpus="${LEANOS_ORACLE_CORPUS:-build/boot/corpus.tsv}"
 [[ -f "$corpus" ]] || { echo "error: oracle corpus '$corpus' not found" >&2; exit 1; }
-if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
+if [[ "$scenario" == fast-entry-syscall || "$scenario" == fast-entry-sysenter ]]; then
+  echo 'LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off' > "$expected"
+elif [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
       "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||
       "$scenario" == extended-state-avx ]]; then
   echo 'LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts' > "$expected"
@@ -67,7 +77,10 @@ printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 echo 'LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' >> "$expected"
-if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
+if [[ "$scenario" == fast-entry-syscall || "$scenario" == fast-entry-sysenter ]]; then
+  echo 'LEANOS/14 FAST-ENTRY cpu.vendor=AuthenticAMD mode=long64 syscall=1 sysenter=1 efer.sce=0 star=0 lstar=0 cstar=0 sfmask=0 sysenter.cs=0 sysenter.esp=0 sysenter.eip=0 writes=complete readback=exact result=PASS' >> "$expected"
+  echo 'LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS' >> "$expected"
+elif [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
       "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||
       "$scenario" == extended-state-avx ]]; then
   echo 'LEANOS/13 EXTENDED-STATE cpuid.1.x87=1 cpuid.1.mmx=1 cpuid.1.sse=1 cpuid.1.sse2=1 cpuid.1.xsave=1 cpuid.1.osxsave=0 cpuid.1.avx=1 cpu=max result=PASS' >> "$expected"
@@ -79,7 +92,13 @@ printf '%s\n' \
   'LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS' \
   'LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS' \
   'LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS' >> "$expected"
-if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
+if [[ "$scenario" == fast-entry-syscall || "$scenario" == fast-entry-sysenter ]]; then
+printf '%s\n' \
+  "LEANOS/14 FAST-ENTRY event=enter subject=1 address-space=1 instruction=${extended_instruction} expected-vector=6" \
+  "LEANOS/14 FAST-ENTRY event=deny subject=1 vector=6 instruction=${extended_instruction} alternate-target=unreached cleanup=complete peer=2" \
+  'LEANOS/14 FAST-ENTRY event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved' \
+  'LEANOS/14 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 alternate-target=0' >> "$expected"
+elif [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
       "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||
       "$scenario" == extended-state-avx ]]; then
 printf '%s\n' \
@@ -226,6 +245,15 @@ if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
   grep -E '^LEANOS/(13 EXTENDED-STATE cpuid\.1\.|6 CONTROL )' "$log" > "$snapshot"
   [[ $(wc -l < "$snapshot") -eq 2 ]] || {
     echo "failure_class=extended-state-snapshot: decoded CPUID/control snapshot incomplete" >&2
+    exit 1
+  }
+elif [[ "$scenario" == fast-entry-syscall || "$scenario" == fast-entry-sysenter ]]; then
+  snapshot="${LEANOS_FAST_ENTRY_SNAPSHOT:-build/boot/fast-entry-control-snapshot-${extended_instruction}.txt}"
+  mkdir -p "$(dirname "$snapshot")"
+  grep -E '^LEANOS/(14 FAST-ENTRY cpu\.|13 EXTENDED-STATE cpuid\.1\.|6 CONTROL )' \
+    "$log" > "$snapshot"
+  [[ $(wc -l < "$snapshot") -eq 3 ]] || {
+    echo "failure_class=fast-entry-snapshot: decoded CPUID/MSR/control snapshot incomplete" >&2
     exit 1
   }
 fi

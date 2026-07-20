@@ -15,6 +15,8 @@ extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t, uint6
 extern uint64_t leanos_entry_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_extended_state_denial_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                                    uint64_t, uint64_t);
+extern uint64_t leanos_privilege_entry_control_demo(uint64_t, uint64_t, uint64_t, uint64_t,
+                                                     uint64_t, uint64_t);
 extern uint64_t leanos_fault_dispatch_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                             uint64_t, uint64_t);
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) { return left == right; }
@@ -52,7 +54,11 @@ int main(void) {
                                             ? leanos_extended_state_denial_demo(v->words[0],
                                                 v->words[1], v->words[2], v->words[3],
                                                 v->words[4], v->words[5])
-                                            : leanos_fault_dispatch_demo(v->words[0], v->words[1],
+                                            : v->adapter == 11
+                                                ? leanos_privilege_entry_control_demo(v->words[0],
+                                                v->words[1], v->words[2], v->words[3],
+                                                v->words[4], v->words[5])
+                                                : leanos_fault_dispatch_demo(v->words[0], v->words[1],
                                                 v->words[2], v->words[3], v->words[4],
                                                 v->words[5]);
         if (got != v->expected) {

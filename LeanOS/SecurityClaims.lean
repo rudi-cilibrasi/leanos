@@ -8,6 +8,7 @@ import LeanOS.FailStop
 import LeanOS.InterruptEntry
 import LeanOS.FaultDispatch
 import LeanOS.PrivilegeEntryStack
+import LeanOS.PrivilegeEntryControl
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 
@@ -131,6 +132,14 @@ theorem privilege_entry_stack_budget_sound (State : Type)
     request state budget acceptedState haccepted
   exact ⟨hconditions.1, hbudget.1, hbudget.2.1, hbudget.2.2.1,
     hbudget.2.2.2.1, hbudget.2.2.2.2.1, hbudget.2.2.2.2.2.2⟩
+
+/-- SC-PRIVILEGE-ENTRY-CONTROL: every accepted finite CPU/MSR state enables
+exactly the reviewed manifest-backed `int 0x80` mechanism. -/
+theorem privilege_entry_control_single_mechanism control mechanism
+    (haccepted : PrivilegeEntryControl.Accepted control) :
+    PrivilegeEntryControl.enabled control mechanism =
+      decide (mechanism = .int80) := by
+  exact PrivilegeEntryControl.accepted_exactly_int80 control haccepted mechanism
 
 /-- SC-USER-RETURN-CONFINEMENT: an accepted return attests the complete
 kernel-selected frame/context tuple and its privilege-critical fields. -/
