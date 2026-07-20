@@ -85,6 +85,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
   status=$?
   set -e
+  sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i '/^LEANOS\/6 CONTROL/i LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
   sed -i \
     -e 's/schedule=one-shot-pit/schedule=bounded-two-shot-pit/' \
