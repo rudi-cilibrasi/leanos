@@ -65,3 +65,34 @@ This deliberately supports one subject, one synchronous gate, scalar arguments,
 and one expected page fault. It adds no scheduler, IPC, preemption, user-pointer
 copying, signals, general fault recovery, speculative-execution defense, or
 production-hardening claim.
+
+## Version-14 containment follow-up
+
+The original reviewed-RIP recovery remains historical evidence and remains in
+the normal blocking-IPC and preemption scenarios.  It is not the policy used
+by the independent `fault-containment` image.  That image starts A in CPL3,
+observes the architectural protection fault at address zero through the shared
+normalized entry path, and passes the kernel-bound vector, origin, current
+subject/address space, ready head, and context owner to the fixed-width
+`LeanOS.FaultDispatch` adapter.  Only its encoded composite result authorizes
+A's cleanup and B's selection; C does not select a recovery label or implement
+a second scheduler for this scenario.
+
+The version-14 transcript separately records hardware entry, the trusted A
+binding, all five non-resumption witnesses, deterministic B selection, B's
+validated return under B's checked CR3, and unchanged B canary/resource
+witnesses.  The ordinary image and its transcript are unchanged.  A
+kernel-origin page fault still bypasses containment and enters the existing
+typed terminal path; vector 8 remains the distinct double-fault/IST purpose.
+
+The mandatory emulator-evidence row retains the containment ISO, ELF, link
+map, generated page-table plans, full disassembly, exact serial transcript,
+runner command log and exit status.  CI also retains the shared oracle corpus
+and hosted generated-C result beside that scenario-specific evidence.  These
+are inspectable integration artifacts across trusted boundaries, not a proof
+of the generated C, linked image, exception delivery, or QEMU execution.
+
+The Lean theorem and oracle concern the bounded model and adapter inputs.  Raw
+x86 delivery, the entry stack, assembly context copy, CR3 load, generated C,
+compiler/linker, final return validation, QEMU, firmware, and the host evidence
+runner remain tested or trusted boundaries, not proved refinement steps.

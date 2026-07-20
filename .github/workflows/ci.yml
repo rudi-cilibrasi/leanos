@@ -89,6 +89,7 @@ jobs:
           path: |
             build/boot/leanos-0.1.0-x86_64.iso
             build/boot/leanos-0.1.0-x86_64-preemption.iso
+            build/boot/leanos-0.1.0-x86_64-fault-containment.iso
             build/boot/leanos-0.1.0-x86_64-extended-state.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-mmx.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-sse.iso
@@ -102,6 +103,7 @@ jobs:
             build/boot/leanos-0.1.0-x86_64-entry-adversarial.iso
             build/boot/leanos.elf
             build/boot/leanos-preemption.elf
+            build/boot/leanos-fault-containment.elf
             build/boot/leanos-extended-state.elf
             build/boot/leanos-extended-state-mmx.elf
             build/boot/leanos-extended-state-sse.elf
@@ -116,6 +118,7 @@ jobs:
             build/boot/leanos-entry-adversarial.elf
             build/boot/leanos.map
             build/boot/leanos-preemption.map
+            build/boot/leanos-fault-containment.map
             build/boot/leanos-extended-state.map
             build/boot/leanos-extended-state-mmx.map
             build/boot/leanos-extended-state-sse.map
@@ -130,6 +133,8 @@ jobs:
             build/boot/boot-page-plan.final.h
             build/boot/boot-page-plan-preemption.h
             build/boot/boot-page-plan-preemption.final.h
+            build/boot/boot-page-plan-fault-containment.h
+            build/boot/boot-page-plan-fault-containment.final.h
             build/boot/boot-page-plan-extended-state.h
             build/boot/boot-page-plan-extended-state.final.h
             build/boot/boot-page-plan-extended-state-mmx.final.h
@@ -142,6 +147,7 @@ jobs:
             build/boot/SHA256SUMS
             build/boot/serial.log
             build/boot/preemption.serial.log
+            build/boot/fault-containment.serial.log
             build/boot/extended-state.serial.log
             build/boot/extended-state-mmx.serial.log
             build/boot/extended-state-sse.serial.log
@@ -166,6 +172,7 @@ jobs:
             build/boot/entry-stack-extended-final-elf-edges.tsv
             build/boot/entry-stack-high-water-*.txt
             build/boot/*.su
+            build/boot/fault-containment.disassembly.txt
             build/boot/extended-state.disassembly.txt
             build/boot/extended-state-mmx.disassembly.txt
             build/boot/extended-state-sse.disassembly.txt
@@ -194,6 +201,7 @@ jobs:
             build/boot/leanos-double-fault-guard-mapped.elf
             build/boot/double-fault-guard-mapped.serial.log
             build/boot/corpus.tsv
+            build/boot/SOURCE_REVISION
             build/oracle/host-results.txt
             build/evidence/*
             build/ci/*.log

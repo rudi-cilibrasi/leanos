@@ -826,6 +826,8 @@ isr14_cld:
     mov 144(%rsp), %rdx
     mov %cr2, %rcx
     call page_fault_handler
+    cmp $2, %rax
+    je contained_fault_restore_peer
     sub $16, %rsp
     mov %rax, 8(%rsp)
     call complete_interrupt_entry
@@ -840,6 +842,18 @@ diagnostic_return_restore:
 .global diagnostic_return_iretq
 diagnostic_return_iretq:
     iretq
+.global contained_fault_restore_peer
+contained_fault_restore_peer:
+    add $8, %rsp
+    lea initial_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    call complete_interrupt_entry
+    mov $3, %esi
+    jmp user_return_epilogue
 .global isr32
 .section .bss,"aw",@nobits
 .align 16
@@ -1005,6 +1019,9 @@ user_return_iretq:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+    jmp user_a_fault_instruction
+#endif
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
@@ -1131,6 +1148,24 @@ extended_state_probe_class:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    movabs $B_INITIAL_R12, %r11
+    cmp %r11, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %r11
+    cmp %r11, %r13
+    jne 2f
+    mov $14, %rax
+    movabs $0xb2b2cafe51a7e55e, %rbx
+    mov $0x030201, %rcx
+    mov $0x51a7, %rdx
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     /* The peer enters only through the common validated return path. */
     movabs $B_INITIAL_R12, %rax

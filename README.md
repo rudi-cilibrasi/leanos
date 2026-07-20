@@ -63,6 +63,8 @@ partial log does not pass. The executable scenarios currently include:
   on an empty endpoint through A's send/wake to exact delivery back to B;
 - a bounded preemption path with two PIT interrupts, separate saved contexts,
   CR3 changes, a switch from A to B, and resumption of A's original frame;
+- an independent user-fault containment path that terminates A through the
+  typed composite dispatch contract and resumes B in B's owned address space;
 - boot-time memory-map validation, reservation, frame scrubbing and publication,
   live page-table checks, WP/SMEP/SMAP probes, and bounded user-copy checks;
 - a dedicated double-fault IST fail-stop probe and a mapped-guard negative;
@@ -72,7 +74,7 @@ partial log does not pass. The executable scenarios currently include:
   with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-75-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+154-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.

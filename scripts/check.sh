@@ -21,6 +21,8 @@ lake build leanos-boot-plan
 
 ./scripts/test-run-preemption-image.sh
 
+./scripts/test-run-fault-containment.sh
+
 ./scripts/test-run-double-fault.sh
 
 ./scripts/test-run-entry-stack-overflow.sh

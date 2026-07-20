@@ -28,6 +28,7 @@ fi
 build="$repo_root/build/boot"
 iso_root="$build/iso"
 preemption_iso_root="$build/iso-preemption"
+fault_containment_iso_root="$build/iso-fault-containment"
 extended_state_iso_root="$build/iso-extended-state"
 extended_state_mmx_iso_root="$build/iso-extended-state-mmx"
 extended_state_sse_iso_root="$build/iso-extended-state-sse"
@@ -63,6 +64,7 @@ if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 rm -rf "$build"
 mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
+  "$fault_containment_iso_root/boot/grub" \
   "$extended_state_iso_root/boot/grub" "$extended_state_mmx_iso_root/boot/grub" \
   "$extended_state_sse_iso_root/boot/grub" \
   "$extended_state_sse2_iso_root/boot/grub" \
@@ -76,6 +78,7 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
 ./scripts/generate-oracle.sh "$build"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-fault-containment.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state-peer-pke.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-double-fault.h"
@@ -98,6 +101,7 @@ lake env lean --c="$build/BlockingIPC.c" LeanOS/BlockingIPC.lean
 lake env lean --c="$build/CapabilityReuse.c" LeanOS/CapabilityReuse.lean
 lake env lean --c="$build/ExtendedState.c" LeanOS/ExtendedState.lean
 lake env lean --c="$build/PrivilegeEntryControl.c" LeanOS/PrivilegeEntryControl.lean
+lake env lean --c="$build/FaultDispatch.c" LeanOS/FaultDispatch.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -127,6 +131,8 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -o "$build/ExtendedState.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" \
   -c "$build/PrivilegeEntryControl.c" -o "$build/PrivilegeEntryControl.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/FaultDispatch.c" \
+  -o "$build/FaultDispatch.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel.o"
@@ -134,6 +140,10 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -DLEANOS_PREEMPTION_SCENARIO=1 -DLEANOS_ENTRY_HIGH_WATER=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
   -c boot/kernel.c -o "$build/kernel-preemption.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
+  -c boot/kernel.c -o "$build/kernel-fault-containment.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
@@ -162,6 +172,9 @@ cp scripts/entry-stack-extended-callgraph.tsv \
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_PREEMPTION_SCENARIO=1 \
   -c boot/boot.S -o "$build/boot-preemption.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+  -c boot/boot.S -o "$build/boot-fault-containment.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
   -c boot/boot.S -o "$build/boot-extended-state.o"
@@ -230,21 +243,29 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -o "$build/leanos-prelink.elf" "$build/boot.o" "$build/kernel.o" \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-preemption-prelink.map" \
   -o "$build/leanos-preemption-prelink.elf" "$build/boot-preemption.o" \
   "$build/kernel-preemption.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-fault-containment-prelink.map" \
+  -o "$build/leanos-fault-containment-prelink.elf" \
+  "$build/boot-fault-containment.o" "$build/kernel-fault-containment.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-prelink.map" \
   -o "$build/leanos-extended-state-prelink.elf" "$build/boot-extended-state.o" \
   "$build/kernel-extended-state.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-mmx-prelink.map" \
   -o "$build/leanos-extended-state-mmx-prelink.elf" \
@@ -252,7 +273,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-sse-prelink.map" \
   -o "$build/leanos-extended-state-sse-prelink.elf" \
@@ -260,7 +281,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-sse2-prelink.map" \
   -o "$build/leanos-extended-state-sse2-prelink.elf" \
@@ -268,7 +289,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-avx-prelink.map" \
   -o "$build/leanos-extended-state-avx-prelink.elf" \
@@ -276,7 +297,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-peer-pke-prelink.map" \
   -o "$build/leanos-extended-state-peer-pke-prelink.elf" \
@@ -284,7 +305,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/kernel-extended-state-peer-pke.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 for mechanism in syscall sysenter; do
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
     -T boot/linker.ld -Map "$build/leanos-fast-entry-${mechanism}-prelink.map" \
@@ -293,7 +314,7 @@ for mechanism in syscall sysenter; do
     "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
     "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
     "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
-    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 done
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
@@ -301,7 +322,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/kernel-double-fault.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-entry-stack-overflow-prelink.map" \
   -o "$build/leanos-entry-stack-overflow-prelink.elf" \
@@ -309,25 +330,27 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
-  "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-entry-adversarial-prelink.map" \
   -o "$build/leanos-entry-adversarial-prelink.elf" "$build/boot-entry-adversarial.o" \
   "$build/kernel-entry-adversarial.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-guard-prelink.map" \
   -o "$build/leanos-guard-prelink.elf" "$build/boot-df-guard-mapped.o" \
   "$build/kernel-double-fault-guard-mapped.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-prelink.elf" \
   "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-preemption-prelink.elf" \
   "$build/boot-page-plan-preemption.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-fault-containment-prelink.elf" \
+  "$build/boot-page-plan-fault-containment.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-prelink.elf" \
   "$build/boot-page-plan-extended-state.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-mmx-prelink.elf" \
@@ -387,6 +410,10 @@ done
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
   -c boot/kernel.c -o "$build/kernel-preemption.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
+  -c boot/kernel.c -o "$build/kernel-fault-containment.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
   -c boot/kernel.c -o "$build/kernel-extended-state.o"
@@ -425,28 +452,36 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -o build/boot/leanos.elf build/boot/boot.o build/boot/kernel.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
   build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o
+  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/FaultDispatch.o
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-entry-adversarial.map" \
   -o "$build/leanos-entry-adversarial.elf" "$build/boot-entry-adversarial.o" \
   "$build/kernel-entry-adversarial.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-preemption.map" \
   -o "$build/leanos-preemption.elf" "$build/boot-preemption.o" \
   "$build/kernel-preemption.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-fault-containment.map" \
+  -o "$build/leanos-fault-containment.elf" "$build/boot-fault-containment.o" \
+  "$build/kernel-fault-containment.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+  "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state.map" \
   -o "$build/leanos-extended-state.elf" "$build/boot-extended-state.o" \
   "$build/kernel-extended-state.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-mmx.map" \
   -o "$build/leanos-extended-state-mmx.elf" \
@@ -454,7 +489,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-sse.map" \
   -o "$build/leanos-extended-state-sse.elf" \
@@ -462,7 +497,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-sse2.map" \
   -o "$build/leanos-extended-state-sse2.elf" \
@@ -470,7 +505,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-avx.map" \
   -o "$build/leanos-extended-state-avx.elf" \
@@ -478,7 +513,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-peer-pke.map" \
   -o "$build/leanos-extended-state-peer-pke.elf" \
@@ -486,7 +521,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/kernel-extended-state-peer-pke.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 for mechanism in syscall sysenter; do
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
     -T boot/linker.ld -Map "$build/leanos-fast-entry-${mechanism}.map" \
@@ -495,7 +530,7 @@ for mechanism in syscall sysenter; do
     "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
     "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
     "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
-    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 done
 
 for spec in "${return_corruptions[@]}"; do
@@ -510,7 +545,7 @@ for spec in "${return_corruptions[@]}"; do
     "$build/kernel-return-${fixture}.o" "$build/KernelTransition.o" \
     "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
     "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
   ./scripts/generate-boot-page-plan.sh "$build/leanos-return-${fixture}-prelink.elf" \
     "$build/boot-page-plan-return-${fixture}.h"
   "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -523,7 +558,7 @@ for spec in "${return_corruptions[@]}"; do
     "$build/kernel-return-${fixture}.o" "$build/KernelTransition.o" \
     "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
     "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
   ./scripts/generate-boot-page-plan.sh "$build/leanos-return-${fixture}.elf" \
     "$build/boot-page-plan-return-${fixture}.final.h"
   cmp "$build/boot-page-plan-return-${fixture}.h" \
@@ -575,6 +610,13 @@ cmp "$build/boot-page-plan.h" "$build/boot-page-plan.final.h" || {
 cmp "$build/boot-page-plan-preemption.h" \
   "$build/boot-page-plan-preemption.final.h" || {
   echo "error: preemption boot page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-fault-containment.elf" \
+  "$build/boot-page-plan-fault-containment.final.h"
+cmp "$build/boot-page-plan-fault-containment.h" \
+  "$build/boot-page-plan-fault-containment.final.h" || {
+  echo "error: fault-containment boot page-table plan drifted after final link" >&2
   exit 1
 }
 ./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state.elf" \
@@ -634,7 +676,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
   build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
   build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o
+  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/FaultDispatch.o
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-entry-stack-overflow.map" \
   -o "$build/leanos-entry-stack-overflow.elf" \
@@ -642,7 +684,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
-  "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+  "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
   -o build/boot/leanos-double-fault-guard-mapped.elf \
@@ -650,7 +692,7 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   build/boot/kernel-double-fault-guard-mapped.o \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
   build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o
+  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/FaultDispatch.o
 
 ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
   "$build/boot-page-plan-double-fault.final.h"
@@ -747,6 +789,7 @@ LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
   | tee "$build/entry-stack-extended-state-peer-pke-final-elf.txt"
 ./scripts/check-image-policy.sh "$build/leanos.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
+./scripts/check-image-policy.sh "$build/leanos-fault-containment.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-mmx.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-sse.elf"
@@ -762,6 +805,8 @@ done
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-stack-overflow.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
+objdump -d --no-show-raw-insn "$build/leanos-fault-containment.elf" \
+  > "$build/fault-containment.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state.elf" \
   > "$build/extended-state.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state-mmx.elf" \
@@ -797,7 +842,7 @@ for fixture in restore branch indirect initial-indirect; do
     "$build/boot-return-${fixture}-fixture.o" "$build/kernel.o" \
     "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
     "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o"
+    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
   if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}-fixture.elf" \
       >"$build/return-${fixture}-fixture.log" 2>&1; then
     echo "error: user-return ${fixture} negative fixture unexpectedly passed" >&2
@@ -825,6 +870,9 @@ cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-preemption.elf" "$preemption_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$preemption_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-fault-containment.elf" \
+  "$fault_containment_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$fault_containment_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-extended-state.elf" "$extended_state_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$extended_state_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-extended-state-mmx.elf" \
@@ -860,6 +908,7 @@ printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
   > "$iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$preemption_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$fault_containment_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_mmx_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_sse_iso_root/boot/SOURCE_REVISION"
@@ -889,6 +938,10 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-preemption.iso" "$preemption_iso_root" -- \
   -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-fault-containment.iso" \
+  "$fault_containment_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-extended-state.iso" \
@@ -946,6 +999,7 @@ for spec in "${return_corruptions[@]}"; do
 done
 sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-preemption.iso" \
+  "$build/leanos-${version}-x86_64-fault-containment.iso" \
   "$build/leanos-${version}-x86_64-extended-state.iso" \
   "$build/leanos-${version}-x86_64-extended-state-mmx.iso" \
   "$build/leanos-${version}-x86_64-extended-state-sse.iso" \
@@ -954,6 +1008,8 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-extended-state-peer-pke.iso" \
   "$build/leanos-${version}-x86_64-double-fault.iso" "$build/leanos.elf" \
   "$build/leanos-preemption.elf" "$build/leanos-preemption.map" \
+  "$build/leanos-fault-containment.elf" \
+  "$build/leanos-fault-containment.map" \
   "$build/leanos-extended-state.elf" "$build/leanos-extended-state.map" \
   "$build/leanos-extended-state-mmx.elf" \
   "$build/leanos-extended-state-mmx.map" \
