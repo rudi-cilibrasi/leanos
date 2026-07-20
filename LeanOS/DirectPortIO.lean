@@ -24,6 +24,13 @@ inductive Width where
   | byte | word | dword
   deriving BEq, DecidableEq, Repr
 
+/-- Match the value consumed by the selected x86 output instruction width.
+Upper request bits are not part of the device-visible operation. -/
+def Width.normalize : Width → UInt64 → UInt64
+  | .byte, value => value % 0x100
+  | .word, value => value % 0x10000
+  | .dword, value => value % 0x100000000
+
 inductive Purpose where
   | serial | pic | pit | debugExit
   deriving BEq, DecidableEq, Repr
@@ -144,16 +151,18 @@ structure Outcome where
   deriving DecidableEq, Repr
 
 /-- Input operations observe but do not mutate this abstract projection.
-Output operations affect only the device class selected by trusted purpose. -/
+Output operations affect only the device class selected by trusted purpose and
+store exactly the low bits consumed by their authorized x86 operation width. -/
 def applyKernel (devices : DeviceState) (request : KernelRequest) : DeviceState :=
   match request.operation.direction with
   | .input => devices
   | .output =>
+      let value := request.operation.width.normalize request.operation.value
       match request.purpose with
-      | .serial => { devices with serial := request.operation.value }
-      | .pic => { devices with pic := request.operation.value }
-      | .pit => { devices with pit := request.operation.value }
-      | .debugExit => { devices with debugExit := request.operation.value }
+      | .serial => { devices with serial := value }
+      | .pic => { devices with pic := value }
+      | .pit => { devices with pit := value }
+      | .debugExit => { devices with debugExit := value }
 
 /-- User entry supplies only port operation words.  Origin and kernel purpose
 are not fields that those words can select. -/
@@ -278,6 +287,23 @@ private def witnessOperation : PortOperation :=
 
 private def witnessKernelRequest : KernelRequest :=
   { purpose := .serial, operation := witnessOperation }
+
+private def upperBitByteRequest : KernelRequest :=
+  { purpose := .serial
+    operation := { witnessOperation with value := 0x100 } }
+
+private def zeroByteRequest : KernelRequest :=
+  { purpose := .serial
+    operation := { witnessOperation with value := 0 } }
+
+/-- Regression for x86 `outb`: bit 8 of a request is not device-visible, so
+`0x100` and `0` have identical accepted byte-output semantics. -/
+theorem byte_output_discards_upper_bits :
+    executeKernel witnessState selectedControls upperBitByteRequest =
+        executeKernel witnessState selectedControls zeroByteRequest ∧
+      (executeKernel witnessState selectedControls upperBitByteRequest).state.devices =
+        { zeroDevices with serial := 0 } := by
+  native_decide
 
 /-- Non-vacuity: one reviewed kernel output is accepted and changes only its
 device projection, while the same attacker-controlled port/value words are

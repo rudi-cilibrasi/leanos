@@ -38,7 +38,9 @@ The serial range in the table is only shorthand for five separately listed
 keys; the model performs no range-based widening. A wrong purpose, port,
 direction, or width rejects atomically. An accepted input observes without
 mutation. An accepted output changes only the device class selected by its
-trusted purpose.
+trusted purpose. Before that output becomes device-visible, `Width.normalize`
+discards every request bit above the authorized byte, word, or double-word
+width, matching the value consumed by the corresponding x86 output operation.
 
 `user_request_preserves_device_state` covers every user request, including
 malformed stored policy and stale live read-back paths.
@@ -51,6 +53,9 @@ for every typed kernel rejection. The stable contract restates the user-denial
 and kernel-confinement results, and `policy_nonvacuous` exhibits both a serial
 output that changes the serial projection and a user denial of the same
 port/value words with identical state.
+`byte_output_discards_upper_bits` is the concrete `outb` regression: accepted
+byte requests with values `0x100` and `0` produce identical transitions and a
+device-visible serial value of zero.
 
 ## Scope and trusted boundary
 
