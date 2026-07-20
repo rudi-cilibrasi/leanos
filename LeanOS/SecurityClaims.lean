@@ -127,13 +127,12 @@ theorem failstop_halted_suffix_absorbing state record proposals
 
 /-- SC-COMPOSITE-AUTHORITATIVE-GATE: the successor gate embeds both ordinary
 and blocking operation families under one latch and typed reply.  Every step
-from the strengthened authoritative precondition preserves the global runtime
-invariant; every embedded blocking step preserves the additional waiter/context
-invariant; classified denial is atomic; and fatal mode absorbs arbitrary mixed
-suffixes. -/
+from the strengthened blocking precondition preserves the folded authoritative
+invariant; every embedded blocking step preserves the full blocking invariant;
+classified denial is atomic; and fatal mode absorbs arbitrary mixed suffixes. -/
 theorem composite_authoritative_gate_contract state operation
     (hstate : FailStop.BlockingRuntimeWellFormed state) :
-    FailStop.RuntimeWellFormed
+    FailStop.AuthoritativeRuntimeWellFormed
         (FailStop.authoritativeGate state operation).state ∧
       (∀ reply,
         (FailStop.authoritativeGate state operation).result = .completed reply →
@@ -141,7 +140,7 @@ theorem composite_authoritative_gate_contract state operation
           reply = FailStop.authoritativeOperationReply state operation ∧
           (FailStop.authoritativeGate state operation).state =
             FailStop.applyAuthoritativeOperation state operation) ∧
-      (∀ rejection : FailStop.AuthoritativeGateRejection
+      (∀ _rejection : FailStop.AuthoritativeGateRejection
           (FailStop.authoritativeGate state operation).result,
         (FailStop.authoritativeGate state operation).state = state) ∧
       (∀ blocking,
@@ -151,18 +150,33 @@ theorem composite_authoritative_gate_contract state operation
       (∀ record suffix,
         state.execution.mode = .halted record →
         FailStop.runAuthoritativeOperations state suffix = state) := by
-  refine ⟨FailStop.authoritativeGate_preserves_runtimeWellFormed state operation hstate,
-    ?_, ?_, ?_, ?_⟩
+  have hready : FailStop.AuthoritativeOperationReady state operation := by
+    cases operation with
+    | ordinary operation => trivial
+    | blocking operation => exact hstate
+  refine ⟨FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
+      state operation hstate.authoritative hready, ?_, ?_, ?_, ?_⟩
   · intro reply hcompleted
     exact FailStop.authoritativeGate_completed_sound state operation reply hcompleted
-  · intro rejection
-    exact FailStop.authoritativeGate_rejection_atomic state operation rejection
+  · intro _rejection
+    exact FailStop.authoritativeGate_rejection_atomic state operation _rejection
   · intro blocking hoperation
     subst operation
     exact FailStop.authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
       state blocking hstate
   · intro record suffix hmode
     exact FailStop.authoritative_halted_suffix_absorbing state record suffix hmode
+
+/-- Ready finite mixtures of ordinary and blocking operations preserve the
+folded global invariant.  Readiness asks for the stronger scheduler-side
+blocking predicate only at states where a blocking operation executes. -/
+theorem composite_authoritative_mixed_trace_preserves_runtimeWellFormed
+    state operations (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
+    (hready : FailStop.AuthoritativeTraceReady state operations) :
+    FailStop.AuthoritativeRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state operations) := by
+  exact FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state operations hstate hready
 
 /-- The successor contract has a reachable classified rejection at the
 boot-produced empty waiter store, rather than being discharged vacuously. -/

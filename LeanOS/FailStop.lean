@@ -9569,6 +9569,156 @@ theorem runOperations_preserves_runtimeWellFormed_universally state operations
   intro operation _hmember
   exact operation_preserves_runtimeWellFormed operation
 
+/-- Removing a subject through the blocking dependency keeps its waiter index
+and exact saved-context bank synchronized.  This projection law intentionally
+does not require the scheduler-side blocking invariant. -/
+theorem blockingIPCContext_terminate_preserves_contextAgreement
+    (state : BlockingIPCContext.State) (subject : BlockingIPCContext.SubjectId)
+    (hstate : BlockingIPCContext.ContextAgreement state) :
+    BlockingIPCContext.ContextAgreement (BlockingIPCContext.terminate state subject) := by
+  rcases hstate with ⟨hagreement, hvalid⟩
+  unfold BlockingIPCContext.terminate
+  split
+  · exact ⟨hagreement, hvalid⟩
+  next haccepted =>
+    constructor
+    · intro candidate
+      by_cases heq : candidate = subject
+      · subst candidate
+        obtain ⟨hwaiter, hblocked⟩ :=
+          BlockingIPCContext.terminate_accepted_cleans_self state subject haccepted
+        have hblockedSome := congrArg Option.isSome hblocked
+        have hwaiterSome := congrArg Option.isSome hwaiter
+        simpa only [BlockingIPCContext.terminate, haccepted] using
+          hblockedSome.trans hwaiterSome.symm
+      · have hblocked : (BlockingIPCContext.terminate state subject).blocked candidate =
+            state.blocked candidate := by
+          simp [BlockingIPCContext.terminate, haccepted,
+            BlockingIPCContext.setBlocked, heq]
+        have hwaiter :
+            (BlockingIPCContext.terminate state subject).ipc.waiterEndpoint candidate =
+              state.ipc.waiterEndpoint candidate := by
+          simp only [BlockingIPCContext.terminate, haccepted, BlockingIPC.terminate,
+            BlockingIPC.cancelSubject]
+          cases hindex : state.ipc.waiterEndpoint subject with
+          | none => rfl
+          | some endpoint =>
+              simp only [hindex]
+              split <;> simp [BlockingIPC.setWaiterEndpoint, heq]
+        have hblockedSome := congrArg Option.isSome hblocked
+        have hwaiterSome := congrArg Option.isSome hwaiter
+        simpa only [BlockingIPCContext.terminate, haccepted] using
+          hblockedSome.trans ((hagreement candidate).trans hwaiterSome.symm)
+    · intro candidate saved hsaved
+      by_cases heq : candidate = subject
+      · subst candidate
+        simp [BlockingIPCContext.setBlocked] at hsaved
+      · apply hvalid candidate saved
+        simpa [BlockingIPCContext.setBlocked, heq] using hsaved
+
+private theorem blockingContextAgreement_of_projections
+    (before after : CompositeState)
+    (hstate : BlockingIPCContext.ContextAgreement before.blockingIPCContext)
+    (hwaiter : after.blockingIPC.waiterEndpoint = before.blockingIPC.waiterEndpoint)
+    (hcontexts : after.blockingContexts = before.blockingContexts) :
+    BlockingIPCContext.ContextAgreement after.blockingIPCContext := by
+  rcases hstate with ⟨hagreement, hvalid⟩
+  constructor
+  · intro subject
+    simpa [CompositeState.blockingIPCContext, hwaiter, hcontexts] using
+      hagreement subject
+  · intro subject saved hsaved
+    apply hvalid subject saved
+    simpa [CompositeState.blockingIPCContext, hcontexts] using hsaved
+
+private theorem publishTerminatedBlockingSubject_preserves_contextAgreement
+    state subject
+    (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
+    BlockingIPCContext.ContextAgreement
+      (publishTerminatedBlockingSubject state subject).blockingIPCContext := by
+  cases hterminate :
+      (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle subject).result with
+  | rejected reason =>
+      simpa [publishTerminatedBlockingSubject, hterminate] using hstate
+  | accepted =>
+      simpa [publishTerminatedBlockingSubject, hterminate] using
+        blockingIPCContext_terminate_preserves_contextAgreement
+          state.blockingIPCContext subject hstate
+
+private theorem dispatchIPC_preserves_contextAgreement state call
+    (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
+    BlockingIPCContext.ContextAgreement (dispatchIPC state call).state.blockingIPCContext := by
+  apply blockingContextAgreement_of_projections state _ hstate
+  · cases call with
+    | send handleWord word0 word1 => rfl
+    | receive handleWord =>
+        simp only [dispatchIPC]
+        generalize hresolve : CapabilityHandle.resolveCurrent state.transfers.capabilities
+          { caller := state.execution.core.context.currentSubject }
+          handleWord .endpoint = resolved
+        cases resolved with
+        | error reason => simp [hresolve, installIPC]
+        | ok endpoint =>
+            cases hpending : state.transfers.pending endpoint.capability.object <;>
+              simp [hresolve, hpending, installIPC]
+  · cases call with
+    | send handleWord word0 word1 => rfl
+    | receive handleWord =>
+        simp only [dispatchIPC]
+        generalize hresolve : CapabilityHandle.resolveCurrent state.transfers.capabilities
+          { caller := state.execution.core.context.currentSubject }
+          handleWord .endpoint = resolved
+        cases resolved with
+        | error reason => simp [hresolve, installIPC]
+        | ok endpoint =>
+            cases hpending : state.transfers.pending endpoint.capability.object <;>
+              simp [hresolve, hpending, installIPC]
+
+private theorem installTerminatedSubject_preserves_contextAgreement state subject resumable
+    (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
+    BlockingIPCContext.ContextAgreement
+      (installTerminatedSubject state subject resumable).blockingIPCContext := by
+  apply blockingContextAgreement_of_projections
+    (publishTerminatedBlockingSubject state subject) _
+    (publishTerminatedBlockingSubject_preserves_contextAgreement state subject hstate)
+  · rfl
+  · rfl
+
+/-- Every ordinary composite operation preserves the exact waiter/saved-context
+agreement.  Operations unrelated to blocking retain both projections
+literally; explicit termination removes the indexed waiter and saved context
+together. -/
+theorem gate_preserves_blockingContextAgreement state operation
+    (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
+    BlockingIPCContext.ContextAgreement
+      (gate state operation).state.blockingIPCContext := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      cases operation <;> simp only [gate, hmode, applyOperation]
+      all_goals try split
+      all_goals try exact hstate
+      all_goals try
+        apply blockingContextAgreement_of_projections state _ hstate <;>
+          grind [selectLiveReturnAuthority, dispatchIPC, installIPC,
+            installResumable, installTransfers, installCopiedCapabilities,
+            installVirtualMemory, installCreatedSubject, installSchedulerAdmission,
+            installSchedulerRemoval, installScheduler, installLifecycle,
+            synchronizeMemory, publishInterruptCleanup]
+      all_goals try
+        apply blockingContextAgreement_of_projections
+          (publishTerminatedBlockingSubject state _) _
+          (publishTerminatedBlockingSubject_preserves_contextAgreement state _ hstate) <;>
+          grind [installTerminatedSubject, installTerminatedResumable]
+      all_goals try exact dispatchIPC_preserves_contextAgreement state _ hstate
+      all_goals try exact installTerminatedSubject_preserves_contextAgreement state _ _ hstate
+      all_goals try
+        cases hcurrent : state.scheduler.lifecycle.current with
+        | none => exact hstate
+        | some subject =>
+            exact installTerminatedSubject_preserves_contextAgreement state subject _ hstate
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
@@ -9637,16 +9787,15 @@ theorem halted_suffix_absorbing state record proposals
 The ordinary gate and the blocking gate were developed independently while
 their operation-specific preservation proofs were completed.  The vocabulary
 below is their migration boundary: it uses the same `CompositeState`, one
-execution latch, and one typed result family.  It deliberately does not claim
-that an ordinary mutation preserves `BlockingRuntimeWellFormed`; closing that
-remaining obligation is what will permit the two legacy gate entry points to
-be retired and arbitrary mixed traces to retain the strengthened invariant. -/
+execution latch, and one typed result family.  The successor invariant folds
+the exact waiter/saved-context agreement into the global boundary; a blocking
+step additionally requires the scheduler-side blocking invariant that its
+dependency transition consumes. -/
 
 /-- Every currently modeled runtime event admitted by the successor gate. -/
 inductive AuthoritativeOperation where
   | ordinary (operation : Operation)
   | blocking (operation : CompositeBlockingOperation)
-  deriving DecidableEq, Repr
 
 /-- Operation-specific observation retained by the successor gate. -/
 inductive AuthoritativeOperationReply where
@@ -9663,6 +9812,19 @@ inductive AuthoritativeGateResult where
 structure AuthoritativeGateOutcome where
   state : CompositeState
   result : AuthoritativeGateResult
+
+/-- The successor gate's authoritative global invariant folds exact
+waiter/saved-context agreement into the established composite runtime
+invariant.  Scheduler-side blocking well-formedness remains the stronger
+precondition required specifically when a blocking transition mutates. -/
+def AuthoritativeRuntimeWellFormed (state : CompositeState) : Prop :=
+  RuntimeWellFormed state ∧
+  BlockingIPCContext.ContextAgreement state.blockingIPCContext
+
+theorem BlockingRuntimeWellFormed.authoritative {state : CompositeState}
+    (hstate : BlockingRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed state :=
+  ⟨hstate.1, hstate.2.2⟩
 
 def applyAuthoritativeOperation (state : CompositeState) :
     AuthoritativeOperation → CompositeState
@@ -9684,6 +9846,18 @@ def authoritativeGate (state : CompositeState) (operation : AuthoritativeOperati
         result := .completed (authoritativeOperationReply state operation) }
   | .handling _ => { state, result := .rejectedBusy }
   | .halted record => { state, result := .rejectedHalted record }
+
+@[simp] theorem authoritativeGate_ordinary_state state operation :
+    (authoritativeGate state (.ordinary operation)).state =
+      (gate state operation).state := by
+  cases hmode : state.execution.mode <;>
+    simp [authoritativeGate, gate, applyAuthoritativeOperation, hmode]
+
+@[simp] theorem authoritativeGate_blocking_state state operation :
+    (authoritativeGate state (.blocking operation)).state =
+      (blockingGate state operation).state := by
+  cases hmode : state.execution.mode <;>
+    simp [authoritativeGate, blockingGate, applyAuthoritativeOperation, hmode]
 
 theorem authoritativeGate_deterministic state operation first second
     (hfirst : authoritativeGate state operation = first)
@@ -9733,15 +9907,16 @@ theorem authoritativeGate_rejection_atomic state operation
           simp only [authoritativeGate, hmode, authoritativeOperationReply] at hrejected
           cases hrejected with
           | ordinary hreply =>
-              simpa [authoritativeGate, hmode, gate] using
-                gate_classified_rejection_global_atomicity state operation hreply
+              rw [authoritativeGate_ordinary_state]
+              exact gate_classified_rejection_global_atomicity state operation hreply
       | blocking operation =>
           simp only [authoritativeGate, hmode, authoritativeOperationReply] at hrejected
           cases hrejected with
           | blocking hreply =>
               have hatomic := blockingGate_rejection_atomic state operation (by
                 simpa [blockingGate, hmode] using hreply)
-              simpa [authoritativeGate, hmode, blockingGate] using hatomic
+              rw [authoritativeGate_blocking_state]
+              exact hatomic
 
 /-- Atomic denial retains even the strengthened waiter/context invariant. -/
 theorem authoritativeGate_rejection_preserves_blockingRuntimeWellFormed
@@ -9752,22 +9927,20 @@ theorem authoritativeGate_rejection_preserves_blockingRuntimeWellFormed
   rw [authoritativeGate_rejection_atomic state operation hrejected]
   exact hstate
 
-/-- From the strengthened authoritative precondition, every successor-gate
-operation preserves the existing global `RuntimeWellFormed` invariant.  A
-blocking operation additionally retains the strengthened invariant by the next
-theorem; ordinary-operation preservation of that extra conjunct remains the
-mixed-trace proof obligation. -/
+/-- From the strengthened blocking precondition, every successor-gate operation
+preserves the existing global `RuntimeWellFormed` invariant.  The following
+theorems retain the stronger blocking invariant for blocking steps and the
+folded authoritative invariant for ordinary steps and ready mixed traces. -/
 theorem authoritativeGate_preserves_runtimeWellFormed state operation
     (hstate : BlockingRuntimeWellFormed state) :
     RuntimeWellFormed (authoritativeGate state operation).state := by
   cases operation with
   | ordinary operation =>
-      simpa [authoritativeGate, gate, applyAuthoritativeOperation] using
-        gate_preserves_runtimeWellFormed state operation hstate.1
+      rw [authoritativeGate_ordinary_state]
+      exact gate_preserves_runtimeWellFormed state operation hstate.1
   | blocking operation =>
-      exact (by
-        simpa [authoritativeGate, blockingGate, applyAuthoritativeOperation] using
-          (blockingGate_preserves_blockingRuntimeWellFormed state operation hstate)).1
+      rw [authoritativeGate_blocking_state]
+      exact (blockingGate_preserves_blockingRuntimeWellFormed state operation hstate).1
 
 /-- The embedded blocking family keeps the full authoritative waiter/context
 invariant through the successor gate for every typed result. -/
@@ -9775,14 +9948,69 @@ theorem authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
     state operation (hstate : BlockingRuntimeWellFormed state) :
     BlockingRuntimeWellFormed
       (authoritativeGate state (.blocking operation)).state := by
-  simpa [authoritativeGate, blockingGate, applyAuthoritativeOperation] using
-    blockingGate_preserves_blockingRuntimeWellFormed state operation hstate
+  rw [authoritativeGate_blocking_state]
+  exact blockingGate_preserves_blockingRuntimeWellFormed state operation hstate
+
+/-- Ordinary successor operations preserve the folded authoritative invariant
+without a blocking-scheduler premise. -/
+theorem authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
+    state operation (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary operation)).state := by
+  constructor
+  · rw [authoritativeGate_ordinary_state]
+    exact gate_preserves_runtimeWellFormed state operation hstate.1
+  · rw [authoritativeGate_ordinary_state]
+    exact gate_preserves_blockingContextAgreement state operation hstate.2
+
+/-- Only a mutating blocking step needs the stronger scheduler/mailbox/waiter
+invariant.  Ordinary steps need no extra premise beyond the authoritative
+global invariant itself. -/
+def AuthoritativeOperationReady (state : CompositeState) :
+    AuthoritativeOperation → Prop
+  | .ordinary _ => True
+  | .blocking _ => BlockingRuntimeWellFormed state
+
+theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
+    state operation (hstate : AuthoritativeRuntimeWellFormed state)
+    (hready : AuthoritativeOperationReady state operation) :
+    AuthoritativeRuntimeWellFormed (authoritativeGate state operation).state := by
+  cases operation with
+  | ordinary operation =>
+      exact authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
+        state operation hstate
+  | blocking operation =>
+      exact (authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
+        state operation hready).authoritative
 
 def runAuthoritativeOperations (state : CompositeState) :
     List AuthoritativeOperation → CompositeState
   | [] => state
   | operation :: rest =>
       runAuthoritativeOperations (authoritativeGate state operation).state rest
+
+/-- Recursive readiness for a finite mixed trace.  It records the stronger
+blocking precondition only at the exact states where blocking events occur;
+ordinary events carry no additional side condition. -/
+def AuthoritativeTraceReady (state : CompositeState) :
+    List AuthoritativeOperation → Prop
+  | [] => True
+  | operation :: rest =>
+      AuthoritativeOperationReady state operation ∧
+      AuthoritativeTraceReady (authoritativeGate state operation).state rest
+
+/-- Every ready finite interleaving of ordinary and blocking operations
+preserves the folded authoritative global invariant. -/
+theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state operations (hstate : AuthoritativeRuntimeWellFormed state)
+    (hready : AuthoritativeTraceReady state operations) :
+    AuthoritativeRuntimeWellFormed (runAuthoritativeOperations state operations) := by
+  induction operations generalizing state with
+  | nil => exact hstate
+  | cons operation rest ih =>
+      exact ih (authoritativeGate state operation).state
+        (authoritativeGate_preserves_authoritativeRuntimeWellFormed
+          state operation hstate hready.1) hready.2
 
 /-- Fatal mode is a separate result class and absorbs arbitrary suffixes that
 mix ordinary operations with blocking delivery, sleep, wake, and cancellation. -/
