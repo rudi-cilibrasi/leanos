@@ -163,6 +163,8 @@ def executeUser (state : State) (liveControls : Controls)
     { state, result := .rejected .malformedPolicy }
   else if _hlive : liveControls ≠ state.controls then
     { state, result := .rejected .staleReadback }
+  else if privilegeAllows liveControls .user then
+    { state, result := .rejected .malformedPolicy }
   else { state, result := .userDeniedGP }
 
 /-- Trusted kernel entry additionally supplies a purpose.  Acceptance requires
@@ -201,21 +203,25 @@ theorem user_request_preserves_device_state state live request :
   unfold executeUser
   split
   · rfl
-  · split <;> rfl
+  · split
+    · rfl
+    · split <;> rfl
 
 theorem user_request_never_kernel_accepted state live request :
     (executeUser state live request).result ≠ .kernelAccepted := by
   unfold executeUser
   split
   · simp
-  · split <;> simp
+  · split
+    · simp
+    · split <;> simp
 
 theorem accepted_user_request_denied_gp state live request
     (hpolicy : AcceptedControls state.controls)
     (hlive : live = state.controls) :
     executeUser state live request = { state, result := .userDeniedGP } := by
   have hcontrols : state.controls = selectedControls := hpolicy
-  simp [executeUser, hcontrols, hlive]
+  simp [executeUser, hcontrols, hlive, selected_controls_deny_user_cpl]
 
 /-- Any typed kernel acceptance exposes the exact manifest membership and
 fresh control binding that authorized it. -/

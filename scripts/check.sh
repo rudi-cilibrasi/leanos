@@ -152,8 +152,33 @@ for fixture in DirectPortUserMutation DirectPortExposedBitmap \
     echo "error: direct-port-I/O fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
   fi
-  if ! grep -q "tests/negative/${fixture}.lean.*error:" "$negative_log"; then
-    echo "error: direct-port-I/O fixture ${fixture} lacked a Lean diagnostic" >&2
+  case "$fixture" in
+    DirectPortUserMutation)
+      expected_diagnostic='error: Type mismatch'
+      expected_proposition='user_request_preserves_device_state state live request'
+      expected_result='(executeUser state live request).state.devices ≠ state.devices'
+      ;;
+    DirectPortExposedBitmap)
+      expected_diagnostic='error: Tactic `native_decide` evaluated that the proposition'
+      expected_proposition='executeUser state exposed request = { state := state, result := Result.userDeniedGP }'
+      expected_result='is false'
+      ;;
+    DirectPortWrongPurpose)
+      expected_diagnostic='error: Tactic `native_decide` evaluated that the proposition'
+      expected_proposition='(executeKernel state selectedControls wrongPurpose).result = Result.kernelAccepted'
+      expected_result='is false'
+      ;;
+    DirectPortWrongWidth)
+      expected_diagnostic='error: Tactic `native_decide` evaluated that the proposition'
+      expected_proposition='(executeKernel state selectedControls wrongWidth).result = Result.kernelAccepted'
+      expected_result='is false'
+      ;;
+  esac
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq "$expected_diagnostic" "$negative_log" ||
+      ! grep -Fq "$expected_proposition" "$negative_log" ||
+      ! grep -Fq "$expected_result" "$negative_log"; then
+    echo "error: direct-port-I/O fixture ${fixture} lacked its expected semantic diagnostic" >&2
     cat "$negative_log" >&2
     exit 1
   fi
