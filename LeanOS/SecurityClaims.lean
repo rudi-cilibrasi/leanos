@@ -535,6 +535,29 @@ theorem composite_contained_fault_cleanup_preserves_context_boundary
     FailStop.interrupt_contained_synchronizes_lifecycle
       state frame subject hcontained⟩
 
+/-- Supporting contained-cleanup theorem: the faulting identity is retired
+from every published lifecycle view and from every scheduler, resumable,
+waiter, and blocked-context projection in the same composite operation. -/
+theorem composite_contained_fault_cleanup_removes_faulting_subject
+    state frame subject
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hcurrent : state.lifecycle.current = some subject)
+    (hcontained :
+      (FailStop.dispatchHardware state.execution frame).action = .contained subject) :
+    let next := FailStop.applyOperation state (.interrupt frame)
+    next.lifecycle.capabilities.subjects subject = false ∧
+      next.execution.core.lifecycle.capabilities.subjects subject = false ∧
+      next.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      next.preemption.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      next.resumable.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      subject ∉ next.scheduler.ready ∧
+      next.scheduler.lifecycle.current ≠ some subject ∧
+      ResumablePreemption.contextFor next.resumable.contexts subject = none ∧
+      next.blockingIPC.waiterEndpoint subject = none ∧
+      next.blockingContexts subject = none := by
+  exact FailStop.interrupt_contained_cleans_faulting_subject
+    state frame subject hstate hcurrent hcontained
+
 /-- Every typed deferred-drain denial is globally atomic, including ready-queue
 and resumable-bank exhaustion.  This supports
 SC-COMPOSITE-CONTAINED-FAULT-CLEANUP. -/

@@ -5094,6 +5094,53 @@ theorem interrupt_contained_synchronizes_lifecycle state frame subject
   simp [applyOperation, hcontained, publishInterruptCleanup,
     installTerminatedResumable]
 
+/-- A contained user fault publishes the complete terminal post-state for the
+faulting identity in one operation.  Every duplicated lifecycle view marks the
+subject dead, the scheduler and resumable bank retain no selectable reference,
+and the authoritative blocking waiter/context pair is removed together. -/
+theorem interrupt_contained_cleans_faulting_subject state frame subject
+    (hstate : RuntimeWellFormed state)
+    (hcurrent : state.lifecycle.current = some subject)
+    (hcontained : (dispatchHardware state.execution frame).action = .contained subject) :
+    let next := applyOperation state (.interrupt frame)
+    next.lifecycle.capabilities.subjects subject = false ∧
+      next.execution.core.lifecycle.capabilities.subjects subject = false ∧
+      next.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      next.preemption.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      next.resumable.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      subject ∉ next.scheduler.ready ∧
+      next.scheduler.lifecycle.current ≠ some subject ∧
+      ResumablePreemption.contextFor next.resumable.contexts subject = none ∧
+      next.blockingIPC.waiterEndpoint subject = none ∧
+      next.blockingContexts subject = none := by
+  have hdead := ResumablePreemption.cleanup_terminates_subject
+    state.resumable subject
+  have hscheduler := ResumablePreemption.cleanup_removes_scheduler_membership
+    state.resumable subject
+  have hcontext := ResumablePreemption.cleanup_removes_context
+    state.resumable subject
+  have hlive : state.lifecycle.capabilities.subjects subject = true :=
+    hstate.2.2.1.2.2.2.2.2 subject hcurrent
+  have hblockingAccepted :
+      (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle subject).result =
+        .accepted := by
+    rw [hstate.blockingLifecycle]
+    simp [SubjectLifecycle.terminate, hstate.2.2.1.1 subject hlive, hlive]
+  have hblockingClean := BlockingIPCContext.terminate_accepted_cleans_self
+    state.blockingIPCContext subject hblockingAccepted
+  have hdetached :
+      let detached := BlockingIPCContext.detachInvalidated
+        (BlockingIPCContext.terminate state.blockingIPCContext subject)
+        state.deferredCancels
+        (ResumablePreemption.cleanupSubject state.resumable subject).scheduler
+      detached.1.ipc.waiterEndpoint subject = none ∧
+        detached.1.blocked subject = none := by
+    simp [BlockingIPCContext.detachInvalidated,
+      hblockingClean.1, hblockingClean.2]
+  simp [applyOperation, hcontained, publishInterruptCleanup,
+    installTerminatedResumable, hdead, hscheduler.1, hscheduler.2, hcontext,
+    hdetached.1, hdetached.2]
+
 /-- A data-only receive cannot consume the envelope paired with a sealed
 descendant.  The composite reply identifies the required transfer operation,
 and every authoritative projection remains byte-for-byte unchanged. -/
