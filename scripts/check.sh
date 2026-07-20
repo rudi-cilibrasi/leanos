@@ -9,6 +9,8 @@ lake build leanos-boot-plan
 
 ./scripts/check-security-claims.sh
 
+./tests/test-q35-pci-construction.py
+
 ./scripts/test-capability-boundaries.sh
 
 ./scripts/check-oracle-host.sh
