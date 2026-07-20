@@ -4792,6 +4792,19 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
                 (ResumablePreemption.cleanupSubject state.resumable subject)
   | .restart => state
 
+private theorem dispatchIPC_directPortIO state call :
+    (dispatchIPC state call).state.directPortIO = state.directPortIO := by
+  cases call <;> simp only [dispatchIPC]
+  all_goals
+    repeat' first | split
+    all_goals rfl
+
+private theorem installTerminatedSubject_directPortIO state subject resumable :
+    (installTerminatedSubject state subject resumable).directPortIO = state.directPortIO := by
+  unfold installTerminatedSubject installTerminatedResumable
+    publishTerminatedBlockingSubject
+  split <;> rfl
+
 /-- Every public composite operation retains the complete direct-port control
 and device projection literally.  Kernel device mutation remains confined to
 the separately typed, purpose-bound `DirectPortIO.executeKernel` boundary, so
@@ -4802,7 +4815,11 @@ a device transition. -/
   cases operation <;> simp only [applyOperation]
   all_goals
     repeat' first | split
-    all_goals simp [selectLiveReturnAuthority]
+    all_goals first
+      | rfl
+      | exact dispatchIPC_directPortIO _ _
+      | exact installTerminatedSubject_directPortIO _ _ _
+      | (unfold selectLiveReturnAuthority; split <;> rfl)
 
 /-- Exact typed observation of the subsystem transition selected by an
 operation.  Unlike the former generic `accepted`, this cannot erase an

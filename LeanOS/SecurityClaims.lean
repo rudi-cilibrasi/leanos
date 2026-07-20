@@ -774,6 +774,23 @@ theorem composite_universal_mixed_trace_preserves_runtimeWellFormed
   exact FailStop.runOperations_preserves_runtimeWellFormed_universally
     state operations hstate
 
+/-- SC-COMPOSITE-DIRECT-PORT-WF: every public composite step and arbitrary
+finite mixed trace retain the complete TSS/IOPL control and device projection
+literally.  Consequently the deny-all user policy embedded in the global
+runtime invariant cannot be relaxed or repaired by an unrelated transition. -/
+theorem composite_gate_preserves_direct_port_boundary state operation operations
+    (hstate : FailStop.RuntimeWellFormed state) :
+    (FailStop.gate state operation).state.directPortIO = state.directPortIO ∧
+      (FailStop.runOperations state operations).directPortIO = state.directPortIO ∧
+      DirectPortIO.AcceptedControls
+        (FailStop.gate state operation).state.directPortIO.controls ∧
+      DirectPortIO.AcceptedControls
+        (FailStop.runOperations state operations).directPortIO.controls := by
+  refine ⟨FailStop.gate_directPortIO state operation,
+    FailStop.runOperations_directPortIO state operations, ?_, ?_⟩
+  · simpa using hstate.directPortControls
+  · simpa using hstate.directPortControls
+
 /-- SC-COMPOSITE-BOOT-WF: every successfully compiled bounded boot page-table
 plan produces an idle composite runtime satisfying the complete global
 invariant before any subject or trusted return identity is admitted. -/
