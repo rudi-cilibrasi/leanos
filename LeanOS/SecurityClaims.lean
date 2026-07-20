@@ -439,7 +439,7 @@ private def nmiWitnessRaw (origin : Interrupt.Privilege) : InterruptEntry.RawNmi
     frame
     claimedOrigin := origin
     frameBytes := 40
-    frameAddress := 0x903fd0
+    frameAddress := 0x903fd8
     acCleared := true
     dfCleared := true }
 

@@ -41,8 +41,9 @@ byte normalization, and a validate-then-relax attempt. The scalar adapter packs
 a byte-bounded device projection for corpus
 comparison; it does not claim to serialize arbitrary device state.
 
-The final 15 NMI records contain exact accepted user-running, kernel-handling,
-and kernel-halted projections followed by every rejection selectable through
+The final 15 NMI records use the machine stub's exact `stackPastLast - 40`
+five-word frame address for accepted user-running, kernel-handling, and
+kernel-halted projections, followed by every rejection selectable through
 the generated scalar boundary. Their ordered identifiers and codes are proved
 against `NmiRejectReason.runtimeInventory`; the compile-time-only invalid
 terminal manifest and a dropped stateful trace class are separate semantic

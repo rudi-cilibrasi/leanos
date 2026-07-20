@@ -123,6 +123,8 @@ private def nmiContextHalted : UInt64 := nmiContextRunning + 0x8000000
 private def nmiControl : UInt64 :=
   2 + 40 * 512 + 0x20000 + 0x40000 + 1 * 0x80000 + 1 * 0x8000000
 
+private def nmiFrameAddress : UInt64 := 0x903fd8
+
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
   boot "boot.accept" 0 1,
@@ -314,29 +316,30 @@ def vectors : List Vector := [
   directPortIO "direct-port.invalid-port" 0 0 1 0xffffffffffffffff 1 65,
   directPortIO "direct-port.post-validation-relaxation" 0 5 0 0x3f8 1 65,
   interruptEntry "entry.user-general-protection" 68877 291 0x800000 257 3,
-  nmi "nmi.user-running" 0 nmiUserFrame 0x900000 nmiContextRunning nmiControl,
-  nmi "nmi.kernel-handling" 0 nmiKernelFrame 0x900000 nmiContextHandling nmiControl,
-  nmi "nmi.kernel-halted" 0 nmiKernelFrame 0x900000 nmiContextHalted nmiControl,
-  nmi "nmi.wrong-descriptor" 1 nmiUserFrame 0x900000 nmiContextRunning nmiControl,
-  nmi "nmi.wrong-target" 0 nmiUserFrame 0x900000 nmiContextRunning (nmiControl + 1),
-  nmi "nmi.spurious-error" 0 nmiUserFrame 0x900000 nmiContextRunning
+  nmi "nmi.user-running" 0 nmiUserFrame nmiFrameAddress nmiContextRunning nmiControl,
+  nmi "nmi.kernel-handling" 0 nmiKernelFrame nmiFrameAddress nmiContextHandling nmiControl,
+  nmi "nmi.kernel-halted" 0 nmiKernelFrame nmiFrameAddress nmiContextHalted nmiControl,
+  nmi "nmi.wrong-descriptor" 1 nmiUserFrame nmiFrameAddress nmiContextRunning nmiControl,
+  nmi "nmi.wrong-target" 0 nmiUserFrame nmiFrameAddress nmiContextRunning (nmiControl + 1),
+  nmi "nmi.spurious-error" 0 nmiUserFrame nmiFrameAddress nmiContextRunning
     (nmiControl + 0x100),
-  nmi "nmi.wrong-frame-bytes" 0 nmiUserFrame 0x900000 nmiContextRunning
+  nmi "nmi.wrong-frame-bytes" 0 nmiUserFrame nmiFrameAddress nmiContextRunning
     (nmiControl - 0x200),
-  nmi "nmi.misaligned" 0 nmiUserFrame 0x900008 nmiContextRunning nmiControl,
-  nmi "nmi.wrong-stack-identity" 0 nmiUserFrame 0x900000
+  nmi "nmi.misaligned" 0 nmiUserFrame 0x903fd0 nmiContextRunning nmiControl,
+  nmi "nmi.wrong-stack-identity" 0 nmiUserFrame nmiFrameAddress
     (nmiContextRunning + 0x10000) nmiControl,
-  nmi "nmi.stack-out-of-bounds" 0 nmiUserFrame 0x900000
-    (nmiContextRunning + 0x1000000) nmiControl,
-  nmi "nmi.wrong-origin" 0 (nmiUserFrame - 0x40000) 0x900000
+  nmi "nmi.frame-not-at-stack-top" 0 nmiUserFrame 0x903fc8
     nmiContextRunning nmiControl,
-  nmi "nmi.wrong-selectors" 0 (nmiUserFrame + 4) 0x900000
+  nmi "nmi.wrong-origin" 0 (nmiUserFrame - 0x40000) nmiFrameAddress
     nmiContextRunning nmiControl,
-  nmi "nmi.noncanonical" 0 (nmiUserFrame - 0x10000) 0x900000
+  nmi "nmi.wrong-selectors" 0 (nmiUserFrame + 4) nmiFrameAddress
     nmiContextRunning nmiControl,
-  nmi "nmi.privileged-state" 0 nmiUserFrame 0x900000 nmiContextRunning
+  nmi "nmi.noncanonical" 0 (nmiUserFrame - 0x10000) nmiFrameAddress
+    nmiContextRunning nmiControl,
+  nmi "nmi.privileged-state" 0 nmiUserFrame nmiFrameAddress nmiContextRunning
     (nmiControl - 0x20000),
-  nmi "nmi.stale-context" 0 nmiUserFrame 0x900000 (nmiContextRunning + 1) nmiControl]
+  nmi "nmi.stale-context" 0 nmiUserFrame nmiFrameAddress
+    (nmiContextRunning + 1) nmiControl]
 
 theorem corpus_shape : vectors.length = 198 := by decide
 theorem boot_decoder_roundtrip_cold :
@@ -507,7 +510,7 @@ theorem nmi_corpus_id_inventory :
       ["nmi.user-running", "nmi.kernel-handling", "nmi.kernel-halted",
         "nmi.wrong-descriptor", "nmi.wrong-target", "nmi.spurious-error",
         "nmi.wrong-frame-bytes", "nmi.misaligned", "nmi.wrong-stack-identity",
-        "nmi.stack-out-of-bounds", "nmi.wrong-origin", "nmi.wrong-selectors",
+        "nmi.frame-not-at-stack-top", "nmi.wrong-origin", "nmi.wrong-selectors",
         "nmi.noncanonical", "nmi.privileged-state", "nmi.stale-context"] := by
   native_decide
 

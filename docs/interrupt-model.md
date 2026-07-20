@@ -151,13 +151,16 @@ word, terminal-only purpose, and dedicated IST identity 2. The ordinary
 manifest cannot authorize that entry, and IST2 is distinct from the existing
 vector-8 IST1 machine protocol. The linker now owns a separate aligned 16 KiB
 IST2 interval, the TSS selects its exclusive upper bound, and the IDT installs
-only the reviewed vector-2 DPL0 interrupt gate for this terminal purpose.
+only the reviewed vector-2 DPL0 interrupt gate for this terminal purpose. Boot
+loads the fully initialized TSS before installing the IST2 gate and publishing
+the IDT, so there is no live vector-2 descriptor that references the prior TSS.
 
 `RawNmiFrame` always contains saved RIP, CS, RFLAGS, RSP, and SS. This includes
 a CPL0 interruption because the selected contract assumes an IST switch; it
 never reuses the ordinary same-privilege three-word shape. `normalizeNmi`
-requires the exact descriptor and target, no error word, a 40-byte aligned
-frame wholly inside the reviewed IST2 bounds without arithmetic wraparound,
+requires the exact descriptor and target, no error word, and a 40-byte
+five-word frame starting at offset 8 modulo 16 whose end is exactly the
+reviewed IST2 upper bound, without arithmetic wraparound,
 canonical saved pointers, cleared AC/DF, matching user or kernel selectors,
 and a kernel-owned current subject/address space. Its active CR3 and prior
 execution mode are explicit trusted snapshot inputs. Attacker registers are

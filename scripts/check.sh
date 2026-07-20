@@ -207,7 +207,7 @@ done
 
 for fixture in NMITerminalManifestMutation NMITraceInventoryMutation \
     NMIOrdinaryManifestVector2 NMIReuseIST0 NMIReuseIST1 NMIWrongPurpose \
-    NMIContainmentRouting NMISchedulerRouting; do
+    NMIContainmentRouting NMISchedulerRouting NMIFrameNotAtStackTop; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: NMI fixture ${fixture} unexpectedly type-checked" >&2
     exit 1

@@ -437,13 +437,13 @@ def nmiRejection? (raw : RawNmiEntry) (context : NmiContext)
   else if raw.boundStub != nmiVector then some .wrongTarget
   else if raw.errorCode.isSome then some .spuriousError
   else if raw.frameBytes != 40 then some .wrongFrameBytes
-  else if raw.frameAddress % 16 != 0 then some .misaligned
+  else if raw.frameAddress % 16 != 8 then some .misaligned
   else if context.stackIdentity != nmiStackIdentity then some .wrongStackIdentity
   else if context.stackFirst != nmiStackFirst ||
       context.stackPastLast != nmiStackPastLast ||
       raw.frameAddress < context.stackFirst ||
       raw.frameAddress + raw.frameBytes < raw.frameAddress ||
-      raw.frameAddress + raw.frameBytes > context.stackPastLast then
+      raw.frameAddress + raw.frameBytes != context.stackPastLast then
     some .stackOutOfBounds
   else if nmiFrameOrigin raw.frame != raw.claimedOrigin then some .wrongOrigin
   else if raw.claimedOrigin = .user then
@@ -682,11 +682,11 @@ def nmiDemo (descriptor frame stack context control : UInt64) : UInt64 :=
   else if hasError then 0x8000000000000004
   else if frameBytes != 40 then
     0x8000000000000005
-  else if stack % 16 != 0 then 0x8000000000000006
+  else if stack % 16 != 8 then 0x8000000000000006
   else if stackIdentity != nmiStackIdentity then
     0x8000000000000008
   else if stackFirst != nmiStackFirst || stackPastLast != nmiStackPastLast ||
-      stack < stackFirst || stack + frameBytes < stack || stack + frameBytes > stackPastLast then
+      stack < stackFirst || stack + frameBytes < stack || stack + frameBytes != stackPastLast then
     0x8000000000000007
   else if frameUser != claimedUser then
     0x8000000000000009

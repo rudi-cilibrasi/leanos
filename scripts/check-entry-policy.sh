@@ -173,6 +173,15 @@ grep -Fq 'tss.rsp0 = (uint64_t)__entry_stack_end;' "$kernel_source" || {
 grep -Fq 'tss.ist[1] = (uint64_t)__nmi_ist_stack_end;' "$kernel_source" || {
   echo "error: vector=2 field=tss.ist2" >&2; exit 1;
 }
+privilege_source="$(sed -n '/^static void privilege_init(void) {$/,/^}$/p' "$kernel_source")"
+tss_load_line="$(grep -n -m1 '^[[:space:]]*load_tss();$' <<<"$privilege_source" | cut -d: -f1 || true)"
+nmi_gate_line="$(grep -n -m1 'set_gate(2, isr2, 2, 0x8e);' <<<"$privilege_source" | cut -d: -f1 || true)"
+idt_load_line="$(grep -n -m1 '__asm__ volatile ("lidt %0"' <<<"$privilege_source" | cut -d: -f1 || true)"
+[[ -n "$tss_load_line" && -n "$nmi_gate_line" && -n "$idt_load_line" &&
+   "$tss_load_line" -lt "$nmi_gate_line" && "$nmi_gate_line" -lt "$idt_load_line" ]] || {
+  echo "error: vector=2 field=publication-order expected=tss-before-ist2-gate-before-lidt" >&2
+  exit 1
+}
 grep -Fq 'if (leanos_entry_demo(descriptor, frame, 0x800000, context, 3) == 0)' \
     "$kernel_source" || {
   echo "error: vector=13 path=generated-model" >&2; exit 1;

@@ -1277,6 +1277,7 @@ static void privilege_init(void) {
     *(uint64_t *)__nmi_ist_stack_start = 0x4e4d493253544143ull;
     *(uint64_t *)((uint64_t)__nmi_ist_stack_end - 128u) =
         0x4b5445524d494e41ull;
+    load_tss();
     set_gate(2, isr2, 2, 0x8e);
     set_gate(8, isr8, 1, 0x8e);
     set_gate(6, isr6, 0, 0x8e);
@@ -1293,7 +1294,6 @@ static void privilege_init(void) {
     out8(0xa1, 0xff);
     struct descriptor idtr = { sizeof(idt) - 1, (uint64_t)idt };
     __asm__ volatile ("lidt %0" : : "m"(idtr));
-    load_tss();
     check_direct_port_control(1);
 }
 
