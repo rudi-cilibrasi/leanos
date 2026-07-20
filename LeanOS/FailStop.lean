@@ -1234,6 +1234,41 @@ theorem publishReleasedBlockingContext_restores_exact state blocking saved next
   · simp [ResumablePreemption.contextFor]
   · rfl
 
+/-- Publishing a released waiter cannot overflow the authoritative resumable
+bank or introduce a second context for the same owner.  These are the two
+structural context-bank obligations discharged entirely by the publisher's
+finite duplicate and capacity checks; later wake-preservation proofs can use
+them without unfolding the blocking transition. -/
+theorem publishReleasedBlockingContext_preserves_bankStructure
+    state blocking saved next
+    (hstate : ResumablePreemption.WellFormed state.resumable)
+    (hpublished : publishReleasedBlockingContext state blocking saved = .ok next) :
+    next.resumable.contexts.length ≤ next.resumable.capacity ∧
+      next.resumable.contexts.Pairwise
+        (fun first second => first.owner ≠ second.owner) := by
+  rcases hstate with ⟨_, hcapacity, hunique, _, _, _, _, _, _, _⟩
+  unfold publishReleasedBlockingContext at hpublished
+  split at hpublished <;> try contradiction
+  split at hpublished <;> try contradiction
+  next hduplicate =>
+    split at hpublished <;> try contradiction
+    next hfull =>
+      split at hpublished <;> try contradiction
+      simp only [Except.ok.injEq] at hpublished
+      subst next
+      constructor
+      · change (saved :: state.resumable.contexts).length ≤
+          state.resumable.capacity
+        simp only [List.length_cons]
+        omega
+      · apply List.pairwise_cons.mpr
+        constructor
+        · intro context hcontext heq
+          apply hfull
+          rw [ResumablePreemption.contextFor, List.find?_isSome]
+          exact ⟨context, hcontext, by simp [heq]⟩
+        · exact hunique
+
 theorem publishReleasedBlockingContext_blockingCoherent state blocking saved next
     (hpublished : publishReleasedBlockingContext state blocking saved = .ok next) :
     next.BlockingIPCCoherent := by
@@ -2013,7 +2048,8 @@ theorem dispatchBlockingSend_sent_preserves_runtimeWellFormed
                         state.blockingIPCContext state.execution.core.context.currentSubject
                         resolution.handle.slot payload haccepted).2
                     simp only [BlockingIPC.send] at hrawAccepted
-                    split at hrawAccepted <;> simp_all [BlockingIPC.reject]
+                    split at hrawAccepted <;>
+                      simp_all [BlockingIPC.reject, hstate.blockingScheduler]
                   simpa [dispatchBlockingSend, hresolve, payload, houtcome] using
                     publishBlockingIPCContext_sameScheduler_preserves_runtimeWellFormed
                       state next hstate hscheduler hcurrent
