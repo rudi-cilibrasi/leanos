@@ -10174,6 +10174,156 @@ theorem gate_transferOffer_preserves_blockingRuntimeWellFormed state endpointWor
             CompositeState.blockingIPCContext, BlockingIPCContext.ContextAgreement,
             BlockingIPCContext.WellFormed, next] using And.intro hblocking' hagreement
 
+/-- A scheduler tick preserves every lifecycle field observed by blocked
+waiters and cannot rotate a subject disjoint from both current and ready into
+either selected position. -/
+private theorem schedulerTick_preserves_blockedView scheduler subject
+    (hcurrent : scheduler.lifecycle.current ≠ some subject)
+    (hready : subject ∉ scheduler.ready) :
+    let next := (Scheduler.tick scheduler).state
+    next.lifecycle.capabilities = scheduler.lifecycle.capabilities ∧
+      next.lifecycle.runnable = scheduler.lifecycle.runnable ∧
+      next.lifecycle.addressOwner = scheduler.lifecycle.addressOwner ∧
+      next.lifecycle.current ≠ some subject ∧
+      subject ∉ next.ready := by
+  generalize htick : Scheduler.tick scheduler = outcome
+  cases outcome with
+  | mk next result =>
+      cases result with
+      | rejected reason =>
+          have hnext := Scheduler.tick_rejected_unchanged scheduler reason (by simp [htick])
+          rw [htick] at hnext
+          change next = scheduler at hnext
+          subst next
+          exact ⟨rfl, rfl, rfl, hcurrent, hready⟩
+      | accepted context =>
+          simp only [Scheduler.tick, Scheduler.yield] at htick
+          split at htick <;> try simp_all [Scheduler.reject]
+          split at htick <;> try simp_all [Scheduler.reject]
+          generalize hselect : Scheduler.selectNext _ = selected at htick
+          cases selected with
+          | mk selectedState selectedResult =>
+              cases selectedResult with
+              | rejected reason => simp [Scheduler.reject] at htick
+              | accepted selectedContext =>
+                  injection htick with hstate _
+                  subst next
+                  simp only [Scheduler.selectNext] at hselect
+                  split at hselect <;> try simp_all [Scheduler.reject]
+                  split at hselect <;> try simp_all [Scheduler.reject]
+                  rcases hselect with ⟨rfl, _⟩
+                  grind
+
+/-- A scheduler tick cannot make an existing endpoint waiter runnable, current,
+or ready.  The tick rotates only the old current subject and the existing ready
+queue, both of which are disjoint from every well-formed waiter. -/
+private theorem blockingIPC_wellFormed_tick (state : BlockingIPC.State)
+    (hstate : BlockingIPC.WellFormed state) :
+    BlockingIPC.WellFormed
+      { state with scheduler := (Scheduler.tick state.scheduler).state } := by
+  rcases hstate with
+    ⟨hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcapabilities⟩
+  have hscheduler' := Scheduler.tick_preserves_wellFormed state.scheduler hscheduler
+  refine ⟨hscheduler', hqueues, ?_, hunique, hindex, ?_, ?_⟩
+  · intro endpoint subject hmember
+    obtain ⟨hliveEndpoint, hauthority, hliveSubject, hrunnable, howner,
+      hcurrent, hready⟩ := hwaiters endpoint subject hmember
+    obtain ⟨hcapabilities, hrunnable', haddressOwner, hcurrent', hready'⟩ :=
+      schedulerTick_preserves_blockedView state.scheduler subject hcurrent hready
+    refine ⟨?_, ?_, ?_, ?_, ?_, hcurrent', hready'⟩
+    · rw [hcapabilities]
+      exact hliveEndpoint
+    · simpa [BlockingIPC.authorizedReceive, hcapabilities] using hauthority
+    · rw [hcapabilities]
+      exact hliveSubject
+    · rw [hrunnable']
+      exact hrunnable
+    · simpa [Scheduler.ownsAddressSpace, haddressOwner] using howner
+  · intro endpoint envelope hvalue
+    obtain ⟨hlive, hkind, henvelope, hempty⟩ := hmailbox endpoint envelope hvalue
+    have hcapabilities := schedulerTick_preserves_capabilities state.scheduler
+    exact ⟨by simpa [hcapabilities] using hlive,
+      by simpa [hcapabilities] using hkind, henvelope, hempty⟩
+  · simpa [schedulerTick_preserves_capabilities state.scheduler] using hcapabilities
+
+/-- A successful save/restore switch publishes exactly the scheduler tick, so
+the waiter-disjoint rotation lemma applies to its blocking projection. -/
+private theorem resumeSwitch_noError_preserves_blockingIPCWellFormed
+    (state : CompositeState) frame registers
+    (herror : (ResumablePreemption.switch state.resumable state.execution.core
+      frame registers).error = none)
+    (hscheduler : state.resumable.scheduler = state.blockingIPC.scheduler)
+    (hstate : BlockingIPC.WellFormed state.blockingIPC) :
+    BlockingIPC.WellFormed
+      { state.blockingIPC with scheduler :=
+        (ResumablePreemption.switch state.resumable state.execution.core
+          frame registers).state.scheduler } := by
+  simp only [ResumablePreemption.switch] at herror ⊢
+  split <;> try simp_all [ResumablePreemption.reject, ResumablePreemption.halt]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals simpa [hscheduler] using blockingIPC_wellFormed_tick state.blockingIPC hstate
+
+/-- The complete resumable-preemption family retains the stronger blocking
+runtime precondition without a readiness witness.  A subsequent block, wake,
+or cancellation can therefore execute immediately after any restored switch,
+typed denial, fatal entry, or outer-latch rejection. -/
+theorem gate_resumePreempt_preserves_blockingRuntimeWellFormed state frame registers
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed
+      (gate state (.resumePreempt frame registers)).state := by
+  constructor
+  · exact resumePreempt_operationPreservesRuntimeWellFormed frame registers state hstate.1
+  · constructor
+    · cases hmode : state.execution.mode with
+      | handling active => simpa [gate, hmode] using hstate.2.1
+      | halted record => simpa [gate, hmode] using hstate.2.1
+      | running =>
+          cases herror : (ResumablePreemption.switch state.resumable
+              state.execution.core frame registers).error with
+          | none =>
+              have hresumable : state.resumable.scheduler = state.scheduler :=
+                hstate.1.1.2.2.2.2.2.2.2.1
+              have hscheduler : state.resumable.scheduler = state.blockingIPC.scheduler :=
+                hresumable.trans hstate.1.blockingScheduler.symm
+              simpa [gate, hmode, applyOperation, herror, installResumable,
+                CompositeState.blockingIPCContext, BlockingIPCContext.WellFormed] using
+                resumeSwitch_noError_preserves_blockingIPCWellFormed
+                  state frame registers herror hscheduler hstate.2.1
+          | some reason =>
+              cases reason with
+              | fatalEntry =>
+                  cases hhalted : (ResumablePreemption.switch state.resumable
+                      state.execution.core frame registers).state.halted with
+                  | false =>
+                      simpa [gate, hmode, applyOperation, herror, hhalted] using hstate.2.1
+                  | true =>
+                      have hscheduler := resumeSwitch_halted_preserves_scheduler
+                        state.resumable state.execution.core frame registers hhalted
+                      have hresumable : state.resumable.scheduler = state.scheduler :=
+                        hstate.1.1.2.2.2.2.2.2.2.1
+                      have hscheduler' :
+                          (ResumablePreemption.switch state.resumable state.execution.core
+                            frame registers).state.scheduler = state.blockingIPC.scheduler :=
+                        hscheduler.trans (hresumable.trans hstate.1.blockingScheduler.symm)
+                      simpa [gate, hmode, applyOperation, herror, hhalted, installResumable,
+                        CompositeState.blockingIPCContext, BlockingIPCContext.WellFormed,
+                        hscheduler'] using hstate.2.1
+              | nonTimer | malformedIncoming | noCurrent | contextMismatch | duplicateSave |
+                  staleActiveSpace | bankFull | schedulerRejected | noDestination |
+                  staleDestination =>
+                    simpa [gate, hmode, applyOperation, herror] using hstate.2.1
+    · exact gate_preserves_blockingContextAgreement state
+        (.resumePreempt frame registers) hstate.2.2
+
 /-- Ordinary operations currently known to retain the complete blocking
 runtime invariant.  Neutral control/data-IPC steps keep the blocking state
 literal; raw and syscall mapping use the scheduler replacement law above;
@@ -10188,6 +10338,8 @@ inductive BlockingRuntimePreservingOperation : Operation → Prop where
   | transferOffer endpointWord sourceWord sourceKind payload rights :
       BlockingRuntimePreservingOperation
         (.transferOffer endpointWord sourceWord sourceKind payload rights)
+  | resumePreempt frame registers :
+      BlockingRuntimePreservingOperation (.resumePreempt frame registers)
 
 theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
     state operation (hoperation : BlockingRuntimePreservingOperation operation)
@@ -10205,6 +10357,8 @@ theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
   | transferOffer endpointWord sourceWord sourceKind payload rights =>
       exact gate_transferOffer_preserves_blockingRuntimeWellFormed state endpointWord sourceWord
         sourceKind payload rights hstate
+  | resumePreempt frame registers =>
+      exact gate_resumePreempt_preserves_blockingRuntimeWellFormed state frame registers hstate
 
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)

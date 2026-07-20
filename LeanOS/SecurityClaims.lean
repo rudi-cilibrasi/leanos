@@ -311,6 +311,20 @@ theorem composite_authoritative_raw_scheduler_then_blocking_preserves_runtimeWel
   · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
       state .scheduleTick blocking (.neutral .scheduleTick) hstate
 
+/-- Resumable preemption preserves the complete blocking precondition for
+every successful restore, typed denial, fatal entry, and outer-latch result.
+Any such result can therefore be followed immediately by an arbitrary block,
+wake, or cancellation without reconstructing readiness. -/
+theorem composite_authoritative_resumePreempt_then_blocking_preserves_runtimeWellFormed
+    state frame registers blocking (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.resumePreempt frame registers))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.resumePreempt frame registers) blocking (.resumePreempt frame registers) hstate
+
 /-- The successor contract has a reachable classified rejection at the
 boot-produced empty waiter store, rather than being discharged vacuously. -/
 theorem composite_authoritative_gate_rejection_reachable_witness plan :
