@@ -146,6 +146,19 @@ for fixture in DMAWeakenedBusMaster DMADroppedFunction DMARuntimeEnable; do
   fi
 done
 
+for fixture in DirectPortUserMutation DirectPortExposedBitmap \
+    DirectPortWrongPurpose DirectPortWrongWidth; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: direct-port-I/O fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -q "tests/negative/${fixture}.lean.*error:" "$negative_log"; then
+    echo "error: direct-port-I/O fixture ${fixture} lacked a Lean diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
 if lake env lean tests/negative/VacuousClaimSetup.lean >"$negative_log" 2>&1; then
   echo "error: vacuous security-claim fixture unexpectedly type-checked" >&2
   exit 1
