@@ -9719,6 +9719,37 @@ theorem gate_preserves_blockingContextAgreement state operation
         | some subject =>
             exact installTerminatedSubject_preserves_contextAgreement state subject _ hstate
 
+/-- Ordinary operations in this family do not mutate the authoritative
+blocking endpoint, scheduler, waiter, completion, or saved-context store. -/
+inductive BlockingStateNeutralOperation : Operation → Prop where
+  | selectUserReturn purpose : BlockingStateNeutralOperation (.selectUserReturn purpose)
+  | restart : BlockingStateNeutralOperation .restart
+
+/-- A blocking-state-neutral ordinary step retains the complete typed blocking
+state literally, not merely its waiter/context agreement projection. -/
+theorem gate_blockingStateNeutral_preserves_blockingIPCContext state operation
+    (hoperation : BlockingStateNeutralOperation operation) :
+    (gate state operation).state.blockingIPCContext = state.blockingIPCContext := by
+  cases hmode : state.execution.mode with
+  | handling active => simp [gate, hmode]
+  | halted record => simp [gate, hmode]
+  | running =>
+      cases hoperation
+      · simp only [gate, hmode, applyOperation, selectLiveReturnAuthority]
+        split <;> rfl
+      · simp [gate, hmode, applyOperation]
+
+/-- The first readiness-free ordinary slice preserves the full blocking
+runtime invariant for every typed result and every execution-latch mode. -/
+theorem gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed state operation
+    (hoperation : BlockingStateNeutralOperation operation)
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed (gate state operation).state := by
+  constructor
+  · exact gate_preserves_runtimeWellFormed state operation hstate.1
+  · rw [gate_blockingStateNeutral_preserves_blockingIPCContext state operation hoperation]
+    exact hstate.2
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
@@ -9950,6 +9981,17 @@ theorem authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
       (authoritativeGate state (.blocking operation)).state := by
   rw [authoritativeGate_blocking_state]
   exact blockingGate_preserves_blockingRuntimeWellFormed state operation hstate
+
+/-- Return selection and restart cross the successor gate
+without weakening the full authoritative blocking invariant. -/
+theorem authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+    state operation (hoperation : BlockingStateNeutralOperation operation)
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed
+      (authoritativeGate state (.ordinary operation)).state := by
+  rw [authoritativeGate_ordinary_state]
+  exact gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+    state operation hoperation hstate
 
 /-- Ordinary successor operations preserve the folded authoritative invariant
 without a blocking-scheduler premise. -/
