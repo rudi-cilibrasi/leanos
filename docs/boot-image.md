@@ -143,7 +143,8 @@ final ELFs and maps, final page-table plans, exact serial logs, decoded
 three-record CPU/CPUID/MSR/control snapshots, and final-ELF policy reports that
 inventory the eight `wrmsr` sites, nine `rdmsr` sites, and the sole deliberate
 probe opcode. The shared evidence directory binds the QEMU command and hashes;
-the hosted oracle results retain all 154 vectors, including the 32-vector
+the hosted oracle results retain all 182 vectors, including the 28-vector
+direct-port-I/O corpus, the 32-vector
 entry-control corpus and 10-vector fault-dispatch corpus; and the entry-policy
 fixture log records controlled
 source/ELF rejection diagnostics. A missing artifact is visible because the CI
