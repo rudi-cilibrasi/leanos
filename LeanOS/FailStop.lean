@@ -1871,6 +1871,7 @@ def dispatchBlockingCancel (state : CompositeState) (subject : BlockingIPC.Subje
           | .ok next => { state := next, reply := .cancelled saved }
 
 inductive CompositeBlockingCancelRejection : CompositeBlockingCancelReply -> Prop
+  | notWaiting : CompositeBlockingCancelRejection .notWaiting
   | context reason : CompositeBlockingCancelRejection (.contextRejected reason)
   | restore reason : CompositeBlockingCancelRejection (.restoreRejected reason)
   | ipc reason : CompositeBlockingCancelRejection (.rejected reason)
@@ -1989,6 +1990,19 @@ structure CompositeBlockingGateOutcome where
   state : CompositeState
   result : CompositeBlockingGateResult
 
+/-- The finite blocking-gate results that denote an ordinary nonfatal denial.
+Fatal absorption remains a distinct terminal result; successful delivery,
+blocking, enqueue, wake, and cancellation are intentionally not classified as
+rejections. -/
+inductive CompositeBlockingGateRejection : CompositeBlockingGateResult → Prop where
+  | busy : CompositeBlockingGateRejection .rejectedBusy
+  | receive {reply} (hrejected : CompositeBlockingReceiveRejection reply) :
+      CompositeBlockingGateRejection (.completed (.receive reply))
+  | send {reply} (hrejected : CompositeBlockingSendRejection reply) :
+      CompositeBlockingGateRejection (.completed (.send reply))
+  | cancel {reply} (hrejected : CompositeBlockingCancelRejection reply) :
+      CompositeBlockingGateRejection (.completed (.cancel reply))
+
 /-- Total typed blocking gate under the same irreversible execution latch as
 the ordinary composite gate.  No operation input carries caller identity,
 address-space identity, or a saved-context owner. -/
@@ -2018,6 +2032,50 @@ theorem blockingGate_mode_rejection_atomic state operation
       cases operation <;> simp [blockingGate, hmode] at hrejected
   | handling entry => simp [blockingGate, hmode]
   | halted record => simp [blockingGate, hmode]
+
+/-- Every ordinary blocking-gate rejection is globally atomic.  This theorem
+classifies denial at the outer typed gate rather than relying on a caller to
+recognize dependency-local replies; consequently a stale handle, invalid
+saved-context transition, unavailable peer switch, restore failure, IPC
+denial, empty cancellation, or busy latch all return the identical composite
+state. -/
+theorem blockingGate_rejection_atomic state operation
+    (hrejected : CompositeBlockingGateRejection (blockingGate state operation).result) :
+    (blockingGate state operation).state = state := by
+  cases hmode : state.execution.mode with
+  | handling entry => simp [blockingGate, hmode]
+  | halted record =>
+      simp only [blockingGate, hmode] at hrejected
+      cases hrejected
+  | running =>
+      cases operation with
+      | receive handleWord frame registers =>
+          cases houtcome : dispatchBlockingReceive state handleWord frame registers with
+          | mk next reply =>
+              simp only [blockingGate, hmode, houtcome] at hrejected ⊢
+              cases hrejected with
+              | receive hreply =>
+                  have hatomic := dispatchBlockingReceive_rejected_atomic
+                    state handleWord frame registers reply hreply (by simp [houtcome])
+                  simpa [houtcome] using hatomic
+      | send handleWord word0 word1 =>
+          cases houtcome : dispatchBlockingSend state handleWord word0 word1 with
+          | mk next reply =>
+              simp only [blockingGate, hmode, houtcome] at hrejected ⊢
+              cases hrejected with
+              | send hreply =>
+                  have hatomic := dispatchBlockingSend_rejected_atomic
+                    state handleWord word0 word1 reply hreply (by simp [houtcome])
+                  simpa [houtcome] using hatomic
+      | cancel subject =>
+          cases houtcome : dispatchBlockingCancel state subject with
+          | mk next reply =>
+              simp only [blockingGate, hmode, houtcome] at hrejected ⊢
+              cases hrejected with
+              | cancel hreply =>
+                  have hatomic := dispatchBlockingCancel_rejected_atomic
+                    state subject reply hreply (by simp [houtcome])
+                  simpa [houtcome] using hatomic
 
 /-- Every block, wake, cancel, typed rejection, and latch rejection preserves
 the authoritative waiter/context agreement and its scheduler projection. -/

@@ -389,9 +389,11 @@ theorem compositeGate_published_requires_single_entry state operation result
   exact ⟨(validate_accepted_iff _).mp hvalid, by simp_all⟩
 
 theorem accepted_composite_user_return_requires_single_entry state request
-    (h : (compositeGate state (.userReturn request)).result = .published .accepted) :
+    (h : (compositeGate state (.userReturn request)).result =
+      .published (.completed (.userReturn .accepted))) :
     CompositePolicyInvariant state :=
-  compositeGate_published_requires_single_entry state (.userReturn request) .accepted h
+  compositeGate_published_requires_single_entry state (.userReturn request)
+    (.completed (.userReturn .accepted)) h
 
 theorem compositeGate_preserves_policy state operation
     (hinvariant : CompositePolicyInvariant state) :

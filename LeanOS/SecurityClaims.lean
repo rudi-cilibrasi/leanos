@@ -184,8 +184,22 @@ pass through the checked resumable-bank restoration boundary. -/
 theorem composite_blocking_gate_preserves_contextWellFormed state operation
     (hstate : FailStop.BlockingReceiveWellFormed state) :
     FailStop.BlockingReceiveWellFormed
-      (FailStop.blockingGate state operation).state := by
-  exact FailStop.blockingGate_preserves_wellFormed state operation hstate
+      (FailStop.blockingGate state operation).state ∧
+    (FailStop.CompositeBlockingGateRejection
+        (FailStop.blockingGate state operation).result →
+      (FailStop.blockingGate state operation).state = state) := by
+  exact ⟨FailStop.blockingGate_preserves_wellFormed state operation hstate,
+    FailStop.blockingGate_rejection_atomic state operation⟩
+
+/-- Concrete non-vacuity for the outer blocking rejection classifier: the
+boot-produced empty waiter store classifies cancellation of subject `1` as an
+ordinary atomic `notWaiting` denial. -/
+theorem composite_blocking_gate_rejection_reachable_witness plan :
+    let state := FailStop.bootRuntime plan
+    FailStop.CompositeBlockingGateRejection
+        (FailStop.blockingGate state (.cancel 1)).result ∧
+      (FailStop.blockingGate state (.cancel 1)).state = state := by
+  exact ⟨.cancel .notWaiting, rfl⟩
 
 /-- SC-COMPOSITE-TRANSFER-OFFER-WF: every canonical sealed-transfer offer,
 including malformed/stale handle rejections and the accepted pending-mailbox
