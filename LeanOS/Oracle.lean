@@ -10,6 +10,7 @@ import LeanOS.CapabilityReuse
 import LeanOS.ExtendedState
 import LeanOS.PrivilegeEntryControl
 import LeanOS.FaultDispatch
+import LeanOS.DirectPortIO
 
 /-!
 # Bounded scalar boundary oracle
@@ -97,6 +98,13 @@ private def faultDispatch (id : String) (vector origin current active ready cont
     words := [vector, origin, current, active, ready, context],
     expected := FaultDispatch.faultDispatchModelExpected
       vector origin current active ready context }
+
+private def directPortIO (id : String) (stored live originPurpose port directionWidth
+    value : UInt64) : Vector :=
+  { id, adapter := "DirectPortIO.scalar",
+    words := [stored, live, originPurpose, port, directionWidth, value],
+    expected := DirectPortIO.directPortIOModelExpected
+      stored live originPurpose port directionWidth value }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -259,9 +267,34 @@ def vectors : List Vector := [
   faultDispatch "fault-dispatch.empty-ready" 14 3 1 1 0 0,
   faultDispatch "fault-dispatch.already-terminated" 14 3 0 1 2 2,
   faultDispatch "fault-dispatch.stale-context" 14 3 1 1 2 3,
-  faultDispatch "fault-dispatch.peer-context-resource-witness" 14 3 1 1 2 2]
+  faultDispatch "fault-dispatch.peer-context-resource-witness" 14 3 1 1 2 2,
+  directPortIO "direct-port.user-denied" 0 0 0 0x3f8 1 65,
+  directPortIO "direct-port.nonzero-iopl" 1 1 0 0x3f8 1 65,
+  directPortIO "direct-port.short-tss-limit" 2 2 0 0x3f8 1 65,
+  directPortIO "direct-port.extended-tss-limit" 3 3 0 0x3f8 1 65,
+  directPortIO "direct-port.in-range-map-base" 4 4 0 0x3f8 1 65,
+  directPortIO "direct-port.exposed-bitmap" 5 5 0 0x3f8 1 65,
+  directPortIO "direct-port.not-kernel-configured" 6 6 0 0x3f8 1 65,
+  directPortIO "direct-port.readback-missing" 7 7 0 0x3f8 1 65,
+  directPortIO "direct-port.stale-readback" 0 7 0 0x3f8 1 65,
+  directPortIO "direct-port.kernel-serial-output" 0 0 1 0x3f8 1 65,
+  directPortIO "direct-port.kernel-serial-input" 0 0 1 0x3fd 0 0,
+  directPortIO "direct-port.kernel-pic-output" 0 0 2 0x20 1 0x20,
+  directPortIO "direct-port.kernel-pit-output" 0 0 3 0x43 1 0x36,
+  directPortIO "direct-port.kernel-debug-exit" 0 0 4 0xf4 1 0x11,
+  directPortIO "direct-port.wrong-purpose" 0 0 1 0x20 1 0x20,
+  directPortIO "direct-port.wrong-port" 0 0 1 0x3f7 1 65,
+  directPortIO "direct-port.wrong-direction" 0 0 1 0x3f8 0 0,
+  directPortIO "direct-port.wrong-word-width" 0 0 1 0x3f8 3 65,
+  directPortIO "direct-port.wrong-dword-width" 0 0 1 0x3f8 5 65,
+  directPortIO "direct-port.byte-normalization" 0 0 1 0x3f8 1 0x100,
+  directPortIO "direct-port.user-input-word" 0 0 0 0x3f8 2 0,
+  directPortIO "direct-port.user-input-dword" 0 0 0 0x3f8 4 0,
+  directPortIO "direct-port.invalid-origin" 0 0 5 0x3f8 1 65,
+  directPortIO "direct-port.invalid-direction-width" 0 0 1 0x3f8 6 65,
+  directPortIO "direct-port.post-validation-relaxation" 0 5 0 0x3f8 1 65]
 
-theorem corpus_shape : vectors.length = 154 := by decide
+theorem corpus_shape : vectors.length = 179 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -387,6 +420,24 @@ adapter to an expectation evaluated by the authoritative normalized-entry,
 lifecycle-cleanup, scheduler-selection, context-bank, and TLB transition. -/
 theorem fault_dispatch_adapter_agrees_with_model :
     vectors.all faultDispatchAdapterAgrees = true := by
+  native_decide
+
+private def directPortIOAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "DirectPortIO.scalar", [stored, live, originPurpose, port, directionWidth, value] =>
+      DirectPortIO.directPortIODemo stored live originPurpose port directionWidth value =
+        vector.expected
+  | _, _ => true
+
+/-- The canonical direct-port block covers accepted controls, every named
+control mutation, stale live state, all direction/width classes, exact and
+wrong kernel purposes, malformed scalar words, and post-validation relaxation. -/
+theorem direct_port_io_corpus_shape :
+    ((vectors.drop 154).take 25).length = 25 := by
+  decide
+
+theorem direct_port_io_adapter_agrees_with_model :
+    ((vectors.drop 154).take 25).all directPortIOAdapterAgrees = true := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

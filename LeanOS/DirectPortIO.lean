@@ -305,6 +305,212 @@ theorem byte_output_discards_upper_bits :
         { zeroDevices with serial := 0 } := by
   native_decide
 
+/-! ## Fixed-width differential adapter
+
+The scalar boundary below is deliberately narrower than the rich model.  Two
+control-mode words select stored and live snapshots, an origin word selects
+either the user path or one trusted kernel purpose, and a direction/width word
+selects one of the six x86 operation classes.  Invalid scalar encodings return
+the reserved all-ones word before a modeled transition is constructed.
+
+The device projection uses one byte per finite device class.  This is complete
+for the selected manifest because every authorized output is byte-wide and the
+adapter starts from byte-sized sentinel values.  It is corpus evidence, not a
+general serialization of arbitrary `DeviceState` values.
+-/
+
+private def adapterDevices : DeviceState :=
+  { serial := 0x11, pic := 0x22, pit := 0x33, debugExit := 0x44 }
+
+/-- Canonical control mutations used by the hosted and QEMU differential
+corpus.  Mode zero is the accepted snapshot; every other named mode isolates
+one rejected control or read-back condition. -/
+def decodeControlMode (mode : UInt64) : Option Controls :=
+  match mode with
+  | 0 => some selectedControls
+  | 1 => some { selectedControls with ioPrivilegeLevel := 3 }
+  | 2 => some { selectedControls with tssDescriptorLimit := 102 }
+  | 3 => some { selectedControls with tssDescriptorLimit := 104 }
+  | 4 => some { selectedControls with ioMapBase := 103 }
+  | 5 => some { selectedControls with ioBitmapPresent := true }
+  | 6 => some { selectedControls with kernelConfigured := false }
+  | 7 => some { selectedControls with readbackMatches := false }
+  | _ => none
+
+private inductive AdapterOrigin where
+  | user
+  | kernel (purpose : Purpose)
+
+private def decodeAdapterOrigin : UInt64 → Option AdapterOrigin
+  | 0 => some .user
+  | 1 => some (.kernel .serial)
+  | 2 => some (.kernel .pic)
+  | 3 => some (.kernel .pit)
+  | 4 => some (.kernel .debugExit)
+  | _ => none
+
+private def decodeDirectionWidth : UInt64 → Option (Direction × Width)
+  | 0 => some (.input, .byte)
+  | 1 => some (.output, .byte)
+  | 2 => some (.input, .word)
+  | 3 => some (.output, .word)
+  | 4 => some (.input, .dword)
+  | 5 => some (.output, .dword)
+  | _ => none
+
+/-- The differential boundary admits exactly the finite port words needed by
+the canonical corpus. Unknown scalar words fail before a `Nat` is constructed,
+so the freestanding entry point retains no arbitrary-precision runtime path. -/
+private def decodeAdapterPort : UInt64 → Option Nat
+  | 0x3f8 => some 0x3f8
+  | 0x3f9 => some 0x3f9
+  | 0x3fa => some 0x3fa
+  | 0x3fb => some 0x3fb
+  | 0x3fc => some 0x3fc
+  | 0x3fd => some 0x3fd
+  | 0x20 => some 0x20
+  | 0x21 => some 0x21
+  | 0xa0 => some 0xa0
+  | 0xa1 => some 0xa1
+  | 0x40 => some 0x40
+  | 0x43 => some 0x43
+  | 0xf4 => some 0xf4
+  | 0x3f7 => some 0x3f7
+  | _ => none
+
+private def fixedWidthOutcome (storedMode liveMode originPurpose port
+    directionWidth value : UInt64) : Option Outcome := do
+  let storedControls ← decodeControlMode storedMode
+  let liveControls ← decodeControlMode liveMode
+  let origin ← decodeAdapterOrigin originPurpose
+  let (direction, width) ← decodeDirectionWidth directionWidth
+  let decodedPort ← decodeAdapterPort port
+  let state : State :=
+    { controls := storedControls, devices := adapterDevices }
+  let operation : PortOperation :=
+    { port := decodedPort, direction, width, value }
+  match origin with
+  | .user => pure (executeUser state liveControls operation)
+  | .kernel purpose =>
+      pure (executeKernel state liveControls { purpose, operation })
+
+private def encodeResult : Result → UInt64
+  | .userDeniedGP => 1
+  | .kernelAccepted => 2
+  | .rejected .malformedPolicy => 16
+  | .rejected .staleReadback => 17
+  | .rejected .unauthorizedKernelOperation => 18
+
+/-- Pack the complete byte-bounded device projection in manifest order. -/
+private def encodeDevices (devices : DeviceState) : UInt64 :=
+  devices.serial % 0x100 +
+    (devices.pic % 0x100) * 0x100 +
+    (devices.pit % 0x100) * 0x10000 +
+    (devices.debugExit % 0x100) * 0x1000000
+
+private def encodeOutcome (outcome : Outcome) : UInt64 :=
+  encodeResult outcome.result * 0x100000000 + encodeDevices outcome.state.devices
+
+/-- Rich-model expectation used when generating the differential corpus. -/
+def directPortIOModelExpected (storedMode liveMode originPurpose port directionWidth
+    value : UInt64) : UInt64 :=
+  match fixedWidthOutcome storedMode liveMode originPurpose port directionWidth value with
+  | some outcome => encodeOutcome outcome
+  | none => 0xffffffffffffffff
+
+private def adapterInitialDevices : UInt64 := 0x44332211
+
+private def scalarResult (code devices : UInt64) : UInt64 :=
+  code * 0x100000000 + devices
+
+private def validControlMode : UInt64 → Bool
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 => true
+  | _ => false
+
+private def validOriginPurpose : UInt64 → Bool
+  | 0 | 1 | 2 | 3 | 4 => true
+  | _ => false
+
+private def validDirectionWidth : UInt64 → Bool
+  | 0 | 1 | 2 | 3 | 4 | 5 => true
+  | _ => false
+
+private def validAdapterPort : UInt64 → Bool
+  | 0x3f8 | 0x3f9 | 0x3fa | 0x3fb | 0x3fc | 0x3fd
+  | 0x20 | 0x21 | 0xa0 | 0xa1 | 0x40 | 0x43 | 0xf4 | 0x3f7 => true
+  | _ => false
+
+private def serialOutputPort : UInt64 → Bool
+  | 0x3f8 | 0x3f9 | 0x3fa | 0x3fb | 0x3fc => true
+  | _ => false
+
+private def picOutputPort : UInt64 → Bool
+  | 0x20 | 0x21 | 0xa0 | 0xa1 => true
+  | _ => false
+
+private def pitOutputPort : UInt64 → Bool
+  | 0x40 | 0x43 => true
+  | _ => false
+
+/-- Allocation-free implementation of the finite scalar boundary.  The rich
+model above remains the independent corpus oracle; this implementation uses
+only fixed-width words so the freestanding image does not retain Lean heap or
+arbitrary-precision-natural helpers. -/
+@[export leanos_direct_port_io_demo]
+def directPortIODemo (storedMode liveMode originPurpose port directionWidth
+    value : UInt64) : UInt64 :=
+  if !(validControlMode storedMode && validControlMode liveMode &&
+      validOriginPurpose originPurpose && validDirectionWidth directionWidth &&
+      validAdapterPort port) then
+    0xffffffffffffffff
+  else if !(storedMode == 0) then
+    0x1044332211
+  else if !(liveMode == 0) then
+    0x1144332211
+  else if originPurpose == 0 then
+    0x0144332211
+  else if originPurpose == 1 && directionWidth == 1 && serialOutputPort port then
+    scalarResult 2 (0x44332200 + value % 0x100)
+  else if originPurpose == 1 && directionWidth == 0 && port == 0x3fd then
+    0x0244332211
+  else if originPurpose == 2 && directionWidth == 1 && picOutputPort port then
+    scalarResult 2 (0x44330011 + (value % 0x100) * 0x100)
+  else if originPurpose == 3 && directionWidth == 1 && pitOutputPort port then
+    scalarResult 2 (0x44002211 + (value % 0x100) * 0x10000)
+  else if originPurpose == 4 && directionWidth == 1 && port == 0xf4 then
+    scalarResult 2 (0x00332211 + (value % 0x100) * 0x1000000)
+  else
+    0x1244332211
+
+theorem directPortIODemo_selected_user_agrees :
+    directPortIODemo 0 0 0 0x3f8 1 65 =
+      directPortIOModelExpected 0 0 0 0x3f8 1 65 := by native_decide
+
+theorem directPortIODemo_selected_kernel_agrees :
+    directPortIODemo 0 0 1 0x3f8 1 65 =
+      directPortIOModelExpected 0 0 1 0x3f8 1 65 := by native_decide
+
+theorem directPortIODemo_rejection_agrees :
+    directPortIODemo 0 0 1 0x20 1 65 =
+      directPortIOModelExpected 0 0 1 0x20 1 65 := by native_decide
+
+theorem directPortIODemo_invalid_origin :
+    directPortIODemo 0 0 5 0x3f8 1 65 = 0xffffffffffffffff := by
+  native_decide
+
+theorem directPortIODemo_invalid_control :
+    directPortIODemo 8 0 1 0x3f8 1 65 = 0xffffffffffffffff := by
+  native_decide
+
+theorem directPortIODemo_invalid_port :
+    directPortIODemo 0 0 1 0xffffffffffffffff 1 65 = 0xffffffffffffffff := by
+  native_decide
+
+theorem directPortIODemo_byte_normalization :
+    directPortIODemo 0 0 1 0x3f8 1 0x100 =
+      directPortIODemo 0 0 1 0x3f8 1 0 := by
+  native_decide
+
 /-- Non-vacuity: one reviewed kernel output is accepted and changes only its
 device projection, while the same attacker-controlled port/value words are
 denied with an identical device state on the user path. -/
