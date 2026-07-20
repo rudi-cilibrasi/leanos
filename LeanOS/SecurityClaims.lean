@@ -325,6 +325,25 @@ theorem composite_authoritative_resumePreempt_then_blocking_preserves_runtimeWel
   exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
     state (.resumePreempt frame registers) blocking (.resumePreempt frame registers) hstate
 
+/-- Every inbound interrupt outcome that does not retire a contained user
+subject retains the complete blocking precondition.  Timer/syscall entry,
+typed entry rejection, fatal latching, and outer-latch absorption can therefore
+be followed immediately by an arbitrary block, wake, or cancellation. -/
+theorem composite_authoritative_noncontained_interrupt_then_blocking_preserves_runtimeWellFormed
+    state frame blocking
+    (hnoncontained : ∀ subject,
+      (FailStop.dispatchHardware state.execution frame).action ≠ .contained subject)
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.interrupt frame))).state
+        (.blocking blocking)).state := by
+  apply FailStop.authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
+  rw [FailStop.authoritativeGate_ordinary_state]
+  exact FailStop.gate_interrupt_noncontained_preserves_blockingRuntimeWellFormed
+    state frame hnoncontained hstate
+
 /-- The successor contract has a reachable classified rejection at the
 boot-produced empty waiter store, rather than being discharged vacuously. -/
 theorem composite_authoritative_gate_rejection_reachable_witness plan :

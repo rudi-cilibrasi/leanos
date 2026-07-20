@@ -10324,6 +10324,48 @@ theorem gate_resumePreempt_preserves_blockingRuntimeWellFormed state frame regis
     · exact gate_preserves_blockingContextAgreement state
         (.resumePreempt frame registers) hstate.2.2
 
+/-- Every inbound interrupt result except contained subject cleanup retains the
+complete blocking precondition.  Ordinary entry changes only the execution
+latch, fatal entry republishes the unchanged authoritative scheduler under the
+terminal resumable latch, and outer-latch rejection is literal absorption.
+
+Contained user faults are deliberately excluded here: retiring a subject can
+also retire endpoint objects on which other subjects are waiting, so that
+branch must cancel every newly unauthorized waiter before it can satisfy the
+same readiness-free conclusion. -/
+theorem gate_interrupt_noncontained_preserves_blockingRuntimeWellFormed
+    state frame
+    (hnoncontained : ∀ subject,
+      (dispatchHardware state.execution frame).action ≠ .contained subject)
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed (gate state (.interrupt frame)).state := by
+  constructor
+  · exact interrupt_operationPreservesRuntimeWellFormed frame state hstate.1
+  · cases hmode : state.execution.mode with
+    | handling active => simpa [gate, hmode] using hstate.2
+    | halted record => simpa [gate, hmode] using hstate.2
+    | running =>
+        let entry := dispatchHardware state.execution frame
+        cases haction : entry.action with
+        | contained subject =>
+            exact False.elim (hnoncontained subject (by simpa [entry] using haction))
+        | fatal reason =>
+            have hscheduler : state.resumable.scheduler = state.blockingIPC.scheduler :=
+              hstate.1.1.2.2.2.2.2.2.2.1.trans hstate.1.blockingScheduler.symm
+            simpa [gate, hmode, applyOperation, entry, haction, installResumable,
+              hscheduler, CompositeState.blockingIPCContext] using hstate.2
+        | timer =>
+            simpa [gate, hmode, applyOperation, entry, haction,
+              CompositeState.blockingIPCContext] using hstate.2
+        | syscall =>
+            simpa [gate, hmode, applyOperation, entry, haction,
+              CompositeState.blockingIPCContext] using hstate.2
+        | rejected reason =>
+            simpa [gate, hmode, applyOperation, entry, haction,
+              CompositeState.blockingIPCContext] using hstate.2
+        | alreadyHalted record =>
+            simpa [gate, hmode, applyOperation, entry, haction] using hstate.2
+
 /-- Ordinary operations currently known to retain the complete blocking
 runtime invariant.  Neutral control/data-IPC steps keep the blocking state
 literal; raw and syscall mapping use the scheduler replacement law above;
