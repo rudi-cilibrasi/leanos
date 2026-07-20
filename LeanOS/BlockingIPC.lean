@@ -1082,6 +1082,14 @@ theorem receive_delivered_scheduler_unchanged state caller slot envelope
   all_goals split <;> simp_all [rejectReceive]
   all_goals split <;> simp_all [rejectReceive]
 
+/-- A delivered receive was authorized for the scheduler-selected caller;
+the public word and slot inputs cannot manufacture another current subject. -/
+theorem receive_delivered_current state caller slot envelope
+    (hresult : (receiveOrBlock state caller slot).result = .delivered envelope) :
+    state.scheduler.lifecycle.current = some caller := by
+  unfold receiveOrBlock at hresult
+  split at hresult <;> simp_all [rejectReceive]
+
 theorem receive_blocked_idle_scheduler_exact state caller slot
     (hresult : (receiveOrBlock state caller slot).result = .blocked)
     (hidle : (receiveOrBlock state caller slot).state.scheduler.lifecycle.current = none) :
