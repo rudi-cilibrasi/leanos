@@ -6,6 +6,7 @@ import LeanOS.BlockingIPCContext
 import LeanOS.Preemption
 import LeanOS.CapabilityTransfer
 import LeanOS.ResumablePreemption
+import LeanOS.DirectPortIO
 
 /-!
 # Irreversible exception fail-stop model
@@ -455,6 +456,13 @@ structure CompositeState where
   They remain quiescent until a capacity-checked drain republishes them. -/
   deferredCancels : BlockingIPCContext.DeferredCancelState :=
     BlockingIPCContext.emptyDeferred
+  /-- The checked TSS/IOPL controls and complete finite device projection from
+  the direct-port authority model.  Ordinary composite operations retain this
+  field literally; trusted, purpose-bound kernel device operations live at the
+  separate direct-port boundary. -/
+  directPortIO : DirectPortIO.State :=
+    { controls := DirectPortIO.selectedControls
+      devices := { serial := 0, pic := 0, pit := 0, debugExit := 0 } }
 
 /-- The blocking store and all composite scheduler views name one scheduler. -/
 def CompositeState.BlockingIPCCoherent (state : CompositeState) : Prop :=
@@ -660,14 +668,15 @@ def RuntimeWellFormed (state : CompositeState) : Prop :=
   CapabilityTransfer.WellFormed state.transfers ∧
   (state.resumable.halted = true ↔ ∃ record, state.execution.mode = .halted record) ∧
   (state.execution.returnAuthorityArmed = true → state.ReturnPlanLive = true) ∧
-  state.BlockingIPCCoherent
+  state.BlockingIPCCoherent ∧
+  DirectPortIO.AcceptedControls state.directPortIO.controls
 
 /-- The blocking store observes the same authoritative lifecycle as every
 other runtime projection. -/
 theorem RuntimeWellFormed.blockingLifecycle {state : CompositeState}
     (hstate : RuntimeWellFormed state) :
     state.blockingIPC.scheduler.lifecycle = state.lifecycle := by
-  rcases hstate with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
+  rcases hstate with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking, _⟩
   exact hblocking.2
 
 /-- The authoritative waiter store observes the composite scheduler itself,
@@ -675,8 +684,16 @@ not merely a lifecycle projection that happens to agree. -/
 theorem RuntimeWellFormed.blockingScheduler {state : CompositeState}
     (hstate : RuntimeWellFormed state) :
     state.blockingIPC.scheduler = state.scheduler := by
-  rcases hstate with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
+  rcases hstate with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking, _⟩
   exact hblocking.1
+
+/-- The global runtime invariant retains the boot-validated deny-all user
+direct-port controls. -/
+theorem RuntimeWellFormed.directPortControls {state : CompositeState}
+    (hstate : RuntimeWellFormed state) :
+    DirectPortIO.AcceptedControls state.directPortIO.controls := by
+  rcases hstate with ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hcontrols⟩
+  exact hcontrols
 
 /-! ## Boot-produced initial runtime -/
 
@@ -758,7 +775,10 @@ def bootRuntime (plan : BootPageTablePlan.Plan) : CompositeState :=
         waiterCapacity := 0
         completion := fun _ => none }
     blockingContexts := fun _ => none
-    deferredCancels := BlockingIPCContext.emptyDeferred }
+    deferredCancels := BlockingIPCContext.emptyDeferred
+    directPortIO :=
+      { controls := DirectPortIO.selectedControls
+        devices := { serial := 0, pic := 0, pit := 0, debugExit := 0 } } }
 
 /-- A successfully compiled bounded boot plan produces a concrete global
 invariant witness.  Boot does not synthesize a live subject or trusted return
@@ -780,7 +800,8 @@ theorem bootRuntime_runtimeWellFormed input plan
     bootMemory, bootVirtualMemory, bootEndpoints,
     CompositeState.blockingIPCContext, CompositeState.BlockingIPCCoherent,
     BlockingIPCContext.WellFormed, BlockingIPCContext.ContextAgreement,
-    BlockingIPC.WellFormed, BlockingIPC.authorizedReceive]
+    BlockingIPC.WellFormed, BlockingIPC.authorizedReceive,
+    DirectPortIO.AcceptedControls]
 
 private def restrictMappings (lifecycle : SubjectLifecycle.State)
     (mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
@@ -1308,7 +1329,7 @@ theorem publishBlockingIPCContext_sameScheduler_preserves_runtimeWellFormed
   rcases hclosed with
     ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
       hschedulerWellFormed, hpreemption, hresumable, htransfers, hterminal,
-      hlive, _hblocking⟩
+      hlive, _hblocking, hportControls⟩
   rcases hcoherent with
     ⟨hexecutionLifecycle, hschedulerLifecycle, hpreemptionScheduler,
       hcapabilitiesLifecycle, hmemoryCapabilities, hipcVirtual,
@@ -1358,7 +1379,7 @@ theorem publishBlockingIPCContext_sameScheduler_preserves_runtimeWellFormed
     rw [hschedulerLifecycle]
     exact hlifecycle
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    publishBlockingIPCContext_coherent state blocking⟩
+    publishBlockingIPCContext_coherent state blocking, ?_⟩
   · simpa [CompositeState.Coherent, publishBlockingIPCContext, hscheduler,
       hcurrent, hcoreSchedulerUpdate, hpreemptionUpdate, hresumableUpdate] using
       hcoherentTail
@@ -1376,6 +1397,7 @@ theorem publishBlockingIPCContext_sameScheduler_preserves_runtimeWellFormed
   · simpa [publishBlockingIPCContext, hscheduler, hcurrent,
       hresumableUpdate] using hterminal
   · simp [publishBlockingIPCContext]
+  · simpa [publishBlockingIPCContext] using hportControls
 
 /-- Publishing the terminal half of a block preserves the complete runtime
 invariant when no peer is ready.  The outgoing current subject is marked
@@ -1397,7 +1419,7 @@ theorem publishBlockingIPCContext_idleBlock_preserves_runtimeWellFormed
   rcases hstate with
     ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
       hschedulerWellFormed, hpreemption, hresumable, htransfers, hterminal,
-      hlive, hblockingCoherent⟩
+      hlive, hblockingCoherent, hportControls⟩
   rcases hcoherent with
     ⟨hexecutionLifecycle, hschedulerLifecycle, hpreemptionScheduler,
       hcapabilitiesLifecycle, hmemoryCapabilities, hipcVirtual,
@@ -1490,13 +1512,14 @@ theorem publishBlockingIPCContext_idleBlock_preserves_runtimeWellFormed
       simpa [publishBlockingIPCContext, hscheduler, hschedulerLifecycle] using hold
   refine ⟨hnextCoherent, hnextExecution, hnextLifecycle, ?_, ?_, ?_, hnextScheduler,
     hnextPreemption, hresumableNext, ?_, ?_, ?_,
-    publishBlockingIPCContext_coherent state blocking⟩
+    publishBlockingIPCContext_coherent state blocking, ?_⟩
   · simpa [publishBlockingIPCContext, hscheduler, hschedulerLifecycle] using hcapabilities
   · simpa [publishBlockingIPCContext] using hvirtual
   · simpa [publishBlockingIPCContext] using hipc
   · simpa [publishBlockingIPCContext] using htransfers
   · simpa [publishBlockingIPCContext] using hterminal
   · simp [publishBlockingIPCContext]
+  · simpa [publishBlockingIPCContext] using hportControls
 
 /-- Restore a released blocking context into the authoritative resumable bank
 before making its owner visible as ready.  Every check is finite and mirrors
@@ -1610,7 +1633,7 @@ theorem publishReleasedBlockingContext_wake_preserves_runtimeWellFormed
   rcases hstate with
     ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
       hschedulerWellFormed, hpreemption, hresumable, htransfers, hterminal,
-      hlive, hblockingCoherent⟩
+      hlive, hblockingCoherent, hportControls⟩
   rcases hcoherent with
     ⟨hexecutionLifecycle, hschedulerLifecycle, hpreemptionScheduler,
       hcapabilitiesLifecycle, hmemoryCapabilities, hipcVirtual,
@@ -1749,12 +1772,13 @@ theorem publishReleasedBlockingContext_wake_preserves_runtimeWellFormed
   rw [hnextShape] at hresumableNext ⊢
   refine ⟨hnextCoherent, hnextExecution, hnextLifecycle, ?_, ?_, ?_, hnextScheduler,
     hnextPreemption, hresumableNext, ?_, ?_, by simp [publishBlockingIPCContext],
-    publishBlockingIPCContext_coherent state blocking⟩
+    publishBlockingIPCContext_coherent state blocking, ?_⟩
   · simpa [publishBlockingIPCContext, hscheduler, hschedulerLifecycle] using hcapabilities
   · simpa [publishBlockingIPCContext] using hvirtual
   · simpa [publishBlockingIPCContext] using hipc
   · simpa [publishBlockingIPCContext] using htransfers
   · simpa [publishBlockingIPCContext] using hterminal
+  · simpa [publishBlockingIPCContext] using hportControls
 
 theorem publishReleasedBlockingContext_blockingCoherent state blocking saved next
     (hpublished : publishReleasedBlockingContext state blocking saved = .ok next) :
@@ -2138,7 +2162,7 @@ theorem restoreBlockingPeer_preserves_runtimeWellFormed
   rcases hstate with
     ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
       hschedulerWellFormed, hpreemption, hresumable, htransfers, hterminal,
-      hlive, hblockingCoherent⟩
+      hlive, hblockingCoherent, hportControls⟩
   rcases hcoherent with
     ⟨hexecutionLifecycle, hschedulerLifecycle, hpreemptionScheduler,
       hcapabilitiesLifecycle, hmemoryCapabilities, hipcVirtual,
@@ -2284,7 +2308,7 @@ theorem restoreBlockingPeer_preserves_runtimeWellFormed
       simpa [publishBlockingIPCContext, hscheduler, hschedulerLifecycle] using hold
   refine ⟨hnextCoherent, hnextExecution, ?_, ?_, ?_, ?_, ?_,
     hnextPreemption, hresumableNext, ?_, ?_, ?_,
-    restoreBlockingPeer_blockingCoherent state blocking next hrestore⟩
+    restoreBlockingPeer_blockingCoherent state blocking next hrestore, ?_⟩
   · rw [hnextShape]
     exact hnextLifecycle
   · rw [hnextShape]
@@ -2301,6 +2325,8 @@ theorem restoreBlockingPeer_preserves_runtimeWellFormed
     simpa [publishBlockingIPCContext] using hterminal
   · rw [hnextShape]
     simp [publishBlockingIPCContext]
+  · rw [hnextShape]
+    simpa [publishBlockingIPCContext] using hportControls
 
 def dispatchBlockingReceive (state : CompositeState) (handleWord : UInt64)
     (frame : Interrupt.HardwareFrame) (registers : ResumableContext.Registers) :
@@ -3353,7 +3379,7 @@ theorem dispatchBlockingCancel_cancelled_preserves_blockingRuntimeWellFormed
       state subject saved hstate hcancelled, ?_⟩
   have hcoherent : state.BlockingIPCCoherent := by
     rcases hstate.1 with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
-    exact hblocking
+    exact hblocking.1
   exact (dispatchBlockingCancel_preserves_wellFormed state subject
     ⟨hstate.2, hcoherent⟩).1
 
@@ -3530,7 +3556,7 @@ theorem blockingGate_send_woke_preserves_blockingRuntimeWellFormed
         state handleWord word0 word1 saved hstate hwoke
   · have hcoherent : state.BlockingIPCCoherent := by
       rcases hstate.1 with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
-      exact hblocking
+      exact hblocking.1
     rw [hsound.2.2]
     simpa [applyBlockingOperation] using
       (dispatchBlockingSend_preserves_wellFormed state handleWord word0 word1
@@ -3676,7 +3702,7 @@ theorem blockingGate_receive_delivered_preserves_blockingRuntimeWellFormed
       state handleWord frame registers envelope hstate.1 hcompleted, ?_⟩
   have hcoherent : state.BlockingIPCCoherent := by
     rcases hstate.1 with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
-    exact hblocking
+    exact hblocking.1
   exact (blockingGate_preserves_wellFormed state
     (.receive handleWord frame registers) ⟨hstate.2, hcoherent⟩).1
 
@@ -3711,7 +3737,7 @@ theorem blockingGate_receive_idle_block_preserves_blockingRuntimeWellFormed
         state handleWord frame registers hstate hblocked hidleDispatch
   · have hcoherent : state.BlockingIPCCoherent := by
       rcases hstate.1 with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
-      exact hblocking
+      exact hblocking.1
     exact (blockingGate_preserves_wellFormed state
       (.receive handleWord frame registers) ⟨hstate.2, hcoherent⟩).1
 
@@ -3745,7 +3771,7 @@ theorem blockingGate_receive_selected_block_preserves_blockingRuntimeWellFormed
         state handleWord frame registers selected hstate hblocked hselectedDispatch
   · have hcoherent : state.BlockingIPCCoherent := by
       rcases hstate.1 with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
-      exact hblocking
+      exact hblocking.1
     exact (blockingGate_preserves_wellFormed state
       (.receive handleWord frame registers) ⟨hstate.2, hcoherent⟩).1
 
@@ -3778,7 +3804,7 @@ theorem blockingGate_preserves_blockingRuntimeWellFormed state operation
     BlockingRuntimeWellFormed (blockingGate state operation).state := by
   have hcoherent : state.BlockingIPCCoherent := by
     rcases hstate.1 with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
-    exact hblocking
+    exact hblocking.1
   cases hmode : state.execution.mode with
   | handling entry => simpa [blockingGate, hmode] using hstate
   | halted record => simpa [blockingGate, hmode] using hstate
@@ -4766,6 +4792,18 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
                 (ResumablePreemption.cleanupSubject state.resumable subject)
   | .restart => state
 
+/-- Every public composite operation retains the complete direct-port control
+and device projection literally.  Kernel device mutation remains confined to
+the separately typed, purpose-bound `DirectPortIO.executeKernel` boundary, so
+attacker-controlled composite words cannot relax TSS/IOPL policy or synthesize
+a device transition. -/
+@[simp] theorem applyOperation_directPortIO state operation :
+    (applyOperation state operation).directPortIO = state.directPortIO := by
+  cases operation <;> simp only [applyOperation]
+  all_goals
+    repeat' first | split
+    all_goals simp [selectLiveReturnAuthority]
+
 /-- Exact typed observation of the subsystem transition selected by an
 operation.  Unlike the former generic `accepted`, this cannot erase an
 operation-specific rejection. -/
@@ -4998,6 +5036,12 @@ def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
       { state := applyOperation state operation, result := .completed (operationReply state operation) }
   | .handling _ => { state, result := .rejectedBusy }
   | .halted record => { state, result := .rejectedHalted record }
+
+/-- Busy, halted, accepted, and dependency-rejected gate steps all retain the
+exact checked direct-port controls and device projection. -/
+@[simp] theorem gate_directPortIO state operation :
+    (gate state operation).state.directPortIO = state.directPortIO := by
+  cases hmode : state.execution.mode <;> simp [gate, hmode]
 
 /-- A running gate exposes the exact typed subsystem observation paired with
 the exact composite post-state computed from the same pre-state and operation.
@@ -5335,7 +5379,7 @@ theorem gate_userReturn_preserves_runtimeWellFormed state request
             RuntimeWellFormed, CompositeState.Coherent,
             ResumablePreemption.wellFormed_set_halted]
           exact ⟨hliveMailbox,
-            by simpa [CompositeState.BlockingIPCCoherent] using hblockingCoherent⟩
+            by simpa [CompositeState.BlockingIPCCoherent] using hblockingCoherent.1⟩
       | true =>
           cases hvalidation : Interrupt.validateUserReturn
               (authoritativeReturnRequest state.execution request) with
@@ -5367,7 +5411,7 @@ theorem gate_userReturn_preserves_runtimeWellFormed state request
                 RuntimeWellFormed, CompositeState.Coherent,
                 ResumablePreemption.wellFormed_set_halted]
               exact ⟨hliveMailbox,
-                by simpa [CompositeState.BlockingIPCCoherent] using hblockingCoherent⟩
+                by simpa [CompositeState.BlockingIPCCoherent] using hblockingCoherent.1⟩
     · rcases hstate with
         ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
           hscheduler, hpreemption, hresumable, htransfers, hhalted, hauthority,
@@ -5387,7 +5431,7 @@ theorem gate_userReturn_preserves_runtimeWellFormed state request
         RuntimeWellFormed, CompositeState.Coherent,
         ResumablePreemption.wellFormed_set_halted]
       exact ⟨hliveMailbox,
-        by simpa [CompositeState.BlockingIPCCoherent] using hblockingCoherent⟩
+        by simpa [CompositeState.BlockingIPCCoherent] using hblockingCoherent.1⟩
   · cases hactual : state.execution.mode with
     | running => exact False.elim (hmode hactual)
     | handling active => simpa [gate, hactual] using hstate
@@ -5946,7 +5990,7 @@ theorem gate_transferOffer_accepted_preserves_runtimeWellFormed state endpointWo
       · intro object envelope hmailbox
         exact hliveMailbox' object envelope hmailbox
     · simpa [installTransfers] using hhalted
-    · exact ⟨by simp [installTransfers], ⟨rfl, rfl⟩⟩
+    · exact ⟨by simp [installTransfers], ⟨⟨rfl, rfl⟩, hlive.2.2⟩⟩
   · simp [gate, hmode, operationReply, haccepted]
 
 /-- An accepted public transfer receipt preserves the authoritative capability
@@ -6184,7 +6228,7 @@ private theorem installTransfers_preserves_runtimeWellFormed state next
         simpa [htransfersCoherent] using hmailbox object envelope hnextMailbox)
       simpa [hsubjectsLifecycle] using hold
   · simpa [installTransfers] using hhalted
-  · exact ⟨by simp [installTransfers], ⟨rfl, rfl⟩⟩
+  · exact ⟨by simp [installTransfers], ⟨⟨rfl, rfl⟩, _hlivePlan.2.2⟩⟩
 
 /-- A delivered public transfer receipt is a complete global mutation: it
 atomically consumes the selected mailbox and pending tag, installs the sealed
@@ -6677,7 +6721,8 @@ theorem gate_capabilityCopy_accepted_preserves_runtimeWellFormed state source de
   · simp only [gate, hmode, applyOperation, haccepted]
     exact ⟨hcoherent', hexecution', hlifecycle', hcapabilities', hvirtual', hipc',
       hscheduler', hpreemption', hresumable', htransfers',
-      by simpa [installCopiedCapabilities] using hhalted, ⟨hlivePlan', ⟨rfl, rfl⟩⟩⟩
+      by simpa [installCopiedCapabilities] using hhalted, hlivePlan', ⟨rfl, rfl⟩,
+      hlivePlan.2.2⟩
   · simp [gate, hmode, operationReply, haccepted]
 
 /-- The authority fragment consumed by live virtual mappings and address-space
@@ -6901,7 +6946,7 @@ private theorem installRevokedCapabilities_preserves_runtimeWellFormed state nex
   exact ⟨hcoherent', hexecution', hlifecycle', hwellFormed, hvirtual', hipc',
     hscheduler', hpreemption', hresumable', htransfers',
     by simpa [installCopiedCapabilities] using hhalted,
-    ⟨by simp [installCopiedCapabilities], ⟨rfl, rfl⟩⟩⟩
+    by simp [installCopiedCapabilities], ⟨rfl, rfl⟩, _hlivePlan.2.2⟩
 
 /-- Creating a fresh subject publishes the exact accepted lifecycle through
 every lifecycle and capability consumer in one coherent gate step.  The
@@ -7520,6 +7565,15 @@ theorem syscall_entry_leaves_return_unarmed state frame
 def runOperations (state : CompositeState) : List Operation → CompositeState
   | [] => state
   | operation :: rest => runOperations (gate state operation).state rest
+
+/-- Arbitrary finite public-operation traces cannot relax the reviewed port
+controls or mutate any modeled device, including suffixes after a fatal latch. -/
+@[simp] theorem runOperations_directPortIO state operations :
+    (runOperations state operations).directPortIO = state.directPortIO := by
+  induction operations generalizing state with
+  | nil => rfl
+  | cons operation rest ih =>
+      rw [runOperations, ih, gate_directPortIO]
 
 /-- The local proof obligation contributed by one public operation to the
 universal runtime-preservation theorem.  Keeping this predicate independent of
@@ -8320,7 +8374,7 @@ private theorem installTerminatedResumable_cleanup_preserves_runtimeWellFormed
   · simpa [installTerminatedResumable, transfers, transferBase, endpoints] using htransfer
   · simpa [installTerminatedResumable, cleaned,
       ResumablePreemption.cleanupSubject] using hhalted
-  · exact ⟨by simp [installTerminatedResumable], ⟨rfl, rfl⟩⟩
+  · exact ⟨by simp [installTerminatedResumable], ⟨⟨rfl, rfl⟩, hlive.2.2⟩⟩
 
 /-- Accepted subject termination is one complete runtime operation family:
 authoritative lifecycle/resource/context cleanup and sealed-offer cancellation
@@ -8341,8 +8395,9 @@ theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
   unfold RuntimeWellFormed at hpreserved ⊢
   rcases hpreserved with
     ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
-      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive, hblocking⟩
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive, hblocking,
+      hportControls⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
       publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
       installTerminatedResumable, CompositeState.Coherent] using hcoherent
@@ -8382,6 +8437,9 @@ theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
   · simp [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
       publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
       installTerminatedResumable, CompositeState.BlockingIPCCoherent, hblocking]
+  · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
+      installTerminatedResumable] using hportControls
 
 /-- Every public subject-termination request preserves the global invariant:
 never-issued/already-dead subjects reject atomically, while acceptance performs
@@ -8620,7 +8678,8 @@ theorem scheduleRemove_operationPreservesRuntimeWellFormed subject :
               exact ⟨hresumable'.1, hticks⟩
             · exact htransfers
             · simpa [installSchedulerRemoval, ResumablePreemption.removeState] using hhalted
-            · exact ⟨by simp [installSchedulerRemoval], ⟨rfl, rfl⟩⟩
+            · exact ⟨by simp [installSchedulerRemoval],
+                ⟨⟨rfl, rfl⟩, hlive.2.2⟩⟩
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.scheduleRemove subject) hstate hmode
 
@@ -8861,7 +8920,8 @@ theorem createSubject_operationPreservesRuntimeWellFormed subject :
               · exact hresumable'
               · exact htransfers'
               · simpa [installCreatedSubject] using hhalted
-              · exact ⟨by simp [installCreatedSubject], ⟨rfl, rfl⟩⟩
+              · exact ⟨by simp [installCreatedSubject],
+                  ⟨⟨rfl, rfl⟩, hlivePlan.2.2⟩⟩
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.createSubject subject) hstate hmode
 
@@ -8982,7 +9042,8 @@ theorem gate_scheduleAdd_accepted_preserves_runtimeWellFormed
     exact ⟨hcoherent', hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
       hscheduler', hpreemption', hresumable', htransfers, hhalted,
       hlive.1, by simp [installSchedulerAdmission,
-        CompositeState.BlockingIPCCoherent, hlifecycleNext, hschedulerCoherent]⟩
+        CompositeState.BlockingIPCCoherent, hlifecycleNext, hschedulerCoherent],
+      hlive.2.2⟩
   · simp [gate, hmode, operationReply, hadmission]
 
 /-- Negative admission regression: an otherwise accepted raw insertion cannot
@@ -9264,7 +9325,7 @@ private theorem installResumable_nonfatal_preserves_runtimeWellFormed state next
   · simpa [installResumable, hvirtual] using hvirtualWellFormed
   · simpa [installResumable, hvirtual] using hipc'
   · simp [installResumable, hhalted, hmode]
-  · exact ⟨by simp [installResumable], ⟨rfl, rfl⟩⟩
+  · exact ⟨by simp [installResumable], ⟨⟨rfl, rfl⟩, _hlive.2.2⟩⟩
 
 /-- Every nonfatal resumable preemption step preserves the complete global
 runtime invariant.  This includes successful save/select/restore as well as
@@ -9572,7 +9633,7 @@ private theorem installResumable_fatal_preserves_runtimeWellFormed state entry
   · simpa [installResumable] using
       (ResumablePreemption.wellFormed_set_halted state.resumable true).2 _hresumable
   · simp [installResumable, hrecord]
-  · exact ⟨by simp [installResumable], ⟨rfl, rfl⟩⟩
+  · exact ⟨by simp [installResumable], ⟨⟨rfl, rfl⟩, _hlive.2.2⟩⟩
 
 /-- A resumable-model fatal entry latches the same typed composite fail-stop
 mode while freezing the scheduler, context bank, translations, IPC, and
@@ -9648,8 +9709,9 @@ private theorem publishInterruptCleanup_preserves_runtimeWellFormed
       (ResumablePreemption.cleanupSubject state.resumable subject)) hcleaned
   rcases hclosed with
     ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
-      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive, _hblocking⟩
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive, _hblocking,
+      hportControls⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · simpa [publishInterruptCleanup, CompositeState.Coherent] using hcoherent
   · simpa [publishInterruptCleanup] using hexecution
   · simpa [publishInterruptCleanup] using hlifecycle
@@ -9664,6 +9726,7 @@ private theorem publishInterruptCleanup_preserves_runtimeWellFormed
   · simpa [publishInterruptCleanup, CompositeState.ReturnPlanLive] using hlive
   · simp [publishInterruptCleanup, CompositeState.BlockingIPCCoherent,
       BlockingIPCContext.detachInvalidated, installTerminatedResumable]
+  · simpa [publishInterruptCleanup, installTerminatedResumable] using hportControls
 
 /-- Every normalized hardware frame is a complete composite operation family.
 Contained user faults reuse authoritative termination cleanup, fatal entry
@@ -11268,6 +11331,40 @@ These fixtures exercise the public composite boundaries rather than only the
 dependency-local transitions.  The arbitrary compiled plan and unrelated
 composite fields are deliberately parametric: evaluation can therefore depend
 only on the authoritative state selected by each operation. -/
+
+private def directPortEvidenceTrace (plan : BootPageTablePlan.Plan) : CompositeState :=
+  runOperations (bootRuntime plan)
+    [.syscall { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 },
+     .createSubject 1, .terminateSubject 1,
+     .interrupt (demoFrame 14 .kernel), .restart, .scheduleTick]
+
+/-- A mixed accepted/rejected/fatal trace retains both the exact reviewed
+controls and every device register from boot, including the post-fatal suffix. -/
+example (plan : BootPageTablePlan.Plan) :
+    (directPortEvidenceTrace plan).directPortIO = (bootRuntime plan).directPortIO ∧
+      (directPortEvidenceTrace plan).directPortIO.controls =
+        DirectPortIO.selectedControls := by
+  simp [directPortEvidenceTrace, bootRuntime]
+
+private def directPortRelaxedComposite (plan : BootPageTablePlan.Plan) : CompositeState :=
+  { bootRuntime plan with
+    directPortIO :=
+      { (bootRuntime plan).directPortIO with
+        controls := { DirectPortIO.selectedControls with ioPrivilegeLevel := 3 } } }
+
+/-- Negative executable regression: a pre-state with relaxed IOPL cannot
+advertise the global invariant, and an ordinary composite step preserves the
+bad projection literally instead of silently repairing it. -/
+example (plan : BootPageTablePlan.Plan) :
+    ¬ RuntimeWellFormed (directPortRelaxedComposite plan) ∧
+      (gate (directPortRelaxedComposite plan) .restart).state.directPortIO =
+        (directPortRelaxedComposite plan).directPortIO := by
+  constructor
+  · intro hstate
+    have hcontrols := hstate.directPortControls
+    simp [DirectPortIO.AcceptedControls, directPortRelaxedComposite,
+      DirectPortIO.selectedControls] at hcontrols
+  · exact gate_directPortIO _ _
 
 private def lifecycleEvidenceCreated (plan : BootPageTablePlan.Plan) : CompositeState :=
   (gate (bootRuntime plan) (.createSubject 1)).state
