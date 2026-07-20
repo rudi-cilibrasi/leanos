@@ -31,6 +31,18 @@ means accepted and stable tags 1 through 8 identify each typed rejection.
 quarantine-owned inputs for issue #105's later composite-state codec; they are
 not a second runtime dispatcher.
 
+`LeanOS.DMAQuarantineCorpus` makes the issue-local control boundary executable
+without importing or approximating #104's composite state. Each of its six
+version-one records contains the complete 421-word accepted/latest-snapshot
+and fatal-latch pre-state, the complete 211-word public operation, the complete
+post-state, and a one-word typed result. Two traces cover ordinary continuity,
+exact re-observation, a valid but changed Command bit, an invalid bus-master
+bit, and post-fatal absorption. Lean proves every field width, both result
+sequences, and adjacent-state continuity; the repository gate emits the corpus
+twice, checks deterministic byte equality, and independently checks its schema
+and chaining. This is a DMA control-projection corpus, not #105's future global
+runtime ABI or a serialization of the model's unbounded memory projection.
+
 ## Proved claim
 
 `AcceptedSnapshot` carries canonical accounting and a nonempty quarantine

@@ -11,6 +11,8 @@ lake build leanos-boot-plan
 
 ./tests/test-q35-pci-construction.py
 
+./scripts/check-dma-quarantine-corpus.sh
+
 ./scripts/test-capability-boundaries.sh
 
 ./scripts/check-oracle-host.sh

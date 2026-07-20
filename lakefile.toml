@@ -11,6 +11,11 @@ name = "leanos-oracle"
 root = "LeanOS.Oracle"
 
 [[lean_exe]]
+name = "leanos-dma-corpus"
+root = "LeanOS.DMAQuarantineCorpus"
+moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
 name = "leanos-boot-plan"
 root = "LeanOS.BootPageTablePlanGenerator"
 moreLeanArgs = ["-DwarningAsError=true"]
