@@ -296,7 +296,7 @@ def vectors : List Vector := [
   directPortIO "direct-port.invalid-live-control" 0 0xffffffffffffffff 1 0x3f8 1 65,
   directPortIO "direct-port.invalid-port" 0 0 1 0xffffffffffffffff 1 65,
   directPortIO "direct-port.post-validation-relaxation" 0 5 0 0x3f8 1 65,
-  interruptEntry "entry.user-general-protection-direct-port" 68877 291 0x800000 257 3]
+  interruptEntry "entry.user-general-protection" 68877 291 0x800000 257 3]
 
 theorem corpus_shape : vectors.length = 183 := by decide
 theorem boot_decoder_roundtrip_cold :

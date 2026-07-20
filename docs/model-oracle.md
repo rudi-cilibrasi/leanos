@@ -28,9 +28,9 @@ the adapter definition and connect the accepted and rejected examples to the
 source models.
 
 The interrupt-entry corpus also includes the user-only vector-13 hardware-error
-shape and its typed general-protection/direct-port purpose. This keeps the live
-denial gate on the same generated manifest classifier as the other ordinary
-entries.
+shape and its broad general-protection purpose. The live handler refines that
+class to direct-port denial only after checking `#GP(0)`, the reviewed RIP, and
+the saved instruction operands.
 
 The final 28 direct-port records cover the selected live-control snapshot,
 every named control mutation, stale read-back, all input/output width classes,

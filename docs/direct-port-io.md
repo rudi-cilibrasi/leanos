@@ -95,7 +95,8 @@ output, QEMU, physical hardware, and final-binary refinement remain unproved.
 
 The executable CPL3 denial crosses the shared generated vector-13 manifest
 normalizer with its user-only hardware-error shape and typed
-general-protection/direct-port purpose, then reaches
+general-protection purpose. The handler then binds `#GP(0)`, the reviewed
+instruction address, and the saved `DX`/`AL` operands before reaching
 the existing atomic fault-cleanup/survivor-dispatch adapter. It retires the
 faulting subject, restores the scheduler-selected peer's kernel-owned saved
 context under that peer's address space, and reaches the peer only through the

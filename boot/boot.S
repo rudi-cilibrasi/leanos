@@ -571,6 +571,8 @@ isr13:
     mov 128(%rsp), %rdi
     mov 136(%rsp), %rsi
     mov 144(%rsp), %rdx
+    mov 96(%rsp), %rcx
+    mov 120(%rsp), %r8
     call entry_adversarial_gp_handler
     cmp $2, %rax
     je direct_port_restore_peer

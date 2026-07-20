@@ -98,7 +98,7 @@ the normalizer, machine context restore, or the final binary.
 
 `LeanOS.InterruptEntry` defines the complete ordinary boot manifest: vector 13
 is a user-only DPL0 interrupt gate with a hardware error word and a typed
-general-protection/direct-port denial purpose; vector 14 is a DPL0 interrupt
+general-protection purpose; vector 14 is a DPL0 interrupt
 gate with a hardware error word and user-fault or supervisor
 diagnostic purpose; vector 32 is a DPL0 interrupt gate without an error word;
 and vector 128 is the sole DPL3 interrupt gate and has syscall purpose. All use

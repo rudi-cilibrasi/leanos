@@ -338,8 +338,9 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     uint64_t descriptor = vector | vector << 8 | has_error << 16;
     uint64_t frame = saved_cs | (uint64_t)user << 8;
     uint64_t context = current_subject | current_subject << 8 | (cr3 >> 12) << 16;
-    /* Every ordinary gate, including the typed vector-13 direct-port denial,
-       must match the same generated InterruptEntry manifest. */
+    /* Every ordinary gate, including the broad vector-13 general-protection
+       class, must match the same generated InterruptEntry manifest.  The
+       handler refines vector 13 only after checking its cause and operands. */
     if (leanos_entry_demo(descriptor, frame, 0x800000, context, 3) == 0)
         fail("entry-model-rejected");
     (void)dpl;
@@ -380,18 +381,22 @@ static void check_entry_manifest(void) {
 
 #ifdef LEANOS_ENTRY_ADVERSARIAL
 uint64_t entry_adversarial_gp_handler(uint64_t error, uint64_t rip,
-                                      uint64_t saved_cs) {
+                                      uint64_t saved_cs, uint64_t saved_rdx,
+                                      uint64_t saved_rax) {
     static const uint64_t expected_error[] = { 14u * 8u + 2u, 32u * 8u + 2u };
     if (saved_cs != 0x23 || entry_adversarial_step >= 3)
         fail("entry-adversarial-gp");
     if (entry_adversarial_step == 2) {
         uint64_t cr3;
         __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        uint64_t port = saved_rdx & UINT64_C(0xffff);
+        uint64_t value = saved_rax & UINT64_C(0xff);
         if (error != 0 || rip != (uint64_t)user_a_direct_port_probe ||
+            port != DEBUG_EXIT || value != UINT64_C(0x11) ||
             current_subject != 1 || cr3 != (uint64_t)page_map_level_4_a)
             fail("direct-port-gp-binding");
         check_direct_port_control(0);
-        if (leanos_direct_port_io_demo(0, 0, 0, 0xf4, 1, 0x11) !=
+        if (leanos_direct_port_io_demo(0, 0, 0, port, 1, value) !=
             UINT64_C(0x0144332211))
             fail("direct-port-model-denial");
         if (blocking_ipc_step != 2 || saved_context_owner_b != 2 ||

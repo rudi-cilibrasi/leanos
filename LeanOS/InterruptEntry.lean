@@ -17,7 +17,7 @@ inductive GateType where | interrupt
 
 inductive Purpose where
   | extendedUnavailable | extendedDenied
-  | generalProtectionDirectPort | userFault | timer | syscall | diagnosticRecovery
+  | generalProtection | userFault | timer | syscall | diagnosticRecovery
   deriving DecidableEq, Repr
 
 inductive OriginPolicy where | userOnly | userOrKernel
@@ -40,7 +40,7 @@ def invalidOpcodeEntry : ManifestEntry :=
 def deviceNotAvailableEntry : ManifestEntry :=
   ⟨7, .interrupt, 0x08, 0, 0, false, .userOnly, .extendedDenied, true⟩
 def generalProtectionEntry : ManifestEntry :=
-  ⟨13, .interrupt, 0x08, 0, 0, true, .userOnly, .generalProtectionDirectPort, true⟩
+  ⟨13, .interrupt, 0x08, 0, 0, true, .userOnly, .generalProtection, true⟩
 def pageFaultEntry : ManifestEntry :=
   ⟨14, .interrupt, 0x08, 0, 0, true, .userOrKernel, .userFault, true⟩
 def timerEntry : ManifestEntry :=
@@ -76,13 +76,14 @@ theorem only_syscall_is_dpl3 entry
     generalProtectionEntry, timerEntry, syscallEntry] at hmember
   rcases hmember with rfl | rfl | rfl | rfl | rfl | rfl <;> simp_all [syscallEntry]
 
-/-- Vector 13 is a hardware-error, user-only gate whose manifest purpose is
-the typed direct-port general-protection denial path. -/
+/-- Vector 13 is a hardware-error, user-only general-protection gate.  A
+handler may refine the cause only after validating the error code, RIP, and
+instruction operands. -/
 theorem general_protection_manifest_binding :
     generalProtectionEntry ∈ manifest ∧
     generalProtectionEntry.hardwareError = true ∧
     generalProtectionEntry.origins = .userOnly ∧
-    generalProtectionEntry.purpose = .generalProtectionDirectPort := by
+    generalProtectionEntry.purpose = .generalProtection := by
   native_decide
 
 inductive RawFrame where
