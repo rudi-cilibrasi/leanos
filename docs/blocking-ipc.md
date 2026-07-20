@@ -27,8 +27,11 @@ no selected peer, the proof connects the dependency's exact caller and
 scheduler mutation to the composite publisher: the caller is non-runnable,
 the ready queue remains empty, the active translation is cleared, and both the
 global runtime invariant and waiter/saved-context agreement are preserved.
-This is specifically the idle terminal publication; immediate peer handoff
-and restoration remain a separate proof boundary.
+The complementary immediate-handoff path is also part of the stable claim.
+When the post-state names a selected peer, the proof fixes that peer as the
+old ready-queue head, consumes exactly its kernel-owned resumable context, and
+switches the modeled active translation to the same identity. Restore failure
+remains a typed, state-preserving rejection rather than a partial block.
 
 The typed blocked-context successor also exposes one atomic subject-termination
 publication law: after lifecycle termination accepts, the same composite

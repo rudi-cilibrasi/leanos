@@ -1149,6 +1149,36 @@ theorem receive_blocked_idle_scheduler_exact state caller slot
   all_goals split at hidle <;>
     simp_all [blockState, Scheduler.selectNext, Scheduler.reject]
 
+/-- A blocked receive that immediately selects a peer performs exactly the
+head-removal scheduler transition after marking the caller non-runnable. -/
+theorem receive_blocked_selected_scheduler_exact state caller slot selected
+    (hresult : (receiveOrBlock state caller slot).result = .blocked)
+    (hselected :
+      (receiveOrBlock state caller slot).state.scheduler.lifecycle.current =
+        some selected) :
+    ∃ rest, state.scheduler.ready = selected :: rest ∧
+      (receiveOrBlock state caller slot).state.scheduler =
+        { state.scheduler with
+          ready := rest
+          lifecycle := { state.scheduler.lifecycle with
+            runnable := SubjectLifecycle.setBool state.scheduler.lifecycle.runnable caller false
+            current := some selected } } := by
+  simp only [receiveOrBlock] at hresult hselected ⊢
+  split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals cases hready : state.scheduler.ready <;>
+    simp_all [blockState, Scheduler.selectNext, Scheduler.reject]
+  all_goals split at hselected <;>
+    simp_all [blockState, Scheduler.selectNext, Scheduler.reject]
+
 /-- A successful block publishes exactly one waiter-index entry. -/
 theorem receive_blocked_waiterEndpoint_exact state caller slot
     (hresult : (receiveOrBlock state caller slot).result = .blocked) :
