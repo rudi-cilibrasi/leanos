@@ -11,7 +11,7 @@ boot_source="${LEANOS_ENTRY_BOOT_SOURCE:-boot/boot.S}"
 
 symbols="$(nm "$elf")"
 control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"
-for symbol in isr6 isr7 isr13 isr14 isr32 isr80 authorize_interrupt_entry \
+for symbol in isr2 isr6 isr7 isr13 isr14 isr32 isr80 authorize_interrupt_entry \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
   page_fault_handler timer_handler entry_stack boot_stack boot_stack_top \
   normalize_fast_entry_msrs read_fast_entry_msrs check_fast_entry_cpuid; do
@@ -140,8 +140,11 @@ else
   echo "error: unknown LEANOS_FAST_ENTRY_PROBE '$fast_probe'" >&2; exit 1
 fi
 
-[[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 8 ]] || {
+[[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 9 ]] || {
   echo "error: vector=77 field=present violated=unexpected-installed-gate-count" >&2; exit 1;
+}
+grep -Fq 'set_gate(2, isr2, 2, 0x8e);' "$kernel_source" || {
+  echo "error: vector=2 field=target-ist-or-dpl" >&2; exit 1;
 }
 grep -Fq 'set_gate(6, isr6, 0, 0x8e);' "$kernel_source" || {
   echo "error: vector=6 field=target-or-dpl" >&2; exit 1;
@@ -166,6 +169,9 @@ grep -Fq 'set_gate(0x80, isr80, 0, 0xee);' "$kernel_source" || {
 }
 grep -Fq 'tss.rsp0 = (uint64_t)__entry_stack_end;' "$kernel_source" || {
   echo "error: vector=128 field=tss.rsp0" >&2; exit 1;
+}
+grep -Fq 'tss.ist[1] = (uint64_t)__nmi_ist_stack_end;' "$kernel_source" || {
+  echo "error: vector=2 field=tss.ist2" >&2; exit 1;
 }
 grep -Fq 'if (leanos_entry_demo(descriptor, frame, 0x800000, context, 3) == 0)' \
     "$kernel_source" || {
