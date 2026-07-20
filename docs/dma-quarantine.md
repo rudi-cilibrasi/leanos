@@ -69,6 +69,19 @@ preserves quarantine. A bit flip, otherwise valid changed snapshot, or invalid
 snapshot becomes typed fatal state, and the halted state absorbs every suffix;
 it is not relabeled as a contained user fault or an ordinary rejection.
 
+`UnownedDeviceStep` makes each modeled device attempt name a present function
+and carry the explicit `DeviceContract`; the accepted snapshot separately
+supplies unassigned ownership and a cleared bus-master bit. `QuarantineStep`
+then combines those attempts with only the continuing cases of `runtimeGate`.
+The finite `QuarantineTrace` theorem proves that every such mixed trace is a
+stutter on the complete issue-local runtime projection: the live control
+invariant, quarantine predicate, physical memory, allocator ownership,
+page-table frames, kernel-owned frames, kernel state, and all subject-visible
+bytes remain unchanged. The stable `SC-DMA-QUARANTINE-TRACE` wrapper advertises
+that finite-trace result separately from the original single-device-step claim.
+This trace is intentionally not the global composite runtime owned by issue #104
+and does not pre-empt that issue's state design.
+
 ## Trusted boundary and dependency
 
 The proofs start after a complete hardware snapshot. PCI configuration reads,
