@@ -611,6 +611,24 @@ theorem composite_deferred_cancel_public_gate_and_trace_preserve
     FailStop.runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
       state subjects hstate⟩
 
+/-- Supporting mixed-trace theorem: contained interrupt cleanup and every
+finite deferred-cancellation suffix execute through the one public successor
+gate.  The post-cleanup deferred invariant remains explicit until its direct
+derivation from the pre-state is completed. -/
+theorem composite_contained_fault_then_deferred_trace_preserves
+    state frame faulting (subjects : List BlockingIPC.SubjectId)
+    (hmode : state.execution.mode = .running)
+    (hcontained :
+      (FailStop.dispatchHardware state.execution frame).action = .contained faulting)
+    (hcleaned : FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.applyOperation state (.interrupt frame))) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (.ordinary (.interrupt frame) ::
+          subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact FailStop.runAuthoritativeContainedInterruptThenDeferredDrains_preserves
+    state frame faulting subjects hmode hcontained hcleaned
+
 /-- SC-COMPOSITE-CONTAINED-FAULT-CLEANUP: stable combined contract for the
 contained-cleanup boundary and its public deferred-drain continuation. -/
 theorem composite_contained_fault_cleanup_and_deferred_trace_contract

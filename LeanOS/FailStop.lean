@@ -11343,6 +11343,32 @@ theorem runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellForm
         (authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFormed
           state subject hstate)
 
+/-- A contained interrupt and its capacity-checked deferred-cancellation
+continuation form one public mixed trace.  The explicit post-cleanup premise
+keeps the remaining proof obligation honest: once contained cleanup is known
+to establish `DeferredBlockingRuntimeWellFormed`, every finite drain suffix is
+carried by the execution-latched authoritative gate without rebuilding any
+waiter, saved-context, or resumable-bank facts between steps. -/
+theorem runAuthoritativeContainedInterruptThenDeferredDrains_preserves
+    state frame faulting (subjects : List BlockingIPC.SubjectId)
+    (hmode : state.execution.mode = .running)
+    (hcontained : (dispatchHardware state.execution frame).action = .contained faulting)
+    (hcleaned : DeferredBlockingRuntimeWellFormed
+      (applyOperation state (.interrupt frame))) :
+    DeferredBlockingRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary (.interrupt frame) ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  have _hcontained := hcontained
+  simp only [runAuthoritativeOperations]
+  have hgate :
+      (authoritativeGate state (.ordinary (.interrupt frame))).state =
+        applyOperation state (.interrupt frame) := by
+    simp [authoritativeGate, hmode, applyAuthoritativeOperation]
+  rw [hgate]
+  exact runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
+    (applyOperation state (.interrupt frame)) subjects hcleaned
+
 /-- Fatal mode is a separate result class and absorbs arbitrary suffixes that
 mix ordinary operations with blocking delivery, sleep, wake, and cancellation. -/
 theorem authoritative_halted_suffix_absorbing state record operations
