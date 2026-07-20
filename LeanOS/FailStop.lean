@@ -2593,6 +2593,86 @@ theorem dispatchBlockingCancel_cancelled_context_valid state subject saved
                     publishReleasedBlockingContext_published_valid
                       state next saved published hrestore
 
+/-- A successful cancellation preserves the complete runtime invariant: the
+exact saved subject context moves from the blocked bank into the resumable
+bank while the authoritative scheduler publishes the canonical wake. -/
+theorem dispatchBlockingCancel_cancelled_preserves_runtimeWellFormed
+    state subject saved
+    (hstate : BlockingRuntimeWellFormed state)
+    (hcancelled : (dispatchBlockingCancel state subject).reply = .cancelled saved) :
+    RuntimeWellFormed (dispatchBlockingCancel state subject).state := by
+  have hpreserved := BlockingIPCContext.cancel_preserves_wellFormed
+    state.blockingIPCContext subject hstate.2
+  cases houtcome : BlockingIPCContext.cancel state.blockingIPCContext subject with
+  | mk blocking result released =>
+      have hblocking : BlockingIPCContext.WellFormed blocking := by
+        simpa [houtcome] using hpreserved
+      cases result with
+      | notWaiting => simp [dispatchBlockingCancel, houtcome] at hcancelled
+      | ipcRejected reason => simp [dispatchBlockingCancel, houtcome] at hcancelled
+      | contextRejected reason => simp [dispatchBlockingCancel, houtcome] at hcancelled
+      | cancelled =>
+          cases released with
+          | none => simp [dispatchBlockingCancel, houtcome] at hcancelled
+          | some actual =>
+              cases hrestore : publishReleasedBlockingContext state blocking actual with
+              | error reason =>
+                  simp [dispatchBlockingCancel, houtcome, hrestore] at hcancelled
+              | ok published =>
+                  simp [dispatchBlockingCancel, houtcome, hrestore] at hcancelled
+                  subst actual
+                  have hreleased :
+                      (BlockingIPCContext.cancel state.blockingIPCContext subject).released =
+                        some saved := by
+                    simp [houtcome]
+                  have hcancelledContext :
+                      (BlockingIPCContext.cancel state.blockingIPCContext subject).result =
+                        .cancelled := by
+                    simp [houtcome]
+                  have hexact := BlockingIPCContext.cancel_cancelled_exact
+                    state.blockingIPCContext subject saved hcancelledContext hreleased
+                  have howner : saved.owner = subject := by
+                    exact BlockingIPCContext.validSaved_owner subject saved
+                      (hstate.2.2.2 subject saved hexact.1)
+                  have hipcExact := BlockingIPCContext.cancel_cancelled_ipc_exact
+                    state.blockingIPCContext subject hcancelledContext
+                  have hrawState :
+                      blocking.ipc =
+                        (BlockingIPC.cancelSubjectTyped state.blockingIPC subject).state := by
+                    rw [houtcome] at hipcExact
+                    exact hipcExact.1
+                  have hrawCancelled :
+                      (BlockingIPC.cancelSubjectTyped state.blockingIPC subject).result =
+                        .cancelled := hipcExact.2
+                  have hscheduler : blocking.ipc.scheduler =
+                      { state.scheduler with
+                        ready := state.scheduler.ready ++ [saved.owner]
+                        lifecycle := { state.scheduler.lifecycle with
+                          runnable := SubjectLifecycle.setBool
+                            state.scheduler.lifecycle.runnable saved.owner true } } := by
+                    rw [hrawState, howner]
+                    simpa [hstate.1.blockingScheduler] using
+                      BlockingIPC.cancelSubjectTyped_cancelled_scheduler_exact
+                        state.blockingIPC subject hstate.2.1 hrawCancelled
+                  simpa [dispatchBlockingCancel, houtcome, hrestore] using
+                    publishReleasedBlockingContext_wake_preserves_runtimeWellFormed
+                      state blocking saved published hstate.1 hblocking hscheduler hrestore
+
+/-- A successful cancellation preserves both the complete composite runtime
+invariant and the exact authoritative waiter/saved-context agreement. -/
+theorem dispatchBlockingCancel_cancelled_preserves_blockingRuntimeWellFormed
+    state subject saved
+    (hstate : BlockingRuntimeWellFormed state)
+    (hcancelled : (dispatchBlockingCancel state subject).reply = .cancelled saved) :
+    BlockingRuntimeWellFormed (dispatchBlockingCancel state subject).state := by
+  refine ⟨dispatchBlockingCancel_cancelled_preserves_runtimeWellFormed
+      state subject saved hstate hcancelled, ?_⟩
+  have hcoherent : state.BlockingIPCCoherent := by
+    rcases hstate.1 with ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking⟩
+    exact hblocking
+  exact (dispatchBlockingCancel_preserves_wellFormed state subject
+    ⟨hstate.2, hcoherent⟩).1
+
 /-! ## Execution-latched typed blocking gate -/
 
 inductive CompositeBlockingOperation where
@@ -2787,6 +2867,25 @@ theorem blockingGate_cancel_cancelled_context_valid state subject saved
   rw [hsound.2.2]
   simpa [applyBlockingOperation] using
     dispatchBlockingCancel_cancelled_context_valid state subject saved hcancelled
+
+/-- A cancellation completed by the outer typed gate preserves the integrated
+global runtime plus authoritative blocking-context invariant. -/
+theorem blockingGate_cancel_cancelled_preserves_blockingRuntimeWellFormed
+    state subject saved
+    (hstate : BlockingRuntimeWellFormed state)
+    (hcompleted : (blockingGate state (.cancel subject)).result =
+      .completed (.cancel (.cancelled saved))) :
+    BlockingRuntimeWellFormed
+      (blockingGate state (.cancel subject)).state := by
+  have hsound := blockingGate_completed_sound state
+    (.cancel subject) (.cancel (.cancelled saved)) hcompleted
+  have hcancelled :
+      (dispatchBlockingCancel state subject).reply = .cancelled saved := by
+    simpa [blockingOperationReply] using hsound.2.1.symm
+  rw [hsound.2.2]
+  simpa [applyBlockingOperation] using
+    dispatchBlockingCancel_cancelled_preserves_blockingRuntimeWellFormed
+      state subject saved hstate hcancelled
 
 theorem blockingGate_mode_rejection_atomic state operation
     (hrejected : (blockingGate state operation).result = .rejectedBusy ∨

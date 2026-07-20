@@ -990,6 +990,32 @@ theorem cancelSubjectTyped_cancelled_waiterEndpoint_exact state subject
   split <;> simp_all [setWaiterEndpoint]
   split <;> simp_all [setWaiterEndpoint]
 
+/-- A successful typed cancellation publishes the canonical scheduler wake:
+the cancelled live waiter is appended once to the ready queue and marked
+runnable in the same transition. -/
+theorem cancelSubjectTyped_cancelled_scheduler_exact state subject
+    (hwf : WellFormed state)
+    (hcancelled : (cancelSubjectTyped state subject).result = .cancelled) :
+    (cancelSubjectTyped state subject).state.scheduler =
+      { state.scheduler with
+        ready := state.scheduler.ready ++ [subject]
+        lifecycle := { state.scheduler.lifecycle with
+          runnable := SubjectLifecycle.setBool
+            state.scheduler.lifecycle.runnable subject true } } := by
+  simp only [cancelSubjectTyped] at hcancelled
+  split at hcancelled
+  · contradiction
+  next endpoint hwaiter =>
+    have hlive : state.scheduler.lifecycle.capabilities.subjects subject = true := by
+      have hmember := (hwf.2.2.2.2.1 endpoint subject).mpr hwaiter
+      exact (hwf.2.2.1 endpoint subject hmember).2.2.1
+    split at hcancelled
+    · contradiction
+    next hroom =>
+      have hroom' : ¬ state.scheduler.capacity ≤ state.scheduler.ready.length := by
+        simpa [hlive] using hroom
+      simp [cancelSubjectTyped, cancelSubject, hwaiter, hlive, hroom']
+
 theorem receiveOrBlock_preserves_wellFormed state caller slot
     (hwf : WellFormed state) :
     WellFormed (receiveOrBlock state caller slot).state := by

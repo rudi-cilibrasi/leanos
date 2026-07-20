@@ -496,6 +496,24 @@ theorem cancel_cancelled_exact state subject saved
   cases outcome with
   | mk next result => cases result <;> simp_all [setBlocked]
 
+/-- Every successful context-owning cancellation publishes the exact raw IPC
+cancellation transition, including its scheduler wake. -/
+theorem cancel_cancelled_ipc_exact state subject
+    (hcancelled : (cancel state subject).result = .cancelled) :
+    (cancel state subject).state.ipc =
+        (BlockingIPC.cancelSubjectTyped state.ipc subject).state ∧
+      (BlockingIPC.cancelSubjectTyped state.ipc subject).result = .cancelled := by
+  unfold cancel at hcancelled ⊢
+  split at hcancelled
+  · simp at hcancelled
+  next endpoint hwaiter =>
+    split at hcancelled
+    · simp at hcancelled
+    next saved hsaved =>
+      generalize hraw : BlockingIPC.cancelSubjectTyped state.ipc subject = outcome at hcancelled ⊢
+      cases outcome with
+      | mk next result => cases result <;> simp_all
+
 @[simp] theorem terminate_blocked_self state subject :
     (SubjectLifecycle.terminate state.ipc.scheduler.lifecycle subject).result = .accepted →
       (terminate state subject).blocked subject = none := by
