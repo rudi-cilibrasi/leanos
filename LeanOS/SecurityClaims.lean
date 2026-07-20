@@ -66,11 +66,36 @@ theorem dma_quarantine_preserves_complete_projection
   exact DMAQuarantine.unowned_device_preserves_complete_projection accepted target before after
     hcontract hknown
 
+/-- SC-DMA-QUARANTINE-TRACE: every finite issue-local trace of continuing
+control operations and contracted unowned-device attempts preserves the live
+quarantine invariant and every modeled memory projection. -/
+theorem dma_quarantine_nonfatal_trace_preserves_complete_projection
+    (before after : DMAQuarantine.RuntimeState)
+    (hinvariant : DMAQuarantine.RuntimeInvariant before)
+    (trace : DMAQuarantine.QuarantineTrace before after) :
+    DMAQuarantine.RuntimeInvariant after ∧
+      DMAQuarantine.quarantine after.accepted.snapshot = true ∧
+      after.memory.physicalMemory = before.memory.physicalMemory ∧
+      after.memory.allocatorOwnership = before.memory.allocatorOwnership ∧
+      after.memory.pageTableFrames = before.memory.pageTableFrames ∧
+      after.memory.kernelOwnedFrames = before.memory.kernelOwnedFrames ∧
+      after.memory.kernelState = before.memory.kernelState ∧
+      after.memory.subjectVisible = before.memory.subjectVisible := by
+  exact DMAQuarantine.nonfatal_trace_preserves_quarantine_and_memory
+    hinvariant trace
+
 /-- The pinned q35 manifest has a concrete accepted, nonempty quarantine
 snapshot; SC-DMA-QUARANTINE is not discharged by an empty inventory. -/
 theorem dma_quarantine_q35_nonvacuous :
     (DMAQuarantine.validate DMAQuarantine.q35Snapshot).isAccepted = true := by
   native_decide
+
+/-- The finite-trace claim has a concrete nonempty mixed trace containing both
+a continuing public-control step and a named present VGA device attempt. -/
+theorem dma_quarantine_q35_trace_nonvacuous :
+    ∃ middle, DMAQuarantine.QuarantineStep DMAQuarantine.q35Runtime middle ∧
+      DMAQuarantine.QuarantineTrace middle DMAQuarantine.q35Runtime :=
+  DMAQuarantine.q35_mixed_trace_nonvacuous
 
 /-- SC-KERNEL-DET: the first modeled transition is deterministic. -/
 theorem kernel_transition_deterministic
