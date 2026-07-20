@@ -102,7 +102,7 @@ def encodeSlots : Nat → List FunctionState → List UInt64
   | slots + 1, function :: rest => encodeFunction function ++ encodeSlots slots rest
 
 /-- Canonical fixed-width state-corpus encoding: two version words followed by
-exactly sixteen twelve-word function slots.  Oversized snapshots have no
+exactly sixteen thirteen-word function slots.  Oversized snapshots have no
 encoding rather than being silently truncated. -/
 def encodeSnapshot (snapshot : Snapshot) : Option (List UInt64) :=
   if snapshot.functions.length ≤ maxFunctions then
@@ -532,6 +532,11 @@ example : (validate { q35Snapshot with functions := q35Functions ++ [q35Function
     some .noncanonical := by native_decide
 example : (validate { q35Snapshot with functions := q35Functions.tail }).reason =
     some .noncanonical := by native_decide
+example :
+    let first := q35Functions.head!
+    let unknown : FunctionState := { first with bdf := bdf 0 2 0 }
+    (validate { q35Snapshot with functions := unknown :: q35Functions.tail }).reason =
+      some .noncanonical := by native_decide
 example :
     let first := q35Functions.head!
     (validate { q35Snapshot with functions :=
