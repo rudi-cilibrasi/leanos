@@ -254,6 +254,20 @@ theorem composite_authoritative_mapping_then_blocking_preserves_runtimeWellForme
   · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
       state (.unmap page) blocking (.unmap page) hstate
 
+/-- Every attacker-controlled syscall tuple preserves the complete blocking
+precondition, including accepted handle-based mapping, TLB-invalidating
+unmapping, access checks, and all decoder or subsystem denials.  Any syscall
+can therefore be followed immediately by an arbitrary authoritative blocking
+operation without a reconstructed readiness witness. -/
+theorem composite_authoritative_syscall_then_blocking_preserves_runtimeWellFormed
+    state call blocking (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state (.ordinary (.syscall call))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.syscall call) blocking (.syscall call) hstate
+
 /-- Raw scheduler selection without a kernel-owned save/restore payload is a
 blocking-state-neutral typed boundary.  Empty dispatch and every forced
 missing-context denial can therefore be followed immediately by an arbitrary

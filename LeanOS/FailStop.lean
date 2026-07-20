@@ -9923,15 +9923,149 @@ theorem gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed state oper
   · rw [gate_blockingStateNeutral_preserves_blockingIPCContext state operation hoperation]
     exact hstate.2
 
+/-- The complete raw syscall family retains the full blocking invariant.
+Decoder and subsystem denials are atomic, access acceptance changes only
+return-control state, and accepted map/unmap publication reuses the same
+scheduler-preserving virtual-memory boundary as the corresponding raw
+operations before selecting the syscall return authority. -/
+theorem gate_syscall_preserves_blockingRuntimeWellFormed state call
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed (gate state (.syscall call)).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      cases hdecode : Syscall.decode call with
+      | error reason => simpa [gate, hmode, applyOperation, Syscall.dispatch, hdecode] using hstate
+      | ok operation =>
+          cases operation with
+          | access page access =>
+              cases hreply :
+                  (Syscall.dispatch state.virtualMemory state.syscallContext call).reply with
+              | rejected reason => simpa [gate, hmode, applyOperation, hreply] using hstate
+              | accepted =>
+                  have hselected :=
+                    gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+                      state (.selectUserReturn .syscallResume)
+                      (.selectUserReturn .syscallResume) hstate
+                  simpa [gate, hmode, applyOperation, hreply, hdecode] using hselected
+          | map handleWord page permissions =>
+              cases hreply :
+                  (Syscall.dispatch state.virtualMemory state.syscallContext call).reply with
+              | rejected reason => simpa [gate, hmode, applyOperation, hreply] using hstate
+              | accepted =>
+                  cases hresolve : CapabilityHandle.resolveCurrent
+                      state.virtualMemory.memory.capabilities
+                      { caller := state.syscallContext.caller } handleWord .memory with
+                  | error denial =>
+                      simp only [CompositeState.syscallContext] at hresolve
+                      simp [Syscall.dispatch, hdecode, Syscall.dispatchDecoded, hresolve,
+                        CompositeState.syscallContext] at hreply
+                  | ok resolution =>
+                      simp only [CompositeState.syscallContext] at hresolve
+                      cases hmap : (VirtualMapping.map state.virtualMemory
+                          state.syscallContext.caller resolution.handle.slot
+                          state.syscallContext.activeAddressSpace page permissions).result with
+                      | rejected reason =>
+                          simp only [CompositeState.syscallContext] at hmap
+                          simp [Syscall.dispatch, hdecode, Syscall.dispatchDecoded, hresolve,
+                            hmap, CompositeState.syscallContext] at hreply
+                      | accepted =>
+                          simp only [CompositeState.syscallContext] at hmap
+                          let next := (VirtualMapping.map state.virtualMemory
+                            state.syscallContext.caller resolution.handle.slot
+                            state.syscallContext.activeAddressSpace page permissions).state
+                          have hmemory : next.memory = state.virtualMemory.memory :=
+                            VirtualMapping.map_memory _ _ _ _ _ _
+                          have howner : next.owner = state.virtualMemory.owner :=
+                            VirtualMapping.map_owner _ _ _ _ _ _
+                          have hvirtual : VirtualMapping.LifecycleWellFormed next :=
+                            VirtualMapping.map_preserves_lifecycleWellFormed _ _ _ _ _ _
+                              hstate.1.2.2.2.2.1
+                          let translations : TLB.State :=
+                            { state.resumable.translations with virtual := next }
+                          have htlb : TLB.Coherent translations := by
+                            simpa [translations, TLB.Coherent] using
+                              hstate.1.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+                          have hinstalled :=
+                            installVirtualMemory_preserves_blockingRuntimeWellFormed
+                              state next translations hstate hmemory howner hvirtual htlb rfl
+                          have hselected :=
+                            gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+                              (installVirtualMemory state next translations)
+                              (.selectUserReturn .syscallResume)
+                              (.selectUserReturn .syscallResume) hinstalled
+                          have hselected' : BlockingRuntimeWellFormed
+                              (selectLiveReturnAuthority
+                                (installVirtualMemory state next translations)
+                                .syscallResume) := by
+                            simpa [gate, applyOperation, installVirtualMemory, hmode] using hselected
+                          have houtcome :
+                              Syscall.dispatch state.virtualMemory state.syscallContext call =
+                                { state := next, reply := .accepted } := by
+                            simp [Syscall.dispatch, hdecode, Syscall.dispatchDecoded, hresolve,
+                              hmap, CompositeState.syscallContext, next]
+                          simpa [gate, hmode, applyOperation, houtcome, hdecode,
+                            next, translations] using hselected'
+          | unmap page =>
+              cases hreply :
+                  (Syscall.dispatch state.virtualMemory state.syscallContext call).reply with
+              | rejected reason => simpa [gate, hmode, applyOperation, hreply] using hstate
+              | accepted =>
+                  cases hunmap : (VirtualMapping.unmap state.virtualMemory
+                      state.syscallContext.caller state.syscallContext.activeAddressSpace page).result with
+                  | rejected reason =>
+                      simp only [CompositeState.syscallContext] at hunmap
+                      simp [Syscall.dispatch, hdecode, Syscall.dispatchDecoded, hunmap,
+                        CompositeState.syscallContext] at hreply
+                  | accepted =>
+                      simp only [CompositeState.syscallContext] at hunmap
+                      let next := (VirtualMapping.unmap state.virtualMemory
+                        state.syscallContext.caller state.syscallContext.activeAddressSpace page).state
+                      have hmemory : next.memory = state.virtualMemory.memory :=
+                        VirtualMapping.unmap_memory _ _ _ _
+                      have howner : next.owner = state.virtualMemory.owner :=
+                        VirtualMapping.unmap_owner _ _ _ _
+                      have hvirtual : VirtualMapping.LifecycleWellFormed next :=
+                        VirtualMapping.unmap_preserves_lifecycleWellFormed _ _ _ _
+                          hstate.1.2.2.2.2.1
+                      let translations := TLB.invalidatePage
+                        { state.resumable.translations with virtual := next }
+                        state.syscallContext.activeAddressSpace page
+                      have htlb : TLB.Coherent translations := by
+                        exact TLB.invalidate_page_preserves_coherent _ _ _
+                          hstate.1.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+                      have hinstalled :=
+                        installVirtualMemory_preserves_blockingRuntimeWellFormed
+                          state next translations hstate hmemory howner hvirtual htlb rfl
+                      have hselected :=
+                        gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+                          (installVirtualMemory state next translations)
+                          (.selectUserReturn .syscallResume)
+                          (.selectUserReturn .syscallResume) hinstalled
+                      have hselected' : BlockingRuntimeWellFormed
+                          (selectLiveReturnAuthority
+                            (installVirtualMemory state next translations)
+                            .syscallResume) := by
+                        simpa [gate, applyOperation, installVirtualMemory, hmode] using hselected
+                      have houtcome :
+                          Syscall.dispatch state.virtualMemory state.syscallContext call =
+                            { state := next, reply := .accepted } := by
+                        simp [Syscall.dispatch, hdecode, Syscall.dispatchDecoded, hunmap,
+                          CompositeState.syscallContext, next]
+                      simpa [gate, hmode, applyOperation, houtcome, hdecode,
+                        next, translations] using hselected'
+
 /-- Ordinary operations currently known to retain the complete blocking
 runtime invariant.  Neutral control/data-IPC steps keep the blocking state
-literal; map and unmap use the scheduler replacement law above. -/
+literal; raw and syscall mapping use the scheduler replacement law above. -/
 inductive BlockingRuntimePreservingOperation : Operation → Prop where
   | neutral {operation} (hoperation : BlockingStateNeutralOperation operation) :
       BlockingRuntimePreservingOperation operation
   | map slot page permissions :
       BlockingRuntimePreservingOperation (.map slot page permissions)
   | unmap page : BlockingRuntimePreservingOperation (.unmap page)
+  | syscall call : BlockingRuntimePreservingOperation (.syscall call)
 
 theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
     state operation (hoperation : BlockingRuntimePreservingOperation operation)
@@ -9945,6 +10079,7 @@ theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
       exact gate_map_preserves_blockingRuntimeWellFormed
         state slot page permissions hstate
   | unmap page => exact gate_unmap_preserves_blockingRuntimeWellFormed state page hstate
+  | syscall call => exact gate_syscall_preserves_blockingRuntimeWellFormed state call hstate
 
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
