@@ -527,10 +527,63 @@ theorem changed_control_is_fatal state snapshot
         exact hchanged (LawfulBEq.eq_of_beq heq)
       simp [hbeq]
 
+/-- A valid re-observation that differs from the boot-accepted snapshot has
+one exact outcome: latch `controlSnapshotChanged`, publish the observation for
+diagnosis, and report the matching fatal result. -/
+theorem valid_changed_control_exact_fatal state snapshot accepted
+    (hrunning : state.mode = .running)
+    (hvalid : validate snapshot = .accepted accepted)
+    (hchanged : snapshot ≠ state.accepted.snapshot) :
+    runtimeGate state (.observeControl snapshot) =
+      ⟨{ state with observed := snapshot, mode := .halted .controlSnapshotChanged },
+        .fatal .controlSnapshotChanged⟩ := by
+  have hbeq : (snapshot == state.accepted.snapshot) = false := by
+    apply Bool.eq_false_iff.mpr
+    intro hequal
+    exact hchanged (LawfulBEq.eq_of_beq hequal)
+  simp [runtimeGate, hrunning, hvalid, hbeq]
+
+/-- A validation rejection has one exact runtime outcome, independently of
+the validator's typed boot reason: latch `invalidControlSnapshot`, retain the
+invalid observation for diagnosis, and report the matching fatal result. -/
+theorem invalid_control_exact_fatal state snapshot reason
+    (hrunning : state.mode = .running)
+    (hinvalid : validate snapshot = .rejected reason) :
+    runtimeGate state (.observeControl snapshot) =
+      ⟨{ state with observed := snapshot, mode := .halted .invalidControlSnapshot },
+        .fatal .invalidControlSnapshot⟩ := by
+  simp [runtimeGate, hrunning, hinvalid]
+
 theorem halted_absorbing state reason operation
     (hmode : state.mode = .halted reason) :
     runtimeGate state operation = ⟨state, .alreadyHalted reason⟩ := by
   simp [runtimeGate, hmode]
+
+/-- Execute a finite public-operation suffix while retaining every typed
+result.  This is the issue-local control projection, not the global trace
+owned by issue #104. -/
+def runRuntime : RuntimeState → List PublicOperation → RuntimeState × List RuntimeResult
+  | state, [] => (state, [])
+  | state, operation :: rest =>
+      let outcome := runtimeGate state operation
+      let suffix := runRuntime outcome.state rest
+      (suffix.1, outcome.result :: suffix.2)
+
+/-- Once a DMA control failure is latched, every finite suffix is absorbed:
+the state is byte-for-byte the same modeled state and each operation reports
+the same typed `alreadyHalted` reason. -/
+theorem halted_suffix_absorbing state reason operations
+    (hmode : state.mode = .halted reason) :
+    runRuntime state operations =
+      (state, List.replicate operations.length (.alreadyHalted reason)) := by
+  induction operations with
+  | nil => rfl
+  | cons operation rest ih =>
+      simp only [runRuntime]
+      rw [halted_absorbing state reason operation hmode]
+      simp only
+      rw [ih]
+      rfl
 
 /-! ## Finite nonfatal DMA traces
 
@@ -748,6 +801,15 @@ example : (runtimeGate q35Runtime (.observeControl q35CommandBitFlipSnapshot)).r
     .fatal .controlSnapshotChanged := by native_decide
 example : (runtimeGate q35Runtime (.observeControl q35BusMasterBitFlipSnapshot)).result =
     .fatal .invalidControlSnapshot := by native_decide
+example : runRuntime
+    (runtimeGate q35Runtime (.observeControl q35CommandBitFlipSnapshot)).state
+    [.ordinary, .observeControl q35Snapshot, .observeControl q35BusMasterBitFlipSnapshot] =
+    ((runtimeGate q35Runtime (.observeControl q35CommandBitFlipSnapshot)).state,
+      [.alreadyHalted .controlSnapshotChanged,
+       .alreadyHalted .controlSnapshotChanged,
+       .alreadyHalted .controlSnapshotChanged]) := by
+  apply halted_suffix_absorbing
+  native_decide
 
 theorem q35_unowned_vga_step_nonvacuous :
     UnownedDeviceStep q35Accepted zeroMemoryProjection zeroMemoryProjection := by
