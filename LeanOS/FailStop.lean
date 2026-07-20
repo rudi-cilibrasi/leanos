@@ -452,6 +452,58 @@ structure CompositeState where
   `BlockingIPCContext` transition. -/
   blockingContexts : BlockingIPC.SubjectId → Option ResumableContext.Context
 
+/-- The blocking store and all composite scheduler views name one scheduler. -/
+def CompositeState.BlockingIPCCoherent (state : CompositeState) : Prop :=
+  state.blockingIPC.scheduler = state.scheduler ∧
+  state.blockingIPC.scheduler.lifecycle = state.lifecycle
+
+/-- The authoritative typed blocking state assembled from its two stored
+projections. -/
+def CompositeState.blockingIPCContext (state : CompositeState) :
+    BlockingIPCContext.State :=
+  { ipc := state.blockingIPC, blocked := state.blockingContexts }
+
+/-- Replacing the scheduler projection preserves a blocking store when every
+field observed by waiter validation is unchanged and the replacement scheduler
+is itself well formed. -/
+private theorem blockingIPC_wellFormed_replaceScheduler
+    (ipc : BlockingIPC.State) (scheduler : Scheduler.State)
+    (hstate : BlockingIPC.WellFormed ipc)
+    (hscheduler : Scheduler.WellFormed scheduler)
+    (hcapabilities : scheduler.lifecycle.capabilities =
+      ipc.scheduler.lifecycle.capabilities)
+    (hrunnable : scheduler.lifecycle.runnable = ipc.scheduler.lifecycle.runnable)
+    (hcurrent : scheduler.lifecycle.current = ipc.scheduler.lifecycle.current)
+    (howner : scheduler.lifecycle.addressOwner = ipc.scheduler.lifecycle.addressOwner)
+    (hready : scheduler.ready = ipc.scheduler.ready) :
+    BlockingIPC.WellFormed { ipc with scheduler } := by
+  rcases hstate with
+    ⟨_hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox, hcapability⟩
+  refine ⟨hscheduler, hqueues, ?_, hunique, hindex, ?_, ?_⟩
+  · simpa [BlockingIPC.authorizedReceive, Scheduler.ownsAddressSpace,
+      hcapabilities, hrunnable, hcurrent, howner, hready] using hwaiters
+  · simpa [hcapabilities] using hmailbox
+  · simpa [hcapabilities] using hcapability
+
+private theorem blockingIPCContext_wellFormed_replaceScheduler
+    (state : CompositeState) (scheduler : Scheduler.State)
+    (hstate : BlockingIPCContext.WellFormed state.blockingIPCContext)
+    (hscheduler : Scheduler.WellFormed scheduler)
+    (hcapabilities : scheduler.lifecycle.capabilities =
+      state.blockingIPC.scheduler.lifecycle.capabilities)
+    (hrunnable : scheduler.lifecycle.runnable =
+      state.blockingIPC.scheduler.lifecycle.runnable)
+    (hcurrent : scheduler.lifecycle.current =
+      state.blockingIPC.scheduler.lifecycle.current)
+    (howner : scheduler.lifecycle.addressOwner =
+      state.blockingIPC.scheduler.lifecycle.addressOwner)
+    (hready : scheduler.ready = state.blockingIPC.scheduler.ready) :
+    BlockingIPCContext.WellFormed
+      { ipc := { state.blockingIPC with scheduler }, blocked := state.blockingContexts } := by
+  exact ⟨blockingIPC_wellFormed_replaceScheduler state.blockingIPC scheduler hstate.1
+    hscheduler hcapabilities hrunnable hcurrent howner hready, hstate.2⟩
+
+
 /-- A compiled return plan refines the active live virtual-memory view exactly
 at the two leaves used by the return gate.  The live object bindings must name
 the same physical frames as the compiled user-text/user-stack leaves. -/
@@ -596,7 +648,8 @@ def RuntimeWellFormed (state : CompositeState) : Prop :=
   ResumablePreemption.WellFormed state.resumable ∧
   CapabilityTransfer.WellFormed state.transfers ∧
   (state.resumable.halted = true ↔ ∃ record, state.execution.mode = .halted record) ∧
-  (state.execution.returnAuthorityArmed = true → state.ReturnPlanLive = true)
+  (state.execution.returnAuthorityArmed = true → state.ReturnPlanLive = true) ∧
+  state.BlockingIPCCoherent
 
 /-! ## Boot-produced initial runtime -/
 
@@ -696,7 +749,10 @@ theorem bootRuntime_runtimeWellFormed input plan
     ResumablePreemption.TranslationAgreement, ResumablePreemption.VirtualAgreement,
     ResumablePreemption.ResourceKindAgreement, CapabilityTransfer.WellFormed,
     TLB.Coherent, CompositeState.ReturnPlanLive, bootCapabilities, bootLifecycle,
-    bootMemory, bootVirtualMemory, bootEndpoints]
+    bootMemory, bootVirtualMemory, bootEndpoints,
+    CompositeState.blockingIPCContext, CompositeState.BlockingIPCCoherent,
+    BlockingIPCContext.WellFormed, BlockingIPCContext.ContextAgreement,
+    BlockingIPC.WellFormed, BlockingIPC.authorizedReceive]
 
 private def restrictMappings (lifecycle : SubjectLifecycle.State)
     (mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
@@ -760,7 +816,8 @@ private def installLifecycle (state : CompositeState)
     resumable := { state.resumable with
       scheduler
       translations := { state.resumable.translations with virtual := virtualMemory } }
-    transfers := { state.transfers with toEndpointState := endpoints } }
+    transfers := { state.transfers with toEndpointState := endpoints }
+    blockingIPC := { state.blockingIPC with scheduler } }
 
 private def installCapabilities (state : CompositeState)
     (capabilities : Capability.State) : CompositeState :=
@@ -790,7 +847,8 @@ private def installCopiedCapabilities (state : CompositeState)
     resumable := { state.resumable with
       scheduler
       translations := { state.resumable.translations with virtual := virtualMemory } }
-    transfers := { state.transfers with toEndpointState := endpoints } }
+    transfers := { state.transfers with toEndpointState := endpoints }
+    blockingIPC := { state.blockingIPC with scheduler } }
 
 /-- Publish subject creation without rebuilding unrelated resources.  Creation
 only promotes the subject registry and issuance history, so memory bindings,
@@ -816,7 +874,8 @@ private def installCreatedSubject (state : CompositeState)
     resumable := { state.resumable with
       scheduler
       translations := { state.resumable.translations with virtual := virtualMemory } }
-    transfers := { state.transfers with toEndpointState := endpoints } }
+    transfers := { state.transfers with toEndpointState := endpoints }
+    blockingIPC := { state.blockingIPC with scheduler } }
 
 @[simp] theorem createSubject_current lifecycle subject :
     (SubjectLifecycle.create lifecycle subject).state.current = lifecycle.current := by
@@ -900,41 +959,24 @@ scheduler transition that blocks or wakes a subject.  The older data-only IPC
 projection remains present while sealed-transfer composition is migrated, but
 it is not used to decide blocking behavior. -/
 
-/-- The blocking store and all composite scheduler views name one scheduler.
-The waiter/index and completion laws remain owned by `BlockingIPC.WellFormed`
-rather than being duplicated here. -/
-def CompositeState.BlockingIPCCoherent (state : CompositeState) : Prop :=
-  state.blockingIPC.scheduler = state.scheduler ∧
-  state.blockingIPC.scheduler.lifecycle = state.lifecycle
-
-/-- The authoritative typed blocking state assembled from its two stored
-projections.  Keeping this constructor public lets refinement layers state
-that neither the raw waiter store nor its saved-context bank can be published
-on its own. -/
-def CompositeState.blockingIPCContext (state : CompositeState) :
-    BlockingIPCContext.State :=
-  { ipc := state.blockingIPC, blocked := state.blockingContexts }
-
 /-- Strengthened runtime predicate for the authoritative blocking-IPC slice. -/
 def BlockingRuntimeWellFormed (state : CompositeState) : Prop :=
   RuntimeWellFormed state ∧
-  BlockingIPCContext.WellFormed state.blockingIPCContext ∧
-  state.BlockingIPCCoherent
+  BlockingIPCContext.WellFormed state.blockingIPCContext
 
 /-- The boot-produced runtime also initializes the authoritative blocking
 store with empty waiter/completion indexes over the same scheduler. -/
 theorem bootRuntime_blockingRuntimeWellFormed input plan
     (hcompiled : BootPageTablePlan.compile input = .ok plan) :
     BlockingRuntimeWellFormed (bootRuntime plan) := by
-  refine ⟨bootRuntime_runtimeWellFormed input plan hcompiled, ?_, ?_⟩
-  · simp [CompositeState.blockingIPCContext, bootRuntime,
-      BlockingIPCContext.WellFormed, BlockingIPCContext.ContextAgreement,
-      BlockingIPC.WellFormed, Scheduler.WellFormed,
-      SubjectLifecycle.WellFormed, Capability.WellFormed,
-      Capability.SlotsWellFormed, Capability.DerivationsWellFormed,
-      Capability.LiveIdentitiesUnique, Capability.SlotSpacesWellFormed,
-      BlockingIPC.authorizedReceive, bootLifecycle, bootCapabilities]
-  · simp [CompositeState.BlockingIPCCoherent, bootRuntime]
+  refine ⟨bootRuntime_runtimeWellFormed input plan hcompiled, ?_⟩
+  simp [CompositeState.blockingIPCContext, bootRuntime,
+    BlockingIPCContext.WellFormed, BlockingIPCContext.ContextAgreement,
+    BlockingIPC.WellFormed, Scheduler.WellFormed,
+    SubjectLifecycle.WellFormed, Capability.WellFormed,
+    Capability.SlotsWellFormed, Capability.DerivationsWellFormed,
+    Capability.LiveIdentitiesUnique, Capability.SlotSpacesWellFormed,
+    BlockingIPC.authorizedReceive, bootLifecycle, bootCapabilities]
 
 /-- Publish the complete blocking store first, then synchronize its scheduler
 and lifecycle to every overlapping composite projection.  Waiters and reserved
@@ -1963,7 +2005,8 @@ private def installSchedulerAdmission (state : CompositeState)
   { state with
     scheduler
     preemption := { state.preemption with scheduler }
-    resumable := { state.resumable with scheduler } }
+    resumable := { state.resumable with scheduler }
+    blockingIPC := { state.blockingIPC with scheduler } }
 
 /-- Admit a runnable subject only when its kernel-owned initial context is
 already staged.  The raw scheduler owns queue policy; this composite wrapper
@@ -2191,7 +2234,8 @@ private def installResumable (state : CompositeState)
     ipc := { state.ipc with virtualMemory }
     capabilities := lifecycle.capabilities
     lifecycle
-    resumable }
+    resumable
+    blockingIPC := { state.blockingIPC with scheduler := resumable.scheduler } }
 
 /-- Publish a resumable-aware scheduler removal without rebuilding unrelated
 resource projections.  `ResumablePreemption.remove` changes only runnable/current
@@ -2210,7 +2254,8 @@ private def installSchedulerRemoval (state : CompositeState)
     scheduler := resumable.scheduler
     preemption := { state.preemption with scheduler := resumable.scheduler }
     lifecycle
-    resumable }
+    resumable
+    blockingIPC := { state.blockingIPC with scheduler := resumable.scheduler } }
 
 /-- Publish the exact #71 capability/mailbox state through every consumer of
 the shared capability registry.  Pending sealed descendants and their trace
@@ -2236,7 +2281,8 @@ private def installTransfers (state : CompositeState)
     resumable := { state.resumable with
       scheduler
       translations := { state.resumable.translations with virtual := virtualMemory } }
-    transfers }
+    transfers
+    blockingIPC := { state.blockingIPC with scheduler } }
 
 /-- Publish authoritative subject cleanup and discard every sealed transfer
 that could retain a retired sender, endpoint, or carried object.  The final
@@ -2267,7 +2313,8 @@ private def installTerminatedResumable (state : CompositeState)
     capabilities := lifecycle.capabilities
     lifecycle
     resumable
-    transfers }
+    transfers
+    blockingIPC := { state.blockingIPC with scheduler := resumable.scheduler } }
 
 /-- Publish interrupt-driven subject cleanup through the same authoritative
 resumable/resource path as explicit termination, then close the kernel copy
@@ -2298,7 +2345,8 @@ private def installVirtualMemory (state : CompositeState)
     lifecycle
     resumable := { state.resumable with
       scheduler
-      translations := { translations with virtual := virtualMemory } } }
+      translations := { translations with virtual := virtualMemory } }
+    blockingIPC := { state.blockingIPC with scheduler } }
 
 theorem installLifecycle_coherent state lifecycle :
     (installLifecycle state lifecycle).Coherent := by
@@ -2391,7 +2439,8 @@ private theorem installVirtualMemory_preserves_runtimeWellFormed state virtualMe
     · exact ⟨hcapabilitiesVirtual, hvirtual⟩
     · simpa [installVirtualMemory, ResumablePreemption.ResourceKindAgreement] using hkinds
   · simpa [installVirtualMemory] using hhalted
-  · simp [installVirtualMemory]
+  · simp [installVirtualMemory, CompositeState.BlockingIPCCoherent,
+      hlive.2.1, hlive.2.2, hschedulerCoherent]
 
 theorem installLifecycle_clears_retired_mailbox state lifecycle object
     (hdead : lifecycle.capabilities.objects object ≠ true) :
@@ -3255,18 +3304,20 @@ theorem gate_selectUserReturn_preserves_runtimeWellFormed state purpose
   | running =>
       rcases hstate with
         ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
-          hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
+          hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive,
+          hblockingCoherent⟩
       have hselected := selectLiveReturnAuthority_execution_wellFormed state purpose hexecution
       have harmed := selectLiveReturnAuthority_armed_implies_live state purpose
       simp only [gate, hmode, applyOperation]
       rw [selectLiveReturnAuthority_eq_execution_update]
       refine ⟨?_, hselected, hlifecycle, hcapabilities, hvirtual, hipc,
-        hscheduler, hpreemption, hresumable, htransfers, ?_, ?_⟩
+        hscheduler, hpreemption, hresumable, htransfers, ?_, ?_, ?_⟩
       · simpa [CompositeState.Coherent] using hcoherent
       · simpa using hhalted
       · intro harmedSelected
         have hliveSelected := harmed (by simpa using harmedSelected)
         simpa [CompositeState.ReturnPlanLive] using hliveSelected
+      · simpa [CompositeState.BlockingIPCCoherent] using hblockingCoherent
 
 /-- An accepted outgoing user return is a complete accepted-operation slice:
 the runtime invariant forces its armed authority to refer to the live mapping
@@ -3282,7 +3333,7 @@ theorem gate_userReturn_accepted_preserves_runtimeWellFormed state request attes
     cases hvalue : state.execution.returnAuthorityArmed with
     | false => simp [completeUserReturn, hmode, hvalue, latchInvalidUserReturn] at haccepted
     | true => rfl
-  have hplan : state.ReturnPlanLive = true := hstate.2.2.2.2.2.2.2.2.2.2.2 harmed
+  have hplan : state.ReturnPlanLive = true := hstate.2.2.2.2.2.2.2.2.2.2.2.1 harmed
   have hunchanged := accepted_user_return_state_unchanged state.execution request attested haccepted
   have hoperation : applyOperation state (.userReturn request) = state := by
     simp [applyOperation, hplan, hunchanged, haccepted]
@@ -3304,7 +3355,8 @@ theorem gate_userReturn_preserves_runtimeWellFormed state request
       | false =>
           rcases hstate with
             ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
-              hscheduler, hpreemption, hresumable, htransfers, hhalted, hauthority⟩
+              hscheduler, hpreemption, hresumable, htransfers, hhalted, hauthority,
+              hblockingCoherent⟩
           have hliveMailbox := hcoherent.2.2.2.2.2.2.2.2.2.2.2.2
           have hexecutionFatal := latchInvalidUserReturn_preserves_wellFormed
             state.execution request .unselectedAuthority none hexecution
@@ -3314,7 +3366,8 @@ theorem gate_userReturn_preserves_runtimeWellFormed state request
           simp_all [gate, applyOperation, completeUserReturn, latchInvalidUserReturn,
             RuntimeWellFormed, CompositeState.Coherent,
             ResumablePreemption.wellFormed_set_halted]
-          exact hliveMailbox
+          exact ⟨hliveMailbox,
+            by simpa [CompositeState.BlockingIPCCoherent] using hblockingCoherent⟩
       | true =>
           cases hvalidation : Interrupt.validateUserReturn
               (authoritativeReturnRequest state.execution request) with
@@ -3327,7 +3380,8 @@ theorem gate_userReturn_preserves_runtimeWellFormed state request
           | rejected reason =>
               rcases hstate with
                 ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
-                  hscheduler, hpreemption, hresumable, htransfers, hhalted, hauthority⟩
+                  hscheduler, hpreemption, hresumable, htransfers, hhalted, hauthority,
+                  hblockingCoherent⟩
               have hliveMailbox := hcoherent.2.2.2.2.2.2.2.2.2.2.2.2
               have hexecutionFatal := latchInvalidUserReturn_preserves_wellFormed
                 state.execution (authoritativeReturnRequest state.execution request)
@@ -3344,10 +3398,12 @@ theorem gate_userReturn_preserves_runtimeWellFormed state request
               simp_all [gate, applyOperation, completeUserReturn, latchInvalidUserReturn,
                 RuntimeWellFormed, CompositeState.Coherent,
                 ResumablePreemption.wellFormed_set_halted]
-              exact hliveMailbox
+              exact ⟨hliveMailbox,
+                by simpa [CompositeState.BlockingIPCCoherent] using hblockingCoherent⟩
     · rcases hstate with
         ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
-          hscheduler, hpreemption, hresumable, htransfers, hhalted, hauthority⟩
+          hscheduler, hpreemption, hresumable, htransfers, hhalted, hauthority,
+          hblockingCoherent⟩
       have hliveMailbox := hcoherent.2.2.2.2.2.2.2.2.2.2.2.2
       rcases hexecution with ⟨hcore, _hbound, hexecutionMode⟩
       have hexecutionPrepared : WellFormed
@@ -3362,7 +3418,8 @@ theorem gate_userReturn_preserves_runtimeWellFormed state request
       simp_all [gate, applyOperation, completeUserReturn, latchInvalidUserReturn,
         RuntimeWellFormed, CompositeState.Coherent,
         ResumablePreemption.wellFormed_set_halted]
-      exact hliveMailbox
+      exact ⟨hliveMailbox,
+        by simpa [CompositeState.BlockingIPCCoherent] using hblockingCoherent⟩
   · cases hactual : state.execution.mode with
     | running => exact False.elim (hmode hactual)
     | handling active => simpa [gate, hactual] using hstate
@@ -3921,7 +3978,7 @@ theorem gate_transferOffer_accepted_preserves_runtimeWellFormed state endpointWo
       · intro object envelope hmailbox
         exact hliveMailbox' object envelope hmailbox
     · simpa [installTransfers] using hhalted
-    · simp [installTransfers]
+    · exact ⟨by simp [installTransfers], ⟨rfl, rfl⟩⟩
   · simp [gate, hmode, operationReply, haccepted]
 
 /-- An accepted public transfer receipt preserves the authoritative capability
@@ -4159,7 +4216,7 @@ private theorem installTransfers_preserves_runtimeWellFormed state next
         simpa [htransfersCoherent] using hmailbox object envelope hnextMailbox)
       simpa [hsubjectsLifecycle] using hold
   · simpa [installTransfers] using hhalted
-  · simp [installTransfers]
+  · exact ⟨by simp [installTransfers], ⟨rfl, rfl⟩⟩
 
 /-- A delivered public transfer receipt is a complete global mutation: it
 atomically consumes the selected mailbox and pending tag, installs the sealed
@@ -4652,7 +4709,7 @@ theorem gate_capabilityCopy_accepted_preserves_runtimeWellFormed state source de
   · simp only [gate, hmode, applyOperation, haccepted]
     exact ⟨hcoherent', hexecution', hlifecycle', hcapabilities', hvirtual', hipc',
       hscheduler', hpreemption', hresumable', htransfers',
-      by simpa [installCopiedCapabilities] using hhalted, hlivePlan'⟩
+      by simpa [installCopiedCapabilities] using hhalted, ⟨hlivePlan', ⟨rfl, rfl⟩⟩⟩
   · simp [gate, hmode, operationReply, haccepted]
 
 /-- The authority fragment consumed by live virtual mappings and address-space
@@ -4875,7 +4932,8 @@ private theorem installRevokedCapabilities_preserves_runtimeWellFormed state nex
       by simp [installCopiedCapabilities], hmodeWellFormed⟩
   exact ⟨hcoherent', hexecution', hlifecycle', hwellFormed, hvirtual', hipc',
     hscheduler', hpreemption', hresumable', htransfers',
-    by simpa [installCopiedCapabilities] using hhalted, by simp [installCopiedCapabilities]⟩
+    by simpa [installCopiedCapabilities] using hhalted,
+    ⟨by simp [installCopiedCapabilities], ⟨rfl, rfl⟩⟩⟩
 
 /-- Creating a fresh subject publishes the exact accepted lifecycle through
 every lifecycle and capability consumer in one coherent gate step.  The
@@ -6185,7 +6243,7 @@ private theorem installTerminatedResumable_cleanup_preserves_runtimeWellFormed
   · simpa [installTerminatedResumable, transfers, transferBase, endpoints] using htransfer
   · simpa [installTerminatedResumable, cleaned,
       ResumablePreemption.cleanupSubject] using hhalted
-  · simp [installTerminatedResumable]
+  · exact ⟨by simp [installTerminatedResumable], ⟨rfl, rfl⟩⟩
 
 /-- Accepted subject termination is one complete runtime operation family:
 authoritative lifecycle/resource/context cleanup and sealed-offer cancellation
@@ -6437,7 +6495,7 @@ theorem scheduleRemove_operationPreservesRuntimeWellFormed subject :
               exact ⟨hresumable'.1, hticks⟩
             · exact htransfers
             · simpa [installSchedulerRemoval, ResumablePreemption.removeState] using hhalted
-            · simp [installSchedulerRemoval]
+            · exact ⟨by simp [installSchedulerRemoval], ⟨rfl, rfl⟩⟩
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.scheduleRemove subject) hstate hmode
 
@@ -6678,7 +6736,7 @@ theorem createSubject_operationPreservesRuntimeWellFormed subject :
               · exact hresumable'
               · exact htransfers'
               · simpa [installCreatedSubject] using hhalted
-              · simp [installCreatedSubject]
+              · exact ⟨by simp [installCreatedSubject], ⟨rfl, rfl⟩⟩
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.createSubject subject) hstate hmode
 
@@ -6797,7 +6855,9 @@ theorem gate_scheduleAdd_accepted_preserves_runtimeWellFormed
   constructor
   · simp only [gate, hmode, applyOperation, hadmission]
     exact ⟨hcoherent', hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
-      hscheduler', hpreemption', hresumable', htransfers, hhalted, hlive⟩
+      hscheduler', hpreemption', hresumable', htransfers, hhalted,
+      hlive.1, by simp [installSchedulerAdmission,
+        CompositeState.BlockingIPCCoherent, hlifecycleNext, hschedulerCoherent]⟩
   · simp [gate, hmode, operationReply, hadmission]
 
 /-- Negative admission regression: an otherwise accepted raw insertion cannot
@@ -7079,7 +7139,7 @@ private theorem installResumable_nonfatal_preserves_runtimeWellFormed state next
   · simpa [installResumable, hvirtual] using hvirtualWellFormed
   · simpa [installResumable, hvirtual] using hipc'
   · simp [installResumable, hhalted, hmode]
-  · simp [installResumable]
+  · exact ⟨by simp [installResumable], ⟨rfl, rfl⟩⟩
 
 /-- Every nonfatal resumable preemption step preserves the complete global
 runtime invariant.  This includes successful save/select/restore as well as
@@ -7303,7 +7363,7 @@ private theorem closeCopyWindow_preserves_runtimeWellFormed state
     RuntimeWellFormed
       { state with execution := { state.execution with copyOverride := false } } := by
   unfold RuntimeWellFormed CompositeState.Coherent WellFormed ReturnAuthorityBound
-    CompositeState.ReturnPlanLive at hstate ⊢
+    CompositeState.ReturnPlanLive CompositeState.BlockingIPCCoherent at hstate ⊢
   simpa using hstate
 
 /-- Completed ordinary inbound entry clears transient return and copy
@@ -7318,10 +7378,10 @@ private theorem clearInboundAuthority_preserves_runtimeWellFormed state
   rcases hclosed with
     ⟨hcoherent, ⟨hcore, _hbound, hentry⟩, hlifecycle, hcapabilities,
       hvirtual, hipc, hscheduler, hpreemption, hresumable, htransfers,
-      hterminal, _hlive⟩
+      hterminal, hlive⟩
   exact ⟨hcoherent, ⟨hcore, by simp, hentry⟩, hlifecycle, hcapabilities,
     hvirtual, hipc, hscheduler, hpreemption, hresumable, htransfers,
-    hterminal, by simp⟩
+    hterminal, ⟨by simp, by simpa [CompositeState.BlockingIPCCoherent] using hlive.2⟩⟩
 
 private theorem installResumable_fatal_preserves_runtimeWellFormed state entry
     (hstate : RuntimeWellFormed state)
@@ -7387,7 +7447,7 @@ private theorem installResumable_fatal_preserves_runtimeWellFormed state entry
   · simpa [installResumable] using
       (ResumablePreemption.wellFormed_set_halted state.resumable true).2 _hresumable
   · simp [installResumable, hrecord]
-  · simp [installResumable]
+  · exact ⟨by simp [installResumable], ⟨rfl, rfl⟩⟩
 
 /-- A resumable-model fatal entry latches the same typed composite fail-stop
 mode while freezing the scheduler, context bank, translations, IPC, and
