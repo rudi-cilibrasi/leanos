@@ -460,6 +460,67 @@ theorem nmi_user_kernel_nonvacuous :
         .halted (FailStop.acceptedNmiRecord returnWitnessComposite.execution kernelEvent)) := by
   native_decide
 
+private def nmiHandlingWitness (vector : Nat) : FailStop.CompositeState :=
+  let frame : Interrupt.HardwareFrame :=
+    { returnWitnessRequest.hardware with vector }
+  { returnWitnessComposite with
+    execution :=
+      { returnWitnessComposite.execution with
+        core :=
+          { returnWitnessComposite.execution.core with
+            context :=
+              { returnWitnessComposite.execution.core.context with entryActive := true } }
+        mode := .handling (FailStop.activeEntry frame) } }
+
+/-- Every named handling and post-halt trace class has a concrete executable
+witness.  The three active ordinary purposes admit a kernel-origin NMI without
+finishing the handler; copy authority is cleared; and repeated, post-double-
+fault, ordinary-operation, and return suffixes leave the terminal latch
+unchanged. -/
+theorem nmi_named_handling_and_after_halt_witnesses :
+    let raw := nmiWitnessRaw .kernel
+    let handlingContext := nmiWitnessContext .handling
+    let handlingEvent := InterruptEntry.makeNormalizedNmi raw handlingContext
+    let syscallState := nmiHandlingWitness 128
+    let pageFaultState := nmiHandlingWitness 14
+    let timerState := nmiHandlingWitness 32
+    let syscallNext := (FailStop.gate syscallState (.nmi raw handlingContext)).state
+    let pageFaultNext := (FailStop.gate pageFaultState (.nmi raw handlingContext)).state
+    let timerNext := (FailStop.gate timerState (.nmi raw handlingContext)).state
+    let runningContext := nmiWitnessContext .running
+    let runningEvent := InterruptEntry.makeNormalizedNmi raw runningContext
+    let copyArmed :=
+      { returnWitnessComposite with
+        execution := { returnWitnessComposite.execution with copyOverride := true } }
+    let runningNext := (FailStop.gate copyArmed (.nmi raw runningContext)).state
+    let doubleFaultFrame : Interrupt.HardwareFrame :=
+      { returnWitnessRequest.hardware with vector := 14 }
+    let doubleFaulted :=
+      { pageFaultState with
+        execution :=
+          (FailStop.dispatchHardware pageFaultState.execution doubleFaultFrame).state }
+    syscallNext.execution.mode =
+        .halted (FailStop.acceptedNmiRecord syscallState.execution handlingEvent) ∧
+      pageFaultNext.execution.mode =
+        .halted (FailStop.acceptedNmiRecord pageFaultState.execution handlingEvent) ∧
+      timerNext.execution.mode =
+        .halted (FailStop.acceptedNmiRecord timerState.execution handlingEvent) ∧
+      runningNext.execution.mode =
+        .halted (FailStop.acceptedNmiRecord copyArmed.execution runningEvent) ∧
+      runningNext.execution.copyOverride = false ∧
+      (FailStop.gate runningNext (.nmi raw runningContext)).result =
+        .rejectedHalted (FailStop.acceptedNmiRecord copyArmed.execution runningEvent) ∧
+      (FailStop.dispatchHardware pageFaultState.execution doubleFaultFrame).action =
+        .fatal .doubleFault ∧
+      (FailStop.gate doubleFaulted (.nmi raw handlingContext)).state.execution.mode =
+        doubleFaulted.execution.mode ∧
+      (FailStop.runOperations syscallNext [.scheduleTick, .restart]).execution.mode =
+        syscallNext.execution.mode ∧
+      (FailStop.runOperations syscallNext
+        [.selectUserReturn .initialDispatch, .userReturn returnWitnessRequest]).execution.mode =
+          syscallNext.execution.mode := by
+  native_decide
+
 /-- SC-NMI-FAILSTOP: an exact normalized vector-2 terminal entry from running
 or any ordinary handling state freezes every business subsystem, clears return
 and copy authority, records the kernel-owned context/CR3, and absorbs every
