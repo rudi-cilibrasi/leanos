@@ -1304,6 +1304,94 @@ def CompositeState.blockingSavedContext (state : CompositeState)
     (state.blockingSavedContext frame registers).addressSpace =
       state.execution.core.context.activeAddressSpace := rfl
 
+/-- Complete a blocking scheduler handoff by consuming the context owned by
+the scheduler-selected peer and switching the modeled CR3/TLB projection to
+that peer's address space.  The selected identity is read only from the
+post-block scheduler; neither the handle word nor the saved registers can
+choose it. -/
+def restoreBlockingPeer (state : CompositeState)
+    (blocking : BlockingIPCContext.State) : Except ResumablePreemption.Error CompositeState :=
+  match blocking.ipc.scheduler.lifecycle.current with
+  | none => .error .noDestination
+  | some selected =>
+      match ResumablePreemption.contextFor state.resumable.contexts selected with
+      | none => .error .noDestination
+      | some destination =>
+          if destination.owner != selected || destination.addressSpace != selected ||
+              Interrupt.validSavedUserFrame destination.frame != true ||
+              blocking.ipc.scheduler.lifecycle.capabilities.subjects destination.owner != true ||
+              blocking.ipc.scheduler.lifecycle.runnable destination.owner != true ||
+              blocking.ipc.scheduler.lifecycle.addressOwner destination.addressSpace !=
+                some destination.owner ||
+              state.resumable.translations.virtual.owner destination.addressSpace !=
+                some destination.owner then
+            .error .staleDestination
+          else
+            let published := publishBlockingIPCContext state blocking
+            .ok { published with
+              execution := { published.execution with
+                core := { published.execution.core with
+                  context := { published.execution.core.context with
+                    currentSubject := destination.owner
+                    activeAddressSpace := destination.addressSpace } }
+                returnAuthorityArmed := false }
+              resumable := { published.resumable with
+                contexts := ResumablePreemption.eraseContext
+                  state.resumable.contexts destination.owner
+                translations := TLB.switch state.resumable.translations
+                  destination.addressSpace } }
+
+/-- A completed block handoff restores exactly the scheduler-selected peer,
+consumes its saved bank entry, and models the required CR3 reload. -/
+theorem restoreBlockingPeer_exact state blocking next
+    (hrestore : restoreBlockingPeer state blocking = .ok next) :
+    ∃ selected destination,
+      blocking.ipc.scheduler.lifecycle.current = some selected ∧
+      ResumablePreemption.contextFor state.resumable.contexts selected = some destination ∧
+      next.execution.core.context.currentSubject = selected ∧
+      next.execution.core.context.activeAddressSpace = destination.addressSpace ∧
+      next.resumable.translations.active = some destination.addressSpace ∧
+      next.resumable.translations.entries = [] ∧
+      ResumablePreemption.contextFor next.resumable.contexts selected = none ∧
+      next.blockingIPCContext = blocking := by
+  simp only [restoreBlockingPeer] at hrestore
+  split at hrestore <;> try contradiction
+  next selected hselected =>
+    split at hrestore <;> try contradiction
+    next destination hdestination =>
+      split at hrestore <;> try contradiction
+      simp only [Except.ok.injEq] at hrestore
+      subst next
+      have howner : destination.owner = selected := by simp_all
+      refine ⟨selected, destination, hselected, hdestination, howner, rfl, ?_, ?_, ?_, rfl⟩
+      · simp [TLB.switch]
+      · simp [TLB.switch]
+      · rw [howner]
+        exact ResumablePreemption.contextFor_erase_self _ _
+
+theorem restoreBlockingPeer_context_exact state blocking next
+    (hrestore : restoreBlockingPeer state blocking = .ok next) :
+    next.blockingIPCContext = blocking := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, hcontext⟩ :=
+    restoreBlockingPeer_exact state blocking next hrestore
+  exact hcontext
+
+theorem restoreBlockingPeer_blockingCoherent state blocking next
+    (hrestore : restoreBlockingPeer state blocking = .ok next) :
+    next.BlockingIPCCoherent := by
+  have hcontext := restoreBlockingPeer_context_exact state blocking next hrestore
+  rw [show next.BlockingIPCCoherent =
+      (publishBlockingIPCContext state blocking).BlockingIPCCoherent by
+    simp only [CompositeState.BlockingIPCCoherent]
+    unfold restoreBlockingPeer at hrestore
+    split at hrestore <;> try contradiction
+    split at hrestore <;> try contradiction
+    split at hrestore <;> try contradiction
+    simp only [Except.ok.injEq] at hrestore
+    subst next
+    rfl]
+  exact publishBlockingIPCContext_coherent state blocking
+
 def dispatchBlockingReceive (state : CompositeState) (handleWord : UInt64)
     (frame : Interrupt.HardwareFrame) (registers : ResumableContext.Registers) :
     CompositeBlockingReceiveOutcome :=
@@ -1322,7 +1410,9 @@ def dispatchBlockingReceive (state : CompositeState) (handleWord : UInt64)
             reply := .delivered envelope }
       | .completed .blocked =>
           if outcome.state.ipc.scheduler.lifecycle.current.isSome then
-            { state, reply := .switchRequired }
+            match restoreBlockingPeer state outcome.state with
+            | .error _ => { state, reply := .switchRequired }
+            | .ok next => { state := next, reply := .blocked }
           else
             { state := publishBlockingIPCContext state outcome.state
               reply := .blocked }
@@ -1352,7 +1442,8 @@ theorem dispatchBlockingReceive_rejected_atomic state handleWord frame registers
             | rejected reason => simp_all
             | blocked =>
                 by_cases hsome : next.ipc.scheduler.lifecycle.current.isSome = true
-                · simp [hsome] at hreply ⊢
+                · cases hrestore : restoreBlockingPeer state next <;>
+                    simp [hsome, hrestore] at hreply ⊢
                 · simp [hsome] at hreply ⊢
 
 theorem dispatchBlockingReceive_preserves_blockingWellFormed state handleWord frame registers
@@ -1384,7 +1475,15 @@ theorem dispatchBlockingReceive_preserves_blockingWellFormed state handleWord fr
                   simpa [dispatchBlockingReceive, hresolve, saved, houtcome] using hnext
               | blocked =>
                   by_cases hsome : next.ipc.scheduler.lifecycle.current.isSome = true
-                  · simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] using hstate
+                  · cases hrestore : restoreBlockingPeer state next with
+                    | error reason =>
+                        simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore] using hstate
+                    | ok published =>
+                        have hcontext := restoreBlockingPeer_context_exact
+                          state next published hrestore
+                        simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore, hcontext] using hnext
                   · simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] using hnext
 
 theorem dispatchBlockingReceive_preserves_coherent state handleWord frame registers
@@ -1411,13 +1510,21 @@ theorem dispatchBlockingReceive_preserves_coherent state handleWord frame regist
                     publishBlockingIPCContext_coherent state next
               | blocked =>
                   by_cases hsome : next.ipc.scheduler.lifecycle.current.isSome = true
-                  · simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] using hstate
+                  · cases hrestore : restoreBlockingPeer state next with
+                    | error reason =>
+                        simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore] using hstate
+                    | ok published =>
+                        simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore] using restoreBlockingPeer_blockingCoherent
+                            state next published hrestore
                   · simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] using
                       publishBlockingIPCContext_coherent state next
 
-/-- Bounded invariant owned by the typed blocking-receive boundary.  The full
-runtime predicate remains a separate obligation until a successful block can
-consume a selected peer's resumable context in the same transition. -/
+/-- Bounded invariant owned by the typed blocking-receive boundary.  Successful
+blocking now consumes the selected peer's resumable context atomically; folding
+this predicate into `RuntimeWellFormed` still requires every non-IPC lifecycle
+and capability publisher to synchronize the blocking projections as well. -/
 def BlockingReceiveWellFormed (state : CompositeState) : Prop :=
   BlockingIPCContext.WellFormed state.blockingIPCContext ∧
     state.BlockingIPCCoherent
@@ -1463,7 +1570,23 @@ theorem dispatchBlockingReceive_blocked_uses_kernel_context state handleWord fra
                   simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
               | blocked =>
                   by_cases hsome : next.ipc.scheduler.lifecycle.current.isSome = true
-                  · simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] at hblocked
+                  · cases hrestore : restoreBlockingPeer state next with
+                    | error reason =>
+                        simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore] at hblocked
+                    | ok published =>
+                        have hexact := BlockingIPCContext.receive_blocked_exact
+                          state.blockingIPCContext state.execution.core.context.currentSubject
+                          resolution.handle.slot saved (by simp [houtcome])
+                        have hcontext := restoreBlockingPeer_context_exact
+                          state next published hrestore
+                        simp only [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore, if_true]
+                        refine ⟨?_, rfl, rfl⟩
+                        change published.blockingIPCContext.blocked
+                          state.execution.core.context.currentSubject = some saved
+                        rw [hcontext]
+                        simpa [houtcome] using hexact.2
                   · have hexact := BlockingIPCContext.receive_blocked_exact
                       state.blockingIPCContext state.execution.core.context.currentSubject
                       resolution.handle.slot saved (by simp [houtcome])
@@ -7900,6 +8023,22 @@ private def blockingEvidenceStore : BlockingIPC.State :=
     waiterCapacity := 2
     completion := fun _ => none }
 
+private def blockingEvidenceRegisters (marker : UInt64) : ResumableContext.Registers :=
+  { accumulator := marker, base := marker, count := marker, data := marker
+    source := marker, destination := marker, basePointer := marker
+    r8 := marker, r9 := marker, r10 := marker, r11 := marker
+    r12 := marker, r13 := marker, r14 := marker, r15 := marker }
+
+private def blockingEvidenceContext (owner : Nat) (marker : UInt64) :
+    ResumableContext.Context :=
+  { owner
+    addressSpace := owner
+    frame := { demoFrame 32 .user with
+      instructionPointer := 0x400000 + marker
+      stackPointer := 0x500000 + marker }
+    registers := blockingEvidenceRegisters marker
+    kind := .suspended }
+
 private def blockingEvidenceComposite (state : CompositeState) : CompositeState :=
   { state with
     execution := { state.execution with
@@ -7911,6 +8050,139 @@ private def blockingEvidenceComposite (state : CompositeState) : CompositeState 
     scheduler := blockingEvidenceStore.scheduler
     lifecycle := blockingEvidenceLifecycle (some 2)
     blockingIPC := blockingEvidenceStore }
+
+/-- Evidence state for the typed public blocking boundary.  Subjects 1 and 3
+have kernel-owned resumable contexts, subject 2 is current, and the modeled
+CR3 names subject 2 before it blocks. -/
+private def blockingContextEvidenceComposite (state : CompositeState) : CompositeState :=
+  let base := blockingEvidenceComposite state
+  { base with
+    resumable := { base.resumable with
+      scheduler := blockingEvidenceStore.scheduler
+      contexts := [blockingEvidenceContext 1 0x10, blockingEvidenceContext 3 0x30]
+      capacity := 3
+      translations := { base.resumable.translations with
+        virtual := { base.resumable.translations.virtual with
+          owner := (blockingEvidenceLifecycle (some 2)).addressOwner }
+        active := some 2
+        entries := [] } }
+    blockingContexts := fun _ => none }
+
+private def blockingEvidenceFrame : Interrupt.HardwareFrame := demoFrame 32 .user
+private def blockingEvidenceRegisters2 : ResumableContext.Registers :=
+  blockingEvidenceRegisters 0x22
+
+private def blockingContextEvidenceRejected (state : CompositeState) :
+    CompositeBlockingGateOutcome :=
+  blockingGate (blockingContextEvidenceComposite state)
+    (.receive 0x0000000000020000 blockingEvidenceFrame blockingEvidenceRegisters2)
+
+private def blockingContextEvidenceBlocked (state : CompositeState) :
+    CompositeBlockingGateOutcome :=
+  blockingGate (blockingContextEvidenceRejected state).state
+    (.receive 0x0000000000010000 blockingEvidenceFrame blockingEvidenceRegisters2)
+
+private def blockingContextEvidenceWoken (state : CompositeState) :
+    CompositeBlockingGateOutcome :=
+  blockingGate (blockingContextEvidenceBlocked state).state
+    (.send 0x0000000000010000 0xCAFE 0xBEEF)
+
+private def blockingContextEvidenceCancelled (state : CompositeState) :
+    CompositeBlockingGateOutcome :=
+  blockingGate (blockingContextEvidenceBlocked state).state (.cancel 2)
+
+/-- One mixed global blocking-gate trace first rejects a stale handle without
+mutation, then blocks subject 2, immediately restores scheduler-selected peer
+1 (including the modeled CR3 flush), and finally wakes subject 2 while
+restoring its exact saved frame/register context into the resumable bank. -/
+example (state : CompositeState) :
+    (blockingContextEvidenceRejected state).result =
+        .completed (.receive (.handleRejected (.denied .staleHandle))) ∧
+      (blockingContextEvidenceRejected state).state =
+        blockingContextEvidenceComposite state := by
+  exact ⟨rfl, rfl⟩
+
+example (state : CompositeState) :
+    (blockingContextEvidenceBlocked state).result = .completed (.receive .blocked) ∧
+      (blockingContextEvidenceBlocked state).state.execution.core.context.currentSubject = 1 ∧
+      (blockingContextEvidenceBlocked state).state.execution.core.context.activeAddressSpace = 1 ∧
+      (blockingContextEvidenceBlocked state).state.resumable.translations.active = some 1 ∧
+      (blockingContextEvidenceBlocked state).state.resumable.translations.entries = [] := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- A mixed rejected-block-wake trace composes at the authoritative composite
+boundary.  The rejected prefix is atomic; both accepted suffix steps preserve
+waiter/context coherence; and wake restores the exact released context into
+the resumable bank. -/
+theorem mixedBlockingWakeTrace_preserves state staleWord liveWord frame registers word0 word1
+    saved
+    (hstate : BlockingReceiveWellFormed state)
+    (hstale : (dispatchBlockingReceive state staleWord frame registers).reply =
+      .handleRejected (.denied .staleHandle))
+    (_hblocked : (dispatchBlockingReceive state liveWord frame registers).reply = .blocked)
+    (hwoke : (dispatchBlockingSend
+      (dispatchBlockingReceive state liveWord frame registers).state
+      liveWord word0 word1).reply = .woke saved) :
+    (dispatchBlockingReceive state staleWord frame registers).state = state ∧
+      BlockingReceiveWellFormed
+        (dispatchBlockingReceive state liveWord frame registers).state ∧
+      BlockingReceiveWellFormed
+        (dispatchBlockingSend
+          (dispatchBlockingReceive state liveWord frame registers).state
+          liveWord word0 word1).state ∧
+      ∃ receiver,
+        (dispatchBlockingReceive state liveWord frame registers).state.blockingContexts
+            receiver = some saved ∧
+        ResumablePreemption.contextFor
+          (dispatchBlockingSend
+            (dispatchBlockingReceive state liveWord frame registers).state
+            liveWord word0 word1).state.resumable.contexts receiver = some saved := by
+  have hreject := dispatchBlockingReceive_rejected_atomic state staleWord frame registers
+    (.handleRejected (.denied .staleHandle))
+    (.handle (.denied .staleHandle)) hstale
+  have hblockedWf := dispatchBlockingReceive_preserves_wellFormed
+    state liveWord frame registers hstate
+  have hwokenWf := dispatchBlockingSend_preserves_wellFormed
+    (dispatchBlockingReceive state liveWord frame registers).state
+    liveWord word0 word1 hblockedWf
+  obtain ⟨receiver, hstored, _, hrestored⟩ := dispatchBlockingSend_woke_exact
+    (dispatchBlockingReceive state liveWord frame registers).state
+    liveWord word0 word1 saved hblockedWf hwoke
+  exact ⟨hreject, hblockedWf, hwokenWf, receiver, hstored, hrestored⟩
+
+/-- The corresponding rejected-block-cancel trace has the same preservation
+shape and restores the cancelled subject's exact saved context. -/
+theorem mixedBlockingCancelTrace_preserves state staleWord liveWord frame registers subject saved
+    (hstate : BlockingReceiveWellFormed state)
+    (hstale : (dispatchBlockingReceive state staleWord frame registers).reply =
+      .handleRejected (.denied .staleHandle))
+    (_hblocked : (dispatchBlockingReceive state liveWord frame registers).reply = .blocked)
+    (hcancelled : (dispatchBlockingCancel
+      (dispatchBlockingReceive state liveWord frame registers).state subject).reply =
+        .cancelled saved) :
+    (dispatchBlockingReceive state staleWord frame registers).state = state ∧
+      BlockingReceiveWellFormed
+        (dispatchBlockingReceive state liveWord frame registers).state ∧
+      BlockingReceiveWellFormed
+        (dispatchBlockingCancel
+          (dispatchBlockingReceive state liveWord frame registers).state subject).state ∧
+      (dispatchBlockingReceive state liveWord frame registers).state.blockingContexts subject =
+        some saved ∧
+      ResumablePreemption.contextFor
+        (dispatchBlockingCancel
+          (dispatchBlockingReceive state liveWord frame registers).state subject).state.resumable.contexts
+        subject = some saved := by
+  have hreject := dispatchBlockingReceive_rejected_atomic state staleWord frame registers
+    (.handleRejected (.denied .staleHandle))
+    (.handle (.denied .staleHandle)) hstale
+  have hblockedWf := dispatchBlockingReceive_preserves_wellFormed
+    state liveWord frame registers hstate
+  have hcancelWf := dispatchBlockingCancel_preserves_wellFormed
+    (dispatchBlockingReceive state liveWord frame registers).state subject hblockedWf
+  obtain ⟨hstored, _, hrestored⟩ := dispatchBlockingCancel_cancelled_exact
+    (dispatchBlockingReceive state liveWord frame registers).state subject saved
+    hblockedWf hcancelled
+  exact ⟨hreject, hblockedWf, hcancelWf, hstored, hrestored⟩
 
 private def blockingEvidenceBlocked (state : CompositeState) : CompositeBlockingIPCOutcome :=
   dispatchBlockingIPC (blockingEvidenceComposite state) (.receive 0x0000000000010000)
