@@ -1077,12 +1077,14 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
                 ++initially_bus_mastering;
                 initial_bus_master_mask |= 1u << index;
             }
-            pci_config_command(device, function,
-                (uint16_t)(command & ~PCI_COMMAND_BUS_MASTER));
+            uint16_t expected_command =
+                (uint16_t)(command & ~PCI_COMMAND_BUS_MASTER);
+            pci_config_command(device, function, expected_command);
             ++writes;
             command = (uint16_t)pci_config_dword(device, function, 0x04);
             ++readbacks;
-            if ((command & PCI_COMMAND_BUS_MASTER) != 0 ||
+            if (command != expected_command ||
+                (command & PCI_COMMAND_BUS_MASTER) != 0 ||
                 (command & ~PCI_COMMAND_MODEL_MASK) != 0)
                 fail("dma-command-readback");
             seen |= 1u << index;
@@ -1105,7 +1107,7 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     serial_u64(initially_bus_mastering);
     serial_puts(" initial-bus-master-mask=");
     serial_u64(initial_bus_master_mask);
-    serial_puts(" bus-master=disabled stage=pre-cpl3 result=PASS\n");
+    serial_puts(" bus-master=disabled readback=exact stage=pre-cpl3 result=PASS\n");
 }
 
 static void serial_init(void) {
