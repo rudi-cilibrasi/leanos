@@ -1086,20 +1086,9 @@ scheduler/lifecycle projection and the authoritative resumable bank.  The
 lower transition has already reserved both finite capacities. -/
 private def publishDeferredDrain (state : CompositeState)
     (outcome : BlockingIPCContext.DrainOutcome) : CompositeState :=
-  let scheduler := outcome.state.ipc.scheduler
-  let lifecycle := scheduler.lifecycle
-  { state with
-    execution := { state.execution with
-      core := { state.execution.core with lifecycle }
-      returnAuthorityArmed := false }
-    scheduler
-    preemption := { state.preemption with scheduler }
-    lifecycle
-    resumable := { state.resumable with
-      scheduler
-      contexts := outcome.resumable }
-    blockingIPC := outcome.state.ipc
-    blockingContexts := outcome.state.blocked
+  let published := publishBlockingIPCContext state outcome.state
+  { published with
+    resumable := { published.resumable with contexts := outcome.resumable }
     deferredCancels := outcome.deferred }
 
 /-- Typed composite drain for a contained-fault peer.  Every rejected branch
@@ -1163,7 +1152,7 @@ theorem drainDeferredCancellation_drained_exact state subject saved
             hcancelled, hcontexts⟩
           simp only [publishDeferredDrain]
           refine ⟨hretained, hremoved, hcancelled, hcontexts, ?_⟩
-          simp
+          exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- A composite success proves both finite reservations in the pre-state and
 the exact resumable-bank append in the published post-state. -/
@@ -1203,7 +1192,8 @@ theorem drainDeferredCancellation_reserves_capacities state subject saved
           simp only [publishDeferredDrain]
           refine ⟨?_, hbankRoom, ?_, hcontexts⟩
           · simpa [CompositeState.blockingIPCContext, hblocking] using hreadyRoom
-          · simpa [CompositeState.blockingIPCContext, hblocking] using hready
+          · simpa [publishBlockingIPCContext, CompositeState.blockingIPCContext,
+              hblocking] using hready
 
 /-- Publish the blocking half of subject termination without reconstructing
 either waiter or saved-context state.  The dependency transition removes the
@@ -1779,6 +1769,131 @@ theorem publishReleasedBlockingContext_wake_preserves_runtimeWellFormed
   · simpa [publishBlockingIPCContext] using htransfers
   · simpa [publishBlockingIPCContext] using hterminal
   · simpa [publishBlockingIPCContext] using hportControls
+
+/-- The capacity-checked drain closes the contained-fault cleanup loop: every
+typed denial is atomic, while success moves exactly one quiescent retained
+context into the resumable bank and preserves both the global runtime
+invariant and the classification of all remaining deferred contexts. -/
+theorem drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
+    state subject (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed
+      (drainDeferredCancellation state subject).state := by
+  simp only [drainDeferredCancellation]
+  generalize houtcome : BlockingIPCContext.drainDeferred state.blockingIPCContext
+    state.deferredCancels state.resumable.contexts state.resumable.capacity subject = outcome
+  cases outcome with
+  | mk next nextDeferred nextResumable result =>
+      cases result with
+      | rejected reason => exact hstate
+      | drained saved =>
+          simp only
+          have hresult :
+              (BlockingIPCContext.drainDeferred state.blockingIPCContext
+                state.deferredCancels state.resumable.contexts
+                state.resumable.capacity subject).result = .drained saved := by
+            rw [houtcome]
+          have hexact := BlockingIPCContext.drainDeferred_drained_exact
+            state.blockingIPCContext state.deferredCancels state.resumable.contexts
+            state.resumable.capacity subject saved hresult
+          have hcapacity := BlockingIPCContext.drainDeferred_drained_reserves_capacity
+            state.blockingIPCContext state.deferredCancels state.resumable.contexts
+            state.resumable.capacity subject saved hresult
+          have hschedulerExact :=
+            BlockingIPCContext.drainDeferred_drained_scheduler_exact
+              state.blockingIPCContext state.deferredCancels state.resumable.contexts
+              state.resumable.capacity subject saved hresult
+          have hdeferredExact :=
+            BlockingIPCContext.drainDeferred_drained_deferred_exact
+              state.blockingIPCContext state.deferredCancels state.resumable.contexts
+              state.resumable.capacity subject saved hresult
+          have hdeferred := BlockingIPCContext.drainDeferred_preserves_deferredWellFormed
+            state.blockingIPCContext state.deferredCancels state.resumable.contexts
+            state.resumable.capacity subject hstate.2.1
+          rw [houtcome] at hexact hcapacity hschedulerExact hdeferredExact hdeferred
+          change nextDeferred =
+            BlockingIPCContext.setRetained state.deferredCancels subject none at hdeferredExact
+          rcases hexact with
+            ⟨hretained, hremoved, hrunnable, hready, _hcompletion, hcontexts⟩
+          rcases hcapacity with
+            ⟨hvalid, _hlive, howns, _hunique, _hreadyRoom, hbankRoom,
+              hscheduler, _hcontexts⟩
+          have howner : saved.owner = subject :=
+            BlockingIPCContext.validSaved_owner subject saved hvalid
+          have hvalidParts := hvalid
+          simp only [BlockingIPCContext.validSaved, Bool.and_eq_true,
+            beq_iff_eq] at hvalidParts
+          have hkind : saved.kind = .suspended := by
+            exact BlockingIPCContext.validSaved_kind subject saved hvalid
+          have hkindNe : (saved.kind != .suspended) = false := by
+            rw [hkind]
+            rfl
+          have hnextLive : next.ipc.scheduler.lifecycle.capabilities.subjects subject = true := by
+            rw [hschedulerExact]
+            simpa [CompositeState.blockingIPCContext] using _hlive
+          have hnextAddress :
+              next.ipc.scheduler.lifecycle.addressOwner saved.addressSpace = some subject := by
+            have haddress :
+                state.blockingIPC.scheduler.lifecycle.addressOwner subject = some subject := by
+              simpa [CompositeState.blockingIPCContext,
+                Scheduler.ownsAddressSpace] using howns
+            rw [hschedulerExact]
+            simpa [CompositeState.blockingIPCContext, hvalidParts.1.1.2] using haddress
+          have habsent := hstate.2.2 subject saved hretained
+          have hbaseRuntime : RuntimeWellFormed
+              { state with deferredCancels := nextDeferred } := by
+            change RuntimeWellFormed state
+            exact hstate.1
+          let published : CompositeState :=
+            { publishBlockingIPCContext { state with deferredCancels := nextDeferred } next with
+              resumable :=
+                { (publishBlockingIPCContext
+                    { state with deferredCancels := nextDeferred } next).resumable with
+                  contexts := saved :: state.resumable.contexts } }
+          have hpublished :
+              publishReleasedBlockingContext
+                  { state with deferredCancels := nextDeferred } next saved =
+                .ok published := by
+            unfold publishReleasedBlockingContext
+            rw [if_neg (by simp [hvalidParts, hkindNe])]
+            rw [if_neg (by
+              simp [hnextLive, hnextAddress, hready, howner]
+              exact hrunnable)]
+            rw [if_neg (by simp [habsent, howner])]
+            rw [if_neg hbankRoom]
+          have hruntime : RuntimeWellFormed published :=
+            publishReleasedBlockingContext_wake_preserves_runtimeWellFormed
+              { state with deferredCancels := nextDeferred } next saved published
+              hbaseRuntime hdeferred.1 (by
+                simpa [howner, CompositeState.blockingIPCContext,
+                  hstate.1.blockingScheduler] using hschedulerExact) hpublished
+          have hshape : publishDeferredDrain state
+              { state := next, deferred := nextDeferred, resumable := nextResumable,
+                result := .drained saved } = published := by
+            unfold publishDeferredDrain published publishBlockingIPCContext
+            rw [hcontexts]
+          rw [hshape]
+          change DeferredBlockingRuntimeWellFormed published
+          refine ⟨hruntime, hdeferred, ?_⟩
+          intro candidate actual hcanceled
+          have hne : candidate ≠ subject := by
+            intro heq
+            subst candidate
+            have hold : nextDeferred.retained subject = some actual := by
+              simpa [published, publishBlockingIPCContext] using hcanceled
+            rw [hremoved] at hold
+            contradiction
+          simp only [published, publishBlockingIPCContext]
+          simp only [ResumablePreemption.contextFor, List.find?_cons]
+          rw [show (saved.owner == candidate) = false by simp [howner, Ne.symm hne]]
+          have hcanceled' : nextDeferred.retained candidate = some actual := by
+            simpa [published, publishBlockingIPCContext] using hcanceled
+          have hcanceledOld : state.deferredCancels.retained candidate = some actual := by
+            have hd : nextDeferred =
+                BlockingIPCContext.setRetained state.deferredCancels subject none :=
+              hdeferredExact
+            rw [hd] at hcanceled'
+            simpa [BlockingIPCContext.setRetained, hne] using hcanceled'
+          exact hstate.2.2 candidate actual hcanceledOld
 
 theorem publishReleasedBlockingContext_blockingCoherent state blocking saved next
     (hpublished : publishReleasedBlockingContext state blocking saved = .ok next) :
@@ -10825,11 +10940,13 @@ dependency transition consumes. -/
 inductive AuthoritativeOperation where
   | ordinary (operation : Operation)
   | blocking (operation : CompositeBlockingOperation)
+  | drainDeferred (subject : BlockingIPC.SubjectId)
 
 /-- Operation-specific observation retained by the successor gate. -/
 inductive AuthoritativeOperationReply where
   | ordinary (reply : OperationReply)
   | blocking (reply : CompositeBlockingOperationReply)
+  | deferredDrain (result : BlockingIPCContext.DrainResult)
   deriving DecidableEq, Repr
 
 inductive AuthoritativeGateResult where
@@ -10859,11 +10976,14 @@ def applyAuthoritativeOperation (state : CompositeState) :
     AuthoritativeOperation → CompositeState
   | .ordinary operation => applyOperation state operation
   | .blocking operation => applyBlockingOperation state operation
+  | .drainDeferred subject => (drainDeferredCancellation state subject).state
 
 def authoritativeOperationReply (state : CompositeState) :
     AuthoritativeOperation → AuthoritativeOperationReply
   | .ordinary operation => .ordinary (operationReply state operation)
   | .blocking operation => .blocking (blockingOperationReply state operation)
+  | .drainDeferred subject =>
+      .deferredDrain (drainDeferredCancellation state subject).result
 
 /-- One total gate for both operation families.  Neither branch can bypass the
 shared busy/halted execution latch. -/
@@ -10887,6 +11007,14 @@ def authoritativeGate (state : CompositeState) (operation : AuthoritativeOperati
       (blockingGate state operation).state := by
   cases hmode : state.execution.mode <;>
     simp [authoritativeGate, blockingGate, applyAuthoritativeOperation, hmode]
+
+@[simp] theorem authoritativeGate_drainDeferred_state state subject :
+    (authoritativeGate state (.drainDeferred subject)).state =
+      match state.execution.mode with
+      | .running => (drainDeferredCancellation state subject).state
+      | .handling _ | .halted _ => state := by
+  cases hmode : state.execution.mode <;>
+    simp [authoritativeGate, applyAuthoritativeOperation, hmode]
 
 theorem authoritativeGate_deterministic state operation first second
     (hfirst : authoritativeGate state operation = first)
@@ -10918,6 +11046,15 @@ inductive AuthoritativeGateRejection : AuthoritativeGateResult → Prop where
   | blocking {reply}
       (hrejected : CompositeBlockingGateRejection (.completed reply)) :
       AuthoritativeGateRejection (.completed (.blocking reply))
+  | deferredDrain (reason : BlockingIPCContext.DrainError) :
+      AuthoritativeGateRejection
+        (.completed (.deferredDrain (.rejected reason)))
+
+theorem AuthoritativeGateRejection.deferredDrain_result {result}
+    (h : AuthoritativeGateRejection (.completed (.deferredDrain result))) :
+    ∃ reason, result = .rejected reason := by
+  cases h with
+  | deferredDrain reason => exact ⟨reason, rfl⟩
 
 /-- Every classified nonfatal denial is byte-for-byte atomic across every
 projection in the shared composite state. -/
@@ -10946,6 +11083,15 @@ theorem authoritativeGate_rejection_atomic state operation
                 simpa [blockingGate, hmode] using hreply)
               rw [authoritativeGate_blocking_state]
               exact hatomic
+      | drainDeferred subject =>
+          have hclassified : AuthoritativeGateRejection
+              (.completed (.deferredDrain
+                (drainDeferredCancellation state subject).result)) := by
+            simpa [authoritativeGate, hmode, authoritativeOperationReply] using hrejected
+          obtain ⟨reason, hresult⟩ := hclassified.deferredDrain_result
+          simpa [authoritativeGate, hmode, applyAuthoritativeOperation] using
+            drainDeferredCancellation_rejected_unchanged
+              state subject reason hresult
 
 /-- Atomic denial retains even the strengthened waiter/context invariant. -/
 theorem authoritativeGate_rejection_preserves_blockingRuntimeWellFormed
@@ -10955,21 +11101,6 @@ theorem authoritativeGate_rejection_preserves_blockingRuntimeWellFormed
     BlockingRuntimeWellFormed (authoritativeGate state operation).state := by
   rw [authoritativeGate_rejection_atomic state operation hrejected]
   exact hstate
-
-/-- From the strengthened blocking precondition, every successor-gate operation
-preserves the existing global `RuntimeWellFormed` invariant.  The following
-theorems retain the stronger blocking invariant for blocking steps and the
-folded authoritative invariant for ordinary steps and ready mixed traces. -/
-theorem authoritativeGate_preserves_runtimeWellFormed state operation
-    (hstate : BlockingRuntimeWellFormed state) :
-    RuntimeWellFormed (authoritativeGate state operation).state := by
-  cases operation with
-  | ordinary operation =>
-      rw [authoritativeGate_ordinary_state]
-      exact gate_preserves_runtimeWellFormed state operation hstate.1
-  | blocking operation =>
-      rw [authoritativeGate_blocking_state]
-      exact (blockingGate_preserves_blockingRuntimeWellFormed state operation hstate).1
 
 /-- The embedded blocking family keeps the full authoritative waiter/context
 invariant through the successor gate for every typed result. -/
@@ -11043,12 +11174,39 @@ theorem authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
     exact gate_preserves_blockingContextAgreement state operation hstate.2
 
 /-- Only a mutating blocking step needs the stronger scheduler/mailbox/waiter
-invariant.  Ordinary steps need no extra premise beyond the authoritative
-global invariant itself. -/
+invariant.  A deferred drain additionally consumes the retained-context
+classification and resumable-bank disjointness carried by the deferred
+runtime invariant.  Ordinary steps need no extra premise beyond the
+authoritative global invariant itself. -/
 def AuthoritativeOperationReady (state : CompositeState) :
     AuthoritativeOperation → Prop
   | .ordinary _ => True
   | .blocking _ => BlockingRuntimeWellFormed state
+  | .drainDeferred _ => DeferredBlockingRuntimeWellFormed state
+
+/-- Every ready successor-gate operation preserves the existing global
+runtime invariant.  Readiness is operation-specific: ordinary operations use
+the supplied global invariant, blocking operations use their authoritative
+waiter store, and deferred drains use their retained-context classification. -/
+theorem authoritativeGate_preserves_runtimeWellFormed state operation
+    (hstate : RuntimeWellFormed state)
+    (hready : AuthoritativeOperationReady state operation) :
+    RuntimeWellFormed (authoritativeGate state operation).state := by
+  cases operation with
+  | ordinary operation =>
+      rw [authoritativeGate_ordinary_state]
+      exact gate_preserves_runtimeWellFormed state operation hstate
+  | blocking operation =>
+      rw [authoritativeGate_blocking_state]
+      exact (blockingGate_preserves_blockingRuntimeWellFormed state operation hready).1
+  | drainDeferred subject =>
+      cases hmode : state.execution.mode with
+      | running =>
+          simpa [authoritativeGate, hmode, applyAuthoritativeOperation] using
+            (drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
+              state subject hready).1
+      | handling active => simpa [authoritativeGate, hmode] using hstate
+      | halted record => simpa [authoritativeGate, hmode] using hstate
 
 theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
     state operation (hstate : AuthoritativeRuntimeWellFormed state)
@@ -11061,6 +11219,21 @@ theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
   | blocking operation =>
       exact (authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
         state operation hready).authoritative
+  | drainDeferred subject =>
+      cases hmode : state.execution.mode with
+      | running =>
+          have hpreserved :=
+            drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
+              state subject hready
+          rw [show (authoritativeGate state (.drainDeferred subject)).state =
+              (drainDeferredCancellation state subject).state by
+            simp [authoritativeGate, hmode, applyAuthoritativeOperation]]
+          change RuntimeWellFormed (drainDeferredCancellation state subject).state ∧
+            BlockingIPCContext.ContextAgreement
+              (drainDeferredCancellation state subject).state.blockingIPCContext
+          exact ⟨hpreserved.1, hpreserved.2.1.1.2⟩
+      | handling active => simpa [authoritativeGate, hmode] using hstate
+      | halted record => simpa [authoritativeGate, hmode] using hstate
 
 def runAuthoritativeOperations (state : CompositeState) :
     List AuthoritativeOperation → CompositeState
@@ -11090,6 +11263,38 @@ theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
       exact ih (authoritativeGate state operation).state
         (authoritativeGate_preserves_authoritativeRuntimeWellFormed
           state operation hstate hready.1) hready.2
+
+/-- A public deferred-drain step preserves the full retained-context
+classification under every outer-latch result. -/
+theorem authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFormed
+    state subject (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed
+      (authoritativeGate state (.drainDeferred subject)).state := by
+  cases hmode : state.execution.mode with
+  | running =>
+      simpa [authoritativeGate, hmode, applyAuthoritativeOperation] using
+        drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
+          state subject hstate
+  | handling active => simpa [authoritativeGate, hmode] using hstate
+  | halted record => simpa [authoritativeGate, hmode] using hstate
+
+/-- Finite public traces containing only capacity-checked deferred drains keep
+the complete deferred-cancellation invariant.  Each successful member removes
+one retained entry, while every typed denial and every terminal suffix is
+state-preserving. -/
+theorem runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
+    state (subjects : List BlockingIPC.SubjectId)
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (subjects.map AuthoritativeOperation.drainDeferred)) := by
+  induction subjects generalizing state with
+  | nil => simpa [runAuthoritativeOperations] using hstate
+  | cons subject rest ih =>
+      simp only [List.map_cons, runAuthoritativeOperations]
+      exact ih _
+        (authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFormed
+          state subject hstate)
 
 /-- Fatal mode is a separate result class and absorbs arbitrary suffixes that
 mix ordinary operations with blocking delivery, sleep, wake, and cancellation. -/
@@ -11737,6 +11942,20 @@ example (state : CompositeState) :
       (deferredEvidenceBankFull state).state =
         deferredEvidenceComposite state 2 1 := by
   exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- The same success and follow-up denial are observable through the public
+authoritative gate and its finite trace runner, rather than only through the
+composite drain helper. -/
+example (state : CompositeState) :
+    let initial := deferredEvidenceComposite state 2 2
+    let first := authoritativeGate initial (.drainDeferred 1)
+    first.result = .completed
+        (.deferredDrain (.drained (blockingEvidenceContext 1 0x10))) ∧
+      (authoritativeGate first.state (.drainDeferred 1)).result =
+        .completed (.deferredDrain (.rejected .notDeferred)) ∧
+      runAuthoritativeOperations initial [.drainDeferred 1, .drainDeferred 1] =
+        first.state := by
+  exact ⟨rfl, rfl, rfl⟩
 
 /-- A concrete kernel fault latches the runtime before a heterogeneous suffix;
 the stale handle, IPC, revoke, unmap, termination, and restart operations are

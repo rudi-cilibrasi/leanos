@@ -44,6 +44,17 @@ theorem validSaved_owner caller saved
   simp only [validSaved, Bool.and_eq_true, beq_iff_eq] at hvalid
   exact hvalid.1.1.1
 
+theorem validSaved_kind caller saved
+    (hvalid : validSaved caller saved = true) : saved.kind = .suspended := by
+  simp only [validSaved, Bool.and_eq_true, beq_iff_eq] at hvalid
+  cases hkind : saved.kind with
+  | initial =>
+      have hk := hvalid.1.2
+      rw [hkind] at hk
+      change false = true at hk
+      contradiction
+  | suspended => rfl
+
 /-- The separate bank is an exact typed projection of the waiter index.  It
 contains no runnable-only entry: every waiter has one valid suspended context,
 and no non-waiter has a blocked context. -/
@@ -273,6 +284,51 @@ theorem drainDeferred_drained_reserves_capacity state deferred resumable capacit
   all_goals try (split at houtcome <;> try simp_all)
   all_goals grind [Nat.not_le_of_gt]
 
+/-- A successful drain performs the canonical scheduler wake shape used by
+the composite resumable-context publisher. -/
+theorem drainDeferred_drained_scheduler_exact state deferred resumable capacity subject saved
+    (h : (drainDeferred state deferred resumable capacity subject).result = .drained saved) :
+    (drainDeferred state deferred resumable capacity subject).state.ipc.scheduler =
+      { state.ipc.scheduler with
+        ready := state.ipc.scheduler.ready ++ [subject]
+        lifecycle := { state.ipc.scheduler.lifecycle with
+          runnable := SubjectLifecycle.setBool
+            state.ipc.scheduler.lifecycle.runnable subject true } } := by
+  generalize houtcome : drainDeferred state deferred resumable capacity subject = outcome at h ⊢
+  rcases outcome with ⟨next, nextDeferred, nextResumable, result⟩
+  simp only at h
+  subst result
+  simp only [drainDeferred] at houtcome
+  split at houtcome <;> try simp_all
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals rcases houtcome with ⟨rfl, rfl, rfl, rfl⟩
+  all_goals rfl
+
+/-- A successful drain removes exactly the selected retained entry and leaves
+every other deferred cancellation untouched. -/
+theorem drainDeferred_drained_deferred_exact state deferred resumable capacity subject saved
+    (h : (drainDeferred state deferred resumable capacity subject).result = .drained saved) :
+    (drainDeferred state deferred resumable capacity subject).deferred =
+      setRetained deferred subject none := by
+  generalize houtcome : drainDeferred state deferred resumable capacity subject = outcome at h ⊢
+  rcases outcome with ⟨next, nextDeferred, nextResumable, result⟩
+  simp only at h
+  subst result
+  simp only [drainDeferred] at houtcome
+  split at houtcome <;> try simp_all
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals rcases houtcome with ⟨rfl, rfl, rfl, rfl⟩
+
 /-- Capacity rejection is typed and atomic: it can occur only after the saved
 context and its subject/address-space authority have been revalidated. -/
 theorem drainDeferred_readyQueueFull_exact state deferred resumable capacity subject
@@ -329,6 +385,115 @@ theorem drainDeferred_resumableBankFull_exact state deferred resumable capacity 
   all_goals try (split at houtcome <;> try simp_all)
   all_goals try (split at houtcome <;> try simp_all)
   all_goals simp_all
+
+/-- Draining one detached context preserves the authoritative blocking store
+and the classification of every still-deferred context.  Rejection is the
+identity transition; success relies on the quiescence facts carried by
+`DeferredWellFormed` before making the selected subject runnable. -/
+theorem drainDeferred_preserves_deferredWellFormed state deferred resumable capacity subject
+    (hstate : DeferredWellFormed state deferred) :
+    DeferredWellFormed
+      (drainDeferred state deferred resumable capacity subject).state
+      (drainDeferred state deferred resumable capacity subject).deferred := by
+  simp only [drainDeferred]
+  split <;> try exact hstate
+  all_goals split <;> try exact hstate
+  all_goals split <;> try exact hstate
+  all_goals split <;> try exact hstate
+  all_goals split <;> try exact hstate
+  all_goals split <;> try exact hstate
+  all_goals split <;> try exact hstate
+  rename_i saved hretained hvalid hlive howns hunique hreadyRoom hbankRoom
+  rcases hstate with ⟨⟨hipc, hagreement⟩, hdisjoint, hdeferred⟩
+  have hfacts := hdeferred subject saved hretained
+  rcases hfacts with
+    ⟨hsaved, hnotWaiting, _hlive, hquiescent, hnotCurrent, hnotReady, _howns⟩
+  have haddressOwner :
+      state.ipc.scheduler.lifecycle.addressOwner subject = some subject := by
+    simpa [Scheduler.ownsAddressSpace] using _howns
+  constructor
+  · constructor
+    · rcases hipc with ⟨hscheduler, hqueues, hwaiters, hqueueUnique,
+        hindex, hmailbox, hcaps⟩
+      have hscheduler' : Scheduler.WellFormed
+          { state.ipc.scheduler with
+            ready := state.ipc.scheduler.ready ++ [subject]
+            lifecycle := { state.ipc.scheduler.lifecycle with
+              runnable := SubjectLifecycle.setBool
+                state.ipc.scheduler.lifecycle.runnable subject true } } := by
+        rcases hscheduler with ⟨hlifecycle, hreadyNodup, hreadyCapacity,
+          hreadyProperties, hcurrentProperties⟩
+        rcases hlifecycle with
+          ⟨hissued, hmemory, haddress, hendpoint, hrunnable, hcurrentLive⟩
+        refine ⟨?_, ?_, ?_, ?_, ?_⟩
+        · refine ⟨hissued, hmemory, haddress, hendpoint, ?_, hcurrentLive⟩
+          intro candidate hruns
+          by_cases heq : candidate = subject
+          · subst candidate
+            exact _hlive
+          · apply hrunnable candidate
+            simpa [SubjectLifecycle.setBool, heq] using hruns
+        · simpa [List.nodup_append] using
+            And.intro hreadyNodup (fun candidate hready heq =>
+              hnotReady (by simpa [heq] using hready))
+        · simp
+          omega
+        · intro candidate hready
+          simp at hready
+          rcases hready with hold | heq
+          · rcases hreadyProperties candidate hold with
+              ⟨hcandidateLive, hruns, hcowns⟩
+            have hne : candidate ≠ subject := by
+              intro heq
+              subst candidate
+              exact hnotReady hold
+            exact ⟨hcandidateLive, by simpa [SubjectLifecycle.setBool, hne], hcowns⟩
+          · subst candidate
+            exact ⟨_hlive, by simp [SubjectLifecycle.setBool],
+              by simp [Scheduler.ownsAddressSpace, haddressOwner]⟩
+        · intro candidate hcurrent
+          rcases hcurrentProperties candidate hcurrent with
+            ⟨hcandidateLive, hruns, hcowns, hcnotReady⟩
+          have hne : candidate ≠ subject := by
+            intro heq
+            subst candidate
+            exact hnotCurrent hcurrent
+          exact ⟨hcandidateLive, by simpa [SubjectLifecycle.setBool, hne], hcowns,
+            by simp [hcnotReady, hne]⟩
+      refine ⟨hscheduler', hqueues, ?_, hqueueUnique, hindex, hmailbox, hcaps⟩
+      intro endpoint candidate hmember
+      rcases hwaiters endpoint candidate hmember with
+        ⟨hliveEndpoint, hauthority, hcLive, hcBlocked, hcOwns,
+          hcNotCurrent, hcNotReady⟩
+      have hne : candidate ≠ subject := by
+        intro heq
+        subst candidate
+        have hindexed := (hindex endpoint subject).mp hmember
+        rw [hnotWaiting] at hindexed
+        contradiction
+      exact ⟨hliveEndpoint, hauthority, hcLive,
+        by simpa [SubjectLifecycle.setBool, hne], hcOwns, hcNotCurrent,
+        by simp [hcNotReady, hne]⟩
+    · exact hagreement
+  · constructor
+    · intro candidate hblocked
+      by_cases heq : candidate = subject
+      · subst candidate
+        simp [setRetained]
+      · simpa [setRetained, heq] using hdisjoint candidate hblocked
+    · intro candidate actual hactual
+      by_cases heq : candidate = subject
+      · subst candidate
+        simp [setRetained] at hactual
+      · have hold := hdeferred candidate actual (by
+            simpa [setRetained, heq] using hactual)
+        rcases hold with
+          ⟨hvalidActual, hnotWaitingActual, hliveActual, hquiescentActual,
+            hnotCurrentActual, hnotReadyActual, hownsActual⟩
+        refine ⟨hvalidActual, hnotWaitingActual, hliveActual, ?_, ?_, ?_, hownsActual⟩
+        · simpa [SubjectLifecycle.setBool, heq] using hquiescentActual
+        · exact hnotCurrentActual
+        · simp [hnotReadyActual, heq]
 
 inductive ContextError where
   | invalidSaved | duplicateSaved | missingSaved

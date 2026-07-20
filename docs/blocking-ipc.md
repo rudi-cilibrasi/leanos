@@ -45,6 +45,17 @@ queue, resumable-context, and transfer cleanup. Terminating an endpoint owner st
 authority filter for other affected waiters before this predicate can be folded
 into the global runtime invariant.
 
+Contained-fault cleanup uses a separate deferred-cancellation bank for peers
+whose endpoint authority was invalidated. Each retained context stays valid,
+live, non-runnable, non-current, absent from the ready queue, and disjoint from
+the resumable bank. The public authoritative gate exposes a typed
+`drainDeferred` operation: it revalidates those facts, reserves ready-queue and
+resumable-bank capacity, and publishes the cancellation, restored context, and
+synchronized scheduler views together. Exhausting either finite bank is a
+distinct typed rejection with the literal pre-state. The one-step theorem and
+the finite drain-trace theorem preserve the strengthened deferred runtime
+invariant; they do not claim a machine restore or automatic progress policy.
+
 ## Bounds, observations, and progress
 
 Wait queues and the scheduler ready queue have explicit fixed capacities.

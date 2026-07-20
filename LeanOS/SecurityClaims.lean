@@ -184,7 +184,8 @@ from the strengthened blocking precondition preserves the folded authoritative
 invariant; every embedded blocking step preserves the full blocking invariant;
 classified denial is atomic; and fatal mode absorbs arbitrary mixed suffixes. -/
 theorem composite_authoritative_gate_contract state operation
-    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
+    (hready : FailStop.AuthoritativeOperationReady state operation) :
     FailStop.AuthoritativeRuntimeWellFormed
         (FailStop.authoritativeGate state operation).state ∧
       (∀ reply,
@@ -203,12 +204,8 @@ theorem composite_authoritative_gate_contract state operation
       (∀ record suffix,
         state.execution.mode = .halted record →
         FailStop.runAuthoritativeOperations state suffix = state) := by
-  have hready : FailStop.AuthoritativeOperationReady state operation := by
-    cases operation with
-    | ordinary operation => trivial
-    | blocking operation => exact hstate
   refine ⟨FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
-      state operation hstate.authoritative hready, ?_, ?_, ?_, ?_⟩
+      state operation hstate hready, ?_, ?_, ?_, ?_⟩
   · intro reply hcompleted
     exact FailStop.authoritativeGate_completed_sound state operation reply hcompleted
   · intro _rejection
@@ -216,7 +213,7 @@ theorem composite_authoritative_gate_contract state operation
   · intro blocking hoperation
     subst operation
     exact FailStop.authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
-      state blocking hstate
+      state blocking hready
   · intro record suffix hmode
     exact FailStop.authoritative_halted_suffix_absorbing state record suffix hmode
 
@@ -520,7 +517,7 @@ theorem composite_blocking_gate_preserves_blockingRuntimeWellFormed state operat
   exact FailStop.blockingGate_preserves_blockingRuntimeWellFormed
     state operation hstate
 
-/-- SC-COMPOSITE-CONTAINED-FAULT-CLEANUP: contained entry cleanup keeps the
+/-- Supporting contained-cleanup theorem: contained entry cleanup keeps the
 published scheduler/lifecycle views synchronized and preserves exact waiter /
 saved-context agreement while invalidated peers move to typed deferred
 cancellation state. -/
@@ -572,6 +569,46 @@ theorem composite_deferred_cancel_drain_success_boundary state subject saved
   exact ⟨hexact.1, hexact.2.1, hexact.2.2.1, hexact.2.2.2.1,
     hcapacity.1, hcapacity.2.1, hcapacity.2.2.1,
     hexact.2.2.2.2.1, hexact.2.2.2.2.2.1⟩
+
+/-- Supporting public-drain theorem: capacity-checked deferred
+cancellation is a public successor-gate operation.  One step and every finite
+drain-only trace preserve the global invariant, authoritative blocking store,
+and exact classification/disjointness of every retained context. -/
+theorem composite_deferred_cancel_public_gate_and_trace_preserve
+    state subject (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.authoritativeGate state (.drainDeferred subject)).state ∧
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.runAuthoritativeOperations state
+          (subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact ⟨
+    FailStop.authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFormed
+      state subject hstate,
+    FailStop.runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
+      state subjects hstate⟩
+
+/-- SC-COMPOSITE-CONTAINED-FAULT-CLEANUP: stable combined contract for the
+contained-cleanup boundary and its public deferred-drain continuation. -/
+theorem composite_contained_fault_cleanup_and_deferred_trace_contract
+    state frame faultSubject drainSubject (subjects : List BlockingIPC.SubjectId)
+    (hcontained :
+      (FailStop.dispatchHardware state.execution frame).action = .contained faultSubject)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
+    let cleaned := FailStop.applyOperation state (.interrupt frame)
+    BlockingIPCContext.ContextAgreement cleaned.blockingIPCContext ∧
+      cleaned.scheduler.lifecycle = cleaned.execution.core.lifecycle ∧
+      cleaned.preemption.scheduler.lifecycle = cleaned.execution.core.lifecycle ∧
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.authoritativeGate state (.drainDeferred drainSubject)).state ∧
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.runAuthoritativeOperations state
+          (subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  have hcleanup := composite_contained_fault_cleanup_preserves_context_boundary
+    state frame faultSubject hcontained hstate.2.1.1.2
+  have hdrains := composite_deferred_cancel_public_gate_and_trace_preserve
+    state drainSubject subjects hstate
+  exact ⟨hcleanup.1, hcleanup.2.1, hcleanup.2.2, hdrains.1, hdrains.2⟩
 
 /-- SC-COMPOSITE-BLOCKING-REJECTION-WF: every finite ordinary denial at the
 typed blocking gate preserves the full composite runtime invariant because it
