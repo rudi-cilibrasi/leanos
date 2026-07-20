@@ -846,6 +846,10 @@ objdump -d --no-show-raw-insn "$build/leanos-extended-state-avx.elf" \
   "$build/leanos-extended-state-avx.elf"
 ./scripts/check-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-report.txt"
 ./scripts/test-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-fixtures.log"
+./scripts/check-direct-port-sites.py "$build/leanos.elf" \
+  | tee "$build/direct-port-sites-report.txt"
+./scripts/test-direct-port-sites.sh "$build/leanos.elf" \
+  | tee "$build/direct-port-sites-fixtures.log"
 
 for fixture in restore branch indirect initial-indirect; do
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \

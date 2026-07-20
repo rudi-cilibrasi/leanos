@@ -104,7 +104,8 @@ Issue #104's authoritative composite invariant remains on its separate,
 unmerged dependency lane. Once that state lands, its exact `RuntimeWellFormed`
 and typed gate should embed `AcceptedSnapshot` and the unchanged control
 snapshot; this model intentionally does not fork a competing composite state.
-Issue #129 remains a separate direct-user-I/O policy lane and explicitly lists
-PCI configuration as a non-goal. When its final-ELF port inventory lands, it
-must classify this checkpoint's boot-only `0xcf8`/`0xcfc` mechanism accesses as
-one reviewed kernel purpose rather than treating them as ambient authority.
+Issue #129's final-ELF inventory now classifies the boot-only `0xcf8`/`0xcfc`
+mechanism accesses as `DMAQuarantine.boot-pci-config`. The exact `out16`,
+`out32`, and `in32` wrapper sites are reviewed exceptions, while the source
+contract fixes their callers to the PCI configuration address/data constants.
+They are not members of the ordinary direct-port authority manifest.

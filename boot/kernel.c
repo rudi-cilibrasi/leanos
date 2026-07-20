@@ -902,25 +902,28 @@ static void exercise_copy_policy(void) {
     serial_puts("LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS\n");
 }
 
-static inline void out8(uint16_t port, uint8_t value) {
+/* Keep each privileged port instruction in one named final-ELF wrapper.  The
+   direct-port site policy inventories these symbols and separately owns the
+   PCI configuration wrappers as boot-only DMA-quarantine exceptions. */
+static __attribute__((noinline, noipa)) void out8(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
 }
 
-static inline uint8_t in8(uint16_t port) {
+static __attribute__((noinline, noipa)) uint8_t in8(uint16_t port) {
     uint8_t value;
     __asm__ volatile ("inb %1, %0" : "=a"(value) : "Nd"(port));
     return value;
 }
 
-static inline void out16(uint16_t port, uint16_t value) {
+static __attribute__((noinline, noipa)) void out16(uint16_t port, uint16_t value) {
     __asm__ volatile ("outw %0, %1" : : "a"(value), "Nd"(port));
 }
 
-static inline void out32(uint16_t port, uint32_t value) {
+static __attribute__((noinline, noipa)) void out32(uint16_t port, uint32_t value) {
     __asm__ volatile ("outl %0, %1" : : "a"(value), "Nd"(port));
 }
 
-static inline uint32_t in32(uint16_t port) {
+static __attribute__((noinline, noipa)) uint32_t in32(uint16_t port) {
     uint32_t value;
     __asm__ volatile ("inl %1, %0" : "=a"(value) : "Nd"(port));
     return value;

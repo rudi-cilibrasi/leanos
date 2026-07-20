@@ -59,13 +59,20 @@ device-visible serial value of zero.
 
 ## Scope and trusted boundary
 
-This independently reviewable slice is the finite policy foundation for GitHub
-issue #129. It does not modify issue #104's composite runtime, normalize vector 13,
-add a generated codec, inspect the final ELF, or claim QEMU evidence. PCI
-configuration ports and MMIO are outside this manifest; PCI DMA quarantine is
-modeled separately and its later machine-inventory integration must assign its
-configuration accesses a distinct reviewed authority rather than widening this
-policy silently.
+The final linked ELF is checked by `scripts/check-direct-port-sites.py` against
+`scripts/direct-port-sites.tsv`. The inventory binds every `in`, `out`, `ins*`,
+and `outs*` instruction to a named wrapper/site and reviewed owner. The C
+wrappers are deliberately not inlined so compiler duplication cannot turn one
+reviewed primitive into ambient, untracked authority. Semantic negative
+fixtures prove that an omitted opcode/site and a misclassified PCI wrapper make
+the policy fail.
+
+PCI configuration ports and MMIO remain outside the ordinary direct-port
+manifest. The three width-specific wrappers used only with configuration
+mechanism #1 ports `0xcf8` and `0xcfc` are classified separately as
+`DMAQuarantine.boot-pci-config`, a boot-only exception owned by the DMA
+quarantine checkpoint rather than a widening of ordinary kernel direct-port
+authority.
 
 The proofs begin after a trusted adapter supplies the complete stored and live
 control snapshots. TSS construction and loading, RFLAGS decoding, I/O-bitmap
