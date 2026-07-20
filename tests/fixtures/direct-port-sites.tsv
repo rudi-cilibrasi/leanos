@@ -1,0 +1,4 @@
+# symbol	offset	opcode	operands	owner
+out16	0x0	out	%ax,(%dx)	DMAQuarantine.boot-pci-config
+out32	0x0	out	%eax,(%dx)	DMAQuarantine.boot-pci-config
+in32	0x0	in	(%dx),%eax	DMAQuarantine.boot-pci-config

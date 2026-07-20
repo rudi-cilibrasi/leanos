@@ -1,0 +1,15 @@
+# symbol	offset	opcode	operands	owner
+isr13	0x15	in	(%dx),%al	DirectPortIO.serial
+isr13	0x20	out	%al,(%dx)	DirectPortIO.serial
+isr13	0x2e	out	%al,(%dx)	DirectPortIO.debug-exit
+isr8_cld	0x52	in	(%dx),%al	DirectPortIO.serial
+isr8_cld	0x5d	out	%al,(%dx)	DirectPortIO.serial
+isr8_cld	0x6b	out	%al,(%dx)	DirectPortIO.debug-exit
+isr8_cld	0x7f	in	(%dx),%al	DirectPortIO.serial
+isr8_cld	0x8a	out	%al,(%dx)	DirectPortIO.serial
+isr8_cld	0x98	out	%al,(%dx)	DirectPortIO.debug-exit
+out8	0x4	out	%al,(%dx)	DirectPortIO.byte-wrapper
+in8	0x2	in	(%dx),%al	DirectPortIO.byte-wrapper
+out16	0x4	out	%ax,(%dx)	DMAQuarantine.boot-pci-config
+out32	0x4	out	%eax,(%dx)	DMAQuarantine.boot-pci-config
+in32	0x2	in	(%dx),%eax	DMAQuarantine.boot-pci-config

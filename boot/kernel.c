@@ -902,25 +902,28 @@ static void exercise_copy_policy(void) {
     serial_puts("LEANOS/6 POLICY zero=accept max=accept unmapped=reject readonly=reject overflow=reject noncanonical=reject wrong-subject=reject stale=reject atomic=PASS\n");
 }
 
-static inline void out8(uint16_t port, uint8_t value) {
+/* Keep each privileged port instruction in one named final-ELF wrapper.  The
+   direct-port site policy inventories these symbols and separately owns the
+   PCI configuration wrappers as boot-only DMA-quarantine exceptions. */
+static __attribute__((noinline, noipa)) void out8(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
 }
 
-static inline uint8_t in8(uint16_t port) {
+static __attribute__((noinline, noipa)) uint8_t in8(uint16_t port) {
     uint8_t value;
     __asm__ volatile ("inb %1, %0" : "=a"(value) : "Nd"(port));
     return value;
 }
 
-static inline void out16(uint16_t port, uint16_t value) {
+static __attribute__((noinline, noipa)) void out16(uint16_t port, uint16_t value) {
     __asm__ volatile ("outw %0, %1" : : "a"(value), "Nd"(port));
 }
 
-static inline void out32(uint16_t port, uint32_t value) {
+static __attribute__((noinline, noipa)) void out32(uint16_t port, uint32_t value) {
     __asm__ volatile ("outl %0, %1" : : "a"(value), "Nd"(port));
 }
 
-static inline uint32_t in32(uint16_t port) {
+static __attribute__((noinline, noipa)) uint32_t in32(uint16_t port) {
     uint32_t value;
     __asm__ volatile ("inl %1, %0" : "=a"(value) : "Nd"(port));
     return value;
@@ -946,16 +949,16 @@ static const struct pci_manifest_entry q35_pci_manifest[] = {
     { 31, 3, 0x8086, 0x2930, 0x0c0500, 1, 1 },
 };
 
-static uint32_t pci_config_dword(uint8_t device, uint8_t function,
-                                 uint8_t offset) {
+static __attribute__((noinline, noipa)) uint32_t pci_config_dword(
+        uint8_t device, uint8_t function, uint8_t offset) {
     uint32_t address = UINT32_C(0x80000000) |
         (uint32_t)device << 11 | (uint32_t)function << 8 | (offset & 0xfcu);
     out32(PCI_CONFIG_ADDRESS, address);
     return in32(PCI_CONFIG_DATA);
 }
 
-static void pci_config_command(uint8_t device, uint8_t function,
-                               uint16_t command) {
+static __attribute__((noinline, noipa)) void pci_config_command(
+        uint8_t device, uint8_t function, uint16_t command) {
     uint32_t address = UINT32_C(0x80000000) |
         (uint32_t)device << 11 | (uint32_t)function << 8 | 0x04u;
     out32(PCI_CONFIG_ADDRESS, address);
@@ -981,7 +984,7 @@ static const struct pci_manifest_entry *q35_manifest_entry(
    first CPL3 return. Missing required functions and extra or changed readable
    functions are fatal; an all-ones vendor read is treated as absence, including
    for the optional NIC slot, under the documented configuration-read assumption. */
-static void quarantine_q35_pci_dma(void) {
+static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     unsigned seen = 0, present = 0, writes = 0, readbacks = 0;
     unsigned initially_bus_mastering = 0;
     unsigned initial_bus_master_mask = 0;
