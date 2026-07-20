@@ -206,6 +206,12 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
       FailStop.RuntimeWellFormed
         (FailStop.blockingGate state (.send handleWord word0 word1)).state) ∧
     (∀ handleWord word0 word1 saved,
+      FailStop.BlockingRuntimeWellFormed state →
+      (FailStop.blockingGate state (.send handleWord word0 word1)).result =
+        .completed (.send (.woke saved)) →
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.blockingGate state (.send handleWord word0 word1)).state) ∧
+    (∀ handleWord word0 word1 saved,
       (FailStop.blockingGate state (.send handleWord word0 word1)).result =
         .completed (.send (.woke saved)) →
       ResumablePreemption.validContext
@@ -224,6 +230,9 @@ theorem composite_blocking_gate_preserves_contextWellFormed state operation
     fun handleWord word0 word1 hglobal hcompleted =>
       FailStop.blockingGate_send_sent_preserves_runtimeWellFormed
         state handleWord word0 word1 hglobal hcompleted,
+    fun handleWord word0 word1 saved hglobal hcompleted =>
+      FailStop.blockingGate_send_woke_preserves_blockingRuntimeWellFormed
+        state handleWord word0 word1 saved hglobal hcompleted,
     fun handleWord word0 word1 saved hcompleted =>
       FailStop.blockingGate_send_woke_context_valid
         state handleWord word0 word1 saved hcompleted,
