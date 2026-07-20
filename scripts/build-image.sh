@@ -846,6 +846,31 @@ objdump -d --no-show-raw-insn "$build/leanos-extended-state-avx.elf" \
   "$build/leanos-extended-state-avx.elf"
 ./scripts/check-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-report.txt"
 ./scripts/test-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-fixtures.log"
+direct_port_report="$build/direct-port-sites-report.txt"
+: > "$direct_port_report"
+direct_port_images=0
+while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
+    _log _scenario _mode _reason; do
+  [[ "$elf_name" == *.elf ]] || continue
+  manifest="scripts/direct-port-sites.tsv"
+  case "$elf_name" in
+    leanos-entry-adversarial.elf)
+      manifest="scripts/direct-port-sites-entry-adversarial.tsv"
+      ;;
+    leanos-entry-stack-overflow.elf)
+      manifest="scripts/direct-port-sites-entry-stack-overflow.tsv"
+      ;;
+  esac
+  ./scripts/check-direct-port-sites.py "$build/$elf_name" "$manifest" \
+    | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
+  ((direct_port_images += 1))
+done < "$matrix"
+[[ "$direct_port_images" -eq 36 ]] || {
+  echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
+  exit 1
+}
+./scripts/test-direct-port-sites.sh "$build/leanos.elf" \
+  | tee "$build/direct-port-sites-fixtures.log"
 
 for fixture in restore branch indirect initial-indirect; do
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
