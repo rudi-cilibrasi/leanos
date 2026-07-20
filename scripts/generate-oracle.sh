@@ -9,7 +9,7 @@ awk -F '\t' '
   BEGIN { print "/* Generated from LeanOS.Oracle; do not edit. */"; print "struct oracle_vector { unsigned adapter, argc; unsigned long long words[6], expected; const char *id; };"; print "static const struct oracle_vector oracle_vectors[] = {"; vectorIndex=0 }
   $1 ~ /^[0-9]+$/ {
     name=toupper($2); gsub(/[^A-Z0-9]/,"_",name); printf "#define ORACLE_INDEX_%s %d\n",name,vectorIndex++
-    n=split($4,w,","); adapter=($3=="KernelTransition" ? 0 : ($3=="Syscall.scalar" ? 1 : ($3=="IPCSyscall.scalar" ? 2 : ($3=="Preemption.scalar" ? 3 : ($3=="Preemption.resumable" ? 4 : ($3=="BootAllocation.scalar" ? 5 : ($3=="Interrupt.userReturn" ? 6 : ($3=="BlockingIPC.scalar" ? 7 : ($3=="CapabilityReuse.scalar" ? 8 : ($3=="Interrupt.entry" ? 9 : ($3=="ExtendedState.denialDispatch" ? 10 : ($3=="PrivilegeEntryControl.scalar" ? 11 : ($3=="FaultDispatch.scalar" ? 12 : 13))))))))))))); printf "{%s,%d,{", adapter,n
+    n=split($4,w,","); adapter=($3=="KernelTransition" ? 0 : ($3=="Syscall.scalar" ? 1 : ($3=="IPCSyscall.scalar" ? 2 : ($3=="Preemption.scalar" ? 3 : ($3=="Preemption.resumable" ? 4 : ($3=="BootAllocation.scalar" ? 5 : ($3=="Interrupt.userReturn" ? 6 : ($3=="BlockingIPC.scalar" ? 7 : ($3=="CapabilityReuse.scalar" ? 8 : ($3=="Interrupt.entry" ? 9 : ($3=="ExtendedState.denialDispatch" ? 10 : ($3=="PrivilegeEntryControl.scalar" ? 11 : ($3=="FaultDispatch.scalar" ? 12 : ($3=="DirectPortIO.scalar" ? 13 : 14)))))))))))))); printf "{%s,%d,{", adapter,n
     for(i=1;i<=6;i++) printf "%s%sULL",(i>1 ? "," : ""),(i<=n ? w[i] : 0)
     printf "},%sULL,\"%s\"},\n",$5,$2
   }

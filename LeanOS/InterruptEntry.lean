@@ -557,6 +557,123 @@ def encodeNmiResult : NmiResult → NmiResultWords
         UInt64.ofNat event.activeAddressSpace, event.activeCr3, event.stackIdentity,
         event.rip, event.cs, event.flags, event.savedRsp, event.savedSs⟩
 
+/-! The canonical scalar corpus below is deliberately a projection of the
+17-word result, not a replacement for it.  Its high-bit fatal tag preserves
+the exact rejection code while the accepted word binds the origin,
+interrupted mode, subject, and address-space fields. -/
+
+private def compactNmiResult : NmiResult → UInt64
+  | .fatal reason => 0x8000000000000000 + reason.code
+  | .accepted event =>
+      1 + (if event.origin = .user then 1 else 0) * 0x100 +
+        event.interruptedMode.code * 0x10000 +
+        UInt64.ofNat event.currentSubject * 0x1000000 +
+        UInt64.ofNat event.activeAddressSpace * 0x100000000
+
+private def nmiDescriptorOf (code : UInt64) : ManifestEntry :=
+  if code = 0 then nmiEntry else { nmiEntry with vector := 3 }
+
+private def nmiInterruptedModeOf (code : UInt64) : InterruptedMode :=
+  if code = 0 then .running else if code = 1 then .handling else .halted
+
+private def nmiContextStackFirst (boundsCode : UInt64) : UInt64 :=
+  if boundsCode = 1 then nmiStackFirst + 16 else nmiStackFirst
+
+private def nmiContextStackPastLast (boundsCode : UInt64) : UInt64 :=
+  if boundsCode = 2 then nmiStackPastLast - 16 else nmiStackPastLast
+
+/-- Rich-model expectation for the bounded generated-C NMI classifier.  The
+five scalar words encode a descriptor selector, the five-word frame metadata,
+the IST2 frame address, trusted context identities, and validation controls.
+The raw RIP/RSP/flags/CR3 payload is fixed because the corpus tests the entry
+contract rather than attacker-selected register serialization. -/
+def nmiModelExpected (descriptor frame stack context control : UInt64) : UInt64 :=
+  let cs := frame % 256
+  let ss := frame / 256 % 256
+  let raw : RawNmiEntry :=
+    { descriptor := nmiDescriptorOf descriptor
+      boundStub := control % 256
+      errorCode := if control / 256 % 2 = 1 then some 0 else none
+      frame :=
+        { rip := 0x400100, cs, flags := 0x202, rsp := 0x500ff8, ss
+          canonicalRip := frame / 65536 % 2 = 1
+          canonicalRsp := frame / 131072 % 2 = 1 }
+      claimedOrigin := if frame / 262144 % 2 = 1 then .user else .kernel
+      frameBytes := control / 512 % 256
+      frameAddress := stack
+      acCleared := control / 131072 % 2 = 1
+      dfCleared := control / 262144 % 2 = 1 }
+  let boundsCode := context / 0x1000000 % 4
+  let ctx : NmiContext :=
+    { currentSubject := (context % 256).toNat
+      activeAddressSpace := (context / 256 % 256).toNat
+      activeCr3 := 0x1000
+      stackIdentity := context / 65536 % 256
+      stackFirst := nmiContextStackFirst boundsCode
+      stackPastLast := nmiContextStackPastLast boundsCode
+      interruptedMode := nmiInterruptedModeOf (context / 0x4000000 % 4) }
+  compactNmiResult (normalizeNmi raw ctx
+    (control / 0x80000 % 256).toNat (control / 0x8000000 % 256).toNat)
+
+/-- Allocation-free spelling of the bounded NMI classifier used by generated
+C.  It mirrors the ordered rich normalizer and returns the compact corpus word
+defined above; it does not model x86 delivery or install an IST2 handler. -/
+def nmiDemo (descriptor frame stack context control : UInt64) : UInt64 :=
+  let cs := frame % 256
+  let ss := frame / 256 % 256
+  let canonicalRip := frame / 65536 % 2 = 1
+  let canonicalRsp := frame / 131072 % 2 = 1
+  let claimedUser := frame / 262144 % 2 = 1
+  let frameUser := cs % 4 = 3
+  let stub := control % 256
+  let hasError := control / 256 % 2 = 1
+  let frameBytes := control / 512 % 256
+  let acCleared := control / 131072 % 2 = 1
+  let dfCleared := control / 262144 % 2 = 1
+  let subject := context % 256
+  let addressSpace := context / 256 % 256
+  let stackIdentity := context / 65536 % 256
+  let boundsCode := context / 0x1000000 % 4
+  let stackFirst := nmiContextStackFirst boundsCode
+  let stackPastLast := nmiContextStackPastLast boundsCode
+  let modeCode := context / 0x4000000 % 4
+  let mode := if modeCode = 0 then 0 else if modeCode = 1 then 1 else 2
+  let expectedSubject := control / 0x80000 % 256
+  let expectedAddressSpace := control / 0x8000000 % 256
+  if descriptor != 0 then 0x8000000000000002
+  else if stub != nmiVector then
+    0x8000000000000003
+  else if hasError then 0x8000000000000004
+  else if frameBytes != 40 then
+    0x8000000000000005
+  else if stack % 16 != 0 then 0x8000000000000006
+  else if stackIdentity != nmiStackIdentity then
+    0x8000000000000008
+  else if stackFirst != nmiStackFirst || stackPastLast != nmiStackPastLast ||
+      stack < stackFirst || stack + frameBytes < stack || stack + frameBytes > stackPastLast then
+    0x8000000000000007
+  else if frameUser != claimedUser then
+    0x8000000000000009
+  else if (claimedUser && (cs != 0x23 || ss != 0x1b)) ||
+      (!claimedUser && (cs != 0x08 || ss != 0x10)) then 0x800000000000000a
+  else if !canonicalRip || !canonicalRsp then
+    0x800000000000000b
+  else if !acCleared || !dfCleared then
+    0x800000000000000c
+  else if subject != expectedSubject || addressSpace != expectedAddressSpace then
+    0x800000000000000d
+  else
+    1 + (if claimedUser then 1 else 0) * 0x100 + mode * 0x10000 +
+      subject * 0x1000000 + addressSpace * 0x100000000
+
+theorem nmiDemo_total descriptor frame stack context control :
+    ∃ result, nmiDemo descriptor frame stack context control = result := by
+  exact ⟨_, rfl⟩
+
+@[export leanos_nmi_demo]
+def nmiDemoExport (descriptor frame stack context control : UInt64) : UInt64 :=
+  nmiDemo descriptor frame stack context control
+
 /-- Fixed-width oracle encoding.  Nonzero success words bind purpose, origin,
 subject, and address-space; zero is terminal rejection. -/
 def entryModelExpected (descriptor frame stack context cleanup : UInt64) : UInt64 :=

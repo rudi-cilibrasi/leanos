@@ -106,6 +106,23 @@ private def directPortIO (id : String) (stored live originPurpose port direction
     expected := DirectPortIO.directPortIOModelExpected
       stored live originPurpose port directionWidth value }
 
+private def nmi (id : String) (descriptor frame stack context control : UInt64) : Vector :=
+  { id, adapter := "Interrupt.nmi", words := [descriptor, frame, stack, context, control],
+    expected := InterruptEntry.nmiModelExpected descriptor frame stack context control }
+
+private def nmiUserFrame : UInt64 :=
+  0x23 + 0x1b * 256 + 0x10000 + 0x20000 + 0x40000
+
+private def nmiKernelFrame : UInt64 :=
+  0x08 + 0x10 * 256 + 0x10000 + 0x20000
+
+private def nmiContextRunning : UInt64 := 1 + 1 * 256 + 2 * 0x10000
+private def nmiContextHandling : UInt64 := nmiContextRunning + 0x4000000
+private def nmiContextHalted : UInt64 := nmiContextRunning + 0x8000000
+
+private def nmiControl : UInt64 :=
+  2 + 40 * 512 + 0x20000 + 0x40000 + 1 * 0x80000 + 1 * 0x8000000
+
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
   boot "boot.accept" 0 1,
@@ -296,9 +313,32 @@ def vectors : List Vector := [
   directPortIO "direct-port.invalid-live-control" 0 0xffffffffffffffff 1 0x3f8 1 65,
   directPortIO "direct-port.invalid-port" 0 0 1 0xffffffffffffffff 1 65,
   directPortIO "direct-port.post-validation-relaxation" 0 5 0 0x3f8 1 65,
-  interruptEntry "entry.user-general-protection" 68877 291 0x800000 257 3]
+  interruptEntry "entry.user-general-protection" 68877 291 0x800000 257 3,
+  nmi "nmi.user-running" 0 nmiUserFrame 0x900000 nmiContextRunning nmiControl,
+  nmi "nmi.kernel-handling" 0 nmiKernelFrame 0x900000 nmiContextHandling nmiControl,
+  nmi "nmi.kernel-halted" 0 nmiKernelFrame 0x900000 nmiContextHalted nmiControl,
+  nmi "nmi.wrong-descriptor" 1 nmiUserFrame 0x900000 nmiContextRunning nmiControl,
+  nmi "nmi.wrong-target" 0 nmiUserFrame 0x900000 nmiContextRunning (nmiControl + 1),
+  nmi "nmi.spurious-error" 0 nmiUserFrame 0x900000 nmiContextRunning
+    (nmiControl + 0x100),
+  nmi "nmi.wrong-frame-bytes" 0 nmiUserFrame 0x900000 nmiContextRunning
+    (nmiControl - 0x200),
+  nmi "nmi.misaligned" 0 nmiUserFrame 0x900008 nmiContextRunning nmiControl,
+  nmi "nmi.wrong-stack-identity" 0 nmiUserFrame 0x900000
+    (nmiContextRunning + 0x10000) nmiControl,
+  nmi "nmi.stack-out-of-bounds" 0 nmiUserFrame 0x900000
+    (nmiContextRunning + 0x1000000) nmiControl,
+  nmi "nmi.wrong-origin" 0 (nmiUserFrame - 0x40000) 0x900000
+    nmiContextRunning nmiControl,
+  nmi "nmi.wrong-selectors" 0 (nmiUserFrame + 4) 0x900000
+    nmiContextRunning nmiControl,
+  nmi "nmi.noncanonical" 0 (nmiUserFrame - 0x10000) 0x900000
+    nmiContextRunning nmiControl,
+  nmi "nmi.privileged-state" 0 nmiUserFrame 0x900000 nmiContextRunning
+    (nmiControl - 0x20000),
+  nmi "nmi.stale-context" 0 nmiUserFrame 0x900000 (nmiContextRunning + 1) nmiControl]
 
-theorem corpus_shape : vectors.length = 183 := by decide
+theorem corpus_shape : vectors.length = 198 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -447,6 +487,35 @@ theorem direct_port_io_corpus_shape :
 
 theorem direct_port_io_adapter_agrees_with_model :
     ((vectors.drop 154).take 28).all directPortIOAdapterAgrees = true := by
+  native_decide
+
+private def nmiAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "Interrupt.nmi", [descriptor, frame, stack, context, control] =>
+      InterruptEntry.nmiDemo descriptor frame stack context control = vector.expected
+  | _, _ => true
+
+/-- The generated-C NMI block contains three accepted interrupted modes and
+one vector for every rejection constructor reachable from the reviewed,
+compile-time-valid terminal manifest.  `invalidManifest` is intentionally not
+runtime-selectable through this scalar boundary. -/
+theorem nmi_corpus_shape : ((vectors.drop 183).take 15).length = 15 := by
+  decide
+
+theorem nmi_adapter_agrees_with_model :
+    ((vectors.drop 183).take 15).all nmiAdapterAgrees = true := by
+  native_decide
+
+theorem nmi_accepted_modes_agree :
+    (vectors[183]).expected = 0x101000101 ∧
+    (vectors[184]).expected = 0x101010001 ∧
+    (vectors[185]).expected = 0x101020001 := by
+  native_decide
+
+theorem nmi_rejection_codes_agree :
+    List.map (fun vector => vector.expected) ((vectors.drop 186).take 12) =
+      List.map (fun code => 0x8000000000000000 + code)
+        [2, 3, 4, 5, 6, 8, 7, 9, 10, 11, 12, 13] := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=
