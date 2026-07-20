@@ -949,16 +949,16 @@ static const struct pci_manifest_entry q35_pci_manifest[] = {
     { 31, 3, 0x8086, 0x2930, 0x0c0500, 1, 1 },
 };
 
-static uint32_t pci_config_dword(uint8_t device, uint8_t function,
-                                 uint8_t offset) {
+static __attribute__((noinline, noipa)) uint32_t pci_config_dword(
+        uint8_t device, uint8_t function, uint8_t offset) {
     uint32_t address = UINT32_C(0x80000000) |
         (uint32_t)device << 11 | (uint32_t)function << 8 | (offset & 0xfcu);
     out32(PCI_CONFIG_ADDRESS, address);
     return in32(PCI_CONFIG_DATA);
 }
 
-static void pci_config_command(uint8_t device, uint8_t function,
-                               uint16_t command) {
+static __attribute__((noinline, noipa)) void pci_config_command(
+        uint8_t device, uint8_t function, uint16_t command) {
     uint32_t address = UINT32_C(0x80000000) |
         (uint32_t)device << 11 | (uint32_t)function << 8 | 0x04u;
     out32(PCI_CONFIG_ADDRESS, address);
@@ -984,7 +984,7 @@ static const struct pci_manifest_entry *q35_manifest_entry(
    first CPL3 return. Missing required functions and extra or changed readable
    functions are fatal; an all-ones vendor read is treated as absence, including
    for the optional NIC slot, under the documented configuration-read assumption. */
-static void quarantine_q35_pci_dma(void) {
+static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     unsigned seen = 0, present = 0, writes = 0, readbacks = 0;
     unsigned initially_bus_mastering = 0;
     unsigned initial_bus_master_mask = 0;

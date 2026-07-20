@@ -59,20 +59,23 @@ device-visible serial value of zero.
 
 ## Scope and trusted boundary
 
-The final linked ELF is checked by `scripts/check-direct-port-sites.py` against
-`scripts/direct-port-sites.tsv`. The inventory binds every `in`, `out`, `ins*`,
-and `outs*` instruction to a named wrapper/site and reviewed owner. The C
-wrappers are deliberately not inlined so compiler duplication cannot turn one
-reviewed primitive into ambient, untracked authority. Semantic negative
-fixtures prove that an omitted opcode/site and a misclassified PCI wrapper make
-the policy fail.
+Every bootable ELF in the emulator evidence matrix is checked by
+`scripts/check-direct-port-sites.py` against an exact variant-specific manifest.
+The inventory binds every `in`, `out`, `ins*`, and `outs*` instruction to a named
+wrapper/site and reviewed owner. The C wrappers are deliberately not inlined so
+compiler duplication cannot turn one reviewed primitive into ambient,
+untracked authority. Semantic negative fixtures prove that an omitted
+opcode/site, a conditional-only opcode, a misclassified PCI wrapper, and
+runtime-handler reuse of a PCI helper make the policy fail.
 
 PCI configuration ports and MMIO remain outside the ordinary direct-port
 manifest. The three width-specific wrappers used only with configuration
 mechanism #1 ports `0xcf8` and `0xcfc` are classified separately as
 `DMAQuarantine.boot-pci-config`, a boot-only exception owned by the DMA
 quarantine checkpoint rather than a widening of ordinary kernel direct-port
-authority.
+authority. The optimized final-ELF call graph must bind those wrappers to the
+two PCI helpers, the helpers to `quarantine_q35_pci_dma`, and that checkpoint to
+`kernel_main` before its sole call to `enter_user`.
 
 The proofs begin after a trusted adapter supplies the complete stored and live
 control snapshots. TSS construction and loading, RFLAGS decoding, I/O-bitmap

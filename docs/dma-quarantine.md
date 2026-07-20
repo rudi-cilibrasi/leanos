@@ -107,5 +107,7 @@ snapshot; this model intentionally does not fork a competing composite state.
 Issue #129's final-ELF inventory now classifies the boot-only `0xcf8`/`0xcfc`
 mechanism accesses as `DMAQuarantine.boot-pci-config`. The exact `out16`,
 `out32`, and `in32` wrapper sites are reviewed exceptions, while the source
-contract fixes their callers to the PCI configuration address/data constants.
-They are not members of the ordinary direct-port authority manifest.
+contract fixes their arguments to the PCI configuration address/data constants.
+The final-ELF call graph additionally pins the wrappers to the two PCI helpers,
+the helpers to this boot checkpoint, and the checkpoint before the first CPL3
+return. They are not members of the ordinary direct-port authority manifest.

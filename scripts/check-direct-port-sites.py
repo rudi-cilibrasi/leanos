@@ -15,6 +15,7 @@ from pathlib import Path
 SITE_RE = re.compile(r"^\s*([0-9a-f]+):\s+(\S+)(?:\s+(.*?))?\s*$")
 SYMBOL_RE = re.compile(r"^[0-9a-f]+ <([^>]+)>:$")
 PORT_OPCODE_RE = re.compile(r"^(?:in|out)(?:b|w|l|s[bwl]?)?$")
+CALL_TARGET_RE = re.compile(r"<([^>+]+)(?:\+0x[0-9a-f]+)?>")
 OWNERS = {
     "DirectPortIO.serial",
     "DirectPortIO.debug-exit",
@@ -44,11 +45,14 @@ def tool_output(*command: str) -> str:
         raise SystemExit(1) from error
 
 
-def elf_sites(elf: Path) -> list[Site]:
+def elf_inventory(elf: Path) -> tuple[list[Site], dict[str, set[str]],
+                                      dict[tuple[str, str], list[int]]]:
     disassembly = tool_output("objdump", "-d", "--no-show-raw-insn", str(elf))
     symbol = ""
     symbol_address = 0
     sites: list[Site] = []
+    callers: dict[str, set[str]] = {}
+    calls: dict[tuple[str, str], list[int]] = {}
     for line in disassembly.splitlines():
         match = SYMBOL_RE.match(line)
         if match:
@@ -56,14 +60,51 @@ def elf_sites(elf: Path) -> list[Site]:
             symbol_address = int(line.split()[0], 16)
             continue
         match = SITE_RE.match(line)
-        if not match or not PORT_OPCODE_RE.fullmatch(match.group(2)):
+        if not match:
+            continue
+        address = int(match.group(1), 16)
+        opcode = match.group(2)
+        operands = match.group(3) or "-"
+        if opcode in {"call", "callq", "jmp", "jmpq"}:
+            target = CALL_TARGET_RE.search(operands)
+            if target and target.group(1) != symbol:
+                callee = target.group(1)
+                callers.setdefault(callee, set()).add(symbol)
+                calls.setdefault((symbol, callee), []).append(address)
+        if not PORT_OPCODE_RE.fullmatch(opcode):
             continue
         if not symbol:
             print("error: final-ELF port-I/O instruction has no owning symbol", file=sys.stderr)
             raise SystemExit(1)
-        sites.append(Site(symbol, int(match.group(1), 16) - symbol_address,
-                          match.group(2), match.group(3) or "-"))
-    return sites
+        sites.append(Site(symbol, address - symbol_address, opcode, operands))
+    return sites, callers, calls
+
+
+def validate_pci_call_graph(callers: dict[str, set[str]],
+                            calls: dict[tuple[str, str], list[int]]) -> None:
+    expected = {
+        "out16": {"pci_config_command"},
+        "out32": {"pci_config_command", "pci_config_dword"},
+        "in32": {"pci_config_dword"},
+        "pci_config_dword": {"quarantine_q35_pci_dma"},
+        "pci_config_command": {"quarantine_q35_pci_dma"},
+        "quarantine_q35_pci_dma": {"kernel_main"},
+    }
+    for callee, expected_callers in expected.items():
+        observed = callers.get(callee, set())
+        if observed != expected_callers:
+            print("error: boot-only PCI final-ELF call graph drifted " +
+                  f"callee={callee} callers={','.join(sorted(observed)) or '-'}",
+                  file=sys.stderr)
+            raise SystemExit(1)
+
+    quarantine_calls = calls.get(("kernel_main", "quarantine_q35_pci_dma"), [])
+    user_calls = calls.get(("kernel_main", "enter_user"), [])
+    if len(quarantine_calls) != 1 or len(user_calls) != 1 or \
+            quarantine_calls[0] >= user_calls[0]:
+        print("error: boot-only PCI quarantine is not before the first CPL3 return",
+              file=sys.stderr)
+        raise SystemExit(1)
 
 
 def read_manifest(path: Path) -> dict[Site, str]:
@@ -137,7 +178,8 @@ def main() -> int:
         return 1
 
     validate_source(args.source)
-    observed = set(elf_sites(args.elf))
+    sites, callers, calls = elf_inventory(args.elf)
+    observed = set(sites)
     manifest = read_manifest(args.manifest)
     expected = set(manifest)
     unexpected = sorted(observed - expected)
@@ -152,6 +194,8 @@ def main() -> int:
         print("error: reviewed final-ELF port-I/O site missing " +
               " ".join(site.fields()), file=sys.stderr)
         return 1
+
+    validate_pci_call_graph(callers, calls)
 
     dma_symbols = {site.symbol for site, owner in manifest.items()
                    if owner == "DMAQuarantine.boot-pci-config"}

@@ -3,6 +3,7 @@ set -euo pipefail
 
 elf="${1:-build/boot/leanos.elf}"
 manifest="${2:-scripts/direct-port-sites.tsv}"
+cc="${LEANOS_CC:-gcc}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -45,6 +46,38 @@ grep -Fq 'error: boot-only PCI configuration wrapper call contract drifted' \
   "$tmp/caller.log" || {
   cat "$tmp/caller.log" >&2
   echo "error: PCI-wrapper caller fixture lacked semantic diagnostic" >&2
+  exit 1
+}
+
+"$cc" -m64 -c tests/fixtures/direct-port-sites.S \
+  -o "$tmp/runtime-reuse.o" -DLEANOS_RUNTIME_HANDLER_REUSE=1
+ld -m elf_x86_64 -nostdlib --build-id=none -e kernel_main \
+  -o "$tmp/runtime-reuse.elf" "$tmp/runtime-reuse.o"
+if ./scripts/check-direct-port-sites.py "$tmp/runtime-reuse.elf" \
+    tests/fixtures/direct-port-sites.tsv >"$tmp/runtime-reuse.log" 2>&1; then
+  echo "error: runtime PCI-helper reuse fixture unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq 'error: boot-only PCI final-ELF call graph drifted callee=pci_config_dword' \
+  "$tmp/runtime-reuse.log" || {
+  cat "$tmp/runtime-reuse.log" >&2
+  echo "error: runtime PCI-helper reuse fixture lacked semantic diagnostic" >&2
+  exit 1
+}
+
+"$cc" -m64 -c tests/fixtures/direct-port-sites.S \
+  -o "$tmp/conditional-site.o" -DLEANOS_CONDITIONAL_PORT_SITE=1
+ld -m elf_x86_64 -nostdlib --build-id=none -e kernel_main \
+  -o "$tmp/conditional-site.elf" "$tmp/conditional-site.o"
+if ./scripts/check-direct-port-sites.py "$tmp/conditional-site.elf" \
+    tests/fixtures/direct-port-sites.tsv >"$tmp/conditional-site.log" 2>&1; then
+  echo "error: conditional-only port site fixture unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq 'error: unauthorized final-ELF port-I/O site conditional_port_path' \
+  "$tmp/conditional-site.log" || {
+  cat "$tmp/conditional-site.log" >&2
+  echo "error: conditional-only port site fixture lacked semantic diagnostic" >&2
   exit 1
 }
 
