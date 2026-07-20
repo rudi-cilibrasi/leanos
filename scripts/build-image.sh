@@ -886,6 +886,7 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     _log _scenario _mode _reason; do
   [[ "$elf_name" == *.elf ]] || continue
   manifest="scripts/direct-port-sites.tsv"
+  direct_port_args=()
   case "$elf_name" in
     leanos-entry-adversarial.elf)
       manifest="scripts/direct-port-sites-entry-adversarial.tsv"
@@ -893,12 +894,17 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     leanos-entry-stack-overflow.elf)
       manifest="scripts/direct-port-sites-entry-stack-overflow.tsv"
       ;;
+    leanos-nmi.elf)
+      manifest="scripts/direct-port-sites-nmi.tsv"
+      direct_port_args=(--terminal-before-user)
+      ;;
   esac
   ./scripts/check-direct-port-sites.py "$build/$elf_name" "$manifest" \
+    "${direct_port_args[@]}" \
     | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
   ((direct_port_images += 1))
 done < "$matrix"
-[[ "$direct_port_images" -eq 39 ]] || {
+[[ "$direct_port_images" -eq 40 ]] || {
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
   exit 1
 }

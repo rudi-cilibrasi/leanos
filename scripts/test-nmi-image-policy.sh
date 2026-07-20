@@ -11,6 +11,21 @@ elf="${1:-$build/leanos-nmi.elf}"
 }
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+./scripts/check-direct-port-sites.py "$elf" scripts/direct-port-sites-nmi.tsv \
+  --terminal-before-user
+sed '0,/^isr2_cld/{/^isr2_cld/d;}' scripts/direct-port-sites-nmi.tsv \
+  >"$tmp/direct-port-sites.tsv"
+if ./scripts/check-direct-port-sites.py "$elf" "$tmp/direct-port-sites.tsv" \
+    --terminal-before-user \
+    >"$tmp/direct-port.log" 2>&1; then
+  echo "error: omitted NMI serial site fixture unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq 'error: unauthorized final-ELF port-I/O site isr2_cld 0x87' \
+  "$tmp/direct-port.log" || {
+    cat "$tmp/direct-port.log" >&2
+    exit 1
+  }
 cp boot/boot.S "$tmp/boot.S"
 sed -i '/^isr2:$/a\    iretq' "$tmp/boot.S"
 gcc -m64 -ffreestanding -fdebug-prefix-map="$root"=. \

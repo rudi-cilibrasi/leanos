@@ -181,7 +181,8 @@ def reachable_addresses(start: int, successors: dict[int, set[int]],
 
 def validate_pci_call_graph(callers: dict[str, set[str]],
                             calls: dict[tuple[str, str], list[int]],
-                            functions: dict[str, list[Instruction]]) -> None:
+                            functions: dict[str, list[Instruction]],
+                            terminal_before_user: bool = False) -> None:
     expected = {
         "out16": {"pci_config_command"},
         "out32": {"pci_config_command", "pci_config_dword"},
@@ -189,7 +190,7 @@ def validate_pci_call_graph(callers: dict[str, set[str]],
         "pci_config_dword": {"quarantine_q35_pci_dma"},
         "pci_config_command": {"quarantine_q35_pci_dma"},
         "quarantine_q35_pci_dma": {"kernel_main"},
-        "enter_user": {"kernel_main"},
+        "enter_user": set() if terminal_before_user else {"kernel_main"},
     }
     for callee, expected_callers in expected.items():
         observed = callers.get(callee, set())
@@ -201,7 +202,8 @@ def validate_pci_call_graph(callers: dict[str, set[str]],
 
     quarantine_calls = calls.get(("kernel_main", "quarantine_q35_pci_dma"), [])
     user_calls = calls.get(("kernel_main", "enter_user"), [])
-    if len(quarantine_calls) != 1 or len(user_calls) != 1:
+    expected_user_calls = 0 if terminal_before_user else 1
+    if len(quarantine_calls) != 1 or len(user_calls) != expected_user_calls:
         print("error: boot-only PCI quarantine/CPL3 call count drifted",
               file=sys.stderr)
         raise SystemExit(1)
@@ -213,21 +215,35 @@ def validate_pci_call_graph(callers: dict[str, set[str]],
     successors = kernel_main_cfg(kernel_main)
     reached = reachable_addresses(kernel_main[0].address, successors)
     quarantine_call = quarantine_calls[0]
-    user_call = user_calls[0]
     if quarantine_call not in reached:
         print("error: boot-only PCI quarantine is unreachable from kernel_main entry",
               file=sys.stderr)
         raise SystemExit(1)
-    if user_call not in reached:
-        print("error: first CPL3 return is unreachable from kernel_main entry",
-              file=sys.stderr)
-        raise SystemExit(1)
     without_quarantine = reachable_addresses(
         kernel_main[0].address, successors, blocked=quarantine_call)
-    if user_call in without_quarantine:
-        print("error: boot-only PCI quarantine does not dominate first CPL3 return",
-              file=sys.stderr)
-        raise SystemExit(1)
+    if terminal_before_user:
+        reachable_halts = {
+            instruction.address for instruction in kernel_main
+            if instruction.opcode == "hlt" and instruction.address in reached
+        }
+        if len(reachable_halts) != 1:
+            print("error: terminal kernel image does not have one reachable halt",
+                  file=sys.stderr)
+            raise SystemExit(1)
+        if reachable_halts & without_quarantine:
+            print("error: boot-only PCI quarantine does not dominate terminal halt",
+                  file=sys.stderr)
+            raise SystemExit(1)
+    else:
+        user_call = user_calls[0]
+        if user_call not in reached:
+            print("error: first CPL3 return is unreachable from kernel_main entry",
+                  file=sys.stderr)
+            raise SystemExit(1)
+        if user_call in without_quarantine:
+            print("error: boot-only PCI quarantine does not dominate first CPL3 return",
+                  file=sys.stderr)
+            raise SystemExit(1)
 
 
 def read_manifest(path: Path) -> dict[Site, str]:
@@ -444,6 +460,8 @@ def main() -> int:
     parser.add_argument("--source", type=Path, default=Path("boot/kernel.c"))
     parser.add_argument("--byte-manifest", type=Path,
                         default=Path("scripts/direct-port-byte-operations.tsv"))
+    parser.add_argument("--terminal-before-user", action="store_true",
+                        help="require quarantine to dominate one terminal kernel halt")
     args = parser.parse_args()
     if not args.elf.is_file() or not args.manifest.is_file() or \
             not args.source.is_file() or not args.byte_manifest.is_file():
@@ -468,7 +486,7 @@ def main() -> int:
               " ".join(site.fields()), file=sys.stderr)
         return 1
 
-    validate_pci_call_graph(callers, calls, functions)
+    validate_pci_call_graph(callers, calls, functions, args.terminal_before_user)
 
     dma_symbols = {site.symbol for site, owner in manifest.items()
                    if owner == "DMAQuarantine.boot-pci-config"}
