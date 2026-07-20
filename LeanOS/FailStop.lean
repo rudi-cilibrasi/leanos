@@ -451,6 +451,10 @@ structure CompositeState where
   This bank is mutated only together with `blockingIPC` through the typed
   `BlockingIPCContext` transition. -/
   blockingContexts : BlockingIPC.SubjectId → Option ResumableContext.Context
+  /-- Valid suspended contexts detached from waiters by contained cleanup.
+  They remain quiescent until a capacity-checked drain republishes them. -/
+  deferredCancels : BlockingIPCContext.DeferredCancelState :=
+    BlockingIPCContext.emptyDeferred
 
 /-- The blocking store and all composite scheduler views name one scheduler. -/
 def CompositeState.BlockingIPCCoherent (state : CompositeState) : Prop :=
@@ -462,6 +466,11 @@ projections. -/
 def CompositeState.blockingIPCContext (state : CompositeState) :
     BlockingIPCContext.State :=
   { ipc := state.blockingIPC, blocked := state.blockingContexts }
+
+/-- The strengthened blocking invariant classifies every saved context as an
+indexed waiter or a disjoint, quiescent deferred cancellation. -/
+def CompositeState.DeferredCancellationWellFormed (state : CompositeState) : Prop :=
+  BlockingIPCContext.DeferredWellFormed state.blockingIPCContext state.deferredCancels
 
 /-- Replacing the scheduler projection preserves a blocking store when every
 field observed by waiter validation is unchanged and the replacement scheduler
@@ -746,7 +755,8 @@ def bootRuntime (plan : BootPageTablePlan.Plan) : CompositeState :=
         waiterEndpoint := fun _ => none
         waiterCapacity := 0
         completion := fun _ => none }
-    blockingContexts := fun _ => none }
+    blockingContexts := fun _ => none
+    deferredCancels := BlockingIPCContext.emptyDeferred }
 
 /-- A successfully compiled bounded boot plan produces a concrete global
 invariant witness.  Boot does not synthesize a live subject or trusted return
@@ -980,6 +990,12 @@ def BlockingRuntimeWellFormed (state : CompositeState) : Prop :=
   RuntimeWellFormed state ∧
   BlockingIPCContext.WellFormed state.blockingIPCContext
 
+/-- Strengthened blocking slice including contexts detached by contained-fault
+cleanup.  A saved context is therefore classified as either an indexed waiter
+or a validated, live-but-quiescent deferred cancellation. -/
+def DeferredBlockingRuntimeWellFormed (state : CompositeState) : Prop :=
+  RuntimeWellFormed state ∧ state.DeferredCancellationWellFormed
+
 /-- The boot-produced runtime also initializes the authoritative blocking
 store with empty waiter/completion indexes over the same scheduler. -/
 theorem bootRuntime_blockingRuntimeWellFormed input plan
@@ -993,6 +1009,21 @@ theorem bootRuntime_blockingRuntimeWellFormed input plan
     Capability.SlotsWellFormed, Capability.DerivationsWellFormed,
     Capability.LiveIdentitiesUnique, Capability.SlotSpacesWellFormed,
     BlockingIPC.authorizedReceive, bootLifecycle, bootCapabilities]
+
+/-- Boot starts with neither indexed waiters nor deferred cancellations. -/
+theorem bootRuntime_deferredBlockingRuntimeWellFormed input plan
+    (hcompiled : BootPageTablePlan.compile input = .ok plan) :
+    DeferredBlockingRuntimeWellFormed (bootRuntime plan) := by
+  refine ⟨bootRuntime_runtimeWellFormed input plan hcompiled, ?_⟩
+  simp [CompositeState.DeferredCancellationWellFormed,
+    BlockingIPCContext.DeferredWellFormed, CompositeState.blockingIPCContext,
+    bootRuntime, BlockingIPCContext.WellFormed,
+    BlockingIPCContext.ContextAgreement, BlockingIPC.WellFormed,
+    Scheduler.WellFormed, SubjectLifecycle.WellFormed, Capability.WellFormed,
+    Capability.SlotsWellFormed, Capability.DerivationsWellFormed,
+    Capability.LiveIdentitiesUnique, Capability.SlotSpacesWellFormed,
+    BlockingIPC.authorizedReceive, BlockingIPCContext.emptyDeferred,
+    bootLifecycle, bootCapabilities]
 
 /-- Publish the complete blocking store first, then synchronize its scheduler
 and lifecycle to every overlapping composite projection.  Waiters and reserved
@@ -4091,9 +4122,16 @@ resumable/resource path as explicit termination, then close the kernel copy
 window as required by every completed inbound entry. -/
 private def publishInterruptCleanup (state : CompositeState)
     (subject : Interrupt.SubjectId) : CompositeState :=
-  let cleaned := installTerminatedResumable state
-    (ResumablePreemption.cleanupSubject state.resumable subject)
-  { cleaned with execution := { cleaned.execution with copyOverride := false } }
+  let resumable := ResumablePreemption.cleanupSubject state.resumable subject
+  let cleaned := installTerminatedResumable state resumable
+  let selfRemoved := BlockingIPCContext.terminate state.blockingIPCContext subject
+  let detached := BlockingIPCContext.detachInvalidated selfRemoved
+    state.deferredCancels resumable.scheduler
+  { cleaned with
+    execution := { cleaned.execution with copyOverride := false }
+    blockingIPC := detached.1.ipc
+    blockingContexts := detached.1.blocked
+    deferredCancels := detached.2 }
 
 /-- Publish a mapping-only transition without running the general lifecycle
 synchronizer.  Map and unmap preserve the memory registry and address-space
@@ -9469,6 +9507,34 @@ theorem resumePreempt_operationPreservesRuntimeWellFormed frame registers :
 
 /-! ### Inbound interrupt preservation -/
 
+private theorem publishInterruptCleanup_preserves_runtimeWellFormed
+    state subject (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running) :
+    RuntimeWellFormed (publishInterruptCleanup state subject) := by
+  have hcleaned := installTerminatedResumable_cleanup_preserves_runtimeWellFormed
+    state subject hstate hmode
+  have hclosed := closeCopyWindow_preserves_runtimeWellFormed
+    (installTerminatedResumable state
+      (ResumablePreemption.cleanupSubject state.resumable subject)) hcleaned
+  rcases hclosed with
+    ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+      hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive, _hblocking⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simpa [publishInterruptCleanup, CompositeState.Coherent] using hcoherent
+  · simpa [publishInterruptCleanup] using hexecution
+  · simpa [publishInterruptCleanup] using hlifecycle
+  · simpa [publishInterruptCleanup] using hcapabilities
+  · simpa [publishInterruptCleanup] using hvirtual
+  · simpa [publishInterruptCleanup] using hipc
+  · simpa [publishInterruptCleanup] using hscheduler
+  · simpa [publishInterruptCleanup] using hpreemption
+  · simpa [publishInterruptCleanup] using hresumable
+  · simpa [publishInterruptCleanup] using htransfers
+  · simpa [publishInterruptCleanup] using hhalted
+  · simpa [publishInterruptCleanup, CompositeState.ReturnPlanLive] using hlive
+  · simp [publishInterruptCleanup, CompositeState.BlockingIPCCoherent,
+      BlockingIPCContext.detachInvalidated, installTerminatedResumable]
+
 /-- Every normalized hardware frame is a complete composite operation family.
 Contained user faults reuse authoritative termination cleanup, fatal entry
 synchronizes both halt latches, and ordinary timer/syscall/rejection entry only
@@ -9486,13 +9552,9 @@ theorem interrupt_operationPreservesRuntimeWellFormed frame :
         state.execution frame hstate.2.1
     cases haction : entry.action with
     | contained subject =>
-        have hcleaned := installTerminatedResumable_cleanup_preserves_runtimeWellFormed
+        have hpublished := publishInterruptCleanup_preserves_runtimeWellFormed
           state subject hstate hmode
-        have hclosed := closeCopyWindow_preserves_runtimeWellFormed
-          (installTerminatedResumable state
-            (ResumablePreemption.cleanupSubject state.resumable subject)) hcleaned
-        simpa [gate, hmode, applyOperation, entry, haction, publishInterruptCleanup] using
-          hclosed
+        simpa [gate, hmode, applyOperation, entry, haction] using hpublished
     | fatal reason =>
         have hentryMode : ∃ record, entry.state.mode = .halted record := by
           apply dispatchHardware_fatal_halts state.execution frame reason
@@ -9725,6 +9787,79 @@ theorem blockingIPCContext_terminate_preserves_contextAgreement
       · apply hvalid candidate saved
         simpa [BlockingIPCContext.setBlocked, heq] using hsaved
 
+private theorem publishInterruptCleanup_preserves_contextAgreement state subject
+    (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
+    BlockingIPCContext.ContextAgreement
+      (publishInterruptCleanup state subject).blockingIPCContext := by
+  have hterminated := blockingIPCContext_terminate_preserves_contextAgreement
+    state.blockingIPCContext subject hstate
+  have hdetached := BlockingIPCContext.detachInvalidated_preserves_contextAgreement
+    (BlockingIPCContext.terminate state.blockingIPCContext subject)
+    state.deferredCancels
+    (ResumablePreemption.cleanupSubject state.resumable subject).scheduler
+    hterminated
+  simpa [publishInterruptCleanup, CompositeState.blockingIPCContext] using hdetached
+
+/-- Contained cleanup preserves exact waiter/saved-context agreement while
+invalidated peers move into the disjoint deferred-cancel bank. -/
+theorem interrupt_contained_preserves_contextAgreement state frame subject
+    (hcontained : (dispatchHardware state.execution frame).action = .contained subject)
+    (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
+    BlockingIPCContext.ContextAgreement
+      (applyOperation state (.interrupt frame)).blockingIPCContext := by
+  simpa [applyOperation, hcontained] using
+    publishInterruptCleanup_preserves_contextAgreement state subject hstate
+
+/-- Exact pointwise contained-fault cleanup law, including validity, peer
+quiescence, and its remaining address-space authority. -/
+theorem interrupt_contained_defers_invalidated_waiter
+    state frame faulting peer endpoint saved
+    (hcontained : (dispatchHardware state.execution frame).action = .contained faulting)
+    (hendpoint :
+      (BlockingIPCContext.terminate state.blockingIPCContext faulting).ipc.waiterEndpoint peer =
+        some endpoint)
+    (hsaved :
+      (BlockingIPCContext.terminate state.blockingIPCContext faulting).blocked peer = some saved)
+    (hretired :
+      (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.objects
+        endpoint = false)
+    (hvalid : BlockingIPCContext.validSaved peer saved = true)
+    (hlive :
+      (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.subjects
+        peer = true)
+    (hquiescent :
+      ((ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.runnable
+        peer) = false)
+    (hcurrent :
+      (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.current ≠
+        some peer)
+    (hready :
+      peer ∉ (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.ready)
+    (hauthority :
+      Scheduler.ownsAddressSpace
+        (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler peer = some peer) :
+    let next := applyOperation state (.interrupt frame)
+    next.blockingIPC.waiterEndpoint peer = none ∧
+      next.blockingContexts peer = none ∧
+      next.deferredCancels.retained peer = some saved ∧
+      BlockingIPCContext.validSaved peer saved = true ∧
+      next.scheduler.lifecycle.capabilities.subjects peer = true ∧
+      next.scheduler.lifecycle.runnable peer = false ∧
+      next.scheduler.lifecycle.current ≠ some peer ∧
+      peer ∉ next.scheduler.ready ∧
+      Scheduler.ownsAddressSpace next.scheduler peer = some peer := by
+  have hexact := BlockingIPCContext.detachInvalidated_invalidated_exact
+    (BlockingIPCContext.terminate state.blockingIPCContext faulting)
+    state.deferredCancels
+    (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler
+    peer endpoint saved hendpoint hsaved hretired
+  simpa [applyOperation, hcontained, publishInterruptCleanup,
+    installTerminatedResumable] using
+    And.intro hexact.1
+      (And.intro hexact.2.1
+        (And.intro hexact.2.2
+          ⟨hvalid, hlive, hquiescent, hcurrent, hready, hauthority⟩))
+
 private theorem blockingContextAgreement_of_projections
     (before after : CompositeState)
     (hstate : BlockingIPCContext.ContextAgreement before.blockingIPCContext)
@@ -9808,6 +9943,7 @@ theorem gate_preserves_blockingContextAgreement state operation
       cases operation <;> simp only [gate, hmode, applyOperation]
       all_goals try split
       all_goals try exact hstate
+      all_goals try exact publishInterruptCleanup_preserves_contextAgreement state _ hstate
       all_goals try
         apply blockingContextAgreement_of_projections state _ hstate <;>
           grind [selectLiveReturnAuthority, dispatchIPC, installIPC,

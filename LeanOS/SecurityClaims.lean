@@ -520,6 +520,24 @@ theorem composite_blocking_gate_preserves_blockingRuntimeWellFormed state operat
   exact FailStop.blockingGate_preserves_blockingRuntimeWellFormed
     state operation hstate
 
+/-- SC-COMPOSITE-CONTAINED-FAULT-CLEANUP: contained entry cleanup keeps the
+published scheduler/lifecycle views synchronized and preserves exact waiter /
+saved-context agreement while invalidated peers move to typed deferred
+cancellation state. -/
+theorem composite_contained_fault_cleanup_preserves_context_boundary
+    state frame subject
+    (hcontained :
+      (FailStop.dispatchHardware state.execution frame).action = .contained subject)
+    (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
+    let next := FailStop.applyOperation state (.interrupt frame)
+    BlockingIPCContext.ContextAgreement next.blockingIPCContext ∧
+      next.scheduler.lifecycle = next.execution.core.lifecycle ∧
+      next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
+  exact ⟨FailStop.interrupt_contained_preserves_contextAgreement
+      state frame subject hcontained hstate,
+    FailStop.interrupt_contained_synchronizes_lifecycle
+      state frame subject hcontained⟩
+
 /-- SC-COMPOSITE-BLOCKING-REJECTION-WF: every finite ordinary denial at the
 typed blocking gate preserves the full composite runtime invariant because it
 returns the literal pre-state. -/

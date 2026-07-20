@@ -20,6 +20,15 @@ structure State where
   ipc : BlockingIPC.State
   blocked : SubjectId → Option ResumableContext.Context
 
+/-- Saved contexts detached from wait queues by authority-destroying cleanup.
+They are not runnable contexts: a separate checked drain must reserve scheduler
+capacity before returning one to the caller. -/
+structure DeferredCancelState where
+  retained : SubjectId → Option ResumableContext.Context
+
+def emptyDeferred : DeferredCancelState :=
+  ⟨fun _ => none⟩
+
 def setBlocked (values : SubjectId → Option ResumableContext.Context)
     (subject : SubjectId) (value : Option ResumableContext.Context) :=
   fun candidate => if candidate = subject then value else values candidate
@@ -46,6 +55,208 @@ def ContextAgreement (state : State) : Prop :=
 
 def WellFormed (state : State) : Prop :=
   BlockingIPC.WellFormed state.ipc /\ ContextAgreement state
+
+/-- Exact classification of sleeping contexts after contained-fault cleanup.
+Ordinary blocked contexts agree exactly with the waiter index.  Detached
+contexts are disjoint, remain valid for their owner, and retain only enough
+lifecycle authority to be resumed by a later capacity-checked drain. -/
+def DeferredWellFormed (state : State) (deferred : DeferredCancelState) : Prop :=
+  WellFormed state /\
+  (∀ subject, (state.blocked subject).isSome = true →
+    deferred.retained subject = none) /\
+  (∀ subject saved, deferred.retained subject = some saved →
+    validSaved subject saved = true ∧
+    state.ipc.waiterEndpoint subject = none ∧
+    state.ipc.scheduler.lifecycle.capabilities.subjects subject = true ∧
+    state.ipc.scheduler.lifecycle.runnable subject = false ∧
+    state.ipc.scheduler.lifecycle.current ≠ some subject ∧
+    subject ∉ state.ipc.scheduler.ready ∧
+    Scheduler.ownsAddressSpace state.ipc.scheduler subject = some subject)
+
+def setRetained (deferred : DeferredCancelState) (subject : SubjectId)
+    (value : Option ResumableContext.Context) : DeferredCancelState :=
+  ⟨fun candidate => if candidate = subject then value else deferred.retained candidate⟩
+
+/-- Pointwise authority test used by contained cleanup. -/
+def remainsWaitingAuthorized (state : State) (subject : SubjectId) : Prop :=
+  ∃ endpoint, state.ipc.waiterEndpoint subject = some endpoint ∧
+    BlockingIPC.authorizedReceive state.ipc subject endpoint
+
+/-- Detach every waiter invalidated by a replacement authoritative scheduler.
+The old, validated context is moved to the typed deferred bank; already
+deferred entries are retained. -/
+def detachInvalidated (state : State) (deferred : DeferredCancelState)
+    (scheduler : Scheduler.State) : State × DeferredCancelState :=
+  let next : BlockingIPC.State := { state.ipc with scheduler }
+  let retainedWaiter (subject : SubjectId) : Bool :=
+    match state.ipc.waiterEndpoint subject with
+    | some endpoint => scheduler.lifecycle.capabilities.objects endpoint
+    | none => false
+    ({ ipc := { next with
+        waiters := fun endpoint =>
+          (state.ipc.waiters endpoint).filter
+            (fun _ => scheduler.lifecycle.capabilities.objects endpoint)
+        waiterEndpoint := fun subject =>
+          match state.ipc.waiterEndpoint subject with
+          | some endpoint =>
+              if scheduler.lifecycle.capabilities.objects endpoint then some endpoint else none
+          | none => none }
+       blocked := fun subject => if retainedWaiter subject then state.blocked subject else none },
+     ⟨fun subject =>
+       if retainedWaiter subject then deferred.retained subject
+       else match state.ipc.waiterEndpoint subject with
+         | some _ => state.blocked subject
+         | none => deferred.retained subject⟩)
+
+theorem detachInvalidated_preserves_contextAgreement state deferred scheduler
+    (hstate : ContextAgreement state) :
+    ContextAgreement (detachInvalidated state deferred scheduler).1 := by
+  rcases hstate with ⟨hprojection, hvalid⟩
+  constructor
+  · intro subject
+    cases hendpoint : state.ipc.waiterEndpoint subject with
+    | none =>
+        have hblocked := hprojection subject
+        simp [detachInvalidated, hendpoint] at hblocked ⊢
+    | some endpoint =>
+        cases hlive : scheduler.lifecycle.capabilities.objects endpoint
+        · simp [detachInvalidated, hendpoint, hlive]
+        · simpa [detachInvalidated, hendpoint, hlive] using hprojection subject
+  · intro subject saved hsaved
+    change (if (match state.ipc.waiterEndpoint subject with
+      | some endpoint => scheduler.lifecycle.capabilities.objects endpoint
+      | none => false) then state.blocked subject else none) = some saved at hsaved
+    generalize hkeep : (match state.ipc.waiterEndpoint subject with
+      | some endpoint => scheduler.lifecycle.capabilities.objects endpoint
+      | none => false) = keep at hsaved
+    cases keep <;> simp_all
+
+theorem detachInvalidated_invalidated_exact state deferred scheduler subject endpoint saved
+    (hendpoint : state.ipc.waiterEndpoint subject = some endpoint)
+    (hsaved : state.blocked subject = some saved)
+    (hretired : scheduler.lifecycle.capabilities.objects endpoint = false) :
+    (detachInvalidated state deferred scheduler).1.ipc.waiterEndpoint subject = none ∧
+      (detachInvalidated state deferred scheduler).1.blocked subject = none ∧
+      (detachInvalidated state deferred scheduler).2.retained subject = some saved := by
+  simp [detachInvalidated, hendpoint, hsaved, hretired]
+
+theorem detachInvalidated_retained_exact state deferred scheduler subject endpoint
+    (hendpoint : state.ipc.waiterEndpoint subject = some endpoint)
+    (hlive : scheduler.lifecycle.capabilities.objects endpoint = true) :
+    (detachInvalidated state deferred scheduler).1.ipc.waiterEndpoint subject = some endpoint ∧
+      (detachInvalidated state deferred scheduler).1.blocked subject = state.blocked subject ∧
+      (detachInvalidated state deferred scheduler).2.retained subject =
+        deferred.retained subject := by
+  simp [detachInvalidated, hendpoint, hlive]
+
+inductive DrainError where
+  | notDeferred | invalidRetained | staleSubject | missingAddressSpace | readyQueueFull
+  deriving DecidableEq, Repr
+
+inductive DrainResult where
+  | drained (saved : ResumableContext.Context)
+  | rejected (reason : DrainError)
+  deriving DecidableEq, Repr
+
+structure DrainOutcome where
+  state : State
+  deferred : DeferredCancelState
+  result : DrainResult
+
+/-- Atomically return one detached peer to scheduler ownership.  Every
+authority fact is checked again and ready capacity is reserved before the
+deferred entry, runnable bit, completion, or queue can change. -/
+def drainDeferred (state : State) (deferred : DeferredCancelState)
+    (subject : SubjectId) : DrainOutcome :=
+  match deferred.retained subject with
+  | none => ⟨state, deferred, .rejected .notDeferred⟩
+  | some saved =>
+      if !validSaved subject saved then
+        ⟨state, deferred, .rejected .invalidRetained⟩
+      else if state.ipc.scheduler.lifecycle.capabilities.subjects subject != true then
+        ⟨state, deferred, .rejected .staleSubject⟩
+      else if Scheduler.ownsAddressSpace state.ipc.scheduler subject != some subject then
+        ⟨state, deferred, .rejected .missingAddressSpace⟩
+      else if state.ipc.scheduler.capacity ≤ state.ipc.scheduler.ready.length then
+        ⟨state, deferred, .rejected .readyQueueFull⟩
+      else
+        let scheduler := { state.ipc.scheduler with
+          ready := state.ipc.scheduler.ready ++ [subject]
+          lifecycle := { state.ipc.scheduler.lifecycle with
+            runnable := SubjectLifecycle.setBool
+              state.ipc.scheduler.lifecycle.runnable subject true } }
+        ⟨{ state with ipc := { state.ipc with
+            scheduler
+            completion := BlockingIPC.setCompletion state.ipc.completion subject
+              (some .cancelled) } },
+          setRetained deferred subject none, .drained saved⟩
+
+theorem drainDeferred_rejected_unchanged state deferred subject reason
+    (h : (drainDeferred state deferred subject).result = .rejected reason) :
+    (drainDeferred state deferred subject).state = state ∧
+      (drainDeferred state deferred subject).deferred = deferred := by
+  simp only [drainDeferred] at h ⊢
+  split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> simp_all
+
+theorem drainDeferred_drained_exact state deferred subject saved
+    (h : (drainDeferred state deferred subject).result = .drained saved) :
+    deferred.retained subject = some saved ∧
+      (drainDeferred state deferred subject).deferred.retained subject = none ∧
+      (drainDeferred state deferred subject).state.ipc.scheduler.lifecycle.runnable subject =
+        true ∧
+      subject ∈ (drainDeferred state deferred subject).state.ipc.scheduler.ready ∧
+      (drainDeferred state deferred subject).state.ipc.completion subject =
+        some .cancelled := by
+  simp only [drainDeferred] at h ⊢
+  split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;>
+    simp_all [setRetained]
+  all_goals split at * <;>
+    simp_all [SubjectLifecycle.setBool, BlockingIPC.setCompletion]
+  all_goals omega
+
+/-- A successful drain revalidates every retained-context authority fact and
+reserves capacity in the pre-state before appending the subject. -/
+theorem drainDeferred_drained_reserves_capacity state deferred subject saved
+    (h : (drainDeferred state deferred subject).result = .drained saved) :
+    validSaved subject saved = true ∧
+      state.ipc.scheduler.lifecycle.capabilities.subjects subject = true ∧
+      Scheduler.ownsAddressSpace state.ipc.scheduler subject = some subject ∧
+      ¬ state.ipc.scheduler.capacity ≤ state.ipc.scheduler.ready.length ∧
+      (drainDeferred state deferred subject).state.ipc.scheduler.ready =
+        state.ipc.scheduler.ready ++ [subject] := by
+  simp only [drainDeferred] at h ⊢
+  split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> simp_all [Nat.not_le_of_gt]
+
+/-- Capacity rejection is typed and atomic: it can occur only after the saved
+context and its subject/address-space authority have been revalidated. -/
+theorem drainDeferred_readyQueueFull_exact state deferred subject
+    (h : (drainDeferred state deferred subject).result =
+      .rejected .readyQueueFull) :
+    (∃ saved, deferred.retained subject = some saved ∧
+      validSaved subject saved = true) ∧
+      state.ipc.scheduler.lifecycle.capabilities.subjects subject = true ∧
+      Scheduler.ownsAddressSpace state.ipc.scheduler subject = some subject ∧
+      state.ipc.scheduler.capacity ≤ state.ipc.scheduler.ready.length ∧
+      (drainDeferred state deferred subject).state = state ∧
+      (drainDeferred state deferred subject).deferred = deferred := by
+  simp only [drainDeferred] at h ⊢
+  split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> try simp_all
+  all_goals split at * <;> simp_all
 
 inductive ContextError where
   | invalidSaved | duplicateSaved | missingSaved
