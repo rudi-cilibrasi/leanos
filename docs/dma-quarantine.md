@@ -68,6 +68,14 @@ operations contain no BDF, assignment, or Command word. Every continued step
 preserves quarantine. A bit flip, otherwise valid changed snapshot, or invalid
 snapshot becomes typed fatal state, and the halted state absorbs every suffix;
 it is not relabeled as a contained user fault or an ordinary rejection.
+`valid_changed_control_exact_fatal` fixes the complete outcome of a valid but
+different observation, while `invalid_control_exact_fatal` fixes the complete
+outcome of any validation rejection. Both retain the observed snapshot for
+diagnosis and latch distinct fatal reasons. `halted_suffix_absorbing` extends
+the one-step result to every finite public-operation suffix: the state remains
+identical and each result repeats the original typed `alreadyHalted` reason.
+The `DMAInvalidControlContinuation` negative fixture is required to fail for a
+concrete bus-master-enabled observation.
 
 `UnownedDeviceStep` makes each modeled device attempt name a present function
 and carry the explicit `DeviceContract`; the accepted snapshot separately
@@ -110,7 +118,11 @@ bus-master bit or any Command bit outside the model's 11-bit range. The exact
 `LEANOS/15 DMA` record is mandatory in `scripts/run-image.sh`; missing and
 forged records are negative runner fixtures. Thus the pinned emulator logs
 show five present functions, one absent optional network function, five writes,
-and five successful read-backs before CPL3. Although the construction-time
+and five successful exact Command-word read-backs before CPL3. The guest
+compares each read-back with the complete word it wrote, not merely with a
+cleared bus-master mask. Independent runner negatives mutate the topology
+version, final bus-master state, read-back count, and exact-read-back marker;
+each must be rejected as a serial-protocol failure. Although the construction-time
 probe sees every Command bus-master bit clear, pinned SeaBIOS enables the
 recognized ICH9 SATA function at `00:1f.2` while booting the CD-ROM. Every
 mandatory accepted-boot record therefore requires one initially enabled bus

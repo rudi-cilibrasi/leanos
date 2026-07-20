@@ -139,6 +139,21 @@ if ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
   exit 1
 fi
 
+if lake env lean tests/negative/DMAInvalidControlContinuation.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: invalid DMA control observation unexpectedly continued" >&2
+  exit 1
+fi
+if ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+    "$negative_log" ||
+    ! grep -Fq 'q35BusMasterBitFlipSnapshot)).result = RuntimeResult.continued' \
+    "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: invalid DMA continuation lacked the expected semantic rejection" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 for fixture in DMAWeakenedBusMaster DMADroppedFunction DMARuntimeEnable DMATraceMutation; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: DMA quarantine fixture ${fixture} unexpectedly type-checked" >&2
