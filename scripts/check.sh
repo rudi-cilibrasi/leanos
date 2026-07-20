@@ -33,8 +33,6 @@ lake build leanos-boot-plan
 
 ./scripts/test-run-nmi.sh
 
-./scripts/test-nmi-image-policy.sh
-
 ./scripts/test-entry-stack-budget.sh
 
 ./scripts/test-entry-stack-layout.sh

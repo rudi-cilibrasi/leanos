@@ -83,6 +83,7 @@ jobs:
           set -o pipefail
           mkdir -p build/ci
           ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
+          ./scripts/test-nmi-image-policy.sh
           ./scripts/run-emulator-evidence.py run \
             2>&1 | tee build/ci/emulator-evidence.log
 
