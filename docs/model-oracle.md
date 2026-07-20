@@ -8,7 +8,8 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `InterruptEntry.entryDemo`, `BlockingIPC.blockingIpcDemo`,
 `CapabilityReuse.capabilityReuseDemo`, `ExtendedState.denialDispatchDemo`,
 `PrivilegeEntryControl.controlDemo`, `FaultDispatch.faultDispatchDemo`, and
-`DirectPortIO.directPortIODemo`. Its stable 183-vector order covers accepted calls,
+`DirectPortIO.directPortIODemo`, and `InterruptEntry.nmiDemo`. Its stable
+198-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -39,6 +40,15 @@ malformed scalar encodings including maximum-word stored/live controls and port,
 byte normalization, and a validate-then-relax attempt. The scalar adapter packs
 a byte-bounded device projection for corpus
 comparison; it does not claim to serialize arbitrary device state.
+
+The final 15 NMI records contain exact accepted user-running, kernel-handling,
+and kernel-halted projections followed by every rejection selectable through
+the generated scalar boundary. Their ordered identifiers and codes are proved
+against `NmiRejectReason.runtimeInventory`; the compile-time-only invalid
+terminal manifest and a dropped stateful trace class are separate semantic
+negative fixtures. Hosted and boot replay both call the same generated
+`leanos_nmi_demo` symbol. This is generated-code/final-ELF/QEMU classifier
+evidence only: the image still does not install or exercise vector 2 or IST2.
 
 The resumable adapter executes both composite context-bank legs and packs the
 restored owner/address-space, logical stack marker, and r12 marker together

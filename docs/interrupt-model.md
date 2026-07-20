@@ -192,8 +192,9 @@ about arbitrary compiler instruction boundaries or partially committed C
 mutations. Physical NMI delivery, blocking/coalescing, descriptor semantics,
 TSS/IST switching, frame construction, stack mapping, assembly, generated C,
 compiler/linker behavior, QEMU, firmware, and hardware remain trusted or future
-tested boundaries. No NMI gate or machine scenario is added by this model-only
-slice.
+tested boundaries. The bounded classifier is now replayed through hosted
+generated C and the final ELF under QEMU, but no vector-2 gate, IST2 stack, or
+physical NMI scenario is installed by this slice.
 
 ## Ordinary entry-stack layout and budget contract
 

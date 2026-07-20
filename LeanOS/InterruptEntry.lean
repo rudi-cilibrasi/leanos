@@ -545,6 +545,42 @@ def NmiRejectReason.code : NmiRejectReason → UInt64
   | .wrongSelectors => 10 | .noncanonical => 11
   | .privilegedStateNotCleared => 12 | .staleKernelContext => 13
 
+/-- Rejections selectable through the fixed-width generated boundary.  The
+compile-time-only `invalidManifest` constructor is excluded deliberately and
+is exercised by a separate negative proof fixture. -/
+def NmiRejectReason.runtimeInventory : List NmiRejectReason :=
+  [.wrongDescriptor, .wrongTarget, .spuriousError, .wrongFrameBytes,
+    .misaligned, .wrongStackIdentity, .stackOutOfBounds, .wrongOrigin,
+    .wrongSelectors, .noncanonical, .privilegedStateNotCleared,
+    .staleKernelContext]
+
+theorem nmi_runtime_rejection_inventory_codes :
+    NmiRejectReason.runtimeInventory.map NmiRejectReason.code =
+      [2, 3, 4, 5, 6, 8, 7, 9, 10, 11, 12, 13] := by
+  native_decide
+
+/-- Named executable-trace inventory required by the terminal policy.  These
+classes are discharged by the concrete witnesses plus the generic atomicity
+and absorption theorems in `SecurityClaims`/`FailStop`; keeping the inventory
+as data makes accidental trace removal visible to a negative fixture. -/
+inductive NmiTraceClass where
+  | cpl3Running | cpl0Running | syscallHandling | pageFaultHandling
+  | timerHandling | copyOverrideArmed | repeatedNmi | afterDoubleFault
+  | operationSuffix | returnSuffix
+  deriving DecidableEq, Repr
+
+def nmiTraceInventory : List NmiTraceClass :=
+  [.cpl3Running, .cpl0Running, .syscallHandling, .pageFaultHandling,
+    .timerHandling, .copyOverrideArmed, .repeatedNmi, .afterDoubleFault,
+    .operationSuffix, .returnSuffix]
+
+theorem nmi_trace_inventory_exact :
+    nmiTraceInventory =
+      [.cpl3Running, .cpl0Running, .syscallHandling, .pageFaultHandling,
+        .timerHandling, .copyOverrideArmed, .repeatedNmi, .afterDoubleFault,
+        .operationSuffix, .returnSuffix] := by
+  rfl
+
 def InterruptedMode.code : InterruptedMode → UInt64
   | .running => 0 | .handling => 1 | .halted => 2
 

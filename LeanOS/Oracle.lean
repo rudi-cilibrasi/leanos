@@ -502,6 +502,15 @@ runtime-selectable through this scalar boundary. -/
 theorem nmi_corpus_shape : ((vectors.drop 183).take 15).length = 15 := by
   decide
 
+theorem nmi_corpus_id_inventory :
+    List.map (fun vector => vector.id) ((vectors.drop 183).take 15) =
+      ["nmi.user-running", "nmi.kernel-handling", "nmi.kernel-halted",
+        "nmi.wrong-descriptor", "nmi.wrong-target", "nmi.spurious-error",
+        "nmi.wrong-frame-bytes", "nmi.misaligned", "nmi.wrong-stack-identity",
+        "nmi.stack-out-of-bounds", "nmi.wrong-origin", "nmi.wrong-selectors",
+        "nmi.noncanonical", "nmi.privileged-state", "nmi.stale-context"] := by
+  native_decide
+
 theorem nmi_adapter_agrees_with_model :
     ((vectors.drop 183).take 15).all nmiAdapterAgrees = true := by
   native_decide
@@ -514,8 +523,8 @@ theorem nmi_accepted_modes_agree :
 
 theorem nmi_rejection_codes_agree :
     List.map (fun vector => vector.expected) ((vectors.drop 186).take 12) =
-      List.map (fun code => 0x8000000000000000 + code)
-        [2, 3, 4, 5, 6, 8, 7, 9, 10, 11, 12, 13] := by
+      List.map (fun reason => 0x8000000000000000 + reason.code)
+        InterruptEntry.NmiRejectReason.runtimeInventory := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=
