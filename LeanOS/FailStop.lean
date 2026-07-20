@@ -11671,6 +11671,73 @@ example (state : CompositeState) :
       terminated.scheduler.lifecycle.capabilities.subjects 2 = false := by
   refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> rfl
 
+/-! ## Executable deferred-cancellation regressions
+
+These fixtures exercise the composite drain itself.  The successful case has
+one quiescent retained context and room in both finite banks.  The two denial
+cases independently exhaust each bank, demonstrating that neither partial
+scheduler publication nor partial context publication is observable. -/
+
+private def deferredEvidenceLifecycle : SubjectLifecycle.State :=
+  { blockingEvidenceLifecycle (some 2) with
+    runnable := fun subject => subject == 2 || subject == 3 }
+
+private def deferredEvidenceScheduler (capacity : Nat) : Scheduler.State :=
+  { lifecycle := deferredEvidenceLifecycle, ready := [3], capacity }
+
+private def deferredEvidenceComposite (state : CompositeState)
+    (readyCapacity resumableCapacity : Nat) : CompositeState :=
+  let scheduler := deferredEvidenceScheduler readyCapacity
+  let retained := blockingEvidenceContext 1 0x10
+  { blockingContextEvidenceComposite state with
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle := deferredEvidenceLifecycle }
+      mode := .running }
+    scheduler
+    lifecycle := deferredEvidenceLifecycle
+    preemption := { state.preemption with scheduler }
+    resumable := { state.resumable with
+      scheduler
+      contexts := [blockingEvidenceContext 3 0x30]
+      capacity := resumableCapacity }
+    blockingIPC := { blockingEvidenceStore with scheduler }
+    blockingContexts := fun _ => none
+    deferredCancels := ⟨fun subject => if subject = 1 then some retained else none⟩ }
+
+private def deferredEvidenceDrained (state : CompositeState) : DeferredDrainOutcome :=
+  drainDeferredCancellation (deferredEvidenceComposite state 2 2) 1
+
+private def deferredEvidenceReadyFull (state : CompositeState) : DeferredDrainOutcome :=
+  drainDeferredCancellation (deferredEvidenceComposite state 1 2) 1
+
+private def deferredEvidenceBankFull (state : CompositeState) : DeferredDrainOutcome :=
+  drainDeferredCancellation (deferredEvidenceComposite state 2 1) 1
+
+/-- Positive executable regression: a valid retained context is consumed once,
+the cancellation completion and ready slot are published together, and the
+exact saved context is restored to the resumable bank. -/
+example (state : CompositeState) :
+    (deferredEvidenceDrained state).result =
+        .drained (blockingEvidenceContext 1 0x10) ∧
+      (deferredEvidenceDrained state).state.deferredCancels.retained 1 = none ∧
+      (deferredEvidenceDrained state).state.blockingIPC.completion 1 =
+        some .cancelled ∧
+      (deferredEvidenceDrained state).state.scheduler.ready = [3, 1] ∧
+      (deferredEvidenceDrained state).state.resumable.contexts =
+        [blockingEvidenceContext 1 0x10, blockingEvidenceContext 3 0x30] := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Negative executable regressions: exhausting either finite publication
+bank selects its distinct typed denial and returns the literal pre-state. -/
+example (state : CompositeState) :
+    (deferredEvidenceReadyFull state).result = .rejected .readyQueueFull ∧
+      (deferredEvidenceReadyFull state).state =
+        deferredEvidenceComposite state 1 2 ∧
+      (deferredEvidenceBankFull state).result = .rejected .resumableBankFull ∧
+      (deferredEvidenceBankFull state).state =
+        deferredEvidenceComposite state 2 1 := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
 /-- A concrete kernel fault latches the runtime before a heterogeneous suffix;
 the stale handle, IPC, revoke, unmap, termination, and restart operations are
 all absorbed byte-for-byte. -/
