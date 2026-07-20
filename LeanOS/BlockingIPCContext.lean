@@ -150,7 +150,8 @@ theorem detachInvalidated_retained_exact state deferred scheduler subject endpoi
   simp [detachInvalidated, hendpoint, hlive]
 
 inductive DrainError where
-  | notDeferred | invalidRetained | staleSubject | missingAddressSpace | readyQueueFull
+  | notDeferred | invalidRetained | staleSubject | missingAddressSpace
+  | duplicateResumable | readyQueueFull | resumableBankFull
   deriving DecidableEq, Repr
 
 inductive DrainResult where
@@ -161,24 +162,31 @@ inductive DrainResult where
 structure DrainOutcome where
   state : State
   deferred : DeferredCancelState
+  resumable : List ResumableContext.Context
   result : DrainResult
 
 /-- Atomically return one detached peer to scheduler ownership.  Every
-authority fact is checked again and ready capacity is reserved before the
-deferred entry, runnable bit, completion, or queue can change. -/
+authority fact is checked again and both finite capacities are reserved before
+the deferred entry, resumable bank, runnable bit, completion, or queue can
+change. -/
 def drainDeferred (state : State) (deferred : DeferredCancelState)
+    (resumable : List ResumableContext.Context) (resumableCapacity : Nat)
     (subject : SubjectId) : DrainOutcome :=
   match deferred.retained subject with
-  | none => ⟨state, deferred, .rejected .notDeferred⟩
+  | none => ⟨state, deferred, resumable, .rejected .notDeferred⟩
   | some saved =>
       if !validSaved subject saved then
-        ⟨state, deferred, .rejected .invalidRetained⟩
+        ⟨state, deferred, resumable, .rejected .invalidRetained⟩
       else if state.ipc.scheduler.lifecycle.capabilities.subjects subject != true then
-        ⟨state, deferred, .rejected .staleSubject⟩
+        ⟨state, deferred, resumable, .rejected .staleSubject⟩
       else if Scheduler.ownsAddressSpace state.ipc.scheduler subject != some subject then
-        ⟨state, deferred, .rejected .missingAddressSpace⟩
+        ⟨state, deferred, resumable, .rejected .missingAddressSpace⟩
+      else if ∃ context ∈ resumable, context.owner = subject then
+        ⟨state, deferred, resumable, .rejected .duplicateResumable⟩
       else if state.ipc.scheduler.capacity ≤ state.ipc.scheduler.ready.length then
-        ⟨state, deferred, .rejected .readyQueueFull⟩
+        ⟨state, deferred, resumable, .rejected .readyQueueFull⟩
+      else if resumableCapacity ≤ resumable.length then
+        ⟨state, deferred, resumable, .rejected .resumableBankFull⟩
       else
         let scheduler := { state.ipc.scheduler with
           ready := state.ipc.scheduler.ready ++ [subject]
@@ -189,74 +197,138 @@ def drainDeferred (state : State) (deferred : DeferredCancelState)
             scheduler
             completion := BlockingIPC.setCompletion state.ipc.completion subject
               (some .cancelled) } },
-          setRetained deferred subject none, .drained saved⟩
+          setRetained deferred subject none, saved :: resumable, .drained saved⟩
 
-theorem drainDeferred_rejected_unchanged state deferred subject reason
-    (h : (drainDeferred state deferred subject).result = .rejected reason) :
-    (drainDeferred state deferred subject).state = state ∧
-      (drainDeferred state deferred subject).deferred = deferred := by
-  simp only [drainDeferred] at h ⊢
-  split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> simp_all
+theorem drainDeferred_rejected_unchanged state deferred resumable capacity subject reason
+    (h : (drainDeferred state deferred resumable capacity subject).result =
+      .rejected reason) :
+    (drainDeferred state deferred resumable capacity subject).state = state ∧
+      (drainDeferred state deferred resumable capacity subject).deferred = deferred ∧
+      (drainDeferred state deferred resumable capacity subject).resumable = resumable := by
+  generalize houtcome : drainDeferred state deferred resumable capacity subject = outcome at h ⊢
+  rcases outcome with ⟨next, nextDeferred, nextResumable, result⟩
+  simp only at h
+  subst result
+  simp only [drainDeferred] at houtcome
+  split at houtcome <;> try simp_all
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals simp_all
 
-theorem drainDeferred_drained_exact state deferred subject saved
-    (h : (drainDeferred state deferred subject).result = .drained saved) :
+theorem drainDeferred_drained_exact state deferred resumable capacity subject saved
+    (h : (drainDeferred state deferred resumable capacity subject).result = .drained saved) :
     deferred.retained subject = some saved ∧
-      (drainDeferred state deferred subject).deferred.retained subject = none ∧
-      (drainDeferred state deferred subject).state.ipc.scheduler.lifecycle.runnable subject =
+      (drainDeferred state deferred resumable capacity subject).deferred.retained subject = none ∧
+      (drainDeferred state deferred resumable capacity subject).state.ipc.scheduler.lifecycle.runnable subject =
         true ∧
-      subject ∈ (drainDeferred state deferred subject).state.ipc.scheduler.ready ∧
-      (drainDeferred state deferred subject).state.ipc.completion subject =
-        some .cancelled := by
-  simp only [drainDeferred] at h ⊢
-  split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;>
-    simp_all [setRetained]
-  all_goals split at * <;>
-    simp_all [SubjectLifecycle.setBool, BlockingIPC.setCompletion]
-  all_goals omega
+      subject ∈ (drainDeferred state deferred resumable capacity subject).state.ipc.scheduler.ready ∧
+      (drainDeferred state deferred resumable capacity subject).state.ipc.completion subject =
+        some .cancelled ∧
+      (drainDeferred state deferred resumable capacity subject).resumable = saved :: resumable := by
+  generalize houtcome : drainDeferred state deferred resumable capacity subject = outcome at h ⊢
+  rcases outcome with ⟨next, nextDeferred, nextResumable, result⟩
+  simp only at h
+  subst result
+  simp only [drainDeferred] at houtcome
+  split at houtcome <;> try simp_all
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals rcases houtcome with ⟨rfl, rfl, rfl, rfl⟩
+  all_goals simp [setRetained, SubjectLifecycle.setBool,
+    BlockingIPC.setCompletion]
 
 /-- A successful drain revalidates every retained-context authority fact and
 reserves capacity in the pre-state before appending the subject. -/
-theorem drainDeferred_drained_reserves_capacity state deferred subject saved
-    (h : (drainDeferred state deferred subject).result = .drained saved) :
+theorem drainDeferred_drained_reserves_capacity state deferred resumable capacity subject saved
+    (h : (drainDeferred state deferred resumable capacity subject).result = .drained saved) :
     validSaved subject saved = true ∧
       state.ipc.scheduler.lifecycle.capabilities.subjects subject = true ∧
       Scheduler.ownsAddressSpace state.ipc.scheduler subject = some subject ∧
+      (∀ context ∈ resumable, context.owner ≠ subject) ∧
       ¬ state.ipc.scheduler.capacity ≤ state.ipc.scheduler.ready.length ∧
-      (drainDeferred state deferred subject).state.ipc.scheduler.ready =
-        state.ipc.scheduler.ready ++ [subject] := by
-  simp only [drainDeferred] at h ⊢
-  split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> simp_all [Nat.not_le_of_gt]
+      ¬ capacity ≤ resumable.length ∧
+      (drainDeferred state deferred resumable capacity subject).state.ipc.scheduler.ready =
+        state.ipc.scheduler.ready ++ [subject] ∧
+      (drainDeferred state deferred resumable capacity subject).resumable =
+        saved :: resumable := by
+  generalize houtcome : drainDeferred state deferred resumable capacity subject = outcome at h ⊢
+  rcases outcome with ⟨next, nextDeferred, nextResumable, result⟩
+  simp only at h
+  subst result
+  simp only [drainDeferred] at houtcome
+  split at houtcome <;> try simp_all
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals grind [Nat.not_le_of_gt]
 
 /-- Capacity rejection is typed and atomic: it can occur only after the saved
 context and its subject/address-space authority have been revalidated. -/
-theorem drainDeferred_readyQueueFull_exact state deferred subject
-    (h : (drainDeferred state deferred subject).result =
+theorem drainDeferred_readyQueueFull_exact state deferred resumable capacity subject
+    (h : (drainDeferred state deferred resumable capacity subject).result =
       .rejected .readyQueueFull) :
     (∃ saved, deferred.retained subject = some saved ∧
       validSaved subject saved = true) ∧
       state.ipc.scheduler.lifecycle.capabilities.subjects subject = true ∧
       Scheduler.ownsAddressSpace state.ipc.scheduler subject = some subject ∧
+      (∀ context ∈ resumable, context.owner ≠ subject) ∧
       state.ipc.scheduler.capacity ≤ state.ipc.scheduler.ready.length ∧
-      (drainDeferred state deferred subject).state = state ∧
-      (drainDeferred state deferred subject).deferred = deferred := by
-  simp only [drainDeferred] at h ⊢
-  split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> try simp_all
-  all_goals split at * <;> simp_all
+      (drainDeferred state deferred resumable capacity subject).state = state ∧
+      (drainDeferred state deferred resumable capacity subject).deferred = deferred ∧
+      (drainDeferred state deferred resumable capacity subject).resumable = resumable := by
+  generalize houtcome : drainDeferred state deferred resumable capacity subject = outcome at h ⊢
+  rcases outcome with ⟨next, nextDeferred, nextResumable, result⟩
+  simp only at h
+  subst result
+  simp only [drainDeferred] at houtcome
+  split at houtcome <;> try simp_all
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals simp_all
+
+/-- Resumable-bank capacity is checked after all authority and uniqueness
+checks, and rejection leaves every projection byte-for-byte unchanged. -/
+theorem drainDeferred_resumableBankFull_exact state deferred resumable capacity subject
+    (h : (drainDeferred state deferred resumable capacity subject).result =
+      .rejected .resumableBankFull) :
+    (∃ saved, deferred.retained subject = some saved ∧
+      validSaved subject saved = true) ∧
+      state.ipc.scheduler.lifecycle.capabilities.subjects subject = true ∧
+      Scheduler.ownsAddressSpace state.ipc.scheduler subject = some subject ∧
+      (∀ context ∈ resumable, context.owner ≠ subject) ∧
+      ¬ state.ipc.scheduler.capacity ≤ state.ipc.scheduler.ready.length ∧
+      capacity ≤ resumable.length ∧
+      (drainDeferred state deferred resumable capacity subject).state = state ∧
+      (drainDeferred state deferred resumable capacity subject).deferred = deferred ∧
+      (drainDeferred state deferred resumable capacity subject).resumable = resumable := by
+  generalize houtcome : drainDeferred state deferred resumable capacity subject = outcome at h ⊢
+  rcases outcome with ⟨next, nextDeferred, nextResumable, result⟩
+  simp only at h
+  subst result
+  simp only [drainDeferred] at houtcome
+  split at houtcome <;> try simp_all
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals try (split at houtcome <;> try simp_all)
+  all_goals simp_all
 
 inductive ContextError where
   | invalidSaved | duplicateSaved | missingSaved

@@ -538,6 +538,41 @@ theorem composite_contained_fault_cleanup_preserves_context_boundary
     FailStop.interrupt_contained_synchronizes_lifecycle
       state frame subject hcontained⟩
 
+/-- Every typed deferred-drain denial is globally atomic, including ready-queue
+and resumable-bank exhaustion.  This supports
+SC-COMPOSITE-CONTAINED-FAULT-CLEANUP. -/
+theorem composite_deferred_cancel_drain_rejection_atomic state subject reason
+    (hrejected : (FailStop.drainDeferredCancellation state subject).result =
+      .rejected reason) :
+    (FailStop.drainDeferredCancellation state subject).state = state := by
+  exact FailStop.drainDeferredCancellation_rejected_unchanged
+    state subject reason hrejected
+
+/-- A successful drain reserves both finite banks and publishes the exact
+retained context through synchronized composite scheduler projections.  This
+supports SC-COMPOSITE-CONTAINED-FAULT-CLEANUP. -/
+theorem composite_deferred_cancel_drain_success_boundary state subject saved
+    (hcoherent : state.BlockingIPCCoherent)
+    (hdrained : (FailStop.drainDeferredCancellation state subject).result =
+      .drained saved) :
+    let next := (FailStop.drainDeferredCancellation state subject).state
+    state.deferredCancels.retained subject = some saved ∧
+      next.deferredCancels.retained subject = none ∧
+      next.blockingIPC.completion subject = some .cancelled ∧
+      next.resumable.contexts = saved :: state.resumable.contexts ∧
+      ¬ state.scheduler.capacity ≤ state.scheduler.ready.length ∧
+      ¬ state.resumable.capacity ≤ state.resumable.contexts.length ∧
+      next.scheduler.ready = state.scheduler.ready ++ [subject] ∧
+      next.resumable.scheduler = next.scheduler ∧
+      next.blockingIPC.scheduler = next.scheduler := by
+  have hexact := FailStop.drainDeferredCancellation_drained_exact
+    state subject saved hdrained
+  have hcapacity := FailStop.drainDeferredCancellation_reserves_capacities
+    state subject saved hcoherent hdrained
+  exact ⟨hexact.1, hexact.2.1, hexact.2.2.1, hexact.2.2.2.1,
+    hcapacity.1, hcapacity.2.1, hcapacity.2.2.1,
+    hexact.2.2.2.2.1, hexact.2.2.2.2.2.1⟩
+
 /-- SC-COMPOSITE-BLOCKING-REJECTION-WF: every finite ordinary denial at the
 typed blocking gate preserves the full composite runtime invariant because it
 returns the literal pre-state. -/

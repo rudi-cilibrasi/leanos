@@ -470,7 +470,9 @@ def CompositeState.blockingIPCContext (state : CompositeState) :
 /-- The strengthened blocking invariant classifies every saved context as an
 indexed waiter or a disjoint, quiescent deferred cancellation. -/
 def CompositeState.DeferredCancellationWellFormed (state : CompositeState) : Prop :=
-  BlockingIPCContext.DeferredWellFormed state.blockingIPCContext state.deferredCancels
+  BlockingIPCContext.DeferredWellFormed state.blockingIPCContext state.deferredCancels ∧
+  (∀ subject saved, state.deferredCancels.retained subject = some saved →
+    ResumablePreemption.contextFor state.resumable.contexts subject = none)
 
 /-- Replacing the scheduler projection preserves a blocking store when every
 field observed by waiter validation is unchanged and the replacement scheduler
@@ -1053,6 +1055,134 @@ def publishBlockingIPCContext (state : CompositeState)
     resumable := { state.resumable with scheduler, translations }
     blockingIPC := blocking.ipc
     blockingContexts := blocking.blocked }
+
+structure DeferredDrainOutcome where
+  state : CompositeState
+  result : BlockingIPCContext.DrainResult
+
+/-- Publish a successful deferred cancellation drain through every duplicated
+scheduler/lifecycle projection and the authoritative resumable bank.  The
+lower transition has already reserved both finite capacities. -/
+private def publishDeferredDrain (state : CompositeState)
+    (outcome : BlockingIPCContext.DrainOutcome) : CompositeState :=
+  let scheduler := outcome.state.ipc.scheduler
+  let lifecycle := scheduler.lifecycle
+  { state with
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle }
+      returnAuthorityArmed := false }
+    scheduler
+    preemption := { state.preemption with scheduler }
+    lifecycle
+    resumable := { state.resumable with
+      scheduler
+      contexts := outcome.resumable }
+    blockingIPC := outcome.state.ipc
+    blockingContexts := outcome.state.blocked
+    deferredCancels := outcome.deferred }
+
+/-- Typed composite drain for a contained-fault peer.  Every rejected branch
+returns the literal composite pre-state.  Success is published only after the
+lower gate has revalidated authority, uniqueness, ready capacity, and
+resumable-bank capacity. -/
+def drainDeferredCancellation (state : CompositeState)
+    (subject : BlockingIPC.SubjectId) : DeferredDrainOutcome :=
+  let outcome := BlockingIPCContext.drainDeferred state.blockingIPCContext
+    state.deferredCancels state.resumable.contexts state.resumable.capacity subject
+  match outcome.result with
+  | .rejected reason => ⟨state, .rejected reason⟩
+  | .drained saved => ⟨publishDeferredDrain state outcome, .drained saved⟩
+
+theorem drainDeferredCancellation_rejected_unchanged state subject reason
+    (h : (drainDeferredCancellation state subject).result = .rejected reason) :
+    (drainDeferredCancellation state subject).state = state := by
+  simp only [drainDeferredCancellation] at h ⊢
+  generalize houtcome : BlockingIPCContext.drainDeferred state.blockingIPCContext
+    state.deferredCancels state.resumable.contexts state.resumable.capacity subject = outcome at h ⊢
+  cases outcome with
+  | mk next nextDeferred nextResumable result =>
+      cases result <;> simp_all
+
+/-- Successful publication installs exactly the retained context, emits typed
+cancellation, removes only that deferred entry, and keeps all scheduler views
+identical. -/
+theorem drainDeferredCancellation_drained_exact state subject saved
+    (h : (drainDeferredCancellation state subject).result = .drained saved) :
+    let next := (drainDeferredCancellation state subject).state
+    state.deferredCancels.retained subject = some saved ∧
+      next.deferredCancels.retained subject = none ∧
+      next.blockingIPC.completion subject = some .cancelled ∧
+      next.resumable.contexts = saved :: state.resumable.contexts ∧
+      next.resumable.scheduler = next.scheduler ∧
+      next.blockingIPC.scheduler = next.scheduler ∧
+      next.scheduler.lifecycle = next.lifecycle ∧
+      next.execution.core.lifecycle = next.lifecycle ∧
+      next.preemption.scheduler = next.scheduler := by
+  simp only [drainDeferredCancellation] at h ⊢
+  generalize houtcome : BlockingIPCContext.drainDeferred state.blockingIPCContext
+    state.deferredCancels state.resumable.contexts state.resumable.capacity subject = outcome at h ⊢
+  cases outcome with
+  | mk next nextDeferred nextResumable result =>
+      cases result with
+      | rejected reason => simp at h
+      | drained actual =>
+          injection h with hactual
+          subst actual
+          simp only
+          have hresult :
+              (BlockingIPCContext.drainDeferred state.blockingIPCContext
+                state.deferredCancels state.resumable.contexts
+                state.resumable.capacity subject).result = .drained saved := by
+            rw [houtcome]
+          have hexact := BlockingIPCContext.drainDeferred_drained_exact
+            state.blockingIPCContext state.deferredCancels state.resumable.contexts
+            state.resumable.capacity subject saved hresult
+          rw [houtcome] at hexact
+          rcases hexact with ⟨hretained, hremoved, _hrunnable, _hready,
+            hcancelled, hcontexts⟩
+          simp only [publishDeferredDrain]
+          refine ⟨hretained, hremoved, hcancelled, hcontexts, ?_⟩
+          simp
+
+/-- A composite success proves both finite reservations in the pre-state and
+the exact resumable-bank append in the published post-state. -/
+theorem drainDeferredCancellation_reserves_capacities state subject saved
+    (hcoherent : state.BlockingIPCCoherent)
+    (h : (drainDeferredCancellation state subject).result = .drained saved) :
+    ¬ state.scheduler.capacity ≤ state.scheduler.ready.length ∧
+      ¬ state.resumable.capacity ≤ state.resumable.contexts.length ∧
+      (drainDeferredCancellation state subject).state.scheduler.ready =
+        state.scheduler.ready ++ [subject] ∧
+      (drainDeferredCancellation state subject).state.resumable.contexts =
+        saved :: state.resumable.contexts := by
+  simp only [drainDeferredCancellation] at h ⊢
+  generalize houtcome : BlockingIPCContext.drainDeferred state.blockingIPCContext
+    state.deferredCancels state.resumable.contexts state.resumable.capacity subject = outcome at h ⊢
+  cases outcome with
+  | mk next nextDeferred nextResumable result =>
+      cases result with
+      | rejected reason => simp at h
+      | drained actual =>
+          injection h with hactual
+          subst actual
+          simp only
+          have hresult :
+              (BlockingIPCContext.drainDeferred state.blockingIPCContext
+                state.deferredCancels state.resumable.contexts
+                state.resumable.capacity subject).result = .drained saved := by
+            rw [houtcome]
+          have hcapacity := BlockingIPCContext.drainDeferred_drained_reserves_capacity
+            state.blockingIPCContext state.deferredCancels state.resumable.contexts
+            state.resumable.capacity subject saved hresult
+          rw [houtcome] at hcapacity
+          rcases hcapacity with
+            ⟨_valid, _live, _owner, _unique, hreadyRoom, hbankRoom,
+              hready, hcontexts⟩
+          have hblocking : state.blockingIPC.scheduler = state.scheduler := hcoherent.1
+          simp only [publishDeferredDrain]
+          refine ⟨?_, hbankRoom, ?_, hcontexts⟩
+          · simpa [CompositeState.blockingIPCContext, hblocking] using hreadyRoom
+          · simpa [CompositeState.blockingIPCContext, hblocking] using hready
 
 /-- Publish the blocking half of subject termination without reconstructing
 either waiter or saved-context state.  The dependency transition removes the
