@@ -177,6 +177,112 @@ def run_fixtures() -> None:
             "mandatory inventory count differs",
         )
 
+        missing_fast_entry = tmp / "missing-fast-entry.tsv"
+        mutate_matrix(
+            missing_fast_entry,
+            lambda lines: [
+                line.replace("fast-entry-syscall", "fast-entry-syscall-replacement")
+                if line.startswith("fast-entry-syscall\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_fast_entry),
+            "mandatory fast-entry scenario is absent: fast-entry-syscall",
+        )
+
+        drifted_fast_entry = tmp / "drifted-fast-entry.tsv"
+        mutate_matrix(
+            drifted_fast_entry,
+            lambda lines: [
+                line.replace("\t30\t", "\t31\t", 1)
+                if line.startswith("fast-entry-sysenter\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(drifted_fast_entry),
+            "mandatory fast-entry scenario fast-entry-sysenter has unexpected timeout",
+        )
+
+        missing_fast_entry_mutation = tmp / "missing-fast-entry-mutation.tsv"
+        mutate_matrix(
+            missing_fast_entry_mutation,
+            lambda lines: [
+                line.replace(
+                    "return-fast-entry-sce-relaxation",
+                    "return-fast-entry-sce-relaxation-replacement",
+                )
+                if line.startswith("return-fast-entry-sce-relaxation\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_fast_entry_mutation),
+            "mandatory fast-entry scenario is absent: return-fast-entry-sce-relaxation",
+        )
+
+        missing_fast_entry_target_mutation = tmp / "missing-fast-entry-target-mutation.tsv"
+        mutate_matrix(
+            missing_fast_entry_target_mutation,
+            lambda lines: [
+                line.replace(
+                    "return-fast-entry-lstar-relaxation",
+                    "return-fast-entry-lstar-relaxation-replacement",
+                )
+                if line.startswith("return-fast-entry-lstar-relaxation\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_fast_entry_target_mutation),
+            "mandatory fast-entry scenario is absent: return-fast-entry-lstar-relaxation",
+        )
+
+        missing_fast_entry_sysenter_mutation = (
+            tmp / "missing-fast-entry-sysenter-mutation.tsv"
+        )
+        mutate_matrix(
+            missing_fast_entry_sysenter_mutation,
+            lambda lines: [
+                line.replace(
+                    "return-fast-entry-sysenter-eip-relaxation",
+                    "return-fast-entry-sysenter-eip-relaxation-replacement",
+                )
+                if line.startswith("return-fast-entry-sysenter-eip-relaxation\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_fast_entry_sysenter_mutation),
+            "mandatory fast-entry scenario is absent: "
+            "return-fast-entry-sysenter-eip-relaxation",
+        )
+
+        missing_complete_live_inventory = tmp / "missing-complete-live-inventory.tsv"
+        mutate_matrix(
+            missing_complete_live_inventory,
+            lambda lines: [
+                line.replace(
+                    "return-fast-entry-sysenter-esp-relaxation",
+                    "return-fast-entry-sysenter-esp-relaxation-replacement",
+                )
+                if line.startswith("return-fast-entry-sysenter-esp-relaxation\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(missing_complete_live_inventory),
+            "mandatory fast-entry scenario is absent: "
+            "return-fast-entry-sysenter-esp-relaxation",
+        )
+
         wrong_class = tmp / "wrong-class.tsv"
         mutate_matrix(
             wrong_class,

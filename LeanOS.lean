@@ -2,6 +2,7 @@ import LeanOS.Capability
 import LeanOS.CapabilityHandle
 import LeanOS.CapabilityTransfer
 import LeanOS.CapabilityReuse
+import LeanOS.DMAQuarantine
 import LeanOS.BootMemoryMap
 import LeanOS.BootReservation
 import LeanOS.BootAllocation
@@ -14,6 +15,7 @@ import LeanOS.IPCSyscall
 import LeanOS.Interrupt
 import LeanOS.InterruptEntry
 import LeanOS.PrivilegeEntryStack
+import LeanOS.PrivilegeEntryControl
 import LeanOS.Example
 import LeanOS.FrameAllocator
 import LeanOS.FrameBudget

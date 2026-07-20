@@ -17,6 +17,8 @@ lake build leanos-boot-plan
 
 ./scripts/test-run-extended-state-image.sh
 
+./scripts/test-run-fast-entry-image.sh
+
 ./scripts/test-run-preemption-image.sh
 
 ./scripts/test-run-fault-containment.sh
@@ -115,6 +117,31 @@ for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlock
   fi
   if ! grep -q "tests/negative/${fixture}.lean.*error: Type mismatch" "$negative_log"; then
     echo "error: security-claim fixture ${fixture} lacked the expected Lean diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
+if lake env lean tests/negative/DMAEmptyInventory.lean >"$negative_log" 2>&1; then
+  echo "error: empty DMA inventory unexpectedly validated" >&2
+  exit 1
+fi
+if ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+    "$negative_log" ||
+    ! grep -Fq '(validate emptySnapshot).isAccepted = true' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: empty DMA inventory lacked the expected semantic rejection" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+for fixture in DMAWeakenedBusMaster DMADroppedFunction DMARuntimeEnable; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: DMA quarantine fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -q "tests/negative/${fixture}.lean.*error:" "$negative_log"; then
+    echo "error: DMA quarantine fixture ${fixture} lacked a Lean diagnostic" >&2
     cat "$negative_log" >&2
     exit 1
   fi

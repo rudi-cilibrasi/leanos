@@ -10,13 +10,135 @@ boot_source="${LEANOS_ENTRY_BOOT_SOURCE:-boot/boot.S}"
 }
 
 symbols="$(nm "$elf")"
+control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"
 for symbol in isr6 isr7 isr14 isr32 isr80 authorize_interrupt_entry \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
-  page_fault_handler timer_handler entry_stack boot_stack boot_stack_top; do
+  page_fault_handler timer_handler entry_stack boot_stack boot_stack_top \
+  normalize_fast_entry_msrs read_fast_entry_msrs check_fast_entry_cpuid; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: entry manifest symbol missing: $symbol" >&2; exit 1;
   }
 done
+
+require_fast_entry_site() {
+  local symbol="$1" opcode="$2" source_site elf_site
+  source_site="$(sed -n "/^${symbol}:$/{n;p;q;}" "$boot_source")"
+  [[ "$source_site" =~ ^[[:space:]]*${opcode}[[:space:]]*$ ]] || {
+    echo "error: fast-entry ${opcode} site drifted: ${symbol}" >&2
+    exit 1
+  }
+  elf_site="$(sed -n "/<${symbol}>:/{n;p;q;}" <<<"$control_disassembly")"
+  [[ "$elf_site" =~ ^[[:space:]]*[[:xdigit:]]+:[[:space:]]+${opcode}([[:space:]]|$) ]] || {
+    echo "error: fast-entry final-ELF ${opcode} site drifted: ${symbol}" >&2
+    exit 1
+  }
+}
+
+# Fast-entry state must be produced by the reviewed early writes and consumed
+# by one explicit read-back inventory before any user return.  The labels keep
+# each privileged instruction reviewable in the final ELF.
+for symbol in normalize_fast_entry_efer_write normalize_fast_entry_star_write \
+  normalize_fast_entry_lstar_write normalize_fast_entry_cstar_write \
+  normalize_fast_entry_sfmask_write normalize_fast_entry_sysenter_cs_write \
+  normalize_fast_entry_sysenter_esp_write normalize_fast_entry_sysenter_eip_write \
+  read_fast_entry_efer read_fast_entry_star read_fast_entry_lstar \
+  read_fast_entry_cstar read_fast_entry_sfmask read_fast_entry_sysenter_cs \
+  read_fast_entry_sysenter_esp read_fast_entry_sysenter_eip; do
+  grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+    echo "error: fast-entry control symbol missing: $symbol" >&2; exit 1;
+  }
+done
+for symbol in normalize_fast_entry_efer_write normalize_fast_entry_star_write \
+  normalize_fast_entry_lstar_write normalize_fast_entry_cstar_write \
+  normalize_fast_entry_sfmask_write normalize_fast_entry_sysenter_cs_write \
+  normalize_fast_entry_sysenter_esp_write normalize_fast_entry_sysenter_eip_write; do
+  require_fast_entry_site "$symbol" wrmsr
+done
+for symbol in read_fast_entry_efer read_fast_entry_star read_fast_entry_lstar \
+  read_fast_entry_cstar read_fast_entry_sfmask read_fast_entry_sysenter_cs \
+  read_fast_entry_sysenter_esp read_fast_entry_sysenter_eip; do
+  require_fast_entry_site "$symbol" rdmsr
+done
+[[ "$(grep -Ec '^[[:space:]]+wrmsr$' "$boot_source")" -eq 8 ]] || {
+  echo "error: fast-entry control write inventory drifted" >&2; exit 1;
+}
+[[ "$(grep -Ec '^[[:space:]]+rdmsr$' "$boot_source")" -eq 9 ]] || {
+  echo "error: fast-entry control read inventory drifted" >&2; exit 1;
+}
+grep -Fq 'and $~1, %eax' "$boot_source" || {
+  echo "error: fast-entry control does not clear EFER.SCE" >&2; exit 1;
+}
+# After the EFER write, EAX/EDX must remain the reviewed zero pair through the
+# STAR/LSTAR/CSTAR/SFMASK and every SYSENTER write.  This source
+# gate complements the final-ELF instruction count by rejecting a stale,
+# noncanonical, or merely nonzero target value without pretending to execute
+# privileged MSR accesses on the host.
+target_write_recipe="$(sed -n \
+  '/^\.global normalize_fast_entry_efer_write$/,/^\.global normalize_extended_state_cr0$/p' \
+  "$boot_source")"
+[[ -n "$target_write_recipe" ]] || {
+  echo "error: fast-entry target write recipe is missing" >&2; exit 1;
+}
+unexpected_target_value_write="$(
+  grep -E '^[[:space:]]*[[:alnum:]]+[[:space:]].*,[[:space:]]*%(e|r)(ax|dx)[[:space:]]*$' \
+    <<<"$target_write_recipe" \
+  | grep -Ev '^[[:space:]]*xor %eax, %eax$|^[[:space:]]*xor %edx, %edx$' \
+  || true
+)"
+[[ -z "$unexpected_target_value_write" ]] || {
+  echo "error: fast-entry target write recipe can introduce nonzero state" >&2
+  echo "$unexpected_target_value_write" >&2
+  exit 1
+}
+grep -Fq 'check_fast_entry_control();' "$kernel_source" || {
+  echo "error: fast-entry control read-back is not boot-reachable" >&2; exit 1;
+}
+grep -Fq 'check_fast_entry_cpuid();' "$kernel_source" || {
+  echo "error: fast-entry CPUID contract is not boot-reachable" >&2; exit 1;
+}
+for contract in \
+  'vendor_b != UINT32_C(0x68747541)' \
+  'vendor_d != UINT32_C(0x69746e65)' \
+  'vendor_c != UINT32_C(0x444d4163)' \
+  '((leaf_d >> 11) & 1u) == 0u' \
+  'max_extended < UINT32_C(0x80000001)' \
+  '((leaf_d >> 29) & 1u) == 0u'; do
+  grep -Fq "$contract" "$kernel_source" || {
+    echo "error: fast-entry CPUID contract drifted field=$contract" >&2; exit 1;
+  }
+done
+[[ "$(grep -Ec '[[:space:]]cpuid([[:space:]]|$)' <<<"$control_disassembly")" -ge 6 ]] || {
+  echo "error: fast-entry CPUID snapshot missing from final ELF" >&2; exit 1;
+}
+[[ "$(grep -Ec '[[:space:]]wrmsr$' <<<"$control_disassembly")" -eq 8 ]] || {
+  echo "error: fast-entry final-ELF write inventory drifted" >&2; exit 1;
+}
+[[ "$(grep -Ec '[[:space:]]rdmsr$' <<<"$control_disassembly")" -eq 9 ]] || {
+  echo "error: fast-entry final-ELF read inventory drifted" >&2; exit 1;
+}
+fast_probe="${LEANOS_FAST_ENTRY_PROBE:-}"
+if [[ -z "$fast_probe" ]]; then
+  if grep -Eq '[[:space:]](syscall|sysenter|sysretq?|sysexit)([[:space:]]|$)' \
+      <<<"$control_disassembly"; then
+    echo "error: unauthorized fast-entry opcode in final ELF" >&2; exit 1
+  fi
+elif [[ "$fast_probe" == syscall || "$fast_probe" == sysenter ]]; then
+  [[ "$(grep -Ec "[[:space:]]${fast_probe}([[:space:]]|$)" <<<"$control_disassembly")" -eq 1 ]] || {
+    echo "error: deliberate $fast_probe probe inventory drifted" >&2; exit 1;
+  }
+  other=syscall; [[ "$fast_probe" == syscall ]] && other=sysenter
+  if grep -Eq "[[:space:]](${other}|sysretq?|sysexit)([[:space:]]|$)" \
+      <<<"$control_disassembly"; then
+    echo "error: unauthorized fast-entry opcode in probe ELF" >&2; exit 1
+  fi
+  probe_dis="$(objdump -d --no-show-raw-insn "$elf" | sed -n \
+    '/<user_a_extended_state_probe>:/,/^$/p')"
+  grep -Eq "[[:space:]]${fast_probe}([[:space:]]|$)" <<<"$probe_dis" || {
+    echo "error: deliberate $fast_probe opcode is outside its reviewed probe site" >&2; exit 1;
+  }
+else
+  echo "error: unknown LEANOS_FAST_ENTRY_PROBE '$fast_probe'" >&2; exit 1
+fi
 
 [[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 8 ]] || {
   echo "error: vector=77 field=present violated=unexpected-installed-gate-count" >&2; exit 1;
@@ -129,6 +251,10 @@ grep -q 'call.*<validate_user_return>' <<<"$epilogue_dis" || {
 }
 grep -Fq 'if (ordinary_entry_active) ordinary_entry_active = 0;' "$kernel_source" || {
   echo "error: reviewed return gate does not consume the entry latch" >&2; exit 1;
+}
+return_source="$(sed -n '/^void validate_user_return/,/^}/p' "$kernel_source")"
+grep -Fq 'check_fast_entry_control();' <<<"$return_source" || {
+  echo "error: reviewed return gate omits live fast-entry read-back" >&2; exit 1;
 }
 
 echo "Entry manifest, TSS snapshot, and final-ELF paths passed"

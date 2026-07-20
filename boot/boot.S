@@ -187,9 +187,48 @@ normalize_extended_state_cr4:
     mov %eax, %cr4
     mov $page_map_level_4_a, %eax
     mov %eax, %cr3
+    /* Establish the reviewed fast privilege-entry denial state before long
+       mode is entered.  SCE is cleared rather than inherited, while the
+       required LME/NXE bits are retained.  Every unused SYSCALL/SYSENTER
+       target is overwritten so firmware values cannot become policy. */
+.global normalize_fast_entry_msrs
+normalize_fast_entry_msrs:
     mov $0xc0000080, %ecx
     rdmsr
+    and $~1, %eax
     or $((1 << 8) | (1 << 11)), %eax
+.global normalize_fast_entry_efer_write
+normalize_fast_entry_efer_write:
+    wrmsr
+    xor %eax, %eax
+    xor %edx, %edx
+    mov $0xc0000081, %ecx
+.global normalize_fast_entry_star_write
+normalize_fast_entry_star_write:
+    wrmsr
+    mov $0xc0000082, %ecx
+.global normalize_fast_entry_lstar_write
+normalize_fast_entry_lstar_write:
+    wrmsr
+    mov $0xc0000083, %ecx
+.global normalize_fast_entry_cstar_write
+normalize_fast_entry_cstar_write:
+    wrmsr
+    mov $0xc0000084, %ecx
+.global normalize_fast_entry_sfmask_write
+normalize_fast_entry_sfmask_write:
+    wrmsr
+    mov $0x174, %ecx
+.global normalize_fast_entry_sysenter_cs_write
+normalize_fast_entry_sysenter_cs_write:
+    wrmsr
+    mov $0x175, %ecx
+.global normalize_fast_entry_sysenter_esp_write
+normalize_fast_entry_sysenter_esp_write:
+    wrmsr
+    mov $0x176, %ecx
+.global normalize_fast_entry_sysenter_eip_write
+normalize_fast_entry_sysenter_eip_write:
     wrmsr
     /* Construction is complete before paging and supervisor write protection.
        EM/MP/TS are explicitly set so x87/MMX use reaches the denial path once
@@ -301,6 +340,65 @@ df_ist_stack_top:
 load_tss:
     mov $0x28, %ax
     ltr %ax
+    ret
+.global read_fast_entry_msrs
+read_fast_entry_msrs:
+    mov $0xc0000080, %ecx
+.global read_fast_entry_efer
+read_fast_entry_efer:
+    rdmsr
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, 0(%rdi)
+    mov $0xc0000081, %ecx
+.global read_fast_entry_star
+read_fast_entry_star:
+    rdmsr
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, 8(%rdi)
+    mov $0xc0000082, %ecx
+.global read_fast_entry_lstar
+read_fast_entry_lstar:
+    rdmsr
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, 16(%rdi)
+    mov $0xc0000083, %ecx
+.global read_fast_entry_cstar
+read_fast_entry_cstar:
+    rdmsr
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, 24(%rdi)
+    mov $0xc0000084, %ecx
+.global read_fast_entry_sfmask
+read_fast_entry_sfmask:
+    rdmsr
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, 32(%rdi)
+    mov $0x174, %ecx
+.global read_fast_entry_sysenter_cs
+read_fast_entry_sysenter_cs:
+    rdmsr
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, 40(%rdi)
+    mov $0x175, %ecx
+.global read_fast_entry_sysenter_esp
+read_fast_entry_sysenter_esp:
+    rdmsr
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, 48(%rdi)
+    mov $0x176, %ecx
+.global read_fast_entry_sysenter_eip
+read_fast_entry_sysenter_eip:
+    rdmsr
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, 56(%rdi)
     ret
 .global enable_smep
 enable_smep:
@@ -933,7 +1031,11 @@ user_a_entry:
        the denial handler and the final-ELF instruction allowlist. */
 .global user_a_extended_state_probe
 user_a_extended_state_probe:
-#ifdef LEANOS_EXTENDED_STATE_AVX_PROBE
+#ifdef LEANOS_FAST_ENTRY_SYSCALL_PROBE
+    syscall
+#elif defined(LEANOS_FAST_ENTRY_SYSENTER_PROBE)
+    sysenter
+#elif defined(LEANOS_EXTENDED_STATE_AVX_PROBE)
     vxorps %ymm0, %ymm0, %ymm0
 #elif defined(LEANOS_EXTENDED_STATE_SSE2_PROBE)
     pxor %xmm0, %xmm0
@@ -1029,6 +1131,10 @@ user_a_stack_top:
 extended_state_probe_class:
 #ifdef LEANOS_EXTENDED_STATE_AVX_PROBE
     .quad 4
+#elif defined(LEANOS_FAST_ENTRY_SYSCALL_PROBE)
+    .quad 5
+#elif defined(LEANOS_FAST_ENTRY_SYSENTER_PROBE)
+    .quad 6
 #elif defined(LEANOS_EXTENDED_STATE_SSE2_PROBE)
     .quad 3
 #elif defined(LEANOS_EXTENDED_STATE_SSE_PROBE)

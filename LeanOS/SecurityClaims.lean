@@ -8,8 +8,10 @@ import LeanOS.FailStop
 import LeanOS.InterruptEntry
 import LeanOS.FaultDispatch
 import LeanOS.PrivilegeEntryStack
+import LeanOS.PrivilegeEntryControl
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
+import LeanOS.DMAQuarantine
 
 /-! # Stable security-claim contract
 
@@ -18,6 +20,29 @@ implementation theorem's assumptions or conclusion therefore require an
 explicit change here and in `docs/security-claims.md`.
 -/
 namespace LeanOS.SecurityClaims
+
+/-- SC-DMA-QUARANTINE: an accepted nonempty q35 quarantine plus the explicit
+bus-master device-control contract preserves every modeled memory projection. -/
+theorem dma_quarantine_preserves_complete_projection
+    (accepted : DMAQuarantine.AcceptedSnapshot) (target : DMAQuarantine.BDF)
+    (before after : DMAQuarantine.MemoryProjection)
+    (hcontract : DMAQuarantine.DeviceContract accepted.snapshot target before after)
+    (hknown : ∃ function ∈ accepted.snapshot.functions,
+      function.bdf = target ∧ function.status = .present) :
+    after.physicalMemory = before.physicalMemory ∧
+      after.allocatorOwnership = before.allocatorOwnership ∧
+      after.pageTableFrames = before.pageTableFrames ∧
+      after.kernelOwnedFrames = before.kernelOwnedFrames ∧
+      after.kernelState = before.kernelState ∧
+      after.subjectVisible = before.subjectVisible := by
+  exact DMAQuarantine.unowned_device_preserves_complete_projection accepted target before after
+    hcontract hknown
+
+/-- The pinned q35 manifest has a concrete accepted, nonempty quarantine
+snapshot; SC-DMA-QUARANTINE is not discharged by an empty inventory. -/
+theorem dma_quarantine_q35_nonvacuous :
+    (DMAQuarantine.validate DMAQuarantine.q35Snapshot).isAccepted = true := by
+  native_decide
 
 /-- SC-KERNEL-DET: the first modeled transition is deterministic. -/
 theorem kernel_transition_deterministic
@@ -481,6 +506,14 @@ theorem privilege_entry_stack_budget_sound (State : Type)
     request state budget acceptedState haccepted
   exact ⟨hconditions.1, hbudget.1, hbudget.2.1, hbudget.2.2.1,
     hbudget.2.2.2.1, hbudget.2.2.2.2.1, hbudget.2.2.2.2.2.2⟩
+
+/-- SC-PRIVILEGE-ENTRY-CONTROL: every accepted finite CPU/MSR state enables
+exactly the reviewed manifest-backed `int 0x80` mechanism. -/
+theorem privilege_entry_control_single_mechanism control mechanism
+    (haccepted : PrivilegeEntryControl.Accepted control) :
+    PrivilegeEntryControl.enabled control mechanism =
+      decide (mechanism = .int80) := by
+  exact PrivilegeEntryControl.accepted_exactly_int80 control haccepted mechanism
 
 /-- SC-USER-RETURN-CONFINEMENT: an accepted return attests the complete
 kernel-selected frame/context tuple and its privilege-critical fields. -/
