@@ -243,6 +243,15 @@ Command register back before CPL3. PCI enumeration and Command-register
 semantics, QEMU/device obedience, the handwritten C adapter, and final-binary
 correspondence remain trusted/tested boundaries rather than proof claims.
 
+The bounded [direct-port-I/O authority model](docs/direct-port-io.md) separates
+untrusted port/value words from kernel-selected purpose, models the selected
+IOPL-zero and deny-all TSS I/O-map controls, and proves that user-origin
+requests preserve the identical complete device projection. Typed kernel
+acceptance is confined to exact serial, PIC, PIT, and debug-exit manifest keys
+including direction and width. TSS loading, x86 privilege and exception
+semantics, device behavior, generated code, and the final binary remain outside
+these model-level claims.
+
 The finite [fast privilege-entry control model](docs/privilege-entry-control.md)
 admits only the manifest-backed `int 0x80` system-call mechanism, requires a
 kernel-produced and read-back EFER/fast-entry-MSR denial tuple, composes the

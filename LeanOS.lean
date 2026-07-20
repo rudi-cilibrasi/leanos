@@ -3,6 +3,7 @@ import LeanOS.CapabilityHandle
 import LeanOS.CapabilityTransfer
 import LeanOS.CapabilityReuse
 import LeanOS.DMAQuarantine
+import LeanOS.DirectPortIO
 import LeanOS.BootMemoryMap
 import LeanOS.BootReservation
 import LeanOS.BootAllocation
