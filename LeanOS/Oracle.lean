@@ -292,9 +292,12 @@ def vectors : List Vector := [
   directPortIO "direct-port.user-input-dword" 0 0 0 0x3f8 4 0,
   directPortIO "direct-port.invalid-origin" 0 0 5 0x3f8 1 65,
   directPortIO "direct-port.invalid-direction-width" 0 0 1 0x3f8 6 65,
+  directPortIO "direct-port.invalid-stored-control" 0xffffffffffffffff 0 1 0x3f8 1 65,
+  directPortIO "direct-port.invalid-live-control" 0 0xffffffffffffffff 1 0x3f8 1 65,
+  directPortIO "direct-port.invalid-port" 0 0 1 0xffffffffffffffff 1 65,
   directPortIO "direct-port.post-validation-relaxation" 0 5 0 0x3f8 1 65]
 
-theorem corpus_shape : vectors.length = 179 := by decide
+theorem corpus_shape : vectors.length = 182 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -433,11 +436,11 @@ private def directPortIOAdapterAgrees (vector : Vector) : Bool :=
 control mutation, stale live state, all direction/width classes, exact and
 wrong kernel purposes, malformed scalar words, and post-validation relaxation. -/
 theorem direct_port_io_corpus_shape :
-    ((vectors.drop 154).take 25).length = 25 := by
+    ((vectors.drop 154).take 28).length = 28 := by
   decide
 
 theorem direct_port_io_adapter_agrees_with_model :
-    ((vectors.drop 154).take 25).all directPortIOAdapterAgrees = true := by
+    ((vectors.drop 154).take 28).all directPortIOAdapterAgrees = true := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

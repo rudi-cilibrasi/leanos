@@ -8,7 +8,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `InterruptEntry.entryDemo`, `BlockingIPC.blockingIpcDemo`,
 `CapabilityReuse.capabilityReuseDemo`, `ExtendedState.denialDispatchDemo`,
 `PrivilegeEntryControl.controlDemo`, `FaultDispatch.faultDispatchDemo`, and
-`DirectPortIO.directPortIODemo`. Its stable 179-vector order covers accepted calls,
+`DirectPortIO.directPortIODemo`. Its stable 182-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -27,11 +27,12 @@ absorption. The Lean checks evaluate every expected result from
 the adapter definition and connect the accepted and rejected examples to the
 source models.
 
-The final 25 direct-port records cover the selected live-control snapshot,
+The final 28 direct-port records cover the selected live-control snapshot,
 every named control mutation, stale read-back, all input/output width classes,
 the four reviewed kernel purposes, wrong-purpose and wrong-port requests,
-malformed scalar encodings, byte normalization, and a validate-then-relax
-attempt. The scalar adapter packs a byte-bounded device projection for corpus
+malformed scalar encodings including maximum-word stored/live controls and port,
+byte normalization, and a validate-then-relax attempt. The scalar adapter packs
+a byte-bounded device projection for corpus
 comparison; it does not claim to serialize arbitrary device state.
 
 The resumable adapter executes both composite context-bank legs and packs the
