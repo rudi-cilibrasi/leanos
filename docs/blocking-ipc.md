@@ -21,6 +21,13 @@ same transition. Termination removes the dead identity without requeuing it.
 Repeated cleanup is idempotent. Malformed stale waiters are removed by the
 same authority filter.
 
+The typed blocked-context successor also exposes one atomic subject-termination
+publication law: after lifecycle termination accepts, the same composite
+post-state contains neither the dead subject's waiter index nor its suspended
+blocked context. Terminating an endpoint owner still requires a broader
+authority filter for other affected waiters before this predicate can be folded
+into the global runtime invariant.
+
 ## Bounds, observations, and progress
 
 Wait queues and the scheduler ready queue have explicit fixed capacities.

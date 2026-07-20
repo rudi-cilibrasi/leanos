@@ -1007,6 +1007,31 @@ def publishBlockingIPCContext (state : CompositeState)
     blockingIPC := blocking.ipc
     blockingContexts := blocking.blocked }
 
+/-- Publish the blocking half of subject termination without reconstructing
+either waiter or saved-context state.  The dependency transition removes the
+subject from both projections, and the established publisher synchronizes its
+post-termination scheduler through every overlapping composite view. -/
+def publishTerminatedBlockingSubject (state : CompositeState)
+    (subject : BlockingIPC.SubjectId) : CompositeState :=
+  publishBlockingIPCContext state
+    (BlockingIPCContext.terminate state.blockingIPCContext subject)
+
+/-- Accepted lifecycle termination cannot be published with a stale waiter or
+blocked context for the dead identity.  Both absences belong to the same
+composite post-state. -/
+theorem publishTerminatedBlockingSubject_cleans_self state subject
+    (haccepted :
+      (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle subject).result =
+        .accepted) :
+    (publishTerminatedBlockingSubject state subject).blockingIPC.waiterEndpoint subject = none ∧
+      (publishTerminatedBlockingSubject state subject).blockingContexts subject = none := by
+  change
+    (BlockingIPCContext.terminate state.blockingIPCContext subject).ipc.waiterEndpoint subject =
+        none ∧
+      (BlockingIPCContext.terminate state.blockingIPCContext subject).blocked subject = none
+  exact BlockingIPCContext.terminate_accepted_cleans_self
+    state.blockingIPCContext subject haccepted
+
 @[simp] theorem publishBlockingIPCContext_context state blocking :
     (publishBlockingIPCContext state blocking).blockingIPCContext = blocking := by
   rfl

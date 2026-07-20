@@ -145,6 +145,12 @@ def cancel (state : State) (subject : SubjectId) : CancelOutcome :=
               { state := ⟨outcome.state, setBlocked state.blocked subject none⟩,
                 result := .cancelled, released := some saved }
 
+/-- Terminate one subject across the shared lifecycle/scheduler, waiter index,
+and exact blocked-context bank in one state transition. -/
+def terminate (state : State) (subject : SubjectId) : State :=
+  { ipc := BlockingIPC.terminate state.ipc subject
+    blocked := setBlocked state.blocked subject none }
+
 /-! ## Focused preservation and atomicity -/
 
 theorem receive_preserves_wellFormed state caller slot saved
@@ -442,5 +448,36 @@ theorem cancel_cancelled_exact state subject saved
   generalize hraw : BlockingIPC.cancelSubjectTyped state.ipc subject = outcome at hcancelled hreleased ⊢
   cases outcome with
   | mk next result => cases result <;> simp_all [setBlocked]
+
+@[simp] theorem terminate_blocked_self state subject :
+    (terminate state subject).blocked subject = none := by
+  simp [terminate, setBlocked]
+
+/-- Once lifecycle termination accepts, waiter removal and blocked-context
+removal are committed by the same typed state value.  The dead subject cannot
+remain indexed in either projection. -/
+theorem terminate_accepted_cleans_self state subject
+    (haccepted : (SubjectLifecycle.terminate state.ipc.scheduler.lifecycle subject).result =
+      .accepted) :
+    (terminate state subject).ipc.waiterEndpoint subject = none ∧
+      (terminate state subject).blocked subject = none := by
+  have hterminated :
+      (SubjectLifecycle.terminate state.ipc.scheduler.lifecycle subject).state =
+        SubjectLifecycle.terminateState state.ipc.scheduler.lifecycle subject := by
+    unfold SubjectLifecycle.terminate at haccepted ⊢
+    split at haccepted <;> simp_all [SubjectLifecycle.reject]
+    split at haccepted <;> simp_all
+  have hdead :
+      (SubjectLifecycle.terminate state.ipc.scheduler.lifecycle subject).state.capabilities.subjects
+        subject = false := by
+    rw [hterminated]
+    exact SubjectLifecycle.terminated_not_live state.ipc.scheduler.lifecycle subject
+  constructor
+  · simp only [terminate, BlockingIPC.terminate, haccepted]
+    unfold BlockingIPC.cancelSubject
+    split
+    · assumption
+    · simp [hdead, BlockingIPC.setWaiterEndpoint]
+  · exact terminate_blocked_self state subject
 
 end LeanOS.BlockingIPCContext
