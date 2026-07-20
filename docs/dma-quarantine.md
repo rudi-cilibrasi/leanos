@@ -83,7 +83,13 @@ bus-master bit or any Command bit outside the model's 11-bit range. The exact
 `LEANOS/15 DMA` record is mandatory in `scripts/run-image.sh`; missing and
 forged records are negative runner fixtures. Thus the pinned emulator logs
 show five present functions, one absent optional network function, five writes,
-and five successful read-backs before CPL3.
+and five successful read-backs before CPL3. Although the construction-time
+probe sees every Command bus-master bit clear, pinned SeaBIOS enables the
+recognized ICH9 SATA function at `00:1f.2` while booting the CD-ROM. Every
+mandatory accepted-boot record therefore requires one initially enabled bus
+master and manifest mask 16, followed by final disabled state. Removing or
+misaddressing `pci_config_command` leaves that SATA bit set and fails the guest
+read-back.
 
 This adapter intentionally treats an all-ones vendor read as architectural
 absence. A missing required function is fatal; for the optional network slot,

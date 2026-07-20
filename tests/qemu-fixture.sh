@@ -8,15 +8,17 @@ for ((i=1; i<=$#; ++i)); do
   if [[ "${!i}" == -m ]]; then next=$((i + 1)); memory_mib="${!next%M}"; fi
 done
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-dma-missing|dma-forged)
+dma-missing|dma-forged|dma-prestate-forged)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
   set -e
   if [[ "$mode" == dma-missing ]]; then
     sed -i '/^LEANOS\/15 DMA /d' "$log"
-  else
+  elif [[ "$mode" == dma-forged ]]; then
     sed -i 's/readbacks=5/readbacks=4/' "$log"
+  else
+    sed -i 's/initial-bus-masters=1/initial-bus-masters=0/' "$log"
   fi
   exit 33
   ;;
@@ -98,6 +100,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
   status=$?
   set -e
+  sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i '/^LEANOS\/6 CONTROL/i LEANOS/12 ENTRY-MANIFEST ordinary=5 extended=6,7 auxiliary=2 extra=0 rsp0=entry-stack ist1=df-stack result=PASS' "$log"
   sed -i \
     -e 's|LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc|' \

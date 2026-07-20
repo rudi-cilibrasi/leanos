@@ -979,6 +979,8 @@ static const struct pci_manifest_entry *q35_manifest_entry(
    first CPL3 return. Missing/extra/changed/unreadable state is fatal. */
 static void quarantine_q35_pci_dma(void) {
     unsigned seen = 0, present = 0, writes = 0, readbacks = 0;
+    unsigned initially_bus_mastering = 0;
+    unsigned initial_bus_master_mask = 0;
     for (unsigned device = 0; device < 32; ++device) {
         for (unsigned function = 0; function < 8; ++function) {
             uint32_t identity = pci_config_dword(device, function, 0x00);
@@ -1001,6 +1003,10 @@ static void quarantine_q35_pci_dma(void) {
 
             uint16_t command = (uint16_t)pci_config_dword(
                 device, function, 0x04);
+            if ((command & PCI_COMMAND_BUS_MASTER) != 0) {
+                ++initially_bus_mastering;
+                initial_bus_master_mask |= 1u << index;
+            }
             pci_config_command(device, function,
                 (uint16_t)(command & ~PCI_COMMAND_BUS_MASTER));
             ++writes;
@@ -1025,7 +1031,11 @@ static void quarantine_q35_pci_dma(void) {
     if (present != 5 || optional_absent != 1 || writes != present ||
         readbacks != present)
         fail("dma-q35-nic-none");
-    serial_puts("LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 bus-master=disabled stage=pre-cpl3 result=PASS\n");
+    serial_puts("LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=");
+    serial_u64(initially_bus_mastering);
+    serial_puts(" initial-bus-master-mask=");
+    serial_u64(initial_bus_master_mask);
+    serial_puts(" bus-master=disabled stage=pre-cpl3 result=PASS\n");
 }
 
 static void serial_init(void) {
