@@ -24,7 +24,8 @@ same authority filter.
 The typed blocked-context successor also exposes one atomic subject-termination
 publication law: after lifecycle termination accepts, the same composite
 post-state contains neither the dead subject's waiter index nor its suspended
-blocked context. Terminating an endpoint owner still requires a broader
+blocked context. A lifecycle rejection publishes nothing and returns the
+identical typed context and composite states. Terminating an endpoint owner still requires a broader
 authority filter for other affected waiters before this predicate can be folded
 into the global runtime invariant.
 

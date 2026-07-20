@@ -148,8 +148,11 @@ def cancel (state : State) (subject : SubjectId) : CancelOutcome :=
 /-- Terminate one subject across the shared lifecycle/scheduler, waiter index,
 and exact blocked-context bank in one state transition. -/
 def terminate (state : State) (subject : SubjectId) : State :=
-  { ipc := BlockingIPC.terminate state.ipc subject
-    blocked := setBlocked state.blocked subject none }
+  match (SubjectLifecycle.terminate state.ipc.scheduler.lifecycle subject).result with
+  | .rejected _ => state
+  | .accepted =>
+      { ipc := BlockingIPC.terminate state.ipc subject
+        blocked := setBlocked state.blocked subject none }
 
 /-! ## Focused preservation and atomicity -/
 
@@ -450,8 +453,19 @@ theorem cancel_cancelled_exact state subject saved
   | mk next result => cases result <;> simp_all [setBlocked]
 
 @[simp] theorem terminate_blocked_self state subject :
-    (terminate state subject).blocked subject = none := by
-  simp [terminate, setBlocked]
+    (SubjectLifecycle.terminate state.ipc.scheduler.lifecycle subject).result = .accepted →
+      (terminate state subject).blocked subject = none := by
+  intro haccepted
+  simp [terminate, haccepted, setBlocked]
+
+/-- A typed lifecycle rejection cannot detach a saved blocking context from
+its still-live waiter. -/
+theorem terminate_rejected_unchanged state subject reason
+    (hrejected :
+      (SubjectLifecycle.terminate state.ipc.scheduler.lifecycle subject).result =
+        .rejected reason) :
+    terminate state subject = state := by
+  simp [terminate, hrejected]
 
 /-- Once lifecycle termination accepts, waiter removal and blocked-context
 removal are committed by the same typed state value.  The dead subject cannot
@@ -478,6 +492,6 @@ theorem terminate_accepted_cleans_self state subject
     split
     · assumption
     · simp [hdead, BlockingIPC.setWaiterEndpoint]
-  · exact terminate_blocked_self state subject
+  · exact terminate_blocked_self state subject haccepted
 
 end LeanOS.BlockingIPCContext

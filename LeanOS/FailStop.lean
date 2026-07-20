@@ -1013,8 +1013,19 @@ subject from both projections, and the established publisher synchronizes its
 post-termination scheduler through every overlapping composite view. -/
 def publishTerminatedBlockingSubject (state : CompositeState)
     (subject : BlockingIPC.SubjectId) : CompositeState :=
-  publishBlockingIPCContext state
-    (BlockingIPCContext.terminate state.blockingIPCContext subject)
+  match (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle subject).result with
+  | .rejected _ => state
+  | .accepted =>
+      publishBlockingIPCContext state
+        (BlockingIPCContext.terminate state.blockingIPCContext subject)
+
+/-- A lifecycle rejection reaches no scheduler, waiter, or context publisher. -/
+theorem publishTerminatedBlockingSubject_rejected_unchanged state subject reason
+    (hrejected :
+      (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle subject).result =
+        .rejected reason) :
+    publishTerminatedBlockingSubject state subject = state := by
+  simp [publishTerminatedBlockingSubject, hrejected]
 
 /-- Accepted lifecycle termination cannot be published with a stale waiter or
 blocked context for the dead identity.  Both absences belong to the same
@@ -1025,6 +1036,7 @@ theorem publishTerminatedBlockingSubject_cleans_self state subject
         .accepted) :
     (publishTerminatedBlockingSubject state subject).blockingIPC.waiterEndpoint subject = none ∧
       (publishTerminatedBlockingSubject state subject).blockingContexts subject = none := by
+  simp only [publishTerminatedBlockingSubject, haccepted]
   change
     (BlockingIPCContext.terminate state.blockingIPCContext subject).ipc.waiterEndpoint subject =
         none ∧
