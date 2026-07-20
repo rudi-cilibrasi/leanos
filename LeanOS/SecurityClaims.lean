@@ -231,6 +231,29 @@ theorem composite_authoritative_mixed_trace_preserves_runtimeWellFormed
   exact FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
     state operations hstate hready
 
+/-- Mapping changes retain the complete authoritative-gate
+blocking precondition, so either raw mapping mutation can be followed directly
+by an arbitrary block, wake, or cancellation in the successor gate. -/
+theorem composite_authoritative_mapping_then_blocking_preserves_runtimeWellFormed
+    state slot page permissions blocking
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state
+            (.ordinary (.map slot page permissions))).state
+          (.blocking blocking)).state ∧
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state
+            (.ordinary (.unmap page))).state
+          (.blocking blocking)).state := by
+  constructor
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state (.map slot page permissions) blocking
+      (.map slot page permissions) hstate
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state (.unmap page) blocking (.unmap page) hstate
+
 /-- The successor contract has a reachable classified rejection at the
 boot-produced empty waiter store, rather than being discharged vacuously. -/
 theorem composite_authoritative_gate_rejection_reachable_witness plan :

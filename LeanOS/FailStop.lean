@@ -4212,6 +4212,36 @@ private theorem installVirtualMemory_preserves_runtimeWellFormed state virtualMe
   · simp [installVirtualMemory, CompositeState.BlockingIPCCoherent,
       hlive.2.1, hlive.2.2, hschedulerCoherent]
 
+/-- Mapping publication changes only the lifecycle mapping projection in the
+blocking scheduler.  Every field used to validate waiters, mailboxes, and
+saved contexts is retained literally, so the complete blocking invariant can
+be carried across the same publication step as the virtual-memory/TLB proof. -/
+private theorem installVirtualMemory_preserves_blockingRuntimeWellFormed
+    state virtualMemory translations (hstate : BlockingRuntimeWellFormed state)
+    (hmemory : virtualMemory.memory = state.virtualMemory.memory)
+    (howner : virtualMemory.owner = state.virtualMemory.owner)
+    (hvirtual : VirtualMapping.LifecycleWellFormed virtualMemory)
+    (htlb : TLB.Coherent translations)
+    (hactive : translations.active = state.resumable.translations.active) :
+    BlockingRuntimeWellFormed
+      (installVirtualMemory state virtualMemory translations) := by
+  have hpost := installVirtualMemory_preserves_runtimeWellFormed
+    state virtualMemory translations hstate.1 hmemory howner hvirtual htlb hactive
+  refine ⟨hpost, ?_⟩
+  have hscheduler := hpost.2.2.2.2.2.2.1
+  have hschedulerLifecycle := hstate.1.1.2.1
+  simpa [installVirtualMemory, CompositeState.blockingIPCContext,
+      hstate.1.blockingScheduler, hschedulerLifecycle] using
+    (blockingIPCContext_wellFormed_replaceScheduler state
+      { state.scheduler with
+        lifecycle := { state.lifecycle with
+          mapping := fun space page => (virtualMemory.mappings space page).map (·.object) } }
+      hstate.2 hscheduler (by simp [hstate.1.blockingScheduler, hschedulerLifecycle])
+      (by simp [hstate.1.blockingScheduler, hschedulerLifecycle])
+      (by simp [hstate.1.blockingScheduler, hschedulerLifecycle])
+      (by simp [hstate.1.blockingScheduler, hschedulerLifecycle])
+      (by simp [hstate.1.blockingScheduler, hschedulerLifecycle]))
+
 theorem installLifecycle_clears_retired_mailbox state lifecycle object
     (hdead : lifecycle.capabilities.objects object ≠ true) :
     (installLifecycle state lifecycle).ipc.endpoints.mailbox object = none := by
@@ -7190,6 +7220,85 @@ theorem gate_unmap_accepted_invalidates_tlb state page next
       (TLB.invalidate_page_absent state.resumable.translations.entries
         { addressSpace := state.execution.core.context.activeAddressSpace, page } context)
 
+/-- Raw mapping is compatible with the authoritative blocking store for every
+typed result.  Rejection is atomic; acceptance changes only mapping and TLB
+projections while retaining every waiter-observed scheduler field. -/
+theorem gate_map_preserves_blockingRuntimeWellFormed state slot page permissions
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed
+      (gate state (.map slot page permissions)).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      generalize hmap : VirtualMapping.map state.virtualMemory
+        state.execution.core.context.currentSubject slot
+        state.execution.core.context.activeAddressSpace page permissions = outcome
+      cases outcome with
+      | mk next result =>
+          cases result with
+          | rejected reason => simpa [gate, hmode, applyOperation, hmap] using hstate
+          | accepted =>
+              have hmemory := VirtualMapping.map_memory state.virtualMemory
+                state.execution.core.context.currentSubject slot
+                state.execution.core.context.activeAddressSpace page permissions
+              have howner := VirtualMapping.map_owner state.virtualMemory
+                state.execution.core.context.currentSubject slot
+                state.execution.core.context.activeAddressSpace page permissions
+              have hvirtual := VirtualMapping.map_preserves_lifecycleWellFormed
+                state.virtualMemory state.execution.core.context.currentSubject slot
+                state.execution.core.context.activeAddressSpace page permissions
+                hstate.1.2.2.2.2.1
+              rw [hmap] at hmemory howner hvirtual
+              let translations : TLB.State :=
+                { state.resumable.translations with virtual := next }
+              have htlb : TLB.Coherent translations := by
+                simpa [translations, TLB.Coherent] using
+                  hstate.1.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+              have hpreserved := installVirtualMemory_preserves_blockingRuntimeWellFormed
+                state next translations hstate hmemory howner hvirtual htlb rfl
+              simpa [gate, hmode, applyOperation, hmap, translations] using hpreserved
+
+/-- Raw unmapping preserves the complete blocking invariant while invalidating
+the selected page from the authoritative resumable-context TLB. -/
+theorem gate_unmap_preserves_blockingRuntimeWellFormed state page
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed (gate state (.unmap page)).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      generalize hunmap : VirtualMapping.unmap state.virtualMemory
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page = outcome
+      cases outcome with
+      | mk next result =>
+          cases result with
+          | rejected reason => simpa [gate, hmode, applyOperation, hunmap] using hstate
+          | accepted =>
+              have hmemory := VirtualMapping.unmap_memory state.virtualMemory
+                state.execution.core.context.currentSubject
+                state.execution.core.context.activeAddressSpace page
+              have howner := VirtualMapping.unmap_owner state.virtualMemory
+                state.execution.core.context.currentSubject
+                state.execution.core.context.activeAddressSpace page
+              have hvirtual := VirtualMapping.unmap_preserves_lifecycleWellFormed
+                state.virtualMemory state.execution.core.context.currentSubject
+                state.execution.core.context.activeAddressSpace page
+                hstate.1.2.2.2.2.1
+              rw [hunmap] at hmemory howner hvirtual
+              let translations := TLB.invalidatePage
+                { state.resumable.translations with virtual := next }
+                state.execution.core.context.activeAddressSpace page
+              have htlb : TLB.Coherent translations := by
+                exact TLB.invalidate_page_preserves_coherent
+                  { state.resumable.translations with virtual := next }
+                  state.execution.core.context.activeAddressSpace page
+                  hstate.1.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+              have hpreserved := installVirtualMemory_preserves_blockingRuntimeWellFormed
+                state next translations hstate hmemory howner hvirtual htlb rfl
+              simpa [gate, hmode, applyOperation, hunmap, translations] using hpreserved
+
 private theorem dispatchHardware_running_returnAuthority_unarmed state frame
     (hmode : state.mode = .running) :
     (dispatchHardware state frame).state.returnAuthorityArmed = false := by
@@ -9793,6 +9902,29 @@ theorem gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed state oper
   · rw [gate_blockingStateNeutral_preserves_blockingIPCContext state operation hoperation]
     exact hstate.2
 
+/-- Ordinary operations currently known to retain the complete blocking
+runtime invariant.  Neutral control/data-IPC steps keep the blocking state
+literal; map and unmap use the scheduler replacement law above. -/
+inductive BlockingRuntimePreservingOperation : Operation → Prop where
+  | neutral {operation} (hoperation : BlockingStateNeutralOperation operation) :
+      BlockingRuntimePreservingOperation operation
+  | map slot page permissions :
+      BlockingRuntimePreservingOperation (.map slot page permissions)
+  | unmap page : BlockingRuntimePreservingOperation (.unmap page)
+
+theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+    state operation (hoperation : BlockingRuntimePreservingOperation operation)
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed (gate state operation).state := by
+  cases hoperation with
+  | neutral hneutral =>
+      exact gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+        state operation hneutral hstate
+  | map slot page permissions =>
+      exact gate_map_preserves_blockingRuntimeWellFormed
+        state slot page permissions hstate
+  | unmap page => exact gate_unmap_preserves_blockingRuntimeWellFormed state page hstate
+
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
     (hsecond : dispatchHardware state frame = second) : first = second := by
@@ -10035,6 +10167,34 @@ theorem authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellForm
   rw [authoritativeGate_ordinary_state]
   exact gate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
     state operation hoperation hstate
+
+/-- Control/data-IPC and raw mapping operations retain the stronger blocking
+precondition through the authoritative successor.  A following block, wake,
+or cancellation can therefore run without reconstructing waiter readiness. -/
+theorem authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+    state operation (hoperation : BlockingRuntimePreservingOperation operation)
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed
+      (authoritativeGate state (.ordinary operation)).state := by
+  rw [authoritativeGate_ordinary_state]
+  exact gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+    state operation hoperation hstate
+
+/-- One readiness-free mixed slice: any compatible ordinary mutation may be
+followed immediately by any authoritative blocking operation while preserving
+the complete global/scheduler/mailbox/waiter/context invariant. -/
+theorem authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state ordinary blocking
+    (hordinary : BlockingRuntimePreservingOperation ordinary)
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed
+      (authoritativeGate
+        (authoritativeGate state (.ordinary ordinary)).state
+        (.blocking blocking)).state := by
+  exact authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
+    (authoritativeGate state (.ordinary ordinary)).state blocking
+    (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+      state ordinary hordinary hstate)
 
 /-- Accepted and fatal return completion both retain the complete blocking
 runtime invariant, so a later blocking step needs no reconstructed readiness
