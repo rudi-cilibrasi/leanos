@@ -38,6 +38,8 @@ extern uint64_t leanos_privilege_entry_control_demo(uint64_t, uint64_t, uint64_t
                                                      uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_fault_dispatch_demo(uint64_t, uint64_t, uint64_t,
                                             uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_direct_port_io_demo(uint64_t, uint64_t, uint64_t,
+                                            uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);
@@ -1099,9 +1101,13 @@ static void replay_oracle(void) {
                                                 ? leanos_privilege_entry_control_demo(v->words[0],
                                                 v->words[1], v->words[2], v->words[3],
                                                 v->words[4], v->words[5])
-                                                : leanos_fault_dispatch_demo(v->words[0], v->words[1],
-                                                v->words[2], v->words[3], v->words[4],
-                                                v->words[5]);
+                                                : v->adapter == 12
+                                                    ? leanos_fault_dispatch_demo(v->words[0],
+                                                    v->words[1], v->words[2], v->words[3],
+                                                    v->words[4], v->words[5])
+                                                    : leanos_direct_port_io_demo(v->words[0],
+                                                    v->words[1], v->words[2], v->words[3],
+                                                    v->words[4], v->words[5]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
