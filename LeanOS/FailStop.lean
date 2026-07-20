@@ -2,6 +2,7 @@ import LeanOS.Interrupt
 import LeanOS.BootPageTablePlan
 import LeanOS.IPCSyscall
 import LeanOS.BlockingIPC
+import LeanOS.BlockingIPCContext
 import LeanOS.Preemption
 import LeanOS.CapabilityTransfer
 import LeanOS.ResumablePreemption
@@ -446,6 +447,10 @@ structure CompositeState where
   /-- Authoritative blocking endpoint state.  Its scheduler is published back
   to every composite scheduler projection by `publishBlockingIPC`. -/
   blockingIPC : BlockingIPC.State
+  /-- Exact suspended contexts paired with the authoritative waiter index.
+  This bank is mutated only together with `blockingIPC` through the typed
+  `BlockingIPCContext` transition. -/
+  blockingContexts : BlockingIPC.SubjectId → Option ResumableContext.Context
 
 /-- A compiled return plan refines the active live virtual-memory view exactly
 at the two leaves used by the return gate.  The live object bindings must name
@@ -671,7 +676,8 @@ def bootRuntime (plan : BootPageTablePlan.Plan) : CompositeState :=
         waiters := fun _ => []
         waiterEndpoint := fun _ => none
         waiterCapacity := 0
-        completion := fun _ => none } }
+        completion := fun _ => none }
+    blockingContexts := fun _ => none }
 
 /-- A successfully compiled bounded boot plan produces a concrete global
 invariant witness.  Boot does not synthesize a live subject or trusted return
@@ -901,10 +907,18 @@ def CompositeState.BlockingIPCCoherent (state : CompositeState) : Prop :=
   state.blockingIPC.scheduler = state.scheduler ∧
   state.blockingIPC.scheduler.lifecycle = state.lifecycle
 
+/-- The authoritative typed blocking state assembled from its two stored
+projections.  Keeping this constructor public lets refinement layers state
+that neither the raw waiter store nor its saved-context bank can be published
+on its own. -/
+def CompositeState.blockingIPCContext (state : CompositeState) :
+    BlockingIPCContext.State :=
+  { ipc := state.blockingIPC, blocked := state.blockingContexts }
+
 /-- Strengthened runtime predicate for the authoritative blocking-IPC slice. -/
 def BlockingRuntimeWellFormed (state : CompositeState) : Prop :=
   RuntimeWellFormed state ∧
-  BlockingIPC.WellFormed state.blockingIPC ∧
+  BlockingIPCContext.WellFormed state.blockingIPCContext ∧
   state.BlockingIPCCoherent
 
 /-- The boot-produced runtime also initializes the authoritative blocking
@@ -913,7 +927,9 @@ theorem bootRuntime_blockingRuntimeWellFormed input plan
     (hcompiled : BootPageTablePlan.compile input = .ok plan) :
     BlockingRuntimeWellFormed (bootRuntime plan) := by
   refine ⟨bootRuntime_runtimeWellFormed input plan hcompiled, ?_, ?_⟩
-  · simp [bootRuntime, BlockingIPC.WellFormed, Scheduler.WellFormed,
+  · simp [CompositeState.blockingIPCContext, bootRuntime,
+      BlockingIPCContext.WellFormed, BlockingIPCContext.ContextAgreement,
+      BlockingIPC.WellFormed, Scheduler.WellFormed,
       SubjectLifecycle.WellFormed, Capability.WellFormed,
       Capability.SlotsWellFormed, Capability.DerivationsWellFormed,
       Capability.LiveIdentitiesUnique, Capability.SlotSpacesWellFormed,
@@ -926,6 +942,36 @@ completions are copied literally; they are never reconstructed by filtering. -/
 def publishBlockingIPC (state : CompositeState)
     (blockingIPC : BlockingIPC.State) : CompositeState :=
   installScheduler { state with blockingIPC } blockingIPC.scheduler
+
+/-- Publish the raw blocking store and its exact saved-context bank in the
+same composite mutation.  Scheduler synchronization is deliberately shared
+with the established raw publication path. -/
+def publishBlockingIPCContext (state : CompositeState)
+    (blocking : BlockingIPCContext.State) : CompositeState :=
+  let scheduler := blocking.ipc.scheduler
+  let lifecycle := scheduler.lifecycle
+  let translations :=
+    if lifecycle.current.isSome then state.resumable.translations
+    else { state.resumable.translations with active := none, entries := [] }
+  { state with
+    execution := { state.execution with
+      core := { state.execution.core with lifecycle }
+      returnAuthorityArmed := false
+      copyOverride := false }
+    scheduler
+    preemption := { state.preemption with scheduler }
+    lifecycle
+    resumable := { state.resumable with scheduler, translations }
+    blockingIPC := blocking.ipc
+    blockingContexts := blocking.blocked }
+
+@[simp] theorem publishBlockingIPCContext_context state blocking :
+    (publishBlockingIPCContext state blocking).blockingIPCContext = blocking := by
+  rfl
+
+@[simp] theorem publishBlockingIPCContext_scheduler state blocking :
+    (publishBlockingIPCContext state blocking).scheduler = blocking.ipc.scheduler := by
+  rfl
 
 @[simp] theorem publishBlockingIPC_blockingIPC state blockingIPC :
     (publishBlockingIPC state blockingIPC).blockingIPC = blockingIPC := by
@@ -954,6 +1000,11 @@ theorem publishBlockingIPC_coherent state blockingIPC :
     (publishBlockingIPC state blockingIPC).BlockingIPCCoherent := by
   simp [CompositeState.BlockingIPCCoherent, publishBlockingIPC,
     installScheduler, installLifecycle]
+
+theorem publishBlockingIPCContext_coherent state blocking :
+    (publishBlockingIPCContext state blocking).BlockingIPCCoherent := by
+  simp [CompositeState.BlockingIPCCoherent, publishBlockingIPCContext,
+    publishBlockingIPC, installScheduler, installLifecycle]
 
 /-- A published wake retains the exact reserved envelope and makes the same
 receiver runnable in the scheduler observed by the rest of the composite. -/
@@ -1157,6 +1208,213 @@ theorem dispatchBlockingIPC_scheduler_coherent state call
                   (BlockingIPC.sendWord state.blockingIPC
                     state.execution.core.context.currentSubject handleWord
                     { word0, word1 }).state
+
+/-! ## Context-owning public blocking receive
+
+The legacy dispatcher above records the raw blocking state used by the finite
+evidence traces.  The public composite operation below instead crosses the
+typed successor: it constructs saved-context identity from the execution
+latch, publishes the waiter store and context bank together, and returns a
+finite typed reply. -/
+
+inductive CompositeBlockingReceiveReply where
+  | handleRejected (reason : CapabilityHandle.WordResolveDenial)
+  | contextRejected (reason : BlockingIPCContext.ContextError)
+  | rejected (reason : BlockingIPC.Error)
+  | switchRequired
+  | delivered (envelope : BlockingIPC.Envelope)
+  | blocked
+  deriving DecidableEq, Repr
+
+structure CompositeBlockingReceiveOutcome where
+  state : CompositeState
+  reply : CompositeBlockingReceiveReply
+
+/-- General-purpose registers and the hardware frame may carry user data, but
+the subject, address-space identity, and context kind are selected solely from
+the authoritative execution state. -/
+def CompositeState.blockingSavedContext (state : CompositeState)
+    (frame : Interrupt.HardwareFrame) (registers : ResumableContext.Registers) :
+    ResumableContext.Context :=
+  { owner := state.execution.core.context.currentSubject
+    addressSpace := state.execution.core.context.activeAddressSpace
+    frame
+    registers
+    kind := .suspended }
+
+@[simp] theorem blockingSavedContext_owner (state : CompositeState) frame registers :
+    (state.blockingSavedContext frame registers).owner =
+      state.execution.core.context.currentSubject := rfl
+
+@[simp] theorem blockingSavedContext_addressSpace (state : CompositeState) frame registers :
+    (state.blockingSavedContext frame registers).addressSpace =
+      state.execution.core.context.activeAddressSpace := rfl
+
+def dispatchBlockingReceive (state : CompositeState) (handleWord : UInt64)
+    (frame : Interrupt.HardwareFrame) (registers : ResumableContext.Registers) :
+    CompositeBlockingReceiveOutcome :=
+  let caller := state.execution.core.context.currentSubject
+  match CapabilityHandle.resolveCurrent state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller } handleWord .endpoint with
+  | .error reason => { state, reply := .handleRejected reason }
+  | .ok resolution =>
+      let outcome := BlockingIPCContext.receiveOrBlock state.blockingIPCContext caller
+        resolution.handle.slot (state.blockingSavedContext frame registers)
+      match outcome.result with
+      | .contextRejected reason => { state, reply := .contextRejected reason }
+      | .completed (.rejected reason) => { state, reply := .rejected reason }
+      | .completed (.delivered envelope) =>
+          { state := publishBlockingIPCContext state outcome.state
+            reply := .delivered envelope }
+      | .completed .blocked =>
+          if outcome.state.ipc.scheduler.lifecycle.current.isSome then
+            { state, reply := .switchRequired }
+          else
+            { state := publishBlockingIPCContext state outcome.state
+              reply := .blocked }
+
+inductive CompositeBlockingReceiveRejection : CompositeBlockingReceiveReply → Prop
+  | handle reason : CompositeBlockingReceiveRejection (.handleRejected reason)
+  | context reason : CompositeBlockingReceiveRejection (.contextRejected reason)
+  | ipc reason : CompositeBlockingReceiveRejection (.rejected reason)
+  | switchRequired : CompositeBlockingReceiveRejection .switchRequired
+
+theorem dispatchBlockingReceive_rejected_atomic state handleWord frame registers reply
+    (hrejected : CompositeBlockingReceiveRejection reply)
+    (hreply : (dispatchBlockingReceive state handleWord frame registers).reply = reply) :
+    (dispatchBlockingReceive state handleWord frame registers).state = state := by
+  cases hrejected
+  all_goals
+    simp only [dispatchBlockingReceive] at hreply ⊢
+    split <;> simp_all
+    generalize houtcome : BlockingIPCContext.receiveOrBlock _ _ _ _ = outcome at hreply ⊢
+    cases outcome with
+    | mk next result =>
+        cases result with
+        | contextRejected reason => simp_all
+        | completed result =>
+            cases result with
+            | delivered envelope => simp_all
+            | rejected reason => simp_all
+            | blocked =>
+                by_cases hsome : next.ipc.scheduler.lifecycle.current.isSome = true
+                · simp [hsome] at hreply ⊢
+                · simp [hsome] at hreply ⊢
+
+theorem dispatchBlockingReceive_preserves_blockingWellFormed state handleWord frame registers
+    (hstate : BlockingIPCContext.WellFormed state.blockingIPCContext) :
+    BlockingIPCContext.WellFormed
+      (dispatchBlockingReceive state handleWord frame registers).state.blockingIPCContext := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simpa [dispatchBlockingReceive, hresolve] using hstate
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      have hpreserved := BlockingIPCContext.receive_preserves_wellFormed
+        state.blockingIPCContext state.execution.core.context.currentSubject
+        resolution.handle.slot saved hstate
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk next result =>
+          have hnext : BlockingIPCContext.WellFormed next := by
+            simpa [houtcome] using hpreserved
+          cases result with
+          | contextRejected reason =>
+              simpa [dispatchBlockingReceive, hresolve, saved, houtcome] using hstate
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simpa [dispatchBlockingReceive, hresolve, saved, houtcome] using hstate
+              | delivered envelope =>
+                  simpa [dispatchBlockingReceive, hresolve, saved, houtcome] using hnext
+              | blocked =>
+                  by_cases hsome : next.ipc.scheduler.lifecycle.current.isSome = true
+                  · simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] using hstate
+                  · simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] using hnext
+
+theorem dispatchBlockingReceive_preserves_coherent state handleWord frame registers
+    (hstate : state.BlockingIPCCoherent) :
+    (dispatchBlockingReceive state handleWord frame registers).state.BlockingIPCCoherent := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simpa [dispatchBlockingReceive, hresolve] using hstate
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk next result =>
+          cases result with
+          | contextRejected reason =>
+              simpa [dispatchBlockingReceive, hresolve, saved, houtcome] using hstate
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simpa [dispatchBlockingReceive, hresolve, saved, houtcome] using hstate
+              | delivered envelope =>
+                  simpa [dispatchBlockingReceive, hresolve, saved, houtcome] using
+                    publishBlockingIPCContext_coherent state next
+              | blocked =>
+                  by_cases hsome : next.ipc.scheduler.lifecycle.current.isSome = true
+                  · simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] using hstate
+                  · simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] using
+                      publishBlockingIPCContext_coherent state next
+
+/-- Bounded invariant owned by the typed blocking-receive boundary.  The full
+runtime predicate remains a separate obligation until a successful block can
+consume a selected peer's resumable context in the same transition. -/
+def BlockingReceiveWellFormed (state : CompositeState) : Prop :=
+  BlockingIPCContext.WellFormed state.blockingIPCContext ∧
+    state.BlockingIPCCoherent
+
+theorem dispatchBlockingReceive_preserves_wellFormed state handleWord frame registers
+    (hstate : BlockingReceiveWellFormed state) :
+    BlockingReceiveWellFormed
+      (dispatchBlockingReceive state handleWord frame registers).state := by
+  exact ⟨dispatchBlockingReceive_preserves_blockingWellFormed
+      state handleWord frame registers hstate.1,
+    dispatchBlockingReceive_preserves_coherent
+      state handleWord frame registers hstate.2⟩
+
+/-- A published block stores the exact frame/register payload under identities
+chosen by the execution latch; no handle word can select another owner or
+address space. -/
+theorem dispatchBlockingReceive_blocked_uses_kernel_context state handleWord frame registers
+    (hblocked : (dispatchBlockingReceive state handleWord frame registers).reply = .blocked) :
+    let caller := state.execution.core.context.currentSubject
+    let saved := state.blockingSavedContext frame registers
+    (dispatchBlockingReceive state handleWord frame registers).state.blockingContexts caller =
+        some saved ∧
+      saved.owner = caller ∧
+      saved.addressSpace = state.execution.core.context.activeAddressSpace := by
+  dsimp only
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hblocked
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk next result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | delivered envelope =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | blocked =>
+                  by_cases hsome : next.ipc.scheduler.lifecycle.current.isSome = true
+                  · simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome] at hblocked
+                  · have hexact := BlockingIPCContext.receive_blocked_exact
+                      state.blockingIPCContext state.execution.core.context.currentSubject
+                      resolution.handle.slot saved (by simp [houtcome])
+                    simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                      publishBlockingIPCContext] using hexact.2
 
 /-- Publish a queue-only admission without invoking lifecycle cleanup.  An
 accepted `Scheduler.add` retains the lifecycle exactly, so the only consumers

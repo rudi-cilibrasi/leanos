@@ -298,6 +298,34 @@ theorem receive_blocked_exact state caller slot saved
       cases outcome with
       | mk next result => cases result <;> simp_all [setBlocked]
 
+/-- A successful typed delivery exposes the exact underlying IPC transition. -/
+theorem receive_delivered_ipc_exact state caller slot saved envelope
+    (hcompleted : (receiveOrBlock state caller slot saved).result =
+      .completed (.delivered envelope)) :
+    (receiveOrBlock state caller slot saved).state.ipc =
+        (BlockingIPC.receiveOrBlock state.ipc caller slot).state ∧
+      (BlockingIPC.receiveOrBlock state.ipc caller slot).result = .delivered envelope := by
+  unfold receiveOrBlock at hcompleted ⊢
+  split at hcompleted <;> simp_all
+  split at hcompleted <;> simp_all
+  generalize hraw : BlockingIPC.receiveOrBlock state.ipc caller slot = outcome at hcompleted ⊢
+  cases outcome with
+  | mk next result => cases result <;> simp_all
+
+/-- A successful typed block likewise publishes the exact raw waiter and
+scheduler post-state rather than reconstructing it. -/
+theorem receive_blocked_ipc_exact state caller slot saved
+    (hcompleted : (receiveOrBlock state caller slot saved).result = .completed .blocked) :
+    (receiveOrBlock state caller slot saved).state.ipc =
+        (BlockingIPC.receiveOrBlock state.ipc caller slot).state ∧
+      (BlockingIPC.receiveOrBlock state.ipc caller slot).result = .blocked := by
+  unfold receiveOrBlock at hcompleted ⊢
+  split at hcompleted <;> simp_all
+  split at hcompleted <;> simp_all
+  generalize hraw : BlockingIPC.receiveOrBlock state.ipc caller slot = outcome at hcompleted ⊢
+  cases outcome with
+  | mk next result => cases result <;> simp_all
+
 theorem send_rejected_unchanged state caller slot payload
     (hrejected : (send state caller slot payload).result ≠ .accepted) :
     (send state caller slot payload).state = state := by

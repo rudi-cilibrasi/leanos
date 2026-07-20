@@ -1065,6 +1065,48 @@ theorem receive_delivered_waiterEndpoint_unchanged state caller slot envelope
   all_goals split at hresult ⊢ <;>
     simp_all [rejectReceive, blockState, setWaiterEndpoint]
 
+theorem receive_delivered_scheduler_unchanged state caller slot envelope
+    (hresult : (receiveOrBlock state caller slot).result = .delivered envelope) :
+    (receiveOrBlock state caller slot).state.scheduler = state.scheduler := by
+  simp only [receiveOrBlock] at hresult ⊢
+  split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+
+theorem receive_blocked_idle_scheduler_exact state caller slot
+    (hresult : (receiveOrBlock state caller slot).result = .blocked)
+    (hidle : (receiveOrBlock state caller slot).state.scheduler.lifecycle.current = none) :
+    state.scheduler.ready = [] ∧
+      (receiveOrBlock state caller slot).state.scheduler =
+        { state.scheduler with
+          lifecycle := { state.scheduler.lifecycle with
+            runnable := SubjectLifecycle.setBool state.scheduler.lifecycle.runnable caller false
+            current := none } } := by
+  simp only [receiveOrBlock] at hresult hidle ⊢
+  split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals split <;> simp_all [rejectReceive]
+  all_goals cases hready : state.scheduler.ready <;>
+    simp_all [blockState, Scheduler.selectNext, Scheduler.reject]
+  all_goals split at hidle <;>
+    simp_all [blockState, Scheduler.selectNext, Scheduler.reject]
+
 /-- A successful block publishes exactly one waiter-index entry. -/
 theorem receive_blocked_waiterEndpoint_exact state caller slot
     (hresult : (receiveOrBlock state caller slot).result = .blocked) :
