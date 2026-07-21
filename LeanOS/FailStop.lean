@@ -341,6 +341,8 @@ theorem accepted_nmi_terminal state raw context event
       next.state.core.context.currentSubject = state.core.context.currentSubject ∧
       next.state.core.context.activeAddressSpace = state.core.context.activeAddressSpace ∧
       next.state.core.context.kernelStack = state.core.context.kernelStack ∧
+      next.state.returnAddressSpace = state.returnAddressSpace ∧
+      next.state.returnPlan = state.returnPlan ∧
       next.state.returnAuthority = state.returnAuthority ∧
       next.state.returnAuthorityArmed = false ∧
       next.state.copyOverride = false := by
@@ -981,6 +983,8 @@ theorem accepted_nmi_composite_atomicity state raw context event proposals
       next.execution.core.context.activeAddressSpace =
         state.execution.core.context.activeAddressSpace ∧
       next.execution.core.context.kernelStack = state.execution.core.context.kernelStack ∧
+      next.execution.returnAddressSpace = state.execution.returnAddressSpace ∧
+      next.execution.returnPlan = state.execution.returnPlan ∧
       next.execution.returnAuthority = state.execution.returnAuthority ∧
       next.execution.returnAuthorityArmed = false ∧
       next.execution.copyOverride = false ∧
@@ -1000,11 +1004,14 @@ theorem accepted_nmi_composite_atomicity state raw context event proposals
     · simp [gate, applyOperation, hmode]
     · simp [gate, applyOperation, hmode]
   rw [hgate]
-  refine ⟨hdispatch.2.1, hdispatch.2.2.1, hdispatch.2.2.2.1,
-    hdispatch.2.2.2.2.1, hdispatch.2.2.2.2.2.1,
-    hdispatch.2.2.2.2.2.2.1, hdispatch.2.2.2.2.2.2.2.1,
-    hdispatch.2.2.2.2.2.2.2.2, rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
-  exact halted_suffix_absorbing _ _ proposals hdispatch.2.1
+  rcases hdispatch with ⟨_, hnextMode, hlifecycle, hsubject, haddressSpace,
+    hstack, hreturnAddressSpace, hreturnPlan, hreturnAuthority, harmed, hcopy⟩
+  refine ⟨hnextMode, hlifecycle, hsubject, haddressSpace, hstack,
+    hreturnAddressSpace, hreturnPlan, hreturnAuthority, harmed, hcopy,
+    rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
+  exact halted_suffix_absorbing
+    { state with execution := (dispatchNmi state.execution raw context).state }
+    (acceptedNmiRecord state.execution event) proposals hnextMode
 
 /-- Outgoing-return rejection is one atomic composite step: it records the
 typed terminal reason, changes no lifecycle/authority/scheduler/resource view,

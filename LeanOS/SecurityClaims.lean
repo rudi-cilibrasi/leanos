@@ -424,8 +424,8 @@ private def nmiWitnessContext (mode : InterruptEntry.InterruptedMode) :
     activeAddressSpace := 1
     activeCr3 := 0xa000
     stackIdentity := InterruptEntry.nmiStackIdentity
-    stackFirst := InterruptEntry.nmiStackFirst
-    stackPastLast := InterruptEntry.nmiStackPastLast
+    stackFirst := InterruptEntry.nmiAbstractStackFirst
+    stackPastLast := InterruptEntry.nmiAbstractStackPastLast
     interruptedMode := mode }
 
 private def nmiWitnessRaw (origin : Interrupt.Privilege) : InterruptEntry.RawNmiEntry :=
@@ -543,6 +543,8 @@ theorem nmi_terminal_failstop state raw context event proposals
         state.execution.core.context.activeAddressSpace ∧
       next.execution.core.context.kernelStack =
         state.execution.core.context.kernelStack ∧
+      next.execution.returnAddressSpace = state.execution.returnAddressSpace ∧
+      next.execution.returnPlan = state.execution.returnPlan ∧
       next.execution.returnAuthority = state.execution.returnAuthority ∧
       next.execution.returnAuthorityArmed = false ∧
       next.execution.copyOverride = false ∧

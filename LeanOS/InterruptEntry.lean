@@ -316,8 +316,11 @@ inductive InterruptedMode where
 def nmiVector : UInt64 := 2
 def nmiIst : UInt64 := 2
 def nmiStackIdentity : UInt64 := 2
-def nmiStackFirst : UInt64 := 0x900000
-def nmiStackPastLast : UInt64 := 0x904000
+/-- Canonical coordinates in the normalized model snapshot.  These are not
+linker virtual addresses; the machine policy separately validates its live
+`__nmi_ist_stack_start`/`end` symbols before constructing a snapshot. -/
+def nmiAbstractStackFirst : UInt64 := 0x900000
+def nmiAbstractStackPastLast : UInt64 := 0x904000
 
 def nmiEntry : ManifestEntry :=
   ⟨2, .interrupt, 0x08, 0, nmiIst, false, .userOrKernel, .terminalNmi, true⟩
@@ -400,7 +403,7 @@ inductive NmiRejectReason where
   | invalidManifest | wrongDescriptor | wrongTarget | spuriousError
   | wrongFrameBytes | misaligned | stackOutOfBounds | wrongStackIdentity
   | wrongOrigin | wrongSelectors | noncanonical | privilegedStateNotCleared
-  | staleKernelContext
+  | staleKernelContext | invalidBoundsEncoding | invalidModeEncoding
   deriving DecidableEq, Repr
 
 inductive NmiResult where
@@ -439,8 +442,8 @@ def nmiRejection? (raw : RawNmiEntry) (context : NmiContext)
   else if raw.frameBytes != 40 then some .wrongFrameBytes
   else if raw.frameAddress % 16 != 8 then some .misaligned
   else if context.stackIdentity != nmiStackIdentity then some .wrongStackIdentity
-  else if context.stackFirst != nmiStackFirst ||
-      context.stackPastLast != nmiStackPastLast ||
+  else if context.stackFirst != nmiAbstractStackFirst ||
+      context.stackPastLast != nmiAbstractStackPastLast ||
       raw.frameAddress < context.stackFirst ||
       raw.frameAddress + raw.frameBytes < raw.frameAddress ||
       raw.frameAddress + raw.frameBytes != context.stackPastLast then
@@ -544,6 +547,7 @@ def NmiRejectReason.code : NmiRejectReason → UInt64
   | .stackOutOfBounds => 7 | .wrongStackIdentity => 8 | .wrongOrigin => 9
   | .wrongSelectors => 10 | .noncanonical => 11
   | .privilegedStateNotCleared => 12 | .staleKernelContext => 13
+  | .invalidBoundsEncoding => 14 | .invalidModeEncoding => 15
 
 /-- Rejections selectable through the fixed-width generated boundary.  The
 compile-time-only `invalidManifest` constructor is excluded deliberately and
@@ -552,11 +556,11 @@ def NmiRejectReason.runtimeInventory : List NmiRejectReason :=
   [.wrongDescriptor, .wrongTarget, .spuriousError, .wrongFrameBytes,
     .misaligned, .wrongStackIdentity, .stackOutOfBounds, .wrongOrigin,
     .wrongSelectors, .noncanonical, .privilegedStateNotCleared,
-    .staleKernelContext]
+    .staleKernelContext, .invalidBoundsEncoding, .invalidModeEncoding]
 
 theorem nmi_runtime_rejection_inventory_codes :
     NmiRejectReason.runtimeInventory.map NmiRejectReason.code =
-      [2, 3, 4, 5, 6, 8, 7, 9, 10, 11, 12, 13] := by
+      [2, 3, 4, 5, 6, 8, 7, 9, 10, 11, 12, 13, 14, 15] := by
   native_decide
 
 /-- Named executable-trace inventory required by the terminal policy.  These
@@ -613,10 +617,10 @@ private def nmiInterruptedModeOf (code : UInt64) : InterruptedMode :=
   if code = 0 then .running else if code = 1 then .handling else .halted
 
 private def nmiContextStackFirst (boundsCode : UInt64) : UInt64 :=
-  if boundsCode = 1 then nmiStackFirst + 16 else nmiStackFirst
+  if boundsCode = 1 then nmiAbstractStackFirst + 16 else nmiAbstractStackFirst
 
 private def nmiContextStackPastLast (boundsCode : UInt64) : UInt64 :=
-  if boundsCode = 2 then nmiStackPastLast - 16 else nmiStackPastLast
+  if boundsCode = 2 then nmiAbstractStackPastLast - 16 else nmiAbstractStackPastLast
 
 /-- Rich-model expectation for the bounded generated-C NMI classifier.  The
 five scalar words encode a descriptor selector, the five-word frame metadata,
@@ -640,6 +644,7 @@ def nmiModelExpected (descriptor frame stack context control : UInt64) : UInt64 
       acCleared := control / 131072 % 2 = 1
       dfCleared := control / 262144 % 2 = 1 }
   let boundsCode := context / 0x1000000 % 4
+  let modeCode := context / 0x4000000 % 4
   let ctx : NmiContext :=
     { currentSubject := (context % 256).toNat
       activeAddressSpace := (context / 256 % 256).toNat
@@ -647,8 +652,10 @@ def nmiModelExpected (descriptor frame stack context control : UInt64) : UInt64 
       stackIdentity := context / 65536 % 256
       stackFirst := nmiContextStackFirst boundsCode
       stackPastLast := nmiContextStackPastLast boundsCode
-      interruptedMode := nmiInterruptedModeOf (context / 0x4000000 % 4) }
-  compactNmiResult (normalizeNmi raw ctx
+      interruptedMode := nmiInterruptedModeOf modeCode }
+  if boundsCode = 3 then compactNmiResult (.fatal .invalidBoundsEncoding)
+  else if modeCode = 3 then compactNmiResult (.fatal .invalidModeEncoding)
+  else compactNmiResult (normalizeNmi raw ctx
     (control / 0x80000 % 256).toNat (control / 0x8000000 % 256).toNat)
 
 /-- Allocation-free spelling of the bounded NMI classifier used by generated
@@ -676,7 +683,9 @@ def nmiDemo (descriptor frame stack context control : UInt64) : UInt64 :=
   let mode := if modeCode = 0 then 0 else if modeCode = 1 then 1 else 2
   let expectedSubject := control / 0x80000 % 256
   let expectedAddressSpace := control / 0x8000000 % 256
-  if descriptor != 0 then 0x8000000000000002
+  if boundsCode = 3 then 0x800000000000000e
+  else if modeCode = 3 then 0x800000000000000f
+  else if descriptor != 0 then 0x8000000000000002
   else if stub != nmiVector then
     0x8000000000000003
   else if hasError then 0x8000000000000004
@@ -685,7 +694,8 @@ def nmiDemo (descriptor frame stack context control : UInt64) : UInt64 :=
   else if stack % 16 != 8 then 0x8000000000000006
   else if stackIdentity != nmiStackIdentity then
     0x8000000000000008
-  else if stackFirst != nmiStackFirst || stackPastLast != nmiStackPastLast ||
+  else if stackFirst != nmiAbstractStackFirst ||
+      stackPastLast != nmiAbstractStackPastLast ||
       stack < stackFirst || stack + frameBytes < stack || stack + frameBytes != stackPastLast then
     0x8000000000000007
   else if frameUser != claimedUser then

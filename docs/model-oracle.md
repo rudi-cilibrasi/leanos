@@ -9,7 +9,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `CapabilityReuse.capabilityReuseDemo`, `ExtendedState.denialDispatchDemo`,
 `PrivilegeEntryControl.controlDemo`, `FaultDispatch.faultDispatchDemo`, and
 `DirectPortIO.directPortIODemo`, and `InterruptEntry.nmiDemo`. Its stable
-198-vector order covers accepted calls,
+200-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -41,10 +41,17 @@ byte normalization, and a validate-then-relax attempt. The scalar adapter packs
 a byte-bounded device projection for corpus
 comparison; it does not claim to serialize arbitrary device state.
 
-The final 15 NMI records use the machine stub's exact `stackPastLast - 40`
-five-word frame address for accepted user-running, kernel-handling, and
-kernel-halted projections, followed by every rejection selectable through
-the generated scalar boundary. Their ordered identifiers and codes are proved
+The final 17 NMI records use an abstract normalized interval and its
+`stackPastLast - 40` five-word frame address for accepted user-running,
+kernel-handling, and kernel-halted normalization, followed by every rejection
+selectable through the generated scalar boundary, including reserved bounds
+and mode codes. These `0x900000..0x904000` model coordinates are deliberately
+not linker virtual addresses. The final-ELF policy independently checks the
+live `__nmi_ist_stack_start`/`end` interval and its `end - 40` frame relation;
+snapshot construction remains an unproved machine-to-model boundary. The
+halted record is accepted only by this normalization corpus: `dispatchNmi`
+short-circuits an already-halted execution before normalization and preserves
+the original terminal record. Their ordered identifiers and codes are proved
 against `NmiRejectReason.runtimeInventory`; the compile-time-only invalid
 terminal manifest and a dropped stateful trace class are separate semantic
 negative fixtures. Hosted and boot replay both call the same generated

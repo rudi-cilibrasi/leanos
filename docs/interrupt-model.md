@@ -169,6 +169,11 @@ canonical saved pointers, cleared AC/DF, matching user or kernel selectors,
 and a kernel-owned current subject/address space. Its active CR3 and prior
 execution mode are explicit trusted snapshot inputs. Attacker registers are
 erased, and a claimed origin that disagrees with saved CS is rejected.
+The canonical `0x900000..0x904000` interval is an abstract coordinate system
+for normalized snapshots, not the linked IST2 virtual address. The final-ELF
+policy separately checks the live linker interval, its 16 KiB size, and the
+`end - 40` post-push frame relation. Constructing the normalized snapshot from
+those machine coordinates remains an explicit trusted boundary.
 
 An accepted result carries vector 2, terminal purpose, origin, IST identity,
 all five saved frame words, current subject/address space, active CR3, stack
@@ -177,7 +182,9 @@ and `FailStop.NmiTerminalWords` are the version-1 fixed-width normalized-result
 and halt-record vocabularies reserved for the later stateful corpus; the latter
 includes the complete optional ordinary active frame rather than a lossy
 purpose tag. This slice does not yet export or replay either encoding through
-generated C.
+generated C. The scalar classifier accepts a typed `.halted` snapshot only to
+exercise normalization; `FailStop.dispatchNmi` checks the execution latch first
+and preserves an already-halted record without invoking that normalizer.
 Malformed snapshots retain a typed normalization reason and authorize no
 ordinary handler.
 

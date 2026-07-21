@@ -318,7 +318,8 @@ def vectors : List Vector := [
   interruptEntry "entry.user-general-protection" 68877 291 0x800000 257 3,
   nmi "nmi.user-running" 0 nmiUserFrame nmiFrameAddress nmiContextRunning nmiControl,
   nmi "nmi.kernel-handling" 0 nmiKernelFrame nmiFrameAddress nmiContextHandling nmiControl,
-  nmi "nmi.kernel-halted" 0 nmiKernelFrame nmiFrameAddress nmiContextHalted nmiControl,
+  nmi "nmi.kernel-halted-normalized" 0 nmiKernelFrame nmiFrameAddress
+    nmiContextHalted nmiControl,
   nmi "nmi.wrong-descriptor" 1 nmiUserFrame nmiFrameAddress nmiContextRunning nmiControl,
   nmi "nmi.wrong-target" 0 nmiUserFrame nmiFrameAddress nmiContextRunning (nmiControl + 1),
   nmi "nmi.spurious-error" 0 nmiUserFrame nmiFrameAddress nmiContextRunning
@@ -339,9 +340,13 @@ def vectors : List Vector := [
   nmi "nmi.privileged-state" 0 nmiUserFrame nmiFrameAddress nmiContextRunning
     (nmiControl - 0x20000),
   nmi "nmi.stale-context" 0 nmiUserFrame nmiFrameAddress
-    (nmiContextRunning + 1) nmiControl]
+    (nmiContextRunning + 1) nmiControl,
+  nmi "nmi.invalid-bounds-code" 0 nmiUserFrame nmiFrameAddress
+    (nmiContextRunning + 3 * 0x1000000) nmiControl,
+  nmi "nmi.invalid-mode-code" 0 nmiUserFrame nmiFrameAddress
+    (nmiContextRunning + 3 * 0x4000000) nmiControl]
 
-theorem corpus_shape : vectors.length = 198 := by decide
+theorem corpus_shape : vectors.length = 200 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -498,24 +503,28 @@ private def nmiAdapterAgrees (vector : Vector) : Bool :=
       InterruptEntry.nmiDemo descriptor frame stack context control = vector.expected
   | _, _ => true
 
-/-- The generated-C NMI block contains three accepted interrupted modes and
+/-- The generated-C NMI block contains three normalized interrupted modes and
 one vector for every rejection constructor reachable from the reviewed,
-compile-time-valid terminal manifest.  `invalidManifest` is intentionally not
-runtime-selectable through this scalar boundary. -/
-theorem nmi_corpus_shape : ((vectors.drop 183).take 15).length = 15 := by
+compile-time-valid terminal manifest or canonical scalar decoder.
+`invalidManifest` is intentionally not runtime-selectable through this scalar
+boundary.  The accepted halted snapshot tests normalization only: the
+authoritative dispatcher short-circuits an already-halted state before calling
+the normalizer and retains its original terminal record. -/
+theorem nmi_corpus_shape : ((vectors.drop 183).take 17).length = 17 := by
   decide
 
 theorem nmi_corpus_id_inventory :
-    List.map (fun vector => vector.id) ((vectors.drop 183).take 15) =
-      ["nmi.user-running", "nmi.kernel-handling", "nmi.kernel-halted",
+    List.map (fun vector => vector.id) ((vectors.drop 183).take 17) =
+      ["nmi.user-running", "nmi.kernel-handling", "nmi.kernel-halted-normalized",
         "nmi.wrong-descriptor", "nmi.wrong-target", "nmi.spurious-error",
         "nmi.wrong-frame-bytes", "nmi.misaligned", "nmi.wrong-stack-identity",
         "nmi.frame-not-at-stack-top", "nmi.wrong-origin", "nmi.wrong-selectors",
-        "nmi.noncanonical", "nmi.privileged-state", "nmi.stale-context"] := by
+        "nmi.noncanonical", "nmi.privileged-state", "nmi.stale-context",
+        "nmi.invalid-bounds-code", "nmi.invalid-mode-code"] := by
   native_decide
 
 theorem nmi_adapter_agrees_with_model :
-    ((vectors.drop 183).take 15).all nmiAdapterAgrees = true := by
+    ((vectors.drop 183).take 17).all nmiAdapterAgrees = true := by
   native_decide
 
 theorem nmi_accepted_modes_agree :
@@ -524,8 +533,13 @@ theorem nmi_accepted_modes_agree :
     (vectors[185]).expected = 0x101020001 := by
   native_decide
 
+theorem nmi_noncanonical_context_codes_rejected :
+    (vectors[198]).expected = 0x800000000000000e ∧
+      (vectors[199]).expected = 0x800000000000000f := by
+  native_decide
+
 theorem nmi_rejection_codes_agree :
-    List.map (fun vector => vector.expected) ((vectors.drop 186).take 12) =
+    List.map (fun vector => vector.expected) ((vectors.drop 186).take 14) =
       List.map (fun reason => 0x8000000000000000 + reason.code)
         InterruptEntry.NmiRejectReason.runtimeInventory := by
   native_decide

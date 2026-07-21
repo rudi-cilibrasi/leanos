@@ -7,8 +7,8 @@ private def context : NmiContext :=
     activeAddressSpace := 1
     activeCr3 := 0x1000
     stackIdentity := nmiStackIdentity
-    stackFirst := nmiStackFirst
-    stackPastLast := nmiStackPastLast
+    stackFirst := nmiAbstractStackFirst
+    stackPastLast := nmiAbstractStackPastLast
     interruptedMode := .running }
 
 private def raw : RawNmiEntry :=

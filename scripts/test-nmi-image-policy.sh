@@ -27,25 +27,57 @@ grep -Fq 'error: unauthorized final-ELF port-I/O site isr2_cld 0x87' \
     exit 1
   }
 cp boot/boot.S "$tmp/boot.S"
-sed -i '/^isr2:$/a\    iretq' "$tmp/boot.S"
-gcc -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
-  -ffile-prefix-map="$root"=. -g3 -c "$tmp/boot.S" -o "$tmp/boot.o"
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -o "$tmp/nmi-return.elf" "$tmp/boot.o" \
-  "$build/kernel-nmi.o" "$build/KernelTransition.o" "$build/Syscall.o" \
-  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
-  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-if ./scripts/check-nmi-image-policy.sh "$tmp/nmi-return.elf" \
-    >"$tmp/policy.log" 2>&1; then
-  echo "error: NMI iretq final-ELF fixture unexpectedly passed" >&2
+mkdir -p "$tmp/source/boot" "$tmp/source/docs"
+cp boot/kernel.c "$tmp/source/boot/kernel.c"
+cp docs/interrupt-model.md "$tmp/source/docs/interrupt-model.md"
+sed -i '/firmware does not deliver$/ { N; s/firmware does not deliver\nNMI before/firmware might deliver\nNMI before/; }' \
+  "$tmp/source/docs/interrupt-model.md"
+if LEANOS_SOURCE_ROOT="$tmp/source" ./scripts/check-nmi-image-policy.sh "$elf" \
+    >"$tmp/policy-text.log" 2>&1; then
+  echo "error: missing multiline NMI policy text fixture unexpectedly passed" >&2
   exit 1
 fi
-grep -Fq 'vector-2 terminal stub calls, pushes, or returns with iretq' \
-  "$tmp/policy.log" || {
-    cat "$tmp/policy.log" >&2
-    exit 1
-  }
+grep -Fq 'error: NMI policy text missing from' "$tmp/policy-text.log" || {
+  cat "$tmp/policy-text.log" >&2
+  exit 1
+}
 
-echo "NMI final-ELF return-edge fixture rejected"
+link_fixture() {
+  local name="$1"
+  local instruction="$2"
+  cp boot/boot.S "$tmp/$name.S"
+  sed -i "/^isr2:\$/a\\    $instruction" "$tmp/$name.S"
+  gcc -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
+    -ffile-prefix-map="$root"=. -g3 -c "$tmp/$name.S" -o "$tmp/$name.o"
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -o "$tmp/$name.elf" "$tmp/$name.o" \
+    "$build/kernel-nmi.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+    "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+    "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+    "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+    "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+}
+
+link_fixture nmi-return ret
+if ./scripts/check-nmi-image-policy.sh "$tmp/nmi-return.elf" \
+    >"$tmp/policy-return.log" 2>&1; then
+  echo "error: NMI ret final-ELF fixture unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq 'terminal CFG contains a return' "$tmp/policy-return.log" || {
+  cat "$tmp/policy-return.log" >&2
+  exit 1
+}
+
+link_fixture nmi-escape 'jmp isr13'
+if ./scripts/check-nmi-image-policy.sh "$tmp/nmi-escape.elf" \
+    >"$tmp/policy-escape.log" 2>&1; then
+  echo "error: NMI branch-escape final-ELF fixture unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq 'terminal CFG branch escapes isr2..isr13' "$tmp/policy-escape.log" || {
+  cat "$tmp/policy-escape.log" >&2
+  exit 1
+}
+
+echo "NMI policy-text, return-edge, and branch-escape fixtures rejected"
