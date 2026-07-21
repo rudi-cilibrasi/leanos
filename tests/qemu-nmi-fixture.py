@@ -18,7 +18,10 @@ terminal = "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=
 
 if mode == "missing-ready":
     raise SystemExit(0)
-log.write_text(ready, encoding="utf-8")
+if mode == "early-terminal":
+    log.write_text(terminal + ready, encoding="utf-8")
+else:
+    log.write_text(ready, encoding="utf-8")
 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
     server.bind(str(monitor))
     server.listen(1)
@@ -27,8 +30,13 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
         connection.sendall(b'{"QMP":{"version":{},"capabilities":[]}}\n')
         capabilities = connection.recv(128)
         connection.sendall(b'{"return":{}}\n')
+        if mode == "missing-injection":
+            raise SystemExit(0)
         command = connection.recv(128)
-        connection.sendall(b'{"return":{}}\n')
+        connection.sendall(
+            b'{"error":{"class":"GenericError","desc":"rejected"}}\n'
+            if mode == "qmp-reject" else b'{"return":{}}\n'
+        )
 if b"qmp_capabilities" not in capabilities or b"inject-nmi" not in command:
     raise SystemExit(1)
 if mode == "hang":
@@ -37,7 +45,16 @@ if mode == "hang":
 if mode == "reject":
     log.write_text(ready + "LEANOS/17 NMI status=FAIL reason=terminal-frame-policy\n", encoding="utf-8")
     raise SystemExit(43)
+if mode == "corrupt-canary":
+    log.write_text(ready + "LEANOS/17 NMI status=FAIL reason=ist2-canary\n", encoding="utf-8")
+    raise SystemExit(43)
 if mode == "wrong-record":
     terminal = terminal.replace("ist=2", "ist=1")
+if mode == "resumed":
+    terminal = terminal.replace("return=none", "return=resumed")
+if mode == "missing-terminal":
+    terminal = ""
+if mode == "duplicate-terminal":
+    terminal += terminal
 log.write_text(ready + terminal, encoding="utf-8")
 raise SystemExit(41 if mode != "reset" else 0)
