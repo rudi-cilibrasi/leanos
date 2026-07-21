@@ -40,25 +40,21 @@ for symbol in isr8 isr8_clac isr8_cld isr13 run_double_fault_probe \
     exit 1
   }
 done
-for symbol in isr2 isr2_clac isr2_cld __nmi_ist_stack_start \
+for symbol in isr2 isr2_clac isr2_cld __nmi_ist_guard_start \
+  __nmi_ist_guard_end nmi_ist_guard __nmi_ist_stack_start \
   __nmi_ist_stack_end nmi_ist_stack nmi_ist_stack_top; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: NMI terminal policy symbol missing: $symbol" >&2
     exit 1
   }
 done
-for section in .df_ist_guard .df_ist_stack; do
+for section in .df_ist_guard .df_ist_stack .nmi_ist_guard .nmi_ist_stack; do
   [[ "$(flags "$section")" == *A* && "$(flags "$section")" == *W* && \
      "$(flags "$section")" != *X* ]] || {
     echo "error: $section must be allocated, writable, and non-executable" >&2
     exit 1
   }
 done
-[[ "$(flags .nmi_ist_stack)" == *A* && "$(flags .nmi_ist_stack)" == *W* && \
-   "$(flags .nmi_ist_stack)" != *X* ]] || {
-  echo "error: .nmi_ist_stack must be allocated, writable, and non-executable" >&2
-  exit 1
-}
 
 symbol_address() { nm -n "$elf" | awk -v name="$1" '$3 == name { print "0x" $1 }'; }
 image_start="$(symbol_address __boot_image_start)"
@@ -81,10 +77,16 @@ stack_end="$(symbol_address __df_ist_stack_end)"
 }
 nmi_stack_start="$(symbol_address __nmi_ist_stack_start)"
 nmi_stack_end="$(symbol_address __nmi_ist_stack_end)"
-[[ $((nmi_stack_end - nmi_stack_start)) -eq 16384 && \
+nmi_guard_start="$(symbol_address __nmi_ist_guard_start)"
+nmi_guard_end="$(symbol_address __nmi_ist_guard_end)"
+[[ $((nmi_guard_end - nmi_guard_start)) -eq 4096 && \
+   $((nmi_guard_start % 4096)) -eq 0 && \
+   $((stack_end)) -eq $((nmi_guard_start)) && \
+   $((nmi_guard_end)) -eq $((nmi_stack_start)) && \
+   $((nmi_stack_end - nmi_stack_start)) -eq 16384 && \
    $((nmi_stack_start % 4096)) -eq 0 && \
-   $((stack_end)) -eq $((nmi_stack_start)) ]] || {
-  echo "error: NMI IST2 bounds are not a distinct aligned 16 KiB interval" >&2
+   $((nmi_stack_end % 16)) -eq 0 ]] || {
+  echo "error: NMI guard/IST2 bounds are not one page plus a distinct aligned 16 KiB interval" >&2
   exit 1
 }
 grep -Fq 'tss.rsp0 = (uint64_t)__entry_stack_end;' boot/kernel.c
@@ -97,6 +99,7 @@ grep -Fq 'set_gate(13, isr13, 0, 0x8e);' boot/kernel.c
 grep -Fq 'movl $0, page_table_a(%eax)' boot/boot.S
 grep -Fq 'movl $0, page_table_b(%eax)' boot/boot.S
 [[ "$(grep -Fc 'mov $__entry_stack_guard_start, %eax' boot/boot.S)" -eq 1 ]]
+[[ "$(grep -Fc 'mov $__nmi_ist_guard_start, %eax' boot/boot.S)" -eq 1 ]]
 stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr8>:/,/<isr6>:/p')"
 [[ -n "$stub_disassembly" ]] || {
   echo "error: could not isolate vector-8 disassembly" >&2

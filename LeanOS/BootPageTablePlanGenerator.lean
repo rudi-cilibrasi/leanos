@@ -26,6 +26,10 @@ structure Layout where
   guardEnd : Nat
   dfStackStart : Nat
   dfStackEnd : Nat
+  nmiGuardStart : Nat
+  nmiGuardEnd : Nat
+  nmiStackStart : Nat
+  nmiStackEnd : Nat
   entryGuardStart : Nat
   entryGuardEnd : Nat
   entryStackStart : Nat
@@ -50,7 +54,7 @@ structure Layout where
   userBStackStart : Nat
   userBStackEnd : Nat
 
-def expectedArgumentCount : Nat := 31
+def expectedArgumentCount : Nat := 35
 
 def parseNat (value : String) : Except String Nat :=
   match value.toNat? with
@@ -67,15 +71,17 @@ def parseLayout (args : List String) : Except String Layout := do
     kernelTextStart := valueAt 2, kernelTextEnd := valueAt 3,
     guardStart := valueAt 4, guardEnd := valueAt 5,
     dfStackStart := valueAt 6, dfStackEnd := valueAt 7,
-    entryGuardStart := valueAt 8, entryGuardEnd := valueAt 9,
-    entryStackStart := valueAt 10, entryStackEnd := valueAt 11,
-    rootA := valueAt 12, pdptA := valueAt 13, pdA := valueAt 14, ptA := valueAt 15,
-    rootB := valueAt 16, pdptB := valueAt 17, pdB := valueAt 18, ptB := valueAt 19,
-    tableEnd := valueAt 20, stackStart := valueAt 21, stackEnd := valueAt 22,
-    userATextStart := valueAt 23, userATextEnd := valueAt 24,
-    userAStackStart := valueAt 25, userAStackEnd := valueAt 26,
-    userBTextStart := valueAt 27, userBTextEnd := valueAt 28,
-    userBStackStart := valueAt 29, userBStackEnd := valueAt 30 }
+    nmiGuardStart := valueAt 8, nmiGuardEnd := valueAt 9,
+    nmiStackStart := valueAt 10, nmiStackEnd := valueAt 11,
+    entryGuardStart := valueAt 12, entryGuardEnd := valueAt 13,
+    entryStackStart := valueAt 14, entryStackEnd := valueAt 15,
+    rootA := valueAt 16, pdptA := valueAt 17, pdA := valueAt 18, ptA := valueAt 19,
+    rootB := valueAt 20, pdptB := valueAt 21, pdB := valueAt 22, ptB := valueAt 23,
+    tableEnd := valueAt 24, stackStart := valueAt 25, stackEnd := valueAt 26,
+    userATextStart := valueAt 27, userATextEnd := valueAt 28,
+    userAStackStart := valueAt 29, userAStackEnd := valueAt 30,
+    userBTextStart := valueAt 31, userBTextEnd := valueAt 32,
+    userBStackStart := valueAt 33, userBStackEnd := valueAt 34 }
 
 def firstPage (address : Nat) : Nat := address / pageBytes
 def endPage (address : Nat) : Nat := (address + pageBytes - 1) / pageBytes
@@ -87,6 +93,7 @@ structure PageClass where
 
 def pageClass (layout : Layout) (space : Space) (page : Nat) : Option PageClass :=
   if pageIn page layout.guardStart layout.guardEnd ||
+      pageIn page layout.nmiGuardStart layout.nmiGuardEnd ||
       pageIn page layout.entryGuardStart layout.entryGuardEnd then none
   else if space == .subjectA && pageIn page layout.userATextStart layout.userATextEnd then
     some ⟨.userText, .subjectA⟩
@@ -103,6 +110,7 @@ def pageClass (layout : Layout) (space : Space) (page : Nat) : Option PageClass 
   else if pageIn page layout.rootA layout.tableEnd then
     some ⟨.pageTables, .supervisor⟩
   else if pageIn page layout.dfStackStart layout.dfStackEnd ||
+      pageIn page layout.nmiStackStart layout.nmiStackEnd ||
       pageIn page layout.entryStackStart layout.entryStackEnd ||
       pageIn page layout.stackStart layout.stackEnd then
     some ⟨.kernelStack, .supervisor⟩
@@ -129,7 +137,7 @@ def reservationResult (layout : Layout) : Option BootReservation.Result :=
      { identity := .descriptorTables, start := layout.bootStart,
        length := pageBytes, lifetime := .permanent },
      { identity := .kernelStacks, start := layout.dfStackStart,
-       length := layout.dfStackEnd - layout.dfStackStart, lifetime := .permanent },
+       length := layout.nmiStackEnd - layout.dfStackStart, lifetime := .permanent },
      { identity := .ordinaryEntryGuard, start := layout.entryGuardStart,
        length := layout.entryGuardEnd - layout.entryGuardStart, lifetime := .permanent },
      { identity := .ordinaryEntryStack, start := layout.entryStackStart,

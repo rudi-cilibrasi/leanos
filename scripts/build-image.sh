@@ -645,6 +645,8 @@ cmp "$build/boot-page-plan-nmi.h" "$build/boot-page-plan-nmi.final.h" || {
   echo "error: NMI probe boot page-table plan drifted after final link" >&2
   exit 1
 }
+./scripts/check-nmi-guard-plan.py "$build/leanos-nmi.elf" \
+  "$build/boot-page-plan-nmi.final.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-preemption.elf" \
   "$build/boot-page-plan-preemption.final.h"
 cmp "$build/boot-page-plan-preemption.h" \

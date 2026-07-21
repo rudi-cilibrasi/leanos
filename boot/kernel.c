@@ -86,6 +86,7 @@ extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
 extern char __df_ist_stack_start[], __df_ist_stack_end[];
 extern char __df_ist_guard_start[], __df_ist_guard_end[];
+extern char __nmi_ist_guard_start[], __nmi_ist_guard_end[];
 extern char __nmi_ist_stack_start[], __nmi_ist_stack_end[];
 extern char __entry_stack_guard_start[], __entry_stack_guard_end[];
 extern char __entry_stack_start[], __entry_stack_end[];
@@ -568,6 +569,10 @@ static void check_live_page_table_mutations(void) {
         guard * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
         "pt", guard);
 #endif
+    uint64_t nmi_guard = boot_page(__nmi_ist_guard_start);
+    expect_live_mutation_rejected("nmi-guard-mapping", &page_table_b[nmi_guard],
+        nmi_guard * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
+        "pt", nmi_guard);
     uint64_t entry_guard = boot_page(__entry_stack_guard_start);
     expect_live_mutation_rejected("entry-guard-mapping", &page_table_b[entry_guard],
         entry_guard * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,

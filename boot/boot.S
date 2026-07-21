@@ -167,6 +167,15 @@ multiboot_entry:
     movl $0, page_table_b+4(%eax)
 #endif
 
+    /* NMI has its own absent lower guard immediately below IST2. */
+    mov $__nmi_ist_guard_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    movl $0, page_table_a(%eax)
+    movl $0, page_table_a+4(%eax)
+    movl $0, page_table_b(%eax)
+    movl $0, page_table_b+4(%eax)
+
     /* The linker-owned page immediately below the ordinary CPL3 entry stack
        is absent in every live address space. */
     mov $__entry_stack_guard_start, %eax
@@ -334,6 +343,12 @@ df_ist_stack:
     .skip 16384
 .global df_ist_stack_top
 df_ist_stack_top:
+
+.section .nmi_ist.guard,"aw",@nobits
+.align 4096
+.global nmi_ist_guard
+nmi_ist_guard:
+    .skip 4096
 
 .section .nmi_ist.stack,"aw",@nobits
 .align 4096

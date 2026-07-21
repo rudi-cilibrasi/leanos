@@ -7,6 +7,9 @@ memory_mib=128
 for ((i=1; i<=$#; ++i)); do
   if [[ "${!i}" == -m ]]; then next=$((i + 1)); memory_mib="${!next%M}"; fi
 done
+add_nmi_guard_fixture() {
+  sed -i '/^LEANOS\/8 PAGING fixture=extra-mapping /a LEANOS/8 PAGING fixture=nmi-guard-mapping root=B level=pt page=6 expected=0 actual=9223372036854800387 result=REJECTED' "$log"
+}
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
   dma-missing|dma-forged|dma-prestate-forged|dma-topology-forged|dma-control-forged|dma-readback-forged)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
@@ -91,6 +94,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
   status=$?
   set -e
+  add_nmi_guard_fixture
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i '/^LEANOS\/6 CONTROL/i LEANOS/17 ENTRY-MANIFEST ordinary=6 extended=6,7 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS' "$log"
   sed -i '/^LEANOS\/6 CONTROL/i LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' "$log"
@@ -108,6 +112,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
   status=$?
   set -e
+  add_nmi_guard_fixture
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i '/^LEANOS\/6 CONTROL/i LEANOS/17 ENTRY-MANIFEST ordinary=6 extended=6,7 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS' "$log"
   sed -i '/^LEANOS\/6 CONTROL/i LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' "$log"

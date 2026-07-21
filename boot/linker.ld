@@ -20,6 +20,11 @@ SECTIONS
     KEEP(*(.df_ist.stack))
     __df_ist_stack_end = .;
   }
+  .nmi_ist_guard (NOLOAD) : ALIGN(4K) {
+    __nmi_ist_guard_start = .;
+    KEEP(*(.nmi_ist.guard))
+    __nmi_ist_guard_end = .;
+  }
   .nmi_ist_stack (NOLOAD) : ALIGN(4K) {
     __nmi_ist_stack_start = .;
     KEEP(*(.nmi_ist.stack))
