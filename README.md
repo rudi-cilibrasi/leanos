@@ -74,7 +74,7 @@ partial log does not pass. The executable scenarios currently include:
   with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-183-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+200-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -358,6 +358,19 @@ classes, while changing only the halt latch.
 The bounded inbound entry manifest and total trap-frame normalizer bind those
 ordinary gates to explicit x86 raw shapes and kernel-owned subject, address
 space, CR3, stack, purpose, and nested-entry state before a boot handler runs.
+
+A separate terminal vector-2 manifest models NMI snapshots on dedicated IST2
+and proves that an exact CPL3 or CPL0 event, including one observed during an
+ordinary handling step, freezes every modeled subsystem and enters the same
+absorbing halt latch without return, scheduling, or CR3 continuation. The boot
+image installs the matching DPL0 vector-2 gate and dedicated IST2 stack; a
+mandatory QEMU monitor-injection probe observes real delivery across IF=0 and
+the terminal assembly record after the kernel reports `NMI-READY`. The boot
+contract explicitly assumes that firmware does not deliver NMI before
+`privilege_init` completes and the kernel publishes its IDT; the inherited
+bootloader IDT and that early window are outside the model and the QEMU probe.
+Delivery/blocking, frame construction, and the compiler/emulator path remain
+trusted tested boundaries rather than theorem claims.
 
 The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,
 bounded double-fault escalation, and one absorbing gate for every modeled

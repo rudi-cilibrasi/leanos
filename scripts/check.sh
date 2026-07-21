@@ -31,6 +31,8 @@ lake build leanos-boot-plan
 
 ./scripts/test-run-entry-stack-overflow.sh
 
+./scripts/test-run-nmi.sh
+
 ./scripts/test-entry-stack-budget.sh
 
 ./scripts/test-entry-stack-layout.sh
@@ -198,6 +200,57 @@ for fixture in DirectPortUserMutation DirectPortExposedBitmap \
       ! grep -Fq "$expected_proposition" "$negative_log" ||
       ! grep -Fq "$expected_result" "$negative_log"; then
     echo "error: direct-port-I/O fixture ${fixture} lacked its expected semantic diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
+for fixture in NMITerminalManifestMutation NMITraceInventoryMutation \
+    NMIOrdinaryManifestVector2 NMIReuseIST0 NMIReuseIST1 NMIWrongPurpose \
+    NMIContainmentRouting NMISchedulerRouting NMIFrameNotAtStackTop; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: NMI fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
+    echo "error: NMI fixture ${fixture} lacked its expected semantic diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
+for fixture in NMIFrameMissingRip NMIFrameMissingCs NMIFrameMissingFlags \
+    NMIFrameMissingRsp NMIFrameMissingSs; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: structural NMI fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  case "$fixture" in
+    NMIFrameMissingRip) expected_field='`rip`' ;;
+    NMIFrameMissingCs) expected_field='`cs`' ;;
+    NMIFrameMissingFlags) expected_field='`flags`' ;;
+    NMIFrameMissingRsp) expected_field='`rsp`' ;;
+    NMIFrameMissingSs) expected_field='`ss`' ;;
+  esac
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: Fields missing' "$negative_log" ||
+      ! grep -Fq "$expected_field" "$negative_log"; then
+    echo "error: structural NMI fixture ${fixture} lacked its missing-frame-word diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
+for fixture in NMIHaltClearing NMIPostHaltRepair; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: post-halt NMI fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: unsolved goals' "$negative_log"; then
+    echo "error: post-halt NMI fixture ${fixture} lacked its absorption diagnostic" >&2
     cat "$negative_log" >&2
     exit 1
   fi

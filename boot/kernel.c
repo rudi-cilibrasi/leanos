@@ -40,6 +40,8 @@ extern uint64_t leanos_fault_dispatch_demo(uint64_t, uint64_t, uint64_t,
                                             uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_direct_port_io_demo(uint64_t, uint64_t, uint64_t,
                                             uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_nmi_demo(uint64_t, uint64_t, uint64_t, uint64_t,
+                                uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);
@@ -53,6 +55,7 @@ extern void run_wp_probe(void);
 extern void run_smep_probe(void);
 extern void enter_user(void *, void *);
 extern void isr80(void);
+extern void isr2(void);
 extern void isr6(void);
 extern void isr7(void);
 extern void isr8(void);
@@ -83,6 +86,7 @@ extern char smep_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
 extern char __df_ist_stack_start[], __df_ist_stack_end[];
 extern char __df_ist_guard_start[], __df_ist_guard_end[];
+extern char __nmi_ist_stack_start[], __nmi_ist_stack_end[];
 extern char __entry_stack_guard_start[], __entry_stack_guard_end[];
 extern char __entry_stack_start[], __entry_stack_end[];
 extern char __kernel_text_start[], __kernel_text_end[];
@@ -157,7 +161,7 @@ static unsigned blocking_ipc_step;
 static unsigned capability_reuse_state;
 static unsigned supervisor_probe;
 static unsigned extended_state_features_accepted;
-static volatile unsigned ordinary_entry_active;
+volatile unsigned ordinary_entry_active;
 #ifdef LEANOS_ENTRY_HIGH_WATER
 static uint64_t entry_stack_high_water_pattern = UINT64_C(0x6c65616e6f735741);
 #endif
@@ -355,6 +359,7 @@ void complete_interrupt_entry(void) {
 static void check_entry_manifest(void) {
     struct expected_gate { unsigned vector; void (*target)(void); uint8_t ist, attr; };
     static const struct expected_gate expected[] = {
+        { 2, isr2, 2, 0x8e },
         { 6, isr6, 0, 0x8e }, { 7, isr7, 0, 0x8e },
         { 8, isr8, 1, 0x8e }, { 13, isr13, 0, 0x8e },
         { 14, isr14, 0, 0x8e }, { 32, isr32, 0, 0x8e },
@@ -374,9 +379,10 @@ static void check_entry_manifest(void) {
             fail("entry-descriptor-mismatch");
     }
     if (tss.rsp0 != (uint64_t)__entry_stack_end ||
-        tss.ist[0] != (uint64_t)__df_ist_stack_end)
+        tss.ist[0] != (uint64_t)__df_ist_stack_end ||
+        tss.ist[1] != (uint64_t)__nmi_ist_stack_end)
         fail("entry-tss-mismatch");
-    serial_puts("LEANOS/12 ENTRY-MANIFEST ordinary=6 extended=6,7 auxiliary=1 extra=0 rsp0=entry-stack ist1=df-stack result=PASS\n");
+    serial_puts("LEANOS/17 ENTRY-MANIFEST ordinary=6 extended=6,7 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS\n");
 }
 
 #ifdef LEANOS_ENTRY_ADVERSARIAL
@@ -1215,9 +1221,12 @@ static void replay_oracle(void) {
                                                     ? leanos_fault_dispatch_demo(v->words[0],
                                                     v->words[1], v->words[2], v->words[3],
                                                     v->words[4], v->words[5])
-                                                    : leanos_direct_port_io_demo(v->words[0],
-                                                    v->words[1], v->words[2], v->words[3],
-                                                    v->words[4], v->words[5]);
+                                                    : v->adapter == 13
+                                                        ? leanos_direct_port_io_demo(v->words[0],
+                                                        v->words[1], v->words[2], v->words[3],
+                                                        v->words[4], v->words[5])
+                                                        : leanos_nmi_demo(v->words[0], v->words[1],
+                                                        v->words[2], v->words[3], v->words[4]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -1257,6 +1266,7 @@ static void privilege_init(void) {
     gdt64[6] = base >> 32;
     tss.rsp0 = (uint64_t)__entry_stack_end;
     tss.ist[0] = (uint64_t)__df_ist_stack_end;
+    tss.ist[1] = (uint64_t)__nmi_ist_stack_end;
     tss.iomap = sizeof(tss);
 #ifdef LEANOS_ENTRY_HIGH_WATER
     initialize_entry_stack_high_water();
@@ -1264,6 +1274,11 @@ static void privilege_init(void) {
     *(uint64_t *)__df_ist_stack_start = 0xd0b1efa17badc0deull;
     *(uint64_t *)((uint64_t)__df_ist_stack_end - 128u) =
         0x15a1c0decafef00dull;
+    *(uint64_t *)__nmi_ist_stack_start = 0x4e4d493253544143ull;
+    *(uint64_t *)((uint64_t)__nmi_ist_stack_end - 128u) =
+        0x4b5445524d494e41ull;
+    load_tss();
+    set_gate(2, isr2, 2, 0x8e);
     set_gate(8, isr8, 1, 0x8e);
     set_gate(6, isr6, 0, 0x8e);
     set_gate(7, isr7, 0, 0x8e);
@@ -1279,7 +1294,6 @@ static void privilege_init(void) {
     out8(0xa1, 0xff);
     struct descriptor idtr = { sizeof(idt) - 1, (uint64_t)idt };
     __asm__ volatile ("lidt %0" : : "m"(idtr));
-    load_tss();
     check_direct_port_control(1);
 }
 
@@ -1874,7 +1888,9 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
-#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+#ifdef LEANOS_NMI_PROBE
+    serial_puts("LEANOS/17 BOOT target=x86_64-q35 schedule=nmi-terminal-probe controls=idt2,ist2,nmi\n");
+#elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     serial_puts(extended_state_probe_class >= 5
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off\n"
         : "LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
@@ -1895,6 +1911,14 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     replay_oracle();
 
     privilege_init();
+#ifdef LEANOS_NMI_PROBE
+    /* Model an NMI selected between composite steps while the ordinary-entry
+       mode is handling.  IF remains clear: QEMU's monitor-injected NMI must
+       cross the interrupt mask and use the dedicated IST2 gate. */
+    ordinary_entry_active = 1;
+    serial_puts("LEANOS/17 NMI-READY origin=cpl0 prior=handling if=0 gate=2 ist=2 result=PASS\n");
+    for (;;) __asm__ volatile ("cli; hlt");
+#endif
     check_fast_entry_cpuid();
     check_fast_entry_control();
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO

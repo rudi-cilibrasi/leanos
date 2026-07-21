@@ -40,6 +40,13 @@ for symbol in isr8 isr8_clac isr8_cld isr13 run_double_fault_probe \
     exit 1
   }
 done
+for symbol in isr2 isr2_clac isr2_cld __nmi_ist_stack_start \
+  __nmi_ist_stack_end nmi_ist_stack nmi_ist_stack_top; do
+  grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+    echo "error: NMI terminal policy symbol missing: $symbol" >&2
+    exit 1
+  }
+done
 for section in .df_ist_guard .df_ist_stack; do
   [[ "$(flags "$section")" == *A* && "$(flags "$section")" == *W* && \
      "$(flags "$section")" != *X* ]] || {
@@ -47,6 +54,11 @@ for section in .df_ist_guard .df_ist_stack; do
     exit 1
   }
 done
+[[ "$(flags .nmi_ist_stack)" == *A* && "$(flags .nmi_ist_stack)" == *W* && \
+   "$(flags .nmi_ist_stack)" != *X* ]] || {
+  echo "error: .nmi_ist_stack must be allocated, writable, and non-executable" >&2
+  exit 1
+}
 
 symbol_address() { nm -n "$elf" | awk -v name="$1" '$3 == name { print "0x" $1 }'; }
 image_start="$(symbol_address __boot_image_start)"
@@ -67,9 +79,19 @@ stack_end="$(symbol_address __df_ist_stack_end)"
   echo "error: double-fault guard/IST1 bounds are not one page plus 16 KiB" >&2
   exit 1
 }
+nmi_stack_start="$(symbol_address __nmi_ist_stack_start)"
+nmi_stack_end="$(symbol_address __nmi_ist_stack_end)"
+[[ $((nmi_stack_end - nmi_stack_start)) -eq 16384 && \
+   $((nmi_stack_start % 4096)) -eq 0 && \
+   $((stack_end)) -eq $((nmi_stack_start)) ]] || {
+  echo "error: NMI IST2 bounds are not a distinct aligned 16 KiB interval" >&2
+  exit 1
+}
 grep -Fq 'tss.rsp0 = (uint64_t)__entry_stack_end;' boot/kernel.c
 grep -Fq 'tss.ist[0] = (uint64_t)__df_ist_stack_end;' boot/kernel.c
-[[ "$(grep -Ec 'set_gate\([^,]+,[^,]+, 1,' boot/kernel.c)" -eq 1 ]]
+grep -Fq 'tss.ist[1] = (uint64_t)__nmi_ist_stack_end;' boot/kernel.c
+[[ "$(grep -Ec 'set_gate\([^,]+,[^,]+, [12],' boot/kernel.c)" -eq 2 ]]
+grep -Fq 'set_gate(2, isr2, 2, 0x8e);' boot/kernel.c
 grep -Fq 'set_gate(8, isr8, 1, 0x8e);' boot/kernel.c
 grep -Fq 'set_gate(13, isr13, 0, 0x8e);' boot/kernel.c
 grep -Fq 'movl $0, page_table_a(%eax)' boot/boot.S
@@ -82,6 +104,15 @@ stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr8>:/,/<isr6>:/p')"
 }
 if grep -Eq '\<(call|iretq|push)\>' <<<"$stub_disassembly"; then
   echo "error: vector-8 terminal stub calls, pushes, or returns with iretq" >&2
+  exit 1
+fi
+nmi_stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr2>:/,/<isr13>:/p')"
+[[ -n "$nmi_stub_disassembly" ]] || {
+  echo "error: could not isolate vector-2 disassembly" >&2
+  exit 1
+}
+if grep -Eq '\<(call|iretq|push)\>' <<<"$nmi_stub_disassembly"; then
+  echo "error: vector-2 terminal stub calls, pushes, or returns with iretq" >&2
   exit 1
 fi
 
@@ -120,12 +151,12 @@ grep -Fq 'or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax' bo
 grep -Fq 'bts $20, %rax' boot/boot.S
 grep -Fq 'bts $21, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]
-[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 12 ]]
-[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 13 ]]
+[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 13 ]]
+[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 14 ]]
 for symbol in smap_copy_from_cld smap_copy_from_stac smap_copy_from_clac \
   smap_copy_to_cld smap_copy_to_stac \
   smap_copy_to_clac smap_omit_cleanup_probe_stac smap_force_clac \
-  isr80_clac isr80_cld isr14_clac isr14_cld isr32_clac isr32_cld \
+  isr2_clac isr2_cld isr80_clac isr80_cld isr14_clac isr14_cld isr32_clac isr32_cld \
   run_smap_probe; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || { echo "error: SMAP evidence symbol missing: $symbol" >&2; exit 1; }
 done

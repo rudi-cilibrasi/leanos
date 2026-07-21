@@ -418,6 +418,146 @@ private def returnWitnessComposite : FailStop.CompositeState :=
     capabilities := returnWitnessLifecycle.capabilities
     lifecycle := returnWitnessLifecycle }
 
+private def nmiWitnessContext (mode : InterruptEntry.InterruptedMode) :
+    InterruptEntry.NmiContext :=
+  { currentSubject := 1
+    activeAddressSpace := 1
+    activeCr3 := 0xa000
+    stackIdentity := InterruptEntry.nmiStackIdentity
+    stackFirst := InterruptEntry.nmiAbstractStackFirst
+    stackPastLast := InterruptEntry.nmiAbstractStackPastLast
+    interruptedMode := mode }
+
+private def nmiWitnessRaw (origin : Interrupt.Privilege) : InterruptEntry.RawNmiEntry :=
+  let frame : InterruptEntry.RawNmiFrame :=
+    match origin with
+    | .user => ⟨0x64100, 0x23, 0x202, 0x65ff8, 0x1b, true, true⟩
+    | .kernel => ⟨0x101000, 0x08, 0x2, 0x700ff8, 0x10, true, true⟩
+  { descriptor := InterruptEntry.nmiEntry
+    boundStub := InterruptEntry.nmiVector
+    errorCode := none
+    frame
+    claimedOrigin := origin
+    frameBytes := 40
+    frameAddress := 0x903fd8
+    acCleared := true
+    dfCleared := true }
+
+/-- Concrete CPL3 and CPL0 raw snapshots both reach the reviewed terminal
+normalizer and then the absorbing composite transition. -/
+theorem nmi_user_kernel_nonvacuous :
+    let userContext := nmiWitnessContext .running
+    let kernelContext := nmiWitnessContext .running
+    let userRaw := nmiWitnessRaw .user
+    let kernelRaw := nmiWitnessRaw .kernel
+    let userEvent := InterruptEntry.makeNormalizedNmi userRaw userContext
+    let kernelEvent := InterruptEntry.makeNormalizedNmi kernelRaw kernelContext
+    InterruptEntry.normalizeNmi userRaw userContext 1 1 = .accepted userEvent ∧
+      InterruptEntry.normalizeNmi kernelRaw kernelContext 1 1 = .accepted kernelEvent ∧
+      ((FailStop.gate returnWitnessComposite (.nmi userRaw userContext)).state.execution.mode =
+        .halted (FailStop.acceptedNmiRecord returnWitnessComposite.execution userEvent)) ∧
+      ((FailStop.gate returnWitnessComposite (.nmi kernelRaw kernelContext)).state.execution.mode =
+        .halted (FailStop.acceptedNmiRecord returnWitnessComposite.execution kernelEvent)) := by
+  native_decide
+
+private def nmiHandlingWitness (vector : Nat) : FailStop.CompositeState :=
+  let frame : Interrupt.HardwareFrame :=
+    { returnWitnessRequest.hardware with vector }
+  { returnWitnessComposite with
+    execution :=
+      { returnWitnessComposite.execution with
+        core :=
+          { returnWitnessComposite.execution.core with
+            context :=
+              { returnWitnessComposite.execution.core.context with entryActive := true } }
+        mode := .handling (FailStop.activeEntry frame) } }
+
+/-- Every named handling and post-halt trace class has a concrete executable
+witness.  The three active ordinary purposes admit a kernel-origin NMI without
+finishing the handler; copy authority is cleared; and repeated, post-double-
+fault, ordinary-operation, and return suffixes leave the terminal latch
+unchanged. -/
+theorem nmi_named_handling_and_after_halt_witnesses :
+    let raw := nmiWitnessRaw .kernel
+    let handlingContext := nmiWitnessContext .handling
+    let handlingEvent := InterruptEntry.makeNormalizedNmi raw handlingContext
+    let syscallState := nmiHandlingWitness 128
+    let pageFaultState := nmiHandlingWitness 14
+    let timerState := nmiHandlingWitness 32
+    let syscallNext := (FailStop.gate syscallState (.nmi raw handlingContext)).state
+    let pageFaultNext := (FailStop.gate pageFaultState (.nmi raw handlingContext)).state
+    let timerNext := (FailStop.gate timerState (.nmi raw handlingContext)).state
+    let runningContext := nmiWitnessContext .running
+    let runningEvent := InterruptEntry.makeNormalizedNmi raw runningContext
+    let copyArmed :=
+      { returnWitnessComposite with
+        execution := { returnWitnessComposite.execution with copyOverride := true } }
+    let runningNext := (FailStop.gate copyArmed (.nmi raw runningContext)).state
+    let doubleFaultFrame : Interrupt.HardwareFrame :=
+      { returnWitnessRequest.hardware with vector := 14 }
+    let doubleFaulted :=
+      { pageFaultState with
+        execution :=
+          (FailStop.dispatchHardware pageFaultState.execution doubleFaultFrame).state }
+    syscallNext.execution.mode =
+        .halted (FailStop.acceptedNmiRecord syscallState.execution handlingEvent) ∧
+      pageFaultNext.execution.mode =
+        .halted (FailStop.acceptedNmiRecord pageFaultState.execution handlingEvent) ∧
+      timerNext.execution.mode =
+        .halted (FailStop.acceptedNmiRecord timerState.execution handlingEvent) ∧
+      runningNext.execution.mode =
+        .halted (FailStop.acceptedNmiRecord copyArmed.execution runningEvent) ∧
+      runningNext.execution.copyOverride = false ∧
+      (FailStop.gate runningNext (.nmi raw runningContext)).result =
+        .rejectedHalted (FailStop.acceptedNmiRecord copyArmed.execution runningEvent) ∧
+      (FailStop.dispatchHardware pageFaultState.execution doubleFaultFrame).action =
+        .fatal .doubleFault ∧
+      (FailStop.gate doubleFaulted (.nmi raw handlingContext)).state.execution.mode =
+        doubleFaulted.execution.mode ∧
+      (FailStop.runOperations syscallNext [.scheduleTick, .restart]).execution.mode =
+        syscallNext.execution.mode ∧
+      (FailStop.runOperations syscallNext
+        [.selectUserReturn .initialDispatch, .userReturn returnWitnessRequest]).execution.mode =
+          syscallNext.execution.mode := by
+  native_decide
+
+/-- SC-NMI-FAILSTOP: an exact normalized vector-2 terminal entry from running
+or any ordinary handling state freezes every business subsystem, clears return
+and copy authority, records the kernel-owned context/CR3, and absorbs every
+later typed operation. -/
+theorem nmi_terminal_failstop state raw context event proposals
+    (hmode : state.execution.mode = .running ∨
+      ∃ active, state.execution.mode = .handling active)
+    (hcontext : context.interruptedMode =
+      FailStop.interruptedModeOf state.execution.mode)
+    (haccepted : InterruptEntry.normalizeNmi raw context
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace = .accepted event) :
+    let next := (FailStop.gate state (.nmi raw context)).state
+    next.execution.mode =
+        .halted (FailStop.acceptedNmiRecord state.execution event) ∧
+      next.execution.core.lifecycle = state.execution.core.lifecycle ∧
+      next.execution.core.context.currentSubject =
+        state.execution.core.context.currentSubject ∧
+      next.execution.core.context.activeAddressSpace =
+        state.execution.core.context.activeAddressSpace ∧
+      next.execution.core.context.kernelStack =
+        state.execution.core.context.kernelStack ∧
+      next.execution.returnAddressSpace = state.execution.returnAddressSpace ∧
+      next.execution.returnPlan = state.execution.returnPlan ∧
+      next.execution.returnAuthority = state.execution.returnAuthority ∧
+      next.execution.returnAuthorityArmed = false ∧
+      next.execution.copyOverride = false ∧
+      next.scheduler = state.scheduler ∧
+      next.preemption = state.preemption ∧
+      next.virtualMemory = state.virtualMemory ∧
+      next.ipc = state.ipc ∧
+      next.capabilities = state.capabilities ∧
+      next.lifecycle = state.lifecycle ∧
+      FailStop.runOperations next proposals = next := by
+  exact FailStop.accepted_nmi_composite_atomicity state raw context event proposals
+    hmode hcontext haccepted
+
 private def returnWitnessSyscallFrame : Interrupt.HardwareFrame :=
   { returnWitnessRequest.hardware with vector := 128 }
 

@@ -143,6 +143,75 @@ binding. Firmware PIC lines are masked when the IDT is installed; only the
 preemption scenario remaps and deliberately unmasks IRQ0, preventing a legacy
 IRQ from being confused with the dedicated vector-8 terminal protocol.
 
+## Terminal non-maskable entry model
+
+Vector 2 is not added to the ordinary manifest. `InterruptEntry.terminalManifest`
+contains exactly one DPL0 interrupt gate with selector `0x08`, no hardware error
+word, terminal-only purpose, and dedicated IST identity 2. The ordinary
+manifest cannot authorize that entry, and IST2 is distinct from the existing
+vector-8 IST1 machine protocol. The linker now owns a separate aligned 16 KiB
+IST2 interval, the TSS selects its exclusive upper bound, and the IDT installs
+only the reviewed vector-2 DPL0 interrupt gate for this terminal purpose. Boot
+loads the fully initialized TSS before installing the IST2 gate and publishing
+the kernel IDT, so the kernel's live vector-2 descriptor never references the
+prior TSS. This ordering does not cover the inherited bootloader IDT before the
+kernel `lidt`: the trusted boot contract assumes that firmware does not deliver
+NMI before `privilege_init` completes. That early window is outside the model
+and the QEMU monitor-injection evidence, which begins only after `NMI-READY`.
+
+`RawNmiFrame` always contains saved RIP, CS, RFLAGS, RSP, and SS. This includes
+a CPL0 interruption because the selected contract assumes an IST switch; it
+never reuses the ordinary same-privilege three-word shape. `normalizeNmi`
+requires the exact descriptor and target, no error word, and a 40-byte
+five-word frame starting at offset 8 modulo 16 whose end is exactly the
+reviewed IST2 upper bound, without arithmetic wraparound,
+canonical saved pointers, cleared AC/DF, matching user or kernel selectors,
+and a kernel-owned current subject/address space. Its active CR3 and prior
+execution mode are explicit trusted snapshot inputs. Attacker registers are
+erased, and a claimed origin that disagrees with saved CS is rejected.
+The canonical `0x900000..0x904000` interval is an abstract coordinate system
+for normalized snapshots, not the linked IST2 virtual address. The final-ELF
+policy separately checks the live linker interval, its 16 KiB size, and the
+`end - 40` post-push frame relation. Constructing the normalized snapshot from
+those machine coordinates remains an explicit trusted boundary.
+
+An accepted result carries vector 2, terminal purpose, origin, IST identity,
+all five saved frame words, current subject/address space, active CR3, stack
+identity, and the interrupted `running` or `handling` mode. `NmiResultWords`
+and `FailStop.NmiTerminalWords` are the version-1 fixed-width normalized-result
+and halt-record vocabularies reserved for the later stateful corpus; the latter
+includes the complete optional ordinary active frame rather than a lossy
+purpose tag. This slice does not yet export or replay either encoding through
+generated C. The scalar classifier accepts a typed `.halted` snapshot only to
+exercise normalization; `FailStop.dispatchNmi` checks the execution latch first
+and preserves an already-halted record without invoking that normalizer.
+Malformed snapshots retain a typed normalization reason and authorize no
+ordinary handler.
+
+`FailStop.dispatchNmi` is separate from `beginEntry`, `finishEntry`, ordinary
+fault containment, and scheduler dispatch. From `running` or any ordinary
+`handling` state it clears return authority and the copy override, records the
+accepted active CR3/stack identity and prior mode, and latches halt. The
+complete composite theorem freezes lifecycle, capabilities, virtual memory,
+IPC, scheduler, preemption, and the current subject/address-space/kernel-stack
+projection, then absorbs every typed suffix. A repeated modeled NMI after halt
+returns the original terminal record unchanged; because this model has no NMI
+return, it assumes a second physical NMI remains architecturally blocked rather
+than modeling nested-NMI recovery.
+
+These are sequential Lean model properties. NMI may be selected between atomic
+composite steps or while the modeled mode is `handling`; this is not a theorem
+about arbitrary compiler instruction boundaries or partially committed C
+mutations. Physical NMI delivery, blocking/coalescing, descriptor semantics,
+TSS/IST switching, frame construction, stack mapping, assembly, generated C,
+compiler/linker behavior, QEMU, firmware, and hardware remain trusted or future
+tested boundaries. The bounded classifier is now replayed through hosted
+generated C and the final ELF under QEMU. A mandatory probe image additionally
+publishes a CPL0 `handling` boundary with IF clear; the evidence runner injects
+a real QEMU NMI, observes the five-word IST2 frame and one terminal record, and
+rejects any return or post-terminal output. This is integration evidence, not
+a proof of x86 delivery, coalescing, or emulator correctness.
+
 ## Ordinary entry-stack layout and budget contract
 
 `LeanOS.PrivilegeEntryStack` introduces the model vocabulary shared by the

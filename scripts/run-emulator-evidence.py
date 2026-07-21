@@ -25,6 +25,7 @@ RUNNERS = {
     "peer-pke",
     "double-fault",
     "entry-stack-overflow",
+    "nmi",
     "double-fault-guard",
 }
 RUNNER_RESULT_CLASSES = {
@@ -33,6 +34,7 @@ RUNNER_RESULT_CLASSES = {
     "peer-pke": "controlled-rejection",
     "double-fault": "fail-stop",
     "entry-stack-overflow": "fail-stop",
+    "nmi": "fail-stop",
     "double-fault-guard": "controlled-rejection",
 }
 REQUIRED_FAST_ENTRY_ROWS = {
@@ -273,6 +275,8 @@ def scenario_invocation(
         command = ["./scripts/run-double-fault.sh", str(paths["image"])]
     elif row["runner"] == "entry-stack-overflow":
         command = ["./scripts/run-entry-stack-overflow.sh", str(paths["image"])]
+    elif row["runner"] == "nmi":
+        command = ["./scripts/run-nmi.sh", str(paths["image"])]
     else:
         environment["LEANOS_EXPECT_GUARD_MAPPED"] = "1"
         command = ["./scripts/run-double-fault.sh", str(paths["image"])]

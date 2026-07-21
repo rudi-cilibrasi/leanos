@@ -1,4 +1,5 @@
 import LeanOS.Interrupt
+import LeanOS.InterruptEntry
 import LeanOS.BootPageTablePlan
 import LeanOS.IPCSyscall
 import LeanOS.Preemption
@@ -17,6 +18,8 @@ set_option linter.unusedSimpArgs false
 
 inductive FatalReason where
   | kernelFault | unsupportedVector | nestedEntry | doubleFault
+  | nonMaskableInterrupt
+  | invalidNmiEntry (reason : InterruptEntry.NmiRejectReason)
   | invalidUserReturn (purpose : Interrupt.ReturnPurpose)
       (reason : Interrupt.ReturnRejectReason)
   deriving DecidableEq, Repr
@@ -33,6 +36,9 @@ structure HaltRecord where
   active : Option ActiveEntry
   incomingVector : Nat
   incomingOrigin : Interrupt.Privilege
+  interruptedMode : Option InterruptEntry.InterruptedMode := none
+  interruptedCr3 : Option UInt64 := none
+  terminalStackIdentity : Option UInt64 := none
   deriving DecidableEq, Repr
 
 inductive Mode where
@@ -138,7 +144,9 @@ def escalation (active : ActiveEntry) (incoming : Interrupt.HardwareFrame) : Fat
 
 def halt (state : State) (reason : FatalReason) (active : Option ActiveEntry)
     (incoming : Interrupt.HardwareFrame) : EntryOutcome :=
-  let record := HaltRecord.mk reason active incoming.vector incoming.savedPrivilege
+  let record : HaltRecord :=
+    { reason, active, incomingVector := incoming.vector
+      incomingOrigin := incoming.savedPrivilege }
   { state := { state with
       mode := .halted record
       returnAuthorityArmed := false
@@ -197,6 +205,155 @@ def dispatchHardware (state : State) (frame : Interrupt.HardwareFrame) : EntryOu
 
 def dispatch (state : State) (trap : Interrupt.Trap) : EntryOutcome :=
   dispatchHardware state trap.hardware
+
+/-! ## Non-maskable terminal entry
+
+Unlike ordinary entry, this transition is admitted while `handling` and never
+calls `beginEntry`, `finishEntry`, containment, scheduling, or return
+selection.  It consumes the separate terminal normalizer result and changes
+only the execution latch plus the two privileged cleanup bits. -/
+
+def interruptedModeOf : Mode → InterruptEntry.InterruptedMode
+  | .running => .running
+  | .handling _ => .handling
+  | .halted _ => .halted
+
+private def latchNmi (state : State) (reason : FatalReason)
+    (active : Option ActiveEntry) (vector : Nat) (origin : Interrupt.Privilege)
+    (mode : InterruptEntry.InterruptedMode) (cr3 : Option UInt64)
+    (stackIdentity : Option UInt64) : EntryOutcome :=
+  let record : HaltRecord :=
+    { reason, active, incomingVector := vector, incomingOrigin := origin
+      interruptedMode := some mode, interruptedCr3 := cr3
+      terminalStackIdentity := stackIdentity }
+  { state := { state with
+      core := { state.core with
+        context := { state.core.context with entryActive := true } }
+      mode := .halted record
+      returnAuthorityArmed := false
+      copyOverride := false }
+    action := .fatal reason }
+
+def acceptedNmiRecord (state : State) (event : InterruptEntry.NormalizedNmi) : HaltRecord :=
+  { reason := .nonMaskableInterrupt
+    active := match state.mode with | .handling entry => some entry | _ => none
+    incomingVector := event.vector.toNat
+    incomingOrigin := event.origin
+    interruptedMode := some event.interruptedMode
+    interruptedCr3 := some event.activeCr3
+    terminalStackIdentity := some event.stackIdentity }
+
+/-- Canonical fixed-width words for the later stateful-corpus boundary.  The
+active ordinary frame is included rather than summarized by a lossy tag. -/
+structure NmiTerminalWords where
+  version : UInt64
+  reason : UInt64
+  incomingVector : UInt64
+  incomingOrigin : UInt64
+  interruptedModePresent : UInt64
+  interruptedMode : UInt64
+  cr3Present : UInt64
+  interruptedCr3 : UInt64
+  stackPresent : UInt64
+  terminalStackIdentity : UInt64
+  activePresent : UInt64
+  activeVector : UInt64
+  activeOrigin : UInt64
+  activeFrameVector : UInt64
+  activeErrorCode : UInt64
+  activeRip : UInt64
+  activeRsp : UInt64
+  activeCs : UInt64
+  activeSs : UInt64
+  activeFlags : UInt64
+  activeCanonicalRip : UInt64
+  activeCanonicalRsp : UInt64
+  activeFlagsAllowed : UInt64
+  deriving DecidableEq, Repr
+
+private def privilegeCode : Interrupt.Privilege → UInt64
+  | .kernel => 0 | .user => 1
+
+def encodeNmiTerminalRecord (record : HaltRecord) : Option NmiTerminalWords :=
+  if record.reason != .nonMaskableInterrupt then none
+  else
+    let (cr3Present, cr3) := match record.interruptedCr3 with
+      | some value => ((1 : UInt64), value) | none => ((0 : UInt64), 0)
+    let (stackPresent, stackIdentity) := match record.terminalStackIdentity with
+      | some value => ((1 : UInt64), value) | none => ((0 : UInt64), 0)
+    let (modePresent, mode) := match record.interruptedMode with
+      | some value => ((1 : UInt64), value.code) | none => ((0 : UInt64), 0)
+    let activeWords := match record.active with
+      | none => ((0 : UInt64), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+      | some active =>
+          ((1 : UInt64), UInt64.ofNat active.vector, privilegeCode active.origin,
+            UInt64.ofNat active.frame.vector, active.frame.errorCode,
+            active.frame.instructionPointer, active.frame.stackPointer,
+            active.frame.codeSelector, active.frame.stackSelector, active.frame.flags,
+            if active.frame.canonicalInstructionPointer then (1 : UInt64) else 0,
+            if active.frame.canonicalStackPointer then (1 : UInt64) else 0,
+            if active.frame.flagsAllowed then (1 : UInt64) else 0)
+    some ⟨1, 1, UInt64.ofNat record.incomingVector, privilegeCode record.incomingOrigin,
+      modePresent, mode, cr3Present, cr3, stackPresent, stackIdentity,
+      activeWords.1, activeWords.2.1, activeWords.2.2.1, activeWords.2.2.2.1,
+      activeWords.2.2.2.2.1, activeWords.2.2.2.2.2.1,
+      activeWords.2.2.2.2.2.2.1, activeWords.2.2.2.2.2.2.2.1,
+      activeWords.2.2.2.2.2.2.2.2.1, activeWords.2.2.2.2.2.2.2.2.2.1,
+      activeWords.2.2.2.2.2.2.2.2.2.2.1,
+      activeWords.2.2.2.2.2.2.2.2.2.2.2.1,
+      activeWords.2.2.2.2.2.2.2.2.2.2.2.2⟩
+
+/-- NMI is an out-of-band terminal step.  A malformed terminal snapshot also
+halts, but retains its exact typed normalization failure rather than granting
+an ordinary handler.  An NMI observed after halt returns the original record
+unchanged, modeling architectural blocking of a second physical NMI until a
+return that this model never performs. -/
+def dispatchNmi (state : State) (raw : InterruptEntry.RawNmiEntry)
+    (context : InterruptEntry.NmiContext) : EntryOutcome :=
+  match state.mode with
+  | .halted record => { state, action := .alreadyHalted record }
+  | mode =>
+      let active := match mode with | .handling entry => some entry | _ => none
+      let interruptedMode := interruptedModeOf mode
+      if context.interruptedMode != interruptedMode then
+        latchNmi state (.invalidNmiEntry .staleKernelContext) active
+          raw.descriptor.vector.toNat raw.claimedOrigin interruptedMode none none
+      else
+        match InterruptEntry.normalizeNmi raw context state.core.context.currentSubject
+            state.core.context.activeAddressSpace with
+        | .fatal reason =>
+            latchNmi state (.invalidNmiEntry reason) active raw.descriptor.vector.toNat
+              raw.claimedOrigin interruptedMode none none
+        | .accepted event =>
+            latchNmi state .nonMaskableInterrupt active event.vector.toNat event.origin
+              event.interruptedMode (some event.activeCr3) (some event.stackIdentity)
+
+theorem accepted_nmi_terminal state raw context event
+    (hmode : state.mode = .running ∨ ∃ active, state.mode = .handling active)
+    (hcontext : context.interruptedMode = interruptedModeOf state.mode)
+    (haccepted : InterruptEntry.normalizeNmi raw context
+      state.core.context.currentSubject state.core.context.activeAddressSpace =
+        .accepted event) :
+    let next := dispatchNmi state raw context
+    next.action = .fatal .nonMaskableInterrupt ∧
+      next.state.mode = .halted (acceptedNmiRecord state event) ∧
+      next.state.core.lifecycle = state.core.lifecycle ∧
+      next.state.core.context.currentSubject = state.core.context.currentSubject ∧
+      next.state.core.context.activeAddressSpace = state.core.context.activeAddressSpace ∧
+      next.state.core.context.kernelStack = state.core.context.kernelStack ∧
+      next.state.returnAddressSpace = state.returnAddressSpace ∧
+      next.state.returnPlan = state.returnPlan ∧
+      next.state.returnAuthority = state.returnAuthority ∧
+      next.state.returnAuthorityArmed = false ∧
+      next.state.copyOverride = false := by
+  rcases hmode with hmode | ⟨active, hmode⟩
+  · simp [dispatchNmi, hmode, hcontext, haccepted, latchNmi, acceptedNmiRecord]
+  · simp [dispatchNmi, hmode, hcontext, haccepted, latchNmi, acceptedNmiRecord]
+
+theorem halted_nmi_absorbing state record raw context
+    (hmode : state.mode = .halted record) :
+    dispatchNmi state raw context = { state, action := .alreadyHalted record } := by
+  simp [dispatchNmi, hmode]
 
 /-! ## Terminal outgoing user-return transaction -/
 
@@ -604,6 +761,7 @@ theorem installLifecycle_releases_retired_memory state lifecycle object frame
 a tag paired with a caller-supplied post-state. -/
 inductive Operation where
   | interrupt (frame : Interrupt.HardwareFrame)
+  | nmi (raw : InterruptEntry.RawNmiEntry) (context : InterruptEntry.NmiContext)
   | selectUserReturn (purpose : Interrupt.ReturnPurpose)
   | userReturn (request : Interrupt.UserReturnRequest)
   | syscall (context : Syscall.TrustedContext) (call : Syscall.UntrustedCall)
@@ -634,6 +792,8 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
       let entry := dispatchHardware state.execution frame
       installLifecycle { state with execution := entry.state }
         entry.state.core.lifecycle
+  | .nmi raw context =>
+      { state with execution := (dispatchNmi state.execution raw context).state }
   | .selectUserReturn purpose =>
       selectLiveReturnAuthority state purpose
   | .userReturn request =>
@@ -713,10 +873,17 @@ theorem preempt_fatal_latches state frame reason
 /-- The sole composite step computes the post-state by invoking the typed
 subsystem transition internally. -/
 def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
-  match state.execution.mode with
-  | .running => { state := applyOperation state operation, result := .accepted }
-  | .handling _ => { state, result := .rejectedBusy }
-  | .halted record => { state, result := .rejectedHalted record }
+  match operation with
+  | .nmi raw context =>
+      match state.execution.mode with
+      | .halted record => { state, result := .rejectedHalted record }
+      | .running | .handling _ =>
+          { state := applyOperation state (.nmi raw context), result := .accepted }
+  | operation =>
+      match state.execution.mode with
+      | .running => { state := applyOperation state operation, result := .accepted }
+      | .handling _ => { state, result := .rejectedBusy }
+      | .halted record => { state, result := .rejectedHalted record }
 
 /-- Initial dispatch is also represented by a typed composite step; syscall
 and timer paths reselect only after their final context update. -/
@@ -786,7 +953,7 @@ theorem halted_entry_absorbing state record frame
 theorem halted_gate_absorbing state record operation
     (hmode : state.execution.mode = .halted record) :
     gate state operation = { state, result := .rejectedHalted record } := by
-  simp [gate, hmode]
+  cases operation <;> simp [gate, hmode]
 
 theorem halted_suffix_absorbing state record proposals
     (hmode : state.execution.mode = .halted record) :
@@ -797,6 +964,54 @@ theorem halted_suffix_absorbing state record proposals
       simp only [runOperations]
       rw [halted_gate_absorbing state record proposal hmode]
       exact ih state hmode
+
+/-- An accepted normalized NMI is one complete composite terminal step.  No
+lifecycle synchronization helper, scheduler/preemption transition, CR3/return
+selection, or ordinary handler runs after the latch is written. -/
+theorem accepted_nmi_composite_atomicity state raw context event proposals
+    (hmode : state.execution.mode = .running ∨
+      ∃ active, state.execution.mode = .handling active)
+    (hcontext : context.interruptedMode = interruptedModeOf state.execution.mode)
+    (haccepted : InterruptEntry.normalizeNmi raw context
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace = .accepted event) :
+    let next := (gate state (.nmi raw context)).state
+    next.execution.mode = .halted (acceptedNmiRecord state.execution event) ∧
+      next.execution.core.lifecycle = state.execution.core.lifecycle ∧
+      next.execution.core.context.currentSubject =
+        state.execution.core.context.currentSubject ∧
+      next.execution.core.context.activeAddressSpace =
+        state.execution.core.context.activeAddressSpace ∧
+      next.execution.core.context.kernelStack = state.execution.core.context.kernelStack ∧
+      next.execution.returnAddressSpace = state.execution.returnAddressSpace ∧
+      next.execution.returnPlan = state.execution.returnPlan ∧
+      next.execution.returnAuthority = state.execution.returnAuthority ∧
+      next.execution.returnAuthorityArmed = false ∧
+      next.execution.copyOverride = false ∧
+      next.scheduler = state.scheduler ∧
+      next.preemption = state.preemption ∧
+      next.virtualMemory = state.virtualMemory ∧
+      next.ipc = state.ipc ∧
+      next.capabilities = state.capabilities ∧
+      next.lifecycle = state.lifecycle ∧
+      runOperations next proposals = next := by
+  dsimp only
+  have hdispatch := accepted_nmi_terminal state.execution raw context event
+    hmode hcontext haccepted
+  have hgate : (gate state (.nmi raw context)).state =
+      { state with execution := (dispatchNmi state.execution raw context).state } := by
+    rcases hmode with hmode | ⟨active, hmode⟩
+    · simp [gate, applyOperation, hmode]
+    · simp [gate, applyOperation, hmode]
+  rw [hgate]
+  rcases hdispatch with ⟨_, hnextMode, hlifecycle, hsubject, haddressSpace,
+    hstack, hreturnAddressSpace, hreturnPlan, hreturnAuthority, harmed, hcopy⟩
+  refine ⟨hnextMode, hlifecycle, hsubject, haddressSpace, hstack,
+    hreturnAddressSpace, hreturnPlan, hreturnAuthority, harmed, hcopy,
+    rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
+  exact halted_suffix_absorbing
+    { state with execution := (dispatchNmi state.execution raw context).state }
+    (acceptedNmiRecord state.execution event) proposals hnextMode
 
 /-- Outgoing-return rejection is one atomic composite step: it records the
 typed terminal reason, changes no lifecycle/authority/scheduler/resource view,
@@ -848,7 +1063,7 @@ theorem rejected_user_return_composite_atomicity state request reason proposals
 theorem halted_never_accepts state record operation
     (hmode : state.execution.mode = .halted record) :
     (gate state operation).result ≠ .accepted := by
-  simp [gate, hmode]
+  cases operation <;> simp [gate, hmode]
 
 /-- Terminal non-resumption over the complete typed composite step: no
 subsystem transition is accepted and no component of the terminal state can
@@ -856,7 +1071,7 @@ change. -/
 theorem halted_terminal_non_resumption state record operation
     (hmode : state.execution.mode = .halted record) :
     (gate state operation).state = state ∧ (gate state operation).result ≠ .accepted := by
-  simp [gate, hmode]
+  cases operation <;> simp [gate, hmode]
 
 theorem fatal_atomicity state frame reason
     (hfatal : (dispatchHardware state frame).action = .fatal reason) :

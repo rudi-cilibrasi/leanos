@@ -1,4 +1,14 @@
 # symbol	offset	opcode	operands	owner
+isr2_cld	0x87	in	(%dx),%al	DirectPortIO.serial
+isr2_cld	0x92	out	%al,(%dx)	DirectPortIO.serial
+isr2_cld	0xac	in	(%dx),%al	DirectPortIO.serial
+isr2_cld	0xb7	out	%al,(%dx)	DirectPortIO.serial
+isr2_cld	0xdf	in	(%dx),%al	DirectPortIO.serial
+isr2_cld	0xea	out	%al,(%dx)	DirectPortIO.serial
+isr2_cld	0xf8	out	%al,(%dx)	DirectPortIO.debug-exit
+isr2_cld	0x10c	in	(%dx),%al	DirectPortIO.serial
+isr2_cld	0x117	out	%al,(%dx)	DirectPortIO.serial
+isr2_cld	0x125	out	%al,(%dx)	DirectPortIO.debug-exit
 isr8_cld	0x52	in	(%dx),%al	DirectPortIO.serial
 isr8_cld	0x5d	out	%al,(%dx)	DirectPortIO.serial
 isr8_cld	0x6b	out	%al,(%dx)	DirectPortIO.debug-exit

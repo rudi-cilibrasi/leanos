@@ -335,6 +335,14 @@ df_ist_stack:
 .global df_ist_stack_top
 df_ist_stack_top:
 
+.section .nmi_ist.stack,"aw",@nobits
+.align 4096
+.global nmi_ist_stack
+nmi_ist_stack:
+    .skip 16384
+.global nmi_ist_stack_top
+nmi_ist_stack_top:
+
 .section .text,"ax",@progbits
 .global load_tss
 load_tss:
@@ -549,6 +557,63 @@ run_double_fault_probe:
     jnz 1b
 .endm
 
+/* Vector 2 has no error-code word.  Hardware IST switching supplies the
+   complete RIP/CS/RFLAGS/RSP/SS snapshot even for a CPL0 interruption.  This
+   terminal stub has no C ABI, calls, pushes, recovery edge, or iretq. */
+.global isr2
+.global isr2_clac
+.global isr2_cld
+isr2:
+    cli
+isr2_clac:
+    clac
+isr2_cld:
+    cld
+    mov %rsp, %rbx
+    cmp $__nmi_ist_stack_start, %rbx
+    jb 8f
+    cmp $__nmi_ist_stack_end, %rbx
+    jae 8f
+    lea 40(%rbx), %rax
+    cmp $__nmi_ist_stack_end, %rax
+    jne 8f
+    movabs $0x4e4d493253544143, %rax
+    cmp %rax, __nmi_ist_stack_start(%rip)
+    jne 8f
+    movabs $0x4b5445524d494e41, %rax
+    cmp %rax, __nmi_ist_stack_end-128(%rip)
+    jne 8f
+    cmpq $0x10, 32(%rbx)
+    jne 6f
+    cmpq $0x08, 8(%rbx)
+    jne 8f
+    cmpl $1, ordinary_entry_active(%rip)
+    jne 5f
+    DF_SERIAL nmi_kernel_handling_record, nmi_kernel_handling_record_end-nmi_kernel_handling_record
+    jmp 7f
+5:
+    DF_SERIAL nmi_kernel_running_record, nmi_kernel_running_record_end-nmi_kernel_running_record
+    jmp 7f
+6:
+    cmpq $0x1b, 32(%rbx)
+    jne 8f
+    cmpq $0x23, 8(%rbx)
+    jne 8f
+    DF_SERIAL nmi_user_running_record, nmi_user_running_record_end-nmi_user_running_record
+7:
+    mov $0x14, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+9:  hlt
+    jmp 9b
+8:
+    DF_SERIAL nmi_failure_record, nmi_failure_record_end-nmi_failure_record
+    mov $0x15, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+10: hlt
+    jmp 10b
+
 /* Reaching this present #GP gate means the ordinary-stack frame push worked.
    The guard-mapped negative image must take this path and must not claim #DF. */
 .global isr13
@@ -672,6 +737,18 @@ isr8_cld:
     jmp 5b
 
 .section .rodata,"a",@progbits
+nmi_kernel_handling_record:
+    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling terminal=latched return=none\n"
+nmi_kernel_handling_record_end:
+nmi_kernel_running_record:
+    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=running terminal=latched return=none\n"
+nmi_kernel_running_record_end:
+nmi_user_running_record:
+    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running terminal=latched return=none\n"
+nmi_user_running_record_end:
+nmi_failure_record:
+    .ascii "LEANOS/17 NMI status=FAIL reason=terminal-frame-policy\n"
+nmi_failure_record_end:
 df_success_record:
     .ascii "LEANOS/8 TERMINAL reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none\n"
 df_success_record_end:

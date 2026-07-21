@@ -26,6 +26,13 @@ run_fixture() {
 }
 
 wrong_target() { sed -i 's/set_gate(14, isr14,/set_gate(14, isr32,/' "$tmp/kernel.c"; }
+nmi_wrong_target() { sed -i 's/set_gate(2, isr2,/set_gate(2, isr8,/' "$tmp/kernel.c"; }
+nmi_wrong_ist() { sed -i 's/set_gate(2, isr2, 2,/set_gate(2, isr2, 1,/' "$tmp/kernel.c"; }
+nmi_dpl3() { sed -i 's/set_gate(2, isr2, 2, 0x8e)/set_gate(2, isr2, 2, 0xee)/' "$tmp/kernel.c"; }
+nmi_wrong_tss() { sed -i 's/tss.ist\[1\] = (uint64_t)__nmi_ist_stack_end;/tss.ist[1] = (uint64_t)__df_ist_stack_end;/' "$tmp/kernel.c"; }
+nmi_late_tss() {
+  sed -i '/^[[:space:]]*load_tss();$/d; /__asm__ volatile ("lidt %0"/a\    load_tss();' "$tmp/kernel.c"
+}
 wrong_ud_target() { sed -i 's/set_gate(6, isr6,/set_gate(6, isr7,/' "$tmp/kernel.c"; }
 wrong_nm_target() { sed -i 's/set_gate(7, isr7,/set_gate(7, isr6,/' "$tmp/kernel.c"; }
 wrong_gp_target() { sed -i 's/set_gate(13, isr13,/set_gate(13, isr14,/' "$tmp/kernel.c"; }
@@ -62,6 +69,11 @@ non_denying_sysenter() { sed -i '/normalize_fast_entry_sysenter_cs_write:/i\    
 omitted_return_readback() { sed -i '/^void validate_user_return/,/^}/ s/check_fast_entry_control();/\/\* omitted return fixture \*\//' "$tmp/kernel.c"; }
 
 run_fixture wrong-target 'vector=14 field=target-or-dpl' wrong_target
+run_fixture nmi-wrong-target 'vector=2 field=target-ist-or-dpl' nmi_wrong_target
+run_fixture nmi-wrong-ist 'vector=2 field=target-ist-or-dpl' nmi_wrong_ist
+run_fixture nmi-dpl3 'vector=2 field=target-ist-or-dpl' nmi_dpl3
+run_fixture nmi-wrong-tss 'vector=2 field=tss.ist2' nmi_wrong_tss
+run_fixture nmi-late-tss 'vector=2 field=publication-order expected=tss-before-ist2-gate-before-lidt' nmi_late_tss
 run_fixture wrong-ud-target 'vector=6 field=target-or-dpl' wrong_ud_target
 run_fixture wrong-nm-target 'vector=7 field=target-or-dpl' wrong_nm_target
 run_fixture wrong-gp-target 'vector=13 field=target-or-dpl' wrong_gp_target
