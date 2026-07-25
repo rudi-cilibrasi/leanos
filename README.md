@@ -337,6 +337,13 @@ capabilities, exclusively owned memory, address spaces, endpoints, pending
 provenance, and runnable/current state. Its creation operation publishes a
 fresh identity; it does not inherit or duplicate another subject's state.
 
+The [bounded lifetime-identity issuers](docs/lifetime-identity.md) make
+kernel-owned, finite counters the authoritative creation path for subject and
+object lifetimes: every accepted creation returns the unique next
+representable 64-bit identity, one object authority spans the memory,
+endpoint, and address-space kinds, rejected or exhausted creation preserves
+the complete runtime, and retired identities can never be made live again.
+
 The bounded [model-oracle corpus](docs/model-oracle.md) is evaluated in Lean
 and replayed through hosted generated code and every boot-reachable adapter.
 This differential check detects integration mismatches; it is not compiler or

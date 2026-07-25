@@ -4,6 +4,15 @@
 creation and termination. Subject identifiers have append-only issued history:
 once terminated, an identifier cannot become live again.
 
+`SubjectLifecycle.create` itself remains an internal transition that accepts an
+identity argument. The authoritative creation path is the
+[bounded lifetime-identity issuer](lifetime-identity.md): its composite
+`createSubject` accepts no identity input, invokes this internal transition
+with exactly the kernel-owned issuer's next representable 64-bit identity, and
+fails closed with a typed exhaustion result before the identity domain could
+wrap or reuse an issued value. Under its runtime invariant the internal
+freshness rejections here are proved unreachable.
+
 Creation publishes a fresh live identity only. It has no parent/child
 relationship and does not inherit or copy capabilities, address spaces,
 mappings, resource budgets, scheduler state, pending IPC, fault state, or

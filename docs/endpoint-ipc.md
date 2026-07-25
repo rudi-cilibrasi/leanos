@@ -25,7 +25,11 @@ Endpoint object identifiers are never reused. Creation rejects an identifier
 that is live or was issued before. Destruction retires the typed object, clears
 its mailbox, and removes every installed capability naming it. Consequently a
 pending message and stale authority cannot become visible through a later
-object incarnation.
+object incarnation. `EndpointIPC.create` is itself an internal transition; the
+authoritative composite path draws the endpoint's identity from the single
+bounded [object-lifetime issuer](lifetime-identity.md) shared with memory and
+address-space creation, so an identifier retired under any kind stays consumed
+for every kind.
 
 ## Machine-checked scope
 

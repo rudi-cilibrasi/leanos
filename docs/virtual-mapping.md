@@ -8,7 +8,11 @@ atomically records that identifier in the shared monotonic object history,
 installs a live address-space object and root grant/revoke capability,
 establishes the owner, and clears every page in the new space. The shared
 history prevents a retired address-space identifier from later becoming either
-another address space or a memory object.
+another address space or a memory object. In the composite
+[bounded-issuance runtime](lifetime-identity.md) this operation is an internal
+transition: the address-space identifier is drawn from the single kernel-owned
+object issuer rather than accepted from a caller, and issuance fails closed
+before the bounded identity domain could wrap.
 
 The owner relation is the explicit, nondelegable authority to map, unmap, and
 translate. The root capability is separately required to destroy the space;
