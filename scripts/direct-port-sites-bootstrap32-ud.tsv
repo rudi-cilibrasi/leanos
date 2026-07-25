@@ -1,14 +1,14 @@
 # symbol	offset	opcode	operands	owner
-isr2_cld	0x87	in	(%dx),%al	DirectPortIO.serial
-isr2_cld	0x92	out	%al,(%dx)	DirectPortIO.serial
-isr2_cld	0xac	in	(%dx),%al	DirectPortIO.serial
-isr2_cld	0xb7	out	%al,(%dx)	DirectPortIO.serial
-isr2_cld	0xdf	in	(%dx),%al	DirectPortIO.serial
-isr2_cld	0xea	out	%al,(%dx)	DirectPortIO.serial
-isr2_cld	0xf8	out	%al,(%dx)	DirectPortIO.debug-exit
-isr2_cld	0x10c	in	(%dx),%al	DirectPortIO.serial
-isr2_cld	0x117	out	%al,(%dx)	DirectPortIO.serial
-isr2_cld	0x125	out	%al,(%dx)	DirectPortIO.debug-exit
+isr2_cld	0xcc	in	(%dx),%al	DirectPortIO.serial
+isr2_cld	0xd7	out	%al,(%dx)	DirectPortIO.serial
+isr2_cld	0xf1	in	(%dx),%al	DirectPortIO.serial
+isr2_cld	0xfc	out	%al,(%dx)	DirectPortIO.serial
+isr2_cld	0x124	in	(%dx),%al	DirectPortIO.serial
+isr2_cld	0x12f	out	%al,(%dx)	DirectPortIO.serial
+isr2_cld	0x13d	out	%al,(%dx)	DirectPortIO.debug-exit
+isr2_cld	0x151	in	(%dx),%al	DirectPortIO.serial
+isr2_cld	0x15c	out	%al,(%dx)	DirectPortIO.serial
+isr2_cld	0x16a	out	%al,(%dx)	DirectPortIO.debug-exit
 isr13	0x15	in	(%dx),%al	DirectPortIO.serial
 isr13	0x20	out	%al,(%dx)	DirectPortIO.serial
 isr13	0x2e	out	%al,(%dx)	DirectPortIO.debug-exit
