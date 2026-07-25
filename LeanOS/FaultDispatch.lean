@@ -60,6 +60,15 @@ def validUserFault (frame : InterruptEntry.NormalizedFrame) : Bool :=
   | some reason => validUserFaultFor reason frame
   | none => false
 
+/-- The generalized gate is exactly the per-class gate under the
+manifest-bound reason decode; `dispatch` evaluates the right-hand side. -/
+theorem validUserFault_iff frame :
+    validUserFault frame = true ↔
+      ∃ reason, InterruptEntry.containedReason? frame.vector = some reason ∧
+        validUserFaultFor reason frame = true := by
+  unfold validUserFault
+  split <;> simp_all
+
 /-- Atomically consume one normalized contained user fault (page fault, divide
 error, or breakpoint).  Destination identity comes only from
 `Scheduler.selectNext`; the selected kernel-owned context is consumed from the
