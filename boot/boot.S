@@ -5,6 +5,60 @@
 .set PAGE_TABLE_COUNT, 8
 .set PAGE_ENTRY_COUNT, 512 * PAGE_TABLE_COUNT
 
+/* The four bootstrap terminal stubs live at fixed reviewed slots inside the
+   pinned .text.earlytrap section so both static IDT images below can name
+   them with assembly-time constants.  boot/linker.ld ASSERTs that each
+   linked stub address equals its constant. */
+.set LEANOS_EARLY_TRAP_BASE, 0x101000
+.set LEANOS_EARLY_ISR2_32, LEANOS_EARLY_TRAP_BASE + 0x000
+.set LEANOS_EARLY_CATCHALL_32, LEANOS_EARLY_TRAP_BASE + 0x080
+.set LEANOS_EARLY_ISR2_64, LEANOS_EARLY_TRAP_BASE + 0x100
+.set LEANOS_EARLY_CATCHALL_64, LEANOS_EARLY_TRAP_BASE + 0x180
+
+/* One legacy 8-byte DPL0 interrupt gate through the kernel 32-bit code
+   selector.  The target is an absolute reviewed constant, never a firmware
+   value. */
+.macro EARLY_GATE32 target
+    .word (\target) & 0xffff
+    .word 0x38
+    .byte 0
+    .byte 0x8e
+    .word ((\target) >> 16) & 0xffff
+.endm
+
+/* One long-mode 16-byte DPL0 interrupt gate through the kernel 64-bit code
+   selector.  IST is deliberately zero: no TSS exists in the bootstrap64
+   phase, so delivery stays on the live bounded boot stack. */
+.macro EARLY_GATE64 target
+    .word (\target) & 0xffff
+    .word 0x08
+    .byte 0
+    .byte 0x8e
+    .word ((\target) >> 16) & 0xffff
+    .long ((\target) >> 32) & 0xffffffff
+    .long 0
+.endm
+
+/* 32-bit serial record loop.  Every opcode is chosen to keep identical
+   instruction boundaries under a 64-bit decoder (no inc/dec short forms or
+   moffs accumulator forms), so final-ELF policy tools that disassemble the
+   whole image observe the same in/out sites this source declares. */
+.macro EARLY_SERIAL32 label, length
+    mov $\label, %esi
+    mov $\length, %ecx
+1:
+    mov $0x3fd, %dx
+2:  inb %dx, %al
+    test $0x20, %al
+    jz 2b
+    movb (%esi), %al
+    mov $0x3f8, %dx
+    outb %al, %dx
+    add $1, %esi
+    sub $1, %ecx
+    jnz 1b
+.endm
+
 .section .multiboot,"a",@progbits
 .align 8
 mb2_start:
@@ -23,10 +77,29 @@ mb2_end:
 .type multiboot_entry, @function
 multiboot_entry:
     cli
+    /* Establish only the descriptor and stack operands needed to publish the
+       first kernel-owned IDT: kernel GDT, kernel 32-bit code/data selectors,
+       and the bounded boot stack.  Everything up to the publication label
+       below runs on inherited firmware descriptor state and is the trusted
+       unavoidable window; no page-table, CR/MSR, port, or C work precedes
+       the first lidt. */
+    lgdt gdt64_pointer
+    ljmp $0x38, $1f
+1:
+    mov $0x40, %cx
+    mov %cx, %ds
+    mov %cx, %es
+    mov %cx, %ss
+    xor %ecx, %ecx
+    mov %cx, %fs
+    mov %cx, %gs
+    mov $boot_stack_top, %esp
+    lidt boot_idt32_pointer
+.global boot_idt32_published
+boot_idt32_published:
     /* Preserve the Multiboot2 handoff before either register is reused. */
     mov %eax, multiboot_magic
     mov %ebx, multiboot_info
-    mov $boot_stack_top, %esp
 
     /* Identity-map 16 MiB with 4 KiB leaves; only the two explicit user
        ranges receive U/S at the leaf.  Upper levels permit traversal. */
@@ -238,7 +311,11 @@ normalize_extended_state_cr0:
     mov %cr0, %eax
     or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax
     mov %eax, %cr0
-    lgdt gdt64_pointer
+    /* Long mode is live at the preceding write.  Publishing the 16-byte-gate
+       bootstrap table is the immediately following instruction, so exactly
+       one instruction boundary separates activation from kernel long-mode
+       IDT ownership; the GDT was already kernel-owned in the prologue. */
+    lidt boot_idt64_pointer
     ljmp $0x08, $long_mode_entry
 
 .code64
@@ -279,6 +356,11 @@ gdt64:
     .quad 0x00affa000000ffff
     .quad 0
     .quad 0
+    /* Kernel 32-bit flat code/data (0x38/0x40) used only between the entry
+       cli and the long-mode switch, so the bootstrap32 gates and prologue
+       never depend on inherited firmware descriptors. */
+    .quad 0x00cf9a000000ffff
+    .quad 0x00cf92000000ffff
 gdt64_end:
 gdt64_pointer:
     .word gdt64_end - gdt64 - 1
@@ -761,6 +843,115 @@ df_failure_record_end:
 df_guard_mapped_record:
     .ascii "LEANOS/8 NEGATIVE reason=guard-mapped vector=13 double-fault=absent status=FAIL\n"
 df_guard_mapped_record_end:
+
+/* Bootstrap terminal stubs.  Both bootstrap IDTs below route every vector to
+   one of these four reviewed sites.  Each stub emits one fixed early-only
+   record, requests a phase-typed debug exit, and halts.  No stub reads the
+   exception frame, pushes, calls, returns, or depends on runtime C state,
+   the Lean runtime, the ordinary entry stack, or the later IDT/TSS. */
+.section .text.earlytrap,"ax",@progbits
+.code32
+.global boot_early_isr2_32
+boot_early_isr2_32:
+    cli
+    cld
+    EARLY_SERIAL32 early32_nmi_record, early32_nmi_record_end-early32_nmi_record
+    mov $0x16, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+5:  hlt
+    jmp 5b
+.global boot_early_isr2_32_end
+boot_early_isr2_32_end:
+.org 0x80, 0x90
+.global boot_early_catchall_32
+boot_early_catchall_32:
+    cli
+    cld
+    EARLY_SERIAL32 early32_fault_record, early32_fault_record_end-early32_fault_record
+    mov $0x16, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+5:  hlt
+    jmp 5b
+.global boot_early_catchall_32_end
+boot_early_catchall_32_end:
+.org 0x100, 0x90
+.code64
+.global boot_early_isr2_64
+boot_early_isr2_64:
+    cli
+    cld
+    DF_SERIAL early64_nmi_record, early64_nmi_record_end-early64_nmi_record
+    mov $0x17, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+5:  hlt
+    jmp 5b
+.global boot_early_isr2_64_end
+boot_early_isr2_64_end:
+.org 0x180, 0x90
+.global boot_early_catchall_64
+boot_early_catchall_64:
+    cli
+    cld
+    DF_SERIAL early64_fault_record, early64_fault_record_end-early64_fault_record
+    mov $0x17, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+5:  hlt
+    jmp 5b
+.global boot_early_catchall_64_end
+boot_early_catchall_64_end:
+
+.section .rodata,"a",@progbits
+early32_nmi_record:
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=2 class=nmi stack=boot target=stub32 latch=terminal return=none\n"
+early32_nmi_record_end:
+early32_fault_record:
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=other class=exception stack=boot target=stub32 latch=terminal return=none\n"
+early32_fault_record_end:
+early64_nmi_record:
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=2 class=nmi stack=boot target=stub64 latch=terminal return=none\n"
+early64_nmi_record_end:
+early64_fault_record:
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=other class=exception stack=boot target=stub64 latch=terminal return=none\n"
+early64_fault_record_end:
+
+/* Statically initialized bootstrap descriptor tables.  Vector 2 is owned in
+   both phases; every other vector routes to the phase catch-all.  The images
+   are data, so final-ELF policy decodes every gate byte-for-byte. */
+.section .rodata.earlyidt,"a",@progbits
+.align 16
+.global boot_idt32
+boot_idt32:
+    EARLY_GATE32 LEANOS_EARLY_CATCHALL_32
+    EARLY_GATE32 LEANOS_EARLY_CATCHALL_32
+    EARLY_GATE32 LEANOS_EARLY_ISR2_32
+    .rept 253
+    EARLY_GATE32 LEANOS_EARLY_CATCHALL_32
+    .endr
+.global boot_idt32_end
+boot_idt32_end:
+.global boot_idt32_pointer
+boot_idt32_pointer:
+    .word boot_idt32_end - boot_idt32 - 1
+    .long boot_idt32
+.align 16
+.global boot_idt64
+boot_idt64:
+    EARLY_GATE64 LEANOS_EARLY_CATCHALL_64
+    EARLY_GATE64 LEANOS_EARLY_CATCHALL_64
+    EARLY_GATE64 LEANOS_EARLY_ISR2_64
+    .rept 253
+    EARLY_GATE64 LEANOS_EARLY_CATCHALL_64
+    .endr
+.global boot_idt64_end
+boot_idt64_end:
+.global boot_idt64_pointer
+boot_idt64_pointer:
+    .word boot_idt64_end - boot_idt64 - 1
+    .long boot_idt64
 
 .section .text,"ax",@progbits
 

@@ -6,6 +6,7 @@ SECTIONS
   __boot_image_start = .;
   .multiboot : { KEEP(*(.multiboot)) }
   __kernel_text_start = .;
+  .earlytrap : ALIGN(4K) { KEEP(*(.text.earlytrap)) }
   .text : ALIGN(4K) { *(.text.boot) *(.text .text.*) }
   __kernel_text_end = .;
   .rodata : ALIGN(4K) { *(.rodata .rodata.*) }
@@ -56,3 +57,10 @@ SECTIONS
   __boot_image_end = .;
   /DISCARD/ : { *(.comment) *(.eh_frame) *(.note*) }
 }
+
+/* The static bootstrap IDT images name the terminal stubs with assembly-time
+   constants; reject any drift between those constants and the linked slots. */
+ASSERT(boot_early_isr2_32 == 0x101000, "bootstrap32 NMI stub moved")
+ASSERT(boot_early_catchall_32 == 0x101080, "bootstrap32 catch-all stub moved")
+ASSERT(boot_early_isr2_64 == 0x101100, "bootstrap64 NMI stub moved")
+ASSERT(boot_early_catchall_64 == 0x101180, "bootstrap64 catch-all stub moved")
