@@ -344,9 +344,32 @@ def vectors : List Vector := [
   nmi "nmi.invalid-bounds-code" 0 nmiUserFrame nmiFrameAddress
     (nmiContextRunning + 3 * 0x1000000) nmiControl,
   nmi "nmi.invalid-mode-code" 0 nmiUserFrame nmiFrameAddress
-    (nmiContextRunning + 3 * 0x4000000) nmiControl]
+    (nmiContextRunning + 3 * 0x4000000) nmiControl,
+  interruptEntry "entry.user-divide-error" 0 291 0x800000 257 3,
+  interruptEntry "entry.user-breakpoint" 771 291 0x800000 257 3,
+  interruptEntry "entry.kernel-divide-error" 0 8 0x800000 257 3,
+  interruptEntry "entry.kernel-breakpoint" 771 8 0x800000 257 3,
+  interruptEntry "entry.spurious-error-divide-error" 65536 291 0x800000 257 3,
+  interruptEntry "entry.spurious-error-breakpoint" 66307 291 0x800000 257 3,
+  interruptEntry "entry.wrong-restart-breakpoint" 771 1315 0x800000 257 3,
+  interruptEntry "entry.wrong-restart-page-fault" 69134 1315 0x800000 257 3,
+  faultDispatch "fault-dispatch.accept-divide-error" 0 3 1 1 2 2,
+  faultDispatch "fault-dispatch.accept-breakpoint" 3 3 1 1 2 2,
+  faultDispatch "fault-dispatch.divide-error-idle" 0 3 1 1 0 0,
+  faultDispatch "fault-dispatch.breakpoint-multi-survivor" 3 3 1 1 3 2,
+  faultDispatch "fault-dispatch.page-fault-multi-survivor" 14 3 1 1 3 2,
+  faultDispatch "fault-dispatch.kernel-origin-divide-error" 0 0 1 1 2 2,
+  faultDispatch "fault-dispatch.kernel-origin-breakpoint" 3 0 1 1 2 2,
+  faultDispatch "fault-dispatch.malformed-divide-error" 0 4 1 1 2 2,
+  faultDispatch "fault-dispatch.wrong-restart-breakpoint" 3 5 1 1 2 2,
+  faultDispatch "fault-dispatch.wrong-restart-page-fault" 14 5 1 1 2 2,
+  faultDispatch "fault-dispatch.swapped-reason-divide-error" 0 6 1 1 2 2,
+  faultDispatch "fault-dispatch.swapped-reason-page-fault" 14 6 1 1 2 2,
+  faultDispatch "fault-dispatch.stale-current-divide-error" 0 3 3 1 2 2,
+  faultDispatch "fault-dispatch.stale-address-space-breakpoint" 3 3 1 3 2 2,
+  faultDispatch "fault-dispatch.stale-context-breakpoint" 3 3 1 1 2 3]
 
-theorem corpus_shape : vectors.length = 200 := by decide
+theorem corpus_shape : vectors.length = 223 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -542,6 +565,34 @@ theorem nmi_rejection_codes_agree :
     List.map (fun vector => vector.expected) ((vectors.drop 186).take 14) =
       List.map (fun reason => 0x8000000000000000 + reason.code)
         InterruptEntry.NmiRejectReason.runtimeInventory := by
+  native_decide
+
+/-- The contained user-fault class block appended for vectors 0 and 3: two
+accepted CPL3 entry vectors, kernel-origin/spurious-error/wrong-restart entry
+rejections, and the composite fault-dispatch corpus binding the typed reason
+codes into the encoded outcome. -/
+theorem user_fault_class_corpus_shape :
+    ((vectors.drop 200).take 23).length = 23 := by
+  decide
+
+theorem user_fault_class_entry_scenario_agrees :
+    (vectors[200]).expected ≠ 0 ∧ (vectors[201]).expected ≠ 0 ∧
+      ((vectors.drop 202).take 6).all (fun vector => vector.expected = 0) = true := by
+  native_decide
+
+/-- Accepted #DE/#BP dispatch words carry the exact reason code in bits
+40--47 over the unchanged version-one witness layout; kernel-origin,
+malformed, and wrong-restart forms are terminal words while swapped-shape and
+stale bindings reject to zero. -/
+theorem user_fault_class_dispatch_scenario_agrees :
+    (vectors[208]).expected = 0x100ff020202 ∧
+      (vectors[209]).expected = 0x200ff020202 ∧
+      (vectors[210]).expected = 0x10000000001 ∧
+      (vectors[211]).expected = 0x2003f020202 ∧
+      (vectors[212]).expected = 0x3f020202 ∧
+      ((vectors.drop 213).take 5).all
+        (fun vector => vector.expected = 0x8000000000000002) = true ∧
+      ((vectors.drop 218).take 5).all (fun vector => vector.expected = 0) = true := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

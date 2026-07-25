@@ -3,11 +3,15 @@ import LeanOS.Interrupt
 /-!
 # Bounded x86-64 interrupt-entry manifest and frame normalization
 
-This module models the inbound boundary for the six ordinary gates used by
+This module models the inbound boundary for the eight ordinary gates used by
 the boot image and the separate terminal vector-2 contract.  Vector 8 remains
 in its own terminal IST1 machine protocol.  Descriptor loads, NMI delivery and
 blocking, x86 frame construction, IST switching, assembly, generated C, and
 the final binary are trusted/tested boundaries rather than theorem claims.
+The vector, error-word, and saved-RIP restart-class conventions for the
+contained synchronous fault vectors follow the AMD64 Architecture
+Programmer's Manual Volume 2 exception tables; x86 delivery itself stays a
+trusted machine assumption, never a theorem conclusion.
 -/
 namespace LeanOS.InterruptEntry
 
@@ -37,6 +41,17 @@ structure ManifestEntry where
   interruptsDisabled : Bool
   deriving DecidableEq, Repr
 
+/-- Vector 0 (#DE) is a hardware-originated fault gate.  Its DPL stays 0 so a
+CPL3 `int $0` cannot software-select the containment path; only the
+architectural divide error reaches this gate. -/
+def divideErrorEntry : ManifestEntry :=
+  ⟨0, .interrupt, 0x08, 0, 0, false, .userOnly, .userFault, true⟩
+/-- Vector 3 (#BP) is deliberately CPL3 software-callable: `int3` requires
+gate DPL 3.  The reviewed descriptor stays an interrupt gate (IF masked on
+entry) rather than a trap gate; any other DPL/type combination is rejected by
+`validateManifest`. -/
+def breakpointEntry : ManifestEntry :=
+  ⟨3, .interrupt, 0x08, 3, 0, false, .userOnly, .userFault, true⟩
 def invalidOpcodeEntry : ManifestEntry :=
   ⟨6, .interrupt, 0x08, 0, 0, false, .userOnly, .extendedUnavailable, true⟩
 def deviceNotAvailableEntry : ManifestEntry :=
@@ -52,13 +67,14 @@ def syscallEntry : ManifestEntry :=
 
 /-- The complete ordinary-gate manifest.  Vector 8 is intentionally absent. -/
 def manifest : List ManifestEntry :=
-  [invalidOpcodeEntry, deviceNotAvailableEntry, generalProtectionEntry, pageFaultEntry,
-    timerEntry, syscallEntry]
+  [divideErrorEntry, breakpointEntry, invalidOpcodeEntry, deviceNotAvailableEntry,
+    generalProtectionEntry, pageFaultEntry, timerEntry, syscallEntry]
 
 def entrySupported (entry : ManifestEntry) : Bool :=
   entry.gate = .interrupt && entry.selector = 0x08 && entry.ist = 0 &&
     entry.interruptsDisabled &&
-    ((entry = invalidOpcodeEntry) || (entry = deviceNotAvailableEntry) ||
+    ((entry = divideErrorEntry) || (entry = breakpointEntry) ||
+      (entry = invalidOpcodeEntry) || (entry = deviceNotAvailableEntry) ||
       (entry = generalProtectionEntry) || (entry = pageFaultEntry) ||
       (entry = timerEntry) || (entry = syscallEntry))
 
@@ -66,17 +82,51 @@ def noDuplicateVectors (entries : List ManifestEntry) : Bool :=
   (entries.map (·.vector)).Nodup
 
 def validateManifest (entries : List ManifestEntry) : Bool :=
-  entries.length = 6 && noDuplicateVectors entries &&
+  entries.length = 8 && noDuplicateVectors entries &&
     entries.all entrySupported &&
-    entries.filter (fun entry => entry.dpl = 3) = [syscallEntry]
+    entries.filter (fun entry => entry.dpl = 3) = [breakpointEntry, syscallEntry]
 
 theorem reviewed_manifest_valid : validateManifest manifest = true := by native_decide
 
-theorem only_syscall_is_dpl3 entry
-    (hmember : entry ∈ manifest) (hdpl : entry.dpl = 3) : entry = syscallEntry := by
-  simp [manifest, invalidOpcodeEntry, deviceNotAvailableEntry, pageFaultEntry,
-    generalProtectionEntry, timerEntry, syscallEntry] at hmember
-  rcases hmember with rfl | rfl | rfl | rfl | rfl | rfl <;> simp_all [syscallEntry]
+/-- The complete software-callable (DPL3) descriptor inventory: the deliberate
+`int3` breakpoint gate and the `int 0x80` syscall gate, nothing else. -/
+theorem only_breakpoint_and_syscall_are_dpl3 entry
+    (hmember : entry ∈ manifest) (hdpl : entry.dpl = 3) :
+    entry = breakpointEntry ∨ entry = syscallEntry := by
+  simp [manifest, divideErrorEntry, breakpointEntry, invalidOpcodeEntry,
+    deviceNotAvailableEntry, pageFaultEntry, generalProtectionEntry, timerEntry,
+    syscallEntry] at hmember
+  rcases hmember with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp_all [breakpointEntry, syscallEntry]
+
+/-- Vector 0 must never become a CPL3 software-callable `INT n` gate. -/
+theorem divide_error_not_software_callable :
+    divideErrorEntry ∈ manifest ∧ divideErrorEntry.dpl = 0 ∧
+      divideErrorEntry.gate = .interrupt ∧
+      divideErrorEntry.hardwareError = false ∧
+      divideErrorEntry.origins = .userOnly ∧
+      divideErrorEntry.purpose = .userFault := by
+  native_decide
+
+/-- Vector 3's reviewed descriptor policy is explicit: DPL3 software-callable,
+interrupt (not trap) gate type, no architectural error word, user-only origin,
+and the shared containment purpose. -/
+theorem breakpoint_manifest_binding :
+    breakpointEntry ∈ manifest ∧ breakpointEntry.dpl = 3 ∧
+      breakpointEntry.gate = .interrupt ∧
+      breakpointEntry.interruptsDisabled = true ∧
+      breakpointEntry.hardwareError = false ∧
+      breakpointEntry.origins = .userOnly ∧
+      breakpointEntry.purpose = .userFault := by
+  native_decide
+
+/-- Any single-field DPL/type deviation from the reviewed vector-3 descriptor
+is rejected: substituting a DPL0 breakpoint gate (or any unreviewed vector-3
+entry) cannot revalidate the manifest. -/
+theorem breakpoint_descriptor_deviation_rejected :
+    validateManifest (manifest.map (fun entry =>
+      if entry.vector = 3 then { entry with dpl := 0 } else entry)) = false := by
+  native_decide
 
 /-- Vector 13 is a hardware-error, user-only general-protection gate.  A
 handler may refine the cause only after validating the error code, RIP, and
@@ -87,6 +137,86 @@ theorem general_protection_manifest_binding :
     generalProtectionEntry.origins = .userOnly ∧
     generalProtectionEntry.purpose = .generalProtection := by
   native_decide
+
+/-! ## Typed contained-fault reason and saved-RIP restart classes
+
+The contained synchronous CPL3 fault classes are a finite reviewed vocabulary
+keyed by the manifest-bound vector, never by attacker registers, user-stack
+words, syscall arguments, or the saved RIP value.  The AMD64 manual fixes the
+per-vector error-word convention and whether the saved RIP names the faulting
+instruction (#DE, #PF) or the following instruction boundary (#BP trap). -/
+
+inductive ContainedReason where
+  | pageFault | divideError | breakpoint
+  deriving DecidableEq, Repr
+
+def ContainedReason.vector : ContainedReason → UInt64
+  | .pageFault => 14 | .divideError => 0 | .breakpoint => 3
+
+/-- Only the page fault pushes an architectural error word; #DE and #BP push
+none, and the normalizer rejects a spurious synthesized word. -/
+def ContainedReason.hasErrorWord : ContainedReason → Bool
+  | .pageFault => true | .divideError => false | .breakpoint => false
+
+/-- Stable fixed-width code for the bounded corpus boundary.  The legacy
+page-fault class stays zero so version-one expected words are unchanged. -/
+def ContainedReason.code : ContainedReason → UInt64
+  | .pageFault => 0 | .divideError => 1 | .breakpoint => 2
+
+/-- What the normalized saved RIP names.  This is a machine assumption about
+the raw snapshot; no modeled transition rewrites RIP to authorize recovery. -/
+inductive RestartClass where
+  | faultingInstruction | followingBoundary
+  deriving DecidableEq, Repr
+
+def RestartClass.other : RestartClass → RestartClass
+  | .faultingInstruction => .followingBoundary
+  | .followingBoundary => .faultingInstruction
+
+def ContainedReason.restartClass : ContainedReason → RestartClass
+  | .pageFault => .faultingInstruction
+  | .divideError => .faultingInstruction
+  | .breakpoint => .followingBoundary
+
+/-- The manifest-bound reason decoder.  Exactly vectors 0, 3, and 14 name a
+contained class; every other vector has no containment reason. -/
+def containedReason? (vector : UInt64) : Option ContainedReason :=
+  if vector = 0 then some .divideError
+  else if vector = 3 then some .breakpoint
+  else if vector = 14 then some .pageFault
+  else none
+
+/-- Reviewed AMD64 saved-RIP table for every ordinary vector: traps and
+interrupts (#BP, timer, `int 0x80`) save the following boundary; faults save
+the faulting instruction. -/
+def restartClassFor (vector : UInt64) : RestartClass :=
+  if vector = 3 || vector = 32 || vector = 128 then .followingBoundary
+  else .faultingInstruction
+
+theorem containedReason_vector_agreement reason vector
+    (hdecoded : containedReason? vector = some reason) : reason.vector = vector := by
+  grind [containedReason?, ContainedReason.vector]
+
+theorem containedReason_roundtrip reason :
+    containedReason? reason.vector = some reason := by
+  cases reason <;> native_decide
+
+/-- The reviewed restart-class table agrees with the typed per-reason class. -/
+theorem contained_restart_class_agreement (reason : ContainedReason) :
+    restartClassFor reason.vector = reason.restartClass := by
+  cases reason <;> native_decide
+
+/-- Every contained class resolves in the manifest to an entry with the exact
+reviewed error convention and the shared containment purpose. -/
+theorem contained_manifest_error_shape (reason : ContainedReason) :
+    ∃ entry, manifest.find? (fun entry => entry.vector = reason.vector) = some entry ∧
+      entry.vector = reason.vector ∧
+      entry.hardwareError = reason.hasErrorWord ∧
+      entry.purpose = .userFault := by
+  cases reason
+  · exact ⟨pageFaultEntry, by native_decide, rfl, rfl, rfl⟩
+  · exact ⟨divideErrorEntry, by native_decide, rfl, rfl, rfl⟩
+  · exact ⟨breakpointEntry, by native_decide, rfl, rfl, rfl⟩
 
 inductive RawFrame where
   /-- CPL changed, so x86 supplied saved RSP and SS. -/
@@ -99,6 +229,10 @@ structure RawEntry where
   boundVector : UInt64
   boundStub : UInt64
   errorCode : Option UInt64
+  /-- Stub-supplied evidence naming what the saved RIP points at.  The
+  normalizer rejects a claim that disagrees with the reviewed per-vector
+  AMD64 table; no transition rewrites RIP to change restart semantics. -/
+  restartClass : RestartClass
   frame : RawFrame
   frameBytes : UInt64
   frameAddress : UInt64
@@ -139,6 +273,7 @@ structure NormalizedFrame where
 
 inductive RejectReason where
   | invalidManifest | unsupportedVector | wrongStub | wrongErrorShape
+  | wrongRestartClass
   | wrongOrigin | wrongFrameShape | truncated | misaligned | stackOutOfBounds
   | nested | privilegedStateNotCleared
   deriving DecidableEq, Repr
@@ -181,7 +316,8 @@ theorem makeNormalized_binds_context entry raw context :
     (makeNormalized entry raw context).activeCr3 = context.activeCr3 ∧
     (makeNormalized entry raw context).stackIdentity = context.stackIdentity := by
   cases raw with
-  | mk boundVector boundStub errorCode frame frameBytes frameAddress acCleared dfCleared =>
+  | mk boundVector boundStub errorCode restartClass frame frameBytes frameAddress
+      acCleared dfCleared =>
     cases frame <;> simp [makeNormalized]
 
 theorem makeNormalized_same_privilege entry raw context rip cs flags
@@ -200,6 +336,7 @@ def normalize (raw : RawEntry) (context : KernelContext) : Result :=
   | some entry =>
       if raw.boundStub != entry.vector then .fatal .wrongStub
       else if raw.errorCode.isSome != entry.hardwareError then .fatal .wrongErrorShape
+      else if raw.restartClass != restartClassFor entry.vector then .fatal .wrongRestartClass
       else if raw.frameBytes != shapeBytes raw.frame then .fatal .truncated
       else if raw.frameAddress % 16 != 0 then .fatal .misaligned
       else if raw.frameAddress < context.stackFirst ||
@@ -251,12 +388,14 @@ theorem nested_never_authorizes raw context (hnested : context.entryActive = tru
   split <;> try simp
   split <;> try simp
   split <;> try simp
+  split <;> try simp
 
 theorem uncleared_ac_never_authorizes raw context (hac : raw.acCleared = false) :
     ∀ accepted, normalize raw context ≠ .accepted accepted := by
   intro accepted
   unfold normalize
   simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, if_false]
+  split <;> try simp
   split <;> try simp
   split <;> try simp
   split <;> try simp
@@ -271,6 +410,7 @@ theorem uncleared_df_never_authorizes raw context (hdf : raw.dfCleared = false) 
   intro accepted
   unfold normalize
   simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true, if_false]
+  split <;> try simp
   split <;> try simp
   split <;> try simp
   split <;> try simp
@@ -295,11 +435,73 @@ theorem same_privilege_never_user raw context accepted
   split at haccepted <;> try contradiction
   split at haccepted <;> try contradiction
   split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
   rw [hshape] at haccepted
   split at haccepted <;> try contradiction
   split at haccepted <;> try contradiction
   cases haccepted
   exact makeNormalized_same_privilege _ _ _ _ _ _ hshape
+
+/-- An accepted record's vector, error shape, and restart-class evidence are
+bound by the manifest entry selected from the kernel-bound vector, never by
+attacker payload words. -/
+theorem accepted_binds_manifest_shape raw context accepted
+    (haccepted : normalize raw context = .accepted accepted) :
+    ∃ entry, findEntry raw.boundVector = some entry ∧
+      accepted.vector = entry.vector ∧
+      accepted.errorCode.isSome = entry.hardwareError ∧
+      raw.restartClass = restartClassFor entry.vector := by
+  unfold normalize at haccepted
+  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true,
+    if_false] at haccepted
+  split at haccepted <;> try contradiction
+  rename_i entry hentry
+  refine ⟨entry, hentry, ?_⟩
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  all_goals try split at haccepted <;> try contradiction
+  all_goals try split at haccepted <;> try contradiction
+  all_goals injection haccepted with haccepted
+  all_goals subst haccepted
+  all_goals simp_all [makeNormalized]
+
+/-- No-error-code normalization and restart-class agreement for the typed
+contained classes, packaged so issue-#104 composition never unfolds
+`normalize`: the accepted error shape and the raw saved-RIP evidence both
+equal the reviewed per-reason convention. -/
+theorem accepted_contained_error_shape raw context accepted reason
+    (haccepted : normalize raw context = .accepted accepted)
+    (hreason : containedReason? accepted.vector = some reason) :
+    accepted.errorCode.isSome = reason.hasErrorWord ∧
+      raw.restartClass = reason.restartClass := by
+  obtain ⟨entry, hentry, hvector, herror, hrestart⟩ :=
+    accepted_binds_manifest_shape raw context accepted haccepted
+  have hpredicate := List.find?_some hentry
+  have hbound : entry.vector = raw.boundVector := by
+    simpa using hpredicate
+  have hreasonVector : reason.vector = accepted.vector :=
+    containedReason_vector_agreement reason accepted.vector hreason
+  obtain ⟨reviewed, hreviewed, hreviewedVector, hreviewedError, _⟩ :=
+    contained_manifest_error_shape reason
+  have hsame : reviewed = entry := by
+    have : findEntry reason.vector = some entry := by
+      rw [hreasonVector, hvector, hbound]
+      exact hentry
+    have hfind : manifest.find? (fun entry => entry.vector = reason.vector) =
+        some entry := this
+    rw [hreviewed] at hfind
+    exact Option.some.inj hfind
+  constructor
+  · rw [herror, ← hsame, hreviewedError]
+  · rw [hrestart, ← hvector, ← hreasonVector]
+    exact contained_restart_class_agreement reason
 
 /-! ## Separate terminal NMI manifest and IST-switch frame
 
@@ -734,6 +936,8 @@ def entryModelExpected (descriptor frame stack context cleanup : UInt64) : UInt6
   let raw : RawEntry :=
     { boundVector := vector, boundStub := stub
       errorCode := if hasError then some 0 else none
+      restartClass := if frame / 1024 % 2 = 1 then (restartClassFor vector).other
+        else restartClassFor vector
       frame := rawFrame, frameBytes := if frame / 512 % 2 = 1 then bytes - 8 else bytes
       frameAddress := stack
       acCleared := cleanup % 2 = 1, dfCleared := cleanup / 2 % 2 = 1 }
@@ -759,9 +963,12 @@ def entryDemo (descriptor frame stack context cleanup : UInt64) : UInt64 :=
   let cs := frame % 256
   let userShape := frame / 256 % 2 = 1
   let truncated := frame / 512 % 2 = 1
+  let restartFlipped := frame / 1024 % 2 = 1
   let descriptorAllowed :=
     stub = vector &&
-      (((vector = 6 || vector = 7) && !hasError) ||
+      ((vector = 0 && !hasError) ||
+       (vector = 3 && !hasError) ||
+       ((vector = 6 || vector = 7) && !hasError) ||
        (vector = 13 && hasError) ||
        (vector = 14 && hasError) ||
        (vector = 32 && !hasError) ||
@@ -772,7 +979,8 @@ def entryDemo (descriptor frame stack context cleanup : UInt64) : UInt64 :=
   let stackAllowed :=
     stack % 16 = 0 && 0x800000 ≤ stack &&
       stack + (if userShape then 40 else 24) ≤ 0x804000
-  if descriptorAllowed && originAllowed && !truncated && stackAllowed && cleanup = 3 then
+  if descriptorAllowed && originAllowed && !truncated && !restartFlipped && stackAllowed &&
+      cleanup = 3 then
     1 + vector * 256 + (if userShape then 1 else 2) * 65536 +
       (context % 256) * 0x1000000 + (context / 256 % 256) * 0x100000000
   else 0
