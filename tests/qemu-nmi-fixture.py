@@ -9,12 +9,17 @@ if "--version" in sys.argv:
     raise SystemExit(0)
 
 mode = os.environ.get("LEANOS_QEMU_FIXTURE_MODE", "success")
+scenario = os.environ.get("LEANOS_NMI_SCENARIO", "kernel-entry")
 serial_arg = sys.argv[sys.argv.index("-serial") + 1]
 monitor_arg = sys.argv[sys.argv.index("-qmp") + 1]
 log = Path(serial_arg.removeprefix("file:"))
 monitor = Path(monitor_arg.removeprefix("unix:").split(",", 1)[0])
-ready = "LEANOS/17 NMI-READY origin=cpl0 prior=handling if=0 gate=2 ist=2 result=PASS\n"
-terminal = "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling terminal=latched return=none\n"
+if scenario == "cpl3-spin":
+    ready = "LEANOS/17 NMI-READY origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS\n"
+    terminal = "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running subject=1 address-space=1 purpose=user-spin canaries=ist2,ordinary,runtime terminal=latched return=none\n"
+else:
+    ready = "LEANOS/17 NMI-READY origin=cpl0 prior=handling if=0 gate=2 ist=2 subject=1 address-space=1 purpose=syscall canaries=armed result=PASS\n"
+    terminal = "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling subject=1 address-space=1 purpose=syscall canaries=ist2,ordinary,runtime terminal=latched return=none\n"
 
 if mode == "missing-ready":
     raise SystemExit(0)

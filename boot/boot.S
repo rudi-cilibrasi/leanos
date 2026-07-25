@@ -598,6 +598,15 @@ isr2_cld:
     movabs $0x4b5445524d494e41, %rax
     cmp %rax, __nmi_ist_stack_end-128(%rip)
     jne 8f
+    movabs $0x4f5244494e415259, %rax
+    cmp %rax, __entry_stack_start(%rip)
+    jne 8f
+    movabs $0x535441434b43414e, %rax
+    cmp %rax, __entry_stack_end-128(%rip)
+    jne 8f
+    movabs $0x52554e54494d454e, %rax
+    cmp %rax, nmi_runtime_canary(%rip)
+    jne 8f
     cmpq $0x10, 32(%rbx)
     jne 6f
     cmpq $0x08, 8(%rbx)
@@ -753,13 +762,13 @@ isr8_cld:
 
 .section .rodata,"a",@progbits
 nmi_kernel_handling_record:
-    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling terminal=latched return=none\n"
+    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling subject=1 address-space=1 purpose=syscall canaries=ist2,ordinary,runtime terminal=latched return=none\n"
 nmi_kernel_handling_record_end:
 nmi_kernel_running_record:
-    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=running terminal=latched return=none\n"
+    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=running subject=1 address-space=1 purpose=kernel canaries=ist2,ordinary,runtime terminal=latched return=none\n"
 nmi_kernel_running_record_end:
 nmi_user_running_record:
-    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running terminal=latched return=none\n"
+    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running subject=1 address-space=1 purpose=user-spin canaries=ist2,ordinary,runtime terminal=latched return=none\n"
 nmi_user_running_record_end:
 nmi_failure_record:
     .ascii "LEANOS/17 NMI status=FAIL reason=terminal-frame-policy\n"
@@ -1143,6 +1152,10 @@ user_return_iretq:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
+#ifdef LEANOS_NMI_PROBE
+1:  pause
+    jmp 1b
+#endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
     jmp user_a_fault_instruction
 #endif

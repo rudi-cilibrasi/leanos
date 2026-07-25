@@ -247,10 +247,13 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
 
 
 def expanded(row: dict[str, str], version: str, build_dir: Path) -> dict[str, Path]:
-    return {
+    paths = {
         key: build_dir / row[key].replace("@VERSION@", version)
         for key in ("image", "elf", "serial_log")
     }
+    if row["runner"] == "nmi":
+        paths["qmp_transcript"] = Path(str(paths["serial_log"]) + ".qmp.jsonl")
+    return paths
 
 
 def scenario_invocation(
@@ -276,6 +279,8 @@ def scenario_invocation(
     elif row["runner"] == "entry-stack-overflow":
         command = ["./scripts/run-entry-stack-overflow.sh", str(paths["image"])]
     elif row["runner"] == "nmi":
+        environment["LEANOS_NMI_SCENARIO"] = row["scenario"]
+        environment["LEANOS_QMP_LOG"] = str(paths["qmp_transcript"])
         command = ["./scripts/run-nmi.sh", str(paths["image"])]
     else:
         environment["LEANOS_EXPECT_GUARD_MAPPED"] = "1"
@@ -400,6 +405,11 @@ def run(args: argparse.Namespace) -> None:
                 "path": display_path(paths["serial_log"]),
                 "sha256": sha256(paths["serial_log"]),
             }
+        if row["runner"] == "nmi" and paths["qmp_transcript"].is_file():
+            result["qmp_transcript"] = {
+                "path": display_path(paths["qmp_transcript"]),
+                "sha256": sha256(paths["qmp_transcript"]),
+            }
         report["results"].append(result)  # type: ignore[union-attr]
         write_report(output, report)
 
@@ -409,6 +419,13 @@ def run(args: argparse.Namespace) -> None:
             )
         if not paths["serial_log"].is_file() or paths["serial_log"].stat().st_size == 0:
             raise EvidenceError(f"scenario {row['id']} did not produce its expected serial log")
+        if row["runner"] == "nmi" and (
+            not paths["qmp_transcript"].is_file()
+            or paths["qmp_transcript"].stat().st_size == 0
+        ):
+            raise EvidenceError(
+                f"scenario {row['id']} did not retain its QMP transcript"
+            )
         if len(result["qemu_commands"]) != 1:
             raise EvidenceError(
                 f"scenario {row['id']} did not record exactly one QEMU command"
@@ -417,6 +434,11 @@ def run(args: argparse.Namespace) -> None:
             "path": display_path(paths["serial_log"]),
             "sha256": sha256(paths["serial_log"]),
         }
+        if row["runner"] == "nmi":
+            result["qmp_transcript"] = {
+                "path": display_path(paths["qmp_transcript"]),
+                "sha256": sha256(paths["qmp_transcript"]),
+            }
         result["status"] = "PASS"
         write_report(output, report)
 
@@ -510,6 +532,16 @@ def verify_report(
         if not isinstance(serial, dict) or serial.get("path") != display_path(paths["serial_log"]):
             raise EvidenceError(f"scenario {row['id']} serial-log identity differs")
         verify_hash(serial, f"scenario {row['id']} serial log")
+        if row["runner"] == "nmi":
+            transcript = result.get("qmp_transcript")
+            if (
+                not isinstance(transcript, dict)
+                or transcript.get("path") != display_path(paths["qmp_transcript"])
+            ):
+                raise EvidenceError(
+                    f"scenario {row['id']} QMP-transcript identity differs"
+                )
+            verify_hash(transcript, f"scenario {row['id']} QMP transcript")
         command_log = result.get("command_log")
         if not isinstance(command_log, dict):
             raise EvidenceError(f"scenario {row['id']} command log is absent")

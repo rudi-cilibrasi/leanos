@@ -12,8 +12,18 @@ log="${LEANOS_SERIAL_LOG:-build/boot/nmi.serial.log}"
 qmp_log="${LEANOS_QMP_LOG:-${log}.qmp.jsonl}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 monitor="${log}.monitor"
-ready='LEANOS/17 NMI-READY origin=cpl0 prior=handling if=0 gate=2 ist=2 result=PASS'
-terminal='LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling terminal=latched return=none'
+scenario="${LEANOS_NMI_SCENARIO:-kernel-entry}"
+case "$scenario" in
+  kernel-entry)
+    ready='LEANOS/17 NMI-READY origin=cpl0 prior=handling if=0 gate=2 ist=2 subject=1 address-space=1 purpose=syscall canaries=armed result=PASS'
+    terminal='LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling subject=1 address-space=1 purpose=syscall canaries=ist2,ordinary,runtime terminal=latched return=none'
+    ;;
+  cpl3-spin)
+    ready='LEANOS/17 NMI-READY origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS'
+    terminal='LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running subject=1 address-space=1 purpose=user-spin canaries=ist2,ordinary,runtime terminal=latched return=none'
+    ;;
+  *) echo "error: NMI scenario must be kernel-entry or cpl3-spin" >&2; exit 1;;
+esac
 
 for tool in "$qemu" timeout python3; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -153,4 +163,4 @@ if commands != ["qmp_capabilities", "inject-nmi"] or len(records) != 5:
     raise SystemExit("failure_class=qmp-transcript: exact injection exchange not retained")
 PY
 
-echo "LeanOS NMI probe passed; retained QMP injection crossed IF=0 onto IST2 and latched the terminal handler"
+echo "LeanOS NMI probe passed; retained QMP injection for ${scenario} entered IST2 and latched the terminal handler"

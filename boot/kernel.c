@@ -163,6 +163,7 @@ static unsigned capability_reuse_state;
 static unsigned supervisor_probe;
 static unsigned extended_state_features_accepted;
 volatile unsigned ordinary_entry_active;
+volatile uint64_t nmi_runtime_canary = UINT64_C(0x52554e54494d454e);
 #ifdef LEANOS_ENTRY_HIGH_WATER
 static uint64_t entry_stack_high_water_pattern = UINT64_C(0x6c65616e6f735741);
 #endif
@@ -1282,6 +1283,9 @@ static void privilege_init(void) {
     *(uint64_t *)__nmi_ist_stack_start = 0x4e4d493253544143ull;
     *(uint64_t *)((uint64_t)__nmi_ist_stack_end - 128u) =
         0x4b5445524d494e41ull;
+    *(uint64_t *)__entry_stack_start = UINT64_C(0x4f5244494e415259);
+    *(uint64_t *)((uint64_t)__entry_stack_end - 128u) =
+        UINT64_C(0x535441434b43414e);
     load_tss();
     set_gate(2, isr2, 2, 0x8e);
     set_gate(8, isr8, 1, 0x8e);
@@ -1301,6 +1305,35 @@ static void privilege_init(void) {
     __asm__ volatile ("lidt %0" : : "m"(idtr));
     check_direct_port_control(1);
 }
+
+#ifdef LEANOS_NMI_PROBE
+static int nmi_cpl3_requested(uint32_t magic, uint32_t info_address) {
+    if (magic != MULTIBOOT2_RUNTIME_MAGIC || info_address < 8 ||
+        info_address >= BOOT_ACCESSIBLE_LIMIT) return 0;
+    const uint8_t *info = (const uint8_t *)(uintptr_t)info_address;
+    uint32_t total = *(const uint32_t *)info;
+    if (total < 16 || total > MAX_HANDOFF_BYTES ||
+        total > BOOT_ACCESSIBLE_LIMIT - info_address) return 0;
+    for (uint32_t offset = 8; offset + 8 <= total;) {
+        const struct mb2_tag *tag = (const struct mb2_tag *)(info + offset);
+        if (tag->size < 8 || tag->size > total - offset) return 0;
+        if (tag->type == 1) {
+            static const char expected[] = "nmi-cpl3";
+            if (tag->size != 8 + sizeof(expected)) return 0;
+            const char *value = (const char *)(tag + 1);
+            unsigned i = 0;
+            for (; i < sizeof(expected); ++i)
+                if (value[i] != expected[i]) return 0;
+            return 1;
+        }
+        if (tag->type == 0) return 0;
+        uint32_t advance = (tag->size + 7u) & ~7u;
+        if (advance < tag->size || advance > total - offset) return 0;
+        offset += advance;
+    }
+    return 0;
+}
+#endif
 
 #ifdef LEANOS_ENTRY_HIGH_WATER
 /* This painted-stack scan is deliberately diagnostic rather than
@@ -1894,6 +1927,7 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
 void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_init();
 #ifdef LEANOS_NMI_PROBE
+    int nmi_cpl3 = nmi_cpl3_requested(multiboot_magic, multiboot_info);
     serial_puts("LEANOS/17 BOOT target=x86_64-q35 schedule=nmi-terminal-probe controls=idt2,ist2,nmi\n");
 #elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     serial_puts(extended_state_probe_class >= 5
@@ -1920,13 +1954,16 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     /* Model an NMI selected between composite steps while the ordinary-entry
        mode is handling.  IF remains clear: QEMU's monitor-injected NMI must
        cross the interrupt mask and use the dedicated IST2 gate. */
-    ordinary_entry_active = 1;
-    serial_puts("LEANOS/17 NMI-READY origin=cpl0 prior=handling if=0 gate=2 ist=2 result=PASS\n");
-    for (;;) __asm__ volatile ("cli; hlt");
+    if (!nmi_cpl3) {
+        ordinary_entry_active = 1;
+        serial_puts("LEANOS/17 NMI-READY origin=cpl0 prior=handling if=0 gate=2 ist=2 subject=1 address-space=1 purpose=syscall canaries=armed result=PASS\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
 #endif
     check_fast_entry_cpuid();
     check_fast_entry_control();
-#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+#ifdef LEANOS_NMI_PROBE
+#elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     if (extended_state_probe_class >= 5)
         serial_puts("LEANOS/14 FAST-ENTRY cpu.vendor=AuthenticAMD mode=long64 syscall=1 sysenter=1 efer.sce=0 star=0 lstar=0 cstar=0 sfmask=0 sysenter.cs=0 sysenter.esp=0 sysenter.eip=0 writes=complete readback=exact result=PASS\n");
 #endif
@@ -1965,7 +2002,13 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts("LEANOS/6 CLEANUP omitted=detected wrappers=checked entry=clac result=PASS\n");
     check_cross_bank_negative();
     check_initial_b_frame_negative();
-#ifdef LEANOS_EXTENDED_STATE_SCENARIO
+#ifdef LEANOS_NMI_PROBE
+    current_subject = 1;
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    check_selected_root_a();
+    serial_puts("LEANOS/17 NMI-READY origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS\n");
+    enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     current_subject = 1;
     __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
     if (extended_state_probe_class > 6)

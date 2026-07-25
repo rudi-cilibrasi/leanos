@@ -8,14 +8,18 @@ trap 'rm -rf "$tmp"' EXIT
 touch "$tmp/image.iso"
 
 invoke() {
+  local mode="$1" scenario="${2:-kernel-entry}"
   LEANOS_QEMU="$root/tests/qemu-nmi-fixture.py" \
-    LEANOS_QEMU_FIXTURE_MODE="$1" LEANOS_QEMU_TIMEOUT_SECONDS=1 \
-    LEANOS_SERIAL_LOG="$tmp/$1.serial" LEANOS_QMP_LOG="$tmp/$1.qmp.jsonl" \
+    LEANOS_QEMU_FIXTURE_MODE="$mode" LEANOS_NMI_SCENARIO="$scenario" \
+    LEANOS_QEMU_TIMEOUT_SECONDS=1 \
+    LEANOS_SERIAL_LOG="$tmp/$mode-$scenario.serial" \
+    LEANOS_QMP_LOG="$tmp/$mode-$scenario.qmp.jsonl" \
     ./scripts/run-nmi.sh "$tmp/image.iso"
 }
 
 invoke success >/dev/null 2>&1
-python3 - "$tmp/success.qmp.jsonl" <<'PY'
+invoke success cpl3-spin >/dev/null 2>&1
+python3 - "$tmp/success-kernel-entry.qmp.jsonl" <<'PY'
 import json
 import sys
 

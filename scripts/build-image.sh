@@ -42,6 +42,7 @@ df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 entry_overflow_iso_root="$build/iso-entry-stack-overflow"
 entry_adversarial_iso_root="$build/iso-entry-adversarial"
 nmi_iso_root="$build/iso-nmi"
+nmi_cpl3_iso_root="$build/iso-nmi-cpl3"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
@@ -75,7 +76,8 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$fast_entry_sysenter_iso_root/boot/grub" \
   "$df_iso_root/boot/grub" \
   "$df_negative_iso_root/boot/grub" "$entry_overflow_iso_root/boot/grub" \
-  "$entry_adversarial_iso_root/boot/grub" "$nmi_iso_root/boot/grub"
+  "$entry_adversarial_iso_root/boot/grub" "$nmi_iso_root/boot/grub" \
+  "$nmi_cpl3_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
@@ -852,6 +854,11 @@ done
 ./scripts/check-image-policy.sh "$build/leanos-entry-stack-overflow.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
 ./scripts/check-nmi-image-policy.sh "$build/leanos-nmi.elf"
+cp "$build/leanos-nmi.elf" "$build/leanos-nmi-cpl3.elf"
+cp "$build/leanos-nmi.map" "$build/leanos-nmi-cpl3.map"
+objdump -d --no-show-raw-insn "$build/leanos-nmi.elf" \
+  > "$build/nmi.disassembly.txt"
+cp "$build/nmi.disassembly.txt" "$build/nmi-cpl3.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-fault-containment.elf" \
   > "$build/fault-containment.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state.elf" \
@@ -896,9 +903,8 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     leanos-entry-stack-overflow.elf)
       manifest="scripts/direct-port-sites-entry-stack-overflow.tsv"
       ;;
-    leanos-nmi.elf)
+    leanos-nmi.elf|leanos-nmi-cpl3.elf)
       manifest="scripts/direct-port-sites-nmi.tsv"
-      direct_port_args=(--terminal-before-user)
       ;;
   esac
   ./scripts/check-direct-port-sites.py "$build/$elf_name" "$manifest" \
@@ -906,7 +912,7 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
   ((direct_port_images += 1))
 done < "$matrix"
-[[ "$direct_port_images" -eq 40 ]] || {
+[[ "$direct_port_images" -eq 41 ]] || {
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
   exit 1
 }
@@ -987,6 +993,8 @@ cp "$build/leanos-entry-adversarial.elf" "$entry_adversarial_iso_root/boot/leano
 cp boot/grub.cfg "$entry_adversarial_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-nmi.elf" "$nmi_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$nmi_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-nmi-cpl3.elf" "$nmi_cpl3_iso_root/boot/leanos.elf"
+cp boot/grub-nmi-cpl3.cfg "$nmi_cpl3_iso_root/boot/grub/grub.cfg"
 printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
   > "$iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
@@ -1005,6 +1013,7 @@ cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_overflow_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$nmi_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$nmi_cpl3_iso_root/boot/SOURCE_REVISION"
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   fixture_root="$build/iso-return-${fixture}"
@@ -1077,6 +1086,10 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-nmi.iso" "$nmi_iso_root" -- \
   -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-nmi-cpl3.iso" "$nmi_cpl3_iso_root" -- \
+  -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   grub-mkrescue -d /usr/lib/grub/i386-pc \
@@ -1124,6 +1137,8 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-entry-adversarial.elf" \
   "$build/leanos-${version}-x86_64-nmi.iso" \
   "$build/leanos-nmi.elf" "$build/leanos-nmi.map" \
+  "$build/leanos-${version}-x86_64-nmi-cpl3.iso" \
+  "$build/leanos-nmi-cpl3.elf" "$build/leanos-nmi-cpl3.map" \
   > "$build/SHA256SUMS"
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"

@@ -108,6 +108,7 @@ jobs:
             build/boot/leanos-0.1.0-x86_64-entry-stack-overflow.iso
             build/boot/leanos-0.1.0-x86_64-entry-adversarial.iso
             build/boot/leanos-0.1.0-x86_64-nmi.iso
+            build/boot/leanos-0.1.0-x86_64-nmi-cpl3.iso
             build/boot/leanos.elf
             build/boot/leanos-preemption.elf
             build/boot/leanos-fault-containment.elf
@@ -124,6 +125,7 @@ jobs:
             build/boot/leanos-entry-stack-overflow.map
             build/boot/leanos-entry-adversarial.elf
             build/boot/leanos-nmi.elf
+            build/boot/leanos-nmi-cpl3.elf
             build/boot/leanos.map
             build/evidence/q35-pci-construction.tsv
             build/boot/leanos-preemption.map
@@ -138,6 +140,7 @@ jobs:
             build/boot/leanos-fast-entry-sysenter.map
             build/boot/leanos-double-fault.map
             build/boot/leanos-nmi.map
+            build/boot/leanos-nmi-cpl3.map
             build/boot/leanos-prelink.map
             build/boot/boot-page-plan.h
             build/boot/boot-page-plan.final.h
@@ -172,6 +175,9 @@ jobs:
             build/boot/entry-stack-overflow.serial.log
             build/boot/entry-adversarial.serial.log
             build/boot/nmi.serial.log
+            build/boot/nmi.serial.log.qmp.jsonl
+            build/boot/nmi-cpl3.serial.log
+            build/boot/nmi-cpl3.serial.log.qmp.jsonl
             build/boot/entry-policy-report.txt
             build/boot/entry-policy-fixtures.log
             build/boot/entry-stack-budget.txt
@@ -191,6 +197,8 @@ jobs:
             build/boot/extended-state-sse.disassembly.txt
             build/boot/extended-state-sse2.disassembly.txt
             build/boot/extended-state-avx.disassembly.txt
+            build/boot/nmi.disassembly.txt
+            build/boot/nmi-cpl3.disassembly.txt
             build/boot/extended-state-policy-report.txt
             build/boot/extended-state-mmx-policy-report.txt
             build/boot/extended-state-sse-policy-report.txt
