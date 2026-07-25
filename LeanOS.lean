@@ -6,6 +6,7 @@ import LeanOS.CapabilityReuse
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
+import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.BootMemoryMap
 import LeanOS.BootReservation
 import LeanOS.BootAllocation

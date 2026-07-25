@@ -131,3 +131,26 @@ Recovery, signals, demand paging, exception upcalls, restart/instruction
 retry, userspace handlers, debugger support, #DB, SMP, nested interrupts, and
 kernel-fault recovery are out of scope; the machine IDT/C slice for vectors 0
 and 3 is deferred to the follow-up machine issue.
+
+## Shared containment vocabulary
+
+`LeanOS.UserFaultContainmentVocabulary` binds the abstract reason-independence
+result above to one concrete two-subject pre-state so the `#DE`, `#BP`, `#PF`,
+and denied-port (`#GP`) machine scenarios share a single subject-termination
+and peer-survival implementation. It normalizes real CPL3 divide-error
+(vector 0, faulting-instruction restart class) and breakpoint (vector 3,
+following-boundary restart class) raw snapshots through `InterruptEntry.normalize`
+and reuses the `LeanOS.DirectPortContainment` witness state.
+`shared_contained_classes_one_transition` proves that all four contained entry
+shapes drive `FaultDispatch.dispatch` to dispatch the same survivor B with the
+typed reason bound to the manifest vector, that the port-denial composition
+reuses the identical vector-14 dispatch, and that every successful post-state is
+byte-for-byte the page-fault post-state via `success_state_reason_independent`.
+`kernel_origin_contained_entries_rejected` shows the same real `#DE`/`#BP`
+snapshots at CPL0 are terminal `wrongOrigin` rejections rather than containment,
+and `contained_classes_retire_faulting_select_survivor` restates the retirement
+of subject A. The stable contract restates this as
+`SC-USER-FAULT-SHARED-CONTAINMENT`, and the negative fixture
+`tests/negative/SharedContainmentReasonSubstitution.lean` shows the typed reason
+cannot be relabeled. The two live IDT-gate/real-instruction QEMU scenarios that
+consume this vocabulary remain the follow-up machine slice.
