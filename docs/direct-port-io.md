@@ -104,3 +104,60 @@ validated user-return epilogue; the denied `OUT` instruction is never skipped
 or resumed. Dedicated negative images mutate the I/O-map base, raw descriptor
 limit, and descriptor granularity independently and must all fail at the live
 control read-back before CPL3 entry.
+
+Four booted probes exercise this path as mandatory accepted-boot rows in the
+emulator matrix, each executing exactly one reviewed raw CPL3 instruction: a
+byte `OUT` to serial data `0x3f8`, a byte `OUT` to `isa-debug-exit` `0xf4` with
+a distinctive guest-error value, a non-destructive byte `IN` from serial
+line-status `0x3fd`, and a byte `OUT` of `0x00` to the master PIC data/mask
+register `0x21`. The PIC probe carries an independent hardware failure oracle
+that does not trust the serial transcript: `privilege_init` masks every legacy
+IRQ line (`out8(0x21, 0xff)`), and after the denial the surviving peer's
+kernel-visible operation performs the inventoried CPL0 read-back `in8(0x21)` and
+requires the observed mask to still be `0xff`. If the attacker's write had
+reached the device the mask would read `0x00` and the kernel fail-stops with
+`direct-port-pic-canary`, even under a forged `device-mutation=0` transcript.
+The read-back is bound in `scripts/direct-port-byte-operations.tsv` as a
+`DirectPortIO.pic` byte operation, and `scripts/test-run-direct-port-pic.sh`
+drives controlled runner negatives for an actually-executed write, a mutated or
+missing canary, forged and reordered records, an attacker-selected survivor, a
+stale address space, guest error, reset, triple fault, and timeout.
+
+## Composed port-denial containment
+
+`LeanOS.DirectPortContainment` is the first model-level composition slice
+between this port-authority policy and the atomic user-fault
+cleanup/survivor-dispatch transition of `LeanOS.FaultDispatch`. Its
+`containDeniedPort` step sequences the two existing model boundaries in the
+order the booted machine exercises them: the untrusted `PortOperation` is first
+denied by `DirectPortIO.executeUser`, and the same normalized user-fault entry
+then drives `FaultDispatch.dispatch` to retire the kernel-selected current
+subject and select the next survivor context. It introduces no second
+authorization table, fault scheduler, or vector-13 classifier; the machine
+binds the `#GP(0)` through the shared generated vector-13 normalizer and reuses
+the vector-14 user-fault containment dispatch for cleanup, exactly as this
+composition sequences the two models.
+
+`denied_port_contained` proves, under exact accepted deny-all controls with a
+freshly matched live read-back and any successful atomic cleanup/dispatch, that
+the port attempt returns the modeled `#GP(0)`, the complete device projection is
+unchanged, the finite privilege view denies CPL3, and the authoritative current
+subject is retired: it becomes dead and non-runnable, leaves the ready queue and
+current slot, loses its resumable context, and loses every address space and
+mapping it owned. `untrusted_words_cannot_select` proves that neither untrusted
+port operation reaches a kernel acceptance and that the survivor selection is
+independent of the untrusted port/value/width words, while
+`attacker_registers_cannot_relabel` records that the attacker register bank is
+not an input to the composed transition.
+`denied_attempt_cannot_return_to_faulting` isolates the no-return-to-A
+conclusion. `denied_port_contained_nonvacuous`,
+`witness_serial_denied_and_dispatched`, and `witness_untrusted_probe_independent`
+supply a concrete two-subject witness in which subject A's serial-console,
+`isa-debug-exit`, and PIC-control probes are all denied with the identical
+device projection and identical survivor dispatch of subject B, and the negative
+fixture `tests/negative/DirectPortContainmentExposedControls.lean` shows the
+accepted-controls hypothesis is load-bearing. The stable contract restates the
+composed result as `SC-DIRECT-PORT-CONTAINMENT`. As with the underlying models,
+x86 privilege/exception delivery, the normalized-entry-to-model refinement, the
+generated adapters, machine cleanup/CR3 writes, QEMU, and the final binary
+remain trusted boundaries rather than theorem claims.

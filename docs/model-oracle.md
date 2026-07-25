@@ -8,8 +8,10 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `InterruptEntry.entryDemo`, `BlockingIPC.blockingIpcDemo`,
 `CapabilityReuse.capabilityReuseDemo`, `ExtendedState.denialDispatchDemo`,
 `PrivilegeEntryControl.controlDemo`, `FaultDispatch.faultDispatchDemo`, and
-`DirectPortIO.directPortIODemo`, and `InterruptEntry.nmiDemo`. Its stable
-200-vector order covers accepted calls,
+`DirectPortIO.directPortIODemo`, `InterruptEntry.nmiDemo`,
+`InterruptEntry.bootPhaseDemo`, and
+`StaleTranslation.staleTranslationDemo`. Its stable
+256-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -24,9 +26,14 @@ maintaining a parallel C live/runnable/queue/context/resource projection. The
 32 entry-control records cover the canonical denial tuple, every modeled
 CPU/MSR/boot-evidence mutation, return authorization, user and kernel denial
 events, stale bindings, alternate-target/stack separation, and post-fatal
-absorption. The Lean checks evaluate every expected result from
-the adapter definition and connect the accepted and rejected examples to the
-source models.
+absorption. The 18 boot-interrupt-phase records cover every orderly and wrong
+table publication, missing runtime prerequisites, bootstrap NMI and
+representative error-code shapes in both bootstrap phases, the typed unowned
+inherited window, runtime delegation, repeated terminal events, attempted
+progress after the latch, malformed phase codes, and an opaque business token
+that must round-trip unchanged. The Lean checks evaluate every expected result
+from the adapter definition and connect the accepted and rejected examples to
+the source models.
 
 The interrupt-entry corpus also includes the user-only vector-13 hardware-error
 shape and its broad general-protection purpose. The live handler refines that
@@ -108,6 +115,20 @@ stale subject/address-space/CR3 bindings, fatal and diagnostic modes, and a
 validate-then-mutate attempt. The exported scalar path remains allocation-free;
 the richer Lean transition still returns the complete accepted request as its
 attestation.
+
+The `StaleTranslation.scalar` block evaluates the canonical
+`StaleTranslation.step` over one reviewed cache fixture (subject 0 owning
+address spaces 1 and 2, page 7 caching live object 10). Its six scalar words
+encode a request kind, actor, address space, page, an auxiliary
+permission/slot, and a filled/post-reuse state selector; the packed result
+carries the accepted bit, the affected-absence bit, and the effect tag with its
+address space and page. The block covers accepted unmap/protect, wrong-owner
+rejections, release/destroy/switch effects, an unmapped page, a post-release
+reuse whose old page stays absent, permission amplification, and a malformed
+encoding. Attacker words cannot select the invalidation target: ownership and
+lifetime are checked by `step`, so a non-owner or post-reuse request packs no
+effect. `stale_translation_adapter_agrees_with_model` proves the exported scalar
+matches the authoritative `step` on every vector.
 
 Run the complete local evidence path with:
 

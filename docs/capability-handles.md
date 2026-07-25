@@ -42,7 +42,13 @@ expose either raw slot through their userspace-facing boundaries.
 The capability graph still records identities as natural numbers internally.
 Only identities in the finite canonical range can be issued as userspace
 words. The codec therefore exposes exhaustion rather than silently reducing a
-natural-number identity modulo 48 bits. Capability copy and sealed-transfer
+natural-number identity modulo 48 bits. This 48-bit capability-generation
+bound is a separate resource from the 64-bit subject and object
+[lifetime-identity issuers](lifetime-identity.md): the bounded creation path
+reports identity-domain exhaustion with its own typed result, while an
+exhausted root-capability generation surfaces as the precise
+state-preserving `generationExhausted` denial, and neither counter can stand
+in for the other. Capability copy and sealed-transfer
 offer boundaries reject zero or reserved/exhausted generations before
 allocation, and copy also rejects destination slots outside the encodable
 16-bit domain. An accepted userspace copy returns the corresponding canonical

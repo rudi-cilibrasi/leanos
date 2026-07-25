@@ -82,12 +82,14 @@ Executable traces cover user and kernel page faults, an unexpected vector,
 timer delivery, valid return, wrong-origin syscall entry, malformed selectors
 and flags, and nested entry.
 
-The later [`LeanOS.FaultDispatch`](fault-dispatch.md) composition consumes the
-normalized vector-14 result and the authoritative resumable scheduler state as
-one transaction. It rejects stale kernel bindings without changing state,
+The later [`LeanOS.FaultDispatch`](fault-dispatch.md) composition consumes any
+normalized contained-class result (vector 14 page fault, vector 0 divide
+error, or vector 3 breakpoint) and the authoritative resumable scheduler state
+as one transaction. It rejects stale kernel bindings without changing state,
 requires the selected current subject to remain live and runnable, applies
 whole-subject cleanup only to that kernel-owned subject, and returns either the
-exact deterministic survivor context or typed idle. Every inbound normalizer
+exact deterministic survivor context or typed idle, carrying the typed
+contained reason without letting it select a cleanup variant. Every inbound normalizer
 `.fatal reason` result, kernel-origin fault, and already-halted state sets or
 retains the absorbing halt latch without exposing cleanup. Inbound failures retain the
 exact `InterruptEntry.RejectReason`; kernel-origin and already-halted outcomes
@@ -96,14 +98,35 @@ the normalizer, machine context restore, or the final binary.
 
 ## Inbound entry manifest and normalization
 
-`LeanOS.InterruptEntry` defines the complete ordinary boot manifest: vector 13
+`LeanOS.InterruptEntry` defines the complete ordinary boot manifest: vector 0
+is a user-only DPL0 interrupt gate without an error word and with the shared
+user-fault containment purpose — its DPL stays 0 so a CPL3 `int $0` cannot
+software-select the divide-error path; vector 3 is the deliberately CPL3
+software-callable DPL3 interrupt gate (an `int3` breakpoint requires gate
+DPL 3) without an error word and with the same containment purpose — the
+interrupt-versus-trap-gate choice is explicit (interrupt gate, IF masked on
+entry) and `validateManifest` rejects any other DPL/type combination for
+vector 3 and any DPL3 form of vector 0; vector 13
 is a user-only DPL0 interrupt gate with a hardware error word and a typed
 general-protection purpose; vector 14 is a DPL0 interrupt
 gate with a hardware error word and user-fault or supervisor
 diagnostic purpose; vector 32 is a DPL0 interrupt gate without an error word;
-and vector 128 is the sole DPL3 interrupt gate and has syscall purpose. All use
+and vector 128 is the DPL3 interrupt gate with syscall purpose. The DPL3
+inventory is exactly the breakpoint and syscall gates
+(`only_breakpoint_and_syscall_are_dpl3`). All use
 selector `0x08`, IST0, and interrupt-gate masking. Vector 8 remains owned by the
 separate terminal IST1 protocol.
+
+The contained synchronous fault classes are a finite typed vocabulary
+(`ContainedReason`: page fault, divide error, breakpoint) keyed by
+`containedReason?` on the manifest-bound vector only. Per the AMD64 manual,
+only the page fault carries an architectural error word, and the saved RIP
+names the faulting instruction for #DE/#PF but the following instruction
+boundary for the #BP trap. The raw snapshot carries typed restart-class
+evidence; the normalizer rejects a claim that disagrees with the reviewed
+per-vector table (`wrongRestartClass`). These are normalized machine
+inputs/assumptions: no modeled transition rewrites RIP, and containment always
+terminates the faulting subject rather than resuming or retrying it.
 
 Raw frames have two distinct constructors. A privilege-changing frame contains
 RIP, CS, RFLAGS, RSP, and SS. A same-privilege frame contains only RIP, CS, and
@@ -113,27 +136,50 @@ from saved registers or user-looking words at later offsets. A kernel vector-14
 frame becomes `diagnosticRecovery`, never user containment.
 
 The total normalizer rejects a duplicate or unsupported manifest, unbound
-vector/stub, wrong error convention, truncated or misaligned frame, wrong raw
+vector/stub, wrong error convention, wrong restart-class evidence, truncated
+or misaligned frame, wrong raw
 shape or origin, out-of-bounds entry stack, nested entry, and uncleared AC/DF.
 Accepted records copy subject, active address space/CR3, and stack identity from
 `KernelContext`; attacker registers are absent from the function input. Lean
-proves manifest validity, uniqueness of the DPL3 syscall gate, totality and
+proves manifest validity, the exact DPL3 breakpoint/syscall gate inventory,
+totality and
 determinism, attacker-register erasure, rejection stability, same-privilege
-confinement, nested/uncleared-state nonauthorization, and exact kernel-context
-binding. These are model results only.
+confinement, nested/uncleared-state nonauthorization, exact kernel-context
+binding, and manifest-bound vector/error-shape/restart-class binding for
+accepted records (`accepted_binds_manifest_shape`,
+`accepted_contained_error_shape`). These are model results only. Kernel-origin
+divide errors and breakpoints are same-privilege frames under a user-only
+origin policy and therefore terminal `wrongOrigin` rejections; only vector 14
+retains the supervisor diagnostic relabeling.
 
 The generated allocation-free `leanos_entry_demo` adapter is replayed in the
 version-one oracle with valid syscall, user general-protection/direct-port,
-user page fault, timer, and diagnostic
-records plus wrong binding, error shape, length, alignment, origin, stack,
-nested-latch, and AC/DF fixtures. `scripts/check-entry-policy.sh` enumerates the
+user page fault, user divide-error, user breakpoint, timer, and diagnostic
+records plus wrong binding, error shape, restart-class evidence, length,
+alignment, origin (including kernel-origin #DE/#BP), spurious #DE/#BP error
+words, stack, nested-latch, and AC/DF fixtures. The live boot image installs the
+reviewed vector-0 (`isr0`, DPL0, no error word) and vector-3 (`isr3`, DPL3
+software breakpoint) gates; both converge on the shared normalizer and the
+generated typed dispatcher, and the real divide-error and breakpoint QEMU
+scenarios boot them. `scripts/check-entry-policy.sh` enumerates the
 final-ELF entry paths and requires cleanup, shared authorization, the typed
-handler, and latch completion in that order. `scripts/test-entry-policy.sh`
+handler, and latch completion in that order, and additionally source-orders the
+two contained integer-fault stubs (AC cleanup before shared normalization before
+the operation-specific handler). `scripts/test-entry-policy.sh`
 applies bounded one-field descriptor, path, error-shape, and TSS mutations to
 controlled source snapshots and requires the production checker to reject each
-with its vector and field/path diagnostic. At boot, `check_entry_manifest`
-decodes every present IDT entry and the relevant TSS stack pointers and rejects
-unmanifested present gates.
+with its vector and field/path diagnostic, including the vector-0/3 negatives:
+missing, extra, swapped, user-callable (DPL3), wrong-IST, and wrong-type gates,
+and handler-before-normalization or branch-around-cleanup contained paths. At
+boot, `check_entry_manifest` decodes every present IDT entry and the relevant
+TSS stack pointers and rejects unmanifested present gates.
+`scripts/test-run-integer-fault.sh` drives the machine-level QEMU-runner
+negatives for both scenarios — wrong delivered vector, synthetic error word,
+wrong saved-RIP class, direct-called handler, page-fault reason substitution,
+RIP-rewrite recovery, partial cleanup, attacker-selected survivor, stale
+address space, corrupted peer canary, nested entry, forged or reordered records,
+guest error, reset, triple fault, and timeout — where a forged serial PASS is
+still rejected by the independent guest debug-exit status.
 
 The bounded entry-adversarial image executes `int $14` and `int $32` from CPL3.
 Both attempts must deliver vector 13 with the selector-derived error code, must
@@ -153,11 +199,20 @@ vector-8 IST1 machine protocol. The linker now owns a separate aligned 16 KiB
 IST2 interval, the TSS selects its exclusive upper bound, and the IDT installs
 only the reviewed vector-2 DPL0 interrupt gate for this terminal purpose. Boot
 loads the fully initialized TSS before installing the IST2 gate and publishing
-the kernel IDT, so the kernel's live vector-2 descriptor never references the
-prior TSS. This ordering does not cover the inherited bootloader IDT before the
-kernel `lidt`: the trusted boot contract assumes that firmware does not deliver
-NMI before `privilege_init` completes. That early window is outside the model
-and the QEMU monitor-injection evidence, which begins only after `NMI-READY`.
+the runtime IDT, so the kernel's live vector-2 descriptor never references the
+prior TSS. Vector 2 is also kernel-owned in both bootstrap phases: the
+bootstrap tables route it to dedicated non-returning stubs, so no stale
+firmware target is reachable after the first kernel `lidt`. The remaining
+trusted window is the reviewed eleven-instruction entry prologue plus the
+single-instruction long-mode IDTR handoff: the boot contract assumes that
+firmware does not deliver
+NMI before the first kernel `lidt` or exactly on that handoff boundary. That
+residual window is outside the model and the QEMU monitor-injection evidence,
+which begins only after `NMI-READY`; the separate mandatory `bootstrap64-nmi`
+probe row supplies the bootstrap-window injection evidence through its own
+exact `EARLY64-READY` checkpoint, and the `bootstrap32-ud` row drives a
+real #UD through the 32-bit bootstrap table (see the boot-interrupt phase
+section below).
 
 `RawNmiFrame` always contains saved RIP, CS, RFLAGS, RSP, and SS. This includes
 a CPL0 interruption because the selected contract assumes an IST switch; it
@@ -211,6 +266,126 @@ publishes a CPL0 `handling` boundary with IF clear; the evidence runner injects
 a real QEMU NMI, observes the five-word IST2 frame and one terminal record, and
 rejects any return or post-terminal output. This is integration evidence, not
 a proof of x86 delivery, coalescing, or emulator correctness.
+
+## Boot-interrupt phase ownership
+
+`LeanOS.BootInterruptPhase` fixes the finite publication chain
+`inherited → bootstrap32 → bootstrap64 → runtime → terminal`. Each owned phase
+names its permitted table, descriptor width (`legacy8` or `long16`), stack
+assumption, vector-2 ownership, and terminal target; only the runtime phase
+may ever carry return authority, and the `contract_table` theorem pins those
+facts. `publish` accepts exactly the next chain step — the runtime manifest
+additionally requires its TSS, IST-stack, and gate-manifest prerequisites —
+and every wrong or premature publication fails closed into the absorbing
+terminal latch. `dispatch` delegates runtime events unchanged to the separate
+ordinary/terminal runtime contracts, types the inherited window as unowned,
+and latches every bootstrap event immediately. Lean proves totality,
+determinism, publication monotonicity with an unreachable inherited phase,
+business-state preservation, that no step arms return authority, that events
+never advance the chain, immediate terminal latching with the bounded reason,
+and absorption of every operation suffix after a latch; concrete witnesses
+cover both bootstrap phases and the orderly chain. The 18-vector
+`bootphase.*` block replays the allocation-free `bootPhaseDemo` adapter
+through the hosted oracle and the boot image with an opaque business token
+that must round-trip unchanged.
+
+The machine implementation makes the phases mechanically recognizable. The
+entry prologue executes only `cli`, one `lgdt` of the kernel GDT, a far jump
+onto the kernel 32-bit code selector, five segment loads, the bounded boot
+stack pointer, and then the first kernel `lidt` of the statically initialized
+`boot_idt32`; the Multiboot2 handoff registers are stored only after the
+`boot_idt32_published` label. All 256 legacy gates are DPL0 interrupt gates
+through selector `0x38`; vector 2 targets `boot_early_isr2_32` and every
+other vector the phase catch-all. The long-mode switch publishes `boot_idt64`
+in the instruction immediately after the paging CR0 write, so exactly one
+instruction boundary separates long-mode activation from kernel 16-byte-gate
+ownership; its 256 gates use selector `0x08` with IST 0 because no TSS exists
+yet, and delivery stays on the live boot stack. Each of the four bootstrap
+stubs clears interrupts and DF, emits one fixed `LEANOS/18 EARLY-TERMINAL`
+record naming its phase, table, width, vector class, stack, and target,
+requests a phase-typed debug exit (`0x16` for bootstrap32, `0x17` for
+bootstrap64), and halts; no stub pushes, calls, returns, or touches runtime C
+state, the Lean runtime, the ordinary entry stack, or the later IDT/TSS, and
+outside the two dedicated probe images below no stub reads the exception
+frame. `privilege_init` then replaces `boot_idt64` with
+the runtime manifest only after the TSS, IST stacks, and checked gate
+manifest exist, with no intermediate reload of any earlier table.
+
+`scripts/check-early-idt-policy.py` runs inside the shared image policy for
+every ELF variant. It decodes both bootstrap tables byte-for-byte against the
+linker-pinned stub slots (rejecting wrong selector, DPL, type, IST, reserved
+words, or targets), verifies both IDTR pointer images, disassembles the
+32-bit prologue in its real mode to require the reviewed pre-`lidt`
+allowlist, the exact `boot_idt32`/`boot_idt64` publication order, and the
+one-instruction CR0-to-`lidt`-to-far-jump handoff, forbids `sti`, port I/O,
+`int`, calls, and returns in the entry interval, bounds all four stubs as
+contained non-returning terminal CFGs, and inventories every `lidt` (exactly
+two bootstrap publications plus the single runtime publication) and rejects
+any `sidt`. `scripts/test-early-idt-policy.sh` rebuilds controlled negatives
+— deleting or delaying the first `lidt`, swapping the tables, DPL3 or
+IST-bearing bootstrap gates, re-pointed vector-2 gates, `iretq`/`call`/escape
+edges in stubs, early `sti`, and early PIC access — and requires the exact
+policy diagnostic for each. The stub serial/debug-exit instructions are
+inventoried in every direct-port site manifest.
+
+Two dedicated probe images demonstrate both sides of that handoff under QEMU.
+The `bootstrap32-ud` image compiles `boot.S` with
+`LEANOS_BOOTSTRAP32_UD_PROBE`: one real `ud2` becomes the first instruction
+after the first kernel `lidt` — at the `boot_idt32_published` boundary,
+before any page-table, CR, MSR, PCI, port, or generated-code operation — so
+vector 6 must reach the pinned 32-bit catch-all stub through `boot_idt32` on
+the live boot stack. The `bootstrap64-nmi` image compiles with
+`LEANOS_BOOTSTRAP64_NMI_PROBE`: immediately after the boot-stack publication
+in the long-mode entry — with `boot_idt64` live, no TSS or IST, IF still
+clear since the entry `cli`, and the runtime `lidt` unpublished and
+unreachable past a halt loop — the guest emits one exact
+`LEANOS/18 EARLY64-READY` record and halts. `scripts/run-bootstrap64-nmi.sh`
+extends the `run-nmi.sh` discipline: it waits for that exact record and the
+QMP socket, negotiates capabilities, issues a single `inject-nmi`, and
+accepts no fixed sleeps, synthetic `int $2`, direct handler calls, or C-set
+flags, so vector 2 must cross the masked window through `boot_idt64` to the
+pinned bootstrap64 stub. In these two images only, the targeted stub
+additionally attests the exact architectural frame with decode-stable reads
+before claiming its record — the no-error `EIP/CS/EFLAGS` #UD shape at the
+probe opcode for bootstrap32, and the IST-0 five-word boot-stack shape with
+`CS=0x08` and IF clear for bootstrap64 — and any other shape emits a typed
+`status=FAIL reason=probe-frame-policy` record with the distinct debug exit
+`0x18`. The accepted probe terminals are versioned and early-only:
+`phase=bootstrap32 … vector=6 reason=invalid-opcode … return=none` with debug
+exit `0x16` (host status 45), and `phase=bootstrap64 … vector=2
+reason=non-maskable-interrupt … return=none` with debug exit `0x17` (host
+status 47). Both stay disjoint from the runtime `LEANOS/17` `prior=handling
+ist=2` vocabulary, so no later runtime delivery can satisfy either mandatory
+row in `scripts/emulator-evidence-matrix.tsv`; each runner additionally
+rejects duplicate, reordered, forged, runtime, or post-terminal output and
+any other exit status.
+
+`scripts/check-early-probe-policy.py` binds each probe image to that exact
+shape in the final ELF and source: the `ud2` placement at
+`boot_idt32_published`, the readiness site at its exported symbol after the
+stack publication, the halt loop dominating the otherwise-unreachable
+`kernel_main` call, every instruction of all four stubs and the long-mode
+entry tail, the frame-guard immediates, both debug-exit codes, and the exact
+record bytes. `scripts/test-early-probe-policy.sh` rebuilds sixteen
+controlled negatives — an `int $6` substitute, moved or pre-`lidt` probes,
+dropped frame guards, wrong success and failure exit codes, forged terminal
+and readiness records, a readiness site moved before the stack publication or
+behind an extra instruction, a skipped halt loop, a synthetic `int $2`, a
+duplicate output site, and cross-probe contamination — and requires each
+exact diagnostic. The probe serial and debug-exit sites are inventoried in
+dedicated direct-port manifests. The two runs are the machine counterparts of
+the existing `bootphase.noerror-fault-bootstrap32` and
+`bootphase.nmi-bootstrap64` oracle rows.
+
+These checks and records are integration evidence: descriptor-load and IDTR
+semantics, delivery inside the residual prologue/handoff window, x86/QEMU
+behavior, and the final binary remain trusted. The phase markers, fixed
+records, debug-exit codes, and pinned stub addresses are deliberately stable;
+the two early-injection scenarios above consume them. QEMU demonstrates two
+selected executions — a pre-paging #UD and one masked-window NMI — and does
+not prove that the binary refines the phase model, that every early fault at
+every bootstrap instruction is contained, or anything about GRUB's own IDT,
+firmware/SMM, physical NMI, machine checks, nested NMI, or SMP.
 
 ## Ordinary entry-stack layout and budget contract
 

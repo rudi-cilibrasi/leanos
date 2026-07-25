@@ -11,9 +11,14 @@ on first allocation and is never cleared, so an identifier can never designate
 a later occupant. Release atomically marks the object dead, removes its binding,
 releases its frame, and removes every installed capability naming it. Access
 also revalidates the live binding and allocator owner. Permanently consuming
-identifiers is simple and makes stale-capability safety explicit, at the cost of
-requiring a sufficiently wide identifier space in a future bounded
-implementation. Access rejects non-memory kinds before checking frame state.
+identifiers is simple and makes stale-capability safety explicit; the required
+identifier-width bound is now supplied by the
+[bounded lifetime-identity issuer](lifetime-identity.md), whose composite
+allocation draws the next representable 64-bit object identity from
+kernel-owned state and fails closed with a typed exhaustion result instead of
+wrapping. `MemoryLifecycle.allocate` remains the internal transition invoked
+with exactly that issued identity. Access rejects non-memory kinds before
+checking frame state.
 
 ## Evidence and scope
 

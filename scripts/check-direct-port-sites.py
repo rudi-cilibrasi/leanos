@@ -38,6 +38,7 @@ BYTE_OWNERS = {
     ("out8", 0x3FB): "DirectPortIO.serial",
     ("out8", 0x3FC): "DirectPortIO.serial",
     ("in8", 0x3FD): "DirectPortIO.serial",
+    ("in8", 0x21): "DirectPortIO.pic",
     ("out8", 0x20): "DirectPortIO.pic",
     ("out8", 0x21): "DirectPortIO.pic",
     ("out8", 0xA0): "DirectPortIO.pic",
@@ -505,10 +506,15 @@ def main() -> int:
     # wrapper even in the one adversarial image that deliberately contains it.
     denial_sites = {site for site, owner in manifest.items()
                     if owner == "DirectPortIO.user-denial-probe"}
-    expected_denial_sites = {
-        Site("user_a_direct_port_probe", 0, "out", "%al,(%dx)")
-    }
-    if denial_sites and denial_sites != expected_denial_sites:
+    # Each adversarial image contains exactly one reviewed raw CPL3 probe: a
+    # byte OUT to a serial/PIC/PIT/debug-exit port, or the non-destructive byte
+    # IN from the serial line-status register.  Both encodings are attacker
+    # origin, never trusted device authority.
+    expected_denial_variants = (
+        {Site("user_a_direct_port_probe", 0, "out", "%al,(%dx)")},
+        {Site("user_a_direct_port_probe", 0, "in", "(%dx),%al")},
+    )
+    if denial_sites and denial_sites not in expected_denial_variants:
         print("error: user direct-port denial probe classification drifted",
               file=sys.stderr)
         return 1

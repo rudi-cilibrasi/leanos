@@ -1,5 +1,5 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	41
+# mandatory-count	49
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
@@ -41,4 +41,12 @@ double-fault	double-fault	fail-stop	30	leanos-@VERSION@-x86_64-double-fault.iso	
 entry-stack-overflow	entry-stack-overflow	fail-stop	30	leanos-@VERSION@-x86_64-entry-stack-overflow.iso	leanos-entry-stack-overflow.elf	entry-stack-overflow.serial.log	entry-stack-overflow	-	-
 nmi-terminal	nmi	fail-stop	30	leanos-@VERSION@-x86_64-nmi.iso	leanos-nmi.elf	nmi.serial.log	kernel-entry	-	-
 nmi-terminal-cpl3	nmi	fail-stop	30	leanos-@VERSION@-x86_64-nmi-cpl3.iso	leanos-nmi-cpl3.elf	nmi-cpl3.serial.log	cpl3-spin	-	-
+bootstrap32-ud	bootstrap32-ud	fail-stop	30	leanos-@VERSION@-x86_64-bootstrap32-ud.iso	leanos-bootstrap32-ud.elf	bootstrap32-ud.serial.log	bootstrap32-ud	-	-
+bootstrap64-nmi	bootstrap64-nmi	fail-stop	30	leanos-@VERSION@-x86_64-bootstrap64-nmi.iso	leanos-bootstrap64-nmi.elf	bootstrap64-nmi.serial.log	bootstrap64-nmi	-	-
 double-fault-guard-mapped	double-fault-guard	controlled-rejection	30	leanos-@VERSION@-x86_64-double-fault-guard-mapped.iso	leanos-double-fault-guard-mapped.elf	double-fault-guard-mapped.serial.log	double-fault-guard-mapped	-	-
+direct-port-serial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-serial.iso	leanos-direct-port-serial.elf	direct-port-serial.serial.log	direct-port-serial	-	-
+direct-port-debug	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-debug.iso	leanos-direct-port-debug.elf	direct-port-debug.serial.log	direct-port-debug	-	-
+direct-port-in	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-in.iso	leanos-direct-port-in.elf	direct-port-in.serial.log	direct-port-in	-	-
+direct-port-pic	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-pic.iso	leanos-direct-port-pic.elf	direct-port-pic.serial.log	direct-port-pic	-	-
+divide-error	boot	accepted-boot	30	leanos-@VERSION@-x86_64-divide-error.iso	leanos-divide-error.elf	divide-error.serial.log	divide-error	-	-
+breakpoint	boot	accepted-boot	30	leanos-@VERSION@-x86_64-breakpoint.iso	leanos-breakpoint.elf	breakpoint.serial.log	breakpoint	-	-

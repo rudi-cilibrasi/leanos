@@ -42,6 +42,10 @@ extern uint64_t leanos_direct_port_io_demo(uint64_t, uint64_t, uint64_t,
                                             uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_nmi_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                 uint64_t);
+extern uint64_t leanos_boot_phase_demo(uint64_t, uint64_t, uint64_t, uint64_t,
+                                       uint64_t);
+extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
+                                              uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);
@@ -55,7 +59,9 @@ extern void run_wp_probe(void);
 extern void run_smep_probe(void);
 extern void enter_user(void *, void *);
 extern void isr80(void);
+extern void isr0(void);
 extern void isr2(void);
+extern void isr3(void);
 extern void isr6(void);
 extern void isr7(void);
 extern void isr8(void);
@@ -70,8 +76,15 @@ extern const uint8_t user_a_extended_state_probe[];
 #endif
 extern char user_a_stack[];
 extern char user_a_fault_instruction[], user_a_fault_recovered[];
-#ifdef LEANOS_ENTRY_ADVERSARIAL
+#if defined(LEANOS_ENTRY_ADVERSARIAL) || defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
 extern char user_a_direct_port_probe[];
+#endif
+#ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
+extern const uint64_t direct_port_probe_class;
+#endif
+#ifdef LEANOS_INTEGER_FAULT_SCENARIO
+extern const uint64_t integer_fault_probe_class;
+extern char user_a_divide_instruction[], user_a_breakpoint_after[];
 #endif
 extern char user_b_entry[];
 extern char user_b_stack[], user_b_stack_top[];
@@ -169,7 +182,12 @@ static uint64_t entry_stack_high_water_pattern = UINT64_C(0x6c65616e6f735741);
 #endif
 #ifdef LEANOS_ENTRY_ADVERSARIAL
 static unsigned entry_adversarial_step;
+#endif
+#if defined(LEANOS_ENTRY_ADVERSARIAL) || defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
 static uint64_t direct_port_fault_attestation;
+#endif
+#ifdef LEANOS_INTEGER_FAULT_SCENARIO
+static uint64_t integer_fault_attestation;
 #endif
 static uint8_t copy_buffer[16];
 static unsigned copy_step;
@@ -322,7 +340,9 @@ void authorize_interrupt_entry(uint64_t vector, uint64_t has_error,
     if ((flags & ((1ull << 10) | (1ull << 18))) != 0)
         fail("entry-privileged-state");
     uint64_t expected_error, dpl, purpose;
-    if (vector == 6) { expected_error = 0; dpl = 0; purpose = 4; }
+    if (vector == 0) { expected_error = 0; dpl = 0; purpose = 7; }
+    else if (vector == 3) { expected_error = 0; dpl = 3; purpose = 8; }
+    else if (vector == 6) { expected_error = 0; dpl = 0; purpose = 4; }
     else if (vector == 7) { expected_error = 0; dpl = 0; purpose = 5; }
     else if (vector == 13) { expected_error = 1; dpl = 0; purpose = 6; }
     else if (vector == 14) { expected_error = 1; dpl = 0; purpose = 1; }
@@ -361,7 +381,8 @@ void complete_interrupt_entry(void) {
 static void check_entry_manifest(void) {
     struct expected_gate { unsigned vector; void (*target)(void); uint8_t ist, attr; };
     static const struct expected_gate expected[] = {
-        { 2, isr2, 2, 0x8e },
+        { 0, isr0, 0, 0x8e }, { 2, isr2, 2, 0x8e },
+        { 3, isr3, 0, 0xee },
         { 6, isr6, 0, 0x8e }, { 7, isr7, 0, 0x8e },
         { 8, isr8, 1, 0x8e }, { 13, isr13, 0, 0x8e },
         { 14, isr14, 0, 0x8e }, { 32, isr32, 0, 0x8e },
@@ -384,7 +405,7 @@ static void check_entry_manifest(void) {
         tss.ist[0] != (uint64_t)__df_ist_stack_end ||
         tss.ist[1] != (uint64_t)__nmi_ist_stack_end)
         fail("entry-tss-mismatch");
-    serial_puts("LEANOS/17 ENTRY-MANIFEST ordinary=6 extended=6,7 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS\n");
+    serial_puts("LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS\n");
 }
 
 #ifdef LEANOS_ENTRY_ADVERSARIAL
@@ -1231,8 +1252,17 @@ static void replay_oracle(void) {
                                                         ? leanos_direct_port_io_demo(v->words[0],
                                                         v->words[1], v->words[2], v->words[3],
                                                         v->words[4], v->words[5])
-                                                        : leanos_nmi_demo(v->words[0], v->words[1],
-                                                        v->words[2], v->words[3], v->words[4]);
+                                                        : v->adapter == 14
+                                                            ? leanos_nmi_demo(v->words[0],
+                                                            v->words[1], v->words[2], v->words[3],
+                                                            v->words[4])
+                                                            : v->adapter == 15
+                                                            ? leanos_boot_phase_demo(v->words[0],
+                                                            v->words[1], v->words[2], v->words[3],
+                                                            v->words[4])
+                                                            : leanos_stale_translation_demo(
+                                                            v->words[0], v->words[1], v->words[2],
+                                                            v->words[3], v->words[4], v->words[5]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -1287,7 +1317,9 @@ static void privilege_init(void) {
     *(uint64_t *)((uint64_t)__entry_stack_end - 128u) =
         UINT64_C(0x535441434b43414e);
     load_tss();
+    set_gate(0, isr0, 0, 0x8e);
     set_gate(2, isr2, 2, 0x8e);
+    set_gate(3, isr3, 0, 0xee);
     set_gate(8, isr8, 1, 0x8e);
     set_gate(6, isr6, 0, 0x8e);
     set_gate(7, isr7, 0, 0x8e);
@@ -1491,6 +1523,47 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             fail("fault-peer-state");
         serial_puts("LEANOS/14 PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
         serial_puts("LEANOS/14 FINAL status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop\n");
+        finish(0x10);
+    }
+#endif
+#ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
+    if (number == 16 && current_subject == 2) {
+        check_selected_root_b();
+        if (arg0 != UINT64_C(0xb2b2d0d151a7e55e) || arg1 != 0x030201 ||
+            arg2 != 0x51a7 ||
+            direct_port_fault_attestation != UINT64_C(0x00000000ff020202))
+            fail("direct-port-peer-state");
+        /* Independent hardware oracle for the PIC probe: the survivor triggers
+           a kernel-owned read-back of the master 8259 interrupt mask.  It reads
+           the actual device register, not the serial claim, so a denied write
+           leaves the init value (0xff) intact while an escaped write to 0x21
+           would have cleared the mask and this check would fail-stop even under
+           a forged "device-mutation=0" transcript. */
+        if (direct_port_probe_class == 3) {
+            uint8_t observed_pic_mask = in8(0x21);
+            if (observed_pic_mask != 0xffu)
+                fail("direct-port-pic-canary");
+            serial_puts("LEANOS/16 DIRECT-PORT-CANARY register=pic-mask port=33 programmed=255 observed=255 device-mutation=0 result=PASS\n");
+        }
+        serial_puts("LEANOS/16 DIRECT-PORT-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
+        serial_puts("LEANOS/16 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0\n");
+        finish(0x10);
+    }
+#endif
+#ifdef LEANOS_INTEGER_FAULT_SCENARIO
+    if (number == 17 && current_subject == 2) {
+        check_selected_root_b();
+        if (arg0 != UINT64_C(0xb2b2de3b51a7e55e) || arg1 != 0x030201 ||
+            arg2 != 0x51a7 ||
+            integer_fault_attestation != (integer_fault_probe_class == 1
+                ? UINT64_C(0x00000200ff020202) : UINT64_C(0x00000100ff020202)))
+            fail("integer-fault-peer-state");
+        serial_puts(integer_fault_probe_class == 1
+            ? "LEANOS/18 BREAKPOINT-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n"
+            : "LEANOS/18 DIVIDE-ERROR-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
+        serial_puts(integer_fault_probe_class == 1
+            ? "LEANOS/18 FINAL status=PASS faulting=terminated survivor=2 vector=3 reason=breakpoint kernel-origin=fail-stop\n"
+            : "LEANOS/18 FINAL status=PASS faulting=terminated survivor=2 vector=0 reason=divide-error kernel-origin=fail-stop\n");
         finish(0x10);
     }
 #endif
@@ -1919,6 +1992,164 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
     fail("kernel-fault");
 }
 
+#ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
+/* Trusted machine adapter for the direct-port-containment family.  Subject A
+   executed exactly one reviewed raw CPL3 port instruction, so hardware
+   delivered #GP(0) before the device operation could take effect.  This
+   routine snapshots the live privilege configuration, types the
+   state-preserving denial through the generated DirectPortIO adapter (device
+   projection unchanged), and then reuses the shared contained-user-fault
+   cleanup/dispatch adapter exactly like the page-fault containment scenario.
+   The untrusted port/value/direction words are recorded only as diagnostics;
+   they cannot select the current subject, the survivor, the kernel purpose, or
+   a claim that no side effect occurred. */
+uint64_t direct_port_containment_gp_handler(uint64_t error, uint64_t rip,
+                                            uint64_t saved_cs, uint64_t saved_rdx,
+                                            uint64_t saved_rax) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    uint64_t port = saved_rdx & UINT64_C(0xffff);
+    uint64_t value = saved_rax & UINT64_C(0xff);
+    uint64_t expected_port;
+    uint64_t direction_width;
+    unsigned check_value;
+    uint64_t expected_value;
+    if (direct_port_probe_class == 1) {
+        expected_port = DEBUG_EXIT; direction_width = 1;
+        check_value = 1; expected_value = UINT64_C(0x11);
+    } else if (direct_port_probe_class == 2) {
+        expected_port = UINT64_C(0x3fd); direction_width = 0;
+        check_value = 0; expected_value = 0;
+    } else if (direct_port_probe_class == 3) {
+        /* Byte OUT of 0x00 to the master PIC data/mask port: an attempt to
+           clear the interrupt mask programmed at init.  Denied under the same
+           #GP(0) path; the surviving peer's mask read-back is the independent
+           oracle. */
+        expected_port = UINT64_C(0x21); direction_width = 1;
+        check_value = 1; expected_value = 0;
+    } else if (direct_port_probe_class == 0) {
+        expected_port = COM1; direction_width = 1;
+        check_value = 1; expected_value = UINT64_C(0x41);
+    } else {
+        fail("direct-port-probe-class");
+    }
+    if (saved_cs != 0x23 || error != 0 ||
+        rip != (uint64_t)user_a_direct_port_probe || port != expected_port ||
+        (check_value && value != expected_value) ||
+        current_subject != 1 || cr3 != (uint64_t)page_map_level_4_a)
+        fail("direct-port-gp-binding");
+    check_direct_port_control(0);
+    /* DirectPortIO types the architectural #GP(0) denial and leaves every
+       device projection byte-identical.  The reviewed user origin denies
+       independently of the untrusted port/value/direction operands. */
+    if (leanos_direct_port_io_demo(0, 0, 0, port, direction_width, value) !=
+        UINT64_C(0x0144332211))
+        fail("direct-port-model-denial");
+    if (saved_context_owner_b != 2 || !initial_b_frame_valid(initial_context_b))
+        fail("direct-port-peer-context");
+    /* The canonical contained-user-fault class reuses the existing atomic
+       cleanup/survivor-dispatch adapter (reason code zero, vector-14 class). */
+    uint64_t result = leanos_fault_dispatch_demo(14, saved_cs & 3u,
+        current_subject, current_subject, saved_context_owner_b,
+        saved_context_owner_b);
+    if (result != UINT64_C(0x00000000ff020202))
+        fail("direct-port-fault-dispatch");
+    uint64_t selected = (result >> 8) & 0xffu;
+    uint64_t address_space = (result >> 16) & 0xffu;
+    uint64_t cleanup = (result >> 24) & 0x1fu;
+    if (selected != saved_context_owner_b || address_space != 2 ||
+        cleanup != 0x1fu || ((result >> 29) & 7u) != 7u)
+        fail("direct-port-fault-encoding");
+    direct_port_fault_attestation = result;
+    current_subject = selected;
+    serial_puts(direct_port_probe_class == 1
+        ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS\n"
+        : direct_port_probe_class == 2
+        ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=1021 direction=in width=byte purpose=user device-mutation=0 result=PASS\n"
+        : direct_port_probe_class == 3
+        ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=33 direction=out width=byte purpose=user device-mutation=0 result=PASS\n"
+        : "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=1016 direction=out width=byte purpose=user device-mutation=0 result=PASS\n");
+    serial_puts("LEANOS/16 DIRECT-PORT-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+    serial_puts("LEANOS/16 DIRECT-PORT-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
+    return 2;
+}
+#endif
+
+/* Trusted machine adapters for the real integer divide-error (#DE, vector 0)
+   and breakpoint (#BP, vector 3) containment scenarios.  Each is reached only
+   through its manifest-checked live IDT gate and the common normalizer; it binds
+   the saved-RIP class without using RIP as an authority input, consumes the
+   shared generated typed dispatcher (distinct reason code per class), retires A,
+   and dispatches B.  isr0/isr3 always link these; the containment logic is only
+   built into the shared integer-fault kernel object. */
+uint64_t divide_error_handler(uint64_t rip, uint64_t saved_cs) {
+#ifdef LEANOS_INTEGER_FAULT_SCENARIO
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if (integer_fault_probe_class != 0 || saved_cs != 0x23 ||
+        current_subject != 1 || rip != (uint64_t)user_a_divide_instruction ||
+        cr3 != (uint64_t)page_map_level_4_a || saved_context_owner_b != 2 ||
+        !initial_b_frame_valid(initial_context_b))
+        fail("divide-error-binding");
+    serial_puts("LEANOS/18 DIVIDE-ERROR-ENTRY vector=0 error=none origin=cpl3 hardware=1 direct-call=0 saved-rip=faulting-instruction subject=1 address-space=1 result=PASS\n");
+    uint64_t result = leanos_fault_dispatch_demo(0, saved_cs & 3u,
+        current_subject, current_subject, saved_context_owner_b,
+        saved_context_owner_b);
+    if (result != UINT64_C(0x00000100ff020202))
+        fail("divide-error-dispatch");
+    uint64_t selected = (result >> 8) & 0xffu;
+    uint64_t address_space = (result >> 16) & 0xffu;
+    uint64_t cleanup = (result >> 24) & 0x1fu;
+    uint64_t reason = (result >> 40) & 0xffu;
+    if (selected != saved_context_owner_b || address_space != 2 ||
+        cleanup != 0x1fu || ((result >> 29) & 7u) != 7u || reason != 1)
+        fail("divide-error-encoding");
+    integer_fault_attestation = result;
+    current_subject = selected;
+    serial_puts("LEANOS/18 DIVIDE-ERROR-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+    serial_puts("LEANOS/18 DIVIDE-ERROR-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned reason=divide-error result=PASS\n");
+    return 0;
+#else
+    (void)rip;
+    (void)saved_cs;
+    fail("divide-error-unexpected");
+#endif
+}
+
+uint64_t breakpoint_handler(uint64_t rip, uint64_t saved_cs) {
+#ifdef LEANOS_INTEGER_FAULT_SCENARIO
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if (integer_fault_probe_class != 1 || saved_cs != 0x23 ||
+        current_subject != 1 || rip != (uint64_t)user_a_breakpoint_after ||
+        cr3 != (uint64_t)page_map_level_4_a || saved_context_owner_b != 2 ||
+        !initial_b_frame_valid(initial_context_b))
+        fail("breakpoint-binding");
+    serial_puts("LEANOS/18 BREAKPOINT-ENTRY vector=3 error=none origin=cpl3 hardware=1 direct-call=0 saved-rip=post-instruction subject=1 address-space=1 result=PASS\n");
+    uint64_t result = leanos_fault_dispatch_demo(3, saved_cs & 3u,
+        current_subject, current_subject, saved_context_owner_b,
+        saved_context_owner_b);
+    if (result != UINT64_C(0x00000200ff020202))
+        fail("breakpoint-dispatch");
+    uint64_t selected = (result >> 8) & 0xffu;
+    uint64_t address_space = (result >> 16) & 0xffu;
+    uint64_t cleanup = (result >> 24) & 0x1fu;
+    uint64_t reason = (result >> 40) & 0xffu;
+    if (selected != saved_context_owner_b || address_space != 2 ||
+        cleanup != 0x1fu || ((result >> 29) & 7u) != 7u || reason != 2)
+        fail("breakpoint-encoding");
+    integer_fault_attestation = result;
+    current_subject = selected;
+    serial_puts("LEANOS/18 BREAKPOINT-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+    serial_puts("LEANOS/18 BREAKPOINT-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned reason=breakpoint result=PASS\n");
+    return 0;
+#else
+    (void)rip;
+    (void)saved_cs;
+    fail("breakpoint-unexpected");
+#endif
+}
+
 /* The sole boot-reachable Lean runtime primitive. See docs/boot-image.md. */
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
     return (uint8_t)(left == right);
@@ -1935,6 +2166,18 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         : "LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
     serial_puts("LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap\n");
+#elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
+    serial_puts(direct_port_probe_class == 1
+        ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=debug-exit contract=v1 controls=wp,smep,smap\n"
+        : direct_port_probe_class == 2
+        ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=serial-in contract=v1 controls=wp,smep,smap\n"
+        : direct_port_probe_class == 3
+        ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=pic-mask contract=v1 controls=wp,smep,smap\n"
+        : "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=serial-out contract=v1 controls=wp,smep,smap\n");
+#elif defined(LEANOS_INTEGER_FAULT_SCENARIO)
+    serial_puts(integer_fault_probe_class == 1
+        ? "LEANOS/18 BOOT target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=breakpoint contract=v1 controls=wp,smep,smap\n"
+        : "LEANOS/18 BOOT target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=divide-error contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 #else
@@ -2030,6 +2273,18 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
     check_selected_root_a();
     serial_puts("LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
+    enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
+    current_subject = 1;
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    check_selected_root_a();
+    serial_puts("LEANOS/16 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
+    enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_INTEGER_FAULT_SCENARIO)
+    current_subject = 1;
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    check_selected_root_a();
+    serial_puts("LEANOS/18 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     arm_timer();

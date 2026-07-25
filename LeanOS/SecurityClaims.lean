@@ -1,3 +1,5 @@
+import LeanOS.BootInterruptPhase
+import LeanOS.BoundedLifecycle
 import LeanOS.KernelTransition
 import LeanOS.Capability
 import LeanOS.FrameAllocator
@@ -13,6 +15,9 @@ import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
+import LeanOS.DirectPortContainment
+import LeanOS.UserFaultContainmentVocabulary
+import LeanOS.StaleTranslation
 
 /-! # Stable security-claim contract
 
@@ -48,6 +53,41 @@ theorem direct_port_kernel_operation_confined state live request
       (DirectPortIO.executeKernel state live request).state.devices =
         DirectPortIO.applyKernel state.devices request := by
   exact DirectPortIO.kernel_acceptance_confined state live request haccepted
+
+/-- SC-DIRECT-PORT-CONTAINMENT: the composed CPL3 port-denial containment
+sequence denies the untrusted user port operation with an unchanged device
+projection and a CPL3-denying finite privilege view, then retires the
+kernel-selected faulting subject through the atomic cleanup/survivor transition;
+the untrusted port/value/width words never reach a kernel operation, and the
+denied attempt can never return to the faulting subject. -/
+theorem direct_port_denial_survivor_contained
+    (devices : DirectPortIO.State) (liveControls : DirectPortIO.Controls)
+    (operation : DirectPortIO.PortOperation)
+    (schedule : ResumablePreemption.State) (entry : InterruptEntry.Result)
+    (hpolicy : DirectPortIO.AcceptedControls devices.controls)
+    (hlive : liveControls = devices.controls)
+    (hsuccess :
+      (∃ reason, (FaultDispatch.dispatch schedule entry).action = .idle reason) ∨
+      ∃ reason context,
+        (FaultDispatch.dispatch schedule entry).action = .dispatch reason context) :
+    let step := DirectPortContainment.containDeniedPort
+      devices liveControls operation schedule entry
+    step.port.result = .userDeniedGP ∧
+      step.port.state.devices = devices.devices ∧
+      DirectPortIO.privilegeAllows liveControls .user = false ∧
+      ∃ faulting,
+        schedule.scheduler.lifecycle.current = some faulting ∧
+          step.fault.state.scheduler.lifecycle.capabilities.subjects faulting = false ∧
+          step.fault.state.scheduler.lifecycle.runnable faulting = false ∧
+          faulting ∉ step.fault.state.scheduler.ready ∧
+          step.fault.state.scheduler.lifecycle.current ≠ some faulting ∧
+          ResumablePreemption.contextFor step.fault.state.contexts faulting = none := by
+  obtain ⟨hdenied, hdevices, hcpl, faulting, hcurrent, _, _, hdead, hnotrun,
+      hready, hnotcurrent, hcontext, _⟩ :=
+    DirectPortContainment.denied_port_contained devices liveControls operation schedule entry
+      hpolicy hlive hsuccess
+  exact ⟨hdenied, hdevices, hcpl,
+    faulting, hcurrent, hdead, hnotrun, hready, hnotcurrent, hcontext⟩
 
 /-- SC-DMA-QUARANTINE: an accepted nonempty q35 quarantine plus the explicit
 bus-master device-control contract preserves every modeled memory projection. -/
@@ -96,6 +136,44 @@ theorem dma_quarantine_q35_trace_nonvacuous :
     ∃ middle, DMAQuarantine.QuarantineStep DMAQuarantine.q35Runtime middle ∧
       DMAQuarantine.QuarantineTrace middle DMAQuarantine.q35Runtime :=
   DMAQuarantine.q35_mixed_trace_nonvacuous
+
+/-- SC-LIFETIME-IDENTITY-NO-REUSE: under the bounded-issuer runtime invariant,
+every finite sequence of composite lifecycle operations preserves
+counter/history agreement, can never make a retired object identity or a
+terminated subject identity live again, and keeps an exhausted subject or
+object issuer exhausted. -/
+theorem lifetime_identity_no_reuse (runtime : BoundedLifecycle.Runtime)
+    (operations : List BoundedLifecycle.Operation)
+    (hinvariant : BoundedLifecycle.Invariant runtime) :
+    BoundedLifecycle.Invariant (BoundedLifecycle.runOperations runtime operations) ∧
+      (∀ object, BoundedLifecycle.issuedObject runtime object = true →
+        runtime.virtualMemory.memory.capabilities.objects object = false →
+        (BoundedLifecycle.runOperations runtime
+          operations).virtualMemory.memory.capabilities.objects object = false) ∧
+      (∀ subject, runtime.lifecycle.issuedSubjects subject = true →
+        runtime.lifecycle.capabilities.subjects subject = false →
+        (BoundedLifecycle.runOperations runtime
+          operations).lifecycle.capabilities.subjects subject = false) ∧
+      (LifetimeIssuer.exhausted runtime.subjectIssuer = true →
+        LifetimeIssuer.exhausted (BoundedLifecycle.runOperations runtime
+          operations).subjectIssuer = true) ∧
+      (LifetimeIssuer.exhausted runtime.objectIssuer = true →
+        LifetimeIssuer.exhausted (BoundedLifecycle.runOperations runtime
+          operations).objectIssuer = true) := by
+  exact BoundedLifecycle.bounded_identity_no_reuse runtime operations hinvariant
+
+/-- The no-reuse bundle is not vacuous: the concrete sample runtime satisfies
+the invariant and survives a mixed creation/retirement trace over both
+identity domains and all three object kinds. -/
+theorem lifetime_identity_no_reuse_nonvacuous :
+    BoundedLifecycle.Invariant BoundedLifecycle.sampleRuntime ∧
+      BoundedLifecycle.Invariant (BoundedLifecycle.runOperations
+        BoundedLifecycle.sampleRuntime
+        [.createSubject, .allocateMemory 0 0, .createEndpoint 0 1,
+          .createAddressSpace 0 2, .destroyEndpoint 0 1, .allocateMemory 1 0]) := by
+  exact ⟨BoundedLifecycle.sampleRuntime_invariant,
+    (BoundedLifecycle.bounded_identity_no_reuse _ _
+      BoundedLifecycle.sampleRuntime_invariant).1⟩
 
 /-- SC-KERNEL-DET: the first modeled transition is deterministic. -/
 theorem kernel_transition_deterministic
@@ -521,6 +599,27 @@ theorem nmi_named_handling_and_after_halt_witnesses :
           syscallNext.execution.mode := by
   native_decide
 
+/-- SC-BOOT-IDT-PHASE: before the runtime IDT is published, every admitted
+bootstrap-phase event is one immediate absorbing terminal latch: it records the
+bounded boot-phase reason, preserves the not-yet-published business state, arms
+no return authority, never advances the publication chain, and absorbs every
+later publication or event. -/
+theorem boot_interrupt_phase_early_terminal (α : Type)
+    (state : BootInterruptPhase.State α) event operations
+    (hphase : state.phase = .bootstrap32 ∨ state.phase = .bootstrap64)
+    (hlatched : state.latched = none) :
+    let record : BootInterruptPhase.EarlyHaltRecord :=
+      ⟨state.phase, event.vector, event.hasErrorCode, event.fromUser, .earlyEvent⟩
+    let next := (BootInterruptPhase.dispatch state event).state
+    (BootInterruptPhase.dispatch state event).outcome = .terminalLatched record ∧
+      next.phase = .terminal ∧
+      next.latched = some record ∧
+      next.returnAuthorityArmed = false ∧
+      next.business = state.business ∧
+      BootInterruptPhase.run next operations = next := by
+  exact BootInterruptPhase.owned_bootstrap_event_terminal_absorbing state event
+    operations hphase hlatched
+
 /-- SC-NMI-FAILSTOP: an exact normalized vector-2 terminal entry from running
 or any ordinary handling state freezes every business subsystem, clears return
 and copy authority, records the kernel-owned context/CR3, and absorbs every
@@ -663,8 +762,9 @@ transition starts from a live, runnable kernel-selected subject and removes it
 from live/runnable identity, the ready queue, the current slot, the authoritative
 resumable bank, and every address space and mapping it owned. -/
 theorem fault_dispatch_success_nonresumption state entry
-    (hsuccess : (FaultDispatch.dispatch state entry).action = .idle ∨
-      ∃ context, (FaultDispatch.dispatch state entry).action = .dispatch context) :
+    (hsuccess : (∃ reason, (FaultDispatch.dispatch state entry).action = .idle reason) ∨
+      ∃ reason context,
+        (FaultDispatch.dispatch state entry).action = .dispatch reason context) :
     ∃ faulting,
       state.scheduler.lifecycle.current = some faulting ∧
         state.scheduler.lifecycle.capabilities.subjects faulting = true ∧
@@ -685,6 +785,129 @@ theorem fault_dispatch_success_nonresumption state entry
                 (FaultDispatch.dispatch state entry).state.translations.virtual.mappings
                   addressSpace page = none := by
   exact FaultDispatch.successful_nonresumption state entry hsuccess
+
+/-- SC-USER-FAULT-CLASS-CONTAINMENT: every accepted modeled CPL3 page-fault,
+divide-error, or breakpoint entry that reaches a successful composite result
+binds its typed reason to the manifest-decoded vector with the reviewed error
+convention, performs the same complete current-subject cleanup with the
+authoritative survivor-or-idle selection, and preserves peer resources; a
+kernel-origin occurrence of any accepted contained frame is the absorbing
+fatal transition, never containment. -/
+theorem user_fault_class_containment state frame reason
+    (hsuccess : (FaultDispatch.dispatch state (.accepted frame)).action = .idle reason ∨
+      ∃ context,
+        (FaultDispatch.dispatch state (.accepted frame)).action = .dispatch reason context) :
+    (InterruptEntry.containedReason? frame.vector = some reason ∧
+      frame.vector = reason.vector ∧
+      frame.purpose = .userFault ∧
+      frame.origin = .user ∧
+      frame.errorCode.isSome = reason.hasErrorWord ∧
+      frame.cs % 4 = 3) ∧
+    (∃ faulting,
+      state.scheduler.lifecycle.current = some faulting ∧
+        state.scheduler.lifecycle.capabilities.subjects faulting = true ∧
+        state.scheduler.lifecycle.runnable faulting = true ∧
+        (FaultDispatch.dispatch state (.accepted frame)).state.scheduler.lifecycle.capabilities.subjects
+          faulting = false ∧
+        (FaultDispatch.dispatch state (.accepted frame)).state.scheduler.lifecycle.runnable
+          faulting = false ∧
+        faulting ∉ (FaultDispatch.dispatch state (.accepted frame)).state.scheduler.ready ∧
+        (FaultDispatch.dispatch state (.accepted frame)).state.scheduler.lifecycle.current ≠
+          some faulting ∧
+        ResumablePreemption.contextFor
+          (FaultDispatch.dispatch state (.accepted frame)).state.contexts faulting = none ∧
+        ∀ addressSpace,
+          state.scheduler.lifecycle.addressOwner addressSpace = some faulting →
+            (FaultDispatch.dispatch state (.accepted frame)).state.scheduler.lifecycle.addressOwner
+                addressSpace = none ∧
+              ∀ page,
+                (FaultDispatch.dispatch state (.accepted frame)).state.translations.virtual.mappings
+                  addressSpace page = none) ∧
+    (∀ kernelFrame : InterruptEntry.NormalizedFrame,
+      kernelFrame.origin = .kernel → state.halted = false →
+        FaultDispatch.dispatch state (.accepted kernelFrame) =
+          FaultDispatch.halt state .kernelOrigin) := by
+  refine ⟨FaultDispatch.success_reason_vector_binding state frame reason hsuccess, ?_, ?_⟩
+  · exact FaultDispatch.successful_nonresumption state (.accepted frame)
+      (hsuccess.elim (fun hidle => Or.inl ⟨reason, hidle⟩)
+        (fun ⟨context, hdispatch⟩ => Or.inr ⟨reason, context, hdispatch⟩))
+  · intro kernelFrame horigin hrunning
+    exact FaultDispatch.kernel_origin_is_fatal state kernelFrame hrunning horigin
+
+/-- SC-STALE-TRANSLATION-INVALIDATION: the public invalidation step returns an
+effect determined by the accepted logical transition and its checked target.  An
+accepted unmap invalidates exactly the requested address-space page and leaves
+that translation absent in the returned cache, so a later access cannot use the
+old translation; an actor that is not the checked owner is rejected, requests no
+invalidation, and preserves the complete cache/model state. -/
+theorem stale_translation_invalidation_confined
+    (state : TLB.State)
+    (actor : VirtualMapping.SubjectId) (addressSpace : VirtualMapping.AddressSpaceId)
+    (page : VirtualMapping.VirtualPage) (context : X86PageTable.AccessContext) :
+    ((StaleTranslation.step state (.unmap actor addressSpace page)).accepted = true →
+      (StaleTranslation.step state (.unmap actor addressSpace page)).effect =
+          .page addressSpace page ∧
+        TLB.lookup
+          (StaleTranslation.step state (.unmap actor addressSpace page)).state.entries
+          { addressSpace, page } context = none) ∧
+    (∀ owner, state.virtual.owner addressSpace = some owner → owner ≠ actor →
+      (StaleTranslation.step state (.unmap actor addressSpace page)).accepted = false ∧
+        (StaleTranslation.step state (.unmap actor addressSpace page)).effect = .none ∧
+        (StaleTranslation.step state (.unmap actor addressSpace page)).state = state) := by
+  refine ⟨fun h => ⟨StaleTranslation.unmap_accepted_effect state actor addressSpace page h,
+      StaleTranslation.accepted_unmap_target_absent state actor addressSpace page context h⟩,
+    fun owner howner hne =>
+      StaleTranslation.unmap_wrong_owner_inert state actor addressSpace page owner howner hne⟩
+
+/-- The stale-translation invalidation contract is non-vacuous: the reviewed
+fixture caches a live CPL3 translation, an accepted unmap returns the exact page
+effect leaving the page absent, and the frame can only be reused after a full
+flush while the old virtual page stays unreachable. -/
+theorem stale_translation_invalidation_nonvacuous :
+    (TLB.access StaleTranslation.filled 7
+        StaleTranslation.ctx).toOption.map (fun result => result.1) = some 4 ∧
+      (StaleTranslation.step StaleTranslation.filled (.unmap 0 1 7)).effect =
+        .page 1 7 ∧
+      (TLB.access
+        (StaleTranslation.step StaleTranslation.filled (.unmap 0 1 7)).state 7
+        StaleTranslation.ctx).isOk = false ∧
+      (StaleTranslation.step StaleTranslation.filled (.release 0 0)).effect = .flush ∧
+      (StaleTranslation.step StaleTranslation.filled (.release 0 0)).state.entries = [] ∧
+      (TLB.access StaleTranslation.reused 7 StaleTranslation.ctx).isOk = false := by
+  native_decide
+
+/-- SC-USER-FAULT-SHARED-CONTAINMENT: over one shared two-subject pre-state the
+real CPL3 divide-error, breakpoint, page-fault, and denied-port entries drive a
+single subject-termination/peer-survival transition: each dispatches the same
+survivor with its typed reason bound to the manifest vector, the port-denial
+composition reuses the identical vector-14 dispatch, and every successful
+post-state is byte-for-byte the page-fault post-state. -/
+theorem user_fault_shared_containment_vocabulary :
+    (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+        UserFaultContainmentVocabulary.divideErrorEntry).action =
+        .dispatch .divideError DirectPortContainment.witnessSurvivorContext ∧
+      (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          UserFaultContainmentVocabulary.breakpointEntry).action =
+        .dispatch .breakpoint DirectPortContainment.witnessSurvivorContext ∧
+      (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          DirectPortContainment.witnessEntry).action =
+        .dispatch .pageFault DirectPortContainment.witnessSurvivorContext ∧
+      (DirectPortContainment.containDeniedPort
+          DirectPortContainment.witnessDevices DirectPortIO.selectedControls
+          DirectPortContainment.serialProbe
+          DirectPortContainment.witnessSchedule
+          DirectPortContainment.witnessEntry).fault.state =
+        (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          DirectPortContainment.witnessEntry).state ∧
+      (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          UserFaultContainmentVocabulary.divideErrorEntry).state =
+        (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          DirectPortContainment.witnessEntry).state ∧
+      (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          UserFaultContainmentVocabulary.breakpointEntry).state =
+        (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          DirectPortContainment.witnessEntry).state :=
+  UserFaultContainmentVocabulary.shared_contained_classes_one_transition
 
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps

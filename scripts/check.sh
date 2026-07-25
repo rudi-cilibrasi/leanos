@@ -27,11 +27,19 @@ lake build leanos-boot-plan
 
 ./scripts/test-run-fault-containment.sh
 
+./scripts/test-run-direct-port-pic.sh
+
+./scripts/test-run-integer-fault.sh
+
 ./scripts/test-run-double-fault.sh
 
 ./scripts/test-run-entry-stack-overflow.sh
 
 ./scripts/test-run-nmi.sh
+
+./scripts/test-run-bootstrap32-ud.sh
+
+./scripts/test-run-bootstrap64-nmi.sh
 
 ./scripts/test-entry-stack-budget.sh
 
@@ -115,13 +123,43 @@ if ! grep -q 'declaration uses `sorry`' "$negative_log"; then
   exit 1
 fi
 
-for fixture in WeakenedAuthorityClaim DroppedSeparationClaim; do
+for fixture in WeakenedAuthorityClaim DroppedSeparationClaim DroppedFaultClassKernelOrigin; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
   fi
   if ! grep -q "tests/negative/${fixture}.lean.*error: Type mismatch" "$negative_log"; then
     echo "error: security-claim fixture ${fixture} lacked the expected Lean diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
+for fixture in FaultReasonRelabel KernelBreakpointContainment \
+    DivideErrorSoftwareGate BreakpointAlternateDescriptor; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: user-fault-class fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
+    echo "error: user-fault-class fixture ${fixture} lacked its expected semantic diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
+for fixture in StaleTranslationOmittedInvalidation StaleTranslationWrongEffect \
+    StaleTranslationForgedTarget; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: stale-translation fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
+    echo "error: stale-translation fixture ${fixture} lacked its expected semantic diagnostic" >&2
     cat "$negative_log" >&2
     exit 1
   fi
@@ -167,6 +205,20 @@ for fixture in DMAWeakenedBusMaster DMADroppedFunction DMARuntimeEnable DMATrace
   fi
 done
 
+if lake env lean tests/negative/WrappingIssuerReuse.lean >"$negative_log" 2>&1; then
+  echo "error: wrapping-issuer reuse fixture unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/WrappingIssuerReuse.lean' "$negative_log" ||
+    ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+      "$negative_log" ||
+    ! grep -Fq 'step5.fst.lifecycle.capabilities.subjects 1 = false' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: wrapping-issuer fixture lacked its expected stale-lifetime diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 for fixture in DirectPortUserMutation DirectPortExposedBitmap \
     DirectPortWrongPurpose DirectPortWrongWidth; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
@@ -205,6 +257,36 @@ for fixture in DirectPortUserMutation DirectPortExposedBitmap \
   fi
 done
 
+if lake env lean tests/negative/DirectPortContainmentExposedControls.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: direct-port containment fixture unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/DirectPortContainmentExposedControls.lean' "$negative_log" ||
+    ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+      "$negative_log" ||
+    ! grep -Fq '.port.result =' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: direct-port containment fixture lacked its expected semantic diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/SharedContainmentReasonSubstitution.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: shared-containment reason-substitution fixture unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/SharedContainmentReasonSubstitution.lean' "$negative_log" ||
+    ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+      "$negative_log" ||
+    ! grep -Fq 'ContainedReason.breakpoint' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: shared-containment reason-substitution fixture lacked its expected diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 for fixture in NMITerminalManifestMutation NMITraceInventoryMutation \
     NMIOrdinaryManifestVector2 NMIReuseIST0 NMIReuseIST1 NMIWrongPurpose \
     NMIContainmentRouting NMISchedulerRouting NMIFrameNotAtStackTop; do
@@ -238,6 +320,21 @@ for fixture in NMIFrameMissingRip NMIFrameMissingCs NMIFrameMissingFlags \
       ! grep -Fq 'error: Fields missing' "$negative_log" ||
       ! grep -Fq "$expected_field" "$negative_log"; then
     echo "error: structural NMI fixture ${fixture} lacked its missing-frame-word diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
+for fixture in BootPhaseSkipBootstrap32 BootPhaseRuntimeWithoutTss \
+    BootPhaseEarlyDelegation BootPhaseProgressAfterLatch; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: boot-phase fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
+    echo "error: boot-phase fixture ${fixture} lacked its expected semantic diagnostic" >&2
     cat "$negative_log" >&2
     exit 1
   fi

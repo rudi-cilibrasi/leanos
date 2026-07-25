@@ -6,6 +6,7 @@ serial_init	out8	0x3fb	DirectPortIO.serial	2
 serial_init	out8	0x3fc	DirectPortIO.serial	1
 serial_putc	in8	0x3fd	DirectPortIO.serial	1
 serial_putc	out8	0x3f8	DirectPortIO.serial	1
+syscall_handler	in8	0x21	DirectPortIO.pic	1
 finish	out8	0xf4	DirectPortIO.debug-exit	1
 privilege_init	out8	0x21	DirectPortIO.pic	1
 privilege_init	out8	0xa1	DirectPortIO.pic	1

@@ -1,3 +1,4 @@
+import LeanOS.BootInterruptPhase
 import LeanOS.KernelTransition
 import LeanOS.Syscall
 import LeanOS.IPCSyscall
@@ -11,6 +12,7 @@ import LeanOS.ExtendedState
 import LeanOS.PrivilegeEntryControl
 import LeanOS.FaultDispatch
 import LeanOS.DirectPortIO
+import LeanOS.StaleTranslation
 
 /-!
 # Bounded scalar boundary oracle
@@ -110,6 +112,13 @@ private def nmi (id : String) (descriptor frame stack context control : UInt64) 
   { id, adapter := "Interrupt.nmi", words := [descriptor, frame, stack, context, control],
     expected := InterruptEntry.nmiModelExpected descriptor frame stack context control }
 
+private def staleTranslation (id : String) (kind actor addressSpace page aux selector : UInt64) :
+    Vector :=
+  { id, adapter := "StaleTranslation.scalar",
+    words := [kind, actor, addressSpace, page, aux, selector],
+    expected := StaleTranslation.staleTranslationModelExpected
+      kind actor addressSpace page aux selector }
+
 private def nmiUserFrame : UInt64 :=
   0x23 + 0x1b * 256 + 0x10000 + 0x20000 + 0x40000
 
@@ -124,6 +133,16 @@ private def nmiControl : UInt64 :=
   2 + 40 * 512 + 0x20000 + 0x40000 + 1 * 0x80000 + 1 * 0x8000000
 
 private def nmiFrameAddress : UInt64 := 0x903fd8
+
+/-- Opaque business token; every boot-phase result must carry it unchanged. -/
+private def bootPhaseBusiness : UInt64 := 0x5a
+
+private def bootPhase (id : String)
+    (phase operation detail latchWord : UInt64) : Vector :=
+  { id, adapter := "Interrupt.bootPhase",
+    words := [phase, operation, detail, latchWord, bootPhaseBusiness],
+    expected := BootInterruptPhase.bootPhaseModelExpected phase operation detail
+      latchWord bootPhaseBusiness }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -344,9 +363,65 @@ def vectors : List Vector := [
   nmi "nmi.invalid-bounds-code" 0 nmiUserFrame nmiFrameAddress
     (nmiContextRunning + 3 * 0x1000000) nmiControl,
   nmi "nmi.invalid-mode-code" 0 nmiUserFrame nmiFrameAddress
-    (nmiContextRunning + 3 * 0x4000000) nmiControl]
+    (nmiContextRunning + 3 * 0x4000000) nmiControl,
+  interruptEntry "entry.user-divide-error" 0 291 0x800000 257 3,
+  interruptEntry "entry.user-breakpoint" 771 291 0x800000 257 3,
+  interruptEntry "entry.kernel-divide-error" 0 8 0x800000 257 3,
+  interruptEntry "entry.kernel-breakpoint" 771 8 0x800000 257 3,
+  interruptEntry "entry.spurious-error-divide-error" 65536 291 0x800000 257 3,
+  interruptEntry "entry.spurious-error-breakpoint" 66307 291 0x800000 257 3,
+  interruptEntry "entry.wrong-restart-breakpoint" 771 1315 0x800000 257 3,
+  interruptEntry "entry.wrong-restart-page-fault" 69134 1315 0x800000 257 3,
+  faultDispatch "fault-dispatch.accept-divide-error" 0 3 1 1 2 2,
+  faultDispatch "fault-dispatch.accept-breakpoint" 3 3 1 1 2 2,
+  faultDispatch "fault-dispatch.divide-error-idle" 0 3 1 1 0 0,
+  faultDispatch "fault-dispatch.breakpoint-multi-survivor" 3 3 1 1 3 2,
+  faultDispatch "fault-dispatch.page-fault-multi-survivor" 14 3 1 1 3 2,
+  faultDispatch "fault-dispatch.kernel-origin-divide-error" 0 0 1 1 2 2,
+  faultDispatch "fault-dispatch.kernel-origin-breakpoint" 3 0 1 1 2 2,
+  faultDispatch "fault-dispatch.malformed-divide-error" 0 4 1 1 2 2,
+  faultDispatch "fault-dispatch.wrong-restart-breakpoint" 3 5 1 1 2 2,
+  faultDispatch "fault-dispatch.wrong-restart-page-fault" 14 5 1 1 2 2,
+  faultDispatch "fault-dispatch.swapped-reason-divide-error" 0 6 1 1 2 2,
+  faultDispatch "fault-dispatch.swapped-reason-page-fault" 14 6 1 1 2 2,
+  faultDispatch "fault-dispatch.stale-current-divide-error" 0 3 3 1 2 2,
+  faultDispatch "fault-dispatch.stale-address-space-breakpoint" 3 3 1 3 2 2,
+  faultDispatch "fault-dispatch.stale-context-breakpoint" 3 3 1 1 2 3,
+  bootPhase "bootphase.publish-bootstrap32" 0 1 0 0,
+  bootPhase "bootphase.publish-bootstrap64" 1 2 0 0,
+  bootPhase "bootphase.publish-runtime" 2 3 7 0,
+  bootPhase "bootphase.runtime-missing-tss" 2 3 6 0,
+  bootPhase "bootphase.skip-bootstrap32" 0 2 0 0,
+  bootPhase "bootphase.backward-bootstrap32" 2 1 0 0,
+  bootPhase "bootphase.premature-runtime" 1 3 7 0,
+  bootPhase "bootphase.nmi-bootstrap32" 1 4 2 0,
+  bootPhase "bootphase.nmi-bootstrap64" 2 4 2 0,
+  bootPhase "bootphase.error-fault-bootstrap64" 2 4 (13 + 256) 0,
+  bootPhase "bootphase.noerror-fault-bootstrap32" 1 4 6 0,
+  bootPhase "bootphase.double-fault-bootstrap64" 2 4 (8 + 256) 0,
+  bootPhase "bootphase.user-claim-early" 1 4 (14 + 256 + 512) 0,
+  bootPhase "bootphase.inherited-window" 0 4 2 0,
+  bootPhase "bootphase.runtime-delegated" 3 4 2 0,
+  bootPhase "bootphase.repeated-after-latch" 4 4 2 1,
+  bootPhase "bootphase.publish-after-latch" 4 1 0 1,
+  bootPhase "bootphase.invalid-phase-code" 9 4 2 0,
+  staleTranslation "stale-translation.unmap-accept" 0 0 1 7 0 0,
+  staleTranslation "stale-translation.protect-downgrade" 1 0 1 7 1 0,
+  staleTranslation "stale-translation.unmap-wrong-owner" 0 1 1 7 0 0,
+  staleTranslation "stale-translation.protect-wrong-owner" 1 1 1 7 1 0,
+  staleTranslation "stale-translation.release-flush" 2 0 0 0 0 0,
+  staleTranslation "stale-translation.destroy-space" 3 0 0 0 1 0,
+  staleTranslation "stale-translation.switch-away" 4 0 2 0 0 0,
+  staleTranslation "stale-translation.switch-back" 4 0 1 0 0 0,
+  staleTranslation "stale-translation.unmap-unmapped" 0 0 1 9 0 0,
+  staleTranslation "stale-translation.reuse-old-page-absent" 0 0 1 7 0 1,
+  staleTranslation "stale-translation.protect-write-amplify" 1 0 1 7 2 0,
+  staleTranslation "stale-translation.destroy-wrong-subject" 3 1 0 0 1 0,
+  staleTranslation "stale-translation.release-wrong-slot" 2 0 0 0 1 0,
+  staleTranslation "stale-translation.switch-unknown-space" 4 0 99 0 0 0,
+  staleTranslation "stale-translation.malformed-kind" 9 0 1 7 0 0]
 
-theorem corpus_shape : vectors.length = 200 := by decide
+theorem corpus_shape : vectors.length = 256 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -544,6 +619,84 @@ theorem nmi_rejection_codes_agree :
         InterruptEntry.NmiRejectReason.runtimeInventory := by
   native_decide
 
+/-- The contained user-fault class block appended for vectors 0 and 3: two
+accepted CPL3 entry vectors, kernel-origin/spurious-error/wrong-restart entry
+rejections, and the composite fault-dispatch corpus binding the typed reason
+codes into the encoded outcome. -/
+theorem user_fault_class_corpus_shape :
+    ((vectors.drop 200).take 23).length = 23 := by
+  decide
+
+theorem user_fault_class_entry_scenario_agrees :
+    (vectors[200]).expected ≠ 0 ∧ (vectors[201]).expected ≠ 0 ∧
+      ((vectors.drop 202).take 6).all (fun vector => vector.expected = 0) = true := by
+  native_decide
+
+/-- Accepted #DE/#BP dispatch words carry the exact reason code in bits
+40--47 over the unchanged version-one witness layout; kernel-origin,
+malformed, and wrong-restart forms are terminal words while swapped-shape and
+stale bindings reject to zero. -/
+theorem user_fault_class_dispatch_scenario_agrees :
+    (vectors[208]).expected = 0x100ff020202 ∧
+      (vectors[209]).expected = 0x200ff020202 ∧
+      (vectors[210]).expected = 0x10000000001 ∧
+      (vectors[211]).expected = 0x2003f020202 ∧
+      (vectors[212]).expected = 0x3f020202 ∧
+      ((vectors.drop 213).take 5).all
+        (fun vector => vector.expected = 0x8000000000000002) = true ∧
+      ((vectors.drop 218).take 5).all (fun vector => vector.expected = 0) = true := by
+  native_decide
+
+private def bootPhaseAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "Interrupt.bootPhase", [phase, operation, detail, latchWord, business] =>
+      InterruptEntry.bootPhaseDemo phase operation detail latchWord business =
+        vector.expected
+  | _, _ => true
+
+/-- The generated-C boot-phase block covers every publication step, each wrong
+or premature publication, bootstrap NMI and representative error-code shapes in
+both bootstrap phases, the typed unowned inherited window, runtime delegation,
+repeated terminal events, attempted progress after the latch, and a malformed
+phase code. -/
+theorem boot_phase_corpus_shape : ((vectors.drop 223).take 18).length = 18 := by
+  decide
+
+theorem boot_phase_corpus_id_inventory :
+    List.map (fun vector => vector.id) ((vectors.drop 223).take 18) =
+      ["bootphase.publish-bootstrap32", "bootphase.publish-bootstrap64",
+        "bootphase.publish-runtime", "bootphase.runtime-missing-tss",
+        "bootphase.skip-bootstrap32", "bootphase.backward-bootstrap32",
+        "bootphase.premature-runtime", "bootphase.nmi-bootstrap32",
+        "bootphase.nmi-bootstrap64", "bootphase.error-fault-bootstrap64",
+        "bootphase.noerror-fault-bootstrap32", "bootphase.double-fault-bootstrap64",
+        "bootphase.user-claim-early", "bootphase.inherited-window",
+        "bootphase.runtime-delegated", "bootphase.repeated-after-latch",
+        "bootphase.publish-after-latch", "bootphase.invalid-phase-code"] := by
+  native_decide
+
+/-- Every boot-phase scalar result agrees with the expectation evaluated from
+the rich finite phase model on the complete boot-phase corpus. -/
+theorem boot_phase_adapter_agrees_with_model :
+    ((vectors.drop 223).take 18).all bootPhaseAdapterAgrees = true := by
+  native_decide
+
+/-- The three orderly publications are the only accepted rows; both bootstrap
+NMI rows latch the absorbing terminal record; delegation and the post-latch
+rows carry the unchanged business token. -/
+theorem boot_phase_expected_classes_agree :
+    (vectors[223]).expected = 0x5a0101 ∧
+    (vectors[224]).expected = 0x5a0201 ∧
+    (vectors[225]).expected = 0x5a0301 ∧
+    (vectors[226]).expected = 0x18005a0202 ∧
+    (vectors[230]).expected = 0x25a0102 ∧
+    (vectors[231]).expected = 0x25a0202 ∧
+    (vectors[237]).expected = 0x25a0004 ∧
+    (vectors[238]).expected = 0x5a0003 ∧
+    (vectors[239]).expected = 0x5a0003 ∧
+    (vectors[240]).expected = 0x8000000000000021 := by
+  native_decide
+
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=
   match vector.adapter, vector.words with
   | "Interrupt.userReturn", [mode, rip, rsp, selectors, flags] =>
@@ -555,6 +708,41 @@ to an expectation evaluated through the authoritative validator. -/
 theorem user_return_adapter_agrees_with_model :
     vectors.all userReturnAdapterAgrees = true := by
   native_decide
+
+private def staleTranslationAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "StaleTranslation.scalar", [kind, actor, addressSpace, page, aux, selector] =>
+      StaleTranslation.staleTranslationDemo kind actor addressSpace page aux selector =
+        vector.expected
+  | _, _ => true
+
+/-- The stale-translation block is the 15-vector tail appended for issue #126:
+accepted unmap/protect, wrong-owner rejections, release/destroy/switch effects,
+unmapped-page and post-reuse rejections, permission amplification, and a
+malformed encoding. -/
+theorem stale_translation_corpus_shape :
+    ((vectors.drop 241).take 15).length = 15 := by decide
+
+/-- Every stale-translation scalar result agrees with the independently
+evaluated authoritative `step` over the exact 15-vector block. -/
+theorem stale_translation_adapter_agrees_with_model :
+    ((vectors.drop 241).take 15).all staleTranslationAdapterAgrees = true := by native_decide
+
+/-- Accepted transitions carry their exact effect word (accepted bit 32,
+affected-absent bit 33, effect tag/space/page), wrong-owner and post-reuse
+requests request no invalidation, and the malformed encoding is a no-op. -/
+theorem stale_translation_scenario_agrees :
+    (vectors[241]).expected = 0x300070101 ∧
+    (vectors[242]).expected = 0x300070101 ∧
+    (vectors[243]).expected = 0x200000000 ∧
+    (vectors[244]).expected = 0x200000000 ∧
+    (vectors[245]).expected = 0x300000003 ∧
+    (vectors[246]).expected = 0x300000102 ∧
+    (vectors[247]).expected = 0x300000003 ∧
+    (vectors[248]).expected = 0x300000003 ∧
+    (vectors[249]).expected = 0x200000000 ∧
+    (vectors[250]).expected = 0x200000000 ∧
+    (vectors[255]).expected = 0 := by native_decide
 
 private def wordsText : List UInt64 → String
   | [] => ""
