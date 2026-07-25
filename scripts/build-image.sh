@@ -294,6 +294,9 @@ cp scripts/entry-stack-extended-callgraph.tsv \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_ENTRY_ADVERSARIAL=1 \
   -c boot/boot.S -o "$build/boot-entry-adversarial.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_NMI_PROBE=1 \
+  -c boot/boot.S -o "$build/boot-nmi.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_BOOTSTRAP32_UD_PROBE=1 \
   -c boot/boot.S -o "$build/boot-bootstrap32-ud.o"
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
@@ -440,7 +443,7 @@ for probe in "${integer_fault_probes[@]}"; do
 done
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-nmi-prelink.map" \
-  -o "$build/leanos-nmi-prelink.elf" "$build/boot.o" \
+  -o "$build/leanos-nmi-prelink.elf" "$build/boot-nmi.o" \
   "$build/kernel-nmi.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
@@ -656,7 +659,7 @@ for probe in "${integer_fault_probes[@]}"; do
 done
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-nmi.map" \
-  -o "$build/leanos-nmi.elf" "$build/boot.o" "$build/kernel-nmi.o" \
+  -o "$build/leanos-nmi.elf" "$build/boot-nmi.o" "$build/kernel-nmi.o" \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
