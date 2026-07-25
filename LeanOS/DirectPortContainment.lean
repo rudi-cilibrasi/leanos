@@ -182,7 +182,8 @@ def debugExitProbe : DirectPortIO.PortOperation :=
 def picProbe : DirectPortIO.PortOperation :=
   { port := 0x21, direction := .output, width := .byte, value := 0xff }
 
-private def witnessCapabilities : Capability.State :=
+/-- Shared two-subject capability witness (subjects 1 and 2 live). -/
+def witnessCapabilities : Capability.State :=
   { subjects := fun subject => subject = 1 || subject = 2
     objects := fun object => object = 1 || object = 2 || object = 20 || object = 30
     kinds := fun object =>
@@ -195,7 +196,9 @@ private def witnessCapabilities : Capability.State :=
         some { object := 20, kind := .memory, rights := { read := true } }
       else none }
 
-private def witnessLifecycle : SubjectLifecycle.State :=
+/-- Shared two-subject lifecycle witness: A (subject 1) current and runnable,
+B (subject 2) runnable and owning resources across every cleanup class. -/
+def witnessLifecycle : SubjectLifecycle.State :=
   { capabilities := witnessCapabilities
     issuedSubjects := fun subject => subject = 1 || subject = 2
     ownedMemory := fun object => if object = 20 then some (2, 40) else none
@@ -231,7 +234,8 @@ private def witnessRegisters : ResumablePreemption.Registers :=
     basePointer := 0
     r8 := 0, r9 := 0, r10 := 0, r11 := 0, r12 := 0, r13 := 0, r14 := 0, r15 := 0 }
 
-private def witnessSurvivorContext : ResumablePreemption.Context :=
+/-- Shared kernel-owned suspended context of survivor B (subject 2). -/
+def witnessSurvivorContext : ResumablePreemption.Context :=
   { owner := 2
     addressSpace := 2
     frame := witnessHardwareFrame

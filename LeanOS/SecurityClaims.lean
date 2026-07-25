@@ -16,6 +16,7 @@ import LeanOS.ScheduledObservation
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
+import LeanOS.UserFaultContainmentVocabulary
 
 /-! # Stable security-claim contract
 
@@ -831,6 +832,39 @@ theorem user_fault_class_containment state frame reason
         (fun ⟨context, hdispatch⟩ => Or.inr ⟨reason, context, hdispatch⟩))
   · intro kernelFrame horigin hrunning
     exact FaultDispatch.kernel_origin_is_fatal state kernelFrame hrunning horigin
+
+/-- SC-USER-FAULT-SHARED-CONTAINMENT: over one shared two-subject pre-state the
+real CPL3 divide-error, breakpoint, page-fault, and denied-port entries drive a
+single subject-termination/peer-survival transition: each dispatches the same
+survivor with its typed reason bound to the manifest vector, the port-denial
+composition reuses the identical vector-14 dispatch, and every successful
+post-state is byte-for-byte the page-fault post-state. -/
+theorem user_fault_shared_containment_vocabulary :
+    (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+        UserFaultContainmentVocabulary.divideErrorEntry).action =
+        .dispatch .divideError DirectPortContainment.witnessSurvivorContext ∧
+      (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          UserFaultContainmentVocabulary.breakpointEntry).action =
+        .dispatch .breakpoint DirectPortContainment.witnessSurvivorContext ∧
+      (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          DirectPortContainment.witnessEntry).action =
+        .dispatch .pageFault DirectPortContainment.witnessSurvivorContext ∧
+      (DirectPortContainment.containDeniedPort
+          DirectPortContainment.witnessDevices DirectPortIO.selectedControls
+          DirectPortContainment.serialProbe
+          DirectPortContainment.witnessSchedule
+          DirectPortContainment.witnessEntry).fault.state =
+        (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          DirectPortContainment.witnessEntry).state ∧
+      (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          UserFaultContainmentVocabulary.divideErrorEntry).state =
+        (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          DirectPortContainment.witnessEntry).state ∧
+      (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          UserFaultContainmentVocabulary.breakpointEntry).state =
+        (FaultDispatch.dispatch DirectPortContainment.witnessSchedule
+          DirectPortContainment.witnessEntry).state :=
+  UserFaultContainmentVocabulary.shared_contained_classes_one_transition
 
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps
