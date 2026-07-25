@@ -143,10 +143,12 @@ final ELFs and maps, final page-table plans, exact serial logs, decoded
 three-record CPU/CPUID/MSR/control snapshots, and final-ELF policy reports that
 inventory the eight `wrmsr` sites, nine `rdmsr` sites, and the sole deliberate
 probe opcode. The shared evidence directory binds the QEMU command and hashes;
-the hosted oracle results retain all 200 vectors, including the 28-vector
+the hosted oracle results retain all 241 vectors, including the 28-vector
 direct-port-I/O corpus, the 32-vector
-entry-control corpus, 10-vector fault-dispatch corpus, and 17-vector NMI
-classifier corpus; and the entry-policy
+entry-control corpus, 10-vector fault-dispatch corpus, 23-vector contained
+user-fault-class corpus, 17-vector NMI
+classifier corpus, and 18-vector boot-interrupt-phase corpus; and the
+entry-policy
 fixture log records controlled
 source/ELF rejection diagnostics. A missing artifact is visible because the CI
 upload uses named paths and the evidence packager rejects a missing or stale
@@ -178,7 +180,10 @@ The following new code and assumptions are trusted, not proved:
 
 - `boot/boot.S`, the Multiboot2 header, page tables, GDT, x86-64 mode switch,
   CR0.WP/CR4.SMEP writes and CPU-feature assumption, stack, fault probes, and
-  System V ABI handoff;
+  System V ABI handoff, including the bootstrap IDT publications: the reviewed
+  eleven-instruction pre-`lidt` prologue, the static `boot_idt32`/`boot_idt64`
+  gate images and their terminal stubs, the one-instruction long-mode IDTR
+  handoff, and NMI non-delivery inside those two residual windows;
 - `boot/kernel.c`, including the bounded Multiboot2 byte parser, physical-frame
   scrub, UART polling, port I/O, QEMU debug-exit behavior, serial formatting,
   and the manual `lean_uint64_dec_eq` implementation;

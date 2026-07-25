@@ -32,6 +32,14 @@ it preserves the current subject/address-space/kernel-stack projection and
 clears both return authority and the SMAP copy override. The composite theorem
 freezes every business subsystem and absorbs all later operations.
 
+Before the runtime IDT exists, the separate finite
+[`LeanOS.BootInterruptPhase`](interrupt-model.md) contract owns dispatch: every
+admitted bootstrap-phase event latches its own absorbing terminal record with
+a bounded boot-phase reason, preserves the not-yet-published business state,
+arms no return authority, and absorbs every later publication or event. That
+early latch composes with, and never weakens, the runtime execution latch
+described here; the runtime phase delegates unchanged to this model.
+
 If the state is already halted, another modeled NMI returns the identical
 record and cannot manufacture a later snapshot. This sequential rule assumes
 that a second physical NMI is blocked until architectural NMI return; no such

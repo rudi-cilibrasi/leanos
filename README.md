@@ -74,7 +74,7 @@ partial log does not pass. The executable scenarios currently include:
   with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-200-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+241-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -372,12 +372,26 @@ ordinary handling step, freezes every modeled subsystem and enters the same
 absorbing halt latch without return, scheduling, or CR3 continuation. The boot
 image installs the matching DPL0 vector-2 gate and dedicated IST2 stack; a
 mandatory QEMU monitor-injection probe observes real delivery across IF=0 and
-the terminal assembly record after the kernel reports `NMI-READY`. The boot
-contract explicitly assumes that firmware does not deliver NMI before
-`privilege_init` completes and the kernel publishes its IDT; the inherited
-bootloader IDT and that early window are outside the model and the QEMU probe.
+the terminal assembly record after the kernel reports `NMI-READY`.
 Delivery/blocking, frame construction, and the compiler/emulator path remain
 trusted tested boundaries rather than theorem claims.
+
+The [boot-interrupt phase model](docs/interrupt-model.md) replaces the
+inherited bootloader IDT in the entry prologue. A finite Lean contract fixes
+the `inherited → bootstrap32 → bootstrap64 → runtime → terminal` publication
+chain with per-phase tables, descriptor widths, stack assumptions, and
+terminal targets, and proves that every admitted bootstrap event latches an
+absorbing terminal record without touching business state, return authority,
+or the publication order. The image publishes a statically decoded 32-bit
+bootstrap IDT before any other boot work, hands off to the 64-bit bootstrap
+table in the instruction after long-mode activation, and keeps every early
+vector — including NMI — on reviewed non-returning terminal stubs until
+`privilege_init` publishes the runtime manifest over valid TSS/IST state. The
+trusted window narrows to the reviewed eleven-instruction pre-`lidt` prologue
+and that single-instruction handoff boundary; final-ELF policy decodes both
+bootstrap tables gate-by-gate, bounds each stub's terminal CFG, and
+inventories every `lidt`/`sidt`. Real descriptor semantics, delivery inside
+the residual window, and the final binary remain trusted/tested boundaries.
 
 The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,
 bounded double-fault escalation, and one absorbing gate for every modeled

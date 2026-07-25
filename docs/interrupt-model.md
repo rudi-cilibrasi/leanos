@@ -187,11 +187,17 @@ vector-8 IST1 machine protocol. The linker now owns a separate aligned 16 KiB
 IST2 interval, the TSS selects its exclusive upper bound, and the IDT installs
 only the reviewed vector-2 DPL0 interrupt gate for this terminal purpose. Boot
 loads the fully initialized TSS before installing the IST2 gate and publishing
-the kernel IDT, so the kernel's live vector-2 descriptor never references the
-prior TSS. This ordering does not cover the inherited bootloader IDT before the
-kernel `lidt`: the trusted boot contract assumes that firmware does not deliver
-NMI before `privilege_init` completes. That early window is outside the model
-and the QEMU monitor-injection evidence, which begins only after `NMI-READY`.
+the runtime IDT, so the kernel's live vector-2 descriptor never references the
+prior TSS. Vector 2 is also kernel-owned in both bootstrap phases: the
+bootstrap tables route it to dedicated non-returning stubs, so no stale
+firmware target is reachable after the first kernel `lidt`. The remaining
+trusted window is the reviewed eleven-instruction entry prologue plus the
+single-instruction long-mode IDTR handoff: the boot contract assumes that
+firmware does not deliver
+NMI before the first kernel `lidt` or exactly on that handoff boundary. That
+residual window is outside the model and the QEMU monitor-injection evidence,
+which begins only after `NMI-READY`; bootstrap-window injection evidence is
+deferred to the follow-up early-injection scenarios.
 
 `RawNmiFrame` always contains saved RIP, CS, RFLAGS, RSP, and SS. This includes
 a CPL0 interruption because the selected contract assumes an IST switch; it
@@ -245,6 +251,72 @@ publishes a CPL0 `handling` boundary with IF clear; the evidence runner injects
 a real QEMU NMI, observes the five-word IST2 frame and one terminal record, and
 rejects any return or post-terminal output. This is integration evidence, not
 a proof of x86 delivery, coalescing, or emulator correctness.
+
+## Boot-interrupt phase ownership
+
+`LeanOS.BootInterruptPhase` fixes the finite publication chain
+`inherited → bootstrap32 → bootstrap64 → runtime → terminal`. Each owned phase
+names its permitted table, descriptor width (`legacy8` or `long16`), stack
+assumption, vector-2 ownership, and terminal target; only the runtime phase
+may ever carry return authority, and the `contract_table` theorem pins those
+facts. `publish` accepts exactly the next chain step — the runtime manifest
+additionally requires its TSS, IST-stack, and gate-manifest prerequisites —
+and every wrong or premature publication fails closed into the absorbing
+terminal latch. `dispatch` delegates runtime events unchanged to the separate
+ordinary/terminal runtime contracts, types the inherited window as unowned,
+and latches every bootstrap event immediately. Lean proves totality,
+determinism, publication monotonicity with an unreachable inherited phase,
+business-state preservation, that no step arms return authority, that events
+never advance the chain, immediate terminal latching with the bounded reason,
+and absorption of every operation suffix after a latch; concrete witnesses
+cover both bootstrap phases and the orderly chain. The 18-vector
+`bootphase.*` block replays the allocation-free `bootPhaseDemo` adapter
+through the hosted oracle and the boot image with an opaque business token
+that must round-trip unchanged.
+
+The machine implementation makes the phases mechanically recognizable. The
+entry prologue executes only `cli`, one `lgdt` of the kernel GDT, a far jump
+onto the kernel 32-bit code selector, five segment loads, the bounded boot
+stack pointer, and then the first kernel `lidt` of the statically initialized
+`boot_idt32`; the Multiboot2 handoff registers are stored only after the
+`boot_idt32_published` label. All 256 legacy gates are DPL0 interrupt gates
+through selector `0x38`; vector 2 targets `boot_early_isr2_32` and every
+other vector the phase catch-all. The long-mode switch publishes `boot_idt64`
+in the instruction immediately after the paging CR0 write, so exactly one
+instruction boundary separates long-mode activation from kernel 16-byte-gate
+ownership; its 256 gates use selector `0x08` with IST 0 because no TSS exists
+yet, and delivery stays on the live boot stack. Each of the four bootstrap
+stubs clears interrupts and DF, emits one fixed `LEANOS/18 EARLY-TERMINAL`
+record naming its phase, table, width, vector class, stack, and target,
+requests a phase-typed debug exit (`0x16` for bootstrap32, `0x17` for
+bootstrap64), and halts; no stub reads the exception frame, pushes, calls,
+returns, or touches runtime C state, the Lean runtime, the ordinary entry
+stack, or the later IDT/TSS. `privilege_init` then replaces `boot_idt64` with
+the runtime manifest only after the TSS, IST stacks, and checked gate
+manifest exist, with no intermediate reload of any earlier table.
+
+`scripts/check-early-idt-policy.py` runs inside the shared image policy for
+every ELF variant. It decodes both bootstrap tables byte-for-byte against the
+linker-pinned stub slots (rejecting wrong selector, DPL, type, IST, reserved
+words, or targets), verifies both IDTR pointer images, disassembles the
+32-bit prologue in its real mode to require the reviewed pre-`lidt`
+allowlist, the exact `boot_idt32`/`boot_idt64` publication order, and the
+one-instruction CR0-to-`lidt`-to-far-jump handoff, forbids `sti`, port I/O,
+`int`, calls, and returns in the entry interval, bounds all four stubs as
+contained non-returning terminal CFGs, and inventories every `lidt` (exactly
+two bootstrap publications plus the single runtime publication) and rejects
+any `sidt`. `scripts/test-early-idt-policy.sh` rebuilds controlled negatives
+— deleting or delaying the first `lidt`, swapping the tables, DPL3 or
+IST-bearing bootstrap gates, re-pointed vector-2 gates, `iretq`/`call`/escape
+edges in stubs, early `sti`, and early PIC access — and requires the exact
+policy diagnostic for each. The stub serial/debug-exit instructions are
+inventoried in every direct-port site manifest.
+
+These checks and records are integration evidence: descriptor-load and IDTR
+semantics, delivery inside the residual prologue/handoff window, x86/QEMU
+behavior, and the final binary remain trusted. The phase markers, fixed
+records, debug-exit codes, and pinned stub addresses are deliberately stable
+so the follow-up early-injection scenarios can consume them.
 
 ## Ordinary entry-stack layout and budget contract
 
