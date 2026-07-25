@@ -115,13 +115,28 @@ if ! grep -q 'declaration uses `sorry`' "$negative_log"; then
   exit 1
 fi
 
-for fixture in WeakenedAuthorityClaim DroppedSeparationClaim; do
+for fixture in WeakenedAuthorityClaim DroppedSeparationClaim DroppedFaultClassKernelOrigin; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
   fi
   if ! grep -q "tests/negative/${fixture}.lean.*error: Type mismatch" "$negative_log"; then
     echo "error: security-claim fixture ${fixture} lacked the expected Lean diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
+for fixture in FaultReasonRelabel KernelBreakpointContainment \
+    DivideErrorSoftwareGate BreakpointAlternateDescriptor; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: user-fault-class fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
+    echo "error: user-fault-class fixture ${fixture} lacked its expected semantic diagnostic" >&2
     cat "$negative_log" >&2
     exit 1
   fi
