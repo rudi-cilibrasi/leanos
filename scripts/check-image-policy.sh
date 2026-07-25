@@ -152,8 +152,8 @@ grep -Fq 'or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax' bo
 grep -Fq 'bts $20, %rax' boot/boot.S
 grep -Fq 'bts $21, %rax' boot/boot.S
 [[ "$(grep -Ec '^[[:space:]]+stac$' boot/boot.S)" -eq 3 ]]
-[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 13 ]]
-[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 18 ]]
+[[ "$(grep -Ec '^[[:space:]]+clac$' boot/boot.S)" -eq 15 ]]
+[[ "$(grep -Ec '^[[:space:]]+cld$' boot/boot.S)" -eq 20 ]]
 for symbol in smap_copy_from_cld smap_copy_from_stac smap_copy_from_clac \
   smap_copy_to_cld smap_copy_to_stac \
   smap_copy_to_clac smap_omit_cleanup_probe_stac smap_force_clac \
@@ -206,7 +206,7 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
   echo "error: resumable context A does not occupy the reviewed 160-byte image" >&2
   exit 1
 }
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 10 ]] || {
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 11 ]] || {
   echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
 }
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S

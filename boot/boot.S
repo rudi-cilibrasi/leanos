@@ -1432,6 +1432,47 @@ user_return_restore:
 user_return_iretq:
     iretq
 
+/* Integer divide-error (#DE, vector 0) and breakpoint (#BP, vector 3) share the
+   ordinary guarded entry stack, carry no hardware error code, clear AC/DF before
+   any C use, normalize through the shared manifest adapter, and call only the
+   generated typed dispatcher.  Placed after the return epilogue so they sit
+   outside the vector-2/vector-8 terminal-stub isolation ranges. */
+.global isr0
+isr0:
+    clac
+    cld
+    SAVE
+    NORMALIZE_ENTRY 0, 0, 144
+    mov 120(%rsp), %rdi
+    mov 128(%rsp), %rsi
+    call divide_error_handler
+    jmp integer_fault_restore_peer
+.global isr3
+isr3:
+    clac
+    cld
+    SAVE
+    NORMALIZE_ENTRY 3, 0, 144
+    mov 120(%rsp), %rdi
+    mov 128(%rsp), %rsi
+    call breakpoint_handler
+    jmp integer_fault_restore_peer
+/* Both contained integer faults retire subject A and install subject B's fresh
+   kernel-owned continuation, then return through the single validated epilogue.
+   The no-error frame is a full 20-word bank, so the peer context is copied in
+   place with no error-word adjustment. */
+.global integer_fault_restore_peer
+integer_fault_restore_peer:
+    lea initial_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    call complete_interrupt_entry
+    mov $3, %esi
+    jmp user_return_epilogue
+
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
@@ -1463,6 +1504,33 @@ user_a_direct_port_probe:
 #else
     outb %al, %dx
 #endif
+    ud2
+#endif
+#ifdef LEANOS_INTEGER_FAULT_SCENARIO
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+#ifdef LEANOS_INTEGER_FAULT_PROBE_BP
+    jmp user_a_breakpoint_instruction
+#endif
+    /* Subject A executes a real integer divide with a checked zero divisor; the
+       processor delivers #DE (vector 0) and the saved RIP names the faulting
+       instruction boundary. */
+    xor %edx, %edx
+    mov $1, %eax
+    xor %ecx, %ecx
+.global user_a_divide_instruction
+user_a_divide_instruction:
+    div %ecx
+    ud2
+    /* Subject A executes the one-byte INT3 opcode from its own user text; the
+       processor delivers #BP (vector 3) and the saved RIP names the reviewed
+       post-instruction boundary. */
+.global user_a_breakpoint_instruction
+user_a_breakpoint_instruction:
+    int3
+.global user_a_breakpoint_after
+user_a_breakpoint_after:
     ud2
 #endif
     mov $0x1b, %ax
@@ -1612,6 +1680,17 @@ direct_port_probe_class:
     .quad 0
 #endif
 
+/* Integer-fault probe selector consumed by the shared kernel object.
+   0 = real integer divide error (#DE, vector 0), 1 = real one-byte breakpoint
+   (#BP, vector 3). */
+.global integer_fault_probe_class
+integer_fault_probe_class:
+#ifdef LEANOS_INTEGER_FAULT_PROBE_BP
+    .quad 1
+#else
+    .quad 0
+#endif
+
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
@@ -1650,6 +1729,27 @@ user_b_entry:
     jne 2f
     mov $16, %rax
     movabs $0xb2b2d0d151a7e55e, %rbx
+    mov $0x030201, %rcx
+    mov $0x51a7, %rdx
+    int $0x80
+    ud2
+#endif
+#ifdef LEANOS_INTEGER_FAULT_SCENARIO
+    /* The survivor enters only through the common validated return, carrying
+       its fresh kernel-owned canaries, and completes a kernel-visible
+       operation proving A was retired and B kept its context/resources. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    movabs $B_INITIAL_R12, %r11
+    cmp %r11, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %r11
+    cmp %r11, %r13
+    jne 2f
+    mov $17, %rax
+    movabs $0xb2b2de3b51a7e55e, %rbx
     mov $0x030201, %rcx
     mov $0x51a7, %rdx
     int $0x80

@@ -11,7 +11,9 @@ boot_source="${LEANOS_ENTRY_BOOT_SOURCE:-boot/boot.S}"
 
 symbols="$(nm "$elf")"
 control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"
-for symbol in isr2 isr6 isr7 isr13 isr14 isr32 isr80 authorize_interrupt_entry \
+for symbol in isr0 isr2 isr3 isr6 isr7 isr13 isr14 isr32 isr80 \
+  authorize_interrupt_entry integer_fault_restore_peer \
+  divide_error_handler breakpoint_handler \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
   page_fault_handler timer_handler entry_stack boot_stack boot_stack_top \
   normalize_fast_entry_msrs read_fast_entry_msrs check_fast_entry_cpuid; do
@@ -140,8 +142,14 @@ else
   echo "error: unknown LEANOS_FAST_ENTRY_PROBE '$fast_probe'" >&2; exit 1
 fi
 
-[[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 9 ]] || {
+[[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 11 ]] || {
   echo "error: vector=77 field=present violated=unexpected-installed-gate-count" >&2; exit 1;
+}
+grep -Fq 'set_gate(0, isr0, 0, 0x8e);' "$kernel_source" || {
+  echo "error: vector=0 field=target-ist-or-dpl violated=divide-error-gate" >&2; exit 1;
+}
+grep -Fq 'set_gate(3, isr3, 0, 0xee);' "$kernel_source" || {
+  echo "error: vector=3 field=target-ist-or-dpl violated=breakpoint-gate" >&2; exit 1;
 }
 grep -Fq 'set_gate(2, isr2, 2, 0x8e);' "$kernel_source" || {
   echo "error: vector=2 field=target-ist-or-dpl" >&2; exit 1;
@@ -164,8 +172,10 @@ grep -Fq 'set_gate(32, isr32, 0, 0x8e);' "$kernel_source" || {
 grep -Fq 'set_gate(0x80, isr80, 0, 0xee);' "$kernel_source" || {
   echo "error: vector=128 field=target-or-dpl" >&2; exit 1;
 }
-[[ "$(grep -Ec 'set_gate\([^,]+,[^,]+,[^,]+, 0xee\)' "$kernel_source")" -eq 1 ]] || {
-  echo "error: vector=128 field=dpl expected=3 violated=extra-dpl3-gate" >&2; exit 1;
+# Exactly two DPL3 (0xee) gates are reviewed: the syscall gate (vector 128) and
+# the CPL3 software-breakpoint gate (vector 3).  Every other gate stays DPL0.
+[[ "$(grep -Ec 'set_gate\([^,]+,[^,]+,[^,]+, 0xee\)' "$kernel_source")" -eq 2 ]] || {
+  echo "error: vector=3,128 field=dpl expected=3 violated=extra-or-missing-dpl3-gate" >&2; exit 1;
 }
 grep -Fq 'tss.rsp0 = (uint64_t)__entry_stack_end;' "$kernel_source" || {
   echo "error: vector=128 field=tss.rsp0" >&2; exit 1;
@@ -253,6 +263,43 @@ check_path() {
 check_path 128 isr80 isr14 syscall_handler
 check_path 14 isr14 isr32 page_fault_handler
 check_path 32 isr32 user_return_epilogue timer_handler
+
+# The contained integer-fault stubs clear AC/DF, normalize through the shared
+# manifest adapter, then call only the generated typed dispatcher before the
+# shared cleanup/return path.  Neither reaches an operation-specific handler or
+# returns before cleanup and normalization, and both converge on the single
+# validated epilogue via the shared restore.
+check_contained_path() {
+  local vector="$1" start_symbol="$2" stop_symbol="$3" handler="$4"
+  local start stop dis cleanup normalize operation restore
+  start="$(address "$start_symbol")"; stop="$(address "$stop_symbol")"
+  dis="$(objdump -d --no-show-raw-insn --start-address="$start" --stop-address="$stop" "$elf")"
+  cleanup="$(grep -n -m1 -E '[[:space:]]clac$' <<<"$dis" | cut -d: -f1)"
+  grep -n -m1 -E '[[:space:]]cld$' <<<"$dis" >/dev/null || {
+    echo "error: vector=$vector path=cleanup field=df" >&2; exit 1;
+  }
+  normalize="$(grep -n -m1 'call.*<authorize_interrupt_entry>' <<<"$dis" | cut -d: -f1)"
+  operation="$(grep -n -m1 "call.*<${handler}>" <<<"$dis" | cut -d: -f1)"
+  restore="$(grep -n -m1 'jmp.*<integer_fault_restore_peer>' <<<"$dis" | cut -d: -f1)"
+  [[ -n "$cleanup" && -n "$normalize" && -n "$operation" && -n "$restore" &&
+     "$cleanup" -lt "$normalize" && "$normalize" -lt "$operation" &&
+     "$operation" -lt "$restore" ]] || {
+    echo "error: vector=$vector path=stub violated=handler-before-cleanup-or-normalization" >&2
+    exit 1
+  }
+  echo "ENTRY-POLICY vector=$vector target=$start_symbol cleanup=AC,DF normalize=shared handler=$handler result=PASS"
+}
+check_contained_path 0 isr0 isr3 divide_error_handler
+check_contained_path 3 isr3 integer_fault_restore_peer breakpoint_handler
+restore_dis="$(objdump -d --no-show-raw-insn \
+  --start-address="$(address integer_fault_restore_peer)" \
+  --stop-address="$(address user_a_entry)" "$elf")"
+grep -Eq 'call.*<complete_interrupt_entry>' <<<"$restore_dis" || {
+  echo "error: vector=0,3 path=restore violated=entry-latch-not-completed" >&2; exit 1;
+}
+grep -Eq 'jmp.*<user_return_epilogue>' <<<"$restore_dis" || {
+  echo "error: vector=0,3 path=restore violated=return-not-validated" >&2; exit 1;
+}
 
 check_denial_path() {
   local vector="$1" start_symbol="$2" stop_symbol="$3"
