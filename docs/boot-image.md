@@ -138,6 +138,12 @@ inside the ISO; no wall-clock build timestamp is embedded. GitHub's ephemeral
 workflow token publishes the release, and OIDC-backed GitHub artifact
 attestations provide provenance without a long-lived secret.
 
+For the early-IDT rows, retained workflow evidence includes both probe ISOs,
+final ELFs, maps, disassembly, final page-table plans, the early-IDT and
+early-probe policy reports, exact serial logs with the early readiness and
+terminal records, and the shared evidence directory's QEMU command, version,
+and normalized QMP-runner transcript for the injected NMI.
+
 For the fast-entry rows, retained workflow evidence includes both probe ISOs,
 final ELFs and maps, final page-table plans, exact serial logs, decoded
 three-record CPU/CPUID/MSR/control snapshots, and final-ELF policy reports that

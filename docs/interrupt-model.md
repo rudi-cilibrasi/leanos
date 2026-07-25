@@ -196,8 +196,11 @@ single-instruction long-mode IDTR handoff: the boot contract assumes that
 firmware does not deliver
 NMI before the first kernel `lidt` or exactly on that handoff boundary. That
 residual window is outside the model and the QEMU monitor-injection evidence,
-which begins only after `NMI-READY`; bootstrap-window injection evidence is
-deferred to the follow-up early-injection scenarios.
+which begins only after `NMI-READY`; the separate mandatory `bootstrap64-nmi`
+probe row supplies the bootstrap-window injection evidence through its own
+exact `EARLY64-READY` checkpoint, and the `bootstrap32-ud` row drives a
+real #UD through the 32-bit bootstrap table (see the boot-interrupt phase
+section below).
 
 `RawNmiFrame` always contains saved RIP, CS, RFLAGS, RSP, and SS. This includes
 a CPL0 interruption because the selected contract assumes an IST switch; it
@@ -289,9 +292,10 @@ yet, and delivery stays on the live boot stack. Each of the four bootstrap
 stubs clears interrupts and DF, emits one fixed `LEANOS/18 EARLY-TERMINAL`
 record naming its phase, table, width, vector class, stack, and target,
 requests a phase-typed debug exit (`0x16` for bootstrap32, `0x17` for
-bootstrap64), and halts; no stub reads the exception frame, pushes, calls,
-returns, or touches runtime C state, the Lean runtime, the ordinary entry
-stack, or the later IDT/TSS. `privilege_init` then replaces `boot_idt64` with
+bootstrap64), and halts; no stub pushes, calls, returns, or touches runtime C
+state, the Lean runtime, the ordinary entry stack, or the later IDT/TSS, and
+outside the two dedicated probe images below no stub reads the exception
+frame. `privilege_init` then replaces `boot_idt64` with
 the runtime manifest only after the TSS, IST stacks, and checked gate
 manifest exist, with no intermediate reload of any earlier table.
 
@@ -312,11 +316,64 @@ edges in stubs, early `sti`, and early PIC access — and requires the exact
 policy diagnostic for each. The stub serial/debug-exit instructions are
 inventoried in every direct-port site manifest.
 
+Two dedicated probe images demonstrate both sides of that handoff under QEMU.
+The `bootstrap32-ud` image compiles `boot.S` with
+`LEANOS_BOOTSTRAP32_UD_PROBE`: one real `ud2` becomes the first instruction
+after the first kernel `lidt` — at the `boot_idt32_published` boundary,
+before any page-table, CR, MSR, PCI, port, or generated-code operation — so
+vector 6 must reach the pinned 32-bit catch-all stub through `boot_idt32` on
+the live boot stack. The `bootstrap64-nmi` image compiles with
+`LEANOS_BOOTSTRAP64_NMI_PROBE`: immediately after the boot-stack publication
+in the long-mode entry — with `boot_idt64` live, no TSS or IST, IF still
+clear since the entry `cli`, and the runtime `lidt` unpublished and
+unreachable past a halt loop — the guest emits one exact
+`LEANOS/18 EARLY64-READY` record and halts. `scripts/run-bootstrap64-nmi.sh`
+extends the `run-nmi.sh` discipline: it waits for that exact record and the
+QMP socket, negotiates capabilities, issues a single `inject-nmi`, and
+accepts no fixed sleeps, synthetic `int $2`, direct handler calls, or C-set
+flags, so vector 2 must cross the masked window through `boot_idt64` to the
+pinned bootstrap64 stub. In these two images only, the targeted stub
+additionally attests the exact architectural frame with decode-stable reads
+before claiming its record — the no-error `EIP/CS/EFLAGS` #UD shape at the
+probe opcode for bootstrap32, and the IST-0 five-word boot-stack shape with
+`CS=0x08` and IF clear for bootstrap64 — and any other shape emits a typed
+`status=FAIL reason=probe-frame-policy` record with the distinct debug exit
+`0x18`. The accepted probe terminals are versioned and early-only:
+`phase=bootstrap32 … vector=6 reason=invalid-opcode … return=none` with debug
+exit `0x16` (host status 45), and `phase=bootstrap64 … vector=2
+reason=non-maskable-interrupt … return=none` with debug exit `0x17` (host
+status 47). Both stay disjoint from the runtime `LEANOS/17` `prior=handling
+ist=2` vocabulary, so no later runtime delivery can satisfy either mandatory
+row in `scripts/emulator-evidence-matrix.tsv`; each runner additionally
+rejects duplicate, reordered, forged, runtime, or post-terminal output and
+any other exit status.
+
+`scripts/check-early-probe-policy.py` binds each probe image to that exact
+shape in the final ELF and source: the `ud2` placement at
+`boot_idt32_published`, the readiness site at its exported symbol after the
+stack publication, the halt loop dominating the otherwise-unreachable
+`kernel_main` call, every instruction of all four stubs and the long-mode
+entry tail, the frame-guard immediates, both debug-exit codes, and the exact
+record bytes. `scripts/test-early-probe-policy.sh` rebuilds sixteen
+controlled negatives — an `int $6` substitute, moved or pre-`lidt` probes,
+dropped frame guards, wrong success and failure exit codes, forged terminal
+and readiness records, a readiness site moved before the stack publication or
+behind an extra instruction, a skipped halt loop, a synthetic `int $2`, a
+duplicate output site, and cross-probe contamination — and requires each
+exact diagnostic. The probe serial and debug-exit sites are inventoried in
+dedicated direct-port manifests. The two runs are the machine counterparts of
+the existing `bootphase.noerror-fault-bootstrap32` and
+`bootphase.nmi-bootstrap64` oracle rows.
+
 These checks and records are integration evidence: descriptor-load and IDTR
 semantics, delivery inside the residual prologue/handoff window, x86/QEMU
 behavior, and the final binary remain trusted. The phase markers, fixed
-records, debug-exit codes, and pinned stub addresses are deliberately stable
-so the follow-up early-injection scenarios can consume them.
+records, debug-exit codes, and pinned stub addresses are deliberately stable;
+the two early-injection scenarios above consume them. QEMU demonstrates two
+selected executions — a pre-paging #UD and one masked-window NMI — and does
+not prove that the binary refines the phase model, that every early fault at
+every bootstrap instruction is contained, or anything about GRUB's own IDT,
+firmware/SMM, physical NMI, machine checks, nested NMI, or SMP.
 
 ## Ordinary entry-stack layout and budget contract
 
