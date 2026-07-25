@@ -167,6 +167,20 @@ for fixture in DMAWeakenedBusMaster DMADroppedFunction DMARuntimeEnable DMATrace
   fi
 done
 
+if lake env lean tests/negative/WrappingIssuerReuse.lean >"$negative_log" 2>&1; then
+  echo "error: wrapping-issuer reuse fixture unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/WrappingIssuerReuse.lean' "$negative_log" ||
+    ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+      "$negative_log" ||
+    ! grep -Fq 'step5.fst.lifecycle.capabilities.subjects 1 = false' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: wrapping-issuer fixture lacked its expected stale-lifetime diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 for fixture in DirectPortUserMutation DirectPortExposedBitmap \
     DirectPortWrongPurpose DirectPortWrongWidth; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
