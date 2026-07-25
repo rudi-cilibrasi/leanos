@@ -250,7 +250,12 @@ requests preserve the identical complete device projection. Typed kernel
 acceptance is confined to exact serial, PIC, PIT, and debug-exit manifest keys
 including direction and width. TSS loading, x86 privilege and exception
 semantics, device behavior, generated code, and the final binary remain outside
-these model-level claims.
+these model-level claims. The composed
+[port-denial containment slice](docs/direct-port-io.md) sequences that user
+denial with the atomic user-fault cleanup/survivor dispatch and proves that a
+denied port attempt leaves the device projection unchanged and retires the
+faulting subject without letting untrusted port/value/width words select a
+kernel operation or survivor, or return to the faulting subject.
 
 The finite [fast privilege-entry control model](docs/privilege-entry-control.md)
 admits only the manifest-backed `int 0x80` system-call mechanism, requires a

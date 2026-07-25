@@ -14,6 +14,7 @@ import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
+import LeanOS.DirectPortContainment
 
 /-! # Stable security-claim contract
 
@@ -49,6 +50,41 @@ theorem direct_port_kernel_operation_confined state live request
       (DirectPortIO.executeKernel state live request).state.devices =
         DirectPortIO.applyKernel state.devices request := by
   exact DirectPortIO.kernel_acceptance_confined state live request haccepted
+
+/-- SC-DIRECT-PORT-CONTAINMENT: the composed CPL3 port-denial containment
+sequence denies the untrusted user port operation with an unchanged device
+projection and a CPL3-denying finite privilege view, then retires the
+kernel-selected faulting subject through the atomic cleanup/survivor transition;
+the untrusted port/value/width words never reach a kernel operation, and the
+denied attempt can never return to the faulting subject. -/
+theorem direct_port_denial_survivor_contained
+    (devices : DirectPortIO.State) (liveControls : DirectPortIO.Controls)
+    (operation : DirectPortIO.PortOperation)
+    (schedule : ResumablePreemption.State) (entry : InterruptEntry.Result)
+    (hpolicy : DirectPortIO.AcceptedControls devices.controls)
+    (hlive : liveControls = devices.controls)
+    (hsuccess :
+      (∃ reason, (FaultDispatch.dispatch schedule entry).action = .idle reason) ∨
+      ∃ reason context,
+        (FaultDispatch.dispatch schedule entry).action = .dispatch reason context) :
+    let step := DirectPortContainment.containDeniedPort
+      devices liveControls operation schedule entry
+    step.port.result = .userDeniedGP ∧
+      step.port.state.devices = devices.devices ∧
+      DirectPortIO.privilegeAllows liveControls .user = false ∧
+      ∃ faulting,
+        schedule.scheduler.lifecycle.current = some faulting ∧
+          step.fault.state.scheduler.lifecycle.capabilities.subjects faulting = false ∧
+          step.fault.state.scheduler.lifecycle.runnable faulting = false ∧
+          faulting ∉ step.fault.state.scheduler.ready ∧
+          step.fault.state.scheduler.lifecycle.current ≠ some faulting ∧
+          ResumablePreemption.contextFor step.fault.state.contexts faulting = none := by
+  obtain ⟨hdenied, hdevices, hcpl, faulting, hcurrent, _, _, hdead, hnotrun,
+      hready, hnotcurrent, hcontext, _⟩ :=
+    DirectPortContainment.denied_port_contained devices liveControls operation schedule entry
+      hpolicy hlive hsuccess
+  exact ⟨hdenied, hdevices, hcpl,
+    faulting, hcurrent, hdead, hnotrun, hready, hnotcurrent, hcontext⟩
 
 /-- SC-DMA-QUARANTINE: an accepted nonempty q35 quarantine plus the explicit
 bus-master device-control contract preserves every modeled memory projection. -/

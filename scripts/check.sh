@@ -234,6 +234,21 @@ for fixture in DirectPortUserMutation DirectPortExposedBitmap \
   fi
 done
 
+if lake env lean tests/negative/DirectPortContainmentExposedControls.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: direct-port containment fixture unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/DirectPortContainmentExposedControls.lean' "$negative_log" ||
+    ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+      "$negative_log" ||
+    ! grep -Fq '.port.result =' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: direct-port containment fixture lacked its expected semantic diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 for fixture in NMITerminalManifestMutation NMITraceInventoryMutation \
     NMIOrdinaryManifestVector2 NMIReuseIST0 NMIReuseIST1 NMIWrongPurpose \
     NMIContainmentRouting NMISchedulerRouting NMIFrameNotAtStackTop; do
