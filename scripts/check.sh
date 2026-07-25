@@ -142,6 +142,21 @@ for fixture in FaultReasonRelabel KernelBreakpointContainment \
   fi
 done
 
+for fixture in StaleTranslationOmittedInvalidation StaleTranslationWrongEffect \
+    StaleTranslationForgedTarget; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: stale-translation fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
+    echo "error: stale-translation fixture ${fixture} lacked its expected semantic diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
 if lake env lean tests/negative/DMAEmptyInventory.lean >"$negative_log" 2>&1; then
   echo "error: empty DMA inventory unexpectedly validated" >&2
   exit 1

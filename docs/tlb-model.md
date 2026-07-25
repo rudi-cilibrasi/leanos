@@ -32,3 +32,47 @@ assume page-table stores and invalidation are ordered as the atomic transition.
 The ISA guarantees, compiler, assembly, QEMU, and hardware are trusted, not
 proved. SMP shootdowns, PCID, global/huge pages, nested paging, speculation,
 replacement performance, and concurrent mutation are outside scope.
+
+## Canonical invalidation step (`LeanOS.StaleTranslation`)
+
+`LeanOS.StaleTranslation.step` is the single public operation the machine
+invalidation path consumes. It takes one reviewed composite `Request` (unmap,
+protect, release, destroy, or a root switch) checked against the authoritative
+`LeanOS.TLB` cache/virtual-mapping state, and returns the published state, an
+`accepted` flag, and the exact machine `Effect`:
+
+- `none` for a state-preserving rejection: the machine performs no invalidation;
+- `page addressSpace page` for an accepted unmap or protect: one `invlpg` at the
+  exact linear page;
+- `space addressSpace` for an accepted destruction and `flush` for an accepted
+  release or a root switch: the reviewed complete CR3 reload on the no-PCID root,
+  since there are no PCIDs or global mappings whose semantics could differ.
+
+The acting subject, active address space, mapping identity, and affected page are
+derived from checked kernel state and generation-bound capability handles;
+attacker words cannot select an invalidation target or claim completion. Lean
+proves the accepted effect is determined by the transition and its checked target
+(`unmap_accepted_effect`, `protect_accepted_effect`, `release_accepted_effect`,
+`destroy_accepted_effect`, `switch_effect`), that a non-owner request is rejected
+and inert (`unmap_wrong_owner_inert`, `protect_wrong_owner_inert`), that the
+returned cache has the affected translation absent (`accepted_unmap_target_absent`,
+`accepted_protect_target_absent`, `accepted_release_all_absent`,
+`accepted_destroy_space_absent`) so a later access cannot use the old
+translation, that release publishes a fully flushed cache before reuse
+(`accepted_release_flushed`), and that the step preserves the bounded-cache
+invariant (`step_preserves_coherent`). `applyEffect` models what the invalidation
+instruction accomplishes and `applyEffect_page_absent`/`applyEffect_space_absent`/
+`applyEffect_flush_absent` show the described effect is sufficient for absence.
+
+`SC-STALE-TRANSLATION-INVALIDATION` restates the effect/target/confinement
+bundle. The `LeanOS.Oracle` `StaleTranslation.scalar` block (accepted
+unmap/protect, wrong-owner rejections, release/destroy/switch effects,
+unmapped-page and post-reuse rejections, permission amplification, and a
+malformed encoding) is replayed by the hosted generated-C oracle and in every
+QEMU boot image; Lean and the generated C agree on each vector. This is
+model-backed differential evidence, not a proof that the processor flushed. The
+scalar effect encoding is deliberately upgradeable: when issues #104/#105 land a
+composite stateful dispatcher, it is replaced by sequence-level model-backed
+evidence and, if a runtime-mutable mapping window is added to the boot-page-table
+plan, a dedicated before/after/reuse QEMU boot scenario. `invlpg`/CR3 completion
+and page-walk hardware remain trusted; nothing here proves the processor flushed.

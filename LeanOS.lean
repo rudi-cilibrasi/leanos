@@ -33,6 +33,7 @@ import LeanOS.ResumablePreemption
 import LeanOS.Syscall
 import LeanOS.UserCopy
 import LeanOS.UserCopyWindow
+import LeanOS.StaleTranslation
 import LeanOS.SubjectLifecycle
 import LeanOS.Oracle
 import LeanOS.Scheduler

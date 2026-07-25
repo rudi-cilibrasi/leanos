@@ -47,6 +47,13 @@ traces cover create/map/destroy, stale identifier reuse, independent spaces,
 unauthorized and repeated destroy, selective release, and stale translation
 after frame reuse.
 
+The selective release cleanup is what the canonical stale-translation
+invalidation step composes with: `LeanOS.StaleTranslation.step` wraps these
+`unmap`/`protect`/`release`/`destroy` transitions (and a root switch) with the
+`LeanOS.TLB` cache, deriving the exact machine invalidation effect from the same
+checked owner/mapping/capability state so a retired frame cannot be reached
+through an old virtual page after reuse. See [the TLB model](tlb-model.md).
+
 These are properties of the Lean model, not hardware page tables, a TLB, page
 faults, concurrency, generated code, a kernel binary, or full information-flow
 noninterference. Compilation and examples are test evidence; only the stated

@@ -8,9 +8,10 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `InterruptEntry.entryDemo`, `BlockingIPC.blockingIpcDemo`,
 `CapabilityReuse.capabilityReuseDemo`, `ExtendedState.denialDispatchDemo`,
 `PrivilegeEntryControl.controlDemo`, `FaultDispatch.faultDispatchDemo`, and
-`DirectPortIO.directPortIODemo`, `InterruptEntry.nmiDemo`, and
-`InterruptEntry.bootPhaseDemo`. Its stable
-241-vector order covers accepted calls,
+`DirectPortIO.directPortIODemo`, `InterruptEntry.nmiDemo`,
+`InterruptEntry.bootPhaseDemo`, and
+`StaleTranslation.staleTranslationDemo`. Its stable
+256-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -114,6 +115,20 @@ stale subject/address-space/CR3 bindings, fatal and diagnostic modes, and a
 validate-then-mutate attempt. The exported scalar path remains allocation-free;
 the richer Lean transition still returns the complete accepted request as its
 attestation.
+
+The `StaleTranslation.scalar` block evaluates the canonical
+`StaleTranslation.step` over one reviewed cache fixture (subject 0 owning
+address spaces 1 and 2, page 7 caching live object 10). Its six scalar words
+encode a request kind, actor, address space, page, an auxiliary
+permission/slot, and a filled/post-reuse state selector; the packed result
+carries the accepted bit, the affected-absence bit, and the effect tag with its
+address space and page. The block covers accepted unmap/protect, wrong-owner
+rejections, release/destroy/switch effects, an unmapped page, a post-release
+reuse whose old page stays absent, permission amplification, and a malformed
+encoding. Attacker words cannot select the invalidation target: ownership and
+lifetime are checked by `step`, so a non-owner or post-reuse request packs no
+effect. `stale_translation_adapter_agrees_with_model` proves the exported scalar
+matches the authoritative `step` on every vector.
 
 Run the complete local evidence path with:
 

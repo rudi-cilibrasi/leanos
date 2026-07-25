@@ -12,6 +12,7 @@ import LeanOS.ExtendedState
 import LeanOS.PrivilegeEntryControl
 import LeanOS.FaultDispatch
 import LeanOS.DirectPortIO
+import LeanOS.StaleTranslation
 
 /-!
 # Bounded scalar boundary oracle
@@ -110,6 +111,13 @@ private def directPortIO (id : String) (stored live originPurpose port direction
 private def nmi (id : String) (descriptor frame stack context control : UInt64) : Vector :=
   { id, adapter := "Interrupt.nmi", words := [descriptor, frame, stack, context, control],
     expected := InterruptEntry.nmiModelExpected descriptor frame stack context control }
+
+private def staleTranslation (id : String) (kind actor addressSpace page aux selector : UInt64) :
+    Vector :=
+  { id, adapter := "StaleTranslation.scalar",
+    words := [kind, actor, addressSpace, page, aux, selector],
+    expected := StaleTranslation.staleTranslationModelExpected
+      kind actor addressSpace page aux selector }
 
 private def nmiUserFrame : UInt64 :=
   0x23 + 0x1b * 256 + 0x10000 + 0x20000 + 0x40000
@@ -396,9 +404,24 @@ def vectors : List Vector := [
   bootPhase "bootphase.runtime-delegated" 3 4 2 0,
   bootPhase "bootphase.repeated-after-latch" 4 4 2 1,
   bootPhase "bootphase.publish-after-latch" 4 1 0 1,
-  bootPhase "bootphase.invalid-phase-code" 9 4 2 0]
+  bootPhase "bootphase.invalid-phase-code" 9 4 2 0,
+  staleTranslation "stale-translation.unmap-accept" 0 0 1 7 0 0,
+  staleTranslation "stale-translation.protect-downgrade" 1 0 1 7 1 0,
+  staleTranslation "stale-translation.unmap-wrong-owner" 0 1 1 7 0 0,
+  staleTranslation "stale-translation.protect-wrong-owner" 1 1 1 7 1 0,
+  staleTranslation "stale-translation.release-flush" 2 0 0 0 0 0,
+  staleTranslation "stale-translation.destroy-space" 3 0 0 0 1 0,
+  staleTranslation "stale-translation.switch-away" 4 0 2 0 0 0,
+  staleTranslation "stale-translation.switch-back" 4 0 1 0 0 0,
+  staleTranslation "stale-translation.unmap-unmapped" 0 0 1 9 0 0,
+  staleTranslation "stale-translation.reuse-old-page-absent" 0 0 1 7 0 1,
+  staleTranslation "stale-translation.protect-write-amplify" 1 0 1 7 2 0,
+  staleTranslation "stale-translation.destroy-wrong-subject" 3 1 0 0 1 0,
+  staleTranslation "stale-translation.release-wrong-slot" 2 0 0 0 1 0,
+  staleTranslation "stale-translation.switch-unknown-space" 4 0 99 0 0 0,
+  staleTranslation "stale-translation.malformed-kind" 9 0 1 7 0 0]
 
-theorem corpus_shape : vectors.length = 241 := by decide
+theorem corpus_shape : vectors.length = 256 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -685,6 +708,41 @@ to an expectation evaluated through the authoritative validator. -/
 theorem user_return_adapter_agrees_with_model :
     vectors.all userReturnAdapterAgrees = true := by
   native_decide
+
+private def staleTranslationAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "StaleTranslation.scalar", [kind, actor, addressSpace, page, aux, selector] =>
+      StaleTranslation.staleTranslationDemo kind actor addressSpace page aux selector =
+        vector.expected
+  | _, _ => true
+
+/-- The stale-translation block is the 15-vector tail appended for issue #126:
+accepted unmap/protect, wrong-owner rejections, release/destroy/switch effects,
+unmapped-page and post-reuse rejections, permission amplification, and a
+malformed encoding. -/
+theorem stale_translation_corpus_shape :
+    ((vectors.drop 241).take 15).length = 15 := by decide
+
+/-- Every stale-translation scalar result agrees with the independently
+evaluated authoritative `step` over the exact 15-vector block. -/
+theorem stale_translation_adapter_agrees_with_model :
+    ((vectors.drop 241).take 15).all staleTranslationAdapterAgrees = true := by native_decide
+
+/-- Accepted transitions carry their exact effect word (accepted bit 32,
+affected-absent bit 33, effect tag/space/page), wrong-owner and post-reuse
+requests request no invalidation, and the malformed encoding is a no-op. -/
+theorem stale_translation_scenario_agrees :
+    (vectors[241]).expected = 0x300070101 ∧
+    (vectors[242]).expected = 0x300070101 ∧
+    (vectors[243]).expected = 0x200000000 ∧
+    (vectors[244]).expected = 0x200000000 ∧
+    (vectors[245]).expected = 0x300000003 ∧
+    (vectors[246]).expected = 0x300000102 ∧
+    (vectors[247]).expected = 0x300000003 ∧
+    (vectors[248]).expected = 0x300000003 ∧
+    (vectors[249]).expected = 0x200000000 ∧
+    (vectors[250]).expected = 0x200000000 ∧
+    (vectors[255]).expected = 0 := by native_decide
 
 private def wordsText : List UInt64 → String
   | [] => ""

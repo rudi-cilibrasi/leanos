@@ -15,6 +15,7 @@ import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
+import LeanOS.StaleTranslation
 
 /-! # Stable security-claim contract
 
@@ -795,6 +796,48 @@ theorem user_fault_class_containment state frame reason
         (fun ⟨context, hdispatch⟩ => Or.inr ⟨reason, context, hdispatch⟩))
   · intro kernelFrame horigin hrunning
     exact FaultDispatch.kernel_origin_is_fatal state kernelFrame hrunning horigin
+
+/-- SC-STALE-TRANSLATION-INVALIDATION: the public invalidation step returns an
+effect determined by the accepted logical transition and its checked target.  An
+accepted unmap invalidates exactly the requested address-space page and leaves
+that translation absent in the returned cache, so a later access cannot use the
+old translation; an actor that is not the checked owner is rejected, requests no
+invalidation, and preserves the complete cache/model state. -/
+theorem stale_translation_invalidation_confined
+    (state : TLB.State)
+    (actor : VirtualMapping.SubjectId) (addressSpace : VirtualMapping.AddressSpaceId)
+    (page : VirtualMapping.VirtualPage) (context : X86PageTable.AccessContext) :
+    ((StaleTranslation.step state (.unmap actor addressSpace page)).accepted = true →
+      (StaleTranslation.step state (.unmap actor addressSpace page)).effect =
+          .page addressSpace page ∧
+        TLB.lookup
+          (StaleTranslation.step state (.unmap actor addressSpace page)).state.entries
+          { addressSpace, page } context = none) ∧
+    (∀ owner, state.virtual.owner addressSpace = some owner → owner ≠ actor →
+      (StaleTranslation.step state (.unmap actor addressSpace page)).accepted = false ∧
+        (StaleTranslation.step state (.unmap actor addressSpace page)).effect = .none ∧
+        (StaleTranslation.step state (.unmap actor addressSpace page)).state = state) := by
+  refine ⟨fun h => ⟨StaleTranslation.unmap_accepted_effect state actor addressSpace page h,
+      StaleTranslation.accepted_unmap_target_absent state actor addressSpace page context h⟩,
+    fun owner howner hne =>
+      StaleTranslation.unmap_wrong_owner_inert state actor addressSpace page owner howner hne⟩
+
+/-- The stale-translation invalidation contract is non-vacuous: the reviewed
+fixture caches a live CPL3 translation, an accepted unmap returns the exact page
+effect leaving the page absent, and the frame can only be reused after a full
+flush while the old virtual page stays unreachable. -/
+theorem stale_translation_invalidation_nonvacuous :
+    (TLB.access StaleTranslation.filled 7
+        StaleTranslation.ctx).toOption.map (fun result => result.1) = some 4 ∧
+      (StaleTranslation.step StaleTranslation.filled (.unmap 0 1 7)).effect =
+        .page 1 7 ∧
+      (TLB.access
+        (StaleTranslation.step StaleTranslation.filled (.unmap 0 1 7)).state 7
+        StaleTranslation.ctx).isOk = false ∧
+      (StaleTranslation.step StaleTranslation.filled (.release 0 0)).effect = .flush ∧
+      (StaleTranslation.step StaleTranslation.filled (.release 0 0)).state.entries = [] ∧
+      (TLB.access StaleTranslation.reused 7 StaleTranslation.ctx).isOk = false := by
+  native_decide
 
 /-- SC-SCHEDULED-ISOLATION: equal finite public traces preserve low-equivalence. -/
 theorem scheduled_finite_trace_isolation observer left right leftSteps rightSteps
