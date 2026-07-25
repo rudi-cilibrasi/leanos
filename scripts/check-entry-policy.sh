@@ -301,6 +301,28 @@ grep -Eq 'jmp.*<user_return_epilogue>' <<<"$restore_dis" || {
   echo "error: vector=0,3 path=restore violated=return-not-validated" >&2; exit 1;
 }
 
+# Source-ordering gate for the two contained integer-fault stubs: each must
+# clear AC before it normalizes through the shared manifest adapter, and it must
+# not reach its operation-specific handler until after that normalization.  This
+# rejects a source-level handler-before-cleanup or direct-called handler that a
+# final-ELF disassembly of the shipped image would otherwise not exhibit.
+for vector in 0 3; do
+  if [[ "$vector" == 0 ]]; then
+    source_path="$(sed -n '/^isr0:/,/^\.global isr3/p' "$boot_source")"
+    handler=divide_error_handler
+  else
+    source_path="$(sed -n '/^isr3:/,/^\.global integer_fault_restore_peer/p' "$boot_source")"
+    handler=breakpoint_handler
+  fi
+  source_cleanup="$(grep -n -m1 '^[[:space:]]*clac$' <<<"$source_path" | cut -d: -f1 || true)"
+  source_normalize="$(grep -n -m1 "NORMALIZE_ENTRY $vector, 0" <<<"$source_path" | cut -d: -f1 || true)"
+  source_handler="$(grep -n -m1 "call $handler" <<<"$source_path" | cut -d: -f1 || true)"
+  [[ -n "$source_cleanup" && -n "$source_normalize" && -n "$source_handler" &&
+     "$source_cleanup" -lt "$source_normalize" && "$source_normalize" -lt "$source_handler" ]] || {
+    echo "error: vector=$vector path=contained" >&2; exit 1;
+  }
+done
+
 check_denial_path() {
   local vector="$1" start_symbol="$2" stop_symbol="$3"
   local start stop dis cleanup normalize operation

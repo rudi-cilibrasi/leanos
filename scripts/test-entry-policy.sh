@@ -67,6 +67,20 @@ stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $user_a_tex
 noncanonical_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $0x00008000, %edx' "$tmp/boot.S"; }
 non_denying_sysenter() { sed -i '/normalize_fast_entry_sysenter_cs_write:/i\    mov $1, %eax' "$tmp/boot.S"; }
 omitted_return_readback() { sed -i '/^void validate_user_return/,/^}/ s/check_fast_entry_control();/\/\* omitted return fixture \*\//' "$tmp/kernel.c"; }
+missing_de_gate() { sed -i '/set_gate(0, isr0, 0, 0x8e);/d' "$tmp/kernel.c"; }
+missing_bp_gate() { sed -i '/set_gate(3, isr3, 0, 0xee);/d' "$tmp/kernel.c"; }
+de_extra_gate() { sed -i '/set_gate(0, isr0, 0, 0x8e);/a\    set_gate(1, isr0, 0, 0x8e);' "$tmp/kernel.c"; }
+swap_de_bp_targets() {
+  sed -i -e 's/set_gate(0, isr0, 0, 0x8e);/set_gate(0, isr3, 0, 0x8e);/' \
+    -e 's/set_gate(3, isr3, 0, 0xee);/set_gate(3, isr0, 0, 0xee);/' "$tmp/kernel.c"
+}
+de_user_callable() { sed -i 's/set_gate(0, isr0, 0, 0x8e);/set_gate(0, isr0, 0, 0xee);/' "$tmp/kernel.c"; }
+de_wrong_ist() { sed -i 's/set_gate(0, isr0, 0, 0x8e);/set_gate(0, isr0, 1, 0x8e);/' "$tmp/kernel.c"; }
+de_wrong_type() { sed -i 's/set_gate(0, isr0, 0, 0x8e);/set_gate(0, isr0, 0, 0x8f);/' "$tmp/kernel.c"; }
+bp_wrong_dpl() { sed -i 's/set_gate(3, isr3, 0, 0xee);/set_gate(3, isr3, 0, 0x8e);/' "$tmp/kernel.c"; }
+de_before_normalize() { sed -i '/NORMALIZE_ENTRY 0, 0/i\    call divide_error_handler' "$tmp/boot.S"; }
+bp_before_normalize() { sed -i '/NORMALIZE_ENTRY 3, 0/i\    call breakpoint_handler' "$tmp/boot.S"; }
+de_branch_cleanup() { sed -i '/^isr0:/,/^\.global isr3/ s/^[[:space:]]*clac$/    nop/' "$tmp/boot.S"; }
 
 run_fixture wrong-target 'vector=14 field=target-or-dpl' wrong_target
 run_fixture nmi-wrong-target 'vector=2 field=target-ist-or-dpl' nmi_wrong_target
@@ -102,5 +116,16 @@ run_fixture stale-lstar 'fast-entry target write recipe can introduce nonzero st
 run_fixture noncanonical-lstar 'fast-entry target write recipe can introduce nonzero state' noncanonical_lstar
 run_fixture non-denying-sysenter 'fast-entry target write recipe can introduce nonzero state' non_denying_sysenter
 run_fixture omitted-return-readback 'reviewed return gate omits live fast-entry read-back' omitted_return_readback
+run_fixture missing-de-gate 'vector=77 field=present' missing_de_gate
+run_fixture missing-bp-gate 'vector=77 field=present' missing_bp_gate
+run_fixture de-extra-gate 'vector=77 field=present' de_extra_gate
+run_fixture swap-de-bp-targets 'vector=0 field=target-ist-or-dpl violated=divide-error-gate' swap_de_bp_targets
+run_fixture de-user-callable 'vector=0 field=target-ist-or-dpl violated=divide-error-gate' de_user_callable
+run_fixture de-wrong-ist 'vector=0 field=target-ist-or-dpl violated=divide-error-gate' de_wrong_ist
+run_fixture de-wrong-type 'vector=0 field=target-ist-or-dpl violated=divide-error-gate' de_wrong_type
+run_fixture bp-wrong-dpl 'vector=3 field=target-ist-or-dpl violated=breakpoint-gate' bp_wrong_dpl
+run_fixture de-handler-before-normalize 'vector=0 path=contained' de_before_normalize
+run_fixture bp-handler-before-normalize 'vector=3 path=contained' bp_before_normalize
+run_fixture de-branch-around-cleanup 'vector=0 path=contained' de_branch_cleanup
 
 echo "Controlled entry descriptor, TSS, and path fixtures passed"

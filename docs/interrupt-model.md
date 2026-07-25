@@ -157,17 +157,29 @@ version-one oracle with valid syscall, user general-protection/direct-port,
 user page fault, user divide-error, user breakpoint, timer, and diagnostic
 records plus wrong binding, error shape, restart-class evidence, length,
 alignment, origin (including kernel-origin #DE/#BP), spurious #DE/#BP error
-words, stack, nested-latch, and AC/DF fixtures. The live boot image does not
-yet install vector-0/3 gates; that machine slice (IDT entries, stubs, and QEMU
-scenarios) is deferred to the follow-up machine issue, so the model manifest
-deliberately leads the installed IDT here. `scripts/check-entry-policy.sh` enumerates the
+words, stack, nested-latch, and AC/DF fixtures. The live boot image installs the
+reviewed vector-0 (`isr0`, DPL0, no error word) and vector-3 (`isr3`, DPL3
+software breakpoint) gates; both converge on the shared normalizer and the
+generated typed dispatcher, and the real divide-error and breakpoint QEMU
+scenarios boot them. `scripts/check-entry-policy.sh` enumerates the
 final-ELF entry paths and requires cleanup, shared authorization, the typed
-handler, and latch completion in that order. `scripts/test-entry-policy.sh`
+handler, and latch completion in that order, and additionally source-orders the
+two contained integer-fault stubs (AC cleanup before shared normalization before
+the operation-specific handler). `scripts/test-entry-policy.sh`
 applies bounded one-field descriptor, path, error-shape, and TSS mutations to
 controlled source snapshots and requires the production checker to reject each
-with its vector and field/path diagnostic. At boot, `check_entry_manifest`
-decodes every present IDT entry and the relevant TSS stack pointers and rejects
-unmanifested present gates.
+with its vector and field/path diagnostic, including the vector-0/3 negatives:
+missing, extra, swapped, user-callable (DPL3), wrong-IST, and wrong-type gates,
+and handler-before-normalization or branch-around-cleanup contained paths. At
+boot, `check_entry_manifest` decodes every present IDT entry and the relevant
+TSS stack pointers and rejects unmanifested present gates.
+`scripts/test-run-integer-fault.sh` drives the machine-level QEMU-runner
+negatives for both scenarios — wrong delivered vector, synthetic error word,
+wrong saved-RIP class, direct-called handler, page-fault reason substitution,
+RIP-rewrite recovery, partial cleanup, attacker-selected survivor, stale
+address space, corrupted peer canary, nested entry, forged or reordered records,
+guest error, reset, triple fault, and timeout — where a forged serial PASS is
+still rejected by the independent guest debug-exit status.
 
 The bounded entry-adversarial image executes `int $14` and `int $32` from CPL3.
 Both attempts must deliver vector 13 with the selector-derived error code, must
