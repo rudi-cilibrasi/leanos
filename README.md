@@ -68,6 +68,11 @@ partial log does not pass. The executable scenarios currently include:
 - boot-time memory-map validation, reservation, frame scrubbing and publication,
   live page-table checks, WP/SMEP/SMAP probes, and bounded user-copy checks;
 - a dedicated double-fault IST fail-stop probe and a mapped-guard negative;
+- two early-IDT fail-stop probes: a real pre-paging `ud2` that vector 6 must
+  carry through the kernel-owned 32-bit bootstrap IDT to its pinned terminal
+  stub, and a QMP-injected NMI delivered after an exact early-only readiness
+  record while the 64-bit bootstrap IDT is live but the runtime IDT is still
+  unpublished;
 - a controlled fast-entry machine-state relaxation that must be caught by the
   live outbound MSR read-back before CPL3; and
 - a bounded suite of deliberately corrupted user-return images that must fail
@@ -395,8 +400,13 @@ vector — including NMI — on reviewed non-returning terminal stubs until
 trusted window narrows to the reviewed eleven-instruction pre-`lidt` prologue
 and that single-instruction handoff boundary; final-ELF policy decodes both
 bootstrap tables gate-by-gate, bounds each stub's terminal CFG, and
-inventories every `lidt`/`sidt`. Real descriptor semantics, delivery inside
-the residual window, and the final binary remain trusted/tested boundaries.
+inventories every `lidt`/`sidt`. Two mandatory QEMU probes exercise both
+sides of the handoff — a real pre-paging `ud2` latched by the bootstrap32
+catch-all with an exact `vector=6 reason=invalid-opcode` terminal record, and
+a monitor-injected NMI latched by the bootstrap64 vector-2 stub after an
+exact early-only readiness checkpoint, before the runtime IDT exists. Real
+descriptor semantics, delivery inside the residual window, and the final
+binary remain trusted/tested boundaries.
 
 The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,
 bounded double-fault escalation, and one absorbing gate for every modeled

@@ -38,7 +38,12 @@ admitted bootstrap-phase event latches its own absorbing terminal record with
 a bounded boot-phase reason, preserves the not-yet-published business state,
 arms no return authority, and absorbs every later publication or event. That
 early latch composes with, and never weakens, the runtime execution latch
-described here; the runtime phase delegates unchanged to this model.
+described here; the runtime phase delegates unchanged to this model. Both
+bootstrap latches now have demonstrated machine executions: the mandatory
+`bootstrap32-ud` and `bootstrap64-nmi` evidence rows drive a real pre-paging
+`ud2` and one monitor-injected masked-window NMI onto the pinned early
+terminal stubs, which stop the guest with their phase-typed debug exits
+without reaching the runtime IDT, ordinary C, or any business state.
 
 If the state is already halted, another modeled NMI returns the identical
 record and cannot manufacture a later snapshot. This sequential rule assumes

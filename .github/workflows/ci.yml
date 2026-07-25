@@ -85,6 +85,7 @@ jobs:
           ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
           ./scripts/test-nmi-image-policy.sh
           ./scripts/test-early-idt-policy.sh
+          ./scripts/test-early-probe-policy.sh
           ./scripts/run-emulator-evidence.py run \
             2>&1 | tee build/ci/emulator-evidence.log
 
@@ -109,6 +110,8 @@ jobs:
             build/boot/leanos-0.1.0-x86_64-entry-stack-overflow.iso
             build/boot/leanos-0.1.0-x86_64-entry-adversarial.iso
             build/boot/leanos-0.1.0-x86_64-nmi.iso
+            build/boot/leanos-0.1.0-x86_64-bootstrap32-ud.iso
+            build/boot/leanos-0.1.0-x86_64-bootstrap64-nmi.iso
             build/boot/leanos.elf
             build/boot/leanos-preemption.elf
             build/boot/leanos-fault-containment.elf
@@ -125,6 +128,8 @@ jobs:
             build/boot/leanos-entry-stack-overflow.map
             build/boot/leanos-entry-adversarial.elf
             build/boot/leanos-nmi.elf
+            build/boot/leanos-bootstrap32-ud.elf
+            build/boot/leanos-bootstrap64-nmi.elf
             build/boot/leanos.map
             build/evidence/q35-pci-construction.tsv
             build/boot/leanos-preemption.map
@@ -139,6 +144,8 @@ jobs:
             build/boot/leanos-fast-entry-sysenter.map
             build/boot/leanos-double-fault.map
             build/boot/leanos-nmi.map
+            build/boot/leanos-bootstrap32-ud.map
+            build/boot/leanos-bootstrap64-nmi.map
             build/boot/leanos-prelink.map
             build/boot/boot-page-plan.h
             build/boot/boot-page-plan.final.h
@@ -157,6 +164,10 @@ jobs:
             build/boot/boot-page-plan-fast-entry-sysenter.final.h
             build/boot/boot-page-plan-nmi.h
             build/boot/boot-page-plan-nmi.final.h
+            build/boot/boot-page-plan-bootstrap32-ud.h
+            build/boot/boot-page-plan-bootstrap32-ud.final.h
+            build/boot/boot-page-plan-bootstrap64-nmi.h
+            build/boot/boot-page-plan-bootstrap64-nmi.final.h
             build/boot/SHA256SUMS
             build/boot/serial.log
             build/boot/preemption.serial.log
@@ -173,6 +184,12 @@ jobs:
             build/boot/entry-stack-overflow.serial.log
             build/boot/entry-adversarial.serial.log
             build/boot/nmi.serial.log
+            build/boot/bootstrap32-ud.serial.log
+            build/boot/bootstrap64-nmi.serial.log
+            build/boot/bootstrap32-ud.disassembly.txt
+            build/boot/bootstrap64-nmi.disassembly.txt
+            build/boot/bootstrap32-ud-early-probe-policy.txt
+            build/boot/bootstrap64-nmi-early-probe-policy.txt
             build/boot/entry-policy-report.txt
             build/boot/entry-policy-fixtures.log
             build/boot/entry-stack-budget.txt

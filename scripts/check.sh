@@ -33,6 +33,10 @@ lake build leanos-boot-plan
 
 ./scripts/test-run-nmi.sh
 
+./scripts/test-run-bootstrap32-ud.sh
+
+./scripts/test-run-bootstrap64-nmi.sh
+
 ./scripts/test-entry-stack-budget.sh
 
 ./scripts/test-entry-stack-layout.sh
