@@ -47,6 +47,9 @@ elif [[ "$scenario" == direct-port-debug ]]; then
 elif [[ "$scenario" == direct-port-in ]]; then
   direct_port_probe_name=serial-in; direct_port_port=1021; direct_port_dir=in
   default_image="build/boot/leanos-${version}-x86_64-direct-port-in.iso"
+elif [[ "$scenario" == direct-port-pic ]]; then
+  direct_port_probe_name=pic-mask; direct_port_port=33; direct_port_dir=out
+  default_image="build/boot/leanos-${version}-x86_64-direct-port-pic.iso"
 elif [[ "$scenario" == divide-error ]]; then
   integer_fault_kind=divide-error; integer_fault_vector=0
   integer_fault_saved_rip=faulting-instruction; integer_fault_upper=DIVIDE-ERROR
@@ -87,7 +90,7 @@ elif [[ "$scenario" == preemption ]]; then
 elif [[ "$scenario" == fault-containment ]]; then
   echo 'LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap' > "$expected"
 elif [[ "$scenario" == direct-port-serial || "$scenario" == direct-port-debug ||
-      "$scenario" == direct-port-in ]]; then
+      "$scenario" == direct-port-in || "$scenario" == direct-port-pic ]]; then
   echo "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=${direct_port_probe_name} contract=v1 controls=wp,smep,smap" > "$expected"
 elif [[ "$scenario" == divide-error || "$scenario" == breakpoint ]]; then
   echo "LEANOS/18 BOOT target=x86_64-q35 subjects=2 schedule=integer-fault-containment probe=${integer_fault_kind} contract=v1 controls=wp,smep,smap" > "$expected"
@@ -141,14 +144,18 @@ printf '%s\n' \
   'LEANOS/14 PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS' \
   'LEANOS/14 FINAL status=PASS faulting=terminated survivor=2 kernel-origin=fail-stop' >> "$expected"
 elif [[ "$scenario" == direct-port-serial || "$scenario" == direct-port-debug ||
-      "$scenario" == direct-port-in ]]; then
+      "$scenario" == direct-port-in || "$scenario" == direct-port-pic ]]; then
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
   'LEANOS/16 ENTER subject=1 address-space=1 cpl=3 resources=owned' \
   "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=${direct_port_port} direction=${direct_port_dir} width=byte purpose=user device-mutation=0 result=PASS" \
   'LEANOS/16 DIRECT-PORT-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS' \
   'LEANOS/16 DIRECT-PORT-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS' \
-  'LEANOS/8 PAGING root=B selected=1 result=PASS' \
+  'LEANOS/8 PAGING root=B selected=1 result=PASS' >> "$expected"
+if [[ "$scenario" == direct-port-pic ]]; then
+  echo 'LEANOS/16 DIRECT-PORT-CANARY register=pic-mask port=33 programmed=255 observed=255 device-mutation=0 result=PASS' >> "$expected"
+fi
+printf '%s\n' \
   'LEANOS/16 DIRECT-PORT-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS' \
   'LEANOS/16 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0' >> "$expected"
 elif [[ "$scenario" == divide-error || "$scenario" == breakpoint ]]; then

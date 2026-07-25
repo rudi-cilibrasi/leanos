@@ -38,6 +38,7 @@ BYTE_OWNERS = {
     ("out8", 0x3FB): "DirectPortIO.serial",
     ("out8", 0x3FC): "DirectPortIO.serial",
     ("in8", 0x3FD): "DirectPortIO.serial",
+    ("in8", 0x21): "DirectPortIO.pic",
     ("out8", 0x20): "DirectPortIO.pic",
     ("out8", 0x21): "DirectPortIO.pic",
     ("out8", 0xA0): "DirectPortIO.pic",

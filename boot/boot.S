@@ -1493,6 +1493,13 @@ user_a_entry:
     mov $0x11, %al
 #elif defined(LEANOS_DIRECT_PORT_PROBE_IN)
     mov $0x3fd, %dx
+#elif defined(LEANOS_DIRECT_PORT_PROBE_PIC)
+    /* Attempt to clear the master 8259 interrupt mask (unmask every IRQ) that
+       privilege_init programmed to 0xff.  If this write reached the device the
+       kernel-owned mask read-back canary in subject B would observe 0x00 and
+       fail-stop, independently of any serial claim. */
+    mov $0x21, %dx
+    mov $0x00, %al
 #else
     mov $0x3f8, %dx
     mov $0x41, %al
@@ -1667,15 +1674,19 @@ extended_state_probe_class:
 
 /* Direct-port-containment probe selector consumed by the shared kernel object.
    0 = byte OUT to serial data (0x3f8), 1 = byte OUT to isa-debug-exit (0xf4),
-   2 = byte IN from serial line-status (0x3fd).  The raw CPL3 instruction itself
-   is chosen at assembly time in user_a_entry; this word only lets the single
-   generated kernel object select its untrusted diagnostics. */
+   2 = byte IN from serial line-status (0x3fd), 3 = byte OUT to the master PIC
+   data/mask register (0x21).  The raw CPL3 instruction itself is chosen at
+   assembly time in user_a_entry; this word only lets the single generated kernel
+   object select its untrusted diagnostics and, for the PIC probe, the
+   kernel-owned interrupt-mask read-back canary. */
 .global direct_port_probe_class
 direct_port_probe_class:
 #if defined(LEANOS_DIRECT_PORT_PROBE_DEBUG)
     .quad 1
 #elif defined(LEANOS_DIRECT_PORT_PROBE_IN)
     .quad 2
+#elif defined(LEANOS_DIRECT_PORT_PROBE_PIC)
+    .quad 3
 #else
     .quad 0
 #endif

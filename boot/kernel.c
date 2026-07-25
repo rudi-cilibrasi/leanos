@@ -1495,6 +1495,18 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             arg2 != 0x51a7 ||
             direct_port_fault_attestation != UINT64_C(0x00000000ff020202))
             fail("direct-port-peer-state");
+        /* Independent hardware oracle for the PIC probe: the survivor triggers
+           a kernel-owned read-back of the master 8259 interrupt mask.  It reads
+           the actual device register, not the serial claim, so a denied write
+           leaves the init value (0xff) intact while an escaped write to 0x21
+           would have cleared the mask and this check would fail-stop even under
+           a forged "device-mutation=0" transcript. */
+        if (direct_port_probe_class == 3) {
+            uint8_t observed_pic_mask = in8(0x21);
+            if (observed_pic_mask != 0xffu)
+                fail("direct-port-pic-canary");
+            serial_puts("LEANOS/16 DIRECT-PORT-CANARY register=pic-mask port=33 programmed=255 observed=255 device-mutation=0 result=PASS\n");
+        }
         serial_puts("LEANOS/16 DIRECT-PORT-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
         serial_puts("LEANOS/16 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0\n");
         finish(0x10);
@@ -1970,6 +1982,13 @@ uint64_t direct_port_containment_gp_handler(uint64_t error, uint64_t rip,
     } else if (direct_port_probe_class == 2) {
         expected_port = UINT64_C(0x3fd); direction_width = 0;
         check_value = 0; expected_value = 0;
+    } else if (direct_port_probe_class == 3) {
+        /* Byte OUT of 0x00 to the master PIC data/mask port: an attempt to
+           clear the interrupt mask programmed at init.  Denied under the same
+           #GP(0) path; the surviving peer's mask read-back is the independent
+           oracle. */
+        expected_port = UINT64_C(0x21); direction_width = 1;
+        check_value = 1; expected_value = 0;
     } else if (direct_port_probe_class == 0) {
         expected_port = COM1; direction_width = 1;
         check_value = 1; expected_value = UINT64_C(0x41);
@@ -2009,6 +2028,8 @@ uint64_t direct_port_containment_gp_handler(uint64_t error, uint64_t rip,
         ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS\n"
         : direct_port_probe_class == 2
         ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=1021 direction=in width=byte purpose=user device-mutation=0 result=PASS\n"
+        : direct_port_probe_class == 3
+        ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=33 direction=out width=byte purpose=user device-mutation=0 result=PASS\n"
         : "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=1016 direction=out width=byte purpose=user device-mutation=0 result=PASS\n");
     serial_puts("LEANOS/16 DIRECT-PORT-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
     serial_puts("LEANOS/16 DIRECT-PORT-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
@@ -2111,6 +2132,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=debug-exit contract=v1 controls=wp,smep,smap\n"
         : direct_port_probe_class == 2
         ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=serial-in contract=v1 controls=wp,smep,smap\n"
+        : direct_port_probe_class == 3
+        ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=pic-mask contract=v1 controls=wp,smep,smap\n"
         : "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=serial-out contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_INTEGER_FAULT_SCENARIO)
     serial_puts(integer_fault_probe_class == 1

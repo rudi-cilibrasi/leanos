@@ -1,5 +1,5 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	47
+# mandatory-count	48
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
@@ -46,5 +46,6 @@ double-fault-guard-mapped	double-fault-guard	controlled-rejection	30	leanos-@VER
 direct-port-serial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-serial.iso	leanos-direct-port-serial.elf	direct-port-serial.serial.log	direct-port-serial	-	-
 direct-port-debug	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-debug.iso	leanos-direct-port-debug.elf	direct-port-debug.serial.log	direct-port-debug	-	-
 direct-port-in	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-in.iso	leanos-direct-port-in.elf	direct-port-in.serial.log	direct-port-in	-	-
+direct-port-pic	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-pic.iso	leanos-direct-port-pic.elf	direct-port-pic.serial.log	direct-port-pic	-	-
 divide-error	boot	accepted-boot	30	leanos-@VERSION@-x86_64-divide-error.iso	leanos-divide-error.elf	divide-error.serial.log	divide-error	-	-
 breakpoint	boot	accepted-boot	30	leanos-@VERSION@-x86_64-breakpoint.iso	leanos-breakpoint.elf	breakpoint.serial.log	breakpoint	-	-

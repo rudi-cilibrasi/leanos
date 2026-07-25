@@ -105,6 +105,24 @@ or resumed. Dedicated negative images mutate the I/O-map base, raw descriptor
 limit, and descriptor granularity independently and must all fail at the live
 control read-back before CPL3 entry.
 
+Four booted probes exercise this path as mandatory accepted-boot rows in the
+emulator matrix, each executing exactly one reviewed raw CPL3 instruction: a
+byte `OUT` to serial data `0x3f8`, a byte `OUT` to `isa-debug-exit` `0xf4` with
+a distinctive guest-error value, a non-destructive byte `IN` from serial
+line-status `0x3fd`, and a byte `OUT` of `0x00` to the master PIC data/mask
+register `0x21`. The PIC probe carries an independent hardware failure oracle
+that does not trust the serial transcript: `privilege_init` masks every legacy
+IRQ line (`out8(0x21, 0xff)`), and after the denial the surviving peer's
+kernel-visible operation performs the inventoried CPL0 read-back `in8(0x21)` and
+requires the observed mask to still be `0xff`. If the attacker's write had
+reached the device the mask would read `0x00` and the kernel fail-stops with
+`direct-port-pic-canary`, even under a forged `device-mutation=0` transcript.
+The read-back is bound in `scripts/direct-port-byte-operations.tsv` as a
+`DirectPortIO.pic` byte operation, and `scripts/test-run-direct-port-pic.sh`
+drives controlled runner negatives for an actually-executed write, a mutated or
+missing canary, forged and reordered records, an attacker-selected survivor, a
+stale address space, guest error, reset, triple fault, and timeout.
+
 ## Composed port-denial containment
 
 `LeanOS.DirectPortContainment` is the first model-level composition slice

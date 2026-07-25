@@ -46,11 +46,12 @@ bootstrap32_ud_iso_root="$build/iso-bootstrap32-ud"
 bootstrap64_nmi_iso_root="$build/iso-bootstrap64-nmi"
 # Direct-port-containment family (#130): one shared kernel object, one reviewed
 # raw CPL3 port instruction per probe selected by a boot.S -D variant.
-direct_port_probes=(serial debug in)
+direct_port_probes=(serial debug in pic)
 declare -A direct_port_probe_flags=(
   [serial]=""
   [debug]="-DLEANOS_DIRECT_PORT_PROBE_DEBUG=1"
   [in]="-DLEANOS_DIRECT_PORT_PROBE_IN=1"
+  [pic]="-DLEANOS_DIRECT_PORT_PROBE_PIC=1"
 )
 # Integer-fault-containment family (#150): one shared kernel object, one real
 # faulting instruction per probe selected by a boot.S -D variant.
@@ -526,7 +527,7 @@ done
 ./scripts/generate-boot-page-plan.sh \
   "$build/leanos-direct-port-serial-prelink.elf" \
   "$build/boot-page-plan-direct-port.h"
-for probe in debug in; do
+for probe in debug in pic; do
   ./scripts/generate-boot-page-plan.sh \
     "$build/leanos-direct-port-${probe}-prelink.elf" \
     "$build/boot-page-plan-direct-port-${probe}.h"
@@ -1154,13 +1155,16 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     leanos-direct-port-in.elf)
       manifest="scripts/direct-port-sites-direct-port-in.tsv"
       ;;
+    leanos-direct-port-pic.elf)
+      manifest="scripts/direct-port-sites-direct-port-pic.tsv"
+      ;;
   esac
   ./scripts/check-direct-port-sites.py "$build/$elf_name" "$manifest" \
     "${direct_port_args[@]}" \
     | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
   ((direct_port_images += 1))
 done < "$matrix"
-[[ "$direct_port_images" -eq 47 ]] || {
+[[ "$direct_port_images" -eq 48 ]] || {
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
   exit 1
 }
