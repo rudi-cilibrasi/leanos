@@ -1,3 +1,4 @@
+import LeanOS.BootInterruptPhase
 import LeanOS.KernelTransition
 import LeanOS.Syscall
 import LeanOS.IPCSyscall
@@ -124,6 +125,16 @@ private def nmiControl : UInt64 :=
   2 + 40 * 512 + 0x20000 + 0x40000 + 1 * 0x80000 + 1 * 0x8000000
 
 private def nmiFrameAddress : UInt64 := 0x903fd8
+
+/-- Opaque business token; every boot-phase result must carry it unchanged. -/
+private def bootPhaseBusiness : UInt64 := 0x5a
+
+private def bootPhase (id : String)
+    (phase operation detail latchWord : UInt64) : Vector :=
+  { id, adapter := "Interrupt.bootPhase",
+    words := [phase, operation, detail, latchWord, bootPhaseBusiness],
+    expected := BootInterruptPhase.bootPhaseModelExpected phase operation detail
+      latchWord bootPhaseBusiness }
 
 /-- Stable ordering is part of schema version one. -/
 def vectors : List Vector := [
@@ -367,9 +378,27 @@ def vectors : List Vector := [
   faultDispatch "fault-dispatch.swapped-reason-page-fault" 14 6 1 1 2 2,
   faultDispatch "fault-dispatch.stale-current-divide-error" 0 3 3 1 2 2,
   faultDispatch "fault-dispatch.stale-address-space-breakpoint" 3 3 1 3 2 2,
-  faultDispatch "fault-dispatch.stale-context-breakpoint" 3 3 1 1 2 3]
+  faultDispatch "fault-dispatch.stale-context-breakpoint" 3 3 1 1 2 3,
+  bootPhase "bootphase.publish-bootstrap32" 0 1 0 0,
+  bootPhase "bootphase.publish-bootstrap64" 1 2 0 0,
+  bootPhase "bootphase.publish-runtime" 2 3 7 0,
+  bootPhase "bootphase.runtime-missing-tss" 2 3 6 0,
+  bootPhase "bootphase.skip-bootstrap32" 0 2 0 0,
+  bootPhase "bootphase.backward-bootstrap32" 2 1 0 0,
+  bootPhase "bootphase.premature-runtime" 1 3 7 0,
+  bootPhase "bootphase.nmi-bootstrap32" 1 4 2 0,
+  bootPhase "bootphase.nmi-bootstrap64" 2 4 2 0,
+  bootPhase "bootphase.error-fault-bootstrap64" 2 4 (13 + 256) 0,
+  bootPhase "bootphase.noerror-fault-bootstrap32" 1 4 6 0,
+  bootPhase "bootphase.double-fault-bootstrap64" 2 4 (8 + 256) 0,
+  bootPhase "bootphase.user-claim-early" 1 4 (14 + 256 + 512) 0,
+  bootPhase "bootphase.inherited-window" 0 4 2 0,
+  bootPhase "bootphase.runtime-delegated" 3 4 2 0,
+  bootPhase "bootphase.repeated-after-latch" 4 4 2 1,
+  bootPhase "bootphase.publish-after-latch" 4 1 0 1,
+  bootPhase "bootphase.invalid-phase-code" 9 4 2 0]
 
-theorem corpus_shape : vectors.length = 223 := by decide
+theorem corpus_shape : vectors.length = 241 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -593,6 +622,56 @@ theorem user_fault_class_dispatch_scenario_agrees :
       ((vectors.drop 213).take 5).all
         (fun vector => vector.expected = 0x8000000000000002) = true ∧
       ((vectors.drop 218).take 5).all (fun vector => vector.expected = 0) = true := by
+  native_decide
+
+private def bootPhaseAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "Interrupt.bootPhase", [phase, operation, detail, latchWord, business] =>
+      InterruptEntry.bootPhaseDemo phase operation detail latchWord business =
+        vector.expected
+  | _, _ => true
+
+/-- The generated-C boot-phase block covers every publication step, each wrong
+or premature publication, bootstrap NMI and representative error-code shapes in
+both bootstrap phases, the typed unowned inherited window, runtime delegation,
+repeated terminal events, attempted progress after the latch, and a malformed
+phase code. -/
+theorem boot_phase_corpus_shape : ((vectors.drop 223).take 18).length = 18 := by
+  decide
+
+theorem boot_phase_corpus_id_inventory :
+    List.map (fun vector => vector.id) ((vectors.drop 223).take 18) =
+      ["bootphase.publish-bootstrap32", "bootphase.publish-bootstrap64",
+        "bootphase.publish-runtime", "bootphase.runtime-missing-tss",
+        "bootphase.skip-bootstrap32", "bootphase.backward-bootstrap32",
+        "bootphase.premature-runtime", "bootphase.nmi-bootstrap32",
+        "bootphase.nmi-bootstrap64", "bootphase.error-fault-bootstrap64",
+        "bootphase.noerror-fault-bootstrap32", "bootphase.double-fault-bootstrap64",
+        "bootphase.user-claim-early", "bootphase.inherited-window",
+        "bootphase.runtime-delegated", "bootphase.repeated-after-latch",
+        "bootphase.publish-after-latch", "bootphase.invalid-phase-code"] := by
+  native_decide
+
+/-- Every boot-phase scalar result agrees with the expectation evaluated from
+the rich finite phase model on the complete boot-phase corpus. -/
+theorem boot_phase_adapter_agrees_with_model :
+    ((vectors.drop 223).take 18).all bootPhaseAdapterAgrees = true := by
+  native_decide
+
+/-- The three orderly publications are the only accepted rows; both bootstrap
+NMI rows latch the absorbing terminal record; delegation and the post-latch
+rows carry the unchanged business token. -/
+theorem boot_phase_expected_classes_agree :
+    (vectors[223]).expected = 0x5a0101 ∧
+    (vectors[224]).expected = 0x5a0201 ∧
+    (vectors[225]).expected = 0x5a0301 ∧
+    (vectors[226]).expected = 0x18005a0202 ∧
+    (vectors[230]).expected = 0x25a0102 ∧
+    (vectors[231]).expected = 0x25a0202 ∧
+    (vectors[237]).expected = 0x25a0004 ∧
+    (vectors[238]).expected = 0x5a0003 ∧
+    (vectors[239]).expected = 0x5a0003 ∧
+    (vectors[240]).expected = 0x8000000000000021 := by
   native_decide
 
 private def userReturnAdapterAgrees (vector : Vector) : Bool :=

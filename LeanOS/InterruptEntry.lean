@@ -993,4 +993,52 @@ theorem entryDemo_total descriptor frame stack context cleanup :
 def entryDemoExport (descriptor frame stack context cleanup : UInt64) : UInt64 :=
   entryDemo descriptor frame stack context cleanup
 
+/-! ## Boot-interrupt phase scalar adapter
+
+Allocation-free spelling of the finite boot-interrupt phase classifier defined
+by `LeanOS.BootInterruptPhase`.  The five words encode the current phase, one
+publication or event operation, its detail word, the prior terminal-latch
+selector, and an opaque business token that must round-trip unchanged.  The
+corpus proves pointwise agreement with `bootPhaseModelExpected`; this adapter
+does not model descriptor loads, x86 delivery, or the final binary. -/
+
+def bootPhaseDemo (phase operation detail latchWord business : UInt64) : UInt64 :=
+  if phase > 4 then 0x8000000000000021
+  else if operation = 0 || operation > 4 then 0x8000000000000022
+  else if latchWord > 1 then 0x8000000000000023
+  else
+    let businessWord := business % 256 * 0x10000
+    if latchWord = 1 then 3 + businessWord
+    else
+      let latched := fun (recordPhase vector errorBit userBit reason : UInt64) =>
+        2 + recordPhase * 0x100 + businessWord + vector % 256 * 0x1000000 +
+          errorBit * 0x100000000 + userBit * 0x200000000 + reason * 0x400000000
+      if operation = 1 then
+        if phase = 0 then 1 + 0x100 + businessWord
+        else latched phase 0 0 0 3
+      else if operation = 2 then
+        if phase = 1 then 1 + 2 * 0x100 + businessWord
+        else latched phase 0 0 0 4
+      else if operation = 3 then
+        if phase = 2 then
+          if detail % 2 = 1 && detail / 2 % 2 = 1 && detail / 4 % 2 = 1 then
+            1 + 3 * 0x100 + businessWord
+          else latched 2 0 0 0 6
+        else latched phase 0 0 0 5
+      else
+        let vector := detail % 256
+        let errorBit := detail / 256 % 2
+        let userBit := detail / 512 % 2
+        if phase = 3 then 4 + businessWord + vector * 0x1000000
+        else if phase = 0 then latched 0 vector errorBit userBit 1
+        else latched phase vector errorBit userBit 0
+
+theorem bootPhaseDemo_total phase operation detail latchWord business :
+    ∃ result, bootPhaseDemo phase operation detail latchWord business = result := by
+  exact ⟨_, rfl⟩
+
+@[export leanos_boot_phase_demo]
+def bootPhaseDemoExport (phase operation detail latchWord business : UInt64) : UInt64 :=
+  bootPhaseDemo phase operation detail latchWord business
+
 end LeanOS.InterruptEntry

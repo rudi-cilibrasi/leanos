@@ -1,3 +1,4 @@
+import LeanOS.BootInterruptPhase
 import LeanOS.BoundedLifecycle
 import LeanOS.KernelTransition
 import LeanOS.Capability
@@ -559,6 +560,27 @@ theorem nmi_named_handling_and_after_halt_witnesses :
         [.selectUserReturn .initialDispatch, .userReturn returnWitnessRequest]).execution.mode =
           syscallNext.execution.mode := by
   native_decide
+
+/-- SC-BOOT-IDT-PHASE: before the runtime IDT is published, every admitted
+bootstrap-phase event is one immediate absorbing terminal latch: it records the
+bounded boot-phase reason, preserves the not-yet-published business state, arms
+no return authority, never advances the publication chain, and absorbs every
+later publication or event. -/
+theorem boot_interrupt_phase_early_terminal (α : Type)
+    (state : BootInterruptPhase.State α) event operations
+    (hphase : state.phase = .bootstrap32 ∨ state.phase = .bootstrap64)
+    (hlatched : state.latched = none) :
+    let record : BootInterruptPhase.EarlyHaltRecord :=
+      ⟨state.phase, event.vector, event.hasErrorCode, event.fromUser, .earlyEvent⟩
+    let next := (BootInterruptPhase.dispatch state event).state
+    (BootInterruptPhase.dispatch state event).outcome = .terminalLatched record ∧
+      next.phase = .terminal ∧
+      next.latched = some record ∧
+      next.returnAuthorityArmed = false ∧
+      next.business = state.business ∧
+      BootInterruptPhase.run next operations = next := by
+  exact BootInterruptPhase.owned_bootstrap_event_terminal_absorbing state event
+    operations hphase hlatched
 
 /-- SC-NMI-FAILSTOP: an exact normalized vector-2 terminal entry from running
 or any ordinary handling state freezes every business subsystem, clears return

@@ -8,6 +8,7 @@ import LeanOS.DirectPortIO
 import LeanOS.BootMemoryMap
 import LeanOS.BootReservation
 import LeanOS.BootAllocation
+import LeanOS.BootInterruptPhase
 import LeanOS.BootPageTablePlan
 import LeanOS.BlockingIPC
 import LeanOS.EndpointIPC
