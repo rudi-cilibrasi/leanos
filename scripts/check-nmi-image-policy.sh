@@ -50,6 +50,9 @@ require_source_text "$source_root/docs/interrupt-model.md" \
   'firmware does not deliver NMI before'
 require_source_text "$source_root/docs/interrupt-model.md" \
   'which begins only after `NMI-READY`'
+./scripts/check-early-idt-policy.py "$elf" \
+  --boot-source "$source_root/boot/boot.S" \
+  --kernel-source "$source_root/boot/kernel.c"
 stub="$(objdump -d "$elf" | sed -n '/<isr2>:/,/<isr13>:/p')"
 [[ -n "$stub" ]] || { echo "error: could not isolate vector-2 disassembly" >&2; exit 1; }
 if grep -Eq '\<push[qwl]?\>' <<<"$stub"; then

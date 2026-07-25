@@ -23,3 +23,15 @@ in8	0x2	in	(%dx),%al	DirectPortIO.byte-wrapper
 out16	0x4	out	%ax,(%dx)	DMAQuarantine.boot-pci-config
 out32	0x4	out	%eax,(%dx)	DMAQuarantine.boot-pci-config
 in32	0x2	in	(%dx),%eax	DMAQuarantine.boot-pci-config
+boot_early_isr2_32	0x10	in	(%dx),%al	DirectPortIO.serial
+boot_early_isr2_32	0x1b	out	%al,(%dx)	DirectPortIO.serial
+boot_early_isr2_32	0x2a	out	%al,(%dx)	DirectPortIO.debug-exit
+boot_early_catchall_32	0x10	in	(%dx),%al	DirectPortIO.serial
+boot_early_catchall_32	0x1b	out	%al,(%dx)	DirectPortIO.serial
+boot_early_catchall_32	0x2a	out	%al,(%dx)	DirectPortIO.debug-exit
+boot_early_isr2_64	0x12	in	(%dx),%al	DirectPortIO.serial
+boot_early_isr2_64	0x1d	out	%al,(%dx)	DirectPortIO.serial
+boot_early_isr2_64	0x2b	out	%al,(%dx)	DirectPortIO.debug-exit
+boot_early_catchall_64	0x12	in	(%dx),%al	DirectPortIO.serial
+boot_early_catchall_64	0x1d	out	%al,(%dx)	DirectPortIO.serial
+boot_early_catchall_64	0x2b	out	%al,(%dx)	DirectPortIO.debug-exit
