@@ -26,6 +26,8 @@ RUNNERS = {
     "double-fault",
     "entry-stack-overflow",
     "nmi",
+    "bootstrap32-ud",
+    "bootstrap64-nmi",
     "double-fault-guard",
 }
 RUNNER_RESULT_CLASSES = {
@@ -35,6 +37,8 @@ RUNNER_RESULT_CLASSES = {
     "double-fault": "fail-stop",
     "entry-stack-overflow": "fail-stop",
     "nmi": "fail-stop",
+    "bootstrap32-ud": "fail-stop",
+    "bootstrap64-nmi": "fail-stop",
     "double-fault-guard": "controlled-rejection",
 }
 REQUIRED_FAST_ENTRY_ROWS = {
@@ -277,6 +281,10 @@ def scenario_invocation(
         command = ["./scripts/run-entry-stack-overflow.sh", str(paths["image"])]
     elif row["runner"] == "nmi":
         command = ["./scripts/run-nmi.sh", str(paths["image"])]
+    elif row["runner"] == "bootstrap32-ud":
+        command = ["./scripts/run-bootstrap32-ud.sh", str(paths["image"])]
+    elif row["runner"] == "bootstrap64-nmi":
+        command = ["./scripts/run-bootstrap64-nmi.sh", str(paths["image"])]
     else:
         environment["LEANOS_EXPECT_GUARD_MAPPED"] = "1"
         command = ["./scripts/run-double-fault.sh", str(paths["image"])]
@@ -542,6 +550,8 @@ def check_workflows() -> None:
             "./scripts/run-image.sh", "./scripts/run-return-corruptions.sh",
             "./scripts/run-double-fault.sh",
             "./scripts/run-entry-stack-overflow.sh",
+            "./scripts/run-bootstrap32-ud.sh",
+            "./scripts/run-bootstrap64-nmi.sh",
         ):
             if bypass in content:
                 raise EvidenceError(f"{relative} bypasses the shared emulator matrix with {bypass}")

@@ -1,5 +1,5 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	40
+# mandatory-count	42
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
@@ -40,4 +40,6 @@ return-direct-port-granularity-relaxation	return	controlled-rejection	30	leanos-
 double-fault	double-fault	fail-stop	30	leanos-@VERSION@-x86_64-double-fault.iso	leanos-double-fault.elf	double-fault.serial.log	double-fault	-	-
 entry-stack-overflow	entry-stack-overflow	fail-stop	30	leanos-@VERSION@-x86_64-entry-stack-overflow.iso	leanos-entry-stack-overflow.elf	entry-stack-overflow.serial.log	entry-stack-overflow	-	-
 nmi-terminal	nmi	fail-stop	30	leanos-@VERSION@-x86_64-nmi.iso	leanos-nmi.elf	nmi.serial.log	nmi-terminal	-	-
+bootstrap32-ud	bootstrap32-ud	fail-stop	30	leanos-@VERSION@-x86_64-bootstrap32-ud.iso	leanos-bootstrap32-ud.elf	bootstrap32-ud.serial.log	bootstrap32-ud	-	-
+bootstrap64-nmi	bootstrap64-nmi	fail-stop	30	leanos-@VERSION@-x86_64-bootstrap64-nmi.iso	leanos-bootstrap64-nmi.elf	bootstrap64-nmi.serial.log	bootstrap64-nmi	-	-
 double-fault-guard-mapped	double-fault-guard	controlled-rejection	30	leanos-@VERSION@-x86_64-double-fault-guard-mapped.iso	leanos-double-fault-guard-mapped.elf	double-fault-guard-mapped.serial.log	double-fault-guard-mapped	-	-
