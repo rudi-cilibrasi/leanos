@@ -1,3 +1,4 @@
+import LeanOS.BoundedLifecycle
 import LeanOS.Capability
 import LeanOS.CapabilityHandle
 import LeanOS.CapabilityTransfer
@@ -23,6 +24,7 @@ import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.FaultDispatch
 import LeanOS.KernelTransition
+import LeanOS.LifetimeIssuer
 import LeanOS.MemoryLifecycle
 import LeanOS.Observation
 import LeanOS.Preemption
