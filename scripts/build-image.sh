@@ -42,6 +42,8 @@ df_negative_iso_root="$build/iso-double-fault-guard-mapped"
 entry_overflow_iso_root="$build/iso-entry-stack-overflow"
 entry_adversarial_iso_root="$build/iso-entry-adversarial"
 nmi_iso_root="$build/iso-nmi"
+bootstrap32_ud_iso_root="$build/iso-bootstrap32-ud"
+bootstrap64_nmi_iso_root="$build/iso-bootstrap64-nmi"
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
@@ -75,7 +77,8 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$fast_entry_sysenter_iso_root/boot/grub" \
   "$df_iso_root/boot/grub" \
   "$df_negative_iso_root/boot/grub" "$entry_overflow_iso_root/boot/grub" \
-  "$entry_adversarial_iso_root/boot/grub" "$nmi_iso_root/boot/grub"
+  "$entry_adversarial_iso_root/boot/grub" "$nmi_iso_root/boot/grub" \
+  "$bootstrap32_ud_iso_root/boot/grub" "$bootstrap64_nmi_iso_root/boot/grub"
 ./scripts/generate-oracle.sh "$build"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
@@ -87,6 +90,8 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-guard.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-entry-adversarial.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-nmi.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-bootstrap32-ud.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-bootstrap64-nmi.h"
 
 # C generation resolves project imports through Lake's compiled module path.
 # Build them here because image jobs and clean checkouts cannot rely on a
@@ -174,6 +179,12 @@ mv "$build/FaultDispatchAndDirectPortIO.o" "$build/FaultDispatch.o"
   -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_NMI_PROBE=1 -c boot/kernel.c -o "$build/kernel-nmi.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
+  -o "$build/kernel-bootstrap32-ud.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
+  -o "$build/kernel-bootstrap64-nmi.o"
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
@@ -245,6 +256,12 @@ cp scripts/entry-stack-extended-callgraph.tsv \
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_ENTRY_ADVERSARIAL=1 \
   -c boot/boot.S -o "$build/boot-entry-adversarial.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_BOOTSTRAP32_UD_PROBE=1 \
+  -c boot/boot.S -o "$build/boot-bootstrap32-ud.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_BOOTSTRAP64_NMI_PROBE=1 \
+  -c boot/boot.S -o "$build/boot-bootstrap64-nmi.o"
 
 # The first link fixes every symbol address while using a same-sized plan
 # placeholder. Lean then accepts the linker-resolved Input and emits the exact
@@ -359,6 +376,22 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
   "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-bootstrap32-ud-prelink.map" \
+  -o "$build/leanos-bootstrap32-ud-prelink.elf" "$build/boot-bootstrap32-ud.o" \
+  "$build/kernel-bootstrap32-ud.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-bootstrap64-nmi-prelink.map" \
+  -o "$build/leanos-bootstrap64-nmi-prelink.elf" "$build/boot-bootstrap64-nmi.o" \
+  "$build/kernel-bootstrap64-nmi.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-guard-prelink.map" \
   -o "$build/leanos-guard-prelink.elf" "$build/boot-df-guard-mapped.o" \
   "$build/kernel-double-fault-guard-mapped.o" "$build/KernelTransition.o" \
@@ -424,6 +457,10 @@ done
   "$build/boot-page-plan-entry-adversarial.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-nmi-prelink.elf" \
   "$build/boot-page-plan-nmi.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap32-ud-prelink.elf" \
+  "$build/boot-page-plan-bootstrap32-ud.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap64-nmi-prelink.elf" \
+  "$build/boot-page-plan-bootstrap64-nmi.h"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel.o"
@@ -472,6 +509,14 @@ done
   -DLEANOS_NMI_PROBE=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-nmi.h"' \
   -c boot/kernel.c -o "$build/kernel-nmi.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_ENTRY_HIGH_WATER=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-bootstrap32-ud.h"' \
+  -c boot/kernel.c -o "$build/kernel-bootstrap32-ud.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_ENTRY_HIGH_WATER=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-bootstrap64-nmi.h"' \
+  -c boot/kernel.c -o "$build/kernel-bootstrap64-nmi.o"
 
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
@@ -492,6 +537,22 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-bootstrap32-ud.map" \
+  -o "$build/leanos-bootstrap32-ud.elf" "$build/boot-bootstrap32-ud.o" \
+  "$build/kernel-bootstrap32-ud.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-bootstrap64-nmi.map" \
+  -o "$build/leanos-bootstrap64-nmi.elf" "$build/boot-bootstrap64-nmi.o" \
+  "$build/kernel-bootstrap64-nmi.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
   "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
@@ -643,6 +704,20 @@ cmp "$build/boot-page-plan.h" "$build/boot-page-plan.final.h" || {
   "$build/boot-page-plan-nmi.final.h"
 cmp "$build/boot-page-plan-nmi.h" "$build/boot-page-plan-nmi.final.h" || {
   echo "error: NMI probe boot page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap32-ud.elf" \
+  "$build/boot-page-plan-bootstrap32-ud.final.h"
+cmp "$build/boot-page-plan-bootstrap32-ud.h" \
+  "$build/boot-page-plan-bootstrap32-ud.final.h" || {
+  echo "error: bootstrap32-ud probe page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap64-nmi.elf" \
+  "$build/boot-page-plan-bootstrap64-nmi.final.h"
+cmp "$build/boot-page-plan-bootstrap64-nmi.h" \
+  "$build/boot-page-plan-bootstrap64-nmi.final.h" || {
+  echo "error: bootstrap64-nmi probe page-table plan drifted after final link" >&2
   exit 1
 }
 ./scripts/generate-boot-page-plan.sh "$build/leanos-preemption.elf" \
@@ -850,6 +925,16 @@ done
 ./scripts/check-image-policy.sh "$build/leanos-entry-stack-overflow.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
 ./scripts/check-nmi-image-policy.sh "$build/leanos-nmi.elf"
+./scripts/check-image-policy.sh "$build/leanos-bootstrap32-ud.elf"
+./scripts/check-image-policy.sh "$build/leanos-bootstrap64-nmi.elf"
+./scripts/check-early-probe-policy.py "$build/leanos-bootstrap32-ud.elf" \
+  bootstrap32-ud | tee "$build/bootstrap32-ud-early-probe-policy.txt"
+./scripts/check-early-probe-policy.py "$build/leanos-bootstrap64-nmi.elf" \
+  bootstrap64-nmi | tee "$build/bootstrap64-nmi-early-probe-policy.txt"
+objdump -d --no-show-raw-insn "$build/leanos-bootstrap32-ud.elf" \
+  > "$build/bootstrap32-ud.disassembly.txt"
+objdump -d --no-show-raw-insn "$build/leanos-bootstrap64-nmi.elf" \
+  > "$build/bootstrap64-nmi.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-fault-containment.elf" \
   > "$build/fault-containment.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state.elf" \
@@ -898,13 +983,19 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
       manifest="scripts/direct-port-sites-nmi.tsv"
       direct_port_args=(--terminal-before-user)
       ;;
+    leanos-bootstrap32-ud.elf)
+      manifest="scripts/direct-port-sites-bootstrap32-ud.tsv"
+      ;;
+    leanos-bootstrap64-nmi.elf)
+      manifest="scripts/direct-port-sites-bootstrap64-nmi.tsv"
+      ;;
   esac
   ./scripts/check-direct-port-sites.py "$build/$elf_name" "$manifest" \
     "${direct_port_args[@]}" \
     | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
   ((direct_port_images += 1))
 done < "$matrix"
-[[ "$direct_port_images" -eq 40 ]] || {
+[[ "$direct_port_images" -eq 42 ]] || {
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
   exit 1
 }
@@ -985,6 +1076,10 @@ cp "$build/leanos-entry-adversarial.elf" "$entry_adversarial_iso_root/boot/leano
 cp boot/grub.cfg "$entry_adversarial_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-nmi.elf" "$nmi_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$nmi_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-bootstrap32-ud.elf" "$bootstrap32_ud_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$bootstrap32_ud_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-bootstrap64-nmi.elf" "$bootstrap64_nmi_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$bootstrap64_nmi_iso_root/boot/grub/grub.cfg"
 printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
   > "$iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
@@ -1003,6 +1098,8 @@ cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_overflow_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$nmi_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$bootstrap32_ud_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$bootstrap64_nmi_iso_root/boot/SOURCE_REVISION"
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   fixture_root="$build/iso-return-${fixture}"
@@ -1075,6 +1172,14 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-nmi.iso" "$nmi_iso_root" -- \
   -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-bootstrap32-ud.iso" \
+  "$bootstrap32_ud_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-bootstrap64-nmi.iso" \
+  "$bootstrap64_nmi_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   grub-mkrescue -d /usr/lib/grub/i386-pc \
@@ -1122,6 +1227,10 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-entry-adversarial.elf" \
   "$build/leanos-${version}-x86_64-nmi.iso" \
   "$build/leanos-nmi.elf" "$build/leanos-nmi.map" \
+  "$build/leanos-${version}-x86_64-bootstrap32-ud.iso" \
+  "$build/leanos-bootstrap32-ud.elf" "$build/leanos-bootstrap32-ud.map" \
+  "$build/leanos-${version}-x86_64-bootstrap64-nmi.iso" \
+  "$build/leanos-bootstrap64-nmi.elf" "$build/leanos-bootstrap64-nmi.map" \
   > "$build/SHA256SUMS"
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"

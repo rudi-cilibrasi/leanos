@@ -97,6 +97,16 @@ multiboot_entry:
     lidt boot_idt32_pointer
 .global boot_idt32_published
 boot_idt32_published:
+#ifdef LEANOS_BOOTSTRAP32_UD_PROBE
+    /* Deterministic bootstrap32 #UD probe: this real ud2 is the first
+       instruction after the first kernel lidt and precedes every page-table,
+       CR, MSR, PCI, port, and generated-code operation, so vector 6 must be
+       delivered through boot_idt32 to the pinned catch-all terminal stub.
+       Nothing after this opcode is reachable in the probe image. */
+.global boot_bootstrap32_ud_probe
+boot_bootstrap32_ud_probe:
+    ud2
+#endif
     /* Preserve the Multiboot2 handoff before either register is reused. */
     mov %eax, multiboot_magic
     mov %ebx, multiboot_info
@@ -329,6 +339,31 @@ long_mode_entry:
     mov %ax, %gs
     mov $boot_stack_top, %rsp
     xor %rbp, %rbp
+#ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
+    /* Early-only injection checkpoint: boot_idt64 and the bounded boot stack
+       are live, no TSS or IST exists, IF has stayed clear since the entry
+       cli, and the runtime lidt inside privilege_init stays unpublished
+       because the halt loop below never falls through to kernel_main.  The
+       host injects exactly one QMP NMI here; vector 2 must be delivered
+       through boot_idt64 to the pinned bootstrap64 terminal stub. */
+.global boot_bootstrap64_nmi_ready
+boot_bootstrap64_nmi_ready:
+    lea early64_ready_record(%rip), %rsi
+    mov $early64_ready_record_end-early64_ready_record, %ecx
+1:
+    mov $0x3fd, %dx
+2:  inb %dx, %al
+    test $0x20, %al
+    jz 2b
+    movb (%rsi), %al
+    mov $0x3f8, %dx
+    outb %al, %dx
+    inc %rsi
+    dec %ecx
+    jnz 1b
+4:  hlt
+    jmp 4b
+#endif
     mov multiboot_magic(%rip), %edi
     mov multiboot_info(%rip), %esi
     call kernel_main
@@ -868,12 +903,35 @@ boot_early_isr2_32_end:
 boot_early_catchall_32:
     cli
     cld
+#ifdef LEANOS_BOOTSTRAP32_UD_PROBE
+    /* Probe-only frame attestation with decode-stable opcodes: a no-error
+       #UD from the reviewed ud2 site pushes exactly EIP/CS/EFLAGS onto the
+       live boot stack with EIP at the probe opcode, CS the kernel 32-bit
+       selector, and IF still clear.  Any other shape is a typed failure. */
+    cmp $(boot_stack_top - 12), %esp
+    jne 6f
+    cmpl $boot_bootstrap32_ud_probe, (%esp)
+    jne 6f
+    cmpl $0x38, 4(%esp)
+    jne 6f
+    testl $0x200, 8(%esp)
+    jnz 6f
+#endif
     EARLY_SERIAL32 early32_fault_record, early32_fault_record_end-early32_fault_record
     mov $0x16, %al
     mov $0xf4, %dx
     outb %al, %dx
 5:  hlt
     jmp 5b
+#ifdef LEANOS_BOOTSTRAP32_UD_PROBE
+6:
+    EARLY_SERIAL32 early32_probe_failure_record, early32_probe_failure_record_end-early32_probe_failure_record
+    mov $0x18, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+7:  hlt
+    jmp 7b
+#endif
 .global boot_early_catchall_32_end
 boot_early_catchall_32_end:
 .org 0x100, 0x90
@@ -882,12 +940,33 @@ boot_early_catchall_32_end:
 boot_early_isr2_64:
     cli
     cld
+#ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
+    /* Probe-only frame attestation: an IST-0 vector-2 delivery from the
+       readiness halt loop pushes the five-word frame onto the live boot
+       stack with the kernel 64-bit selector and IF still clear.  Any other
+       shape is a typed failure. */
+    cmp $(boot_stack_top - 40), %rsp
+    jne 6f
+    cmpq $0x08, 8(%rsp)
+    jne 6f
+    testl $0x200, 16(%rsp)
+    jnz 6f
+#endif
     DF_SERIAL early64_nmi_record, early64_nmi_record_end-early64_nmi_record
     mov $0x17, %al
     mov $0xf4, %dx
     outb %al, %dx
 5:  hlt
     jmp 5b
+#ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
+6:
+    DF_SERIAL early64_probe_failure_record, early64_probe_failure_record_end-early64_probe_failure_record
+    mov $0x18, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+7:  hlt
+    jmp 7b
+#endif
 .global boot_early_isr2_64_end
 boot_early_isr2_64_end:
 .org 0x180, 0x90
@@ -909,11 +988,38 @@ early32_nmi_record:
     .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=2 class=nmi stack=boot target=stub32 latch=terminal return=none\n"
 early32_nmi_record_end:
 early32_fault_record:
+#ifdef LEANOS_BOOTSTRAP32_UD_PROBE
+    /* The probe image narrows the catch-all record: its frame attestation
+       admits only the reviewed no-error #UD delivery, so the fixed record
+       may name vector 6 without reading any hardware state at runtime. */
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=6 reason=invalid-opcode error=none frame=eip,cs,eflags stack=boot target=stub32 latch=terminal return=none\n"
+#else
     .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=other class=exception stack=boot target=stub32 latch=terminal return=none\n"
+#endif
 early32_fault_record_end:
+#ifdef LEANOS_BOOTSTRAP32_UD_PROBE
+early32_probe_failure_record:
+    .ascii "LEANOS/18 EARLY-TERMINAL status=FAIL phase=bootstrap32 reason=probe-frame-policy\n"
+early32_probe_failure_record_end:
+#endif
 early64_nmi_record:
+#ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
+    /* The probe image narrows the vector-2 record: its frame attestation
+       admits only an IST-0 boot-stack delivery with IF clear, so the fixed
+       record may claim the full five-word masked-window shape. */
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=2 reason=non-maskable-interrupt error=none frame=rip,cs,rflags,rsp,ss stack=boot target=stub64 latch=terminal return=none\n"
+#else
     .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=2 class=nmi stack=boot target=stub64 latch=terminal return=none\n"
+#endif
 early64_nmi_record_end:
+#ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
+early64_probe_failure_record:
+    .ascii "LEANOS/18 EARLY-TERMINAL status=FAIL phase=bootstrap64 reason=probe-frame-policy\n"
+early64_probe_failure_record_end:
+early64_ready_record:
+    .ascii "LEANOS/18 EARLY64-READY phase=bootstrap64 table=bootstrap64 width=long16 stack=boot if=0 tss=none runtime-idt=unpublished result=PASS\n"
+early64_ready_record_end:
+#endif
 early64_fault_record:
     .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=other class=exception stack=boot target=stub64 latch=terminal return=none\n"
 early64_fault_record_end:
