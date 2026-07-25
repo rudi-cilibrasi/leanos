@@ -715,6 +715,7 @@ isr2_cld:
     movabs $0x4b5445524d494e41, %rax
     cmp %rax, __nmi_ist_stack_end-128(%rip)
     jne 8f
+#ifdef LEANOS_NMI_PROBE
     movabs $0x4f5244494e415259, %rax
     cmp %rax, __entry_stack_start(%rip)
     jne 8f
@@ -724,6 +725,7 @@ isr2_cld:
     movabs $0x52554e54494d454e, %rax
     cmp %rax, nmi_runtime_canary(%rip)
     jne 8f
+#endif
     cmpq $0x10, 32(%rbx)
     jne 6f
     cmpq $0x08, 8(%rbx)

@@ -1313,9 +1313,11 @@ static void privilege_init(void) {
     *(uint64_t *)__nmi_ist_stack_start = 0x4e4d493253544143ull;
     *(uint64_t *)((uint64_t)__nmi_ist_stack_end - 128u) =
         0x4b5445524d494e41ull;
+#ifdef LEANOS_NMI_PROBE
     *(uint64_t *)__entry_stack_start = UINT64_C(0x4f5244494e415259);
     *(uint64_t *)((uint64_t)__entry_stack_end - 128u) =
         UINT64_C(0x535441434b43414e);
+#endif
     load_tss();
     set_gate(0, isr0, 0, 0x8e);
     set_gate(2, isr2, 2, 0x8e);
