@@ -1,3 +1,4 @@
+import LeanOS.BoundedLifecycle
 import LeanOS.KernelTransition
 import LeanOS.Capability
 import LeanOS.FrameAllocator
@@ -96,6 +97,44 @@ theorem dma_quarantine_q35_trace_nonvacuous :
     ∃ middle, DMAQuarantine.QuarantineStep DMAQuarantine.q35Runtime middle ∧
       DMAQuarantine.QuarantineTrace middle DMAQuarantine.q35Runtime :=
   DMAQuarantine.q35_mixed_trace_nonvacuous
+
+/-- SC-LIFETIME-IDENTITY-NO-REUSE: under the bounded-issuer runtime invariant,
+every finite sequence of composite lifecycle operations preserves
+counter/history agreement, can never make a retired object identity or a
+terminated subject identity live again, and keeps an exhausted subject or
+object issuer exhausted. -/
+theorem lifetime_identity_no_reuse (runtime : BoundedLifecycle.Runtime)
+    (operations : List BoundedLifecycle.Operation)
+    (hinvariant : BoundedLifecycle.Invariant runtime) :
+    BoundedLifecycle.Invariant (BoundedLifecycle.runOperations runtime operations) ∧
+      (∀ object, BoundedLifecycle.issuedObject runtime object = true →
+        runtime.virtualMemory.memory.capabilities.objects object = false →
+        (BoundedLifecycle.runOperations runtime
+          operations).virtualMemory.memory.capabilities.objects object = false) ∧
+      (∀ subject, runtime.lifecycle.issuedSubjects subject = true →
+        runtime.lifecycle.capabilities.subjects subject = false →
+        (BoundedLifecycle.runOperations runtime
+          operations).lifecycle.capabilities.subjects subject = false) ∧
+      (LifetimeIssuer.exhausted runtime.subjectIssuer = true →
+        LifetimeIssuer.exhausted (BoundedLifecycle.runOperations runtime
+          operations).subjectIssuer = true) ∧
+      (LifetimeIssuer.exhausted runtime.objectIssuer = true →
+        LifetimeIssuer.exhausted (BoundedLifecycle.runOperations runtime
+          operations).objectIssuer = true) := by
+  exact BoundedLifecycle.bounded_identity_no_reuse runtime operations hinvariant
+
+/-- The no-reuse bundle is not vacuous: the concrete sample runtime satisfies
+the invariant and survives a mixed creation/retirement trace over both
+identity domains and all three object kinds. -/
+theorem lifetime_identity_no_reuse_nonvacuous :
+    BoundedLifecycle.Invariant BoundedLifecycle.sampleRuntime ∧
+      BoundedLifecycle.Invariant (BoundedLifecycle.runOperations
+        BoundedLifecycle.sampleRuntime
+        [.createSubject, .allocateMemory 0 0, .createEndpoint 0 1,
+          .createAddressSpace 0 2, .destroyEndpoint 0 1, .allocateMemory 1 0]) := by
+  exact ⟨BoundedLifecycle.sampleRuntime_invariant,
+    (BoundedLifecycle.bounded_identity_no_reuse _ _
+      BoundedLifecycle.sampleRuntime_invariant).1⟩
 
 /-- SC-KERNEL-DET: the first modeled transition is deterministic. -/
 theorem kernel_transition_deterministic
