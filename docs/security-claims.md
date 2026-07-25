@@ -33,7 +33,8 @@ remain excluded unless a separate refinement claim says otherwise.
 | SC-EXTENDED-STATE-DENIAL | `extended_state_denial_confined` | `ExtendedState.denied_subject_confined` | `ExtendedState.classify` | Contained typed denial from the finite classifier; exact accepted CR0/CR4 denial snapshot; coherent bounded CPUID projection; normalized user origin and live kernel-owned subject/address-space binding | Proved | CPUID/control-register reads, instruction decoding and exception priority/delivery, entry assembly, generated C, compiler/linker, QEMU, hardware, final-binary refinement |
 | SC-EXTENDED-STATE-CLEANUP | `extended_state_denial_cleanup_nonresumable` | `ExtendedState.denial_cleanup_cannot_resume` | `ExtendedState.dispatchDenied`, `ResumablePreemption.cleanupSubject`, `Scheduler.selectNext` | Typed contained denial; authoritative resumable-preemption lifecycle, ready queue, context bank, mapping and TLB projections | Proved | Normalized-entry-to-model refinement, generated adapter, machine cleanup/restore and CR3 writes, compiler/linker, QEMU, hardware |
 | SC-EXTENDED-STATE-GLOBAL | `extended_state_global_runtime_preservation` | `ExtendedState.runComposite_preserves_policy` | `ExtendedState.compositeGate`, `FailStop.gate` | Exact denied feature/control predicate before a finite sequence of authoritative interrupt, return, syscall, preemption, IPC, capability, mapping, lifecycle, or scheduler operations | Proved | Live CPUID/control-register reads, generated C, assembly, compiler/linker, QEMU, hardware, final-binary refinement |
-| SC-FAULT-DISPATCH-NONRESUMPTION | `fault_dispatch_success_nonresumption` | `FaultDispatch.successful_nonresumption` | `FaultDispatch.dispatch` over the authoritative scheduler, lifecycle, resumable-context, virtual-mapping, and TLB state | The total composite result is successful (`idle` or a scheduler-derived dispatch); the conclusion exposes that the pre-state current subject was live and runnable, then proves it dead and non-runnable, absent from scheduling/context state, and stripped of every pre-fault-owned address space and mapping | Proved | Normalized-entry-to-model refinement, waiter/in-flight-transfer cleanup, generated adapter, machine cleanup/restore and CR3 writes, compiler/linker, QEMU, hardware |
+| SC-FAULT-DISPATCH-NONRESUMPTION | `fault_dispatch_success_nonresumption` | `FaultDispatch.successful_nonresumption` | `FaultDispatch.dispatch` over the authoritative scheduler, lifecycle, resumable-context, virtual-mapping, and TLB state | The total composite result is successful (typed-reason `idle` or a scheduler-derived dispatch); the conclusion exposes that the pre-state current subject was live and runnable, then proves it dead and non-runnable, absent from scheduling/context state, and stripped of every pre-fault-owned address space and mapping | Proved | Normalized-entry-to-model refinement, waiter/in-flight-transfer cleanup, generated adapter, machine cleanup/restore and CR3 writes, compiler/linker, QEMU, hardware |
+| SC-USER-FAULT-CLASS-CONTAINMENT | `user_fault_class_containment` | `FaultDispatch.success_reason_vector_binding`, `FaultDispatch.successful_nonresumption`, `FaultDispatch.kernel_origin_is_fatal` | `FaultDispatch.dispatch` over normalized `InterruptEntry` records for the manifest-bound page-fault, divide-error, and breakpoint classes | Successful composite result (`idle reason` or `dispatch reason context`) for an accepted CPL3 frame; the conclusion binds the typed reason to the manifest-decoded vector and its reviewed error-word convention, restates the complete non-resumption cleanup package, and makes every kernel-origin accepted frame from a running state the absorbing `kernelOrigin` halt | Proved | x86 #DE/#BP/#PF delivery, gate loads, and saved-RIP restart semantics (AMD64 manual assumptions), normalizer-to-machine refinement, generated adapter, machine cleanup/restore and CR3 writes, compiler/linker, QEMU, hardware, final-binary refinement |
 | SC-SCHEDULED-ISOLATION | `scheduled_finite_trace_isolation` | `ScheduledObservation.finite_trace_lowEquiv` | Finite paired scheduled runs | Initial low-equivalence and equal declared public event projections | Proved | Timing, termination, public channels, binary refinement |
 <!-- claim-index:end -->
 
@@ -49,6 +50,17 @@ stable claim does not silently promote those model properties into a
 normalizer-to-machine or final-binary refinement statement. The exact cleanup,
 progress, and trusted boundaries are documented in
 [the fault-dispatch model](fault-dispatch.md).
+
+`SC-USER-FAULT-CLASS-CONTAINMENT` extends the same composite transition to the
+three typed contained classes. The reason value (page fault, divide error, or
+breakpoint) is decoded only from the manifest-bound vector of the accepted
+normalized frame; the claim binds it to the reviewed per-class error-word
+convention and restates that all three classes share the identical cleanup and
+survivor selection. The kernel-origin conjunct is a model statement about
+accepted kernel-origin frames; kernel-origin #DE/#BP raw snapshots are already
+terminal at the normalizer (`wrongOrigin`) under their user-only origin policy.
+Vector/error-word/saved-RIP conventions come from the AMD64 manual and remain
+trusted machine assumptions, not theorem conclusions.
 
 ## Review workflow
 

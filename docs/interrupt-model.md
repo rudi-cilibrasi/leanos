@@ -82,12 +82,14 @@ Executable traces cover user and kernel page faults, an unexpected vector,
 timer delivery, valid return, wrong-origin syscall entry, malformed selectors
 and flags, and nested entry.
 
-The later [`LeanOS.FaultDispatch`](fault-dispatch.md) composition consumes the
-normalized vector-14 result and the authoritative resumable scheduler state as
-one transaction. It rejects stale kernel bindings without changing state,
+The later [`LeanOS.FaultDispatch`](fault-dispatch.md) composition consumes any
+normalized contained-class result (vector 14 page fault, vector 0 divide
+error, or vector 3 breakpoint) and the authoritative resumable scheduler state
+as one transaction. It rejects stale kernel bindings without changing state,
 requires the selected current subject to remain live and runnable, applies
 whole-subject cleanup only to that kernel-owned subject, and returns either the
-exact deterministic survivor context or typed idle. Every inbound normalizer
+exact deterministic survivor context or typed idle, carrying the typed
+contained reason without letting it select a cleanup variant. Every inbound normalizer
 `.fatal reason` result, kernel-origin fault, and already-halted state sets or
 retains the absorbing halt latch without exposing cleanup. Inbound failures retain the
 exact `InterruptEntry.RejectReason`; kernel-origin and already-halted outcomes
@@ -96,14 +98,35 @@ the normalizer, machine context restore, or the final binary.
 
 ## Inbound entry manifest and normalization
 
-`LeanOS.InterruptEntry` defines the complete ordinary boot manifest: vector 13
+`LeanOS.InterruptEntry` defines the complete ordinary boot manifest: vector 0
+is a user-only DPL0 interrupt gate without an error word and with the shared
+user-fault containment purpose — its DPL stays 0 so a CPL3 `int $0` cannot
+software-select the divide-error path; vector 3 is the deliberately CPL3
+software-callable DPL3 interrupt gate (an `int3` breakpoint requires gate
+DPL 3) without an error word and with the same containment purpose — the
+interrupt-versus-trap-gate choice is explicit (interrupt gate, IF masked on
+entry) and `validateManifest` rejects any other DPL/type combination for
+vector 3 and any DPL3 form of vector 0; vector 13
 is a user-only DPL0 interrupt gate with a hardware error word and a typed
 general-protection purpose; vector 14 is a DPL0 interrupt
 gate with a hardware error word and user-fault or supervisor
 diagnostic purpose; vector 32 is a DPL0 interrupt gate without an error word;
-and vector 128 is the sole DPL3 interrupt gate and has syscall purpose. All use
+and vector 128 is the DPL3 interrupt gate with syscall purpose. The DPL3
+inventory is exactly the breakpoint and syscall gates
+(`only_breakpoint_and_syscall_are_dpl3`). All use
 selector `0x08`, IST0, and interrupt-gate masking. Vector 8 remains owned by the
 separate terminal IST1 protocol.
+
+The contained synchronous fault classes are a finite typed vocabulary
+(`ContainedReason`: page fault, divide error, breakpoint) keyed by
+`containedReason?` on the manifest-bound vector only. Per the AMD64 manual,
+only the page fault carries an architectural error word, and the saved RIP
+names the faulting instruction for #DE/#PF but the following instruction
+boundary for the #BP trap. The raw snapshot carries typed restart-class
+evidence; the normalizer rejects a claim that disagrees with the reviewed
+per-vector table (`wrongRestartClass`). These are normalized machine
+inputs/assumptions: no modeled transition rewrites RIP, and containment always
+terminates the faulting subject rather than resuming or retrying it.
 
 Raw frames have two distinct constructors. A privilege-changing frame contains
 RIP, CS, RFLAGS, RSP, and SS. A same-privilege frame contains only RIP, CS, and
@@ -113,20 +136,31 @@ from saved registers or user-looking words at later offsets. A kernel vector-14
 frame becomes `diagnosticRecovery`, never user containment.
 
 The total normalizer rejects a duplicate or unsupported manifest, unbound
-vector/stub, wrong error convention, truncated or misaligned frame, wrong raw
+vector/stub, wrong error convention, wrong restart-class evidence, truncated
+or misaligned frame, wrong raw
 shape or origin, out-of-bounds entry stack, nested entry, and uncleared AC/DF.
 Accepted records copy subject, active address space/CR3, and stack identity from
 `KernelContext`; attacker registers are absent from the function input. Lean
-proves manifest validity, uniqueness of the DPL3 syscall gate, totality and
+proves manifest validity, the exact DPL3 breakpoint/syscall gate inventory,
+totality and
 determinism, attacker-register erasure, rejection stability, same-privilege
-confinement, nested/uncleared-state nonauthorization, and exact kernel-context
-binding. These are model results only.
+confinement, nested/uncleared-state nonauthorization, exact kernel-context
+binding, and manifest-bound vector/error-shape/restart-class binding for
+accepted records (`accepted_binds_manifest_shape`,
+`accepted_contained_error_shape`). These are model results only. Kernel-origin
+divide errors and breakpoints are same-privilege frames under a user-only
+origin policy and therefore terminal `wrongOrigin` rejections; only vector 14
+retains the supervisor diagnostic relabeling.
 
 The generated allocation-free `leanos_entry_demo` adapter is replayed in the
 version-one oracle with valid syscall, user general-protection/direct-port,
-user page fault, timer, and diagnostic
-records plus wrong binding, error shape, length, alignment, origin, stack,
-nested-latch, and AC/DF fixtures. `scripts/check-entry-policy.sh` enumerates the
+user page fault, user divide-error, user breakpoint, timer, and diagnostic
+records plus wrong binding, error shape, restart-class evidence, length,
+alignment, origin (including kernel-origin #DE/#BP), spurious #DE/#BP error
+words, stack, nested-latch, and AC/DF fixtures. The live boot image does not
+yet install vector-0/3 gates; that machine slice (IDT entries, stubs, and QEMU
+scenarios) is deferred to the follow-up machine issue, so the model manifest
+deliberately leads the installed IDT here. `scripts/check-entry-policy.sh` enumerates the
 final-ELF entry paths and requires cleanup, shared authorization, the typed
 handler, and latch completion in that order. `scripts/test-entry-policy.sh`
 applies bounded one-field descriptor, path, error-shape, and TSS mutations to
