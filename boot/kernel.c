@@ -72,8 +72,11 @@ extern const uint8_t user_a_extended_state_probe[];
 #endif
 extern char user_a_stack[];
 extern char user_a_fault_instruction[], user_a_fault_recovered[];
-#ifdef LEANOS_ENTRY_ADVERSARIAL
+#if defined(LEANOS_ENTRY_ADVERSARIAL) || defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
 extern char user_a_direct_port_probe[];
+#endif
+#ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
+extern const uint64_t direct_port_probe_class;
 #endif
 extern char user_b_entry[];
 extern char user_b_stack[], user_b_stack_top[];
@@ -169,6 +172,8 @@ static uint64_t entry_stack_high_water_pattern = UINT64_C(0x6c65616e6f735741);
 #endif
 #ifdef LEANOS_ENTRY_ADVERSARIAL
 static unsigned entry_adversarial_step;
+#endif
+#if defined(LEANOS_ENTRY_ADVERSARIAL) || defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
 static uint64_t direct_port_fault_attestation;
 #endif
 static uint8_t copy_buffer[16];
@@ -1463,6 +1468,18 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         finish(0x10);
     }
 #endif
+#ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
+    if (number == 16 && current_subject == 2) {
+        check_selected_root_b();
+        if (arg0 != UINT64_C(0xb2b2d0d151a7e55e) || arg1 != 0x030201 ||
+            arg2 != 0x51a7 ||
+            direct_port_fault_attestation != UINT64_C(0x00000000ff020202))
+            fail("direct-port-peer-state");
+        serial_puts("LEANOS/16 DIRECT-PORT-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS\n");
+        serial_puts("LEANOS/16 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1 device-mutation=0\n");
+        finish(0x10);
+    }
+#endif
 #ifdef LEANOS_EXTENDED_STATE_SCENARIO
     if (current_subject == 2 && number == 13) {
 #ifdef LEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE
@@ -1888,6 +1905,80 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
     fail("kernel-fault");
 }
 
+#ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
+/* Trusted machine adapter for the direct-port-containment family.  Subject A
+   executed exactly one reviewed raw CPL3 port instruction, so hardware
+   delivered #GP(0) before the device operation could take effect.  This
+   routine snapshots the live privilege configuration, types the
+   state-preserving denial through the generated DirectPortIO adapter (device
+   projection unchanged), and then reuses the shared contained-user-fault
+   cleanup/dispatch adapter exactly like the page-fault containment scenario.
+   The untrusted port/value/direction words are recorded only as diagnostics;
+   they cannot select the current subject, the survivor, the kernel purpose, or
+   a claim that no side effect occurred. */
+uint64_t direct_port_containment_gp_handler(uint64_t error, uint64_t rip,
+                                            uint64_t saved_cs, uint64_t saved_rdx,
+                                            uint64_t saved_rax) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    uint64_t port = saved_rdx & UINT64_C(0xffff);
+    uint64_t value = saved_rax & UINT64_C(0xff);
+    uint64_t expected_port;
+    uint64_t direction_width;
+    unsigned check_value;
+    uint64_t expected_value;
+    if (direct_port_probe_class == 1) {
+        expected_port = DEBUG_EXIT; direction_width = 1;
+        check_value = 1; expected_value = UINT64_C(0x11);
+    } else if (direct_port_probe_class == 2) {
+        expected_port = UINT64_C(0x3fd); direction_width = 0;
+        check_value = 0; expected_value = 0;
+    } else if (direct_port_probe_class == 0) {
+        expected_port = COM1; direction_width = 1;
+        check_value = 1; expected_value = UINT64_C(0x41);
+    } else {
+        fail("direct-port-probe-class");
+    }
+    if (saved_cs != 0x23 || error != 0 ||
+        rip != (uint64_t)user_a_direct_port_probe || port != expected_port ||
+        (check_value && value != expected_value) ||
+        current_subject != 1 || cr3 != (uint64_t)page_map_level_4_a)
+        fail("direct-port-gp-binding");
+    check_direct_port_control(0);
+    /* DirectPortIO types the architectural #GP(0) denial and leaves every
+       device projection byte-identical.  The reviewed user origin denies
+       independently of the untrusted port/value/direction operands. */
+    if (leanos_direct_port_io_demo(0, 0, 0, port, direction_width, value) !=
+        UINT64_C(0x0144332211))
+        fail("direct-port-model-denial");
+    if (saved_context_owner_b != 2 || !initial_b_frame_valid(initial_context_b))
+        fail("direct-port-peer-context");
+    /* The canonical contained-user-fault class reuses the existing atomic
+       cleanup/survivor-dispatch adapter (reason code zero, vector-14 class). */
+    uint64_t result = leanos_fault_dispatch_demo(14, saved_cs & 3u,
+        current_subject, current_subject, saved_context_owner_b,
+        saved_context_owner_b);
+    if (result != UINT64_C(0x00000000ff020202))
+        fail("direct-port-fault-dispatch");
+    uint64_t selected = (result >> 8) & 0xffu;
+    uint64_t address_space = (result >> 16) & 0xffu;
+    uint64_t cleanup = (result >> 24) & 0x1fu;
+    if (selected != saved_context_owner_b || address_space != 2 ||
+        cleanup != 0x1fu || ((result >> 29) & 7u) != 7u)
+        fail("direct-port-fault-encoding");
+    direct_port_fault_attestation = result;
+    current_subject = selected;
+    serial_puts(direct_port_probe_class == 1
+        ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=244 direction=out width=byte purpose=user device-mutation=0 result=PASS\n"
+        : direct_port_probe_class == 2
+        ? "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=1021 direction=in width=byte purpose=user device-mutation=0 result=PASS\n"
+        : "LEANOS/16 DIRECT-PORT-DENIAL subject=1 vector=13 error=0 origin=cpl3 port=1016 direction=out width=byte purpose=user device-mutation=0 result=PASS\n");
+    serial_puts("LEANOS/16 DIRECT-PORT-TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+    serial_puts("LEANOS/16 DIRECT-PORT-DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
+    return 2;
+}
+#endif
+
 /* The sole boot-reachable Lean runtime primitive. See docs/boot-image.md. */
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) {
     return (uint8_t)(left == right);
@@ -1903,6 +1994,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         : "LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
     serial_puts("LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap\n");
+#elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
+    serial_puts(direct_port_probe_class == 1
+        ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=debug-exit contract=v1 controls=wp,smep,smap\n"
+        : direct_port_probe_class == 2
+        ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=serial-in contract=v1 controls=wp,smep,smap\n"
+        : "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=serial-out contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     serial_puts("LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap\n");
 #else
@@ -1989,6 +2086,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
     check_selected_root_a();
     serial_puts("LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
+    enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
+    current_subject = 1;
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    check_selected_root_a();
+    serial_puts("LEANOS/16 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
     arm_timer();

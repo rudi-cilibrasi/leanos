@@ -1,5 +1,5 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	42
+# mandatory-count	45
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
@@ -43,3 +43,6 @@ nmi-terminal	nmi	fail-stop	30	leanos-@VERSION@-x86_64-nmi.iso	leanos-nmi.elf	nmi
 bootstrap32-ud	bootstrap32-ud	fail-stop	30	leanos-@VERSION@-x86_64-bootstrap32-ud.iso	leanos-bootstrap32-ud.elf	bootstrap32-ud.serial.log	bootstrap32-ud	-	-
 bootstrap64-nmi	bootstrap64-nmi	fail-stop	30	leanos-@VERSION@-x86_64-bootstrap64-nmi.iso	leanos-bootstrap64-nmi.elf	bootstrap64-nmi.serial.log	bootstrap64-nmi	-	-
 double-fault-guard-mapped	double-fault-guard	controlled-rejection	30	leanos-@VERSION@-x86_64-double-fault-guard-mapped.iso	leanos-double-fault-guard-mapped.elf	double-fault-guard-mapped.serial.log	double-fault-guard-mapped	-	-
+direct-port-serial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-serial.iso	leanos-direct-port-serial.elf	direct-port-serial.serial.log	direct-port-serial	-	-
+direct-port-debug	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-debug.iso	leanos-direct-port-debug.elf	direct-port-debug.serial.log	direct-port-debug	-	-
+direct-port-in	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-in.iso	leanos-direct-port-in.elf	direct-port-in.serial.log	direct-port-in	-	-

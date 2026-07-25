@@ -44,6 +44,14 @@ entry_adversarial_iso_root="$build/iso-entry-adversarial"
 nmi_iso_root="$build/iso-nmi"
 bootstrap32_ud_iso_root="$build/iso-bootstrap32-ud"
 bootstrap64_nmi_iso_root="$build/iso-bootstrap64-nmi"
+# Direct-port-containment family (#130): one shared kernel object, one reviewed
+# raw CPL3 port instruction per probe selected by a boot.S -D variant.
+direct_port_probes=(serial debug in)
+declare -A direct_port_probe_flags=(
+  [serial]=""
+  [debug]="-DLEANOS_DIRECT_PORT_PROBE_DEBUG=1"
+  [in]="-DLEANOS_DIRECT_PORT_PROBE_IN=1"
+)
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
@@ -79,6 +87,9 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$df_negative_iso_root/boot/grub" "$entry_overflow_iso_root/boot/grub" \
   "$entry_adversarial_iso_root/boot/grub" "$nmi_iso_root/boot/grub" \
   "$bootstrap32_ud_iso_root/boot/grub" "$bootstrap64_nmi_iso_root/boot/grub"
+for probe in "${direct_port_probes[@]}"; do
+  mkdir -p "$build/iso-direct-port-${probe}/boot/grub"
+done
 ./scripts/generate-oracle.sh "$build"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
@@ -92,6 +103,7 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-nmi.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-bootstrap32-ud.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-bootstrap64-nmi.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-direct-port.h"
 
 # C generation resolves project imports through Lake's compiled module path.
 # Build them here because image jobs and clean checkouts cannot rely on a
@@ -185,6 +197,10 @@ mv "$build/FaultDispatchAndDirectPortIO.o" "$build/FaultDispatch.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel-bootstrap64-nmi.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-direct-port.h"' \
+  -c boot/kernel.c -o "$build/kernel-direct-port.o"
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
@@ -262,6 +278,13 @@ cp scripts/entry-stack-extended-callgraph.tsv \
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_BOOTSTRAP64_NMI_PROBE=1 \
   -c boot/boot.S -o "$build/boot-bootstrap64-nmi.o"
+for probe in "${direct_port_probes[@]}"; do
+  "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+    -ffile-prefix-map="$repo_root"=. -g3 \
+    -DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1 \
+    ${direct_port_probe_flags[$probe]} \
+    -c boot/boot.S -o "$build/boot-direct-port-${probe}.o"
+done
 
 # The first link fixes every symbol address while using a same-sized plan
 # placeholder. Lean then accepts the linker-resolved Input and emits the exact
@@ -367,6 +390,16 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+for probe in "${direct_port_probes[@]}"; do
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-direct-port-${probe}-prelink.map" \
+    -o "$build/leanos-direct-port-${probe}-prelink.elf" \
+    "$build/boot-direct-port-${probe}.o" "$build/kernel-direct-port.o" \
+    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+    "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+done
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-nmi-prelink.map" \
   -o "$build/leanos-nmi-prelink.elf" "$build/boot.o" \
@@ -455,6 +488,19 @@ done
   "$build/boot-page-plan-guard.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-entry-adversarial-prelink.elf" \
   "$build/boot-page-plan-entry-adversarial.h"
+./scripts/generate-boot-page-plan.sh \
+  "$build/leanos-direct-port-serial-prelink.elf" \
+  "$build/boot-page-plan-direct-port.h"
+for probe in debug in; do
+  ./scripts/generate-boot-page-plan.sh \
+    "$build/leanos-direct-port-${probe}-prelink.elf" \
+    "$build/boot-page-plan-direct-port-${probe}.h"
+  cmp "$build/boot-page-plan-direct-port.h" \
+    "$build/boot-page-plan-direct-port-${probe}.h" || {
+    echo "error: direct-port $probe probe changed the shared page-table plan" >&2
+    exit 1
+  }
+done
 ./scripts/generate-boot-page-plan.sh "$build/leanos-nmi-prelink.elf" \
   "$build/boot-page-plan-nmi.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap32-ud-prelink.elf" \
@@ -517,6 +563,10 @@ done
   -DLEANOS_ENTRY_HIGH_WATER=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-bootstrap64-nmi.h"' \
   -c boot/kernel.c -o "$build/kernel-bootstrap64-nmi.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-direct-port.h"' \
+  -c boot/kernel.c -o "$build/kernel-direct-port.o"
 
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
@@ -531,6 +581,16 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
   "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+for probe in "${direct_port_probes[@]}"; do
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-direct-port-${probe}.map" \
+    -o "$build/leanos-direct-port-${probe}.elf" \
+    "$build/boot-direct-port-${probe}.o" "$build/kernel-direct-port.o" \
+    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+    "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+done
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-nmi.map" \
   -o "$build/leanos-nmi.elf" "$build/boot.o" "$build/kernel-nmi.o" \
@@ -836,6 +896,15 @@ cmp "$build/boot-page-plan-entry-adversarial.h" \
   echo "error: entry-adversarial page-table plan drifted after final link" >&2
   exit 1
 }
+for probe in "${direct_port_probes[@]}"; do
+  ./scripts/generate-boot-page-plan.sh "$build/leanos-direct-port-${probe}.elf" \
+    "$build/boot-page-plan-direct-port-${probe}.final.h"
+  cmp "$build/boot-page-plan-direct-port.h" \
+    "$build/boot-page-plan-direct-port-${probe}.final.h" || {
+    echo "error: direct-port $probe boot page-table plan drifted after final link" >&2
+    exit 1
+  }
+done
 
 undefined="$(nm -u "$build/leanos.elf")"
 if [[ -n "$undefined" ]]; then
@@ -924,6 +993,9 @@ done
 ./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-stack-overflow.elf"
 ./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
+for probe in "${direct_port_probes[@]}"; do
+  ./scripts/check-image-policy.sh "$build/leanos-direct-port-${probe}.elf"
+done
 ./scripts/check-nmi-image-policy.sh "$build/leanos-nmi.elf"
 ./scripts/check-image-policy.sh "$build/leanos-bootstrap32-ud.elf"
 ./scripts/check-image-policy.sh "$build/leanos-bootstrap64-nmi.elf"
@@ -947,6 +1019,10 @@ objdump -d --no-show-raw-insn "$build/leanos-extended-state-sse2.elf" \
   > "$build/extended-state-sse2.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state-avx.elf" \
   > "$build/extended-state-avx.disassembly.txt"
+for probe in "${direct_port_probes[@]}"; do
+  objdump -d --no-show-raw-insn "$build/leanos-direct-port-${probe}.elf" \
+    > "$build/direct-port-${probe}.disassembly.txt"
+done
 ./scripts/check-extended-state-policy.sh "$build/leanos-extended-state.elf" x87 \
   | tee "$build/extended-state-policy-report.txt"
 ./scripts/check-extended-state-policy.sh "$build/leanos-extended-state-mmx.elf" mmx \
@@ -989,13 +1065,22 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     leanos-bootstrap64-nmi.elf)
       manifest="scripts/direct-port-sites-bootstrap64-nmi.tsv"
       ;;
+    leanos-direct-port-serial.elf)
+      manifest="scripts/direct-port-sites-direct-port-serial.tsv"
+      ;;
+    leanos-direct-port-debug.elf)
+      manifest="scripts/direct-port-sites-direct-port-debug.tsv"
+      ;;
+    leanos-direct-port-in.elf)
+      manifest="scripts/direct-port-sites-direct-port-in.tsv"
+      ;;
   esac
   ./scripts/check-direct-port-sites.py "$build/$elf_name" "$manifest" \
     "${direct_port_args[@]}" \
     | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
   ((direct_port_images += 1))
 done < "$matrix"
-[[ "$direct_port_images" -eq 42 ]] || {
+[[ "$direct_port_images" -eq 45 ]] || {
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
   exit 1
 }
@@ -1080,6 +1165,11 @@ cp "$build/leanos-bootstrap32-ud.elf" "$bootstrap32_ud_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$bootstrap32_ud_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-bootstrap64-nmi.elf" "$bootstrap64_nmi_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$bootstrap64_nmi_iso_root/boot/grub/grub.cfg"
+for probe in "${direct_port_probes[@]}"; do
+  cp "$build/leanos-direct-port-${probe}.elf" \
+    "$build/iso-direct-port-${probe}/boot/leanos.elf"
+  cp boot/grub.cfg "$build/iso-direct-port-${probe}/boot/grub/grub.cfg"
+done
 printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
   > "$iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
@@ -1100,6 +1190,10 @@ cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$nmi_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$bootstrap32_ud_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$bootstrap64_nmi_iso_root/boot/SOURCE_REVISION"
+for probe in "${direct_port_probes[@]}"; do
+  cp "$build/SOURCE_REVISION" \
+    "$build/iso-direct-port-${probe}/boot/SOURCE_REVISION"
+done
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   fixture_root="$build/iso-return-${fixture}"
@@ -1180,6 +1274,12 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-bootstrap64-nmi.iso" \
   "$bootstrap64_nmi_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
+for probe in "${direct_port_probes[@]}"; do
+  grub-mkrescue -d /usr/lib/grub/i386-pc \
+    -o "$build/leanos-${version}-x86_64-direct-port-${probe}.iso" \
+    "$build/iso-direct-port-${probe}" -- -volume_date uuid 2000010100000000 \
+    -volume_date all_file_dates 2000010100000000 >/dev/null
+done
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   grub-mkrescue -d /usr/lib/grub/i386-pc \
@@ -1232,6 +1332,11 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-bootstrap64-nmi.iso" \
   "$build/leanos-bootstrap64-nmi.elf" "$build/leanos-bootstrap64-nmi.map" \
   > "$build/SHA256SUMS"
+for probe in "${direct_port_probes[@]}"; do
+  sha256sum "$build/leanos-${version}-x86_64-direct-port-${probe}.iso" \
+    "$build/leanos-direct-port-${probe}.elf" \
+    "$build/leanos-direct-port-${probe}.map" >> "$build/SHA256SUMS"
+done
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   sha256sum "$build/leanos-${version}-x86_64-return-${fixture}.iso" \

@@ -735,7 +735,7 @@ isr2_cld:
    The guard-mapped negative image must take this path and must not claim #DF. */
 .global isr13
 isr13:
-#ifdef LEANOS_ENTRY_ADVERSARIAL
+#if defined(LEANOS_ENTRY_ADVERSARIAL) || defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
     clac
     cld
     /* This gate precedes the shared SAVE/NORMALIZE_ENTRY macro definitions.
@@ -755,6 +755,7 @@ isr13:
     mov 144(%rsp), %rdx
     mov 96(%rsp), %rcx
     mov 120(%rsp), %r8
+#ifdef LEANOS_ENTRY_ADVERSARIAL
     call entry_adversarial_gp_handler
     cmp $2, %rax
     je direct_port_restore_peer
@@ -793,6 +794,15 @@ direct_port_restore_peer:
     call complete_interrupt_entry
     mov $3, %esi
     jmp user_return_epilogue
+#else
+    /* Direct-port-containment family: subject A executed exactly one reviewed
+       raw CPL3 port instruction, so hardware delivered #GP(0).  The handler
+       types the state-preserving denial and the shared contained-user-fault
+       cleanup/dispatch, then the peer is restored through the same validated
+       return path as the page-fault containment scenario. */
+    call direct_port_containment_gp_handler
+    jmp contained_fault_restore_peer
+#endif
 #else
     cli
     clac
@@ -1428,6 +1438,33 @@ user_a_entry:
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
     jmp user_a_fault_instruction
 #endif
+#ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    /* Subject A executes exactly one reviewed raw CPL3 port instruction with a
+       distinctive operand.  IOPL is 0 and the TSS I/O-map base is beyond the
+       descriptor limit, so hardware raises #GP(0) before the device operation
+       takes effect.  The exported label is the sole RIP the denial handler and
+       the final-ELF probe allowlist accept. */
+#if defined(LEANOS_DIRECT_PORT_PROBE_DEBUG)
+    mov $0xf4, %dx
+    mov $0x11, %al
+#elif defined(LEANOS_DIRECT_PORT_PROBE_IN)
+    mov $0x3fd, %dx
+#else
+    mov $0x3f8, %dx
+    mov $0x41, %al
+#endif
+.global user_a_direct_port_probe
+user_a_direct_port_probe:
+#if defined(LEANOS_DIRECT_PORT_PROBE_IN)
+    inb %dx, %al
+#else
+    outb %al, %dx
+#endif
+    ud2
+#endif
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
@@ -1560,6 +1597,21 @@ extended_state_probe_class:
     .quad 0
 #endif
 
+/* Direct-port-containment probe selector consumed by the shared kernel object.
+   0 = byte OUT to serial data (0x3f8), 1 = byte OUT to isa-debug-exit (0xf4),
+   2 = byte IN from serial line-status (0x3fd).  The raw CPL3 instruction itself
+   is chosen at assembly time in user_a_entry; this word only lets the single
+   generated kernel object select its untrusted diagnostics. */
+.global direct_port_probe_class
+direct_port_probe_class:
+#if defined(LEANOS_DIRECT_PORT_PROBE_DEBUG)
+    .quad 1
+#elif defined(LEANOS_DIRECT_PORT_PROBE_IN)
+    .quad 2
+#else
+    .quad 0
+#endif
+
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
@@ -1576,6 +1628,28 @@ user_b_entry:
     jne 2f
     mov $14, %rax
     movabs $0xb2b2cafe51a7e55e, %rbx
+    mov $0x030201, %rcx
+    mov $0x51a7, %rdx
+    int $0x80
+    ud2
+#endif
+#ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
+    /* The survivor enters only through the common validated return, carrying
+       its fresh kernel-owned register canaries.  Its kernel-visible operation
+       proves the denied peer never mutated a device and that B kept its
+       address space, stack, and resources. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    movabs $B_INITIAL_R12, %r11
+    cmp %r11, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %r11
+    cmp %r11, %r13
+    jne 2f
+    mov $16, %rax
+    movabs $0xb2b2d0d151a7e55e, %rbx
     mov $0x030201, %rcx
     mov $0x51a7, %rdx
     int $0x80
