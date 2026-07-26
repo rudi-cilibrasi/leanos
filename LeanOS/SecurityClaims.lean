@@ -558,6 +558,18 @@ theorem composite_contained_fault_cleanup_removes_faulting_subject
   exact FailStop.interrupt_contained_cleans_faulting_subject
     state frame subject hstate hcurrent hcontained
 
+/-- The contained-entry identity binding also excludes the faulting identity
+from the deferred bank in the cleanup post-state. -/
+theorem composite_contained_fault_cleanup_clears_faulting_deferred
+    state frame subject
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state)
+    (hbound : FailStop.ContainedFaultIdentityBound state)
+    (hcontained :
+      (FailStop.dispatchHardware state.execution frame).action = .contained subject) :
+    (FailStop.applyOperation state (.interrupt frame)).deferredCancels.retained subject = none := by
+  exact FailStop.interrupt_contained_clears_faulting_deferred
+    state frame subject hstate hbound hcontained
+
 /-- Every typed deferred-drain denial is globally atomic, including ready-queue
 and resumable-bank exhaustion.  This supports
 SC-COMPOSITE-CONTAINED-FAULT-CLEANUP. -/
@@ -611,28 +623,27 @@ theorem composite_deferred_cancel_public_gate_and_trace_preserve
     FailStop.runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
       state subjects hstate⟩
 
-/-- Supporting mixed-trace theorem: contained interrupt cleanup and every
-finite deferred-cancellation suffix execute through the one public successor
-gate.  The post-cleanup deferred invariant remains explicit until its direct
-derivation from the pre-state is completed. -/
+/-- Supporting mixed-trace theorem: identity-bound contained interrupt cleanup
+and every finite deferred-cancellation suffix execute through the one public
+successor gate while preserving the complete deferred invariant. -/
 theorem composite_contained_fault_then_deferred_trace_preserves
     state frame faulting (subjects : List BlockingIPC.SubjectId)
-    (hmode : state.execution.mode = .running)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state)
+    (hbound : FailStop.ContainedFaultIdentityBound state)
     (hcontained :
-      (FailStop.dispatchHardware state.execution frame).action = .contained faulting)
-    (hcleaned : FailStop.DeferredBlockingRuntimeWellFormed
-      (FailStop.applyOperation state (.interrupt frame))) :
+      (FailStop.dispatchHardware state.execution frame).action = .contained faulting) :
     FailStop.DeferredBlockingRuntimeWellFormed
       (FailStop.runAuthoritativeOperations state
         (.ordinary (.interrupt frame) ::
           subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
   exact FailStop.runAuthoritativeContainedInterruptThenDeferredDrains_preserves
-    state frame faulting subjects hmode hcontained hcleaned
+    state frame faulting subjects hstate hbound hcontained
 
 /-- SC-COMPOSITE-CONTAINED-FAULT-CLEANUP: stable combined contract for the
 contained-cleanup boundary and its public deferred-drain continuation. -/
 theorem composite_contained_fault_cleanup_and_deferred_trace_contract
     state frame faultSubject drainSubject (subjects : List BlockingIPC.SubjectId)
+    (hbound : FailStop.ContainedFaultIdentityBound state)
     (hcontained :
       (FailStop.dispatchHardware state.execution frame).action = .contained faultSubject)
     (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
@@ -640,6 +651,11 @@ theorem composite_contained_fault_cleanup_and_deferred_trace_contract
     BlockingIPCContext.ContextAgreement cleaned.blockingIPCContext ∧
       cleaned.scheduler.lifecycle = cleaned.execution.core.lifecycle ∧
       cleaned.preemption.scheduler.lifecycle = cleaned.execution.core.lifecycle ∧
+      FailStop.DeferredBlockingRuntimeWellFormed cleaned ∧
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.runAuthoritativeOperations state
+          (.ordinary (.interrupt frame) ::
+            subjects.map FailStop.AuthoritativeOperation.drainDeferred)) ∧
       FailStop.DeferredBlockingRuntimeWellFormed
         (FailStop.authoritativeGate state (.drainDeferred drainSubject)).state ∧
       FailStop.DeferredBlockingRuntimeWellFormed
@@ -647,9 +663,14 @@ theorem composite_contained_fault_cleanup_and_deferred_trace_contract
           (subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
   have hcleanup := composite_contained_fault_cleanup_preserves_context_boundary
     state frame faultSubject hcontained hstate.2.1.1.2
+  have hcleaned := FailStop.interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
+    state frame faultSubject hstate hbound hcontained
+  have hmixed := composite_contained_fault_then_deferred_trace_preserves
+    state frame faultSubject subjects hstate hbound hcontained
   have hdrains := composite_deferred_cancel_public_gate_and_trace_preserve
     state drainSubject subjects hstate
-  exact ⟨hcleanup.1, hcleanup.2.1, hcleanup.2.2, hdrains.1, hdrains.2⟩
+  exact ⟨hcleanup.1, hcleanup.2.1, hcleanup.2.2, hcleaned, hmixed,
+    hdrains.1, hdrains.2⟩
 
 /-- SC-COMPOSITE-BLOCKING-REJECTION-WF: every finite ordinary denial at the
 typed blocking gate preserves the full composite runtime invariant because it
@@ -1067,12 +1088,33 @@ theorem user_return_authority_requires_live_plan state purpose
     state.ReturnPlanLive = true := by
   exact FailStop.selectLiveReturnAuthority_armed_implies_live state purpose harmed
 
+private def returnWitnessCapabilities : Capability.State :=
+  { nextIdentity := 3
+    derivations := fun identity =>
+      if identity = 0 then
+        some (none, 1, .addressSpace, { revoke := true })
+      else if identity = 1 then
+        some (none, 100, .memory, { read := true })
+      else if identity = 2 then
+        some (none, 101, .memory, { read := true, write := true })
+      else none
+    subjects := fun subject => subject = 1
+    objects := fun object => object = 1 || object = 100 || object = 101
+    kinds := fun object =>
+      if object = 1 then some .addressSpace
+      else if object = 100 || object = 101 then some .memory
+      else none
+    slots := fun subject slot =>
+      if subject = 1 ∧ slot = 0 then
+        some { object := 1, kind := .addressSpace, rights := { revoke := true }, identity := 0 }
+      else if subject = 1 ∧ slot = 1 then
+        some { object := 100, kind := .memory, rights := { read := true }, identity := 1 }
+      else if subject = 1 ∧ slot = 2 then
+        some { object := 101, kind := .memory, rights := { read := true, write := true }, identity := 2 }
+      else none }
+
 private def returnWitnessLifecycle : SubjectLifecycle.State :=
-  { capabilities :=
-      { subjects := fun subject => subject = 1
-        objects := fun object => object = 100 || object = 101
-        kinds := fun object => if object = 100 || object = 101 then some .memory else none
-        slots := fun _ _ => none }
+  { capabilities := returnWitnessCapabilities
     issuedSubjects := fun subject => subject = 1
     ownedMemory := fun object =>
       if object = 100 then some (1, 100)
@@ -1091,6 +1133,256 @@ private def returnWitnessLifecycle : SubjectLifecycle.State :=
       if frame = 100 then false else if frame = 101 then false else true
     runnable := fun subject => subject = 1
     current := some 1 }
+
+private theorem returnWitnessCapabilities_wellFormed :
+    Capability.WellFormed returnWitnessCapabilities := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro subject slot capability hslot
+    simp only [returnWitnessCapabilities] at hslot ⊢
+    split at hslot
+    · cases hslot
+      simp_all [Capability.rightsValid]
+    · split at hslot
+      · cases hslot
+        simp_all [Capability.rightsValid, Capability.nonemptyRights]
+      · split at hslot
+        · cases hslot
+          simp_all [Capability.rightsValid, Capability.nonemptyRights]
+        · contradiction
+  · intro identity parent object kind rights hderivation
+    simp only [returnWitnessCapabilities] at hderivation ⊢
+    split at hderivation
+    · cases hderivation
+      simp_all
+    · split at hderivation
+      · cases hderivation
+        simp_all
+      · split at hderivation
+        · cases hderivation
+          simp_all
+        · contradiction
+  · intro subject slot capability otherSubject otherSlot otherCapability
+      hslot hother hidentity
+    simp only [returnWitnessCapabilities] at hslot hother
+    split at hslot
+    · cases hslot
+      split at hother
+      · cases hother
+        simp_all
+      · split at hother
+        · cases hother
+          simp at hidentity
+        · split at hother
+          · cases hother
+            simp at hidentity
+          · contradiction
+    · split at hslot
+      · cases hslot
+        split at hother
+        · cases hother
+          simp at hidentity
+        · split at hother
+          · cases hother
+            simp_all
+          · split at hother
+            · cases hother
+              simp at hidentity
+            · contradiction
+      · split at hslot
+        · cases hslot
+          split at hother
+          · cases hother
+            simp at hidentity
+          · split at hother
+            · cases hother
+              simp at hidentity
+            · split at hother
+              · cases hother
+                simp_all
+              · contradiction
+        · contradiction
+  · intro subject slot houtOfRange
+    change 4 ≤ slot at houtOfRange
+    simp only [returnWitnessCapabilities]
+    split
+    · simp_all
+    · split
+      · simp_all
+      · split
+        · simp_all
+        · rfl
+
+@[simp] private theorem returnWitnessLifecycle_capabilities :
+    returnWitnessLifecycle.capabilities = returnWitnessCapabilities := rfl
+
+@[simp] private theorem returnWitnessLifecycle_issuedSubjects subject :
+    returnWitnessLifecycle.issuedSubjects subject = decide (subject = 1) := rfl
+
+@[simp] private theorem returnWitnessLifecycle_ownedMemory object :
+    returnWitnessLifecycle.ownedMemory object =
+      if object = 100 then some (1, 100)
+      else if object = 101 then some (1, 101)
+      else none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_addressOwner addressSpace :
+    returnWitnessLifecycle.addressOwner addressSpace =
+      if addressSpace = 1 then some 1 else none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_mapping addressSpace page :
+    returnWitnessLifecycle.mapping addressSpace page =
+      if addressSpace = 1 ∧ page = 100 then some 100
+      else if addressSpace = 1 ∧ page = 101 then some 101
+      else none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_endpointOwner object :
+    returnWitnessLifecycle.endpointOwner object = none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_mailbox object :
+    returnWitnessLifecycle.mailbox object = none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_frameOwner frame :
+    returnWitnessLifecycle.frameOwner frame =
+      if frame = 100 then some 1 else if frame = 101 then some 1 else none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_freeFrame frame :
+    returnWitnessLifecycle.freeFrame frame =
+      if frame = 100 then false else if frame = 101 then false else true := rfl
+
+@[simp] private theorem returnWitnessLifecycle_runnable subject :
+    returnWitnessLifecycle.runnable subject = decide (subject = 1) := rfl
+
+@[simp] private theorem returnWitnessLifecycle_current :
+    returnWitnessLifecycle.current = some 1 := rfl
+
+@[simp] private theorem returnWitnessLifecycle_wellFormed :
+    SubjectLifecycle.WellFormed returnWitnessLifecycle := by
+  simp [SubjectLifecycle.WellFormed, returnWitnessLifecycle,
+    returnWitnessCapabilities]
+  intro object subject frame howned
+  by_cases h100 : object = 100
+  · subst object
+    simp at howned
+    cases howned
+    simp_all
+  · by_cases h101 : object = 101
+    · subst object
+      simp [h100] at howned
+      cases howned
+      simp_all
+    · simp [h100, h101] at howned
+
+@[simp] private theorem returnWitnessCapabilities_nextIdentity :
+    returnWitnessCapabilities.nextIdentity = 3 := rfl
+
+@[simp] private theorem returnWitnessCapabilities_derivations identity :
+    returnWitnessCapabilities.derivations identity =
+      if identity = 0 then
+        some (none, 1, .addressSpace, { revoke := true })
+      else if identity = 1 then
+        some (none, 100, .memory, { read := true })
+      else if identity = 2 then
+        some (none, 101, .memory, { read := true, write := true })
+      else none := rfl
+
+@[simp] private theorem returnWitnessCapabilities_subjects subject :
+    returnWitnessCapabilities.subjects subject = decide (subject = 1) := rfl
+
+@[simp] private theorem returnWitnessCapabilities_objects object :
+    returnWitnessCapabilities.objects object =
+      (object = 1 || object = 100 || object = 101) := rfl
+
+@[simp] private theorem returnWitnessCapabilities_kinds object :
+    returnWitnessCapabilities.kinds object =
+      if object = 1 then some .addressSpace
+      else if object = 100 || object = 101 then some .memory
+      else none := rfl
+
+@[simp] private theorem returnWitnessCapabilities_slotCapacity subject :
+    returnWitnessCapabilities.slotCapacity subject = 4 := rfl
+
+@[simp] private theorem returnWitnessCapabilities_slots subject slot :
+    returnWitnessCapabilities.slots subject slot =
+      if subject = 1 ∧ slot = 0 then
+        some { object := 1, kind := .addressSpace, rights := { revoke := true }, identity := 0 }
+      else if subject = 1 ∧ slot = 1 then
+        some { object := 100, kind := .memory, rights := { read := true }, identity := 1 }
+      else if subject = 1 ∧ slot = 2 then
+        some { object := 101, kind := .memory, rights := { read := true, write := true }, identity := 2 }
+      else none := rfl
+
+@[simp] private theorem returnWitnessCapabilities_readAuthority subject object :
+    Capability.HasAuthority returnWitnessCapabilities subject object .read ↔
+      subject = 1 ∧ (object = 100 ∨ object = 101) := by
+  constructor
+  · rintro ⟨slot, capability, hslot, hobject, hright⟩
+    simp only [returnWitnessCapabilities] at hslot
+    split at hslot
+    · cases hslot
+      simp [Capability.hasRight, Capability.permits] at hright
+    · split at hslot
+      · cases hslot
+        simp_all [Capability.hasRight, Capability.permits]
+      · split at hslot
+        · cases hslot
+          simp_all [Capability.hasRight, Capability.permits]
+        · contradiction
+  · rintro ⟨rfl, rfl | rfl⟩
+    · refine ⟨1, {
+        object := 100
+        kind := .memory
+        rights := { read := true }
+        identity := 1 }, rfl, rfl, rfl⟩
+    · refine ⟨2, {
+        object := 101
+        kind := .memory
+        rights := { read := true, write := true }
+        identity := 2 }, rfl, rfl, rfl⟩
+
+@[simp] private theorem returnWitnessCapabilities_writeAuthority subject object :
+    Capability.HasAuthority returnWitnessCapabilities subject object .write ↔
+      subject = 1 ∧ object = 101 := by
+  constructor
+  · rintro ⟨slot, capability, hslot, hobject, hright⟩
+    simp only [returnWitnessCapabilities] at hslot
+    split at hslot
+    · cases hslot
+      simp [Capability.hasRight, Capability.permits] at hright
+    · split at hslot
+      · cases hslot
+        simp [Capability.hasRight, Capability.permits] at hright
+      · split at hslot
+        · cases hslot
+          simp_all [Capability.hasRight, Capability.permits]
+        · contradiction
+  · rintro ⟨rfl, rfl⟩
+    refine ⟨2, {
+      object := 101
+      kind := .memory
+      rights := { read := true, write := true }
+      identity := 2 }, rfl, rfl, rfl⟩
+
+@[simp] private theorem returnWitnessCapabilities_revokeAuthority subject object :
+    Capability.HasAuthority returnWitnessCapabilities subject object .revoke ↔
+      subject = 1 ∧ object = 1 := by
+  constructor
+  · rintro ⟨slot, capability, hslot, hobject, hright⟩
+    simp only [returnWitnessCapabilities] at hslot
+    split at hslot
+    · cases hslot
+      simp_all [Capability.hasRight, Capability.permits]
+    · split at hslot
+      · cases hslot
+        simp [Capability.hasRight, Capability.permits] at hright
+      · split at hslot
+        · cases hslot
+          simp [Capability.hasRight, Capability.permits] at hright
+        · contradiction
+  · rintro ⟨rfl, rfl⟩
+    refine ⟨0, {
+      object := 1
+      kind := .addressSpace
+      rights := { revoke := true }
+      identity := 0 }, rfl, rfl, rfl⟩
 
 private def returnWitnessPlan : Option BootPageTablePlan.Plan :=
   (BootPageTablePlan.compile BootPageTablePlan.sampleInput).toOption
@@ -1159,7 +1451,8 @@ theorem user_return_authority_reachable_witness :
   constructor
   · apply FailStop.selectReturnAuthority_wellFormed
     simp [returnWitnessBase, returnWitnessLifecycle, FailStop.WellFormed,
-      Interrupt.WellFormed, SubjectLifecycle.WellFormed]
+      returnWitnessCapabilities, Interrupt.WellFormed,
+      SubjectLifecycle.WellFormed]
     intro object subject frame howned
     by_cases h100 : object = 100
     · subst object
@@ -1184,7 +1477,18 @@ private def returnWitnessMemory : MemoryLifecycle.State :=
           else .reserved }
     binding := fun object =>
       if object = 100 then some 100 else if object = 101 then some 101 else none
-    issued := fun object => object = 100 || object = 101 }
+    issued := fun object => object = 1 || object = 100 || object = 101 }
+
+@[simp] private theorem returnWitnessMemory_capabilities :
+    returnWitnessMemory.capabilities = returnWitnessCapabilities := rfl
+
+@[simp] private theorem returnWitnessMemory_binding object :
+    returnWitnessMemory.binding object =
+      if object = 100 then some 100 else if object = 101 then some 101 else none := rfl
+
+@[simp] private theorem returnWitnessMemory_issued object :
+    returnWitnessMemory.issued object =
+      (object = 1 || object = 100 || object = 101) := rfl
 
 private def returnWitnessVirtualMemory : VirtualMapping.State :=
   { memory := returnWitnessMemory
@@ -1196,6 +1500,64 @@ private def returnWitnessVirtualMemory : VirtualMapping.State :=
         some { object := 101, permissions := { read := true, write := true } }
       else none
     issuedAddressSpace := fun space => space = 1 }
+
+@[simp] private theorem returnWitnessVirtualMemory_capabilities :
+    returnWitnessVirtualMemory.memory.capabilities = returnWitnessCapabilities := rfl
+
+@[simp] private theorem returnWitnessVirtualMemory_owner addressSpace :
+    returnWitnessVirtualMemory.owner addressSpace =
+      if addressSpace = 1 then some 1 else none := rfl
+
+@[simp] private theorem returnWitnessVirtualMemory_owner_lifecycle :
+    returnWitnessVirtualMemory.owner = returnWitnessLifecycle.addressOwner := rfl
+
+@[simp] private theorem returnWitnessVirtualMemory_wellFormed :
+    VirtualMapping.LifecycleWellFormed returnWitnessVirtualMemory := by
+  refine ⟨?_, returnWitnessCapabilities_wellFormed, ?_, ?_⟩
+  · constructor
+    · intro addressSpace subject howner
+      simp [returnWitnessVirtualMemory, returnWitnessLifecycle] at howner
+      rcases howner with ⟨rfl, rfl⟩
+      rfl
+    · intro addressSpace page mapping hmapping
+      simp only [returnWitnessVirtualMemory] at hmapping
+      split at hmapping
+      next hselected =>
+        rcases hselected with ⟨rfl, rfl⟩
+        cases hmapping
+        refine ⟨1, 100, rfl, rfl, rfl, rfl, ?_, ?_⟩
+        · intro
+          change Capability.HasAuthority returnWitnessCapabilities 1 100 .read
+          simp
+        · simp
+      next hnotSelected =>
+        split at hmapping
+        next hselected =>
+          rcases hselected with ⟨rfl, rfl⟩
+          cases hmapping
+          refine ⟨1, 101, rfl, rfl, rfl, rfl, ?_, ?_⟩
+          · intro
+            change Capability.HasAuthority returnWitnessCapabilities 1 101 .read
+            simp
+          · intro
+            change Capability.HasAuthority returnWitnessCapabilities 1 101 .write
+            simp
+        next hnotSelected => contradiction
+  · intro addressSpace subject howner
+    simp [returnWitnessVirtualMemory, returnWitnessLifecycle] at howner
+    rcases howner with ⟨rfl, rfl⟩
+    have hauthority :
+        Capability.HasAuthority returnWitnessCapabilities 1 1 .revoke := by
+      simp
+    exact ⟨rfl, rfl, rfl, rfl, hauthority⟩
+  · intro addressSpace hlive hkind
+    by_cases hspace : addressSpace = 1
+    · subst addressSpace
+      exact ⟨1, rfl⟩
+    · change returnWitnessCapabilities.kinds addressSpace =
+        some .addressSpace at hkind
+      rw [returnWitnessCapabilities_kinds] at hkind
+      simp [hspace] at hkind
 
 private def returnWitnessEndpoints : EndpointIPC.State :=
   { capabilities := returnWitnessLifecycle.capabilities
@@ -1234,6 +1596,59 @@ private def returnWitnessComposite : FailStop.CompositeState :=
         waiterCapacity := 0
         completion := fun _ => none }
     blockingContexts := fun _ => none }
+
+private def containedFaultWitnessFrame : Interrupt.HardwareFrame :=
+  { returnWitnessRequest.hardware with vector := 14 }
+
+set_option maxRecDepth 100000 in
+/-- Concrete non-vacuity for the contained-cleanup contract: the live
+return-authority fixture binds execution subject `1` to the authoritative
+lifecycle, and a user page fault reaches contained cleanup plus an empty
+deferred-drain suffix while preserving the complete deferred invariant. -/
+theorem composite_contained_fault_cleanup_reachable_witness :
+    FailStop.DeferredBlockingRuntimeWellFormed returnWitnessComposite ∧
+      FailStop.ContainedFaultIdentityBound returnWitnessComposite ∧
+      (FailStop.dispatchHardware returnWitnessComposite.execution
+        containedFaultWitnessFrame).action = .contained 1 ∧
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.runAuthoritativeOperations returnWitnessComposite
+          [.ordinary (.interrupt containedFaultWitnessFrame)]) := by
+  have hstate :
+      FailStop.DeferredBlockingRuntimeWellFormed returnWitnessComposite := by
+    simp [FailStop.DeferredBlockingRuntimeWellFormed,
+      FailStop.RuntimeWellFormed, FailStop.CompositeState.Coherent,
+      FailStop.CompositeState.DeferredCancellationWellFormed,
+      FailStop.CompositeState.BlockingIPCCoherent,
+      FailStop.CompositeState.blockingIPCContext,
+      BlockingIPCContext.DeferredWellFormed, BlockingIPCContext.WellFormed,
+      BlockingIPCContext.ContextAgreement, returnWitnessComposite,
+      returnWitnessBase,
+      returnWitnessEndpoints,
+      FailStop.WellFormed, Interrupt.WellFormed,
+      returnWitnessCapabilities_wellFormed,
+      IPCSyscall.WellFormed, EndpointIPC.WellFormed,
+      Scheduler.WellFormed, Scheduler.ownsAddressSpace,
+      Preemption.WellFormed, ResumablePreemption.WellFormed,
+      ResumablePreemption.contextFor,
+      ResumablePreemption.ReadyContextAgreement,
+      ResumablePreemption.TranslationAgreement,
+      ResumablePreemption.VirtualAgreement,
+      ResumablePreemption.ResourceKindAgreement,
+      CapabilityTransfer.WellFormed, BlockingIPC.WellFormed,
+      DirectPortIO.AcceptedControls,
+      Capability.rightsValid, Capability.nonemptyRights,
+      Capability.rightsSubset, TLB.Coherent,
+      BlockingIPCContext.emptyDeferred] <;> grind
+  have hbound : FailStop.ContainedFaultIdentityBound returnWitnessComposite := by
+    rfl
+  have hcontained :
+      (FailStop.dispatchHardware returnWitnessComposite.execution
+        containedFaultWitnessFrame).action = .contained 1 := by
+    native_decide
+  exact ⟨hstate, hbound, hcontained,
+    composite_contained_fault_then_deferred_trace_preserves
+      returnWitnessComposite containedFaultWitnessFrame 1 []
+      hstate hbound hcontained⟩
 
 private def returnWitnessSyscallFrame : Interrupt.HardwareFrame :=
   { returnWitnessRequest.hardware with vector := 128 }

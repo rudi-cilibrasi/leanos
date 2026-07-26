@@ -479,6 +479,8 @@ def CompositeState.blockingIPCContext (state : CompositeState) :
 indexed waiter or a disjoint, quiescent deferred cancellation. -/
 def CompositeState.DeferredCancellationWellFormed (state : CompositeState) : Prop :=
   BlockingIPCContext.DeferredWellFormed state.blockingIPCContext state.deferredCancels ∧
+  (forall subject saved, state.blockingContexts subject = some saved →
+    ResumablePreemption.contextFor state.resumable.contexts subject = none) ∧
   (∀ subject saved, state.deferredCancels.retained subject = some saved →
     ResumablePreemption.contextFor state.resumable.contexts subject = none)
 
@@ -1838,7 +1840,18 @@ theorem drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
                 Scheduler.ownsAddressSpace] using howns
             rw [hschedulerExact]
             simpa [CompositeState.blockingIPCContext, hvalidParts.1.1.2] using haddress
-          have habsent := hstate.2.2 subject saved hretained
+          have habsent := hstate.2.2.2 subject saved hretained
+          have hblockedExact : next.blocked = state.blockingContexts := by
+            simp only [BlockingIPCContext.drainDeferred] at houtcome
+            split at houtcome <;> try simp_all
+            all_goals try (split at houtcome <;> try simp_all)
+            all_goals try (split at houtcome <;> try simp_all)
+            all_goals try (split at houtcome <;> try simp_all)
+            all_goals try (split at houtcome <;> try simp_all)
+            all_goals try (split at houtcome <;> try simp_all)
+            all_goals try (split at houtcome <;> try simp_all)
+            all_goals rcases houtcome with ⟨rfl, rfl, rfl, rfl⟩
+            all_goals rfl
           have hbaseRuntime : RuntimeWellFormed
               { state with deferredCancels := nextDeferred } := by
             change RuntimeWellFormed state
@@ -1873,7 +1886,23 @@ theorem drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
             rw [hcontexts]
           rw [hshape]
           change DeferredBlockingRuntimeWellFormed published
-          refine ⟨hruntime, hdeferred, ?_⟩
+          refine ⟨hruntime, hdeferred, ?_, ?_⟩
+          · intro candidate actual hblocked
+            have hblockedOld : state.blockingContexts candidate = some actual := by
+              simpa [published, publishBlockingIPCContext, hblockedExact] using hblocked
+            have hne : candidate ≠ subject := by
+              intro heq
+              subst candidate
+              have hsome : (state.blockingIPCContext.blocked subject).isSome = true := by
+                simp [CompositeState.blockingIPCContext, hblockedOld]
+              have hnone := hstate.2.1.2.1 subject hsome
+              rw [hretained] at hnone
+              contradiction
+            have holdAbsent := hstate.2.2.1 candidate actual hblockedOld
+            simp only [published, publishBlockingIPCContext]
+            simp only [ResumablePreemption.contextFor, List.find?_cons]
+            rw [show (saved.owner == candidate) = false by simp [howner, Ne.symm hne]]
+            exact holdAbsent
           intro candidate actual hcanceled
           have hne : candidate ≠ subject := by
             intro heq
@@ -1893,7 +1922,7 @@ theorem drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
               hdeferredExact
             rw [hd] at hcanceled'
             simpa [BlockingIPCContext.setRetained, hne] using hcanceled'
-          exact hstate.2.2 candidate actual hcanceledOld
+          exact hstate.2.2.2 candidate actual hcanceledOld
 
 theorem publishReleasedBlockingContext_blockingCoherent state blocking saved next
     (hpublished : publishReleasedBlockingContext state blocking saved = .ok next) :
@@ -4400,7 +4429,11 @@ private def publishInterruptCleanup (state : CompositeState)
     state.deferredCancels resumable.scheduler
   { cleaned with
     execution := { cleaned.execution with copyOverride := false }
-    blockingIPC := detached.1.ipc
+    blockingIPC := { detached.1.ipc with
+      mailbox := fun endpoint =>
+        if resumable.scheduler.lifecycle.capabilities.objects endpoint then
+          detached.1.ipc.mailbox endpoint
+        else none }
     blockingContexts := detached.1.blocked
     deferredCancels := detached.2 }
 
@@ -10170,7 +10203,8 @@ private theorem publishInterruptCleanup_preserves_contextAgreement state subject
     state.deferredCancels
     (ResumablePreemption.cleanupSubject state.resumable subject).scheduler
     hterminated
-  simpa [publishInterruptCleanup, CompositeState.blockingIPCContext] using hdetached
+  simpa [BlockingIPCContext.ContextAgreement, publishInterruptCleanup,
+    CompositeState.blockingIPCContext] using hdetached
 
 /-- Contained cleanup preserves exact waiter/saved-context agreement while
 invalidated peers move into the disjoint deferred-cancel bank. -/
@@ -10181,6 +10215,618 @@ theorem interrupt_contained_preserves_contextAgreement state frame subject
       (applyOperation state (.interrupt frame)).blockingIPCContext := by
   simpa [applyOperation, hcontained] using
     publishInterruptCleanup_preserves_contextAgreement state subject hstate
+
+/-- Readiness for a contained fault binds the trusted execution identity to
+the authoritative lifecycle selection.  `CompositeState.Coherent` supplies
+the forward implication from a selected lifecycle subject, but intentionally
+does not claim that an arbitrary running execution context is selected.  This
+small reverse equality is therefore required exactly at contained entry. -/
+def ContainedFaultIdentityBound (state : CompositeState) : Prop :=
+  state.lifecycle.current = some state.execution.core.context.currentSubject
+
+/-- A contained result always names the trusted execution identity; combined
+with the contained-entry binding, it therefore names `lifecycle.current`. -/
+private theorem interrupt_contained_faulting_identity core frame faulting
+    (hcontained :
+      (Interrupt.dispatchHardware core frame).action = .contained faulting) :
+    core.context.currentSubject = faulting := by
+  unfold Interrupt.dispatchHardware at hcontained
+  split at hcontained <;> try simp_all
+  cases hvector : Interrupt.decodeVector frame.vector with
+  | none => simp [hvector] at hcontained
+  | some vector =>
+      cases vector with
+      | pageFault => cases horigin : frame.savedPrivilege <;> simp_all
+      | timer => simp [hvector] at hcontained
+      | syscall => cases horigin : frame.savedPrivilege <;> simp_all
+
+theorem contained_faulting_identity_is_current state frame faulting
+    (hbound : ContainedFaultIdentityBound state)
+    (hcontained : (dispatchHardware state.execution frame).action = .contained faulting) :
+    state.lifecycle.current = some faulting := by
+  have hid : state.execution.core.context.currentSubject = faulting := by
+    cases hmode : state.execution.mode with
+    | handling active => simp [dispatchHardware, hmode, halt] at hcontained
+    | halted record => simp [dispatchHardware, hmode] at hcontained
+    | running =>
+        simp only [dispatchHardware, hmode, beginEntry, finishEntry] at hcontained
+        generalize hd : Interrupt.dispatchHardware
+          { state.execution.core with context :=
+            { state.execution.core.context with entryActive := false } }
+          frame = outcome at hcontained
+        cases outcome with
+        | mk next action =>
+            cases action with
+            | contained actual =>
+                have hrawAction :
+                    (Interrupt.dispatchHardware
+                      { state.execution.core with context :=
+                        { state.execution.core.context with entryActive := false } }
+                      frame).action = .contained actual := by
+                  rw [hd]
+                have hraw := interrupt_contained_faulting_identity
+                  { state.execution.core with context :=
+                    { state.execution.core.context with entryActive := false } }
+                  frame actual hrawAction
+                have hactual : actual = faulting := by
+                  simpa [activeEntry, hd] using hcontained
+                simpa [hactual] using hraw
+            | fatal reason => simp [activeEntry, hd, halt] at hcontained
+            | timer => simp [activeEntry, hd] at hcontained
+            | syscall => simp [activeEntry, hd] at hcontained
+            | rejected reason => simp [activeEntry, hd] at hcontained
+  simpa [ContainedFaultIdentityBound, hid] using hbound
+
+set_option maxHeartbeats 100000 in
+/-- Contained cleanup establishes the complete deferred-cancellation
+post-state when the trusted faulting identity is the authoritative current
+subject.  The binding rules out the only otherwise possible collision: a
+quiescent retained identity cannot simultaneously be the subject retired by
+the interrupt. -/
+theorem interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
+    state frame faulting
+    (hstate : DeferredBlockingRuntimeWellFormed state)
+    (hbound : ContainedFaultIdentityBound state)
+    (hcontained : (dispatchHardware state.execution frame).action = .contained faulting) :
+    DeferredBlockingRuntimeWellFormed
+      (applyOperation state (.interrupt frame)) := by
+  have hcurrent : state.lifecycle.current = some faulting :=
+    contained_faulting_identity_is_current state frame faulting hbound hcontained
+  have hmode : state.execution.mode = .running := by
+    cases hmode : state.execution.mode with
+    | handling active => simp [dispatchHardware, hmode, halt] at hcontained
+    | halted record => simp [dispatchHardware, hmode] at hcontained
+    | running => rfl
+  constructor
+  · simpa [applyOperation, hcontained] using
+      publishInterruptCleanup_preserves_runtimeWellFormed
+        state faulting hstate.1 hmode
+  · simp only [applyOperation, hcontained]
+    rcases hstate.2 with
+      ⟨⟨⟨hipcWellFormed, hcontextAgreement⟩, hblockedDisjoint,
+        hretainedWellFormed⟩, hblockedResumableDisjoint,
+        hresumableDisjoint⟩
+    rcases hstate.1 with
+      ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+        hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive,
+        hblocking, hports⟩
+    have hresumableScheduler : state.resumable.scheduler = state.scheduler :=
+      hcoherent.2.2.2.2.2.2.2.1
+    have hblockingScheduler : state.blockingIPC.scheduler = state.scheduler :=
+      hblocking.1
+    have hblockingLifecycle :
+        state.blockingIPC.scheduler.lifecycle = state.lifecycle :=
+      hblocking.2
+    have hresumableBlocking :
+        state.resumable.scheduler = state.blockingIPC.scheduler :=
+      hresumableScheduler.trans hblockingScheduler.symm
+    have hcleanup := ResumablePreemption.cleanupSubject_preserves_wellFormed
+      state.resumable faulting hresumable
+    have hliveFaulting :
+        state.blockingIPC.scheduler.lifecycle.capabilities.subjects faulting = true := by
+      rw [hblockingLifecycle]
+      exact hlifecycle.2.2.2.2.2 faulting hcurrent
+    have hissuedFaulting :
+        state.blockingIPC.scheduler.lifecycle.issuedSubjects faulting = true := by
+      rw [hblockingLifecycle]
+      exact hlifecycle.1 faulting (by simpa [hblockingLifecycle] using hliveFaulting)
+    have hterminate :
+        (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle faulting).result =
+          .accepted := by
+      simp [SubjectLifecycle.terminate, hliveFaulting, hissuedFaulting]
+    have hwaiterSelf : state.blockingIPC.waiterEndpoint faulting = none := by
+      cases hendpoint : state.blockingIPC.waiterEndpoint faulting with
+      | none => rfl
+      | some endpoint =>
+          have hmember := (hipcWellFormed.2.2.2.2.1 endpoint faulting).mpr hendpoint
+          rcases hipcWellFormed.2.2.1 endpoint faulting hmember with
+            ⟨_, _, _, _, _, hnotCurrent, _⟩
+          have hblockingCurrent :
+              state.blockingIPC.scheduler.lifecycle.current = some faulting := by
+            rw [hblockingLifecycle]
+            exact hcurrent
+          exact False.elim (hnotCurrent hblockingCurrent)
+    have hterminatedBlocking :
+        BlockingIPC.terminate state.blockingIPC faulting =
+          { state.blockingIPC with
+            scheduler := { state.blockingIPC.scheduler with
+              lifecycle := SubjectLifecycle.terminateState
+                state.blockingIPC.scheduler.lifecycle faulting
+              ready := state.blockingIPC.scheduler.ready.filter (· ≠ faulting) } } := by
+      simp [BlockingIPC.terminate, SubjectLifecycle.terminate, hliveFaulting,
+        hissuedFaulting, BlockingIPC.cancelSubject, hwaiterSelf]
+    have hpostWaiters (endpoint : BlockingIPC.ObjectId) :
+        (publishInterruptCleanup state faulting).blockingIPC.waiters endpoint =
+          (state.blockingIPC.waiters endpoint).filter
+            (fun _ =>
+              (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.objects
+                endpoint) := by
+      simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+        BlockingIPCContext.detachInvalidated,
+        BlockingIPCContext.terminate, hterminate, hterminatedBlocking]
+    have hpostWaiterCapacity :
+        (publishInterruptCleanup state faulting).blockingIPC.waiterCapacity =
+          state.blockingIPC.waiterCapacity := by
+      simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+        BlockingIPCContext.detachInvalidated,
+        BlockingIPCContext.terminate, hterminate, hterminatedBlocking]
+    have cleanup_preserves_quiescent (subject : BlockingIPC.SubjectId)
+        (hsubjectNe : subject ≠ faulting)
+        (hsubjectLive :
+          state.blockingIPC.scheduler.lifecycle.capabilities.subjects subject = true)
+        (hsubjectRunnable :
+          state.blockingIPC.scheduler.lifecycle.runnable subject = false)
+        (hsubjectNotReady : subject ∉ state.blockingIPC.scheduler.ready)
+        (hsubjectOwns :
+          Scheduler.ownsAddressSpace state.blockingIPC.scheduler subject = some subject) :
+        let scheduler :=
+          (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler
+        scheduler.lifecycle.capabilities.subjects subject = true ∧
+          scheduler.lifecycle.runnable subject = false ∧
+          scheduler.lifecycle.current ≠ some subject ∧
+          subject ∉ scheduler.ready ∧
+          Scheduler.ownsAddressSpace scheduler subject = some subject := by
+      dsimp only
+      have howns :
+          state.blockingIPC.scheduler.lifecycle.addressOwner subject = some subject := by
+        unfold Scheduler.ownsAddressSpace at hsubjectOwns
+        split at hsubjectOwns
+        · assumption
+        · contradiction
+      have hownsNe :
+          state.blockingIPC.scheduler.lifecycle.addressOwner subject ≠ some faulting := by
+        rw [howns]
+        simp [hsubjectNe]
+      refine ⟨?_, ?_, ?_, ?_, ?_⟩
+      · simpa [ResumablePreemption.cleanupSubject,
+          ResumablePreemption.retireOwnedAddressSpaces,
+          SubjectLifecycle.terminateState,
+          SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool,
+          hresumableBlocking, hsubjectNe] using hsubjectLive
+      · simpa [ResumablePreemption.cleanupSubject,
+          SubjectLifecycle.terminateState, SubjectLifecycle.setBool,
+          hresumableBlocking, hsubjectNe] using hsubjectRunnable
+      · simp [ResumablePreemption.cleanupSubject,
+          SubjectLifecycle.terminateState, hresumableBlocking,
+          hblockingLifecycle, hcurrent]
+      · intro hready
+        have hready' : subject ∈ state.blockingIPC.scheduler.ready.filter
+            (· != faulting) := by
+          simpa [ResumablePreemption.cleanupSubject, hresumableBlocking] using hready
+        exact hsubjectNotReady (List.mem_filter.mp hready').1
+      · simp [Scheduler.ownsAddressSpace, ResumablePreemption.cleanupSubject,
+          SubjectLifecycle.terminateState, hresumableBlocking, hownsNe, howns]
+        exact hsubjectNe
+    have cleanup_context_absent (subject : BlockingIPC.SubjectId)
+        (habsent : ResumablePreemption.contextFor state.resumable.contexts subject = none) :
+        ResumablePreemption.contextFor
+            (ResumablePreemption.cleanupSubject state.resumable faulting).contexts subject = none := by
+      by_cases hsubject : subject = faulting
+      · subst subject
+        exact ResumablePreemption.cleanup_removes_context state.resumable faulting
+      · simpa [ResumablePreemption.cleanupSubject] using
+          (ResumablePreemption.contextFor_erase_other
+            state.resumable.contexts faulting subject hsubject).trans habsent
+    clear hstate hcoherent hblocking hresumable hexecution hcapabilities hvirtual
+      hipc hscheduler hpreemption htransfers hhalted hlive hports hlifecycle
+    unfold CompositeState.DeferredCancellationWellFormed
+    constructor
+    · unfold BlockingIPCContext.DeferredWellFormed
+      constructor
+      · constructor
+        · rcases hipcWellFormed with
+            ⟨_, hqueues, hwaiters, hunique, hindex, hmailbox, hcapability⟩
+          simp only [CompositeState.blockingIPCContext] at hqueues hwaiters hunique
+          simp only [CompositeState.blockingIPCContext] at hindex hmailbox hcapability
+          refine ⟨hcleanup.1, ?_, ?_, ?_, ?_, ?_, ?_⟩
+          · intro endpoint
+            rw [show
+              (publishInterruptCleanup state faulting).blockingIPCContext.ipc.waiters endpoint =
+                (publishInterruptCleanup state faulting).blockingIPC.waiters endpoint by rfl,
+              hpostWaiters, show
+              (publishInterruptCleanup state faulting).blockingIPCContext.ipc.waiterCapacity =
+                (publishInterruptCleanup state faulting).blockingIPC.waiterCapacity by rfl,
+              hpostWaiterCapacity]
+            refine ⟨?_, ?_⟩
+            · exact (hqueues endpoint).1.filter _
+            · exact Nat.le_trans (List.length_filter_le _ _) (hqueues endpoint).2
+          · intro endpoint subject hmember
+            have hkeep :
+                (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.objects
+                  endpoint = true := by
+              cases hvalue :
+                  (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.objects
+                    endpoint with
+              | false =>
+                  simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                    hterminate, hterminatedBlocking, hvalue] at hmember
+              | true => rfl
+            have holdMember : subject ∈ state.blockingIPC.waiters endpoint := by
+              simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking, hkeep] using hmember
+            rcases hwaiters endpoint subject holdMember with
+              ⟨holdLive, holdAuthority, holdSubjectLive, holdRunnable,
+                holdOwns, holdNotCurrent, holdNotReady⟩
+            have hsubjectNe : subject ≠ faulting := by
+              intro heq
+              subst subject
+              have hindexed := (hindex endpoint faulting).mp holdMember
+              change state.blockingIPC.waiterEndpoint faulting = some endpoint at hindexed
+              rw [hwaiterSelf] at hindexed
+              simp at hindexed
+            refine ⟨hkeep, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · rcases holdAuthority with
+                ⟨slot, capability, hslot, hobject, hkind, hrights, _⟩
+              refine ⟨slot, capability, ?_, hobject, hkind, hrights, hkeep⟩
+              have hkeepFacts := hkeep
+              simp [ResumablePreemption.cleanupSubject,
+                ResumablePreemption.retireOwnedAddressSpaces,
+                SubjectLifecycle.terminateState,
+                SubjectLifecycle.terminatedCapabilities, hresumableBlocking,
+                hobject] at hkeepFacts
+              rcases hkeepFacts with ⟨haddress, ⟨hmemory, hendpoint⟩, _⟩
+              simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking, ResumablePreemption.cleanupSubject,
+                ResumablePreemption.retireOwnedAddressSpaces,
+                SubjectLifecycle.terminateState,
+                SubjectLifecycle.terminatedCapabilities, hresumableBlocking,
+                hslot, hobject, hsubjectNe, haddress, hmemory, hendpoint]
+            · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking, ResumablePreemption.cleanupSubject,
+                ResumablePreemption.retireOwnedAddressSpaces,
+                SubjectLifecycle.terminateState,
+                SubjectLifecycle.terminatedCapabilities, SubjectLifecycle.setBool,
+                hresumableBlocking, hsubjectNe] using holdSubjectLive
+            · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking, ResumablePreemption.cleanupSubject,
+                SubjectLifecycle.terminateState, SubjectLifecycle.setBool,
+                hresumableBlocking, hsubjectNe] using holdRunnable
+            · have howns :
+                  state.blockingIPC.scheduler.lifecycle.addressOwner subject = some subject := by
+                unfold Scheduler.ownsAddressSpace at holdOwns
+                split at holdOwns
+                · assumption
+                · contradiction
+              have hownsNe :
+                  state.blockingIPC.scheduler.lifecycle.addressOwner subject ≠ some faulting := by
+                rw [howns]
+                simp [hsubjectNe]
+              simp [Scheduler.ownsAddressSpace, publishInterruptCleanup,
+                CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking, ResumablePreemption.cleanupSubject,
+                SubjectLifecycle.terminateState, hresumableBlocking,
+                hownsNe, howns]
+              exact hsubjectNe
+            · simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking, ResumablePreemption.cleanupSubject,
+                SubjectLifecycle.terminateState, hresumableBlocking,
+                hblockingLifecycle, hcurrent]
+            · intro hready
+              apply holdNotReady
+              have hready' : subject ∈ state.blockingIPC.scheduler.ready.filter
+                  (· != faulting) := by
+                simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking, ResumablePreemption.cleanupSubject,
+                hresumableBlocking] using hready
+              exact (List.mem_filter.mp hready').1
+          · intro first second subject hfirst hsecond
+            apply hunique first second subject
+            · have hold := hfirst
+              simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking] at hold
+              exact hold.1
+            · have hold := hsecond
+              simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking] at hold
+              exact hold.1
+          · intro endpoint subject
+            simp only [publishInterruptCleanup, CompositeState.blockingIPCContext,
+              BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+              hterminate, hterminatedBlocking, List.mem_filter]
+            constructor
+            · rintro ⟨hmember, hkeep⟩
+              have hindexed := (hindex endpoint subject).mp hmember
+              simp [hindexed, hkeep]
+            · intro hindexed
+              cases hold : state.blockingIPC.waiterEndpoint subject with
+              | none => simp [hold] at hindexed
+              | some actual =>
+                  by_cases hlive :
+                      (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.objects
+                        actual = true
+                  · simp [hold, hlive] at hindexed
+                    subst actual
+                    exact ⟨(hindex endpoint subject).mpr hold, hlive⟩
+                  · simp [hold, hlive] at hindexed
+          · intro endpoint envelope hmail
+            by_cases hkeep :
+                (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.objects
+                  endpoint = true
+            · have holdMail : state.blockingIPC.mailbox endpoint = some envelope := by
+                simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                  hterminate, hterminatedBlocking, hkeep] using hmail
+              rcases hmailbox endpoint envelope holdMail with ⟨_, hkind, hend, hempty⟩
+              refine ⟨hkeep, ?_, hend, ?_⟩
+              · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                    hterminate, hterminatedBlocking] using
+                  ResumablePreemption.cleanup_live_object_preserves_kind
+                    state.resumable faulting endpoint .endpoint hkeep
+                    (by simpa [hresumableBlocking] using hkind)
+              · simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                  hterminate, hterminatedBlocking, hkeep, hempty]
+            · simp [publishInterruptCleanup, CompositeState.blockingIPCContext, hkeep] at hmail
+          · have hcleanupVirtual := hcleanup.2.2.2.2.2.2.2.1
+            have hcapabilityCleanup : Capability.WellFormed
+                (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities := by
+              rw [← hcleanupVirtual.1]
+              exact hcleanupVirtual.2.2.1
+            simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking] using hcapabilityCleanup
+        · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext] using
+            publishInterruptCleanup_preserves_contextAgreement
+              state faulting hcontextAgreement
+      · constructor
+        · intro subject hblocked
+          cases hendpoint : state.blockingIPC.waiterEndpoint subject with
+          | none =>
+              simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking, hendpoint] at hblocked
+          | some endpoint =>
+              have hsubjectNe : subject ≠ faulting := by
+                intro heq
+                subst subject
+                rw [hwaiterSelf] at hendpoint
+                contradiction
+              by_cases hkeep :
+                  (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.objects
+                    endpoint = true
+              · have holdBlocked : (state.blockingContexts subject).isSome = true := by
+                  simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                    BlockingIPCContext.setBlocked, hterminate, hterminatedBlocking,
+                    hendpoint, hsubjectNe, hkeep] using hblocked
+                have holdNone := hblockedDisjoint subject (by
+                  simpa [CompositeState.blockingIPCContext] using holdBlocked)
+                simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                  BlockingIPCContext.setBlocked, hterminate, hterminatedBlocking,
+                  hendpoint, hsubjectNe, hkeep] using holdNone
+              · simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                  BlockingIPCContext.setBlocked, hterminate, hterminatedBlocking,
+                  hendpoint, hsubjectNe, hkeep] at hblocked
+        · intro subject saved hretained
+          cases hendpoint : state.blockingIPC.waiterEndpoint subject with
+          | none =>
+              have holdRetained : state.deferredCancels.retained subject = some saved := by
+                simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                  hterminate, hterminatedBlocking, hendpoint] using hretained
+              rcases hretainedWellFormed subject saved holdRetained with
+                ⟨hvalid, _, hlive, hrunnable, hnotCurrent, hnotReady, howns⟩
+              simp only [CompositeState.blockingIPCContext] at hlive hrunnable hnotCurrent
+              simp only [CompositeState.blockingIPCContext] at hnotReady howns
+              have hsubjectNe : subject ≠ faulting := by
+                intro heq
+                subst subject
+                apply hnotCurrent
+                rw [hblockingLifecycle]
+                exact hcurrent
+              have hquiescent := cleanup_preserves_quiescent subject hsubjectNe
+                hlive hrunnable hnotReady howns
+              refine ⟨hvalid, ?_, ?_, ?_, ?_, ?_, ?_⟩
+              · simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                  hterminate, hterminatedBlocking, hendpoint]
+              · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated] using hquiescent.1
+              · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated] using hquiescent.2.1
+              · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated] using hquiescent.2.2.1
+              · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated] using hquiescent.2.2.2.1
+              · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated] using hquiescent.2.2.2.2
+          | some endpoint =>
+              have hsubjectNe : subject ≠ faulting := by
+                intro heq
+                subst subject
+                rw [hwaiterSelf] at hendpoint
+                contradiction
+              by_cases hkeep :
+                  (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.objects
+                    endpoint = true
+              · have hblockedSome : (state.blockingContexts subject).isSome = true := by
+                  have hagreement := hcontextAgreement.1 subject
+                  simpa [CompositeState.blockingIPCContext, hendpoint] using hagreement
+                have hnone := hblockedDisjoint subject (by
+                  simpa [CompositeState.blockingIPCContext] using hblockedSome)
+                have : state.deferredCancels.retained subject = some saved := by
+                  simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                    BlockingIPCContext.setBlocked, hterminate, hterminatedBlocking,
+                    hendpoint, hsubjectNe, hkeep] using hretained
+                rw [hnone] at this
+                contradiction
+              · have hblocked : state.blockingContexts subject = some saved := by
+                  simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                    BlockingIPCContext.setBlocked, hterminate, hterminatedBlocking,
+                    hendpoint, hsubjectNe, hkeep] using hretained
+                have hvalid := hcontextAgreement.2 subject saved (by
+                  simpa [CompositeState.blockingIPCContext] using hblocked)
+                have hmember := (hipcWellFormed.2.2.2.2.1 endpoint subject).mpr (by
+                  simpa [CompositeState.blockingIPCContext] using hendpoint)
+                rcases hipcWellFormed.2.2.1 endpoint subject hmember with
+                  ⟨_, _, hlive, hrunnable, hownsSome, _, hnotReady⟩
+                simp only [CompositeState.blockingIPCContext] at hlive hrunnable
+                simp only [CompositeState.blockingIPCContext] at hownsSome hnotReady
+                have howns :
+                    Scheduler.ownsAddressSpace state.blockingIPC.scheduler subject =
+                      some subject := by
+                  unfold Scheduler.ownsAddressSpace at hownsSome
+                  split at hownsSome
+                  · rename_i haddress
+                    simp [Scheduler.ownsAddressSpace, haddress]
+                  · contradiction
+                have hquiescent := cleanup_preserves_quiescent subject hsubjectNe
+                  hlive hrunnable hnotReady howns
+                refine ⟨hvalid, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                · simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                    hterminate, hterminatedBlocking, hendpoint, hsubjectNe, hkeep]
+                · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated] using hquiescent.1
+                · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated] using hquiescent.2.1
+                · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated] using hquiescent.2.2.1
+                · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated] using hquiescent.2.2.2.1
+                · simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                    BlockingIPCContext.detachInvalidated] using hquiescent.2.2.2.2
+    · constructor
+      · intro subject saved hblocked
+        cases hendpoint : state.blockingIPC.waiterEndpoint subject with
+        | none =>
+            simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+              BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+              hterminate, hterminatedBlocking, hendpoint] at hblocked
+        | some endpoint =>
+            have hsubjectNe : subject ≠ faulting := by
+              intro heq
+              subst subject
+              rw [hwaiterSelf] at hendpoint
+              contradiction
+            by_cases hkeep :
+                (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.objects
+                  endpoint = true
+            · have holdBlocked : state.blockingContexts subject = some saved := by
+                simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                  BlockingIPCContext.setBlocked, hterminate, hterminatedBlocking,
+                  hendpoint, hsubjectNe, hkeep] using hblocked
+              have holdAbsent := hblockedResumableDisjoint subject saved holdBlocked
+              simpa [publishInterruptCleanup, installTerminatedResumable,
+                CompositeState.blockingIPCContext] using
+                cleanup_context_absent subject holdAbsent
+            · simp [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                BlockingIPCContext.setBlocked, hterminate, hterminatedBlocking,
+                hendpoint, hsubjectNe, hkeep] at hblocked
+      · intro subject saved hretained
+        cases hendpoint : state.blockingIPC.waiterEndpoint subject with
+        | none =>
+            have holdRetained : state.deferredCancels.retained subject = some saved := by
+              simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                hterminate, hterminatedBlocking, hendpoint] using hretained
+            have holdAbsent := hresumableDisjoint subject saved holdRetained
+            simpa [publishInterruptCleanup, installTerminatedResumable,
+              CompositeState.blockingIPCContext] using
+              cleanup_context_absent subject holdAbsent
+        | some endpoint =>
+            have hsubjectNe : subject ≠ faulting := by
+              intro heq
+              subst subject
+              rw [hwaiterSelf] at hendpoint
+              contradiction
+            by_cases hkeep :
+                (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler.lifecycle.capabilities.objects
+                  endpoint = true
+            · have hblockedSome : (state.blockingContexts subject).isSome = true := by
+                have hagreement := hcontextAgreement.1 subject
+                simpa [CompositeState.blockingIPCContext, hendpoint] using hagreement
+              have hnone := hblockedDisjoint subject (by
+                simpa [CompositeState.blockingIPCContext] using hblockedSome)
+              have holdRetained : state.deferredCancels.retained subject = some saved := by
+                simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                  BlockingIPCContext.setBlocked, hterminate, hterminatedBlocking,
+                  hendpoint, hsubjectNe, hkeep] using hretained
+              rw [hnone] at holdRetained
+              contradiction
+            · have holdBlocked : state.blockingContexts subject = some saved := by
+                simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+                  BlockingIPCContext.detachInvalidated, BlockingIPCContext.terminate,
+                  BlockingIPCContext.setBlocked, hterminate, hterminatedBlocking,
+                  hendpoint, hsubjectNe, hkeep] using hretained
+              have holdAbsent := hblockedResumableDisjoint subject saved holdBlocked
+              simpa [publishInterruptCleanup, installTerminatedResumable,
+                CompositeState.blockingIPCContext] using
+                cleanup_context_absent subject holdAbsent
+
+/-- The identity binding makes the faulting subject's retained slot
+uninhabited after cleanup.  Without the binding, the pre-state deferred
+invariant permits exactly the stale quiescent identity that motivated this
+contained-entry premise. -/
+theorem interrupt_contained_clears_faulting_deferred
+    state frame faulting
+    (hstate : DeferredBlockingRuntimeWellFormed state)
+    (hbound : ContainedFaultIdentityBound state)
+    (hcontained : (dispatchHardware state.execution frame).action = .contained faulting) :
+    (applyOperation state (.interrupt frame)).deferredCancels.retained faulting = none := by
+  have hpost := interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
+    state frame faulting hstate hbound hcontained
+  cases hretained :
+      (applyOperation state (.interrupt frame)).deferredCancels.retained faulting with
+  | none => rfl
+  | some saved =>
+      have hlive := hpost.2.1.2.2 faulting saved hretained
+      have hdead := ResumablePreemption.cleanup_terminates_subject
+        state.resumable faulting
+      have hdeadLifecycle :
+          (applyOperation state (.interrupt frame)).lifecycle.capabilities.subjects
+            faulting = false := by
+        simpa [applyOperation, hcontained, publishInterruptCleanup,
+          installTerminatedResumable] using hdead
+      have :
+          (applyOperation state (.interrupt frame)).blockingIPCContext.ipc.scheduler.lifecycle.capabilities.subjects
+            faulting = false := by
+        rw [show
+          (applyOperation state (.interrupt frame)).blockingIPCContext.ipc.scheduler.lifecycle =
+            (applyOperation state (.interrupt frame)).lifecycle by
+          exact hpost.1.blockingLifecycle]
+        exact hdeadLifecycle
+      have hlive' := hlive.2.2.1
+      rw [this] at hlive'
+      contradiction
 
 /-- Exact pointwise contained-fault cleanup law, including validity, peer
 quiescence, and its remaining address-space authority. -/
@@ -11344,22 +11990,26 @@ theorem runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellForm
           state subject hstate)
 
 /-- A contained interrupt and its capacity-checked deferred-cancellation
-continuation form one public mixed trace.  The explicit post-cleanup premise
-keeps the remaining proof obligation honest: once contained cleanup is known
-to establish `DeferredBlockingRuntimeWellFormed`, every finite drain suffix is
-carried by the execution-latched authoritative gate without rebuilding any
-waiter, saved-context, or resumable-bank facts between steps. -/
+continuation form one public mixed trace.  The trusted execution/lifecycle
+binding establishes the cleanup post-state directly, after which every finite
+drain suffix is carried by the execution-latched authoritative gate without
+rebuilding waiter, saved-context, or resumable-bank facts between steps. -/
 theorem runAuthoritativeContainedInterruptThenDeferredDrains_preserves
     state frame faulting (subjects : List BlockingIPC.SubjectId)
-    (hmode : state.execution.mode = .running)
-    (hcontained : (dispatchHardware state.execution frame).action = .contained faulting)
-    (hcleaned : DeferredBlockingRuntimeWellFormed
-      (applyOperation state (.interrupt frame))) :
+    (hstate : DeferredBlockingRuntimeWellFormed state)
+    (hbound : ContainedFaultIdentityBound state)
+    (hcontained : (dispatchHardware state.execution frame).action = .contained faulting) :
     DeferredBlockingRuntimeWellFormed
       (runAuthoritativeOperations state
         (.ordinary (.interrupt frame) ::
           subjects.map AuthoritativeOperation.drainDeferred)) := by
-  have _hcontained := hcontained
+  have hmode : state.execution.mode = .running := by
+    cases hmode : state.execution.mode with
+    | handling active => simp [dispatchHardware, hmode, halt] at hcontained
+    | halted record => simp [dispatchHardware, hmode] at hcontained
+    | running => rfl
+  have hcleaned := interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
+    state frame faulting hstate hbound hcontained
   simp only [runAuthoritativeOperations]
   have hgate :
       (authoritativeGate state (.ordinary (.interrupt frame))).state =
