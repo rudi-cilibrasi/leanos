@@ -77,6 +77,16 @@ whole-buffer query, fixture query, and legacy scalar allocation-check export.
 This is sole-transport-boundary evidence for the focused artifact, not yet a
 claim about the production boot image's physical-memory reader.
 
+The production image now retains those same two generated exports.  Its
+physical-memory TCB reads the already bounded, aligned information extent in
+eight-byte chunks, replays each pure transition for all state/result words,
+and copies only the exact chunk exposed by an accepted transition into a
+64-KiB aligned static buffer.  The parser reads that immutable boot-lifetime
+copy rather than rereading physical handoff memory.  Every image variant
+requires the generated init/step symbols in the final ELF.  This establishes
+the production copy/ownership and exact stream-continuity checkpoint; it does
+not yet make transport completion allocator authority.
+
 `BootMemoryMapStreamPipeline` now supplies the proof-side composition contract
 for the next production step. A rich decoder input exists only after exact
 model replay completes at the bound extent, and its byte list is proved equal
@@ -97,10 +107,12 @@ This checkpoint does not claim that the scalar freestanding export itself
 stores or parses the emitted bytes, that the proof-side rich composition is
 reachable in the production ELF, that the continuity chain authenticates
 bytes, or that the final binary refines Lean. The existing version-one decoder
-corpus remains the hosted complete typed projection test. Production must not
-grant allocator or scrub/publication authority from version-two transport
-completion alone; it must implement this exact composition without restoring a
-C tag walker or shadow classifier.
+corpus remains the hosted complete typed projection test. The production image
+still has the legacy C tag walker/classifier after the generated immutable-copy
+boundary, so stream completion alone does not grant allocator or
+scrub/publication authority and issue #173 remains open. The next integration
+must implement the exact rich composition and remove that walker rather than
+turning it into a shadow policy.
 
 No trusted declaration, foreign primitive, runtime shim, or other TCB entry is
 added by this slice. The proof-side composition uses only existing executable

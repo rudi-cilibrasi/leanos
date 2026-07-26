@@ -25,6 +25,11 @@ extern uint64_t leanos_resumable_preemption_demo(uint64_t, uint64_t, uint64_t,
                                                   uint64_t, uint64_t);
 extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t,
                                              uint64_t, uint64_t);
+extern uint64_t leanos_boot_handoff_stream_init(uint64_t, uint64_t, uint64_t,
+                                                uint64_t, uint64_t);
+extern uint64_t leanos_boot_handoff_stream_step(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t,
                                         uint64_t, uint64_t);
 extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t,
@@ -143,6 +148,11 @@ struct __attribute__((packed)) mb2_mmap_entry {
 };
 
 static uint8_t boot_frames[BOOT_ACCESSIBLE_LIMIT / PAGE_BYTES];
+/* Written once during bounded boot ingestion, then treated as immutable by
+   the parser.  Only chunks exposed by the generated stream transition enter
+   this copy. */
+static uint8_t boot_handoff_copy[MAX_HANDOFF_BYTES]
+    __attribute__((aligned(8)));
 static volatile uint64_t published_boot_object;
 
 struct __attribute__((packed)) idt_entry {
@@ -891,6 +901,83 @@ static __attribute__((noreturn)) void handoff_fail(const char *reason) {
     serial_putc('\n'); finish(0x11);
 }
 
+struct boot_handoff_stream_state {
+    uint64_t version, status, error, identity, extent, offset, chain;
+};
+
+static uint64_t handoff_stream_init_query(uint32_t magic, uint32_t info_address,
+                                          uint32_t total, uint64_t query) {
+    return leanos_boot_handoff_stream_init(
+        magic, info_address, total, info_address, query);
+}
+
+static uint64_t handoff_stream_step_query(
+        const struct boot_handoff_stream_state *state, uint32_t info_address,
+        uint64_t offset, uint64_t chunk, uint64_t terminal, uint64_t query) {
+    return leanos_boot_handoff_stream_step(
+        state->version, state->status, state->error, state->identity,
+        state->extent, state->offset, state->chain, info_address, offset, 8,
+        chunk, terminal, query);
+}
+
+/* Physical memory access is the explicit TCB boundary.  The generated scalar
+   transition binds every accepted eight-byte chunk to one aligned identity
+   and extent, enforces exact offsets and terminal state, and exposes the word
+   copied below only on success. */
+static const uint8_t *copy_boot_handoff(uint32_t magic, uint32_t info_address,
+                                        uint32_t total) {
+    const uint8_t *physical = (const uint8_t *)(uint64_t)info_address;
+    struct boot_handoff_stream_state state = {
+        handoff_stream_init_query(magic, info_address, total, 0),
+        handoff_stream_init_query(magic, info_address, total, 1),
+        handoff_stream_init_query(magic, info_address, total, 2),
+        handoff_stream_init_query(magic, info_address, total, 3),
+        handoff_stream_init_query(magic, info_address, total, 4),
+        handoff_stream_init_query(magic, info_address, total, 5),
+        handoff_stream_init_query(magic, info_address, total, 6)
+    };
+    if (state.version != 2 || state.status != 0 || state.error != 0 ||
+        state.identity != info_address || state.extent != total ||
+        state.offset != 0)
+        handoff_fail("stream-init");
+
+    for (uint64_t offset = 0; offset < total; offset += 8) {
+        uint64_t physical_chunk = *(const uint64_t *)(physical + offset);
+        uint64_t terminal = offset + 8 == total;
+        struct boot_handoff_stream_state next = {
+            handoff_stream_step_query(
+                &state, info_address, offset, physical_chunk, terminal, 0),
+            handoff_stream_step_query(
+                &state, info_address, offset, physical_chunk, terminal, 1),
+            handoff_stream_step_query(
+                &state, info_address, offset, physical_chunk, terminal, 2),
+            handoff_stream_step_query(
+                &state, info_address, offset, physical_chunk, terminal, 3),
+            handoff_stream_step_query(
+                &state, info_address, offset, physical_chunk, terminal, 4),
+            handoff_stream_step_query(
+                &state, info_address, offset, physical_chunk, terminal, 5),
+            handoff_stream_step_query(
+                &state, info_address, offset, physical_chunk, terminal, 6)
+        };
+        uint64_t exposed = handoff_stream_step_query(
+            &state, info_address, offset, physical_chunk, terminal, 7);
+        uint64_t exposed_count = handoff_stream_step_query(
+            &state, info_address, offset, physical_chunk, terminal, 8);
+        if (next.version != 2 || next.error != 0 ||
+            next.identity != info_address || next.extent != total ||
+            next.offset != offset + 8 || exposed_count != 8 ||
+            exposed != physical_chunk ||
+            next.status != (terminal ? 1u : 0u))
+            handoff_fail("stream-step");
+        *(uint64_t *)(boot_handoff_copy + offset) = exposed;
+        state = next;
+    }
+    if (state.status != 1 || state.offset != total)
+        handoff_fail("stream-incomplete");
+    return boot_handoff_copy;
+}
+
 static void reserve_byte_range(uint64_t start, uint64_t stop) {
     uint64_t first = start / PAGE_BYTES;
     uint64_t last = (stop + PAGE_BYTES - 1) / PAGE_BYTES;
@@ -898,16 +985,17 @@ static void reserve_byte_range(uint64_t start, uint64_t stop) {
     for (uint64_t frame = first; frame < last; ++frame) boot_frames[frame] = 2;
 }
 
-/* Bounded, allocation-free Multiboot2 glue. Its correspondence to the Lean
-   evidence adapter is tested, but the byte loads themselves remain in the TCB. */
+/* Bounded Multiboot2 glue over the immutable generated-stream copy.  Tag
+   walking and classification remain the next replacement checkpoint. */
 static void boot_allocate(uint32_t magic, uint32_t info_address) {
     if (magic != MULTIBOOT2_RUNTIME_MAGIC) handoff_fail("magic");
     if ((info_address & 7u) != 0 || info_address < PAGE_BYTES ||
         info_address >= BOOT_ACCESSIBLE_LIMIT) handoff_fail("pointer");
-    const uint8_t *info = (const uint8_t *)(uint64_t)info_address;
-    uint32_t total = *(const uint32_t *)info;
+    const uint8_t *physical = (const uint8_t *)(uint64_t)info_address;
+    uint32_t total = *(const uint32_t *)physical;
     if (total < 16 || total > MAX_HANDOFF_BYTES || (total & 7u) != 0 ||
         total > BOOT_ACCESSIBLE_LIMIT - info_address) handoff_fail("bounds");
+    const uint8_t *info = copy_boot_handoff(magic, info_address, total);
 
     uint32_t offset = 8, entries = 0, entry_size = 0;
     uint64_t highest_end = 0; unsigned saw_map = 0, saw_end = 0;

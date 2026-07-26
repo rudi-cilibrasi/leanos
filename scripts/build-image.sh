@@ -128,6 +128,8 @@ lake env lean --c="$build/Syscall.c" LeanOS/Syscall.lean
 lake env lean --c="$build/IPCSyscall.c" LeanOS/IPCSyscall.lean
 lake env lean --c="$build/Preemption.c" LeanOS/Preemption.lean
 lake env lean --c="$build/BootAllocation.c" LeanOS/BootAllocation.lean
+lake env lean --c="$build/BootMemoryMapStreaming.c" \
+  LeanOS/BootMemoryMapStreaming.lean
 lake env lean --c="$build/Interrupt.c" LeanOS/Interrupt.lean
 lake env lean --c="$build/InterruptEntry.c" LeanOS/InterruptEntry.lean
 lake env lean --c="$build/BlockingIPC.c" LeanOS/BlockingIPC.lean
@@ -154,6 +156,15 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -o "$build/Preemption.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/BootAllocation.c" \
   -o "$build/BootAllocation.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
+  -c "$build/BootMemoryMapStreaming.c" \
+  -o "$build/BootMemoryMapStreaming.o"
+# All existing image variants link BootAllocation.o.  Combine the generated
+# stream transport into that reviewed object so no variant can accidentally
+# retain the old allocation adapter without the bounded handoff-copy boundary.
+ld -r "$build/BootAllocation.o" "$build/BootMemoryMapStreaming.o" \
+  -o "$build/BootAllocationAndHandoffStream.o"
+mv "$build/BootAllocationAndHandoffStream.o" "$build/BootAllocation.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Interrupt.c" \
   -o "$build/Interrupt.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/InterruptEntry.c" \
@@ -1008,6 +1019,12 @@ if ! grep -q ' T leanos_boot_allocation_check$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_boot_allocation_check" >&2
   exit 1
 fi
+for symbol in leanos_boot_handoff_stream_init leanos_boot_handoff_stream_step; do
+  if ! grep -q " T ${symbol}$" <<<"$symbols"; then
+    echo "error: generated image does not retain $symbol" >&2
+    exit 1
+  fi
+done
 if ! grep -q ' T leanos_user_return_demo$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_user_return_demo" >&2
   exit 1
