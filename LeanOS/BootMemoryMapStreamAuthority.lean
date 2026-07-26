@@ -220,35 +220,35 @@ def stepWord (version status error identity extent offset chain phase content pa
   else if query == 18 then ntagCount
   else 0
 
-private def validRange (start length : UInt64) : Bool :=
+def validRange (start length : UInt64) : Bool :=
   length != 0 && length <= 0xffffffffffffffff - start
 
-private def physicalByteLimit : UInt64 :=
+def physicalByteLimit : UInt64 :=
   UInt64.ofNat LeanOS.BootMemoryMap.physicalLimit
 
-private def withinPhysicalLimit (start length : UInt64) : Bool :=
+def withinPhysicalLimit (start length : UInt64) : Bool :=
   validRange start length && start + length <= physicalByteLimit
 
-private def contained (outerStart outerLength start length : UInt64) : Bool :=
+def contained (outerStart outerLength start length : UInt64) : Bool :=
   validRange outerStart outerLength && validRange start length &&
     outerStart <= start && start + length <= outerStart + outerLength
 
 private def reserved (frame start length : UInt64) : Bool :=
   overlap start (start + length) (frameFirst frame) (framePast frame)
 
-private def roundedFirst (start : UInt64) : UInt64 :=
+def roundedFirst (start : UInt64) : UInt64 :=
   start / 4096
 
-private def roundedPast (start length : UInt64) : UInt64 :=
+def roundedPast (start length : UInt64) : UInt64 :=
   let stop := start + length
   stop / 4096 + if stop % 4096 == 0 then 0 else 1
 
-private def roundedDisjoint
+def roundedDisjoint
     (leftStart leftLength rightStart rightLength : UInt64) : Bool :=
   roundedPast leftStart leftLength <= roundedFirst rightStart ||
     roundedPast rightStart rightLength <= roundedFirst leftStart
 
-private def manifestValid
+def manifestValid
     (lowStart lowLength imageStart imageLength pageStart pageLength
     descriptorStart descriptorLength stacksStart stacksLength
     guardStart guardLength entryStart entryLength usersStart usersLength
