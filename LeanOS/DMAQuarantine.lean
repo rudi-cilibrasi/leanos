@@ -101,9 +101,11 @@ def encodeSlots : Nat → List FunctionState → List UInt64
   | slots + 1, [] => emptySlot ++ encodeSlots slots []
   | slots + 1, function :: rest => encodeFunction function ++ encodeSlots slots rest
 
-/-- Canonical fixed-width state-corpus encoding: two version words followed by
-exactly sixteen thirteen-word function slots.  Oversized snapshots have no
-encoding rather than being silently truncated. -/
+/-- Fixed-width typed serialization: two version words followed by exactly
+sixteen thirteen-word function slots.  Oversized snapshots have no encoding
+rather than being silently truncated.  This function deliberately does not
+validate field tags, manifest accounting, versions, or quarantine; a future
+#105 decoder owns canonical byte-level decoding for the composite state. -/
 def encodeSnapshot (snapshot : Snapshot) : Option (List UInt64) :=
   if snapshot.functions.length ≤ maxFunctions then
     some ([snapshot.version, snapshot.topologyVersion] ++
@@ -337,16 +339,33 @@ structure MemoryProjection where
   kernelState : Nat → UInt64
   subjectVisible : Nat → Nat → UInt8
 
+structure DeviceReadObservation where
+  observedByte : UInt8
+  deriving BEq, DecidableEq, Repr
+
 /-- Trusted hardware rule: any device-originated change by the named function
 requires that function to be present with its observed PCI Command bus-master
 bit enabled. Assignment is kernel policy, not a hardware precondition for DMA;
-acceptance separately proves that every present function is unassigned. This
-is an assumption about the modeled device, not a theorem about PCI/QEMU. -/
+acceptance separately proves that every present function is unassigned.
+This integrity-only assumption constrains memory mutation, not bytes a device
+may read, device-read confidentiality, IOMMU translation, or real PCI/QEMU
+behavior. -/
 def DeviceContract (snapshot : Snapshot) (target : BDF)
     (before after : MemoryProjection) : Prop :=
   before ≠ after → ∃ function ∈ snapshot.functions,
     function.bdf = target ∧ function.status = .present ∧
       busMasterEnabled function = true
+
+/-- The integrity contract is compatible with distinct modeled device-read
+observations.  No confidentiality conclusion follows from `DeviceContract`. -/
+theorem device_contract_allows_distinct_reads snapshot target memory :
+    DeviceContract snapshot target memory memory ∧
+      ({ observedByte := 0 } : DeviceReadObservation) ≠
+        ({ observedByte := 1 } : DeviceReadObservation) := by
+  constructor
+  · intro hchanged
+    exact (hchanged rfl).elim
+  · decide
 
 /-- An unowned function in an accepted, nonempty quarantine cannot change any
 part of the complete modeled memory projection. -/
@@ -695,6 +714,12 @@ def q35Runtime : RuntimeState :=
   ⟨q35Accepted, q35Snapshot, zeroMemoryProjection, .running⟩
 
 example : (validate q35Snapshot).isAccepted = true := by native_decide
+/-- Serialization is defined for a bounded typed snapshot even when semantic
+validation rejects it.  Encoding success is not acceptance or #105 decoding. -/
+theorem stale_snapshot_serializes_but_rejects :
+    (encodeSnapshot { q35Snapshot with version := 0 }).isSome = true ∧
+      (validate { q35Snapshot with version := 0 }).isAccepted = false := by
+  native_decide
 example : encodeValidationResult (validate q35Snapshot) = [0] := by native_decide
 example : encodeValidationResult (validate { q35Snapshot with version := 0 }) = [1] := by
   native_decide

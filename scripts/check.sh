@@ -255,7 +255,7 @@ if ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
 fi
 
 for fixture in DMAWeakenedBusMaster DMADroppedFunction DMARuntimeEnable DMATraceMutation \
-    DMAGlobalControlMutation; do
+    DMAGlobalControlMutation DMADeviceReadConfidentiality DMAEncodingImpliesValidation; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: DMA quarantine fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
