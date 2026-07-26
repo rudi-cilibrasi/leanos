@@ -72,9 +72,9 @@ profile, and one live-plan agreement at the fault page:
   lifecycle mappings;
 - a supervisor planned leaf must not be shadowed by either mapping projection;
   and
-- a user leaf must equal the current live memory-object binding, allocator
-  owner, lifecycle mapping, lifecycle object/frame binding, frame owner/free
-  status, read permission, and writable bit.
+- a user leaf must name an issued current memory object and equal its live
+  binding, allocator owner, lifecycle mapping, lifecycle object/frame binding,
+  frame owner/free status, read permission, and writable bit.
 
 The exact matching TLB key/context must be absent and the bounded cache must
 remain within capacity. This names the single-core completed-invalidation
@@ -113,12 +113,16 @@ bindings byte-for-byte, and
 all four admitted denial classes, empty and multiple-survivor queues, plus
 mismatched error, reserved error, kernel origin, forged address space, wrong
 root, stale virtual or lifecycle mapping, incoherent-TLB, reserved-bit live
-leaf, out-of-range live frame, and malformed live-ancestor fatal results.
+leaf, out-of-range live frame, malformed live-ancestor, and unissued mapped
+object fatal results.
 Proof-integrity fixtures reject accepting every present error, ignoring the
 active walk, containing a reserved-bit fault, allowing a snapshot to substitute
 another address space, containing a corrupt live-table report, or containing a
 non-present fault while the lifecycle
-still carries the concrete stale page-50/object-999 mapping.
+still carries the concrete stale page-50/object-999 mapping. A separate
+concrete fixture clears object 100's monotonic issuance bit while retaining all
+of its mapping, capability, binding, allocator, and lifecycle projections; the
+agreement gate must classify that stale-generation state as fatal.
 
 This independently correct slice does not change the public input type of the
 older shared `dispatch` function because #104 is concurrently making the one

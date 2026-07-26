@@ -214,7 +214,8 @@ def livePlanAgreement (state : ResumablePreemption.State)
         match virtual.memory.binding mapping.object with
         | none => false
         | some frame =>
-            virtual.memory.capabilities.objects mapping.object &&
+            virtual.memory.issued mapping.object &&
+              virtual.memory.capabilities.objects mapping.object &&
               virtual.memory.capabilities.kinds mapping.object = some .memory &&
               lifecycle.capabilities.objects mapping.object &&
               lifecycle.capabilities.kinds mapping.object = some .memory &&
@@ -2061,6 +2062,30 @@ private def pageFaultMappedState (page : Nat) (writable : Bool) :
                 some { object, permissions := { read := true, write := writable } }
               else base.translations.virtual.mappings space candidatePage } } }
 
+/-- Concrete stale-generation counterexample: every mapped-object projection
+still names object 100, but its monotonic issuance bit has been cleared. -/
+def pageFaultAgreementUnissuedObjectState : ResumablePreemption.State :=
+  let base := pageFaultMappedState 100 false
+  { base with
+    translations :=
+      { base.translations with
+        virtual :=
+          { base.translations.virtual with
+            memory :=
+              { base.translations.virtual.memory with
+                issued := fun candidate =>
+                  if candidate = 100 then false
+                  else base.translations.virtual.memory.issued candidate } } } }
+
+def pageFaultAgreementUnissuedObjectOutcome : Outcome :=
+  samplePlanDispatch pageFaultAgreementUnissuedObjectState
+    (pageFaultRecord 7 100)
+
+def pageFaultAgreementUnissuedObjectContained : Bool :=
+  match pageFaultAgreementUnissuedObjectOutcome.action with
+  | .idle .pageFault | .dispatch .pageFault _ => true
+  | _ => false
+
 def pageFaultReservedLiveTableOutcome : Outcome :=
   samplePlanDispatchWithReport (pageFaultMappedState 100 false)
     (pageFaultRecord 7 100)
@@ -2232,6 +2257,11 @@ theorem page_fault_stale_lifecycle_mapping_is_fatal :
       pageFaultAgreementStaleLifecycleState
       (pageFaultAgreementWitnessRecord 4 50)).action =
         .fatal (.pageFaultIntegrity .staleMapping) := by
+  native_decide
+
+theorem page_fault_unissued_object_mapping_is_fatal :
+    pageFaultAgreementUnissuedObjectOutcome.action =
+      .fatal (.pageFaultIntegrity .staleMapping) := by
   native_decide
 
 private def incoherentPageFaultState : ResumablePreemption.State :=
