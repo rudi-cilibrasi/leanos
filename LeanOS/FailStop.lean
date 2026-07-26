@@ -4669,14 +4669,25 @@ private def installTerminatedResumable (state : CompositeState)
     transfers
     blockingIPC := { state.blockingIPC with scheduler := resumable.scheduler } }
 
-/-- Publish one explicit subject termination through both authoritative cleanup
-stores.  The blocking transition runs against the live pre-state, so it can
-remove the exact waiter/context pair before the resumable/resource publisher
-installs the same terminated lifecycle everywhere else. -/
+/-- Publish one explicit subject termination through every authoritative
+cleanup store.  The blocking transition runs against the live pre-state, so it
+can remove the exact waiter/context pair before the resumable/resource
+publisher installs the same terminated lifecycle everywhere else.  A
+quiescent context retained by contained cleanup is also retired here: a dead
+subject must not remain eligible for a later deferred-cancellation drain. -/
 private def installTerminatedSubject (state : CompositeState)
     (subject : BlockingIPC.SubjectId)
     (resumable : ResumablePreemption.State) : CompositeState :=
-  installTerminatedResumable (publishTerminatedBlockingSubject state subject) resumable
+  let cleaned :=
+    installTerminatedResumable (publishTerminatedBlockingSubject state subject) resumable
+  { cleaned with
+    deferredCancels :=
+      BlockingIPCContext.setRetained cleaned.deferredCancels subject none }
+
+@[simp] private theorem installTerminatedSubject_deferred_self state subject resumable :
+    (installTerminatedSubject state subject resumable).deferredCancels.retained subject =
+      none := by
+  simp [installTerminatedSubject, BlockingIPCContext.setRetained]
 
 /-- Publish interrupt-driven subject cleanup through the same authoritative
 resumable/resource path as explicit termination, then close the kernel copy
@@ -6923,6 +6934,25 @@ theorem gate_terminateCurrent_accepted_sound state context next
       · refine ⟨subject, rfl, ?_⟩
         simp [gate, hmode, applyOperation, haccepted, hcurrent]
 
+/-- The scheduler-selected spelling reaches the same authoritative deferred
+cleanup as explicit termination.  In particular, its accepted post-state
+cannot retain a drainable saved context for the selected dead subject. -/
+theorem gate_terminateCurrent_accepted_cleans_deferred state context next
+    (hmode : state.execution.mode = .running)
+    (haccepted : Scheduler.terminateCurrent state.scheduler =
+      { state := next, result := .accepted context })
+    (hwellFormed : Scheduler.WellFormed state.scheduler) :
+    (gate state .terminateCurrent).result =
+        .completed (.scheduler (.accepted context)) ∧
+      ∃ subject, state.scheduler.lifecycle.current = some subject ∧
+        (gate state .terminateCurrent).state.deferredCancels.retained subject = none := by
+  obtain ⟨hresult, subject, hcurrent, hstate⟩ :=
+    gate_terminateCurrent_accepted_sound state context next hmode haccepted hwellFormed
+  refine ⟨hresult, subject, hcurrent, ?_⟩
+  rw [hstate]
+  exact installTerminatedSubject_deferred_self state subject
+    (ResumablePreemption.cleanupSubject state.resumable subject)
+
 /-- Accepted capability copying publishes the exact fresh capability state to
 every consumer.  The composite reply cannot report success while lifecycle,
 IPC, scheduler, mapping, or saved-context projections retain the old registry. -/
@@ -8666,8 +8696,8 @@ that retires the subject identity. -/
 
 /-- Typed acceptance of subject termination exposes the cleanup facts needed
 by every future operation-family preservation proof: the subject is dead,
-cannot remain current or queued, has no resumable context, and no in-flight
-sealed descendant survives the lifecycle teardown. -/
+cannot remain current or queued, has no blocking, resumable, or deferred
+context, and no in-flight sealed descendant survives the lifecycle teardown. -/
 theorem terminateSubject_accepted_cleans_runtime_references state subject lifecycle
     (hstate : RuntimeWellFormed state)
     (hmode : state.execution.mode = .running)
@@ -8684,6 +8714,7 @@ theorem terminateSubject_accepted_cleans_runtime_references state subject lifecy
           (gate state (.terminateSubject subject)).state.resumable.contexts subject = none ∧
       (gate state (.terminateSubject subject)).state.blockingIPC.waiterEndpoint subject = none ∧
       (gate state (.terminateSubject subject)).state.blockingContexts subject = none ∧
+      (gate state (.terminateSubject subject)).state.deferredCancels.retained subject = none ∧
       (∀ endpoint,
         (gate state (.terminateSubject subject)).state.transfers.pending endpoint = none) := by
   have hdead := ResumablePreemption.cleanup_terminates_subject
@@ -8704,7 +8735,8 @@ theorem terminateSubject_accepted_cleans_runtime_references state subject lifecy
     hblockingAccepted, installTerminatedResumable, installTransfers,
     installResumable, installLifecycle]
   exact ⟨trivial, hdead, hscheduler.1, hscheduler.2, hcontext,
-    hblockingClean.1, hblockingClean.2,
+    hblockingClean.1, hblockingClean.2, by
+      simp [installTerminatedSubject, BlockingIPCContext.setRetained],
     CapabilityTransfer.cancelAllOffers_pending _⟩
 
 /-- Accepted termination preserves both scheduler projections, including when
@@ -13925,6 +13957,9 @@ private def deferredEvidenceReadyFull (state : CompositeState) : DeferredDrainOu
 private def deferredEvidenceBankFull (state : CompositeState) : DeferredDrainOutcome :=
   drainDeferredCancellation (deferredEvidenceComposite state 2 1) 1
 
+private def deferredEvidenceTerminated (state : CompositeState) : GateOutcome :=
+  gate (deferredEvidenceComposite state 2 2) (.terminateSubject 1)
+
 /-- Positive executable regression: a valid retained context is consumed once,
 the cancellation completion and ready slot are published together, and the
 exact saved context is restored to the resumable bank. -/
@@ -13949,6 +13984,18 @@ example (state : CompositeState) :
       (deferredEvidenceBankFull state).state =
         deferredEvidenceComposite state 2 1 := by
   exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- Explicit termination consumes the same retained saved context instead of
+leaving a dead identity eligible for a later public drain.  The cleanup is
+observable through the ordinary composite gate and the deferred projection of
+its single authoritative post-state. -/
+example (state : CompositeState) :
+    (deferredEvidenceTerminated state).result =
+        .completed (.terminateSubject .accepted) ∧
+      (deferredEvidenceTerminated state).state.lifecycle.capabilities.subjects 1 =
+        false ∧
+      (deferredEvidenceTerminated state).state.deferredCancels.retained 1 = none := by
+  exact ⟨rfl, rfl, rfl⟩
 
 /-- The same success and follow-up denial are observable through the public
 authoritative gate and its finite trace runner, rather than only through the

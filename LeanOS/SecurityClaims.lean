@@ -1056,6 +1056,37 @@ theorem composite_gate_termination_preserves_runtimeWellFormed state subject
   exact ⟨FailStop.terminateSubject_operationPreservesRuntimeWellFormed subject state hstate,
     FailStop.terminateCurrent_operationPreservesRuntimeWellFormed state hstate⟩
 
+/-- Supporting termination theorem: an accepted explicit termination removes
+the dead identity from every modeled scheduler and saved-context projection,
+including the deferred-cancellation bank, and cancels every sealed transfer in
+the same composite post-state. -/
+theorem composite_gate_termination_cleans_runtime_references
+    state subject lifecycle
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : SubjectLifecycle.terminate state.lifecycle subject =
+      { state := lifecycle, result := .accepted }) :
+    (FailStop.gate state (.terminateSubject subject)).result =
+        .completed (.terminateSubject .accepted) ∧
+      (FailStop.gate state (.terminateSubject subject)).state.lifecycle.capabilities.subjects
+        subject = false ∧
+      subject ∉ (FailStop.gate state (.terminateSubject subject)).state.scheduler.ready ∧
+      (FailStop.gate state (.terminateSubject subject)).state.scheduler.lifecycle.current ≠
+        some subject ∧
+      ResumablePreemption.contextFor
+        (FailStop.gate state (.terminateSubject subject)).state.resumable.contexts
+        subject = none ∧
+      (FailStop.gate state (.terminateSubject subject)).state.blockingIPC.waiterEndpoint
+        subject = none ∧
+      (FailStop.gate state (.terminateSubject subject)).state.blockingContexts subject = none ∧
+      (FailStop.gate state (.terminateSubject subject)).state.deferredCancels.retained
+        subject = none ∧
+      ∀ endpoint,
+        (FailStop.gate state (.terminateSubject subject)).state.transfers.pending endpoint =
+          none := by
+  exact FailStop.terminateSubject_accepted_cleans_runtime_references
+    state subject lifecycle hstate hmode haccepted
+
 /-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of every
 public operation preserve the complete runtime invariant for every accepted,
 typed-rejected, busy, halted, or fatal result. -/
