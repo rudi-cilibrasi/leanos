@@ -127,7 +127,11 @@ agreement gate must classify that stale-generation state as fatal.
 The boot boundary exposes an allocation-free scalar lowering of this decision
 order for the fixed image runtime. Handwritten C supplies the immutable
 canonical record plus independently decoded selected-root, report, mapping,
-TLB, and leaf observations. The generated adapter returns a tagged route:
+and leaf observations. Hardware TLB contents are not inspectable, so the
+fixed boot adapter narrows the rich lookup-absence premise to a checked
+sufficient condition: the active CR3 reload was read back, PCID is disabled,
+and the faulting leaf is non-global. Failure to observe that flush is an
+integrity-fatal generated route. The generated adapter returns a tagged route:
 contain, fatal, kernel diagnostic, or state-preserving rejection. Only the
 contain tag carries the existing generated cleanup/survivor witness into the
 containment handler; the C adapter does not classify ordinary versus fatal

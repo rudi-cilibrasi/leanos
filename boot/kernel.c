@@ -59,7 +59,9 @@ extern uint64_t leanos_page_fault_dispatch_transition(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t);
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);
@@ -143,6 +145,7 @@ extern uint64_t page_directory_b[], page_table_b[];
 #define PTE_USER 4ull
 #define PTE_ACCESSED (1ull << 5)
 #define PTE_DIRTY (1ull << 6)
+#define PTE_GLOBAL (1ull << 8)
 #define PTE_NX (1ull << 63)
 #define PTE_ADDRESS 0x000ffffffffff000ull
 
@@ -171,6 +174,11 @@ static uint8_t entry_stack[16384]
     __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
+/* The page-fault lowering claims an empty matching non-global TLB entry only
+   after this boot image has performed and read back a CR3 reload.  With PCID
+   disabled, that reload is the reviewed sufficient condition that evicts the
+   faulting page's non-global translation. */
+static volatile uint64_t page_fault_tlb_flush_cr3;
 
 /* The machine-facing spelling of InterruptEntry's version-one canonical
    page-fault encoding.  Construction is confined to
@@ -698,6 +706,15 @@ static void check_selected_root_a(void) {
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a) fail("pt-root-a-resume");
     serial_puts("LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\n");
+}
+
+__attribute__((noinline, used))
+static void activate_user_address_space(uint64_t *root) {
+    uint64_t observed_cr3;
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(root) : "memory");
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(observed_cr3));
+    page_fault_tlb_flush_cr3 =
+        observed_cr3 == (uint64_t)root ? observed_cr3 : 0;
 }
 
 static void serial_u64(uint64_t value) {
@@ -2145,14 +2162,16 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
     const uint64_t report_agrees = !user ||
         (root != 0 && decoded_root_matches((unsigned)active_address_space,
                                            root, pdpt, pd, pt, 0));
+    const uint64_t expected_leaf =
+        user && snapshot.fault_page < BOOT_LEAF_COUNT ?
+            expected_boot_leaf((unsigned)active_address_space,
+                               snapshot.fault_page) : 0;
     const uint64_t live_leaf =
         user && pt != 0 && snapshot.fault_page < BOOT_LEAF_COUNT ?
             pt[snapshot.fault_page] & ~(PTE_ACCESSED | PTE_DIRTY) : 0;
-    const uint64_t mapping_agrees = !user ||
-        (snapshot.fault_page < BOOT_LEAF_COUNT &&
-         snapshot.current_subject == active_address_space &&
-         live_leaf == expected_boot_leaf((unsigned)active_address_space,
-                                         snapshot.fault_page));
+    const uint64_t checked_non_global_tlb_flush =
+        user && page_fault_tlb_flush_cr3 == cr3 &&
+        (cr4 & (1ull << 17)) == 0 && (live_leaf & PTE_GLOBAL) == 0;
     const uint64_t route = leanos_page_fault_dispatch_transition(
         snapshot.version, snapshot.vector, snapshot.error,
         snapshot.fault_address, snapshot.fault_page, snapshot.access,
@@ -2162,9 +2181,14 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
         snapshot.rflags, snapshot.user_rsp, snapshot.user_ss,
         snapshot.stack_identity, snapshot.reserved, trusted_subject,
         active_address_space, cr3, paging_controls, trusted_stack_identity,
-        canonical, (uint64_t)root, report_agrees, mapping_agrees, 1, live_leaf,
-        current_subject, active_address_space, saved_context_owner_b,
-        saved_context_owner_b);
+        canonical, active_address_space, (uint64_t)root,
+        active_address_space, (uint64_t)root, report_agrees,
+        expected_leaf, live_leaf,
+        current_subject == snapshot.current_subject, 1, current_subject,
+        active_address_space, active_address_space, active_address_space,
+        0, 0, checked_non_global_tlb_flush, current_subject,
+        active_address_space,
+        saved_context_owner_b, saved_context_owner_b);
     const struct page_fault_transition transition = {
         .kind = (enum page_fault_transition_kind)(route >> 56),
         .result = route & UINT64_C(0x00ffffffffffffff),
@@ -2442,13 +2466,13 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     check_initial_b_frame_negative();
 #ifdef LEANOS_NMI_PROBE
     current_subject = 1;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/17 NMI-READY origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     current_subject = 1;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    activate_user_address_space(page_map_level_4_a);
     if (extended_state_probe_class > 6)
         fail("extended-state-probe-class");
     serial_puts(extended_state_probe_class >= 5
@@ -2465,19 +2489,19 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
     current_subject = 1;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
     current_subject = 1;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/16 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_INTEGER_FAULT_SCENARIO)
     current_subject = 1;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/18 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
@@ -2486,7 +2510,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     enter_user(user_a_entry, user_a_stack_top);
 #else
     current_subject = 2;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_b) : "memory");
+    activate_user_address_space(page_map_level_4_b);
     check_selected_root_b();
     serial_puts("LEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10\n");
     enter_user(user_b_entry, user_b_stack_top);

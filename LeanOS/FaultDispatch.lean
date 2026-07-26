@@ -1746,12 +1746,16 @@ The interrupt-time adapter cannot allocate the `List`-backed runtime, plan,
 and decoded-root values consumed by `dispatchPageFault`.  This fixed-width
 lowering retains the same decision order for the boot image: exact canonical
 authorization, kernel-origin fatal classification, current/address-space
-agreement, plan/live-root agreement, TLB coherence, error-versus-walk
-agreement, and finally the existing typed cleanup/survivor transition.
+agreement, plan/live-root agreement, a checked non-global CR3-flush
+precondition, error-versus-walk agreement, and finally the existing typed
+cleanup/survivor transition.
 
 The live report and mapping booleans are independently computed by the trusted
-machine adapter from the generated boot plan and the selected root.  They are
-inputs rather than claims recovered from the canonical record.  A successful
+machine adapter from the generated boot plan and the selected root.  Because
+hardware does not expose TLB contents, the fixed boot adapter soundly narrows
+the rich model's lookup-absence check: it admits only a non-global fault leaf
+after a read-back-checked CR3 reload with PCID disabled.  They are inputs
+rather than claims recovered from the canonical record.  A successful
 word carries the existing `faultDispatchDemo` containment result.  The most
 significant byte is the generated route tag: `1` contain, `2` fatal, `3`
 kernel diagnostic, or `4` state-preserving rejection.  The low 56 bits carry
@@ -1764,8 +1768,11 @@ def pageFaultDispatchTransition
       privilegeCode currentSubject activeAddressSpace activeCr3 controlsCode rip
       cs flags userRsp userSs stackIdentity reserved trustedSubject
       trustedAddressSpace trustedCr3 trustedControls trustedStackIdentity
-      canonicalAuthorization planRootCr3 liveRootReportAgrees liveMappingAgrees tlbCoherent
-      liveLeaf current active ready contextOwner : UInt64) : UInt64 :=
+      canonicalAuthorization planSpace planRootCr3 reportSpace reportRootCr3
+      liveRootReportValid expectedLeaf liveLeaf liveSubject runnable
+      lifecycleCurrent addressOwner translationsActive virtualOwner
+      virtualMappingObject lifecycleMappingObject checkedNonGlobalTlbFlush
+      current active ready contextOwner : UInt64) : UInt64 :=
   let errorUser := if errorWord / 4 % 2 = 1 then 1 else 0
   let errorProtection := if errorWord % 2 = 1 then 1 else 0
   let derivedAccess :=
@@ -1776,6 +1783,7 @@ def pageFaultDispatchTransition
   let fullSnapshotAgrees :=
     version = 1 && vector = 14 && errorWord / 32 = 0 &&
       errorWord / 8 % 2 != 1 && canonicalAddress faultAddress &&
+      !(errorWord / 2 % 2 = 1 && errorWord / 16 % 2 = 1) &&
       canonicalAddress rip && faultPage = faultAddress / 4096 &&
       accessCode = derivedAccess && protectionCode = errorProtection &&
       privilegeCode = errorUser && currentSubject = trustedSubject &&
@@ -1796,8 +1804,16 @@ def pageFaultDispatchTransition
   else if currentSubject != current || trustedSubject != current ||
       activeAddressSpace != active || trustedAddressSpace != active then
     0x0400000000000000
-  else if activeCr3 != planRootCr3 || liveRootReportAgrees != 1 ||
-      liveMappingAgrees != 1 || tlbCoherent != 1 || controlsCode != 15 then
+  else if planSpace != activeAddressSpace || activeCr3 != planRootCr3 ||
+      reportSpace != planSpace || reportRootCr3 != planRootCr3 ||
+      liveRootReportValid != 1 || expectedLeaf != liveLeaf ||
+      liveSubject != 1 || runnable != 1 ||
+      lifecycleCurrent != currentSubject || addressOwner != activeAddressSpace ||
+      translationsActive != activeAddressSpace ||
+      virtualOwner != activeAddressSpace ||
+      virtualMappingObject != 0 || lifecycleMappingObject != 0 ||
+      checkedNonGlobalTlbFlush != 1 ||
+      controlsCode != 15 then
     0x0200000000000003
   else
     let present := liveLeaf % 2 = 1
@@ -1822,22 +1838,27 @@ def pageFaultDispatchTransitionExport
       privilegeCode currentSubject activeAddressSpace activeCr3 controlsCode rip
       cs flags userRsp userSs stackIdentity reserved trustedSubject
       trustedAddressSpace trustedCr3 trustedControls trustedStackIdentity
-      canonicalAuthorization planRootCr3 liveRootReportAgrees liveMappingAgrees tlbCoherent
-      liveLeaf current active ready contextOwner : UInt64) : UInt64 :=
+      canonicalAuthorization planSpace planRootCr3 reportSpace reportRootCr3
+      liveRootReportValid expectedLeaf liveLeaf liveSubject runnable
+      lifecycleCurrent addressOwner translationsActive virtualOwner
+      virtualMappingObject lifecycleMappingObject checkedNonGlobalTlbFlush
+      current active ready contextOwner : UInt64) : UInt64 :=
   pageFaultDispatchTransition version vector errorWord faultAddress faultPage
     accessCode protectionCode privilegeCode currentSubject activeAddressSpace
     activeCr3 controlsCode rip cs flags userRsp userSs stackIdentity reserved
     trustedSubject trustedAddressSpace trustedCr3 trustedControls
-    trustedStackIdentity canonicalAuthorization planRootCr3
-    liveRootReportAgrees liveMappingAgrees
-    tlbCoherent liveLeaf current active ready contextOwner
+    trustedStackIdentity canonicalAuthorization planSpace planRootCr3 reportSpace
+    reportRootCr3 liveRootReportValid expectedLeaf liveLeaf liveSubject runnable
+    lifecycleCurrent addressOwner translationsActive virtualOwner
+    virtualMappingObject lifecycleMappingObject checkedNonGlobalTlbFlush
+    current active ready contextOwner
 
 theorem page_fault_dispatch_transition_contained_nonvacuous :
     pageFaultDispatchTransition
       1 14 5 0x1000 1 0 1 1 1 1 0xa000 15
       0x400100 0x23 0x202 0x500ff8 0x1b 1 0
       1 1 0xa000 15 1
-      1 0xa000 1 1 1 1 1 1 2 2 =
+      1 1 0xa000 1 0xa000 1 1 1 1 1 1 1 1 1 0 0 1 1 1 2 2 =
         0x01000000ff020202 := by
   native_decide
 
@@ -1846,7 +1867,7 @@ theorem page_fault_dispatch_transition_mismatch_is_fatal :
       1 14 4 0x32000 50 0 0 1 1 1 0xa000 15
       0x400100 0x23 0x202 0x500ff8 0x1b 1 0
       1 1 0xa000 15 1
-      1 0xa000 1 1 1 1 1 1 2 2 =
+      1 1 0xa000 1 0xa000 1 1 1 1 1 1 1 1 1 0 0 1 1 1 2 2 =
         0x0200000000000004 := by
   native_decide
 
@@ -2092,7 +2113,7 @@ theorem page_fault_dispatch_transition_consumes_strengthened_dispatch :
       1 14 5 0x1000 1 0 1 1 1 1 0xa000 15
       0x400100 0x23 0x202 0x500ff8 0x1b 1 0
       1 1 0xa000 15 1
-      1 0xa000 1 1 1 1 1 1 2 2 =
+      1 1 0xa000 1 0xa000 1 1 1 1 1 1 1 1 1 0 0 1 1 1 2 2 =
         0x0100000000000000 +
           encodeBootOutcome pageFaultAgreementWitnessState
             (pageFaultAgreementWitnessOutcome
@@ -2405,6 +2426,44 @@ def pageFaultAgreementIncoherentOutcome : Outcome :=
 theorem page_fault_incoherent_tlb_is_fatal :
     pageFaultAgreementIncoherentOutcome.action =
       .fatal (.pageFaultIntegrity .incoherentTlb) := by
+  native_decide
+
+/-! The hosted generated-code regression boundary runs the allocation-free
+boot lowering for the two integrity cases that are easiest to accidentally
+erase at the ABI: the impossible W+I error shape and the absence of an
+observed non-global CR3 flush.  The theorem below couples those emitted scalar
+tags to the rich #169 transition's independently evaluated fatal actions. -/
+
+def pageFaultDispatchRegressionDemo (kind : UInt64) : UInt64 :=
+  let impossibleWriteFetch := kind = 0
+  let errorWord := if impossibleWriteFetch then 23 else 4
+  let faultAddress := if impossibleWriteFetch then 0x65000 else 0x32000
+  let faultPage := if impossibleWriteFetch then 101 else 50
+  let accessCode := if impossibleWriteFetch then 2 else 0
+  let protectionCode := if impossibleWriteFetch then 1 else 0
+  let leaf := if impossibleWriteFetch then 0x8000000000000005 else 0
+  let checkedFlush := if impossibleWriteFetch then 1 else 0
+  let scalar :=
+    pageFaultDispatchTransition
+      1 14 errorWord faultAddress faultPage accessCode protectionCode
+      1 1 1 0xa000 15
+      0x400100 0x23 0x202 0x500ff8 0x1b 1 0
+      1 1 0xa000 15 1
+      1 1 0xa000 1 0xa000 1 leaf leaf
+      1 1 1 1 1 1 0 0 checkedFlush 1 1 2 2
+  scalar / 0x0100000000000000
+
+@[export leanos_page_fault_dispatch_regression_demo]
+def pageFaultDispatchRegressionDemoExport (kind : UInt64) : UInt64 :=
+  pageFaultDispatchRegressionDemo kind
+
+theorem page_fault_generated_cross_path_regressions_are_fatal :
+    pageFaultImpossibleWriteInstructionOutcome.action =
+        .fatal (.pageFaultIntegrity .malformedSnapshot) ∧
+      pageFaultDispatchRegressionDemo 0 = 2 ∧
+      pageFaultAgreementIncoherentOutcome.action =
+        .fatal (.pageFaultIntegrity .incoherentTlb) ∧
+      pageFaultDispatchRegressionDemo 1 = 2 := by
   native_decide
 
 /-- Authorization cannot substitute a different decoded record. -/

@@ -279,6 +279,7 @@ grep -Fq 'const struct page_fault_transition transition = {' \
   grep -Fq '.result = route & UINT64_C(0x00ffffffffffffff)' \
     <<<"$page_fault_adapter_source" &&
   grep -Fq '.snapshot = &snapshot' <<<"$page_fault_adapter_source" &&
+  grep -Fq 'switch (transition.kind) {' <<<"$page_fault_adapter_source" &&
   grep -Fq 'case PAGE_FAULT_TRANSITION_FATAL:' <<<"$page_fault_adapter_source" &&
   grep -Fq 'fail("page-fault-fatal");' <<<"$page_fault_adapter_source" &&
   grep -Fq 'case PAGE_FAULT_TRANSITION_REJECTED:' <<<"$page_fault_adapter_source" &&
@@ -300,9 +301,17 @@ agreement_arguments="$(
     <<<"$page_fault_adapter_source" | tr -d '[:space:]' |
     sed 's/^.*leanos_page/leanos_page/'
 )"
-expected_agreement_arguments='leanos_page_fault_dispatch_transition(snapshot.version,snapshot.vector,snapshot.error,snapshot.fault_address,snapshot.fault_page,snapshot.access,snapshot.protection,snapshot.user,snapshot.current_subject,snapshot.active_address_space,snapshot.active_cr3,snapshot.paging_controls,snapshot.rip,snapshot.saved_cs,snapshot.rflags,snapshot.user_rsp,snapshot.user_ss,snapshot.stack_identity,snapshot.reserved,trusted_subject,active_address_space,cr3,paging_controls,trusted_stack_identity,canonical,(uint64_t)root,report_agrees,mapping_agrees,1,live_leaf,current_subject,active_address_space,saved_context_owner_b,saved_context_owner_b);'
+expected_agreement_arguments='leanos_page_fault_dispatch_transition(snapshot.version,snapshot.vector,snapshot.error,snapshot.fault_address,snapshot.fault_page,snapshot.access,snapshot.protection,snapshot.user,snapshot.current_subject,snapshot.active_address_space,snapshot.active_cr3,snapshot.paging_controls,snapshot.rip,snapshot.saved_cs,snapshot.rflags,snapshot.user_rsp,snapshot.user_ss,snapshot.stack_identity,snapshot.reserved,trusted_subject,active_address_space,cr3,paging_controls,trusted_stack_identity,canonical,active_address_space,(uint64_t)root,active_address_space,(uint64_t)root,report_agrees,expected_leaf,live_leaf,current_subject==snapshot.current_subject,1,current_subject,active_address_space,active_address_space,active_address_space,0,0,checked_non_global_tlb_flush,current_subject,active_address_space,saved_context_owner_b,saved_context_owner_b);'
 [[ "$agreement_arguments" == "$expected_agreement_arguments" ]] || {
   echo "error: vector=14 field=strengthened-agreement-inputs source" >&2; exit 1;
+}
+grep -Fq 'user && page_fault_tlb_flush_cr3 == cr3 &&' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq '(cr4 & (1ull << 17)) == 0 && (live_leaf & PTE_GLOBAL) == 0' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'static void activate_user_address_space(uint64_t *root)' \
+    "$kernel_source" || {
+  echo "error: vector=14 field=checked-tlb-flush source" >&2; exit 1;
 }
 snapshot_mutations="$(
   grep -E 'snapshot\.(version|vector|error|fault_address|fault_page|access|protection|user|current_subject|active_address_space|active_cr3|paging_controls|rip|saved_cs|rflags|user_rsp|user_ss|stack_identity|reserved)[[:space:]]*(\\+\\+|--|[+*/%^|&-]?=)' \
