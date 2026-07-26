@@ -186,6 +186,21 @@ for fixture in PageFaultAgreementAcceptEveryPresent \
   fi
 done
 
+if lake env lean tests/negative/PageFaultAgreementWriteInstructionContainment.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: impossible write/instruction page fault unexpectedly contained" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/PageFaultAgreementWriteInstructionContainment.lean' \
+      "$negative_log" ||
+    ! grep -Fq 'error: Type mismatch' "$negative_log" ||
+    ! grep -Fq 'pageFaultImpossibleWriteInstructionContained = true' "$negative_log" ||
+    ! grep -Fq 'pageFaultImpossibleWriteInstructionContained = false' "$negative_log"; then
+  echo "error: impossible write/instruction fixture lacked its expected fatal diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 for fixture in StaleTranslationOmittedInvalidation StaleTranslationWrongEffect \
     StaleTranslationForgedTarget; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then

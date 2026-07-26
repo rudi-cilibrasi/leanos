@@ -280,7 +280,10 @@ def pageFaultAgreement (state : ResumablePreemption.State)
             match InterruptEntry.decodePageFaultError snapshot.errorWord with
             | .error _ => .error .malformedSnapshot
             | .ok decoded =>
-                pageFaultClassificationAgreement plan space snapshot decoded
+                if decoded.write && decoded.instructionFetch then
+                  .error .malformedSnapshot
+                else
+                  pageFaultClassificationAgreement plan space snapshot decoded
 
 def canonicalPageFaultFrame
     (snapshot : InterruptEntry.CanonicalPageFault) :
@@ -344,6 +347,13 @@ theorem dispatchPageFault_deterministic state plan words trusted first second
     (hsecond : dispatchPageFault state plan words trusted = second) :
     first = second := by
   rw [← hfirst, hsecond]
+
+/-- Once the stronger page-fault boundary sets the halt latch, every later
+page-fault input is absorbed before decoding or consulting trusted context. -/
+theorem dispatchPageFault_already_halted_absorbing state plan words trusted
+    (hhalted : state.halted = true) :
+    dispatchPageFault state plan words trusted = halt state .alreadyHalted := by
+  simp [dispatchPageFault, hhalted]
 
 theorem denialAgreement_sound decoded cause denial
     (h : denialAgreement decoded cause = some denial) :
@@ -2008,6 +2018,16 @@ private def pageFaultMappedState (page : Nat) (writable : Bool) :
                 some { object, permissions := { read := true, write := writable } }
               else base.translations.virtual.mappings space candidatePage } } }
 
+/-- Concrete witness for the architecturally impossible simultaneous
+write/instruction-fetch error encoding (P/W/U/I = 1). -/
+def pageFaultImpossibleWriteInstructionOutcome : Outcome :=
+  samplePlanDispatch (pageFaultMappedState 101 true) (pageFaultRecord 23 101)
+
+def pageFaultImpossibleWriteInstructionContained : Bool :=
+  match pageFaultImpossibleWriteInstructionOutcome.action with
+  | .idle .pageFault | .dispatch .pageFault _ => true
+  | _ => false
+
 theorem page_fault_nonpresent_read_contained_nonvacuous :
     (samplePlanDispatch (traceState true) (pageFaultRecord 4 50)).action =
       .dispatch .pageFault traceSurvivorContext := by
@@ -2029,6 +2049,24 @@ theorem page_fault_nx_execute_contained_nonvacuous :
       (pageFaultRecord 21 101)).action =
         .dispatch .pageFault traceSurvivorContext := by
   native_decide
+
+theorem page_fault_write_instruction_is_absorbing_fatal :
+    pageFaultImpossibleWriteInstructionOutcome.action =
+        .fatal (.pageFaultIntegrity .malformedSnapshot) ∧
+      pageFaultImpossibleWriteInstructionOutcome.state.halted = true ∧
+      ∀ plan words trusted,
+        dispatchPageFault pageFaultImpossibleWriteInstructionOutcome.state
+            plan words trusted =
+          halt pageFaultImpossibleWriteInstructionOutcome.state .alreadyHalted := by
+  have hfatal :
+      pageFaultImpossibleWriteInstructionOutcome.action =
+        .fatal (.pageFaultIntegrity .malformedSnapshot) := by
+    native_decide
+  have hhalted : pageFaultImpossibleWriteInstructionOutcome.state.halted = true := by
+    native_decide
+  refine ⟨hfatal, hhalted, ?_⟩
+  intro plan words trusted
+  exact dispatchPageFault_already_halted_absorbing _ _ _ _ hhalted
 
 theorem page_fault_no_survivor_contained_nonvacuous :
     (samplePlanDispatch (traceState false) (pageFaultRecord 4 50)).action =
@@ -2206,6 +2244,7 @@ theorem pageFaultAgreement_sound state plan record denial
           record.faultPage.toNat (pageFaultAccessContext record) = .error cause ∧
         denialAgreement decoded cause = some denial := by
   simp only [pageFaultAgreement] at hagreement
+  split at hagreement <;> try contradiction
   split at hagreement <;> try contradiction
   split at hagreement <;> try contradiction
   split at hagreement <;> try contradiction
