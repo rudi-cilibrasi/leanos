@@ -228,6 +228,33 @@ int check_stream(void) {
             4096, 4096, decoded.word[1], decoded.word[14], decoded.word[15],
             1, 1) != 0)
         return 25;
+    const uint64_t peer_overlap[][18] = {
+        {0, 0x100000, 0x200000, 0x100000,
+         0x240000, 0x1000, 0x220000, 0x1000, 0x230000, 0x1000,
+         0x240000, 0x1000, 0x241000, 0x4000, 0x280000, 0x2000,
+         0x300000, 96},
+        {0, 0x100000, 0x200000, 0x100000,
+         0x210000, 0x1000, 0x241000, 0x1000, 0x230000, 0x1000,
+         0x240000, 0x1000, 0x241000, 0x4000, 0x280000, 0x2000,
+         0x300000, 96},
+        {0, 0x100000, 0x200000, 0x100000,
+         0x210000, 0x1000, 0x220000, 0x1000, 0x240000, 0x1000,
+         0x240000, 0x1000, 0x241000, 0x4000, 0x280000, 0x2000,
+         0x300000, 96},
+        {0, 0x100000, 0x200000, 0x100000,
+         0x210000, 0x1000, 0x220000, 0x1000, 0x230000, 0x1000,
+         0x240000, 0x1000, 0x241000, 0x4000, 0x241000, 0x2000,
+         0x300000, 96},
+    };
+    for (uint64_t peer = 0; peer < 4; ++peer) {
+        const uint64_t *range = peer_overlap[peer];
+        if (leanos_boot_manifest_candidate(
+                256, range[0], range[1], range[2], range[3], range[4],
+                range[5], range[6], range[7], range[8], range[9], range[10],
+                range[11], range[12], range[13], range[14], range[15],
+                range[16], range[17]) != 0)
+            return 26 + peer;
+    }
     return 0;
 }
 

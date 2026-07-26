@@ -230,6 +230,18 @@ private def contained (outerStart outerLength start length : UInt64) : Bool :=
 private def reserved (frame start length : UInt64) : Bool :=
   overlap start (start + length) (frameFirst frame) (framePast frame)
 
+private def roundedFirst (start : UInt64) : UInt64 :=
+  start / 4096
+
+private def roundedPast (start length : UInt64) : UInt64 :=
+  let stop := start + length
+  stop / 4096 + if stop % 4096 == 0 then 0 else 1
+
+private def roundedDisjoint
+    (leftStart leftLength rightStart rightLength : UInt64) : Bool :=
+  roundedPast leftStart leftLength <= roundedFirst rightStart ||
+    roundedPast rightStart rightLength <= roundedFirst leftStart
+
 private def manifestValid
     (lowStart lowLength imageStart imageLength pageStart pageLength
     descriptorStart descriptorLength stacksStart stacksLength
@@ -245,13 +257,24 @@ private def manifestValid
     contained imageStart imageLength usersStart usersLength &&
     validRange infoStart infoLength && infoStart % 8 == 0 &&
     guardLength == 4096 && entryLength != 0 &&
-    guardStart + guardLength == entryStart
+    guardStart + guardLength == entryStart &&
+    roundedPast guardStart guardLength == roundedFirst entryStart &&
+    roundedDisjoint guardStart guardLength pageStart pageLength &&
+    roundedDisjoint entryStart entryLength pageStart pageLength &&
+    roundedDisjoint guardStart guardLength descriptorStart descriptorLength &&
+    roundedDisjoint entryStart entryLength descriptorStart descriptorLength &&
+    roundedDisjoint guardStart guardLength stacksStart stacksLength &&
+    roundedDisjoint entryStart entryLength stacksStart stacksLength &&
+    roundedDisjoint guardStart guardLength usersStart usersLength &&
+    roundedDisjoint entryStart entryLength usersStart usersLength
 
 /-! The positional arguments are the canonical identities:
 low memory, loaded image, page tables, descriptor tables, kernel stacks,
 ordinary-entry guard, ordinary-entry stack, embedded users, and Multiboot info.
-All image-owned subranges must lie within the loaded image; the ordinary guard
-and stack must be exact adjacent page intervals. -/
+All image-owned subranges must lie within the loaded image.  The ordinary guard
+and stack must be exact adjacent rounded frame intervals, disjoint after
+rounding from page tables, descriptor tables, other kernel stacks, and embedded
+users. -/
 @[export leanos_boot_manifest_candidate]
 def manifestCandidate (frame
     lowStart lowLength imageStart imageLength pageStart pageLength
@@ -311,6 +334,18 @@ example : manifestCandidate 800 0 0x100000 0x100000 0x200000
 example : manifestCandidate 1 0 0x100000 0x100000 0x200000
     0x110000 0x1000 0x120000 0x1000 0x130000 0x1000
     0x140000 0x1000 0x141000 0x4000 0x180000 0x2000 0x300000 96 = 0 := by decide
+example : manifestCandidate 800 0 0x100000 0x100000 0x200000
+    0x140000 0x1000 0x120000 0x1000 0x130000 0x1000
+    0x140000 0x1000 0x141000 0x4000 0x180000 0x2000 0x300000 96 = 0 := by decide
+example : manifestCandidate 800 0 0x100000 0x100000 0x200000
+    0x110000 0x1000 0x141000 0x1000 0x130000 0x1000
+    0x140000 0x1000 0x141000 0x4000 0x180000 0x2000 0x300000 96 = 0 := by decide
+example : manifestCandidate 800 0 0x100000 0x100000 0x200000
+    0x110000 0x1000 0x120000 0x1000 0x140000 0x1000
+    0x140000 0x1000 0x141000 0x4000 0x180000 0x2000 0x300000 96 = 0 := by decide
+example : manifestCandidate 800 0 0x100000 0x100000 0x200000
+    0x110000 0x1000 0x120000 0x1000 0x130000 0x1000
+    0x140000 0x1000 0x141000 0x4000 0x141000 0x2000 0x300000 96 = 0 := by decide
 example : manifestStart 0 0x100000 0x200000 0x100000
     0x210000 0x1000 0x220000 0x1000 0x230000 0x1000
     0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0x300000 96 = 256 := by decide

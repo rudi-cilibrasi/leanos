@@ -409,6 +409,47 @@ def gapRich : Except Error Authority :=
 def gapScalar : ScalarState :=
   scalarReplay gapChunks (scalarInitialAt gapIdentity gapBytes.length 256)
 
+def peerOverlapManifest (identity : BootReservation.Identity) :
+    List BootReservation.Reservation :=
+  gapManifest.map fun reservation =>
+    if reservation.identity == identity then
+      { reservation with start :=
+          if identity == .descriptorTables || identity == .embeddedUsers then
+            0x241000
+          else
+            0x240000 }
+    else reservation
+
+def peerOverlapRich (identity : BootReservation.Identity) : Except Error Authority :=
+  run (UInt64.ofNat multiboot2Magic) gapIdentity gapBytes.length gapChunks
+    (peerOverlapManifest identity) 7
+
+/-! Each independently owned peer class is rejected by both the rich
+reservation path and the scalar production decision when it shares rounded
+frames with the ordinary-entry guard or stack. -/
+theorem ordinaryEntryPeerOverlap_scalar_richPipeline_sharedRejection :
+    errorOf (peerOverlapRich .pageTables) =
+        some (.reservation .ordinaryEntryOverlap) ∧
+      manifestCandidate 256 0 0x100000 0x200000 0x100000
+        0x240000 0x1000 0x220000 0x1000 0x230000 0x1000
+        0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0x300000 96 = 0 ∧
+      errorOf (peerOverlapRich .descriptorTables) =
+        some (.reservation .ordinaryEntryOverlap) ∧
+      manifestCandidate 256 0 0x100000 0x200000 0x100000
+        0x210000 0x1000 0x241000 0x1000 0x230000 0x1000
+        0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0x300000 96 = 0 ∧
+      errorOf (peerOverlapRich .kernelStacks) =
+        some (.reservation .ordinaryEntryOverlap) ∧
+      manifestCandidate 256 0 0x100000 0x200000 0x100000
+        0x210000 0x1000 0x220000 0x1000 0x240000 0x1000
+        0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0x300000 96 = 0 ∧
+      errorOf (peerOverlapRich .embeddedUsers) =
+        some (.reservation .ordinaryEntryOverlap) ∧
+      manifestCandidate 256 0 0x100000 0x200000 0x100000
+        0x210000 0x1000 0x220000 0x1000 0x230000 0x1000
+        0x240000 0x1000 0x241000 0x4000 0x241000 0x2000 0x300000 96 = 0 := by
+  native_decide
+
 /-! The reviewed low-memory-gap handoff is shared byte-for-byte across the rich
 pipeline and production scalar replay.  The rich reservation overlay and
 allocator select frame 256 in [1 MiB, 2 MiB); the scalar start and selection
