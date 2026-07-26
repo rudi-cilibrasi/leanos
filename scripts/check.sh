@@ -17,6 +17,8 @@ lake build leanos-boot-plan
 
 ./scripts/check-oracle-host.sh
 
+./scripts/check-boot-handoff-host.sh
+
 ./scripts/test-run-image.sh
 
 ./scripts/test-run-extended-state-image.sh

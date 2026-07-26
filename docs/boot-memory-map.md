@@ -28,6 +28,16 @@ Every accepted `Decoded` value carries the exact entries accepted by
 success theorem exposes the exact decoded handoff used by `normalize`.
 `Except` rejection has no handoff or normalized partial-result projection.
 
+`BootMemoryMapDecoderABI` exposes a version-one generated-C query boundary over
+one immutable `ByteArray`. Accepted queries return the total size, every
+decoded entry triple, and every canonical normalized-region triple. Rejections
+return a stable stage and typed error code; they expose no accepted projection.
+Each query starts from the complete byte buffer, so callers cannot continue
+state with bytes from another handoff. `scripts/check-boot-handoff-host.sh`
+replays checked-in accepted, overlap-order, truncation, and noncanonical-padding
+fixtures through generated C and compares complete projections rather than a
+digest or caller-supplied stage flags.
+
 ## Accepted subset and bounds
 
 The model requires the Multiboot2 boot magic, an 8-byte-aligned information
@@ -97,7 +107,7 @@ Firmware and the bootloader remain trusted to describe real hardware
 truthfully. Physical-memory copying, boot assembly, compiler, generated code,
 and binary-to-model correspondence remain outside these proofs. The byte
 decoder proves properties of the immutable finite copy; it does not prove that
-the copy agrees with physical memory. Production consumption of this decoded
-result, reservation-manifest decoding, and hosted/QEMU differential replay are
-follow-up integration work. Kernel, page-table, stack, and bootloader-buffer
-reservations remain owned by the next overlay layer.
+the copy agrees with physical memory. Production consumption of the generated
+query result, reservation-manifest decoding, and malformed-handoff QEMU replay
+are follow-up integration work. Kernel, page-table, stack, and
+bootloader-buffer reservations remain owned by the next overlay layer.

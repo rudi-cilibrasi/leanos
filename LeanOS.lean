@@ -9,6 +9,7 @@ import LeanOS.DirectPortContainment
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.BootMemoryMap
 import LeanOS.BootMemoryMapDecoder
+import LeanOS.BootMemoryMapDecoderABI
 import LeanOS.BootReservation
 import LeanOS.BootAllocation
 import LeanOS.BootInterruptPhase
