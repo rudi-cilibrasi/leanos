@@ -96,6 +96,7 @@ jobs:
           name: leanos-boot-${{ github.sha }}
           path: |
             build/boot/leanos-0.1.0-x86_64.iso
+            build/boot/leanos-0.1.0-x86_64-malformed-handoff.iso
             build/boot/leanos-0.1.0-x86_64-preemption.iso
             build/boot/leanos-0.1.0-x86_64-fault-containment.iso
             build/boot/leanos-0.1.0-x86_64-extended-state.iso
@@ -114,6 +115,8 @@ jobs:
             build/boot/leanos-0.1.0-x86_64-bootstrap32-ud.iso
             build/boot/leanos-0.1.0-x86_64-bootstrap64-nmi.iso
             build/boot/leanos.elf
+            build/boot/leanos-malformed-handoff.elf
+            build/boot/leanos-malformed-handoff.map
             build/boot/leanos-preemption.elf
             build/boot/leanos-fault-containment.elf
             build/boot/leanos-extended-state.elf
@@ -152,6 +155,8 @@ jobs:
             build/boot/leanos-prelink.map
             build/boot/boot-page-plan.h
             build/boot/boot-page-plan.final.h
+            build/boot/boot-page-plan-malformed-handoff.h
+            build/boot/boot-page-plan-malformed-handoff.final.h
             build/boot/boot-page-plan-preemption.h
             build/boot/boot-page-plan-preemption.final.h
             build/boot/boot-page-plan-fault-containment.h
@@ -173,6 +178,7 @@ jobs:
             build/boot/boot-page-plan-bootstrap64-nmi.final.h
             build/boot/SHA256SUMS
             build/boot/serial.log
+            build/boot/malformed-handoff.serial.log
             build/boot/preemption.serial.log
             build/boot/fault-containment.serial.log
             build/boot/extended-state.serial.log

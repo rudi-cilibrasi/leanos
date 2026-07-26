@@ -198,7 +198,8 @@ def stepWord (version status error identity extent offset chain phase content pa
   let nblocked := if phase == phaseEntryType && entryKind != 1 && touches then 1 else blocked
   let nentries := if phase == phaseEntryType then entries + 1 else entries
   let nsaw := if phase == phaseTag && low32 chunk == 6 then 1 else sawMap
-  let nhighest := if phase == phaseEntryType && stop > highest then stop else highest
+  let nhighest :=
+    if phase == phaseEntryType && entryKind == 1 && stop > highest then stop else highest
   if query == 0 then abiVersion
   else if query == 1 then
     if reason != noError then rejected

@@ -960,6 +960,13 @@ static const uint8_t *copy_boot_handoff(uint32_t magic, uint32_t info_address,
 
     for (uint64_t offset = 0; offset < total; offset += 8) {
         uint64_t physical_chunk = *(const uint64_t *)(physical + offset);
+#ifdef LEANOS_MALFORMED_HANDOFF_FIXTURE
+        /* Controlled production-decoder negative: preserve the advertised
+           extent while making the Multiboot information-header reserved word
+           nonzero.  The generated stream transport must bind this exact raw
+           word and the generated decoder must reject it before authority. */
+        if (offset == 0) physical_chunk |= 1ull << 32;
+#endif
         uint64_t terminal = offset + 8 == total;
         struct boot_handoff_stream_state next = {
             handoff_stream_step_query(

@@ -128,8 +128,20 @@ already proved extensionally equal to the rich `BootMemoryMapDecoder.decode`
 and `BootReservation.initializeAllocator` projection. The existing version-one
 decoder corpus and `BootMemoryMapStreamPipeline` remain the rich typed
 specification. Closing that scalar-to-rich equivalence proof, expanding the raw
-corpus comparison to every projection word, and controlled malformed-handoff
-QEMU injection remain before issue #173 is complete.
+corpus comparison to every projection word remain before issue #173 is
+complete.
+
+The controlled `malformed-handoff` image changes only the reserved high word
+of the copied Multiboot information header while preserving the real GRUB
+identity, extent, offsets, and generated streaming transition. Thus the
+production generated decoder—not a hosted substitute—observes the malformed
+raw word and must emit exactly
+`LEANOS/7 BOOTALLOC status=FAIL reason=decode-rejected`. The dedicated QEMU
+runner requires the independent guest-error exit signal, rejects reset, hang,
+wrong or duplicate records, and fails if any handoff, map, allocation, scrub,
+publication, or final success authority escapes. Both the final ELF and
+two-pass linker plan, the exact QEMU command and serial log, and negative
+diagnostics are retained by the release-blocking evidence matrix.
 
 No trusted declaration, foreign primitive, runtime shim, or other TCB entry is
 added by this slice. The proof-side composition uses only existing executable
@@ -210,5 +222,6 @@ consume the generated version-three decoder and complete reservation manifest.
 The focused freestanding replay covers canonical decoding,
 usable/non-usable overlap, nonzero ignored-tag padding rejection, manifest
 exclusion, stable selection, and publication mutation. Controlled
-malformed-handoff QEMU replay and a proved complete-projection correspondence
-remain follow-up integration work.
+malformed-handoff QEMU replay reaches the production generated decoder and
+rejects before authority. A proved complete-projection correspondence remains
+follow-up proof work.

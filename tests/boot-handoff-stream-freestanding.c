@@ -123,6 +123,14 @@ int check_stream(void) {
     if (decoded.word[1] != 1 || decoded.word[14] != 1 ||
         decoded.word[15] != 1)
         return 15;
+    uint64_t high_reserved[12];
+    for (uint64_t index = 0; index < 12; ++index)
+        high_reserved[index] = chunks[index];
+    high_reserved[8] = 0x100000000;
+    high_reserved[9] = 0x10000000000;
+    decoded = decode(high_reserved, 1);
+    if (decoded.word[1] != 1 || decoded.word[17] != 0x5000)
+        return 18;
     uint64_t malformed[12];
     for (uint64_t index = 0; index < 12; ++index) malformed[index] = chunks[index];
     malformed[2] = 0x1aa;

@@ -29,6 +29,7 @@ RUNNERS = {
     "bootstrap32-ud",
     "bootstrap64-nmi",
     "double-fault-guard",
+    "malformed-handoff",
 }
 RUNNER_RESULT_CLASSES = {
     "boot": "accepted-boot",
@@ -40,6 +41,7 @@ RUNNER_RESULT_CLASSES = {
     "bootstrap32-ud": "fail-stop",
     "bootstrap64-nmi": "fail-stop",
     "double-fault-guard": "controlled-rejection",
+    "malformed-handoff": "controlled-rejection",
 }
 REQUIRED_FAST_ENTRY_ROWS = {
     "fast-entry-syscall": {
@@ -290,6 +292,8 @@ def scenario_invocation(
         command = ["./scripts/run-bootstrap32-ud.sh", str(paths["image"])]
     elif row["runner"] == "bootstrap64-nmi":
         command = ["./scripts/run-bootstrap64-nmi.sh", str(paths["image"])]
+    elif row["runner"] == "malformed-handoff":
+        command = ["./scripts/run-malformed-handoff.sh", str(paths["image"])]
     else:
         environment["LEANOS_EXPECT_GUARD_MAPPED"] = "1"
         command = ["./scripts/run-double-fault.sh", str(paths["image"])]
@@ -584,6 +588,7 @@ def check_workflows() -> None:
             "./scripts/run-entry-stack-overflow.sh",
             "./scripts/run-bootstrap32-ud.sh",
             "./scripts/run-bootstrap64-nmi.sh",
+            "./scripts/run-malformed-handoff.sh",
         ):
             if bypass in content:
                 raise EvidenceError(f"{relative} bypasses the shared emulator matrix with {bypass}")
