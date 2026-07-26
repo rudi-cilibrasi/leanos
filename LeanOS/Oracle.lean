@@ -3,7 +3,7 @@ import LeanOS.KernelTransition
 import LeanOS.Syscall
 import LeanOS.IPCSyscall
 import LeanOS.Preemption
-import LeanOS.BootAllocation
+import LeanOS.BootMemoryMapStreamAuthority
 import LeanOS.Interrupt
 import LeanOS.InterruptEntry
 import LeanOS.BlockingIPC
@@ -58,10 +58,13 @@ private def resumable (id : String) (leg targetDescriptor savedDescriptor
     expected := Preemption.resumableDemo leg targetDescriptor savedDescriptor
       targetRegisterMarker savedRegisterMarker }
 
-private def bootAllocation (id : String) (magic infoBytes entryBytes selected flags : UInt64) :
+private def bootAllocation (id : String)
+    (current candidate status usable blocked manifest : UInt64) :
     Vector :=
-  { id, adapter := "BootAllocation.scalar", words := [magic, infoBytes, entryBytes, selected, flags],
-    expected := BootAllocation.check magic infoBytes entryBytes selected flags }
+  { id, adapter := "BootAllocation.scalar",
+    words := [current, candidate, status, usable, blocked, manifest],
+    expected := BootMemoryMapStreamAuthority.selectFrame
+      current candidate status usable blocked manifest }
 
 private def userReturn (id : String) (mode rip rsp selectors flags : UInt64) : Vector :=
   { id, adapter := "Interrupt.userReturn", words := [mode, rip, rsp, selectors, flags],
@@ -175,15 +178,14 @@ def vectors : List Vector := [
   resumable "resumable.a-to-b" 1 0x202 0x101 0xde 0x1c,
   resumable "resumable.b-to-a" 2 0x101 0x202 0x1c 0xde,
   resumable "resumable.cross-restored" 2 0x102 0x202 0x1c 0xde,
-  bootAllocation "boot-allocation.accept" BootAllocation.multiboot2Magic 128 24 512 15,
-  bootAllocation "boot-allocation.wrong-magic" 0 128 24 512 15,
-  bootAllocation "boot-allocation.truncated" BootAllocation.multiboot2Magic 8 24 512 15,
-  bootAllocation "boot-allocation.misaligned-size" BootAllocation.multiboot2Magic 127 24 512 15,
-  bootAllocation "boot-allocation.bad-entry-size" BootAllocation.multiboot2Magic 128 16 512 15,
-  bootAllocation "boot-allocation.fixed-width-overflow" BootAllocation.multiboot2Magic
-    18446744073709551615 24 512 15,
-  bootAllocation "boot-allocation.no-eligible-frame" BootAllocation.multiboot2Magic 128 24 4096 15,
-  bootAllocation "boot-allocation.publish-before-scrub" BootAllocation.multiboot2Magic 128 24 512 11,
+  bootAllocation "boot-allocation.accept" 4096 512 1 1 0 1,
+  bootAllocation "boot-allocation.parser-rejected" 4096 512 2 1 0 1,
+  bootAllocation "boot-allocation.parser-incomplete" 4096 512 0 1 0 1,
+  bootAllocation "boot-allocation.no-usable-coverage" 4096 512 1 0 0 1,
+  bootAllocation "boot-allocation.nonusable-overlap" 4096 512 1 1 1 1,
+  bootAllocation "boot-allocation.no-eligible-frame" 4096 4096 1 1 0 1,
+  bootAllocation "boot-allocation.manifest-rejected" 4096 512 1 1 0 0,
+  bootAllocation "boot-allocation.first-selection-stable" 511 512 1 1 0 1,
   userReturn "user-return.initial" 1 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.syscall-resume" 2 0x400100 0x500ff8 0x1b0023 0x202,
   userReturn "user-return.scheduler-restore" 3 0x400100 0x500ff8 0x1b0023 0x202,

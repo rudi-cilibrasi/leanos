@@ -45,6 +45,7 @@ nmi_iso_root="$build/iso-nmi"
 nmi_cpl3_iso_root="$build/iso-nmi-cpl3"
 bootstrap32_ud_iso_root="$build/iso-bootstrap32-ud"
 bootstrap64_nmi_iso_root="$build/iso-bootstrap64-nmi"
+malformed_handoff_iso_root="$build/iso-malformed-handoff"
 # Direct-port-containment family (#130): one shared kernel object, one reviewed
 # raw CPL3 port instruction per probe selected by a boot.S -D variant.
 direct_port_probes=(serial debug in pic)
@@ -96,7 +97,8 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$df_negative_iso_root/boot/grub" "$entry_overflow_iso_root/boot/grub" \
   "$entry_adversarial_iso_root/boot/grub" "$nmi_iso_root/boot/grub" \
   "$nmi_cpl3_iso_root/boot/grub" "$bootstrap32_ud_iso_root/boot/grub" \
-  "$bootstrap64_nmi_iso_root/boot/grub"
+  "$bootstrap64_nmi_iso_root/boot/grub" \
+  "$malformed_handoff_iso_root/boot/grub"
 for probe in "${direct_port_probes[@]}"; do
   mkdir -p "$build/iso-direct-port-${probe}/boot/grub"
 done
@@ -105,6 +107,8 @@ for probe in "${integer_fault_probes[@]}"; do
 done
 ./scripts/generate-oracle.sh "$build"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
+./scripts/generate-boot-page-plan.sh --stub \
+  "$build/boot-page-plan-malformed-handoff.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-fault-containment.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state.h"
@@ -128,6 +132,10 @@ lake env lean --c="$build/Syscall.c" LeanOS/Syscall.lean
 lake env lean --c="$build/IPCSyscall.c" LeanOS/IPCSyscall.lean
 lake env lean --c="$build/Preemption.c" LeanOS/Preemption.lean
 lake env lean --c="$build/BootAllocation.c" LeanOS/BootAllocation.lean
+lake env lean --c="$build/BootMemoryMapStreaming.c" \
+  LeanOS/BootMemoryMapStreaming.lean
+lake env lean --c="$build/BootMemoryMapStreamAuthority.c" \
+  LeanOS/BootMemoryMapStreamAuthority.lean
 lake env lean --c="$build/Interrupt.c" LeanOS/Interrupt.lean
 lake env lean --c="$build/InterruptEntry.c" LeanOS/InterruptEntry.lean
 lake env lean --c="$build/BlockingIPC.c" LeanOS/BlockingIPC.lean
@@ -154,6 +162,19 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -o "$build/Preemption.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/BootAllocation.c" \
   -o "$build/BootAllocation.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
+  -c "$build/BootMemoryMapStreaming.c" \
+  -o "$build/BootMemoryMapStreaming.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
+  -c "$build/BootMemoryMapStreamAuthority.c" \
+  -o "$build/BootMemoryMapStreamAuthority.o"
+# All existing image variants link BootAllocation.o.  Combine the generated
+# stream transport into that reviewed object so no variant can accidentally
+# retain the old allocation adapter without the bounded handoff-copy boundary.
+ld -r "$build/BootAllocation.o" "$build/BootMemoryMapStreaming.o" \
+  "$build/BootMemoryMapStreamAuthority.o" \
+  -o "$build/BootAllocationAndHandoffStream.o"
+mv "$build/BootAllocationAndHandoffStream.o" "$build/BootAllocation.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Interrupt.c" \
   -o "$build/Interrupt.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/InterruptEntry.c" \
@@ -180,6 +201,10 @@ mv "$build/FaultDispatchAndDirectPortIO.o" "$build/FaultDispatch.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_MALFORMED_HANDOFF_FIXTURE=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-malformed-handoff.h"' \
+  -c boot/kernel.c -o "$build/kernel-malformed-handoff.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_PREEMPTION_SCENARIO=1 -DLEANOS_ENTRY_HIGH_WATER=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
@@ -328,6 +353,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
   "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-malformed-handoff-prelink.map" \
+  -o "$build/leanos-malformed-handoff-prelink.elf" "$build/boot.o" \
+  "$build/kernel-malformed-handoff.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-preemption-prelink.map" \
   -o "$build/leanos-preemption-prelink.elf" "$build/boot-preemption.o" \
   "$build/kernel-preemption.o" "$build/KernelTransition.o" "$build/Syscall.o" \
@@ -474,6 +507,8 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-prelink.elf" \
   "$build/boot-page-plan.h"
+./scripts/generate-boot-page-plan.sh "$build/leanos-malformed-handoff-prelink.elf" \
+  "$build/boot-page-plan-malformed-handoff.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-preemption-prelink.elf" \
   "$build/boot-page-plan-preemption.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-fault-containment-prelink.elf" \
@@ -563,6 +598,10 @@ cmp "$build/boot-page-plan-integer-fault.h" \
   -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_MALFORMED_HANDOFF_FIXTURE=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-malformed-handoff.h"' \
+  -c boot/kernel.c -o "$build/kernel-malformed-handoff.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_PREEMPTION_SCENARIO=1 -DLEANOS_ENTRY_HIGH_WATER=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
   -c boot/kernel.c -o "$build/kernel-preemption.o"
@@ -630,6 +669,14 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
   build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
   build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/FaultDispatch.o
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-malformed-handoff.map" \
+  -o "$build/leanos-malformed-handoff.elf" "$build/boot.o" \
+  "$build/kernel-malformed-handoff.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-entry-adversarial.map" \
   -o "$build/leanos-entry-adversarial.elf" "$build/boot-entry-adversarial.o" \
@@ -826,6 +873,13 @@ cmp "$build/boot-page-plan.h" "$build/boot-page-plan.final.h" || {
   echo "error: linker-resolved boot page-table plan drifted after final link" >&2
   exit 1
 }
+./scripts/generate-boot-page-plan.sh "$build/leanos-malformed-handoff.elf" \
+  "$build/boot-page-plan-malformed-handoff.final.h"
+cmp "$build/boot-page-plan-malformed-handoff.h" \
+  "$build/boot-page-plan-malformed-handoff.final.h" || {
+  echo "error: malformed-handoff page-table plan drifted after final link" >&2
+  exit 1
+}
 ./scripts/generate-boot-page-plan.sh "$build/leanos-nmi.elf" \
   "$build/boot-page-plan-nmi.final.h"
 cmp "$build/boot-page-plan-nmi.h" "$build/boot-page-plan-nmi.final.h" || {
@@ -1004,10 +1058,18 @@ if ! grep -q ' T leanos_preemption_demo$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_preemption_demo" >&2
   exit 1
 fi
-if ! grep -q ' T leanos_boot_allocation_check$' <<<"$symbols"; then
-  echo "error: generated image does not retain leanos_boot_allocation_check" >&2
+if grep -q ' T leanos_boot_allocation_check$' <<<"$symbols"; then
+  echo "error: generated image retained legacy scalar allocation authority" >&2
   exit 1
 fi
+for symbol in leanos_boot_handoff_stream_init leanos_boot_handoff_stream_step \
+  leanos_boot_decode_init leanos_boot_decode_step leanos_boot_manifest_candidate \
+  leanos_boot_manifest_start leanos_boot_select_frame leanos_boot_publish_authority; do
+  if ! grep -q " T ${symbol}$" <<<"$symbols"; then
+    echo "error: generated image does not retain $symbol" >&2
+    exit 1
+  fi
+done
 if ! grep -q ' T leanos_user_return_demo$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_user_return_demo" >&2
   exit 1
@@ -1059,6 +1121,7 @@ LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
   ./scripts/check-entry-stack-budget.sh "$build/leanos-extended-state-peer-pke.elf" \
   | tee "$build/entry-stack-extended-state-peer-pke-final-elf.txt"
 ./scripts/check-image-policy.sh "$build/leanos.elf"
+./scripts/check-image-policy.sh "$build/leanos-malformed-handoff.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
 ./scripts/check-image-policy.sh "$build/leanos-fault-containment.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state.elf"
@@ -1177,7 +1240,7 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
   ((direct_port_images += 1))
 done < "$matrix"
-[[ "$direct_port_images" -eq 49 ]] || {
+[[ "$direct_port_images" -eq 50 ]] || {
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
   exit 1
 }
@@ -1220,6 +1283,9 @@ grep -Fq 'indirect control-flow instruction' \
 
 cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-malformed-handoff.elf" \
+  "$malformed_handoff_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$malformed_handoff_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-preemption.elf" "$preemption_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$preemption_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-fault-containment.elf" \
@@ -1294,6 +1360,7 @@ cp "$build/SOURCE_REVISION" "$nmi_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$nmi_cpl3_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$bootstrap32_ud_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$bootstrap64_nmi_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$malformed_handoff_iso_root/boot/SOURCE_REVISION"
 for probe in "${direct_port_probes[@]}"; do
   cp "$build/SOURCE_REVISION" \
     "$build/iso-direct-port-${probe}/boot/SOURCE_REVISION"
@@ -1314,6 +1381,10 @@ done
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64.iso" "$iso_root" -- \
   -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-malformed-handoff.iso" \
+  "$malformed_handoff_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-preemption.iso" "$preemption_iso_root" -- \
@@ -1406,6 +1477,9 @@ for spec in "${return_corruptions[@]}"; do
     -volume_date all_file_dates 2000010100000000 >/dev/null
 done
 sha256sum "$build/leanos-${version}-x86_64.iso" \
+  "$build/leanos-${version}-x86_64-malformed-handoff.iso" \
+  "$build/leanos-malformed-handoff.elf" \
+  "$build/leanos-malformed-handoff.map" \
   "$build/leanos-${version}-x86_64-preemption.iso" \
   "$build/leanos-${version}-x86_64-fault-containment.iso" \
   "$build/leanos-${version}-x86_64-extended-state.iso" \
