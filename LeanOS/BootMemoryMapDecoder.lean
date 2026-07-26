@@ -328,6 +328,9 @@ def ignoredTags (count : Nat) : List UInt8 :=
 def repeatedEntries (count : Nat) : List (List UInt8) :=
   (List.range count).map fun frame => entry (frame * pageBytes) pageBytes 1
 
+def repeatedEntryInput (count : Nat) : Input :=
+  withBytes (information (memoryMapTag (repeatedEntries count) ++ endTag))
+
 example : errorOf (decode (withBytes (zeroes (maxTagBytes + 1)))) =
     some .bufferTooLarge := by native_decide
 
@@ -337,6 +340,18 @@ example : errorOf
 
 example : errorOf (decode (withBytes
     (information (memoryMapTag (repeatedEntries (maxEntries + 1)) ++ endTag)))) =
+    some .tooManyEntries := by native_decide
+
+example : (decode (repeatedEntryInput 128)).toOption.map (·.entries.length) =
+    some 128 := by native_decide
+
+example : (decode (repeatedEntryInput 129)).toOption.map (·.entries.length) =
+    some 129 := by native_decide
+
+example : (decode (repeatedEntryInput 256)).toOption.map (·.entries.length) =
+    some maxEntries := by native_decide
+
+example : errorOf (decode (repeatedEntryInput 257)) =
     some .tooManyEntries := by native_decide
 
 example : errorOf (decode (withBytes

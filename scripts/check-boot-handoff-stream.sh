@@ -35,6 +35,16 @@ for required in 'query < 19' 'state.word[0] != 4' \
     exit 1
   }
 done
+grep -Fq \
+  'def entryLimit : UInt64 := UInt64.ofNat LeanOS.BootMemoryMap.maxEntries' \
+  LeanOS/BootMemoryMapStreamAuthority.lean || {
+  echo "error: production decoder entry limit is not derived from the rich model" >&2
+  exit 1
+}
+if grep -Fq 'MAX_MMAP_ENTRIES' boot/kernel.c; then
+  echo "error: production C retains a second memory-map entry limit" >&2
+  exit 1
+fi
 
 lake build LeanOS.BootMemoryMapStreaming LeanOS.BootMemoryMapStreamAuthority \
   LeanOS.BootMemoryMapStreamPipeline
@@ -82,7 +92,8 @@ done
 # hide behind a non-exported name in this final focused artifact.
 while read -r text_symbol; do
   case "$text_symbol" in
-    _start|check_stream|decode|decode_extent|step_query|leanos_boot_handoff_stream_init|\
+    _start|check_stream|decode|decode_entry_count|decode_extent|step_query|\
+leanos_boot_handoff_stream_init|\
 leanos_boot_handoff_stream_step|\
 leanos_boot_decode_init|leanos_boot_decode_step|leanos_boot_manifest_candidate|\
 leanos_boot_select_frame|leanos_boot_publish_authority|\

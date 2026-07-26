@@ -6,7 +6,8 @@ a 64 KiB static buffer only through the generated version-two stream
 transition, which binds the aligned identity, advertised extent, exact offset,
 and terminal chunk. Multiboot2 alignment padding is not interpreted. The
 generated version-four authority then accepts one version-zero memory-map tag
-with at most 64 total tags and 128 24-byte entries and rejects bad headers,
+with at most 64 total tags and 256 24-byte entries, deriving that entry bound
+from the rich `BootMemoryMap.maxEntries` limit, and rejects bad headers,
 tag advances, entry layouts, duplicate or missing maps, a 65th tag, zero
 lengths, reserved entry words, and fixed-width overflow before exposing
 candidate authority.

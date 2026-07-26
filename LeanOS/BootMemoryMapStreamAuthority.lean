@@ -41,6 +41,8 @@ def phaseEntryLength : UInt64 := 5
 def phaseEntryType : UInt64 := 6
 def phaseDone : UInt64 := 7
 
+def entryLimit : UInt64 := UInt64.ofNat LeanOS.BootMemoryMap.maxEntries
+
 def initialChain : UInt64 := 0xcbf29ce484222325
 def chainPrime : UInt64 := 0x100000001b3
 
@@ -106,7 +108,7 @@ private def transitionError (version status error identity extent offset phase
       else if tagType == 6 then
         if sawMap != 0 then duplicateMap
         else if size < 40 || (size - 16) % 24 != 0 then badMapLayout
-        else if (size - 16) / 24 > 128 then tooManyEntries
+        else if (size - 16) / 24 > entryLimit then tooManyEntries
         else noError
       else noError
   else if phase == phaseIgnored then
@@ -114,12 +116,12 @@ private def transitionError (version status error identity extent offset phase
     else noError
   else if phase == phaseMapLayout then
     if low32 chunk != 24 || high32 chunk != 0 || content < 24 ||
-        content % 24 != 0 || content / 24 > 128 then badMapLayout
+        content % 24 != 0 || content / 24 > entryLimit then badMapLayout
     else noError
   else if phase == phaseEntryType then
     if high32 chunk != 0 || length == 0 ||
         length > 0xffffffffffffffff - base then badEntry
-    else if entries >= 128 then tooManyEntries
+    else if entries >= entryLimit then tooManyEntries
     else noError
   else noError
 

@@ -53,6 +53,22 @@ static struct decode_state decode(const uint64_t chunks[12], uint64_t target) {
     return decode_extent(chunks, 12, target);
 }
 
+static struct decode_state decode_entry_count(uint64_t entry_count) {
+    uint64_t chunks[4 + 3 * 257] = {0};
+    const uint64_t count = 4 + 3 * entry_count;
+    const uint64_t extent = count * 8;
+    chunks[0] = extent;
+    chunks[1] = ((16 + 24 * entry_count) << 32) | 6;
+    chunks[2] = 24;
+    for (uint64_t index = 0; index < entry_count; ++index) {
+        chunks[3 + 3 * index] = 0;
+        chunks[4 + 3 * index] = 0x4000;
+        chunks[5 + 3 * index] = 1;
+    }
+    chunks[count - 1] = UINT64_C(0x0000000800000000);
+    return decode_extent(chunks, count, 1);
+}
+
 static uint64_t step_query(const struct stream_state *state, uint64_t identity,
                            uint64_t offset, uint64_t count, uint64_t chunk,
                            uint64_t terminal, uint64_t query) {
@@ -157,6 +173,19 @@ int check_stream(void) {
     if (decoded.word[0] != 4 || decoded.word[1] != 2 ||
         decoded.word[2] != 5)
         return 19;
+    const uint64_t accepted_entry_counts[] = {128, 129, 256};
+    for (uint64_t index = 0; index < 3; ++index) {
+        const uint64_t entry_count = accepted_entry_counts[index];
+        decoded = decode_entry_count(entry_count);
+        if (decoded.word[0] != 4 || decoded.word[1] != 1 ||
+            decoded.word[2] != 0 || decoded.word[7] != 7 ||
+            decoded.word[11] != entry_count || decoded.word[18] != 2)
+            return 20 + index;
+    }
+    decoded = decode_entry_count(257);
+    if (decoded.word[0] != 4 || decoded.word[1] != 2 ||
+        decoded.word[2] != 8 || decoded.word[18] != 0)
+        return 23;
     uint64_t manifest = leanos_boot_manifest_candidate(
         800, 0, 0x100000, 0x100000, 0x200000,
         0x110000, 0x1000, 0x120000, 0x1000, 0x130000, 0x1000,
