@@ -81,10 +81,43 @@ SMEP, and SMAP mutation, plus trusted subject and address-space values equal to
 ## Trusted boundary
 
 The model assumes x86 supplies the error word and CR2 for the same fault.
-Source and final-ELF policy gates require the labeled CR2 sample to precede
-the first authorization call and require the preserved sample to supply the C
-handler; a separately labeled EFER read is excluded from the unchanged
-nine-read fast-entry inventory. Generated C, handwritten assembly/C,
-compiler/linker, QEMU, firmware, and hardware remain trusted/tested; these
-policy checks are not a proof of x86 delivery, atomicity, or final-binary
-refinement.
+The runtime adapter spells the version-one encoding as one 19-word C record.
+Assembly samples CR2 exactly once before the first call and preserves that word
+beside the saved GPR bank and hardware error/frame. After generic entry
+normalization, `authorize_page_fault_snapshot` constructs the record once as a
+`const` object, samples CR3, current subject/address-space identity, WP, NXE,
+SMEP, and SMAP into it, and invokes the generated provenance adapter. It then
+samples the selected compiled root/report and fault-page leaf and passes those
+independent observations to the allocation-free generated strengthened
+agreement transition. The machine lowering is restricted to its fixed CPL3
+page-zero read probe. Immediately before the transition it executes `invlpg`
+on the recorded fault address; the reviewed interval does not access page
+zero, so a translation refilled after address-space activation cannot satisfy
+the checked lookup-absence input. Present write and NX denial cases remain
+model coverage and are not runtime-lowering claims. The generated result
+carries an explicit contain,
+fatal, kernel-diagnostic, or reject tag; handwritten C only decodes that tag.
+Only a contain tag can call `page_fault_handler`, which receives the same
+record rather than separately selected raw arguments. Kernel-origin
+WP/SMEP/SMAP diagnostics require the distinct generated diagnostic tag. The
+generated route binds the exact armed probe state to its expected error word,
+saved RIP, CR2 address, recovery RIP, and completed probe state; stale or
+forged purposes are fatal. The C diagnostic handler consumes that typed
+recovery result and cannot reclassify the mutable probe state or snapshot.
+Diagnostic recovery cannot enter user containment.
+
+Source and final-ELF policy gates require capture-before-normalization,
+provenance-before-strengthened-agreement-before-handler order, exactly one CR2
+read, exactly one typed containment-handler and diagnostic-handler call site,
+the complete fixed diagnostic tuple arguments, and a page-zero
+invalidation operand: source policy fixes the helper input to zero, while the
+final-ELF policy requires the zeroing instruction immediately before `invlpg`
+through that same register. A wrong-target negative fixture must be rejected.
+Negative fixtures also reject a forged diagnostic purpose, both a direct
+handler bypass, and routing a generated fatal result to containment. A
+separately labeled EFER read is
+excluded from the unchanged nine-read fast-entry inventory. The scalar
+lowering, live report decoder,
+generated C, handwritten assembly/C, compiler/linker, QEMU, firmware, and
+hardware remain trusted/tested; these policy checks are not a proof of x86
+delivery, atomicity, C immutability, or final-binary refinement.

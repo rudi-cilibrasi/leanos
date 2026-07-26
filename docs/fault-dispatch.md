@@ -124,6 +124,29 @@ concrete fixture clears object 100's monotonic issuance bit while retaining all
 of its mapping, capability, binding, allocator, and lifecycle projections; the
 agreement gate must classify that stale-generation state as fatal.
 
+The boot boundary exposes an allocation-free scalar lowering of this decision
+order for the fixed image runtime. Handwritten C supplies the immutable
+canonical record plus independently decoded selected-root, report, mapping,
+and leaf observations. Hardware TLB contents are not inspectable, so the
+fixed boot adapter narrows the rich lookup-absence premise to the sole
+production containment probe: a CPL3 read of linear page zero. It invalidates
+that exact page immediately before the generated transition, and the reviewed
+interval does not access page zero. A missing exact-page boundary is an
+integrity-fatal generated route. Broader present write and NX denials remain
+model cases, not claims of this machine lowering. The generated adapter returns
+a tagged route:
+contain, fatal, kernel diagnostic, or state-preserving rejection. Only the
+contain tag carries the existing generated cleanup/survivor witness into the
+containment handler; the C adapter does not classify ordinary versus fatal
+faults. The diagnostic tag binds the armed WP/SMEP/SMAP state to its exact
+error/RIP/address/recovery tuple and carries the completed probe state; forged
+or stale diagnostic purposes are fatal before the C handler. Source and
+final-ELF gates require provenance authorization and this strengthened
+generated route before either operation-specific handler, and controlled
+negative fixtures reject fatal-to-containment and diagnostic-purpose bypasses. This
+lowering and the C-side live observations remain trusted integration code, not
+a refinement theorem from `dispatchPageFault` to the final ELF.
+
 This independently correct slice does not change the public input type of the
 older shared `dispatch` function because #104 is concurrently making the one
 global gate and owns publication of the compiled plan. The #104 integration

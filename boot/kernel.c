@@ -71,6 +71,22 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                        uint64_t);
+extern uint64_t leanos_authorize_page_fault_snapshot(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_page_fault_dispatch_transition(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);
@@ -121,6 +137,7 @@ extern uint64_t saved_context_b_original_flags, saved_context_b_original_rsp;
 extern uint64_t saved_context_a_original_rip, saved_context_b_original_rip;
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
+extern char smap_probe_instruction[], smap_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
 extern char __df_ist_stack_start[], __df_ist_stack_end[];
 extern char __df_ist_guard_start[], __df_ist_guard_end[];
@@ -153,6 +170,7 @@ extern uint64_t page_directory_b[], page_table_b[];
 #define PTE_USER 4ull
 #define PTE_ACCESSED (1ull << 5)
 #define PTE_DIRTY (1ull << 6)
+#define PTE_GLOBAL (1ull << 8)
 #define PTE_NX (1ull << 63)
 #define PTE_ADDRESS 0x000ffffffffff000ull
 
@@ -185,6 +203,48 @@ static uint8_t entry_stack[16384]
     __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
+
+/* The machine-facing spelling of InterruptEntry's version-one canonical
+   page-fault encoding.  Construction is confined to
+   authorize_page_fault_snapshot; every operation-specific consumer receives
+   the same const object after the generated provenance agreement succeeds. */
+struct page_fault_entry_record {
+    uint64_t version;
+    uint64_t vector;
+    uint64_t error;
+    uint64_t fault_address;
+    uint64_t fault_page;
+    uint64_t access;
+    uint64_t protection;
+    uint64_t user;
+    uint64_t current_subject;
+    uint64_t active_address_space;
+    uint64_t active_cr3;
+    uint64_t paging_controls;
+    uint64_t rip;
+    uint64_t saved_cs;
+    uint64_t rflags;
+    uint64_t user_rsp;
+    uint64_t user_ss;
+    uint64_t stack_identity;
+    uint64_t reserved;
+};
+
+_Static_assert(sizeof(struct page_fault_entry_record) == 19u * sizeof(uint64_t),
+               "canonical page-fault record layout");
+
+enum page_fault_transition_kind {
+    PAGE_FAULT_TRANSITION_CONTAIN = 1,
+    PAGE_FAULT_TRANSITION_FATAL = 2,
+    PAGE_FAULT_TRANSITION_KERNEL_DIAGNOSTIC = 3,
+    PAGE_FAULT_TRANSITION_REJECTED = 4
+};
+
+struct page_fault_transition {
+    enum page_fault_transition_kind kind;
+    uint64_t result;
+    const struct page_fault_entry_record *snapshot;
+};
 /* Concrete image of the bounded state consumed and published by
    ExtendedState.dispatchDenied.  Bits are indexed by subject identity. */
 struct extended_state_authority {
@@ -670,6 +730,17 @@ static void check_selected_root_a(void) {
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a) fail("pt-root-a-resume");
     serial_puts("LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS\n");
+}
+
+__attribute__((noinline, used))
+static void activate_user_address_space(uint64_t *root) {
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(root) : "memory");
+}
+
+__attribute__((noinline, used))
+static void invalidate_fixed_fault_page(void) {
+    const uint64_t fixed_page_address = 0;
+    __asm__ volatile ("invlpg (%0)" : : "r"(fixed_page_address) : "memory");
 }
 
 static void serial_u64(uint64_t value) {
@@ -2054,60 +2125,25 @@ static void arm_timer(void) {
     out8(0x43, 0x30); out8(0x40, 0xff); out8(0x40, 0xff);
 }
 
-static uint64_t page_fault_provenance_expected(uint64_t error,
-                                               uint64_t fault_address,
-                                               uint64_t context,
-                                               uint64_t controls) {
-    uint64_t access_code = ((error >> 4) & 1u) != 0 ? 2u :
-                           ((error >> 1) & 1u) != 0 ? 1u : 0u;
-    uint64_t architectural = (fault_address >> 12) * 32u +
-        access_code * 4u + (error & 1u) * 2u + ((error >> 2) & 1u);
-    uint64_t authority = context * UINT64_C(0x9e3779b185ebca87) +
-        ((controls >> 3) & 15u) * UINT64_C(0x100000001b3);
-    return (architectural + authority) & UINT64_C(0x7fffffffffffffff);
-}
-
-uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
-                            uint64_t fault_address) {
-    uint64_t provenance_cr3;
-    uint64_t provenance_cr0;
-    uint64_t provenance_cr4;
-    uint32_t provenance_efer_low, provenance_efer_high;
-    __asm__ volatile ("mov %%cr3, %0" : "=r"(provenance_cr3));
-    __asm__ volatile ("mov %%cr0, %0" : "=r"(provenance_cr0));
-    __asm__ volatile ("mov %%cr4, %0" : "=r"(provenance_cr4));
-    __asm__ volatile (".global page_fault_provenance_efer_read\n"
-                      "page_fault_provenance_efer_read:\n"
-                      "rdmsr" : "=a"(provenance_efer_low),
-                      "=d"(provenance_efer_high)
-                      : "c"(UINT32_C(0xc0000080)));
-    (void)provenance_efer_high;
-    uint64_t provenance_context = current_subject | current_subject << 8 |
-                                  (provenance_cr3 >> 12) << 16;
-    uint64_t provenance_controls = 3u |
-        ((provenance_cr0 >> 16) & 1u) << 3 |
-        ((provenance_efer_low >> 11) & 1u) << 4 |
-        ((provenance_cr4 >> 20) & 1u) << 5 |
-        ((provenance_cr4 >> 21) & 1u) << 6;
-    uint64_t provenance = leanos_page_fault_demo(
-        error, fault_address, (saved_cs & 3u) == 3u ? 0u : 1u,
-        provenance_context, provenance_controls);
-    uint64_t expected_provenance = page_fault_provenance_expected(
-        error, fault_address, provenance_context, provenance_controls);
-    if ((provenance >> 63) != 0 || provenance != expected_provenance)
-        fail("page-fault-provenance");
+__attribute__((noinline))
+uint64_t page_fault_handler(const struct page_fault_transition *transition) {
+    const struct page_fault_entry_record *snapshot = transition->snapshot;
+    const uint64_t error = snapshot->error;
+    const uint64_t rip = snapshot->rip;
+    const uint64_t fault_address = snapshot->fault_address;
+    if (transition->kind != PAGE_FAULT_TRANSITION_CONTAIN)
+        fail("page-fault-containment-bypass");
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
-    if ((saved_cs & 3u) == 3u && error == 5u &&
-        rip == (uint64_t)user_a_fault_instruction && fault_address == 0u) {
-        uint64_t cr3;
-        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
-        if (current_subject != 1 || cr3 != (uint64_t)page_map_level_4_a ||
-            saved_context_owner_b != 2 || !initial_b_frame_valid(initial_context_b))
+    if (error == 5u && rip == (uint64_t)user_a_fault_instruction &&
+        fault_address == 0u) {
+        if (snapshot->current_subject != 1 ||
+            snapshot->active_address_space != 1 ||
+            snapshot->active_cr3 != (uint64_t)page_map_level_4_a ||
+            saved_context_owner_b != 2 ||
+            !initial_b_frame_valid(initial_context_b))
             fail("fault-authority-binding");
         serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS\n");
-        uint64_t result = leanos_fault_dispatch_demo(14, saved_cs & 3u,
-            current_subject, current_subject, saved_context_owner_b,
-            saved_context_owner_b);
+        uint64_t result = transition->result;
         if (result != UINT64_C(0x00000000ff020202))
             fail("fault-model-dispatch");
         uint64_t selected = (result >> 8) & 0xffu;
@@ -2127,35 +2163,176 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
         return 2;
     }
 #endif
-    if ((saved_cs & 3u) == 3u && error == 5u &&
-        rip == (uint64_t)user_a_fault_instruction && fault_address == 0u) {
+    if (error != 5u || rip != (uint64_t)user_a_fault_instruction ||
+        fault_address != 0u)
+        fail("user-fault");
 #ifdef LEANOS_ENTRY_HIGH_WATER
-        report_entry_stack_high_water("user-page-fault");
+    report_entry_stack_high_water("user-page-fault");
 #endif
-        serial_puts("LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS\n");
-        return (uint64_t)user_a_fault_recovered;
-    }
-    if (supervisor_probe == 1 && (saved_cs & 3u) == 0u && error == 3u &&
-        rip == (uint64_t)wp_probe_instruction &&
-        fault_address == (uint64_t)wp_probe_target) {
+    serial_puts("LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS\n");
+    return (uint64_t)user_a_fault_recovered;
+}
+
+__attribute__((noinline))
+uint64_t page_fault_diagnostic_handler(
+    const struct page_fault_transition *transition) {
+    const uint64_t recovery = transition->result &
+        UINT64_C(0x0000ffffffffffff);
+    const uint64_t completed_state = transition->result >> 48;
+    if (transition->kind != PAGE_FAULT_TRANSITION_KERNEL_DIAGNOSTIC ||
+        recovery == 0 ||
+        (completed_state != 2 && completed_state != 4 &&
+         completed_state != 6))
+        fail("page-fault-diagnostic-bypass");
+    supervisor_probe = (unsigned)completed_state;
+    if (completed_state == 2) {
         serial_puts("LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS\n");
-        supervisor_probe = 2;
-        return (uint64_t)wp_probe_recovered;
-    }
-    if (supervisor_probe == 3 && (saved_cs & 3u) == 0u && error == 17u &&
-        rip == (uint64_t)user_a_entry && fault_address == (uint64_t)user_a_entry) {
+    } else if (completed_state == 4) {
         serial_puts("LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS\n");
-        supervisor_probe = 4;
-        return (uint64_t)smep_probe_recovered;
-    }
-    if (supervisor_probe == 5 && (saved_cs & 3u) == 0u && error == 1u &&
-        fault_address == (uint64_t)user_a_stack) {
-        extern char smap_probe_recovered[];
+    } else {
         serial_puts("LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS\n");
-        supervisor_probe = 6;
-        return (uint64_t)smap_probe_recovered;
     }
-    fail("kernel-fault");
+    return recovery;
+}
+
+/* Construct one immutable vector-14 record before any operation-specific
+   handler.  `frame` points at the one preserved CR2 word followed by the
+   saved GPR bank and the hardware error/frame.  CR2 is never reread here.
+   The generated adapter must agree with the record's architectural fields and
+   independently sampled kernel context before page_fault_handler is called. */
+__attribute__((noinline))
+uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
+    uint64_t cr3, cr0, cr4;
+    uint32_t provenance_efer_low, provenance_efer_high;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    __asm__ volatile (".global page_fault_provenance_efer_read\n"
+                      "page_fault_provenance_efer_read:\n"
+                      "rdmsr" : "=a"(provenance_efer_low),
+                      "=d"(provenance_efer_high)
+                      : "c"(UINT32_C(0xc0000080)));
+    (void)provenance_efer_high;
+
+    const uint64_t error = frame[16];
+    const uint64_t saved_cs = frame[18];
+    const uint64_t user = (saved_cs & 3u) == 3u;
+    const uint64_t active_address_space =
+        cr3 == (uint64_t)page_map_level_4_a ? 1u :
+        cr3 == (uint64_t)page_map_level_4_b ? 2u : 0u;
+    const uint64_t paging_controls =
+        ((cr0 >> 16) & 1u) |
+        ((uint64_t)(provenance_efer_low >> 11) & 1u) << 1 |
+        ((cr4 >> 20) & 1u) << 2 |
+        ((cr4 >> 21) & 1u) << 3;
+    const uint64_t trusted_subject = current_subject;
+    const uint64_t trusted_stack_identity = user ? 1u : 2u;
+    const struct page_fault_entry_record snapshot = {
+        .version = 1,
+        .vector = 14,
+        .error = error,
+        .fault_address = frame[0],
+        .fault_page = frame[0] >> 12,
+        .access = ((error >> 4) & 1u) != 0 ? 2u :
+                  ((error >> 1) & 1u) != 0 ? 1u : 0u,
+        .protection = error & 1u,
+        .user = user,
+        .current_subject = trusted_subject,
+        .active_address_space = active_address_space,
+        .active_cr3 = cr3,
+        .paging_controls = paging_controls,
+        .rip = frame[17],
+        .saved_cs = saved_cs,
+        .rflags = frame[19],
+        .user_rsp = user ? frame[20] : 0,
+        .user_ss = user ? frame[21] : 0,
+        .stack_identity = trusted_stack_identity,
+        .reserved = 0
+    };
+    const uint64_t canonical = leanos_authorize_page_fault_snapshot(
+        snapshot.version, snapshot.vector, snapshot.error,
+        snapshot.fault_address, snapshot.fault_page, snapshot.access,
+        snapshot.protection, snapshot.user, snapshot.current_subject,
+        snapshot.active_address_space, snapshot.active_cr3,
+        snapshot.paging_controls, snapshot.rip, snapshot.saved_cs,
+        snapshot.rflags, snapshot.user_rsp, snapshot.user_ss,
+        snapshot.stack_identity, snapshot.reserved, trusted_subject,
+        active_address_space, cr3, paging_controls, trusted_stack_identity);
+    uint64_t *root = active_address_space == 1 ? page_map_level_4_a :
+                     active_address_space == 2 ? page_map_level_4_b : 0;
+    uint64_t *pdpt = active_address_space == 1 ? page_directory_pointer_a :
+                     active_address_space == 2 ? page_directory_pointer_b : 0;
+    uint64_t *pd = active_address_space == 1 ? page_directory_a :
+                   active_address_space == 2 ? page_directory_b : 0;
+    uint64_t *pt = active_address_space == 1 ? page_table_a :
+                   active_address_space == 2 ? page_table_b : 0;
+    const uint64_t report_agrees = !user ||
+        (root != 0 && decoded_root_matches((unsigned)active_address_space,
+                                           root, pdpt, pd, pt, 0));
+    const uint64_t expected_leaf =
+        user && snapshot.fault_page < BOOT_LEAF_COUNT ?
+            expected_boot_leaf((unsigned)active_address_space,
+                               snapshot.fault_page) : 0;
+    const uint64_t live_leaf =
+        user && pt != 0 && snapshot.fault_page < BOOT_LEAF_COUNT ?
+            pt[snapshot.fault_page] & ~(PTE_ACCESSED | PTE_DIRTY) : 0;
+    /* The boot lowering is deliberately limited to its one production
+       containment probe: CPL3 reads linear page zero, which the kernel never
+       accesses between this instruction and the generated transition.  An
+       exact invalidation here establishes absence for snapshot.fault_page
+       even if that translation was refilled after the earlier CR3 reload.
+       Broader present write/NX cases remain modeled but are not claimed by
+       this machine adapter. */
+    const uint64_t fixed_fault_page =
+        user && snapshot.fault_address == 0 && snapshot.fault_page == 0 &&
+        snapshot.error == 5 && snapshot.access == 0 &&
+        snapshot.protection == 1;
+    invalidate_fixed_fault_page();
+    const uint64_t checked_exact_fault_page_invalidation = fixed_fault_page;
+    const uint64_t route = leanos_page_fault_dispatch_transition(
+        snapshot.version, snapshot.vector, snapshot.error,
+        snapshot.fault_address, snapshot.fault_page, snapshot.access,
+        snapshot.protection, snapshot.user, snapshot.current_subject,
+        snapshot.active_address_space, snapshot.active_cr3,
+        snapshot.paging_controls, snapshot.rip, snapshot.saved_cs,
+        snapshot.rflags, snapshot.user_rsp, snapshot.user_ss,
+        snapshot.stack_identity, snapshot.reserved, trusted_subject,
+        active_address_space, cr3, paging_controls, trusted_stack_identity,
+        canonical, supervisor_probe,
+        (uint64_t)wp_probe_instruction, (uint64_t)wp_probe_target,
+        (uint64_t)wp_probe_recovered,
+        (uint64_t)user_a_entry, (uint64_t)user_a_entry,
+        (uint64_t)smep_probe_recovered,
+        (uint64_t)smap_probe_instruction, (uint64_t)user_a_stack,
+        (uint64_t)smap_probe_recovered,
+        active_address_space, (uint64_t)root,
+        active_address_space, (uint64_t)root, report_agrees,
+        expected_leaf, live_leaf,
+        current_subject == snapshot.current_subject, 1, current_subject,
+        active_address_space, active_address_space, active_address_space,
+        0, 0, checked_exact_fault_page_invalidation, current_subject,
+        active_address_space,
+        saved_context_owner_b, saved_context_owner_b);
+    const struct page_fault_transition transition = {
+        .kind = (enum page_fault_transition_kind)(route >> 56),
+        .result = route & UINT64_C(0x00ffffffffffffff),
+        .snapshot = &snapshot
+    };
+    if (snapshot.active_address_space == 0 ||
+        snapshot.current_subject != snapshot.active_address_space ||
+        canonical == 0)
+        fail("page-fault-provenance");
+    switch (transition.kind) {
+    case PAGE_FAULT_TRANSITION_CONTAIN:
+        return page_fault_handler(&transition);
+    case PAGE_FAULT_TRANSITION_KERNEL_DIAGNOSTIC:
+        return page_fault_diagnostic_handler(&transition);
+    case PAGE_FAULT_TRANSITION_FATAL:
+        fail("page-fault-fatal");
+    case PAGE_FAULT_TRANSITION_REJECTED:
+    default:
+        fail("page-fault-rejected");
+    }
 }
 
 #ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
@@ -2413,13 +2590,13 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     check_initial_b_frame_negative();
 #ifdef LEANOS_NMI_PROBE
     current_subject = 1;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/17 NMI-READY origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     current_subject = 1;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    activate_user_address_space(page_map_level_4_a);
     if (extended_state_probe_class > 6)
         fail("extended-state-probe-class");
     serial_puts(extended_state_probe_class >= 5
@@ -2436,19 +2613,19 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
     current_subject = 1;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
     current_subject = 1;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/16 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_INTEGER_FAULT_SCENARIO)
     current_subject = 1;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_a) : "memory");
+    activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/18 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
@@ -2457,7 +2634,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     enter_user(user_a_entry, user_a_stack_top);
 #else
     current_subject = 2;
-    __asm__ volatile ("mov %0, %%cr3" : : "r"(page_map_level_4_b) : "memory");
+    activate_user_address_space(page_map_level_4_b);
     check_selected_root_b();
     serial_puts("LEANOS/10 IPC event=enter subject=2 address-space=2 cpl=3 endpoint=10\n");
     enter_user(user_b_entry, user_b_stack_top);
