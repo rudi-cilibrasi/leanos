@@ -702,6 +702,21 @@ theorem composite_deferred_cancel_public_gate_and_trace_preserve
     FailStop.runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
       state subjects hstate⟩
 
+/-- The complete inbound-interrupt family composes with an arbitrary public
+deferred-drain suffix.  The identity premise is consumed only if the interrupt
+selects contained user-fault cleanup; all other typed interrupt outcomes retain
+the deferred store and context banks exactly. -/
+theorem composite_interrupt_then_deferred_trace_preserves
+    state frame (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state)
+    (hbound : FailStop.ContainedFaultIdentityBound state) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (.ordinary (.interrupt frame) ::
+          subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact FailStop.runAuthoritativeInterruptThenDeferredDrains_preserves
+    state frame subjects hstate hbound
+
 /-- Supporting mixed-trace theorem: identity-bound contained interrupt cleanup
 and every finite deferred-cancellation suffix execute through the one public
 successor gate while preserving the complete deferred invariant. -/

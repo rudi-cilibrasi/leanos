@@ -11819,6 +11819,73 @@ theorem gate_interrupt_noncontained_preserves_blockingRuntimeWellFormed
         | alreadyHalted record =>
             simpa [gate, hmode, applyOperation, entry, haction] using hstate.2
 
+/-- Every non-contained interrupt outcome also retains the complete deferred
+cancellation classification.  Fatal entry changes only the execution and
+resumable halt latches; timer, syscall, rejected, and already-halted outcomes
+leave the waiter, saved-context, retained-context, and resumable banks exact. -/
+theorem gate_interrupt_noncontained_preserves_deferredBlockingRuntimeWellFormed
+    state frame
+    (hnoncontained : ∀ subject,
+      (dispatchHardware state.execution frame).action ≠ .contained subject)
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed (gate state (.interrupt frame)).state := by
+  constructor
+  · exact (gate_interrupt_noncontained_preserves_blockingRuntimeWellFormed
+      state frame hnoncontained ⟨hstate.1, hstate.2.1.1⟩).1
+  · cases hmode : state.execution.mode with
+    | handling active => simpa [gate, hmode] using hstate.2
+    | halted record => simpa [gate, hmode] using hstate.2
+    | running =>
+        let entry := dispatchHardware state.execution frame
+        cases haction : entry.action with
+        | contained subject =>
+            exact False.elim (hnoncontained subject (by simpa [entry] using haction))
+        | fatal reason =>
+            have hscheduler : state.resumable.scheduler = state.blockingIPC.scheduler :=
+              hstate.1.1.2.2.2.2.2.2.2.1.trans hstate.1.blockingScheduler.symm
+            simpa [gate, hmode, applyOperation, entry, haction, installResumable,
+              hscheduler,
+              CompositeState.DeferredCancellationWellFormed,
+              CompositeState.blockingIPCContext] using hstate.2
+        | timer =>
+            simpa [gate, hmode, applyOperation, entry, haction,
+              CompositeState.DeferredCancellationWellFormed,
+              CompositeState.blockingIPCContext] using hstate.2
+        | syscall =>
+            simpa [gate, hmode, applyOperation, entry, haction,
+              CompositeState.DeferredCancellationWellFormed,
+              CompositeState.blockingIPCContext] using hstate.2
+        | rejected reason =>
+            simpa [gate, hmode, applyOperation, entry, haction,
+              CompositeState.DeferredCancellationWellFormed,
+              CompositeState.blockingIPCContext] using hstate.2
+        | alreadyHalted record =>
+            simpa [gate, hmode, applyOperation, entry, haction] using hstate.2
+
+/-- The complete interrupt family preserves the deferred blocking runtime.
+The trusted execution/lifecycle binding is consumed only by the contained
+user-fault branch; all other typed outcomes preserve the same invariant
+without an additional readiness fact. -/
+theorem gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
+    state frame
+    (hstate : DeferredBlockingRuntimeWellFormed state)
+    (hbound : ContainedFaultIdentityBound state) :
+    DeferredBlockingRuntimeWellFormed (gate state (.interrupt frame)).state := by
+  by_cases hcontained :
+      ∃ subject, (dispatchHardware state.execution frame).action = .contained subject
+  · obtain ⟨subject, haction⟩ := hcontained
+    have hpreserved :=
+      interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
+        state frame subject hstate hbound haction
+    have hmode : state.execution.mode = .running := by
+      cases hmode : state.execution.mode with
+      | handling active => simp [dispatchHardware, hmode, halt] at haction
+      | halted record => simp [dispatchHardware, hmode] at haction
+      | running => rfl
+    simpa [gate, hmode] using hpreserved
+  · exact gate_interrupt_noncontained_preserves_deferredBlockingRuntimeWellFormed
+      state frame (fun subject haction => hcontained ⟨subject, haction⟩) hstate
+
 /-- Ordinary operations currently known to retain the complete blocking
 runtime invariant.  Neutral control/data-IPC steps keep the blocking state
 literal; raw and syscall mapping use the scheduler replacement law above;
@@ -12316,6 +12383,19 @@ theorem authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFor
   | handling active => simpa [authoritativeGate, hmode] using hstate
   | halted record => simpa [authoritativeGate, hmode] using hstate
 
+/-- The public successor gate retains the complete deferred blocking runtime
+across every inbound interrupt result under the explicit contained-entry
+identity binding. -/
+theorem authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
+    state frame
+    (hstate : DeferredBlockingRuntimeWellFormed state)
+    (hbound : ContainedFaultIdentityBound state) :
+    DeferredBlockingRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.interrupt frame))).state := by
+  rw [authoritativeGate_ordinary_state]
+  exact gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
+    state frame hstate hbound
+
 /-- Finite public traces containing only capacity-checked deferred drains keep
 the complete deferred-cancellation invariant.  Each successful member removes
 one retained entry, while every typed denial and every terminal suffix is
@@ -12333,6 +12413,23 @@ theorem runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellForm
       exact ih _
         (authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFormed
           state subject hstate)
+
+/-- Every inbound interrupt result can be followed by an arbitrary finite
+deferred-drain suffix without leaving the public authoritative gate or
+weakening the deferred blocking invariant between steps. -/
+theorem runAuthoritativeInterruptThenDeferredDrains_preserves
+    state frame (subjects : List BlockingIPC.SubjectId)
+    (hstate : DeferredBlockingRuntimeWellFormed state)
+    (hbound : ContainedFaultIdentityBound state) :
+    DeferredBlockingRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary (.interrupt frame) ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  simp only [runAuthoritativeOperations]
+  exact runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
+    (authoritativeGate state (.ordinary (.interrupt frame))).state subjects
+    (authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
+      state frame hstate hbound)
 
 /-- A contained interrupt and its capacity-checked deferred-cancellation
 continuation form one public mixed trace.  The trusted execution/lifecycle
