@@ -30,6 +30,7 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t, uint
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
 extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
+extern uint64_t leanos_page_fault_diagnostic_regression_demo(uint64_t);
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) { return left == right; }
 
 int main(void) {
@@ -102,6 +103,11 @@ int main(void) {
     if (leanos_page_fault_dispatch_regression_demo(0) != UINT64_C(2) ||
         leanos_page_fault_dispatch_regression_demo(1) != UINT64_C(2)) {
         fputs("page-fault rich/scalar regression route was not fatal\n", stderr);
+        return 1;
+    }
+    if (leanos_page_fault_diagnostic_regression_demo(0) != UINT64_C(2) ||
+        leanos_page_fault_diagnostic_regression_demo(1) != UINT64_C(2)) {
+        fputs("page-fault stale/forged diagnostic route was not fatal\n", stderr);
         return 1;
     }
     return 0;

@@ -1761,15 +1761,22 @@ word carries the existing `faultDispatchDemo` containment result.  The most
 significant byte is the generated route tag: `1` contain, `2` fatal, `3`
 kernel diagnostic, or `4` state-preserving rejection.  The low 56 bits carry
 the containment witness or typed fatal class (`2` malformed/provenance, `3`
-root/report/mapping/TLB integrity, `4` error/walk mismatch).  Handwritten C
-may decode this tag, but cannot choose ordinary containment over fatality. -/
+root/report/mapping/TLB integrity, `4` error/walk mismatch).  A diagnostic
+result binds the exact armed probe state and its expected RIP, address, and
+recovery RIP; bits 48--55 carry the generated completed probe state and bits
+0--47 carry the reviewed recovery RIP.  Handwritten C may decode this result,
+but cannot choose ordinary containment, diagnostic recovery, or fatality. -/
 
 def pageFaultDispatchTransition
     (version vector errorWord faultAddress faultPage accessCode protectionCode
       privilegeCode currentSubject activeAddressSpace activeCr3 controlsCode rip
       cs flags userRsp userSs stackIdentity reserved trustedSubject
       trustedAddressSpace trustedCr3 trustedControls trustedStackIdentity
-      canonicalAuthorization planSpace planRootCr3 reportSpace reportRootCr3
+      canonicalAuthorization diagnosticProbeState
+      wpExpectedRip wpExpectedFaultAddress wpRecoveryRip
+      smepExpectedRip smepExpectedFaultAddress smepRecoveryRip
+      smapExpectedRip smapExpectedFaultAddress smapRecoveryRip
+      planSpace planRootCr3 reportSpace reportRootCr3
       liveRootReportValid expectedLeaf liveLeaf liveSubject runnable
       lifecycleCurrent addressOwner translationsActive virtualOwner
       virtualMappingObject lifecycleMappingObject checkedExactFaultPageInvalidation
@@ -1801,7 +1808,21 @@ def pageFaultDispatchTransition
       canonicalAuthorization != (if privilegeCode = 1 then 1 else 2) then
     0x0200000000000002
   else if privilegeCode != 1 then
-    0x0300000000000001
+    let diagnosticResult :=
+      if diagnosticProbeState = 1 && errorWord = 3 &&
+          rip = wpExpectedRip && faultAddress = wpExpectedFaultAddress &&
+          wpRecoveryRip != 0 && wpRecoveryRip < 0x0001000000000000 then
+        0x0302000000000000 + wpRecoveryRip
+      else if diagnosticProbeState = 3 && errorWord = 17 &&
+          rip = smepExpectedRip && faultAddress = smepExpectedFaultAddress &&
+          smepRecoveryRip != 0 && smepRecoveryRip < 0x0001000000000000 then
+        0x0304000000000000 + smepRecoveryRip
+      else if diagnosticProbeState = 5 && errorWord = 1 &&
+          rip = smapExpectedRip && faultAddress = smapExpectedFaultAddress &&
+          smapRecoveryRip != 0 && smapRecoveryRip < 0x0001000000000000 then
+        0x0306000000000000 + smapRecoveryRip
+      else 0
+    if diagnosticResult = 0 then 0x0200000000000002 else diagnosticResult
   else if currentSubject != current || trustedSubject != current ||
       activeAddressSpace != active || trustedAddressSpace != active then
     0x0400000000000000
@@ -1839,7 +1860,11 @@ def pageFaultDispatchTransitionExport
       privilegeCode currentSubject activeAddressSpace activeCr3 controlsCode rip
       cs flags userRsp userSs stackIdentity reserved trustedSubject
       trustedAddressSpace trustedCr3 trustedControls trustedStackIdentity
-      canonicalAuthorization planSpace planRootCr3 reportSpace reportRootCr3
+      canonicalAuthorization diagnosticProbeState
+      wpExpectedRip wpExpectedFaultAddress wpRecoveryRip
+      smepExpectedRip smepExpectedFaultAddress smepRecoveryRip
+      smapExpectedRip smapExpectedFaultAddress smapRecoveryRip
+      planSpace planRootCr3 reportSpace reportRootCr3
       liveRootReportValid expectedLeaf liveLeaf liveSubject runnable
       lifecycleCurrent addressOwner translationsActive virtualOwner
       virtualMappingObject lifecycleMappingObject checkedExactFaultPageInvalidation
@@ -1848,8 +1873,12 @@ def pageFaultDispatchTransitionExport
     accessCode protectionCode privilegeCode currentSubject activeAddressSpace
     activeCr3 controlsCode rip cs flags userRsp userSs stackIdentity reserved
     trustedSubject trustedAddressSpace trustedCr3 trustedControls
-    trustedStackIdentity canonicalAuthorization planSpace planRootCr3 reportSpace
-    reportRootCr3 liveRootReportValid expectedLeaf liveLeaf liveSubject runnable
+    trustedStackIdentity canonicalAuthorization diagnosticProbeState
+    wpExpectedRip wpExpectedFaultAddress wpRecoveryRip
+    smepExpectedRip smepExpectedFaultAddress smepRecoveryRip
+    smapExpectedRip smapExpectedFaultAddress smapRecoveryRip
+    planSpace planRootCr3 reportSpace reportRootCr3 liveRootReportValid
+    expectedLeaf liveLeaf liveSubject runnable
     lifecycleCurrent addressOwner translationsActive virtualOwner
     virtualMappingObject lifecycleMappingObject checkedExactFaultPageInvalidation
     current active ready contextOwner
@@ -1859,7 +1888,8 @@ theorem page_fault_dispatch_transition_contained_nonvacuous :
       1 14 5 0x1000 1 0 1 1 1 1 0xa000 15
       0x400100 0x23 0x202 0x500ff8 0x1b 1 0
       1 1 0xa000 15 1
-      1 1 0xa000 1 0xa000 1 1 1 1 1 1 1 1 1 0 0 1 1 1 2 2 =
+      1 0 0 0 0 0 0 0 0 0 0
+      1 0xa000 1 0xa000 1 1 1 1 1 1 1 1 1 0 0 1 1 1 2 2 =
         0x01000000ff020202 := by
   native_decide
 
@@ -1868,8 +1898,39 @@ theorem page_fault_dispatch_transition_mismatch_is_fatal :
       1 14 4 0x32000 50 0 0 1 1 1 0xa000 15
       0x400100 0x23 0x202 0x500ff8 0x1b 1 0
       1 1 0xa000 15 1
-      1 1 0xa000 1 0xa000 1 1 1 1 1 1 1 1 1 0 0 1 1 1 2 2 =
+      1 0 0 0 0 0 0 0 0 0 0
+      1 0xa000 1 0xa000 1 1 1 1 1 1 1 1 1 0 0 1 1 1 2 2 =
         0x0200000000000004 := by
+  native_decide
+
+theorem page_fault_dispatch_transition_diagnostic_binding :
+    pageFaultDispatchTransition
+        1 14 3 0x301000 0x301 1 1 0 1 1 0xa000 15
+        0x300100 0x08 0x202 0 0 2 0
+        1 1 0xa000 15 2
+        2 1 0x300100 0x301000 0x300108
+        0x400100 0x400100 0x300208
+        0x300300 0x500000 0x300308
+        0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 =
+      0x0302000000300108 ∧
+    pageFaultDispatchTransition
+        1 14 3 0x301000 0x301 1 1 0 1 1 0xa000 15
+        0x300100 0x08 0x202 0 0 2 0
+        1 1 0xa000 15 2
+        2 2 0x300100 0x301000 0x300108
+        0x400100 0x400100 0x300208
+        0x300300 0x500000 0x300308
+        0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 =
+      0x0200000000000002 ∧
+    pageFaultDispatchTransition
+        1 14 3 0x301000 0x301 1 1 0 1 1 0xa000 15
+        0x300101 0x08 0x202 0 0 2 0
+        1 1 0xa000 15 2
+        2 1 0x300100 0x301000 0x300108
+        0x400100 0x400100 0x300208
+        0x300300 0x500000 0x300308
+        0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 =
+      0x0200000000000002 := by
   native_decide
 
 private def bootCleanupWitness (before : ResumablePreemption.State)
@@ -2114,7 +2175,8 @@ theorem page_fault_dispatch_transition_consumes_strengthened_dispatch :
       1 14 5 0x1000 1 0 1 1 1 1 0xa000 15
       0x400100 0x23 0x202 0x500ff8 0x1b 1 0
       1 1 0xa000 15 1
-      1 1 0xa000 1 0xa000 1 1 1 1 1 1 1 1 1 0 0 1 1 1 2 2 =
+      1 0 0 0 0 0 0 0 0 0 0
+      1 0xa000 1 0xa000 1 1 1 1 1 1 1 1 1 0 0 1 1 1 2 2 =
         0x0100000000000000 +
           encodeBootOutcome pageFaultAgreementWitnessState
             (pageFaultAgreementWitnessOutcome
@@ -2450,7 +2512,8 @@ def pageFaultDispatchRegressionDemo (kind : UInt64) : UInt64 :=
       1 1 1 0xa000 15
       0x400100 0x23 0x202 0x500ff8 0x1b 1 0
       1 1 0xa000 15 1
-      1 1 0xa000 1 0xa000 1 leaf leaf
+      1 0 0 0 0 0 0 0 0 0 0
+      1 0xa000 1 0xa000 1 leaf leaf
       1 1 1 1 1 1 0 0 checkedFlush 1 1 2 2
   scalar / 0x0100000000000000
 
@@ -2458,13 +2521,43 @@ def pageFaultDispatchRegressionDemo (kind : UInt64) : UInt64 :=
 def pageFaultDispatchRegressionDemoExport (kind : UInt64) : UInt64 :=
   pageFaultDispatchRegressionDemo kind
 
+/-! Generated-code diagnostic regressions keep the kernel-origin branch on the
+same allocation-free route as the boot image.  Kind zero supplies a stale
+completed probe state; kind one forges the WP purpose around a SMEP snapshot.
+Neither can obtain the diagnostic tag or a recovery RIP. -/
+
+def pageFaultDiagnosticRegressionDemo (kind : UInt64) : UInt64 :=
+  let forgedPurpose := kind = 1
+  let errorWord := if forgedPurpose then 17 else 3
+  let faultAddress := if forgedPurpose then 0x400100 else 0x301000
+  let faultPage := faultAddress / 4096
+  let accessCode := if forgedPurpose then 2 else 1
+  let rip := if forgedPurpose then 0x400100 else 0x300100
+  let probeState := if forgedPurpose then 1 else 2
+  let scalar :=
+    pageFaultDispatchTransition
+      1 14 errorWord faultAddress faultPage accessCode 1
+      0 1 1 0xa000 15 rip 0x08 0x202 0 0 2 0
+      1 1 0xa000 15 2
+      2 probeState 0x300100 0x301000 0x300108
+      0x400100 0x400100 0x300208
+      0x300300 0x500000 0x300308
+      0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  scalar / 0x0100000000000000
+
+@[export leanos_page_fault_diagnostic_regression_demo]
+def pageFaultDiagnosticRegressionDemoExport (kind : UInt64) : UInt64 :=
+  pageFaultDiagnosticRegressionDemo kind
+
 theorem page_fault_generated_cross_path_regressions_are_fatal :
     pageFaultImpossibleWriteInstructionOutcome.action =
         .fatal (.pageFaultIntegrity .malformedSnapshot) ∧
       pageFaultDispatchRegressionDemo 0 = 2 ∧
       pageFaultAgreementIncoherentOutcome.action =
-        .fatal (.pageFaultIntegrity .incoherentTlb) ∧
-      pageFaultDispatchRegressionDemo 1 = 2 := by
+          .fatal (.pageFaultIntegrity .incoherentTlb) ∧
+      pageFaultDispatchRegressionDemo 1 = 2 ∧
+      pageFaultDiagnosticRegressionDemo 0 = 2 ∧
+      pageFaultDiagnosticRegressionDemo 1 = 2 := by
   native_decide
 
 /-- Authorization cannot substitute a different decoded record. -/

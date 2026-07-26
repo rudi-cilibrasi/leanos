@@ -138,9 +138,12 @@ a tagged route:
 contain, fatal, kernel diagnostic, or state-preserving rejection. Only the
 contain tag carries the existing generated cleanup/survivor witness into the
 containment handler; the C adapter does not classify ordinary versus fatal
-faults. Source and final-ELF gates require provenance authorization and this
-strengthened generated route before either operation-specific handler, and a
-controlled negative fixture rejects a fatal-to-containment bypass. This
+faults. The diagnostic tag binds the armed WP/SMEP/SMAP state to its exact
+error/RIP/address/recovery tuple and carries the completed probe state; forged
+or stale diagnostic purposes are fatal before the C handler. Source and
+final-ELF gates require provenance authorization and this strengthened
+generated route before either operation-specific handler, and controlled
+negative fixtures reject fatal-to-containment and diagnostic-purpose bypasses. This
 lowering and the C-side live observations remain trusted integration code, not
 a refinement theorem from `dispatchPageFault` to the final ELF.
 

@@ -146,7 +146,8 @@ done < <(nm -n "$elf" | awk '$3 ~ /^(page_map_level_4_[ab]|page_table_[ab]|gdt64
 # and disassembly: WP is set in the final CR0 paging write, while SMEP is enabled
 # by a distinct routine invoked only after privilege_init installs vector 14.
 for symbol in enable_smep run_wp_probe wp_probe_instruction wp_probe_recovered \
-  wp_probe_target run_smep_probe smep_probe_instruction smep_probe_recovered; do
+  wp_probe_target run_smep_probe smep_probe_instruction smep_probe_recovered \
+  smap_probe_instruction smap_probe_recovered; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: supervisor-control evidence symbol missing: $symbol" >&2; exit 1;
   }
@@ -164,10 +165,13 @@ for symbol in smap_copy_from_cld smap_copy_from_stac smap_copy_from_clac \
   run_smap_probe; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || { echo "error: SMAP evidence symbol missing: $symbol" >&2; exit 1; }
 done
-grep -Fq 'fault_address == (uint64_t)wp_probe_target' boot/kernel.c
-grep -Fq 'fault_address == (uint64_t)user_a_entry' boot/kernel.c
+grep -Fq '(uint64_t)wp_probe_instruction, (uint64_t)wp_probe_target,' boot/kernel.c
+grep -Fq '(uint64_t)user_a_entry, (uint64_t)user_a_entry,' boot/kernel.c
+grep -Fq '(uint64_t)smap_probe_instruction, (uint64_t)user_a_stack,' boot/kernel.c
+grep -Fq '(uint64_t)smap_probe_recovered,' boot/kernel.c
 grep -Fq 'if (supervisor_probe != 2) fail("wp-no-fault")' boot/kernel.c
 grep -Fq 'if (supervisor_probe != 4) fail("smep-no-fault")' boot/kernel.c
+grep -Fq 'if (supervisor_probe != 6) fail("smap-no-fault")' boot/kernel.c
 
 for suffix in a b; do
   page_table_start="$(nm -n "$elf" | awk -v name="page_table_$suffix" '$3 == name { print "0x" $1 }')"

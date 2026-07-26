@@ -99,17 +99,23 @@ carries an explicit contain,
 fatal, kernel-diagnostic, or reject tag; handwritten C only decodes that tag.
 Only a contain tag can call `page_fault_handler`, which receives the same
 record rather than separately selected raw arguments. Kernel-origin
-WP/SMEP/SMAP diagnostics require the distinct generated diagnostic tag and
-cannot enter user containment.
+WP/SMEP/SMAP diagnostics require the distinct generated diagnostic tag. The
+generated route binds the exact armed probe state to its expected error word,
+saved RIP, CR2 address, recovery RIP, and completed probe state; stale or
+forged purposes are fatal. The C diagnostic handler consumes that typed
+recovery result and cannot reclassify the mutable probe state or snapshot.
+Diagnostic recovery cannot enter user containment.
 
 Source and final-ELF policy gates require capture-before-normalization,
 provenance-before-strengthened-agreement-before-handler order, exactly one CR2
-read, exactly one typed containment-handler call site, and a page-zero
+read, exactly one typed containment-handler and diagnostic-handler call site,
+the complete fixed diagnostic tuple arguments, and a page-zero
 invalidation operand: source policy fixes the helper input to zero, while the
 final-ELF policy requires the zeroing instruction immediately before `invlpg`
 through that same register. A wrong-target negative fixture must be rejected.
-Negative fixtures also reject both a direct handler bypass and routing a
-generated fatal result to containment. A separately labeled EFER read is
+Negative fixtures also reject a forged diagnostic purpose, both a direct
+handler bypass, and routing a generated fatal result to containment. A
+separately labeled EFER read is
 excluded from the unchanged nine-read fast-entry inventory. The scalar
 lowering, live report decoder,
 generated C, handwritten assembly/C, compiler/linker, QEMU, firmware, and

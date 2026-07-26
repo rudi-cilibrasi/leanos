@@ -84,6 +84,8 @@ extern uint64_t leanos_page_fault_dispatch_transition(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
@@ -135,6 +137,7 @@ extern uint64_t saved_context_b_original_flags, saved_context_b_original_rsp;
 extern uint64_t saved_context_a_original_rip, saved_context_b_original_rip;
 extern char wp_probe_instruction[], wp_probe_recovered[], wp_probe_target[];
 extern char smep_probe_recovered[];
+extern char smap_probe_instruction[], smap_probe_recovered[];
 extern char __boot_image_start[], __boot_image_end[];
 extern char __df_ist_stack_start[], __df_ist_stack_end[];
 extern char __df_ist_guard_start[], __df_ist_guard_end[];
@@ -2173,34 +2176,23 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
 __attribute__((noinline))
 uint64_t page_fault_diagnostic_handler(
     const struct page_fault_transition *transition) {
-    const struct page_fault_entry_record *snapshot = transition->snapshot;
-    const uint64_t error = snapshot->error;
-    const uint64_t rip = snapshot->rip;
-    const uint64_t fault_address = snapshot->fault_address;
+    const uint64_t recovery = transition->result &
+        UINT64_C(0x0000ffffffffffff);
+    const uint64_t completed_state = transition->result >> 48;
     if (transition->kind != PAGE_FAULT_TRANSITION_KERNEL_DIAGNOSTIC ||
-        transition->result != 1)
+        recovery == 0 ||
+        (completed_state != 2 && completed_state != 4 &&
+         completed_state != 6))
         fail("page-fault-diagnostic-bypass");
-    if (supervisor_probe == 1 && error == 3u &&
-        rip == (uint64_t)wp_probe_instruction &&
-        fault_address == (uint64_t)wp_probe_target) {
+    supervisor_probe = (unsigned)completed_state;
+    if (completed_state == 2) {
         serial_puts("LEANOS/4 PROBE kind=wp vector=14 error=3 origin=kernel address=kernel-text policy=fatal result=PASS\n");
-        supervisor_probe = 2;
-        return (uint64_t)wp_probe_recovered;
-    }
-    if (supervisor_probe == 3 && error == 17u &&
-        rip == (uint64_t)user_a_entry && fault_address == (uint64_t)user_a_entry) {
+    } else if (completed_state == 4) {
         serial_puts("LEANOS/4 PROBE kind=smep vector=14 error=17 origin=kernel address=user-a-text policy=fatal result=PASS\n");
-        supervisor_probe = 4;
-        return (uint64_t)smep_probe_recovered;
-    }
-    if (supervisor_probe == 5 && error == 1u &&
-        fault_address == (uint64_t)user_a_stack) {
-        extern char smap_probe_recovered[];
+    } else {
         serial_puts("LEANOS/6 PROBE kind=smap-direct vector=14 origin=kernel ac=0 result=PASS\n");
-        supervisor_probe = 6;
-        return (uint64_t)smap_probe_recovered;
     }
-    fail("kernel-fault");
+    return recovery;
 }
 
 /* Construct one immutable vector-14 record before any operation-specific
@@ -2306,7 +2298,14 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
         snapshot.rflags, snapshot.user_rsp, snapshot.user_ss,
         snapshot.stack_identity, snapshot.reserved, trusted_subject,
         active_address_space, cr3, paging_controls, trusted_stack_identity,
-        canonical, active_address_space, (uint64_t)root,
+        canonical, supervisor_probe,
+        (uint64_t)wp_probe_instruction, (uint64_t)wp_probe_target,
+        (uint64_t)wp_probe_recovered,
+        (uint64_t)user_a_entry, (uint64_t)user_a_entry,
+        (uint64_t)smep_probe_recovered,
+        (uint64_t)smap_probe_instruction, (uint64_t)user_a_stack,
+        (uint64_t)smap_probe_recovered,
+        active_address_space, (uint64_t)root,
         active_address_space, (uint64_t)root, report_agrees,
         expected_leaf, live_leaf,
         current_subject == snapshot.current_subject, 1, current_subject,

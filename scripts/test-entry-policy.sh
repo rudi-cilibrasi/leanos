@@ -104,6 +104,9 @@ page_fault_exact_invalidation_bypass() {
   sed -i '/0, 0, checked_exact_fault_page_invalidation,/s/checked_exact_fault_page_invalidation/1/' \
     "$tmp/kernel.c"
 }
+page_fault_forged_diagnostic_purpose() {
+  sed -i 's/canonical, supervisor_probe,/canonical, 1,/' "$tmp/kernel.c"
+}
 page_fault_wrong_invalidation_target() {
   sed -i 's/const uint64_t fixed_page_address = 0;/const uint64_t fixed_page_address = PAGE_BYTES;/' \
     "$tmp/kernel.c"
@@ -187,16 +190,19 @@ run_fixture page-fault-fatal-route-to-handler \
   'vector=14 field=typed-generated-route source' \
   page_fault_fatal_route_to_handler
 run_fixture page-fault-live-leaf-bypass \
-  'vector=14 field=strengthened-agreement-inputs source' \
+  'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
   page_fault_live_leaf_bypass
 run_fixture page-fault-exact-invalidation-bypass \
-  'vector=14 field=strengthened-agreement-inputs source' \
+  'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
   page_fault_exact_invalidation_bypass
+run_fixture page-fault-forged-diagnostic-purpose \
+  'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
+  page_fault_forged_diagnostic_purpose
 run_fixture page-fault-wrong-invalidation-target \
   'vector=14 field=exact-fault-page-invalidation source' \
   page_fault_wrong_invalidation_target
 run_fixture page-fault-refilled-after-recorded-reload \
-  'vector=14 field=strengthened-agreement-inputs source' \
+  'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
   page_fault_refilled_after_recorded_reload
 run_fixture page-fault-rip-post-authorization-mutation \
   'vector=14 field=immutable-snapshot source' \
