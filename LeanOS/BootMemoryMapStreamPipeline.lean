@@ -432,6 +432,43 @@ theorem lowMemoryGap_scalar_richPipeline_firstFree_agreement :
         gapScalar.word[15]! 1 = 256 := by
   native_decide
 
+def zeroEntryBytes : List UInt8 :=
+  information (memoryMapTag [] ++ endTag)
+
+def zeroEntryChunks : List ModelChunk :=
+  chunked zeroEntryBytes
+
+def zeroEntryInput : Input :=
+  { magic := multiboot2Magic, infoAddress := identity.toNat,
+    bytes := zeroEntryBytes }
+
+def zeroEntryScalar : ScalarState :=
+  scalarReplay zeroEntryChunks (scalarInitial zeroEntryBytes.length 1)
+
+/-! The rich and scalar decoders share the Multiboot2 tag-shape policy for an
+exact empty memory-map tag.  Both decode the same 32 bytes successfully.  The
+rich pipeline rejects only when reservation overlay has no regions to publish;
+the scalar production path likewise reaches selection with no usable coverage,
+so it cannot select or publish a frame. -/
+theorem zeroEntry_exactByte_scalar_richPipeline_sharedRejection :
+    streamBytes zeroEntryChunks = zeroEntryBytes ∧
+      zeroEntryBytes.length = 32 ∧
+      (BootMemoryMapDecoder.decode zeroEntryInput).toOption.map (·.entries) =
+        some [] ∧
+      errorOf (run (UInt64.ofNat multiboot2Magic) identity zeroEntryBytes.length
+        zeroEntryChunks BootReservation.twoSidedManifest 7) =
+          some (.reservation .emptyOutput) ∧
+      zeroEntryScalar.word[1]! = complete ∧
+      zeroEntryScalar.word[2]! = noError ∧
+      zeroEntryScalar.word[11]! = 0 ∧
+      zeroEntryScalar.word[14]! = 0 ∧
+      zeroEntryScalar.word[15]! = 0 ∧
+      selectFrame 4096 1 zeroEntryScalar.word[1]! zeroEntryScalar.word[14]!
+        zeroEntryScalar.word[15]! 1 = 4096 ∧
+      publishAuthority 4096 4096 zeroEntryScalar.word[1]! zeroEntryScalar.word[14]!
+        zeroEntryScalar.word[15]! 1 1 = 0 := by
+  native_decide
+
 example : errorOf (authorize (UInt64.ofNat multiboot2Magic) identity
     allocationBytes.length allocationChunks BootReservation.twoSidedManifest 7
     mutatedProjection) = some .outputMutation := by native_decide

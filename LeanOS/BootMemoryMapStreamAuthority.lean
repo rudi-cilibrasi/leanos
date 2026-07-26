@@ -107,7 +107,7 @@ private def transitionError (version status error identity extent offset phase
         else if sawMap != 1 then missingMap else noError
       else if tagType == 6 then
         if sawMap != 0 then duplicateMap
-        else if size < 40 || (size - 16) % 24 != 0 then badMapLayout
+        else if size < 16 || (size - 16) % 24 != 0 then badMapLayout
         else if (size - 16) / 24 > entryLimit then tooManyEntries
         else noError
       else noError
@@ -115,7 +115,7 @@ private def transitionError (version status error identity extent offset phase
     if padded < 8 || content > padded then badState
     else noError
   else if phase == phaseMapLayout then
-    if low32 chunk != 24 || high32 chunk != 0 || content < 24 ||
+    if low32 chunk != 24 || high32 chunk != 0 ||
         content % 24 != 0 || content / 24 > entryLimit then badMapLayout
     else noError
   else if phase == phaseEntryType then
@@ -136,7 +136,8 @@ private def nextPhase (phase chunk content padded : UInt64) : UInt64 :=
     else phaseIgnored
   else if phase == phaseIgnored then
     if padded == 8 then phaseTag else phaseIgnored
-  else if phase == phaseMapLayout then phaseEntryBase
+  else if phase == phaseMapLayout then
+    if content == 0 then phaseTag else phaseEntryBase
   else if phase == phaseEntryBase then phaseEntryLength
   else if phase == phaseEntryLength then phaseEntryType
   else if phase == phaseEntryType then

@@ -114,6 +114,11 @@ the physical zeroing loop, generated publication rechecks the selected-frame,
 decoded-status, coverage, overlap, manifest, and scrub tuple before exposing
 an object token.
 
+The scalar decoder accepts the same zero-entry memory-map tag shape as the
+rich decoder. Such a tag decodes completely, then fails closed at the shared
+reservation/allocation boundary because it yields no region and no usable
+candidate; it is not classified as a malformed tag by only one path.
+
 `BootMemoryMapStreamPipeline` now supplies the proof-side composition contract
 for the next production step. A rich decoder input exists only after exact
 model replay completes at the bound extent, and its byte list is proved equal

@@ -213,6 +213,21 @@ int check_stream(void) {
     if (gap_start != 256 || manifest != 1 ||
         leanos_boot_select_frame(4096, gap_start, 1, 1, 0, manifest) != 256)
         return 24;
+    const uint64_t zero_entry_fixture[4] = {
+        32, UINT64_C(0x0000001000000006), 24,
+        UINT64_C(0x0000000800000000),
+    };
+    decoded = decode_extent(zero_entry_fixture, 4, 1);
+    if (decoded.word[0] != 4 || decoded.word[1] != 1 ||
+        decoded.word[2] != 0 || decoded.word[7] != 7 ||
+        decoded.word[11] != 0 || decoded.word[14] != 0 ||
+        decoded.word[15] != 0 || decoded.word[18] != 2 ||
+        leanos_boot_select_frame(4096, 1, decoded.word[1], decoded.word[14],
+                                 decoded.word[15], 1) != 4096 ||
+        leanos_boot_publish_authority(
+            4096, 4096, decoded.word[1], decoded.word[14], decoded.word[15],
+            1, 1) != 0)
+        return 25;
     return 0;
 }
 
