@@ -255,7 +255,7 @@ if ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
 fi
 
 for fixture in DMAWeakenedBusMaster DMADroppedFunction DMARuntimeEnable DMATraceMutation \
-    DMAGlobalControlMutation DMADeviceReadConfidentiality DMAEncodingImpliesValidation; do
+    DMAGlobalControlMutation; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: DMA quarantine fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
@@ -266,6 +266,33 @@ for fixture in DMAWeakenedBusMaster DMADroppedFunction DMARuntimeEnable DMATrace
     exit 1
   fi
 done
+
+if lake env lean tests/negative/DMADeviceReadConfidentiality.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: DMA device-read confidentiality overclaim unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'has type' "$negative_log" ||
+    ! grep -Fq 'observedByte := 0 } ≠ { observedByte := 1' "$negative_log" ||
+    ! grep -Fq 'observedByte := 0 } = { observedByte := 1' "$negative_log"; then
+  echo "error: DMA confidentiality fixture lacked the expected semantic mismatch" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/DMAEncodingImpliesValidation.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: DMA encoding-implies-validation overclaim unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+    "$negative_log" ||
+    ! grep -Fq '(validate staleSnapshot).isAccepted = true' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: DMA encoding fixture lacked the expected semantic rejection" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
 
 if lake env lean tests/negative/WrappingIssuerReuse.lean >"$negative_log" 2>&1; then
   echo "error: wrapping-issuer reuse fixture unexpectedly type-checked" >&2
