@@ -82,10 +82,29 @@ physical-memory TCB reads the already bounded, aligned information extent in
 eight-byte chunks, replays each pure transition for all state/result words,
 and copies only the exact chunk exposed by an accepted transition into a
 64-KiB aligned static buffer.  The parser reads that immutable boot-lifetime
-copy rather than rereading physical handoff memory.  Every image variant
+copy rather than rereading physical handoff memory. Every image variant
 requires the generated init/step symbols in the final ELF.  This establishes
-the production copy/ownership and exact stream-continuity checkpoint; it does
-not yet make transport completion allocator authority.
+the production copy/ownership and exact stream-continuity checkpoint.
+
+`BootMemoryMapStreamAuthority` is the version-three, allocation-free production
+consumer of that copy. Its scalar state machine reads aligned raw words,
+validates the information header, tag sizes and advances, ignored-tag padding,
+the unique version-zero 24-byte memory map, every entry range/reserved field,
+and the terminal end tag. For one candidate frame, it retains full usable
+coverage and any non-usable overlap independent of entry order. C no longer
+walks memory-map tags, classifies entries, maintains a frame bitmap, or calls
+`leanos_boot_allocation_check`.
+
+The generated manifest boundary takes all nine checked reservation identities
+in canonical order: low memory, loaded image, page tables, descriptor tables,
+kernel stacks, ordinary-entry guard, ordinary-entry stack, embedded users, and
+the Multiboot information copy. It validates nonempty contained ranges and the
+adjacent ordinary-entry layout, rounds overlap at page granularity, supplies
+the first candidate after enclosing reservations, and rejects any selected
+candidate covered by a live interval. Generated selection preserves the first
+eligible decoded candidate. After C executes and verifies the physical zeroing
+loop, generated publication rechecks the selected-frame, decoded-status,
+coverage, overlap, manifest, and scrub tuple before exposing an object token.
 
 `BootMemoryMapStreamPipeline` now supplies the proof-side composition contract
 for the next production step. A rich decoder input exists only after exact
@@ -103,16 +122,14 @@ the selected frame; changing any projection field rejects with
 selection plus cross-identity splicing, reordered chunks, and selected-frame
 mutation.
 
-This checkpoint does not claim that the scalar freestanding export itself
-stores or parses the emitted bytes, that the proof-side rich composition is
-reachable in the production ELF, that the continuity chain authenticates
-bytes, or that the final binary refines Lean. The existing version-one decoder
-corpus remains the hosted complete typed projection test. The production image
-still has the legacy C tag walker/classifier after the generated immutable-copy
-boundary, so stream completion alone does not grant allocator or
-scrub/publication authority and issue #173 remains open. The next integration
-must implement the exact rich composition and remove that walker rather than
-turning it into a shadow policy.
+This checkpoint does not claim that the continuity chain authenticates bytes,
+that generated C or the final binary refines Lean, or that the scalar parser is
+already proved extensionally equal to the rich `BootMemoryMapDecoder.decode`
+and `BootReservation.initializeAllocator` projection. The existing version-one
+decoder corpus and `BootMemoryMapStreamPipeline` remain the rich typed
+specification. Closing that scalar-to-rich equivalence proof, expanding the raw
+corpus comparison to every projection word, and controlled malformed-handoff
+QEMU injection remain before issue #173 is complete.
 
 No trusted declaration, foreign primitive, runtime shim, or other TCB entry is
 added by this slice. The proof-side composition uses only existing executable
@@ -188,7 +205,10 @@ Firmware and the bootloader remain trusted to describe real hardware
 truthfully. Physical-memory copying, boot assembly, compiler, generated code,
 and binary-to-model correspondence remain outside these proofs. The byte
 decoder proves properties of the immutable finite copy; it does not prove that
-the copy agrees with physical memory. Production consumption of the generated
-query result, reservation-manifest decoding, and malformed-handoff QEMU replay
-are follow-up integration work. Kernel, page-table, stack, and
-bootloader-buffer reservations remain owned by the next overlay layer.
+the copy agrees with physical memory. Production selection and publication now
+consume the generated version-three decoder and complete reservation manifest.
+The focused freestanding replay covers canonical decoding,
+usable/non-usable overlap, nonzero ignored-tag padding rejection, manifest
+exclusion, stable selection, and publication mutation. Controlled
+malformed-handoff QEMU replay and a proved complete-projection correspondence
+remain follow-up integration work.

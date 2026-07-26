@@ -23,13 +23,31 @@ extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_resumable_preemption_demo(uint64_t, uint64_t, uint64_t,
                                                   uint64_t, uint64_t);
-extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t,
-                                             uint64_t, uint64_t);
 extern uint64_t leanos_boot_handoff_stream_init(uint64_t, uint64_t, uint64_t,
                                                 uint64_t, uint64_t);
 extern uint64_t leanos_boot_handoff_stream_step(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_decode_init(uint64_t, uint64_t, uint64_t,
+                                        uint64_t, uint64_t);
+extern uint64_t leanos_boot_decode_step(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t);
+extern uint64_t leanos_boot_manifest_candidate(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_manifest_start(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_select_frame(uint64_t, uint64_t, uint64_t,
+                                         uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_publish_authority(uint64_t, uint64_t, uint64_t,
+                                              uint64_t, uint64_t, uint64_t,
+                                              uint64_t);
 extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t,
                                         uint64_t, uint64_t);
 extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t,
@@ -147,7 +165,6 @@ struct __attribute__((packed)) mb2_mmap_entry {
     uint64_t base, length; uint32_t type, reserved;
 };
 
-static uint8_t boot_frames[BOOT_ACCESSIBLE_LIMIT / PAGE_BYTES];
 /* Written once during bounded boot ingestion, then treated as immutable by
    the parser.  Only chunks exposed by the generated stream transition enter
    this copy. */
@@ -978,15 +995,58 @@ static const uint8_t *copy_boot_handoff(uint32_t magic, uint32_t info_address,
     return boot_handoff_copy;
 }
 
-static void reserve_byte_range(uint64_t start, uint64_t stop) {
-    uint64_t first = start / PAGE_BYTES;
-    uint64_t last = (stop + PAGE_BYTES - 1) / PAGE_BYTES;
-    if (last > sizeof(boot_frames)) last = sizeof(boot_frames);
-    for (uint64_t frame = first; frame < last; ++frame) boot_frames[frame] = 2;
+struct boot_decode_state { uint64_t word[18]; };
+
+#define BOOT_MANIFEST_ARGS(info_address, total) \
+    0, 0x100000u, \
+    (uint64_t)__boot_image_start, \
+    (uint64_t)__boot_image_end - (uint64_t)__boot_image_start, \
+    (uint64_t)page_map_level_4_a, \
+    (uint64_t)(page_table_b + BOOT_LEAF_COUNT) - (uint64_t)page_map_level_4_a, \
+    (uint64_t)gdt64, sizeof(uint64_t) * 7u, \
+    (uint64_t)boot_stack, (uint64_t)boot_stack_top - (uint64_t)boot_stack, \
+    (uint64_t)__entry_stack_guard_start, \
+    (uint64_t)__entry_stack_guard_end - (uint64_t)__entry_stack_guard_start, \
+    (uint64_t)__entry_stack_start, \
+    (uint64_t)__entry_stack_end - (uint64_t)__entry_stack_start, \
+    (uint64_t)__user_a_text_start, \
+    (uint64_t)__user_b_stack_end - (uint64_t)__user_a_text_start, \
+    (uint64_t)(info_address), (uint64_t)(total)
+
+static struct boot_decode_state decode_boot_candidate(
+        uint32_t magic, uint32_t info_address, uint32_t total,
+        uint64_t candidate, const uint8_t *info) {
+    struct boot_decode_state state, next;
+    for (uint64_t query = 0; query < 18; ++query)
+        state.word[query] =
+            leanos_boot_decode_init(magic, info_address, total, candidate, query);
+    if (state.word[0] != 3 || state.word[1] != 0 || state.word[2] != 0 ||
+        state.word[3] != info_address || state.word[4] != total ||
+        state.word[5] != 0 || state.word[16] != candidate)
+        handoff_fail("decode-init");
+    for (uint64_t offset = 0; offset < total; offset += 8) {
+        uint64_t chunk = *(const uint64_t *)(info + offset);
+        uint64_t terminal = offset + 8 == total;
+        for (uint64_t query = 0; query < 18; ++query)
+            next.word[query] = leanos_boot_decode_step(
+                state.word[0], state.word[1], state.word[2], state.word[3],
+                state.word[4], state.word[5], state.word[6], state.word[7],
+                state.word[8], state.word[9], state.word[10], state.word[11],
+                state.word[12], state.word[13], state.word[14], state.word[15],
+                state.word[16], state.word[17], info_address, offset, chunk,
+                terminal, query);
+        state = next;
+        if (state.word[2] != 0)
+            handoff_fail("decode-rejected");
+    }
+    if (state.word[1] != 1 || state.word[5] != total || state.word[7] != 7)
+        handoff_fail("decode-incomplete");
+    return state;
 }
 
-/* Bounded Multiboot2 glue over the immutable generated-stream copy.  Tag
-   walking and classification remain the next replacement checkpoint. */
+/* The generated raw-word decoder is the sole tag walker, classifier,
+   reservation decision, and first-frame selector.  C only transports the
+   immutable copy and executes the returned scrub/publication operation. */
 static void boot_allocate(uint32_t magic, uint32_t info_address) {
     if (magic != MULTIBOOT2_RUNTIME_MAGIC) handoff_fail("magic");
     if ((info_address & 7u) != 0 || info_address < PAGE_BYTES ||
@@ -996,78 +1056,41 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     if (total < 16 || total > MAX_HANDOFF_BYTES || (total & 7u) != 0 ||
         total > BOOT_ACCESSIBLE_LIMIT - info_address) handoff_fail("bounds");
     const uint8_t *info = copy_boot_handoff(magic, info_address, total);
-
-    uint32_t offset = 8, entries = 0, entry_size = 0;
-    uint64_t highest_end = 0; unsigned saw_map = 0, saw_end = 0;
-    while (offset <= total - 8) {
-        const struct mb2_tag *tag = (const struct mb2_tag *)(info + offset);
-        if (tag->size < 8 || tag->size > total - offset) handoff_fail("tag-size");
-        if (tag->type == 0) {
-            if (tag->size != 8) handoff_fail("end-tag");
-            saw_end = 1; break;
-        }
-        if (tag->type == 6) {
-            if (saw_map || tag->size < 16) handoff_fail("mmap-shape");
-            const struct mb2_mmap_tag *map = (const struct mb2_mmap_tag *)tag;
-            if (map->entry_size != sizeof(struct mb2_mmap_entry) ||
-                map->entry_version != 0 ||
-                (tag->size - 16) % map->entry_size != 0) handoff_fail("mmap-layout");
-            entry_size = map->entry_size;
-            uint32_t count = (tag->size - 16) / map->entry_size;
-            if (count == 0 || count > MAX_MMAP_ENTRIES) handoff_fail("mmap-count");
-            for (uint32_t i = 0; i < count; ++i) {
-                const struct mb2_mmap_entry *entry = (const struct mb2_mmap_entry *)
-                    ((const uint8_t *)map + 16 + i * map->entry_size);
-                uint64_t stop;
-                if (entry->length == 0 || __builtin_add_overflow(entry->base,
-                    entry->length, &stop)) handoff_fail("entry-range");
-                uint64_t first, last;
-                if (entry->type == 1) {
-                    if (stop > highest_end) highest_end = stop;
-                    if (entry->base > UINT64_MAX - (PAGE_BYTES - 1))
-                        handoff_fail("entry-round");
-                    first = (entry->base + PAGE_BYTES - 1) / PAGE_BYTES;
-                    last = stop / PAGE_BYTES;
-                    if (last > sizeof(boot_frames)) last = sizeof(boot_frames);
-                    for (uint64_t frame = first; frame < last; ++frame)
-                        if (boot_frames[frame] == 0) boot_frames[frame] = 1;
-                } else {
-                    first = entry->base / PAGE_BYTES;
-                    last = stop >= BOOT_ACCESSIBLE_LIMIT ? sizeof(boot_frames) :
-                        (stop + PAGE_BYTES - 1) / PAGE_BYTES;
-                    if (last > sizeof(boot_frames)) last = sizeof(boot_frames);
-                    for (uint64_t frame = first; frame < last; ++frame)
-                        boot_frames[frame] = 2;
-                }
-            }
-            entries = count; saw_map = 1;
-        }
-        uint32_t advance = (tag->size + 7u) & ~7u;
-        if (advance < tag->size || advance > total - offset) handoff_fail("tag-advance");
-        offset += advance;
+    uint64_t first = leanos_boot_manifest_start(BOOT_MANIFEST_ARGS(info_address, total));
+    if (first >= 4096) handoff_fail("manifest");
+    uint64_t selected = 4096;
+    struct boot_decode_state authority = {{0}};
+    for (uint64_t candidate = first; candidate < 4096 && selected == 4096;
+         ++candidate) {
+        struct boot_decode_state decoded =
+            decode_boot_candidate(magic, info_address, total, candidate, info);
+        uint64_t manifest = leanos_boot_manifest_candidate(
+            candidate, BOOT_MANIFEST_ARGS(info_address, total));
+        selected = leanos_boot_select_frame(
+            selected, candidate, decoded.word[1], decoded.word[14],
+            decoded.word[15], manifest);
+        if (selected < 4096) authority = decoded;
     }
-    if (!saw_end || !saw_map) handoff_fail("missing-tag");
-
-    reserve_byte_range(0, 1024u * 1024u);
-    reserve_byte_range((uint64_t)__boot_image_start, (uint64_t)__boot_image_end);
-    reserve_byte_range(info_address, (uint64_t)info_address + total);
-    uint64_t selected = sizeof(boot_frames);
-    for (uint64_t frame = 256; frame < sizeof(boot_frames); ++frame)
-        if (boot_frames[frame] == 1) { selected = frame; break; }
-    if (selected == sizeof(boot_frames)) handoff_fail("no-frame");
-    if (leanos_boot_allocation_check(magic, total, entry_size, selected, 15) != 1)
-        handoff_fail("model-check");
+    if (selected >= 4096 || authority.word[16] != selected)
+        handoff_fail("no-frame");
 
     volatile uint8_t *frame = (volatile uint8_t *)(selected * PAGE_BYTES);
     for (uint64_t i = 0; i < PAGE_BYTES; ++i) frame[i] = 0;
     for (uint64_t i = 0; i < PAGE_BYTES; ++i)
         if (frame[i] != 0) handoff_fail("scrub");
-    published_boot_object = selected + 1; /* publish only after the full scrub */
+    uint64_t manifest = leanos_boot_manifest_candidate(
+        selected, BOOT_MANIFEST_ARGS(info_address, total));
+    published_boot_object = leanos_boot_publish_authority(
+        selected, authority.word[16], authority.word[1], authority.word[14],
+        authority.word[15], manifest, 1);
+    if (published_boot_object != selected + 1) handoff_fail("publication");
 
     serial_puts("LEANOS/7 HANDOFF magic=valid info-bytes="); serial_u64(total);
-    serial_puts(" mmap-entries="); serial_u64(entries); serial_puts(" result=PASS\n");
-    serial_puts("LEANOS/7 MAP boot-pages="); serial_u64(sizeof(boot_frames));
-    serial_puts(" reported-top-mib="); serial_u64(highest_end / (1024u * 1024u));
+    serial_puts(" mmap-entries="); serial_u64(authority.word[11]);
+    serial_puts(" result=PASS\n");
+    serial_puts("LEANOS/7 MAP boot-pages=4096");
+    serial_puts(" reported-top-mib=");
+    serial_u64(authority.word[17] / (1024u * 1024u));
     serial_puts(" precedence=reserved result=PASS\n");
     serial_puts("LEANOS/7 ALLOC frame="); serial_u64(selected);
     serial_puts(" firmware-usable=1 boot-accessible=1 reserved=0 result=PASS\n");
@@ -1312,8 +1335,8 @@ static void replay_oracle(void) {
                     ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
                         v->words[3], v->words[4])
                 : v->adapter == 5
-                        ? leanos_boot_allocation_check(v->words[0], v->words[1], v->words[2],
-                            v->words[3], v->words[4])
+                        ? leanos_boot_select_frame(v->words[0], v->words[1], v->words[2],
+                            v->words[3], v->words[4], v->words[5])
                         : v->adapter == 6
                             ? leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
                                 v->words[3], v->words[4])
