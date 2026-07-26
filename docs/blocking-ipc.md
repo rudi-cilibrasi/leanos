@@ -48,7 +48,10 @@ saved context moves to the quiescent deferred-cancellation bank, and the dead
 endpoint mailbox is cleared atomically. Arbitrary ordinary successor-gate
 traces, including either termination spelling and raw scheduler requests,
 preserve the folded runtime/waiter-context invariant without a reconstructed
-readiness premise.
+readiness premise. Scheduler-selected termination additionally preserves the
+complete retained-context classification, so it may be followed immediately
+by any finite capacity-checked deferred-drain suffix through the authoritative
+gate without an `AuthoritativeTraceReady` witness.
 
 Contained-fault cleanup uses a separate deferred-cancellation bank for peers
 whose endpoint authority was invalidated. Each retained context stays valid,

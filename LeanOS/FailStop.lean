@@ -10710,30 +10710,21 @@ theorem contained_faulting_identity_is_current state frame faulting
   simpa [ContainedFaultIdentityBound, hid] using hbound
 
 set_option maxHeartbeats 100000 in
-/-- Contained cleanup establishes the complete deferred-cancellation
-post-state when the trusted faulting identity is the authoritative current
-subject.  The binding rules out the only otherwise possible collision: a
-quiescent retained identity cannot simultaneously be the subject retired by
-the interrupt. -/
-theorem interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
-    state frame faulting
+/-- The shared current-subject cleanup publisher establishes the complete
+deferred-cancellation post-state.  Current selection rules out the only
+otherwise possible collision: a quiescent retained identity cannot
+simultaneously be the subject retired by cleanup. -/
+private theorem publishInterruptCleanup_preserves_deferredBlockingRuntimeWellFormed
+    state faulting
     (hstate : DeferredBlockingRuntimeWellFormed state)
-    (hbound : ContainedFaultIdentityBound state)
-    (hcontained : (dispatchHardware state.execution frame).action = .contained faulting) :
+    (hcurrent : state.lifecycle.current = some faulting)
+    (hmode : state.execution.mode = .running) :
     DeferredBlockingRuntimeWellFormed
-      (applyOperation state (.interrupt frame)) := by
-  have hcurrent : state.lifecycle.current = some faulting :=
-    contained_faulting_identity_is_current state frame faulting hbound hcontained
-  have hmode : state.execution.mode = .running := by
-    cases hmode : state.execution.mode with
-    | handling active => simp [dispatchHardware, hmode, halt] at hcontained
-    | halted record => simp [dispatchHardware, hmode] at hcontained
-    | running => rfl
+      (publishInterruptCleanup state faulting) := by
   constructor
-  · simpa [applyOperation, hcontained] using
-      publishInterruptCleanup_preserves_runtimeWellFormed
-        state faulting hstate.1 hmode
-  · simp only [applyOperation, hcontained]
+  · exact publishInterruptCleanup_preserves_runtimeWellFormed
+      state faulting hstate.1 hmode
+  ·
     rcases hstate.2 with
       ⟨⟨⟨hipcWellFormed, hcontextAgreement⟩, hblockedDisjoint,
         hretainedWellFormed⟩, hblockedResumableDisjoint,
@@ -11223,6 +11214,158 @@ theorem interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
               simpa [publishInterruptCleanup, installTerminatedResumable,
                 CompositeState.blockingIPCContext] using
                 cleanup_context_absent subject holdAbsent
+
+/-- Explicit cleanup of the authoritative current subject preserves the
+complete deferred invariant.  The explicit publisher additionally clears the
+retired subject's retained slot; current-subject quiescence makes that update
+extensionally equal to the already-empty slot established by the shared
+cleanup proof. -/
+private theorem installTerminatedSubject_current_preserves_deferredBlockingRuntimeWellFormed
+    state subject
+    (hstate : DeferredBlockingRuntimeWellFormed state)
+    (hcurrent : state.lifecycle.current = some subject)
+    (hmode : state.execution.mode = .running) :
+    DeferredBlockingRuntimeWellFormed
+      (installTerminatedSubject state subject
+        (ResumablePreemption.cleanupSubject state.resumable subject)) := by
+  have hlifecycle : SubjectLifecycle.WellFormed state.lifecycle :=
+    hstate.1.2.2.1
+  have hlive : state.lifecycle.capabilities.subjects subject = true :=
+    hlifecycle.2.2.2.2.2 subject hcurrent
+  have hissued : state.lifecycle.issuedSubjects subject = true :=
+    hlifecycle.1 subject hlive
+  have haccepted :
+      (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted := by
+    simp [SubjectLifecycle.terminate, hlive, hissued]
+  have hruntime :=
+    gate_terminateSubject_accepted_preserves_runtimeWellFormed
+      state subject hstate.1 hmode haccepted
+  have hpublished :=
+    publishInterruptCleanup_preserves_deferredBlockingRuntimeWellFormed
+      state subject hstate hcurrent hmode
+  have hretained :
+      (publishInterruptCleanup state subject).deferredCancels.retained subject = none := by
+    cases hvalue :
+        (publishInterruptCleanup state subject).deferredCancels.retained subject with
+    | none => rfl
+    | some saved =>
+        have hlivePost :=
+          (hpublished.2.1.2.2 subject saved hvalue).2.2.1
+        have hdead := ResumablePreemption.cleanup_terminates_subject
+          state.resumable subject
+        have hdeadBlocking :
+            (publishInterruptCleanup state subject).blockingIPCContext.ipc.scheduler.lifecycle.capabilities.subjects
+                subject = false := by
+          simpa [publishInterruptCleanup, CompositeState.blockingIPCContext,
+            BlockingIPCContext.detachInvalidated, installTerminatedResumable] using hdead
+        rw [hdeadBlocking] at hlivePost
+        contradiction
+  have hdeferred :
+      BlockingIPCContext.setRetained
+          (publishInterruptCleanup state subject).deferredCancels subject none =
+        (publishInterruptCleanup state subject).deferredCancels := by
+    cases hdeferredState :
+        (publishInterruptCleanup state subject).deferredCancels with
+    | mk retained =>
+        have hsubject : retained subject = none := by
+          simpa [hdeferredState] using hretained
+        change
+          (⟨fun candidate =>
+              if candidate = subject then none else retained candidate⟩ :
+                BlockingIPCContext.DeferredCancelState) =
+            (⟨retained⟩ : BlockingIPCContext.DeferredCancelState)
+        congr
+        funext candidate
+        by_cases heq : candidate = subject
+        · subst candidate
+          simp [hsubject]
+        · simp [heq]
+  have hdeferredProjection :
+      (installTerminatedSubject state subject
+          (ResumablePreemption.cleanupSubject state.resumable subject)).deferredCancels =
+        (publishInterruptCleanup state subject).deferredCancels := by
+    simpa [installTerminatedSubject, publishInterruptCleanup] using hdeferred
+  have hblockingContext :
+      (installTerminatedSubject state subject
+          (ResumablePreemption.cleanupSubject state.resumable subject)).blockingIPCContext =
+        (publishInterruptCleanup state subject).blockingIPCContext := rfl
+  have hresumableContexts :
+      (installTerminatedSubject state subject
+          (ResumablePreemption.cleanupSubject state.resumable subject)).resumable.contexts =
+        (publishInterruptCleanup state subject).resumable.contexts := rfl
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted] using hruntime
+  · unfold CompositeState.DeferredCancellationWellFormed at hpublished ⊢
+    rw [hblockingContext, hdeferredProjection, hresumableContexts]
+    exact hpublished.2
+
+/-- Contained cleanup establishes the complete deferred-cancellation
+post-state when the trusted faulting identity is the authoritative current
+subject.  The binding rules out the only otherwise possible collision: a
+quiescent retained identity cannot simultaneously be the subject retired by
+the interrupt. -/
+theorem interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
+    state frame faulting
+    (hstate : DeferredBlockingRuntimeWellFormed state)
+    (hbound : ContainedFaultIdentityBound state)
+    (hcontained : (dispatchHardware state.execution frame).action = .contained faulting) :
+    DeferredBlockingRuntimeWellFormed
+      (applyOperation state (.interrupt frame)) := by
+  have hcurrent : state.lifecycle.current = some faulting :=
+    contained_faulting_identity_is_current state frame faulting hbound hcontained
+  have hmode : state.execution.mode = .running := by
+    cases hmode : state.execution.mode with
+    | handling active => simp [dispatchHardware, hmode, halt] at hcontained
+    | halted record => simp [dispatchHardware, hmode] at hcontained
+    | running => rfl
+  simpa [applyOperation, hcontained] using
+    publishInterruptCleanup_preserves_deferredBlockingRuntimeWellFormed
+      state faulting hstate hcurrent hmode
+
+/-- Scheduler-selected termination preserves the complete retained-context
+classification for every typed result.  A missing current subject and every
+busy or halted outer-latch result are atomic; acceptance retires the
+authoritative current subject through the shared cleanup publisher. -/
+theorem gate_terminateCurrent_preserves_deferredBlockingRuntimeWellFormed
+    state (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed (gate state .terminateCurrent).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      cases hcurrent : state.scheduler.lifecycle.current with
+      | none =>
+          simpa [gate, hmode, applyOperation, Scheduler.terminateCurrent,
+            Scheduler.reject, hcurrent] using hstate
+      | some subject =>
+          have hschedulerLifecycle : state.scheduler.lifecycle = state.lifecycle :=
+            hstate.1.1.2.1
+          have hlifecycleCurrent : state.lifecycle.current = some subject := by
+            rw [← hschedulerLifecycle]
+            exact hcurrent
+          have hpreserved :=
+            installTerminatedSubject_current_preserves_deferredBlockingRuntimeWellFormed
+              state subject hstate hlifecycleCurrent hmode
+          have hlifecycle : SubjectLifecycle.WellFormed state.lifecycle :=
+            hstate.1.2.2.1
+          have hlive : state.lifecycle.capabilities.subjects subject = true :=
+            hlifecycle.2.2.2.2.2 subject hlifecycleCurrent
+          have hissued : state.lifecycle.issuedSubjects subject = true :=
+            hlifecycle.1 subject hlive
+          have haccepted :
+              (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted := by
+            simp [SubjectLifecycle.terminate, hlive, hissued]
+          have hterminated :
+              (Scheduler.terminateCurrent state.scheduler).result = .accepted := by
+            cases htermination :
+                SubjectLifecycle.terminate state.lifecycle subject with
+            | mk lifecycle result =>
+                cases result with
+                | rejected reason => simp [htermination] at haccepted
+                | accepted =>
+                    simp [Scheduler.terminateCurrent, hcurrent,
+                      hschedulerLifecycle, hlifecycleCurrent, htermination]
+          simpa [gate, hmode, applyOperation, hterminated, hcurrent] using hpreserved
 
 /-- The identity binding makes the faulting subject's retained slot
 uninhabited after cleanup.  Without the binding, the pre-state deferred
@@ -13256,6 +13399,17 @@ theorem authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFor
   | handling active => simpa [authoritativeGate, hmode] using hstate
   | halted record => simpa [authoritativeGate, hmode] using hstate
 
+/-- Scheduler-selected termination crosses the successor gate without
+weakening the retained-context classification needed by a following deferred
+drain. -/
+theorem authoritativeGate_terminateCurrent_preserves_deferredBlockingRuntimeWellFormed
+    state (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed
+      (authoritativeGate state (.ordinary .terminateCurrent)).state := by
+  rw [authoritativeGate_ordinary_state]
+  exact gate_terminateCurrent_preserves_deferredBlockingRuntimeWellFormed
+    state hstate
+
 /-- The public successor gate retains the complete deferred blocking runtime
 across every inbound interrupt result under the explicit contained-entry
 identity binding. -/
@@ -13298,6 +13452,23 @@ theorem runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellForm
       exact ih _
         (authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFormed
           state subject hstate)
+
+/-- Scheduler-selected termination and an arbitrary finite deferred-drain
+continuation form one readiness-free public trace.  The terminating step
+establishes the exact retained-context classification consumed by every
+capacity-checked suffix step. -/
+theorem runAuthoritativeTerminateCurrentThenDeferredDrains_preserves
+    state (subjects : List BlockingIPC.SubjectId)
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary .terminateCurrent ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  simp only [runAuthoritativeOperations]
+  exact runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
+    (authoritativeGate state (.ordinary .terminateCurrent)).state subjects
+    (authoritativeGate_terminateCurrent_preserves_deferredBlockingRuntimeWellFormed
+      state hstate)
 
 /-- Every inbound interrupt result can be followed by an arbitrary finite
 deferred-drain suffix without leaving the public authoritative gate or

@@ -1139,6 +1139,19 @@ theorem composite_authoritative_ordinary_trace_preserves_runtimeWellFormed
     FailStop.runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFormed
       state operations hstate
 
+/-- Supporting readiness-free termination trace theorem: scheduler-selected
+termination establishes and preserves the complete deferred-cancellation
+invariant consumed by any finite capacity-checked drain suffix. -/
+theorem composite_terminateCurrent_then_deferred_trace_preserves
+    state (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (.ordinary .terminateCurrent ::
+          subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact FailStop.runAuthoritativeTerminateCurrentThenDeferredDrains_preserves
+    state subjects hstate
+
 /-- SC-COMPOSITE-DIRECT-PORT-WF: every public composite step and arbitrary
 finite mixed trace retain the complete TSS/IOPL control and device projection
 literally.  Consequently the deny-all user policy embedded in the global
