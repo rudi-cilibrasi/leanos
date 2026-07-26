@@ -104,6 +104,10 @@ page_fault_exact_invalidation_bypass() {
   sed -i '/0, 0, checked_exact_fault_page_invalidation,/s/checked_exact_fault_page_invalidation/1/' \
     "$tmp/kernel.c"
 }
+page_fault_wrong_invalidation_target() {
+  sed -i 's/const uint64_t fixed_page_address = 0;/const uint64_t fixed_page_address = PAGE_BYTES;/' \
+    "$tmp/kernel.c"
+}
 page_fault_refilled_after_recorded_reload() {
   sed -i '/const uint64_t route = leanos_page_fault_dispatch_transition(/i\
     const uint64_t recorded_reload_cr3 = cr3;\
@@ -188,6 +192,9 @@ run_fixture page-fault-live-leaf-bypass \
 run_fixture page-fault-exact-invalidation-bypass \
   'vector=14 field=strengthened-agreement-inputs source' \
   page_fault_exact_invalidation_bypass
+run_fixture page-fault-wrong-invalidation-target \
+  'vector=14 field=exact-fault-page-invalidation source' \
+  page_fault_wrong_invalidation_target
 run_fixture page-fault-refilled-after-recorded-reload \
   'vector=14 field=strengthened-agreement-inputs source' \
   page_fault_refilled_after_recorded_reload

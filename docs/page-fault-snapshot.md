@@ -104,10 +104,14 @@ cannot enter user containment.
 
 Source and final-ELF policy gates require capture-before-normalization,
 provenance-before-strengthened-agreement-before-handler order, exactly one CR2
-read, and exactly one typed containment-handler call site. Negative fixtures
-must reject both a direct handler bypass and routing a generated fatal result
-to containment. A separately labeled EFER read is excluded from the unchanged
-nine-read fast-entry inventory. The scalar lowering, live report decoder,
+read, exactly one typed containment-handler call site, and a page-zero
+invalidation operand: source policy fixes the helper input to zero, while the
+final-ELF policy requires the zeroing instruction immediately before `invlpg`
+through that same register. A wrong-target negative fixture must be rejected.
+Negative fixtures also reject both a direct handler bypass and routing a
+generated fatal result to containment. A separately labeled EFER read is
+excluded from the unchanged nine-read fast-entry inventory. The scalar
+lowering, live report decoder,
 generated C, handwritten assembly/C, compiler/linker, QEMU, firmware, and
 hardware remain trusted/tested; these policy checks are not a proof of x86
 delivery, atomicity, C immutability, or final-binary refinement.

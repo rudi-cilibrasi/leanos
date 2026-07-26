@@ -303,6 +303,10 @@ agreement_arguments="$(
     <<<"$page_fault_adapter_source" | tr -d '[:space:]' |
     sed 's/^.*leanos_page/leanos_page/'
 )"
+invalidation_helper_source="$(
+  sed -n '/^static void invalidate_fixed_fault_page(void) {/,/^}/p' \
+    "$kernel_source"
+)"
 expected_agreement_arguments='leanos_page_fault_dispatch_transition(snapshot.version,snapshot.vector,snapshot.error,snapshot.fault_address,snapshot.fault_page,snapshot.access,snapshot.protection,snapshot.user,snapshot.current_subject,snapshot.active_address_space,snapshot.active_cr3,snapshot.paging_controls,snapshot.rip,snapshot.saved_cs,snapshot.rflags,snapshot.user_rsp,snapshot.user_ss,snapshot.stack_identity,snapshot.reserved,trusted_subject,active_address_space,cr3,paging_controls,trusted_stack_identity,canonical,active_address_space,(uint64_t)root,active_address_space,(uint64_t)root,report_agrees,expected_leaf,live_leaf,current_subject==snapshot.current_subject,1,current_subject,active_address_space,active_address_space,active_address_space,0,0,checked_exact_fault_page_invalidation,current_subject,active_address_space,saved_context_owner_b,saved_context_owner_b);'
 [[ "$agreement_arguments" == "$expected_agreement_arguments" ]] || {
   echo "error: vector=14 field=strengthened-agreement-inputs source" >&2; exit 1;
@@ -313,9 +317,12 @@ grep -Fq 'user && snapshot.fault_address == 0 && snapshot.fault_page == 0 &&' \
     <<<"$page_fault_adapter_source" &&
   grep -Fq 'snapshot.protection == 1;' <<<"$page_fault_adapter_source" &&
   grep -Fq 'invalidate_fixed_fault_page();' <<<"$page_fault_adapter_source" &&
-  grep -Fq 'static void invalidate_fixed_fault_page(void)' "$kernel_source" &&
+  grep -Fq 'static void invalidate_fixed_fault_page(void)' \
+    <<<"$invalidation_helper_source" &&
+  grep -Fq 'const uint64_t fixed_page_address = 0;' \
+    <<<"$invalidation_helper_source" &&
   grep -Fq '"invlpg (%0)" : : "r"(fixed_page_address) : "memory");' \
-    "$kernel_source" &&
+    <<<"$invalidation_helper_source" &&
   ! grep -Fq 'page_fault_tlb_flush_cr3' "$kernel_source" || {
   echo "error: vector=14 field=exact-fault-page-invalidation source" >&2; exit 1;
 }
@@ -459,7 +466,21 @@ elf_invalidation_disassembly="$(
 )"
 elf_invalidation_site="$(grep -m1 -E '[[:space:]]invlpg[[:space:]]' \
   <<<"$elf_invalidation_disassembly")"
-[[ "$elf_invalidation_site" =~ [[:space:]]invlpg[[:space:]]+\(%[[:alnum:]]+\)$ ]] || {
+mapfile -t elf_invalidation_instructions < <(
+  awk '/^[[:space:]]*[[:xdigit:]]+:/ {
+    sub(/^[[:space:]]*[[:xdigit:]]+:[[:space:]]*/, "")
+    print
+  }' <<<"$elf_invalidation_disassembly"
+)
+elf_invalidation_zero_bound=0
+for ((i = 1; i < ${#elf_invalidation_instructions[@]}; i++)); do
+  if [[ "${elf_invalidation_instructions[$i]}" == 'invlpg (%rax)' &&
+        "${elf_invalidation_instructions[$((i - 1))]}" == 'xor    %eax,%eax' ]]; then
+    elf_invalidation_zero_bound=1
+  fi
+done
+[[ "$elf_invalidation_site" =~ [[:space:]]invlpg[[:space:]]+\(%rax\)$ &&
+   "$elf_invalidation_zero_bound" -eq 1 ]] || {
   echo "error: vector=14 field=exact-fault-page-invalidation final-elf" >&2
   exit 1
 }
