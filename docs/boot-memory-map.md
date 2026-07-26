@@ -1,10 +1,32 @@
 # Multiboot2 memory-map normalization
 
-`LeanOS.BootMemoryMap` is a bounded executable model between an untrusted
-Multiboot2 handoff and `FrameAllocator.init`. It is not a byte parser. A future
-adapter must decode the little-endian structure into the typed `Handoff` value;
-the model validates every fixed-width field it consumes before producing any
-allocator input.
+`LeanOS.BootMemoryMap` is a bounded executable model between a typed
+Multiboot2 handoff and `FrameAllocator.init`. `LeanOS.BootMemoryMapDecoder`
+provides the preceding immutable-byte boundary: it decodes a copied
+little-endian information structure into exactly that `Handoff` type, then
+feeds the existing normalizer without introducing a second classification
+policy. Copying the bounded structure from physical memory remains a trusted
+boot integration step.
+
+## Immutable byte boundary
+
+`BootMemoryMapDecoder.Input` contains the preserved boot magic, information
+address, and a finite byte list. The decoder rejects buffers smaller than 16
+bytes or larger than 64 KiB before tag traversal. It checks the advertised
+total size against the immutable copy, the reserved information-header word,
+every little-endian load, aligned tag advance, tag extent, and alignment
+padding. Padding and reserved entry words must be zero.
+
+Exactly one version-zero memory-map tag with 24-byte entries and one final
+8-byte end tag are accepted. Unknown tags are retained as typed ignored tags;
+unknown memory types are conservatively decoded as reserved. Early or missing
+end tags, duplicate or missing maps, truncated fields, unsupported layouts,
+excess tags or entries, and noncanonical padding reject deterministically.
+Every accepted `Decoded` value carries the exact entries accepted by
+`BootMemoryMap.validateHandoff` and a checked byte/tag/entry-bounds witness.
+`decodeAndNormalize` is the sole composition helper for this slice, and its
+success theorem exposes the exact decoded handoff used by `normalize`.
+`Except` rejection has no handoff or normalized partial-result projection.
 
 ## Accepted subset and bounds
 
@@ -72,8 +94,10 @@ first-entry-wins classifier supplies a local counterexample: swapping usable
 and reserved overlapping entries changes its answer.
 
 Firmware and the bootloader remain trusted to describe real hardware
-truthfully. The byte decoder, boot assembly, compiler, generated code, and
-binary-to-model correspondence are also outside these proofs. This model proves
-only conservative interpretation of the supplied typed structure. Kernel,
-page-table, stack, and bootloader-buffer reservations are intentionally left to
-the next overlay layer.
+truthfully. Physical-memory copying, boot assembly, compiler, generated code,
+and binary-to-model correspondence remain outside these proofs. The byte
+decoder proves properties of the immutable finite copy; it does not prove that
+the copy agrees with physical memory. Production consumption of this decoded
+result, reservation-manifest decoding, and hosted/QEMU differential replay are
+follow-up integration work. Kernel, page-table, stack, and bootloader-buffer
+reservations remain owned by the next overlay layer.
