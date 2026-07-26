@@ -14184,6 +14184,60 @@ def AuthoritativeOperationCompatible (state : CompositeState) :
         (authoritativeGate state (.blocking operation)).state
   | .drainDeferred _ => True
 
+/-- Control, data-only IPC, and raw scheduler constructors retain every
+projection observed by dormant cancellation.  Their shared public operation
+class can therefore discharge the successor-gate compatibility boundary
+without a caller-supplied post-state law. -/
+theorem blockingStateNeutral_authoritativeOperationCompatible state operation
+    (hoperation : BlockingStateNeutralOperation operation)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state (.ordinary operation) := by
+  have hdeferred (candidate) (hcandidate : BlockingStateNeutralOperation candidate) :
+      (authoritativeGate state (.ordinary candidate)).state.deferredCancels =
+        state.deferredCancels := by
+    rw [authoritativeGate_ordinary_state]
+    cases hcandidate <;> cases hmode : state.execution.mode <;>
+      simp only [gate, hmode, applyOperation, selectLiveReturnAuthority, dispatchIPC, installIPC,
+        schedulerDispatch, schedulerYield, schedulerTick, Scheduler.reject,
+        installScheduler, installLifecycle, synchronizeMemory]
+    all_goals
+      repeat' first | split
+      all_goals rfl
+  have hblocked (candidate) (hcandidate : BlockingStateNeutralOperation candidate) :
+      (authoritativeGate state (.ordinary candidate)).state.blockingContexts =
+        state.blockingContexts := by
+    change
+      (authoritativeGate state (.ordinary candidate)).state.blockingIPCContext.blocked =
+        state.blockingIPCContext.blocked
+    rw [authoritativeGate_ordinary_state,
+      gate_blockingStateNeutral_preserves_blockingIPCContext state candidate hcandidate]
+  have hipc (candidate) (hcandidate : BlockingStateNeutralOperation candidate) :
+      (authoritativeGate state (.ordinary candidate)).state.blockingIPC =
+        state.blockingIPC := by
+    change
+      (authoritativeGate state (.ordinary candidate)).state.blockingIPCContext.ipc =
+        state.blockingIPCContext.ipc
+    rw [authoritativeGate_ordinary_state,
+      gate_blockingStateNeutral_preserves_blockingIPCContext state candidate hcandidate]
+  have hcontexts (candidate) (hcandidate : BlockingStateNeutralOperation candidate) :
+      (authoritativeGate state (.ordinary candidate)).state.resumable.contexts =
+        state.resumable.contexts := by
+    rw [authoritativeGate_ordinary_state]
+    cases hcandidate <;> cases hmode : state.execution.mode <;>
+      simp only [gate, hmode, applyOperation, selectLiveReturnAuthority, dispatchIPC, installIPC,
+        schedulerDispatch, schedulerYield, schedulerTick, Scheduler.reject,
+        installScheduler, installLifecycle, synchronizeMemory]
+    all_goals
+      repeat' first | split
+      all_goals rfl
+  cases hoperation <;>
+    apply dormantCancellationCompatible_of_exact_projections state _ hstate
+  all_goals first
+    | exact hdeferred _ (by constructor)
+    | exact hblocked _ (by constructor)
+    | exact hipc _ (by constructor)
+    | exact hcontexts _ (by constructor)
+
 private theorem authoritativeGate_ordinary_preserves_deferredBlockingRuntimeWellFormed
     state operation (hstate : DeferredBlockingRuntimeWellFormed state)
     (hcompatible : AuthoritativeOperationCompatible state (.ordinary operation)) :
@@ -14367,6 +14421,106 @@ theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
               state subject hstate
       | handling active => simpa [authoritativeGate, hmode] using hstate
       | halted record => simpa [authoritativeGate, hmode] using hstate
+
+/-- Every ordinary constructor in the blocking-state-neutral family now has a
+closed successor-gate preservation theorem.  Its compatibility evidence is
+derived from exact transition projections, never from the desired post-state
+invariant. -/
+theorem authoritativeGate_blockingStateNeutral_preserves_authoritativeRuntimeWellFormed
+    state operation (hoperation : BlockingStateNeutralOperation operation)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary operation)).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary operation) hstate
+    (blockingStateNeutral_authoritativeOperationCompatible
+      state operation hoperation hstate)
+
+/-- A successful blocking receive cannot select an identity held in the
+dormant cancellation bank: blocking requires that identity to be the current
+subject, while retained cancellation requires it to be quiescent. -/
+theorem dispatchBlockingReceive_blocked_not_retained state handleWord frame registers
+    subject retained
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hretained : state.deferredCancels.retained subject = some retained)
+    (hblocked :
+      (dispatchBlockingReceive state handleWord frame registers).reply = .blocked) :
+    state.execution.core.context.currentSubject ≠ subject := by
+  intro hcaller
+  have hnotCurrent :=
+    (hstate.2.1.2.2 subject retained hretained).2.2.2.2.1
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hblocked
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk next result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | delivered envelope =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | blocked =>
+                  have hexact := BlockingIPCContext.receive_blocked_ipc_exact
+                    state.blockingIPCContext state.execution.core.context.currentSubject
+                    resolution.handle.slot saved (by simp [houtcome])
+                  have hcurrent := BlockingIPC.receive_blocked_current
+                    state.blockingIPC state.execution.core.context.currentSubject
+                    resolution.handle.slot hexact.2
+                  apply hnotCurrent
+                  change state.blockingIPC.scheduler.lifecycle.current = some subject
+                  simpa [hcaller] using hcurrent
+
+/-- A successful blocking send can wake only a subject with a saved waiter
+context.  Such an owner is disjoint from every dormant retained cancellation,
+so send cannot silently reactivate retained authority. -/
+theorem dispatchBlockingSend_woke_not_retained state handleWord word0 word1 restored
+    subject retained
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hretained : state.deferredCancels.retained subject = some retained)
+    (hwoke :
+      (dispatchBlockingSend state handleWord word0 word1).reply = .woke restored) :
+    restored.owner ≠ subject := by
+  have hcoherent : state.BlockingIPCCoherent := by
+    rcases hstate.blocking.1 with
+      ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking, _⟩
+    exact hblocking
+  obtain ⟨receiver, hstored, _, _⟩ := dispatchBlockingSend_woke_exact
+    state handleWord word0 word1 restored
+      ⟨hstate.blocking.2, hcoherent⟩ hwoke
+  have howner : restored.owner = receiver :=
+    BlockingIPCContext.validSaved_owner receiver restored
+      (hstate.blocking.2.2.2 receiver restored hstored)
+  have hnotRetained :
+      state.deferredCancels.retained receiver = none :=
+    hstate.2.1.2.1 receiver (by
+      change (state.blockingContexts receiver).isSome = true
+      rw [hstored]
+      rfl)
+  intro heq
+  have hreceiver : receiver = subject := howner.symm.trans heq
+  rw [hreceiver, hretained] at hnotRetained
+  simp [hretained] at hnotRetained
+
+/-- Cancelling a dormant retained identity is exactly atomic.  The retained
+classification supplies the missing-waiter fact consumed directly by the
+blocking cancellation transition. -/
+theorem dispatchBlockingCancel_retained_unchanged state subject retained
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hretained : state.deferredCancels.retained subject = some retained) :
+    (dispatchBlockingCancel state subject).state = state := by
+  have hwaiter :=
+    (hstate.2.1.2.2 subject retained hretained).2.1
+  change state.blockingIPC.waiterEndpoint subject = none at hwaiter
+  simp [dispatchBlockingCancel, BlockingIPCContext.cancel,
+    CompositeState.blockingIPCContext, hwaiter]
 
 /-- Return-authority selection changes only the execution projection.  Its
 public constructor therefore derives dormant-cancellation compatibility
