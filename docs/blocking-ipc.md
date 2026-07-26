@@ -51,7 +51,7 @@ preserve the folded runtime/waiter-context invariant without a reconstructed
 readiness premise. Both explicit and scheduler-selected termination preserve
 the complete retained-context classification, so either may be followed
 immediately by any finite capacity-checked deferred-drain suffix through the
-authoritative gate without an `AuthoritativeTraceReady` witness. Explicit
+authoritative gate without an `AuthoritativeTraceCompatible` witness. Explicit
 termination covers live identities that begin blocked, already deferred, or
 otherwise non-current. More generally, arbitrary
 finite interleavings of the readiness-free ordinary family with block, wake,

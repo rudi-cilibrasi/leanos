@@ -284,12 +284,12 @@ theorem failstop_halted_suffix_absorbing state record proposals
 
 /-- SC-COMPOSITE-AUTHORITATIVE-GATE: the successor gate embeds both ordinary
 and blocking operation families under one latch and typed reply.  The complete
-blocking/deferred invariant supplies structural readiness, while an exact
-post-state contract records preservation across authority-affecting steps;
+blocking/deferred invariant supplies structural readiness, while independently
+checkable compatibility premises record only operation-local effect laws;
 classified denial is atomic, and fatal mode absorbs arbitrary mixed suffixes. -/
 theorem composite_authoritative_gate_contract state operation
     (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
-    (hcontract : FailStop.AuthoritativeOperationContract state operation) :
+    (hcompatible : FailStop.AuthoritativeOperationCompatible state operation) :
     FailStop.AuthoritativeRuntimeWellFormed
         (FailStop.authoritativeGate state operation).state ∧
       FailStop.AuthoritativeOperationReady state operation ∧
@@ -311,7 +311,7 @@ theorem composite_authoritative_gate_contract state operation
         state.execution.mode = .halted record →
         FailStop.runAuthoritativeOperations state suffix = state) := by
   refine ⟨FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
-      state operation hstate hcontract, hstate.operationReady operation,
+      state operation hstate hcompatible, hstate.operationReady operation,
       ?_, ?_, ?_, ?_⟩
   · intro reply hcompleted
     exact FailStop.authoritativeGate_completed_sound state operation reply hcompleted
@@ -319,20 +319,21 @@ theorem composite_authoritative_gate_contract state operation
     exact FailStop.authoritativeGate_rejection_atomic state operation _rejection
   · intro blocking hoperation
     subst operation
-    exact (hcontract hstate).blocking
+    exact (FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
+      state (.blocking blocking) hstate hcompatible).blocking
   · intro record suffix hmode
     exact FailStop.authoritative_halted_suffix_absorbing state record suffix hmode
 
-/-- Contracted finite mixtures of ordinary and blocking operations preserve
+/-- Compatible finite mixtures of ordinary and blocking operations preserve
 the complete folded global invariant.  Structural blocking/deferred readiness
 is derived from that invariant rather than repeated as a trace premise. -/
 theorem composite_authoritative_mixed_trace_preserves_runtimeWellFormed
     state operations (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
-    (hcontracts : FailStop.AuthoritativeTraceReady state operations) :
+    (hcompatible : FailStop.AuthoritativeTraceCompatible state operations) :
     FailStop.AuthoritativeRuntimeWellFormed
       (FailStop.runAuthoritativeOperations state operations) := by
   exact FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
-    state operations hstate hcontracts
+    state operations hstate hcompatible
 
 /-- Mapping changes retain the complete authoritative-gate
 blocking precondition, so either raw mapping mutation can be followed directly
@@ -1152,21 +1153,21 @@ theorem composite_universal_mixed_trace_preserves_runtimeWellFormed
   exact FailStop.runOperations_preserves_runtimeWellFormed_universally
     state operations hstate
 
-/-- Supporting contracted trace theorem: an arbitrary finite list of ordinary
+/-- Supporting compatible trace theorem: an arbitrary finite list of ordinary
 successor-gate operations preserves the complete folded blocking/deferred
-invariant when every exact public post-state satisfies its recursive
-operation contract. -/
+invariant from recursive operation-local premises, without assuming any
+intermediate preservation conclusion. -/
 theorem composite_authoritative_ordinary_trace_preserves_runtimeWellFormed
     state (operations : List FailStop.Operation)
     (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
-    (hcontracts : FailStop.AuthoritativeTraceReady state
+    (hcompatible : FailStop.AuthoritativeTraceCompatible state
       (operations.map FailStop.AuthoritativeOperation.ordinary)) :
     FailStop.AuthoritativeRuntimeWellFormed
       (FailStop.runAuthoritativeOperations state
         (operations.map FailStop.AuthoritativeOperation.ordinary)) := by
   exact
     FailStop.runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFormed
-      state operations hstate hcontracts
+      state operations hstate hcompatible
 
 /-- Supporting readiness-free mixed-trace theorem: every finite interleaving
 of the compatible ordinary family and arbitrary authoritative blocking

@@ -14049,8 +14049,8 @@ theorem authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFo
 /-- A state-independent readiness-free mixed-trace language.  Every ordinary
 member carries its compositional blocking-preservation proof, while every
 authoritative blocking member is admitted directly because the preceding
-members retain the complete blocking runtime invariant.  Unlike
-`AuthoritativeTraceReady`, this certificate does not inspect or restate any
+members retain the complete blocking runtime invariant.  Unlike the finite
+compatibility certificate below, this language does not inspect any
 intermediate runtime state. -/
 inductive ReadinessFreeMixedTrace : List AuthoritativeOperation → Prop where
   | nil : ReadinessFreeMixedTrace []
@@ -14072,25 +14072,198 @@ theorem authoritativeGate_userReturn_preserves_blockingRuntimeWellFormed
   exact authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
     state (.userReturn request) (.userReturn request) hstate
 
-/-- A public operation contract records that the exact gate-selected
-post-state satisfies the authoritative invariant.  This is deliberately
-separate from structural readiness: deferred identities are quiescent, so an
-arbitrary scheduler or authority mutation cannot soundly be claimed to retain
-their authority without an operation-specific proof. -/
-def AuthoritativeOperationContract (state : CompositeState)
-    (operation : AuthoritativeOperation) : Prop :=
-  AuthoritativeRuntimeWellFormed state →
-    AuthoritativeRuntimeWellFormed (authoritativeGate state operation).state
+/-- Exact local effect laws needed when an operation leaves the dormant
+cancellation store in place.  These laws mention only the affected blocking,
+scheduler, and resumable projections; they do not assume either the global
+runtime invariant or its preservation conclusion. -/
+structure DormantCancellationCompatible (before after : CompositeState) : Prop where
+  deferredExact : after.deferredCancels = before.deferredCancels
+  blockedDeferredDisjoint :
+    ∀ subject, (after.blockingContexts subject).isSome = true →
+      after.deferredCancels.retained subject = none
+  blockedResumableDisjoint :
+    ∀ subject saved, after.blockingContexts subject = some saved →
+      ResumablePreemption.contextFor after.resumable.contexts subject = none
+  retainedQuiescent :
+    ∀ subject saved, before.deferredCancels.retained subject = some saved →
+      after.blockingIPC.waiterEndpoint subject = none ∧
+      after.blockingIPC.scheduler.lifecycle.capabilities.subjects subject = true ∧
+      after.blockingIPC.scheduler.lifecycle.runnable subject = false ∧
+      after.blockingIPC.scheduler.lifecycle.current ≠ some subject ∧
+      subject ∉ after.blockingIPC.scheduler.ready ∧
+      Scheduler.ownsAddressSpace after.blockingIPC.scheduler subject = some subject ∧
+      ResumablePreemption.contextFor after.resumable.contexts subject = none
+
+private theorem dormantCancellationCompatible_preserves
+    before after (hbefore : DeferredBlockingRuntimeWellFormed before)
+    (hblocking : BlockingRuntimeWellFormed after)
+    (hcompatible : DormantCancellationCompatible before after) :
+    DeferredBlockingRuntimeWellFormed after := by
+  refine ⟨hblocking.1, ?_⟩
+  unfold CompositeState.DeferredCancellationWellFormed
+  refine ⟨?_, hcompatible.blockedResumableDisjoint, ?_⟩
+  · unfold BlockingIPCContext.DeferredWellFormed
+    refine ⟨hblocking.2, hcompatible.blockedDeferredDisjoint, ?_⟩
+    intro subject saved hretained
+    have hretainedBefore : before.deferredCancels.retained subject = some saved := by
+      rw [← hcompatible.deferredExact]
+      exact hretained
+    have hvalid := hbefore.2.1.2.2 subject saved hretainedBefore
+    exact ⟨hvalid.1, hcompatible.retainedQuiescent subject saved hretainedBefore |>.1,
+      hcompatible.retainedQuiescent subject saved hretainedBefore |>.2.1,
+      hcompatible.retainedQuiescent subject saved hretainedBefore |>.2.2.1,
+      hcompatible.retainedQuiescent subject saved hretainedBefore |>.2.2.2.1,
+      hcompatible.retainedQuiescent subject saved hretainedBefore |>.2.2.2.2.1,
+      hcompatible.retainedQuiescent subject saved hretainedBefore |>.2.2.2.2.2.1⟩
+  · intro subject saved hretained
+    have hretainedBefore : before.deferredCancels.retained subject = some saved := by
+      rw [← hcompatible.deferredExact]
+      exact hretained
+    exact hcompatible.retainedQuiescent subject saved hretainedBefore |>.2.2.2.2.2.2
+
+/-- Independently checkable compatibility premises for every public operation.
+Contained entry consumes its trusted identity binding.  Termination, NMI, and
+capacity-checked drains have direct preservation proofs.  Scheduler admission
+must not target an undrained cancellation.  Operations already proved to
+preserve the blocking runtime expose only exact dormant-store effect laws.
+Raw scheduler removal additionally exposes the one lower blocking projection
+for which it has no unconditional preservation theorem.  No branch assumes
+the authoritative invariant of the gate-selected post-state. -/
+def AuthoritativeOperationCompatible (state : CompositeState) :
+    AuthoritativeOperation → Prop
+  | .ordinary (.interrupt _) => ContainedFaultIdentityBound state
+  | .ordinary (.nmi _ _) => True
+  | .ordinary (.terminateSubject _) => True
+  | .ordinary .terminateCurrent => True
+  | .ordinary (.scheduleRemove subject) =>
+      BlockingIPCContext.WellFormed
+        (authoritativeGate state
+          (.ordinary (.scheduleRemove subject))).state.blockingIPCContext ∧
+      DormantCancellationCompatible state
+        (authoritativeGate state (.ordinary (.scheduleRemove subject))).state
+  | .ordinary operation =>
+      DormantCancellationCompatible state
+        (authoritativeGate state (.ordinary operation)).state
+  | .blocking operation =>
+      DormantCancellationCompatible state
+        (authoritativeGate state (.blocking operation)).state
+  | .drainDeferred _ => True
+
+private theorem authoritativeGate_ordinary_preserves_deferredBlockingRuntimeWellFormed
+    state operation (hstate : DeferredBlockingRuntimeWellFormed state)
+    (hcompatible : AuthoritativeOperationCompatible state (.ordinary operation)) :
+    DeferredBlockingRuntimeWellFormed
+      (authoritativeGate state (.ordinary operation)).state := by
+  have hblocking : BlockingRuntimeWellFormed state := ⟨hstate.1, hstate.2.1.1⟩
+  cases operation with
+  | interrupt frame =>
+      rw [authoritativeGate_ordinary_state]
+      exact gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
+        state frame hstate hcompatible
+  | nmi raw context =>
+      rw [authoritativeGate_ordinary_state]
+      exact gate_nmi_preserves_deferredBlockingRuntimeWellFormed
+        state raw context hstate
+  | terminateSubject subject =>
+      rw [authoritativeGate_ordinary_state]
+      exact gate_terminateSubject_preserves_deferredBlockingRuntimeWellFormed
+        state subject hstate
+  | terminateCurrent =>
+      rw [authoritativeGate_ordinary_state]
+      exact gate_terminateCurrent_preserves_deferredBlockingRuntimeWellFormed
+        state hstate
+  | scheduleRemove subject =>
+      apply dormantCancellationCompatible_preserves state _ hstate
+      · refine ⟨?_, hcompatible.1⟩
+        rw [authoritativeGate_ordinary_state]
+        exact gate_preserves_runtimeWellFormed state (.scheduleRemove subject) hstate.1
+      · exact hcompatible.2
+  | selectUserReturn purpose =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+          state _ (.selectUserReturn purpose) hblocking) hcompatible
+  | userReturn request =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+          state _ (.userReturn request) hblocking) hcompatible
+  | ipc call =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+          state _ (.ipc call) hblocking) hcompatible
+  | scheduleNext =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+          state _ .scheduleNext hblocking) hcompatible
+  | scheduleYield =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+          state _ .scheduleYield hblocking) hcompatible
+  | scheduleTick =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+          state _ .scheduleTick hblocking) hcompatible
+  | restart =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
+          state _ .restart hblocking) hcompatible
+  | map slot page permissions =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.map slot page permissions) hblocking) hcompatible
+  | unmap page =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.unmap page) hblocking) hcompatible
+  | syscall call =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.syscall call) hblocking) hcompatible
+  | resumePreempt frame registers =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.resumePreempt frame registers) hblocking) hcompatible
+  | transferOffer endpointWord sourceWord sourceKind payload rights =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.transferOffer endpointWord sourceWord sourceKind payload rights)
+          hblocking) hcompatible
+  | transferAccept endpointWord destinationSlot =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.transferAccept endpointWord destinationSlot) hblocking) hcompatible
+  | capabilityCopy source destination destinationSlot rights =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.capabilityCopy source destination destinationSlot rights)
+          hblocking) hcompatible
+  | capabilityRevoke authoritySlot victim victimSlot =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.capabilityRevoke authoritySlot victim victimSlot)
+          hblocking) hcompatible
+  | capabilityRevokeSubtree authoritySlot victim victimSlot =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.capabilityRevokeSubtree authoritySlot victim victimSlot)
+          hblocking) hcompatible
+  | createSubject subject =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.createSubject subject) hblocking) hcompatible
+  | scheduleAdd subject =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.scheduleAdd subject) hblocking) hcompatible
 
 /-- Ordinary successor operations cross the folded authoritative boundary
-when their public operation contract establishes deferred-authority
-compatibility. -/
+when their independently stated operation compatibility premises hold. -/
 theorem authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
     state operation (hstate : AuthoritativeRuntimeWellFormed state)
-    (hcontract : AuthoritativeOperationContract state (.ordinary operation)) :
+    (hcompatible : AuthoritativeOperationCompatible state (.ordinary operation)) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary operation)).state := by
-  exact hcontract hstate
+  exact authoritativeGate_ordinary_preserves_deferredBlockingRuntimeWellFormed
+    state operation hstate hcompatible
 
 /-- Structural readiness consumed by the lower transition proofs.  The
 authoritative invariant now implies every branch of this predicate; it is no
@@ -14135,9 +14308,30 @@ theorem authoritativeGate_preserves_runtimeWellFormed state operation
 
 theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
     state operation (hstate : AuthoritativeRuntimeWellFormed state)
-    (hcontract : AuthoritativeOperationContract state operation) :
+    (hcompatible : AuthoritativeOperationCompatible state operation) :
     AuthoritativeRuntimeWellFormed (authoritativeGate state operation).state := by
-  exact hcontract hstate
+  cases operation with
+  | ordinary operation =>
+      exact authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
+        state operation hstate hcompatible
+  | blocking operation =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
+          state operation hstate.blocking) hcompatible
+  | drainDeferred subject =>
+      cases hmode : state.execution.mode with
+      | running =>
+          rw [show
+            (authoritativeGate state (.drainDeferred subject)).state =
+              (drainDeferredCancellation state subject).state by
+            simp [authoritativeGate, hmode, applyAuthoritativeOperation]]
+          change DeferredBlockingRuntimeWellFormed
+            (drainDeferredCancellation state subject).state
+          exact
+            drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
+              state subject hstate
+      | handling active => simpa [authoritativeGate, hmode] using hstate
+      | halted record => simpa [authoritativeGate, hmode] using hstate
 
 def runAuthoritativeOperations (state : CompositeState) :
     List AuthoritativeOperation → CompositeState
@@ -14178,43 +14372,44 @@ theorem readinessFreeMixedTrace_nonvacuous :
     (.blocking
       (.ordinary (.capabilityRevoke 0 1 0) .nil))
 
-/-- Recursive public contracts for a finite mixed trace.  Each member proves
-that its exact post-state retains blocking/deferred well-formedness; structural
-blocking and drain readiness then follows from that invariant at the next
-step. -/
-def AuthoritativeTraceReady (state : CompositeState) :
+/-- Recursive operation-specific compatibility for a finite mixed trace.
+Unlike the removed postcondition contract, each member records only the
+independently stated input premise consumed by that operation. -/
+def AuthoritativeTraceCompatible (state : CompositeState) :
     List AuthoritativeOperation → Prop
   | [] => True
   | operation :: rest =>
-      AuthoritativeOperationContract state operation ∧
-      AuthoritativeTraceReady (authoritativeGate state operation).state rest
+      AuthoritativeOperationCompatible state operation ∧
+      AuthoritativeTraceCompatible (authoritativeGate state operation).state rest
 
-/-- Every contracted finite interleaving of ordinary and blocking operations
-preserves the complete authoritative global invariant. -/
+/-- Every compatible finite interleaving of ordinary and blocking operations
+preserves the complete authoritative global invariant without assuming any
+intermediate preservation conclusion. -/
 theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
     state operations (hstate : AuthoritativeRuntimeWellFormed state)
-    (hcontracts : AuthoritativeTraceReady state operations) :
+    (hcompatible : AuthoritativeTraceCompatible state operations) :
     AuthoritativeRuntimeWellFormed (runAuthoritativeOperations state operations) := by
   induction operations generalizing state with
   | nil => exact hstate
   | cons operation rest ih =>
       exact ih (authoritativeGate state operation).state
         (authoritativeGate_preserves_authoritativeRuntimeWellFormed
-          state operation hstate hcontracts.1) hcontracts.2
+          state operation hstate hcompatible.1) hcompatible.2
 
 /-- Arbitrary finite ordinary traces need no reconstructed blocking or drain
-readiness.  Their recursive public contracts retain the authoritative
-invariant directly at every exact gate-selected post-state. -/
+readiness.  Their recursive compatibility evidence composes operation-local
+premises without assuming the authoritative invariant at an intermediate
+gate-selected post-state. -/
 theorem runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFormed
     state (operations : List Operation)
     (hstate : AuthoritativeRuntimeWellFormed state)
-    (hcontracts : AuthoritativeTraceReady state
+    (hcompatible : AuthoritativeTraceCompatible state
       (operations.map AuthoritativeOperation.ordinary)) :
     AuthoritativeRuntimeWellFormed
       (runAuthoritativeOperations state
         (operations.map AuthoritativeOperation.ordinary)) := by
   exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
-    state (operations.map AuthoritativeOperation.ordinary) hstate hcontracts
+    state (operations.map AuthoritativeOperation.ordinary) hstate hcompatible
 
 /-- A public deferred-drain step preserves the full retained-context
 classification under every outer-latch result. -/
