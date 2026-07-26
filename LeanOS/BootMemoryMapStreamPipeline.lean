@@ -409,6 +409,56 @@ def gapRich : Except Error Authority :=
 def gapScalar : ScalarState :=
   scalarReplay gapChunks (scalarInitialAt gapIdentity gapBytes.length 256)
 
+def physicalLimitBytes : List UInt8 :=
+  information
+    (memoryMapTag [entry 0 BootMemoryMap.physicalLimit 1] ++ endTag)
+
+def physicalLimitChunks : List ModelChunk :=
+  chunkedAt gapIdentity physicalLimitBytes
+
+def physicalLimitManifest (imageLength infoStart infoLength : Nat) :
+    List BootReservation.Reservation :=
+  [{ identity := .lowMemory, start := 0, length := 0x100000,
+     lifetime := .permanent },
+   { identity := .loadedImage, start := 0xf00000, length := imageLength,
+     lifetime := .permanent },
+   { identity := .pageTables, start := 0xf10000, length := 0x1000,
+     lifetime := .permanent },
+   { identity := .descriptorTables, start := 0xf20000, length := 0x1000,
+     lifetime := .permanent },
+   { identity := .kernelStacks, start := 0xf30000, length := 0x1000,
+     lifetime := .permanent },
+   { identity := .ordinaryEntryGuard, start := 0xf40000, length := 0x1000,
+     lifetime := .permanent },
+   { identity := .ordinaryEntryStack, start := 0xf41000, length := 0x4000,
+     lifetime := .permanent },
+   { identity := .embeddedUsers, start := 0xf80000, length := 0x2000,
+     lifetime := .permanent },
+   { identity := .multibootInfo, start := infoStart, length := infoLength,
+     lifetime := .bootstrap }]
+
+def physicalLimitRich : Except Error Authority :=
+  run (UInt64.ofNat multiboot2Magic) gapIdentity physicalLimitBytes.length
+    physicalLimitChunks (physicalLimitManifest 0x100000 0x300000 96) 7
+
+def outsideImageLimitRich : Except Error Authority :=
+  run (UInt64.ofNat multiboot2Magic) gapIdentity physicalLimitBytes.length
+    physicalLimitChunks (physicalLimitManifest 0x100001 0x300000 96) 7
+
+def exactInfoLimitRich : Except Error Authority :=
+  run (UInt64.ofNat multiboot2Magic) gapIdentity physicalLimitBytes.length
+    physicalLimitChunks
+      (physicalLimitManifest 0x100000 (BootMemoryMap.physicalLimit - 96) 96) 7
+
+def outsideInfoLimitRich : Except Error Authority :=
+  run (UInt64.ofNat multiboot2Magic) gapIdentity physicalLimitBytes.length
+    physicalLimitChunks
+      (physicalLimitManifest 0x100000 (BootMemoryMap.physicalLimit - 32) 96) 7
+
+def physicalLimitScalar : ScalarState :=
+  scalarReplay physicalLimitChunks
+    (scalarInitialAt gapIdentity physicalLimitBytes.length 256)
+
 def peerOverlapManifest (identity : BootReservation.Identity) :
     List BootReservation.Reservation :=
   gapManifest.map fun reservation =>
@@ -471,6 +521,44 @@ theorem lowMemoryGap_scalar_richPipeline_firstFree_agreement :
         0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0x300000 96 = 1 ∧
       selectFrame 4096 256 gapScalar.word[1]! gapScalar.word[14]!
         gapScalar.word[15]! 1 = 256 := by
+  native_decide
+
+/-! The scalar production manifest and the rich
+`BootMemoryMapDecoder` -> `BootReservation.initializeAllocator` ->
+`FrameAllocator.allocate` boundary agree at the canonical 16 MiB endpoint.
+An image or Multiboot reservation ending exactly at the limit is accepted and
+selects the same first free frame. Advancing either endpoint past the limit is
+rejected by the rich reservation transition and makes scalar selection and
+publication impossible. -/
+theorem physicalLimit_scalar_richPipeline_boundary_agreement :
+    streamBytes physicalLimitChunks = physicalLimitBytes ∧
+      physicalLimitBytes.length = 56 ∧
+      physicalLimitScalar.word[1]! = complete ∧
+      physicalLimitScalar.word[2]! = noError ∧
+      physicalLimitScalar.word[14]! = 1 ∧
+      physicalLimitScalar.word[15]! = 0 ∧
+      physicalLimitRich.toOption.map (·.allocation.frame) = some 256 ∧
+      manifestCandidate 256 0 0x100000 0xf00000 0x100000
+        0xf10000 0x1000 0xf20000 0x1000 0xf30000 0x1000
+        0xf40000 0x1000 0xf41000 0x4000 0xf80000 0x2000 0x300000 96 = 1 ∧
+      exactInfoLimitRich.toOption.map (·.allocation.frame) = some 256 ∧
+      manifestCandidate 256 0 0x100000 0xf00000 0x100000
+        0xf10000 0x1000 0xf20000 0x1000 0xf30000 0x1000
+        0xf40000 0x1000 0xf41000 0x4000 0xf80000 0x2000 0xffffa0 96 = 1 ∧
+      errorOf outsideImageLimitRich =
+        some (.reservation .outsidePhysicalLimit) ∧
+      manifestCandidate 256 0 0x100000 0xf00000 0x100001
+        0xf10000 0x1000 0xf20000 0x1000 0xf30000 0x1000
+        0xf40000 0x1000 0xf41000 0x4000 0xf80000 0x2000 0x300000 96 = 0 ∧
+      selectFrame 4096 256 physicalLimitScalar.word[1]!
+        physicalLimitScalar.word[14]! physicalLimitScalar.word[15]! 0 = 4096 ∧
+      errorOf outsideInfoLimitRich =
+        some (.reservation .outsidePhysicalLimit) ∧
+      manifestCandidate 256 0 0x100000 0x200000 0x100000
+        0x210000 0x1000 0x220000 0x1000 0x230000 0x1000
+        0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0xfffff0 96 = 0 ∧
+      publishAuthority 4096 4096 physicalLimitScalar.word[1]!
+        physicalLimitScalar.word[14]! physicalLimitScalar.word[15]! 0 1 = 0 := by
   native_decide
 
 def zeroEntryBytes : List UInt8 :=

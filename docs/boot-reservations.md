@@ -32,6 +32,13 @@ image inside usable RAM, touching/overlapping reservations, an unaligned
 Multiboot2 block, usable RAM after the image, full consumption, and atomic
 manifest rejection.
 
+The generated scalar manifest applies the same 16 MiB physical endpoint used
+by `roundInterval` to the loaded image and the independent Multiboot
+reservation. Lean boundary fixtures prove agreement with the rich
+decode/initialize/allocate path at the exact endpoint and for the first
+out-of-range image byte and Multiboot extent; the freestanding generated-C
+replay carries matching positive and negative fixtures.
+
 ## Trusted boundary
 
 Lean does not prove the linker, loader, Multiboot2 producer, assembly, compiler,

@@ -223,6 +223,12 @@ def stepWord (version status error identity extent offset chain phase content pa
 private def validRange (start length : UInt64) : Bool :=
   length != 0 && length <= 0xffffffffffffffff - start
 
+private def physicalByteLimit : UInt64 :=
+  UInt64.ofNat LeanOS.BootMemoryMap.physicalLimit
+
+private def withinPhysicalLimit (start length : UInt64) : Bool :=
+  validRange start length && start + length <= physicalByteLimit
+
 private def contained (outerStart outerLength start length : UInt64) : Bool :=
   validRange outerStart outerLength && validRange start length &&
     outerStart <= start && start + length <= outerStart + outerLength
@@ -248,14 +254,14 @@ private def manifestValid
     guardStart guardLength entryStart entryLength usersStart usersLength
     infoStart infoLength : UInt64) : Bool :=
   lowStart == 0 && lowLength == 0x100000 &&
-    validRange imageStart imageLength &&
+    withinPhysicalLimit imageStart imageLength &&
     contained imageStart imageLength pageStart pageLength &&
     contained imageStart imageLength descriptorStart descriptorLength &&
     contained imageStart imageLength stacksStart stacksLength &&
     contained imageStart imageLength guardStart guardLength &&
     contained imageStart imageLength entryStart entryLength &&
     contained imageStart imageLength usersStart usersLength &&
-    validRange infoStart infoLength && infoStart % 8 == 0 &&
+    withinPhysicalLimit infoStart infoLength && infoStart % 8 == 0 &&
     guardLength == 4096 && entryLength != 0 &&
     guardStart + guardLength == entryStart &&
     roundedPast guardStart guardLength == roundedFirst entryStart &&
@@ -274,7 +280,9 @@ ordinary-entry guard, ordinary-entry stack, embedded users, and Multiboot info.
 All image-owned subranges must lie within the loaded image.  The ordinary guard
 and stack must be exact adjacent rounded frame intervals, disjoint after
 rounding from page tables, descriptor tables, other kernel stacks, and embedded
-users. -/
+users.  The loaded image and independent Multiboot reservation must end at or
+below the canonical `BootMemoryMap.physicalLimit`; containment then applies the
+same bound to every image-owned subrange. -/
 @[export leanos_boot_manifest_candidate]
 def manifestCandidate (frame
     lowStart lowLength imageStart imageLength pageStart pageLength
@@ -346,6 +354,24 @@ example : manifestCandidate 800 0 0x100000 0x100000 0x200000
 example : manifestCandidate 800 0 0x100000 0x100000 0x200000
     0x110000 0x1000 0x120000 0x1000 0x130000 0x1000
     0x140000 0x1000 0x141000 0x4000 0x141000 0x2000 0x300000 96 = 0 := by decide
+example : manifestCandidate 256 0 0x100000 0xf00000 0x100000
+    0xf10000 0x1000 0xf20000 0x1000 0xf30000 0x1000
+    0xf40000 0x1000 0xf41000 0x4000 0xf80000 0x2000 0x300000 96 = 1 := by decide
+example : manifestCandidate 256 0 0x100000 0xf00000 0x100000
+    0xf10000 0x1000 0xf20000 0x1000 0xf30000 0x1000
+    0xf40000 0x1000 0xf41000 0x4000 0xf80000 0x2000 0xffffa0 96 = 1 := by decide
+example : manifestCandidate 256 0 0x100000 0xf00000 0x100001
+    0xf10000 0x1000 0xf20000 0x1000 0xf30000 0x1000
+    0xf40000 0x1000 0xf41000 0x4000 0xf80000 0x2000 0x300000 96 = 0 := by decide
+example : manifestCandidate 256 0 0x100000 0x200000 0x100000
+    0x210000 0x1000 0x220000 0x1000 0x230000 0x1000
+    0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0xfffff0 96 = 0 := by decide
+example : manifestStart 0 0x100000 0xf00000 0x100001
+    0xf10000 0x1000 0xf20000 0x1000 0xf30000 0x1000
+    0xf40000 0x1000 0xf41000 0x4000 0xf80000 0x2000 0x300000 96 = 4096 := by decide
+example : manifestStart 0 0x100000 0x200000 0x100000
+    0x210000 0x1000 0x220000 0x1000 0x230000 0x1000
+    0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0xfffff0 96 = 4096 := by decide
 example : manifestStart 0 0x100000 0x200000 0x100000
     0x210000 0x1000 0x220000 0x1000 0x230000 0x1000
     0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0x300000 96 = 256 := by decide

@@ -255,6 +255,51 @@ int check_stream(void) {
                 range[16], range[17]) != 0)
             return 26 + peer;
     }
+    const uint64_t image_at_limit = leanos_boot_manifest_candidate(
+        256, 0, 0x100000, 0xf00000, 0x100000,
+        0xf10000, 0x1000, 0xf20000, 0x1000, 0xf30000, 0x1000,
+        0xf40000, 0x1000, 0xf41000, 0x4000, 0xf80000, 0x2000,
+        0x300000, 96);
+    if (image_at_limit != 1 ||
+        leanos_boot_select_frame(4096, 256, 1, 1, 0, image_at_limit) != 256)
+        return 30;
+    const uint64_t info_at_limit = leanos_boot_manifest_candidate(
+        256, 0, 0x100000, 0xf00000, 0x100000,
+        0xf10000, 0x1000, 0xf20000, 0x1000, 0xf30000, 0x1000,
+        0xf40000, 0x1000, 0xf41000, 0x4000, 0xf80000, 0x2000,
+        0xffffa0, 96);
+    if (info_at_limit != 1 ||
+        leanos_boot_publish_authority(256, 256, 1, 1, 0,
+                                      info_at_limit, 1) != 257)
+        return 31;
+    const uint64_t image_past_limit = leanos_boot_manifest_candidate(
+        256, 0, 0x100000, 0xf00000, 0x100001,
+        0xf10000, 0x1000, 0xf20000, 0x1000, 0xf30000, 0x1000,
+        0xf40000, 0x1000, 0xf41000, 0x4000, 0xf80000, 0x2000,
+        0x300000, 96);
+    if (image_past_limit != 0 ||
+        leanos_boot_manifest_start(
+            0, 0x100000, 0xf00000, 0x100001,
+            0xf10000, 0x1000, 0xf20000, 0x1000, 0xf30000, 0x1000,
+            0xf40000, 0x1000, 0xf41000, 0x4000, 0xf80000, 0x2000,
+            0x300000, 96) != 4096 ||
+        leanos_boot_select_frame(4096, 256, 1, 1, 0,
+                                 image_past_limit) != 4096)
+        return 32;
+    const uint64_t info_past_limit = leanos_boot_manifest_candidate(
+        256, 0, 0x100000, 0x200000, 0x100000,
+        0x210000, 0x1000, 0x220000, 0x1000, 0x230000, 0x1000,
+        0x240000, 0x1000, 0x241000, 0x4000, 0x280000, 0x2000,
+        0xfffff0, 96);
+    if (info_past_limit != 0 ||
+        leanos_boot_manifest_start(
+            0, 0x100000, 0x200000, 0x100000,
+            0x210000, 0x1000, 0x220000, 0x1000, 0x230000, 0x1000,
+            0x240000, 0x1000, 0x241000, 0x4000, 0x280000, 0x2000,
+            0xfffff0, 96) != 4096 ||
+        leanos_boot_publish_authority(4096, 4096, 1, 1, 0,
+                                      info_past_limit, 1) != 0)
+        return 33;
     return 0;
 }
 

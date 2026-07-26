@@ -16,9 +16,11 @@ Usable entries contribute only complete 4 KiB pages. Non-usable entries take
 precedence independent of input order. The generated manifest boundary checks
 the canonical nine reservation identities, including low memory, the complete
 loaded image and its live subranges, and the copied handoff. Selection is
-restricted to the 16 MiB bootstrap identity map. The selected page is fully
-zeroed and checked before the generated publication transition exposes the
-object identifier.
+restricted to the 16 MiB bootstrap identity map. The loaded-image and
+Multiboot reservations must also end at or below that same physical limit; an
+endpoint exactly at 16 MiB is accepted, while the first byte beyond it rejects
+before selection. The selected page is fully zeroed and checked before the
+generated publication transition exposes the object identifier.
 
 `LeanOS.BootMemoryMapStreamPipeline` is the rich proof-side composition from
 the exact accepted byte sequence through `BootMemoryMapDecoder`,
@@ -45,8 +47,12 @@ code for the bounded rich projection and allocation-free scalar cases. QEMU
 demonstrates the integrated artifact for fixed reported maps and a controlled
 malformed-handoff rejection. The proof-side and freestanding exact-byte
 65-tag fixture agree that the rich decoder and scalar ABI reject at their
-respective `tooManyTags` errors. Neither compilation nor QEMU execution
-verifies the binary.
+respective `tooManyTags` errors. A separate exact-boundary theorem replays the
+same usable handoff through the rich decoder/reservation/allocator chain and
+the scalar production decision: both accept image and Multiboot endpoints at
+16 MiB, and both reject either reservation beyond it. Generated freestanding C
+fixtures cover the same positive and negative endpoints. Neither compilation
+nor QEMU execution verifies the binary.
 
 Physical-memory reads and scrub writes in `boot/kernel.c`, handoff register
 preservation and ABI in `boot/boot.S`, linker symbols, generated C, compiler,
@@ -55,6 +61,6 @@ TCB. The version-four scalar parser and manifest decision are not yet proved
 extensionally equal to the rich decoder, normalizer, reservation overlay, and
 complete projection for arbitrary bytes. Focused hosted/freestanding corpus
 and QEMU checks narrow that correspondence assumption; the exact 65-tag
-agreement theorem closes the reviewed concrete divergence without claiming an
-all-input equivalence. No new Lean `unsafe`, `extern`, axiom, constant, or
-proof escape is introduced.
+and physical-limit agreement theorems close their reviewed concrete
+divergences without claiming an all-input equivalence. No new Lean `unsafe`,
+`extern`, axiom, constant, or proof escape is introduced.
