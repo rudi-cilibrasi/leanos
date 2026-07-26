@@ -72,16 +72,40 @@ offset plus the exact sum of accepted byte counts.
 standalone freestanding ELF, replays the checked-in accepted buffer in twelve
 chunks plus negative state transitions, executes it, rejects undefined
 symbols, and rejects retained allocation, boxed-value, big-`Nat`, or
-initialization-runtime symbols.
+initialization-runtime symbols. Its final-ELF inventory also rejects the boxed
+whole-buffer query, fixture query, and legacy scalar allocation-check export.
+This is sole-transport-boundary evidence for the focused artifact, not yet a
+claim about the production boot image's physical-memory reader.
 
-This checkpoint deliberately does not claim that the scalar transport parses
-tags, normalizes entries, applies reservations, selects a frame, authenticates
-the continuity chain, or refines the final binary. The existing version-one
-decoder corpus remains the authoritative complete typed projection test.
-Production must not grant allocator or scrub/publication authority from a
-version-two transport completion. The next boundary must connect the emitted
-chunks to the existing decoder/normalizer/reservation state without restoring
-a C tag walker or shadow classifier.
+`BootMemoryMapStreamPipeline` now supplies the proof-side composition contract
+for the next production step. A rich decoder input exists only after exact
+model replay completes at the bound extent, and its byte list is proved equal
+to the ordered concatenation of accepted chunks. The composition then calls
+the existing byte decoder, `BootReservation.initializeAllocator` (which calls
+the existing normalizer and overlay), and `FrameAllocator.allocate`; it accepts
+no caller-supplied parsed fields or policy flags. Its authority value retains
+the equations for all four transitions. Successful selection additionally
+carries the existing `usableFrameSound` predicate, the boot-accessible bound,
+and reservation exclusion. A complete projection includes every decoded
+entry, normalized region, checked reservation interval, overlaid region, and
+the selected frame; changing any projection field rejects with
+`outputMutation`. Executable fixtures cover exact byte reconstruction and
+selection plus cross-identity splicing, reordered chunks, and selected-frame
+mutation.
+
+This checkpoint does not claim that the scalar freestanding export itself
+stores or parses the emitted bytes, that the proof-side rich composition is
+reachable in the production ELF, that the continuity chain authenticates
+bytes, or that the final binary refines Lean. The existing version-one decoder
+corpus remains the hosted complete typed projection test. Production must not
+grant allocator or scrub/publication authority from version-two transport
+completion alone; it must implement this exact composition without restoring a
+C tag walker or shadow classifier.
+
+No trusted declaration, foreign primitive, runtime shim, or other TCB entry is
+added by this slice. The proof-side composition uses only existing executable
+definitions and proved witnesses; the residual trusted boundary remains the
+one documented by ADR 0002 and the immutable-copy assumptions above.
 
 ## Accepted subset and bounds
 

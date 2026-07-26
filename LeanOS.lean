@@ -12,6 +12,7 @@ import LeanOS.BootMemoryMapDecoder
 import LeanOS.BootMemoryMapDecoderABI
 import LeanOS.BootMemoryMapStreaming
 import LeanOS.BootReservation
+import LeanOS.BootMemoryMapStreamPipeline
 import LeanOS.BootAllocation
 import LeanOS.BootInterruptPhase
 import LeanOS.BootPageTablePlan
