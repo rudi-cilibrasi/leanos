@@ -53,11 +53,15 @@ the complete retained-context classification, so either may be followed
 immediately by any finite capacity-checked deferred-drain suffix through the
 authoritative gate without an `AuthoritativeTraceCompatible` witness. Explicit
 termination covers live identities that begin blocked, already deferred, or
-otherwise non-current. More generally, arbitrary
-finite interleavings of the readiness-free ordinary family with block, wake,
+otherwise non-current. More generally, finite interleavings of the
+readiness-free ordinary family with block, wake,
 delivery, and cancellation operations carry one state-independent trace
 certificate; no intermediate state is exposed through a recursive readiness
-gate.
+gate. This readiness-free slice preserves `BlockingRuntimeWellFormed`, not the
+folded deferred-cancellation invariant. The broader
+`AuthoritativeRuntimeWellFormed` theorem remains conditional on an
+`AuthoritativeTraceCompatible` certificate whose dormant-cancellation laws are
+not yet derived for every public constructor.
 
 Contained-fault cleanup uses a separate deferred-cancellation bank for peers
 whose endpoint authority was invalidated. Each retained context stays valid,

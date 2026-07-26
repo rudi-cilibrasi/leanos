@@ -13769,7 +13769,7 @@ theorem observeDMAControl_changed_suffix_absorbing state snapshot accepted propo
   · rfl
   · exact halted_suffix_absorbing _ _ proposals rfl
 
-/-! ## Authoritative ordinary/blocking gate successor
+/-! ## Conditional authoritative ordinary/blocking gate successor
 
 The ordinary gate and the blocking gate were developed independently while
 their operation-specific preservation proofs were completed.  The vocabulary
@@ -13777,8 +13777,10 @@ below is their migration boundary: it uses the same `CompositeState`, one
 execution latch, and one typed result family.  The successor invariant folds
 the complete blocking/deferred classification into the global boundary.
 Lower blocking and drain readiness are projections of that invariant;
-authority-affecting operations additionally carry a public compatibility
-contract for their exact post-state. -/
+ordinary and blocking operations additionally carry public compatibility
+facts about their dormant-cancellation effects.  Those facts are not yet
+derived for every constructor, so this section does not establish universal
+successor-gate preservation. -/
 
 /-- Every currently modeled runtime event admitted by the successor gate. -/
 inductive AuthoritativeOperation where
@@ -14121,14 +14123,15 @@ private theorem dormantCancellationCompatible_preserves
       exact hretained
     exact hcompatible.retainedQuiescent subject saved hretainedBefore |>.2.2.2.2.2.2
 
-/-- Independently checkable compatibility premises for every public operation.
+/-- Independently stated compatibility premises for every public operation.
 Contained entry consumes its trusted identity binding.  Termination, NMI, and
 capacity-checked drains have direct preservation proofs.  Scheduler admission
 must not target an undrained cancellation.  Operations already proved to
 preserve the blocking runtime expose only exact dormant-store effect laws.
 Raw scheduler removal additionally exposes the one lower blocking projection
 for which it has no unconditional preservation theorem.  No branch assumes
-the authoritative invariant of the gate-selected post-state. -/
+the authoritative invariant of the gate-selected post-state, but most branches
+still require the caller to establish laws about that exact post-state. -/
 def AuthoritativeOperationCompatible (state : CompositeState) :
     AuthoritativeOperation → Prop
   | .ordinary (.interrupt _) => ContainedFaultIdentityBound state
@@ -14382,9 +14385,11 @@ def AuthoritativeTraceCompatible (state : CompositeState) :
       AuthoritativeOperationCompatible state operation ∧
       AuthoritativeTraceCompatible (authoritativeGate state operation).state rest
 
-/-- Every compatible finite interleaving of ordinary and blocking operations
-preserves the complete authoritative global invariant without assuming any
-intermediate preservation conclusion. -/
+/-- Every compatibility-certified finite interleaving of ordinary and blocking
+operations preserves the complete authoritative global invariant without
+assuming any intermediate preservation conclusion.  This is intentionally not
+a universal trace theorem: no inhabitant is provided for an arbitrary
+operation list. -/
 theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
     state operations (hstate : AuthoritativeRuntimeWellFormed state)
     (hcompatible : AuthoritativeTraceCompatible state operations) :

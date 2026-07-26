@@ -282,12 +282,13 @@ theorem failstop_halted_suffix_absorbing state record proposals
     FailStop.runOperations state proposals = state := by
   exact FailStop.halted_suffix_absorbing state record proposals hmode
 
-/-- SC-COMPOSITE-AUTHORITATIVE-GATE: the successor gate embeds both ordinary
-and blocking operation families under one latch and typed reply.  The complete
-blocking/deferred invariant supplies structural readiness, while independently
-checkable compatibility premises record only operation-local effect laws;
-classified denial is atomic, and fatal mode absorbs arbitrary mixed suffixes. -/
-theorem composite_authoritative_gate_contract state operation
+/-- SC-COMPOSITE-AUTHORITATIVE-COMPATIBLE-GATE: the successor gate embeds both
+ordinary and blocking operation families under one latch and typed reply.
+The complete blocking/deferred invariant supplies structural readiness.
+Preservation remains explicitly conditional on caller-supplied dormant-store
+and operation-local compatibility facts; classified denial is atomic, and
+fatal mode absorbs arbitrary mixed suffixes. -/
+theorem composite_authoritative_compatible_gate_contract state operation
     (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
     (hcompatible : FailStop.AuthoritativeOperationCompatible state operation) :
     FailStop.AuthoritativeRuntimeWellFormed
@@ -324,10 +325,10 @@ theorem composite_authoritative_gate_contract state operation
   · intro record suffix hmode
     exact FailStop.authoritative_halted_suffix_absorbing state record suffix hmode
 
-/-- Compatible finite mixtures of ordinary and blocking operations preserve
-the complete folded global invariant.  Structural blocking/deferred readiness
-is derived from that invariant rather than repeated as a trace premise. -/
-theorem composite_authoritative_mixed_trace_preserves_runtimeWellFormed
+/-- Compatibility-certified finite mixtures of ordinary and blocking
+operations preserve the complete folded global invariant.  This supporting
+theorem does not claim that the certificate follows from the pre-invariant. -/
+theorem composite_authoritative_compatible_mixed_trace_preserves_runtimeWellFormed
     state operations (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
     (hcompatible : FailStop.AuthoritativeTraceCompatible state operations) :
     FailStop.AuthoritativeRuntimeWellFormed
@@ -1143,10 +1144,13 @@ theorem composite_gate_termination_defers_invalidated_peer
     state owner lifecycle peer endpoint saved hmode haccepted hpeer
     hendpoint hsaved hretired
 
-/-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of every
-public operation preserve the complete runtime invariant for every accepted,
-typed-rejected, busy, halted, or fatal result. -/
-theorem composite_universal_mixed_trace_preserves_runtimeWellFormed
+/-- SC-COMPOSITE-LEGACY-OPERATION-TRACE-WF: arbitrary finite interleavings of
+every constructor in the legacy `Operation`/`gate` surface preserve
+`RuntimeWellFormed` for every accepted, typed-rejected, busy, halted, or fatal
+result.  This surface excludes `CompositeBlockingOperation` and deferred
+cancellation drains, and `RuntimeWellFormed` excludes their folded
+classification. -/
+theorem composite_legacy_operation_mixed_trace_preserves_runtimeWellFormed
     state operations
     (hstate : FailStop.RuntimeWellFormed state) :
     FailStop.RuntimeWellFormed (FailStop.runOperations state operations) := by
@@ -1311,12 +1315,13 @@ private theorem registeredMixedTrace_registered operation
     exact .restart
 
 set_option maxRecDepth 100000 in
-/-- Concrete non-vacuity for the universal mixed-trace contract: the accepted
-repository boot plan runs a finite trace containing attacker-controlled
+/-- Concrete non-vacuity for the legacy-operation mixed-trace contract: the
+accepted repository boot plan runs a finite trace containing attacker-controlled
 syscall/IPC/sealed-transfer/capability-copy/revocation/mapping words, lifecycle
 creation/termination, resumable-aware scheduler cleanup, return selection, and restart
-while retaining the global invariant. -/
-theorem composite_universal_mixed_trace_reachable_witness :
+while retaining `RuntimeWellFormed`.  It is not evidence for the folded
+authoritative blocking/deferred invariant. -/
+theorem composite_legacy_operation_mixed_trace_reachable_witness :
     match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
     | .ok plan => FailStop.RuntimeWellFormed
         (FailStop.runOperations (FailStop.bootRuntime plan) registeredMixedTrace)
@@ -1331,7 +1336,7 @@ theorem composite_universal_mixed_trace_reachable_witness :
         native_decide
       simp [hresult] at hsuccess
   | ok plan =>
-      apply composite_universal_mixed_trace_preserves_runtimeWellFormed
+      apply composite_legacy_operation_mixed_trace_preserves_runtimeWellFormed
       exact FailStop.bootRuntime_runtimeWellFormed
         BootPageTablePlan.sampleInput plan hresult
 
