@@ -72,10 +72,19 @@ preserves one identity and extent and that its final offset equals the initial
 offset plus the exact sum of accepted byte counts.
 `scripts/check-boot-handoff-stream.sh` compiles the generated exports into a
 standalone freestanding ELF, replays the checked-in accepted buffer in twelve
-chunks plus negative state transitions, executes it, rejects undefined
-symbols, and rejects retained allocation, boxed-value, big-`Nat`, or
-initialization-runtime symbols. Its final-ELF inventory also rejects the boxed
-whole-buffer query, fixture query, and legacy scalar allocation-check export.
+chunks plus negative state transitions, and executes a raw-word rejection
+corpus covering a nonzero information-header word, malformed tag size,
+duplicate and missing maps, unsupported map layout, zero-length, reserved-word,
+and overflowing entries, a missing end tag, the 65-tag limit, and the
+257-entry limit. Each fixture requires the exact typed scalar error code. The
+check rejects undefined symbols and retained allocation, boxed-value,
+big-`Nat`, or initialization-runtime symbols. Its final-ELF inventory also
+rejects the boxed whole-buffer query, fixture query, and legacy scalar
+allocation-check export.
+`malformedRawCorpus_scalar_rich_exactDiagnostics` replays the same malformed
+classes in Lean and records the exact rich decoder or normalization error
+paired with each generated scalar diagnostic; no paired rich rejection reaches
+scalar candidate authority.
 This is sole-transport-boundary evidence for the focused artifact, not yet a
 claim about the production boot image's physical-memory reader.
 

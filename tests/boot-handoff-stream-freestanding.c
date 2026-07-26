@@ -57,6 +57,13 @@ static struct decode_state decode(const uint64_t chunks[12], uint64_t target) {
     return decode_extent(chunks, 12, target);
 }
 
+static int expect_decode_error(
+        const uint64_t *chunks, uint64_t count, uint64_t expected) {
+    const struct decode_state decoded = decode_extent(chunks, count, 1);
+    return decoded.word[0] == 4 && decoded.word[1] == 2 &&
+        decoded.word[2] == expected;
+}
+
 static struct decode_state decode_entry_count(uint64_t entry_count) {
     uint64_t chunks[4 + 3 * 257] = {0};
     const uint64_t count = 4 + 3 * entry_count;
@@ -163,6 +170,51 @@ int check_stream(void) {
     decoded = decode(malformed, 1);
     if (decoded.word[1] != 2 || decoded.word[2] != 3)
         return 16;
+    const uint64_t malformed_tag_size[2] = {
+        16, UINT64_C(0x000000040000002a),
+    };
+    const uint64_t duplicate_map[5] = {
+        40, UINT64_C(0x0000001000000006), 24,
+        UINT64_C(0x0000001000000006), UINT64_C(0x0000000800000000),
+    };
+    const uint64_t bad_map_layout[4] = {
+        32, UINT64_C(0x0000001000000006), 32,
+        UINT64_C(0x0000000800000000),
+    };
+    const uint64_t zero_length_entry[7] = {
+        56, UINT64_C(0x0000002800000006), 24, 0, 0, 1,
+        UINT64_C(0x0000000800000000),
+    };
+    const uint64_t reserved_entry_word[7] = {
+        56, UINT64_C(0x0000002800000006), 24, 0, 0x1000,
+        UINT64_C(0x0000000100000001), UINT64_C(0x0000000800000000),
+    };
+    const uint64_t overflowing_entry[7] = {
+        56, UINT64_C(0x0000002800000006), 24, UINT64_MAX, 2, 1,
+        UINT64_C(0x0000000800000000),
+    };
+    const uint64_t missing_map[2] = {
+        16, UINT64_C(0x0000000800000000),
+    };
+    const uint64_t missing_end[2] = {
+        16, UINT64_C(0x000000080000002a),
+    };
+    if (!expect_decode_error(malformed_tag_size, 2, 4))
+        return 34;
+    if (!expect_decode_error(duplicate_map, 5, 6))
+        return 35;
+    if (!expect_decode_error(bad_map_layout, 4, 7))
+        return 36;
+    if (!expect_decode_error(zero_length_entry, 7, 9))
+        return 37;
+    if (!expect_decode_error(reserved_entry_word, 7, 9))
+        return 38;
+    if (!expect_decode_error(overflowing_entry, 7, 9))
+        return 39;
+    if (!expect_decode_error(missing_map, 2, 10))
+        return 40;
+    if (!expect_decode_error(missing_end, 2, 11))
+        return 41;
     uint64_t too_many_tags_fixture[70] = {0};
     too_many_tags_fixture[0] = 560;
     for (uint64_t index = 1; index <= 63; ++index)
