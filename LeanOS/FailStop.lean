@@ -12262,6 +12262,79 @@ theorem gate_createSubject_preserves_blockingRuntimeWellFormed state subject
                 BlockingIPCContext.ContextAgreement, gate, hmode, applyOperation,
                 hcreate, installCreatedSubject] using hagreement
 
+/-- Scheduler admission is readiness-free at the blocking boundary.  A
+successful admission appends only a runnable subject with an already-staged
+kernel context; every indexed waiter is non-runnable, so no waiter can be the
+new ready member.  Rejections and outer-latch denials remain literal no-ops. -/
+theorem gate_scheduleAdd_preserves_blockingRuntimeWellFormed state subject
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed (gate state (.scheduleAdd subject)).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      cases hadmission : schedulerAdmission state subject with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              have hunchanged := schedulerAdmission_rejected_unchanged
+                state subject reason (by simp [hadmission])
+              simpa [gate, hmode, applyOperation, hadmission, hunchanged] using hstate
+          | accepted context =>
+              obtain ⟨hadd, saved, hmember, howner⟩ :=
+                schedulerAdmission_accepted_exact state subject context next hadmission
+              have hglobal :=
+                (gate_scheduleAdd_accepted_preserves_runtimeWellFormed
+                  state subject context next saved hstate.1 hmode hadd
+                    ⟨hmember, howner⟩).1
+              refine ⟨hglobal, ?_⟩
+              rcases hstate.2 with ⟨hblocking, hagreement⟩
+              change BlockingIPC.WellFormed state.blockingIPC at hblocking
+              rcases hblocking with
+                ⟨_, hqueues, hwaiters, hunique, hindex, hmailbox, hcapabilities⟩
+              obtain ⟨hlifecycle, hready⟩ :=
+                schedulerAdd_accepted_projections state.scheduler subject context next hadd
+              have hscheduler : Scheduler.WellFormed next := by
+                have hold := Scheduler.add_preserves_wellFormed
+                  state.scheduler subject hstate.1.2.2.2.2.2.2.1
+                simpa [hadd] using hold
+              have hblocking' : BlockingIPC.WellFormed
+                  (gate state (.scheduleAdd subject)).state.blockingIPC := by
+                simp only [gate, hmode, applyOperation, hadmission,
+                  installSchedulerAdmission]
+                refine ⟨hscheduler, hqueues, ?_, hunique, hindex, ?_, ?_⟩
+                · intro endpoint waiter hwaiter
+                  obtain ⟨hliveEndpoint, hauthority, hliveWaiter, hblocked,
+                    howns, hnotCurrent, hnotReady⟩ :=
+                      hwaiters endpoint waiter hwaiter
+                  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                  · simpa [hlifecycle, hstate.1.blockingScheduler] using hliveEndpoint
+                  · simpa [BlockingIPC.authorizedReceive, hlifecycle,
+                      hstate.1.blockingScheduler] using hauthority
+                  · simpa [hlifecycle, hstate.1.blockingScheduler] using hliveWaiter
+                  · simpa [hlifecycle, hstate.1.blockingScheduler] using hblocked
+                  · simpa [Scheduler.ownsAddressSpace, hlifecycle,
+                      hstate.1.blockingScheduler] using howns
+                  · simpa [hlifecycle, hstate.1.blockingScheduler] using hnotCurrent
+                  · rw [hready]
+                    intro hmember'
+                    rcases List.mem_append.mp hmember' with hold | hold
+                    · apply hnotReady
+                      simpa [hstate.1.blockingScheduler] using hold
+                    · simp only [List.mem_singleton] at hold
+                      subst waiter
+                      have hrunnable :
+                          next.lifecycle.runnable subject = true :=
+                        (hscheduler.2.2.2.1 subject (by simp [hready])).2.1
+                      rw [hlifecycle, ← hstate.1.blockingScheduler] at hrunnable
+                      simp [hblocked] at hrunnable
+                · simpa [hlifecycle, hstate.1.blockingScheduler] using hmailbox
+                · simpa [hlifecycle, hstate.1.blockingScheduler] using hcapabilities
+              refine ⟨hblocking', ?_⟩
+              simpa [CompositeState.blockingIPCContext,
+                BlockingIPCContext.ContextAgreement, gate, hmode, applyOperation,
+                hadmission, installSchedulerAdmission] using hagreement
+
 /-- A scheduler tick preserves every lifecycle field observed by blocked
 waiters and cannot rotate a subject disjoint from both current and ready into
 either selected position. -/
@@ -12568,6 +12641,7 @@ inductive BlockingRuntimePreservingOperation : Operation → Prop where
       BlockingRuntimePreservingOperation
         (.capabilityRevokeSubtree authoritySlot victim victimSlot)
   | createSubject subject : BlockingRuntimePreservingOperation (.createSubject subject)
+  | scheduleAdd subject : BlockingRuntimePreservingOperation (.scheduleAdd subject)
   | resumePreempt frame registers :
       BlockingRuntimePreservingOperation (.resumePreempt frame registers)
 
@@ -12601,6 +12675,8 @@ theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
         victim victimSlot hstate
   | createSubject subject =>
       exact gate_createSubject_preserves_blockingRuntimeWellFormed state subject hstate
+  | scheduleAdd subject =>
+      exact gate_scheduleAdd_preserves_blockingRuntimeWellFormed state subject hstate
   | resumePreempt frame registers =>
       exact gate_resumePreempt_preserves_blockingRuntimeWellFormed state frame registers hstate
 

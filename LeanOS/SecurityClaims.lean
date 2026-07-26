@@ -430,6 +430,20 @@ theorem composite_authoritative_createSubject_then_blocking_preserves_runtimeWel
   exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
     state (.createSubject subject) blocking (.createSubject subject) hstate
 
+/-- Context-staged scheduler admission appends a runnable identity, which
+cannot alias any non-runnable indexed waiter.  Every accepted admission and
+typed denial can therefore precede an arbitrary authoritative blocking
+operation without a reconstructed readiness witness. -/
+theorem composite_authoritative_schedulerAdmission_then_blocking_preserves_runtimeWellFormed
+    state subject blocking (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.scheduleAdd subject))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.scheduleAdd subject) blocking (.scheduleAdd subject) hstate
+
 /-- Raw scheduler selection without a kernel-owned save/restore payload is a
 blocking-state-neutral typed boundary.  Empty dispatch and every forced
 missing-context denial can therefore be followed immediately by an arbitrary
