@@ -266,6 +266,29 @@ theorem interrupt_entry_context_binding entry raw context :
     (InterruptEntry.makeNormalized entry raw context).stackIdentity = context.stackIdentity := by
   exact InterruptEntry.makeNormalized_binds_context entry raw context
 
+/-- SC-PAGE-FAULT-PROVENANCE: exact error decoding derives access, CR2
+derives the page, and authority/control fields come only from the accepted
+entry and kernel context. -/
+theorem page_fault_provenance_binding frame word decoded raw context
+    (hdecode : InterruptEntry.decodePageFaultError word = .ok decoded) :
+    let snapshot :=
+      InterruptEntry.makeNormalizedPageFault frame word decoded raw context
+    InterruptEntry.decodePageFaultError word = .ok decoded ∧
+      snapshot.entry.vector = frame.vector ∧
+      snapshot.entry.errorCode = some word ∧
+      snapshot.accessKind = decoded.accessKind ∧
+      snapshot.faultAddress = raw.faultAddress ∧
+      snapshot.faultPage = raw.faultAddress / 4096 ∧
+      snapshot.entry.currentSubject = frame.currentSubject ∧
+      snapshot.entry.activeAddressSpace = frame.activeAddressSpace ∧
+      snapshot.entry.activeCr3 = frame.activeCr3 ∧
+      snapshot.controls = context.controls := by
+  obtain ⟨hvector, herror, _, haccess, haddress, hpage, hsubject,
+      hspace, hcr3, hcontrols⟩ :=
+    InterruptEntry.makeNormalizedPageFault_exact_binding frame word decoded raw context
+  exact ⟨hdecode, hvector, herror, haccess, haddress, hpage, hsubject,
+    hspace, hcr3, hcontrols⟩
+
 /-- SC-PRIVILEGE-ENTRY-STACK: accepted ordinary-entry stack authorization
 names the valid guarded layout exactly and carries a checked byte remainder
 without changing the modeled composite state. -/

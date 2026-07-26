@@ -1,4 +1,5 @@
 import LeanOS.Interrupt
+import LeanOS.X86PageTable
 
 /-!
 # Bounded x86-64 interrupt-entry manifest and frame normalization
@@ -502,6 +503,365 @@ theorem accepted_contained_error_shape raw context accepted reason
   · rw [herror, ← hsame, hreviewedError]
   · rw [hrestart, ← hvector, ← hreasonVector]
     exact contained_restart_class_agreement reason
+
+/-! ## Canonical page-fault provenance
+
+The generic entry record above deliberately stops at the architectural error
+word.  This page-fault-specific layer attaches the CR2 sample and a
+kernel-owned paging-control snapshot only after the vector-14 entry has passed
+the ordinary manifest/frame normalizer.  The supported architectural profile
+is the AMD64 `P`, `W/R`, `U/S`, `RSVD`, and `I/D` error-word layout.  `RSVD=1`
+is retained as a distinct rejection, and every bit at position five or above
+(including PK, shadow-stack, and SGX indications) is unsupported by this
+bounded profile and rejected rather than truncated.
+
+x86 delivery, the temporal relationship between the pushed error word and
+CR2, assembly sampling, and control-register read-back remain trusted machine
+assumptions. -/
+
+structure PagingControls where
+  writeProtect : Bool
+  nxEnable : Bool
+  smep : Bool
+  smap : Bool
+  deriving DecidableEq, Repr
+
+structure PageFaultContext where
+  entry : KernelContext
+  controls : PagingControls
+  deriving DecidableEq, Repr
+
+structure DecodedPageFaultError where
+  protection : Bool
+  write : Bool
+  user : Bool
+  instructionFetch : Bool
+  deriving DecidableEq, Repr
+
+def DecodedPageFaultError.accessKind (error : DecodedPageFaultError) :
+    X86PageTable.AccessKind :=
+  if error.instructionFetch then .execute else if error.write then .write else .read
+
+inductive PageFaultErrorReject where
+  | reservedBitViolation | unsupportedBits
+  deriving DecidableEq, Repr
+
+/-- Total exact decoder for the selected five-bit AMD64 profile. -/
+def decodePageFaultError (word : UInt64) :
+    Except PageFaultErrorReject DecodedPageFaultError :=
+  if word / 32 != 0 then .error .unsupportedBits
+  else if word / 8 % 2 = 1 then .error .reservedBitViolation
+  else .ok
+    { protection := word % 2 = 1
+      write := word / 2 % 2 = 1
+      user := word / 4 % 2 = 1
+      instructionFetch := word / 16 % 2 = 1 }
+
+theorem decodePageFaultError_total word :
+    ∃ result, decodePageFaultError word = result := ⟨_, rfl⟩
+
+theorem decodePageFaultError_deterministic word first second
+    (hfirst : decodePageFaultError word = first)
+    (hsecond : decodePageFaultError word = second) : first = second := by
+  rw [← hfirst, hsecond]
+
+theorem reserved_error_bit_rejected (word : UInt64)
+    (hsupported : word / 32 = 0) (hreserved : word / 8 % 2 = 1) :
+    decodePageFaultError word = .error .reservedBitViolation := by
+  simp [decodePageFaultError, hsupported, hreserved]
+
+theorem unsupported_error_bits_rejected (word : UInt64) (hhigh : word / 32 ≠ 0) :
+    decodePageFaultError word = .error .unsupportedBits := by
+  simp [decodePageFaultError, hhigh]
+
+structure RawPageFault where
+  entry : RawEntry
+  /-- Trusted assembly samples CR2 for this accepted vector-14 entry. -/
+  faultAddress : UInt64
+  /-- Saved GPRs and diagnostics are retained only as non-authoritative data. -/
+  savedGprs : AttackerRegisters
+  diagnosticWords : List UInt64
+  deriving DecidableEq, Repr
+
+structure NormalizedPageFault where
+  entry : NormalizedFrame
+  error : DecodedPageFaultError
+  accessKind : X86PageTable.AccessKind
+  faultAddress : UInt64
+  faultPage : UInt64
+  controls : PagingControls
+  deriving DecidableEq, Repr
+
+inductive PageFaultRejectReason where
+  | entry (reason : RejectReason)
+  | wrongVector | missingError | reservedBitViolation | unsupportedErrorBits
+  | privilegeMismatch | noncanonicalAddress
+  deriving DecidableEq, Repr
+
+inductive PageFaultResult where
+  | accepted (snapshot : NormalizedPageFault)
+  | fatal (reason : PageFaultRejectReason)
+  deriving DecidableEq, Repr
+
+def canonicalLinearAddress (address : UInt64) : Bool :=
+  address < 0x0000800000000000 || address ≥ 0xffff800000000000
+
+def makeNormalizedPageFault (frame : NormalizedFrame) (word : UInt64)
+    (decoded : DecodedPageFaultError) (raw : RawPageFault)
+    (context : PageFaultContext) : NormalizedPageFault :=
+  { entry := { frame with errorCode := some word }
+    error := decoded
+    accessKind := decoded.accessKind
+    faultAddress := raw.faultAddress
+    faultPage := raw.faultAddress / 4096
+    controls := context.controls }
+
+/-- The page-fault payload can authorize nothing until the generic vector-14
+entry is accepted.  Privilege is checked twice: saved-CS origin must agree
+with the architectural U/S error bit. -/
+def normalizePageFault (raw : RawPageFault) (context : PageFaultContext) :
+    PageFaultResult :=
+  match normalize raw.entry context.entry with
+  | .fatal reason => .fatal (.entry reason)
+  | .accepted frame =>
+      if frame.vector != 14 then .fatal .wrongVector
+      else match frame.errorCode with
+      | none => .fatal .missingError
+      | some word =>
+          match decodePageFaultError word with
+          | .error .reservedBitViolation => .fatal .reservedBitViolation
+          | .error .unsupportedBits => .fatal .unsupportedErrorBits
+          | .ok decoded =>
+              let originUser := frame.origin = .user
+              if originUser != decoded.user then .fatal .privilegeMismatch
+              else if !canonicalLinearAddress raw.faultAddress then
+                .fatal .noncanonicalAddress
+              else .accepted (makeNormalizedPageFault frame word decoded raw context)
+
+theorem normalizePageFault_total raw context :
+    ∃ result, normalizePageFault raw context = result := ⟨_, rfl⟩
+
+theorem normalizePageFault_deterministic raw context first second
+    (hfirst : normalizePageFault raw context = first)
+    (hsecond : normalizePageFault raw context = second) : first = second := by
+  rw [← hfirst, hsecond]
+
+/-- GPRs and diagnostic payload are erased from every authorization field. -/
+theorem pageFault_saved_gpr_confinement (raw : RawPageFault)
+    (context : PageFaultContext) left right :
+    normalizePageFault { raw with savedGprs := left } context =
+      normalizePageFault { raw with savedGprs := right } context := by
+  rfl
+
+theorem pageFault_diagnostic_confinement (raw : RawPageFault)
+    (context : PageFaultContext) left right :
+    normalizePageFault { raw with diagnosticWords := left } context =
+      normalizePageFault { raw with diagnosticWords := right } context := by
+  rfl
+
+/-- Exact CR2 page binding and authoritative context binding at construction. -/
+theorem makeNormalizedPageFault_exact_binding frame word decoded raw context :
+    let snapshot := makeNormalizedPageFault frame word decoded raw context
+    snapshot.entry.vector = frame.vector ∧
+      snapshot.entry.errorCode = some word ∧
+      snapshot.error = decoded ∧
+      snapshot.accessKind = decoded.accessKind ∧
+      snapshot.faultAddress = raw.faultAddress ∧
+      snapshot.faultPage = raw.faultAddress / 4096 ∧
+      snapshot.entry.currentSubject = frame.currentSubject ∧
+      snapshot.entry.activeAddressSpace = frame.activeAddressSpace ∧
+      snapshot.entry.activeCr3 = frame.activeCr3 ∧
+      snapshot.controls = context.controls := by
+  simp [makeNormalizedPageFault]
+
+/-- Fixed-width version-one canonical record.  All fields are words; derived
+fields are repeated deliberately so the decoder can reject relabeling. -/
+structure CanonicalPageFault where
+  vector : UInt64
+  errorWord : UInt64
+  faultAddress : UInt64
+  faultPage : UInt64
+  accessCode : UInt64
+  protectionCode : UInt64
+  privilegeCode : UInt64
+  currentSubject : UInt64
+  activeAddressSpace : UInt64
+  activeCr3 : UInt64
+  controlsCode : UInt64
+  rip : UInt64
+  cs : UInt64
+  flags : UInt64
+  userRsp : UInt64
+  userSs : UInt64
+  stackIdentity : UInt64
+  reserved : UInt64
+  deriving DecidableEq, Repr
+
+def pageFaultAccessCode : X86PageTable.AccessKind → UInt64
+  | .read => 0 | .write => 1 | .execute => 2
+
+def pagingControlsCode (controls : PagingControls) : UInt64 :=
+  (if controls.writeProtect then 1 else 0) +
+    (if controls.nxEnable then 2 else 0) +
+    (if controls.smep then 4 else 0) +
+    (if controls.smap then 8 else 0)
+
+def validCanonicalPageFault (record : CanonicalPageFault) : Bool :=
+  record.vector = 14 && canonicalLinearAddress record.faultAddress &&
+    record.faultPage = record.faultAddress / 4096 &&
+    record.reserved = 0 && record.controlsCode < 16 &&
+    match decodePageFaultError record.errorWord with
+    | .error _ => false
+    | .ok decoded =>
+        record.accessCode = pageFaultAccessCode decoded.accessKind &&
+          record.protectionCode = (if decoded.protection then 1 else 0) &&
+          record.privilegeCode = (if decoded.user then 1 else 0) &&
+          record.cs % 4 = (if decoded.user then 3 else 0) &&
+          (if decoded.user then record.userRsp != 0 && record.userSs != 0
+            else record.userRsp = 0 && record.userSs = 0)
+
+def pageFaultCodecVersion : UInt64 := 1
+def pageFaultCodecWidth : Nat := 19
+
+/-- Version, followed by the 18 canonical fields in declaration order. -/
+def encodeCanonicalPageFault (record : CanonicalPageFault) : List UInt64 :=
+  [pageFaultCodecVersion, record.vector, record.errorWord, record.faultAddress,
+    record.faultPage, record.accessCode, record.protectionCode,
+    record.privilegeCode, record.currentSubject, record.activeAddressSpace,
+    record.activeCr3, record.controlsCode, record.rip, record.cs, record.flags,
+    record.userRsp, record.userSs, record.stackIdentity, record.reserved]
+
+def decodeCanonicalPageFault : List UInt64 → Option CanonicalPageFault
+  | [version, vector, errorWord, faultAddress, faultPage, accessCode,
+      protectionCode, privilegeCode, currentSubject, activeAddressSpace,
+      activeCr3, controlsCode, rip, cs, flags, userRsp, userSs, stackIdentity,
+      reserved] =>
+      let record : CanonicalPageFault :=
+        { vector, errorWord, faultAddress, faultPage, accessCode, protectionCode,
+          privilegeCode, currentSubject, activeAddressSpace, activeCr3,
+          controlsCode, rip, cs, flags, userRsp, userSs, stackIdentity, reserved }
+      if version != pageFaultCodecVersion then none
+      else if !validCanonicalPageFault record then none
+      else some record
+  | _ => none
+
+theorem encodeCanonicalPageFault_width record :
+    (encodeCanonicalPageFault record).length = pageFaultCodecWidth := by
+  rfl
+
+theorem decode_encode_canonical_page_fault record
+    (hvalid : validCanonicalPageFault record = true) :
+    decodeCanonicalPageFault (encodeCanonicalPageFault record) = some record := by
+  simp [decodeCanonicalPageFault, encodeCanonicalPageFault, pageFaultCodecVersion, hvalid]
+
+theorem canonical_page_fault_encoding_injective left right
+    (h : encodeCanonicalPageFault left = encodeCanonicalPageFault right) :
+    left = right := by
+  simp [encodeCanonicalPageFault] at h
+  cases left
+  cases right
+  simp_all
+
+theorem canonical_exact_bit_binding record
+    (hvalid : validCanonicalPageFault record = true) :
+    ∃ decoded, decodePageFaultError record.errorWord = .ok decoded ∧
+      record.accessCode = pageFaultAccessCode decoded.accessKind ∧
+      record.protectionCode = (if decoded.protection then 1 else 0) ∧
+      record.privilegeCode = (if decoded.user then 1 else 0) ∧
+      record.faultPage = record.faultAddress / 4096 := by
+  unfold validCanonicalPageFault at hvalid
+  split at hvalid <;> simp_all
+
+theorem rejected_canonical_authorizes_nothing words
+    (hrejected : decodeCanonicalPageFault words = none) :
+    ¬ ∃ record, decodeCanonicalPageFault words = some record := by
+  simp [hrejected]
+
+def PageFaultRejectReason.code : PageFaultRejectReason → UInt64
+  | .entry _ => 1
+  | .wrongVector => 2 | .missingError => 3
+  | .reservedBitViolation => 4 | .unsupportedErrorBits => 5
+  | .privilegeMismatch => 6 | .noncanonicalAddress => 7
+
+def compactPageFaultResult : PageFaultResult → UInt64
+  | .fatal reason => 0x8000000000000000 + reason.code
+  | .accepted snapshot =>
+      snapshot.faultPage * 32 +
+        pageFaultAccessCode snapshot.accessKind * 4 +
+        (if snapshot.error.protection then 2 else 0) +
+        (if snapshot.error.user then 1 else 0)
+
+private def pageFaultDemoRaw (error address mode controls : UInt64) : RawPageFault :=
+  let userShape := mode != 1
+  let vector := if mode = 2 then 13 else 14
+  let stub := if mode = 3 then 13 else vector
+  let frame : RawFrame :=
+    if userShape then .privilegeChange 0x400100 0x23 0x202 0x500ff8 0x1b
+    else .samePrivilege 0x100000 0x08 0x202
+  { entry :=
+      { boundVector := vector
+        boundStub := stub
+        errorCode := if mode = 4 then none else some error
+        restartClass := restartClassFor vector
+        frame
+        frameBytes := if mode = 5 then shapeBytes frame - 8 else shapeBytes frame
+        frameAddress := 0x800000
+        acCleared := controls % 2 = 1
+        dfCleared := controls / 2 % 2 = 1 }
+    faultAddress := address
+    savedGprs := ⟨[0xdead, 0xbeef]⟩
+    diagnosticWords := [address, error] }
+
+private def pageFaultDemoContext (context controls : UInt64) : PageFaultContext :=
+  { entry :=
+      { currentSubject := (context % 256).toNat
+        activeAddressSpace := (context / 256 % 256).toNat
+        activeCr3 := context / 65536
+        stackIdentity := 1
+        stackFirst := 0x800000
+        stackPastLast := 0x804000
+        entryActive := controls / 4 % 2 = 1 }
+    controls :=
+      { writeProtect := controls / 8 % 2 = 1
+        nxEnable := controls / 16 % 2 = 1
+        smep := controls / 32 % 2 = 1
+        smap := controls / 64 % 2 = 1 } }
+
+/-- Five-word generated adapter for executable provenance vectors.  `mode`
+selects only controlled entry-shape negatives; access kind always comes from
+the architectural error word, and the fault page always comes from CR2. -/
+def pageFaultModelExpected (error address mode context controls : UInt64) : UInt64 :=
+  compactPageFaultResult
+    (normalizePageFault (pageFaultDemoRaw error address mode controls)
+      (pageFaultDemoContext context controls))
+
+/-- Allocation-free spelling used by generated C.  The ordered rejection
+codes mirror `normalizePageFault`; finite pointwise agreement with the rich
+model is checked by `Oracle.page_fault_adapter_agrees_with_model`. -/
+def pageFaultDemo (error address mode _context controls : UInt64) : UInt64 :=
+  let acCleared := controls % 2 = 1
+  let dfCleared := controls / 2 % 2 = 1
+  let nested := controls / 4 % 2 = 1
+  let originUser := mode != 1
+  let errorUser := error / 4 % 2 = 1
+  let accessCode := if error / 16 % 2 = 1 then 2
+    else if error / 2 % 2 = 1 then 1 else 0
+  if !acCleared || !dfCleared || nested || mode = 3 || mode = 4 || mode = 5 then
+    0x8000000000000001
+  else if mode = 2 then 0x8000000000000002
+  else if error / 32 != 0 then 0x8000000000000005
+  else if error / 8 % 2 = 1 then 0x8000000000000004
+  else if originUser != errorUser then 0x8000000000000006
+  else if !canonicalLinearAddress address then 0x8000000000000007
+  else address / 4096 * 32 + accessCode * 4 +
+    (if error % 2 = 1 then 2 else 0) + (if errorUser then 1 else 0)
+
+theorem pageFaultDemo_total error address mode context controls :
+    ∃ result, pageFaultDemo error address mode context controls = result := ⟨_, rfl⟩
+
+@[export leanos_page_fault_demo]
+def pageFaultDemoExport (error address mode context controls : UInt64) : UInt64 :=
+  pageFaultDemo error address mode context controls
 
 /-! ## Separate terminal NMI manifest and IST-switch frame
 

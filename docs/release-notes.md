@@ -17,6 +17,10 @@ generated C, GCC, GNU assembler and linker, GRUB, the boot assembly and C shim,
 the linker script, SeaBIOS, QEMU, x86-64 hardware semantics, Multiboot2, the
 16550 UART, and the debug-exit device contract. The connection from the proved
 Lean model through generated code to the released machine image is not proved.
+The vector-14 path additionally carries a version-one canonical page-fault
+snapshot binding supported error bits, CR2/page, saved frame,
+subject/address-space/CR3, and paging controls before policy; x86 delivery,
+error-word/CR2 ordering, and assembly sampling remain trusted.
 For extended-state denial this inventory specifically includes CPUID and
 CR0/CR4 reads, #UD/#NM priority and delivery, probe decoding, vector 6/7 entry
 and cleanup assembly, generated scalar dispatch, peer restore, and transcript
