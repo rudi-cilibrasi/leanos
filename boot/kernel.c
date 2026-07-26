@@ -1945,7 +1945,9 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
     __asm__ volatile ("mov %%cr3, %0" : "=r"(provenance_cr3));
     __asm__ volatile ("mov %%cr0, %0" : "=r"(provenance_cr0));
     __asm__ volatile ("mov %%cr4, %0" : "=r"(provenance_cr4));
-    __asm__ volatile ("rdmsr" : "=a"(provenance_efer_low),
+    __asm__ volatile (".global page_fault_provenance_efer_read\n"
+                      "page_fault_provenance_efer_read:\n"
+                      "rdmsr" : "=a"(provenance_efer_low),
                       "=d"(provenance_efer_high)
                       : "c"(UINT32_C(0xc0000080)));
     (void)provenance_efer_high;

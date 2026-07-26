@@ -57,8 +57,11 @@ rows preserve per-vector inputs and identifiers in `build/boot/corpus.tsv`.
 
 ## Trusted boundary
 
-The model assumes x86 supplies the error word and CR2 for the same fault and
-that assembly samples them before either can be replaced. Generated C,
-handwritten assembly/C, compiler/linker, QEMU, firmware, and hardware remain
-trusted/tested; the proofs do not establish those assumptions or final-binary
+The model assumes x86 supplies the error word and CR2 for the same fault.
+Source and final-ELF policy gates require the labeled CR2 sample to precede
+the first authorization call and require the preserved sample to supply the C
+handler; a separately labeled EFER read is excluded from the unchanged
+nine-read fast-entry inventory. Generated C, handwritten assembly/C,
+compiler/linker, QEMU, firmware, and hardware remain trusted/tested; these
+policy checks are not a proof of x86 delivery, atomicity, or final-binary
 refinement.

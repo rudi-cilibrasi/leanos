@@ -473,6 +473,34 @@ theorem accepted_binds_manifest_shape raw context accepted
   all_goals subst haccepted
   all_goals simp_all [makeNormalized]
 
+/-- Every accepted generic normalization retains the kernel-owned authority
+context, independent of the selected frame shape. -/
+theorem normalize_accepted_binds_context raw context accepted
+    (haccepted : normalize raw context = .accepted accepted) :
+    raw.errorCode = accepted.errorCode ∧
+      accepted.currentSubject = context.currentSubject ∧
+      accepted.activeAddressSpace = context.activeAddressSpace ∧
+      accepted.activeCr3 = context.activeCr3 := by
+  unfold normalize at haccepted
+  simp only [reviewed_manifest_valid, Bool.not_true, Bool.false_eq_true,
+    if_false] at haccepted
+  split at haccepted <;> try contradiction
+  rename_i entry hentry
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  all_goals try split at haccepted <;> try contradiction
+  all_goals try split at haccepted <;> try contradiction
+  all_goals generalize horigin : entry.origins = origin at haccepted
+  all_goals cases origin <;> simp_all [makeNormalized]
+  all_goals subst accepted
+  all_goals simp
+
 /-- No-error-code normalization and restart-class agreement for the typed
 contained classes, packaged so issue-#104 composition never unfolds
 `normalize`: the accepted error shape and the raw saved-RIP evidence both
@@ -673,6 +701,39 @@ theorem makeNormalizedPageFault_exact_binding frame word decoded raw context :
       snapshot.entry.activeCr3 = frame.activeCr3 ∧
       snapshot.controls = context.controls := by
   simp [makeNormalizedPageFault]
+
+/-- Acceptance, rather than direct constructor use, establishes the complete
+page-fault provenance contract. -/
+theorem normalizePageFault_accepted_binding raw context snapshot
+    (haccepted : normalizePageFault raw context = .accepted snapshot) :
+    snapshot.entry.vector = 14 ∧
+      ∃ word,
+        raw.entry.errorCode = some word ∧
+        snapshot.entry.errorCode = some word ∧
+        decodePageFaultError word = .ok snapshot.error ∧
+        snapshot.accessKind = snapshot.error.accessKind ∧
+        snapshot.faultAddress = raw.faultAddress ∧
+        snapshot.faultPage = raw.faultAddress / 4096 ∧
+        canonicalLinearAddress raw.faultAddress = true ∧
+        decide (snapshot.entry.origin = .user) = snapshot.error.user ∧
+        snapshot.entry.currentSubject = context.entry.currentSubject ∧
+        snapshot.entry.activeAddressSpace = context.entry.activeAddressSpace ∧
+        snapshot.entry.activeCr3 = context.entry.activeCr3 ∧
+        snapshot.controls = context.controls := by
+  unfold normalizePageFault at haccepted
+  split at haccepted <;> try contradiction
+  rename_i frame hframe
+  have hcontext :=
+    normalize_accepted_binds_context raw.entry context.entry frame hframe
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  dsimp only at haccepted
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  all_goals injection haccepted with hsnapshot
+  all_goals subst snapshot
+  all_goals simp_all [makeNormalizedPageFault]
 
 /-- Fixed-width version-one canonical record.  All fields are words; derived
 fields are repeated deliberately so the decoder can reject relabeling. -/
