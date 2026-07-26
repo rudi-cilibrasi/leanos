@@ -288,6 +288,28 @@ theorem page_fault_provenance_binding raw context snapshot
         snapshot.controls = context.controls := by
   exact InterruptEntry.normalizePageFault_accepted_binding raw context snapshot haccepted
 
+/-- The serialized page-fault action boundary authorizes only independently
+supplied subject and address-space identities that fit one canonical codec
+word.  Under that checked premise, converting the authorized words back to
+`Nat` yields the exact trusted identities rather than a modulo-`2^64` alias. -/
+theorem page_fault_authorization_context_binding
+    (State : Type) words context (state : State) record
+    (hauthorized :
+      (InterruptEntry.authorizeCanonicalPageFault words context state).authorized =
+        some record) :
+    InterruptEntry.AuthorityIdentityRepresentable context.entry.currentSubject ∧
+      InterruptEntry.AuthorityIdentityRepresentable
+        context.entry.activeAddressSpace ∧
+      record.currentSubject.toNat = context.entry.currentSubject ∧
+      record.activeAddressSpace.toNat = context.entry.activeAddressSpace ∧
+      record.currentSubject = UInt64.ofNat context.entry.currentSubject ∧
+      record.activeAddressSpace = UInt64.ofNat context.entry.activeAddressSpace ∧
+      record.activeCr3 = context.entry.activeCr3 ∧
+      record.controlsCode =
+        InterruptEntry.pagingControlsCode context.controls := by
+  exact InterruptEntry.authorized_canonical_binds_trusted_context
+    State words context state record hauthorized
+
 /-- SC-PRIVILEGE-ENTRY-STACK: accepted ordinary-entry stack authorization
 names the valid guarded layout exactly and carries a checked byte remainder
 without changing the modeled composite state. -/

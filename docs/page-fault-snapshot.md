@@ -65,10 +65,18 @@ the resulting complete serialization with the decoded record.
 `authorized_canonical_has_trusted_normalized_preimage` and
 `authorized_canonical_binds_trusted_context` prove that authorization carries
 this independent witness and exact subject/address-space/CR3/control binding.
-Decode failures and forged authority/control fields return no authorization
-and leave containment state unchanged. Dedicated negative fixtures cover each
-subject, address-space, CR3, WP, NXE, SMEP, and SMAP mutation. Generated corpus
-rows preserve per-vector inputs and identifiers in `build/boot/corpus.tsv`.
+At this action boundary, the kernel-owned subject and address-space `Nat`
+identities must satisfy `AuthorityIdentityRepresentable`, meaning each is
+strictly below `2^64`. This checked premise makes the subject/address-space
+equality exact after conversion back to `Nat`; authorization does not compare
+identities only after a truncating `UInt64.ofNat`. Zero remains rejected by the
+codec, while the previously admitted all-ones word remains in range. Decode
+failures, unrepresentable trusted identities, and forged authority/control
+fields return no authorization and leave containment state unchanged.
+Dedicated negative fixtures cover each subject, address-space, CR3, WP, NXE,
+SMEP, and SMAP mutation, plus trusted subject and address-space values equal to
+`2^64 + 1`. Generated corpus rows preserve per-vector inputs and identifiers in
+`build/boot/corpus.tsv`.
 
 ## Trusted boundary
 
