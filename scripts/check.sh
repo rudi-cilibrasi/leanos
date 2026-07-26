@@ -170,6 +170,22 @@ for fixture in PageFaultDroppedCR2 PageFaultIgnoredAccessBits \
   fi
 done
 
+for fixture in PageFaultAgreementAcceptEveryPresent \
+    PageFaultAgreementIgnoredWalk PageFaultAgreementReservedContainment \
+    PageFaultAgreementForgedAddressSpace; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: page-fault agreement fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
+    echo "error: page-fault agreement fixture ${fixture} lacked its expected semantic diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
 for fixture in StaleTranslationOmittedInvalidation StaleTranslationWrongEffect \
     StaleTranslationForgedTarget; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
