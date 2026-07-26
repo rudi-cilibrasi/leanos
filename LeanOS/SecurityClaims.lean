@@ -144,13 +144,34 @@ quarantine. -/
 theorem dma_quarantine_global_runtime_preservation
     (state : FailStop.CompositeState)
     (operations : List FailStop.AuthoritativeOperation)
-    (hinvariant : FailStop.AuthoritativeRuntimeWellFormed state)
-    (hcompatible : FailStop.AuthoritativeTraceCompatible state operations) :
+    (hinvariant : FailStop.AuthoritativeRuntimeWellFormed state) :
     let next := FailStop.runAuthoritativeOperations state operations
     next.DMAQuarantined ∧
       DMAQuarantine.quarantine next.dmaObserved = true := by
   exact FailStop.runAuthoritativeOperations_preserves_dmaQuarantined
-    state operations hinvariant hcompatible
+    state operations hinvariant.dmaQuarantined
+
+/-- SC-DMA-AUTHORITATIVE-PROJECTION: the authoritative live PCI observation instantiates the explicit
+device-control contract used by the complete-memory preservation result.
+This is an IOMMU-independent model theorem, not a claim about hardware
+obedience to the PCI Command register. -/
+theorem dma_authoritative_unowned_device_preservation
+    (state : FailStop.CompositeState)
+    (hinvariant : FailStop.AuthoritativeRuntimeWellFormed state)
+    (target : DMAQuarantine.BDF)
+    (before after : DMAQuarantine.MemoryProjection)
+    (hcontract : DMAQuarantine.DeviceContract
+      state.dmaObserved target before after)
+    (hknown : ∃ function ∈ state.dmaObserved.functions,
+      function.bdf = target ∧ function.status = .present) :
+    after.physicalMemory = before.physicalMemory ∧
+      after.allocatorOwnership = before.allocatorOwnership ∧
+      after.pageTableFrames = before.pageTableFrames ∧
+      after.kernelOwnedFrames = before.kernelOwnedFrames ∧
+      after.kernelState = before.kernelState ∧
+      after.subjectVisible = before.subjectVisible :=
+  hinvariant.dmaQuarantined.unownedDevicePreservesCompleteProjection
+    target before after hcontract hknown
 
 /-- SC-DMA-CONTROL-FAILSTOP: an invalid live PCI observation is a fatal
 composite transition, and every subsequent authoritative successor operation

@@ -143,15 +143,24 @@ Issue #104's authoritative `FailStop.CompositeState` now embeds the
 proof-carrying accepted snapshot and latest control observation directly;
 `RuntimeWellFormed` includes their exact `DMAQuarantined` agreement, and
 `AuthoritativeRuntimeWellFormed` exposes that same conjunct.
-Compatibility-certified ordinary, blocking, and deferred-drain traces preserve
-the complete authoritative invariant and therefore the nonempty deny-all
-quarantine. Trusted `observeDMAControl` revalidates a live hardware snapshot:
-an exact observation continues atomically, while an invalid or
-valid-but-changed observation publishes the diagnostic snapshot, latches a
-typed DMA fatal record, and is absorbed by every later authoritative successor
-operation without a compatibility premise. This integration does not fork
-`DMAQuarantine.RuntimeState` or its parallel memory projection into the
-composite runtime.
+Every authoritative ordinary, blocking, and deferred-drain constructor retains
+the accepted and observed PCI authority fields literally. Consequently an
+arbitrary finite successor trace preserves the nonempty deny-all quarantine
+without #104's stronger, still-partial dormant-cancellation compatibility
+certificate. The authoritative live observation also instantiates the explicit
+`DeviceContract`: a named present unowned-device attempt preserves the complete
+physical-memory projection without assuming an IOMMU. Trusted
+`observeDMAControl` revalidates a live hardware snapshot: an exact observation
+continues atomically, while an invalid or valid-but-changed observation
+publishes the diagnostic snapshot, latches a typed DMA fatal record, and is
+absorbed by every later authoritative successor operation. This integration
+does not fork `DMAQuarantine.RuntimeState` or its parallel memory projection
+into the composite runtime.
+
+Issue #105 remains the owner of the canonical fixed-width encoding and
+generated stateful dispatcher. No composite-state codec is present here, so
+this DMA slice deliberately proves constructor-level model preservation and
+does not invent a parallel ABI or claim a generated-C refinement.
 Issue #129's final-ELF inventory now classifies the boot-only `0xcf8`/`0xcfc`
 mechanism accesses as `DMAQuarantine.boot-pci-config`. The exact `out16`,
 `out32`, and `in32` wrapper sites are reviewed exceptions, while the source

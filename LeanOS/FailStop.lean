@@ -1396,6 +1396,23 @@ def drainDeferredCancellation (state : CompositeState)
   | .rejected reason => ⟨state, .rejected reason⟩
   | .drained saved => ⟨publishDeferredDrain state outcome, .drained saved⟩
 
+/-- Deferred cancellation drains cannot replace either proof-carrying PCI
+authority field.  Successful publication changes only scheduler, lifecycle,
+context, and deferred-cancellation projections; every denial is atomic. -/
+@[simp] theorem drainDeferredCancellation_dmaAuthority state subject :
+    (drainDeferredCancellation state subject).state.dmaAccepted =
+        state.dmaAccepted ∧
+      (drainDeferredCancellation state subject).state.dmaObserved =
+        state.dmaObserved := by
+  simp only [drainDeferredCancellation]
+  generalize houtcome : BlockingIPCContext.drainDeferred
+    state.blockingIPCContext state.deferredCancels state.resumable.contexts
+    state.resumable.capacity subject = outcome
+  cases outcome with
+  | mk next nextDeferred nextResumable result =>
+      cases result <;>
+        simp [publishDeferredDrain, publishBlockingIPCContext]
+
 theorem drainDeferredCancellation_rejected_unchanged state subject reason
     (h : (drainDeferredCancellation state subject).result = .rejected reason) :
     (drainDeferredCancellation state subject).state = state := by
@@ -3897,6 +3914,50 @@ theorem blockingGate_running_exact state operation
       { state := applyBlockingOperation state operation
         result := .completed (blockingOperationReply state operation) } := by
   simp [blockingGate, hmode]
+
+private theorem restoreBlockingPeer_dmaAuthority state blocking next
+    (hnext : restoreBlockingPeer state blocking = .ok next) :
+    next.dmaAccepted = state.dmaAccepted ∧
+      next.dmaObserved = state.dmaObserved := by
+  unfold restoreBlockingPeer at hnext
+  repeat' first | split at hnext
+  all_goals try contradiction
+  all_goals injection hnext with hnext
+  all_goals subst next
+  all_goals exact ⟨rfl, rfl⟩
+
+private theorem publishReleasedBlockingContext_dmaAuthority
+    state blocking saved next
+    (hnext : publishReleasedBlockingContext state blocking saved = .ok next) :
+    next.dmaAccepted = state.dmaAccepted ∧
+      next.dmaObserved = state.dmaObserved := by
+  unfold publishReleasedBlockingContext at hnext
+  repeat' first | split at hnext
+  all_goals try contradiction
+  all_goals injection hnext with hnext
+  all_goals subst next
+  all_goals exact ⟨rfl, rfl⟩
+
+/-- Blocking receive, send/wake, and cancellation retain the accepted and
+observed PCI authority fields for every typed success, denial, and outer-latch
+result.  This is a structural operation law and needs no global compatibility
+premise. -/
+@[simp] theorem blockingGate_dmaAuthority state operation :
+    (blockingGate state operation).state.dmaAccepted = state.dmaAccepted ∧
+      (blockingGate state operation).state.dmaObserved = state.dmaObserved := by
+  cases hmode : state.execution.mode with
+  | handling entry => simp [blockingGate, hmode]
+  | halted record => simp [blockingGate, hmode]
+  | running =>
+      cases operation <;>
+        simp only [blockingGate, hmode, applyBlockingOperation,
+          dispatchBlockingReceive, dispatchBlockingSend, dispatchBlockingCancel]
+      all_goals
+        repeat' first | split
+        all_goals first
+          | exact ⟨rfl, rfl⟩
+          | exact restoreBlockingPeer_dmaAuthority _ _ _ ‹_›
+          | exact publishReleasedBlockingContext_dmaAuthority _ _ _ _ ‹_›
 
 /-- A completed blocking result proves that the execution latch was running
 and fixes both the exact typed dependency reply and exact composite post-state.
@@ -13882,6 +13943,62 @@ def authoritativeGate (state : CompositeState) (operation : AuthoritativeOperati
   cases hmode : state.execution.mode <;>
     simp [authoritativeGate, applyAuthoritativeOperation, hmode]
 
+/-- No authoritative ordinary, blocking, or deferred-drain operation can
+replace the boot-accepted PCI authority or the current live observation.
+Unlike complete global preservation, this structural field law is
+unconditional: it does not depend on unfinished operation-compatibility
+constructors. -/
+@[simp] theorem authoritativeGate_dmaAuthority state operation :
+    (authoritativeGate state operation).state.dmaAccepted =
+        state.dmaAccepted ∧
+      (authoritativeGate state operation).state.dmaObserved =
+        state.dmaObserved := by
+  cases operation with
+  | ordinary operation =>
+      rw [authoritativeGate_ordinary_state]
+      exact gate_dmaAuthority state operation
+  | blocking operation =>
+      rw [authoritativeGate_blocking_state]
+      exact blockingGate_dmaAuthority state operation
+  | drainDeferred subject =>
+      cases hmode : state.execution.mode <;>
+        simp [authoritativeGate, applyAuthoritativeOperation, hmode]
+
+/-- Every authoritative constructor preserves the live DMA quarantine
+projection without requiring the stronger global compatibility certificate. -/
+theorem authoritativeGate_preserves_dmaQuarantined state operation
+    (hstate : state.DMAQuarantined) :
+    (authoritativeGate state operation).state.DMAQuarantined := by
+  obtain ⟨haccepted, hobserved⟩ :=
+    authoritativeGate_dmaAuthority state operation
+  unfold CompositeState.DMAQuarantined at hstate ⊢
+  simpa [haccepted, hobserved] using hstate
+
+/-- The authoritative live observation supplies the same explicit hardware
+contract used by the issue-local complete-memory theorem.  Thus a named
+present device attempt is a stutter on physical memory, allocator ownership,
+page-table frames, kernel-owned frames, kernel state, and every
+subject-visible byte without assuming an IOMMU. -/
+theorem CompositeState.DMAQuarantined.unownedDevicePreservesCompleteProjection
+    {state : CompositeState} (hstate : state.DMAQuarantined)
+    (target : DMAQuarantine.BDF)
+    (before after : DMAQuarantine.MemoryProjection)
+    (hcontract : DMAQuarantine.DeviceContract
+      state.dmaObserved target before after)
+    (hknown : ∃ function ∈ state.dmaObserved.functions,
+      function.bdf = target ∧ function.status = .present) :
+    after.physicalMemory = before.physicalMemory ∧
+      after.allocatorOwnership = before.allocatorOwnership ∧
+      after.pageTableFrames = before.pageTableFrames ∧
+      after.kernelOwnedFrames = before.kernelOwnedFrames ∧
+      after.kernelState = before.kernelState ∧
+      after.subjectVisible = before.subjectVisible := by
+  rw [hstate] at hcontract hknown
+  apply DMAQuarantine.unowned_device_preserves_complete_projection
+    state.dmaAccepted target before after
+  · exact hcontract
+  · exact hknown
+
 theorem authoritativeGate_deterministic state operation first second
     (hfirst : authoritativeGate state operation = first)
     (hsecond : authoritativeGate state operation = second) : first = second := by
@@ -14102,6 +14219,38 @@ structure DormantCancellationCompatible (before after : CompositeState) : Prop w
       subject ∉ after.blockingIPC.scheduler.ready ∧
       Scheduler.ownsAddressSpace after.blockingIPC.scheduler subject = some subject ∧
       ResumablePreemption.contextFor after.resumable.contexts subject = none
+
+/-- Exact preservation of the four projections observed by dormant
+cancellation is sufficient to derive its operation-local compatibility law
+from the folded authoritative invariant.  This is the reusable constructor
+boundary: operation proofs need not reconstruct waiter or retained-context
+validity when they leave those stores literally unchanged. -/
+theorem dormantCancellationCompatible_of_exact_projections before after
+    (hbefore : AuthoritativeRuntimeWellFormed before)
+    (hdeferred : after.deferredCancels = before.deferredCancels)
+    (hblocked : after.blockingContexts = before.blockingContexts)
+    (hipc : after.blockingIPC = before.blockingIPC)
+    (hcontexts : after.resumable.contexts = before.resumable.contexts) :
+    DormantCancellationCompatible before after := by
+  refine ⟨hdeferred, ?_, ?_, ?_⟩
+  · intro subject hsome
+    rw [hblocked] at hsome
+    rw [hdeferred]
+    exact hbefore.2.1.2.1 subject hsome
+  · intro subject saved hsaved
+    rw [hblocked] at hsaved
+    rw [hcontexts]
+    exact hbefore.2.2.1 subject saved hsaved
+  · intro subject saved hretained
+    have hretainedBefore :
+        before.deferredCancels.retained subject = some saved := by
+      exact hretained
+    have hvalid := hbefore.2.1.2.2 subject saved hretainedBefore
+    rw [hipc, hcontexts]
+    exact ⟨hvalid.2.1, hvalid.2.2.1, hvalid.2.2.2.1,
+      hvalid.2.2.2.2.1, hvalid.2.2.2.2.2.1,
+      hvalid.2.2.2.2.2.2,
+      hbefore.2.2.2 subject saved hretainedBefore⟩
 
 private theorem dormantCancellationCompatible_preserves
     before after (hbefore : DeferredBlockingRuntimeWellFormed before)
@@ -14343,6 +14492,74 @@ theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
       | handling active => simpa [authoritativeGate, hmode] using hstate
       | halted record => simpa [authoritativeGate, hmode] using hstate
 
+/-- Return-authority selection changes only the execution projection.  Its
+public constructor therefore derives dormant-cancellation compatibility
+directly from the folded invariant, with no caller-supplied post-state law. -/
+theorem selectUserReturn_authoritativeOperationCompatible state purpose
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.selectUserReturn purpose)) := by
+  apply dormantCancellationCompatible_of_exact_projections state _ hstate
+  all_goals
+    cases hmode : state.execution.mode <;>
+      simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+        applyOperation, selectLiveReturnAuthority]
+    all_goals split <;> rfl
+
+/-- Outgoing return completion may change execution mode and the resumable
+fatal latch, but it cannot change the waiter, deferred-cancellation, or saved
+context stores. -/
+theorem userReturn_authoritativeOperationCompatible state request
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.userReturn request)) := by
+  apply dormantCancellationCompatible_of_exact_projections state _ hstate
+  all_goals
+    cases hmode : state.execution.mode <;>
+      simp [authoritativeGate, hmode, applyAuthoritativeOperation, applyOperation]
+    all_goals split <;> simp
+
+/-- Restart is the identity constructor under every gate mode, so its
+compatibility obligation follows from exact projection preservation. -/
+theorem restart_authoritativeOperationCompatible state
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state (.ordinary .restart) := by
+  apply dormantCancellationCompatible_of_exact_projections state _ hstate
+  all_goals
+    cases hmode : state.execution.mode <;>
+      simp [authoritativeGate, hmode, applyAuthoritativeOperation, applyOperation]
+
+/-- Return-authority selection unconditionally preserves the complete folded
+authoritative invariant. -/
+theorem authoritativeGate_selectUserReturn_preserves_authoritativeRuntimeWellFormed
+    state purpose (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.selectUserReturn purpose))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.selectUserReturn purpose)) hstate
+    (selectUserReturn_authoritativeOperationCompatible state purpose hstate)
+
+/-- Outgoing user-return completion unconditionally preserves the complete
+folded authoritative invariant. -/
+theorem authoritativeGate_userReturn_preserves_authoritativeRuntimeWellFormed
+    state request (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.userReturn request))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.userReturn request)) hstate
+    (userReturn_authoritativeOperationCompatible state request hstate)
+
+/-- Restart unconditionally preserves the complete folded authoritative
+invariant. -/
+theorem authoritativeGate_restart_preserves_authoritativeRuntimeWellFormed
+    state (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary .restart)).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary .restart) hstate
+    (restart_authoritativeOperationCompatible state hstate)
+
 def runAuthoritativeOperations (state : CompositeState) :
     List AuthoritativeOperation → CompositeState
   | [] => state
@@ -14408,18 +14625,21 @@ theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
         (authoritativeGate_preserves_authoritativeRuntimeWellFormed
           state operation hstate hcompatible.1) hcompatible.2
 
-/-- Compatibility-certified successor traces retain the exact boot-accepted
-PCI observation as a projection of the one authoritative runtime invariant. -/
+/-- Arbitrary authoritative successor traces retain the exact boot-accepted
+PCI observation.  This proof ranges over ordinary, blocking, and deferred
+drain constructors directly and therefore needs neither the stronger global
+invariant nor its still-partial operation compatibility certificate. -/
 theorem runAuthoritativeOperations_preserves_dmaQuarantined
-    state operations (hstate : AuthoritativeRuntimeWellFormed state)
-    (hcompatible : AuthoritativeTraceCompatible state operations) :
+    state operations (hstate : state.DMAQuarantined) :
     let next := runAuthoritativeOperations state operations
     next.DMAQuarantined ∧
       DMAQuarantine.quarantine next.dmaObserved = true := by
-  have hnext :=
-    runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
-      state operations hstate hcompatible
-  exact ⟨hnext.dmaQuarantined, hnext.dmaQuarantined.quarantine⟩
+  induction operations generalizing state with
+  | nil => exact ⟨hstate, hstate.quarantine⟩
+  | cons operation rest ih =>
+      simp only [runAuthoritativeOperations]
+      exact ih (authoritativeGate state operation).state
+        (authoritativeGate_preserves_dmaQuarantined state operation hstate)
 
 /-- Arbitrary finite ordinary traces need no reconstructed blocking or drain
 readiness.  Their recursive compatibility evidence composes operation-local
