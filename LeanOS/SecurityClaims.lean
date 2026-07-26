@@ -391,6 +391,20 @@ theorem composite_authoritative_capabilityCopy_then_blocking_preserves_runtimeWe
     state (.capabilityCopy source destination destinationSlot rights) blocking
       (.capabilityCopy source destination destinationSlot rights) hstate
 
+/-- Fresh subject creation is monotonic for every lifecycle fact observed by
+an indexed waiter.  Accepted identity publication and every typed denial can
+therefore be followed immediately by an arbitrary authoritative blocking
+operation. -/
+theorem composite_authoritative_createSubject_then_blocking_preserves_runtimeWellFormed
+    state subject blocking (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.createSubject subject))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.createSubject subject) blocking (.createSubject subject) hstate
+
 /-- Raw scheduler selection without a kernel-owned save/restore payload is a
 blocking-state-neutral typed boundary.  Empty dispatch and every forced
 missing-context denial can therefore be followed immediately by an arbitrary

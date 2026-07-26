@@ -1174,6 +1174,34 @@ private def installCreatedSubject (state : CompositeState)
   split <;> try rfl
   split <;> rfl
 
+@[simp] theorem createSubject_slots lifecycle subject :
+    (SubjectLifecycle.create lifecycle subject).state.capabilities.slots =
+      lifecycle.capabilities.slots := by
+  simp only [SubjectLifecycle.create]
+  split <;> try rfl
+  split <;> rfl
+
+@[simp] theorem createSubject_kinds lifecycle subject :
+    (SubjectLifecycle.create lifecycle subject).state.capabilities.kinds =
+      lifecycle.capabilities.kinds := by
+  simp only [SubjectLifecycle.create]
+  split <;> try rfl
+  split <;> rfl
+
+@[simp] theorem createSubject_runnable lifecycle subject :
+    (SubjectLifecycle.create lifecycle subject).state.runnable =
+      lifecycle.runnable := by
+  simp only [SubjectLifecycle.create]
+  split <;> try rfl
+  split <;> rfl
+
+@[simp] theorem createSubject_addressOwner lifecycle subject :
+    (SubjectLifecycle.create lifecycle subject).state.addressOwner =
+      lifecycle.addressOwner := by
+  simp only [SubjectLifecycle.create]
+  split <;> try rfl
+  split <;> rfl
+
 theorem createSubject_preserves_live lifecycle subject candidate
     (hlive : lifecycle.capabilities.subjects candidate = true) :
     (SubjectLifecycle.create lifecycle subject).state.capabilities.subjects candidate = true := by
@@ -11893,6 +11921,125 @@ theorem gate_capabilityCopy_preserves_blockingRuntimeWellFormed state source des
             CompositeState.blockingIPCContext, BlockingIPCContext.ContextAgreement,
             BlockingIPCContext.WellFormed, next] using And.intro hblocking' hagreement
 
+/-- Fresh-subject publication retains the complete blocking precondition.
+Creation only promotes one monotonic lifecycle identity; every existing waiter,
+mailbox, scheduler member, and saved context keeps the same authority and
+index. Typed denials and outer-latch rejection are literal no-ops. -/
+theorem gate_createSubject_preserves_blockingRuntimeWellFormed state subject
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed (gate state (.createSubject subject)).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      cases hcreate : SubjectLifecycle.create state.lifecycle subject with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [gate, hmode, applyOperation, hcreate] using hstate
+          | accepted =>
+              have hglobal :=
+                createSubject_operationPreservesRuntimeWellFormed subject state hstate.1
+              refine ⟨hglobal, ?_⟩
+              rcases hstate.2 with ⟨hblocking, hagreement⟩
+              change BlockingIPC.WellFormed state.blockingIPC at hblocking
+              rcases hblocking with
+                ⟨_, hqueues, hwaiters, hunique, hindex, hmailbox, _⟩
+              rcases hglobal with
+                ⟨_, _, _, hcapabilities, _, _, hscheduler, _, _, _, _, _, _, _⟩
+              have hblockingScheduler :
+                  state.blockingIPC.scheduler = state.scheduler :=
+                hstate.1.blockingScheduler
+              have hblockingLifecycle :
+                  state.blockingIPC.scheduler.lifecycle = state.lifecycle :=
+                hstate.1.blockingLifecycle
+              have hslots :
+                  next.capabilities.slots = state.lifecycle.capabilities.slots := by
+                have hold := congrArg
+                  (fun outcome => outcome.state.capabilities.slots) hcreate
+                exact hold.symm.trans (createSubject_slots state.lifecycle subject)
+              have hobjects :
+                  next.capabilities.objects = state.lifecycle.capabilities.objects := by
+                have hold := congrArg
+                  (fun outcome => outcome.state.capabilities.objects) hcreate
+                exact hold.symm.trans (createSubject_objects state.lifecycle subject)
+              have hkinds :
+                  next.capabilities.kinds = state.lifecycle.capabilities.kinds := by
+                have hold := congrArg
+                  (fun outcome => outcome.state.capabilities.kinds) hcreate
+                exact hold.symm.trans (createSubject_kinds state.lifecycle subject)
+              have hrunnableEq :
+                  next.runnable = state.lifecycle.runnable := by
+                have hold := congrArg (fun outcome => outcome.state.runnable) hcreate
+                exact hold.symm.trans (createSubject_runnable state.lifecycle subject)
+              have haddressOwner :
+                  next.addressOwner = state.lifecycle.addressOwner := by
+                have hold := congrArg (fun outcome => outcome.state.addressOwner) hcreate
+                exact hold.symm.trans (createSubject_addressOwner state.lifecycle subject)
+              have hcurrentEq :
+                  next.current = state.lifecycle.current := by
+                have hold := congrArg (fun outcome => outcome.state.current) hcreate
+                exact hold.symm.trans (createSubject_current state.lifecycle subject)
+              have hblocking' : BlockingIPC.WellFormed
+                  (gate state (.createSubject subject)).state.blockingIPC := by
+                simp only [gate, hmode, applyOperation, hcreate, installCreatedSubject]
+                refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                · simpa [gate, hmode, applyOperation, hcreate, installCreatedSubject] using
+                    hscheduler
+                · simpa [gate, hmode, applyOperation, hcreate, installCreatedSubject] using
+                    hqueues
+                · intro endpoint waiter hmember
+                  have hmember' : waiter ∈ state.blockingIPC.waiters endpoint := by
+                    simpa [gate, hmode, applyOperation, hcreate, installCreatedSubject] using
+                      hmember
+                  obtain ⟨hliveEndpoint, ⟨slot, capability, hslot, hobject, hkind,
+                    hreceive, _⟩, hliveWaiter, hrunnable, howner, hcurrent, hready⟩ :=
+                    hwaiters endpoint waiter hmember'
+                  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                  · rw [hobjects, ← hblockingLifecycle]
+                    exact hliveEndpoint
+                  · refine ⟨slot, capability, ?_, hobject, hkind, hreceive, ?_⟩
+                    · rw [hslots, ← hblockingLifecycle]
+                      exact hslot
+                    · rw [hobjects, ← hblockingLifecycle]
+                      exact hliveEndpoint
+                  · have hold := createSubject_preserves_live
+                      state.lifecycle subject waiter (by
+                        rw [← hblockingLifecycle]
+                        exact hliveWaiter)
+                    rw [hcreate] at hold
+                    exact hold
+                  · rw [hrunnableEq, ← hblockingLifecycle]
+                    exact hrunnable
+                  · simpa [Scheduler.ownsAddressSpace, haddressOwner,
+                      ← hblockingLifecycle] using howner
+                  · rw [hcurrentEq, ← hblockingLifecycle]
+                    exact hcurrent
+                  · simpa [hblockingScheduler] using hready
+                · simpa [gate, hmode, applyOperation, hcreate, installCreatedSubject] using
+                    hunique
+                · simpa [gate, hmode, applyOperation, hcreate, installCreatedSubject] using
+                    hindex
+                · intro endpoint envelope hmail
+                  have hmail' : state.blockingIPC.mailbox endpoint = some envelope := by
+                    simpa [gate, hmode, applyOperation, hcreate, installCreatedSubject] using
+                      hmail
+                  obtain ⟨hlive, hkind, henvelope, hempty⟩ :=
+                    hmailbox endpoint envelope hmail'
+                  refine ⟨?_, ?_, henvelope, ?_⟩
+                  · rw [hobjects, ← hblockingLifecycle]
+                    exact hlive
+                  · rw [hkinds, ← hblockingLifecycle]
+                    exact hkind
+                  · simpa [gate, hmode, applyOperation, hcreate, installCreatedSubject] using
+                      hempty
+                · simpa [gate, hmode, applyOperation, hcreate, installCreatedSubject] using
+                    hcapabilities
+              refine ⟨hblocking', ?_⟩
+              simpa [CompositeState.blockingIPCContext,
+                BlockingIPCContext.ContextAgreement, gate, hmode, applyOperation,
+                hcreate, installCreatedSubject] using hagreement
+
 /-- A scheduler tick preserves every lifecycle field observed by blocked
 waiters and cannot rotate a subject disjoint from both current and ready into
 either selected position. -/
@@ -12192,6 +12339,7 @@ inductive BlockingRuntimePreservingOperation : Operation → Prop where
   | capabilityCopy source destination destinationSlot rights :
       BlockingRuntimePreservingOperation
         (.capabilityCopy source destination destinationSlot rights)
+  | createSubject subject : BlockingRuntimePreservingOperation (.createSubject subject)
   | resumePreempt frame registers :
       BlockingRuntimePreservingOperation (.resumePreempt frame registers)
 
@@ -12217,6 +12365,8 @@ theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
   | capabilityCopy source destination destinationSlot rights =>
       exact gate_capabilityCopy_preserves_blockingRuntimeWellFormed state source destination
         destinationSlot rights hstate
+  | createSubject subject =>
+      exact gate_createSubject_preserves_blockingRuntimeWellFormed state subject hstate
   | resumePreempt frame registers =>
       exact gate_resumePreempt_preserves_blockingRuntimeWellFormed state frame registers hstate
 
