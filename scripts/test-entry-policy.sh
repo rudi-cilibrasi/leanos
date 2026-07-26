@@ -80,6 +80,18 @@ late_page_fault_cr2_capture() {
     /call authorize_interrupt_entry/a\    mov %cr2, %rax
   }' "$tmp/boot.S"
 }
+second_page_fault_cr2_capture() {
+  sed -i '/^isr14:/,/^\\.global isr32/{
+    /call authorize_page_fault_snapshot/i\    mov %cr2, %rax
+  }' "$tmp/boot.S"
+}
+direct_page_fault_handler() {
+  sed -i 's/call authorize_page_fault_snapshot/call page_fault_handler/' "$tmp/boot.S"
+}
+page_fault_handler_before_generated() {
+  sed -i '/const uint64_t agreement = leanos_page_fault_demo(/i\
+    page_fault_handler(&snapshot);' "$tmp/kernel.c"
+}
 stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $user_a_text, %eax' "$tmp/boot.S"; }
 noncanonical_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $0x00008000, %edx' "$tmp/boot.S"; }
 non_denying_sysenter() { sed -i '/normalize_fast_entry_sysenter_cs_write:/i\    mov $1, %eax' "$tmp/boot.S"; }
@@ -134,6 +146,13 @@ run_fixture unlabeled-page-fault-efer-read \
   'page-fault-provenance EFER source site drifted' unlabeled_page_fault_efer_read
 run_fixture late-page-fault-cr2-capture \
   'vector=14 field=cr2-sampling-order source' late_page_fault_cr2_capture
+run_fixture second-page-fault-cr2-capture \
+  'vector=14 field=cr2-single-sample source' second_page_fault_cr2_capture
+run_fixture direct-page-fault-handler \
+  'vector=14 field=cr2-sampling-order source' direct_page_fault_handler
+run_fixture page-fault-handler-before-generated \
+  'vector=14 path=generated-agreement-before-handler source' \
+  page_fault_handler_before_generated
 run_fixture stale-lstar 'fast-entry target write recipe can introduce nonzero state' stale_lstar
 run_fixture noncanonical-lstar 'fast-entry target write recipe can introduce nonzero state' noncanonical_lstar
 run_fixture non-denying-sysenter 'fast-entry target write recipe can introduce nonzero state' non_denying_sysenter

@@ -159,6 +159,35 @@ static uint8_t entry_stack[16384]
     __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
+
+/* The machine-facing spelling of InterruptEntry's version-one canonical
+   page-fault encoding.  Construction is confined to
+   authorize_page_fault_snapshot; every operation-specific consumer receives
+   the same const object after the generated provenance agreement succeeds. */
+struct page_fault_entry_record {
+    uint64_t version;
+    uint64_t vector;
+    uint64_t error;
+    uint64_t fault_address;
+    uint64_t fault_page;
+    uint64_t access;
+    uint64_t protection;
+    uint64_t user;
+    uint64_t current_subject;
+    uint64_t active_address_space;
+    uint64_t active_cr3;
+    uint64_t paging_controls;
+    uint64_t rip;
+    uint64_t saved_cs;
+    uint64_t rflags;
+    uint64_t user_rsp;
+    uint64_t user_ss;
+    uint64_t stack_identity;
+    uint64_t reserved;
+};
+
+_Static_assert(sizeof(struct page_fault_entry_record) == 19u * sizeof(uint64_t),
+               "canonical page-fault record layout");
 /* Concrete image of the bounded state consumed and published by
    ExtendedState.dispatchDenied.  Bits are indexed by subject identity. */
 struct extended_state_authority {
@@ -1949,41 +1978,18 @@ static uint64_t page_fault_provenance_expected(uint64_t error,
     return (architectural + authority) & UINT64_C(0x7fffffffffffffff);
 }
 
-uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
-                            uint64_t fault_address) {
-    uint64_t provenance_cr3;
-    uint64_t provenance_cr0;
-    uint64_t provenance_cr4;
-    uint32_t provenance_efer_low, provenance_efer_high;
-    __asm__ volatile ("mov %%cr3, %0" : "=r"(provenance_cr3));
-    __asm__ volatile ("mov %%cr0, %0" : "=r"(provenance_cr0));
-    __asm__ volatile ("mov %%cr4, %0" : "=r"(provenance_cr4));
-    __asm__ volatile (".global page_fault_provenance_efer_read\n"
-                      "page_fault_provenance_efer_read:\n"
-                      "rdmsr" : "=a"(provenance_efer_low),
-                      "=d"(provenance_efer_high)
-                      : "c"(UINT32_C(0xc0000080)));
-    (void)provenance_efer_high;
-    uint64_t provenance_context = current_subject | current_subject << 8 |
-                                  (provenance_cr3 >> 12) << 16;
-    uint64_t provenance_controls = 3u |
-        ((provenance_cr0 >> 16) & 1u) << 3 |
-        ((provenance_efer_low >> 11) & 1u) << 4 |
-        ((provenance_cr4 >> 20) & 1u) << 5 |
-        ((provenance_cr4 >> 21) & 1u) << 6;
-    uint64_t provenance = leanos_page_fault_demo(
-        error, fault_address, (saved_cs & 3u) == 3u ? 0u : 1u,
-        provenance_context, provenance_controls);
-    uint64_t expected_provenance = page_fault_provenance_expected(
-        error, fault_address, provenance_context, provenance_controls);
-    if ((provenance >> 63) != 0 || provenance != expected_provenance)
-        fail("page-fault-provenance");
+__attribute__((noinline))
+uint64_t page_fault_handler(const struct page_fault_entry_record *snapshot) {
+    const uint64_t error = snapshot->error;
+    const uint64_t rip = snapshot->rip;
+    const uint64_t saved_cs = snapshot->saved_cs;
+    const uint64_t fault_address = snapshot->fault_address;
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
     if ((saved_cs & 3u) == 3u && error == 5u &&
         rip == (uint64_t)user_a_fault_instruction && fault_address == 0u) {
-        uint64_t cr3;
-        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
-        if (current_subject != 1 || cr3 != (uint64_t)page_map_level_4_a ||
+        if (snapshot->current_subject != 1 ||
+            snapshot->active_address_space != 1 ||
+            snapshot->active_cr3 != (uint64_t)page_map_level_4_a ||
             saved_context_owner_b != 2 || !initial_b_frame_valid(initial_context_b))
             fail("fault-authority-binding");
         serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS\n");
@@ -2038,6 +2044,73 @@ uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
         return (uint64_t)smap_probe_recovered;
     }
     fail("kernel-fault");
+}
+
+/* Construct one immutable vector-14 record before any operation-specific
+   handler.  `frame` points at the one preserved CR2 word followed by the
+   saved GPR bank and the hardware error/frame.  CR2 is never reread here.
+   The generated adapter must agree with the record's architectural fields and
+   independently sampled kernel context before page_fault_handler is called. */
+__attribute__((noinline))
+uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
+    uint64_t cr3, cr0, cr4;
+    uint32_t provenance_efer_low, provenance_efer_high;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    __asm__ volatile (".global page_fault_provenance_efer_read\n"
+                      "page_fault_provenance_efer_read:\n"
+                      "rdmsr" : "=a"(provenance_efer_low),
+                      "=d"(provenance_efer_high)
+                      : "c"(UINT32_C(0xc0000080)));
+    (void)provenance_efer_high;
+
+    const uint64_t error = frame[16];
+    const uint64_t saved_cs = frame[18];
+    const uint64_t user = (saved_cs & 3u) == 3u;
+    const uint64_t active_address_space =
+        cr3 == (uint64_t)page_map_level_4_a ? 1u :
+        cr3 == (uint64_t)page_map_level_4_b ? 2u : 0u;
+    const uint64_t paging_controls =
+        ((cr0 >> 16) & 1u) |
+        ((uint64_t)(provenance_efer_low >> 11) & 1u) << 1 |
+        ((cr4 >> 20) & 1u) << 2 |
+        ((cr4 >> 21) & 1u) << 3;
+    const struct page_fault_entry_record snapshot = {
+        .version = 1,
+        .vector = 14,
+        .error = error,
+        .fault_address = frame[0],
+        .fault_page = frame[0] >> 12,
+        .access = ((error >> 4) & 1u) != 0 ? 2u :
+                  ((error >> 1) & 1u) != 0 ? 1u : 0u,
+        .protection = error & 1u,
+        .user = user,
+        .current_subject = current_subject,
+        .active_address_space = active_address_space,
+        .active_cr3 = cr3,
+        .paging_controls = paging_controls,
+        .rip = frame[17],
+        .saved_cs = saved_cs,
+        .rflags = frame[19],
+        .user_rsp = user ? frame[20] : 0,
+        .user_ss = user ? frame[21] : 0,
+        .stack_identity = user ? 1u : 2u,
+        .reserved = 0
+    };
+    const uint64_t context = snapshot.current_subject |
+        snapshot.active_address_space << 8 | (snapshot.active_cr3 >> 12) << 16;
+    const uint64_t controls = 3u | snapshot.paging_controls << 3;
+    const uint64_t agreement = leanos_page_fault_demo(
+        snapshot.error, snapshot.fault_address, snapshot.user ? 0u : 1u,
+        context, controls);
+    const uint64_t expected = page_fault_provenance_expected(
+        snapshot.error, snapshot.fault_address, context, controls);
+    if (snapshot.active_address_space == 0 ||
+        snapshot.current_subject != snapshot.active_address_space ||
+        (agreement >> 63) != 0 || agreement != expected)
+        fail("page-fault-provenance");
+    return page_fault_handler(&snapshot);
 }
 
 #ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO

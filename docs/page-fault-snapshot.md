@@ -81,10 +81,20 @@ SMEP, and SMAP mutation, plus trusted subject and address-space values equal to
 ## Trusted boundary
 
 The model assumes x86 supplies the error word and CR2 for the same fault.
-Source and final-ELF policy gates require the labeled CR2 sample to precede
-the first authorization call and require the preserved sample to supply the C
-handler; a separately labeled EFER read is excluded from the unchanged
-nine-read fast-entry inventory. Generated C, handwritten assembly/C,
+The runtime adapter spells the version-one encoding as one 19-word C record.
+Assembly samples CR2 exactly once before the first call and preserves that word
+beside the saved GPR bank and hardware error/frame. After generic entry
+normalization, `authorize_page_fault_snapshot` constructs the record once as a
+`const` object, samples CR3, current subject/address-space identity, WP, NXE,
+SMEP, and SMAP into it, and invokes the generated provenance adapter. Only
+agreement can call `page_fault_handler`, which receives the same record rather
+than separately selected raw arguments. Kernel-origin WP/SMEP/SMAP diagnostics
+remain explicit consumers of this path and cannot enter user containment.
+
+Source and final-ELF policy gates require capture-before-normalization,
+generated-agreement-before-handler order, exactly one CR2 read, and exactly one
+typed handler call site. A separately labeled EFER read is excluded from the
+unchanged nine-read fast-entry inventory. Generated C, handwritten assembly/C,
 compiler/linker, QEMU, firmware, and hardware remain trusted/tested; these
-policy checks are not a proof of x86 delivery, atomicity, or final-binary
-refinement.
+policy checks are not a proof of x86 delivery, atomicity, C immutability, or
+final-binary refinement.

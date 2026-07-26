@@ -15,7 +15,7 @@ for symbol in isr0 isr2 isr3 isr6 isr7 isr13 isr14 isr32 isr80 \
   authorize_interrupt_entry integer_fault_restore_peer \
   divide_error_handler breakpoint_handler \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
-  page_fault_handler page_fault_provenance_efer_read \
+  authorize_page_fault_snapshot page_fault_handler page_fault_provenance_efer_read \
   timer_handler entry_stack boot_stack boot_stack_top \
   normalize_fast_entry_msrs read_fast_entry_msrs check_fast_entry_cpuid; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
@@ -237,8 +237,8 @@ grep -q 'mov \$1, %esi' <<<"$source_path" || {
 source_capture="$(grep -n -m1 '^[[:space:]]*mov %cr2, %rax$' <<<"$source_path" | cut -d: -f1 || true)"
 source_preserve="$(grep -n -m1 '^[[:space:]]*push %rax$' <<<"$source_path" | cut -d: -f1 || true)"
 source_normalize="$(grep -n -m1 '^[[:space:]]*call authorize_interrupt_entry$' <<<"$source_path" | cut -d: -f1 || true)"
-source_restore="$(grep -n -m1 '^[[:space:]]*mov (%rsp), %rcx$' <<<"$source_path" | cut -d: -f1 || true)"
-source_handler="$(grep -n -m1 '^[[:space:]]*call page_fault_handler$' <<<"$source_path" | cut -d: -f1 || true)"
+source_restore="$(grep -n -m1 '^[[:space:]]*mov %rsp, %rdi$' <<<"$source_path" | cut -d: -f1 || true)"
+source_handler="$(grep -n -m1 '^[[:space:]]*call authorize_page_fault_snapshot$' <<<"$source_path" | cut -d: -f1 || true)"
 source_first_call="$(grep -n -m1 '^[[:space:]]*call ' <<<"$source_path" | cut -d: -f1 || true)"
 for symbol in isr14_capture_cr2 isr14_preserve_cr2 isr14_restore_cr2; do
   grep -Fq "${symbol}:" <<<"$source_path" || {
@@ -253,6 +253,28 @@ done
    "$source_normalize" -lt "$source_restore" &&
    "$source_restore" -lt "$source_handler" ]] || {
   echo "error: vector=14 field=cr2-sampling-order source" >&2; exit 1;
+}
+[[ "$(grep -Ec '^[[:space:]]*mov %cr2,' "$boot_source")" -eq 1 ]] || {
+  echo "error: vector=14 field=cr2-single-sample source" >&2; exit 1;
+}
+page_fault_adapter_source="$(
+  sed -n '/^uint64_t authorize_page_fault_snapshot(/,/^}$/p' "$kernel_source"
+)"
+source_generated="$(grep -n -m1 '^[[:space:]]*const uint64_t agreement = leanos_page_fault_demo(' \
+  <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
+source_operation="$(grep -n -m1 'page_fault_handler(&snapshot)' \
+  <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
+grep -Fq 'const struct page_fault_entry_record snapshot = {' \
+  <<<"$page_fault_adapter_source" || {
+  echo "error: vector=14 field=immutable-snapshot source" >&2; exit 1;
+}
+[[ -n "$source_generated" && -n "$source_operation" &&
+   "$source_generated" -lt "$source_operation" ]] || {
+  echo "error: vector=14 path=generated-agreement-before-handler source" >&2
+  exit 1
+}
+[[ "$(grep -Fc 'page_fault_handler(&snapshot)' "$kernel_source")" -eq 1 ]] || {
+  echo "error: vector=14 path=raw-or-direct-handler source" >&2; exit 1;
 }
 for vector in 6 7; do
   if [[ "$vector" == 6 ]]; then
@@ -302,7 +324,7 @@ check_path() {
 }
 
 check_path 128 isr80 isr14 syscall_handler
-check_path 14 isr14 isr32 page_fault_handler
+check_path 14 isr14 isr32 authorize_page_fault_snapshot
 check_path 32 isr32 user_return_epilogue timer_handler
 
 page_fault_disassembly="$(
@@ -317,7 +339,7 @@ elf_normalize="$(grep -n -m1 'call.*<authorize_interrupt_entry>' \
   <<<"$page_fault_disassembly" | cut -d: -f1 || true)"
 elf_restore="$(grep -n -m1 '<isr14_restore_cr2>:' \
   <<<"$page_fault_disassembly" | cut -d: -f1 || true)"
-elf_handler="$(grep -n -m1 'call.*<page_fault_handler>' \
+elf_handler="$(grep -n -m1 'call.*<authorize_page_fault_snapshot>' \
   <<<"$page_fault_disassembly" | cut -d: -f1 || true)"
 elf_first_call="$(grep -n -m1 -E '[[:space:]]call[[:space:]]' \
   <<<"$page_fault_disassembly" | cut -d: -f1 || true)"
@@ -329,7 +351,7 @@ elf_restore_site="$(sed -n '/<isr14_restore_cr2>:/{n;p;q;}' \
   <<<"$page_fault_disassembly")"
 [[ "$elf_capture_site" =~ [[:space:]]mov[[:space:]]+%cr2,[[:space:]]*%rax$ &&
    "$elf_preserve_site" =~ [[:space:]]push[[:space:]]+%rax$ &&
-   "$elf_restore_site" =~ [[:space:]]mov[[:space:]]+\(%rsp\),[[:space:]]*%rcx$ ]] || {
+   "$elf_restore_site" =~ [[:space:]]mov[[:space:]]+%rsp,[[:space:]]*%rdi$ ]] || {
   echo "error: vector=14 field=cr2-sampling-order final-elf" >&2; exit 1;
 }
 for symbol in isr14_capture_cr2 isr14_preserve_cr2 isr14_restore_cr2; do
@@ -343,6 +365,26 @@ done
    "$elf_normalize" -eq "$elf_first_call" && "$elf_normalize" -lt "$elf_restore" &&
    "$elf_restore" -lt "$elf_handler" ]] || {
   echo "error: vector=14 field=cr2-sampling-order final-elf" >&2; exit 1;
+}
+[[ "$(grep -Ec '[[:space:]]mov[[:space:]]+%cr2,' <<<"$page_fault_disassembly")" -eq 1 ]] || {
+  echo "error: vector=14 field=cr2-single-sample final-elf" >&2; exit 1;
+}
+page_fault_adapter_disassembly="$(
+  objdump -d --no-show-raw-insn \
+    --start-address="$(address authorize_page_fault_snapshot)" \
+    --stop-address="$(address divide_error_handler)" "$elf"
+)"
+elf_generated="$(grep -n -m1 'call.*<leanos_page_fault_demo>' \
+  <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
+elf_operation="$(grep -n -m1 'call.*<page_fault_handler>' \
+  <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
+[[ -n "$elf_generated" && -n "$elf_operation" &&
+   "$elf_generated" -lt "$elf_operation" ]] || {
+  echo "error: vector=14 path=generated-agreement-before-handler final-elf" >&2
+  exit 1
+}
+[[ "$(grep -Ec 'call.*<page_fault_handler>' <<<"$control_disassembly")" -eq 1 ]] || {
+  echo "error: vector=14 path=raw-or-direct-handler final-elf" >&2; exit 1;
 }
 
 # The contained integer-fault stubs clear AC/DF, normalize through the shared
