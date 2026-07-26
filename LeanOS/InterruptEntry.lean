@@ -1227,6 +1227,147 @@ theorem canonical_page_fault_max_word_authority_preserved :
       (encodeCanonicalPageFault record) context ()).authorized = some record := by
   native_decide
 
+/-! ## Allocation-free full-record authorization adapter
+
+The boot image cannot allocate a `List UInt64` at interrupt time, so its
+generated boundary uses the same version-one checks in an unboxed scalar
+spelling.  The five trailing arguments are independently sampled kernel
+authority rather than claims recovered from the serialized record. -/
+
+inductive CanonicalPageFaultAuthorization where
+  | rejected | user | kernel
+  deriving DecidableEq, Repr
+
+def CanonicalPageFaultAuthorization.code :
+    CanonicalPageFaultAuthorization → UInt64
+  | .rejected => 0
+  | .user => 1
+  | .kernel => 2
+
+def canonicalPageFaultWordsValid
+    (version vector errorWord faultAddress faultPage accessCode protectionCode
+      privilegeCode currentSubject activeAddressSpace activeCr3 controlsCode rip
+      cs flags userRsp userSs stackIdentity reserved trustedSubject
+      trustedAddressSpace trustedCr3 trustedControls trustedStackIdentity :
+      UInt64) : Bool :=
+  let errorUser := if errorWord / 4 % 2 = 1 then 1 else 0
+  let errorProtection := if errorWord % 2 = 1 then 1 else 0
+  let derivedAccess :=
+    if errorWord / 16 % 2 = 1 then 2
+    else if errorWord / 2 % 2 = 1 then 1 else 0
+  version = pageFaultCodecVersion && vector = 14 &&
+    canonicalLinearAddress faultAddress && canonicalLinearAddress rip &&
+    faultPage = faultAddress / 4096 && reserved = 0 && controlsCode < 16 &&
+    ((if controlsCode % 2 = 1 then 1 else 0) +
+      (if controlsCode / 2 % 2 = 1 then 2 else 0) +
+      (if controlsCode / 4 % 2 = 1 then 4 else 0) +
+      (if controlsCode / 8 % 2 = 1 then 8 else 0)) = controlsCode &&
+    flags / 2 % 2 = 1 && currentSubject != 0 &&
+    activeAddressSpace != 0 && activeCr3 != 0 && stackIdentity != 0 &&
+    errorWord / 32 = 0 && decide (errorWord / 8 % 2 ≠ 1) &&
+    accessCode = derivedAccess && protectionCode = errorProtection &&
+    privilegeCode = errorUser &&
+    (if errorUser = 1 then
+      cs = 0x23 && canonicalLinearAddress userRsp &&
+        userRsp != 0 && userSs = 0x1b
+    else
+      cs = 0x08 && userRsp = 0 && userSs = 0) &&
+    currentSubject = trustedSubject &&
+    activeAddressSpace = trustedAddressSpace && activeCr3 = trustedCr3 &&
+    controlsCode = trustedControls && stackIdentity = trustedStackIdentity
+
+def authorizeCanonicalPageFaultWords
+    (version vector errorWord faultAddress faultPage accessCode protectionCode
+      privilegeCode currentSubject activeAddressSpace activeCr3 controlsCode rip
+      cs flags userRsp userSs stackIdentity reserved trustedSubject
+      trustedAddressSpace trustedCr3 trustedControls trustedStackIdentity :
+      UInt64) : CanonicalPageFaultAuthorization :=
+  if canonicalPageFaultWordsValid version vector errorWord faultAddress faultPage
+      accessCode protectionCode privilegeCode currentSubject activeAddressSpace
+      activeCr3 controlsCode rip cs flags userRsp userSs stackIdentity reserved
+      trustedSubject trustedAddressSpace trustedCr3 trustedControls
+      trustedStackIdentity then
+    if privilegeCode = 1 then .user else .kernel
+  else
+    .rejected
+
+theorem canonical_page_fault_words_valid_exact
+    (record : CanonicalPageFault)
+    (trustedSubject trustedAddressSpace trustedCr3 trustedControls
+      trustedStackIdentity : UInt64) :
+    canonicalPageFaultWordsValid pageFaultCodecVersion record.vector
+        record.errorWord record.faultAddress record.faultPage record.accessCode
+        record.protectionCode record.privilegeCode record.currentSubject
+        record.activeAddressSpace record.activeCr3 record.controlsCode record.rip
+        record.cs record.flags record.userRsp record.userSs record.stackIdentity
+        record.reserved trustedSubject trustedAddressSpace trustedCr3
+        trustedControls trustedStackIdentity =
+      (validCanonicalPageFault record &&
+        record.currentSubject = trustedSubject &&
+        record.activeAddressSpace = trustedAddressSpace &&
+        record.activeCr3 = trustedCr3 &&
+        record.controlsCode = trustedControls &&
+        record.stackIdentity = trustedStackIdentity) := by
+  rcases record with ⟨vector, errorWord, faultAddress, faultPage, accessCode,
+    protectionCode, privilegeCode, currentSubject, activeAddressSpace, activeCr3,
+    controlsCode, rip, cs, flags, userRsp, userSs, stackIdentity, reserved⟩
+  simp only [canonicalPageFaultWordsValid, validCanonicalPageFault,
+    pageFaultCodecVersion, pagingControlsCode, pagingControlsOfCode,
+    decodePageFaultError, pageFaultAccessCode, DecodedPageFaultError.accessKind]
+  by_cases hhigh : errorWord / 32 = 0
+  · simp [hhigh]
+    by_cases hreserved : errorWord / 8 % 2 = 1
+    · simp [hreserved]
+    · simp [hreserved]
+      by_cases hfetch : errorWord / 16 % 2 = 1
+      · simp [hfetch, Bool.and_assoc]
+      · simp [hfetch]
+        by_cases hwrite : errorWord / 2 % 2 = 1 <;>
+          simp [hwrite, Bool.and_assoc]
+  · simp [hhigh]
+
+def authorizeCanonicalPageFaultWordsCode
+    (version vector errorWord faultAddress faultPage accessCode protectionCode
+      privilegeCode currentSubject activeAddressSpace activeCr3 controlsCode rip
+      cs flags userRsp userSs stackIdentity reserved trustedSubject
+      trustedAddressSpace trustedCr3 trustedControls trustedStackIdentity :
+      UInt64) : UInt64 :=
+  (authorizeCanonicalPageFaultWords version vector errorWord faultAddress
+    faultPage accessCode protectionCode privilegeCode currentSubject
+    activeAddressSpace activeCr3 controlsCode rip cs flags userRsp userSs
+    stackIdentity reserved trustedSubject trustedAddressSpace trustedCr3
+    trustedControls trustedStackIdentity).code
+
+@[export leanos_authorize_page_fault_snapshot]
+def authorizeCanonicalPageFaultWordsExport
+    (version vector errorWord faultAddress faultPage accessCode protectionCode
+      privilegeCode currentSubject activeAddressSpace activeCr3 controlsCode rip
+      cs flags userRsp userSs stackIdentity reserved trustedSubject
+      trustedAddressSpace trustedCr3 trustedControls trustedStackIdentity :
+      UInt64) : UInt64 :=
+  if canonicalPageFaultWordsValid version vector errorWord faultAddress faultPage
+      accessCode protectionCode privilegeCode currentSubject activeAddressSpace
+      activeCr3 controlsCode rip cs flags userRsp userSs stackIdentity reserved
+      trustedSubject trustedAddressSpace trustedCr3 trustedControls
+      trustedStackIdentity then
+    if privilegeCode = 1 then 1 else 2
+  else
+    0
+
+theorem canonical_page_fault_words_authorization_nonvacuous :
+    authorizeCanonicalPageFaultWordsCode
+      1 14 4 0x400123 0x400 0 0 1 1 1 0x1000 15
+      0x400100 0x23 0x202 0x500ff8 0x1b 1 0
+      1 1 0x1000 15 1 = 1 := by
+  native_decide
+
+theorem canonical_page_fault_words_rip_mutation_attested :
+    authorizeCanonicalPageFaultWordsCode
+      1 14 4 0x400123 0x400 0 0 1 1 1 0x1000 15
+      0x0000800000000000 0x23 0x202 0x500ff8 0x1b 1 0
+      1 1 0x1000 15 1 = 0 := by
+  native_decide
+
 def PageFaultRejectReason.code : PageFaultRejectReason → UInt64
   | .entry _ => 1
   | .wrongVector => 2 | .missingError => 3

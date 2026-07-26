@@ -1267,13 +1267,10 @@ isr14_preserve_cr2:
     mov %rsp, %rdx
     mov 144(%rsp), %rcx
     call authorize_interrupt_entry
-    mov 128(%rsp), %rdi
-    mov 136(%rsp), %rsi
-    mov 144(%rsp), %rdx
 .global isr14_restore_cr2
 isr14_restore_cr2:
-    mov (%rsp), %rcx
-    call page_fault_handler
+    mov %rsp, %rdi
+    call authorize_page_fault_snapshot
     cmp $2, %rax
     je contained_fault_restore_peer
     sub $16, %rsp

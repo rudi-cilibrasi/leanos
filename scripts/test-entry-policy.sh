@@ -80,6 +80,51 @@ late_page_fault_cr2_capture() {
     /call authorize_interrupt_entry/a\    mov %cr2, %rax
   }' "$tmp/boot.S"
 }
+second_page_fault_cr2_capture() {
+  sed -i '/^isr14:/,/^\\.global isr32/{
+    /call authorize_page_fault_snapshot/i\    mov %cr2, %rax
+  }' "$tmp/boot.S"
+}
+direct_page_fault_handler() {
+  sed -i 's/call authorize_page_fault_snapshot/call page_fault_handler/' "$tmp/boot.S"
+}
+page_fault_handler_before_generated() {
+  sed -i '/const uint64_t route = leanos_page_fault_dispatch_transition(/i\
+    page_fault_handler(&transition);' "$tmp/kernel.c"
+}
+page_fault_fatal_route_to_handler() {
+  sed -i '/case PAGE_FAULT_TRANSITION_FATAL:/{n;s/fail("page-fault-fatal");/return page_fault_handler(\&transition);/;}' \
+    "$tmp/kernel.c"
+}
+page_fault_live_leaf_bypass() {
+  sed -i '/expected_leaf, live_leaf,/s/expected_leaf, live_leaf/expected_leaf, expected_leaf/' \
+    "$tmp/kernel.c"
+}
+page_fault_exact_invalidation_bypass() {
+  sed -i '/0, 0, checked_exact_fault_page_invalidation,/s/checked_exact_fault_page_invalidation/1/' \
+    "$tmp/kernel.c"
+}
+page_fault_forged_diagnostic_purpose() {
+  sed -i 's/canonical, supervisor_probe,/canonical, 1,/' "$tmp/kernel.c"
+}
+page_fault_wrong_invalidation_target() {
+  sed -i 's/const uint64_t fixed_page_address = 0;/const uint64_t fixed_page_address = PAGE_BYTES;/' \
+    "$tmp/kernel.c"
+}
+page_fault_refilled_after_recorded_reload() {
+  sed -i '/const uint64_t route = leanos_page_fault_dispatch_transition(/i\
+    const uint64_t recorded_reload_cr3 = cr3;\
+    const uint64_t translation_refilled_after_reload = 1;\
+    const uint64_t stale_reload_claim =\
+        recorded_reload_cr3 == cr3 && translation_refilled_after_reload;' \
+    "$tmp/kernel.c"
+  sed -i '/0, 0, checked_exact_fault_page_invalidation,/s/checked_exact_fault_page_invalidation/stale_reload_claim/' \
+    "$tmp/kernel.c"
+}
+mutate_page_fault_rip_after_authorization() {
+  sed -i '/if (snapshot.active_address_space == 0/i\
+    snapshot.rip ^= 1;' "$tmp/kernel.c"
+}
 stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $user_a_text, %eax' "$tmp/boot.S"; }
 noncanonical_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $0x00008000, %edx' "$tmp/boot.S"; }
 non_denying_sysenter() { sed -i '/normalize_fast_entry_sysenter_cs_write:/i\    mov $1, %eax' "$tmp/boot.S"; }
@@ -134,6 +179,34 @@ run_fixture unlabeled-page-fault-efer-read \
   'page-fault-provenance EFER source site drifted' unlabeled_page_fault_efer_read
 run_fixture late-page-fault-cr2-capture \
   'vector=14 field=cr2-sampling-order source' late_page_fault_cr2_capture
+run_fixture second-page-fault-cr2-capture \
+  'vector=14 field=cr2-single-sample source' second_page_fault_cr2_capture
+run_fixture direct-page-fault-handler \
+  'vector=14 field=cr2-sampling-order source' direct_page_fault_handler
+run_fixture page-fault-handler-before-generated \
+  'vector=14 path=generated-agreement-before-handler source' \
+  page_fault_handler_before_generated
+run_fixture page-fault-fatal-route-to-handler \
+  'vector=14 field=typed-generated-route source' \
+  page_fault_fatal_route_to_handler
+run_fixture page-fault-live-leaf-bypass \
+  'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
+  page_fault_live_leaf_bypass
+run_fixture page-fault-exact-invalidation-bypass \
+  'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
+  page_fault_exact_invalidation_bypass
+run_fixture page-fault-forged-diagnostic-purpose \
+  'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
+  page_fault_forged_diagnostic_purpose
+run_fixture page-fault-wrong-invalidation-target \
+  'vector=14 field=exact-fault-page-invalidation source' \
+  page_fault_wrong_invalidation_target
+run_fixture page-fault-refilled-after-recorded-reload \
+  'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
+  page_fault_refilled_after_recorded_reload
+run_fixture page-fault-rip-post-authorization-mutation \
+  'vector=14 field=immutable-snapshot source' \
+  mutate_page_fault_rip_after_authorization
 run_fixture stale-lstar 'fast-entry target write recipe can introduce nonzero state' stale_lstar
 run_fixture noncanonical-lstar 'fast-entry target write recipe can introduce nonzero state' noncanonical_lstar
 run_fixture non-denying-sysenter 'fast-entry target write recipe can introduce nonzero state' non_denying_sysenter
