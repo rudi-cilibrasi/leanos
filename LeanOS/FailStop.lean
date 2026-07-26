@@ -14522,6 +14522,197 @@ theorem dispatchBlockingCancel_retained_unchanged state subject retained
   simp [dispatchBlockingCancel, BlockingIPCContext.cancel,
     CompositeState.blockingIPCContext, hwaiter]
 
+/-- A successful blocking cancellation changes only the cancelled identity's
+blocking indexes and scheduler state, then prepends its released context. -/
+theorem dispatchBlockingCancel_cancelled_projection_exact state subject saved
+    (hstate : BlockingReceiveWellFormed state)
+    (hcancelled : (dispatchBlockingCancel state subject).reply = .cancelled saved) :
+    let next := (dispatchBlockingCancel state subject).state
+    next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts =
+        BlockingIPCContext.setBlocked state.blockingContexts subject none ∧
+      next.blockingIPC = BlockingIPC.cancelSubject state.blockingIPC subject ∧
+      next.resumable.contexts = saved :: state.resumable.contexts ∧
+      saved.owner = subject := by
+  cases houtcome : BlockingIPCContext.cancel state.blockingIPCContext subject with
+  | mk blocking result released =>
+      cases result with
+      | notWaiting => simp [dispatchBlockingCancel, houtcome] at hcancelled
+      | ipcRejected reason => simp [dispatchBlockingCancel, houtcome] at hcancelled
+      | contextRejected reason => simp [dispatchBlockingCancel, houtcome] at hcancelled
+      | cancelled =>
+          cases released with
+          | none => simp [dispatchBlockingCancel, houtcome] at hcancelled
+          | some actual =>
+              cases hrestore : publishReleasedBlockingContext state blocking actual with
+              | error reason =>
+                  simp [dispatchBlockingCancel, houtcome, hrestore] at hcancelled
+              | ok published =>
+                  simp [dispatchBlockingCancel, houtcome, hrestore] at hcancelled
+                  subst actual
+                  have hcontext := BlockingIPCContext.cancel_cancelled_exact
+                    state.blockingIPCContext subject saved (by simp [houtcome])
+                      (by simp [houtcome])
+                  have hipc :
+                      blocking.ipc = BlockingIPC.cancelSubject state.blockingIPC subject := by
+                    have hraw := BlockingIPC.cancelSubjectTyped_cancelled_exact
+                      state.blockingIPC subject (by
+                        have := (BlockingIPCContext.cancel_cancelled_ipc_exact
+                          state.blockingIPCContext subject (by simp [houtcome])).2
+                        exact this)
+                    have hblocking :=
+                      (BlockingIPCContext.cancel_cancelled_ipc_exact
+                        state.blockingIPCContext subject (by simp [houtcome])).1
+                    simpa [houtcome] using hblocking.trans hraw
+                  have hblocked :
+                      blocking.blocked =
+                        BlockingIPCContext.setBlocked state.blockingContexts subject none := by
+                    have hshape := houtcome
+                    unfold BlockingIPCContext.cancel at hshape
+                    split at hshape <;> try simp_all
+                    split at hshape <;> try simp_all
+                    exact congrArg BlockingIPCContext.State.blocked hshape.symm
+                  have howner : saved.owner = subject :=
+                    BlockingIPCContext.validSaved_owner subject saved
+                      (hstate.1.2.2 subject saved hcontext.1)
+                  have hrestoreExact := hrestore
+                  unfold publishReleasedBlockingContext at hrestoreExact
+                  split at hrestoreExact <;> try contradiction
+                  split at hrestoreExact <;> try contradiction
+                  split at hrestoreExact <;> try contradiction
+                  split at hrestoreExact <;> try contradiction
+                  simp only [Except.ok.injEq] at hrestoreExact
+                  subst published
+                  simp [dispatchBlockingCancel, houtcome,
+                    hrestore, publishBlockingIPCContext, hipc, hblocked, howner]
+
+/-- Blocking cancellation preserves every dormant retained cancellation.
+Targeting a retained identity is atomic; targeting another waiter changes only
+that waiter's blocking, scheduler, and restored-context projections. -/
+theorem blockingCancel_authoritativeOperationCompatible state subject
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state (.blocking (.cancel subject)) := by
+  cases hmode : state.execution.mode with
+  | handling active =>
+      apply dormantCancellationCompatible_of_exact_projections state _ hstate
+      all_goals simp [authoritativeGate, hmode]
+  | halted record =>
+      apply dormantCancellationCompatible_of_exact_projections state _ hstate
+      all_goals simp [authoritativeGate, hmode]
+  | running =>
+      have hgate :
+          (authoritativeGate state (.blocking (.cancel subject))).state =
+            (dispatchBlockingCancel state subject).state := by
+        simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+          applyBlockingOperation]
+      change DormantCancellationCompatible state
+        (authoritativeGate state (.blocking (.cancel subject))).state
+      rw [hgate]
+      cases hreply : (dispatchBlockingCancel state subject).reply with
+      | notWaiting =>
+          rw [dispatchBlockingCancel_rejected_atomic state subject _
+            .notWaiting hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | contextRejected reason =>
+          rw [dispatchBlockingCancel_rejected_atomic state subject _
+            (.context reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | restoreRejected reason =>
+          rw [dispatchBlockingCancel_rejected_atomic state subject _
+            (.restore reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | rejected reason =>
+          rw [dispatchBlockingCancel_rejected_atomic state subject _
+            (.ipc reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | cancelled restored =>
+          have hcoherent : state.BlockingIPCCoherent := by
+            rcases hstate.blocking.1 with
+              ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking, _⟩
+            exact hblocking
+          have hshape := dispatchBlockingCancel_cancelled_projection_exact
+            state subject restored
+              ⟨hstate.blocking.2, hcoherent⟩ hreply
+          dsimp only at hshape
+          rcases hshape with ⟨hdeferred, hblocked, hipc, hcontexts, howner⟩
+          refine ⟨hdeferred, ?_, ?_, ?_⟩
+          · intro candidate hsome
+            rw [hblocked] at hsome
+            by_cases heq : candidate = subject
+            · subst candidate
+              simp [BlockingIPCContext.setBlocked] at hsome
+            · rw [hdeferred]
+              apply hstate.2.1.2.1 candidate
+              change (state.blockingContexts candidate).isSome = true
+              simpa [BlockingIPCContext.setBlocked, heq] using hsome
+          · intro candidate saved hsome
+            rw [hblocked] at hsome
+            by_cases heq : candidate = subject
+            · subst candidate
+              simp [BlockingIPCContext.setBlocked] at hsome
+            · have hbefore : state.blockingContexts candidate = some saved := by
+                simpa [BlockingIPCContext.setBlocked, heq] using hsome
+              rw [hcontexts]
+              simpa [ResumablePreemption.contextFor, howner, heq, Ne.symm heq] using
+                hstate.2.2.1 candidate saved hbefore
+          · intro candidate saved hretained
+            by_cases heq : candidate = subject
+            · subst candidate
+              have hatomic := dispatchBlockingCancel_retained_unchanged
+                state subject saved hstate hretained
+              rw [hatomic]
+              exact ⟨(hstate.2.1.2.2 subject saved hretained).2.1,
+                (hstate.2.1.2.2 subject saved hretained).2.2.1,
+                (hstate.2.1.2.2 subject saved hretained).2.2.2.1,
+                (hstate.2.1.2.2 subject saved hretained).2.2.2.2.1,
+                (hstate.2.1.2.2 subject saved hretained).2.2.2.2.2.1,
+                (hstate.2.1.2.2 subject saved hretained).2.2.2.2.2.2,
+                hstate.2.2.2 subject saved hretained⟩
+            · have hvalid := hstate.2.1.2.2 candidate saved hretained
+              simp only [CompositeState.blockingIPCContext] at hvalid
+              rw [hipc, hcontexts]
+              have hbefore := And.intro hvalid.2.1
+                (And.intro hvalid.2.2.1
+                  (And.intro hvalid.2.2.2.1
+                    (And.intro hvalid.2.2.2.2.1
+                      (And.intro hvalid.2.2.2.2.2.1
+                        (And.intro hvalid.2.2.2.2.2.2
+                          (hstate.2.2.2 candidate saved hretained))))))
+              simp only [BlockingIPC.cancelSubject]
+              split
+              · simpa [ResumablePreemption.contextFor, howner, heq, Ne.symm heq] using
+                  hbefore
+              · split
+                · simpa [ResumablePreemption.contextFor, howner, heq, Ne.symm heq] using
+                    hbefore
+                · by_cases hlive :
+                      state.blockingIPC.scheduler.lifecycle.capabilities.subjects subject =
+                        true
+                  · simpa [hlive, BlockingIPC.setWaiterEndpoint,
+                      BlockingIPC.removeWaiter, BlockingIPC.setCompletion,
+                      SubjectLifecycle.setBool, Scheduler.ownsAddressSpace,
+                      ResumablePreemption.contextFor,
+                      howner, heq, Ne.symm heq] using hbefore
+                  · simpa [hlive, BlockingIPC.setWaiterEndpoint,
+                      BlockingIPC.removeWaiter, BlockingIPC.setCompletion,
+                      SubjectLifecycle.setBool, Scheduler.ownsAddressSpace,
+                      ResumablePreemption.contextFor,
+                      howner, heq, Ne.symm heq] using hbefore
+
+/-- Blocking cancellation has a closed preservation theorem at the folded
+authoritative boundary; callers need no post-state compatibility witness. -/
+theorem authoritativeGate_blockingCancel_preserves_authoritativeRuntimeWellFormed
+    state subject (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.blocking (.cancel subject))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.blocking (.cancel subject)) hstate
+    (blockingCancel_authoritativeOperationCompatible state subject hstate)
+
 /-- Return-authority selection changes only the execution projection.  Its
 public constructor therefore derives dormant-cancellation compatibility
 directly from the folded invariant, with no caller-supplied post-state law. -/
