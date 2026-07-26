@@ -43,8 +43,8 @@ extern uint64_t leanos_boot_manifest_start(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_select_frame(uint64_t, uint64_t, uint64_t,
-                                         uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_consume_exact_projection(uint64_t, uint64_t, uint64_t,
+                                        uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_publish_authority(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t,
                                               uint64_t);
@@ -1073,7 +1073,7 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
             decode_boot_candidate(magic, info_address, total, candidate, info);
         uint64_t manifest = leanos_boot_manifest_candidate(
             candidate, BOOT_MANIFEST_ARGS(info_address, total));
-        selected = leanos_boot_select_frame(
+        selected = leanos_boot_consume_exact_projection(
             selected, candidate, decoded.word[1], decoded.word[14],
             decoded.word[15], manifest);
         if (selected < 4096) authority = decoded;
@@ -1100,7 +1100,7 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     serial_u64(authority.word[17] / (1024u * 1024u));
     serial_puts(" precedence=reserved result=PASS\n");
     serial_puts("LEANOS/7 ALLOC frame="); serial_u64(selected);
-    serial_puts(" firmware-usable=1 boot-accessible=1 reserved=0 result=PASS\n");
+    serial_puts(" firmware-usable=1 boot-accessible=1 reserved=0 projection=exact-rich result=PASS\n");
     serial_puts("LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS\n");
     serial_puts("LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS\n");
     serial_puts("LEANOS/7 BOOTALLOC status=PASS\n");
@@ -1342,7 +1342,8 @@ static void replay_oracle(void) {
                     ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
                         v->words[3], v->words[4])
                 : v->adapter == 5
-                        ? leanos_boot_select_frame(v->words[0], v->words[1], v->words[2],
+                        ? leanos_boot_consume_exact_projection(
+                            v->words[0], v->words[1], v->words[2],
                             v->words[3], v->words[4], v->words[5])
                         : v->adapter == 6
                             ? leanos_user_return_demo(v->words[0], v->words[1], v->words[2],

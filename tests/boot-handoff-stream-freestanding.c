@@ -20,7 +20,7 @@ extern uint64_t leanos_boot_manifest_start(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_select_frame(
+extern uint64_t leanos_boot_consume_exact_projection(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_publish_authority(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
@@ -196,7 +196,7 @@ int check_stream(void) {
         0x140000, 0x1000, 0x141000, 0x4000, 0x180000, 0x2000,
         0x300000, 96);
     if (manifest != 1 ||
-        leanos_boot_select_frame(4096, 800, 1, 1, 0, manifest) != 800 ||
+        leanos_boot_consume_exact_projection(4096, 800, 1, 1, 0, manifest) != 800 ||
         leanos_boot_publish_authority(800, 800, 1, 1, 0, manifest, 1) != 801 ||
         leanos_boot_publish_authority(800, 801, 1, 1, 0, manifest, 1) != 0)
         return 17;
@@ -211,7 +211,8 @@ int check_stream(void) {
         0x240000, 0x1000, 0x241000, 0x4000, 0x280000, 0x2000,
         0x300000, 96);
     if (gap_start != 256 || manifest != 1 ||
-        leanos_boot_select_frame(4096, gap_start, 1, 1, 0, manifest) != 256)
+        leanos_boot_consume_exact_projection(
+            4096, gap_start, 1, 1, 0, manifest) != 256)
         return 24;
     const uint64_t zero_entry_fixture[4] = {
         32, UINT64_C(0x0000001000000006), 24,
@@ -222,8 +223,9 @@ int check_stream(void) {
         decoded.word[2] != 0 || decoded.word[7] != 7 ||
         decoded.word[11] != 0 || decoded.word[14] != 0 ||
         decoded.word[15] != 0 || decoded.word[18] != 2 ||
-        leanos_boot_select_frame(4096, 1, decoded.word[1], decoded.word[14],
-                                 decoded.word[15], 1) != 4096 ||
+        leanos_boot_consume_exact_projection(
+            4096, 1, decoded.word[1], decoded.word[14],
+            decoded.word[15], 1) != 4096 ||
         leanos_boot_publish_authority(
             4096, 4096, decoded.word[1], decoded.word[14], decoded.word[15],
             1, 1) != 0)
@@ -261,7 +263,8 @@ int check_stream(void) {
         0xf40000, 0x1000, 0xf41000, 0x4000, 0xf80000, 0x2000,
         0x300000, 96);
     if (image_at_limit != 1 ||
-        leanos_boot_select_frame(4096, 256, 1, 1, 0, image_at_limit) != 256)
+        leanos_boot_consume_exact_projection(
+            4096, 256, 1, 1, 0, image_at_limit) != 256)
         return 30;
     const uint64_t info_at_limit = leanos_boot_manifest_candidate(
         256, 0, 0x100000, 0xf00000, 0x100000,
@@ -283,8 +286,8 @@ int check_stream(void) {
             0xf10000, 0x1000, 0xf20000, 0x1000, 0xf30000, 0x1000,
             0xf40000, 0x1000, 0xf41000, 0x4000, 0xf80000, 0x2000,
             0x300000, 96) != 4096 ||
-        leanos_boot_select_frame(4096, 256, 1, 1, 0,
-                                 image_past_limit) != 4096)
+        leanos_boot_consume_exact_projection(
+            4096, 256, 1, 1, 0, image_past_limit) != 4096)
         return 32;
     const uint64_t info_past_limit = leanos_boot_manifest_candidate(
         256, 0, 0x100000, 0x200000, 0x100000,
