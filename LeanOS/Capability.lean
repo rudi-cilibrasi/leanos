@@ -446,12 +446,12 @@ def revokeSubtree (state : State) (actor : SubjectId) (authoritySlot : SlotId)
             else reject state .objectMismatch
       else reject state .missingRevoke
 
-/-- Rights consumed by the composite runtime's live virtual-memory and
-address-space invariants.  The capability layer exposes this finite guard so
-the composite adapter can reject a revocation before publishing a state that
-would lose required authority. -/
+/-- Rights consumed by the composite runtime's live virtual-memory,
+address-space, and blocking-waiter invariants.  The capability layer exposes
+this finite guard so the composite adapter can reject a revocation before
+publishing a state that would lose required authority. -/
 def hasRuntimeCriticalRight (rights : Rights) : Bool :=
-  rights.read || rights.write || rights.revoke
+  rights.read || rights.write || rights.revoke || rights.receive
 
 /-- Direct revocation is conservatively publishable when the selected live
 capability carries no runtime-critical right.  This deliberately rejects some
@@ -503,9 +503,9 @@ def revokeSubtreeRuntimeSafe (state : State) (actor : SubjectId)
       else reject state .runtimeAuthorityRequired
 
 theorem hasRuntimeCriticalRight_of_hasRight (rights : Rights) (right : Right)
-    (hcritical : right = .read ∨ right = .write ∨ right = .revoke)
+    (hcritical : right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive)
     (hright : hasRight rights right) : hasRuntimeCriticalRight rights = true := by
-  rcases hcritical with rfl | rfl | rfl <;>
+  rcases hcritical with rfl | rfl | rfl | rfl <;>
     simp_all [hasRight, permits, hasRuntimeCriticalRight]
 
 theorem revokeRuntimeSafe_accepted_raw state actor authoritySlot victim victimSlot next
@@ -553,7 +553,7 @@ theorem revokeRuntimeSafe_accepted_preserves_critical_authority state actor auth
     (haccepted : revokeRuntimeSafe state actor authoritySlot victim victimSlot =
       { state := next, result := .accepted }) :
     ∀ subject object right,
-      (right = .read ∨ right = .write ∨ right = .revoke) →
+      (right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive) →
       HasAuthority state subject object right →
       HasAuthority next subject object right := by
   obtain ⟨hraw, hsafe⟩ := revokeRuntimeSafe_accepted_raw state actor authoritySlot
@@ -573,7 +573,7 @@ theorem revokeRuntimeSafe_accepted_preserves_critical_authority state actor auth
           rcases hraw with ⟨rfl, rfl⟩
           intro subject object
           have hpreserve : ∀ right,
-              (right = .read ∨ right = .write ∨ right = .revoke) →
+              (right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive) →
               HasAuthority state subject object right →
               HasAuthority (clear state victim victimSlot) subject object right := by
             intro right hcritical hauthority
@@ -601,7 +601,7 @@ theorem revokeSubtreeRuntimeSafe_accepted_preserves_critical_authority state act
     (haccepted : revokeSubtreeRuntimeSafe state actor authoritySlot victim victimSlot =
       { state := next, result := .accepted }) :
     ∀ subject object right,
-      (right = .read ∨ right = .write ∨ right = .revoke) →
+      (right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive) →
       HasAuthority state subject object right →
       HasAuthority next subject object right := by
   obtain ⟨hraw, hsafe⟩ := revokeSubtreeRuntimeSafe_accepted_raw state actor authoritySlot
@@ -621,7 +621,7 @@ theorem revokeSubtreeRuntimeSafe_accepted_preserves_critical_authority state act
           rcases hraw with ⟨rfl, rfl⟩
           intro subject object
           have hpreserve : ∀ right,
-              (right = .read ∨ right = .write ∨ right = .revoke) →
+              (right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive) →
               HasAuthority state subject object right →
               HasAuthority (clearSubtree state target.identity) subject object right := by
             intro right hcritical hauthority

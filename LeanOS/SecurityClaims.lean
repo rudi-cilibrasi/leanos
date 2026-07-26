@@ -391,6 +391,31 @@ theorem composite_authoritative_capabilityCopy_then_blocking_preserves_runtimeWe
     state (.capabilityCopy source destination destinationSlot rights) blocking
       (.capabilityCopy source destination destinationSlot rights) hstate
 
+/-- Composite-safe direct and transitive revocation fail closed before
+removing receive authority used by an indexed waiter.  Every accepted
+revocation and every typed denial can therefore be followed immediately by an
+arbitrary authoritative blocking operation. -/
+theorem composite_authoritative_capabilityRevoke_then_blocking_preserves_runtimeWellFormed
+    state authoritySlot victim victimSlot blocking
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state
+            (.ordinary (.capabilityRevoke authoritySlot victim victimSlot))).state
+          (.blocking blocking)).state ∧
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state
+            (.ordinary (.capabilityRevokeSubtree authoritySlot victim victimSlot))).state
+          (.blocking blocking)).state := by
+  constructor
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state (.capabilityRevoke authoritySlot victim victimSlot) blocking
+        (.capabilityRevoke authoritySlot victim victimSlot) hstate
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state (.capabilityRevokeSubtree authoritySlot victim victimSlot) blocking
+        (.capabilityRevokeSubtree authoritySlot victim victimSlot) hstate
+
 /-- Fresh subject creation is monotonic for every lifecycle fact observed by
 an indexed waiter.  Accepted identity publication and every typed denial can
 therefore be followed immediately by an arbitrary authoritative blocking
