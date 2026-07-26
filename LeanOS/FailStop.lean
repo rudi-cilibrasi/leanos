@@ -13254,6 +13254,22 @@ theorem authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFo
     (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
       state ordinary hordinary hstate)
 
+/-- A state-independent readiness-free mixed-trace language.  Every ordinary
+member carries its compositional blocking-preservation proof, while every
+authoritative blocking member is admitted directly because the preceding
+members retain the complete blocking runtime invariant.  Unlike
+`AuthoritativeTraceReady`, this certificate does not inspect or restate any
+intermediate runtime state. -/
+inductive ReadinessFreeMixedTrace : List AuthoritativeOperation → Prop where
+  | nil : ReadinessFreeMixedTrace []
+  | ordinary {operation rest}
+      (hoperation : BlockingRuntimePreservingOperation operation)
+      (hrest : ReadinessFreeMixedTrace rest) :
+      ReadinessFreeMixedTrace (.ordinary operation :: rest)
+  | blocking {operation rest}
+      (hrest : ReadinessFreeMixedTrace rest) :
+      ReadinessFreeMixedTrace (.blocking operation :: rest)
+
 /-- Accepted and fatal return completion both retain the complete blocking
 runtime invariant, so a later blocking step needs no reconstructed readiness
 witness after crossing the return-control boundary. -/
@@ -13343,6 +13359,39 @@ def runAuthoritativeOperations (state : CompositeState) :
   | [] => state
   | operation :: rest =>
       runAuthoritativeOperations (authoritativeGate state operation).state rest
+
+/-- Arbitrary finite interleavings from the readiness-free mixed language
+preserve the complete global/scheduler/mailbox/waiter/context invariant.
+Consequently every later blocking member consumes the invariant established
+by the preceding transition rather than a legacy per-state readiness gate. -/
+theorem runAuthoritativeReadinessFreeMixedTrace_preserves_blockingRuntimeWellFormed
+    state operations
+    (hoperations : ReadinessFreeMixedTrace operations)
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed
+      (runAuthoritativeOperations state operations) := by
+  induction hoperations generalizing state with
+  | nil => exact hstate
+  | ordinary hoperation hrest ih =>
+      exact ih _
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ hoperation hstate)
+  | blocking hrest ih =>
+      exact ih _
+        (authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
+          state _ hstate)
+
+/-- The readiness-free language is inhabited by a heterogeneous trace with
+ordinary lifecycle and revocation mutations on both sides of a blocking
+cancellation.  This keeps the general preservation theorem's trace premise
+independently auditable rather than relying on an abstract inhabitant. -/
+theorem readinessFreeMixedTrace_nonvacuous :
+    ReadinessFreeMixedTrace
+      [.ordinary (.createSubject 1), .blocking (.cancel 1),
+        .ordinary (.capabilityRevoke 0 1 0)] := by
+  exact .ordinary (.createSubject 1)
+    (.blocking
+      (.ordinary (.capabilityRevoke 0 1 0) .nil))
 
 /-- Arbitrary finite ordinary traces need no reconstructed blocking readiness.
 This includes explicit and scheduler-selected termination, raw scheduler

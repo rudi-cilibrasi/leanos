@@ -1139,6 +1139,21 @@ theorem composite_authoritative_ordinary_trace_preserves_runtimeWellFormed
     FailStop.runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFormed
       state operations hstate
 
+/-- Supporting readiness-free mixed-trace theorem: every finite interleaving
+of the compatible ordinary family and arbitrary authoritative blocking
+operations preserves the complete blocking runtime invariant.  The trace
+certificate is state-independent and therefore replaces the legacy recursive
+readiness gate throughout this compositional slice. -/
+theorem composite_authoritative_readinessFree_mixed_trace_preserves
+    state operations
+    (hoperations : FailStop.ReadinessFreeMixedTrace operations)
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state operations) := by
+  exact
+    FailStop.runAuthoritativeReadinessFreeMixedTrace_preserves_blockingRuntimeWellFormed
+      state operations hoperations hstate
+
 /-- Supporting readiness-free termination trace theorem: scheduler-selected
 termination establishes and preserves the complete deferred-cancellation
 invariant consumed by any finite capacity-checked drain suffix. -/

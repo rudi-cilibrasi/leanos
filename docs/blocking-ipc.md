@@ -51,7 +51,11 @@ preserve the folded runtime/waiter-context invariant without a reconstructed
 readiness premise. Scheduler-selected termination additionally preserves the
 complete retained-context classification, so it may be followed immediately
 by any finite capacity-checked deferred-drain suffix through the authoritative
-gate without an `AuthoritativeTraceReady` witness.
+gate without an `AuthoritativeTraceReady` witness. More generally, arbitrary
+finite interleavings of the readiness-free ordinary family with block, wake,
+delivery, and cancellation operations carry one state-independent trace
+certificate; no intermediate state is exposed through a recursive readiness
+gate.
 
 Contained-fault cleanup uses a separate deferred-cancellation bank for peers
 whose endpoint authority was invalidated. Each retained context stays valid,
