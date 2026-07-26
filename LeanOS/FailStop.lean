@@ -11886,6 +11886,27 @@ theorem gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
   · exact gate_interrupt_noncontained_preserves_deferredBlockingRuntimeWellFormed
       state frame (fun subject haction => hcontained ⟨subject, haction⟩) hstate
 
+/-- Out-of-band NMI fail-stop retains the complete deferred blocking runtime.
+The terminal step changes only the execution latch and resumable halt bit; the
+authoritative scheduler, waiter/context store, retained cancellations, and
+resumable context bank remain exact.  An already-halted NMI is absorbed. -/
+theorem gate_nmi_preserves_deferredBlockingRuntimeWellFormed
+    state raw context
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed (gate state (.nmi raw context)).state := by
+  constructor
+  · cases hmode : state.execution.mode with
+    | halted record => simpa [gate, hmode] using hstate.1
+    | running | handling =>
+        simpa [gate, hmode] using
+          applyNmi_preserves_runtimeWellFormed state raw context hstate.1
+  · cases hmode : state.execution.mode with
+    | halted record => simpa [gate, hmode] using hstate.2
+    | running | handling =>
+        simpa [gate, hmode, applyOperation,
+          CompositeState.DeferredCancellationWellFormed,
+          CompositeState.blockingIPCContext] using hstate.2
+
 /-- Ordinary operations currently known to retain the complete blocking
 runtime invariant.  Neutral control/data-IPC steps keep the blocking state
 literal; raw and syscall mapping use the scheduler replacement law above;
@@ -12396,6 +12417,18 @@ theorem authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
   exact gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
     state frame hstate hbound
 
+/-- The successor gate preserves the strongest deferred invariant across its
+out-of-band NMI operation, including the handling-mode path unavailable to
+ordinary operations. -/
+theorem authoritativeGate_nmi_preserves_deferredBlockingRuntimeWellFormed
+    state raw context
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.nmi raw context))).state := by
+  rw [authoritativeGate_ordinary_state]
+  exact gate_nmi_preserves_deferredBlockingRuntimeWellFormed
+    state raw context hstate
+
 /-- Finite public traces containing only capacity-checked deferred drains keep
 the complete deferred-cancellation invariant.  Each successful member removes
 one retained entry, while every typed denial and every terminal suffix is
@@ -12430,6 +12463,23 @@ theorem runAuthoritativeInterruptThenDeferredDrains_preserves
     (authoritativeGate state (.ordinary (.interrupt frame))).state subjects
     (authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
       state frame hstate hbound)
+
+/-- NMI fail-stop and any proposed deferred-drain suffix form one public
+authoritative trace.  The first step preserves the strongest invariant and
+latches terminal mode, so the entire suffix is absorbed without manufacturing
+an apparently coherent repair. -/
+theorem runAuthoritativeNmiThenDeferredDrains_preserves
+    state raw context (subjects : List BlockingIPC.SubjectId)
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary (.nmi raw context) ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  simp only [runAuthoritativeOperations]
+  exact runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
+    (authoritativeGate state (.ordinary (.nmi raw context))).state subjects
+    (authoritativeGate_nmi_preserves_deferredBlockingRuntimeWellFormed
+      state raw context hstate)
 
 /-- A contained interrupt and its capacity-checked deferred-cancellation
 continuation form one public mixed trace.  The trusted execution/lifecycle

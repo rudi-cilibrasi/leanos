@@ -717,6 +717,19 @@ theorem composite_interrupt_then_deferred_trace_preserves
   exact FailStop.runAuthoritativeInterruptThenDeferredDrains_preserves
     state frame subjects hstate hbound
 
+/-- Supporting authoritative-gate theorem: an NMI from running or handling
+mode preserves the complete deferred invariant while entering fail-stop, and
+the resulting terminal state absorbs every proposed public drain suffix. -/
+theorem composite_nmi_then_deferred_trace_preserves
+    state raw context (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (.ordinary (.nmi raw context) ::
+          subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact FailStop.runAuthoritativeNmiThenDeferredDrains_preserves
+    state raw context subjects hstate
+
 /-- Supporting mixed-trace theorem: identity-bound contained interrupt cleanup
 and every finite deferred-cancellation suffix execute through the one public
 successor gate while preserving the complete deferred invariant. -/
