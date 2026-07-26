@@ -33,8 +33,14 @@ complete projection; its final ELF rejects retention of the separate scalar
 decode/manifest/select/publication exports. The rich ELF is compiled twice
 byte-for-byte and replays overlap-order, partial-page, unknown-type, duplicate,
 maximum-entry, overflow, truncation, reservation-crossing, and output-mutation
-cases. It remains deliberately excluded from the freestanding production
-image. `LeanOS.BootAllocation` retains the allocator-to-scrub and
+cases. The boxed evaluator remains excluded from the allocation-free
+production image. `BootMemoryMapScalarRichEquivalence` defines the canonical
+fixed-width candidate encoding and proves, for arbitrary decoded entries,
+checked intervals, and bounded frames, that
+`leanos_boot_consume_exact_projection` accepts exactly the rich usable and
+unreserved predicate. It also proves every accepted rich authority is
+consumable through that export. `LeanOS.BootAllocation` retains the
+allocator-to-scrub and
 fresh-publication model theorems. The production final ELF rejects the legacy
 `leanos_boot_allocation_check` scalar adapter; the hosted oracle instead
 exercises the generated selection transition's accepted and rejected cases.
@@ -64,11 +70,11 @@ nor QEMU execution verifies the binary.
 Physical-memory reads and scrub writes in `boot/kernel.c`, handoff register
 preservation and ABI in `boot/boot.S`, linker symbols, generated C, compiler,
 GRUB, Multiboot2 producer, QEMU, firmware truthfulness, and hardware are in the
-TCB. The hosted rich ABI consumes the canonical decoder and full model exactly,
-but the version-four production scalar parser and manifest decision are not yet
-proved extensionally equal to that complete projection for arbitrary bytes and
-do not yet consume its result directly. Focused hosted/freestanding corpus and
-QEMU checks narrow that correspondence assumption; the exact 65-tag and
-physical-limit agreement theorems close their reviewed concrete divergences
-without claiming an all-input equivalence. No new Lean `unsafe`, `extern`,
+TCB. The hosted rich ABI consumes the canonical decoder and full model exactly.
+The freestanding image consumes its canonical scalar candidate encoding through
+the sole generated exact-projection decision point; the former selector is
+absent from focused and production final ELFs. QEMU requires the resulting
+`projection=exact-rich` record before scrub and publication. Generated C, C
+transport of the scalar words, compiler output, and machine execution remain
+trusted/tested rather than proved refinement. No new Lean `unsafe`, `extern`,
 axiom, constant, or proof escape is introduced.

@@ -16,6 +16,7 @@ import LeanOS.BootMemoryMapStreamAuthority
 import LeanOS.BootReservation
 import LeanOS.BootMemoryMapStreamPipeline
 import LeanOS.BootMemoryMapFullProjectionABI
+import LeanOS.BootMemoryMapScalarRichEquivalence
 import LeanOS.BootAllocation
 import LeanOS.BootInterruptPhase
 import LeanOS.BootPageTablePlan

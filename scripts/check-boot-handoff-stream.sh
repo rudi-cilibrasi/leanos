@@ -42,7 +42,8 @@ production_decode="$(
   sed -n '/^static struct boot_decode_state decode_boot_candidate(/,/^}/p' boot/kernel.c
 )"
 for required in leanos_boot_manifest_start leanos_boot_manifest_candidate \
-  decode_boot_candidate leanos_boot_select_frame leanos_boot_publish_authority; do
+  decode_boot_candidate leanos_boot_consume_exact_projection \
+  leanos_boot_publish_authority; do
   grep -Fq "$required" <<<"$production_allocate" || {
     echo "error: production allocation omits $required" >&2
     exit 1
@@ -163,7 +164,8 @@ fi
 symbols="$(nm "$build/stream.elf")"
 for symbol in leanos_boot_handoff_stream_init leanos_boot_handoff_stream_step \
   leanos_boot_decode_init leanos_boot_decode_step leanos_boot_manifest_candidate \
-  leanos_boot_manifest_start leanos_boot_select_frame leanos_boot_publish_authority; do
+  leanos_boot_manifest_start leanos_boot_consume_exact_projection \
+  leanos_boot_publish_authority; do
   if ! grep -q " T ${symbol}$" <<<"$symbols"; then
     echo "error: handoff stream image does not retain $symbol" >&2
     exit 1
@@ -174,7 +176,7 @@ done
 # boundary.  In particular, neither the boxed whole-buffer reader nor the old
 # scalar allocation-policy adapter may become an accidental second authority.
 for forbidden_policy in leanos_boot_handoff_query leanos_boot_handoff_fixture_query \
-  leanos_boot_allocation_check; do
+  leanos_boot_allocation_check leanos_boot_select_frame; do
   if grep -q " T ${forbidden_policy}$" <<<"$symbols"; then
     echo "error: handoff stream image retained forbidden policy symbol $forbidden_policy" >&2
     exit 1
@@ -190,7 +192,7 @@ leanos_boot_handoff_stream_init|\
 leanos_boot_handoff_stream_step|\
 leanos_boot_decode_init|leanos_boot_decode_step|leanos_boot_manifest_candidate|\
 leanos_boot_manifest_start|\
-leanos_boot_select_frame|leanos_boot_publish_authority|\
+leanos_boot_consume_exact_projection|leanos_boot_publish_authority|\
 lp_leanos___private_LeanOS_BootMemoryMapStreaming_0__LeanOS_BootMemoryMapStreaming_canonicalChunk|\
 lp_leanos___private_LeanOS_BootMemoryMapStreamAuthority_0__LeanOS_BootMemoryMapStreamAuthority_manifestValid|\
 lp_leanos___private_LeanOS_BootMemoryMapStreamAuthority_0__LeanOS_BootMemoryMapStreamAuthority_transitionError|\

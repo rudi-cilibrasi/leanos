@@ -314,12 +314,22 @@ def manifestStart
     let lowPast := (lowStart + lowLength + 4095) / 4096
     if lowPast < 4096 then lowPast else 4096
 
-@[export leanos_boot_select_frame]
-def selectFrame (current candidate decodeStatus usable blocked manifest : UInt64) : UInt64 :=
+/-- Allocation-free consumer for the exact candidate projection.  The
+proof-only scalar/rich equivalence module establishes that the four projection
+fields are precisely the rich decoded usable, non-usable-overlap, and
+reservation predicates. -/
+@[export leanos_boot_consume_exact_projection]
+def consumeExactProjection
+    (current candidate decodeStatus usable blocked manifest : UInt64) : UInt64 :=
   if current < 4096 then current
   else if candidate < 4096 && decodeStatus == complete && usable == 1 &&
       blocked == 0 && manifest == 1 then candidate
   else 4096
+
+/-- Proof-side compatibility name.  It is intentionally not exported and
+final-ELF policy rejects the former `leanos_boot_select_frame` symbol. -/
+def selectFrame (current candidate decodeStatus usable blocked manifest : UInt64) : UInt64 :=
+  consumeExactProjection current candidate decodeStatus usable blocked manifest
 
 @[export leanos_boot_publish_authority]
 def publishAuthority (selected rescanned status usable blocked manifest scrubbed : UInt64) :

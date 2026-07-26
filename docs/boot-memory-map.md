@@ -170,16 +170,18 @@ the same 560-byte layout and requires scalar error code 5, while source policy
 requires production consumers to retain all nineteen ABI words and pass the
 tag-count word on every transition.
 
-This checkpoint does not claim that the continuity chain authenticates bytes,
-that generated C or the final binary refines Lean, or that the production
-scalar parser is extensionally equal to the rich
-`BootMemoryMapDecoder.decode` and `BootReservation.initializeAllocator`
-projection for every possible input. The exact rich generated-C fixture is
-hosted evidence and is deliberately absent from the freestanding production
-image. Expanding scalar-to-rich comparison from the concrete agreement
-fixtures to every accepted/rejected projection—or making production consume
-the exact rich result—remains a documented correspondence and integration
-boundary.
+This checkpoint does not claim that the continuity chain authenticates bytes
+or that generated C or the final binary refines Lean. The boxed exact-rich
+generated-C fixture is hosted evidence and remains absent from the
+allocation-free production image.
+`BootMemoryMapScalarRichEquivalence.field_words_iff_rich_predicates` proves the
+candidate-policy comparison for arbitrary entry lists, checked reservation
+intervals, and frames. `consume_exact_projection_iff` proves the sole
+freestanding decision consumes that canonical encoding, while
+`accepted_authority_projection_consumable` projects every accepted rich
+decode/reserve/allocate authority into the same decision. Final-ELF policy
+requires `leanos_boot_consume_exact_projection`, rejects the superseded
+selector, and QEMU requires `projection=exact-rich` from the production path.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
@@ -273,6 +275,6 @@ The focused freestanding replay covers canonical decoding,
 usable/non-usable overlap, arbitrary ignored-tag padding, manifest
 exclusion, stable selection, and publication mutation. Controlled
 malformed-handoff QEMU replay reaches the production generated decoder and
-rejects before authority. Hosted generated-C now executes and compares the
-complete rich projection directly; correspondence of the separate production
-scalar route to that projection for all inputs remains follow-up proof work.
+rejects before authority. Hosted generated-C executes and compares the complete
+rich projection directly; the universal candidate theorem and final-ELF/QEMU
+policy bind the allocation-free production consumer to its exact result.

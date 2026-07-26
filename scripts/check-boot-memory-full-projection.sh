@@ -68,7 +68,8 @@ grep -Eq ' [Tt] leanos_boot_full_projection_fixture_query$' <<<"$symbols" || {
 }
 for forbidden in leanos_boot_handoff_query leanos_boot_handoff_fixture_query \
   leanos_boot_decode_init leanos_boot_decode_step leanos_boot_manifest_candidate \
-  leanos_boot_manifest_start leanos_boot_select_frame leanos_boot_publish_authority \
+  leanos_boot_manifest_start leanos_boot_select_frame \
+  leanos_boot_consume_exact_projection leanos_boot_publish_authority \
   leanos_boot_allocation_check; do
   if grep -Eq " [Tt] ${forbidden}$" <<<"$symbols"; then
     echo "error: full boot-memory projection ELF retained parallel authority $forbidden" >&2
