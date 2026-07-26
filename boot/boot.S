@@ -1256,8 +1256,12 @@ isr14_clac:
 isr14_cld:
     cld
     SAVE
-    sub $8, %rsp
-    movq $0, (%rsp)
+.global isr14_capture_cr2
+isr14_capture_cr2:
+    mov %cr2, %rax
+.global isr14_preserve_cr2
+isr14_preserve_cr2:
+    push %rax
     mov $14, %edi
     mov $1, %esi
     mov %rsp, %rdx
@@ -1266,7 +1270,9 @@ isr14_cld:
     mov 128(%rsp), %rdi
     mov 136(%rsp), %rsi
     mov 144(%rsp), %rdx
-    mov %cr2, %rcx
+.global isr14_restore_cr2
+isr14_restore_cr2:
+    mov (%rsp), %rcx
     call page_fault_handler
     cmp $2, %rax
     je contained_fault_restore_peer

@@ -46,7 +46,11 @@ branch_ud_cleanup() { sed -i '/^isr6:/,/^\.global isr7/ s/^[[:space:]]*clac$/   
 ud_before_normalize() { sed -i '/NORMALIZE_ENTRY 6, 0/i\    call extended_state_denial_handler' "$tmp/boot.S"; }
 nm_before_normalize() { sed -i '/NORMALIZE_ENTRY 7, 0/i\    call extended_state_denial_handler' "$tmp/boot.S"; }
 c_before_normalize() { sed -i '/NORMALIZE_ENTRY 128, 0/i\    call syscall_handler' "$tmp/boot.S"; }
-gp_before_normalize() { sed -i '/call authorize_interrupt_entry/i\    call entry_adversarial_gp_handler' "$tmp/boot.S"; }
+gp_before_normalize() {
+  sed -i '/^isr13:/,/^\.global isr8/{
+    /call authorize_interrupt_entry/i\    call entry_adversarial_gp_handler
+  }' "$tmp/boot.S"
+}
 gp_model_bypass() {
   sed -i 's/if (leanos_entry_demo(descriptor/if (vector != 13 \&\& leanos_entry_demo(descriptor/' "$tmp/kernel.c"
 }
@@ -62,6 +66,19 @@ relocated_fast_entry_write() {
 }
 relocated_fast_entry_read() {
   sed -i '/read_fast_entry_lstar:/{n;s/rdmsr/nop/}; /\.global enable_smep/i\    rdmsr' "$tmp/boot.S"
+}
+extra_fast_entry_read() {
+  sed -i '/\.global enable_smep/i\    rdmsr' "$tmp/boot.S"
+}
+unlabeled_page_fault_efer_read() {
+  sed -i 's/page_fault_provenance_efer_read/page_fault_provenance_efer_unreviewed/g' \
+    "$tmp/kernel.c"
+}
+late_page_fault_cr2_capture() {
+  sed -i '/^isr14:/,/^\\.global isr32/{
+    /mov %cr2, %rax/s//nop/
+    /call authorize_interrupt_entry/a\    mov %cr2, %rax
+  }' "$tmp/boot.S"
 }
 stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $user_a_text, %eax' "$tmp/boot.S"; }
 noncanonical_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $0x00008000, %edx' "$tmp/boot.S"; }
@@ -112,6 +129,11 @@ run_fixture missing-fast-entry-long-mode 'fast-entry CPUID contract drifted' mis
 run_fixture extra-fast-entry-write 'fast-entry control write inventory drifted' extra_fast_entry_write
 run_fixture relocated-fast-entry-write 'fast-entry wrmsr site drifted' relocated_fast_entry_write
 run_fixture relocated-fast-entry-read 'fast-entry rdmsr site drifted' relocated_fast_entry_read
+run_fixture extra-fast-entry-read 'fast-entry control read inventory drifted' extra_fast_entry_read
+run_fixture unlabeled-page-fault-efer-read \
+  'page-fault-provenance EFER source site drifted' unlabeled_page_fault_efer_read
+run_fixture late-page-fault-cr2-capture \
+  'vector=14 field=cr2-sampling-order source' late_page_fault_cr2_capture
 run_fixture stale-lstar 'fast-entry target write recipe can introduce nonzero state' stale_lstar
 run_fixture noncanonical-lstar 'fast-entry target write recipe can introduce nonzero state' noncanonical_lstar
 run_fixture non-denying-sysenter 'fast-entry target write recipe can introduce nonzero state' non_denying_sysenter

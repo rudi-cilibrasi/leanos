@@ -15,7 +15,8 @@ for symbol in isr0 isr2 isr3 isr6 isr7 isr13 isr14 isr32 isr80 \
   authorize_interrupt_entry integer_fault_restore_peer \
   divide_error_handler breakpoint_handler \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
-  page_fault_handler timer_handler entry_stack boot_stack boot_stack_top \
+  page_fault_handler page_fault_provenance_efer_read \
+  timer_handler entry_stack boot_stack boot_stack_top \
   normalize_fast_entry_msrs read_fast_entry_msrs check_fast_entry_cpuid; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: entry manifest symbol missing: $symbol" >&2; exit 1;
@@ -67,6 +68,10 @@ done
 [[ "$(grep -Ec '^[[:space:]]+rdmsr$' "$boot_source")" -eq 9 ]] || {
   echo "error: fast-entry control read inventory drifted" >&2; exit 1;
 }
+grep -Fq '"page_fault_provenance_efer_read:\n"' "$kernel_source" &&
+  grep -Fq '"rdmsr" : "=a"(provenance_efer_low)' "$kernel_source" || {
+  echo "error: page-fault-provenance EFER source site drifted" >&2; exit 1;
+}
 grep -Fq 'and $~1, %eax' "$boot_source" || {
   echo "error: fast-entry control does not clear EFER.SCE" >&2; exit 1;
 }
@@ -115,7 +120,23 @@ done
 [[ "$(grep -Ec '[[:space:]]wrmsr$' <<<"$control_disassembly")" -eq 8 ]] || {
   echo "error: fast-entry final-ELF write inventory drifted" >&2; exit 1;
 }
-[[ "$(grep -Ec '[[:space:]]rdmsr$' <<<"$control_disassembly")" -eq 9 ]] || {
+page_fault_efer_site="$(
+  sed -n '/<page_fault_provenance_efer_read>:/{n;p;q;}' <<<"$control_disassembly"
+)"
+[[ "$page_fault_efer_site" =~ ^[[:space:]]*[[:xdigit:]]+:[[:space:]]+rdmsr([[:space:]]|$) ]] || {
+  echo "error: page-fault-provenance EFER final-ELF site drifted" >&2; exit 1;
+}
+page_fault_start="$(nm -n "$elf" | awk '$3 == "page_fault_handler" { print "0x" $1 }')"
+page_fault_stop="$(nm -n "$elf" | awk '$3 == "divide_error_handler" { print "0x" $1 }')"
+page_fault_disassembly="$(
+  objdump -d --no-show-raw-insn --start-address="$page_fault_start" \
+    --stop-address="$page_fault_stop" "$elf"
+)"
+[[ "$(grep -Ec '[[:space:]]rdmsr$' <<<"$page_fault_disassembly")" -eq 1 ]] || {
+  echo "error: page-fault-provenance EFER final-ELF inventory drifted" >&2; exit 1;
+}
+final_rdmsr_count="$(grep -Ec '[[:space:]]rdmsr$' <<<"$control_disassembly")"
+[[ "$((final_rdmsr_count - 1))" -eq 9 ]] || {
   echo "error: fast-entry final-ELF read inventory drifted" >&2; exit 1;
 }
 fast_probe="${LEANOS_FAST_ENTRY_PROBE:-}"
@@ -213,6 +234,26 @@ source_path="$(sed -n '/^isr14:/,/^\.global isr32/p' "$boot_source")"
 grep -q 'mov \$1, %esi' <<<"$source_path" || {
   echo "error: vector=14 field=error-shape" >&2; exit 1;
 }
+source_capture="$(grep -n -m1 '^[[:space:]]*mov %cr2, %rax$' <<<"$source_path" | cut -d: -f1 || true)"
+source_preserve="$(grep -n -m1 '^[[:space:]]*push %rax$' <<<"$source_path" | cut -d: -f1 || true)"
+source_normalize="$(grep -n -m1 '^[[:space:]]*call authorize_interrupt_entry$' <<<"$source_path" | cut -d: -f1 || true)"
+source_restore="$(grep -n -m1 '^[[:space:]]*mov (%rsp), %rcx$' <<<"$source_path" | cut -d: -f1 || true)"
+source_handler="$(grep -n -m1 '^[[:space:]]*call page_fault_handler$' <<<"$source_path" | cut -d: -f1 || true)"
+source_first_call="$(grep -n -m1 '^[[:space:]]*call ' <<<"$source_path" | cut -d: -f1 || true)"
+for symbol in isr14_capture_cr2 isr14_preserve_cr2 isr14_restore_cr2; do
+  grep -Fq "${symbol}:" <<<"$source_path" || {
+    echo "error: vector=14 field=cr2-sampling-order source" >&2; exit 1;
+  }
+done
+[[ -n "$source_capture" && -n "$source_preserve" && -n "$source_normalize" &&
+   -n "$source_restore" && -n "$source_handler" && -n "$source_first_call" &&
+   "$source_capture" -lt "$source_preserve" &&
+   "$source_preserve" -lt "$source_normalize" &&
+   "$source_normalize" -eq "$source_first_call" &&
+   "$source_normalize" -lt "$source_restore" &&
+   "$source_restore" -lt "$source_handler" ]] || {
+  echo "error: vector=14 field=cr2-sampling-order source" >&2; exit 1;
+}
 for vector in 6 7; do
   if [[ "$vector" == 6 ]]; then
     source_path="$(sed -n '/^isr6:/,/^\.global isr7/p' "$boot_source")"
@@ -263,6 +304,46 @@ check_path() {
 check_path 128 isr80 isr14 syscall_handler
 check_path 14 isr14 isr32 page_fault_handler
 check_path 32 isr32 user_return_epilogue timer_handler
+
+page_fault_disassembly="$(
+  objdump -d --no-show-raw-insn \
+    --start-address="$(address isr14)" --stop-address="$(address isr32)" "$elf"
+)"
+elf_capture="$(grep -n -m1 '<isr14_capture_cr2>:' \
+  <<<"$page_fault_disassembly" | cut -d: -f1 || true)"
+elf_preserve="$(grep -n -m1 '<isr14_preserve_cr2>:' \
+  <<<"$page_fault_disassembly" | cut -d: -f1 || true)"
+elf_normalize="$(grep -n -m1 'call.*<authorize_interrupt_entry>' \
+  <<<"$page_fault_disassembly" | cut -d: -f1 || true)"
+elf_restore="$(grep -n -m1 '<isr14_restore_cr2>:' \
+  <<<"$page_fault_disassembly" | cut -d: -f1 || true)"
+elf_handler="$(grep -n -m1 'call.*<page_fault_handler>' \
+  <<<"$page_fault_disassembly" | cut -d: -f1 || true)"
+elf_first_call="$(grep -n -m1 -E '[[:space:]]call[[:space:]]' \
+  <<<"$page_fault_disassembly" | cut -d: -f1 || true)"
+elf_capture_site="$(sed -n '/<isr14_capture_cr2>:/{n;p;q;}' \
+  <<<"$page_fault_disassembly")"
+elf_preserve_site="$(sed -n '/<isr14_preserve_cr2>:/{n;p;q;}' \
+  <<<"$page_fault_disassembly")"
+elf_restore_site="$(sed -n '/<isr14_restore_cr2>:/{n;p;q;}' \
+  <<<"$page_fault_disassembly")"
+[[ "$elf_capture_site" =~ [[:space:]]mov[[:space:]]+%cr2,[[:space:]]*%rax$ &&
+   "$elf_preserve_site" =~ [[:space:]]push[[:space:]]+%rax$ &&
+   "$elf_restore_site" =~ [[:space:]]mov[[:space:]]+\(%rsp\),[[:space:]]*%rcx$ ]] || {
+  echo "error: vector=14 field=cr2-sampling-order final-elf" >&2; exit 1;
+}
+for symbol in isr14_capture_cr2 isr14_preserve_cr2 isr14_restore_cr2; do
+  grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+    echo "error: vector=14 field=cr2-sampling-order final-elf" >&2; exit 1;
+  }
+done
+[[ -n "$elf_capture" && -n "$elf_preserve" && -n "$elf_normalize" &&
+   -n "$elf_restore" && -n "$elf_handler" && -n "$elf_first_call" &&
+   "$elf_capture" -lt "$elf_preserve" && "$elf_preserve" -lt "$elf_normalize" &&
+   "$elf_normalize" -eq "$elf_first_call" && "$elf_normalize" -lt "$elf_restore" &&
+   "$elf_restore" -lt "$elf_handler" ]] || {
+  echo "error: vector=14 field=cr2-sampling-order final-elf" >&2; exit 1;
+}
 
 # The contained integer-fault stubs clear AC/DF, normalize through the shared
 # manifest adapter, then call only the generated typed dispatcher before the

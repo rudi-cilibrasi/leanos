@@ -82,6 +82,12 @@ private def interruptEntry (id : String) (descriptor frame stack context cleanup
   { id, adapter := "Interrupt.entry", words := [descriptor, frame, stack, context, cleanup],
     expected := InterruptEntry.entryModelExpected descriptor frame stack context cleanup }
 
+private def pageFault (id : String) (error address mode context controls : UInt64) :
+    Vector :=
+  { id, adapter := "Interrupt.pageFault",
+    words := [error, address, mode, context, controls],
+    expected := InterruptEntry.pageFaultModelExpected error address mode context controls }
+
 private def extendedState (id : String) (policy mode vector current active normalized : UInt64) :
     Vector :=
   { id, adapter := "ExtendedState.denialDispatch",
@@ -419,9 +425,48 @@ def vectors : List Vector := [
   staleTranslation "stale-translation.destroy-wrong-subject" 3 1 0 0 1 0,
   staleTranslation "stale-translation.release-wrong-slot" 2 0 0 0 1 0,
   staleTranslation "stale-translation.switch-unknown-space" 4 0 99 0 0 0,
-  staleTranslation "stale-translation.malformed-kind" 9 0 1 7 0 0]
+  staleTranslation "stale-translation.malformed-kind" 9 0 1 7 0 0,
+  pageFault "page-fault.user-read-not-present" 4 0x400123 0 0x10000101 123,
+  pageFault "page-fault.user-write-not-present" 6 0x400123 0 0x10000101 123,
+  pageFault "page-fault.user-execute-not-present" 20 0x400123 0 0x10000101 123,
+  pageFault "page-fault.user-read-protection" 5 0x400123 0 0x10000101 123,
+  pageFault "page-fault.user-write-protection" 7 0x400123 0 0x10000101 123,
+  pageFault "page-fault.user-execute-protection" 21 0x400123 0 0x10000101 123,
+  pageFault "page-fault.kernel-read" 0 0xffff800000001234 1 0x10000101 123,
+  pageFault "page-fault.reserved-bit" 12 0x400123 0 0x10000101 123,
+  pageFault "page-fault.unsupported-bit-5-pk" 36 0x400123 0 0x10000101 123,
+  pageFault "page-fault.unsupported-bit-6-shadow-stack" 68 0x400123 0
+    0x10000101 123,
+  pageFault "page-fault.unsupported-bit-7" 132 0x400123 0 0x10000101 123,
+  pageFault "page-fault.unsupported-bit-8" 260 0x400123 0 0x10000101 123,
+  pageFault "page-fault.unsupported-bit-9" 516 0x400123 0 0x10000101 123,
+  pageFault "page-fault.unsupported-bit-10" 1028 0x400123 0 0x10000101 123,
+  pageFault "page-fault.unsupported-bit-11" 2052 0x400123 0 0x10000101 123,
+  pageFault "page-fault.unsupported-bit-12" 4100 0x400123 0 0x10000101 123,
+  pageFault "page-fault.unsupported-bit-13" 8196 0x400123 0 0x10000101 123,
+  pageFault "page-fault.unsupported-bit-14" 16388 0x400123 0 0x10000101 123,
+  pageFault "page-fault.unsupported-bit-15-sgx" 32772 0x400123 0
+    0x10000101 123,
+  pageFault "page-fault.wrong-cr2" 4 0x401123 0 0x10000101 123,
+  pageFault "page-fault.wrong-vector" 4 0x400123 2 0x10000101 123,
+  pageFault "page-fault.wrong-stub" 4 0x400123 3 0x10000101 123,
+  pageFault "page-fault.missing-error" 4 0x400123 4 0x10000101 123,
+  pageFault "page-fault.malformed-frame" 4 0x400123 5 0x10000101 123,
+  pageFault "page-fault.privilege-mismatch" 0 0x400123 0 0x10000101 123,
+  pageFault "page-fault.nested" 4 0x400123 0 0x10000101 127,
+  pageFault "page-fault.low-canonical-boundary" 4 0x7fffffffffff 0 0x10000101 123,
+  pageFault "page-fault.upper-canonical-boundary" 4 0xffff800000000000 0
+    0x10000101 123,
+  pageFault "page-fault.noncanonical-boundary" 4 0x800000000000 0 0x10000101 123,
+  pageFault "page-fault.authority-subject-mutated" 4 0x400123 0 0x10000102 123,
+  pageFault "page-fault.authority-space-mutated" 4 0x400123 0 0x10000201 123,
+  pageFault "page-fault.authority-cr3-mutated" 4 0x400123 0 0x10010101 123,
+  pageFault "page-fault.authority-wp-mutated" 4 0x400123 0 0x10000101 115,
+  pageFault "page-fault.authority-nxe-mutated" 4 0x400123 0 0x10000101 107,
+  pageFault "page-fault.authority-smep-mutated" 4 0x400123 0 0x10000101 91,
+  pageFault "page-fault.authority-smap-mutated" 4 0x400123 0 0x10000101 59]
 
-theorem corpus_shape : vectors.length = 256 := by decide
+theorem corpus_shape : vectors.length = 292 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -743,6 +788,49 @@ theorem stale_translation_scenario_agrees :
     (vectors[249]).expected = 0x200000000 ∧
     (vectors[250]).expected = 0x200000000 ∧
     (vectors[255]).expected = 0 := by native_decide
+
+private def pageFaultAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "Interrupt.pageFault", [error, address, mode, context, controls] =>
+      InterruptEntry.pageFaultDemo error address mode context controls = vector.expected
+  | _, _ => true
+
+theorem page_fault_corpus_shape : ((vectors.drop 256).take 36).length = 36 := by
+  decide
+
+theorem page_fault_adapter_agrees_with_model :
+    ((vectors.drop 256).take 36).all pageFaultAdapterAgrees = true := by
+  native_decide
+
+/-- Dropping any authority-bearing input changes the accepted executable
+witness, so the rich-model corpus cannot agree with an erasing adapter. -/
+theorem page_fault_subject_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[285]).expected := by native_decide
+theorem page_fault_space_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[286]).expected := by native_decide
+theorem page_fault_cr3_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[287]).expected := by native_decide
+theorem page_fault_wp_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[288]).expected := by native_decide
+theorem page_fault_nxe_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[289]).expected := by native_decide
+theorem page_fault_smep_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[290]).expected := by native_decide
+theorem page_fault_smap_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[291]).expected := by native_decide
+
+theorem page_fault_authority_mutations_attested :
+    (vectors[256]).expected ≠ (vectors[285]).expected ∧
+    (vectors[256]).expected ≠ (vectors[286]).expected ∧
+    (vectors[256]).expected ≠ (vectors[287]).expected ∧
+    (vectors[256]).expected ≠ (vectors[288]).expected ∧
+    (vectors[256]).expected ≠ (vectors[289]).expected ∧
+    (vectors[256]).expected ≠ (vectors[290]).expected ∧
+    (vectors[256]).expected ≠ (vectors[291]).expected :=
+  ⟨page_fault_subject_mutation_attested, page_fault_space_mutation_attested,
+    page_fault_cr3_mutation_attested, page_fault_wp_mutation_attested,
+    page_fault_nxe_mutation_attested, page_fault_smep_mutation_attested,
+    page_fault_smap_mutation_attested⟩
 
 private def wordsText : List UInt64 → String
   | [] => ""

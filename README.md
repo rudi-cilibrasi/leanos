@@ -375,6 +375,10 @@ classes, while changing only the halt latch.
 The bounded inbound entry manifest and total trap-frame normalizer bind those
 ordinary gates to explicit x86 raw shapes and kernel-owned subject, address
 space, CR3, stack, purpose, and nested-entry state before a boot handler runs.
+The layered [canonical page-fault snapshot](docs/page-fault-snapshot.md)
+then derives read/write/execute and protection class from the exact supported
+error bits, binds CR2 to its 4 KiB page, confines diagnostics, and publishes a
+versioned fixed-width codec without claiming x86 or binary refinement.
 
 A separate terminal vector-2 manifest models NMI snapshots on dedicated IST2
 and proves that an exact CPL3 or CPL0 event, including one observed during an

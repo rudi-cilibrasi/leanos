@@ -1,0 +1,90 @@
+# Canonical x86 page-fault snapshot
+
+`LeanOS.InterruptEntry.normalizePageFault` is the canonical inbound provenance
+boundary for vector 14. It consumes an already normalized generic
+`InterruptEntry` plus the CR2 sample and kernel-owned paging context. It does
+not implement page-table policy or runtime recovery.
+
+## Supported error word
+
+| Bit | Meaning | Treatment |
+| --- | --- | --- |
+| 0 | `P`: non-present (0) or protection (1) | Admitted and retained |
+| 1 | `W/R`: read (0) or write (1) | Admitted; derives access kind |
+| 2 | `U/S`: supervisor (0) or user (1) | Admitted; must match saved-CS origin |
+| 3 | `RSVD`: reserved-bit violation | Typed terminal rejection |
+| 4 | `I/D`: data (0) or instruction fetch (1) | Admitted; derives execute |
+| 5 and above | PK, shadow-stack, SGX, and unselected fields | Typed unsupported-bit rejection |
+
+Instruction fetch takes precedence over `W/R`; otherwise `W/R` selects write
+or read. A caller-supplied access label is not an input. CR2 must be canonical.
+The snapshot retains the full word and derives `faultPage = CR2 / 4096`.
+WP, NXE, SMEP, and SMAP come from kernel context. Saved GPRs and diagnostics
+cannot affect authorization.
+
+## Version-one codec manifest
+
+The canonical encoding is exactly 19 `UInt64` words.
+
+| Index | Field |
+| ---: | --- |
+| 0 | Version, exactly `1` |
+| 1 | Vector, exactly `14` |
+| 2 | Raw architectural error word |
+| 3 | Full CR2 fault address |
+| 4 | Derived 4 KiB fault page |
+| 5 | Derived access: read `0`, write `1`, execute `2` |
+| 6 | Non-present `0` or protection `1` |
+| 7 | Supervisor `0` or user `1` |
+| 8 | Kernel-selected current subject |
+| 9 | Kernel-selected active address space |
+| 10 | Kernel-sampled active CR3 |
+| 11 | WP/NXE/SMEP/SMAP bits `0..3`; higher bits zero |
+| 12 | Saved RIP |
+| 13 | Saved CS |
+| 14 | Saved RFLAGS |
+| 15 | Saved user RSP, or zero for supervisor origin |
+| 16 | Saved user SS, or zero for supervisor origin |
+| 17 | Kernel-selected entry-stack identity |
+| 18 | Reserved, exactly zero |
+
+Decoding requires exactly 19 words. It rejects truncation, extension, wrong
+version, nonzero reserved fields, unsupported controls, noncanonical address,
+page mismatch, unsupported error bits, derived-field relabeling, noncanonical
+saved RIP, a missing RFLAGS bit one, zero authority/stack identities, and
+saved-CS/RSP/SS shapes outside the reviewed kernel (`0x08`) and user
+(`0x23`/`0x1b`) profiles.
+`decode_encode_canonical_page_fault` proves valid-record roundtrip and
+`canonical_page_fault_encoding_injective` proves injectivity.
+`decoded_canonical_page_fault_has_normalized_preimage` proves every decoded
+record is the serialization of a concrete accepted `normalizePageFault`
+snapshot. That codec-only preimage reconstructs context for representability;
+it grants no authority. The action boundary instead requires an independently
+supplied trusted `PageFaultContext`, normalizes under that context, and compares
+the resulting complete serialization with the decoded record.
+`authorized_canonical_has_trusted_normalized_preimage` and
+`authorized_canonical_binds_trusted_context` prove that authorization carries
+this independent witness and exact subject/address-space/CR3/control binding.
+At this action boundary, the kernel-owned subject and address-space `Nat`
+identities must satisfy `AuthorityIdentityRepresentable`, meaning each is
+strictly below `2^64`. This checked premise makes the subject/address-space
+equality exact after conversion back to `Nat`; authorization does not compare
+identities only after a truncating `UInt64.ofNat`. Zero remains rejected by the
+codec, while the previously admitted all-ones word remains in range. Decode
+failures, unrepresentable trusted identities, and forged authority/control
+fields return no authorization and leave containment state unchanged.
+Dedicated negative fixtures cover each subject, address-space, CR3, WP, NXE,
+SMEP, and SMAP mutation, plus trusted subject and address-space values equal to
+`2^64 + 1`. Generated corpus rows preserve per-vector inputs and identifiers in
+`build/boot/corpus.tsv`.
+
+## Trusted boundary
+
+The model assumes x86 supplies the error word and CR2 for the same fault.
+Source and final-ELF policy gates require the labeled CR2 sample to precede
+the first authorization call and require the preserved sample to supply the C
+handler; a separately labeled EFER read is excluded from the unchanged
+nine-read fast-entry inventory. Generated C, handwritten assembly/C,
+compiler/linker, QEMU, firmware, and hardware remain trusted/tested; these
+policy checks are not a proof of x86 delivery, atomicity, or final-binary
+refinement.

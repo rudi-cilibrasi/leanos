@@ -73,6 +73,7 @@ jobs:
             build/boot/SHA256SUMS
             build/boot/SOURCE_REVISION
             build/boot/corpus.tsv
+            docs/page-fault-snapshot.md
             build/oracle/host-results.txt
             build/evidence/*
             build/ci/*.txt

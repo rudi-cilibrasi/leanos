@@ -10,8 +10,9 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `PrivilegeEntryControl.controlDemo`, `FaultDispatch.faultDispatchDemo`, and
 `DirectPortIO.directPortIODemo`, `InterruptEntry.nmiDemo`,
 `InterruptEntry.bootPhaseDemo`, and
-`StaleTranslation.staleTranslationDemo`. Its stable
-256-vector order covers accepted calls,
+`StaleTranslation.staleTranslationDemo`, and
+`InterruptEntry.pageFaultDemo`. Its stable
+292-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -39,6 +40,18 @@ The interrupt-entry corpus also includes the user-only vector-13 hardware-error
 shape and its broad general-protection purpose. The live handler refines that
 class to direct-port denial only after checking `#GP(0)`, the reviewed RIP, and
 the saved instruction operands.
+
+The 36 page-fault provenance records cover user read/write/execute,
+non-present and protection classes, kernel origin, RSVD, PK, shadow-stack and
+SGX rejection, a changed CR2 page, wrong vector/stub/error shape, truncated and
+nested entry, privilege mismatch, and lower/upper canonical plus noncanonical
+boundaries. Seven accepted mutation rows independently vary subject, address
+space, CR3, WP, NXE, SMEP, and SMAP; each must change the generated authority
+attestation. Expected values come from `normalizePageFault`; hosted generated C
+and every boot image call the same `leanos_page_fault_demo`. The compact result
+is executable differential evidence only. The independent 19-word canonical
+codec carries all authoritative fields and is the object of the Lean
+roundtrip/injectivity and exact-binding theorems.
 
 The final 28 direct-port records cover the selected live-control snapshot,
 every named control mutation, stale read-back, all input/output width classes,

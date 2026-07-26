@@ -46,6 +46,8 @@ extern uint64_t leanos_boot_phase_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                        uint64_t);
 extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
+                                       uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);
@@ -1260,9 +1262,13 @@ static void replay_oracle(void) {
                                                             ? leanos_boot_phase_demo(v->words[0],
                                                             v->words[1], v->words[2], v->words[3],
                                                             v->words[4])
-                                                            : leanos_stale_translation_demo(
+                                                            : v->adapter == 16
+                                                            ? leanos_stale_translation_demo(
                                                             v->words[0], v->words[1], v->words[2],
-                                                            v->words[3], v->words[4], v->words[5]);
+                                                            v->words[3], v->words[4], v->words[5])
+                                                            : leanos_page_fault_demo(v->words[0],
+                                                            v->words[1], v->words[2],
+                                                            v->words[3], v->words[4]);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
@@ -1930,8 +1936,48 @@ static void arm_timer(void) {
     out8(0x43, 0x30); out8(0x40, 0xff); out8(0x40, 0xff);
 }
 
+static uint64_t page_fault_provenance_expected(uint64_t error,
+                                               uint64_t fault_address,
+                                               uint64_t context,
+                                               uint64_t controls) {
+    uint64_t access_code = ((error >> 4) & 1u) != 0 ? 2u :
+                           ((error >> 1) & 1u) != 0 ? 1u : 0u;
+    uint64_t architectural = (fault_address >> 12) * 32u +
+        access_code * 4u + (error & 1u) * 2u + ((error >> 2) & 1u);
+    uint64_t authority = context * UINT64_C(0x9e3779b185ebca87) +
+        ((controls >> 3) & 15u) * UINT64_C(0x100000001b3);
+    return (architectural + authority) & UINT64_C(0x7fffffffffffffff);
+}
+
 uint64_t page_fault_handler(uint64_t error, uint64_t rip, uint64_t saved_cs,
                             uint64_t fault_address) {
+    uint64_t provenance_cr3;
+    uint64_t provenance_cr0;
+    uint64_t provenance_cr4;
+    uint32_t provenance_efer_low, provenance_efer_high;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(provenance_cr3));
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(provenance_cr0));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(provenance_cr4));
+    __asm__ volatile (".global page_fault_provenance_efer_read\n"
+                      "page_fault_provenance_efer_read:\n"
+                      "rdmsr" : "=a"(provenance_efer_low),
+                      "=d"(provenance_efer_high)
+                      : "c"(UINT32_C(0xc0000080)));
+    (void)provenance_efer_high;
+    uint64_t provenance_context = current_subject | current_subject << 8 |
+                                  (provenance_cr3 >> 12) << 16;
+    uint64_t provenance_controls = 3u |
+        ((provenance_cr0 >> 16) & 1u) << 3 |
+        ((provenance_efer_low >> 11) & 1u) << 4 |
+        ((provenance_cr4 >> 20) & 1u) << 5 |
+        ((provenance_cr4 >> 21) & 1u) << 6;
+    uint64_t provenance = leanos_page_fault_demo(
+        error, fault_address, (saved_cs & 3u) == 3u ? 0u : 1u,
+        provenance_context, provenance_controls);
+    uint64_t expected_provenance = page_fault_provenance_expected(
+        error, fault_address, provenance_context, provenance_controls);
+    if ((provenance >> 63) != 0 || provenance != expected_provenance)
+        fail("page-fault-provenance");
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
     if ((saved_cs & 3u) == 3u && error == 5u &&
         rip == (uint64_t)user_a_fault_instruction && fault_address == 0u) {

@@ -152,6 +152,45 @@ divide errors and breakpoints are same-privilege frames under a user-only
 origin policy and therefore terminal `wrongOrigin` rejections; only vector 14
 retains the supervisor diagnostic relabeling.
 
+### Canonical page-fault provenance
+
+`InterruptEntry.normalizePageFault` is strictly layered on the accepted
+ordinary vector-14 entry. It then decodes the architectural error word and
+binds the CR2 sample. The bounded AMD64 profile admits `P`, `W/R`, `U/S`, and
+`I/D`; an asserted `RSVD` indication has its own terminal rejection and every
+bit at position five or above—including PK, shadow-stack, and SGX—is
+unsupported and rejected. Read, write, or execute is derived from `I/D` then
+`W/R`; no payload supplies an access label. Saved-CS origin must agree with
+the error word's `U/S` bit.
+
+The normalized record retains full CR2 and derives the page as unsigned
+`CR2 / 4096`, accepting only canonical x86-64 linear addresses. Current
+subject, address space, CR3, and WP/NXE/SMEP/SMAP come from
+`PageFaultContext`; saved GPRs and diagnostics are explicitly confined away
+from authorization. This provenance layer does not walk or mutate page
+tables, invalidate TLB entries, retry instructions, or implement demand
+paging.
+
+`CanonicalPageFault` has a version-one fixed width of 19 `UInt64` words. Its
+decoder rejects wrong versions, truncation or extension, a nonzero reserved
+word, unsupported controls, noncanonical addresses, mismatched pages, and
+access/protection/privilege relabeling. It also validates the reviewed saved
+CS/RSP/SS shapes, canonical saved RIP, RFLAGS bit one, and nonzero
+subject/address-space/CR3/stack identities. Lean proves width, valid-record
+roundtrip, encoding injectivity, exact bit/page binding, that every decoded
+record has a concrete accepted normalizer preimage, decode-failure no-action,
+normalizer totality/determinism, and GPR/diagnostic confinement. The codec
+action boundary additionally takes an independent trusted `PageFaultContext`,
+renormalizes the decoded architectural fields under it, and authorizes only
+when the resulting serialization exactly matches the decoded record. Thus
+serialized subject, address-space, CR3, and WP/NXE/SMEP/SMAP fields remain
+claims to check; a mismatch returns no authorization and leaves containment
+state unchanged. The generated
+five-word adapter is only a compact executable corpus projection, not the
+canonical codec or a machine-refinement theorem; its scalar result nevertheless
+attests the exact compact context plus WP/NXE/SMEP/SMAP and is checked
+independently by the live C handler before containment.
+
 The generated allocation-free `leanos_entry_demo` adapter is replayed in the
 version-one oracle with valid syscall, user general-protection/direct-port,
 user page fault, user divide-error, user breakpoint, timer, and diagnostic

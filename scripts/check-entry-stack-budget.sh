@@ -120,9 +120,25 @@ objdump -d --no-show-raw-insn "$elf" | awk \
     return result
   }
   /^[[:xdigit:]]+[[:space:]]+<[^>]+>:/ {
-    caller = $2; gsub(/[<>:]/, "", caller); present[caller] = 1; next
+    symbol = $2; gsub(/[<>:]/, "", symbol); present[symbol] = 1
+    # These exported names are policy anchors inside the straight-line isr14
+    # body, not callable function entries.  Keep attributing their following
+    # instructions and fallthrough edges to the current root.
+    if (symbol == "isr14_capture_cr2" ||
+        symbol == "isr14_preserve_cr2" ||
+        symbol == "isr14_restore_cr2" ||
+        symbol == "page_fault_provenance_efer_read") {
+      if (symbol == "isr14_preserve_cr2") policy_slot_push = 1
+      next
+    }
+    caller = symbol
+    next
   }
-  caller != "" && $2 ~ /^push/ { count[caller]++; allocation[caller] += 8 }
+  caller != "" && $2 ~ /^push/ {
+    if (!policy_slot_push) count[caller]++
+    allocation[caller] += 8
+    policy_slot_push = 0
+  }
   caller != "" && $2 ~ /^sub(q)?$/ && $3 ~ /^\$(0[xX][[:xdigit:]]+|[0-9]+),%rsp$/ {
     operand = $3; sub(/^\$/, "", operand); sub(/,%rsp$/, "", operand)
     allocation[caller] += unsigned_immediate(operand)

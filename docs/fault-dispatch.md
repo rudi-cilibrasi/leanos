@@ -52,6 +52,86 @@ remain distinct as `kernelOrigin` and `alreadyHalted`. Fatal results retain the
 complete scheduler/lifecycle, context bank, mapping, and translation state while
 setting the latch.
 
+## Active-address-space page-fault agreement
+
+`dispatchPageFault` is the strengthened vector-14 entry point. It consumes the
+exact version-one canonical words and independent trusted context from
+`InterruptEntry.authorizeCanonicalPageFault`, a proof-carrying
+`BootPageTablePlan.Plan`, a bounded `BootPageTablePlan.DecodedRoot` sampled
+from the kernel-selected CR3, and the existing `ResumablePreemption.State`.
+The transition adds no second page-table store, lifecycle view, scheduler, or
+global invariant. The complete decoded report is checked against the
+proof-carrying plan already retained by the #104 global runtime.
+
+The active translation projection selects subject-A root 1 or subject-B root 2;
+CR2 selects only a page inside that already selected root. The gate checks the
+report's address-space identity, plan-derived CR3, selected WP/NXE/SMEP/SMAP
+profile, and one live-plan agreement at the fault page:
+
+- an absent planned leaf must also be absent from both the live virtual and
+  lifecycle mappings;
+- a supervisor planned leaf must not be shadowed by either mapping projection;
+  and
+- a user leaf must name an issued current memory object and equal its live
+  binding, allocator owner, lifecycle mapping, lifecycle object/frame binding,
+  frame owner/free status, read permission, and writable bit.
+
+The exact matching TLB key/context must be absent and the bounded cache must
+remain within capacity. This names the single-core completed-invalidation
+precondition instead of choosing between stale cache data and a current walk.
+Classification uses the page-local ancestor path and leaf decoded from the live
+report, not a page table reconstructed from the safe plan. Reserved-bit and
+out-of-range-frame outcomes therefore remain observable integrity classes.
+Noncanonical CR2 records are rejected by the canonical snapshot gate before a
+walk. Every other candidate denial is admitted only after the
+whole decoded report validates against the plan, so malformed ancestors,
+extra/missing leaves, wrong pointers, and permission/frame drift fail closed.
+The classifier admits only four ordinary denials: non-present with `P=0`,
+supervisor with `P=1`, read-only write with `P=1,W/R=1`, and NX instruction
+fetch with `P=1,I/D=1`. An allowed access, reserved/frame-range
+walk, invalid live report, wrong root, stale mapping/lifetime, matching
+cached entry, unsupported canonical encoding, or error/walk mismatch is typed
+integrity failure and sets the existing absorbing latch.
+
+SMEP and SMAP are not claimed as live-walk outcomes at this boundary:
+`dispatchPageFault` authorizes only CPL3 accesses, so its classifier context is
+`.user`; SMEP/SMAP are supervisor-access checks covered by separate kernel
+probes.
+
+Successful agreement delegates to `FaultDispatch.dispatch`; it does not
+reimplement cleanup or survivor selection.
+`dispatchPageFault_success_sound` exposes the exact decoded record,
+independent action authorization, active root, CR2 page, live mapping/TLB
+checks, decoded error, classifier cause, and denial equality for every
+successful outcome. `dispatchPageFault_integrity_fatal_atomicity` proves that
+an integrity-fatal result changes only the halt latch,
+`dispatchPageFault_fatal_atomicity` extends that frozen-store result to every
+fatal class, `dispatchPageFault_rejected_unchanged` preserves stale nonfatal
+bindings byte-for-byte, and
+`dispatchPageFault_preserves_wellFormed` preserves the complete
+`ResumablePreemption.WellFormed` predicate. Concrete executable witnesses cover
+all four admitted denial classes, empty and multiple-survivor queues, plus
+mismatched error, reserved error, kernel origin, forged address space, wrong
+root, stale virtual or lifecycle mapping, incoherent-TLB, reserved-bit live
+leaf, out-of-range live frame, malformed live-ancestor, and unissued mapped
+object fatal results.
+Proof-integrity fixtures reject accepting every present error, ignoring the
+active walk, containing a reserved-bit fault, allowing a snapshot to substitute
+another address space, containing a corrupt live-table report, or containing a
+non-present fault while the lifecycle
+still carries the concrete stale page-50/object-999 mapping. A separate
+concrete fixture clears object 100's monotonic issuance bit while retaining all
+of its mapping, capability, binding, allocator, and lifecycle projections; the
+agreement gate must classify that stale-generation state as fatal.
+
+This independently correct slice does not change the public input type of the
+older shared `dispatch` function because #104 is concurrently making the one
+global gate and owns publication of the compiled plan. The #104 integration
+must route vector 14 through `dispatchPageFault`; divide error, breakpoint, and
+the shared cleanup theorem remain unchanged. Until that cutover lands, the
+older vector-only `dispatch` claim remains the weaker normalized-frame claim
+documented above and is not promoted to active-page-table agreement.
+
 ## Cleanup and survivor boundary
 
 Accepted user-fault cleanup reuses `ResumablePreemption.cleanupSubject`, which
