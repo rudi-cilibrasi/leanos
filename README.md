@@ -68,13 +68,18 @@ partial log does not pass. The executable scenarios currently include:
 - boot-time memory-map validation, reservation, frame scrubbing and publication,
   live page-table checks, WP/SMEP/SMAP probes, and bounded user-copy checks;
 - a dedicated double-fault IST fail-stop probe and a mapped-guard negative;
+- two early-IDT fail-stop probes: a real pre-paging `ud2` that vector 6 must
+  carry through the kernel-owned 32-bit bootstrap IDT to its pinned terminal
+  stub, and a QMP-injected NMI delivered after an exact early-only readiness
+  record while the 64-bit bootstrap IDT is live but the runtime IDT is still
+  unpublished;
 - a controlled fast-entry machine-state relaxation that must be caught by the
   live outbound MSR read-back before CPL3; and
 - a bounded suite of deliberately corrupted user-return images that must fail
   with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-183-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+241-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -250,7 +255,12 @@ requests preserve the identical complete device projection. Typed kernel
 acceptance is confined to exact serial, PIC, PIT, and debug-exit manifest keys
 including direction and width. TSS loading, x86 privilege and exception
 semantics, device behavior, generated code, and the final binary remain outside
-these model-level claims.
+these model-level claims. The composed
+[port-denial containment slice](docs/direct-port-io.md) sequences that user
+denial with the atomic user-fault cleanup/survivor dispatch and proves that a
+denied port attempt leaves the device projection unchanged and retires the
+faulting subject without letting untrusted port/value/width words select a
+kernel operation or survivor, or return to the faulting subject.
 
 The finite [fast privilege-entry control model](docs/privilege-entry-control.md)
 admits only the manifest-backed `int 0x80` system-call mechanism, requires a
@@ -337,6 +347,13 @@ capabilities, exclusively owned memory, address spaces, endpoints, pending
 provenance, and runnable/current state. Its creation operation publishes a
 fresh identity; it does not inherit or duplicate another subject's state.
 
+The [bounded lifetime-identity issuers](docs/lifetime-identity.md) make
+kernel-owned, finite counters the authoritative creation path for subject and
+object lifetimes: every accepted creation returns the unique next
+representable 64-bit identity, one object authority spans the memory,
+endpoint, and address-space kinds, rejected or exhausted creation preserves
+the complete runtime, and retired identities can never be made live again.
+
 The bounded [model-oracle corpus](docs/model-oracle.md) is evaluated in Lean
 and replayed through hosted generated code and every boot-reachable adapter.
 This differential check detects integration mismatches; it is not compiler or
@@ -358,6 +375,38 @@ classes, while changing only the halt latch.
 The bounded inbound entry manifest and total trap-frame normalizer bind those
 ordinary gates to explicit x86 raw shapes and kernel-owned subject, address
 space, CR3, stack, purpose, and nested-entry state before a boot handler runs.
+
+A separate terminal vector-2 manifest models NMI snapshots on dedicated IST2
+and proves that an exact CPL3 or CPL0 event, including one observed during an
+ordinary handling step, freezes every modeled subsystem and enters the same
+absorbing halt latch without return, scheduling, or CR3 continuation. The boot
+image installs the matching DPL0 vector-2 gate and dedicated IST2 stack; a
+mandatory QEMU monitor-injection probe observes real delivery across IF=0 and
+the terminal assembly record after the kernel reports `NMI-READY`.
+Delivery/blocking, frame construction, and the compiler/emulator path remain
+trusted tested boundaries rather than theorem claims.
+
+The [boot-interrupt phase model](docs/interrupt-model.md) replaces the
+inherited bootloader IDT in the entry prologue. A finite Lean contract fixes
+the `inherited → bootstrap32 → bootstrap64 → runtime → terminal` publication
+chain with per-phase tables, descriptor widths, stack assumptions, and
+terminal targets, and proves that every admitted bootstrap event latches an
+absorbing terminal record without touching business state, return authority,
+or the publication order. The image publishes a statically decoded 32-bit
+bootstrap IDT before any other boot work, hands off to the 64-bit bootstrap
+table in the instruction after long-mode activation, and keeps every early
+vector — including NMI — on reviewed non-returning terminal stubs until
+`privilege_init` publishes the runtime manifest over valid TSS/IST state. The
+trusted window narrows to the reviewed eleven-instruction pre-`lidt` prologue
+and that single-instruction handoff boundary; final-ELF policy decodes both
+bootstrap tables gate-by-gate, bounds each stub's terminal CFG, and
+inventories every `lidt`/`sidt`. Two mandatory QEMU probes exercise both
+sides of the handoff — a real pre-paging `ud2` latched by the bootstrap32
+catch-all with an exact `vector=6 reason=invalid-opcode` terminal record, and
+a monitor-injected NMI latched by the bootstrap64 vector-2 stub after an
+exact early-only readiness checkpoint, before the runtime IDT exists. Real
+descriptor semantics, delivery inside the residual window, and the final
+binary remain trusted/tested boundaries.
 
 The [fail-stop model](docs/fail-stop.md) adds an irreversible execution latch,
 bounded double-fault escalation, and one absorbing gate for every modeled

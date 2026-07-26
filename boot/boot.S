@@ -5,6 +5,60 @@
 .set PAGE_TABLE_COUNT, 8
 .set PAGE_ENTRY_COUNT, 512 * PAGE_TABLE_COUNT
 
+/* The four bootstrap terminal stubs live at fixed reviewed slots inside the
+   pinned .text.earlytrap section so both static IDT images below can name
+   them with assembly-time constants.  boot/linker.ld ASSERTs that each
+   linked stub address equals its constant. */
+.set LEANOS_EARLY_TRAP_BASE, 0x101000
+.set LEANOS_EARLY_ISR2_32, LEANOS_EARLY_TRAP_BASE + 0x000
+.set LEANOS_EARLY_CATCHALL_32, LEANOS_EARLY_TRAP_BASE + 0x080
+.set LEANOS_EARLY_ISR2_64, LEANOS_EARLY_TRAP_BASE + 0x100
+.set LEANOS_EARLY_CATCHALL_64, LEANOS_EARLY_TRAP_BASE + 0x180
+
+/* One legacy 8-byte DPL0 interrupt gate through the kernel 32-bit code
+   selector.  The target is an absolute reviewed constant, never a firmware
+   value. */
+.macro EARLY_GATE32 target
+    .word (\target) & 0xffff
+    .word 0x38
+    .byte 0
+    .byte 0x8e
+    .word ((\target) >> 16) & 0xffff
+.endm
+
+/* One long-mode 16-byte DPL0 interrupt gate through the kernel 64-bit code
+   selector.  IST is deliberately zero: no TSS exists in the bootstrap64
+   phase, so delivery stays on the live bounded boot stack. */
+.macro EARLY_GATE64 target
+    .word (\target) & 0xffff
+    .word 0x08
+    .byte 0
+    .byte 0x8e
+    .word ((\target) >> 16) & 0xffff
+    .long ((\target) >> 32) & 0xffffffff
+    .long 0
+.endm
+
+/* 32-bit serial record loop.  Every opcode is chosen to keep identical
+   instruction boundaries under a 64-bit decoder (no inc/dec short forms or
+   moffs accumulator forms), so final-ELF policy tools that disassemble the
+   whole image observe the same in/out sites this source declares. */
+.macro EARLY_SERIAL32 label, length
+    mov $\label, %esi
+    mov $\length, %ecx
+1:
+    mov $0x3fd, %dx
+2:  inb %dx, %al
+    test $0x20, %al
+    jz 2b
+    movb (%esi), %al
+    mov $0x3f8, %dx
+    outb %al, %dx
+    add $1, %esi
+    sub $1, %ecx
+    jnz 1b
+.endm
+
 .section .multiboot,"a",@progbits
 .align 8
 mb2_start:
@@ -23,10 +77,39 @@ mb2_end:
 .type multiboot_entry, @function
 multiboot_entry:
     cli
+    /* Establish only the descriptor and stack operands needed to publish the
+       first kernel-owned IDT: kernel GDT, kernel 32-bit code/data selectors,
+       and the bounded boot stack.  Everything up to the publication label
+       below runs on inherited firmware descriptor state and is the trusted
+       unavoidable window; no page-table, CR/MSR, port, or C work precedes
+       the first lidt. */
+    lgdt gdt64_pointer
+    ljmp $0x38, $1f
+1:
+    mov $0x40, %cx
+    mov %cx, %ds
+    mov %cx, %es
+    mov %cx, %ss
+    xor %ecx, %ecx
+    mov %cx, %fs
+    mov %cx, %gs
+    mov $boot_stack_top, %esp
+    lidt boot_idt32_pointer
+.global boot_idt32_published
+boot_idt32_published:
+#ifdef LEANOS_BOOTSTRAP32_UD_PROBE
+    /* Deterministic bootstrap32 #UD probe: this real ud2 is the first
+       instruction after the first kernel lidt and precedes every page-table,
+       CR, MSR, PCI, port, and generated-code operation, so vector 6 must be
+       delivered through boot_idt32 to the pinned catch-all terminal stub.
+       Nothing after this opcode is reachable in the probe image. */
+.global boot_bootstrap32_ud_probe
+boot_bootstrap32_ud_probe:
+    ud2
+#endif
     /* Preserve the Multiboot2 handoff before either register is reused. */
     mov %eax, multiboot_magic
     mov %ebx, multiboot_info
-    mov $boot_stack_top, %esp
 
     /* Identity-map 16 MiB with 4 KiB leaves; only the two explicit user
        ranges receive U/S at the leaf.  Upper levels permit traversal. */
@@ -167,6 +250,15 @@ multiboot_entry:
     movl $0, page_table_b+4(%eax)
 #endif
 
+    /* NMI has its own absent lower guard immediately below IST2. */
+    mov $__nmi_ist_guard_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    movl $0, page_table_a(%eax)
+    movl $0, page_table_a+4(%eax)
+    movl $0, page_table_b(%eax)
+    movl $0, page_table_b+4(%eax)
+
     /* The linker-owned page immediately below the ordinary CPL3 entry stack
        is absent in every live address space. */
     mov $__entry_stack_guard_start, %eax
@@ -238,7 +330,11 @@ normalize_extended_state_cr0:
     mov %cr0, %eax
     or $((1 << 31) | (1 << 16) | (1 << 3) | (1 << 2) | (1 << 1)), %eax
     mov %eax, %cr0
-    lgdt gdt64_pointer
+    /* Long mode is live at the preceding write.  Publishing the 16-byte-gate
+       bootstrap table is the immediately following instruction, so exactly
+       one instruction boundary separates activation from kernel long-mode
+       IDT ownership; the GDT was already kernel-owned in the prologue. */
+    lidt boot_idt64_pointer
     ljmp $0x08, $long_mode_entry
 
 .code64
@@ -252,6 +348,31 @@ long_mode_entry:
     mov %ax, %gs
     mov $boot_stack_top, %rsp
     xor %rbp, %rbp
+#ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
+    /* Early-only injection checkpoint: boot_idt64 and the bounded boot stack
+       are live, no TSS or IST exists, IF has stayed clear since the entry
+       cli, and the runtime lidt inside privilege_init stays unpublished
+       because the halt loop below never falls through to kernel_main.  The
+       host injects exactly one QMP NMI here; vector 2 must be delivered
+       through boot_idt64 to the pinned bootstrap64 terminal stub. */
+.global boot_bootstrap64_nmi_ready
+boot_bootstrap64_nmi_ready:
+    lea early64_ready_record(%rip), %rsi
+    mov $early64_ready_record_end-early64_ready_record, %ecx
+1:
+    mov $0x3fd, %dx
+2:  inb %dx, %al
+    test $0x20, %al
+    jz 2b
+    movb (%rsi), %al
+    mov $0x3f8, %dx
+    outb %al, %dx
+    inc %rsi
+    dec %ecx
+    jnz 1b
+4:  hlt
+    jmp 4b
+#endif
     mov multiboot_magic(%rip), %edi
     mov multiboot_info(%rip), %esi
     call kernel_main
@@ -279,6 +400,11 @@ gdt64:
     .quad 0x00affa000000ffff
     .quad 0
     .quad 0
+    /* Kernel 32-bit flat code/data (0x38/0x40) used only between the entry
+       cli and the long-mode switch, so the bootstrap32 gates and prologue
+       never depend on inherited firmware descriptors. */
+    .quad 0x00cf9a000000ffff
+    .quad 0x00cf92000000ffff
 gdt64_end:
 gdt64_pointer:
     .word gdt64_end - gdt64 - 1
@@ -334,6 +460,20 @@ df_ist_stack:
     .skip 16384
 .global df_ist_stack_top
 df_ist_stack_top:
+
+.section .nmi_ist.guard,"aw",@nobits
+.align 4096
+.global nmi_ist_guard
+nmi_ist_guard:
+    .skip 4096
+
+.section .nmi_ist.stack,"aw",@nobits
+.align 4096
+.global nmi_ist_stack
+nmi_ist_stack:
+    .skip 16384
+.global nmi_ist_stack_top
+nmi_ist_stack_top:
 
 .section .text,"ax",@progbits
 .global load_tss
@@ -549,11 +689,79 @@ run_double_fault_probe:
     jnz 1b
 .endm
 
+/* Vector 2 has no error-code word.  Hardware IST switching supplies the
+   complete RIP/CS/RFLAGS/RSP/SS snapshot even for a CPL0 interruption.  This
+   terminal stub has no C ABI, calls, pushes, recovery edge, or iretq. */
+.global isr2
+.global isr2_clac
+.global isr2_cld
+isr2:
+    cli
+isr2_clac:
+    clac
+isr2_cld:
+    cld
+    mov %rsp, %rbx
+    cmp $__nmi_ist_stack_start, %rbx
+    jb 8f
+    cmp $__nmi_ist_stack_end, %rbx
+    jae 8f
+    lea 40(%rbx), %rax
+    cmp $__nmi_ist_stack_end, %rax
+    jne 8f
+    movabs $0x4e4d493253544143, %rax
+    cmp %rax, __nmi_ist_stack_start(%rip)
+    jne 8f
+    movabs $0x4b5445524d494e41, %rax
+    cmp %rax, __nmi_ist_stack_end-128(%rip)
+    jne 8f
+#ifdef LEANOS_NMI_PROBE
+    movabs $0x4f5244494e415259, %rax
+    cmp %rax, __entry_stack_start(%rip)
+    jne 8f
+    movabs $0x535441434b43414e, %rax
+    cmp %rax, __entry_stack_end-128(%rip)
+    jne 8f
+    movabs $0x52554e54494d454e, %rax
+    cmp %rax, nmi_runtime_canary(%rip)
+    jne 8f
+#endif
+    cmpq $0x10, 32(%rbx)
+    jne 6f
+    cmpq $0x08, 8(%rbx)
+    jne 8f
+    cmpl $1, ordinary_entry_active(%rip)
+    jne 5f
+    DF_SERIAL nmi_kernel_handling_record, nmi_kernel_handling_record_end-nmi_kernel_handling_record
+    jmp 7f
+5:
+    DF_SERIAL nmi_kernel_running_record, nmi_kernel_running_record_end-nmi_kernel_running_record
+    jmp 7f
+6:
+    cmpq $0x1b, 32(%rbx)
+    jne 8f
+    cmpq $0x23, 8(%rbx)
+    jne 8f
+    DF_SERIAL nmi_user_running_record, nmi_user_running_record_end-nmi_user_running_record
+7:
+    mov $0x14, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+9:  hlt
+    jmp 9b
+8:
+    DF_SERIAL nmi_failure_record, nmi_failure_record_end-nmi_failure_record
+    mov $0x15, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+10: hlt
+    jmp 10b
+
 /* Reaching this present #GP gate means the ordinary-stack frame push worked.
    The guard-mapped negative image must take this path and must not claim #DF. */
 .global isr13
 isr13:
-#ifdef LEANOS_ENTRY_ADVERSARIAL
+#if defined(LEANOS_ENTRY_ADVERSARIAL) || defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
     clac
     cld
     /* This gate precedes the shared SAVE/NORMALIZE_ENTRY macro definitions.
@@ -573,6 +781,7 @@ isr13:
     mov 144(%rsp), %rdx
     mov 96(%rsp), %rcx
     mov 120(%rsp), %r8
+#ifdef LEANOS_ENTRY_ADVERSARIAL
     call entry_adversarial_gp_handler
     cmp $2, %rax
     je direct_port_restore_peer
@@ -611,6 +820,15 @@ direct_port_restore_peer:
     call complete_interrupt_entry
     mov $3, %esi
     jmp user_return_epilogue
+#else
+    /* Direct-port-containment family: subject A executed exactly one reviewed
+       raw CPL3 port instruction, so hardware delivered #GP(0).  The handler
+       types the state-preserving denial and the shared contained-user-fault
+       cleanup/dispatch, then the peer is restored through the same validated
+       return path as the page-fault containment scenario. */
+    call direct_port_containment_gp_handler
+    jmp contained_fault_restore_peer
+#endif
 #else
     cli
     clac
@@ -672,6 +890,18 @@ isr8_cld:
     jmp 5b
 
 .section .rodata,"a",@progbits
+nmi_kernel_handling_record:
+    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=handling subject=1 address-space=1 purpose=syscall canaries=ist2,ordinary,runtime terminal=latched return=none\n"
+nmi_kernel_handling_record_end:
+nmi_kernel_running_record:
+    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl0 prior=running subject=1 address-space=1 purpose=kernel canaries=ist2,ordinary,runtime terminal=latched return=none\n"
+nmi_kernel_running_record_end:
+nmi_user_running_record:
+    .ascii "LEANOS/17 NMI reason=non-maskable-interrupt vector=2 error=none ist=2 frame=rip,cs,rflags,rsp,ss origin=cpl3 prior=running subject=1 address-space=1 purpose=user-spin canaries=ist2,ordinary,runtime terminal=latched return=none\n"
+nmi_user_running_record_end:
+nmi_failure_record:
+    .ascii "LEANOS/17 NMI status=FAIL reason=terminal-frame-policy\n"
+nmi_failure_record_end:
 df_success_record:
     .ascii "LEANOS/8 TERMINAL reason=double-fault vector=8 error=0 ist=1 rsp=in-range canaries=intact normal-stack=unmapped return=none\n"
 df_success_record_end:
@@ -684,6 +914,186 @@ df_failure_record_end:
 df_guard_mapped_record:
     .ascii "LEANOS/8 NEGATIVE reason=guard-mapped vector=13 double-fault=absent status=FAIL\n"
 df_guard_mapped_record_end:
+
+/* Bootstrap terminal stubs.  Both bootstrap IDTs below route every vector to
+   one of these four reviewed sites.  Each stub emits one fixed early-only
+   record, requests a phase-typed debug exit, and halts.  No stub reads the
+   exception frame, pushes, calls, returns, or depends on runtime C state,
+   the Lean runtime, the ordinary entry stack, or the later IDT/TSS. */
+.section .text.earlytrap,"ax",@progbits
+.code32
+.global boot_early_isr2_32
+boot_early_isr2_32:
+    cli
+    cld
+    EARLY_SERIAL32 early32_nmi_record, early32_nmi_record_end-early32_nmi_record
+    mov $0x16, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+5:  hlt
+    jmp 5b
+.global boot_early_isr2_32_end
+boot_early_isr2_32_end:
+.org 0x80, 0x90
+.global boot_early_catchall_32
+boot_early_catchall_32:
+    cli
+    cld
+#ifdef LEANOS_BOOTSTRAP32_UD_PROBE
+    /* Probe-only frame attestation with decode-stable opcodes: a no-error
+       #UD from the reviewed ud2 site pushes exactly EIP/CS/EFLAGS onto the
+       live boot stack with EIP at the probe opcode, CS the kernel 32-bit
+       selector, and IF still clear.  Any other shape is a typed failure. */
+    cmp $(boot_stack_top - 12), %esp
+    jne 6f
+    cmpl $boot_bootstrap32_ud_probe, (%esp)
+    jne 6f
+    cmpl $0x38, 4(%esp)
+    jne 6f
+    testl $0x200, 8(%esp)
+    jnz 6f
+#endif
+    EARLY_SERIAL32 early32_fault_record, early32_fault_record_end-early32_fault_record
+    mov $0x16, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+5:  hlt
+    jmp 5b
+#ifdef LEANOS_BOOTSTRAP32_UD_PROBE
+6:
+    EARLY_SERIAL32 early32_probe_failure_record, early32_probe_failure_record_end-early32_probe_failure_record
+    mov $0x18, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+7:  hlt
+    jmp 7b
+#endif
+.global boot_early_catchall_32_end
+boot_early_catchall_32_end:
+.org 0x100, 0x90
+.code64
+.global boot_early_isr2_64
+boot_early_isr2_64:
+    cli
+    cld
+#ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
+    /* Probe-only frame attestation: an IST-0 vector-2 delivery from the
+       readiness halt loop pushes the five-word frame onto the live boot
+       stack with the kernel 64-bit selector and IF still clear.  Any other
+       shape is a typed failure. */
+    cmp $(boot_stack_top - 40), %rsp
+    jne 6f
+    cmpq $0x08, 8(%rsp)
+    jne 6f
+    testl $0x200, 16(%rsp)
+    jnz 6f
+#endif
+    DF_SERIAL early64_nmi_record, early64_nmi_record_end-early64_nmi_record
+    mov $0x17, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+5:  hlt
+    jmp 5b
+#ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
+6:
+    DF_SERIAL early64_probe_failure_record, early64_probe_failure_record_end-early64_probe_failure_record
+    mov $0x18, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+7:  hlt
+    jmp 7b
+#endif
+.global boot_early_isr2_64_end
+boot_early_isr2_64_end:
+.org 0x180, 0x90
+.global boot_early_catchall_64
+boot_early_catchall_64:
+    cli
+    cld
+    DF_SERIAL early64_fault_record, early64_fault_record_end-early64_fault_record
+    mov $0x17, %al
+    mov $0xf4, %dx
+    outb %al, %dx
+5:  hlt
+    jmp 5b
+.global boot_early_catchall_64_end
+boot_early_catchall_64_end:
+
+.section .rodata,"a",@progbits
+early32_nmi_record:
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=2 class=nmi stack=boot target=stub32 latch=terminal return=none\n"
+early32_nmi_record_end:
+early32_fault_record:
+#ifdef LEANOS_BOOTSTRAP32_UD_PROBE
+    /* The probe image narrows the catch-all record: its frame attestation
+       admits only the reviewed no-error #UD delivery, so the fixed record
+       may name vector 6 without reading any hardware state at runtime. */
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=6 reason=invalid-opcode error=none frame=eip,cs,eflags stack=boot target=stub32 latch=terminal return=none\n"
+#else
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=other class=exception stack=boot target=stub32 latch=terminal return=none\n"
+#endif
+early32_fault_record_end:
+#ifdef LEANOS_BOOTSTRAP32_UD_PROBE
+early32_probe_failure_record:
+    .ascii "LEANOS/18 EARLY-TERMINAL status=FAIL phase=bootstrap32 reason=probe-frame-policy\n"
+early32_probe_failure_record_end:
+#endif
+early64_nmi_record:
+#ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
+    /* The probe image narrows the vector-2 record: its frame attestation
+       admits only an IST-0 boot-stack delivery with IF clear, so the fixed
+       record may claim the full five-word masked-window shape. */
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=2 reason=non-maskable-interrupt error=none frame=rip,cs,rflags,rsp,ss stack=boot target=stub64 latch=terminal return=none\n"
+#else
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=2 class=nmi stack=boot target=stub64 latch=terminal return=none\n"
+#endif
+early64_nmi_record_end:
+#ifdef LEANOS_BOOTSTRAP64_NMI_PROBE
+early64_probe_failure_record:
+    .ascii "LEANOS/18 EARLY-TERMINAL status=FAIL phase=bootstrap64 reason=probe-frame-policy\n"
+early64_probe_failure_record_end:
+early64_ready_record:
+    .ascii "LEANOS/18 EARLY64-READY phase=bootstrap64 table=bootstrap64 width=long16 stack=boot if=0 tss=none runtime-idt=unpublished result=PASS\n"
+early64_ready_record_end:
+#endif
+early64_fault_record:
+    .ascii "LEANOS/18 EARLY-TERMINAL phase=bootstrap64 table=bootstrap64 width=long16 vector=other class=exception stack=boot target=stub64 latch=terminal return=none\n"
+early64_fault_record_end:
+
+/* Statically initialized bootstrap descriptor tables.  Vector 2 is owned in
+   both phases; every other vector routes to the phase catch-all.  The images
+   are data, so final-ELF policy decodes every gate byte-for-byte. */
+.section .rodata.earlyidt,"a",@progbits
+.align 16
+.global boot_idt32
+boot_idt32:
+    EARLY_GATE32 LEANOS_EARLY_CATCHALL_32
+    EARLY_GATE32 LEANOS_EARLY_CATCHALL_32
+    EARLY_GATE32 LEANOS_EARLY_ISR2_32
+    .rept 253
+    EARLY_GATE32 LEANOS_EARLY_CATCHALL_32
+    .endr
+.global boot_idt32_end
+boot_idt32_end:
+.global boot_idt32_pointer
+boot_idt32_pointer:
+    .word boot_idt32_end - boot_idt32 - 1
+    .long boot_idt32
+.align 16
+.global boot_idt64
+boot_idt64:
+    EARLY_GATE64 LEANOS_EARLY_CATCHALL_64
+    EARLY_GATE64 LEANOS_EARLY_CATCHALL_64
+    EARLY_GATE64 LEANOS_EARLY_ISR2_64
+    .rept 253
+    EARLY_GATE64 LEANOS_EARLY_CATCHALL_64
+    .endr
+.global boot_idt64_end
+boot_idt64_end:
+.global boot_idt64_pointer
+boot_idt64_pointer:
+    .word boot_idt64_end - boot_idt64 - 1
+    .long boot_idt64
 
 .section .text,"ax",@progbits
 
@@ -1048,11 +1458,117 @@ user_return_restore:
 user_return_iretq:
     iretq
 
+/* Integer divide-error (#DE, vector 0) and breakpoint (#BP, vector 3) share the
+   ordinary guarded entry stack, carry no hardware error code, clear AC/DF before
+   any C use, normalize through the shared manifest adapter, and call only the
+   generated typed dispatcher.  Placed after the return epilogue so they sit
+   outside the vector-2/vector-8 terminal-stub isolation ranges. */
+.global isr0
+isr0:
+    clac
+    cld
+    SAVE
+    NORMALIZE_ENTRY 0, 0, 144
+    mov 120(%rsp), %rdi
+    mov 128(%rsp), %rsi
+    call divide_error_handler
+    jmp integer_fault_restore_peer
+.global isr3
+isr3:
+    clac
+    cld
+    SAVE
+    NORMALIZE_ENTRY 3, 0, 144
+    mov 120(%rsp), %rdi
+    mov 128(%rsp), %rsi
+    call breakpoint_handler
+    jmp integer_fault_restore_peer
+/* Both contained integer faults retire subject A and install subject B's fresh
+   kernel-owned continuation, then return through the single validated epilogue.
+   The no-error frame is a full 20-word bank, so the peer context is copied in
+   place with no error-word adjustment. */
+.global integer_fault_restore_peer
+integer_fault_restore_peer:
+    lea initial_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
+    movq $page_map_level_4_b, %rax
+    mov %rax, %cr3
+    call complete_interrupt_entry
+    mov $3, %esi
+    jmp user_return_epilogue
+
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
+#ifdef LEANOS_NMI_PROBE
+1:  pause
+    jmp 1b
+#endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
     jmp user_a_fault_instruction
+#endif
+#ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    /* Subject A executes exactly one reviewed raw CPL3 port instruction with a
+       distinctive operand.  IOPL is 0 and the TSS I/O-map base is beyond the
+       descriptor limit, so hardware raises #GP(0) before the device operation
+       takes effect.  The exported label is the sole RIP the denial handler and
+       the final-ELF probe allowlist accept. */
+#if defined(LEANOS_DIRECT_PORT_PROBE_DEBUG)
+    mov $0xf4, %dx
+    mov $0x11, %al
+#elif defined(LEANOS_DIRECT_PORT_PROBE_IN)
+    mov $0x3fd, %dx
+#elif defined(LEANOS_DIRECT_PORT_PROBE_PIC)
+    /* Attempt to clear the master 8259 interrupt mask (unmask every IRQ) that
+       privilege_init programmed to 0xff.  If this write reached the device the
+       kernel-owned mask read-back canary in subject B would observe 0x00 and
+       fail-stop, independently of any serial claim. */
+    mov $0x21, %dx
+    mov $0x00, %al
+#else
+    mov $0x3f8, %dx
+    mov $0x41, %al
+#endif
+.global user_a_direct_port_probe
+user_a_direct_port_probe:
+#if defined(LEANOS_DIRECT_PORT_PROBE_IN)
+    inb %dx, %al
+#else
+    outb %al, %dx
+#endif
+    ud2
+#endif
+#ifdef LEANOS_INTEGER_FAULT_SCENARIO
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+#ifdef LEANOS_INTEGER_FAULT_PROBE_BP
+    jmp user_a_breakpoint_instruction
+#endif
+    /* Subject A executes a real integer divide with a checked zero divisor; the
+       processor delivers #DE (vector 0) and the saved RIP names the faulting
+       instruction boundary. */
+    xor %edx, %edx
+    mov $1, %eax
+    xor %ecx, %ecx
+.global user_a_divide_instruction
+user_a_divide_instruction:
+    div %ecx
+    ud2
+    /* Subject A executes the one-byte INT3 opcode from its own user text; the
+       processor delivers #BP (vector 3) and the saved RIP names the reviewed
+       post-instruction boundary. */
+.global user_a_breakpoint_instruction
+user_a_breakpoint_instruction:
+    int3
+.global user_a_breakpoint_after
+user_a_breakpoint_after:
+    ud2
 #endif
     mov $0x1b, %ax
     mov %ax, %ds
@@ -1186,6 +1702,36 @@ extended_state_probe_class:
     .quad 0
 #endif
 
+/* Direct-port-containment probe selector consumed by the shared kernel object.
+   0 = byte OUT to serial data (0x3f8), 1 = byte OUT to isa-debug-exit (0xf4),
+   2 = byte IN from serial line-status (0x3fd), 3 = byte OUT to the master PIC
+   data/mask register (0x21).  The raw CPL3 instruction itself is chosen at
+   assembly time in user_a_entry; this word only lets the single generated kernel
+   object select its untrusted diagnostics and, for the PIC probe, the
+   kernel-owned interrupt-mask read-back canary. */
+.global direct_port_probe_class
+direct_port_probe_class:
+#if defined(LEANOS_DIRECT_PORT_PROBE_DEBUG)
+    .quad 1
+#elif defined(LEANOS_DIRECT_PORT_PROBE_IN)
+    .quad 2
+#elif defined(LEANOS_DIRECT_PORT_PROBE_PIC)
+    .quad 3
+#else
+    .quad 0
+#endif
+
+/* Integer-fault probe selector consumed by the shared kernel object.
+   0 = real integer divide error (#DE, vector 0), 1 = real one-byte breakpoint
+   (#BP, vector 3). */
+.global integer_fault_probe_class
+integer_fault_probe_class:
+#ifdef LEANOS_INTEGER_FAULT_PROBE_BP
+    .quad 1
+#else
+    .quad 0
+#endif
+
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
@@ -1202,6 +1748,49 @@ user_b_entry:
     jne 2f
     mov $14, %rax
     movabs $0xb2b2cafe51a7e55e, %rbx
+    mov $0x030201, %rcx
+    mov $0x51a7, %rdx
+    int $0x80
+    ud2
+#endif
+#ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
+    /* The survivor enters only through the common validated return, carrying
+       its fresh kernel-owned register canaries.  Its kernel-visible operation
+       proves the denied peer never mutated a device and that B kept its
+       address space, stack, and resources. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    movabs $B_INITIAL_R12, %r11
+    cmp %r11, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %r11
+    cmp %r11, %r13
+    jne 2f
+    mov $16, %rax
+    movabs $0xb2b2d0d151a7e55e, %rbx
+    mov $0x030201, %rcx
+    mov $0x51a7, %rdx
+    int $0x80
+    ud2
+#endif
+#ifdef LEANOS_INTEGER_FAULT_SCENARIO
+    /* The survivor enters only through the common validated return, carrying
+       its fresh kernel-owned canaries, and completes a kernel-visible
+       operation proving A was retired and B kept its context/resources. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    movabs $B_INITIAL_R12, %r11
+    cmp %r11, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %r11
+    cmp %r11, %r13
+    jne 2f
+    mov $17, %rax
+    movabs $0xb2b2de3b51a7e55e, %rbx
     mov $0x030201, %rcx
     mov $0x51a7, %rdx
     int $0x80

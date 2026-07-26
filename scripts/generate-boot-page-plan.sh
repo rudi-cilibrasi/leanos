@@ -38,6 +38,8 @@ symbols=(
   __kernel_text_start __kernel_text_end
   __df_ist_guard_start __df_ist_guard_end
   __df_ist_stack_start __df_ist_stack_end
+  __nmi_ist_guard_start __nmi_ist_guard_end
+  __nmi_ist_stack_start __nmi_ist_stack_end
   __entry_stack_guard_start __entry_stack_guard_end
   __entry_stack_start __entry_stack_end
   page_map_level_4_a page_directory_pointer_a page_directory_a page_table_a

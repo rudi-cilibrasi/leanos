@@ -38,7 +38,7 @@ sed -i \
 
 case "$mode" in
   success) ;;
-  missing-manifest) sed -i '/^LEANOS\/12 ENTRY-MANIFEST/d' "$log" ;;
+  missing-manifest) sed -i '/^LEANOS\/17 ENTRY-MANIFEST/d' "$log" ;;
   missing-control) sed -i '/^LEANOS\/14 FAST-ENTRY cpu\./d' "$log" ;;
   wrong-vector) sed -i 's/event=deny subject=1 vector=6/event=deny subject=1 vector=13/' "$log" ;;
   wrong-error-shape) sed -i 's/vector=6 instruction=/vector=6 error=1 instruction=/' "$log" ;;

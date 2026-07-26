@@ -5,10 +5,12 @@ import LeanOS.ResumablePreemption
 # Atomic user-fault cleanup and survivor dispatch
 
 This is the first composition slice between the normalized inbound interrupt
-contract and the authoritative scheduler/context-bank state.  A valid user
-page fault terminates the kernel-selected current subject and selects the next
-context in one total transition. Kernel faults and every inbound `.fatal`
-result halt; stale authoritative bindings reject without exposing cleanup.
+contract and the authoritative scheduler/context-bank state.  A valid CPL3
+page fault, divide error, or breakpoint terminates the kernel-selected current
+subject and selects the next context in one total transition; the typed
+contained reason is carried in the outcome but never selects a cleanup or
+survivor variant. Kernel faults and every inbound `.fatal` result halt; stale
+authoritative bindings reject without exposing cleanup.
 -/
 namespace LeanOS.FaultDispatch
 
@@ -27,8 +29,9 @@ inductive FatalReason where
   deriving DecidableEq, Repr
 
 inductive Action where
-  | idle
-  | dispatch (context : ResumablePreemption.Context)
+  | idle (reason : InterruptEntry.ContainedReason)
+  | dispatch (reason : InterruptEntry.ContainedReason)
+      (context : ResumablePreemption.Context)
   | rejected (reason : RejectReason)
   | fatal (reason : FatalReason)
   deriving DecidableEq, Repr
@@ -43,15 +46,35 @@ def reject (state : ResumablePreemption.State) (reason : RejectReason) : Outcome
 def halt (state : ResumablePreemption.State) (reason : FatalReason) : Outcome :=
   { state := { state with halted := true }, action := .fatal reason }
 
-def validUserFault (frame : InterruptEntry.NormalizedFrame) : Bool :=
-  frame.vector = 14 && frame.purpose = .userFault && frame.origin = .user &&
-    frame.errorCode.isSome && frame.cs % 4 = 3 && frame.userRsp.isSome &&
-    frame.userSs.isSome
+/-- The per-class shape gate: the manifest-bound vector, the shared user-fault
+purpose, CPL3 origin, and the reviewed per-reason error convention. -/
+def validUserFaultFor (reason : InterruptEntry.ContainedReason)
+    (frame : InterruptEntry.NormalizedFrame) : Bool :=
+  frame.vector = reason.vector && frame.purpose = .userFault && frame.origin = .user &&
+    frame.errorCode.isSome = reason.hasErrorWord && frame.cs % 4 = 3 &&
+    frame.userRsp.isSome && frame.userSs.isSome
 
-/-- Atomically consume one normalized page fault.  Destination identity comes
-only from `Scheduler.selectNext`; the selected kernel-owned context is consumed
-from the existing resumable bank and its address space is installed through
-the existing TLB transition. -/
+/-- The generalized containment gate over every reviewed contained class. -/
+def validUserFault (frame : InterruptEntry.NormalizedFrame) : Bool :=
+  match InterruptEntry.containedReason? frame.vector with
+  | some reason => validUserFaultFor reason frame
+  | none => false
+
+/-- The generalized gate is exactly the per-class gate under the
+manifest-bound reason decode; `dispatch` evaluates the right-hand side. -/
+theorem validUserFault_iff frame :
+    validUserFault frame = true ↔
+      ∃ reason, InterruptEntry.containedReason? frame.vector = some reason ∧
+        validUserFaultFor reason frame = true := by
+  unfold validUserFault
+  split <;> simp_all
+
+/-- Atomically consume one normalized contained user fault (page fault, divide
+error, or breakpoint).  Destination identity comes only from
+`Scheduler.selectNext`; the selected kernel-owned context is consumed from the
+existing resumable bank and its address space is installed through the
+existing TLB transition.  The typed reason is decoded from the manifest-bound
+vector alone and never chooses a different cleanup or survivor rule. -/
 def dispatch (state : ResumablePreemption.State)
     (entry : InterruptEntry.Result) : Outcome :=
   if state.halted then halt state .alreadyHalted
@@ -59,7 +82,10 @@ def dispatch (state : ResumablePreemption.State)
   | .fatal reason => halt state (.entry reason)
   | .accepted frame =>
       if frame.origin = .kernel then halt state .kernelOrigin
-      else if !validUserFault frame then reject state .wrongPurpose
+      else match InterruptEntry.containedReason? frame.vector with
+      | none => reject state .wrongPurpose
+      | some reason =>
+      if !validUserFaultFor reason frame then reject state .wrongPurpose
       else match state.scheduler.lifecycle.current with
       | none => reject state .staleCurrent
       | some current =>
@@ -78,7 +104,7 @@ def dispatch (state : ResumablePreemption.State)
             match selected.result with
             | .rejected reason => reject state (.scheduler reason)
             | .accepted none =>
-                { state := { cleaned with scheduler := selected.state }, action := .idle }
+                { state := { cleaned with scheduler := selected.state }, action := .idle reason }
             | .accepted (some trusted) =>
                 match ResumablePreemption.contextFor cleaned.contexts
                     trusted.currentSubject with
@@ -101,7 +127,7 @@ def dispatch (state : ResumablePreemption.State)
                           scheduler := selected.state
                           contexts := ResumablePreemption.eraseContext cleaned.contexts context.owner
                           translations := TLB.switch cleaned.translations context.addressSpace }
-                        action := .dispatch context }
+                        action := .dispatch reason context }
 
 /-- Explicit attacker data is not consulted by fault cleanup or survivor
 selection. -/
@@ -130,6 +156,7 @@ theorem rejected_unchanged state entry reason
   simp only [dispatch] at h ⊢
   split <;> simp_all [halt, reject]
   split <;> simp_all [halt, reject]
+  all_goals split <;> simp_all [halt, reject]
   all_goals split <;> simp_all [halt, reject]
   all_goals split <;> simp_all [halt, reject]
   all_goals split <;> simp_all [halt, reject]
@@ -175,8 +202,8 @@ theorem already_halted_absorbing state entry (hhalted : state.halted = true) :
 
 /-- A dispatched context is exactly the deterministic scheduler selection and
 is live, runnable, and address-space-owned in the post-state. -/
-theorem dispatched_context_safe state entry context
-    (h : (dispatch state entry).action = .dispatch context) :
+theorem dispatched_context_safe state entry reason context
+    (h : (dispatch state entry).action = .dispatch reason context) :
     let next := (dispatch state entry).state
     next.scheduler.lifecycle.capabilities.subjects context.owner = true ∧
       next.scheduler.lifecycle.runnable context.owner = true ∧
@@ -198,7 +225,8 @@ theorem dispatched_context_safe state entry context
     all_goals split at hd <;> try simp_all [halt, reject]
     all_goals split at hd <;> try simp_all [halt, reject]
     all_goals split at hd <;> try simp_all [halt, reject]
-    all_goals rcases hd with ⟨rfl, rfl⟩
+    all_goals split at hd <;> try simp_all [halt, reject]
+    all_goals rcases hd with ⟨rfl, rfl, rfl⟩
     all_goals simp_all [TLB.switch]
     all_goals grind
 
@@ -215,8 +243,8 @@ theorem cleanup_nonresumption state subject :
 /-- A survivor-dispatch outcome carries the cleanup boundary into the returned
 state: the faulting subject is dead, absent from the ready queue and current
 slot, and has no resumable context. -/
-theorem dispatched_nonresumption state entry context
-    (hdispatch : (dispatch state entry).action = .dispatch context) :
+theorem dispatched_nonresumption state entry reason context
+    (hdispatch : (dispatch state entry).action = .dispatch reason context) :
     ∃ faulting,
       state.scheduler.lifecycle.current = some faulting ∧
         (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
@@ -241,7 +269,8 @@ theorem dispatched_nonresumption state entry context
     all_goals split at hd <;> try simp_all [halt, reject]
     all_goals split at hd <;> try simp_all [halt, reject]
     all_goals split at hd <;> try simp_all [halt, reject]
-    all_goals rcases hd with ⟨rfl, rfl⟩
+    all_goals split at hd <;> try simp_all [halt, reject]
+    all_goals rcases hd with ⟨rfl, rfl, rfl⟩
     all_goals
       let faulting := state.scheduler.lifecycle.current.getD 0
       have hdead := ResumablePreemption.cleanup_terminates_subject state faulting
@@ -268,6 +297,7 @@ theorem dispatch_preserves_scheduler_and_tlb state entry
   have hparts := hstate
   rcases hparts with ⟨hscheduler, _, _, _, _, _, _, _, _, htlb⟩
   simp only [dispatch]
+  all_goals (try split) <;> try simp_all [halt, reject]
   all_goals (try split) <;> try simp_all [halt, reject]
   all_goals (try split) <;> try simp_all [halt, reject]
   all_goals (try split) <;> try simp_all [halt, reject]
@@ -398,6 +428,7 @@ private theorem fatal_state_eq_halt state entry reason
   all_goals split <;> try simp_all [halt, reject]
   all_goals split <;> try simp_all [halt, reject]
   all_goals split <;> try simp_all [halt, reject]
+  all_goals split <;> try simp_all [halt, reject]
   all_goals split <;> simp_all [halt, reject]
 
 /-- Every fatal composite result changes only the irreversible latch.  In
@@ -411,8 +442,8 @@ theorem fatal_atomicity state entry reason
   rw [fatal_state_eq_halt state entry reason h]
   exact halt_preserves_authoritative_stores state reason
 
-private theorem dispatched_is_authoritative_transition state entry context
-    (h : (dispatch state entry).action = .dispatch context) :
+private theorem dispatched_is_authoritative_transition state entry reason context
+    (h : (dispatch state entry).action = .dispatch reason context) :
     ∃ faulting trusted,
       state.scheduler.lifecycle.current = some faulting ∧
       (Scheduler.selectNext
@@ -441,12 +472,13 @@ private theorem dispatched_is_authoritative_transition state entry context
   all_goals split at h <;> try simp_all [halt, reject]
   all_goals split at h <;> try simp_all [halt, reject]
   all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
   all_goals rcases h with ⟨rfl⟩
   all_goals grind
 
 /-- A successful dispatch consumes exactly the post-cleanup FIFO head. -/
-theorem dispatch_uses_survivor_head state entry context
-    (h : (dispatch state entry).action = .dispatch context) :
+theorem dispatch_uses_survivor_head state entry reason context
+    (h : (dispatch state entry).action = .dispatch reason context) :
     ∃ faulting rest,
       (ResumablePreemption.cleanupSubject state faulting).scheduler.ready =
         context.owner :: rest := by
@@ -461,14 +493,15 @@ theorem dispatch_uses_survivor_head state entry context
   all_goals split at h <;> try simp_all [halt, reject]
   all_goals split at h <;> try simp_all [halt, reject]
   all_goals split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
   all_goals grind [Scheduler.selectNext, Scheduler.ownsAddressSpace, Scheduler.reject]
 
 /-- Dispatch consumes the selected survivor's context but leaves every third
 subject's suspended context byte-for-byte unchanged.  The two inequalities
 name the only context-bank slots removed by the composite transition: the
 faulting current subject and the scheduler-selected survivor. -/
-theorem dispatch_preserves_unselected_context state entry selected faulting other saved
-    (hdispatch : (dispatch state entry).action = .dispatch selected)
+theorem dispatch_preserves_unselected_context state entry reason selected faulting other saved
+    (hdispatch : (dispatch state entry).action = .dispatch reason selected)
     (hcurrent : state.scheduler.lifecycle.current = some faulting)
     (hsaved : ResumablePreemption.contextFor state.contexts other = some saved)
     (hotherFaulting : other ≠ faulting)
@@ -476,7 +509,7 @@ theorem dispatch_preserves_unselected_context state entry selected faulting othe
     ResumablePreemption.contextFor
       (dispatch state entry).state.contexts other = some saved := by
   obtain ⟨actualFaulting, trusted, hactualCurrent, _, hselected, hstate⟩ :=
-    dispatched_is_authoritative_transition state entry selected hdispatch
+    dispatched_is_authoritative_transition state entry reason selected hdispatch
   have hfaulting : actualFaulting = faulting := by grind
   subst actualFaulting
   rw [hstate]
@@ -491,9 +524,9 @@ theorem dispatch_preserves_unselected_context state entry selected faulting othe
 subject unchanged.  These hypotheses cover the ownership branches that may be
 removed by `SubjectLifecycle.terminateState`; selection itself changes only
 the current subject and ready queue. -/
-theorem dispatch_preserves_unrelated_resources state entry selected faulting owner
+theorem dispatch_preserves_unrelated_resources state entry reason selected faulting owner
     memoryObject frame addressSpace page endpoint
-    (hdispatch : (dispatch state entry).action = .dispatch selected)
+    (hdispatch : (dispatch state entry).action = .dispatch reason selected)
     (hcurrent : state.scheduler.lifecycle.current = some faulting)
     (hmemory : state.scheduler.lifecycle.ownedMemory memoryObject = some (owner, frame))
     (haddress : state.scheduler.lifecycle.addressOwner addressSpace = some owner)
@@ -507,7 +540,7 @@ theorem dispatch_preserves_unrelated_resources state entry selected faulting own
       next.endpointOwner endpoint = some owner ∧
       next.frameOwner frame = some owner := by
   obtain ⟨actualFaulting, trusted, hactualCurrent, hselected, hcontext, hstate⟩ :=
-    dispatched_is_authoritative_transition state entry selected hdispatch
+    dispatched_is_authoritative_transition state entry reason selected hdispatch
   have hfaulting : actualFaulting = faulting := by grind
   subst actualFaulting
   rw [hstate]
@@ -522,8 +555,8 @@ private theorem selectNext_none_eq scheduler
     Scheduler.selectNext scheduler = { state := scheduler, result := .accepted none } := by
   grind [Scheduler.selectNext, Scheduler.reject]
 
-theorem idle_is_clean_empty state entry
-    (h : (dispatch state entry).action = .idle) :
+theorem idle_is_clean_empty state entry reason
+    (h : (dispatch state entry).action = .idle reason) :
     ∃ faulting,
       state.scheduler.lifecycle.current = some faulting ∧
       (dispatch state entry).state = ResumablePreemption.cleanupSubject state faulting ∧
@@ -532,6 +565,7 @@ theorem idle_is_clean_empty state entry
   simp only [dispatch] at h ⊢
   split at h <;> try simp_all [halt, reject]
   split at h <;> try simp_all [halt, reject]
+  all_goals split at h <;> try simp_all [halt, reject]
   all_goals split at h <;> try simp_all [halt, reject]
   all_goals split at h <;> try simp_all [halt, reject]
   all_goals split at h <;> try simp_all [halt, reject]
@@ -547,8 +581,8 @@ theorem idle_is_clean_empty state entry
 
 /-- The idle success branch has the same non-resumption boundary as survivor
 dispatch; an empty queue never turns the terminated subject into a fallback. -/
-theorem idle_nonresumption state entry
-    (hidle : (dispatch state entry).action = .idle) :
+theorem idle_nonresumption state entry reason
+    (hidle : (dispatch state entry).action = .idle reason) :
     ∃ faulting,
       state.scheduler.lifecycle.current = some faulting ∧
         (dispatch state entry).state.scheduler.lifecycle.capabilities.subjects
@@ -557,7 +591,7 @@ theorem idle_nonresumption state entry
         (dispatch state entry).state.scheduler.lifecycle.current ≠ some faulting ∧
         ResumablePreemption.contextFor
           (dispatch state entry).state.contexts faulting = none := by
-  rcases idle_is_clean_empty state entry hidle with
+  rcases idle_is_clean_empty state entry reason hidle with
     ⟨faulting, hcurrent, hstate, _, _⟩
   rw [hstate]
   exact ⟨faulting, hcurrent,
@@ -570,8 +604,8 @@ theorem idle_nonresumption state entry
 being live and runnable.  Exposing these facts keeps the stable termination
 claim non-vacuous even if the entry gate is later refactored. -/
 theorem successful_faulting_live_runnable state entry
-    (hsuccess : (dispatch state entry).action = .idle ∨
-      ∃ context, (dispatch state entry).action = .dispatch context) :
+    (hsuccess : (∃ reason, (dispatch state entry).action = .idle reason) ∨
+      ∃ reason context, (dispatch state entry).action = .dispatch reason context) :
     ∃ faulting,
       state.scheduler.lifecycle.current = some faulting ∧
         state.scheduler.lifecycle.capabilities.subjects faulting = true ∧
@@ -579,6 +613,7 @@ theorem successful_faulting_live_runnable state entry
   simp only [dispatch] at hsuccess ⊢
   split at hsuccess <;> try simp_all [halt, reject]
   split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
   all_goals split at hsuccess <;> try simp_all [halt, reject]
   all_goals split at hsuccess <;> try simp_all [halt, reject]
   all_goals split at hsuccess <;> try simp_all [halt, reject]
@@ -593,8 +628,8 @@ theorem successful_faulting_live_runnable state entry
 cleanup boundary. Every address space owned by the faulting subject in the
 pre-state loses its owner and every mapping in that space. -/
 theorem successful_cleanup_complete state entry
-    (hsuccess : (dispatch state entry).action = .idle ∨
-      ∃ context, (dispatch state entry).action = .dispatch context) :
+    (hsuccess : (∃ reason, (dispatch state entry).action = .idle reason) ∨
+      ∃ reason context, (dispatch state entry).action = .dispatch reason context) :
     ∃ faulting,
       state.scheduler.lifecycle.current = some faulting ∧
         (dispatch state entry).state.scheduler.lifecycle.runnable faulting = false ∧
@@ -604,8 +639,8 @@ theorem successful_cleanup_complete state entry
             ∀ page,
               (dispatch state entry).state.translations.virtual.mappings
                 addressSpace page = none := by
-  rcases hsuccess with hidle | ⟨context, hdispatch⟩
-  · rcases idle_is_clean_empty state entry hidle with
+  rcases hsuccess with ⟨reason, hidle⟩ | ⟨reason, context, hdispatch⟩
+  · rcases idle_is_clean_empty state entry reason hidle with
       ⟨faulting, hcurrent, hstate, _, _⟩
     refine ⟨faulting, hcurrent, ?_, ?_⟩
     · rw [hstate]
@@ -617,7 +652,7 @@ theorem successful_cleanup_complete state entry
         fun page => ResumablePreemption.cleanup_removes_owned_space_mappings
           state faulting addressSpace page howner⟩
   · obtain ⟨faulting, trusted, hcurrent, hselected, _, hstate⟩ :=
-      dispatched_is_authoritative_transition state entry context hdispatch
+      dispatched_is_authoritative_transition state entry reason context hdispatch
     let cleaned := ResumablePreemption.cleanupSubject state faulting
     have hrunnable :
         (Scheduler.selectNext cleaned.scheduler).state.lifecycle.runnable =
@@ -652,8 +687,8 @@ runnable subject that faulted, regardless of whether the deterministic
 scheduler finds a survivor. It also exposes removal of the runnable bit and
 every pre-fault-owned address space and mapping. -/
 theorem successful_nonresumption state entry
-    (hsuccess : (dispatch state entry).action = .idle ∨
-      ∃ context, (dispatch state entry).action = .dispatch context) :
+    (hsuccess : (∃ reason, (dispatch state entry).action = .idle reason) ∨
+      ∃ reason context, (dispatch state entry).action = .dispatch reason context) :
     ∃ faulting,
       state.scheduler.lifecycle.current = some faulting ∧
         state.scheduler.lifecycle.capabilities.subjects faulting = true ∧
@@ -675,8 +710,8 @@ theorem successful_nonresumption state entry
     ⟨liveFaulting, hliveCurrent, hlive, hrunnable⟩
   rcases successful_cleanup_complete state entry hsuccess with
     ⟨cleanedFaulting, hcleanedCurrent, hnotRunnable, hspaces⟩
-  rcases hsuccess with hidle | ⟨context, hdispatch⟩
-  · rcases idle_nonresumption state entry hidle with
+  rcases hsuccess with ⟨reason, hidle⟩ | ⟨reason, context, hdispatch⟩
+  · rcases idle_nonresumption state entry reason hidle with
       ⟨faulting, hfaulting, hdead, habsent, hcurrent, hcontext⟩
     have : liveFaulting = faulting := by simp_all
     subst liveFaulting
@@ -684,7 +719,7 @@ theorem successful_nonresumption state entry
     subst cleanedFaulting
     exact ⟨faulting, hfaulting, hlive, hrunnable, hdead, hnotRunnable,
       habsent, hcurrent, hcontext, hspaces⟩
-  · rcases dispatched_nonresumption state entry context hdispatch with
+  · rcases dispatched_nonresumption state entry reason context hdispatch with
       ⟨faulting, hfaulting, hdead, habsent, hcurrent, hcontext⟩
     have : liveFaulting = faulting := by simp_all
     subst liveFaulting
@@ -692,6 +727,95 @@ theorem successful_nonresumption state entry
     subst cleanedFaulting
     exact ⟨faulting, hfaulting, hlive, hrunnable, hdead, hnotRunnable,
       habsent, hcurrent, hcontext, hspaces⟩
+
+/-- Reason/vector agreement at the composite boundary: a successful action's
+typed reason is exactly the manifest-bound decode of the accepted frame's
+vector with the reviewed per-class error convention, so no untrusted word can
+relabel one contained class as another. -/
+theorem success_reason_vector_binding state frame reason
+    (hsuccess : (dispatch state (.accepted frame)).action = .idle reason ∨
+      ∃ context, (dispatch state (.accepted frame)).action = .dispatch reason context) :
+    InterruptEntry.containedReason? frame.vector = some reason ∧
+      frame.vector = reason.vector ∧
+      frame.purpose = .userFault ∧
+      frame.origin = .user ∧
+      frame.errorCode.isSome = reason.hasErrorWord ∧
+      frame.cs % 4 = 3 := by
+  simp only [dispatch] at hsuccess
+  split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals (try split at hsuccess) <;> try simp_all [halt, reject]
+  all_goals (try split at hsuccess) <;> try simp_all [halt, reject]
+  all_goals (try split at hsuccess) <;> try simp_all [halt, reject]
+  all_goals grind [validUserFaultFor]
+
+/-- Reason-independent cleanup: any two successful composite results from the
+same authoritative pre-state publish exactly the same post-state.  The typed
+reason names the contained class in the outcome but never selects a cleanup,
+survivor, or address-space variant, so issue-#104 composition can treat the
+three contained classes as one transition. -/
+theorem success_state_reason_independent state first second
+    (hfirst : (∃ reason, (dispatch state first).action = .idle reason) ∨
+      ∃ reason context, (dispatch state first).action = .dispatch reason context)
+    (hsecond : (∃ reason, (dispatch state second).action = .idle reason) ∨
+      ∃ reason context, (dispatch state second).action = .dispatch reason context) :
+    (dispatch state first).state = (dispatch state second).state := by
+  rcases hfirst with ⟨reasonFirst, hfirstIdle⟩ | ⟨reasonFirst, contextFirst, hfirstDispatch⟩ <;>
+    rcases hsecond with ⟨reasonSecond, hsecondIdle⟩ |
+      ⟨reasonSecond, contextSecond, hsecondDispatch⟩
+  · obtain ⟨faultingFirst, hcurrentFirst, hstateFirst, _, _⟩ :=
+      idle_is_clean_empty state first reasonFirst hfirstIdle
+    obtain ⟨faultingSecond, hcurrentSecond, hstateSecond, _, _⟩ :=
+      idle_is_clean_empty state second reasonSecond hsecondIdle
+    have : faultingFirst = faultingSecond := by grind
+    subst this
+    rw [hstateFirst, hstateSecond]
+  · obtain ⟨faultingFirst, hcurrentFirst, hstateFirst, hreadyFirst, _⟩ :=
+      idle_is_clean_empty state first reasonFirst hfirstIdle
+    obtain ⟨faultingSecond, trusted, hcurrentSecond, hselected, _, _⟩ :=
+      dispatched_is_authoritative_transition state second reasonSecond contextSecond
+        hsecondDispatch
+    have : faultingFirst = faultingSecond := by grind
+    subst this
+    rw [hstateFirst] at hreadyFirst
+    exact absurd hselected (by grind [Scheduler.selectNext, Scheduler.reject])
+  · obtain ⟨faultingSecond, hcurrentSecond, hstateSecond, hreadySecond, _⟩ :=
+      idle_is_clean_empty state second reasonSecond hsecondIdle
+    obtain ⟨faultingFirst, trusted, hcurrentFirst, hselected, _, _⟩ :=
+      dispatched_is_authoritative_transition state first reasonFirst contextFirst
+        hfirstDispatch
+    have : faultingSecond = faultingFirst := by grind
+    subst this
+    rw [hstateSecond] at hreadySecond
+    exact absurd hselected (by grind [Scheduler.selectNext, Scheduler.reject])
+  · obtain ⟨faultingFirst, trustedFirst, hcurrentFirst, hselectedFirst,
+      hcontextFirst, hstateFirst⟩ :=
+      dispatched_is_authoritative_transition state first reasonFirst contextFirst
+        hfirstDispatch
+    obtain ⟨faultingSecond, trustedSecond, hcurrentSecond, hselectedSecond,
+      hcontextSecond, hstateSecond⟩ :=
+      dispatched_is_authoritative_transition state second reasonSecond contextSecond
+        hsecondDispatch
+    have hfaulting : faultingFirst = faultingSecond := by grind
+    subst hfaulting
+    have htrusted : trustedFirst = trustedSecond := by grind
+    subst htrusted
+    have hcontext : contextFirst = contextSecond := by grind
+    subst hcontext
+    rw [hstateFirst, hstateSecond]
+
+/-- Attacker payload words cannot select or relabel the typed contained
+reason: the observable action is a function of the kernel-owned state and the
+normalized entry alone. -/
+theorem attacker_payload_cannot_relabel {Payload : Type} state entry
+    (left right : Payload) :
+    (dispatchWithPayload state entry left).action =
+      (dispatchWithPayload state entry right).action := by
+  rfl
 
 /-! Executable regressions for the invariant boundary closed by this slice:
 one queued survivor becomes the sole current subject, while no survivor yields
@@ -805,7 +929,7 @@ private def traceEntry : InterruptEntry.Result :=
     stackIdentity := 1 }
 
 example : (dispatch (traceState true) traceEntry).action =
-    .dispatch traceSurvivorContext := by native_decide
+    .dispatch .pageFault traceSurvivorContext := by native_decide
 
 /-- The selected peer fixture owns resources in every lifecycle cleanup class,
 and dispatch preserves them independently of its complete saved context. -/
@@ -834,7 +958,7 @@ example :
         (dispatch (traceState true) traceEntry).state.contexts 1 = none := by
   native_decide
 
-example : (dispatch (traceState false) traceEntry).action = .idle ∧
+example : (dispatch (traceState false) traceEntry).action = .idle .pageFault ∧
     (dispatch (traceState false) traceEntry).state.scheduler.lifecycle.current = none ∧
     (dispatch (traceState false) traceEntry).state.scheduler.ready = [] ∧
     ResumablePreemption.contextFor
@@ -935,6 +1059,7 @@ private def traceRawUserFault : InterruptEntry.RawEntry :=
   { boundVector := 14
     boundStub := 14
     errorCode := some 0
+    restartClass := .faultingInstruction
     frame := .privilegeChange 0x400100 0x23 0x202 0x500ff8 0x1b
     frameBytes := 40
     frameAddress := 0x800000
@@ -951,6 +1076,58 @@ private def traceRawKernelFault : InterruptEntry.RawEntry :=
 
 private def traceUnsupportedEntry : InterruptEntry.RawEntry :=
   { traceRawKernelFault with boundVector := 15, boundStub := 15, errorCode := none }
+
+/-- Raw CPL3 divide-error snapshot: vector 0, no architectural error word, and
+faulting-instruction saved-RIP evidence. -/
+private def traceRawDivideError : InterruptEntry.RawEntry :=
+  { traceRawUserFault with boundVector := 0, boundStub := 0, errorCode := none }
+
+/-- Raw CPL3 breakpoint snapshot: vector 3, no error word, and
+following-boundary saved-RIP evidence for the `int3` trap class. -/
+private def traceRawBreakpoint : InterruptEntry.RawEntry :=
+  { traceRawUserFault with
+    boundVector := 3
+    boundStub := 3
+    errorCode := none
+    restartClass := .followingBoundary }
+
+/-- Kernel-origin (same-privilege) divide error: the user-only origin policy
+makes this a terminal normalizer rejection, never containment. -/
+private def traceRawKernelDivideError : InterruptEntry.RawEntry :=
+  { traceRawDivideError with
+    frame := .samePrivilege 0x100000 0x08 0x202
+    frameBytes := 24 }
+
+private def traceRawKernelBreakpoint : InterruptEntry.RawEntry :=
+  { traceRawBreakpoint with
+    frame := .samePrivilege 0x100000 0x08 0x202
+    frameBytes := 24 }
+
+/-- Spurious synthesized error word on a #BP entry. -/
+private def traceRawBreakpointSpuriousError : InterruptEntry.RawEntry :=
+  { traceRawBreakpoint with errorCode := some 0 }
+
+/-- Wrong restart-class evidence: a #BP snapshot claiming the saved RIP names
+the faulting instruction contradicts the reviewed AMD64 trap table. -/
+private def traceRawBreakpointWrongRestart : InterruptEntry.RawEntry :=
+  { traceRawBreakpoint with restartClass := .faultingInstruction }
+
+private def traceDivideEntry : InterruptEntry.Result :=
+  match traceEntry with
+  | .accepted frame => .accepted { frame with vector := 0, errorCode := none }
+  | other => other
+
+private def traceBreakpointEntry : InterruptEntry.Result :=
+  match traceEntry with
+  | .accepted frame => .accepted { frame with vector := 3, errorCode := none }
+  | other => other
+
+/-- Swapped reason/vector shape: a divide-error vector carrying a page-fault
+error word must stay a typed rejection. -/
+private def traceSwappedDivideShape : InterruptEntry.Result :=
+  match traceEntry with
+  | .accepted frame => .accepted { frame with vector := 0 }
+  | other => other
 
 private def traceNestedContext : InterruptEntry.KernelContext :=
   { traceKernelContext with entryActive := true }
@@ -976,8 +1153,115 @@ private def traceStaleSurvivorVirtualOwner : ResumablePreemption.State :=
           if addressSpace = 2 then some 3
           else traceMultiState.translations.virtual.owner addressSpace } } }
 
-example : (dispatch traceMultiState traceEntry).action = .dispatch traceSurvivorContext := by
+example : (dispatch traceMultiState traceEntry).action =
+    .dispatch .pageFault traceSurvivorContext := by
   native_decide
+
+/-! The two new contained classes reuse the identical cleanup and survivor
+path: same survivor context, same post-cleanup state, distinct typed reason.
+Kernel-origin, spurious-error, wrong-restart, swapped-shape, and stale-binding
+forms stay fatal or state-preserving rejections. -/
+
+example : (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawDivideError traceKernelContext)).action =
+    .dispatch .divideError traceSurvivorContext := by
+  native_decide
+
+example : (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawBreakpoint traceKernelContext)).action =
+    .dispatch .breakpoint traceSurvivorContext := by
+  native_decide
+
+/-- Reason-independent cleanup, executably: the divide-error class publishes
+exactly the page-fault post-state over the multi-survivor fixture. -/
+example :
+    (dispatch traceMultiState
+        (InterruptEntry.normalize traceRawDivideError traceKernelContext)).state =
+      (dispatch traceMultiState traceEntry).state :=
+  success_state_reason_independent traceMultiState _ _
+    (Or.inr ⟨.divideError, traceSurvivorContext, by native_decide⟩)
+    (Or.inr ⟨.pageFault, traceSurvivorContext, by native_decide⟩)
+
+/-- The breakpoint class also publishes exactly the page-fault post-state. -/
+example :
+    (dispatch traceMultiState
+        (InterruptEntry.normalize traceRawBreakpoint traceKernelContext)).state =
+      (dispatch traceMultiState traceEntry).state :=
+  success_state_reason_independent traceMultiState _ _
+    (Or.inr ⟨.breakpoint, traceSurvivorContext, by native_decide⟩)
+    (Or.inr ⟨.pageFault, traceSurvivorContext, by native_decide⟩)
+
+/-- No-survivor #DE and #BP entries produce the typed idle result and retire
+the faulting subject's resumable slot, exactly like the page-fault path. -/
+example :
+    (dispatch (traceState false) traceDivideEntry).action = .idle .divideError ∧
+      (dispatch (traceState false) traceBreakpointEntry).action = .idle .breakpoint ∧
+      ResumablePreemption.contextFor
+        (dispatch (traceState false) traceDivideEntry).state.contexts 1 = none ∧
+      (dispatch (traceState false) traceDivideEntry).state.scheduler.lifecycle.current =
+        none := by
+  native_decide
+
+/-- The idle #DE cleanup equals the idle page-fault cleanup byte for byte. -/
+example :
+    (dispatch (traceState false) traceDivideEntry).state =
+      (dispatch (traceState false) traceEntry).state :=
+  success_state_reason_independent (traceState false) _ _
+    (Or.inl ⟨.divideError, by native_decide⟩)
+    (Or.inl ⟨.pageFault, by native_decide⟩)
+
+/-- Kernel-origin #DE/#BP are absorbed by the terminal wrong-origin latch and
+preserve authoritative stores; they are never relabeled as containment. -/
+example :
+    InterruptEntry.normalize traceRawKernelDivideError traceKernelContext =
+        .fatal .wrongOrigin ∧
+      InterruptEntry.normalize traceRawKernelBreakpoint traceKernelContext =
+        .fatal .wrongOrigin ∧
+      (dispatch traceMultiState
+        (InterruptEntry.normalize traceRawKernelDivideError traceKernelContext)).action =
+        .fatal (.entry .wrongOrigin) ∧
+      (dispatch traceMultiState
+        (InterruptEntry.normalize traceRawKernelDivideError traceKernelContext)).state.halted =
+        true := by
+  native_decide
+
+/-- The kernel-origin #DE latch preserves the complete scheduler store. -/
+example :
+    (dispatch traceMultiState
+      (InterruptEntry.normalize traceRawKernelDivideError traceKernelContext)).state.scheduler =
+      traceMultiState.scheduler :=
+  (fatal_atomicity _ _ (.entry .wrongOrigin) (by native_decide)).2.1
+
+/-- A spurious error word on #BP and wrong restart-class evidence both reject
+at the normalizer with their exact typed reasons. -/
+example :
+    InterruptEntry.normalize traceRawBreakpointSpuriousError traceKernelContext =
+        .fatal .wrongErrorShape ∧
+      InterruptEntry.normalize traceRawBreakpointWrongRestart traceKernelContext =
+        .fatal .wrongRestartClass ∧
+      (dispatch traceMultiState
+        (InterruptEntry.normalize traceRawBreakpointWrongRestart traceKernelContext)).action =
+        .fatal (.entry .wrongRestartClass) := by
+  native_decide
+
+/-- Swapped reason/vector records reject without exposing cleanup, and stale
+current/address bindings reject the new classes exactly like vector 14. -/
+example :
+    (dispatch traceMultiState traceSwappedDivideShape).action = .rejected .wrongPurpose ∧
+      (dispatch traceAlreadyTerminated traceDivideEntry).action = .rejected .staleCurrent ∧
+      (dispatch traceStaleSurvivorVirtualOwner traceBreakpointEntry).action =
+        .rejected .staleContext := by
+  native_decide
+
+/-- Each of those rejections retains the complete pre-state. -/
+example :
+    (dispatch traceMultiState traceSwappedDivideShape).state = traceMultiState ∧
+      (dispatch traceAlreadyTerminated traceDivideEntry).state = traceAlreadyTerminated ∧
+      (dispatch traceStaleSurvivorVirtualOwner traceBreakpointEntry).state =
+        traceStaleSurvivorVirtualOwner :=
+  ⟨rejected_unchanged _ _ .wrongPurpose (by native_decide),
+    rejected_unchanged _ _ .staleCurrent (by native_decide),
+    rejected_unchanged _ _ .staleContext (by native_decide)⟩
 
 /-- Successful dispatch clears both the runnable projection and a real
 pre-fault mapping in every address space owned by the terminated subject. -/
@@ -985,7 +1269,7 @@ example :
     traceFaultOwnedMapping.translations.virtual.mappings 1 4 =
         some { object := 1, permissions := { read := true } } ∧
       (dispatch traceFaultOwnedMapping traceEntry).action =
-        .dispatch traceSurvivorContext ∧
+        .dispatch .pageFault traceSurvivorContext ∧
       (dispatch traceFaultOwnedMapping traceEntry).state.scheduler.lifecycle.runnable 1 = false ∧
       (dispatch traceFaultOwnedMapping traceEntry).state.scheduler.lifecycle.addressOwner 1 = none ∧
       (dispatch traceFaultOwnedMapping traceEntry).state.translations.virtual.mappings 1 4 = none := by
@@ -1123,8 +1407,10 @@ example :
     ResumablePreemption.contextFor
         (ResumablePreemption.cleanupSubject traceMultiState 1).contexts 3 =
       some traceThirdContext ∧
-      (dispatch traceMultiState traceEntry).action = .dispatch traceSurvivorContext ∧
-      (dispatch traceMultiState traceEntry).action ≠ .dispatch traceThirdContext := by
+      (dispatch traceMultiState traceEntry).action =
+        .dispatch .pageFault traceSurvivorContext ∧
+      (dispatch traceMultiState traceEntry).action ≠
+        .dispatch .pageFault traceThirdContext := by
   native_decide
 
 /-- The atomic fault transition preserves the complete authoritative runtime
@@ -1136,13 +1422,13 @@ theorem dispatch_preserves_wellFormed state entry
     (hstate : ResumablePreemption.WellFormed state) :
     ResumablePreemption.WellFormed (dispatch state entry).state := by
   cases haction : (dispatch state entry).action with
-  | idle =>
-      obtain ⟨faulting, _, hnext, _, _⟩ := idle_is_clean_empty state entry haction
+  | idle reason =>
+      obtain ⟨faulting, _, hnext, _, _⟩ := idle_is_clean_empty state entry reason haction
       rw [hnext]
       exact ResumablePreemption.cleanupSubject_preserves_wellFormed state faulting hstate
-  | dispatch context =>
+  | dispatch reason context =>
       obtain ⟨faulting, trusted, _, hselected, hcontext, hnext⟩ :=
-        dispatched_is_authoritative_transition state entry context haction
+        dispatched_is_authoritative_transition state entry reason context haction
       rw [hnext]
       exact consumeSelected_preserves_wellFormed _ trusted context
         (ResumablePreemption.cleanupSubject_preserves_wellFormed state faulting hstate)
@@ -1161,17 +1447,28 @@ the kernel-owned bounded scheduler/context bank.  The result packs action in
   cleanup witnesses (live, runnable, current, queued, resumable) in bits
   24--28, preserved survivor frame/register context in bit 29, preserved
   capability authority in bit 30, and preserved memory/mapping/endpoint/frame
-  resources in bit 31.
+  resources in bit 31, and the typed contained-reason code in bits 40--47
+  (zero for the legacy page-fault class, so version-one words are unchanged).
   Bit 63 distinguishes typed fail-stop from nonfatal rejection.  Entry class
-  4 is the bounded malformed-frame fixture emitted by the normalizer. -/
+  4 is the bounded malformed-frame fixture emitted by the normalizer, class 5
+  the wrong restart-class evidence fixture, and class 6 the swapped
+  reason/vector error-shape fixture. -/
 
 def faultDispatchDemo (vector entryClass current active ready contextOwner : UInt64) : UInt64 :=
-  if vector != 14 then 0x8000000000000002
+  let reasonCode : UInt64 :=
+    if vector = 14 then 0 else if vector = 0 then 1 else if vector = 3 then 2 else 3
+  if reasonCode = 3 then 0x8000000000000002
   else if entryClass = 4 then 0x8000000000000002
-  else if entryClass != 3 then 0x8000000000000001
+  else if entryClass = 5 then 0x8000000000000002
+  else if entryClass = 6 then 0
+  else if entryClass != 3 then
+    if vector = 14 then 0x8000000000000001 else 0x8000000000000002
   else if current != 1 || active != 1 then 0
-  else if ready = 0 then 1
-  else if ready = 2 && contextOwner = 2 then 0x00000000ff020202
+  else if ready = 0 then 1 + reasonCode * 0x10000000000
+  else if ready = 2 && contextOwner = 2 then
+    0x00000000ff020202 + reasonCode * 0x10000000000
+  else if ready = 3 && contextOwner = 2 then
+    0x000000003f020202 + reasonCode * 0x10000000000
   else 0
 
 @[export leanos_fault_dispatch_demo]
@@ -1194,7 +1491,7 @@ private def bootCleanupWitness (before : ResumablePreemption.State)
 private def bootPeerContextWitness (before : ResumablePreemption.State)
     (outcome : Outcome) : UInt64 :=
   match outcome.action with
-  | .dispatch context =>
+  | .dispatch _ context =>
       if ResumablePreemption.contextFor before.contexts context.owner = some context ∧
           outcome.state.scheduler.lifecycle.capabilities.subjects context.owner = true ∧
           outcome.state.scheduler.lifecycle.runnable context.owner = true ∧
@@ -1205,7 +1502,7 @@ private def bootPeerContextWitness (before : ResumablePreemption.State)
 private def bootPeerCapabilityWitness (before : ResumablePreemption.State)
     (outcome : Outcome) : UInt64 :=
   match outcome.action with
-  | .dispatch context =>
+  | .dispatch _ context =>
       if before.scheduler.lifecycle.capabilities.slots context.owner 7 =
             some { object := 20, kind := .memory, rights := { read := true } } ∧
           outcome.state.scheduler.lifecycle.capabilities.slots context.owner 7 =
@@ -1216,7 +1513,7 @@ private def bootPeerCapabilityWitness (before : ResumablePreemption.State)
 private def bootPeerResourceWitness (before : ResumablePreemption.State)
     (outcome : Outcome) : UInt64 :=
   match outcome.action with
-  | .dispatch context =>
+  | .dispatch _ context =>
       if before.scheduler.lifecycle.ownedMemory 20 = some (context.owner, 40) ∧
           outcome.state.scheduler.lifecycle.ownedMemory 20 = some (context.owner, 40) ∧
           before.scheduler.lifecycle.mapping context.addressSpace 9 = some 20 ∧
@@ -1234,12 +1531,13 @@ private def bootPeerResourceWitness (before : ResumablePreemption.State)
 
 def encodeBootOutcome (before : ResumablePreemption.State) (outcome : Outcome) : UInt64 :=
   match outcome.action with
-  | .idle => 1
-  | .dispatch context =>
+  | .idle reason => 1 + reason.code * 0x10000000000
+  | .dispatch reason context =>
       2 + UInt64.ofNat context.owner * 0x100 +
         UInt64.ofNat context.addressSpace * 0x10000 +
         bootCleanupWitness before outcome + bootPeerContextWitness before outcome +
-        bootPeerCapabilityWitness before outcome + bootPeerResourceWitness before outcome
+        bootPeerCapabilityWitness before outcome + bootPeerResourceWitness before outcome +
+        reason.code * 0x10000000000
   | .rejected _ => 0
   | .fatal .kernelOrigin => 0x8000000000000001
   | .fatal _ => 0x8000000000000002
@@ -1251,15 +1549,37 @@ def faultDispatchModelExpected (vector entryClass current active ready contextOw
   let state :=
     if current = 0 then traceAlreadyTerminated
     else if ready = 0 then traceState false
+    else if ready = 3 then traceMultiState
     else if contextOwner = 2 then traceState true
     else traceStaleSurvivorVirtualOwner
+  let rawUser :=
+    if vector = 0 then traceRawDivideError
+    else if vector = 3 then traceRawBreakpoint
+    else traceRawUserFault
+  let rawKernel :=
+    if vector = 0 then traceRawKernelDivideError
+    else if vector = 3 then traceRawKernelBreakpoint
+    else traceRawKernelFault
   let entry :=
-    if vector != 14 then (.fatal .unsupportedVector : InterruptEntry.Result)
+    if vector != 0 && vector != 3 && vector != 14 then
+      (.fatal .unsupportedVector : InterruptEntry.Result)
     else if entryClass = 4 then
-      InterruptEntry.normalize traceMalformedUserFault traceKernelContext
-    else if entryClass != 3 then InterruptEntry.normalize traceRawKernelFault traceKernelContext
+      InterruptEntry.normalize { rawUser with frameBytes := 32 } traceKernelContext
+    else if entryClass = 5 then
+      InterruptEntry.normalize
+        { rawUser with restartClass := rawUser.restartClass.other } traceKernelContext
+    else if entryClass = 6 then
+      match traceEntry with
+      | .accepted frame => .accepted { frame with
+          vector := vector
+          errorCode := if vector = 14 then none else some 0
+          currentSubject := current.toNat, activeAddressSpace := active.toNat }
+      | other => other
+    else if entryClass != 3 then InterruptEntry.normalize rawKernel traceKernelContext
     else match traceEntry with
       | .accepted frame => .accepted { frame with
+          vector := vector
+          errorCode := if vector = 14 then some 0 else none
           currentSubject := current.toNat, activeAddressSpace := active.toNat }
       | other => other
   encodeBootOutcome state (dispatch state entry)
@@ -1279,6 +1599,30 @@ theorem faultDispatchDemo_malformed_frame_fail_stop :
     faultDispatchDemo 14 4 1 1 2 2 =
       encodeBootOutcome (traceState true) (dispatch (traceState true)
         (InterruptEntry.normalize traceMalformedUserFault traceKernelContext)) := by
+  native_decide
+
+theorem faultDispatchDemo_accepts_divide_error :
+    faultDispatchDemo 0 3 1 1 2 2 =
+      encodeBootOutcome (traceState true)
+        (dispatch (traceState true) traceDivideEntry) := by
+  native_decide
+
+theorem faultDispatchDemo_accepts_breakpoint_multi_survivor :
+    faultDispatchDemo 3 3 1 1 3 2 =
+      encodeBootOutcome traceMultiState
+        (dispatch traceMultiState traceBreakpointEntry) := by
+  native_decide
+
+theorem faultDispatchDemo_kernel_divide_error_fail_stop :
+    faultDispatchDemo 0 0 1 1 2 2 =
+      encodeBootOutcome (traceState true) (dispatch (traceState true)
+        (InterruptEntry.normalize traceRawKernelDivideError traceKernelContext)) := by
+  native_decide
+
+theorem faultDispatchDemo_wrong_restart_fail_stop :
+    faultDispatchDemo 3 5 1 1 2 2 =
+      encodeBootOutcome (traceState true) (dispatch (traceState true)
+        (InterruptEntry.normalize traceRawBreakpointWrongRestart traceKernelContext)) := by
   native_decide
 
 end LeanOS.FaultDispatch

@@ -1,12 +1,16 @@
+import LeanOS.BoundedLifecycle
 import LeanOS.Capability
 import LeanOS.CapabilityHandle
 import LeanOS.CapabilityTransfer
 import LeanOS.CapabilityReuse
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
+import LeanOS.DirectPortContainment
+import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.BootMemoryMap
 import LeanOS.BootReservation
 import LeanOS.BootAllocation
+import LeanOS.BootInterruptPhase
 import LeanOS.BootPageTablePlan
 import LeanOS.BlockingIPC
 import LeanOS.BlockingIPCContext
@@ -24,6 +28,7 @@ import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.FaultDispatch
 import LeanOS.KernelTransition
+import LeanOS.LifetimeIssuer
 import LeanOS.MemoryLifecycle
 import LeanOS.Observation
 import LeanOS.Preemption
@@ -32,6 +37,7 @@ import LeanOS.ResumableContext
 import LeanOS.Syscall
 import LeanOS.UserCopy
 import LeanOS.UserCopyWindow
+import LeanOS.StaleTranslation
 import LeanOS.SubjectLifecycle
 import LeanOS.Oracle
 import LeanOS.Scheduler

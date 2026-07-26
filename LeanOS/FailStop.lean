@@ -1,4 +1,5 @@
 import LeanOS.Interrupt
+import LeanOS.InterruptEntry
 import LeanOS.BootPageTablePlan
 import LeanOS.IPCSyscall
 import LeanOS.BlockingIPC
@@ -22,6 +23,8 @@ set_option linter.unusedSimpArgs false
 
 inductive FatalReason where
   | kernelFault | unsupportedVector | nestedEntry | doubleFault
+  | nonMaskableInterrupt
+  | invalidNmiEntry (reason : InterruptEntry.NmiRejectReason)
   | invalidUserReturn (purpose : Interrupt.ReturnPurpose)
       (reason : Interrupt.ReturnRejectReason)
   deriving DecidableEq, Repr
@@ -38,6 +41,9 @@ structure HaltRecord where
   active : Option ActiveEntry
   incomingVector : Nat
   incomingOrigin : Interrupt.Privilege
+  interruptedMode : Option InterruptEntry.InterruptedMode := none
+  interruptedCr3 : Option UInt64 := none
+  terminalStackIdentity : Option UInt64 := none
   deriving DecidableEq, Repr
 
 inductive Mode where
@@ -143,7 +149,9 @@ def escalation (active : ActiveEntry) (incoming : Interrupt.HardwareFrame) : Fat
 
 def halt (state : State) (reason : FatalReason) (active : Option ActiveEntry)
     (incoming : Interrupt.HardwareFrame) : EntryOutcome :=
-  let record := HaltRecord.mk reason active incoming.vector incoming.savedPrivilege
+  let record : HaltRecord :=
+    { reason, active, incomingVector := incoming.vector
+      incomingOrigin := incoming.savedPrivilege }
   { state := { state with
       mode := .halted record
       returnAuthorityArmed := false
@@ -202,6 +210,231 @@ def dispatchHardware (state : State) (frame : Interrupt.HardwareFrame) : EntryOu
 
 def dispatch (state : State) (trap : Interrupt.Trap) : EntryOutcome :=
   dispatchHardware state trap.hardware
+
+/-! ## Non-maskable terminal entry
+
+Unlike ordinary entry, this transition is admitted while `handling` and never
+calls `beginEntry`, `finishEntry`, containment, scheduling, or return
+selection.  It consumes the separate terminal normalizer result and changes
+only the execution latch plus the two privileged cleanup bits. -/
+
+def interruptedModeOf : Mode → InterruptEntry.InterruptedMode
+  | .running => .running
+  | .handling _ => .handling
+  | .halted _ => .halted
+
+private def latchNmi (state : State) (reason : FatalReason)
+    (active : Option ActiveEntry) (vector : Nat) (origin : Interrupt.Privilege)
+    (mode : InterruptEntry.InterruptedMode) (cr3 : Option UInt64)
+    (stackIdentity : Option UInt64) : EntryOutcome :=
+  let record : HaltRecord :=
+    { reason, active, incomingVector := vector, incomingOrigin := origin
+      interruptedMode := some mode, interruptedCr3 := cr3
+      terminalStackIdentity := stackIdentity }
+  { state := { state with
+      core := { state.core with
+        context := { state.core.context with entryActive := true } }
+      mode := .halted record
+      returnAuthorityArmed := false
+      copyOverride := false }
+    action := .fatal reason }
+
+/-- Every NMI latch preserves the execution invariant: the lifecycle remains
+unchanged, return authority is disarmed, and the terminal entry-active bit is
+set in the same atomic update as the halt record. -/
+private theorem latchNmi_preserves_wellFormed state reason active vector origin mode cr3
+    stackIdentity (hstate : WellFormed state) :
+    WellFormed
+      (latchNmi state reason active vector origin mode cr3 stackIdentity).state := by
+  rcases hstate with ⟨hcore, _hbound, _hmode⟩
+  exact ⟨by simpa only [Interrupt.WellFormed, latchNmi] using hcore,
+    by simp [latchNmi], by simp [latchNmi]⟩
+
+def acceptedNmiRecord (state : State) (event : InterruptEntry.NormalizedNmi) : HaltRecord :=
+  { reason := .nonMaskableInterrupt
+    active := match state.mode with | .handling entry => some entry | _ => none
+    incomingVector := event.vector.toNat
+    incomingOrigin := event.origin
+    interruptedMode := some event.interruptedMode
+    interruptedCr3 := some event.activeCr3
+    terminalStackIdentity := some event.stackIdentity }
+
+/-- Canonical fixed-width words for the later stateful-corpus boundary.  The
+active ordinary frame is included rather than summarized by a lossy tag. -/
+structure NmiTerminalWords where
+  version : UInt64
+  reason : UInt64
+  incomingVector : UInt64
+  incomingOrigin : UInt64
+  interruptedModePresent : UInt64
+  interruptedMode : UInt64
+  cr3Present : UInt64
+  interruptedCr3 : UInt64
+  stackPresent : UInt64
+  terminalStackIdentity : UInt64
+  activePresent : UInt64
+  activeVector : UInt64
+  activeOrigin : UInt64
+  activeFrameVector : UInt64
+  activeErrorCode : UInt64
+  activeRip : UInt64
+  activeRsp : UInt64
+  activeCs : UInt64
+  activeSs : UInt64
+  activeFlags : UInt64
+  activeCanonicalRip : UInt64
+  activeCanonicalRsp : UInt64
+  activeFlagsAllowed : UInt64
+  deriving DecidableEq, Repr
+
+private def privilegeCode : Interrupt.Privilege → UInt64
+  | .kernel => 0 | .user => 1
+
+def encodeNmiTerminalRecord (record : HaltRecord) : Option NmiTerminalWords :=
+  if record.reason != .nonMaskableInterrupt then none
+  else
+    let (cr3Present, cr3) := match record.interruptedCr3 with
+      | some value => ((1 : UInt64), value) | none => ((0 : UInt64), 0)
+    let (stackPresent, stackIdentity) := match record.terminalStackIdentity with
+      | some value => ((1 : UInt64), value) | none => ((0 : UInt64), 0)
+    let (modePresent, mode) := match record.interruptedMode with
+      | some value => ((1 : UInt64), value.code) | none => ((0 : UInt64), 0)
+    let activeWords := match record.active with
+      | none => ((0 : UInt64), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+      | some active =>
+          ((1 : UInt64), UInt64.ofNat active.vector, privilegeCode active.origin,
+            UInt64.ofNat active.frame.vector, active.frame.errorCode,
+            active.frame.instructionPointer, active.frame.stackPointer,
+            active.frame.codeSelector, active.frame.stackSelector, active.frame.flags,
+            if active.frame.canonicalInstructionPointer then (1 : UInt64) else 0,
+            if active.frame.canonicalStackPointer then (1 : UInt64) else 0,
+            if active.frame.flagsAllowed then (1 : UInt64) else 0)
+    some ⟨1, 1, UInt64.ofNat record.incomingVector, privilegeCode record.incomingOrigin,
+      modePresent, mode, cr3Present, cr3, stackPresent, stackIdentity,
+      activeWords.1, activeWords.2.1, activeWords.2.2.1, activeWords.2.2.2.1,
+      activeWords.2.2.2.2.1, activeWords.2.2.2.2.2.1,
+      activeWords.2.2.2.2.2.2.1, activeWords.2.2.2.2.2.2.2.1,
+      activeWords.2.2.2.2.2.2.2.2.1, activeWords.2.2.2.2.2.2.2.2.2.1,
+      activeWords.2.2.2.2.2.2.2.2.2.2.1,
+      activeWords.2.2.2.2.2.2.2.2.2.2.2.1,
+      activeWords.2.2.2.2.2.2.2.2.2.2.2.2⟩
+
+/-- NMI is an out-of-band terminal step.  A malformed terminal snapshot also
+halts, but retains its exact typed normalization failure rather than granting
+an ordinary handler.  An NMI observed after halt returns the original record
+unchanged, modeling architectural blocking of a second physical NMI until a
+return that this model never performs. -/
+def dispatchNmi (state : State) (raw : InterruptEntry.RawNmiEntry)
+    (context : InterruptEntry.NmiContext) : EntryOutcome :=
+  match state.mode with
+  | .halted record => { state, action := .alreadyHalted record }
+  | mode =>
+      let active := match mode with | .handling entry => some entry | _ => none
+      let interruptedMode := interruptedModeOf mode
+      if context.interruptedMode != interruptedMode then
+        latchNmi state (.invalidNmiEntry .staleKernelContext) active
+          raw.descriptor.vector.toNat raw.claimedOrigin interruptedMode none none
+      else
+        match InterruptEntry.normalizeNmi raw context state.core.context.currentSubject
+            state.core.context.activeAddressSpace with
+        | .fatal reason =>
+            latchNmi state (.invalidNmiEntry reason) active raw.descriptor.vector.toNat
+              raw.claimedOrigin interruptedMode none none
+        | .accepted event =>
+            latchNmi state .nonMaskableInterrupt active event.vector.toNat event.origin
+              event.interruptedMode (some event.activeCr3) (some event.stackIdentity)
+
+theorem dispatchNmi_preserves_wellFormed state raw context
+    (hstate : WellFormed state) :
+    WellFormed (dispatchNmi state raw context).state := by
+  cases hmode : state.mode with
+  | halted record => simpa [dispatchNmi, hmode] using hstate
+  | running =>
+      simp only [dispatchNmi, hmode]
+      split
+      · exact latchNmi_preserves_wellFormed _ _ _ _ _ _ _ _ hstate
+      · split <;> exact latchNmi_preserves_wellFormed _ _ _ _ _ _ _ _ hstate
+  | handling entry =>
+      simp only [dispatchNmi, hmode]
+      split
+      · exact latchNmi_preserves_wellFormed _ _ _ _ _ _ _ _ hstate
+      · split <;> exact latchNmi_preserves_wellFormed _ _ _ _ _ _ _ _ hstate
+
+@[simp] theorem dispatchNmi_core_lifecycle state raw context :
+    (dispatchNmi state raw context).state.core.lifecycle = state.core.lifecycle := by
+  cases hmode : state.mode with
+  | halted record => simp [dispatchNmi, hmode]
+  | running | handling =>
+      simp [dispatchNmi, hmode]
+      split <;> simp [latchNmi]
+      split <;> simp [latchNmi]
+
+@[simp] theorem dispatchNmi_currentSubject state raw context :
+    (dispatchNmi state raw context).state.core.context.currentSubject =
+      state.core.context.currentSubject := by
+  cases hmode : state.mode with
+  | halted record => simp [dispatchNmi, hmode]
+  | running | handling =>
+      simp [dispatchNmi, hmode]
+      split <;> simp [latchNmi]
+      split <;> simp [latchNmi]
+
+@[simp] theorem dispatchNmi_activeAddressSpace state raw context :
+    (dispatchNmi state raw context).state.core.context.activeAddressSpace =
+      state.core.context.activeAddressSpace := by
+  cases hmode : state.mode with
+  | halted record => simp [dispatchNmi, hmode]
+  | running | handling =>
+      simp [dispatchNmi, hmode]
+      split <;> simp [latchNmi]
+      split <;> simp [latchNmi]
+
+theorem dispatchNmi_nonhalted_halts state raw context
+    (hnotHalted : ∀ record, state.mode ≠ .halted record) :
+    ∃ record, (dispatchNmi state raw context).state.mode = .halted record := by
+  cases hmode : state.mode with
+  | halted record => exact False.elim (hnotHalted record hmode)
+  | running | handling =>
+      simp [dispatchNmi, hmode]
+      split <;> simp [latchNmi]
+      split <;> simp [latchNmi]
+
+theorem dispatchNmi_nonhalted_disarms state raw context
+    (hnotHalted : ∀ record, state.mode ≠ .halted record) :
+    (dispatchNmi state raw context).state.returnAuthorityArmed = false := by
+  cases hmode : state.mode with
+  | halted record => exact False.elim (hnotHalted record hmode)
+  | running | handling =>
+      simp [dispatchNmi, hmode]
+      split <;> simp [latchNmi]
+      split <;> simp [latchNmi]
+
+theorem accepted_nmi_terminal state raw context event
+    (hmode : state.mode = .running ∨ ∃ active, state.mode = .handling active)
+    (hcontext : context.interruptedMode = interruptedModeOf state.mode)
+    (haccepted : InterruptEntry.normalizeNmi raw context
+      state.core.context.currentSubject state.core.context.activeAddressSpace =
+        .accepted event) :
+    let next := dispatchNmi state raw context
+    next.action = .fatal .nonMaskableInterrupt ∧
+      next.state.mode = .halted (acceptedNmiRecord state event) ∧
+      next.state.core.lifecycle = state.core.lifecycle ∧
+      next.state.core.context.currentSubject = state.core.context.currentSubject ∧
+      next.state.core.context.activeAddressSpace = state.core.context.activeAddressSpace ∧
+      next.state.core.context.kernelStack = state.core.context.kernelStack ∧
+      next.state.returnAddressSpace = state.returnAddressSpace ∧
+      next.state.returnPlan = state.returnPlan ∧
+      next.state.returnAuthority = state.returnAuthority ∧
+      next.state.returnAuthorityArmed = false ∧
+      next.state.copyOverride = false := by
+  rcases hmode with hmode | ⟨active, hmode⟩
+  · simp [dispatchNmi, hmode, hcontext, haccepted, latchNmi, acceptedNmiRecord]
+  · simp [dispatchNmi, hmode, hcontext, haccepted, latchNmi, acceptedNmiRecord]
+
+theorem halted_nmi_absorbing state record raw context
+    (hmode : state.mode = .halted record) :
+    dispatchNmi state raw context = { state, action := .alreadyHalted record } := by
+  simp [dispatchNmi, hmode]
 
 /-! ## Terminal outgoing user-return transaction -/
 
@@ -4617,6 +4850,7 @@ theorem installLifecycle_releases_retired_memory state lifecycle object frame
 a tag paired with a caller-supplied post-state. -/
 inductive Operation where
   | interrupt (frame : Interrupt.HardwareFrame)
+  | nmi (raw : InterruptEntry.RawNmiEntry) (context : InterruptEntry.NmiContext)
   | selectUserReturn (purpose : Interrupt.ReturnPurpose)
   | userReturn (request : Interrupt.UserReturnRequest)
   | syscall (call : Syscall.UntrustedCall)
@@ -4655,6 +4889,7 @@ inductive CompositeIPCReply where
 
 inductive OperationReply where
   | interrupt (action : EntryAction)
+  | nmi (action : EntryAction)
   | returnSelection (armed : Bool)
   | userReturn (reply : UserReturnReply)
   | syscall (reply : Syscall.Reply)
@@ -4786,6 +5021,14 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
             { state.resumable with halted := true }
       | .timer | .syscall | .rejected _ => { state with execution := entry.state }
       | .alreadyHalted _ => state
+  | .nmi raw context =>
+      let entry := dispatchNmi state.execution raw context
+      match state.execution.mode with
+      | .halted _ => state
+      | .running | .handling _ =>
+          { state with
+            execution := entry.state
+            resumable := { state.resumable with halted := true } }
   | .selectUserReturn purpose =>
       selectLiveReturnAuthority state purpose
   | .userReturn request =>
@@ -4969,11 +5212,39 @@ a device transition. -/
       | exact installTerminatedSubject_directPortIO _ _ _
       | (unfold selectLiveReturnAuthority; split <;> rfl)
 
+private theorem applyNmi_preserves_runtimeWellFormed state raw context
+    (hstate : RuntimeWellFormed state) :
+    RuntimeWellFormed (applyOperation state (.nmi raw context)) := by
+  cases hmode : state.execution.mode with
+  | halted record => simpa [applyOperation, hmode] using hstate
+  | running | handling =>
+      simp only [applyOperation, hmode]
+      rcases hstate with
+        ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
+          hscheduler, hpreemption, hresumable, htransfers, _hterminal, hlive,
+          hblocking, hports⟩
+      have hexecution' :=
+        dispatchNmi_preserves_wellFormed state.execution raw context hexecution
+      have hnotHalted : ∀ record, state.execution.mode ≠ .halted record := by
+        intro record
+        simp [hmode]
+      have hhalted := dispatchNmi_nonhalted_halts state.execution raw context hnotHalted
+      have hdisarmed :=
+        dispatchNmi_nonhalted_disarms state.execution raw context hnotHalted
+      refine ⟨?_, hexecution', hlifecycle, hcapabilities, hvirtual, hipc, hscheduler,
+        hpreemption, ?_, htransfers, ?_, ?_, hblocking, hports⟩
+      · simpa [CompositeState.Coherent] using hcoherent
+      · simpa using
+          (ResumablePreemption.wellFormed_set_halted state.resumable true).2 hresumable
+      · simpa using hhalted
+      · simp [hdisarmed]
+
 /-- Exact typed observation of the subsystem transition selected by an
 operation.  Unlike the former generic `accepted`, this cannot erase an
 operation-specific rejection. -/
 def operationReply (state : CompositeState) : Operation → OperationReply
   | .interrupt frame => .interrupt (dispatchHardware state.execution frame).action
+  | .nmi raw context => .nmi (dispatchNmi state.execution raw context).action
   | .selectUserReturn purpose =>
       .returnSelection (selectLiveReturnAuthority state purpose).execution.returnAuthorityArmed
   | .userReturn request =>
@@ -5243,17 +5514,27 @@ theorem resumePreempt_synchronizes_current_context state frame registers
 /-- The sole composite step computes the post-state by invoking the typed
 subsystem transition internally. -/
 def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
-  match state.execution.mode with
-  | .running =>
-      { state := applyOperation state operation, result := .completed (operationReply state operation) }
-  | .handling _ => { state, result := .rejectedBusy }
-  | .halted record => { state, result := .rejectedHalted record }
+  match operation with
+  | .nmi raw context =>
+      match state.execution.mode with
+      | .halted record => { state, result := .rejectedHalted record }
+      | .running | .handling _ =>
+          { state := applyOperation state (.nmi raw context)
+            result := .completed (operationReply state (.nmi raw context)) }
+  | operation =>
+      match state.execution.mode with
+      | .running =>
+          { state := applyOperation state operation
+            result := .completed (operationReply state operation) }
+      | .handling _ => { state, result := .rejectedBusy }
+      | .halted record => { state, result := .rejectedHalted record }
 
 /-- Busy, halted, accepted, and dependency-rejected gate steps all retain the
 exact checked direct-port controls and device projection. -/
 @[simp] theorem gate_directPortIO state operation :
     (gate state operation).state.directPortIO = state.directPortIO := by
-  cases hmode : state.execution.mode <;> simp [gate, hmode]
+  cases operation <;> cases hmode : state.execution.mode <;>
+    simp [gate, hmode]
 
 /-- A running gate exposes the exact typed subsystem observation paired with
 the exact composite post-state computed from the same pre-state and operation.
@@ -5264,7 +5545,7 @@ theorem gate_running_exact state operation
     gate state operation =
       { state := applyOperation state operation
         result := .completed (operationReply state operation) } := by
-  simp [gate, hmode]
+  cases operation <;> simp [gate, hmode]
 
 /-- Both public gate rejection classes are atomic for every operation.  Busy
 and halted results retain the identical composite state, including the exact
@@ -5273,10 +5554,8 @@ theorem gate_mode_rejection_atomicity state operation
     (hrejected : (gate state operation).result = .rejectedBusy ∨
       ∃ record, (gate state operation).result = .rejectedHalted record) :
     (gate state operation).state = state := by
-  cases hmode : state.execution.mode with
-  | running => simp [gate, hmode] at hrejected
-  | handling active => simp [gate, hmode]
-  | halted record => simp [gate, hmode]
+  cases operation <;> cases hmode : state.execution.mode <;>
+    simp [gate, hmode] at hrejected ⊢
 
 /-- Any completed result proves that the latch was running and identifies both
 the exact typed reply and exact post-state.  Thus a subsystem rejection cannot
@@ -5284,13 +5563,13 @@ be mistaken for a different operation's success, and no caller-selected state
 can be paired with an authoritative reply. -/
 theorem gate_completed_sound state operation reply
     (hcompleted : (gate state operation).result = .completed reply) :
-    state.execution.mode = .running ∧
+    (state.execution.mode = .running ∨
+        ∃ raw context, operation = .nmi raw context) ∧
       reply = operationReply state operation ∧
       (gate state operation).state = applyOperation state operation := by
-  cases hmode : state.execution.mode with
-  | running => simp [gate, hmode] at hcompleted ⊢; simp [gate, hmode, hcompleted]
-  | handling active => simp [gate, hmode] at hcompleted
-  | halted record => simp [gate, hmode] at hcompleted
+  cases operation <;> cases hmode : state.execution.mode <;>
+    simp [gate, hmode] at hcompleted ⊢ <;>
+    exact hcompleted.symm
 
 /-- Every typed nonfatal subsystem rejection is globally atomic.  The theorem
 is intentionally quantified over the finite composite reply classification:
@@ -5300,8 +5579,8 @@ theorem gate_subsystem_rejection_atomicity state operation reply
     (hresult : (gate state operation).result = .completed reply)
     (hrejected : SubsystemRejection state operation reply) :
     (gate state operation).state = state := by
-  have hmode := (gate_completed_sound state operation reply hresult).1
-  cases hrejected <;> simp_all [gate, applyOperation]
+  cases hrejected <;> cases hmode : state.execution.mode <;>
+    simp_all [gate, applyOperation]
 
 /-- Every finite nonfatal subsystem rejection preserves the complete runtime
 invariant because the composite gate publishes the literal pre-state.  This
@@ -5321,6 +5600,8 @@ private theorem classified_rejection_is_subsystem state operation
     (hrejected : (operationReply state operation).isNonfatalRejection = true) :
     SubsystemRejection state operation (operationReply state operation) := by
   cases operation with
+  | nmi raw context =>
+      simp [operationReply, OperationReply.isNonfatalRejection] at hrejected
   | interrupt frame | selectUserReturn purpose | restart =>
       simp [operationReply, OperationReply.isNonfatalRejection] at hrejected
   | userReturn request =>
@@ -5467,9 +5748,9 @@ theorem gate_classified_rejection_atomicity state operation
     (hrejected : (operationReply state operation).isNonfatalRejection = true) :
     (gate state operation).result = .completed (operationReply state operation) ∧
       (gate state operation).state = state := by
-  refine ⟨by simp [gate, hmode], ?_⟩
+  refine ⟨by cases operation <;> simp [gate, hmode], ?_⟩
   exact gate_subsystem_rejection_atomicity state operation
-    (operationReply state operation) (by simp [gate, hmode])
+    (operationReply state operation) (by cases operation <;> simp [gate, hmode])
     (classified_rejection_is_subsystem state operation hrejected)
 
 /-- Classified subsystem rejection is globally atomic even when the outer
@@ -5480,8 +5761,10 @@ theorem gate_classified_rejection_global_atomicity state operation
     (gate state operation).state = state := by
   cases hmode : state.execution.mode with
   | running => exact (gate_classified_rejection_atomicity state operation hmode hrejected).2
-  | handling active => simp [gate, hmode]
-  | halted record => simp [gate, hmode]
+  | handling active =>
+      cases operation <;>
+        simp [gate, hmode, operationReply, OperationReply.isNonfatalRejection] at hrejected ⊢
+  | halted record => cases operation <;> simp [gate, hmode]
 
 /-- A total classified rejection also preserves the complete composite
 invariant, as a direct consequence of byte-for-byte state preservation. -/
@@ -6497,8 +6780,13 @@ theorem gate_rejected_mode_preserves_runtimeWellFormed state operation
     RuntimeWellFormed (gate state operation).state := by
   cases hmode : state.execution.mode with
   | running => exact False.elim (hnotRunning hmode)
-  | handling active => simpa [gate, hmode] using hstate
-  | halted record => simpa [gate, hmode] using hstate
+  | handling active =>
+      cases operation with
+      | nmi raw context =>
+          simpa [gate, hmode] using applyNmi_preserves_runtimeWellFormed
+            state raw context hstate
+      | _ => simpa [gate, hmode] using hstate
+  | halted record => cases operation <;> simpa [gate, hmode] using hstate
 
 /-- An accepted queue insertion is a sound composite mutation: its public
 reply is the scheduler's accepted reply, its scheduler projection is the exact
@@ -9998,6 +10286,7 @@ scheduler-only preemption constructor has been retired in favor of
 to update the authoritative context bank atomically. -/
 
 inductive RuntimeTraceOperation : Operation → Prop where
+  | nmi raw context : RuntimeTraceOperation (.nmi raw context)
   | interrupt frame : RuntimeTraceOperation (.interrupt frame)
   | selectUserReturn purpose : RuntimeTraceOperation (.selectUserReturn purpose)
   | userReturn request : RuntimeTraceOperation (.userReturn request)
@@ -10035,6 +10324,11 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
     (hoperation : RuntimeTraceOperation operation) :
     OperationPreservesRuntimeWellFormed operation := by
   cases hoperation with
+  | nmi raw context =>
+      intro state hstate
+      cases hmode : state.execution.mode <;>
+        simpa [gate, hmode, applyOperation] using
+          applyNmi_preserves_runtimeWellFormed state raw context hstate
   | interrupt frame => exact interrupt_operationPreservesRuntimeWellFormed frame
   | selectUserReturn purpose =>
       exact selectUserReturn_operationPreservesRuntimeWellFormed purpose
@@ -10079,6 +10373,7 @@ gate theorem below. -/
 theorem runtimeTraceOperation_complete operation :
     RuntimeTraceOperation operation := by
   cases operation with
+  | nmi raw context => exact .nmi raw context
   | interrupt frame => exact .interrupt frame
   | selectUserReturn purpose => exact .selectUserReturn purpose
   | userReturn request => exact .userReturn request
@@ -10955,8 +11250,12 @@ theorem gate_preserves_blockingContextAgreement state operation
     BlockingIPCContext.ContextAgreement
       (gate state operation).state.blockingIPCContext := by
   cases hmode : state.execution.mode with
-  | handling active => simpa [gate, hmode] using hstate
-  | halted record => simpa [gate, hmode] using hstate
+  | handling active =>
+      cases operation with
+      | nmi raw context =>
+          simpa [gate, hmode, applyOperation, CompositeState.blockingIPCContext] using hstate
+      | _ => simpa [gate, hmode] using hstate
+  | halted record => cases operation <;> simpa [gate, hmode] using hstate
   | running =>
       cases operation <;> simp only [gate, hmode, applyOperation]
       all_goals try split
@@ -10999,8 +11298,8 @@ theorem gate_blockingStateNeutral_preserves_blockingIPCContext state operation
     (hoperation : BlockingStateNeutralOperation operation) :
     (gate state operation).state.blockingIPCContext = state.blockingIPCContext := by
   cases hmode : state.execution.mode with
-  | handling active => simp [gate, hmode]
-  | halted record => simp [gate, hmode]
+  | handling active => cases hoperation <;> simp [gate, hmode, applyOperation]
+  | halted record => cases hoperation <;> simp [gate, hmode]
   | running =>
       cases hoperation
       · simp only [gate, hmode, applyOperation, selectLiveReturnAuthority]
@@ -11607,7 +11906,7 @@ theorem halted_entry_absorbing state record frame
 theorem halted_gate_absorbing state record operation
     (hmode : state.execution.mode = .halted record) :
     gate state operation = { state, result := .rejectedHalted record } := by
-  simp [gate, hmode]
+  cases operation <;> simp [gate, hmode]
 
 theorem halted_suffix_absorbing state record proposals
     (hmode : state.execution.mode = .halted record) :
@@ -11682,17 +11981,25 @@ def authoritativeOperationReply (state : CompositeState) :
 shared busy/halted execution latch. -/
 def authoritativeGate (state : CompositeState) (operation : AuthoritativeOperation) :
     AuthoritativeGateOutcome :=
-  match state.execution.mode with
-  | .running =>
-      { state := applyAuthoritativeOperation state operation
-        result := .completed (authoritativeOperationReply state operation) }
-  | .handling _ => { state, result := .rejectedBusy }
-  | .halted record => { state, result := .rejectedHalted record }
+  match operation with
+  | .ordinary (.nmi raw context) =>
+      match state.execution.mode with
+      | .halted record => { state, result := .rejectedHalted record }
+      | .running | .handling _ =>
+          { state := applyOperation state (.nmi raw context)
+            result := .completed (.ordinary (operationReply state (.nmi raw context))) }
+  | operation =>
+      match state.execution.mode with
+      | .running =>
+          { state := applyAuthoritativeOperation state operation
+            result := .completed (authoritativeOperationReply state operation) }
+      | .handling _ => { state, result := .rejectedBusy }
+      | .halted record => { state, result := .rejectedHalted record }
 
 @[simp] theorem authoritativeGate_ordinary_state state operation :
     (authoritativeGate state (.ordinary operation)).state =
       (gate state operation).state := by
-  cases hmode : state.execution.mode <;>
+  cases operation <;> cases hmode : state.execution.mode <;>
     simp [authoritativeGate, gate, applyAuthoritativeOperation, hmode]
 
 @[simp] theorem authoritativeGate_blocking_state state operation :
@@ -11715,20 +12022,31 @@ theorem authoritativeGate_deterministic state operation first second
   rw [hfirst] at hsecond
   exact hsecond
 
-/-- Completion fixes the running latch, exact typed reply, and exact post-state
-for either embedded operation family. -/
+/-- Completion fixes either the running latch or the explicit out-of-band NMI
+admission, plus the exact typed reply and exact post-state. -/
 theorem authoritativeGate_completed_sound state operation reply
     (hcompleted : (authoritativeGate state operation).result = .completed reply) :
-    state.execution.mode = .running ∧
+    (state.execution.mode = .running ∨
+        ∃ raw context, operation = .ordinary (.nmi raw context)) ∧
       reply = authoritativeOperationReply state operation ∧
       (authoritativeGate state operation).state =
         applyAuthoritativeOperation state operation := by
-  cases hmode : state.execution.mode with
-  | running =>
-      simp [authoritativeGate, hmode] at hcompleted ⊢
-      exact hcompleted.symm
-  | handling active => simp [authoritativeGate, hmode] at hcompleted
-  | halted record => simp [authoritativeGate, hmode] at hcompleted
+  cases operation with
+  | ordinary operation =>
+      cases operation <;> cases hmode : state.execution.mode <;>
+        simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+          authoritativeOperationReply] at hcompleted ⊢ <;>
+        exact hcompleted.symm
+  | blocking operation =>
+      cases hmode : state.execution.mode <;>
+        simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+          authoritativeOperationReply] at hcompleted ⊢ <;>
+        exact hcompleted.symm
+  | drainDeferred subject =>
+      cases hmode : state.execution.mode <;>
+        simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+          authoritativeOperationReply] at hcompleted ⊢ <;>
+        exact hcompleted.symm
 
 /-- Finite ordinary denials and finite blocking denials share one classifier.
 The terminal halted result is intentionally absent. -/
@@ -11756,18 +12074,45 @@ theorem authoritativeGate_rejection_atomic state operation
       (authoritativeGate state operation).result) :
     (authoritativeGate state operation).state = state := by
   cases hmode : state.execution.mode with
-  | handling active => simp [authoritativeGate, hmode]
+  | handling active =>
+      cases operation with
+      | ordinary operation =>
+          cases operation <;>
+            simp [authoritativeGate, hmode, authoritativeOperationReply,
+              OperationReply.isNonfatalRejection] at hrejected ⊢
+          all_goals
+            cases hrejected with
+            | ordinary hreply =>
+                simp [operationReply, OperationReply.isNonfatalRejection] at hreply
+      | blocking operation => simp [authoritativeGate, hmode]
+      | drainDeferred subject => simp [authoritativeGate, hmode]
   | halted record =>
-      simp only [authoritativeGate, hmode] at hrejected
-      cases hrejected
+      cases operation with
+      | ordinary operation =>
+          cases operation <;> simp [authoritativeGate, hmode] at hrejected <;>
+            cases hrejected
+      | blocking operation =>
+          simp [authoritativeGate, hmode] at hrejected
+          cases hrejected
+      | drainDeferred subject =>
+          simp [authoritativeGate, hmode] at hrejected
+          cases hrejected
   | running =>
       cases operation with
       | ordinary operation =>
-          simp only [authoritativeGate, hmode, authoritativeOperationReply] at hrejected
-          cases hrejected with
-          | ordinary hreply =>
-              rw [authoritativeGate_ordinary_state]
-              exact gate_classified_rejection_global_atomicity state operation hreply
+          cases operation with
+          | nmi raw context =>
+              simp [authoritativeGate, hmode, authoritativeOperationReply,
+                operationReply, OperationReply.isNonfatalRejection] at hrejected
+              cases hrejected with
+              | ordinary hreply =>
+                  simp [OperationReply.isNonfatalRejection] at hreply
+          | _ =>
+              simp only [authoritativeGate, hmode, authoritativeOperationReply] at hrejected
+              cases hrejected with
+              | ordinary hreply =>
+                  rw [authoritativeGate_ordinary_state]
+                  exact gate_classified_rejection_global_atomicity state _ hreply
       | blocking operation =>
           simp only [authoritativeGate, hmode, authoritativeOperationReply] at hrejected
           cases hrejected with
@@ -12030,7 +12375,10 @@ theorem authoritative_halted_suffix_absorbing state record operations
       simp only [runAuthoritativeOperations]
       have hgate : authoritativeGate state operation =
           { state, result := .rejectedHalted record } := by
-        simp [authoritativeGate, hmode]
+        cases operation with
+        | ordinary operation => cases operation <;> simp [authoritativeGate, hmode]
+        | blocking operation => simp [authoritativeGate, hmode]
+        | drainDeferred subject => simp [authoritativeGate, hmode]
       rw [hgate]
       exact ih state hmode
 
@@ -12042,6 +12390,58 @@ theorem authoritativeGate_rejection_reachable_witness plan :
       (authoritativeGate (bootRuntime plan) (.blocking (.cancel 1))).state =
         bootRuntime plan := by
   exact ⟨.blocking (.cancel .notWaiting), rfl⟩
+
+/-- An accepted normalized NMI is one complete composite terminal step.  No
+lifecycle synchronization helper, scheduler/preemption transition, CR3/return
+selection, or ordinary handler runs after the latch is written. -/
+theorem accepted_nmi_composite_atomicity state raw context event proposals
+    (hmode : state.execution.mode = .running ∨
+      ∃ active, state.execution.mode = .handling active)
+    (hcontext : context.interruptedMode = interruptedModeOf state.execution.mode)
+    (haccepted : InterruptEntry.normalizeNmi raw context
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace = .accepted event) :
+    let next := (gate state (.nmi raw context)).state
+    next.execution.mode = .halted (acceptedNmiRecord state.execution event) ∧
+      next.execution.core.lifecycle = state.execution.core.lifecycle ∧
+      next.execution.core.context.currentSubject =
+        state.execution.core.context.currentSubject ∧
+      next.execution.core.context.activeAddressSpace =
+        state.execution.core.context.activeAddressSpace ∧
+      next.execution.core.context.kernelStack = state.execution.core.context.kernelStack ∧
+      next.execution.returnAddressSpace = state.execution.returnAddressSpace ∧
+      next.execution.returnPlan = state.execution.returnPlan ∧
+      next.execution.returnAuthority = state.execution.returnAuthority ∧
+      next.execution.returnAuthorityArmed = false ∧
+      next.execution.copyOverride = false ∧
+      next.scheduler = state.scheduler ∧
+      next.preemption = state.preemption ∧
+      next.virtualMemory = state.virtualMemory ∧
+      next.ipc = state.ipc ∧
+      next.capabilities = state.capabilities ∧
+      next.lifecycle = state.lifecycle ∧
+      runOperations next proposals = next := by
+  dsimp only
+  have hdispatch := accepted_nmi_terminal state.execution raw context event
+    hmode hcontext haccepted
+  have hgate : (gate state (.nmi raw context)).state =
+      { state with
+        execution := (dispatchNmi state.execution raw context).state
+        resumable := { state.resumable with halted := true } } := by
+    rcases hmode with hmode | ⟨active, hmode⟩
+    · simp [gate, applyOperation, hmode]
+    · simp [gate, applyOperation, hmode]
+  rw [hgate]
+  rcases hdispatch with ⟨_, hnextMode, hlifecycle, hsubject, haddressSpace,
+    hstack, hreturnAddressSpace, hreturnPlan, hreturnAuthority, harmed, hcopy⟩
+  refine ⟨hnextMode, hlifecycle, hsubject, haddressSpace, hstack,
+    hreturnAddressSpace, hreturnPlan, hreturnAuthority, harmed, hcopy,
+    rfl, rfl, rfl, rfl, rfl, rfl, ?_⟩
+  exact halted_suffix_absorbing
+    { state with
+      execution := (dispatchNmi state.execution raw context).state
+      resumable := { state.resumable with halted := true } }
+    (acceptedNmiRecord state.execution event) proposals hnextMode
 
 /-- Outgoing-return rejection is one atomic composite step: it records the
 typed terminal reason, changes no lifecycle/authority/scheduler/resource view,
@@ -12102,7 +12502,7 @@ theorem rejected_user_return_composite_atomicity state request reason proposals
 theorem halted_never_accepts state record operation
     (hmode : state.execution.mode = .halted record) :
     ∀ reply, (gate state operation).result ≠ .completed reply := by
-  simp [gate, hmode]
+  cases operation <;> simp [gate, hmode]
 
 /-- Terminal non-resumption over the complete typed composite step: no
 subsystem transition is accepted and no component of the terminal state can
@@ -12111,7 +12511,7 @@ theorem halted_terminal_non_resumption state record operation
     (hmode : state.execution.mode = .halted record) :
     (gate state operation).state = state ∧
       ∀ reply, (gate state operation).result ≠ .completed reply := by
-  simp [gate, hmode]
+  cases operation <;> simp [gate, hmode]
 
 theorem fatal_atomicity state frame reason
     (hfatal : (dispatchHardware state frame).action = .fatal reason) :
