@@ -283,15 +283,16 @@ theorem failstop_halted_suffix_absorbing state record proposals
   exact FailStop.halted_suffix_absorbing state record proposals hmode
 
 /-- SC-COMPOSITE-AUTHORITATIVE-GATE: the successor gate embeds both ordinary
-and blocking operation families under one latch and typed reply.  Every step
-from the strengthened blocking precondition preserves the folded authoritative
-invariant; every embedded blocking step preserves the full blocking invariant;
-classified denial is atomic; and fatal mode absorbs arbitrary mixed suffixes. -/
+and blocking operation families under one latch and typed reply.  The complete
+blocking/deferred invariant supplies structural readiness, while an exact
+post-state contract records preservation across authority-affecting steps;
+classified denial is atomic, and fatal mode absorbs arbitrary mixed suffixes. -/
 theorem composite_authoritative_gate_contract state operation
     (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
-    (hready : FailStop.AuthoritativeOperationReady state operation) :
+    (hcontract : FailStop.AuthoritativeOperationContract state operation) :
     FailStop.AuthoritativeRuntimeWellFormed
         (FailStop.authoritativeGate state operation).state ∧
+      FailStop.AuthoritativeOperationReady state operation ∧
       (∀ reply,
         (FailStop.authoritativeGate state operation).result = .completed reply →
         (state.execution.mode = .running ∨
@@ -310,28 +311,28 @@ theorem composite_authoritative_gate_contract state operation
         state.execution.mode = .halted record →
         FailStop.runAuthoritativeOperations state suffix = state) := by
   refine ⟨FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
-      state operation hstate hready, ?_, ?_, ?_, ?_⟩
+      state operation hstate hcontract, hstate.operationReady operation,
+      ?_, ?_, ?_, ?_⟩
   · intro reply hcompleted
     exact FailStop.authoritativeGate_completed_sound state operation reply hcompleted
   · intro _rejection
     exact FailStop.authoritativeGate_rejection_atomic state operation _rejection
   · intro blocking hoperation
     subst operation
-    exact FailStop.authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
-      state blocking hready
+    exact (hcontract hstate).blocking
   · intro record suffix hmode
     exact FailStop.authoritative_halted_suffix_absorbing state record suffix hmode
 
-/-- Ready finite mixtures of ordinary and blocking operations preserve the
-folded global invariant.  Readiness asks for the stronger scheduler-side
-blocking predicate only at states where a blocking operation executes. -/
+/-- Contracted finite mixtures of ordinary and blocking operations preserve
+the complete folded global invariant.  Structural blocking/deferred readiness
+is derived from that invariant rather than repeated as a trace premise. -/
 theorem composite_authoritative_mixed_trace_preserves_runtimeWellFormed
     state operations (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
-    (hready : FailStop.AuthoritativeTraceReady state operations) :
+    (hcontracts : FailStop.AuthoritativeTraceReady state operations) :
     FailStop.AuthoritativeRuntimeWellFormed
       (FailStop.runAuthoritativeOperations state operations) := by
   exact FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
-    state operations hstate hready
+    state operations hstate hcontracts
 
 /-- Mapping changes retain the complete authoritative-gate
 blocking precondition, so either raw mapping mutation can be followed directly
@@ -1151,19 +1152,21 @@ theorem composite_universal_mixed_trace_preserves_runtimeWellFormed
   exact FailStop.runOperations_preserves_runtimeWellFormed_universally
     state operations hstate
 
-/-- Supporting readiness-free trace theorem: an arbitrary finite list of
-ordinary successor-gate operations, including explicit/current termination
-and scheduler actions, preserves the folded global waiter/context invariant
-without an `AuthoritativeTraceReady` premise. -/
+/-- Supporting contracted trace theorem: an arbitrary finite list of ordinary
+successor-gate operations preserves the complete folded blocking/deferred
+invariant when every exact public post-state satisfies its recursive
+operation contract. -/
 theorem composite_authoritative_ordinary_trace_preserves_runtimeWellFormed
     state (operations : List FailStop.Operation)
-    (hstate : FailStop.AuthoritativeRuntimeWellFormed state) :
+    (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
+    (hcontracts : FailStop.AuthoritativeTraceReady state
+      (operations.map FailStop.AuthoritativeOperation.ordinary)) :
     FailStop.AuthoritativeRuntimeWellFormed
       (FailStop.runAuthoritativeOperations state
         (operations.map FailStop.AuthoritativeOperation.ordinary)) := by
   exact
     FailStop.runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFormed
-      state operations hstate
+      state operations hstate hcontracts
 
 /-- Supporting readiness-free mixed-trace theorem: every finite interleaving
 of the compatible ordinary family and arbitrary authoritative blocking

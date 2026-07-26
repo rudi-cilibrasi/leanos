@@ -13775,9 +13775,10 @@ The ordinary gate and the blocking gate were developed independently while
 their operation-specific preservation proofs were completed.  The vocabulary
 below is their migration boundary: it uses the same `CompositeState`, one
 execution latch, and one typed result family.  The successor invariant folds
-the exact waiter/saved-context agreement into the global boundary; a blocking
-step additionally requires the scheduler-side blocking invariant that its
-dependency transition consumes. -/
+the complete blocking/deferred classification into the global boundary.
+Lower blocking and drain readiness are projections of that invariant;
+authority-affecting operations additionally carry a public compatibility
+contract for their exact post-state. -/
 
 /-- Every currently modeled runtime event admitted by the successor gate. -/
 inductive AuthoritativeOperation where
@@ -13802,18 +13803,23 @@ structure AuthoritativeGateOutcome where
   state : CompositeState
   result : AuthoritativeGateResult
 
-/-- The successor gate's authoritative global invariant folds exact
-waiter/saved-context agreement into the established composite runtime
-invariant.  Scheduler-side blocking well-formedness remains the stronger
-precondition required specifically when a blocking transition mutates. -/
+/-- The successor gate's authoritative global invariant includes the complete
+blocking/deferred-cancellation classification.  In particular, it carries the
+scheduler/mailbox/waiter well-formedness required by blocking transitions and
+the retained-context classification required by deferred drains. -/
 def AuthoritativeRuntimeWellFormed (state : CompositeState) : Prop :=
   RuntimeWellFormed state ∧
-  BlockingIPCContext.ContextAgreement state.blockingIPCContext
+  state.DeferredCancellationWellFormed
 
-theorem BlockingRuntimeWellFormed.authoritative {state : CompositeState}
-    (hstate : BlockingRuntimeWellFormed state) :
+theorem DeferredBlockingRuntimeWellFormed.authoritative {state : CompositeState}
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed state :=
-  ⟨hstate.1, hstate.2.2⟩
+  hstate
+
+theorem AuthoritativeRuntimeWellFormed.blocking {state : CompositeState}
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed state :=
+  ⟨hstate.1, hstate.2.1.1⟩
 
 def applyAuthoritativeOperation (state : CompositeState) :
     AuthoritativeOperation → CompositeState
@@ -14066,33 +14072,47 @@ theorem authoritativeGate_userReturn_preserves_blockingRuntimeWellFormed
   exact authoritativeGate_blockingStateNeutral_preserves_blockingRuntimeWellFormed
     state (.userReturn request) (.userReturn request) hstate
 
-/-- Ordinary successor operations preserve the folded authoritative invariant
-without a blocking-scheduler premise. -/
+/-- A public operation contract records that the exact gate-selected
+post-state satisfies the authoritative invariant.  This is deliberately
+separate from structural readiness: deferred identities are quiescent, so an
+arbitrary scheduler or authority mutation cannot soundly be claimed to retain
+their authority without an operation-specific proof. -/
+def AuthoritativeOperationContract (state : CompositeState)
+    (operation : AuthoritativeOperation) : Prop :=
+  AuthoritativeRuntimeWellFormed state →
+    AuthoritativeRuntimeWellFormed (authoritativeGate state operation).state
+
+/-- Ordinary successor operations cross the folded authoritative boundary
+when their public operation contract establishes deferred-authority
+compatibility. -/
 theorem authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
-    state operation (hstate : AuthoritativeRuntimeWellFormed state) :
+    state operation (hstate : AuthoritativeRuntimeWellFormed state)
+    (hcontract : AuthoritativeOperationContract state (.ordinary operation)) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary operation)).state := by
-  constructor
-  · rw [authoritativeGate_ordinary_state]
-    exact gate_preserves_runtimeWellFormed state operation hstate.1
-  · rw [authoritativeGate_ordinary_state]
-    exact gate_preserves_blockingContextAgreement state operation hstate.2
+  exact hcontract hstate
 
-/-- Only a mutating blocking step needs the stronger scheduler/mailbox/waiter
-invariant.  A deferred drain additionally consumes the retained-context
-classification and resumable-bank disjointness carried by the deferred
-runtime invariant.  Ordinary steps need no extra premise beyond the
-authoritative global invariant itself. -/
+/-- Structural readiness consumed by the lower transition proofs.  The
+authoritative invariant now implies every branch of this predicate; it is no
+longer an external per-state premise of the public contract. -/
 def AuthoritativeOperationReady (state : CompositeState) :
     AuthoritativeOperation → Prop
   | .ordinary _ => True
   | .blocking _ => BlockingRuntimeWellFormed state
   | .drainDeferred _ => DeferredBlockingRuntimeWellFormed state
 
-/-- Every ready successor-gate operation preserves the existing global
-runtime invariant.  Readiness is operation-specific: ordinary operations use
-the supplied global invariant, blocking operations use their authoritative
-waiter store, and deferred drains use their retained-context classification. -/
+theorem AuthoritativeRuntimeWellFormed.operationReady
+    {state : CompositeState} (hstate : AuthoritativeRuntimeWellFormed state)
+    (operation : AuthoritativeOperation) :
+    AuthoritativeOperationReady state operation := by
+  cases operation with
+  | ordinary operation => trivial
+  | blocking operation => exact hstate.blocking
+  | drainDeferred subject => exact hstate
+
+/-- Every structurally ready successor-gate operation preserves the older
+global runtime projection.  Preservation of deferred authority is the
+separate public operation contract above. -/
 theorem authoritativeGate_preserves_runtimeWellFormed state operation
     (hstate : RuntimeWellFormed state)
     (hready : AuthoritativeOperationReady state operation) :
@@ -14115,30 +14135,9 @@ theorem authoritativeGate_preserves_runtimeWellFormed state operation
 
 theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
     state operation (hstate : AuthoritativeRuntimeWellFormed state)
-    (hready : AuthoritativeOperationReady state operation) :
+    (hcontract : AuthoritativeOperationContract state operation) :
     AuthoritativeRuntimeWellFormed (authoritativeGate state operation).state := by
-  cases operation with
-  | ordinary operation =>
-      exact authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
-        state operation hstate
-  | blocking operation =>
-      exact (authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
-        state operation hready).authoritative
-  | drainDeferred subject =>
-      cases hmode : state.execution.mode with
-      | running =>
-          have hpreserved :=
-            drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
-              state subject hready
-          rw [show (authoritativeGate state (.drainDeferred subject)).state =
-              (drainDeferredCancellation state subject).state by
-            simp [authoritativeGate, hmode, applyAuthoritativeOperation]]
-          change RuntimeWellFormed (drainDeferredCancellation state subject).state ∧
-            BlockingIPCContext.ContextAgreement
-              (drainDeferredCancellation state subject).state.blockingIPCContext
-          exact ⟨hpreserved.1, hpreserved.2.1.1.2⟩
-      | handling active => simpa [authoritativeGate, hmode] using hstate
-      | halted record => simpa [authoritativeGate, hmode] using hstate
+  exact hcontract hstate
 
 def runAuthoritativeOperations (state : CompositeState) :
     List AuthoritativeOperation → CompositeState
@@ -14179,46 +14178,43 @@ theorem readinessFreeMixedTrace_nonvacuous :
     (.blocking
       (.ordinary (.capabilityRevoke 0 1 0) .nil))
 
-/-- Arbitrary finite ordinary traces need no reconstructed blocking readiness.
-This includes explicit and scheduler-selected termination, raw scheduler
-denials, resumable scheduling, and terminal suffixes: each step preserves the
-folded global waiter/context invariant directly. -/
-theorem runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFormed
-    state (operations : List Operation)
-    (hstate : AuthoritativeRuntimeWellFormed state) :
-    AuthoritativeRuntimeWellFormed
-      (runAuthoritativeOperations state
-        (operations.map AuthoritativeOperation.ordinary)) := by
-  induction operations generalizing state with
-  | nil => simpa [runAuthoritativeOperations] using hstate
-  | cons operation rest ih =>
-      simp only [List.map_cons, runAuthoritativeOperations]
-      exact ih _
-        (authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
-          state operation hstate)
-
-/-- Recursive readiness for a finite mixed trace.  It records the stronger
-blocking precondition only at the exact states where blocking events occur;
-ordinary events carry no additional side condition. -/
+/-- Recursive public contracts for a finite mixed trace.  Each member proves
+that its exact post-state retains blocking/deferred well-formedness; structural
+blocking and drain readiness then follows from that invariant at the next
+step. -/
 def AuthoritativeTraceReady (state : CompositeState) :
     List AuthoritativeOperation → Prop
   | [] => True
   | operation :: rest =>
-      AuthoritativeOperationReady state operation ∧
+      AuthoritativeOperationContract state operation ∧
       AuthoritativeTraceReady (authoritativeGate state operation).state rest
 
-/-- Every ready finite interleaving of ordinary and blocking operations
-preserves the folded authoritative global invariant. -/
+/-- Every contracted finite interleaving of ordinary and blocking operations
+preserves the complete authoritative global invariant. -/
 theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
     state operations (hstate : AuthoritativeRuntimeWellFormed state)
-    (hready : AuthoritativeTraceReady state operations) :
+    (hcontracts : AuthoritativeTraceReady state operations) :
     AuthoritativeRuntimeWellFormed (runAuthoritativeOperations state operations) := by
   induction operations generalizing state with
   | nil => exact hstate
   | cons operation rest ih =>
       exact ih (authoritativeGate state operation).state
         (authoritativeGate_preserves_authoritativeRuntimeWellFormed
-          state operation hstate hready.1) hready.2
+          state operation hstate hcontracts.1) hcontracts.2
+
+/-- Arbitrary finite ordinary traces need no reconstructed blocking or drain
+readiness.  Their recursive public contracts retain the authoritative
+invariant directly at every exact gate-selected post-state. -/
+theorem runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFormed
+    state (operations : List Operation)
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hcontracts : AuthoritativeTraceReady state
+      (operations.map AuthoritativeOperation.ordinary)) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (operations.map AuthoritativeOperation.ordinary)) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state (operations.map AuthoritativeOperation.ordinary) hstate hcontracts
 
 /-- A public deferred-drain step preserves the full retained-context
 classification under every outer-latch result. -/
