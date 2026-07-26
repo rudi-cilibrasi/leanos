@@ -185,12 +185,21 @@ generated-C fixture is hosted evidence and remains absent from the
 allocation-free production image.
 `BootMemoryMapScalarRichEquivalence.field_words_iff_rich_predicates` proves the
 candidate-policy comparison for arbitrary entry lists, checked reservation
-intervals, and frames. `consume_exact_projection_iff` proves the sole
-freestanding decision consumes that canonical encoding, while
-`accepted_authority_projection_consumable` projects every accepted rich
-decode/reserve/allocate authority into the same decision. Final-ELF policy
-requires `leanos_boot_consume_exact_projection`, rejects the superseded
-selector, and QEMU requires `projection=exact-rich` from the production path.
+intervals, and frames. `consume_canonical_projection_iff` fixes the candidate
+identity and all three production decision words directly from those rich
+objects, so its public equivalence has no caller-supplied field equations.
+`roundInterval_contains_iff_byteRangeReserves` proves each checked half-open
+byte range reserves exactly the frames selected by the production overlap
+test, and `rounded_ranges_reservedBy_iff` composes that result over the complete
+nine-identity manifest (in fact, over any successfully rounded list). Thus the
+production manifest word and the rich reservation overlay cannot omit or add a
+range after rounding.
+`accepted_authority_projection_consumable` then derives reservation exclusion
+from the accepted allocation witness itself and projects every accepted rich
+decode/reserve/allocate authority into the same decision without an external
+readiness premise. Final-ELF policy requires
+`leanos_boot_consume_exact_projection`, rejects the superseded selector, and
+QEMU requires `projection=exact-rich` from the production path.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
