@@ -1036,6 +1036,10 @@ if ! grep -q ' T leanos_stale_translation_demo$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_stale_translation_demo" >&2
   exit 1
 fi
+if ! grep -q ' T leanos_page_fault_demo$' <<<"$symbols"; then
+  echo "error: generated image does not retain leanos_page_fault_demo" >&2
+  exit 1
+fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   echo "error: kernel ELF has no valid Multiboot2 header" >&2
   exit 1
