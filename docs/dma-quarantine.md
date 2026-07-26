@@ -147,9 +147,14 @@ Every authoritative ordinary, blocking, and deferred-drain constructor retains
 the accepted and observed PCI authority fields literally. Consequently an
 arbitrary finite successor trace preserves the nonempty deny-all quarantine
 without #104's stronger, still-partial dormant-cancellation compatibility
-certificate. The authoritative live observation also instantiates the explicit
-`DeviceContract`: a named present unowned-device attempt preserves the complete
-physical-memory projection without assuming an IOMMU. Trusted
+certificate. The already-derived exact-projection compatibility laws for
+return-authority selection, user-return completion, and restart are also
+consumed directly: each constructor preserves the complete authoritative
+invariant and therefore its DMA conjunct, without importing compatibility
+premises for unfinished constructors. The authoritative live observation also
+instantiates the explicit `DeviceContract`: a named present unowned-device
+attempt preserves the complete physical-memory projection without assuming an
+IOMMU. Trusted
 `observeDMAControl` revalidates a live hardware snapshot: an exact observation
 continues atomically, while an invalid or valid-but-changed observation
 publishes the diagnostic snapshot, latches a typed DMA fatal record, and is

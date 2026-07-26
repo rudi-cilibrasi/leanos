@@ -14560,6 +14560,31 @@ theorem authoritativeGate_restart_preserves_authoritativeRuntimeWellFormed
     (.ordinary .restart) hstate
     (restart_authoritativeOperationCompatible state hstate)
 
+/-- The self-contained neutral-constructor compatibility laws preserve the
+authoritative DMA conjunct as a consequence of complete global preservation.
+No compatibility premise for any unfinished constructor enters this slice. -/
+theorem authoritativeGate_neutralConstructors_preserve_dmaQuarantined
+    state (hstate : AuthoritativeRuntimeWellFormed state) :
+    (∀ purpose,
+      (authoritativeGate state
+        (.ordinary (.selectUserReturn purpose))).state.DMAQuarantined) ∧
+    (∀ request,
+      (authoritativeGate state
+        (.ordinary (.userReturn request))).state.DMAQuarantined) ∧
+    (authoritativeGate state (.ordinary .restart)).state.DMAQuarantined := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro purpose
+    exact
+      (authoritativeGate_selectUserReturn_preserves_authoritativeRuntimeWellFormed
+        state purpose hstate).dmaQuarantined
+  · intro request
+    exact
+      (authoritativeGate_userReturn_preserves_authoritativeRuntimeWellFormed
+        state request hstate).dmaQuarantined
+  · exact
+      (authoritativeGate_restart_preserves_authoritativeRuntimeWellFormed
+        state hstate).dmaQuarantined
+
 def runAuthoritativeOperations (state : CompositeState) :
     List AuthoritativeOperation → CompositeState
   | [] => state
