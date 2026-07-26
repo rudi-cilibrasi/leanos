@@ -141,14 +141,17 @@ upgrade the Lean theorem into a hardware claim.
 
 Issue #104's authoritative `FailStop.CompositeState` now embeds the
 proof-carrying accepted snapshot and latest control observation directly;
-`RuntimeWellFormed` includes their exact `DMAQuarantined` agreement. Ordinary
-public operations preserve both fields and finite ordinary traces preserve the
-nonempty deny-all quarantine. Trusted `observeDMAControl` revalidates a live
-hardware snapshot: an exact observation continues atomically, while an invalid
-or valid-but-changed observation publishes the diagnostic snapshot, latches a
-typed DMA fatal record, and is absorbed by every later public-operation suffix.
-This integration does not fork `DMAQuarantine.RuntimeState` or its parallel
-memory projection into the composite runtime.
+`RuntimeWellFormed` includes their exact `DMAQuarantined` agreement, and
+`AuthoritativeRuntimeWellFormed` exposes that same conjunct.
+Compatibility-certified ordinary, blocking, and deferred-drain traces preserve
+the complete authoritative invariant and therefore the nonempty deny-all
+quarantine. Trusted `observeDMAControl` revalidates a live hardware snapshot:
+an exact observation continues atomically, while an invalid or
+valid-but-changed observation publishes the diagnostic snapshot, latches a
+typed DMA fatal record, and is absorbed by every later authoritative successor
+operation without a compatibility premise. This integration does not fork
+`DMAQuarantine.RuntimeState` or its parallel memory projection into the
+composite runtime.
 Issue #129's final-ELF inventory now classifies the boot-only `0xcf8`/`0xcfc`
 mechanism accesses as `DMAQuarantine.boot-pci-config`. The exact `out16`,
 `out32`, and `in32` wrapper sites are reviewed exceptions, while the source

@@ -137,29 +137,34 @@ theorem dma_quarantine_q35_trace_nonvacuous :
       DMAQuarantine.QuarantineTrace middle DMAQuarantine.q35Runtime :=
   DMAQuarantine.q35_mixed_trace_nonvacuous
 
-/-- SC-DMA-QUARANTINE-GLOBAL: the sole composite runtime invariant contains
-the exact boot-accepted PCI control observation, and every finite ordinary
-composite suffix preserves that nonempty deny-all quarantine. -/
+/-- SC-DMA-QUARANTINE-GLOBAL: the sole authoritative runtime invariant
+contains the exact boot-accepted PCI control observation, and every finite
+ordinary/blocking/deferred successor suffix preserves that nonempty deny-all
+quarantine. -/
 theorem dma_quarantine_global_runtime_preservation
-    (state : FailStop.CompositeState) (operations : List FailStop.Operation)
-    (hinvariant : FailStop.RuntimeWellFormed state) :
-    let next := FailStop.runOperations state operations
+    (state : FailStop.CompositeState)
+    (operations : List FailStop.AuthoritativeOperation)
+    (hinvariant : FailStop.AuthoritativeRuntimeWellFormed state)
+    (hcompatible : FailStop.AuthoritativeTraceCompatible state operations) :
+    let next := FailStop.runAuthoritativeOperations state operations
     next.DMAQuarantined ∧
       DMAQuarantine.quarantine next.dmaObserved = true := by
-  exact FailStop.runOperations_preserves_dmaQuarantined
-    state operations hinvariant.dmaQuarantined
+  exact FailStop.runAuthoritativeOperations_preserves_dmaQuarantined
+    state operations hinvariant hcompatible
 
 /-- SC-DMA-CONTROL-FAILSTOP: an invalid live PCI observation is a fatal
-composite transition, and every subsequent ordinary operation is absorbed. -/
+composite transition, and every subsequent authoritative successor operation
+is absorbed. -/
 theorem dma_invalid_live_control_is_fatal_and_absorbing
     (state : FailStop.CompositeState) (snapshot : DMAQuarantine.Snapshot)
-    (reason : DMAQuarantine.RejectReason) (operations : List FailStop.Operation)
+    (reason : DMAQuarantine.RejectReason)
+    (operations : List FailStop.AuthoritativeOperation)
     (hrunning : state.execution.mode = .running)
     (hinvalid : DMAQuarantine.validate snapshot = .rejected reason) :
     let next := (FailStop.observeDMAControl state snapshot).state
     (∃ record, next.execution.mode = .halted record) ∧
-      FailStop.runOperations next operations = next := by
-  have h := FailStop.observeDMAControl_invalid_suffix_absorbing
+      FailStop.runAuthoritativeOperations next operations = next := by
+  have h := FailStop.observeDMAControl_invalid_authoritative_suffix_absorbing
     state snapshot reason operations hrunning hinvalid
   exact ⟨⟨_, h.1⟩, h.2⟩
 

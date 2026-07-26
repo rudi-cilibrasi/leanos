@@ -13823,6 +13823,13 @@ theorem AuthoritativeRuntimeWellFormed.blocking {state : CompositeState}
     BlockingRuntimeWellFormed state :=
   ⟨hstate.1, hstate.2.1.1⟩
 
+/-- The successor invariant exposes the same proof-carrying PCI quarantine
+carried by the sole global runtime invariant. -/
+theorem AuthoritativeRuntimeWellFormed.dmaQuarantined {state : CompositeState}
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    state.DMAQuarantined :=
+  hstate.1.dmaQuarantined
+
 def applyAuthoritativeOperation (state : CompositeState) :
     AuthoritativeOperation → CompositeState
   | .ordinary operation => applyOperation state operation
@@ -14401,6 +14408,19 @@ theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
         (authoritativeGate_preserves_authoritativeRuntimeWellFormed
           state operation hstate hcompatible.1) hcompatible.2
 
+/-- Compatibility-certified successor traces retain the exact boot-accepted
+PCI observation as a projection of the one authoritative runtime invariant. -/
+theorem runAuthoritativeOperations_preserves_dmaQuarantined
+    state operations (hstate : AuthoritativeRuntimeWellFormed state)
+    (hcompatible : AuthoritativeTraceCompatible state operations) :
+    let next := runAuthoritativeOperations state operations
+    next.DMAQuarantined ∧
+      DMAQuarantine.quarantine next.dmaObserved = true := by
+  have hnext :=
+    runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+      state operations hstate hcompatible
+  exact ⟨hnext.dmaQuarantined, hnext.dmaQuarantined.quarantine⟩
+
 /-- Arbitrary finite ordinary traces need no reconstructed blocking or drain
 readiness.  Their recursive compatibility evidence composes operation-local
 premises without assuming the authoritative invariant at an intermediate
@@ -14609,6 +14629,40 @@ theorem authoritative_halted_suffix_absorbing state record operations
         | drainDeferred subject => simp [authoritativeGate, hmode]
       rw [hgate]
       exact ih state hmode
+
+/-- A validator-rejected live PCI observation is absorbed by the complete
+successor vocabulary, including blocking operations and deferred drains. -/
+theorem observeDMAControl_invalid_authoritative_suffix_absorbing
+    state snapshot reason operations
+    (hrunning : state.execution.mode = .running)
+    (hinvalid : DMAQuarantine.validate snapshot = .rejected reason) :
+    let next := (observeDMAControl state snapshot).state
+    next.execution.mode =
+        .halted (dmaHaltRecord .dmaInvalidControlSnapshot) ∧
+      runAuthoritativeOperations next operations = next := by
+  rw [observeDMAControl_invalid_exact_fatal state snapshot reason hrunning hinvalid]
+  dsimp [latchDMAControlFailure]
+  constructor
+  · rfl
+  · exact authoritative_halted_suffix_absorbing _ _ operations rfl
+
+/-- A valid but changed PCI observation receives its distinct fatal reason and
+is likewise absorbed by every authoritative successor operation. -/
+theorem observeDMAControl_changed_authoritative_suffix_absorbing
+    state snapshot accepted operations
+    (hrunning : state.execution.mode = .running)
+    (hvalid : DMAQuarantine.validate snapshot = .accepted accepted)
+    (hchanged : snapshot ≠ state.dmaAccepted.snapshot) :
+    let next := (observeDMAControl state snapshot).state
+    next.execution.mode =
+        .halted (dmaHaltRecord .dmaControlSnapshotChanged) ∧
+      runAuthoritativeOperations next operations = next := by
+  rw [observeDMAControl_changed_exact_fatal state snapshot accepted
+    hrunning hvalid hchanged]
+  dsimp [latchDMAControlFailure]
+  constructor
+  · rfl
+  · exact authoritative_halted_suffix_absorbing _ _ operations rfl
 
 /-- Concrete reachability for the successor rejection class: the boot-produced
 empty waiter store rejects cancellation without mutation. -/
