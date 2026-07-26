@@ -136,6 +136,31 @@ the selected frame; changing any projection field rejects with
 selection plus cross-identity splicing, reordered chunks, and selected-frame
 mutation.
 
+`BootMemoryMapFullProjectionABI` makes the exact rich transition executable as
+a hosted generated-C boundary without calling the scalar parser. Its sole
+fixture export starts from immutable raw bytes, calls
+`BootMemoryMapDecoder.decode`, passes the resulting handoff unchanged to
+`BootReservation.initializeAllocator`, calls `FrameAllocator.allocate`, and
+serializes every decoded entry, normalized region, checked reservation interval
+(including identity and lifetime), overlaid region, and the selected frame.
+Rejection exposes only a typed stage/error code and no projection word. The
+accepted corpus combines duplicate usable entries, usable/non-usable overlaps,
+both entry orders, an unknown memory type, a partial page, and reservations
+crossing normalized regions. Separate fixtures retain the exact 256-entry bound
+and reject a missing end tag, fixed-width address overflow, and a substituted
+selected frame.
+
+`scripts/check-boot-memory-full-projection.sh` builds the generated C and hosted
+ELF twice and requires byte-identical object files and final ELFs. It replays
+the complete 90-word projection, checks that reversed input changes only the
+raw witness order, and retains generated C, ELF hashes, symbol inventory,
+section headers, disassembly, results, and mutation diagnostics under
+`build/boot-memory-full-projection`. Final-ELF policy requires the sole rich
+fixture export and rejects the scalar decode/manifest/select/publication
+exports and legacy adapters. The deliberately false
+`BootMemoryFullProjectionMutation` Lean fixture must also fail with the
+expected semantic diagnostic.
+
 The exact 65-tag fixture is shared at the byte level by the scalar replay and
 `BootMemoryMapStreamPipeline`. The
 `sixtyFiveTag_exactByte_scalar_richPipeline_agreement` theorem proves exact
@@ -146,13 +171,15 @@ requires production consumers to retain all nineteen ABI words and pass the
 tag-count word on every transition.
 
 This checkpoint does not claim that the continuity chain authenticates bytes,
-that generated C or the final binary refines Lean, or that the scalar parser is
-extensionally equal to the rich `BootMemoryMapDecoder.decode` and
-`BootReservation.initializeAllocator` projection for every possible input.
-The existing version-one decoder corpus and `BootMemoryMapStreamPipeline`
-remain the rich typed specification. Expanding scalar-to-rich comparison from
-the concrete 65-tag repair to every accepted/rejected projection remains a
-documented correspondence assumption.
+that generated C or the final binary refines Lean, or that the production
+scalar parser is extensionally equal to the rich
+`BootMemoryMapDecoder.decode` and `BootReservation.initializeAllocator`
+projection for every possible input. The exact rich generated-C fixture is
+hosted evidence and is deliberately absent from the freestanding production
+image. Expanding scalar-to-rich comparison from the concrete agreement
+fixtures to every accepted/rejected projection—or making production consume
+the exact rich result—remains a documented correspondence and integration
+boundary.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
@@ -246,5 +273,6 @@ The focused freestanding replay covers canonical decoding,
 usable/non-usable overlap, arbitrary ignored-tag padding, manifest
 exclusion, stable selection, and publication mutation. Controlled
 malformed-handoff QEMU replay reaches the production generated decoder and
-rejects before authority. A proved complete-projection correspondence remains
-follow-up proof work.
+rejects before authority. Hosted generated-C now executes and compares the
+complete rich projection directly; correspondence of the separate production
+scalar route to that projection for all inputs remains follow-up proof work.
