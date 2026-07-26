@@ -153,7 +153,9 @@ done
 for fixture in PageFaultDroppedCR2 PageFaultIgnoredAccessBits \
     PageFaultClearedReserved PageFaultUnsupportedBit PageFaultPayloadAccessKind \
     PageFaultInvalidUserSelector PageFaultNoncanonicalRip \
-    PageFaultZeroStackIdentity; do
+    PageFaultZeroStackIdentity PageFaultForgedSubject \
+    PageFaultForgedAddressSpace PageFaultForgedCr3 PageFaultForgedWp \
+    PageFaultForgedNxe PageFaultForgedSmep PageFaultForgedSmap; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: page-fault provenance fixture ${fixture} unexpectedly type-checked" >&2
     exit 1

@@ -993,29 +993,149 @@ def canonicalPageFaultExample : CanonicalPageFault :=
     stackIdentity := 1
     reserved := 0 }
 
+def canonicalPageFaultExampleContext : PageFaultContext :=
+  { entry :=
+      { currentSubject := 1
+        activeAddressSpace := 1
+        activeCr3 := 0x1000
+        stackIdentity := 1
+        stackFirst := 0x800000
+        stackPastLast := 0x804000
+        entryActive := false }
+    controls :=
+      { writeProtect := true
+        nxEnable := true
+        smep := true
+        smap := true } }
+
 theorem canonical_page_fault_codec_nonvacuous :
     validCanonicalPageFault canonicalPageFaultExample = true ∧
       decodeCanonicalPageFault (encodeCanonicalPageFault canonicalPageFaultExample) =
         some canonicalPageFaultExample := by
   native_decide
 
-/-- The action boundary consumes the codec result.  A malformed record has no
-authorized snapshot and leaves the supplied containment state unchanged. -/
+/-- The action boundary consumes the codec result only after reconstructing
+the architectural snapshot under an independently supplied kernel context.
+Serialized authority and paging-control words are therefore claims to check,
+not inputs from which trusted context may be reconstructed. -/
 structure CanonicalPageFaultAction (State : Type) where
   authorized : Option CanonicalPageFault
   state : State
 
-def authorizeCanonicalPageFault (words : List UInt64) (state : State) :
+def authorizeCanonicalPageFault (words : List UInt64)
+    (trustedContext : PageFaultContext) (state : State) :
     CanonicalPageFaultAction State :=
   match decodeCanonicalPageFault words with
   | none => ⟨none, state⟩
-  | some record => ⟨some record, state⟩
+  | some record =>
+      match normalizePageFault (canonicalPageFaultRaw record) trustedContext with
+      | .fatal _ => ⟨none, state⟩
+      | .accepted snapshot =>
+          if canonicalPageFaultRecord snapshot = record then
+            ⟨some record, state⟩
+          else
+            ⟨none, state⟩
 
-theorem rejected_canonical_authorizes_nothing (State : Type) words (state : State)
+theorem rejected_canonical_authorizes_nothing (State : Type) words
+    (trustedContext : PageFaultContext) (state : State)
     (hrejected : decodeCanonicalPageFault words = none) :
-    (authorizeCanonicalPageFault words state).authorized = none ∧
-      (authorizeCanonicalPageFault words state).state = state := by
+    (authorizeCanonicalPageFault words trustedContext state).authorized = none ∧
+      (authorizeCanonicalPageFault words trustedContext state).state = state := by
   simp [authorizeCanonicalPageFault, hrejected]
+
+/-- Authorization supplies an accepted normalizer witness under the caller's
+independent trusted context, not the context claimed by the encoded record. -/
+theorem authorized_canonical_has_trusted_normalized_preimage
+    (State : Type) words (trustedContext : PageFaultContext) (state : State) record
+    (hauthorized :
+      (authorizeCanonicalPageFault words trustedContext state).authorized =
+        some record) :
+    ∃ snapshot,
+      normalizePageFault (canonicalPageFaultRaw record) trustedContext =
+          .accepted snapshot ∧
+        canonicalPageFaultRecord snapshot = record := by
+  unfold authorizeCanonicalPageFault at hauthorized
+  generalize hdecode : decodeCanonicalPageFault words = decoded at hauthorized
+  cases decoded with
+  | none => contradiction
+  | some decodedRecord =>
+      generalize haccepted :
+        normalizePageFault (canonicalPageFaultRaw decodedRecord) trustedContext =
+          result at hauthorized
+      cases result with
+      | fatal reason =>
+          simp [haccepted] at hauthorized
+      | accepted snapshot =>
+          by_cases hrecord : canonicalPageFaultRecord snapshot = decodedRecord
+          · simp [haccepted, hrecord] at hauthorized
+            subst record
+            exact ⟨snapshot, haccepted, hrecord⟩
+          · simp [haccepted, hrecord] at hauthorized
+
+/-- Every authorized authority/control field equals the independently supplied
+kernel context.  No serialized field is promoted to authority by itself. -/
+theorem authorized_canonical_binds_trusted_context
+    (State : Type) words (trustedContext : PageFaultContext) (state : State) record
+    (hauthorized :
+      (authorizeCanonicalPageFault words trustedContext state).authorized =
+        some record) :
+    record.currentSubject = UInt64.ofNat trustedContext.entry.currentSubject ∧
+      record.activeAddressSpace =
+        UInt64.ofNat trustedContext.entry.activeAddressSpace ∧
+      record.activeCr3 = trustedContext.entry.activeCr3 ∧
+      record.controlsCode = pagingControlsCode trustedContext.controls := by
+  obtain ⟨snapshot, haccepted, hrecord⟩ :=
+    authorized_canonical_has_trusted_normalized_preimage
+      State words trustedContext state record hauthorized
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, hsubject, hspace, hcr3, hcontrols⟩ :=
+    normalizePageFault_accepted_binding _ _ _ haccepted
+  rw [← hrecord]
+  simp [canonicalPageFaultRecord, hsubject, hspace, hcr3, hcontrols]
+
+/-- Decoding and context comparison are pure authorization checks; neither an
+accepted nor a rejected serialized record mutates containment state. -/
+theorem canonical_page_fault_authorization_preserves_state
+    (State : Type) words (trustedContext : PageFaultContext) (state : State) :
+    (authorizeCanonicalPageFault words trustedContext state).state = state := by
+  unfold authorizeCanonicalPageFault
+  split <;> try rfl
+  split <;> try rfl
+  split <;> rfl
+
+/-- Rejection at either the codec or trusted-context boundary cannot authorize
+containment and cannot mutate the supplied state. -/
+theorem unauthorized_canonical_cannot_mutate
+    (State : Type) words (trustedContext : PageFaultContext) (state : State)
+    (hunauthorized :
+      (authorizeCanonicalPageFault words trustedContext state).authorized = none) :
+    (authorizeCanonicalPageFault words trustedContext state).authorized = none ∧
+      (authorizeCanonicalPageFault words trustedContext state).state = state := by
+  constructor
+  · exact hunauthorized
+  · exact canonical_page_fault_authorization_preserves_state
+      State words trustedContext state
+
+theorem canonical_page_fault_authorization_nonvacuous :
+    (authorizeCanonicalPageFault
+      (encodeCanonicalPageFault canonicalPageFaultExample)
+      canonicalPageFaultExampleContext ()).authorized =
+        some canonicalPageFaultExample := by
+  native_decide
+
+/-- Each authority/control mutation is still codec-valid, but none is
+authorized against the independently supplied example context. -/
+theorem canonical_page_fault_forged_authority_rejected :
+    let authorize := fun record =>
+      (authorizeCanonicalPageFault (encodeCanonicalPageFault record)
+        canonicalPageFaultExampleContext ()).authorized
+    authorize { canonicalPageFaultExample with currentSubject := 2 } = none ∧
+      authorize { canonicalPageFaultExample with activeAddressSpace := 2 } = none ∧
+      authorize { canonicalPageFaultExample with activeCr3 := 0x2000 } = none ∧
+      authorize { canonicalPageFaultExample with controlsCode := 14 } = none ∧
+      authorize { canonicalPageFaultExample with controlsCode := 13 } = none ∧
+      authorize { canonicalPageFaultExample with controlsCode := 11 } = none ∧
+      authorize { canonicalPageFaultExample with controlsCode := 7 } = none := by
+  native_decide
 
 def PageFaultRejectReason.code : PageFaultRejectReason → UInt64
   | .entry _ => 1

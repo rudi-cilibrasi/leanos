@@ -58,10 +58,17 @@ saved-CS/RSP/SS shapes outside the reviewed kernel (`0x08`) and user
 `canonical_page_fault_encoding_injective` proves injectivity.
 `decoded_canonical_page_fault_has_normalized_preimage` proves every decoded
 record is the serialization of a concrete accepted `normalizePageFault`
-snapshot. `rejected_canonical_authorizes_nothing` is stated over the codec
-action boundary and proves decode failure returns no authorized record and
-leaves containment state unchanged. Generated corpus rows preserve per-vector
-inputs and identifiers in `build/boot/corpus.tsv`.
+snapshot. That codec-only preimage reconstructs context for representability;
+it grants no authority. The action boundary instead requires an independently
+supplied trusted `PageFaultContext`, normalizes under that context, and compares
+the resulting complete serialization with the decoded record.
+`authorized_canonical_has_trusted_normalized_preimage` and
+`authorized_canonical_binds_trusted_context` prove that authorization carries
+this independent witness and exact subject/address-space/CR3/control binding.
+Decode failures and forged authority/control fields return no authorization
+and leave containment state unchanged. Dedicated negative fixtures cover each
+subject, address-space, CR3, WP, NXE, SMEP, and SMAP mutation. Generated corpus
+rows preserve per-vector inputs and identifiers in `build/boot/corpus.tsv`.
 
 ## Trusted boundary
 

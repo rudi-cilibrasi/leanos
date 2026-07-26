@@ -179,7 +179,13 @@ CS/RSP/SS shapes, canonical saved RIP, RFLAGS bit one, and nonzero
 subject/address-space/CR3/stack identities. Lean proves width, valid-record
 roundtrip, encoding injectivity, exact bit/page binding, that every decoded
 record has a concrete accepted normalizer preimage, decode-failure no-action,
-normalizer totality/determinism, and GPR/diagnostic confinement. The generated
+normalizer totality/determinism, and GPR/diagnostic confinement. The codec
+action boundary additionally takes an independent trusted `PageFaultContext`,
+renormalizes the decoded architectural fields under it, and authorizes only
+when the resulting serialization exactly matches the decoded record. Thus
+serialized subject, address-space, CR3, and WP/NXE/SMEP/SMAP fields remain
+claims to check; a mismatch returns no authorization and leaves containment
+state unchanged. The generated
 five-word adapter is only a compact executable corpus projection, not the
 canonical codec or a machine-refinement theorem; its scalar result nevertheless
 attests the exact compact context plus WP/NXE/SMEP/SMAP and is checked
