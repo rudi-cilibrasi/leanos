@@ -1087,6 +1087,34 @@ theorem composite_gate_termination_cleans_runtime_references
   exact FailStop.terminateSubject_accepted_cleans_runtime_references
     state subject lifecycle hstate hmode haccepted
 
+/-- Supporting endpoint-owner cleanup theorem: accepted termination detaches
+every named peer whose waiter endpoint was retired, retains the exact saved
+context for a checked deferred drain, and clears that endpoint's mailbox. -/
+theorem composite_gate_termination_defers_invalidated_peer
+    state owner lifecycle peer endpoint saved
+    (hmode : state.execution.mode = .running)
+    (haccepted : SubjectLifecycle.terminate state.lifecycle owner =
+      { state := lifecycle, result := .accepted })
+    (hpeer : peer ≠ owner)
+    (hendpoint :
+      (BlockingIPCContext.terminate state.blockingIPCContext owner).ipc.waiterEndpoint peer =
+        some endpoint)
+    (hsaved :
+      (BlockingIPCContext.terminate state.blockingIPCContext owner).blocked peer = some saved)
+    (hretired :
+      (ResumablePreemption.cleanupSubject state.resumable owner).scheduler.lifecycle.capabilities.objects
+        endpoint = false) :
+    let next := (FailStop.gate state (.terminateSubject owner)).state
+    (FailStop.gate state (.terminateSubject owner)).result =
+        .completed (.terminateSubject .accepted) ∧
+      next.blockingIPC.waiterEndpoint peer = none ∧
+      next.blockingContexts peer = none ∧
+      next.deferredCancels.retained peer = some saved ∧
+      next.blockingIPC.mailbox endpoint = none := by
+  exact FailStop.terminateSubject_accepted_defers_invalidated_waiter
+    state owner lifecycle peer endpoint saved hmode haccepted hpeer
+    hendpoint hsaved hretired
+
 /-- SC-COMPOSITE-MIXED-TRACE-WF: arbitrary finite interleavings of every
 public operation preserve the complete runtime invariant for every accepted,
 typed-rejected, busy, halted, or fatal result. -/
@@ -1096,6 +1124,20 @@ theorem composite_universal_mixed_trace_preserves_runtimeWellFormed
     FailStop.RuntimeWellFormed (FailStop.runOperations state operations) := by
   exact FailStop.runOperations_preserves_runtimeWellFormed_universally
     state operations hstate
+
+/-- Supporting readiness-free trace theorem: an arbitrary finite list of
+ordinary successor-gate operations, including explicit/current termination
+and scheduler actions, preserves the folded global waiter/context invariant
+without an `AuthoritativeTraceReady` premise. -/
+theorem composite_authoritative_ordinary_trace_preserves_runtimeWellFormed
+    state (operations : List FailStop.Operation)
+    (hstate : FailStop.AuthoritativeRuntimeWellFormed state) :
+    FailStop.AuthoritativeRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (operations.map FailStop.AuthoritativeOperation.ordinary)) := by
+  exact
+    FailStop.runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFormed
+      state operations hstate
 
 /-- SC-COMPOSITE-DIRECT-PORT-WF: every public composite step and arbitrary
 finite mixed trace retain the complete TSS/IOPL control and device projection

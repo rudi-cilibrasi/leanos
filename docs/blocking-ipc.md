@@ -41,9 +41,14 @@ identical typed context and composite states. The public explicit-termination
 gate and its scheduler-selected `terminateCurrent` spelling now use this
 publisher before committing resumable/resource cleanup, so waiter and blocked
 context absence are part of the same typed global result as lifecycle, ready
-queue, resumable-context, and transfer cleanup. Terminating an endpoint owner still requires a broader
-authority filter for other affected waiters before this predicate can be folded
-into the global runtime invariant.
+queue, resumable-context, and transfer cleanup. Terminating an endpoint owner
+also applies the contained-cleanup authority filter: every peer waiter whose
+endpoint is retired loses its waiter index and blocked-context entry, the exact
+saved context moves to the quiescent deferred-cancellation bank, and the dead
+endpoint mailbox is cleared atomically. Arbitrary ordinary successor-gate
+traces, including either termination spelling and raw scheduler requests,
+preserve the folded runtime/waiter-context invariant without a reconstructed
+readiness premise.
 
 Contained-fault cleanup uses a separate deferred-cancellation bank for peers
 whose endpoint authority was invalidated. Each retained context stays valid,

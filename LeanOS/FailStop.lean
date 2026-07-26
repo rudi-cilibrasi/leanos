@@ -4672,17 +4672,28 @@ private def installTerminatedResumable (state : CompositeState)
 /-- Publish one explicit subject termination through every authoritative
 cleanup store.  The blocking transition runs against the live pre-state, so it
 can remove the exact waiter/context pair before the resumable/resource
-publisher installs the same terminated lifecycle everywhere else.  A
-quiescent context retained by contained cleanup is also retired here: a dead
-subject must not remain eligible for a later deferred-cancellation drain. -/
+publisher installs the same terminated lifecycle everywhere else.  Waiters on
+endpoints owned by the terminated subject are detached with their exact saved
+contexts for a later capacity-checked cancellation drain, and mailboxes for
+those retired endpoints are cleared in the same mutation.  A quiescent context
+retained by contained cleanup is also retired here: a dead subject must not
+remain eligible for a later deferred-cancellation drain. -/
 private def installTerminatedSubject (state : CompositeState)
     (subject : BlockingIPC.SubjectId)
     (resumable : ResumablePreemption.State) : CompositeState :=
-  let cleaned :=
-    installTerminatedResumable (publishTerminatedBlockingSubject state subject) resumable
+  let cleaned := installTerminatedResumable state resumable
+  let selfRemoved := BlockingIPCContext.terminate state.blockingIPCContext subject
+  let detached := BlockingIPCContext.detachInvalidated selfRemoved
+    state.deferredCancels resumable.scheduler
   { cleaned with
+    blockingIPC := { detached.1.ipc with
+      mailbox := fun endpoint =>
+        if resumable.scheduler.lifecycle.capabilities.objects endpoint then
+          detached.1.ipc.mailbox endpoint
+        else none }
+    blockingContexts := detached.1.blocked
     deferredCancels :=
-      BlockingIPCContext.setRetained cleaned.deferredCancels subject none }
+      BlockingIPCContext.setRetained detached.2 subject none }
 
 @[simp] private theorem installTerminatedSubject_deferred_self state subject resumable :
     (installTerminatedSubject state subject resumable).deferredCancels.retained subject =
@@ -5231,9 +5242,7 @@ private theorem dispatchIPC_directPortIO state call :
 
 private theorem installTerminatedSubject_directPortIO state subject resumable :
     (installTerminatedSubject state subject resumable).directPortIO = state.directPortIO := by
-  unfold installTerminatedSubject installTerminatedResumable
-    publishTerminatedBlockingSubject
-  split <;> rfl
+  rfl
 
 /-- Every public composite operation retains the complete direct-port control
 and device projection literally.  Kernel device mutation remains confined to
@@ -8730,14 +8739,65 @@ theorem terminateSubject_accepted_cleans_runtime_references state subject lifecy
     simp [haccepted]
   have hblockingClean := BlockingIPCContext.terminate_accepted_cleans_self
     state.blockingIPCContext subject hblockingAccepted
+  have hdetachedClean :
+      let detached := BlockingIPCContext.detachInvalidated
+        (BlockingIPCContext.terminate state.blockingIPCContext subject)
+        state.deferredCancels
+        (ResumablePreemption.cleanupSubject state.resumable subject).scheduler
+      detached.1.ipc.waiterEndpoint subject = none ∧
+        detached.1.blocked subject = none := by
+    simp [BlockingIPCContext.detachInvalidated,
+      hblockingClean.1, hblockingClean.2]
   simp only [gate, hmode, operationReply, applyOperation, haccepted]
-  simp only [installTerminatedSubject, publishTerminatedBlockingSubject,
-    hblockingAccepted, installTerminatedResumable, installTransfers,
+  simp only [installTerminatedSubject, hblockingAccepted,
+    installTerminatedResumable, installTransfers,
     installResumable, installLifecycle]
   exact ⟨trivial, hdead, hscheduler.1, hscheduler.2, hcontext,
-    hblockingClean.1, hblockingClean.2, by
+    hdetachedClean.1, hdetachedClean.2, by
       simp [installTerminatedSubject, BlockingIPCContext.setRetained],
     CapabilityTransfer.cancelAllOffers_pending _⟩
+
+/-- Terminating an endpoint owner cannot strand a peer waiter on the retired
+endpoint.  The peer's exact saved context moves from the waiter/context pair to
+the quiescent deferred-cancellation bank, and the dead endpoint's modeled
+mailbox is cleared in the same accepted composite transition. -/
+theorem terminateSubject_accepted_defers_invalidated_waiter
+    state owner lifecycle peer endpoint saved
+    (hmode : state.execution.mode = .running)
+    (haccepted : SubjectLifecycle.terminate state.lifecycle owner =
+      { state := lifecycle, result := .accepted })
+    (hpeer : peer ≠ owner)
+    (hendpoint :
+      (BlockingIPCContext.terminate state.blockingIPCContext owner).ipc.waiterEndpoint peer =
+        some endpoint)
+    (hsaved :
+      (BlockingIPCContext.terminate state.blockingIPCContext owner).blocked peer = some saved)
+    (hretired :
+      (ResumablePreemption.cleanupSubject state.resumable owner).scheduler.lifecycle.capabilities.objects
+        endpoint = false) :
+    let next := (gate state (.terminateSubject owner)).state
+    (gate state (.terminateSubject owner)).result =
+        .completed (.terminateSubject .accepted) ∧
+      next.blockingIPC.waiterEndpoint peer = none ∧
+      next.blockingContexts peer = none ∧
+      next.deferredCancels.retained peer = some saved ∧
+      next.blockingIPC.mailbox endpoint = none := by
+  have hexact := BlockingIPCContext.detachInvalidated_invalidated_exact
+    (BlockingIPCContext.terminate state.blockingIPCContext owner)
+    state.deferredCancels
+    (ResumablePreemption.cleanupSubject state.resumable owner).scheduler
+    peer endpoint saved hendpoint hsaved hretired
+  constructor
+  · simp [gate, hmode, operationReply, haccepted]
+  · refine ⟨?_, ?_, ?_, ?_⟩
+    · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject] using
+        hexact.1
+    · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject] using
+        hexact.2.1
+    · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+        BlockingIPCContext.setRetained, hpeer] using hexact.2.2
+    · simp [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+        hretired]
 
 /-- Accepted termination preserves both scheduler projections, including when
 cleanup leaves a lone current subject with no queued peer.  Such a state is
@@ -9012,7 +9072,8 @@ theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
       installTerminatedResumable, hlive]
   · simp [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
       publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
-      installTerminatedResumable, CompositeState.BlockingIPCCoherent, hblocking]
+      installTerminatedResumable, BlockingIPCContext.detachInvalidated,
+      CompositeState.BlockingIPCCoherent, hblocking]
   · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
       publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
       installTerminatedResumable] using hportControls
@@ -11311,11 +11372,15 @@ private theorem installTerminatedSubject_preserves_contextAgreement state subjec
     (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
     BlockingIPCContext.ContextAgreement
       (installTerminatedSubject state subject resumable).blockingIPCContext := by
-  apply blockingContextAgreement_of_projections
-    (publishTerminatedBlockingSubject state subject) _
-    (publishTerminatedBlockingSubject_preserves_contextAgreement state subject hstate)
-  · rfl
-  · rfl
+  have hterminated := blockingIPCContext_terminate_preserves_contextAgreement
+    state.blockingIPCContext subject hstate
+  have hdetached := BlockingIPCContext.detachInvalidated_preserves_contextAgreement
+    (BlockingIPCContext.terminate state.blockingIPCContext subject)
+    state.deferredCancels resumable.scheduler hterminated
+  rcases hdetached with ⟨hprojection, hvalid⟩
+  constructor
+  · simpa [installTerminatedSubject, CompositeState.blockingIPCContext] using hprojection
+  · simpa [installTerminatedSubject, CompositeState.blockingIPCContext] using hvalid
 
 /-- Every ordinary composite operation preserves the exact waiter/saved-context
 agreement.  Operations unrelated to blocking retain both projections
@@ -13136,6 +13201,24 @@ def runAuthoritativeOperations (state : CompositeState) :
   | operation :: rest =>
       runAuthoritativeOperations (authoritativeGate state operation).state rest
 
+/-- Arbitrary finite ordinary traces need no reconstructed blocking readiness.
+This includes explicit and scheduler-selected termination, raw scheduler
+denials, resumable scheduling, and terminal suffixes: each step preserves the
+folded global waiter/context invariant directly. -/
+theorem runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFormed
+    state (operations : List Operation)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (operations.map AuthoritativeOperation.ordinary)) := by
+  induction operations generalizing state with
+  | nil => simpa [runAuthoritativeOperations] using hstate
+  | cons operation rest ih =>
+      simp only [List.map_cons, runAuthoritativeOperations]
+      exact ih _
+        (authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
+          state operation hstate)
+
 /-- Recursive readiness for a finite mixed trace.  It records the stronger
 blocking precondition only at the exact states where blocking events occur;
 ordinary events carry no additional side condition. -/
@@ -13763,6 +13846,9 @@ private def blockingContextEvidenceCancelled (state : CompositeState) :
 private def blockingContextEvidenceTerminated (state : CompositeState) : GateOutcome :=
   gate (blockingContextEvidenceBlocked state).state (.terminateSubject 2)
 
+private def blockingContextEvidenceOwnerTerminated (state : CompositeState) : GateOutcome :=
+  gate (blockingContextEvidenceBlocked state).state (.terminateSubject 0)
+
 /-- One mixed global blocking-gate trace first rejects a stale handle without
 mutation, then blocks subject 2, immediately restores scheduler-selected peer
 1 (including the modeled CR3 flush), and finally wakes subject 2 while
@@ -13793,6 +13879,23 @@ example (state : CompositeState) :
       (blockingContextEvidenceTerminated state).state.scheduler.lifecycle.capabilities.subjects
         2 = false := by
   exact ⟨rfl, rfl, rfl, rfl⟩
+
+set_option maxHeartbeats 800000 in
+/-- Endpoint-owner termination removes the affected peer's waiter and blocked
+context together, retains the exact context for a checked cancellation drain,
+and clears the retired endpoint mailbox.  No external readiness witness is
+used to compute this executable trace. -/
+example (state : CompositeState) :
+    (blockingContextEvidenceOwnerTerminated state).result =
+        .completed (.terminateSubject .accepted) ∧
+      (blockingContextEvidenceOwnerTerminated state).state.blockingIPC.waiterEndpoint 2 =
+        none ∧
+      (blockingContextEvidenceOwnerTerminated state).state.blockingContexts 2 = none ∧
+      (blockingContextEvidenceOwnerTerminated state).state.deferredCancels.retained 2 =
+        some ((blockingContextEvidenceComposite state).blockingSavedContext
+          blockingEvidenceFrame blockingEvidenceRegisters2) ∧
+      (blockingContextEvidenceOwnerTerminated state).state.blockingIPC.mailbox 10 = none := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- A mixed rejected-block-wake trace composes at the authoritative composite
 boundary.  The rejected prefix is atomic; both accepted suffix steps preserve
