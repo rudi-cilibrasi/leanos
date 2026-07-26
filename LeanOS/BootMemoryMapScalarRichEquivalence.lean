@@ -37,6 +37,119 @@ def blockedWord (entries : List RawEntry) (frame : Nat) : UInt64 :=
 def manifestWord (intervals : List BootReservation.Interval) (frame : Nat) : UInt64 :=
   if BootReservation.reservedBy intervals frame then 0 else 1
 
+/-- The rich reservation manifest denoted by the production ABI's canonical
+positional words.  Identity and lifetime are fixed here rather than supplied
+by the caller. -/
+def canonicalManifest
+    (lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength : UInt64) : List BootReservation.Reservation :=
+  [{ identity := .lowMemory, start := lowStart.toNat, length := lowLength.toNat,
+     lifetime := .permanent },
+   { identity := .loadedImage, start := imageStart.toNat, length := imageLength.toNat,
+     lifetime := .permanent },
+   { identity := .pageTables, start := pageStart.toNat, length := pageLength.toNat,
+     lifetime := .permanent },
+   { identity := .descriptorTables, start := descriptorStart.toNat,
+     length := descriptorLength.toNat, lifetime := .permanent },
+   { identity := .kernelStacks, start := stacksStart.toNat, length := stacksLength.toNat,
+     lifetime := .permanent },
+   { identity := .ordinaryEntryGuard, start := guardStart.toNat,
+     length := guardLength.toNat, lifetime := .permanent },
+   { identity := .ordinaryEntryStack, start := entryStart.toNat,
+     length := entryLength.toNat, lifetime := .permanent },
+   { identity := .embeddedUsers, start := usersStart.toNat, length := usersLength.toNat,
+     lifetime := .permanent },
+   { identity := .multibootInfo, start := infoStart.toNat, length := infoLength.toNat,
+     lifetime := .bootstrap }]
+
+/-- The positional ABI construction supplies every rich manifest identity
+exactly once and cannot introduce an identity outside the reviewed vocabulary.
+This discharges the two structural gates of `BootReservation.validateManifest`
+independently of the caller-supplied range words. -/
+theorem canonicalManifest_identity_valid
+    (lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength : UInt64) :
+    (BootReservation.requiredIdentities.all fun identity =>
+        BootReservation.exactlyOnce identity
+          (canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+            descriptorStart descriptorLength stacksStart stacksLength
+            guardStart guardLength entryStart entryLength usersStart usersLength
+            infoStart infoLength)) = true ∧
+      ((canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+          descriptorStart descriptorLength stacksStart stacksLength
+          guardStart guardLength entryStart entryLength usersStart usersLength
+          infoStart infoLength).all fun reservation =>
+            BootReservation.requiredIdentities.contains reservation.identity) = true := by
+  simp +decide [canonicalManifest, BootReservation.requiredIdentities,
+    BootReservation.exactlyOnce]
+
+/-- The containment gate used by rich manifest validation, named so the
+canonical ABI proof can expose its remaining arithmetic obligation directly. -/
+def richImageContained (intervals : List BootReservation.Interval) : Bool :=
+  let image := intervals.find? (·.identity == .loadedImage)
+  intervals.all fun interval =>
+    interval.identity == .lowMemory || interval.identity == .multibootInfo ||
+      match image with
+      | none => false
+      | some loaded => loaded.firstFrame ≤ interval.firstFrame &&
+          interval.firstFrame + interval.frameCount ≤
+            loaded.firstFrame + loaded.frameCount
+
+/-- Once the nine canonical ranges round successfully and satisfy rich
+loaded-image containment, `validateManifest` accepts exactly those intervals.
+The identity/cardinality gates cannot fail because they are fixed by the ABI
+constructor rather than transported from C. -/
+theorem canonicalManifest_validate_of_rounds
+    (lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength : UInt64)
+    (intervals : List BootReservation.Interval)
+    (hround :
+      (canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength).mapM BootReservation.roundInterval = .ok intervals)
+    (hcontained : richImageContained intervals = true) :
+    BootReservation.validateManifest
+      (canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength) = .ok intervals := by
+  let manifest :=
+    canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+      descriptorStart descriptorLength stacksStart stacksLength
+      guardStart guardLength entryStart entryLength usersStart usersLength
+      infoStart infoLength
+  have hidentity := canonicalManifest_identity_valid
+    lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength
+  have hsize : ¬manifest.length > BootReservation.maxReservations := by
+    simp [manifest, canonicalManifest, BootReservation.maxReservations]
+  have hrequired :
+      ¬(!(BootReservation.requiredIdentities.all fun identity =>
+        BootReservation.exactlyOnce identity manifest)) = true := by
+    simp [manifest, hidentity.1]
+  have hvocabulary :
+      ¬(!(manifest.all fun reservation =>
+        BootReservation.requiredIdentities.contains reservation.identity)) = true := by
+    simp [manifest, hidentity.2]
+  change BootReservation.validateManifest manifest = .ok intervals
+  simp only [BootReservation.validateManifest]
+  rw [if_neg hsize, if_neg hrequired, if_neg hvocabulary]
+  change manifest.mapM BootReservation.roundInterval = .ok intervals at hround
+  rw [hround]
+  change (if !richImageContained intervals then
+      Except.error BootReservation.Error.inconsistentImage
+    else Except.ok intervals) = Except.ok intervals
+  simp [hcontained]
+
 /-- The proof-side form of the production range-overlap test.  Keeping this in
 `Nat` makes its relationship to `BootReservation.roundInterval` explicit;
 accepted production range words are all below the 16 MiB physical limit, so
