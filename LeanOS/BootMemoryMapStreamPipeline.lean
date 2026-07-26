@@ -250,25 +250,31 @@ def allocationBytes : List UInt8 :=
   information
     (memoryMapTag [entry 0 (14 * pageBytes) 1] ++ endTag)
 
-def chunked (bytes : List UInt8) : List ModelChunk :=
+def chunkedAt (streamIdentity : UInt64) (bytes : List UInt8) : List ModelChunk :=
   (List.range ((bytes.length + 7) / 8)).map fun index =>
     let offset := index * 8
     let part := (bytes.drop offset).take 8
-    { identity
+    { identity := streamIdentity
       offset
       bytes := part
       terminal := offset + part.length == bytes.length }
+
+def chunked (bytes : List UInt8) : List ModelChunk :=
+  chunkedAt identity bytes
 
 def allocationChunks : List ModelChunk := chunked allocationBytes
 
 structure ScalarState where
   word : Array UInt64
 
-def scalarInitial (extent target : Nat) : ScalarState :=
+def scalarInitialAt (streamIdentity : UInt64) (extent target : Nat) : ScalarState :=
   { word := Array.ofFn fun query : Fin 19 =>
       BootMemoryMapStreamAuthority.initWord
-        (UInt64.ofNat multiboot2Magic) identity (UInt64.ofNat extent)
+        (UInt64.ofNat multiboot2Magic) streamIdentity (UInt64.ofNat extent)
         (UInt64.ofNat target) (UInt64.ofNat query.val) }
+
+def scalarInitial (extent target : Nat) : ScalarState :=
+  scalarInitialAt identity extent target
 
 private def chunkWordAux : List UInt8 → UInt64 → UInt64 → UInt64
   | [], _, result => result
@@ -366,6 +372,65 @@ theorem sixtyFiveTag_exactByte_scalar_richPipeline_agreement :
   constructor
   · native_decide
   · native_decide
+
+def gapIdentity : UInt64 := 0x300000
+
+def gapBytes : List UInt8 :=
+  information
+    (tag 42 (zeroes 25) ++
+      memoryMapTag [entry 0 (4 * 1024 * 1024) 1] ++ endTag)
+
+def gapChunks : List ModelChunk :=
+  chunkedAt gapIdentity gapBytes
+
+def gapManifest : List BootReservation.Reservation :=
+  [{ identity := .lowMemory, start := 0, length := 0x100000,
+     lifetime := .permanent },
+   { identity := .loadedImage, start := 0x200000, length := 0x100000,
+     lifetime := .permanent },
+   { identity := .pageTables, start := 0x210000, length := 0x1000,
+     lifetime := .permanent },
+   { identity := .descriptorTables, start := 0x220000, length := 0x1000,
+     lifetime := .permanent },
+   { identity := .kernelStacks, start := 0x230000, length := 0x1000,
+     lifetime := .permanent },
+   { identity := .ordinaryEntryGuard, start := 0x240000, length := 0x1000,
+     lifetime := .permanent },
+   { identity := .ordinaryEntryStack, start := 0x241000, length := 0x4000,
+     lifetime := .permanent },
+   { identity := .embeddedUsers, start := 0x280000, length := 0x2000,
+     lifetime := .permanent },
+   { identity := .multibootInfo, start := 0x300000, length := 96,
+     lifetime := .bootstrap }]
+
+def gapRich : Except Error Authority :=
+  run (UInt64.ofNat multiboot2Magic) gapIdentity gapBytes.length gapChunks gapManifest 7
+
+def gapScalar : ScalarState :=
+  scalarReplay gapChunks (scalarInitialAt gapIdentity gapBytes.length 256)
+
+/-! The reviewed low-memory-gap handoff is shared byte-for-byte across the rich
+pipeline and production scalar replay.  The rich reservation overlay and
+allocator select frame 256 in [1 MiB, 2 MiB); the scalar start and selection
+choose that same first free frame instead of skipping past the later image and
+Multiboot reservations. -/
+theorem lowMemoryGap_scalar_richPipeline_firstFree_agreement :
+    streamBytes gapChunks = gapBytes ∧
+      gapBytes.length = 96 ∧
+      gapRich.toOption.map (·.allocation.frame) = some 256 ∧
+      manifestStart 0 0x100000 0x200000 0x100000
+        0x210000 0x1000 0x220000 0x1000 0x230000 0x1000
+        0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0x300000 96 = 256 ∧
+      gapScalar.word[1]! = complete ∧
+      gapScalar.word[2]! = noError ∧
+      gapScalar.word[14]! = 1 ∧
+      gapScalar.word[15]! = 0 ∧
+      manifestCandidate 256 0 0x100000 0x200000 0x100000
+        0x210000 0x1000 0x220000 0x1000 0x230000 0x1000
+        0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0x300000 96 = 1 ∧
+      selectFrame 4096 256 gapScalar.word[1]! gapScalar.word[14]!
+        gapScalar.word[15]! 1 = 256 := by
+  native_decide
 
 example : errorOf (authorize (UInt64.ofNat multiboot2Magic) identity
     allocationBytes.length allocationChunks BootReservation.twoSidedManifest 7

@@ -70,7 +70,7 @@ fi
 symbols="$(nm "$build/stream.elf")"
 for symbol in leanos_boot_handoff_stream_init leanos_boot_handoff_stream_step \
   leanos_boot_decode_init leanos_boot_decode_step leanos_boot_manifest_candidate \
-  leanos_boot_select_frame leanos_boot_publish_authority; do
+  leanos_boot_manifest_start leanos_boot_select_frame leanos_boot_publish_authority; do
   if ! grep -q " T ${symbol}$" <<<"$symbols"; then
     echo "error: handoff stream image does not retain $symbol" >&2
     exit 1
@@ -96,6 +96,7 @@ while read -r text_symbol; do
 leanos_boot_handoff_stream_init|\
 leanos_boot_handoff_stream_step|\
 leanos_boot_decode_init|leanos_boot_decode_step|leanos_boot_manifest_candidate|\
+leanos_boot_manifest_start|\
 leanos_boot_select_frame|leanos_boot_publish_authority|\
 lp_leanos___private_LeanOS_BootMemoryMapStreaming_0__LeanOS_BootMemoryMapStreaming_canonicalChunk|\
 lp_leanos___private_LeanOS_BootMemoryMapStreamAuthority_0__LeanOS_BootMemoryMapStreamAuthority_manifestValid|\

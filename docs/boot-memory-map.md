@@ -105,11 +105,14 @@ in canonical order: low memory, loaded image, page tables, descriptor tables,
 kernel stacks, ordinary-entry guard, ordinary-entry stack, embedded users, and
 the Multiboot information copy. It validates nonempty contained ranges and the
 adjacent ordinary-entry layout, rounds overlap at page granularity, supplies
-the first candidate after enclosing reservations, and rejects any selected
-candidate covered by a live interval. Generated selection preserves the first
-eligible decoded candidate. After C executes and verifies the physical zeroing
-loop, generated publication rechecks the selected-frame, decoded-status,
-coverage, overlap, manifest, and scrub tuple before exposing an object token.
+the first candidate after the mandatory low-memory reservation, and rejects any
+selected candidate covered by a later live interval. This preserves usable
+holes before the loaded image or Multiboot information and matches the
+ascending first-free order of `FrameAllocator.allocate`. Generated selection
+preserves the first eligible decoded candidate. After C executes and verifies
+the physical zeroing loop, generated publication rechecks the selected-frame,
+decoded-status, coverage, overlap, manifest, and scrub tuple before exposing
+an object token.
 
 `BootMemoryMapStreamPipeline` now supplies the proof-side composition contract
 for the next production step. A rich decoder input exists only after exact

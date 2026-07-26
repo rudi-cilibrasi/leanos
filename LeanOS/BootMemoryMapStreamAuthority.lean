@@ -280,11 +280,7 @@ def manifestStart
       entryStart entryLength usersStart usersLength infoStart infoLength then 4096
   else
     let lowPast := (lowStart + lowLength + 4095) / 4096
-    let imagePast := (imageStart + imageLength + 4095) / 4096
-    let infoPast := (infoStart + infoLength + 4095) / 4096
-    let first := if lowPast > imagePast then lowPast else imagePast
-    let first := if first > infoPast then first else infoPast
-    if first < 4096 then first else 4096
+    if lowPast < 4096 then lowPast else 4096
 
 @[export leanos_boot_select_frame]
 def selectFrame (current candidate decodeStatus usable blocked manifest : UInt64) : UInt64 :=
@@ -314,6 +310,9 @@ example : manifestCandidate 800 0 0x100000 0x100000 0x200000
 example : manifestCandidate 1 0 0x100000 0x100000 0x200000
     0x110000 0x1000 0x120000 0x1000 0x130000 0x1000
     0x140000 0x1000 0x141000 0x4000 0x180000 0x2000 0x300000 96 = 0 := by decide
+example : manifestStart 0 0x100000 0x200000 0x100000
+    0x210000 0x1000 0x220000 0x1000 0x230000 0x1000
+    0x240000 0x1000 0x241000 0x4000 0x280000 0x2000 0x300000 96 = 256 := by decide
 example : selectFrame 4096 300 complete 1 0 1 = 300 := by decide
 example : publishAuthority 300 300 complete 1 0 1 1 = 301 := by decide
 example : publishAuthority 300 301 complete 1 0 1 1 = 0 := by decide

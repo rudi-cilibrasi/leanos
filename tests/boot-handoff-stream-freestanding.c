@@ -16,6 +16,10 @@ extern uint64_t leanos_boot_manifest_candidate(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_manifest_start(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_select_frame(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_publish_authority(
@@ -196,6 +200,19 @@ int check_stream(void) {
         leanos_boot_publish_authority(800, 800, 1, 1, 0, manifest, 1) != 801 ||
         leanos_boot_publish_authority(800, 801, 1, 1, 0, manifest, 1) != 0)
         return 17;
+    uint64_t gap_start = leanos_boot_manifest_start(
+        0, 0x100000, 0x200000, 0x100000,
+        0x210000, 0x1000, 0x220000, 0x1000, 0x230000, 0x1000,
+        0x240000, 0x1000, 0x241000, 0x4000, 0x280000, 0x2000,
+        0x300000, 96);
+    manifest = leanos_boot_manifest_candidate(
+        gap_start, 0, 0x100000, 0x200000, 0x100000,
+        0x210000, 0x1000, 0x220000, 0x1000, 0x230000, 0x1000,
+        0x240000, 0x1000, 0x241000, 0x4000, 0x280000, 0x2000,
+        0x300000, 96);
+    if (gap_start != 256 || manifest != 1 ||
+        leanos_boot_select_frame(4096, gap_start, 1, 1, 0, manifest) != 256)
+        return 24;
     return 0;
 }
 
