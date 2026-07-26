@@ -8,7 +8,8 @@ extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_resumable_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                                   uint64_t);
-extern uint64_t leanos_boot_allocation_check(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_select_frame(uint64_t, uint64_t, uint64_t, uint64_t,
+                                         uint64_t, uint64_t);
 extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
@@ -45,8 +46,8 @@ int main(void) {
                     ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
                         v->words[3], v->words[4])
                     : v->adapter == 5
-                        ? leanos_boot_allocation_check(v->words[0], v->words[1], v->words[2],
-                            v->words[3], v->words[4])
+                        ? leanos_boot_select_frame(v->words[0], v->words[1], v->words[2],
+                            v->words[3], v->words[4], v->words[5])
                         : v->adapter == 6
                             ? leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
                                 v->words[3], v->words[4])
