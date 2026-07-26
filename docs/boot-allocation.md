@@ -5,10 +5,11 @@ pointer across the 32-bit to 64-bit transition. Physical memory is copied into
 a 64 KiB static buffer only through the generated version-two stream
 transition, which binds the aligned identity, advertised extent, exact offset,
 and terminal chunk. Multiboot2 alignment padding is not interpreted. The
-generated version-three authority then accepts one version-zero memory-map tag
-with at most 128 24-byte entries and rejects bad headers, tag advances, entry
-layouts, duplicate or missing maps, zero lengths, reserved entry words, and
-fixed-width overflow before exposing candidate authority.
+generated version-four authority then accepts one version-zero memory-map tag
+with at most 64 total tags and 128 24-byte entries and rejects bad headers,
+tag advances, entry layouts, duplicate or missing maps, a 65th tag, zero
+lengths, reserved entry words, and fixed-width overflow before exposing
+candidate authority.
 
 Usable entries contribute only complete 4 KiB pages. Non-usable entries take
 precedence independent of input order. The generated manifest boundary checks
@@ -41,14 +42,18 @@ Lean proves properties of the typed normalization, reservation, allocator,
 stream composition, lifetime, and scrub models. Hosted replay tests generated
 code for the bounded rich projection and allocation-free scalar cases. QEMU
 demonstrates the integrated artifact for fixed reported maps and a controlled
-malformed-handoff rejection. Neither compilation nor QEMU execution verifies
-the binary.
+malformed-handoff rejection. The proof-side and freestanding exact-byte
+65-tag fixture agree that the rich decoder and scalar ABI reject at their
+respective `tooManyTags` errors. Neither compilation nor QEMU execution
+verifies the binary.
 
 Physical-memory reads and scrub writes in `boot/kernel.c`, handoff register
 preservation and ABI in `boot/boot.S`, linker symbols, generated C, compiler,
 GRUB, Multiboot2 producer, QEMU, firmware truthfulness, and hardware are in the
-TCB. The version-three scalar parser and manifest decision are not yet proved
+TCB. The version-four scalar parser and manifest decision are not yet proved
 extensionally equal to the rich decoder, normalizer, reservation overlay, and
-complete projection. Focused hosted/freestanding corpus and QEMU checks narrow
-that correspondence assumption; they do not prove it for arbitrary bytes. No
-new Lean `unsafe`, `extern`, axiom, constant, or proof escape is introduced.
+complete projection for arbitrary bytes. Focused hosted/freestanding corpus
+and QEMU checks narrow that correspondence assumption; the exact 65-tag
+agreement theorem closes the reviewed concrete divergence without claiming an
+all-input equivalence. No new Lean `unsafe`, `extern`, axiom, constant, or
+proof escape is introduced.

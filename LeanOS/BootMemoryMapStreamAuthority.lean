@@ -3,7 +3,7 @@ import LeanOS.BootMemoryMapStreaming
 /-!
 # Allocation-free production handoff authority
 
-This version-three scalar boundary parses the supported Multiboot2 handoff
+This version-four scalar boundary parses the supported Multiboot2 handoff
 directly from its continuous eight-byte stream.  A scan is parameterized by
 one boot-accessible frame and returns authority only when that frame has full
 usable coverage and no non-usable overlap.  The companion manifest decision
@@ -14,7 +14,7 @@ All exports are `UInt64`-only and use no Lean runtime allocation.
 -/
 namespace LeanOS.BootMemoryMapStreamAuthority
 
-def abiVersion : UInt64 := 3
+def abiVersion : UInt64 := 4
 def active : UInt64 := 0
 def complete : UInt64 := 1
 def rejected : UInt64 := 2
@@ -24,6 +24,7 @@ def badState : UInt64 := 1
 def badStream : UInt64 := 2
 def badInfoHeader : UInt64 := 3
 def badTag : UInt64 := 4
+def tooManyTags : UInt64 := 5
 def duplicateMap : UInt64 := 6
 def badMapLayout : UInt64 := 7
 def tooManyEntries : UInt64 := 8
@@ -59,7 +60,7 @@ private def initialError (magic address extent target : UInt64) : UInt64 :=
 /-! State words are version, status, error, identity, extent, next offset,
 continuity chain, parser phase, tag content remaining, tag padded remaining,
 saw-map, entry count, pending base, pending length, usable coverage,
-non-usable overlap, target frame, and highest reported end. -/
+non-usable overlap, target frame, highest reported end, and tag count. -/
 @[export leanos_boot_decode_init]
 def initWord (magic address extent target query : UInt64) : UInt64 :=
   let reason := initialError magic address extent target
@@ -80,11 +81,11 @@ private def overlap (base stop first past : UInt64) : Bool :=
 
 private def transitionError (version status error identity extent offset phase
     content padded sawMap entries base length usable blocked target
-    streamIdentity streamOffset chunk terminal : UInt64) : UInt64 :=
+    _highest tagCount streamIdentity streamOffset chunk terminal : UInt64) : UInt64 :=
   if version != abiVersion || status != active || error != noError ||
       identity % 8 != 0 || extent < 16 || extent > 65536 || extent % 8 != 0 ||
       offset >= extent || target >= 4096 || phase > phaseEntryType ||
-      usable > 1 || blocked > 1 || sawMap > 1 then badState
+      usable > 1 || blocked > 1 || sawMap > 1 || tagCount > 64 then badState
   else if streamIdentity != identity || streamOffset != offset ||
       terminal > 1 || ((offset + 8 == extent) != (terminal == 1)) then badStream
   else if phase == phaseInfo then
@@ -94,7 +95,8 @@ private def transitionError (version status error identity extent offset phase
     let tagType := low32 chunk
     let size := high32 chunk
     let remaining := extent - offset
-    if size < 8 || size > remaining || size > 0xfffffffffffffff8 then badTag
+    if tagCount >= 64 then tooManyTags
+    else if size < 8 || size > remaining || size > 0xfffffffffffffff8 then badTag
     else
       let rounded := (size + 7) &&& 0xfffffffffffffff8
       if rounded > remaining then badTag
@@ -166,10 +168,10 @@ private def framePast (target : UInt64) : UInt64 := target * 4096 + 4096
 
 @[export leanos_boot_decode_step]
 def stepWord (version status error identity extent offset chain phase content padded
-    sawMap entries base length usable blocked target highest streamIdentity streamOffset
-    chunk terminal query : UInt64) : UInt64 :=
+    sawMap entries base length usable blocked target highest tagCount
+    streamIdentity streamOffset chunk terminal query : UInt64) : UInt64 :=
   let reason := transitionError version status error identity extent offset phase content padded
-    sawMap entries base length usable blocked target streamIdentity streamOffset
+    sawMap entries base length usable blocked target highest tagCount streamIdentity streamOffset
     chunk terminal
   let advanced := offset + 8
   let nphase := nextPhase phase chunk content padded
@@ -185,6 +187,7 @@ def stepWord (version status error identity extent offset chain phase content pa
   let nblocked := if phase == phaseEntryType && entryKind != 1 && touches then 1 else blocked
   let nentries := if phase == phaseEntryType then entries + 1 else entries
   let nsaw := if phase == phaseTag && low32 chunk == 6 then 1 else sawMap
+  let ntagCount := if phase == phaseTag then tagCount + 1 else tagCount
   let nhighest :=
     if phase == phaseEntryType && entryKind == 1 && stop > highest then stop else highest
   if query == 0 then abiVersion
@@ -211,6 +214,7 @@ def stepWord (version status error identity extent offset chain phase content pa
   else if query == 15 then nblocked
   else if query == 16 then target
   else if query == 17 then nhighest
+  else if query == 18 then ntagCount
   else 0
 
 private def validRange (start length : UInt64) : Bool :=

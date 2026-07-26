@@ -34,7 +34,7 @@ extern uint64_t leanos_boot_decode_step(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t);
+    uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_manifest_candidate(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
@@ -1002,7 +1002,7 @@ static const uint8_t *copy_boot_handoff(uint32_t magic, uint32_t info_address,
     return boot_handoff_copy;
 }
 
-struct boot_decode_state { uint64_t word[18]; };
+struct boot_decode_state { uint64_t word[19]; };
 
 #define BOOT_MANIFEST_ARGS(info_address, total) \
     0, 0x100000u, \
@@ -1024,24 +1024,25 @@ static struct boot_decode_state decode_boot_candidate(
         uint32_t magic, uint32_t info_address, uint32_t total,
         uint64_t candidate, const uint8_t *info) {
     struct boot_decode_state state, next;
-    for (uint64_t query = 0; query < 18; ++query)
+    for (uint64_t query = 0; query < 19; ++query)
         state.word[query] =
             leanos_boot_decode_init(magic, info_address, total, candidate, query);
-    if (state.word[0] != 3 || state.word[1] != 0 || state.word[2] != 0 ||
+    if (state.word[0] != 4 || state.word[1] != 0 || state.word[2] != 0 ||
         state.word[3] != info_address || state.word[4] != total ||
-        state.word[5] != 0 || state.word[16] != candidate)
+        state.word[5] != 0 || state.word[16] != candidate ||
+        state.word[18] != 0)
         handoff_fail("decode-init");
     for (uint64_t offset = 0; offset < total; offset += 8) {
         uint64_t chunk = *(const uint64_t *)(info + offset);
         uint64_t terminal = offset + 8 == total;
-        for (uint64_t query = 0; query < 18; ++query)
+        for (uint64_t query = 0; query < 19; ++query)
             next.word[query] = leanos_boot_decode_step(
                 state.word[0], state.word[1], state.word[2], state.word[3],
                 state.word[4], state.word[5], state.word[6], state.word[7],
                 state.word[8], state.word[9], state.word[10], state.word[11],
                 state.word[12], state.word[13], state.word[14], state.word[15],
-                state.word[16], state.word[17], info_address, offset, chunk,
-                terminal, query);
+                state.word[16], state.word[17], state.word[18], info_address,
+                offset, chunk, terminal, query);
         state = next;
         if (state.word[2] != 0)
             handoff_fail("decode-rejected");

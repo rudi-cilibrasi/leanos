@@ -11,7 +11,7 @@ extern uint64_t leanos_boot_decode_step(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t);
+    uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_manifest_candidate(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
@@ -25,26 +25,32 @@ struct stream_state {
     uint64_t word[7];
 };
 
-struct decode_state { uint64_t word[18]; };
+struct decode_state { uint64_t word[19]; };
 
-static struct decode_state decode(const uint64_t chunks[12], uint64_t target) {
+static struct decode_state decode_extent(
+        const uint64_t *chunks, uint64_t count, uint64_t target) {
     struct decode_state state, next;
-    for (uint64_t query = 0; query < 18; ++query)
+    const uint64_t extent = count * 8;
+    for (uint64_t query = 0; query < 19; ++query)
         state.word[query] =
-            leanos_boot_decode_init(0x36d76289, 0x1000, 96, target, query);
-    for (uint64_t index = 0; index < 12; ++index) {
-        for (uint64_t query = 0; query < 18; ++query)
+            leanos_boot_decode_init(0x36d76289, 0x1000, extent, target, query);
+    for (uint64_t index = 0; index < count; ++index) {
+        for (uint64_t query = 0; query < 19; ++query)
             next.word[query] = leanos_boot_decode_step(
                 state.word[0], state.word[1], state.word[2], state.word[3],
                 state.word[4], state.word[5], state.word[6], state.word[7],
                 state.word[8], state.word[9], state.word[10], state.word[11],
                 state.word[12], state.word[13], state.word[14], state.word[15],
-                state.word[16], state.word[17], 0x1000, index * 8,
-                chunks[index], index == 11, query);
+                state.word[16], state.word[17], state.word[18], 0x1000,
+                index * 8, chunks[index], index + 1 == count, query);
         state = next;
         if (state.word[2] != 0) break;
     }
     return state;
+}
+
+static struct decode_state decode(const uint64_t chunks[12], uint64_t target) {
+    return decode_extent(chunks, 12, target);
 }
 
 static uint64_t step_query(const struct stream_state *state, uint64_t identity,
@@ -114,10 +120,10 @@ int check_stream(void) {
     if (step_query(&state, identity, 96, 1, 0, 0, 7) != 0)
         return 12;
     struct decode_state decoded = decode(chunks, 1);
-    if (decoded.word[0] != 3 || decoded.word[1] != 1 ||
+    if (decoded.word[0] != 4 || decoded.word[1] != 1 ||
         decoded.word[2] != 0 || decoded.word[7] != 7 ||
         decoded.word[11] != 2 || decoded.word[14] != 1 ||
-        decoded.word[15] != 0)
+        decoded.word[15] != 0 || decoded.word[18] != 3)
         return 14;
     decoded = decode(chunks, 2);
     if (decoded.word[1] != 1 || decoded.word[14] != 1 ||
@@ -137,6 +143,20 @@ int check_stream(void) {
     decoded = decode(malformed, 1);
     if (decoded.word[1] != 2 || decoded.word[2] != 3)
         return 16;
+    uint64_t too_many_tags_fixture[70] = {0};
+    too_many_tags_fixture[0] = 560;
+    for (uint64_t index = 1; index <= 63; ++index)
+        too_many_tags_fixture[index] = 0x000000080000002a;
+    too_many_tags_fixture[64] = 0x0000002800000006;
+    too_many_tags_fixture[65] = 24;
+    too_many_tags_fixture[66] = 0;
+    too_many_tags_fixture[67] = 0x4000;
+    too_many_tags_fixture[68] = 1;
+    too_many_tags_fixture[69] = 0x0000000800000000;
+    decoded = decode_extent(too_many_tags_fixture, 70, 1);
+    if (decoded.word[0] != 4 || decoded.word[1] != 2 ||
+        decoded.word[2] != 5)
+        return 19;
     uint64_t manifest = leanos_boot_manifest_candidate(
         800, 0, 0x100000, 0x100000, 0x200000,
         0x110000, 0x1000, 0x120000, 0x1000, 0x130000, 0x1000,

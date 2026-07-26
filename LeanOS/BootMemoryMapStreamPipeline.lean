@@ -1,4 +1,5 @@
 import LeanOS.BootMemoryMapDecoder
+import LeanOS.BootMemoryMapStreamAuthority
 import LeanOS.BootMemoryMapStreaming
 import LeanOS.BootReservation
 
@@ -241,6 +242,7 @@ theorem rejected_exposes_no_authority magic infoAddress extent chunks manifest o
 namespace Fixtures
 
 open BootMemoryMapDecoder.Fixtures
+open LeanOS.BootMemoryMapStreamAuthority
 
 def identity : UInt64 := 0x1000
 
@@ -258,6 +260,40 @@ def chunked (bytes : List UInt8) : List ModelChunk :=
       terminal := offset + part.length == bytes.length }
 
 def allocationChunks : List ModelChunk := chunked allocationBytes
+
+structure ScalarState where
+  word : Array UInt64
+
+def scalarInitial (extent target : Nat) : ScalarState :=
+  { word := Array.ofFn fun query : Fin 19 =>
+      BootMemoryMapStreamAuthority.initWord
+        (UInt64.ofNat multiboot2Magic) identity (UInt64.ofNat extent)
+        (UInt64.ofNat target) (UInt64.ofNat query.val) }
+
+private def chunkWordAux : List UInt8 → UInt64 → UInt64 → UInt64
+  | [], _, result => result
+  | byte :: rest, factor, result =>
+      chunkWordAux rest (factor * 256) (result + UInt64.ofNat byte.toNat * factor)
+
+def chunkWord (bytes : List UInt8) : UInt64 :=
+  chunkWordAux bytes 1 0
+
+def scalarStep (state : ScalarState) (chunk : ModelChunk) : ScalarState :=
+  { word := Array.ofFn fun query : Fin 19 =>
+      BootMemoryMapStreamAuthority.stepWord
+        state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+        state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+        state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+        state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+        state.word[16]! state.word[17]! state.word[18]!
+        chunk.identity (UInt64.ofNat chunk.offset) (chunkWord chunk.bytes)
+        (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) }
+
+def scalarReplay : List ModelChunk → ScalarState → ScalarState
+  | [], state => state
+  | chunk :: rest, state =>
+      let next := scalarStep state chunk
+      if next.word[2]! != noError then next else scalarReplay rest next
 
 def accepted : Except Error Authority :=
   run (UInt64.ofNat multiboot2Magic) identity allocationBytes.length allocationChunks
@@ -286,6 +322,50 @@ def mutatedProjection : Projection :=
 def errorOf {α : Type} : Except Error α → Option Error
   | .error reason => some reason
   | .ok _ => none
+
+def sixtyFiveTagBytes : List UInt8 :=
+  information
+    (ignoredTags 63 ++ memoryMapTag [entry 0 (4 * pageBytes) 1] ++ endTag)
+
+def sixtyFiveTagChunks : List ModelChunk :=
+  chunked sixtyFiveTagBytes
+
+def sixtyFiveTagInput : Input :=
+  { magic := multiboot2Magic, infoAddress := identity.toNat,
+    bytes := sixtyFiveTagBytes }
+
+def sixtyFiveTagScalar : ScalarState :=
+  scalarReplay sixtyFiveTagChunks (scalarInitial sixtyFiveTagBytes.length 1)
+
+/-- The reviewed 65-tag counterexample is one exact immutable byte sequence on
+both sides of the comparison.  The rich stream pipeline reconstructs those
+bytes before rejecting at its decoder bound, and scalar ABI v4 rejects the
+same sequence with its dedicated error code before granting authority. -/
+theorem sixtyFiveTag_exactByte_scalar_richPipeline_agreement :
+    streamBytes sixtyFiveTagChunks = sixtyFiveTagBytes ∧
+      sixtyFiveTagBytes.length = 560 ∧
+      BootMemoryMapDecoder.Fixtures.errorOf
+          (BootMemoryMapDecoder.decode sixtyFiveTagInput) =
+        some BootMemoryMapDecoder.Error.tooManyTags ∧
+      sixtyFiveTagScalar.word[0]! = BootMemoryMapStreamAuthority.abiVersion ∧
+      sixtyFiveTagScalar.word[1]! = BootMemoryMapStreamAuthority.rejected ∧
+      sixtyFiveTagScalar.word[2]! = BootMemoryMapStreamAuthority.tooManyTags ∧
+      errorOf (run (UInt64.ofNat multiboot2Magic) identity sixtyFiveTagBytes.length
+        sixtyFiveTagChunks BootReservation.twoSidedManifest 7) =
+          some (.decode .tooManyTags) := by
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  constructor
+  · native_decide
+  · native_decide
 
 example : errorOf (authorize (UInt64.ofNat multiboot2Magic) identity
     allocationBytes.length allocationChunks BootReservation.twoSidedManifest 7

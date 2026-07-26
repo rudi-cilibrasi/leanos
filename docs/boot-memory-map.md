@@ -88,11 +88,14 @@ copy rather than rereading physical handoff memory. Every image variant
 requires the generated init/step symbols in the final ELF.  This establishes
 the production copy/ownership and exact stream-continuity checkpoint.
 
-`BootMemoryMapStreamAuthority` is the version-three, allocation-free production
+`BootMemoryMapStreamAuthority` is the version-four, allocation-free production
 consumer of that copy. Its scalar state machine reads aligned raw words,
 validates the information header, tag sizes and advances, ignored-tag extents,
 the unique version-zero 24-byte memory map, every entry range/reserved field,
-and the terminal end tag. For one candidate frame, it retains full usable
+the 64-tag bound, and the terminal end tag. Its nineteen-word state carries a
+tag count incremented only when a tag header is accepted; attempting a 65th
+tag rejects with the dedicated `tooManyTags` code before it can complete or
+grant authority. For one candidate frame, it retains full usable
 coverage and any non-usable overlap independent of entry order. C no longer
 walks memory-map tags, classifies entries, maintains a frame bitmap, or calls
 `leanos_boot_allocation_check`.
@@ -124,14 +127,23 @@ the selected frame; changing any projection field rejects with
 selection plus cross-identity splicing, reordered chunks, and selected-frame
 mutation.
 
+The exact 65-tag fixture is shared at the byte level by the scalar replay and
+`BootMemoryMapStreamPipeline`. The
+`sixtyFiveTag_exactByte_scalar_richPipeline_agreement` theorem proves exact
+chunk reconstruction and that both paths reject the same bytes at their
+respective `tooManyTags` errors. The freestanding generated-C replay exercises
+the same 560-byte layout and requires scalar error code 5, while source policy
+requires production consumers to retain all nineteen ABI words and pass the
+tag-count word on every transition.
+
 This checkpoint does not claim that the continuity chain authenticates bytes,
 that generated C or the final binary refines Lean, or that the scalar parser is
-already proved extensionally equal to the rich `BootMemoryMapDecoder.decode`
-and `BootReservation.initializeAllocator` projection. The existing version-one
-decoder corpus and `BootMemoryMapStreamPipeline` remain the rich typed
-specification. Closing that scalar-to-rich equivalence proof, expanding the raw
-corpus comparison to every projection word remain before issue #173 is
-complete.
+extensionally equal to the rich `BootMemoryMapDecoder.decode` and
+`BootReservation.initializeAllocator` projection for every possible input.
+The existing version-one decoder corpus and `BootMemoryMapStreamPipeline`
+remain the rich typed specification. Expanding scalar-to-rich comparison from
+the concrete 65-tag repair to every accepted/rejected projection remains a
+documented correspondence assumption.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
