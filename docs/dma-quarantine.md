@@ -139,10 +139,16 @@ device obedience remain tested assumptions. The C manifest and the final
 binary are not proved to refine `q35Manifest`, so the boot checkpoint does not
 upgrade the Lean theorem into a hardware claim.
 
-Issue #104's authoritative composite invariant remains on its separate,
-unmerged dependency lane. Once that state lands, its exact `RuntimeWellFormed`
-and typed gate should embed `AcceptedSnapshot` and the unchanged control
-snapshot; this model intentionally does not fork a competing composite state.
+Issue #104's authoritative `FailStop.CompositeState` now embeds the
+proof-carrying accepted snapshot and latest control observation directly;
+`RuntimeWellFormed` includes their exact `DMAQuarantined` agreement. Ordinary
+public operations preserve both fields and finite ordinary traces preserve the
+nonempty deny-all quarantine. Trusted `observeDMAControl` revalidates a live
+hardware snapshot: an exact observation continues atomically, while an invalid
+or valid-but-changed observation publishes the diagnostic snapshot, latches a
+typed DMA fatal record, and is absorbed by every later public-operation suffix.
+This integration does not fork `DMAQuarantine.RuntimeState` or its parallel
+memory projection into the composite runtime.
 Issue #129's final-ELF inventory now classifies the boot-only `0xcf8`/`0xcfc`
 mechanism accesses as `DMAQuarantine.boot-pci-config`. The exact `out16`,
 `out32`, and `in32` wrapper sites are reviewed exceptions, while the source

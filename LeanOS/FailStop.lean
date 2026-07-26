@@ -1,6 +1,7 @@
 import LeanOS.Interrupt
 import LeanOS.InterruptEntry
 import LeanOS.BootPageTablePlan
+import LeanOS.DMAQuarantine
 import LeanOS.IPCSyscall
 import LeanOS.BlockingIPC
 import LeanOS.BlockingIPCContext
@@ -24,6 +25,7 @@ set_option linter.unusedSimpArgs false
 inductive FatalReason where
   | kernelFault | unsupportedVector | nestedEntry | doubleFault
   | nonMaskableInterrupt
+  | dmaControlSnapshotChanged | dmaInvalidControlSnapshot
   | invalidNmiEntry (reason : InterruptEntry.NmiRejectReason)
   | invalidUserReturn (purpose : Interrupt.ReturnPurpose)
       (reason : Interrupt.ReturnRejectReason)
@@ -696,6 +698,12 @@ structure CompositeState where
   directPortIO : DirectPortIO.State :=
     { controls := DirectPortIO.selectedControls
       devices := { serial := 0, pic := 0, pit := 0, debugExit := 0 } }
+  /-- Boot-validated finite PCI inventory and its proof-carrying deny-all
+  quarantine.  This is authority state, not a second memory/runtime model. -/
+  dmaAccepted : DMAQuarantine.AcceptedSnapshot := DMAQuarantine.q35Accepted
+  /-- Latest authoritative PCI control observation.  Ordinary public
+  operations cannot supply or change this snapshot. -/
+  dmaObserved : DMAQuarantine.Snapshot := DMAQuarantine.q35Snapshot
 
 /-- The blocking store and all composite scheduler views name one scheduler. -/
 def CompositeState.BlockingIPCCoherent (state : CompositeState) : Prop :=
@@ -887,6 +895,19 @@ def CompositeState.Coherent (state : CompositeState) : Prop :=
   (∀ object envelope, state.ipc.endpoints.mailbox object = some envelope →
     state.lifecycle.capabilities.subjects envelope.sender = true)
 
+/-- The live composite publishes a DMA quarantine only while its current
+control observation is exactly the boot-accepted finite snapshot.
+`AcceptedSnapshot` carries canonical accounting, nonemptiness, unassigned
+ownership, and the deny-all bus-master proof. -/
+@[simp] def CompositeState.DMAQuarantined (state : CompositeState) : Prop :=
+  state.dmaObserved = state.dmaAccepted.snapshot
+
+theorem CompositeState.DMAQuarantined.quarantine {state : CompositeState}
+    (hstate : state.DMAQuarantined) :
+    DMAQuarantine.quarantine state.dmaObserved = true := by
+  rw [hstate]
+  exact state.dmaAccepted.quarantineAccepted
+
 /-- The global invariant advertised by the composite runtime boundary.  It
 collects every invariant represented in `CompositeState`; cross-view equality
 is explicit rather than inferred from repair after a transition. -/
@@ -904,7 +925,8 @@ def RuntimeWellFormed (state : CompositeState) : Prop :=
   (state.resumable.halted = true ↔ ∃ record, state.execution.mode = .halted record) ∧
   (state.execution.returnAuthorityArmed = true → state.ReturnPlanLive = true) ∧
   state.BlockingIPCCoherent ∧
-  DirectPortIO.AcceptedControls state.directPortIO.controls
+  (DirectPortIO.AcceptedControls state.directPortIO.controls ∧
+    state.DMAQuarantined)
 
 /-- The blocking store observes the same authoritative lifecycle as every
 other runtime projection. -/
@@ -927,8 +949,16 @@ direct-port controls. -/
 theorem RuntimeWellFormed.directPortControls {state : CompositeState}
     (hstate : RuntimeWellFormed state) :
     DirectPortIO.AcceptedControls state.directPortIO.controls := by
-  rcases hstate with ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hcontrols⟩
+  rcases hstate with ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hcontrols, _⟩
   exact hcontrols
+
+/-- The global runtime invariant includes the exact boot-accepted PCI control
+observation, rather than treating DMA quarantine as a parallel claim. -/
+theorem RuntimeWellFormed.dmaQuarantined {state : CompositeState}
+    (hstate : RuntimeWellFormed state) :
+    state.DMAQuarantined := by
+  rcases hstate with ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, hdma⟩
+  exact hdma
 
 /-! ## Boot-produced initial runtime -/
 
@@ -1036,7 +1066,7 @@ theorem bootRuntime_runtimeWellFormed input plan
     CompositeState.blockingIPCContext, CompositeState.BlockingIPCCoherent,
     BlockingIPCContext.WellFormed, BlockingIPCContext.ContextAgreement,
     BlockingIPC.WellFormed, BlockingIPC.authorizedReceive,
-    DirectPortIO.AcceptedControls]
+    DirectPortIO.AcceptedControls, DMAQuarantine.q35Accepted]
 
 private def restrictMappings (lifecycle : SubjectLifecycle.State)
     (mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
@@ -4857,7 +4887,8 @@ private theorem installVirtualMemory_preserves_runtimeWellFormed state virtualMe
     · simpa [installVirtualMemory, ResumablePreemption.ResourceKindAgreement] using hkinds
   · simpa [installVirtualMemory] using hhalted
   · simp [installVirtualMemory, CompositeState.BlockingIPCCoherent,
-      hlive.2.1, hlive.2.2, hschedulerCoherent]
+      hlive.2.1, hlive.2.2, hlive.2.2.2, hschedulerCoherent]
+    exact hlive.2.2.2
 
 /-- Mapping publication changes only the lifecycle mapping projection in the
 blocking scheduler.  Every field used to validate waiters, mailboxes, and
@@ -5262,6 +5293,14 @@ private theorem dispatchIPC_directPortIO state call :
     repeat' first | split
     all_goals rfl
 
+private theorem dispatchIPC_dmaAuthority state call :
+    (dispatchIPC state call).state.dmaAccepted = state.dmaAccepted ∧
+      (dispatchIPC state call).state.dmaObserved = state.dmaObserved := by
+  cases call <;> simp only [dispatchIPC]
+  all_goals
+    repeat' first | split
+    all_goals exact ⟨rfl, rfl⟩
+
 private theorem installTerminatedSubject_directPortIO state subject resumable :
     (installTerminatedSubject state subject resumable).directPortIO = state.directPortIO := by
   rfl
@@ -5280,6 +5319,26 @@ a device transition. -/
       | rfl
       | exact dispatchIPC_directPortIO _ _
       | exact installTerminatedSubject_directPortIO _ _ _
+      | (unfold selectLiveReturnAuthority; split <;> rfl)
+
+@[simp] theorem applyOperation_dmaAccepted state operation :
+    (applyOperation state operation).dmaAccepted = state.dmaAccepted := by
+  cases operation <;> simp only [applyOperation]
+  all_goals
+    repeat' first | split
+    all_goals first
+      | rfl
+      | exact (dispatchIPC_dmaAuthority _ _).1
+      | (unfold selectLiveReturnAuthority; split <;> rfl)
+
+@[simp] theorem applyOperation_dmaObserved state operation :
+    (applyOperation state operation).dmaObserved = state.dmaObserved := by
+  cases operation <;> simp only [applyOperation]
+  all_goals
+    repeat' first | split
+    all_goals first
+      | rfl
+      | exact (dispatchIPC_dmaAuthority _ _).2
       | (unfold selectLiveReturnAuthority; split <;> rfl)
 
 private theorem applyNmi_preserves_runtimeWellFormed state raw context
@@ -5599,12 +5658,135 @@ def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
       | .handling _ => { state, result := .rejectedBusy }
       | .halted record => { state, result := .rejectedHalted record }
 
+/-- Typed result of the trusted PCI control re-observation boundary.  A live
+invalid or changed observation is fatal, never an ordinary rejection that may
+continue to user mode. -/
+inductive DMAControlResult where
+  | continued
+  | fatal (record : HaltRecord)
+  | rejectedBusy
+  | rejectedHalted (record : HaltRecord)
+  deriving DecidableEq, Repr
+
+structure DMAControlOutcome where
+  state : CompositeState
+  result : DMAControlResult
+
+private def dmaHaltRecord (reason : FatalReason) : HaltRecord :=
+  { reason
+    active := none
+    incomingVector := 0
+    incomingOrigin := .kernel }
+
+private def latchDMAControlFailure (state : CompositeState)
+    (snapshot : DMAQuarantine.Snapshot) (reason : FatalReason) :
+    DMAControlOutcome :=
+  let record := dmaHaltRecord reason
+  { state :=
+      { state with
+        execution :=
+          { state.execution with
+            core :=
+              { state.execution.core with
+                context := { state.execution.core.context with entryActive := true } }
+            mode := .halted record
+            returnAuthorityArmed := false
+            copyOverride := false }
+        resumable := { state.resumable with halted := true }
+        dmaObserved := snapshot }
+    result := .fatal record }
+
+/-- Trusted live PCI observation.  The caller supplies a hardware snapshot,
+not a device identity or mutation request.  Exact re-observation continues;
+identity drift, unreadability, unexpected topology, assignment, or enabled bus
+mastering latches the same absorbing execution mode as every other fatal
+composite event. -/
+def observeDMAControl (state : CompositeState)
+    (snapshot : DMAQuarantine.Snapshot) : DMAControlOutcome :=
+  match state.execution.mode with
+  | .halted record => { state, result := .rejectedHalted record }
+  | .handling _ => { state, result := .rejectedBusy }
+  | .running =>
+      match DMAQuarantine.validate snapshot with
+      | .accepted _ =>
+          if snapshot == state.dmaAccepted.snapshot then
+            { state := { state with dmaObserved := snapshot }, result := .continued }
+          else
+            latchDMAControlFailure state snapshot .dmaControlSnapshotChanged
+      | .rejected _ =>
+          latchDMAControlFailure state snapshot .dmaInvalidControlSnapshot
+
+/-- A continuing live observation is byte-for-byte atomic and preserves the
+global invariant, including its exact DMA quarantine conjunct. -/
+theorem observeDMAControl_continued_unchanged state snapshot
+    (hstate : RuntimeWellFormed state)
+    (hcontinued : (observeDMAControl state snapshot).result = .continued) :
+    observeDMAControl state snapshot =
+      { state, result := .continued } := by
+  cases hmode : state.execution.mode with
+  | handling active => simp [observeDMAControl, hmode] at hcontinued
+  | halted record => simp [observeDMAControl, hmode] at hcontinued
+  | running =>
+      simp only [observeDMAControl, hmode] at hcontinued ⊢
+      cases hvalidation : DMAQuarantine.validate snapshot with
+      | rejected reason =>
+          simp [hvalidation, latchDMAControlFailure] at hcontinued
+      | accepted accepted =>
+          by_cases heq : snapshot == state.dmaAccepted.snapshot
+          · have hsnapshot : snapshot = state.dmaAccepted.snapshot :=
+              LawfulBEq.eq_of_beq heq
+            have hobserved : snapshot = state.dmaObserved :=
+              hsnapshot.trans hstate.dmaQuarantined.symm
+            simp only [hvalidation, heq, if_true]
+            rw [hobserved]
+          · simp [hvalidation, heq, latchDMAControlFailure] at hcontinued
+
+/-- A validator rejection has one exact global outcome: publish the observed
+snapshot for diagnosis and atomically latch the DMA-invalid fatal record. -/
+theorem observeDMAControl_invalid_exact_fatal state snapshot reason
+    (hrunning : state.execution.mode = .running)
+    (hinvalid : DMAQuarantine.validate snapshot = .rejected reason) :
+    observeDMAControl state snapshot =
+      latchDMAControlFailure state snapshot .dmaInvalidControlSnapshot := by
+  simp [observeDMAControl, hrunning, hinvalid]
+
+/-- A valid but changed control snapshot is equally fatal; validation cannot
+turn live control drift into an ordinary continuation. -/
+theorem observeDMAControl_changed_exact_fatal state snapshot accepted
+    (hrunning : state.execution.mode = .running)
+    (hvalid : DMAQuarantine.validate snapshot = .accepted accepted)
+    (hchanged : snapshot ≠ state.dmaAccepted.snapshot) :
+    observeDMAControl state snapshot =
+      latchDMAControlFailure state snapshot .dmaControlSnapshotChanged := by
+  have hbeq : (snapshot == state.dmaAccepted.snapshot) = false := by
+    apply Bool.eq_false_iff.mpr
+    intro hequal
+    exact hchanged (LawfulBEq.eq_of_beq hequal)
+  simp [observeDMAControl, hrunning, hvalid, hbeq]
+
 /-- Busy, halted, accepted, and dependency-rejected gate steps all retain the
 exact checked direct-port controls and device projection. -/
 @[simp] theorem gate_directPortIO state operation :
     (gate state operation).state.directPortIO = state.directPortIO := by
   cases operation <;> cases hmode : state.execution.mode <;>
     simp [gate, hmode]
+
+/-- No ordinary public operation can replace the accepted PCI authority or
+the current live control observation. -/
+@[simp] theorem gate_dmaAuthority state operation :
+    (gate state operation).state.dmaAccepted = state.dmaAccepted ∧
+      (gate state operation).state.dmaObserved = state.dmaObserved := by
+  cases operation <;> cases hmode : state.execution.mode <;>
+    simp [gate, hmode]
+
+/-- Every ordinary composite step preserves the DMA conjunct already folded
+into `RuntimeWellFormed`. -/
+theorem gate_preserves_dmaQuarantined state operation
+    (hstate : state.DMAQuarantined) :
+    (gate state operation).state.DMAQuarantined := by
+  obtain ⟨haccepted, hobserved⟩ := gate_dmaAuthority state operation
+  unfold CompositeState.DMAQuarantined at hstate ⊢
+  simpa [haccepted, hobserved] using hstate
 
 /-- A running gate exposes the exact typed subsystem observation paired with
 the exact composite post-state computed from the same pre-state and operation.
@@ -8179,6 +8361,20 @@ controls or mutate any modeled device, including suffixes after a fatal latch. -
   | nil => rfl
   | cons operation rest ih =>
       rw [runOperations, ih, gate_directPortIO]
+
+/-- Arbitrary finite ordinary suffixes preserve the exact accepted/observed
+PCI authority and therefore the global DMA quarantine conjunct. -/
+theorem runOperations_preserves_dmaQuarantined state operations
+    (hstate : state.DMAQuarantined) :
+    (runOperations state operations).DMAQuarantined ∧
+      DMAQuarantine.quarantine
+        (runOperations state operations).dmaObserved = true := by
+  induction operations generalizing state with
+  | nil => exact ⟨hstate, hstate.quarantine⟩
+  | cons operation rest ih =>
+      simp only [runOperations]
+      exact ih (gate state operation).state
+        (gate_preserves_dmaQuarantined state operation hstate)
 
 /-- The local proof obligation contributed by one public operation to the
 universal runtime-preservation theorem.  Keeping this predicate independent of
@@ -13539,6 +13735,39 @@ theorem halted_suffix_absorbing state record proposals
       simp only [runOperations]
       rw [halted_gate_absorbing state record proposal hmode]
       exact ih state hmode
+
+/-- A rejected live PCI snapshot enters the same fatal latch used by the
+ordinary composite gate, so every later public-operation suffix is absorbed
+byte-for-byte. -/
+theorem observeDMAControl_invalid_suffix_absorbing state snapshot reason proposals
+    (hrunning : state.execution.mode = .running)
+    (hinvalid : DMAQuarantine.validate snapshot = .rejected reason) :
+    let next := (observeDMAControl state snapshot).state
+    next.execution.mode =
+        .halted (dmaHaltRecord .dmaInvalidControlSnapshot) ∧
+      runOperations next proposals = next := by
+  rw [observeDMAControl_invalid_exact_fatal state snapshot reason hrunning hinvalid]
+  dsimp [latchDMAControlFailure]
+  constructor
+  · rfl
+  · exact halted_suffix_absorbing _ _ proposals rfl
+
+/-- A valid-but-different PCI snapshot has the distinct diagnostic reason and
+the same exact fatal absorption property. -/
+theorem observeDMAControl_changed_suffix_absorbing state snapshot accepted proposals
+    (hrunning : state.execution.mode = .running)
+    (hvalid : DMAQuarantine.validate snapshot = .accepted accepted)
+    (hchanged : snapshot ≠ state.dmaAccepted.snapshot) :
+    let next := (observeDMAControl state snapshot).state
+    next.execution.mode =
+        .halted (dmaHaltRecord .dmaControlSnapshotChanged) ∧
+      runOperations next proposals = next := by
+  rw [observeDMAControl_changed_exact_fatal state snapshot accepted
+    hrunning hvalid hchanged]
+  dsimp [latchDMAControlFailure]
+  constructor
+  · rfl
+  · exact halted_suffix_absorbing _ _ proposals rfl
 
 /-! ## Authoritative ordinary/blocking gate successor
 

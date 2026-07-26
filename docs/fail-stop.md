@@ -53,6 +53,11 @@ instruction interleavings or partially committed implementation mutations.
 
 The composite state places scheduler/preemption, syscall virtual memory, IPC,
 capability, mapping, and subject-lifecycle state under the same execution latch.
+It also retains the boot-accepted PCI snapshot and latest authoritative control
+observation; their exact DMA quarantine agreement is a conjunct of
+`RuntimeWellFormed`. Trusted live PCI re-observation cannot become an ordinary
+rejection: invalid or changed control state latches a typed DMA fatal record,
+after which the ordinary composite gate absorbs every suffix.
 `Operation` carries each subsystem's typed inputs, and `gate` invokes the real
 subsystem transition internally; callers cannot supply an arbitrary post-state.
 Once halted it returns the identical composite state and rejects every
