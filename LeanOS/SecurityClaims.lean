@@ -360,6 +360,22 @@ theorem composite_authoritative_transferOffer_then_blocking_preserves_runtimeWel
     state (.transferOffer endpointWord sourceWord sourceKind payload rights) blocking
       (.transferOffer endpointWord sourceWord sourceKind payload rights) hstate
 
+/-- Every sealed capability-transfer receipt retains the complete blocking
+precondition. Filling the checked-empty destination slot and consuming the
+sealed mailbox can therefore be followed immediately by an arbitrary block,
+wake, or cancellation without a separate readiness reconstruction. -/
+theorem composite_authoritative_transferAccept_then_blocking_preserves_runtimeWellFormed
+    state endpointWord destinationSlot blocking
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.transferAccept endpointWord destinationSlot))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.transferAccept endpointWord destinationSlot) blocking
+      (.transferAccept endpointWord destinationSlot) hstate
+
 /-- Raw scheduler selection without a kernel-owned save/restore payload is a
 blocking-state-neutral typed boundary.  Empty dispatch and every forced
 missing-context denial can therefore be followed immediately by an arbitrary
