@@ -50,10 +50,18 @@ The canonical encoding is exactly 19 `UInt64` words.
 
 Decoding requires exactly 19 words. It rejects truncation, extension, wrong
 version, nonzero reserved fields, unsupported controls, noncanonical address,
-page mismatch, unsupported error bits, and derived-field relabeling.
+page mismatch, unsupported error bits, derived-field relabeling, noncanonical
+saved RIP, a missing RFLAGS bit one, zero authority/stack identities, and
+saved-CS/RSP/SS shapes outside the reviewed kernel (`0x08`) and user
+(`0x23`/`0x1b`) profiles.
 `decode_encode_canonical_page_fault` proves valid-record roundtrip and
-`canonical_page_fault_encoding_injective` proves injectivity. Generated corpus
-rows preserve per-vector inputs and identifiers in `build/boot/corpus.tsv`.
+`canonical_page_fault_encoding_injective` proves injectivity.
+`decoded_canonical_page_fault_has_normalized_preimage` proves every decoded
+record is the serialization of a concrete accepted `normalizePageFault`
+snapshot. `rejected_canonical_authorizes_nothing` is stated over the codec
+action boundary and proves decode failure returns no authorized record and
+leaves containment state unchanged. Generated corpus rows preserve per-vector
+inputs and identifiers in `build/boot/corpus.tsv`.
 
 ## Trusted boundary
 

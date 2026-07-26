@@ -12,7 +12,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `InterruptEntry.bootPhaseDemo`, and
 `StaleTranslation.staleTranslationDemo`, and
 `InterruptEntry.pageFaultDemo`. Its stable
-285-vector order covers accepted calls,
+292-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -41,11 +41,13 @@ shape and its broad general-protection purpose. The live handler refines that
 class to direct-port denial only after checking `#GP(0)`, the reviewed RIP, and
 the saved instruction operands.
 
-The 29 page-fault provenance records cover user read/write/execute,
+The 36 page-fault provenance records cover user read/write/execute,
 non-present and protection classes, kernel origin, RSVD, PK, shadow-stack and
 SGX rejection, a changed CR2 page, wrong vector/stub/error shape, truncated and
 nested entry, privilege mismatch, and lower/upper canonical plus noncanonical
-boundaries. Expected values come from `normalizePageFault`; hosted generated C
+boundaries. Seven accepted mutation rows independently vary subject, address
+space, CR3, WP, NXE, SMEP, and SMAP; each must change the generated authority
+attestation. Expected values come from `normalizePageFault`; hosted generated C
 and every boot image call the same `leanos_page_fault_demo`. The compact result
 is executable differential evidence only. The independent 19-word canonical
 codec carries all authoritative fields and is the object of the Lean

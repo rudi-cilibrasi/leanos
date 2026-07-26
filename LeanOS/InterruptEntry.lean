@@ -767,19 +767,55 @@ def pagingControlsCode (controls : PagingControls) : UInt64 :=
     (if controls.smep then 4 else 0) +
     (if controls.smap then 8 else 0)
 
+/-- Decode the four reviewed paging-control bits from their canonical word. -/
+def pagingControlsOfCode (code : UInt64) : PagingControls :=
+  { writeProtect := code % 2 = 1
+    nxEnable := code / 2 % 2 = 1
+    smep := code / 4 % 2 = 1
+    smap := code / 8 % 2 = 1 }
+
+/-- The canonical codec is the serialized image of the normalized snapshot,
+not a second independently authoritative record format. -/
+def canonicalPageFaultRecord (snapshot : NormalizedPageFault) : CanonicalPageFault :=
+  { vector := snapshot.entry.vector
+    errorWord := snapshot.entry.errorCode.getD 0
+    faultAddress := snapshot.faultAddress
+    faultPage := snapshot.faultPage
+    accessCode := pageFaultAccessCode snapshot.accessKind
+    protectionCode := if snapshot.error.protection then 1 else 0
+    privilegeCode := if snapshot.error.user then 1 else 0
+    currentSubject := UInt64.ofNat snapshot.entry.currentSubject
+    activeAddressSpace := UInt64.ofNat snapshot.entry.activeAddressSpace
+    activeCr3 := snapshot.entry.activeCr3
+    controlsCode := pagingControlsCode snapshot.controls
+    rip := snapshot.entry.rip
+    cs := snapshot.entry.cs
+    flags := snapshot.entry.flags
+    userRsp := snapshot.entry.userRsp.getD 0
+    userSs := snapshot.entry.userSs.getD 0
+    stackIdentity := snapshot.entry.stackIdentity
+    reserved := 0 }
+
 def validCanonicalPageFault (record : CanonicalPageFault) : Bool :=
   record.vector = 14 && canonicalLinearAddress record.faultAddress &&
+    canonicalLinearAddress record.rip &&
     record.faultPage = record.faultAddress / 4096 &&
     record.reserved = 0 && record.controlsCode < 16 &&
+    pagingControlsCode (pagingControlsOfCode record.controlsCode) =
+      record.controlsCode &&
+    record.flags / 2 % 2 = 1 && record.currentSubject != 0 &&
+    record.activeAddressSpace != 0 && record.activeCr3 != 0 &&
+    record.stackIdentity != 0 &&
     match decodePageFaultError record.errorWord with
     | .error _ => false
     | .ok decoded =>
         record.accessCode = pageFaultAccessCode decoded.accessKind &&
           record.protectionCode = (if decoded.protection then 1 else 0) &&
           record.privilegeCode = (if decoded.user then 1 else 0) &&
-          record.cs % 4 = (if decoded.user then 3 else 0) &&
-          (if decoded.user then record.userRsp != 0 && record.userSs != 0
-            else record.userRsp = 0 && record.userSs = 0)
+          (if decoded.user then
+            record.cs = 0x23 && canonicalLinearAddress record.userRsp &&
+              record.userRsp != 0 && record.userSs = 0x1b
+            else record.cs = 0x08 && record.userRsp = 0 && record.userSs = 0)
 
 def pageFaultCodecVersion : UInt64 := 1
 def pageFaultCodecWidth : Nat := 19
@@ -792,19 +828,24 @@ def encodeCanonicalPageFault (record : CanonicalPageFault) : List UInt64 :=
     record.activeCr3, record.controlsCode, record.rip, record.cs, record.flags,
     record.userRsp, record.userSs, record.stackIdentity, record.reserved]
 
-def decodeCanonicalPageFault : List UInt64 → Option CanonicalPageFault
+def parseCanonicalPageFault : List UInt64 → Option (UInt64 × CanonicalPageFault)
   | [version, vector, errorWord, faultAddress, faultPage, accessCode,
       protectionCode, privilegeCode, currentSubject, activeAddressSpace,
       activeCr3, controlsCode, rip, cs, flags, userRsp, userSs, stackIdentity,
       reserved] =>
-      let record : CanonicalPageFault :=
+      some (version,
         { vector, errorWord, faultAddress, faultPage, accessCode, protectionCode,
           privilegeCode, currentSubject, activeAddressSpace, activeCr3,
-          controlsCode, rip, cs, flags, userRsp, userSs, stackIdentity, reserved }
+          controlsCode, rip, cs, flags, userRsp, userSs, stackIdentity, reserved })
+  | _ => none
+
+def decodeCanonicalPageFault (words : List UInt64) : Option CanonicalPageFault :=
+  match parseCanonicalPageFault words with
+  | none => none
+  | some (version, record) =>
       if version != pageFaultCodecVersion then none
       else if !validCanonicalPageFault record then none
       else some record
-  | _ => none
 
 theorem encodeCanonicalPageFault_width record :
     (encodeCanonicalPageFault record).length = pageFaultCodecWidth := by
@@ -813,7 +854,8 @@ theorem encodeCanonicalPageFault_width record :
 theorem decode_encode_canonical_page_fault record
     (hvalid : validCanonicalPageFault record = true) :
     decodeCanonicalPageFault (encodeCanonicalPageFault record) = some record := by
-  simp [decodeCanonicalPageFault, encodeCanonicalPageFault, pageFaultCodecVersion, hvalid]
+  simp [decodeCanonicalPageFault, parseCanonicalPageFault,
+    encodeCanonicalPageFault, pageFaultCodecVersion, hvalid]
 
 theorem canonical_page_fault_encoding_injective left right
     (h : encodeCanonicalPageFault left = encodeCanonicalPageFault right) :
@@ -833,10 +875,147 @@ theorem canonical_exact_bit_binding record
   unfold validCanonicalPageFault at hvalid
   split at hvalid <;> simp_all
 
-theorem rejected_canonical_authorizes_nothing words
+private def canonicalPageFaultRaw (record : CanonicalPageFault) : RawPageFault :=
+  let frame :=
+    if record.privilegeCode = 1 then
+      .privilegeChange record.rip record.cs record.flags record.userRsp record.userSs
+    else .samePrivilege record.rip record.cs record.flags
+  { entry :=
+      { boundVector := 14
+        boundStub := 14
+        errorCode := some record.errorWord
+        restartClass := restartClassFor 14
+        frame
+        frameBytes := shapeBytes frame
+        frameAddress := 0x800000
+        acCleared := true
+        dfCleared := true }
+    faultAddress := record.faultAddress
+    savedGprs := ⟨[]⟩
+    diagnosticWords := [] }
+
+private def canonicalPageFaultContext (record : CanonicalPageFault) : PageFaultContext :=
+  { entry :=
+      { currentSubject := record.currentSubject.toNat
+        activeAddressSpace := record.activeAddressSpace.toNat
+        activeCr3 := record.activeCr3
+        stackIdentity := record.stackIdentity
+        stackFirst := 0x800000
+        stackPastLast := 0x804000
+        entryActive := false }
+    controls := pagingControlsOfCode record.controlsCode }
+
+private def canonicalPageFaultSnapshot (record : CanonicalPageFault)
+    (decoded : DecodedPageFaultError) : NormalizedPageFault :=
+  { entry :=
+      { vector := 14
+        purpose := if decoded.user then .userFault else .diagnosticRecovery
+        origin := if decoded.user then .user else .kernel
+        errorCode := some record.errorWord
+        rip := record.rip
+        cs := record.cs
+        flags := record.flags
+        userRsp := if decoded.user then some record.userRsp else none
+        userSs := if decoded.user then some record.userSs else none
+        currentSubject := record.currentSubject.toNat
+        activeAddressSpace := record.activeAddressSpace.toNat
+        activeCr3 := record.activeCr3
+        stackIdentity := record.stackIdentity }
+    error := decoded
+    accessKind := decoded.accessKind
+    faultAddress := record.faultAddress
+    faultPage := record.faultAddress / 4096
+    controls := pagingControlsOfCode record.controlsCode }
+
+private theorem find_page_fault_entry : findEntry 14 = some pageFaultEntry := by
+  native_decide
+
+/-- Every record admitted by the codec has a concrete accepted vector-14
+normalizer preimage, and serializing that snapshot yields the same record. -/
+theorem valid_canonical_page_fault_has_normalized_preimage record
+    (hvalid : validCanonicalPageFault record = true) :
+    ∃ snapshot,
+      normalizePageFault (canonicalPageFaultRaw record)
+          (canonicalPageFaultContext record) = .accepted snapshot ∧
+        canonicalPageFaultRecord snapshot = record := by
+  unfold validCanonicalPageFault at hvalid
+  split at hvalid
+  · simp_all
+  · rename_i decoded hdecoded
+    refine ⟨canonicalPageFaultSnapshot record decoded, ?_, ?_⟩
+    · cases decoded with
+      | mk protection write user instructionFetch =>
+        cases user <;> cases record <;>
+        simp_all [canonicalPageFaultRaw, canonicalPageFaultContext,
+          canonicalPageFaultSnapshot, normalizePageFault, normalize,
+          find_page_fault_entry, reviewed_manifest_valid, pageFaultEntry,
+          makeNormalized, makeNormalizedPageFault, shapeBytes, purposeFor]
+    · cases decoded with
+      | mk protection write user instructionFetch =>
+        cases user <;> cases record <;>
+        simp_all [canonicalPageFaultSnapshot, canonicalPageFaultRecord,
+          pagingControlsCode, pageFaultAccessCode,
+          DecodedPageFaultError.accessKind]
+
+theorem decoded_canonical_page_fault_has_normalized_preimage words record
+    (hdecoded : decodeCanonicalPageFault words = some record) :
+    ∃ snapshot,
+      normalizePageFault (canonicalPageFaultRaw record)
+          (canonicalPageFaultContext record) = .accepted snapshot ∧
+        canonicalPageFaultRecord snapshot = record := by
+  have hvalid : validCanonicalPageFault record = true := by
+    unfold decodeCanonicalPageFault at hdecoded
+    split at hdecoded <;> try contradiction
+    split at hdecoded <;> try contradiction
+    split at hdecoded <;> try contradiction
+    injection hdecoded with hrecord
+    subst record
+    simp_all
+  exact valid_canonical_page_fault_has_normalized_preimage record hvalid
+
+def canonicalPageFaultExample : CanonicalPageFault :=
+  { vector := 14
+    errorWord := 4
+    faultAddress := 0x400123
+    faultPage := 0x400
+    accessCode := 0
+    protectionCode := 0
+    privilegeCode := 1
+    currentSubject := 1
+    activeAddressSpace := 1
+    activeCr3 := 0x1000
+    controlsCode := 15
+    rip := 0x400100
+    cs := 0x23
+    flags := 0x202
+    userRsp := 0x500ff8
+    userSs := 0x1b
+    stackIdentity := 1
+    reserved := 0 }
+
+theorem canonical_page_fault_codec_nonvacuous :
+    validCanonicalPageFault canonicalPageFaultExample = true ∧
+      decodeCanonicalPageFault (encodeCanonicalPageFault canonicalPageFaultExample) =
+        some canonicalPageFaultExample := by
+  native_decide
+
+/-- The action boundary consumes the codec result.  A malformed record has no
+authorized snapshot and leaves the supplied containment state unchanged. -/
+structure CanonicalPageFaultAction (State : Type) where
+  authorized : Option CanonicalPageFault
+  state : State
+
+def authorizeCanonicalPageFault (words : List UInt64) (state : State) :
+    CanonicalPageFaultAction State :=
+  match decodeCanonicalPageFault words with
+  | none => ⟨none, state⟩
+  | some record => ⟨some record, state⟩
+
+theorem rejected_canonical_authorizes_nothing (State : Type) words (state : State)
     (hrejected : decodeCanonicalPageFault words = none) :
-    ¬ ∃ record, decodeCanonicalPageFault words = some record := by
-  simp [hrejected]
+    (authorizeCanonicalPageFault words state).authorized = none ∧
+      (authorizeCanonicalPageFault words state).state = state := by
+  simp [authorizeCanonicalPageFault, hrejected]
 
 def PageFaultRejectReason.code : PageFaultRejectReason → UInt64
   | .entry _ => 1
@@ -844,13 +1023,29 @@ def PageFaultRejectReason.code : PageFaultRejectReason → UInt64
   | .reservedBitViolation => 4 | .unsupportedErrorBits => 5
   | .privilegeMismatch => 6 | .noncanonicalAddress => 7
 
+/-- Lower-half executable witness combining the architectural result with the
+exact compact authority-context word and all four paging-control bits. -/
+def pageFaultAuthorityMix (context controlsCode : UInt64) : UInt64 :=
+  (context * 0x9e3779b185ebca87 +
+    controlsCode * 0x100000001b3) % 0x8000000000000000
+
+def pageFaultAcceptedWitness (faultPage : UInt64)
+    (accessCode : UInt64) (protection user : Bool)
+    (context controlsCode : UInt64) : UInt64 :=
+  (faultPage * 32 + accessCode * 4 +
+    (if protection then 2 else 0) + (if user then 1 else 0) +
+    pageFaultAuthorityMix context controlsCode) % 0x8000000000000000
+
 def compactPageFaultResult : PageFaultResult → UInt64
   | .fatal reason => 0x8000000000000000 + reason.code
   | .accepted snapshot =>
-      snapshot.faultPage * 32 +
-        pageFaultAccessCode snapshot.accessKind * 4 +
-        (if snapshot.error.protection then 2 else 0) +
-        (if snapshot.error.user then 1 else 0)
+      let context := UInt64.ofNat snapshot.entry.currentSubject +
+        UInt64.ofNat snapshot.entry.activeAddressSpace * 256 +
+        snapshot.entry.activeCr3 * 65536
+      pageFaultAcceptedWitness snapshot.faultPage
+        (pageFaultAccessCode snapshot.accessKind)
+        snapshot.error.protection snapshot.error.user context
+        (pagingControlsCode snapshot.controls)
 
 private def pageFaultDemoRaw (error address mode controls : UInt64) : RawPageFault :=
   let userShape := mode != 1
@@ -897,9 +1092,10 @@ def pageFaultModelExpected (error address mode context controls : UInt64) : UInt
       (pageFaultDemoContext context controls))
 
 /-- Allocation-free spelling used by generated C.  The ordered rejection
-codes mirror `normalizePageFault`; finite pointwise agreement with the rich
-model is checked by `Oracle.page_fault_adapter_agrees_with_model`. -/
-def pageFaultDemo (error address mode _context controls : UInt64) : UInt64 :=
+codes mirror `normalizePageFault`; its accepted witness includes the exact
+authority context and paging controls.  Finite pointwise agreement with the
+rich model is checked by `Oracle.page_fault_adapter_agrees_with_model`. -/
+def pageFaultDemo (error address mode context controls : UInt64) : UInt64 :=
   let acCleared := controls % 2 = 1
   let dfCleared := controls / 2 % 2 = 1
   let nested := controls / 4 % 2 = 1
@@ -914,8 +1110,8 @@ def pageFaultDemo (error address mode _context controls : UInt64) : UInt64 :=
   else if error / 8 % 2 = 1 then 0x8000000000000004
   else if originUser != errorUser then 0x8000000000000006
   else if !canonicalLinearAddress address then 0x8000000000000007
-  else address / 4096 * 32 + accessCode * 4 +
-    (if error % 2 = 1 then 2 else 0) + (if errorUser then 1 else 0)
+  else pageFaultAcceptedWitness (address / 4096) accessCode
+    (error % 2 = 1) errorUser context (controls / 8 % 16)
 
 theorem pageFaultDemo_total error address mode context controls :
     ∃ result, pageFaultDemo error address mode context controls = result := ⟨_, rfl⟩

@@ -66,6 +66,7 @@ cat >"$tmp/fixture.S" <<'EOF'
 .text
 .globl fixture_root, root, leaf, detached, indirect_root, short_root
 .globl cycle_root, cycle_a, cycle_b, assembly_over_root, assembly_over_helper
+.globl page_fault_root, isr14_capture_cr2, isr14_preserve_cr2, isr14_restore_cr2
 fixture_root:
 .rept 15
 push %rax
@@ -111,6 +112,19 @@ assembly_over_helper:
 sub $256, %rsp
 add $256, %rsp
 ret
+page_fault_root:
+.rept 15
+push %rax
+.endr
+sub $8, %rsp
+isr14_capture_cr2:
+nop
+isr14_preserve_cr2:
+push %rax
+call root
+isr14_restore_cr2:
+nop
+ret
 EOF
 gcc -c "$tmp/fixture.S" -o "$tmp/fixture.o"
 ld --build-id=none -o "$tmp/fixture.elf" -e fixture_root "$tmp/fixture.o"
@@ -123,6 +137,15 @@ grep -Fq 'path=ok final-elf-root=fixture_root save-register-pushes=15 reviewed-f
   "$tmp/elf-ok.log"
 grep -Fq 'assembly-functions=1 root-assembly-bytes=136 assembly-bytes=0 call-return-bytes=16 total=208 margin=0' \
   "$tmp/elf-ok.log"
+
+printf 'page-fault\tuser\t1\t0\tpage_fault_root\troot;leaf\n' >"$tmp/page-fault.tsv"
+LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/page-fault.tsv" \
+  LEANOS_ENTRY_STACK_USABLE_BYTES=232 \
+  ./scripts/check-entry-stack-budget.sh "$tmp/fixture.elf" >"$tmp/page-fault-elf.log"
+grep -Fq 'path=page-fault final-elf-root=page_fault_root save-register-pushes=15 reviewed-functions=2 reachable-functions=3' \
+  "$tmp/page-fault-elf.log"
+grep -Fq 'root-assembly-bytes=136 assembly-bytes=8 call-return-bytes=16 total=232 margin=0' \
+  "$tmp/page-fault-elf.log"
 
 run_rejected_elf() {
   local name="$1" diagnostic="$2"

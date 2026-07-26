@@ -151,7 +151,9 @@ for fixture in FaultReasonRelabel KernelBreakpointContainment \
 done
 
 for fixture in PageFaultDroppedCR2 PageFaultIgnoredAccessBits \
-    PageFaultClearedReserved PageFaultUnsupportedBit PageFaultPayloadAccessKind; do
+    PageFaultClearedReserved PageFaultUnsupportedBit PageFaultPayloadAccessKind \
+    PageFaultInvalidUserSelector PageFaultNoncanonicalRip \
+    PageFaultZeroStackIdentity; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: page-fault provenance fixture ${fixture} unexpectedly type-checked" >&2
     exit 1

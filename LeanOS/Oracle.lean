@@ -457,9 +457,16 @@ def vectors : List Vector := [
   pageFault "page-fault.low-canonical-boundary" 4 0x7fffffffffff 0 0x10000101 123,
   pageFault "page-fault.upper-canonical-boundary" 4 0xffff800000000000 0
     0x10000101 123,
-  pageFault "page-fault.noncanonical-boundary" 4 0x800000000000 0 0x10000101 123]
+  pageFault "page-fault.noncanonical-boundary" 4 0x800000000000 0 0x10000101 123,
+  pageFault "page-fault.authority-subject-mutated" 4 0x400123 0 0x10000102 123,
+  pageFault "page-fault.authority-space-mutated" 4 0x400123 0 0x10000201 123,
+  pageFault "page-fault.authority-cr3-mutated" 4 0x400123 0 0x10010101 123,
+  pageFault "page-fault.authority-wp-mutated" 4 0x400123 0 0x10000101 115,
+  pageFault "page-fault.authority-nxe-mutated" 4 0x400123 0 0x10000101 107,
+  pageFault "page-fault.authority-smep-mutated" 4 0x400123 0 0x10000101 91,
+  pageFault "page-fault.authority-smap-mutated" 4 0x400123 0 0x10000101 59]
 
-theorem corpus_shape : vectors.length = 285 := by decide
+theorem corpus_shape : vectors.length = 292 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -788,12 +795,42 @@ private def pageFaultAdapterAgrees (vector : Vector) : Bool :=
       InterruptEntry.pageFaultDemo error address mode context controls = vector.expected
   | _, _ => true
 
-theorem page_fault_corpus_shape : ((vectors.drop 256).take 29).length = 29 := by
+theorem page_fault_corpus_shape : ((vectors.drop 256).take 36).length = 36 := by
   decide
 
 theorem page_fault_adapter_agrees_with_model :
-    ((vectors.drop 256).take 29).all pageFaultAdapterAgrees = true := by
+    ((vectors.drop 256).take 36).all pageFaultAdapterAgrees = true := by
   native_decide
+
+/-- Dropping any authority-bearing input changes the accepted executable
+witness, so the rich-model corpus cannot agree with an erasing adapter. -/
+theorem page_fault_subject_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[285]).expected := by native_decide
+theorem page_fault_space_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[286]).expected := by native_decide
+theorem page_fault_cr3_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[287]).expected := by native_decide
+theorem page_fault_wp_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[288]).expected := by native_decide
+theorem page_fault_nxe_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[289]).expected := by native_decide
+theorem page_fault_smep_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[290]).expected := by native_decide
+theorem page_fault_smap_mutation_attested :
+    (vectors[256]).expected ≠ (vectors[291]).expected := by native_decide
+
+theorem page_fault_authority_mutations_attested :
+    (vectors[256]).expected ≠ (vectors[285]).expected ∧
+    (vectors[256]).expected ≠ (vectors[286]).expected ∧
+    (vectors[256]).expected ≠ (vectors[287]).expected ∧
+    (vectors[256]).expected ≠ (vectors[288]).expected ∧
+    (vectors[256]).expected ≠ (vectors[289]).expected ∧
+    (vectors[256]).expected ≠ (vectors[290]).expected ∧
+    (vectors[256]).expected ≠ (vectors[291]).expected :=
+  ⟨page_fault_subject_mutation_attested, page_fault_space_mutation_attested,
+    page_fault_cr3_mutation_attested, page_fault_wp_mutation_attested,
+    page_fault_nxe_mutation_attested, page_fault_smep_mutation_attested,
+    page_fault_smap_mutation_attested⟩
 
 private def wordsText : List UInt64 → String
   | [] => ""

@@ -174,11 +174,16 @@ paging.
 `CanonicalPageFault` has a version-one fixed width of 19 `UInt64` words. Its
 decoder rejects wrong versions, truncation or extension, a nonzero reserved
 word, unsupported controls, noncanonical addresses, mismatched pages, and
-access/protection/privilege relabeling. Lean proves width, valid-record
-roundtrip, encoding injectivity, exact bit/page binding, normalizer
-totality/determinism, and GPR/diagnostic confinement. The generated five-word
-adapter is only a compact executable corpus projection, not the canonical
-codec or a machine-refinement theorem.
+access/protection/privilege relabeling. It also validates the reviewed saved
+CS/RSP/SS shapes, canonical saved RIP, RFLAGS bit one, and nonzero
+subject/address-space/CR3/stack identities. Lean proves width, valid-record
+roundtrip, encoding injectivity, exact bit/page binding, that every decoded
+record has a concrete accepted normalizer preimage, decode-failure no-action,
+normalizer totality/determinism, and GPR/diagnostic confinement. The generated
+five-word adapter is only a compact executable corpus projection, not the
+canonical codec or a machine-refinement theorem; its scalar result nevertheless
+attests the exact compact context plus WP/NXE/SMEP/SMAP and is checked
+independently by the live C handler before containment.
 
 The generated allocation-free `leanos_entry_demo` adapter is replayed in the
 version-one oracle with valid syscall, user general-protection/direct-port,
