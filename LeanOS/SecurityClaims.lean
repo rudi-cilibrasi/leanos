@@ -137,6 +137,17 @@ theorem dma_quarantine_q35_trace_nonvacuous :
       DMAQuarantine.QuarantineTrace middle DMAQuarantine.q35Runtime :=
   DMAQuarantine.q35_mixed_trace_nonvacuous
 
+/-- SC-DMA-QUARANTINE-GLOBAL: every finite suffix of the authoritative
+composite gate preserves the exact boot-accepted PCI control observation and
+therefore its finite, nonempty deny-all DMA quarantine. -/
+theorem dma_quarantine_global_runtime_preservation
+    (state : FailStop.CompositeState) (operations : List FailStop.Operation)
+    (hinvariant : state.DMAQuarantined) :
+    let next := FailStop.runOperations state operations
+    next.DMAQuarantined ∧
+      DMAQuarantine.quarantine next.dmaObserved = true := by
+  exact FailStop.runOperations_preserves_dma_quarantine state operations hinvariant
+
 /-- SC-LIFETIME-IDENTITY-NO-REUSE: under the bounded-issuer runtime invariant,
 every finite sequence of composite lifecycle operations preserves
 counter/history agreement, can never make a retired object identity or a

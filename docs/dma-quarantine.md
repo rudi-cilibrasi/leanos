@@ -139,10 +139,26 @@ device obedience remain tested assumptions. The C manifest and the final
 binary are not proved to refine `q35Manifest`, so the boot checkpoint does not
 upgrade the Lean theorem into a hardware claim.
 
-Issue #104's authoritative composite invariant remains on its separate,
-unmerged dependency lane. Once that state lands, its exact `RuntimeWellFormed`
-and typed gate should embed `AcceptedSnapshot` and the unchanged control
-snapshot; this model intentionally does not fork a competing composite state.
+The existing authoritative `FailStop.CompositeState` now embeds the
+proof-carrying `dmaAccepted` snapshot and the latest `dmaObserved` control
+snapshot directly. It does not embed `DMAQuarantine.RuntimeState`, whose
+separate memory projection would create a competing composite runtime.
+`CompositeState.DMAQuarantined` requires the current observation to equal the
+accepted snapshot. `FailStop.gate_preserves_dma_quarantine` proves that every
+current composite operation preserves both authority fields exactly, and
+`FailStop.runOperations_preserves_dma_quarantine` lifts that result to every
+finite suffix. The public operation vocabulary contains no BDF, assignment,
+Command word, accepted snapshot, or observed snapshot.
+
+Issue #104's stronger `RuntimeWellFormed` and typed gate remain on their
+separate, unmerged dependency lane. When that state lands, it must include
+`CompositeState.DMAQuarantined` as one conjunct and route authoritative live
+control re-observation through its fatal result rather than an ordinary
+rejection. Until then, `DMAQuarantine.runtimeGate` remains the separately
+proved typed model for changed/invalid observation and fatal absorption. This
+checkpoint integrates immutable DMA authority into the sole composite state;
+it does not claim that the current global gate performs live PCI reads.
+
 Issue #129's final-ELF inventory now classifies the boot-only `0xcf8`/`0xcfc`
 mechanism accesses as `DMAQuarantine.boot-pci-config`. The exact `out16`,
 `out32`, and `in32` wrapper sites are reviewed exceptions, while the source

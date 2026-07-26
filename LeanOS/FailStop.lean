@@ -1,6 +1,7 @@
 import LeanOS.Interrupt
 import LeanOS.InterruptEntry
 import LeanOS.BootPageTablePlan
+import LeanOS.DMAQuarantine
 import LeanOS.IPCSyscall
 import LeanOS.Preemption
 
@@ -547,6 +548,12 @@ structure CompositeState where
   ipc : IPCSyscall.State
   capabilities : Capability.State
   lifecycle : SubjectLifecycle.State
+  /-- Boot-validated finite PCI inventory and its proof-carrying deny-all
+  quarantine.  This is authority state, not a second memory/runtime model. -/
+  dmaAccepted : DMAQuarantine.AcceptedSnapshot := DMAQuarantine.q35Accepted
+  /-- Latest authoritative PCI control observation.  Ordinary composite
+  operations cannot supply or change this snapshot. -/
+  dmaObserved : DMAQuarantine.Snapshot := DMAQuarantine.q35Snapshot
 
 /-- A compiled return plan refines the active live virtual-memory view exactly
 at the two leaves used by the return gate.  The live object bindings must name
@@ -632,6 +639,19 @@ def CompositeState.Coherent (state : CompositeState) : Prop :=
   (∀ object envelope, state.ipc.endpoints.mailbox object = some envelope →
     state.lifecycle.capabilities.subjects envelope.sender = true)
 
+/-- The authoritative composite publishes a DMA quarantine only while its
+current control observation is exactly the boot-accepted finite snapshot.
+`AcceptedSnapshot` itself carries canonical accounting, nonemptiness, and the
+deny-all bus-master proof. -/
+def CompositeState.DMAQuarantined (state : CompositeState) : Prop :=
+  state.dmaObserved = state.dmaAccepted.snapshot
+
+theorem CompositeState.DMAQuarantined.quarantine {state : CompositeState}
+    (hstate : state.DMAQuarantined) :
+    DMAQuarantine.quarantine state.dmaObserved = true := by
+  rw [hstate]
+  exact state.dmaAccepted.quarantineAccepted
+
 private def restrictMappings (lifecycle : SubjectLifecycle.State)
     (mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
       Option VirtualMapping.Mapping) :=
@@ -703,6 +723,40 @@ private def installScheduler (state : CompositeState)
     (scheduler : Scheduler.State) : CompositeState :=
   installLifecycle { state with scheduler, preemption := { state.preemption with scheduler } }
     scheduler.lifecycle
+
+@[simp] private theorem installLifecycle_dmaAccepted state lifecycle :
+    (installLifecycle state lifecycle).dmaAccepted = state.dmaAccepted := by
+  rfl
+
+@[simp] private theorem installLifecycle_dmaObserved state lifecycle :
+    (installLifecycle state lifecycle).dmaObserved = state.dmaObserved := by
+  rfl
+
+@[simp] private theorem installCapabilities_dmaAccepted state capabilities :
+    (installCapabilities state capabilities).dmaAccepted = state.dmaAccepted := by
+  simp [installCapabilities]
+
+@[simp] private theorem installCapabilities_dmaObserved state capabilities :
+    (installCapabilities state capabilities).dmaObserved = state.dmaObserved := by
+  simp [installCapabilities]
+
+@[simp] private theorem installScheduler_dmaAccepted state scheduler :
+    (installScheduler state scheduler).dmaAccepted = state.dmaAccepted := by
+  simp [installScheduler]
+
+@[simp] private theorem installScheduler_dmaObserved state scheduler :
+    (installScheduler state scheduler).dmaObserved = state.dmaObserved := by
+  simp [installScheduler]
+
+@[simp] private theorem selectLiveReturnAuthority_dmaAccepted state purpose :
+    (selectLiveReturnAuthority state purpose).dmaAccepted = state.dmaAccepted := by
+  unfold selectLiveReturnAuthority
+  split <;> rfl
+
+@[simp] private theorem selectLiveReturnAuthority_dmaObserved state purpose :
+    (selectLiveReturnAuthority state purpose).dmaObserved = state.dmaObserved := by
+  unfold selectLiveReturnAuthority
+  split <;> rfl
 
 private def lifecycleFromVirtualMemory (lifecycle : SubjectLifecycle.State)
     (virtualMemory : VirtualMapping.State) : SubjectLifecycle.State :=
@@ -852,6 +906,20 @@ private def applyOperation (state : CompositeState) : Operation → CompositeSta
       installScheduler state (Scheduler.terminateCurrent state.scheduler).state
   | .restart => state
 
+@[simp] theorem applyOperation_dmaAccepted state operation :
+    (applyOperation state operation).dmaAccepted = state.dmaAccepted := by
+  cases operation <;> simp [applyOperation]
+  case preempt frame =>
+    generalize haction : (dispatchHardware state.execution frame).action = action
+    cases action <;> simp [applyOperation, haction]
+
+@[simp] theorem applyOperation_dmaObserved state operation :
+    (applyOperation state operation).dmaObserved = state.dmaObserved := by
+  cases operation <;> simp [applyOperation]
+  case preempt frame =>
+    generalize haction : (dispatchHardware state.execution frame).action = action
+    cases action <;> simp [applyOperation, haction]
+
 /-- A contained user fault is published to both scheduler views in the same
 composite step, so neither can select from the pre-termination lifecycle. -/
 theorem interrupt_synchronizes_lifecycle state frame :
@@ -885,6 +953,30 @@ def gate (state : CompositeState) (operation : Operation) : GateOutcome :=
       | .handling _ => { state, result := .rejectedBusy }
       | .halted record => { state, result := .rejectedHalted record }
 
+/-- No public composite operation can replace the accepted PCI authority or
+the current control observation.  In particular, the operation vocabulary has
+no BDF, assignment, or Command-register payload. -/
+theorem gate_preserves_dma_authority state operation :
+    (gate state operation).state.dmaAccepted = state.dmaAccepted ∧
+      (gate state operation).state.dmaObserved = state.dmaObserved := by
+  cases operation <;> cases hmode : state.execution.mode <;>
+    simp [gate, hmode]
+
+/-- Every composite step preserves the finite DMA quarantine.  This statement
+is about the authoritative Lean composite; PCI reads and device obedience
+remain trusted machine assumptions. -/
+theorem gate_preserves_dma_quarantine state operation
+    (hstate : state.DMAQuarantined) :
+    (gate state operation).state.DMAQuarantined ∧
+      DMAQuarantine.quarantine (gate state operation).state.dmaObserved = true := by
+  obtain ⟨haccepted, hobserved⟩ := gate_preserves_dma_authority state operation
+  constructor
+  · unfold CompositeState.DMAQuarantined at hstate ⊢
+    rw [haccepted, hobserved]
+    exact hstate
+  · rw [hobserved]
+    exact hstate.quarantine
+
 /-- Initial dispatch is also represented by a typed composite step; syscall
 and timer paths reselect only after their final context update. -/
 theorem select_user_return_is_reachable state purpose
@@ -901,6 +993,20 @@ theorem syscall_entry_leaves_return_unarmed state frame
 def runOperations (state : CompositeState) : List Operation → CompositeState
   | [] => state
   | operation :: rest => runOperations (gate state operation).state rest
+
+/-- Finite global suffixes preserve the same authoritative DMA observation and
+the proof-carrying quarantine. -/
+theorem runOperations_preserves_dma_quarantine state operations
+    (hstate : state.DMAQuarantined) :
+    (runOperations state operations).DMAQuarantined ∧
+      DMAQuarantine.quarantine
+        (runOperations state operations).dmaObserved = true := by
+  induction operations generalizing state with
+  | nil => exact ⟨hstate, hstate.quarantine⟩
+  | cons operation rest ih =>
+      simp only [runOperations]
+      exact ih (gate state operation).state
+        (gate_preserves_dma_quarantine state operation hstate).1
 
 theorem dispatchHardware_deterministic state frame first second
     (hfirst : dispatchHardware state frame = first)
