@@ -41,8 +41,9 @@ static lean_object *run_host(int argc, char **argv) {
 
     expect("truncated status", leanos_boot_handoff_fixture_query(2, 1), 2);
     expect("truncated typed error", leanos_boot_handoff_fixture_query(2, 2), 6);
-    expect("padding status", leanos_boot_handoff_fixture_query(3, 1), 2);
-    expect("padding typed error", leanos_boot_handoff_fixture_query(3, 2), 11);
+    for (uint64_t word = 0; word < 20; ++word)
+        expect("padding-independent projection",
+               leanos_boot_handoff_fixture_query(3, word), expected[word]);
 
     puts("Hosted generated-C handoff projection replay passed");
     return lean_io_result_mk_ok(lean_box(0));

@@ -30,7 +30,6 @@ inductive Error where
   | tooManyTags
   | malformedTagSize
   | tagOutOfBounds
-  | nonzeroPadding
   | missingEndTag
   | misplacedEndTag
   | missingMemoryMap
@@ -64,9 +63,6 @@ def readU32 (bytes : List UInt8) (offset : Nat) : Except Error Nat :=
 
 def readU64 (bytes : List UInt8) (offset : Nat) : Except Error Nat :=
   readLE bytes offset 8
-
-def allZero (bytes : List UInt8) (offset count : Nat) : Bool :=
-  (List.range count).all fun index => bytes[offset + index]? == some 0
 
 def memoryKind (kind : Nat) : MemoryKind :=
   match kind with
@@ -102,7 +98,6 @@ private def decodeTags (bytes : List UInt8) (total offset fuel : Nat)
       if offset + tagSize > total then throw .tagOutOfBounds
       let advance := aligned8 tagSize
       if offset + advance > total then throw .tagOutOfBounds
-      if !allZero bytes (offset + tagSize) (advance - tagSize) then throw .nonzeroPadding
       if tagType == 0 then
         if tagSize != 8 then throw .malformedTagSize
         if offset + advance != total then throw .misplacedEndTag
@@ -313,10 +308,10 @@ example : errorOf (decode (withBytes
     (information (memoryMapTag [entry 0 0x1000 1 1] ++ endTag)))) =
     some .nonzeroEntryReserved := by native_decide
 
-example : errorOf (decode (withBytes
+example : ((decode (withBytes
     (information (tag 42 [byte 0xaa] (paddingByte := byte 1) ++
-      memoryMapTag sampleEntries ++ endTag)))) =
-    some .nonzeroPadding := by native_decide
+      memoryMapTag sampleEntries ++ endTag)))).toOption.map (·.handoff)) =
+    some sampleHandoff := by native_decide
 
 example : ((decode (withBytes
     (information (memoryMapTag [entry 0 0x1000 99] ++ endTag)))).toOption.map

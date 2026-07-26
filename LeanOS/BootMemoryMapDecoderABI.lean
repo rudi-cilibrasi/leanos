@@ -26,7 +26,6 @@ def errorCode : BootMemoryMapDecoder.Error → UInt64
   | .tooManyTags => 8
   | .malformedTagSize => 9
   | .tagOutOfBounds => 10
-  | .nonzeroPadding => 11
   | .missingEndTag => 12
   | .misplacedEndTag => 13
   | .missingMemoryMap => 14
@@ -166,6 +165,8 @@ def paddingArray : ByteArray :=
 
 example : query magic 0x1000 truncatedArray 1 = 2 := by native_decide
 example : query magic 0x1000 truncatedArray 2 = 6 := by native_decide
+example : query magic 0x1000 paddingArray 1 = 1 := by native_decide
+example : query magic 0x1000 paddingArray 19 = 1 := by native_decide
 
 end Fixtures
 

@@ -133,9 +133,9 @@ int check_stream(void) {
         return 18;
     uint64_t malformed[12];
     for (uint64_t index = 0; index < 12; ++index) malformed[index] = chunks[index];
-    malformed[2] = 0x1aa;
+    malformed[0] |= 0x100000000;
     decoded = decode(malformed, 1);
-    if (decoded.word[1] != 2 || decoded.word[2] != 5)
+    if (decoded.word[1] != 2 || decoded.word[2] != 3)
         return 16;
     uint64_t manifest = leanos_boot_manifest_candidate(
         800, 0, 0x100000, 0x100000, 0x200000,

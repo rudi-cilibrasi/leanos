@@ -24,7 +24,6 @@ def badState : UInt64 := 1
 def badStream : UInt64 := 2
 def badInfoHeader : UInt64 := 3
 def badTag : UInt64 := 4
-def badPadding : UInt64 := 5
 def duplicateMap : UInt64 := 6
 def badMapLayout : UInt64 := 7
 def tooManyEntries : UInt64 := 8
@@ -76,17 +75,6 @@ def initWord (magic address extent target query : UInt64) : UInt64 :=
   else if query == 16 then target
   else 0
 
-private def canonicalTail (content chunk : UInt64) : Bool :=
-  if content == 0 then chunk == 0
-  else if content == 1 then chunk < 0x100
-  else if content == 2 then chunk < 0x10000
-  else if content == 3 then chunk < 0x1000000
-  else if content == 4 then chunk < 0x100000000
-  else if content == 5 then chunk < 0x10000000000
-  else if content == 6 then chunk < 0x1000000000000
-  else if content == 7 then chunk < 0x100000000000000
-  else true
-
 private def overlap (base stop first past : UInt64) : Bool :=
   base < past && first < stop
 
@@ -121,7 +109,6 @@ private def transitionError (version status error identity extent offset phase
       else noError
   else if phase == phaseIgnored then
     if padded < 8 || content > padded then badState
-    else if content < 8 && !canonicalTail content chunk then badPadding
     else noError
   else if phase == phaseMapLayout then
     if low32 chunk != 24 || high32 chunk != 0 || content < 24 ||

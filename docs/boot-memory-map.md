@@ -15,13 +15,15 @@ address, and a finite byte list. The decoder rejects buffers smaller than 16
 bytes or larger than 64 KiB before tag traversal. It checks the advertised
 total size against the immutable copy, the reserved information-header word,
 every little-endian load, aligned tag advance, tag extent, and alignment
-padding. Padding and reserved entry words must be zero.
+padding extent. Multiboot2 does not define alignment padding bytes, so their
+values are ignored while reserved information-header and entry words must be
+zero.
 
 Exactly one version-zero memory-map tag with 24-byte entries and one final
 8-byte end tag are accepted. Unknown tags are retained as typed ignored tags;
 unknown memory types are conservatively decoded as reserved. Early or missing
 end tags, duplicate or missing maps, truncated fields, unsupported layouts,
-excess tags or entries, and noncanonical padding reject deterministically.
+and excess tags or entries reject deterministically.
 Every accepted `Decoded` value carries the exact entries accepted by
 `BootMemoryMap.validateHandoff` and a checked byte/tag/entry-bounds witness.
 `decodeAndNormalize` is the sole composition helper for this slice, and its
@@ -34,7 +36,7 @@ decoded entry triple, and every canonical normalized-region triple. Rejections
 return a stable stage and typed error code; they expose no accepted projection.
 Each query starts from the complete byte buffer, so callers cannot continue
 state with bytes from another handoff. `scripts/check-boot-handoff-host.sh`
-replays checked-in accepted, overlap-order, truncation, and noncanonical-padding
+replays checked-in accepted, overlap-order, truncation, and arbitrary-padding
 fixtures through generated C and compares complete projections rather than a
 digest or caller-supplied stage flags.
 
@@ -88,7 +90,7 @@ the production copy/ownership and exact stream-continuity checkpoint.
 
 `BootMemoryMapStreamAuthority` is the version-three, allocation-free production
 consumer of that copy. Its scalar state machine reads aligned raw words,
-validates the information header, tag sizes and advances, ignored-tag padding,
+validates the information header, tag sizes and advances, ignored-tag extents,
 the unique version-zero 24-byte memory map, every entry range/reserved field,
 and the terminal end tag. For one candidate frame, it retains full usable
 coverage and any non-usable overlap independent of entry order. C no longer
@@ -220,7 +222,7 @@ decoder proves properties of the immutable finite copy; it does not prove that
 the copy agrees with physical memory. Production selection and publication now
 consume the generated version-three decoder and complete reservation manifest.
 The focused freestanding replay covers canonical decoding,
-usable/non-usable overlap, nonzero ignored-tag padding rejection, manifest
+usable/non-usable overlap, arbitrary ignored-tag padding, manifest
 exclusion, stable selection, and publication mutation. Controlled
 malformed-handoff QEMU replay reaches the production generated decoder and
 rejects before authority. A proved complete-projection correspondence remains
