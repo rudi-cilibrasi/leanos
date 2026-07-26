@@ -124,6 +124,19 @@ concrete fixture clears object 100's monotonic issuance bit while retaining all
 of its mapping, capability, binding, allocator, and lifecycle projections; the
 agreement gate must classify that stale-generation state as fatal.
 
+The boot boundary exposes an allocation-free scalar lowering of this decision
+order for the fixed image runtime. Handwritten C supplies the immutable
+canonical record plus independently decoded selected-root, report, mapping,
+TLB, and leaf observations. The generated adapter returns a tagged route:
+contain, fatal, kernel diagnostic, or state-preserving rejection. Only the
+contain tag carries the existing generated cleanup/survivor witness into the
+containment handler; the C adapter does not classify ordinary versus fatal
+faults. Source and final-ELF gates require provenance authorization and this
+strengthened generated route before either operation-specific handler, and a
+controlled negative fixture rejects a fatal-to-containment bypass. This
+lowering and the C-side live observations remain trusted integration code, not
+a refinement theorem from `dispatchPageFault` to the final ELF.
+
 This independently correct slice does not change the public input type of the
 older shared `dispatch` function because #104 is concurrently making the one
 global gate and owns publication of the compiled plan. The #104 integration

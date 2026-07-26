@@ -86,15 +86,22 @@ Assembly samples CR2 exactly once before the first call and preserves that word
 beside the saved GPR bank and hardware error/frame. After generic entry
 normalization, `authorize_page_fault_snapshot` constructs the record once as a
 `const` object, samples CR3, current subject/address-space identity, WP, NXE,
-SMEP, and SMAP into it, and invokes the generated provenance adapter. Only
-agreement can call `page_fault_handler`, which receives the same record rather
-than separately selected raw arguments. Kernel-origin WP/SMEP/SMAP diagnostics
-remain explicit consumers of this path and cannot enter user containment.
+SMEP, and SMAP into it, and invokes the generated provenance adapter. It then
+samples the selected compiled root/report and fault-page leaf and passes those
+independent observations to the allocation-free generated strengthened
+agreement transition. The generated result carries an explicit contain,
+fatal, kernel-diagnostic, or reject tag; handwritten C only decodes that tag.
+Only a contain tag can call `page_fault_handler`, which receives the same
+record rather than separately selected raw arguments. Kernel-origin
+WP/SMEP/SMAP diagnostics require the distinct generated diagnostic tag and
+cannot enter user containment.
 
 Source and final-ELF policy gates require capture-before-normalization,
-generated-agreement-before-handler order, exactly one CR2 read, and exactly one
-typed handler call site. A separately labeled EFER read is excluded from the
-unchanged nine-read fast-entry inventory. Generated C, handwritten assembly/C,
-compiler/linker, QEMU, firmware, and hardware remain trusted/tested; these
-policy checks are not a proof of x86 delivery, atomicity, C immutability, or
-final-binary refinement.
+provenance-before-strengthened-agreement-before-handler order, exactly one CR2
+read, and exactly one typed containment-handler call site. Negative fixtures
+must reject both a direct handler bypass and routing a generated fatal result
+to containment. A separately labeled EFER read is excluded from the unchanged
+nine-read fast-entry inventory. The scalar lowering, live report decoder,
+generated C, handwritten assembly/C, compiler/linker, QEMU, firmware, and
+hardware remain trusted/tested; these policy checks are not a proof of x86
+delivery, atomicity, C immutability, or final-binary refinement.

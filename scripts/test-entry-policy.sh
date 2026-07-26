@@ -89,8 +89,12 @@ direct_page_fault_handler() {
   sed -i 's/call authorize_page_fault_snapshot/call page_fault_handler/' "$tmp/boot.S"
 }
 page_fault_handler_before_generated() {
-  sed -i '/leanos_authorize_page_fault_snapshot(/i\
-    page_fault_handler(&authorization);' "$tmp/kernel.c"
+  sed -i '/const uint64_t route = leanos_page_fault_dispatch_transition(/i\
+    page_fault_handler(&transition);' "$tmp/kernel.c"
+}
+page_fault_fatal_route_to_handler() {
+  sed -i '/case PAGE_FAULT_TRANSITION_FATAL:/{n;s/fail("page-fault-fatal");/return page_fault_handler(\&transition);/;}' \
+    "$tmp/kernel.c"
 }
 mutate_page_fault_rip_after_authorization() {
   sed -i '/if (snapshot.active_address_space == 0/i\
@@ -157,6 +161,9 @@ run_fixture direct-page-fault-handler \
 run_fixture page-fault-handler-before-generated \
   'vector=14 path=generated-agreement-before-handler source' \
   page_fault_handler_before_generated
+run_fixture page-fault-fatal-route-to-handler \
+  'vector=14 field=typed-generated-route source' \
+  page_fault_fatal_route_to_handler
 run_fixture page-fault-rip-post-authorization-mutation \
   'vector=14 field=immutable-snapshot source' \
   mutate_page_fault_rip_after_authorization

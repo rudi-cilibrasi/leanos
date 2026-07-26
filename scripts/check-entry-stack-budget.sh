@@ -79,12 +79,13 @@ while IFS=$'\t' read -r path origin hardware_error safety elf_root functions ext
       echo "error: path=$path missing-stack-usage=$function_name" >&2; exit 1;
     }
     if [[ "${usage_kind[$function_name]}" != static ]]; then
-      # The fixed 24-word page-fault ABI uses stack-passed scalar arguments on
-      # AMD64, which GCC labels dynamic,bounded even though its reported bound
-      # is exact and the generated path performs no object allocation.
+      # The fixed scalar page-fault ABIs use stack-passed arguments on AMD64,
+      # which GCC labels dynamic,bounded even though their reported bounds are
+      # exact and the generated paths perform no object allocation.
       [[ "${usage_kind[$function_name]}" == dynamic,bounded &&
          ( "$function_name" == authorize_page_fault_snapshot ||
-           "$function_name" == leanos_authorize_page_fault_snapshot ) ]] || {
+           "$function_name" == leanos_authorize_page_fault_snapshot ||
+           "$function_name" == leanos_page_fault_dispatch_transition ) ]] || {
         echo "error: path=$path function=$function_name stack-usage=${usage_kind[$function_name]}" >&2
         exit 1
       }

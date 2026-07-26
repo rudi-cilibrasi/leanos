@@ -53,6 +53,13 @@ extern uint64_t leanos_authorize_page_fault_snapshot(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_page_fault_dispatch_transition(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);
@@ -194,14 +201,16 @@ struct page_fault_entry_record {
 _Static_assert(sizeof(struct page_fault_entry_record) == 19u * sizeof(uint64_t),
                "canonical page-fault record layout");
 
-enum page_fault_authorization_kind {
-    PAGE_FAULT_REJECTED = 0,
-    PAGE_FAULT_AUTHORIZED_USER = 1,
-    PAGE_FAULT_AUTHORIZED_KERNEL = 2
+enum page_fault_transition_kind {
+    PAGE_FAULT_TRANSITION_CONTAIN = 1,
+    PAGE_FAULT_TRANSITION_FATAL = 2,
+    PAGE_FAULT_TRANSITION_KERNEL_DIAGNOSTIC = 3,
+    PAGE_FAULT_TRANSITION_REJECTED = 4
 };
 
-struct page_fault_authorization {
-    enum page_fault_authorization_kind kind;
+struct page_fault_transition {
+    enum page_fault_transition_kind kind;
+    uint64_t result;
     const struct page_fault_entry_record *snapshot;
 };
 /* Concrete image of the bounded state consumed and published by
@@ -1982,56 +1991,63 @@ static void arm_timer(void) {
 }
 
 __attribute__((noinline))
-uint64_t page_fault_handler(const struct page_fault_authorization *authorization) {
-    const struct page_fault_entry_record *snapshot = authorization->snapshot;
+uint64_t page_fault_handler(const struct page_fault_transition *transition) {
+    const struct page_fault_entry_record *snapshot = transition->snapshot;
     const uint64_t error = snapshot->error;
     const uint64_t rip = snapshot->rip;
     const uint64_t fault_address = snapshot->fault_address;
-    if (authorization->kind == PAGE_FAULT_AUTHORIZED_USER) {
+    if (transition->kind != PAGE_FAULT_TRANSITION_CONTAIN)
+        fail("page-fault-containment-bypass");
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
-        if (error == 5u && rip == (uint64_t)user_a_fault_instruction &&
-            fault_address == 0u) {
-            if (snapshot->current_subject != 1 ||
-                snapshot->active_address_space != 1 ||
-                snapshot->active_cr3 != (uint64_t)page_map_level_4_a ||
-                saved_context_owner_b != 2 ||
-                !initial_b_frame_valid(initial_context_b))
-                fail("fault-authority-binding");
-            serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS\n");
-            uint64_t result = leanos_fault_dispatch_demo(
-                14, snapshot->saved_cs & 3u,
-                current_subject, current_subject, saved_context_owner_b,
-                saved_context_owner_b);
-            if (result != UINT64_C(0x00000000ff020202))
-                fail("fault-model-dispatch");
-            uint64_t selected = (result >> 8) & 0xffu;
-            uint64_t address_space = (result >> 16) & 0xffu;
-            uint64_t cleanup = (result >> 24) & 0x1fu;
-            uint64_t peer_context_witness = (result >> 29) & 1u;
-            uint64_t peer_capability_witness = (result >> 30) & 1u;
-            uint64_t peer_resource_witness = (result >> 31) & 1u;
-            if (cleanup != 0x1fu || peer_context_witness != 1 ||
-                peer_capability_witness != 1 || peer_resource_witness != 1 ||
-                selected != saved_context_owner_b || address_space != 2)
-                fail("fault-model-encoding");
-            fault_dispatch_attestation = result;
-            current_subject = selected;
-            serial_puts("LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
-            serial_puts("LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
-            return 2;
-        }
-#endif
-        if (error != 5u || rip != (uint64_t)user_a_fault_instruction ||
-            fault_address != 0u)
-            fail("user-fault");
-#ifdef LEANOS_ENTRY_HIGH_WATER
-        report_entry_stack_high_water("user-page-fault");
-#endif
-        serial_puts("LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS\n");
-        return (uint64_t)user_a_fault_recovered;
+    if (error == 5u && rip == (uint64_t)user_a_fault_instruction &&
+        fault_address == 0u) {
+        if (snapshot->current_subject != 1 ||
+            snapshot->active_address_space != 1 ||
+            snapshot->active_cr3 != (uint64_t)page_map_level_4_a ||
+            saved_context_owner_b != 2 ||
+            !initial_b_frame_valid(initial_context_b))
+            fail("fault-authority-binding");
+        serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS\n");
+        uint64_t result = transition->result;
+        if (result != UINT64_C(0x00000000ff020202))
+            fail("fault-model-dispatch");
+        uint64_t selected = (result >> 8) & 0xffu;
+        uint64_t address_space = (result >> 16) & 0xffu;
+        uint64_t cleanup = (result >> 24) & 0x1fu;
+        uint64_t peer_context_witness = (result >> 29) & 1u;
+        uint64_t peer_capability_witness = (result >> 30) & 1u;
+        uint64_t peer_resource_witness = (result >> 31) & 1u;
+        if (cleanup != 0x1fu || peer_context_witness != 1 ||
+            peer_capability_witness != 1 || peer_resource_witness != 1 ||
+            selected != saved_context_owner_b || address_space != 2)
+            fail("fault-model-encoding");
+        fault_dispatch_attestation = result;
+        current_subject = selected;
+        serial_puts("LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
+        serial_puts("LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS\n");
+        return 2;
     }
-    if (authorization->kind != PAGE_FAULT_AUTHORIZED_KERNEL)
-        fail("page-fault-authorization-kind");
+#endif
+    if (error != 5u || rip != (uint64_t)user_a_fault_instruction ||
+        fault_address != 0u)
+        fail("user-fault");
+#ifdef LEANOS_ENTRY_HIGH_WATER
+    report_entry_stack_high_water("user-page-fault");
+#endif
+    serial_puts("LEANOS/11 USER-FAULT vector=14 error=5 origin=cpl3 address=zero contained=1 result=PASS\n");
+    return (uint64_t)user_a_fault_recovered;
+}
+
+__attribute__((noinline))
+uint64_t page_fault_diagnostic_handler(
+    const struct page_fault_transition *transition) {
+    const struct page_fault_entry_record *snapshot = transition->snapshot;
+    const uint64_t error = snapshot->error;
+    const uint64_t rip = snapshot->rip;
+    const uint64_t fault_address = snapshot->fault_address;
+    if (transition->kind != PAGE_FAULT_TRANSITION_KERNEL_DIAGNOSTIC ||
+        transition->result != 1)
+        fail("page-fault-diagnostic-bypass");
     if (supervisor_probe == 1 && error == 3u &&
         rip == (uint64_t)wp_probe_instruction &&
         fault_address == (uint64_t)wp_probe_target) {
@@ -2109,27 +2125,66 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
         .stack_identity = trusted_stack_identity,
         .reserved = 0
     };
-    const struct page_fault_authorization authorization = {
-        .kind = (enum page_fault_authorization_kind)
-            leanos_authorize_page_fault_snapshot(
-                snapshot.version, snapshot.vector, snapshot.error,
-                snapshot.fault_address, snapshot.fault_page, snapshot.access,
-                snapshot.protection, snapshot.user, snapshot.current_subject,
-                snapshot.active_address_space, snapshot.active_cr3,
-                snapshot.paging_controls, snapshot.rip, snapshot.saved_cs,
-                snapshot.rflags, snapshot.user_rsp, snapshot.user_ss,
-                snapshot.stack_identity, snapshot.reserved, trusted_subject,
-                active_address_space, cr3, paging_controls,
-                trusted_stack_identity),
+    const uint64_t canonical = leanos_authorize_page_fault_snapshot(
+        snapshot.version, snapshot.vector, snapshot.error,
+        snapshot.fault_address, snapshot.fault_page, snapshot.access,
+        snapshot.protection, snapshot.user, snapshot.current_subject,
+        snapshot.active_address_space, snapshot.active_cr3,
+        snapshot.paging_controls, snapshot.rip, snapshot.saved_cs,
+        snapshot.rflags, snapshot.user_rsp, snapshot.user_ss,
+        snapshot.stack_identity, snapshot.reserved, trusted_subject,
+        active_address_space, cr3, paging_controls, trusted_stack_identity);
+    uint64_t *root = active_address_space == 1 ? page_map_level_4_a :
+                     active_address_space == 2 ? page_map_level_4_b : 0;
+    uint64_t *pdpt = active_address_space == 1 ? page_directory_pointer_a :
+                     active_address_space == 2 ? page_directory_pointer_b : 0;
+    uint64_t *pd = active_address_space == 1 ? page_directory_a :
+                   active_address_space == 2 ? page_directory_b : 0;
+    uint64_t *pt = active_address_space == 1 ? page_table_a :
+                   active_address_space == 2 ? page_table_b : 0;
+    const uint64_t report_agrees = !user ||
+        (root != 0 && decoded_root_matches((unsigned)active_address_space,
+                                           root, pdpt, pd, pt, 0));
+    const uint64_t live_leaf =
+        user && pt != 0 && snapshot.fault_page < BOOT_LEAF_COUNT ?
+            pt[snapshot.fault_page] & ~(PTE_ACCESSED | PTE_DIRTY) : 0;
+    const uint64_t mapping_agrees = !user ||
+        (snapshot.fault_page < BOOT_LEAF_COUNT &&
+         snapshot.current_subject == active_address_space &&
+         live_leaf == expected_boot_leaf((unsigned)active_address_space,
+                                         snapshot.fault_page));
+    const uint64_t route = leanos_page_fault_dispatch_transition(
+        snapshot.version, snapshot.vector, snapshot.error,
+        snapshot.fault_address, snapshot.fault_page, snapshot.access,
+        snapshot.protection, snapshot.user, snapshot.current_subject,
+        snapshot.active_address_space, snapshot.active_cr3,
+        snapshot.paging_controls, snapshot.rip, snapshot.saved_cs,
+        snapshot.rflags, snapshot.user_rsp, snapshot.user_ss,
+        snapshot.stack_identity, snapshot.reserved, trusted_subject,
+        active_address_space, cr3, paging_controls, trusted_stack_identity,
+        canonical, (uint64_t)root, report_agrees, mapping_agrees, 1, live_leaf,
+        current_subject, active_address_space, saved_context_owner_b,
+        saved_context_owner_b);
+    const struct page_fault_transition transition = {
+        .kind = (enum page_fault_transition_kind)(route >> 56),
+        .result = route & UINT64_C(0x00ffffffffffffff),
         .snapshot = &snapshot
     };
     if (snapshot.active_address_space == 0 ||
         snapshot.current_subject != snapshot.active_address_space ||
-        authorization.kind == PAGE_FAULT_REJECTED ||
-        authorization.kind != (user ? PAGE_FAULT_AUTHORIZED_USER :
-                                 PAGE_FAULT_AUTHORIZED_KERNEL))
+        canonical == 0)
         fail("page-fault-provenance");
-    return page_fault_handler(&authorization);
+    switch (transition.kind) {
+    case PAGE_FAULT_TRANSITION_CONTAIN:
+        return page_fault_handler(&transition);
+    case PAGE_FAULT_TRANSITION_KERNEL_DIAGNOSTIC:
+        return page_fault_diagnostic_handler(&transition);
+    case PAGE_FAULT_TRANSITION_FATAL:
+        fail("page-fault-fatal");
+    case PAGE_FAULT_TRANSITION_REJECTED:
+    default:
+        fail("page-fault-rejected");
+    }
 }
 
 #ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO

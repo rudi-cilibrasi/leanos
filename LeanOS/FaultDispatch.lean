@@ -1740,6 +1740,116 @@ def faultDispatchDemo (vector entryClass current active ready contextOwner : UIn
 def faultDispatchDemoExport (vector origin current active ready contextOwner : UInt64) : UInt64 :=
   faultDispatchDemo vector origin current active ready contextOwner
 
+/-! ## Allocation-free canonical page-fault dispatch boundary
+
+The interrupt-time adapter cannot allocate the `List`-backed runtime, plan,
+and decoded-root values consumed by `dispatchPageFault`.  This fixed-width
+lowering retains the same decision order for the boot image: exact canonical
+authorization, kernel-origin fatal classification, current/address-space
+agreement, plan/live-root agreement, TLB coherence, error-versus-walk
+agreement, and finally the existing typed cleanup/survivor transition.
+
+The live report and mapping booleans are independently computed by the trusted
+machine adapter from the generated boot plan and the selected root.  They are
+inputs rather than claims recovered from the canonical record.  A successful
+word carries the existing `faultDispatchDemo` containment result.  The most
+significant byte is the generated route tag: `1` contain, `2` fatal, `3`
+kernel diagnostic, or `4` state-preserving rejection.  The low 56 bits carry
+the containment witness or typed fatal class (`2` malformed/provenance, `3`
+root/report/mapping/TLB integrity, `4` error/walk mismatch).  Handwritten C
+may decode this tag, but cannot choose ordinary containment over fatality. -/
+
+def pageFaultDispatchTransition
+    (version vector errorWord faultAddress faultPage accessCode protectionCode
+      privilegeCode currentSubject activeAddressSpace activeCr3 controlsCode rip
+      cs flags userRsp userSs stackIdentity reserved trustedSubject
+      trustedAddressSpace trustedCr3 trustedControls trustedStackIdentity
+      canonicalAuthorization planRootCr3 liveRootReportAgrees liveMappingAgrees tlbCoherent
+      liveLeaf current active ready contextOwner : UInt64) : UInt64 :=
+  let errorUser := if errorWord / 4 % 2 = 1 then 1 else 0
+  let errorProtection := if errorWord % 2 = 1 then 1 else 0
+  let derivedAccess :=
+    if errorWord / 16 % 2 = 1 then 2
+    else if errorWord / 2 % 2 = 1 then 1 else 0
+  let canonicalAddress := fun address : UInt64 =>
+    address < 0x0000800000000000 || address ≥ 0xffff800000000000
+  let fullSnapshotAgrees :=
+    version = 1 && vector = 14 && errorWord / 32 = 0 &&
+      errorWord / 8 % 2 != 1 && canonicalAddress faultAddress &&
+      canonicalAddress rip && faultPage = faultAddress / 4096 &&
+      accessCode = derivedAccess && protectionCode = errorProtection &&
+      privilegeCode = errorUser && currentSubject = trustedSubject &&
+      activeAddressSpace = trustedAddressSpace && activeCr3 = trustedCr3 &&
+      controlsCode = trustedControls && stackIdentity = trustedStackIdentity &&
+      controlsCode < 16 && flags / 2 % 2 = 1 && currentSubject != 0 &&
+      activeAddressSpace != 0 && activeCr3 != 0 && stackIdentity != 0 &&
+      reserved = 0 &&
+      (if errorUser = 1 then
+        cs = 0x23 && canonicalAddress userRsp && userRsp != 0 && userSs = 0x1b
+      else
+        cs = 0x08 && userRsp = 0 && userSs = 0)
+  if !fullSnapshotAgrees || canonicalAuthorization = 0 ||
+      canonicalAuthorization != (if privilegeCode = 1 then 1 else 2) then
+    0x0200000000000002
+  else if privilegeCode != 1 then
+    0x0300000000000001
+  else if currentSubject != current || trustedSubject != current ||
+      activeAddressSpace != active || trustedAddressSpace != active then
+    0x0400000000000000
+  else if activeCr3 != planRootCr3 || liveRootReportAgrees != 1 ||
+      liveMappingAgrees != 1 || tlbCoherent != 1 || controlsCode != 15 then
+    0x0200000000000003
+  else
+    let present := liveLeaf % 2 = 1
+    let writable := liveLeaf / 2 % 2 = 1
+    let userLeaf := liveLeaf / 4 % 2 = 1
+    let noExecute := liveLeaf / 0x8000000000000000 % 2 = 1
+    let denialAgrees :=
+      if !present then protectionCode = 0
+      else if !userLeaf then protectionCode = 1
+      else if accessCode = 1 && !writable then protectionCode = 1
+      else if accessCode = 2 && noExecute then protectionCode = 1
+      else false
+    if !denialAgrees then
+      0x0200000000000004
+    else
+      0x0100000000000000 +
+        faultDispatchDemo 14 3 current active ready contextOwner
+
+@[export leanos_page_fault_dispatch_transition]
+def pageFaultDispatchTransitionExport
+    (version vector errorWord faultAddress faultPage accessCode protectionCode
+      privilegeCode currentSubject activeAddressSpace activeCr3 controlsCode rip
+      cs flags userRsp userSs stackIdentity reserved trustedSubject
+      trustedAddressSpace trustedCr3 trustedControls trustedStackIdentity
+      canonicalAuthorization planRootCr3 liveRootReportAgrees liveMappingAgrees tlbCoherent
+      liveLeaf current active ready contextOwner : UInt64) : UInt64 :=
+  pageFaultDispatchTransition version vector errorWord faultAddress faultPage
+    accessCode protectionCode privilegeCode currentSubject activeAddressSpace
+    activeCr3 controlsCode rip cs flags userRsp userSs stackIdentity reserved
+    trustedSubject trustedAddressSpace trustedCr3 trustedControls
+    trustedStackIdentity canonicalAuthorization planRootCr3
+    liveRootReportAgrees liveMappingAgrees
+    tlbCoherent liveLeaf current active ready contextOwner
+
+theorem page_fault_dispatch_transition_contained_nonvacuous :
+    pageFaultDispatchTransition
+      1 14 5 0x1000 1 0 1 1 1 1 0xa000 15
+      0x400100 0x23 0x202 0x500ff8 0x1b 1 0
+      1 1 0xa000 15 1
+      1 0xa000 1 1 1 1 1 1 2 2 =
+        0x01000000ff020202 := by
+  native_decide
+
+theorem page_fault_dispatch_transition_mismatch_is_fatal :
+    pageFaultDispatchTransition
+      1 14 4 0x32000 50 0 0 1 1 1 0xa000 15
+      0x400100 0x23 0x202 0x500ff8 0x1b 1 0
+      1 1 0xa000 15 1
+      1 0xa000 1 1 1 1 1 1 2 2 =
+        0x0200000000000004 := by
+  native_decide
+
 private def bootCleanupWitness (before : ResumablePreemption.State)
     (outcome : Outcome) : UInt64 :=
   match before.scheduler.lifecycle.current with
@@ -1973,6 +2083,21 @@ def pageFaultAgreementWitnessOutcomeFromState
     (state : ResumablePreemption.State)
     (record : InterruptEntry.CanonicalPageFault) : Outcome :=
   samplePlanDispatch state record
+
+/-- The boot adapter's admitted scalar witness is the tagged encoding of the
+same concrete `dispatchPageFault` transition used by the strengthened
+agreement proofs, rather than an independently selected C containment path. -/
+theorem page_fault_dispatch_transition_consumes_strengthened_dispatch :
+    pageFaultDispatchTransition
+      1 14 5 0x1000 1 0 1 1 1 1 0xa000 15
+      0x400100 0x23 0x202 0x500ff8 0x1b 1 0
+      1 1 0xa000 15 1
+      1 0xa000 1 1 1 1 1 1 2 2 =
+        0x0100000000000000 +
+          encodeBootOutcome pageFaultAgreementWitnessState
+            (pageFaultAgreementWitnessOutcome
+              (pageFaultAgreementWitnessRecord 5 1)) := by
+  native_decide
 
 def pageFaultAgreementWitnessContained
     (record : InterruptEntry.CanonicalPageFault) : Bool :=
