@@ -48,10 +48,12 @@ saved context moves to the quiescent deferred-cancellation bank, and the dead
 endpoint mailbox is cleared atomically. Arbitrary ordinary successor-gate
 traces, including either termination spelling and raw scheduler requests,
 preserve the folded runtime/waiter-context invariant without a reconstructed
-readiness premise. Scheduler-selected termination additionally preserves the
-complete retained-context classification, so it may be followed immediately
-by any finite capacity-checked deferred-drain suffix through the authoritative
-gate without an `AuthoritativeTraceReady` witness. More generally, arbitrary
+readiness premise. Both explicit and scheduler-selected termination preserve
+the complete retained-context classification, so either may be followed
+immediately by any finite capacity-checked deferred-drain suffix through the
+authoritative gate without an `AuthoritativeTraceReady` witness. Explicit
+termination covers live identities that begin blocked, already deferred, or
+otherwise non-current. More generally, arbitrary
 finite interleavings of the readiness-free ordinary family with block, wake,
 delivery, and cancellation operations carry one state-independent trace
 certificate; no intermediate state is exposed through a recursive readiness

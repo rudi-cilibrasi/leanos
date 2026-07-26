@@ -11524,6 +11524,208 @@ private theorem detachedAcceptedTermination_preserves_deferredBlockingRuntimeWel
       hwaiterDetached hdeferredDetached hmodeDetached
   simpa [detached] using hpublished
 
+/-- Explicit accepted termination publishes the same blocking, retained, and
+resumable-context projections as source normalization followed by the shared
+cleanup publisher.  The ordinary runtime projection is supplied by the
+existing global termination theorem; the exact projection equality carries
+the stronger deferred classification without reconstructing it. -/
+private theorem installTerminatedSubject_accepted_preserves_deferredBlockingRuntimeWellFormed
+    state subject
+    (hstate : DeferredBlockingRuntimeWellFormed state)
+    (haccepted :
+      (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted)
+    (hmode : state.execution.mode = .running) :
+    DeferredBlockingRuntimeWellFormed
+      (installTerminatedSubject state subject
+        (ResumablePreemption.cleanupSubject state.resumable subject)) := by
+  have hruntime :=
+    gate_terminateSubject_accepted_preserves_runtimeWellFormed
+      state subject hstate.1 hmode haccepted
+  have hpublished :=
+    detachedAcceptedTermination_preserves_deferredBlockingRuntimeWellFormed
+      state subject hstate haccepted hmode
+  have hblockingLifecycle :
+      state.blockingIPC.scheduler.lifecycle = state.lifecycle :=
+    hstate.1.blockingLifecycle
+  have hblockingAccepted :
+      (SubjectLifecycle.terminate state.blockingIPC.scheduler.lifecycle subject).result =
+        .accepted := by
+    rw [hblockingLifecycle]
+    exact haccepted
+  have hlive :
+      state.blockingIPC.scheduler.lifecycle.capabilities.subjects subject = true := by
+    cases hlive :
+        state.blockingIPC.scheduler.lifecycle.capabilities.subjects subject
+    · cases hissued :
+          state.blockingIPC.scheduler.lifecycle.issuedSubjects subject <;>
+        simp [SubjectLifecycle.terminate, SubjectLifecycle.reject, hlive, hissued]
+          at hblockingAccepted
+    · rfl
+  have hissued :
+      state.blockingIPC.scheduler.lifecycle.issuedSubjects subject = true := by
+    cases hissued :
+        state.blockingIPC.scheduler.lifecycle.issuedSubjects subject <;>
+      simp [SubjectLifecycle.terminate, SubjectLifecycle.reject, hissued]
+        at hblockingAccepted ⊢
+  have hsetBlocked :
+      BlockingIPCContext.setBlocked
+          (BlockingIPCContext.setBlocked state.blockingContexts subject none)
+          subject none =
+        BlockingIPCContext.setBlocked state.blockingContexts subject none := by
+    funext candidate
+    by_cases heq : candidate = subject <;>
+      simp [BlockingIPCContext.setBlocked, heq]
+  have hterminatedContext :
+      BlockingIPCContext.terminate state.blockingIPCContext subject =
+        BlockingIPCContext.terminate
+          (detachTerminationSource state subject).blockingIPCContext subject := by
+    cases hendpoint : state.blockingIPC.waiterEndpoint subject <;>
+      simp [detachTerminationSource, CompositeState.blockingIPCContext,
+        BlockingIPCContext.terminate, BlockingIPC.terminate,
+        SubjectLifecycle.terminate, hlive, hissued, hendpoint,
+        BlockingIPC.cancelSubject, SubjectLifecycle.terminated_not_live,
+        BlockingIPC.setWaiterEndpoint, BlockingIPC.setCompletion,
+        BlockingIPC.removeWaiter, BlockingIPCContext.setBlocked, hsetBlocked]
+  have hterminatedWaiter :
+      (BlockingIPCContext.terminate state.blockingIPCContext subject).ipc.waiterEndpoint
+          subject = none := by
+    cases hendpoint : state.blockingIPC.waiterEndpoint subject <;>
+      simp [CompositeState.blockingIPCContext, BlockingIPCContext.terminate,
+        BlockingIPC.terminate, SubjectLifecycle.terminate, hlive, hissued,
+        hendpoint, BlockingIPC.cancelSubject, SubjectLifecycle.terminated_not_live,
+        BlockingIPC.setWaiterEndpoint]
+  have setRetained_detachInvalidated (blocking : BlockingIPCContext.State)
+      (deferred : BlockingIPCContext.DeferredCancelState)
+      (scheduler : Scheduler.State)
+      (hwaiter : blocking.ipc.waiterEndpoint subject = none) :
+      BlockingIPCContext.setRetained
+          (BlockingIPCContext.detachInvalidated blocking deferred scheduler).2
+          subject none =
+        (BlockingIPCContext.detachInvalidated blocking
+          (BlockingIPCContext.setRetained deferred subject none) scheduler).2 := by
+    cases deferred with
+    | mk retained =>
+        simp only [BlockingIPCContext.setRetained,
+          BlockingIPCContext.detachInvalidated]
+        apply congrArg BlockingIPCContext.DeferredCancelState.mk
+        funext candidate
+        by_cases heq : candidate = subject
+        · subst candidate
+          simp [BlockingIPCContext.setRetained,
+            BlockingIPCContext.detachInvalidated, hwaiter]
+        · simp [BlockingIPCContext.setRetained,
+            BlockingIPCContext.detachInvalidated, heq]
+  have detachInvalidated_fst_deferred (blocking : BlockingIPCContext.State)
+      (first second : BlockingIPCContext.DeferredCancelState)
+      (scheduler : Scheduler.State) :
+      (BlockingIPCContext.detachInvalidated blocking first scheduler).1 =
+        (BlockingIPCContext.detachInvalidated blocking second scheduler).1 := by
+    rfl
+  have hdetachedBlocking :
+      (BlockingIPCContext.detachInvalidated
+          (BlockingIPCContext.terminate state.blockingIPCContext subject)
+          state.deferredCancels
+          (ResumablePreemption.cleanupSubject state.resumable subject).scheduler).1 =
+        (BlockingIPCContext.detachInvalidated
+          (BlockingIPCContext.terminate
+            (detachTerminationSource state subject).blockingIPCContext subject)
+          (detachTerminationSource state subject).deferredCancels
+          (ResumablePreemption.cleanupSubject
+            (detachTerminationSource state subject).resumable subject).scheduler).1 := by
+    cases hendpoint : state.blockingIPC.waiterEndpoint subject <;>
+      simpa [detachTerminationSource, hendpoint, hterminatedContext] using
+        detachInvalidated_fst_deferred
+          (BlockingIPCContext.terminate state.blockingIPCContext subject)
+          state.deferredCancels
+          (BlockingIPCContext.setRetained state.deferredCancels subject none)
+          (ResumablePreemption.cleanupSubject state.resumable subject).scheduler
+  have hblockingContext :
+      (installTerminatedSubject state subject
+          (ResumablePreemption.cleanupSubject state.resumable subject)).blockingIPCContext =
+        (publishInterruptCleanup (detachTerminationSource state subject)
+          subject).blockingIPCContext := by
+    let cleanup := ResumablePreemption.cleanupSubject state.resumable subject
+    let publishDetached (detached : BlockingIPCContext.State) :
+        BlockingIPCContext.State :=
+      { ipc := { detached.ipc with
+          mailbox := fun endpoint =>
+            if cleanup.scheduler.lifecycle.capabilities.objects endpoint then
+              detached.ipc.mailbox endpoint
+            else none }
+        blocked := detached.blocked }
+    have hpublishedBlocking := congrArg publishDetached hdetachedBlocking
+    cases hendpoint : state.blockingIPC.waiterEndpoint subject <;>
+      simpa [installTerminatedSubject, publishInterruptCleanup,
+        detachTerminationSource, CompositeState.blockingIPCContext,
+        cleanup, publishDetached, hendpoint] using hpublishedBlocking
+  have hblockingContexts :
+      (installTerminatedSubject state subject
+          (ResumablePreemption.cleanupSubject state.resumable subject)).blockingContexts =
+        (publishInterruptCleanup (detachTerminationSource state subject)
+          subject).blockingContexts := by
+    simpa [CompositeState.blockingIPCContext] using
+      congrArg BlockingIPCContext.State.blocked hblockingContext
+  have hdeferredProjection :
+      (installTerminatedSubject state subject
+          (ResumablePreemption.cleanupSubject state.resumable subject)).deferredCancels =
+        (publishInterruptCleanup (detachTerminationSource state subject)
+          subject).deferredCancels := by
+    have hcommute := setRetained_detachInvalidated
+      (BlockingIPCContext.terminate state.blockingIPCContext subject)
+      state.deferredCancels
+      (ResumablePreemption.cleanupSubject state.resumable subject).scheduler
+      hterminatedWaiter
+    calc
+      _ = BlockingIPCContext.setRetained
+          (BlockingIPCContext.detachInvalidated
+            (BlockingIPCContext.terminate state.blockingIPCContext subject)
+            state.deferredCancels
+            (ResumablePreemption.cleanupSubject state.resumable subject).scheduler).2
+          subject none := rfl
+      _ = (BlockingIPCContext.detachInvalidated
+            (BlockingIPCContext.terminate state.blockingIPCContext subject)
+            (BlockingIPCContext.setRetained state.deferredCancels subject none)
+            (ResumablePreemption.cleanupSubject state.resumable subject).scheduler).2 :=
+        hcommute
+      _ = _ := by
+        cases hendpoint : state.blockingIPC.waiterEndpoint subject <;>
+          simp [publishInterruptCleanup, detachTerminationSource,
+            hendpoint, hterminatedContext]
+  have hresumableContexts :
+      (installTerminatedSubject state subject
+          (ResumablePreemption.cleanupSubject state.resumable subject)).resumable.contexts =
+        (publishInterruptCleanup (detachTerminationSource state subject)
+          subject).resumable.contexts := by
+    cases hendpoint : state.blockingIPC.waiterEndpoint subject <;>
+      simp [installTerminatedSubject, publishInterruptCleanup,
+        installTerminatedResumable, detachTerminationSource, hendpoint]
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted] using hruntime
+  · unfold CompositeState.DeferredCancellationWellFormed at hpublished ⊢
+    rw [hblockingContext, hblockingContexts, hdeferredProjection, hresumableContexts]
+    exact hpublished.2
+
+/-- Explicit termination preserves the complete retained-context
+classification for every public gate result.  Lifecycle rejection and every
+busy or halted outer-latch result are atomic; acceptance first detaches any
+blocked or already-deferred target and then publishes authoritative cleanup. -/
+theorem gate_terminateSubject_preserves_deferredBlockingRuntimeWellFormed
+    state subject (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed
+      (gate state (.terminateSubject subject)).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      cases htermination :
+          (SubjectLifecycle.terminate state.lifecycle subject).result with
+      | rejected reason =>
+          simpa [gate, hmode, applyOperation, htermination] using hstate
+      | accepted =>
+          simpa [gate, hmode, applyOperation, htermination] using
+            installTerminatedSubject_accepted_preserves_deferredBlockingRuntimeWellFormed
+              state subject hstate htermination hmode
+
 /-- Current-subject cleanup is the first consumer of the reusable
 termination/detachment lemma.  Current selection derives the two source
 absences required by that lemma: a current subject is neither an indexed
@@ -13803,6 +14005,17 @@ theorem authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFor
   | handling active => simpa [authoritativeGate, hmode] using hstate
   | halted record => simpa [authoritativeGate, hmode] using hstate
 
+/-- Explicit identity termination crosses the public successor gate while
+preserving the complete deferred classification needed by later checked
+cancellation drains. -/
+theorem authoritativeGate_terminateSubject_preserves_deferredBlockingRuntimeWellFormed
+    state subject (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.terminateSubject subject))).state := by
+  rw [authoritativeGate_ordinary_state]
+  exact gate_terminateSubject_preserves_deferredBlockingRuntimeWellFormed
+    state subject hstate
+
 /-- Scheduler-selected termination crosses the successor gate without
 weakening the retained-context classification needed by a following deferred
 drain. -/
@@ -13856,6 +14069,22 @@ theorem runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellForm
       exact ih _
         (authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFormed
           state subject hstate)
+
+/-- Explicit termination of any live, blocked, deferred, or rejected identity
+and an arbitrary finite deferred-drain continuation form one readiness-free
+public trace. -/
+theorem runAuthoritativeTerminateSubjectThenDeferredDrains_preserves
+    state subject (subjects : List BlockingIPC.SubjectId)
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary (.terminateSubject subject) ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  simp only [runAuthoritativeOperations]
+  exact runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
+    (authoritativeGate state (.ordinary (.terminateSubject subject))).state subjects
+    (authoritativeGate_terminateSubject_preserves_deferredBlockingRuntimeWellFormed
+      state subject hstate)
 
 /-- Scheduler-selected termination and an arbitrary finite deferred-drain
 continuation form one readiness-free public trace.  The terminating step

@@ -1154,6 +1154,19 @@ theorem composite_authoritative_readinessFree_mixed_trace_preserves
     FailStop.runAuthoritativeReadinessFreeMixedTrace_preserves_blockingRuntimeWellFormed
       state operations hoperations hstate
 
+/-- Supporting readiness-free termination trace theorem: explicit termination
+of any selected identity preserves the complete deferred-cancellation
+invariant consumed by any finite capacity-checked drain suffix. -/
+theorem composite_terminateSubject_then_deferred_trace_preserves
+    state subject (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (.ordinary (.terminateSubject subject) ::
+          subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact FailStop.runAuthoritativeTerminateSubjectThenDeferredDrains_preserves
+    state subject subjects hstate
+
 /-- Supporting readiness-free termination trace theorem: scheduler-selected
 termination establishes and preserves the complete deferred-cancellation
 invariant consumed by any finite capacity-checked drain suffix. -/
