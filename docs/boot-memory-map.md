@@ -38,6 +38,51 @@ replays checked-in accepted, overlap-order, truncation, and noncanonical-padding
 fixtures through generated C and compares complete projections rather than a
 digest or caller-supplied stage flags.
 
+The boxed version-one query is hosted evidence, not a permitted freestanding
+entry point. `BootMemoryMapStreaming` therefore adds a version-two scalar
+transport boundary as the next integration boundary. Reset binds the
+Multiboot2 magic, aligned information address, bounded aligned extent, and
+stream identity. Each transition accepts one canonical little-endian chunk of
+one through eight bytes only at the exact next offset. The terminal bit must
+agree exactly with exhaustion of the bound extent. A different buffer identity,
+stale offset or version, malformed state, extent overflow, early or late
+terminal bit, nonzero unused high byte, or replay after completion rejects and
+exposes no chunk.
+
+The ABI state is seven `UInt64` words: version, status, typed transport error,
+bound identity, bound extent, next offset, and a diagnostic continuity chain.
+Queries 7 and 8 expose the current chunk and byte count only for a successful
+transition. Callers replay one pure transition for every desired result word
+and must commit the returned state words together before reading another
+chunk. Input and state may not alias the immutable source buffer. Reset starts
+only at offset zero; completed or rejected states cannot be resumed. Replaying
+an old active state with its old chunk is deterministic, but supplies no new
+authority. The chain is diagnostic and is not treated as a collision-resistant
+authentication code.
+
+`accepted_step_advances_exactly`, `accepted_step_preserves_stream`,
+`accepted_step_exposes_exact_chunk`, and
+`accepted_step_terminal_iff_extent` prove the scalar offset, identity/extent,
+chunk, and terminal projections used by this protocol. Completed-state replay
+rejection and rejection non-projection have separate lemmas. In the proof-side
+exact sequence model, `replay_continuity` proves that any accepted chunk list
+preserves one identity and extent and that its final offset equals the initial
+offset plus the exact sum of accepted byte counts.
+`scripts/check-boot-handoff-stream.sh` compiles the generated exports into a
+standalone freestanding ELF, replays the checked-in accepted buffer in twelve
+chunks plus negative state transitions, executes it, rejects undefined
+symbols, and rejects retained allocation, boxed-value, big-`Nat`, or
+initialization-runtime symbols.
+
+This checkpoint deliberately does not claim that the scalar transport parses
+tags, normalizes entries, applies reservations, selects a frame, authenticates
+the continuity chain, or refines the final binary. The existing version-one
+decoder corpus remains the authoritative complete typed projection test.
+Production must not grant allocator or scrub/publication authority from a
+version-two transport completion. The next boundary must connect the emitted
+chunks to the existing decoder/normalizer/reservation state without restoring
+a C tag walker or shadow classifier.
+
 ## Accepted subset and bounds
 
 The model requires the Multiboot2 boot magic, an 8-byte-aligned information
