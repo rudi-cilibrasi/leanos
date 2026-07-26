@@ -89,8 +89,12 @@ direct_page_fault_handler() {
   sed -i 's/call authorize_page_fault_snapshot/call page_fault_handler/' "$tmp/boot.S"
 }
 page_fault_handler_before_generated() {
-  sed -i '/const uint64_t agreement = leanos_page_fault_demo(/i\
-    page_fault_handler(&snapshot);' "$tmp/kernel.c"
+  sed -i '/leanos_authorize_page_fault_snapshot(/i\
+    page_fault_handler(&authorization);' "$tmp/kernel.c"
+}
+mutate_page_fault_rip_after_authorization() {
+  sed -i '/if (snapshot.active_address_space == 0/i\
+    snapshot.rip ^= 1;' "$tmp/kernel.c"
 }
 stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $user_a_text, %eax' "$tmp/boot.S"; }
 noncanonical_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $0x00008000, %edx' "$tmp/boot.S"; }
@@ -153,6 +157,9 @@ run_fixture direct-page-fault-handler \
 run_fixture page-fault-handler-before-generated \
   'vector=14 path=generated-agreement-before-handler source' \
   page_fault_handler_before_generated
+run_fixture page-fault-rip-post-authorization-mutation \
+  'vector=14 field=immutable-snapshot source' \
+  mutate_page_fault_rip_after_authorization
 run_fixture stale-lstar 'fast-entry target write recipe can introduce nonzero state' stale_lstar
 run_fixture noncanonical-lstar 'fast-entry target write recipe can introduce nonzero state' noncanonical_lstar
 run_fixture non-denying-sysenter 'fast-entry target write recipe can introduce nonzero state' non_denying_sysenter
