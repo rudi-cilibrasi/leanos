@@ -313,9 +313,9 @@ theorem page_fault_authorization_context_binding
 /-- SC-PAGE-FAULT-ACTIVE-SPACE-AGREEMENT: every successful strengthened
 page-fault containment result consumes the exact canonical decoder/action
 authorization, checks CR2 only inside the kernel-selected active boot-plan
-root, revalidates the live mapping/lifetime and empty matching TLB entry, and
-admits only an architectural error class matching the active page-table
-denial. -/
+root, revalidates complete plan/virtual/lifecycle object-and-frame agreement
+(including absence) and an empty matching TLB entry, and admits only an
+architectural error class matching the active page-table denial. -/
 theorem page_fault_active_space_containment_agreement state plan words trusted
     (hsuccess :
       (FaultDispatch.dispatchPageFault state plan words trusted).action =

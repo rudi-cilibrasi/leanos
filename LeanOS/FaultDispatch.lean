@@ -188,11 +188,13 @@ def livePlanAgreement (state : ResumablePreemption.State)
     (addressSpace : VirtualMapping.AddressSpaceId)
     (page : VirtualMapping.VirtualPage) : Bool :=
   let virtual := state.translations.virtual
+  let lifecycle := state.scheduler.lifecycle
   match BootPageTablePlan.expectedAt plan space page,
       virtual.mappings addressSpace page with
-  | none, none => true
+  | none, none => lifecycle.mapping addressSpace page = none
   | none, some _ => false
-  | some leaf, none => !leaf.user
+  | some leaf, none =>
+      !leaf.user && lifecycle.mapping addressSpace page = none
   | some leaf, some mapping =>
       if !leaf.user then false
       else
@@ -201,11 +203,15 @@ def livePlanAgreement (state : ResumablePreemption.State)
         | some frame =>
             virtual.memory.capabilities.objects mapping.object &&
               virtual.memory.capabilities.kinds mapping.object = some .memory &&
+              lifecycle.capabilities.objects mapping.object &&
+              lifecycle.capabilities.kinds mapping.object = some .memory &&
               virtual.memory.allocator.status frame = .owned mapping.object &&
+              lifecycle.ownedMemory mapping.object = some (addressSpace, frame) &&
+              lifecycle.frameOwner frame = some addressSpace &&
+              !lifecycle.freeFrame frame &&
               leaf.frame = frame && mapping.permissions.read &&
               leaf.writable = mapping.permissions.write &&
-              state.scheduler.lifecycle.mapping addressSpace page =
-                some mapping.object
+              lifecycle.mapping addressSpace page = some mapping.object
 
 def pageFaultTlbCoherent (state : ResumablePreemption.State)
     (addressSpace : VirtualMapping.AddressSpaceId)
@@ -1918,9 +1924,34 @@ def pageFaultAgreementWitnessOutcome
     (record : InterruptEntry.CanonicalPageFault) : Outcome :=
   samplePlanDispatch pageFaultAgreementWitnessState record
 
+def pageFaultAgreementWitnessOutcomeFromState
+    (state : ResumablePreemption.State)
+    (record : InterruptEntry.CanonicalPageFault) : Outcome :=
+  samplePlanDispatch state record
+
 def pageFaultAgreementWitnessContained
     (record : InterruptEntry.CanonicalPageFault) : Bool :=
   match (pageFaultAgreementWitnessOutcome record).action with
+  | .idle .pageFault | .dispatch .pageFault _ => true
+  | _ => false
+
+/-- Concrete stale cross-projection counterexample: the plan and virtual
+mapping both omit page 50, but the lifecycle still names object 999 there. -/
+def pageFaultAgreementStaleLifecycleState : ResumablePreemption.State :=
+  let base := pageFaultAgreementWitnessState
+  { base with
+    scheduler :=
+      { base.scheduler with
+        lifecycle :=
+          { base.scheduler.lifecycle with
+            mapping := fun space page =>
+              if space = 1 && page = 50 then some 999
+              else base.scheduler.lifecycle.mapping space page } } }
+
+def pageFaultAgreementStaleLifecycleContained : Bool :=
+  match (pageFaultAgreementWitnessOutcomeFromState
+      pageFaultAgreementStaleLifecycleState
+      (pageFaultAgreementWitnessRecord 4 50)).action with
   | .idle .pageFault | .dispatch .pageFault _ => true
   | _ => false
 
@@ -2068,6 +2099,13 @@ theorem page_fault_kernel_origin_is_fatal :
 theorem page_fault_stale_mapping_is_fatal :
     (samplePlanDispatch (traceState true) (pageFaultRecord 4 100)).action =
       .fatal (.pageFaultIntegrity .staleMapping) := by
+  native_decide
+
+theorem page_fault_stale_lifecycle_mapping_is_fatal :
+    (pageFaultAgreementWitnessOutcomeFromState
+      pageFaultAgreementStaleLifecycleState
+      (pageFaultAgreementWitnessRecord 4 50)).action =
+        .fatal (.pageFaultIntegrity .staleMapping) := by
   native_decide
 
 private def incoherentPageFaultState : ResumablePreemption.State :=

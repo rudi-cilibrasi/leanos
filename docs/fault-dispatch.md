@@ -67,10 +67,13 @@ CR2 selects only a page inside that already selected root. The gate checks the
 plan-derived CR3, the selected WP/NXE/SMEP/SMAP profile, and one live-plan
 agreement at the fault page:
 
-- an absent planned leaf must also be absent from the live virtual mapping;
-- a supervisor planned leaf must not be shadowed by a user mapping; and
+- an absent planned leaf must also be absent from both the live virtual and
+  lifecycle mappings;
+- a supervisor planned leaf must not be shadowed by either mapping projection;
+  and
 - a user leaf must equal the current live memory-object binding, allocator
-  owner, lifecycle mapping, read permission, and writable bit.
+  owner, lifecycle mapping, lifecycle object/frame binding, frame owner/free
+  status, read permission, and writable bit.
 
 The exact matching TLB key/context must be absent and the bounded cache must
 remain within capacity. This names the single-core completed-invalidation
@@ -96,9 +99,11 @@ bindings byte-for-byte, and
 `ResumablePreemption.WellFormed` predicate. Concrete executable witnesses cover
 all four admitted denial classes, empty and multiple-survivor queues, plus
 mismatched error, reserved error, kernel origin, forged address space, wrong
-root, stale mapping, and incoherent-TLB fatal results. Proof-integrity fixtures
-reject accepting every present error, ignoring the active walk, containing a
-reserved-bit fault, or allowing a snapshot to substitute another address space.
+root, stale virtual or lifecycle mapping, and incoherent-TLB fatal results.
+Proof-integrity fixtures reject accepting every present error, ignoring the
+active walk, containing a reserved-bit fault, allowing a snapshot to substitute
+another address space, or containing a non-present fault while the lifecycle
+still carries the concrete stale page-50/object-999 mapping.
 
 This independently correct slice does not change the public input type of the
 older shared `dispatch` function because #104 is concurrently making the one
