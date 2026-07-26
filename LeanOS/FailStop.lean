@@ -14096,6 +14096,38 @@ structure DormantCancellationCompatible (before after : CompositeState) : Prop w
       Scheduler.ownsAddressSpace after.blockingIPC.scheduler subject = some subject ∧
       ResumablePreemption.contextFor after.resumable.contexts subject = none
 
+/-- Exact preservation of the four projections observed by dormant
+cancellation is sufficient to derive its operation-local compatibility law
+from the folded authoritative invariant.  This is the reusable constructor
+boundary: operation proofs need not reconstruct waiter or retained-context
+validity when they leave those stores literally unchanged. -/
+theorem dormantCancellationCompatible_of_exact_projections before after
+    (hbefore : AuthoritativeRuntimeWellFormed before)
+    (hdeferred : after.deferredCancels = before.deferredCancels)
+    (hblocked : after.blockingContexts = before.blockingContexts)
+    (hipc : after.blockingIPC = before.blockingIPC)
+    (hcontexts : after.resumable.contexts = before.resumable.contexts) :
+    DormantCancellationCompatible before after := by
+  refine ⟨hdeferred, ?_, ?_, ?_⟩
+  · intro subject hsome
+    rw [hblocked] at hsome
+    rw [hdeferred]
+    exact hbefore.2.1.2.1 subject hsome
+  · intro subject saved hsaved
+    rw [hblocked] at hsaved
+    rw [hcontexts]
+    exact hbefore.2.2.1 subject saved hsaved
+  · intro subject saved hretained
+    have hretainedBefore :
+        before.deferredCancels.retained subject = some saved := by
+      exact hretained
+    have hvalid := hbefore.2.1.2.2 subject saved hretainedBefore
+    rw [hipc, hcontexts]
+    exact ⟨hvalid.2.1, hvalid.2.2.1, hvalid.2.2.2.1,
+      hvalid.2.2.2.2.1, hvalid.2.2.2.2.2.1,
+      hvalid.2.2.2.2.2.2,
+      hbefore.2.2.2 subject saved hretainedBefore⟩
+
 private theorem dormantCancellationCompatible_preserves
     before after (hbefore : DeferredBlockingRuntimeWellFormed before)
     (hblocking : BlockingRuntimeWellFormed after)
@@ -14335,6 +14367,74 @@ theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
               state subject hstate
       | handling active => simpa [authoritativeGate, hmode] using hstate
       | halted record => simpa [authoritativeGate, hmode] using hstate
+
+/-- Return-authority selection changes only the execution projection.  Its
+public constructor therefore derives dormant-cancellation compatibility
+directly from the folded invariant, with no caller-supplied post-state law. -/
+theorem selectUserReturn_authoritativeOperationCompatible state purpose
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.selectUserReturn purpose)) := by
+  apply dormantCancellationCompatible_of_exact_projections state _ hstate
+  all_goals
+    cases hmode : state.execution.mode <;>
+      simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+        applyOperation, selectLiveReturnAuthority]
+    all_goals split <;> rfl
+
+/-- Outgoing return completion may change execution mode and the resumable
+fatal latch, but it cannot change the waiter, deferred-cancellation, or saved
+context stores. -/
+theorem userReturn_authoritativeOperationCompatible state request
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.userReturn request)) := by
+  apply dormantCancellationCompatible_of_exact_projections state _ hstate
+  all_goals
+    cases hmode : state.execution.mode <;>
+      simp [authoritativeGate, hmode, applyAuthoritativeOperation, applyOperation]
+    all_goals split <;> simp
+
+/-- Restart is the identity constructor under every gate mode, so its
+compatibility obligation follows from exact projection preservation. -/
+theorem restart_authoritativeOperationCompatible state
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state (.ordinary .restart) := by
+  apply dormantCancellationCompatible_of_exact_projections state _ hstate
+  all_goals
+    cases hmode : state.execution.mode <;>
+      simp [authoritativeGate, hmode, applyAuthoritativeOperation, applyOperation]
+
+/-- Return-authority selection unconditionally preserves the complete folded
+authoritative invariant. -/
+theorem authoritativeGate_selectUserReturn_preserves_authoritativeRuntimeWellFormed
+    state purpose (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.selectUserReturn purpose))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.selectUserReturn purpose)) hstate
+    (selectUserReturn_authoritativeOperationCompatible state purpose hstate)
+
+/-- Outgoing user-return completion unconditionally preserves the complete
+folded authoritative invariant. -/
+theorem authoritativeGate_userReturn_preserves_authoritativeRuntimeWellFormed
+    state request (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.userReturn request))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.userReturn request)) hstate
+    (userReturn_authoritativeOperationCompatible state request hstate)
+
+/-- Restart unconditionally preserves the complete folded authoritative
+invariant. -/
+theorem authoritativeGate_restart_preserves_authoritativeRuntimeWellFormed
+    state (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary .restart)).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary .restart) hstate
+    (restart_authoritativeOperationCompatible state hstate)
 
 def runAuthoritativeOperations (state : CompositeState) :
     List AuthoritativeOperation → CompositeState
