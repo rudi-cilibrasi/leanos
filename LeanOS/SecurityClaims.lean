@@ -376,6 +376,21 @@ theorem composite_authoritative_transferAccept_then_blocking_preserves_runtimeWe
     state (.transferAccept endpointWord destinationSlot) blocking
       (.transferAccept endpointWord destinationSlot) hstate
 
+/-- Capability delegation is monotonic for every authority held by an indexed
+waiter.  Accepted empty-slot installation and every typed denial can therefore
+be followed immediately by an arbitrary authoritative blocking operation. -/
+theorem composite_authoritative_capabilityCopy_then_blocking_preserves_runtimeWellFormed
+    state source destination destinationSlot rights blocking
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.capabilityCopy source destination destinationSlot rights))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.capabilityCopy source destination destinationSlot rights) blocking
+      (.capabilityCopy source destination destinationSlot rights) hstate
+
 /-- Raw scheduler selection without a kernel-owned save/restore payload is a
 blocking-state-neutral typed boundary.  Empty dispatch and every forced
 missing-context denial can therefore be followed immediately by an arbitrary

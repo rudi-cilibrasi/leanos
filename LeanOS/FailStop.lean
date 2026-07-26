@@ -11744,6 +11744,155 @@ theorem gate_transferAccept_preserves_blockingRuntimeWellFormed state endpointWo
             CompositeState.blockingIPCContext, BlockingIPCContext.ContextAgreement,
             BlockingIPCContext.WellFormed, next] using And.intro hblocking' hagreement
 
+/-- Capability delegation retains the complete blocking precondition.
+Accepted copy fills one checked-empty slot and preserves every authority
+already held by an indexed waiter; typed denials and outer-latch rejection are
+literal no-ops. -/
+theorem gate_capabilityCopy_preserves_blockingRuntimeWellFormed state source destination
+    destinationSlot rights (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed
+      (gate state (.capabilityCopy source destination destinationSlot rights)).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      let outcome := Capability.copy state.capabilities
+        state.execution.core.context.currentSubject source destination destinationSlot rights
+      cases hresult : outcome.result with
+      | rejected reason =>
+          simpa [gate, hmode, applyOperation, outcome, hresult] using hstate
+      | accepted =>
+          have haccepted :
+              (Capability.copy state.capabilities
+                state.execution.core.context.currentSubject source destination destinationSlot
+                rights).result = .accepted := by
+            simpa [outcome] using hresult
+          let next := (Capability.copy state.capabilities
+            state.execution.core.context.currentSubject source destination destinationSlot
+            rights).state
+          have hcopy :
+              Capability.copy state.capabilities
+                state.execution.core.context.currentSubject source destination destinationSlot
+                rights = { state := next, result := .accepted } := by
+            cases hraw : Capability.copy state.capabilities
+                state.execution.core.context.currentSubject source destination destinationSlot
+                rights with
+            | mk actual actualResult =>
+                simp [hraw, next] at haccepted ⊢
+                exact haccepted
+          have hglobal :=
+            (gate_capabilityCopy_accepted_preserves_runtimeWellFormed state source destination
+              destinationSlot rights next hstate.1 hmode hcopy).1
+          refine ⟨hglobal, ?_⟩
+          have hcapabilities : Capability.WellFormed next :=
+            Capability.copy_preserves_wellFormed state.capabilities
+              state.execution.core.context.currentSubject source destination destinationSlot
+              rights hstate.1.2.2.2.1
+          have hregistry := Capability.copy_preserves_registries state.capabilities
+            state.execution.core.context.currentSubject source destination destinationSlot rights
+          change next.subjects = state.capabilities.subjects ∧
+              next.objects = state.capabilities.objects ∧
+              next.kinds = state.capabilities.kinds ∧
+              next.slotCapacity = state.capabilities.slotCapacity at hregistry
+          rcases hregistry with ⟨hsubjects, hobjects, hkinds, _hcapacity⟩
+          rcases hstate.1.1 with
+            ⟨_, hschedulerLifecycle, _, hcapabilitiesCoherent, _, _, _, _, _, _, _⟩
+          have hbase : state.capabilities =
+              state.blockingIPC.scheduler.lifecycle.capabilities := by
+            exact hcapabilitiesCoherent.trans
+              (congrArg SubjectLifecycle.State.capabilities hstate.1.blockingLifecycle.symm)
+          have hsubjects' : next.subjects =
+              state.blockingIPC.scheduler.lifecycle.capabilities.subjects :=
+            hsubjects.trans (congrArg Capability.State.subjects hbase)
+          have hobjects' : next.objects =
+              state.blockingIPC.scheduler.lifecycle.capabilities.objects :=
+            hobjects.trans (congrArg Capability.State.objects hbase)
+          have hkinds' : next.kinds =
+              state.blockingIPC.scheduler.lifecycle.capabilities.kinds :=
+            hkinds.trans (congrArg Capability.State.kinds hbase)
+          rcases hstate.2 with ⟨hblocking, hagreement⟩
+          rcases hblocking with
+            ⟨_, hqueues, hwaiters, hunique, hindex, hmailbox, holdCapabilities⟩
+          rcases hglobal with ⟨_, _, _, _, _, _, hscheduler, _, _, _, _, _, _⟩
+          have hscheduler' : Scheduler.WellFormed
+              { state.scheduler with lifecycle :=
+                { state.lifecycle with capabilities := next } } := by
+            simpa [gate, hmode, applyOperation, haccepted, installCopiedCapabilities, next] using
+              hscheduler
+          have hblocking' : BlockingIPC.WellFormed
+              { state.blockingIPC with scheduler :=
+                { state.scheduler with lifecycle :=
+                  { state.lifecycle with capabilities := next } } } := by
+            refine ⟨hscheduler', hqueues, ?_, hunique, hindex, ?_, hcapabilities⟩
+            · intro endpoint subject hmember
+              obtain ⟨hliveEndpoint, ⟨slot, capability, hslot, hobject, hkind,
+                hreceive, _⟩, hliveSubject, hrunnable, howner, hcurrent, hready⟩ :=
+                hwaiters endpoint subject hmember
+              have holdAuthority :
+                  Capability.HasAuthority state.capabilities subject endpoint .receive := by
+                refine ⟨slot, capability, ?_, hobject, ?_⟩
+                · change
+                    state.blockingIPC.scheduler.lifecycle.capabilities.slots subject slot =
+                      some capability at hslot
+                  rw [← hbase] at hslot
+                  exact hslot
+                · simpa [Capability.hasRight, Capability.permits] using hreceive
+              have hnewAuthority :=
+                Capability.copy_preserves_authority state.capabilities
+                  state.execution.core.context.currentSubject source destination destinationSlot
+                  rights subject endpoint .receive holdAuthority
+              change Capability.HasAuthority next subject endpoint .receive at hnewAuthority
+              obtain ⟨newSlot, newCapability, hnewSlot, hnewObject, hnewReceive⟩ :=
+                hnewAuthority
+              have holdEndpointKind :
+                  state.blockingIPC.scheduler.lifecycle.capabilities.kinds endpoint =
+                    some .endpoint := by
+                change
+                  state.blockingIPC.scheduler.lifecycle.capabilities.slots subject slot =
+                    some capability at hslot
+                have holdValid := holdCapabilities.1 subject slot capability hslot
+                have holdEndpointKindContext :
+                    state.blockingIPCContext.ipc.scheduler.lifecycle.capabilities.kinds endpoint =
+                      some .endpoint := by
+                  simpa [hobject, hkind] using holdValid.2.2.1
+                change
+                  state.blockingIPC.scheduler.lifecycle.capabilities.kinds endpoint =
+                    some .endpoint at holdEndpointKindContext
+                exact holdEndpointKindContext
+              have hnewValid := hcapabilities.1 subject newSlot newCapability hnewSlot
+              have hnewKind : newCapability.kind = .endpoint := by
+                have hregistryKind :
+                    next.kinds endpoint = some newCapability.kind := by
+                  simpa [hnewObject] using hnewValid.2.2.1
+                rw [hkinds', holdEndpointKind] at hregistryKind
+                exact Option.some.inj hregistryKind.symm
+              refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+              · rw [hobjects']
+                exact hliveEndpoint
+              · refine ⟨newSlot, newCapability, hnewSlot, hnewObject, hnewKind, ?_, ?_⟩
+                · simpa [Capability.hasRight, Capability.permits] using hnewReceive
+                · rw [hobjects']
+                  exact hliveEndpoint
+              · rw [hsubjects']
+                exact hliveSubject
+              · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler,
+                  hschedulerLifecycle] using hrunnable
+              · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler,
+                  hschedulerLifecycle, Scheduler.ownsAddressSpace] using howner
+              · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler,
+                  hschedulerLifecycle] using hcurrent
+              · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler] using hready
+            · intro endpoint envelope hmail
+              obtain ⟨hlive, hkind, henvelope, hempty⟩ := hmailbox endpoint envelope hmail
+              refine ⟨?_, ?_, henvelope, hempty⟩
+              · rw [hobjects']
+                exact hlive
+              · rw [hkinds']
+                exact hkind
+          simpa [gate, hmode, applyOperation, haccepted, installCopiedCapabilities,
+            CompositeState.blockingIPCContext, BlockingIPCContext.ContextAgreement,
+            BlockingIPCContext.WellFormed, next] using And.intro hblocking' hagreement
+
 /-- A scheduler tick preserves every lifecycle field observed by blocked
 waiters and cannot rotate a subject disjoint from both current and ready into
 either selected position. -/
@@ -12040,6 +12189,9 @@ inductive BlockingRuntimePreservingOperation : Operation → Prop where
         (.transferOffer endpointWord sourceWord sourceKind payload rights)
   | transferAccept endpointWord destinationSlot :
       BlockingRuntimePreservingOperation (.transferAccept endpointWord destinationSlot)
+  | capabilityCopy source destination destinationSlot rights :
+      BlockingRuntimePreservingOperation
+        (.capabilityCopy source destination destinationSlot rights)
   | resumePreempt frame registers :
       BlockingRuntimePreservingOperation (.resumePreempt frame registers)
 
@@ -12062,6 +12214,9 @@ theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
   | transferAccept endpointWord destinationSlot =>
       exact gate_transferAccept_preserves_blockingRuntimeWellFormed
         state endpointWord destinationSlot hstate
+  | capabilityCopy source destination destinationSlot rights =>
+      exact gate_capabilityCopy_preserves_blockingRuntimeWellFormed state source destination
+        destinationSlot rights hstate
   | resumePreempt frame registers =>
       exact gate_resumePreempt_preserves_blockingRuntimeWellFormed state frame registers hstate
 
