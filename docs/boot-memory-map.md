@@ -201,6 +201,21 @@ readiness premise. Final-ELF policy requires
 `leanos_boot_consume_exact_projection`, rejects the superseded selector, and
 QEMU requires `projection=exact-rich` from the production path.
 
+`runCanonical` is the proof-only composition of those production gates for an
+arbitrary immutable raw input. It first requires the scalar
+`manifestValid` predicate, constructs the complete nine-identity manifest,
+and then invokes the exact rich decode/reserve/allocate transition.
+`runCanonical_acceptance_binding` proves in one acceptance statement that the
+raw input reaches `BootMemoryMapDecoder.decode` unchanged, the positional
+manifest validates to the canonical rounded intervals retained by the
+reservation result, and the selected authority is accepted by
+`consumeExactProjection` with fields derived only from that result.
+`runCanonical_raw_bytes_extensional` additionally proves that equal magic,
+information address, and immutable bytes cannot produce different complete
+rich projections for equal manifest words and owner. These theorems are
+universal over byte buffers and contain no fixture or entry-order premise; they
+add no generated export.
+
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
 identity, extent, offsets, and generated streaming transition. Thus the
