@@ -172,7 +172,8 @@ done
 
 for fixture in PageFaultAgreementAcceptEveryPresent \
     PageFaultAgreementIgnoredWalk PageFaultAgreementReservedContainment \
-    PageFaultAgreementForgedAddressSpace PageFaultAgreementStaleLifecycle; do
+    PageFaultAgreementForgedAddressSpace PageFaultAgreementStaleLifecycle \
+    PageFaultAgreementCorruptLiveTableContainment; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: page-fault agreement fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
