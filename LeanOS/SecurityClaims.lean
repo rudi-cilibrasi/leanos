@@ -310,6 +310,51 @@ theorem page_fault_authorization_context_binding
   exact InterruptEntry.authorized_canonical_binds_trusted_context
     State words context state record hauthorized
 
+/-- SC-PAGE-FAULT-ACTIVE-SPACE-AGREEMENT: every successful strengthened
+page-fault containment result consumes the exact canonical decoder/action
+authorization, checks CR2 only inside the kernel-selected active boot-plan
+root, binds and validates the complete decoded live-root report, revalidates
+plan/virtual/lifecycle object-and-frame agreement (including absence) and an
+empty matching TLB entry, and admits only an architectural error class matching
+the live page-table denial. -/
+theorem page_fault_active_space_containment_agreement state plan report words trusted
+    (hsuccess :
+      (FaultDispatch.dispatchPageFault state plan report words trusted).action =
+          .idle .pageFault ∨
+        ∃ context,
+          (FaultDispatch.dispatchPageFault state plan report words trusted).action =
+            .dispatch .pageFault context) :
+    ∃ record denial space decoded cause,
+      InterruptEntry.decodeCanonicalPageFault words = some record ∧
+        (InterruptEntry.authorizeCanonicalPageFault words trusted state).authorized =
+          some record ∧
+        FaultDispatch.pageFaultAgreement state plan report record = .ok denial ∧
+        FaultDispatch.selectedBootSpace
+          (FaultDispatch.activeFaultAddressSpace state) = some space ∧
+        report.space = space ∧
+        report.selectedRoot = plan.rootFrame space ∧
+        record.activeCr3 = FaultDispatch.expectedCr3 plan space ∧
+        BootPageTablePlan.validateDecodedRoot plan report = .ok () ∧
+        FaultDispatch.livePlanAgreement state plan space
+          (FaultDispatch.activeFaultAddressSpace state) record.faultPage.toNat = true ∧
+        FaultDispatch.pageFaultTlbCoherent state
+          (FaultDispatch.activeFaultAddressSpace state) record.faultPage.toNat
+          (FaultDispatch.pageFaultAccessContext record) = true ∧
+        InterruptEntry.decodePageFaultError record.errorWord = .ok decoded ∧
+        X86PageTable.classify
+          (FaultDispatch.livePageTableAt report record.faultPage.toNat)
+          record.faultPage.toNat (FaultDispatch.pageFaultAccessContext record) =
+            .error cause ∧
+        FaultDispatch.denialAgreement decoded cause = some denial := by
+  obtain ⟨record, denial, hdecode, hauthorized, hagreement,
+      space, decoded, cause, hspace, hreportSpace, hreportRoot, hroot, hreport,
+      hlive, htlb, herror,
+      hclassify, hdenial⟩ :=
+    FaultDispatch.dispatchPageFault_success_sound state plan report words trusted hsuccess
+  exact ⟨record, denial, space, decoded, cause, hdecode, hauthorized,
+    hagreement, hspace, hreportSpace, hreportRoot, hroot, hreport, hlive, htlb,
+    herror, hclassify, hdenial⟩
+
 /-- SC-PRIVILEGE-ENTRY-STACK: accepted ordinary-entry stack authorization
 names the valid guarded layout exactly and carries a checked byte remainder
 without changing the modeled composite state. -/

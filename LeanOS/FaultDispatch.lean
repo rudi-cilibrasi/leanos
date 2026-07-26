@@ -1,5 +1,6 @@
 import LeanOS.InterruptEntry
 import LeanOS.ResumablePreemption
+import LeanOS.BootPageTablePlan
 
 /-!
 # Atomic user-fault cleanup and survivor dispatch
@@ -22,9 +23,21 @@ inductive RejectReason where
   | scheduler (reason : Scheduler.Error) | missingContext | staleContext
   deriving DecidableEq, Repr
 
+inductive PageFaultDenial where
+  | notPresent | supervisor | readOnly | noExecute
+  deriving BEq, DecidableEq, Repr
+
+inductive PageFaultIntegrityReason where
+  | malformedSnapshot | provenanceMismatch | unsupportedAddressSpace
+  | wrongRoot | staleMapping | incoherentTlb | accessAllowed
+  | liveTableReport (cause : BootPageTablePlan.ReportError)
+  | walkIntegrity (cause : X86PageTable.WalkError) | walkMismatch
+  deriving BEq, DecidableEq, Repr
+
 inductive FatalReason where
   | entry (reason : InterruptEntry.RejectReason)
   | kernelOrigin
+  | pageFaultIntegrity (reason : PageFaultIntegrityReason)
   | alreadyHalted
   deriving DecidableEq, Repr
 
@@ -128,6 +141,258 @@ def dispatch (state : ResumablePreemption.State)
                           contexts := ResumablePreemption.eraseContext cleaned.contexts context.owner
                           translations := TLB.switch cleaned.translations context.addressSpace }
                         action := .dispatch reason context }
+
+/-! ## Canonical page-fault/page-table agreement gate
+
+The stronger vector-14 boundary consumes issue #168's exact codec and action
+authorizer.  The proof-carrying boot plan and bounded decoded live-root report
+are read-only views retained by the global runtime; no second CR3 map,
+page-table store, scheduler, or lifecycle projection is introduced here.
+Successful agreement delegates to `dispatch`, so cleanup and survivor
+selection remain the single transition above. -/
+
+def selectedBootSpace : VirtualMapping.AddressSpaceId →
+    Option BootPageTablePlan.Space
+  | 1 => some .subjectA
+  | 2 => some .subjectB
+  | _ => none
+
+def expectedCr3 (plan : BootPageTablePlan.Plan)
+    (space : BootPageTablePlan.Space) : UInt64 :=
+  UInt64.ofNat (plan.rootFrame space * X86PageTable.pageBytes)
+
+def decodedAncestorAt (entries : List BootPageTablePlan.DecodedAncestor)
+    (index : Nat) : X86PageTable.Ancestor :=
+  match entries[index]? with
+  | none => { present := false, writable := false, user := false }
+  | some entry =>
+      { present := entry.present, writable := entry.writable, user := entry.user }
+
+/-- The page-local x86 view decoded from the bounded report rooted at the CR3
+selected by the kernel.  The report retains all slots for whole-root
+validation; classification projects only the ancestor path and leaf selected
+by CR2. -/
+def livePageTableAt (report : BootPageTablePlan.DecodedRoot)
+    (page : Nat) : X86PageTable.PageTable :=
+  { pml4 := decodedAncestorAt report.pml4Entries 0
+    pdpt := decodedAncestorAt report.pdptEntries 0
+    pd := decodedAncestorAt report.pdEntries (page / X86PageTable.entriesPerTable)
+    leaf := BootPageTablePlan.actualAt report }
+
+def pageFaultAccessContext (snapshot : InterruptEntry.CanonicalPageFault) :
+    X86PageTable.AccessContext :=
+  { privilege := .user
+    kind :=
+      if snapshot.accessCode = 2 then .execute
+      else if snapshot.accessCode = 1 then .write
+      else .read
+    writeProtect := snapshot.controlsCode % 2 = 1
+    nxEnable := snapshot.controlsCode / 2 % 2 = 1
+    smep := snapshot.controlsCode / 4 % 2 = 1
+    smap := snapshot.controlsCode / 8 % 2 = 1
+    ac := false }
+
+/-- The active boot-plan leaf and the live virtual/lifetime projection agree
+at the checked CR2 page.  Supervisor leaves are plan-owned and must not be
+shadowed by a user mapping.  User leaves must name the exact current live
+object/frame binding and permissions in both lifecycle projections. -/
+def livePlanAgreement (state : ResumablePreemption.State)
+    (plan : BootPageTablePlan.Plan) (space : BootPageTablePlan.Space)
+    (addressSpace : VirtualMapping.AddressSpaceId)
+    (page : VirtualMapping.VirtualPage) : Bool :=
+  let virtual := state.translations.virtual
+  let lifecycle := state.scheduler.lifecycle
+  match BootPageTablePlan.expectedAt plan space page,
+      virtual.mappings addressSpace page with
+  | none, none => lifecycle.mapping addressSpace page = none
+  | none, some _ => false
+  | some leaf, none =>
+      !leaf.user && lifecycle.mapping addressSpace page = none
+  | some leaf, some mapping =>
+      if !leaf.user then false
+      else
+        match virtual.memory.binding mapping.object with
+        | none => false
+        | some frame =>
+            virtual.memory.issued mapping.object &&
+              virtual.memory.capabilities.objects mapping.object &&
+              virtual.memory.capabilities.kinds mapping.object = some .memory &&
+              lifecycle.capabilities.objects mapping.object &&
+              lifecycle.capabilities.kinds mapping.object = some .memory &&
+              virtual.memory.allocator.status frame = .owned mapping.object &&
+              lifecycle.ownedMemory mapping.object = some (addressSpace, frame) &&
+              lifecycle.frameOwner frame = some addressSpace &&
+              !lifecycle.freeFrame frame &&
+              leaf.frame = frame && mapping.permissions.read &&
+              leaf.writable = mapping.permissions.write &&
+              lifecycle.mapping addressSpace page = some mapping.object
+
+def pageFaultTlbCoherent (state : ResumablePreemption.State)
+    (addressSpace : VirtualMapping.AddressSpaceId)
+    (page : VirtualMapping.VirtualPage)
+    (context : X86PageTable.AccessContext) : Bool :=
+  state.translations.entries.length ≤ TLB.capacity &&
+    TLB.lookup state.translations.entries { addressSpace, page } context = none
+
+def activeFaultAddressSpace (state : ResumablePreemption.State) :
+    VirtualMapping.AddressSpaceId :=
+  state.translations.active.getD 0
+
+def denialAgreement (decoded : InterruptEntry.DecodedPageFaultError)
+    (cause : X86PageTable.WalkError) : Option PageFaultDenial :=
+  if !decoded.protection then
+    if cause = .notPresent then some .notPresent else none
+  else
+    match cause, decoded.accessKind with
+    | .supervisor, _ => some .supervisor
+    | .notWritable, .write => some .readOnly
+    | .noExecute, .execute => some .noExecute
+    | _, _ => none
+
+def pageFaultClassificationAgreement (plan : BootPageTablePlan.Plan)
+    (_space : BootPageTablePlan.Space)
+    (report : BootPageTablePlan.DecodedRoot)
+    (snapshot : InterruptEntry.CanonicalPageFault)
+    (decoded : InterruptEntry.DecodedPageFaultError) :
+    Except PageFaultIntegrityReason PageFaultDenial :=
+  let context := pageFaultAccessContext snapshot
+  match X86PageTable.classify (livePageTableAt report snapshot.faultPage.toNat)
+      snapshot.faultPage.toNat context with
+  | .ok _ => throw .accessAllowed
+  | .error cause =>
+      if cause = .reservedBits || cause = .frameOutOfRange then
+        throw (.walkIntegrity cause)
+      else
+        match BootPageTablePlan.validateDecodedRoot plan report with
+        | .error reportCause => throw (.liveTableReport reportCause)
+        | .ok _ =>
+          match denialAgreement decoded cause with
+          | some denial => pure denial
+          | none => throw .walkMismatch
+
+/-- Finite agreement between the canonical architectural error class and the
+decoded live table rooted at the kernel-selected active CR3. Integrity walk
+failures are classified before whole-report validation; every ordinary denial
+requires the complete report to match the proof-carrying plan. -/
+def pageFaultAgreement (state : ResumablePreemption.State)
+    (plan : BootPageTablePlan.Plan)
+    (report : BootPageTablePlan.DecodedRoot)
+    (snapshot : InterruptEntry.CanonicalPageFault) :
+    Except PageFaultIntegrityReason PageFaultDenial :=
+  if !InterruptEntry.validCanonicalPageFault snapshot then
+    .error .malformedSnapshot
+  else
+    let addressSpace := activeFaultAddressSpace state
+    match selectedBootSpace addressSpace with
+    | none => .error .unsupportedAddressSpace
+    | some space =>
+        if report.space ≠ space then
+          .error (.liveTableReport .wrongRoot)
+        else if report.selectedRoot ≠ plan.rootFrame space then
+          .error (.liveTableReport .wrongRoot)
+        else if snapshot.activeCr3 != expectedCr3 plan space then .error .wrongRoot
+        else if snapshot.controlsCode != 15 then .error .provenanceMismatch
+        else if !livePlanAgreement state plan space addressSpace
+            snapshot.faultPage.toNat then .error .staleMapping
+        else
+          let context := pageFaultAccessContext snapshot
+          if !pageFaultTlbCoherent state addressSpace snapshot.faultPage.toNat
+              context then .error .incoherentTlb
+          else
+            match InterruptEntry.decodePageFaultError snapshot.errorWord with
+            | .error _ => .error .malformedSnapshot
+            | .ok decoded =>
+                if decoded.write && decoded.instructionFetch then
+                  .error .malformedSnapshot
+                else
+                  pageFaultClassificationAgreement plan space report snapshot decoded
+
+def canonicalPageFaultFrame
+    (snapshot : InterruptEntry.CanonicalPageFault) :
+    InterruptEntry.NormalizedFrame :=
+  { vector := snapshot.vector
+    purpose := .userFault
+    origin := .user
+    errorCode := some snapshot.errorWord
+    rip := snapshot.rip
+    cs := snapshot.cs
+    flags := snapshot.flags
+    userRsp := some snapshot.userRsp
+    userSs := some snapshot.userSs
+    currentSubject := snapshot.currentSubject.toNat
+    activeAddressSpace := snapshot.activeAddressSpace.toNat
+    activeCr3 := snapshot.activeCr3
+    stackIdentity := snapshot.stackIdentity }
+
+/-- Strengthened page-fault entry point.  Stale nonfatal scheduler bindings
+reject atomically before cleanup.  Once the canonical snapshot has an
+integrity-class failure, the existing fatal latch is set and every
+authoritative store is frozen.  Only a matching ordinary denial reaches the
+shared cleanup/survivor transition. -/
+def dispatchPageFault (state : ResumablePreemption.State)
+    (plan : BootPageTablePlan.Plan) (report : BootPageTablePlan.DecodedRoot)
+    (words : List UInt64)
+    (trusted : InterruptEntry.PageFaultContext) : Outcome :=
+  if state.halted then halt state .alreadyHalted
+  else match InterruptEntry.decodeCanonicalPageFault words with
+  | none => halt state (.pageFaultIntegrity .malformedSnapshot)
+  | some snapshot =>
+      if snapshot.privilegeCode != 1 then halt state .kernelOrigin
+      else match state.scheduler.lifecycle.current with
+      | none => reject state .staleCurrent
+      | some current =>
+          if trusted.entry.currentSubject != current ||
+              state.scheduler.lifecycle.capabilities.subjects current != true ||
+              state.scheduler.lifecycle.runnable current != true then
+            reject state .staleCurrent
+          else if trusted.entry.activeAddressSpace != current ||
+              state.scheduler.lifecycle.addressOwner current != some current ||
+              state.translations.active != some current ||
+              state.translations.virtual.owner current != some current then
+            reject state .staleAddressSpace
+          else
+            let authorized :=
+              InterruptEntry.authorizeCanonicalPageFault words trusted state
+            match authorized.authorized with
+            | none => halt state (.pageFaultIntegrity .provenanceMismatch)
+            | some checked =>
+                match pageFaultAgreement state plan report checked with
+                | .error reason => halt state (.pageFaultIntegrity reason)
+                | .ok _ =>
+                    dispatch state (.accepted (canonicalPageFaultFrame checked))
+
+theorem dispatchPageFault_total state plan report words trusted :
+    ∃ outcome, dispatchPageFault state plan report words trusted = outcome :=
+  ⟨_, rfl⟩
+
+theorem dispatchPageFault_deterministic state plan report words trusted first second
+    (hfirst : dispatchPageFault state plan report words trusted = first)
+    (hsecond : dispatchPageFault state plan report words trusted = second) :
+    first = second := by
+  rw [← hfirst, hsecond]
+
+/-- Once the stronger page-fault boundary sets the halt latch, every later
+page-fault input is absorbed before decoding or consulting trusted context. -/
+theorem dispatchPageFault_already_halted_absorbing state plan report words trusted
+    (hhalted : state.halted = true) :
+    dispatchPageFault state plan report words trusted = halt state .alreadyHalted := by
+  simp [dispatchPageFault, hhalted]
+
+theorem denialAgreement_sound decoded cause denial
+    (h : denialAgreement decoded cause = some denial) :
+    (decoded.protection = false ∧ cause = .notPresent ∧
+        denial = .notPresent) ∨
+      (decoded.protection = true ∧ cause = .supervisor ∧
+        denial = .supervisor) ∨
+      (decoded.protection = true ∧ decoded.accessKind = .write ∧
+        cause = .notWritable ∧ denial = .readOnly) ∨
+      (decoded.protection = true ∧ decoded.accessKind = .execute ∧
+        cause = .noExecute ∧ denial = .noExecute) := by
+  unfold denialAgreement at h
+  split at h <;> simp_all
+  all_goals split at h <;> simp_all
+  all_goals split at h <;> simp_all
+
 
 /-- Explicit attacker data is not consulted by fault cleanup or survivor
 selection. -/
@@ -1624,5 +1889,660 @@ theorem faultDispatchDemo_wrong_restart_fail_stop :
       encodeBootOutcome (traceState true) (dispatch (traceState true)
         (InterruptEntry.normalize traceRawBreakpointWrongRestart traceKernelContext)) := by
   native_decide
+
+/-! Executable agreement traces use the repository's proof-carrying sample
+boot plan.  The checked page is always selected inside active address space A;
+the encoded CR2 field never selects a root or cleanup target. -/
+
+private def pageFaultAgreementContext : InterruptEntry.PageFaultContext :=
+  { entry :=
+      { currentSubject := 1
+        activeAddressSpace := 1
+        activeCr3 := 0xa000
+        stackIdentity := 1
+        stackFirst := 0x800000
+        stackPastLast := 0x804000
+        entryActive := false }
+    controls :=
+      { writeProtect := true
+        nxEnable := true
+        smep := true
+        smap := true } }
+
+private def pageFaultRecord (errorWord faultPage : UInt64) :
+    InterruptEntry.CanonicalPageFault :=
+  let decoded :=
+    match InterruptEntry.decodePageFaultError errorWord with
+    | .ok decoded => decoded
+    | .error _ =>
+        { protection := false, write := false, user := true,
+          instructionFetch := false }
+  { vector := 14
+    errorWord
+    faultAddress := faultPage * UInt64.ofNat X86PageTable.pageBytes
+    faultPage
+    accessCode := InterruptEntry.pageFaultAccessCode decoded.accessKind
+    protectionCode := if decoded.protection then 1 else 0
+    privilegeCode := if decoded.user then 1 else 0
+    currentSubject := 1
+    activeAddressSpace := 1
+    activeCr3 := 0xa000
+    controlsCode := 15
+    rip := 0x400100
+    cs := 0x23
+    flags := 0x202
+    userRsp := 0x500ff8
+    userSs := 0x1b
+    stackIdentity := 1
+    reserved := 0 }
+
+private def samplePlanDispatch (state : ResumablePreemption.State)
+    (record : InterruptEntry.CanonicalPageFault) : Outcome :=
+  match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+  | .error _ => halt state (.pageFaultIntegrity .malformedSnapshot)
+  | .ok plan =>
+      dispatchPageFault state plan (BootPageTablePlan.decodedReport plan .subjectA)
+        (InterruptEntry.encodeCanonicalPageFault record)
+        pageFaultAgreementContext
+
+private def samplePlanDispatchWithReport (state : ResumablePreemption.State)
+    (record : InterruptEntry.CanonicalPageFault)
+    (mutate : BootPageTablePlan.DecodedRoot →
+      BootPageTablePlan.DecodedRoot) : Outcome :=
+  match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+  | .error _ => halt state (.pageFaultIntegrity .malformedSnapshot)
+  | .ok plan =>
+      let report := mutate (BootPageTablePlan.decodedReport plan .subjectA)
+      dispatchPageFault state plan report
+        (InterruptEntry.encodeCanonicalPageFault record)
+        pageFaultAgreementContext
+
+/-- Public concrete fixtures used only by proof-integrity regressions. -/
+def pageFaultAgreementWitnessState : ResumablePreemption.State :=
+  traceState true
+
+def pageFaultAgreementWitnessRecord (errorWord faultPage : UInt64) :
+    InterruptEntry.CanonicalPageFault :=
+  pageFaultRecord errorWord faultPage
+
+def pageFaultAgreementWitnessOutcome
+    (record : InterruptEntry.CanonicalPageFault) : Outcome :=
+  samplePlanDispatch pageFaultAgreementWitnessState record
+
+def pageFaultAgreementWitnessOutcomeFromState
+    (state : ResumablePreemption.State)
+    (record : InterruptEntry.CanonicalPageFault) : Outcome :=
+  samplePlanDispatch state record
+
+def pageFaultAgreementWitnessContained
+    (record : InterruptEntry.CanonicalPageFault) : Bool :=
+  match (pageFaultAgreementWitnessOutcome record).action with
+  | .idle .pageFault | .dispatch .pageFault _ => true
+  | _ => false
+
+def mutatePageFaultLiveLeaf (page : Nat)
+    (mutate : X86PageTable.Leaf → X86PageTable.Leaf)
+    (report : BootPageTablePlan.DecodedRoot) :
+    BootPageTablePlan.DecodedRoot :=
+  { report with
+    leaves := report.leaves.map fun entry =>
+      if entry.page = page then { entry with leaf := mutate entry.leaf }
+      else entry }
+
+/-- Concrete stale cross-projection counterexample: the plan and virtual
+mapping both omit page 50, but the lifecycle still names object 999 there. -/
+def pageFaultAgreementStaleLifecycleState : ResumablePreemption.State :=
+  let base := pageFaultAgreementWitnessState
+  { base with
+    scheduler :=
+      { base.scheduler with
+        lifecycle :=
+          { base.scheduler.lifecycle with
+            mapping := fun space page =>
+              if space = 1 && page = 50 then some 999
+              else base.scheduler.lifecycle.mapping space page } } }
+
+def pageFaultAgreementStaleLifecycleContained : Bool :=
+  match (pageFaultAgreementWitnessOutcomeFromState
+      pageFaultAgreementStaleLifecycleState
+      (pageFaultAgreementWitnessRecord 4 50)).action with
+  | .idle .pageFault | .dispatch .pageFault _ => true
+  | _ => false
+
+private def pageFaultMappedState (page : Nat) (writable : Bool) :
+    ResumablePreemption.State :=
+  let base := traceState true
+  let object := page
+  let frame := page
+  let capabilities :=
+    { base.scheduler.lifecycle.capabilities with
+      objects := fun candidate =>
+        candidate = object ||
+          base.scheduler.lifecycle.capabilities.objects candidate
+      kinds := fun candidate =>
+        if candidate = object then some .memory
+        else base.scheduler.lifecycle.capabilities.kinds candidate }
+  let lifecycle :=
+    { base.scheduler.lifecycle with
+      capabilities
+      ownedMemory := fun candidate =>
+        if candidate = object then some (1, frame)
+        else base.scheduler.lifecycle.ownedMemory candidate
+      mapping := fun space candidatePage =>
+        if space = 1 && candidatePage = page then some object
+        else base.scheduler.lifecycle.mapping space candidatePage
+      frameOwner := fun candidate =>
+        if candidate = frame then some 1
+        else base.scheduler.lifecycle.frameOwner candidate
+      freeFrame := fun candidate =>
+        if candidate = frame then false
+        else base.scheduler.lifecycle.freeFrame candidate }
+  { base with
+    scheduler := { base.scheduler with lifecycle }
+    translations :=
+      { base.translations with
+        virtual :=
+          { base.translations.virtual with
+            memory :=
+              { base.translations.virtual.memory with
+                capabilities
+                allocator :=
+                  { frames := frame :: base.translations.virtual.memory.allocator.frames
+                    status := fun candidate =>
+                      if candidate = frame then .owned object
+                      else base.translations.virtual.memory.allocator.status candidate }
+                binding := fun candidate =>
+                  if candidate = object then some frame
+                  else base.translations.virtual.memory.binding candidate
+                issued := fun candidate =>
+                  candidate = object ||
+                    base.translations.virtual.memory.issued candidate }
+            mappings := fun space candidatePage =>
+              if space = 1 && candidatePage = page then
+                some { object, permissions := { read := true, write := writable } }
+              else base.translations.virtual.mappings space candidatePage } } }
+
+/-- Concrete stale-generation counterexample: every mapped-object projection
+still names object 100, but its monotonic issuance bit has been cleared. -/
+def pageFaultAgreementUnissuedObjectState : ResumablePreemption.State :=
+  let base := pageFaultMappedState 100 false
+  { base with
+    translations :=
+      { base.translations with
+        virtual :=
+          { base.translations.virtual with
+            memory :=
+              { base.translations.virtual.memory with
+                issued := fun candidate =>
+                  if candidate = 100 then false
+                  else base.translations.virtual.memory.issued candidate } } } }
+
+def pageFaultAgreementUnissuedObjectOutcome : Outcome :=
+  samplePlanDispatch pageFaultAgreementUnissuedObjectState
+    (pageFaultRecord 7 100)
+
+def pageFaultAgreementUnissuedObjectContained : Bool :=
+  match pageFaultAgreementUnissuedObjectOutcome.action with
+  | .idle .pageFault | .dispatch .pageFault _ => true
+  | _ => false
+
+def pageFaultReservedLiveTableOutcome : Outcome :=
+  samplePlanDispatchWithReport (pageFaultMappedState 100 false)
+    (pageFaultRecord 7 100)
+    (mutatePageFaultLiveLeaf 100 fun leaf =>
+      { leaf with reservedBitsClear := false })
+
+def pageFaultOutOfRangeLiveTableOutcome : Outcome :=
+  samplePlanDispatchWithReport (pageFaultMappedState 100 false)
+    (pageFaultRecord 7 100)
+    (mutatePageFaultLiveLeaf 100 fun leaf =>
+      { leaf with frame := X86PageTable.physicalFrameLimit })
+
+def pageFaultMalformedAncestorOutcome : Outcome :=
+  samplePlanDispatchWithReport (traceState true) (pageFaultRecord 4 50)
+    (fun report =>
+      { report with
+        pdEntries := report.pdEntries.modify 0 fun entry =>
+          { entry with present := false } })
+
+def pageFaultReservedLiveTableContained : Bool :=
+  match pageFaultReservedLiveTableOutcome.action with
+  | .idle .pageFault | .dispatch .pageFault _ => true
+  | _ => false
+
+/-- Concrete witness for the architecturally impossible simultaneous
+write/instruction-fetch error encoding (P/W/U/I = 1). -/
+def pageFaultImpossibleWriteInstructionOutcome : Outcome :=
+  samplePlanDispatch (pageFaultMappedState 101 true) (pageFaultRecord 23 101)
+
+def pageFaultImpossibleWriteInstructionContained : Bool :=
+  match pageFaultImpossibleWriteInstructionOutcome.action with
+  | .idle .pageFault | .dispatch .pageFault _ => true
+  | _ => false
+
+theorem page_fault_nonpresent_read_contained_nonvacuous :
+    (samplePlanDispatch (traceState true) (pageFaultRecord 4 50)).action =
+      .dispatch .pageFault traceSurvivorContext := by
+  native_decide
+
+theorem page_fault_supervisor_read_contained_nonvacuous :
+    (samplePlanDispatch (traceState true) (pageFaultRecord 5 1)).action =
+      .dispatch .pageFault traceSurvivorContext := by
+  native_decide
+
+theorem page_fault_readonly_write_contained_nonvacuous :
+    (samplePlanDispatch (pageFaultMappedState 100 false)
+      (pageFaultRecord 7 100)).action =
+        .dispatch .pageFault traceSurvivorContext := by
+  native_decide
+
+theorem page_fault_nx_execute_contained_nonvacuous :
+    (samplePlanDispatch (pageFaultMappedState 101 true)
+      (pageFaultRecord 21 101)).action =
+        .dispatch .pageFault traceSurvivorContext := by
+  native_decide
+
+theorem page_fault_validated_live_report_contained_nonvacuous :
+    (samplePlanDispatch (traceState true) (pageFaultRecord 4 50)).action =
+      .dispatch .pageFault traceSurvivorContext := by
+  native_decide
+
+theorem page_fault_reserved_live_table_is_fatal_nonvacuous :
+    pageFaultReservedLiveTableOutcome.action =
+      .fatal (.pageFaultIntegrity (.walkIntegrity .reservedBits)) := by
+  native_decide
+
+theorem page_fault_out_of_range_live_table_is_fatal_nonvacuous :
+    pageFaultOutOfRangeLiveTableOutcome.action =
+      .fatal (.pageFaultIntegrity (.walkIntegrity .frameOutOfRange)) := by
+  native_decide
+
+theorem page_fault_malformed_ancestor_is_fatal_nonvacuous :
+    pageFaultMalformedAncestorOutcome.action =
+      .fatal (.pageFaultIntegrity (.liveTableReport .wrongAncestor)) := by
+  native_decide
+
+theorem page_fault_write_instruction_is_absorbing_fatal :
+    pageFaultImpossibleWriteInstructionOutcome.action =
+        .fatal (.pageFaultIntegrity .malformedSnapshot) ∧
+      pageFaultImpossibleWriteInstructionOutcome.state.halted = true ∧
+      ∀ plan report words trusted,
+        dispatchPageFault pageFaultImpossibleWriteInstructionOutcome.state
+            plan report words trusted =
+          halt pageFaultImpossibleWriteInstructionOutcome.state .alreadyHalted := by
+  have hfatal :
+      pageFaultImpossibleWriteInstructionOutcome.action =
+        .fatal (.pageFaultIntegrity .malformedSnapshot) := by
+    native_decide
+  have hhalted : pageFaultImpossibleWriteInstructionOutcome.state.halted = true := by
+    native_decide
+  refine ⟨hfatal, hhalted, ?_⟩
+  intro plan report words trusted
+  exact dispatchPageFault_already_halted_absorbing _ _ _ _ _ hhalted
+
+theorem page_fault_no_survivor_contained_nonvacuous :
+    (samplePlanDispatch (traceState false) (pageFaultRecord 4 50)).action =
+      .idle .pageFault := by
+  native_decide
+
+theorem page_fault_multiple_survivors_contained_nonvacuous :
+    (samplePlanDispatch traceMultiState (pageFaultRecord 4 50)).action =
+      .dispatch .pageFault traceSurvivorContext := by
+  native_decide
+
+theorem page_fault_mismatched_error_is_fatal :
+    (samplePlanDispatch (traceState true) (pageFaultRecord 5 50)).action =
+      .fatal (.pageFaultIntegrity .walkMismatch) := by
+  native_decide
+
+theorem page_fault_readonly_mismatched_error_is_fatal :
+    (samplePlanDispatch (pageFaultMappedState 100 false)
+      (pageFaultRecord 5 100)).action =
+        .fatal (.pageFaultIntegrity .accessAllowed) := by
+  native_decide
+
+theorem page_fault_nx_mismatched_error_is_fatal :
+    (samplePlanDispatch (pageFaultMappedState 101 true)
+      (pageFaultRecord 5 101)).action =
+        .fatal (.pageFaultIntegrity .accessAllowed) := by
+  native_decide
+
+theorem page_fault_reserved_error_is_fatal :
+    (samplePlanDispatch (traceState true) (pageFaultRecord 12 50)).action =
+      .fatal (.pageFaultIntegrity .malformedSnapshot) := by
+  native_decide
+
+theorem page_fault_wrong_root_is_fatal :
+    let record := { pageFaultRecord 4 50 with activeCr3 := 0xb000 }
+    let trusted :=
+      { pageFaultAgreementContext with
+        entry :=
+          { pageFaultAgreementContext.entry with
+            activeCr3 := 0xb000 } }
+    let outcome :=
+      match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+      | .error _ =>
+          halt (traceState true) (.pageFaultIntegrity .malformedSnapshot)
+      | .ok plan =>
+          dispatchPageFault (traceState true) plan
+            (BootPageTablePlan.decodedReport plan .subjectA)
+            (InterruptEntry.encodeCanonicalPageFault record) trusted
+    outcome.action = .fatal (.pageFaultIntegrity .wrongRoot) := by
+  native_decide
+
+theorem page_fault_forged_address_space_is_fatal :
+    let record :=
+      { pageFaultRecord 4 50 with activeAddressSpace := 2 }
+    (samplePlanDispatch (traceState true) record).action =
+      .fatal (.pageFaultIntegrity .provenanceMismatch) := by
+  native_decide
+
+theorem page_fault_kernel_origin_is_fatal :
+    let record :=
+      { pageFaultRecord 0 50 with
+        cs := 0x08
+        userRsp := 0
+        userSs := 0 }
+    (samplePlanDispatch (traceState true) record).action =
+      .fatal .kernelOrigin := by
+  native_decide
+
+theorem page_fault_stale_mapping_is_fatal :
+    (samplePlanDispatch (traceState true) (pageFaultRecord 4 100)).action =
+      .fatal (.pageFaultIntegrity .staleMapping) := by
+  native_decide
+
+theorem page_fault_stale_lifecycle_mapping_is_fatal :
+    (pageFaultAgreementWitnessOutcomeFromState
+      pageFaultAgreementStaleLifecycleState
+      (pageFaultAgreementWitnessRecord 4 50)).action =
+        .fatal (.pageFaultIntegrity .staleMapping) := by
+  native_decide
+
+theorem page_fault_unissued_object_mapping_is_fatal :
+    pageFaultAgreementUnissuedObjectOutcome.action =
+      .fatal (.pageFaultIntegrity .staleMapping) := by
+  native_decide
+
+private def incoherentPageFaultState : ResumablePreemption.State :=
+  let record := pageFaultRecord 4 50
+  let context := pageFaultAccessContext record
+  { traceState true with
+    translations :=
+      { (traceState true).translations with
+        entries :=
+          [{ key := { addressSpace := 1, page := 50 },
+             frame := 999, context }] } }
+
+def pageFaultAgreementIncoherentOutcome : Outcome :=
+  samplePlanDispatch incoherentPageFaultState (pageFaultRecord 4 50)
+
+theorem page_fault_incoherent_tlb_is_fatal :
+    pageFaultAgreementIncoherentOutcome.action =
+      .fatal (.pageFaultIntegrity .incoherentTlb) := by
+  native_decide
+
+/-- Authorization cannot substitute a different decoded record. -/
+theorem authorized_page_fault_is_decoded (State : Type) words trusted
+    (state : State) record
+    (hauthorized :
+      (InterruptEntry.authorizeCanonicalPageFault words trusted state).authorized =
+        some record) :
+    InterruptEntry.decodeCanonicalPageFault words = some record := by
+  unfold InterruptEntry.authorizeCanonicalPageFault at hauthorized
+  split at hauthorized <;> try simp_all
+  split at hauthorized <;> try simp_all
+  split at hauthorized <;> try simp_all
+  split at hauthorized <;> simp_all
+
+/-- Small projection lemma for #104: under the already checked authoritative
+bindings, the stronger page-fault gate is definitionally the existing cleanup
+and survivor transition. -/
+theorem dispatchPageFault_checked_transition state plan report words trusted record denial
+    (hrunning : state.halted = false)
+    (hdecoded : InterruptEntry.decodeCanonicalPageFault words = some record)
+    (huser : record.privilegeCode = 1)
+    (hcurrent : state.scheduler.lifecycle.current =
+      some trusted.entry.currentSubject)
+    (hlive :
+      state.scheduler.lifecycle.capabilities.subjects
+        trusted.entry.currentSubject = true)
+    (hrunnable :
+      state.scheduler.lifecycle.runnable trusted.entry.currentSubject = true)
+    (hspace : trusted.entry.activeAddressSpace =
+      trusted.entry.currentSubject)
+    (howner : state.scheduler.lifecycle.addressOwner
+      trusted.entry.currentSubject = some trusted.entry.currentSubject)
+    (hactive : state.translations.active =
+      some trusted.entry.currentSubject)
+    (hvirtualOwner : state.translations.virtual.owner
+      trusted.entry.currentSubject = some trusted.entry.currentSubject)
+    (hauthorized :
+      (InterruptEntry.authorizeCanonicalPageFault words trusted state).authorized =
+        some record)
+    (hagreement : pageFaultAgreement state plan report record = .ok denial) :
+    dispatchPageFault state plan report words trusted =
+      dispatch state (.accepted (canonicalPageFaultFrame record)) := by
+  unfold dispatchPageFault
+  simp only [hrunning, hdecoded, huser, hcurrent, hlive, hrunnable,
+    hspace, howner, hactive, hvirtualOwner, hauthorized, hagreement]
+  simp
+
+/-- Every admitted ordinary denial exposes the active root, live
+mapping/lifetime check, cache-coherence precondition, exact architectural
+decoder, and matching page-table classification. -/
+theorem pageFaultClassificationAgreement_sound plan space report record decoded denial
+    (hagreement :
+      pageFaultClassificationAgreement plan space report record decoded = .ok denial) :
+    ∃ cause,
+      BootPageTablePlan.validateDecodedRoot plan report = .ok () ∧
+      X86PageTable.classify (livePageTableAt report record.faultPage.toNat)
+          record.faultPage.toNat (pageFaultAccessContext record) = .error cause ∧
+        denialAgreement decoded cause = some denial := by
+  simp only [pageFaultClassificationAgreement] at hagreement
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  all_goals split at hagreement <;> try contradiction
+  all_goals
+    change Except.ok _ = Except.ok _ at hagreement
+    injection hagreement with hdenial
+    subst denial
+    simp_all
+
+set_option maxRecDepth 8192 in
+theorem pageFaultAgreement_sound state plan report record denial
+    (hagreement : pageFaultAgreement state plan report record = .ok denial) :
+    ∃ space decoded cause,
+      selectedBootSpace (activeFaultAddressSpace state) = some space ∧
+        report.space = space ∧
+        report.selectedRoot = plan.rootFrame space ∧
+        record.activeCr3 = expectedCr3 plan space ∧
+        BootPageTablePlan.validateDecodedRoot plan report = .ok () ∧
+        livePlanAgreement state plan space
+          (activeFaultAddressSpace state) record.faultPage.toNat = true ∧
+        pageFaultTlbCoherent state (activeFaultAddressSpace state)
+          record.faultPage.toNat (pageFaultAccessContext record) = true ∧
+        InterruptEntry.decodePageFaultError record.errorWord = .ok decoded ∧
+        X86PageTable.classify (livePageTableAt report record.faultPage.toNat)
+          record.faultPage.toNat (pageFaultAccessContext record) = .error cause ∧
+        denialAgreement decoded cause = some denial := by
+  simp only [pageFaultAgreement] at hagreement
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  split at hagreement <;> try contradiction
+  all_goals
+    rename_i hvalid selected space hspace hreportSpaceNeg hreportRootNeg
+      hrootNeg hcontrols hliveNeg htlbNeg decodedResult decoded hdecoded
+      himpossible
+    obtain ⟨cause, hreport, hclassify, hdenial⟩ :=
+      pageFaultClassificationAgreement_sound _ _ _ _ _ _ hagreement
+    have hreportSpace : report.space = space :=
+      Classical.byContradiction (fun hne => hreportSpaceNeg hne)
+    have hreportRoot : report.selectedRoot = plan.rootFrame space :=
+      Classical.byContradiction (fun hne => hreportRootNeg hne)
+    have hroot : record.activeCr3 = expectedCr3 plan space := by
+      apply Classical.byContradiction
+      intro hne
+      exact hrootNeg (by simp [hne])
+    have hlive : livePlanAgreement state plan space
+        (activeFaultAddressSpace state) record.faultPage.toNat = true := by
+      cases hlive : livePlanAgreement state plan space
+        (activeFaultAddressSpace state) record.faultPage.toNat <;> simp_all
+    have htlb : pageFaultTlbCoherent state (activeFaultAddressSpace state)
+        record.faultPage.toNat (pageFaultAccessContext record) = true := by
+      cases hcoherent : pageFaultTlbCoherent state (activeFaultAddressSpace state)
+        record.faultPage.toNat (pageFaultAccessContext record) <;> simp_all
+    exact ⟨space, decoded, cause, hspace, hreportSpace, hreportRoot, hroot,
+      hreport, hlive, htlb, hdecoded, hclassify, hdenial⟩
+
+set_option maxRecDepth 8192 in
+/-- Containment soundness stated from the observable successful result:
+every successful strengthened page-fault cleanup has one exact codec-decoded,
+independently authorized record and one active-root agreement witness. -/
+theorem dispatchPageFault_success_sound state plan report words trusted
+    (hsuccess :
+      (dispatchPageFault state plan report words trusted).action =
+          .idle .pageFault ∨
+        ∃ context,
+          (dispatchPageFault state plan report words trusted).action =
+            .dispatch .pageFault context) :
+    ∃ record denial,
+      InterruptEntry.decodeCanonicalPageFault words = some record ∧
+        (InterruptEntry.authorizeCanonicalPageFault words trusted state).authorized =
+          some record ∧
+        pageFaultAgreement state plan report record = .ok denial ∧
+        ∃ space decoded cause,
+          selectedBootSpace (activeFaultAddressSpace state) = some space ∧
+            report.space = space ∧
+            report.selectedRoot = plan.rootFrame space ∧
+            record.activeCr3 = expectedCr3 plan space ∧
+            BootPageTablePlan.validateDecodedRoot plan report = .ok () ∧
+            livePlanAgreement state plan space
+              (activeFaultAddressSpace state) record.faultPage.toNat = true ∧
+            pageFaultTlbCoherent state (activeFaultAddressSpace state)
+              record.faultPage.toNat (pageFaultAccessContext record) = true ∧
+            InterruptEntry.decodePageFaultError record.errorWord = .ok decoded ∧
+            X86PageTable.classify (livePageTableAt report record.faultPage.toNat)
+              record.faultPage.toNat (pageFaultAccessContext record) =
+                .error cause ∧
+            denialAgreement decoded cause = some denial := by
+  simp only [dispatchPageFault] at hsuccess
+  split at hsuccess <;> try simp_all [halt, reject]
+  split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals split at hsuccess <;> try simp_all [halt, reject]
+  all_goals
+    have hdecodedAuthorized :=
+      authorized_page_fault_is_decoded ResumablePreemption.State
+        words trusted state _ (by assumption)
+    simp_all only [Option.some.injEq]
+    constructor
+    · trivial
+    · refine ⟨_, rfl, ?_⟩
+      obtain ⟨space, decoded, cause, hspace, hreportSpace, hreportRoot,
+          hroot, hreport, hlive, htlb,
+          hdecoded, hclassify, hdenial⟩ :=
+        pageFaultAgreement_sound _ _ _ _ _ (by assumption)
+      exact ⟨space, hspace, hreportSpace, hreportRoot, hroot, hreport,
+        hlive, htlb, decoded, hdecoded, cause, hclassify, hdenial⟩
+
+/-- Integrity-fatal outcomes freeze every authoritative store while setting
+the absorbing latch. -/
+theorem dispatchPageFault_integrity_fatal_atomicity state plan report words trusted reason
+    (hfatal : (dispatchPageFault state plan report words trusted).action =
+      .fatal (.pageFaultIntegrity reason)) :
+    (dispatchPageFault state plan report words trusted).state.halted = true ∧
+      (dispatchPageFault state plan report words trusted).state.scheduler =
+        state.scheduler ∧
+      (dispatchPageFault state plan report words trusted).state.contexts =
+        state.contexts ∧
+      (dispatchPageFault state plan report words trusted).state.translations =
+        state.translations := by
+  simp only [dispatchPageFault] at hfatal ⊢
+  split at hfatal <;> try simp_all [halt, reject]
+  split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals
+    exact fatal_atomicity state _ (.pageFaultIntegrity reason) hfatal
+
+/-- Every fatal result of the strengthened page-fault boundary, including
+kernel-origin and already-halted outcomes, freezes the authoritative stores. -/
+theorem dispatchPageFault_fatal_atomicity state plan report words trusted reason
+    (hfatal : (dispatchPageFault state plan report words trusted).action =
+      .fatal reason) :
+    (dispatchPageFault state plan report words trusted).state.halted = true ∧
+      (dispatchPageFault state plan report words trusted).state.scheduler =
+        state.scheduler ∧
+      (dispatchPageFault state plan report words trusted).state.contexts =
+        state.contexts ∧
+      (dispatchPageFault state plan report words trusted).state.translations =
+        state.translations := by
+  simp only [dispatchPageFault] at hfatal ⊢
+  split at hfatal <;> try simp_all [halt, reject]
+  split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals split at hfatal <;> try simp_all [halt, reject]
+  all_goals exact fatal_atomicity state _ reason hfatal
+
+/-- Stale nonfatal bindings reject before cleanup and retain the exact input
+state. -/
+theorem dispatchPageFault_rejected_unchanged state plan report words trusted reason
+    (hrejected : (dispatchPageFault state plan report words trusted).action =
+      .rejected reason) :
+    (dispatchPageFault state plan report words trusted).state = state := by
+  simp only [dispatchPageFault] at hrejected ⊢
+  split at hrejected <;> try simp_all [halt, reject]
+  split at hrejected <;> try simp_all [halt, reject]
+  all_goals split at hrejected <;> try simp_all [halt, reject]
+  all_goals split at hrejected <;> try simp_all [halt, reject]
+  all_goals split at hrejected <;> try simp_all [halt, reject]
+  all_goals split at hrejected <;> try simp_all [halt, reject]
+  all_goals split at hrejected <;> try simp_all [halt, reject]
+  all_goals split at hrejected <;> try simp_all [halt, reject]
+  all_goals exact rejected_unchanged state _ reason hrejected
+
+/-- The stronger page-fault gate preserves the complete resumable-preemption
+invariant for every nonfatal result and for every fatal latch update. -/
+theorem dispatchPageFault_preserves_wellFormed state plan report words trusted
+    (hstate : ResumablePreemption.WellFormed state) :
+    ResumablePreemption.WellFormed
+      (dispatchPageFault state plan report words trusted).state := by
+  simp only [dispatchPageFault]
+  split <;> try simpa [halt, ResumablePreemption.wellFormed_set_halted] using hstate
+  split <;> try simpa [halt, ResumablePreemption.wellFormed_set_halted] using hstate
+  all_goals split <;> try simpa [halt, reject,
+    ResumablePreemption.wellFormed_set_halted] using hstate
+  all_goals split <;> try simpa [halt, reject,
+    ResumablePreemption.wellFormed_set_halted] using hstate
+  all_goals split <;> try simpa [halt, reject,
+    ResumablePreemption.wellFormed_set_halted] using hstate
+  all_goals split <;> try simpa [halt, reject,
+    ResumablePreemption.wellFormed_set_halted] using hstate
+  all_goals split <;> try simpa [halt, reject,
+    ResumablePreemption.wellFormed_set_halted] using hstate
+  all_goals split <;> try simpa [halt, reject,
+    ResumablePreemption.wellFormed_set_halted] using hstate
+  all_goals exact dispatch_preserves_wellFormed _ _ hstate
 
 end LeanOS.FaultDispatch

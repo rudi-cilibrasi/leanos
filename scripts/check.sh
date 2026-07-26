@@ -176,6 +176,39 @@ for fixture in PageFaultDroppedCR2 PageFaultIgnoredAccessBits \
   fi
 done
 
+for fixture in PageFaultAgreementAcceptEveryPresent \
+    PageFaultAgreementIgnoredWalk PageFaultAgreementReservedContainment \
+    PageFaultAgreementForgedAddressSpace PageFaultAgreementStaleLifecycle \
+    PageFaultAgreementUnissuedObject \
+    PageFaultAgreementCorruptLiveTableContainment; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: page-fault agreement fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
+    echo "error: page-fault agreement fixture ${fixture} lacked its expected semantic diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
+if lake env lean tests/negative/PageFaultAgreementWriteInstructionContainment.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: impossible write/instruction page fault unexpectedly contained" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/PageFaultAgreementWriteInstructionContainment.lean' \
+      "$negative_log" ||
+    ! grep -Fq 'error: Type mismatch' "$negative_log" ||
+    ! grep -Fq 'pageFaultImpossibleWriteInstructionContained = true' "$negative_log" ||
+    ! grep -Fq 'pageFaultImpossibleWriteInstructionContained = false' "$negative_log"; then
+  echo "error: impossible write/instruction fixture lacked its expected fatal diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
 for fixture in StaleTranslationOmittedInvalidation StaleTranslationWrongEffect \
     StaleTranslationForgedTarget; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
