@@ -89,7 +89,13 @@ normalization, `authorize_page_fault_snapshot` constructs the record once as a
 SMEP, and SMAP into it, and invokes the generated provenance adapter. It then
 samples the selected compiled root/report and fault-page leaf and passes those
 independent observations to the allocation-free generated strengthened
-agreement transition. The generated result carries an explicit contain,
+agreement transition. The machine lowering is restricted to its fixed CPL3
+page-zero read probe. Immediately before the transition it executes `invlpg`
+on the recorded fault address; the reviewed interval does not access page
+zero, so a translation refilled after address-space activation cannot satisfy
+the checked lookup-absence input. Present write and NX denial cases remain
+model coverage and are not runtime-lowering claims. The generated result
+carries an explicit contain,
 fatal, kernel-diagnostic, or reject tag; handwritten C only decodes that tag.
 Only a contain tag can call `page_fault_handler`, which receives the same
 record rather than separately selected raw arguments. Kernel-origin

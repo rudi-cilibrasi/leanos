@@ -174,11 +174,6 @@ static uint8_t entry_stack[16384]
     __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
-/* The page-fault lowering claims an empty matching non-global TLB entry only
-   after this boot image has performed and read back a CR3 reload.  With PCID
-   disabled, that reload is the reviewed sufficient condition that evicts the
-   faulting page's non-global translation. */
-static volatile uint64_t page_fault_tlb_flush_cr3;
 
 /* The machine-facing spelling of InterruptEntry's version-one canonical
    page-fault encoding.  Construction is confined to
@@ -710,11 +705,13 @@ static void check_selected_root_a(void) {
 
 __attribute__((noinline, used))
 static void activate_user_address_space(uint64_t *root) {
-    uint64_t observed_cr3;
     __asm__ volatile ("mov %0, %%cr3" : : "r"(root) : "memory");
-    __asm__ volatile ("mov %%cr3, %0" : "=r"(observed_cr3));
-    page_fault_tlb_flush_cr3 =
-        observed_cr3 == (uint64_t)root ? observed_cr3 : 0;
+}
+
+__attribute__((noinline, used))
+static void invalidate_fixed_fault_page(void) {
+    const uint64_t fixed_page_address = 0;
+    __asm__ volatile ("invlpg (%0)" : : "r"(fixed_page_address) : "memory");
 }
 
 static void serial_u64(uint64_t value) {
@@ -2169,9 +2166,19 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
     const uint64_t live_leaf =
         user && pt != 0 && snapshot.fault_page < BOOT_LEAF_COUNT ?
             pt[snapshot.fault_page] & ~(PTE_ACCESSED | PTE_DIRTY) : 0;
-    const uint64_t checked_non_global_tlb_flush =
-        user && page_fault_tlb_flush_cr3 == cr3 &&
-        (cr4 & (1ull << 17)) == 0 && (live_leaf & PTE_GLOBAL) == 0;
+    /* The boot lowering is deliberately limited to its one production
+       containment probe: CPL3 reads linear page zero, which the kernel never
+       accesses between this instruction and the generated transition.  An
+       exact invalidation here establishes absence for snapshot.fault_page
+       even if that translation was refilled after the earlier CR3 reload.
+       Broader present write/NX cases remain modeled but are not claimed by
+       this machine adapter. */
+    const uint64_t fixed_fault_page =
+        user && snapshot.fault_address == 0 && snapshot.fault_page == 0 &&
+        snapshot.error == 5 && snapshot.access == 0 &&
+        snapshot.protection == 1;
+    invalidate_fixed_fault_page();
+    const uint64_t checked_exact_fault_page_invalidation = fixed_fault_page;
     const uint64_t route = leanos_page_fault_dispatch_transition(
         snapshot.version, snapshot.vector, snapshot.error,
         snapshot.fault_address, snapshot.fault_page, snapshot.access,
@@ -2186,7 +2193,7 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
         expected_leaf, live_leaf,
         current_subject == snapshot.current_subject, 1, current_subject,
         active_address_space, active_address_space, active_address_space,
-        0, 0, checked_non_global_tlb_flush, current_subject,
+        0, 0, checked_exact_fault_page_invalidation, current_subject,
         active_address_space,
         saved_context_owner_b, saved_context_owner_b);
     const struct page_fault_transition transition = {

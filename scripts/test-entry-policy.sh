@@ -100,8 +100,18 @@ page_fault_live_leaf_bypass() {
   sed -i '/expected_leaf, live_leaf,/s/expected_leaf, live_leaf/expected_leaf, expected_leaf/' \
     "$tmp/kernel.c"
 }
-page_fault_tlb_flush_bypass() {
-  sed -i '/0, 0, checked_non_global_tlb_flush,/s/checked_non_global_tlb_flush/1/' \
+page_fault_exact_invalidation_bypass() {
+  sed -i '/0, 0, checked_exact_fault_page_invalidation,/s/checked_exact_fault_page_invalidation/1/' \
+    "$tmp/kernel.c"
+}
+page_fault_refilled_after_recorded_reload() {
+  sed -i '/const uint64_t route = leanos_page_fault_dispatch_transition(/i\
+    const uint64_t recorded_reload_cr3 = cr3;\
+    const uint64_t translation_refilled_after_reload = 1;\
+    const uint64_t stale_reload_claim =\
+        recorded_reload_cr3 == cr3 && translation_refilled_after_reload;' \
+    "$tmp/kernel.c"
+  sed -i '/0, 0, checked_exact_fault_page_invalidation,/s/checked_exact_fault_page_invalidation/stale_reload_claim/' \
     "$tmp/kernel.c"
 }
 mutate_page_fault_rip_after_authorization() {
@@ -175,9 +185,12 @@ run_fixture page-fault-fatal-route-to-handler \
 run_fixture page-fault-live-leaf-bypass \
   'vector=14 field=strengthened-agreement-inputs source' \
   page_fault_live_leaf_bypass
-run_fixture page-fault-tlb-flush-bypass \
+run_fixture page-fault-exact-invalidation-bypass \
   'vector=14 field=strengthened-agreement-inputs source' \
-  page_fault_tlb_flush_bypass
+  page_fault_exact_invalidation_bypass
+run_fixture page-fault-refilled-after-recorded-reload \
+  'vector=14 field=strengthened-agreement-inputs source' \
+  page_fault_refilled_after_recorded_reload
 run_fixture page-fault-rip-post-authorization-mutation \
   'vector=14 field=immutable-snapshot source' \
   mutate_page_fault_rip_after_authorization

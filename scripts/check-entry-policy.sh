@@ -17,7 +17,7 @@ for symbol in isr0 isr2 isr3 isr6 isr7 isr13 isr14 isr32 isr80 \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
   authorize_page_fault_snapshot page_fault_handler page_fault_diagnostic_handler \
   leanos_authorize_page_fault_snapshot leanos_page_fault_dispatch_transition \
-  page_fault_provenance_efer_read \
+  page_fault_provenance_efer_read invalidate_fixed_fault_page \
   timer_handler entry_stack boot_stack boot_stack_top \
   normalize_fast_entry_msrs read_fast_entry_msrs check_fast_entry_cpuid; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
@@ -264,6 +264,8 @@ page_fault_adapter_source="$(
 )"
 source_generated="$(grep -n -m1 'leanos_authorize_page_fault_snapshot(' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
+source_invalidation="$(grep -n -m1 'invalidate_fixed_fault_page();' \
+  <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
 source_agreement="$(grep -n -m1 'leanos_page_fault_dispatch_transition(' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
 source_operation="$(grep -n -m1 'page_fault_handler(&transition)' \
@@ -301,17 +303,21 @@ agreement_arguments="$(
     <<<"$page_fault_adapter_source" | tr -d '[:space:]' |
     sed 's/^.*leanos_page/leanos_page/'
 )"
-expected_agreement_arguments='leanos_page_fault_dispatch_transition(snapshot.version,snapshot.vector,snapshot.error,snapshot.fault_address,snapshot.fault_page,snapshot.access,snapshot.protection,snapshot.user,snapshot.current_subject,snapshot.active_address_space,snapshot.active_cr3,snapshot.paging_controls,snapshot.rip,snapshot.saved_cs,snapshot.rflags,snapshot.user_rsp,snapshot.user_ss,snapshot.stack_identity,snapshot.reserved,trusted_subject,active_address_space,cr3,paging_controls,trusted_stack_identity,canonical,active_address_space,(uint64_t)root,active_address_space,(uint64_t)root,report_agrees,expected_leaf,live_leaf,current_subject==snapshot.current_subject,1,current_subject,active_address_space,active_address_space,active_address_space,0,0,checked_non_global_tlb_flush,current_subject,active_address_space,saved_context_owner_b,saved_context_owner_b);'
+expected_agreement_arguments='leanos_page_fault_dispatch_transition(snapshot.version,snapshot.vector,snapshot.error,snapshot.fault_address,snapshot.fault_page,snapshot.access,snapshot.protection,snapshot.user,snapshot.current_subject,snapshot.active_address_space,snapshot.active_cr3,snapshot.paging_controls,snapshot.rip,snapshot.saved_cs,snapshot.rflags,snapshot.user_rsp,snapshot.user_ss,snapshot.stack_identity,snapshot.reserved,trusted_subject,active_address_space,cr3,paging_controls,trusted_stack_identity,canonical,active_address_space,(uint64_t)root,active_address_space,(uint64_t)root,report_agrees,expected_leaf,live_leaf,current_subject==snapshot.current_subject,1,current_subject,active_address_space,active_address_space,active_address_space,0,0,checked_exact_fault_page_invalidation,current_subject,active_address_space,saved_context_owner_b,saved_context_owner_b);'
 [[ "$agreement_arguments" == "$expected_agreement_arguments" ]] || {
   echo "error: vector=14 field=strengthened-agreement-inputs source" >&2; exit 1;
 }
-grep -Fq 'user && page_fault_tlb_flush_cr3 == cr3 &&' \
+grep -Fq 'user && snapshot.fault_address == 0 && snapshot.fault_page == 0 &&' \
     <<<"$page_fault_adapter_source" &&
-  grep -Fq '(cr4 & (1ull << 17)) == 0 && (live_leaf & PTE_GLOBAL) == 0' \
+  grep -Fq 'snapshot.error == 5 && snapshot.access == 0 &&' \
     <<<"$page_fault_adapter_source" &&
-  grep -Fq 'static void activate_user_address_space(uint64_t *root)' \
-    "$kernel_source" || {
-  echo "error: vector=14 field=checked-tlb-flush source" >&2; exit 1;
+  grep -Fq 'snapshot.protection == 1;' <<<"$page_fault_adapter_source" &&
+  grep -Fq 'invalidate_fixed_fault_page();' <<<"$page_fault_adapter_source" &&
+  grep -Fq 'static void invalidate_fixed_fault_page(void)' "$kernel_source" &&
+  grep -Fq '"invlpg (%0)" : : "r"(fixed_page_address) : "memory");' \
+    "$kernel_source" &&
+  ! grep -Fq 'page_fault_tlb_flush_cr3' "$kernel_source" || {
+  echo "error: vector=14 field=exact-fault-page-invalidation source" >&2; exit 1;
 }
 snapshot_mutations="$(
   grep -E 'snapshot\.(version|vector|error|fault_address|fault_page|access|protection|user|current_subject|active_address_space|active_cr3|paging_controls|rip|saved_cs|rflags|user_rsp|user_ss|stack_identity|reserved)[[:space:]]*(\\+\\+|--|[+*/%^|&-]?=)' \
@@ -320,8 +326,10 @@ snapshot_mutations="$(
 if [[ -n "$snapshot_mutations" ]]; then
   echo "error: vector=14 field=immutable-snapshot source" >&2; exit 1
 fi
-[[ -n "$source_generated" && -n "$source_agreement" &&
+[[ -n "$source_generated" && -n "$source_invalidation" && -n "$source_agreement" &&
    -n "$source_operation" && "$source_generated" -lt "$source_agreement" &&
+   "$source_generated" -lt "$source_invalidation" &&
+   "$source_invalidation" -lt "$source_agreement" &&
    "$source_agreement" -lt "$source_operation" ]] || {
   echo "error: vector=14 path=generated-agreement-before-handler source" >&2
   exit 1
@@ -429,12 +437,35 @@ page_fault_adapter_disassembly="$(
 )"
 elf_generated="$(grep -n -m1 'call.*<leanos_authorize_page_fault_snapshot>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
+elf_invalidation="$(grep -n -m1 'call.*<invalidate_fixed_fault_page>' \
+  <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
 elf_agreement="$(grep -n -m1 'call.*<leanos_page_fault_dispatch_transition>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
 elf_operation="$(grep -n -m1 'call.*<page_fault_handler>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
-[[ -n "$elf_generated" && -n "$elf_agreement" && -n "$elf_operation" &&
-   "$elf_generated" -lt "$elf_agreement" &&
+invalidation_start="$(address invalidate_fixed_fault_page)"
+invalidation_stop="$(nm -n "$elf" | awk -v start="${invalidation_start#0x}" '
+  $1 == start { found = 1; next }
+  found && NF >= 3 { print "0x" $1; exit }
+')"
+[[ -n "$invalidation_stop" ]] || {
+  echo "error: vector=14 field=exact-fault-page-invalidation final-elf" >&2
+  exit 1
+}
+elf_invalidation_disassembly="$(
+  objdump -d --no-show-raw-insn \
+    --start-address="$invalidation_start" \
+    --stop-address="$invalidation_stop" "$elf"
+)"
+elf_invalidation_site="$(grep -m1 -E '[[:space:]]invlpg[[:space:]]' \
+  <<<"$elf_invalidation_disassembly")"
+[[ "$elf_invalidation_site" =~ [[:space:]]invlpg[[:space:]]+\(%[[:alnum:]]+\)$ ]] || {
+  echo "error: vector=14 field=exact-fault-page-invalidation final-elf" >&2
+  exit 1
+}
+[[ -n "$elf_generated" && -n "$elf_invalidation" && -n "$elf_agreement" &&
+   -n "$elf_operation" && "$elf_generated" -lt "$elf_invalidation" &&
+   "$elf_invalidation" -lt "$elf_agreement" &&
    "$elf_agreement" -lt "$elf_operation" ]] || {
   echo "error: vector=14 path=generated-agreement-before-handler final-elf" >&2
   exit 1

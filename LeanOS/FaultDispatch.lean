@@ -1746,16 +1746,17 @@ The interrupt-time adapter cannot allocate the `List`-backed runtime, plan,
 and decoded-root values consumed by `dispatchPageFault`.  This fixed-width
 lowering retains the same decision order for the boot image: exact canonical
 authorization, kernel-origin fatal classification, current/address-space
-agreement, plan/live-root agreement, a checked non-global CR3-flush
+agreement, plan/live-root agreement, a checked exact page-zero invalidation
 precondition, error-versus-walk agreement, and finally the existing typed
 cleanup/survivor transition.
 
 The live report and mapping booleans are independently computed by the trusted
 machine adapter from the generated boot plan and the selected root.  Because
 hardware does not expose TLB contents, the fixed boot adapter soundly narrows
-the rich model's lookup-absence check: it admits only a non-global fault leaf
-after a read-back-checked CR3 reload with PCID disabled.  They are inputs
-rather than claims recovered from the canonical record.  A successful
+the rich model's lookup-absence check to its page-zero CPL3 read probe and
+invalidates that exact page immediately before this transition.  Page zero is
+not accessed in between.  This checked boundary is an input rather than a
+claim recovered from the canonical record.  A successful
 word carries the existing `faultDispatchDemo` containment result.  The most
 significant byte is the generated route tag: `1` contain, `2` fatal, `3`
 kernel diagnostic, or `4` state-preserving rejection.  The low 56 bits carry
@@ -1771,7 +1772,7 @@ def pageFaultDispatchTransition
       canonicalAuthorization planSpace planRootCr3 reportSpace reportRootCr3
       liveRootReportValid expectedLeaf liveLeaf liveSubject runnable
       lifecycleCurrent addressOwner translationsActive virtualOwner
-      virtualMappingObject lifecycleMappingObject checkedNonGlobalTlbFlush
+      virtualMappingObject lifecycleMappingObject checkedExactFaultPageInvalidation
       current active ready contextOwner : UInt64) : UInt64 :=
   let errorUser := if errorWord / 4 % 2 = 1 then 1 else 0
   let errorProtection := if errorWord % 2 = 1 then 1 else 0
@@ -1812,7 +1813,7 @@ def pageFaultDispatchTransition
       translationsActive != activeAddressSpace ||
       virtualOwner != activeAddressSpace ||
       virtualMappingObject != 0 || lifecycleMappingObject != 0 ||
-      checkedNonGlobalTlbFlush != 1 ||
+      checkedExactFaultPageInvalidation != 1 ||
       controlsCode != 15 then
     0x0200000000000003
   else
@@ -1841,7 +1842,7 @@ def pageFaultDispatchTransitionExport
       canonicalAuthorization planSpace planRootCr3 reportSpace reportRootCr3
       liveRootReportValid expectedLeaf liveLeaf liveSubject runnable
       lifecycleCurrent addressOwner translationsActive virtualOwner
-      virtualMappingObject lifecycleMappingObject checkedNonGlobalTlbFlush
+      virtualMappingObject lifecycleMappingObject checkedExactFaultPageInvalidation
       current active ready contextOwner : UInt64) : UInt64 :=
   pageFaultDispatchTransition version vector errorWord faultAddress faultPage
     accessCode protectionCode privilegeCode currentSubject activeAddressSpace
@@ -1850,7 +1851,7 @@ def pageFaultDispatchTransitionExport
     trustedStackIdentity canonicalAuthorization planSpace planRootCr3 reportSpace
     reportRootCr3 liveRootReportValid expectedLeaf liveLeaf liveSubject runnable
     lifecycleCurrent addressOwner translationsActive virtualOwner
-    virtualMappingObject lifecycleMappingObject checkedNonGlobalTlbFlush
+    virtualMappingObject lifecycleMappingObject checkedExactFaultPageInvalidation
     current active ready contextOwner
 
 theorem page_fault_dispatch_transition_contained_nonvacuous :
