@@ -343,6 +343,79 @@ def sixtyFiveTagInput : Input :=
 def sixtyFiveTagScalar : ScalarState :=
   scalarReplay sixtyFiveTagChunks (scalarInitial sixtyFiveTagBytes.length 1)
 
+/-- Raw malformed handoffs shared byte-for-byte by the rich decoder and the
+allocation-free scalar production decoder. -/
+def malformedTagSizeBytes : List UInt8 :=
+  information (u32 42 ++ u32 4)
+
+def duplicateMapBytes : List UInt8 :=
+  information (memoryMapTag [] ++ memoryMapTag [])
+
+def badMapLayoutBytes : List UInt8 :=
+  information (memoryMapTag [] (entrySize := 32) ++ endTag)
+
+def zeroLengthEntryBytes : List UInt8 :=
+  information (memoryMapTag [entry 0 0 1] ++ endTag)
+
+def reservedEntryWordBytes : List UInt8 :=
+  information (memoryMapTag [entry 0 0x1000 1 1] ++ endTag)
+
+def overflowingEntryBytes : List UInt8 :=
+  information (memoryMapTag [entry (wordLimit - 1) 2 1] ++ endTag)
+
+def missingMapBytes : List UInt8 :=
+  information endTag
+
+def missingEndBytes : List UInt8 :=
+  information (tag 42 [])
+
+def rawInput (bytes : List UInt8) : Input :=
+  { magic := multiboot2Magic, infoAddress := identity.toNat, bytes }
+
+def scalarFor (bytes : List UInt8) : ScalarState :=
+  scalarReplay (chunked bytes) (scalarInitial bytes.length 1)
+
+def richRunFor (bytes : List UInt8) : Except Error Authority :=
+  run (UInt64.ofNat multiboot2Magic) identity bytes.length (chunked bytes)
+    BootReservation.twoSidedManifest 7
+
+/-- Each broader malformed raw fixture has an exact typed diagnostic on both
+the rich transition and the generated scalar production decoder.  The scalar
+codes intentionally coarsen layout, entry, and normalization failures, but
+never accept or expose candidate authority for a rich rejection. -/
+theorem malformedRawCorpus_scalar_rich_exactDiagnostics :
+    BootMemoryMapDecoder.Fixtures.errorOf
+        (BootMemoryMapDecoder.decode (rawInput malformedTagSizeBytes)) =
+        some .malformedTagSize ∧
+      (scalarFor malformedTagSizeBytes).word[2]! = badTag ∧
+      BootMemoryMapDecoder.Fixtures.errorOf
+        (BootMemoryMapDecoder.decode (rawInput duplicateMapBytes)) =
+        some .duplicateMemoryMap ∧
+      (scalarFor duplicateMapBytes).word[2]! = duplicateMap ∧
+      BootMemoryMapDecoder.Fixtures.errorOf
+        (BootMemoryMapDecoder.decode (rawInput badMapLayoutBytes)) =
+        some .badEntrySize ∧
+      (scalarFor badMapLayoutBytes).word[2]! = badMapLayout ∧
+      errorOf (richRunFor zeroLengthEntryBytes) =
+        some (.reservation .normalizationInvariant) ∧
+      (scalarFor zeroLengthEntryBytes).word[2]! = badEntry ∧
+      BootMemoryMapDecoder.Fixtures.errorOf
+        (BootMemoryMapDecoder.decode (rawInput reservedEntryWordBytes)) =
+        some .nonzeroEntryReserved ∧
+      (scalarFor reservedEntryWordBytes).word[2]! = badEntry ∧
+      errorOf (richRunFor overflowingEntryBytes) =
+        some (.reservation .normalizationInvariant) ∧
+      (scalarFor overflowingEntryBytes).word[2]! = badEntry ∧
+      BootMemoryMapDecoder.Fixtures.errorOf
+        (BootMemoryMapDecoder.decode (rawInput missingMapBytes)) =
+        some .missingMemoryMap ∧
+      (scalarFor missingMapBytes).word[2]! = missingMap ∧
+      BootMemoryMapDecoder.Fixtures.errorOf
+        (BootMemoryMapDecoder.decode (rawInput missingEndBytes)) =
+        some .missingEndTag ∧
+      (scalarFor missingEndBytes).word[2]! = missingEnd := by
+  native_decide
+
 /-- The reviewed 65-tag counterexample is one exact immutable byte sequence on
 both sides of the comparison.  The rich stream pipeline reconstructs those
 bytes before rejecting at its decoder bound, and scalar ABI v4 rejects the
