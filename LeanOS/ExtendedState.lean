@@ -320,9 +320,10 @@ theorem compositeGate_published_requires_denial state operation result
 
 theorem accepted_composite_user_return_requires_denial state request
     (haccepted : (compositeGate state (.userReturn request)).result =
-      .published .accepted) :
+      .published (.completed (.userReturn .accepted))) :
     CompositePolicyInvariant state := by
-  exact compositeGate_published_requires_denial state (.userReturn request) .accepted haccepted
+  exact compositeGate_published_requires_denial state (.userReturn request)
+    (.completed (.userReturn .accepted)) haccepted
 
 /-- Once established, the global policy predicate is invariant under every
 modeled composite operation; the wrapper changes only the composite projection

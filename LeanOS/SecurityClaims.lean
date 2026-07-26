@@ -137,6 +137,32 @@ theorem dma_quarantine_q35_trace_nonvacuous :
       DMAQuarantine.QuarantineTrace middle DMAQuarantine.q35Runtime :=
   DMAQuarantine.q35_mixed_trace_nonvacuous
 
+/-- SC-DMA-QUARANTINE-GLOBAL: the sole composite runtime invariant contains
+the exact boot-accepted PCI control observation, and every finite ordinary
+composite suffix preserves that nonempty deny-all quarantine. -/
+theorem dma_quarantine_global_runtime_preservation
+    (state : FailStop.CompositeState) (operations : List FailStop.Operation)
+    (hinvariant : FailStop.RuntimeWellFormed state) :
+    let next := FailStop.runOperations state operations
+    next.DMAQuarantined ∧
+      DMAQuarantine.quarantine next.dmaObserved = true := by
+  exact FailStop.runOperations_preserves_dmaQuarantined
+    state operations hinvariant.dmaQuarantined
+
+/-- SC-DMA-CONTROL-FAILSTOP: an invalid live PCI observation is a fatal
+composite transition, and every subsequent ordinary operation is absorbed. -/
+theorem dma_invalid_live_control_is_fatal_and_absorbing
+    (state : FailStop.CompositeState) (snapshot : DMAQuarantine.Snapshot)
+    (reason : DMAQuarantine.RejectReason) (operations : List FailStop.Operation)
+    (hrunning : state.execution.mode = .running)
+    (hinvalid : DMAQuarantine.validate snapshot = .rejected reason) :
+    let next := (FailStop.observeDMAControl state snapshot).state
+    (∃ record, next.execution.mode = .halted record) ∧
+      FailStop.runOperations next operations = next := by
+  have h := FailStop.observeDMAControl_invalid_suffix_absorbing
+    state snapshot reason operations hrunning hinvalid
+  exact ⟨⟨_, h.1⟩, h.2⟩
+
 /-- SC-LIFETIME-IDENTITY-NO-REUSE: under the bounded-issuer runtime invariant,
 every finite sequence of composite lifecycle operations preserves
 counter/history agreement, can never make a retired object identity or a
@@ -255,6 +281,1064 @@ theorem failstop_halted_suffix_absorbing state record proposals
     (hmode : state.execution.mode = .halted record) :
     FailStop.runOperations state proposals = state := by
   exact FailStop.halted_suffix_absorbing state record proposals hmode
+
+/-- SC-COMPOSITE-AUTHORITATIVE-COMPATIBLE-GATE: the successor gate embeds both
+ordinary and blocking operation families under one latch and typed reply.
+The complete blocking/deferred invariant supplies structural readiness.
+Preservation remains explicitly conditional on caller-supplied dormant-store
+and operation-local compatibility facts; classified denial is atomic, and
+fatal mode absorbs arbitrary mixed suffixes. -/
+theorem composite_authoritative_compatible_gate_contract state operation
+    (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
+    (hcompatible : FailStop.AuthoritativeOperationCompatible state operation) :
+    FailStop.AuthoritativeRuntimeWellFormed
+        (FailStop.authoritativeGate state operation).state ∧
+      FailStop.AuthoritativeOperationReady state operation ∧
+      (∀ reply,
+        (FailStop.authoritativeGate state operation).result = .completed reply →
+        (state.execution.mode = .running ∨
+          ∃ raw context, operation = .ordinary (.nmi raw context)) ∧
+          reply = FailStop.authoritativeOperationReply state operation ∧
+          (FailStop.authoritativeGate state operation).state =
+            FailStop.applyAuthoritativeOperation state operation) ∧
+      (∀ _rejection : FailStop.AuthoritativeGateRejection
+          (FailStop.authoritativeGate state operation).result,
+        (FailStop.authoritativeGate state operation).state = state) ∧
+      (∀ blocking,
+        operation = .blocking blocking →
+        FailStop.BlockingRuntimeWellFormed
+          (FailStop.authoritativeGate state operation).state) ∧
+      (∀ record suffix,
+        state.execution.mode = .halted record →
+        FailStop.runAuthoritativeOperations state suffix = state) := by
+  refine ⟨FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
+      state operation hstate hcompatible, hstate.operationReady operation,
+      ?_, ?_, ?_, ?_⟩
+  · intro reply hcompleted
+    exact FailStop.authoritativeGate_completed_sound state operation reply hcompleted
+  · intro _rejection
+    exact FailStop.authoritativeGate_rejection_atomic state operation _rejection
+  · intro blocking hoperation
+    subst operation
+    exact (FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
+      state (.blocking blocking) hstate hcompatible).blocking
+  · intro record suffix hmode
+    exact FailStop.authoritative_halted_suffix_absorbing state record suffix hmode
+
+/-- Compatibility-certified finite mixtures of ordinary and blocking
+operations preserve the complete folded global invariant.  This supporting
+theorem does not claim that the certificate follows from the pre-invariant. -/
+theorem composite_authoritative_compatible_mixed_trace_preserves_runtimeWellFormed
+    state operations (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
+    (hcompatible : FailStop.AuthoritativeTraceCompatible state operations) :
+    FailStop.AuthoritativeRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state operations) := by
+  exact FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state operations hstate hcompatible
+
+/-- Mapping changes retain the complete authoritative-gate
+blocking precondition, so either raw mapping mutation can be followed directly
+by an arbitrary block, wake, or cancellation in the successor gate. -/
+theorem composite_authoritative_mapping_then_blocking_preserves_runtimeWellFormed
+    state slot page permissions blocking
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state
+            (.ordinary (.map slot page permissions))).state
+          (.blocking blocking)).state ∧
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state
+            (.ordinary (.unmap page))).state
+          (.blocking blocking)).state := by
+  constructor
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state (.map slot page permissions) blocking
+      (.map slot page permissions) hstate
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state (.unmap page) blocking (.unmap page) hstate
+
+/-- Every attacker-controlled syscall tuple preserves the complete blocking
+precondition, including accepted handle-based mapping, TLB-invalidating
+unmapping, access checks, and all decoder or subsystem denials.  Any syscall
+can therefore be followed immediately by an arbitrary authoritative blocking
+operation without a reconstructed readiness witness. -/
+theorem composite_authoritative_syscall_then_blocking_preserves_runtimeWellFormed
+    state call blocking (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state (.ordinary (.syscall call))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.syscall call) blocking (.syscall call) hstate
+
+/-- Every sealed capability-transfer offer retains the complete blocking
+precondition.  The pending descendant and tagged mailbox can therefore be
+published before an arbitrary block, wake, or cancellation without a separate
+readiness reconstruction. -/
+theorem composite_authoritative_transferOffer_then_blocking_preserves_runtimeWellFormed
+    state endpointWord sourceWord sourceKind payload rights blocking
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.transferOffer endpointWord sourceWord sourceKind payload rights))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.transferOffer endpointWord sourceWord sourceKind payload rights) blocking
+      (.transferOffer endpointWord sourceWord sourceKind payload rights) hstate
+
+/-- Every sealed capability-transfer receipt retains the complete blocking
+precondition. Filling the checked-empty destination slot and consuming the
+sealed mailbox can therefore be followed immediately by an arbitrary block,
+wake, or cancellation without a separate readiness reconstruction. -/
+theorem composite_authoritative_transferAccept_then_blocking_preserves_runtimeWellFormed
+    state endpointWord destinationSlot blocking
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.transferAccept endpointWord destinationSlot))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.transferAccept endpointWord destinationSlot) blocking
+      (.transferAccept endpointWord destinationSlot) hstate
+
+/-- Capability delegation is monotonic for every authority held by an indexed
+waiter.  Accepted empty-slot installation and every typed denial can therefore
+be followed immediately by an arbitrary authoritative blocking operation. -/
+theorem composite_authoritative_capabilityCopy_then_blocking_preserves_runtimeWellFormed
+    state source destination destinationSlot rights blocking
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.capabilityCopy source destination destinationSlot rights))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.capabilityCopy source destination destinationSlot rights) blocking
+      (.capabilityCopy source destination destinationSlot rights) hstate
+
+/-- Composite-safe direct and transitive revocation fail closed before
+removing receive authority used by an indexed waiter.  Every accepted
+revocation and every typed denial can therefore be followed immediately by an
+arbitrary authoritative blocking operation. -/
+theorem composite_authoritative_capabilityRevoke_then_blocking_preserves_runtimeWellFormed
+    state authoritySlot victim victimSlot blocking
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state
+            (.ordinary (.capabilityRevoke authoritySlot victim victimSlot))).state
+          (.blocking blocking)).state ∧
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state
+            (.ordinary (.capabilityRevokeSubtree authoritySlot victim victimSlot))).state
+          (.blocking blocking)).state := by
+  constructor
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state (.capabilityRevoke authoritySlot victim victimSlot) blocking
+        (.capabilityRevoke authoritySlot victim victimSlot) hstate
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state (.capabilityRevokeSubtree authoritySlot victim victimSlot) blocking
+        (.capabilityRevokeSubtree authoritySlot victim victimSlot) hstate
+
+/-- Fresh subject creation is monotonic for every lifecycle fact observed by
+an indexed waiter.  Accepted identity publication and every typed denial can
+therefore be followed immediately by an arbitrary authoritative blocking
+operation. -/
+theorem composite_authoritative_createSubject_then_blocking_preserves_runtimeWellFormed
+    state subject blocking (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.createSubject subject))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.createSubject subject) blocking (.createSubject subject) hstate
+
+/-- Context-staged scheduler admission appends a runnable identity, which
+cannot alias any non-runnable indexed waiter.  Every accepted admission and
+typed denial can therefore precede an arbitrary authoritative blocking
+operation without a reconstructed readiness witness. -/
+theorem composite_authoritative_schedulerAdmission_then_blocking_preserves_runtimeWellFormed
+    state subject blocking (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.scheduleAdd subject))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.scheduleAdd subject) blocking (.scheduleAdd subject) hstate
+
+/-- Raw scheduler selection without a kernel-owned save/restore payload is a
+blocking-state-neutral typed boundary.  Empty dispatch and every forced
+missing-context denial can therefore be followed immediately by an arbitrary
+authoritative blocking operation without a reconstructed readiness witness. -/
+theorem composite_authoritative_raw_scheduler_then_blocking_preserves_runtimeWellFormed
+    state blocking (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state (.ordinary .scheduleNext)).state
+          (.blocking blocking)).state ∧
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state (.ordinary .scheduleYield)).state
+          (.blocking blocking)).state ∧
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state (.ordinary .scheduleTick)).state
+          (.blocking blocking)).state := by
+  constructor
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state .scheduleNext blocking (.neutral .scheduleNext) hstate
+  constructor
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state .scheduleYield blocking (.neutral .scheduleYield) hstate
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state .scheduleTick blocking (.neutral .scheduleTick) hstate
+
+/-- Resumable preemption preserves the complete blocking precondition for
+every successful restore, typed denial, fatal entry, and outer-latch result.
+Any such result can therefore be followed immediately by an arbitrary block,
+wake, or cancellation without reconstructing readiness. -/
+theorem composite_authoritative_resumePreempt_then_blocking_preserves_runtimeWellFormed
+    state frame registers blocking (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.resumePreempt frame registers))).state
+        (.blocking blocking)).state := by
+  exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+    state (.resumePreempt frame registers) blocking (.resumePreempt frame registers) hstate
+
+/-- Every inbound interrupt outcome that does not retire a contained user
+subject retains the complete blocking precondition.  Timer/syscall entry,
+typed entry rejection, fatal latching, and outer-latch absorption can therefore
+be followed immediately by an arbitrary block, wake, or cancellation. -/
+theorem composite_authoritative_noncontained_interrupt_then_blocking_preserves_runtimeWellFormed
+    state frame blocking
+    (hnoncontained : ∀ subject,
+      (FailStop.dispatchHardware state.execution frame).action ≠ .contained subject)
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.authoritativeGate
+        (FailStop.authoritativeGate state
+          (.ordinary (.interrupt frame))).state
+        (.blocking blocking)).state := by
+  apply FailStop.authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
+  rw [FailStop.authoritativeGate_ordinary_state]
+  exact FailStop.gate_interrupt_noncontained_preserves_blockingRuntimeWellFormed
+    state frame hnoncontained hstate
+
+/-- The successor contract has a reachable classified rejection at the
+boot-produced empty waiter store, rather than being discharged vacuously. -/
+theorem composite_authoritative_gate_rejection_reachable_witness plan :
+    FailStop.AuthoritativeGateRejection
+        (FailStop.authoritativeGate (FailStop.bootRuntime plan)
+          (.blocking (.cancel 1))).result ∧
+      (FailStop.authoritativeGate (FailStop.bootRuntime plan)
+        (.blocking (.cancel 1))).state = FailStop.bootRuntime plan := by
+  exact FailStop.authoritativeGate_rejection_reachable_witness plan
+
+/-- SC-COMPOSITE-GATE-WF: the sealed-mailbox rejection path of the public
+composite gate preserves the complete runtime invariant and exposes the typed
+reason that callers must use capability-transfer acceptance instead.  This is
+the first operation-specific preservation slice of the global gate contract. -/
+theorem composite_gate_sealed_receive_preserves_runtimeWellFormed
+    state handleWord endpoint transfer
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hresolve : CapabilityHandle.resolveCurrent state.transfers.capabilities
+      { caller := state.execution.core.context.currentSubject }
+      handleWord .endpoint = .ok endpoint)
+    (hpending : state.transfers.pending endpoint.capability.object = some transfer) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.ipc (.receive handleWord))).state ∧
+      (FailStop.gate state (.ipc (.receive handleWord))).result =
+        .completed (.ipc .sealedTransferPending) := by
+  exact FailStop.gate_sealed_receive_preserves_runtimeWellFormed state handleWord
+    endpoint transfer hstate hmode hresolve hpending
+
+/-- SC-COMPOSITE-GATE-SEND-WF: the accepted data-send mutation preserves the
+complete runtime invariant while publishing one exact typed success. -/
+theorem composite_gate_data_send_preserves_runtimeWellFormed
+    state handleWord word0 word1
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hsent : (FailStop.operationReply state
+      (.ipc (.send handleWord word0 word1))) = .ipc (.syscall .sent)) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.ipc (.send handleWord word0 word1))).state ∧
+      (FailStop.gate state (.ipc (.send handleWord word0 word1))).result =
+        .completed (.ipc (.syscall .sent)) := by
+  apply FailStop.gate_ipc_send_accepted_preserves_runtimeWellFormed
+    state handleWord word0 word1 hstate hmode
+  simpa [FailStop.operationReply] using hsent
+
+/-- SC-COMPOSITE-GATE-RECEIVE-WF: accepted data receipt preserves the complete
+runtime invariant and exposes the exact sender and payload selected by the
+kernel-confined endpoint transition. -/
+theorem composite_gate_data_receive_preserves_runtimeWellFormed
+    state handleWord sender word0 word1
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (hdelivered : FailStop.operationReply state (.ipc (.receive handleWord)) =
+      .ipc (.syscall (.delivered sender word0 word1))) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.ipc (.receive handleWord))).state ∧
+      (FailStop.gate state (.ipc (.receive handleWord))).result =
+        .completed (.ipc (.syscall (.delivered sender word0 word1))) := by
+  apply FailStop.gate_ipc_receive_accepted_preserves_runtimeWellFormed
+    state handleWord sender word0 word1 hstate hmode
+  simpa [FailStop.operationReply] using hdelivered
+
+/-- Every typed block, wake, cancellation,
+ordinary rejection, and execution-latch rejection preserves the exact
+waiter/saved-context agreement.  Successful wake and cancellation additionally
+pass through the checked resumable-bank restoration boundary. -/
+theorem composite_blocking_gate_preserves_contextWellFormed state operation
+    (hstate : FailStop.BlockingReceiveWellFormed state) :
+    FailStop.BlockingReceiveWellFormed
+      (FailStop.blockingGate state operation).state ∧
+    (FailStop.CompositeBlockingGateRejection
+        (FailStop.blockingGate state operation).result →
+      (FailStop.blockingGate state operation).state = state) ∧
+    (∀ reply, (FailStop.blockingGate state operation).result = .completed reply →
+      state.execution.mode = .running ∧
+        reply = FailStop.blockingOperationReply state operation ∧
+        (FailStop.blockingGate state operation).state =
+          FailStop.applyBlockingOperation state operation) ∧
+    (∀ handleWord frame registers envelope,
+      FailStop.BlockingRuntimeWellFormed state →
+      (FailStop.blockingGate state (.receive handleWord frame registers)).result =
+        .completed (.receive (.delivered envelope)) →
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.blockingGate state (.receive handleWord frame registers)).state) ∧
+    (∀ handleWord frame registers,
+      FailStop.BlockingRuntimeWellFormed state →
+      (FailStop.blockingGate state (.receive handleWord frame registers)).result =
+        .completed (.receive .blocked) →
+      (FailStop.blockingGate state
+        (.receive handleWord frame registers)).state.scheduler.lifecycle.current = none →
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.blockingGate state (.receive handleWord frame registers)).state) ∧
+    (∀ handleWord frame registers selected,
+      FailStop.BlockingRuntimeWellFormed state →
+      (FailStop.blockingGate state (.receive handleWord frame registers)).result =
+        .completed (.receive .blocked) →
+      (FailStop.blockingGate state
+        (.receive handleWord frame registers)).state.scheduler.lifecycle.current =
+          some selected →
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.blockingGate state (.receive handleWord frame registers)).state) ∧
+    (∀ handleWord frame registers,
+      FailStop.BlockingRuntimeWellFormed state →
+      (FailStop.blockingGate state (.receive handleWord frame registers)).result =
+        .completed (.receive .blocked) →
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.blockingGate state (.receive handleWord frame registers)).state) ∧
+    (∀ handleWord word0 word1,
+      FailStop.RuntimeWellFormed state →
+      (FailStop.blockingGate state (.send handleWord word0 word1)).result =
+        .completed (.send .sent) →
+      FailStop.RuntimeWellFormed
+        (FailStop.blockingGate state (.send handleWord word0 word1)).state) ∧
+    (∀ handleWord word0 word1 saved,
+      FailStop.BlockingRuntimeWellFormed state →
+      (FailStop.blockingGate state (.send handleWord word0 word1)).result =
+        .completed (.send (.woke saved)) →
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.blockingGate state (.send handleWord word0 word1)).state) ∧
+    (∀ handleWord word0 word1 saved,
+      (FailStop.blockingGate state (.send handleWord word0 word1)).result =
+        .completed (.send (.woke saved)) →
+      ResumablePreemption.validContext
+        (FailStop.blockingGate state (.send handleWord word0 word1)).state.resumable saved) ∧
+    (∀ subject saved,
+      FailStop.BlockingRuntimeWellFormed state →
+      (FailStop.blockingGate state (.cancel subject)).result =
+        .completed (.cancel (.cancelled saved)) →
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.blockingGate state (.cancel subject)).state) ∧
+    (∀ subject saved,
+      (FailStop.blockingGate state (.cancel subject)).result =
+        .completed (.cancel (.cancelled saved)) →
+      ResumablePreemption.validContext
+        (FailStop.blockingGate state (.cancel subject)).state.resumable saved) := by
+  exact ⟨FailStop.blockingGate_preserves_wellFormed state operation hstate,
+    FailStop.blockingGate_rejection_atomic state operation,
+    FailStop.blockingGate_completed_sound state operation,
+    fun handleWord frame registers envelope hglobal hcompleted =>
+      FailStop.blockingGate_receive_delivered_preserves_blockingRuntimeWellFormed
+        state handleWord frame registers envelope hglobal hcompleted,
+    fun handleWord frame registers hglobal hcompleted hidle =>
+      FailStop.blockingGate_receive_idle_block_preserves_blockingRuntimeWellFormed
+        state handleWord frame registers hglobal hcompleted hidle,
+    fun handleWord frame registers selected hglobal hcompleted hselected =>
+      FailStop.blockingGate_receive_selected_block_preserves_blockingRuntimeWellFormed
+        state handleWord frame registers selected hglobal hcompleted hselected,
+    fun handleWord frame registers hglobal hcompleted =>
+      FailStop.blockingGate_receive_blocked_preserves_blockingRuntimeWellFormed
+        state handleWord frame registers hglobal hcompleted,
+    fun handleWord word0 word1 hglobal hcompleted =>
+      FailStop.blockingGate_send_sent_preserves_runtimeWellFormed
+        state handleWord word0 word1 hglobal hcompleted,
+    fun handleWord word0 word1 saved hglobal hcompleted =>
+      FailStop.blockingGate_send_woke_preserves_blockingRuntimeWellFormed
+        state handleWord word0 word1 saved hglobal hcompleted,
+    fun handleWord word0 word1 saved hcompleted =>
+      FailStop.blockingGate_send_woke_context_valid
+        state handleWord word0 word1 saved hcompleted,
+    fun subject saved hglobal hcompleted =>
+      FailStop.blockingGate_cancel_cancelled_preserves_blockingRuntimeWellFormed
+        state subject saved hglobal hcompleted,
+    fun subject saved hcompleted =>
+      FailStop.blockingGate_cancel_cancelled_context_valid
+        state subject saved hcompleted⟩
+
+/-- SC-COMPOSITE-BLOCKING-CONTEXT-WF: the complete typed blocking gate preserves the integrated global runtime
+and authoritative waiter/context invariant without requiring the caller to
+classify its result.  This supports SC-COMPOSITE-BLOCKING-CONTEXT-WF. -/
+theorem composite_blocking_gate_preserves_blockingRuntimeWellFormed state operation
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.blockingGate state operation).state := by
+  exact FailStop.blockingGate_preserves_blockingRuntimeWellFormed
+    state operation hstate
+
+/-- Supporting contained-cleanup theorem: contained entry cleanup keeps the
+published scheduler/lifecycle views synchronized and preserves exact waiter /
+saved-context agreement while invalidated peers move to typed deferred
+cancellation state. -/
+theorem composite_contained_fault_cleanup_preserves_context_boundary
+    state frame subject
+    (hcontained :
+      (FailStop.dispatchHardware state.execution frame).action = .contained subject)
+    (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
+    let next := FailStop.applyOperation state (.interrupt frame)
+    BlockingIPCContext.ContextAgreement next.blockingIPCContext ∧
+      next.scheduler.lifecycle = next.execution.core.lifecycle ∧
+      next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
+  exact ⟨FailStop.interrupt_contained_preserves_contextAgreement
+      state frame subject hcontained hstate,
+    FailStop.interrupt_contained_synchronizes_lifecycle
+      state frame subject hcontained⟩
+
+/-- Supporting contained-cleanup theorem: the faulting identity is retired
+from every published lifecycle view and from every scheduler, resumable,
+waiter, and blocked-context projection in the same composite operation. -/
+theorem composite_contained_fault_cleanup_removes_faulting_subject
+    state frame subject
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hcurrent : state.lifecycle.current = some subject)
+    (hcontained :
+      (FailStop.dispatchHardware state.execution frame).action = .contained subject) :
+    let next := FailStop.applyOperation state (.interrupt frame)
+    next.lifecycle.capabilities.subjects subject = false ∧
+      next.execution.core.lifecycle.capabilities.subjects subject = false ∧
+      next.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      next.preemption.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      next.resumable.scheduler.lifecycle.capabilities.subjects subject = false ∧
+      subject ∉ next.scheduler.ready ∧
+      next.scheduler.lifecycle.current ≠ some subject ∧
+      ResumablePreemption.contextFor next.resumable.contexts subject = none ∧
+      next.blockingIPC.waiterEndpoint subject = none ∧
+      next.blockingContexts subject = none := by
+  exact FailStop.interrupt_contained_cleans_faulting_subject
+    state frame subject hstate hcurrent hcontained
+
+/-- The contained-entry identity binding also excludes the faulting identity
+from the deferred bank in the cleanup post-state. -/
+theorem composite_contained_fault_cleanup_clears_faulting_deferred
+    state frame subject
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state)
+    (hbound : FailStop.ContainedFaultIdentityBound state)
+    (hcontained :
+      (FailStop.dispatchHardware state.execution frame).action = .contained subject) :
+    (FailStop.applyOperation state (.interrupt frame)).deferredCancels.retained subject = none := by
+  exact FailStop.interrupt_contained_clears_faulting_deferred
+    state frame subject hstate hbound hcontained
+
+/-- Every typed deferred-drain denial is globally atomic, including ready-queue
+and resumable-bank exhaustion.  This supports
+SC-COMPOSITE-CONTAINED-FAULT-CLEANUP. -/
+theorem composite_deferred_cancel_drain_rejection_atomic state subject reason
+    (hrejected : (FailStop.drainDeferredCancellation state subject).result =
+      .rejected reason) :
+    (FailStop.drainDeferredCancellation state subject).state = state := by
+  exact FailStop.drainDeferredCancellation_rejected_unchanged
+    state subject reason hrejected
+
+/-- A successful drain reserves both finite banks and publishes the exact
+retained context through synchronized composite scheduler projections.  This
+supports SC-COMPOSITE-CONTAINED-FAULT-CLEANUP. -/
+theorem composite_deferred_cancel_drain_success_boundary state subject saved
+    (hcoherent : state.BlockingIPCCoherent)
+    (hdrained : (FailStop.drainDeferredCancellation state subject).result =
+      .drained saved) :
+    let next := (FailStop.drainDeferredCancellation state subject).state
+    state.deferredCancels.retained subject = some saved ∧
+      next.deferredCancels.retained subject = none ∧
+      next.blockingIPC.completion subject = some .cancelled ∧
+      next.resumable.contexts = saved :: state.resumable.contexts ∧
+      ¬ state.scheduler.capacity ≤ state.scheduler.ready.length ∧
+      ¬ state.resumable.capacity ≤ state.resumable.contexts.length ∧
+      next.scheduler.ready = state.scheduler.ready ++ [subject] ∧
+      next.resumable.scheduler = next.scheduler ∧
+      next.blockingIPC.scheduler = next.scheduler := by
+  have hexact := FailStop.drainDeferredCancellation_drained_exact
+    state subject saved hdrained
+  have hcapacity := FailStop.drainDeferredCancellation_reserves_capacities
+    state subject saved hcoherent hdrained
+  exact ⟨hexact.1, hexact.2.1, hexact.2.2.1, hexact.2.2.2.1,
+    hcapacity.1, hcapacity.2.1, hcapacity.2.2.1,
+    hexact.2.2.2.2.1, hexact.2.2.2.2.2.1⟩
+
+/-- Supporting public-drain theorem: capacity-checked deferred
+cancellation is a public successor-gate operation.  One step and every finite
+drain-only trace preserve the global invariant, authoritative blocking store,
+and exact classification/disjointness of every retained context. -/
+theorem composite_deferred_cancel_public_gate_and_trace_preserve
+    state subject (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.authoritativeGate state (.drainDeferred subject)).state ∧
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.runAuthoritativeOperations state
+          (subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact ⟨
+    FailStop.authoritativeGate_drainDeferred_preserves_deferredBlockingRuntimeWellFormed
+      state subject hstate,
+    FailStop.runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
+      state subjects hstate⟩
+
+/-- The complete inbound-interrupt family composes with an arbitrary public
+deferred-drain suffix.  The identity premise is consumed only if the interrupt
+selects contained user-fault cleanup; all other typed interrupt outcomes retain
+the deferred store and context banks exactly. -/
+theorem composite_interrupt_then_deferred_trace_preserves
+    state frame (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state)
+    (hbound : FailStop.ContainedFaultIdentityBound state) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (.ordinary (.interrupt frame) ::
+          subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact FailStop.runAuthoritativeInterruptThenDeferredDrains_preserves
+    state frame subjects hstate hbound
+
+/-- Supporting authoritative-gate theorem: an NMI from running or handling
+mode preserves the complete deferred invariant while entering fail-stop, and
+the resulting terminal state absorbs every proposed public drain suffix. -/
+theorem composite_nmi_then_deferred_trace_preserves
+    state raw context (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (.ordinary (.nmi raw context) ::
+          subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact FailStop.runAuthoritativeNmiThenDeferredDrains_preserves
+    state raw context subjects hstate
+
+/-- Supporting mixed-trace theorem: identity-bound contained interrupt cleanup
+and every finite deferred-cancellation suffix execute through the one public
+successor gate while preserving the complete deferred invariant. -/
+theorem composite_contained_fault_then_deferred_trace_preserves
+    state frame faulting (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state)
+    (hbound : FailStop.ContainedFaultIdentityBound state)
+    (hcontained :
+      (FailStop.dispatchHardware state.execution frame).action = .contained faulting) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (.ordinary (.interrupt frame) ::
+          subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact FailStop.runAuthoritativeContainedInterruptThenDeferredDrains_preserves
+    state frame faulting subjects hstate hbound hcontained
+
+/-- SC-COMPOSITE-CONTAINED-FAULT-CLEANUP: stable combined contract for the
+contained-cleanup boundary and its public deferred-drain continuation. -/
+theorem composite_contained_fault_cleanup_and_deferred_trace_contract
+    state frame faultSubject drainSubject (subjects : List BlockingIPC.SubjectId)
+    (hbound : FailStop.ContainedFaultIdentityBound state)
+    (hcontained :
+      (FailStop.dispatchHardware state.execution frame).action = .contained faultSubject)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
+    let cleaned := FailStop.applyOperation state (.interrupt frame)
+    BlockingIPCContext.ContextAgreement cleaned.blockingIPCContext ∧
+      cleaned.scheduler.lifecycle = cleaned.execution.core.lifecycle ∧
+      cleaned.preemption.scheduler.lifecycle = cleaned.execution.core.lifecycle ∧
+      FailStop.DeferredBlockingRuntimeWellFormed cleaned ∧
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.runAuthoritativeOperations state
+          (.ordinary (.interrupt frame) ::
+            subjects.map FailStop.AuthoritativeOperation.drainDeferred)) ∧
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.authoritativeGate state (.drainDeferred drainSubject)).state ∧
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.runAuthoritativeOperations state
+          (subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  have hcleanup := composite_contained_fault_cleanup_preserves_context_boundary
+    state frame faultSubject hcontained hstate.2.1.1.2
+  have hcleaned := FailStop.interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
+    state frame faultSubject hstate hbound hcontained
+  have hmixed := composite_contained_fault_then_deferred_trace_preserves
+    state frame faultSubject subjects hstate hbound hcontained
+  have hdrains := composite_deferred_cancel_public_gate_and_trace_preserve
+    state drainSubject subjects hstate
+  exact ⟨hcleanup.1, hcleanup.2.1, hcleanup.2.2, hcleaned, hmixed,
+    hdrains.1, hdrains.2⟩
+
+/-- SC-COMPOSITE-BLOCKING-REJECTION-WF: every finite ordinary denial at the
+typed blocking gate preserves the full composite runtime invariant because it
+returns the literal pre-state. -/
+theorem composite_blocking_gate_rejection_preserves_runtimeWellFormed state operation
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hrejected : FailStop.CompositeBlockingGateRejection
+      (FailStop.blockingGate state operation).result) :
+    FailStop.RuntimeWellFormed (FailStop.blockingGate state operation).state := by
+  exact FailStop.blockingGate_rejection_preserves_runtimeWellFormed
+    state operation hstate hrejected
+
+/-- Concrete non-vacuity for the outer blocking rejection classifier: the
+boot-produced empty waiter store classifies cancellation of subject `1` as an
+ordinary atomic `notWaiting` denial. -/
+theorem composite_blocking_gate_rejection_reachable_witness plan :
+    let state := FailStop.bootRuntime plan
+    FailStop.CompositeBlockingGateRejection
+        (FailStop.blockingGate state (.cancel 1)).result ∧
+      (FailStop.blockingGate state (.cancel 1)).state = state := by
+  exact ⟨.cancel .notWaiting, rfl⟩
+
+/-- SC-COMPOSITE-TRANSFER-OFFER-WF: every canonical sealed-transfer offer,
+including malformed/stale handle rejections and the accepted pending-mailbox
+mutation, preserves the complete global runtime invariant. -/
+theorem composite_gate_transferOffer_preserves_runtimeWellFormed
+    state endpointWord sourceWord sourceKind payload rights
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+      (FailStop.gate state
+        (.transferOffer endpointWord sourceWord sourceKind payload rights)).state := by
+  exact FailStop.transferOffer_operationPreservesRuntimeWellFormed endpointWord sourceWord
+    sourceKind payload rights state hstate
+
+/-- SC-COMPOSITE-TRANSFER-ACCEPT-WF: every canonical sealed-transfer receipt,
+including malformed/stale handle and slot rejections as well as successful
+authority installation, preserves the complete global runtime invariant. -/
+theorem composite_gate_transferAccept_preserves_runtimeWellFormed
+    state endpointWord destinationSlot
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+      (FailStop.gate state (.transferAccept endpointWord destinationSlot)).state := by
+  exact FailStop.transferAccept_operationPreservesRuntimeWellFormed endpointWord
+    destinationSlot state hstate
+
+/-- SC-COMPOSITE-GATE-CONTRACT: every completed public gate step identifies
+either the running latch or the explicitly out-of-band NMI operation, plus the
+exact typed reply and exact composite post-state; both gate-level rejection
+classes and every classified nonfatal subsystem rejection preserve the
+complete state, and every classified rejection preserves the global invariant
+whenever the pre-state satisfies it. -/
+theorem composite_gate_typed_result_contract state operation :
+    (∀ reply, (FailStop.gate state operation).result = .completed reply →
+      (state.execution.mode = .running ∨
+        ∃ raw context, operation = .nmi raw context) ∧
+        reply = FailStop.operationReply state operation ∧
+        (FailStop.gate state operation).state = FailStop.applyOperation state operation) ∧
+    (((FailStop.gate state operation).result = .rejectedBusy ∨
+      ∃ record, (FailStop.gate state operation).result = .rejectedHalted record) →
+      (FailStop.gate state operation).state = state) ∧
+    (∀ reply, (FailStop.gate state operation).result = .completed reply →
+      FailStop.SubsystemRejection state operation reply →
+      (FailStop.gate state operation).state = state ∧
+        (FailStop.RuntimeWellFormed state →
+          FailStop.RuntimeWellFormed (FailStop.gate state operation).state)) ∧
+    ((FailStop.operationReply state operation).isNonfatalRejection = true →
+      (FailStop.gate state operation).state = state ∧
+        (FailStop.RuntimeWellFormed state →
+          FailStop.RuntimeWellFormed (FailStop.gate state operation).state)) := by
+  constructor
+  · intro reply hcompleted
+    exact FailStop.gate_completed_sound state operation reply hcompleted
+  constructor
+  · exact FailStop.gate_mode_rejection_atomicity state operation
+  constructor
+  · intro reply hcompleted hrejected
+    constructor
+    · exact FailStop.gate_subsystem_rejection_atomicity state operation reply
+        hcompleted hrejected
+    · intro hstate
+      exact (FailStop.gate_subsystem_rejection_preserves_runtimeWellFormed
+        state operation reply hstate hcompleted hrejected).1
+  · intro hrejected
+    constructor
+    · exact FailStop.gate_classified_rejection_global_atomicity state operation hrejected
+    · intro hstate
+      exact (FailStop.gate_classified_rejection_preserves_runtimeWellFormed
+        state operation hstate hrejected).1
+
+/-- SC-COMPOSITE-AUTHORITY-CONFINEMENT: every public authority-bearing
+operation reports the exact subsystem result computed for the current subject
+and, where applicable, the active address space selected by the execution
+latch.  No operation argument supplies either privileged identity. -/
+theorem composite_gate_authority_confinement state
+    syscallCall ipcCall endpointWord sourceWord sourceKind payload rights
+    source destination destinationSlot authoritySlot victim victimSlot slot page permissions
+    (hmode : state.execution.mode = .running) :
+    (FailStop.gate state (.syscall syscallCall)).result =
+        .completed (.syscall
+          (Syscall.dispatch state.virtualMemory state.syscallContext syscallCall).reply) ∧
+    (FailStop.gate state (.ipc ipcCall)).result =
+        .completed (.ipc (FailStop.authoritativeIPCReply state ipcCall)) ∧
+    (FailStop.gate state
+        (.transferOffer endpointWord sourceWord sourceKind payload rights)).result =
+        .completed (.transferOffer
+          (CapabilityTransfer.offerWords state.transfers
+            state.execution.core.context.currentSubject endpointWord sourceWord sourceKind
+            payload rights).result) ∧
+    (FailStop.gate state (.transferAccept endpointWord destinationSlot)).result =
+        .completed (.transferAccept
+          (CapabilityTransfer.acceptWord state.transfers
+            state.execution.core.context.currentSubject endpointWord destinationSlot).result
+          (CapabilityTransfer.acceptWord state.transfers
+            state.execution.core.context.currentSubject endpointWord destinationSlot).deliveredWord) ∧
+    (FailStop.gate state
+        (.capabilityCopy source destination destinationSlot rights)).result =
+        .completed (.capability
+          (Capability.copy state.capabilities
+            state.execution.core.context.currentSubject source destination destinationSlot
+            rights).result) ∧
+    (FailStop.gate state (.capabilityRevoke authoritySlot victim victimSlot)).result =
+        .completed (.capability
+          (Capability.revokeRuntimeSafe state.capabilities
+            state.execution.core.context.currentSubject authoritySlot victim victimSlot).result) ∧
+    (FailStop.gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).result =
+        .completed (.capability
+          (Capability.revokeSubtreeRuntimeSafe state.capabilities
+            state.execution.core.context.currentSubject authoritySlot victim victimSlot).result) ∧
+    (FailStop.gate state (.map slot page permissions)).result =
+        .completed (.map
+          (VirtualMapping.map state.virtualMemory
+            state.execution.core.context.currentSubject slot
+            state.execution.core.context.activeAddressSpace page permissions).result) ∧
+    (FailStop.gate state (.unmap page)).result =
+        .completed (.unmap
+          (VirtualMapping.unmap state.virtualMemory
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page).result) := by
+  exact FailStop.authority_operations_result_sound state syscallCall ipcCall endpointWord
+    sourceWord sourceKind payload rights source destination destinationSlot authoritySlot victim
+    victimSlot slot page permissions hmode
+
+/-- SC-COMPOSITE-CONTROL-WF: both control operations preserve the complete
+invariant in every execution mode, including the exact sealed-transfer and
+resumable states retained by busy and halted gate rejection. -/
+theorem composite_gate_control_preserves_runtimeWellFormed state purpose
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.selectUserReturn purpose)).state ∧
+      FailStop.RuntimeWellFormed (FailStop.gate state .restart).state := by
+  exact ⟨FailStop.gate_selectUserReturn_preserves_runtimeWellFormed state purpose
+      hstate,
+    FailStop.gate_restart_preserves_runtimeWellFormed state hstate⟩
+
+/-- SC-COMPOSITE-MAPPING-WF: both kernel-confined raw mapping operations
+preserve the complete runtime invariant in every execution mode. -/
+theorem composite_gate_mapping_preserves_runtimeWellFormed state slot page permissions
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.map slot page permissions)).state ∧
+      FailStop.RuntimeWellFormed (FailStop.gate state (.unmap page)).state := by
+  exact ⟨FailStop.map_operationPreservesRuntimeWellFormed slot page permissions state hstate,
+    FailStop.unmap_operationPreservesRuntimeWellFormed page state hstate⟩
+
+/-- SC-COMPOSITE-SYSCALL-WF: every attacker-controlled fixed-width syscall
+tuple preserves the complete runtime invariant; privileged caller and address
+space selection remain projections of the authoritative execution state. -/
+theorem composite_gate_syscall_preserves_runtimeWellFormed state call
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed (FailStop.gate state (.syscall call)).state := by
+  exact FailStop.syscall_operationPreservesRuntimeWellFormed call state hstate
+
+/-- SC-COMPOSITE-SCHEDULER-ADMISSION-WF: queue admission is total over public
+subject identifiers, rejects a missing kernel-owned context atomically, and
+preserves the complete runtime invariant for every typed result. -/
+theorem composite_gate_schedulerAdmission_preserves_runtimeWellFormed state subject
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+      (FailStop.gate state (.scheduleAdd subject)).state := by
+  exact FailStop.scheduleAdd_operationPreservesRuntimeWellFormed subject state hstate
+
+/-- SC-COMPOSITE-TERMINATION-WF: every subject identifier is a total public
+termination request. Rejections are atomic; acceptance retires the subject's
+resources and removes all scheduler, context, mailbox, and sealed-transfer
+references while preserving the complete runtime invariant. -/
+theorem composite_gate_termination_preserves_runtimeWellFormed state subject
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed
+        (FailStop.gate state (.terminateSubject subject)).state ∧
+      FailStop.RuntimeWellFormed
+        (FailStop.gate state .terminateCurrent).state := by
+  exact ⟨FailStop.terminateSubject_operationPreservesRuntimeWellFormed subject state hstate,
+    FailStop.terminateCurrent_operationPreservesRuntimeWellFormed state hstate⟩
+
+/-- Supporting termination theorem: an accepted explicit termination removes
+the dead identity from every modeled scheduler and saved-context projection,
+including the deferred-cancellation bank, and cancels every sealed transfer in
+the same composite post-state. -/
+theorem composite_gate_termination_cleans_runtime_references
+    state subject lifecycle
+    (hstate : FailStop.RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : SubjectLifecycle.terminate state.lifecycle subject =
+      { state := lifecycle, result := .accepted }) :
+    (FailStop.gate state (.terminateSubject subject)).result =
+        .completed (.terminateSubject .accepted) ∧
+      (FailStop.gate state (.terminateSubject subject)).state.lifecycle.capabilities.subjects
+        subject = false ∧
+      subject ∉ (FailStop.gate state (.terminateSubject subject)).state.scheduler.ready ∧
+      (FailStop.gate state (.terminateSubject subject)).state.scheduler.lifecycle.current ≠
+        some subject ∧
+      ResumablePreemption.contextFor
+        (FailStop.gate state (.terminateSubject subject)).state.resumable.contexts
+        subject = none ∧
+      (FailStop.gate state (.terminateSubject subject)).state.blockingIPC.waiterEndpoint
+        subject = none ∧
+      (FailStop.gate state (.terminateSubject subject)).state.blockingContexts subject = none ∧
+      (FailStop.gate state (.terminateSubject subject)).state.deferredCancels.retained
+        subject = none ∧
+      ∀ endpoint,
+        (FailStop.gate state (.terminateSubject subject)).state.transfers.pending endpoint =
+          none := by
+  exact FailStop.terminateSubject_accepted_cleans_runtime_references
+    state subject lifecycle hstate hmode haccepted
+
+/-- Supporting endpoint-owner cleanup theorem: accepted termination detaches
+every named peer whose waiter endpoint was retired, retains the exact saved
+context for a checked deferred drain, and clears that endpoint's mailbox. -/
+theorem composite_gate_termination_defers_invalidated_peer
+    state owner lifecycle peer endpoint saved
+    (hmode : state.execution.mode = .running)
+    (haccepted : SubjectLifecycle.terminate state.lifecycle owner =
+      { state := lifecycle, result := .accepted })
+    (hpeer : peer ≠ owner)
+    (hendpoint :
+      (BlockingIPCContext.terminate state.blockingIPCContext owner).ipc.waiterEndpoint peer =
+        some endpoint)
+    (hsaved :
+      (BlockingIPCContext.terminate state.blockingIPCContext owner).blocked peer = some saved)
+    (hretired :
+      (ResumablePreemption.cleanupSubject state.resumable owner).scheduler.lifecycle.capabilities.objects
+        endpoint = false) :
+    let next := (FailStop.gate state (.terminateSubject owner)).state
+    (FailStop.gate state (.terminateSubject owner)).result =
+        .completed (.terminateSubject .accepted) ∧
+      next.blockingIPC.waiterEndpoint peer = none ∧
+      next.blockingContexts peer = none ∧
+      next.deferredCancels.retained peer = some saved ∧
+      next.blockingIPC.mailbox endpoint = none := by
+  exact FailStop.terminateSubject_accepted_defers_invalidated_waiter
+    state owner lifecycle peer endpoint saved hmode haccepted hpeer
+    hendpoint hsaved hretired
+
+/-- SC-COMPOSITE-LEGACY-OPERATION-TRACE-WF: arbitrary finite interleavings of
+every constructor in the legacy `Operation`/`gate` surface preserve
+`RuntimeWellFormed` for every accepted, typed-rejected, busy, halted, or fatal
+result.  This surface excludes `CompositeBlockingOperation` and deferred
+cancellation drains, and `RuntimeWellFormed` excludes their folded
+classification. -/
+theorem composite_legacy_operation_mixed_trace_preserves_runtimeWellFormed
+    state operations
+    (hstate : FailStop.RuntimeWellFormed state) :
+    FailStop.RuntimeWellFormed (FailStop.runOperations state operations) := by
+  exact FailStop.runOperations_preserves_runtimeWellFormed_universally
+    state operations hstate
+
+/-- Supporting compatible trace theorem: an arbitrary finite list of ordinary
+successor-gate operations preserves the complete folded blocking/deferred
+invariant from recursive operation-local premises, without assuming any
+intermediate preservation conclusion. -/
+theorem composite_authoritative_ordinary_trace_preserves_runtimeWellFormed
+    state (operations : List FailStop.Operation)
+    (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
+    (hcompatible : FailStop.AuthoritativeTraceCompatible state
+      (operations.map FailStop.AuthoritativeOperation.ordinary)) :
+    FailStop.AuthoritativeRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (operations.map FailStop.AuthoritativeOperation.ordinary)) := by
+  exact
+    FailStop.runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFormed
+      state operations hstate hcompatible
+
+/-- Supporting readiness-free mixed-trace theorem: every finite interleaving
+of the compatible ordinary family and arbitrary authoritative blocking
+operations preserves the complete blocking runtime invariant.  The trace
+certificate is state-independent and therefore replaces the legacy recursive
+readiness gate throughout this compositional slice. -/
+theorem composite_authoritative_readinessFree_mixed_trace_preserves
+    state operations
+    (hoperations : FailStop.ReadinessFreeMixedTrace operations)
+    (hstate : FailStop.BlockingRuntimeWellFormed state) :
+    FailStop.BlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state operations) := by
+  exact
+    FailStop.runAuthoritativeReadinessFreeMixedTrace_preserves_blockingRuntimeWellFormed
+      state operations hoperations hstate
+
+/-- Supporting readiness-free termination trace theorem: explicit termination
+of any selected identity preserves the complete deferred-cancellation
+invariant consumed by any finite capacity-checked drain suffix. -/
+theorem composite_terminateSubject_then_deferred_trace_preserves
+    state subject (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (.ordinary (.terminateSubject subject) ::
+          subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact FailStop.runAuthoritativeTerminateSubjectThenDeferredDrains_preserves
+    state subject subjects hstate
+
+/-- Supporting readiness-free termination trace theorem: scheduler-selected
+termination establishes and preserves the complete deferred-cancellation
+invariant consumed by any finite capacity-checked drain suffix. -/
+theorem composite_terminateCurrent_then_deferred_trace_preserves
+    state (subjects : List BlockingIPC.SubjectId)
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
+    FailStop.DeferredBlockingRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state
+        (.ordinary .terminateCurrent ::
+          subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  exact FailStop.runAuthoritativeTerminateCurrentThenDeferredDrains_preserves
+    state subjects hstate
+
+/-- SC-COMPOSITE-DIRECT-PORT-WF: every public composite step and arbitrary
+finite mixed trace retain the complete TSS/IOPL control and device projection
+literally.  Consequently the deny-all user policy embedded in the global
+runtime invariant cannot be relaxed or repaired by an unrelated transition. -/
+theorem composite_gate_preserves_direct_port_boundary state operation operations
+    (hstate : FailStop.RuntimeWellFormed state) :
+    (FailStop.gate state operation).state.directPortIO = state.directPortIO ∧
+      (FailStop.runOperations state operations).directPortIO = state.directPortIO ∧
+      DirectPortIO.AcceptedControls
+        (FailStop.gate state operation).state.directPortIO.controls ∧
+      DirectPortIO.AcceptedControls
+        (FailStop.runOperations state operations).directPortIO.controls := by
+  refine ⟨FailStop.gate_directPortIO state operation,
+    FailStop.runOperations_directPortIO state operations, ?_, ?_⟩
+  · simpa using hstate.directPortControls
+  · simpa using hstate.directPortControls
+
+/-- SC-COMPOSITE-BOOT-WF: every successfully compiled bounded boot page-table
+plan produces an idle composite runtime satisfying the complete global
+invariant before any subject or trusted return identity is admitted. -/
+theorem composite_boot_runtime_wellFormed input plan
+    (hcompiled : BootPageTablePlan.compile input = .ok plan) :
+    FailStop.RuntimeWellFormed (FailStop.bootRuntime plan) := by
+  exact FailStop.bootRuntime_runtimeWellFormed input plan hcompiled
+
+set_option maxRecDepth 100000 in
+/-- Concrete non-vacuity witness: the repository's accepted bounded sample
+boot input reaches the globally well-formed initial composite runtime. -/
+theorem composite_boot_runtime_reachable_witness :
+    match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+    | .ok plan => FailStop.RuntimeWellFormed (FailStop.bootRuntime plan)
+    | .error _ => False := by
+  generalize hresult : BootPageTablePlan.compile BootPageTablePlan.sampleInput = result
+  cases result with
+  | error reason =>
+      have hsuccess :
+          (match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+            | .ok _ => true
+            | .error _ => false) = true := by
+        native_decide
+      simp [hresult] at hsuccess
+  | ok plan =>
+      exact FailStop.bootRuntime_runtimeWellFormed BootPageTablePlan.sampleInput plan hresult
+
+private def registeredMixedTrace : List FailStop.Operation :=
+  [.syscall { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 },
+   .ipc (.receive 0),
+   .transferOffer 0 0 .memory { word0 := 0, word1 := 0 } { read := true },
+   .transferAccept 0 0,
+   .capabilityCopy 0 1 0 { read := true },
+   .capabilityRevoke 0 1 0,
+   .capabilityRevokeSubtree 0 1 0,
+   .map 0 0 { read := true },
+   .unmap 0,
+   .createSubject 1,
+   .scheduleAdd 1,
+   .scheduleRemove 1,
+   .terminateSubject 1,
+   .terminateCurrent,
+   .selectUserReturn .initialDispatch,
+   .restart]
+
+private theorem registeredMixedTrace_registered operation
+    (hmember : operation ∈ registeredMixedTrace) :
+    FailStop.RuntimeTraceOperation operation := by
+  simp [registeredMixedTrace] at hmember
+  rcases hmember with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h
+  · subst operation
+    exact .syscall _
+  · subst operation
+    exact .ipc _
+  · subst operation
+    exact .transferOffer _ _ _ _ _
+  · subst operation
+    exact .transferAccept _ _
+  · subst operation
+    exact .capabilityCopy _ _ _ _
+  · subst operation
+    exact .capabilityRevoke _ _ _
+  · subst operation
+    exact .capabilityRevokeSubtree _ _ _
+  · subst operation
+    exact .map _ _ _
+  · subst operation
+    exact .unmap _
+  · subst operation
+    exact .createSubject _
+  · subst operation
+    exact .scheduleAdd _
+  · subst operation
+    exact .scheduleRemove _
+  · subst operation
+    exact .terminateSubject _
+  · subst operation
+    exact .terminateCurrent
+  · subst operation
+    exact .selectUserReturn _
+  · subst operation
+    exact .restart
+
+set_option maxRecDepth 100000 in
+/-- Concrete non-vacuity for the legacy-operation mixed-trace contract: the
+accepted repository boot plan runs a finite trace containing attacker-controlled
+syscall/IPC/sealed-transfer/capability-copy/revocation/mapping words, lifecycle
+creation/termination, resumable-aware scheduler cleanup, return selection, and restart
+while retaining `RuntimeWellFormed`.  It is not evidence for the folded
+authoritative blocking/deferred invariant. -/
+theorem composite_legacy_operation_mixed_trace_reachable_witness :
+    match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+    | .ok plan => FailStop.RuntimeWellFormed
+        (FailStop.runOperations (FailStop.bootRuntime plan) registeredMixedTrace)
+    | .error _ => False := by
+  generalize hresult : BootPageTablePlan.compile BootPageTablePlan.sampleInput = result
+  cases result with
+  | error reason =>
+      have hsuccess :
+          (match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+            | .ok _ => true
+            | .error _ => false) = true := by
+        native_decide
+      simp [hresult] at hsuccess
+  | ok plan =>
+      apply composite_legacy_operation_mixed_trace_preserves_runtimeWellFormed
+      exact FailStop.bootRuntime_runtimeWellFormed
+        BootPageTablePlan.sampleInput plan hresult
 
 /-- SC-INTERRUPT-ENTRY-BINDING: every normalized record constructor copies
 authority-bearing context fields from the kernel-owned input. -/
@@ -435,12 +1519,33 @@ theorem user_return_authority_requires_live_plan state purpose
     state.ReturnPlanLive = true := by
   exact FailStop.selectLiveReturnAuthority_armed_implies_live state purpose harmed
 
+private def returnWitnessCapabilities : Capability.State :=
+  { nextIdentity := 3
+    derivations := fun identity =>
+      if identity = 0 then
+        some (none, 1, .addressSpace, { revoke := true })
+      else if identity = 1 then
+        some (none, 100, .memory, { read := true })
+      else if identity = 2 then
+        some (none, 101, .memory, { read := true, write := true })
+      else none
+    subjects := fun subject => subject = 1
+    objects := fun object => object = 1 || object = 100 || object = 101
+    kinds := fun object =>
+      if object = 1 then some .addressSpace
+      else if object = 100 || object = 101 then some .memory
+      else none
+    slots := fun subject slot =>
+      if subject = 1 ∧ slot = 0 then
+        some { object := 1, kind := .addressSpace, rights := { revoke := true }, identity := 0 }
+      else if subject = 1 ∧ slot = 1 then
+        some { object := 100, kind := .memory, rights := { read := true }, identity := 1 }
+      else if subject = 1 ∧ slot = 2 then
+        some { object := 101, kind := .memory, rights := { read := true, write := true }, identity := 2 }
+      else none }
+
 private def returnWitnessLifecycle : SubjectLifecycle.State :=
-  { capabilities :=
-      { subjects := fun subject => subject = 1
-        objects := fun object => object = 100 || object = 101
-        kinds := fun object => if object = 100 || object = 101 then some .memory else none
-        slots := fun _ _ => none }
+  { capabilities := returnWitnessCapabilities
     issuedSubjects := fun subject => subject = 1
     ownedMemory := fun object =>
       if object = 100 then some (1, 100)
@@ -459,6 +1564,256 @@ private def returnWitnessLifecycle : SubjectLifecycle.State :=
       if frame = 100 then false else if frame = 101 then false else true
     runnable := fun subject => subject = 1
     current := some 1 }
+
+private theorem returnWitnessCapabilities_wellFormed :
+    Capability.WellFormed returnWitnessCapabilities := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro subject slot capability hslot
+    simp only [returnWitnessCapabilities] at hslot ⊢
+    split at hslot
+    · cases hslot
+      simp_all [Capability.rightsValid]
+    · split at hslot
+      · cases hslot
+        simp_all [Capability.rightsValid, Capability.nonemptyRights]
+      · split at hslot
+        · cases hslot
+          simp_all [Capability.rightsValid, Capability.nonemptyRights]
+        · contradiction
+  · intro identity parent object kind rights hderivation
+    simp only [returnWitnessCapabilities] at hderivation ⊢
+    split at hderivation
+    · cases hderivation
+      simp_all
+    · split at hderivation
+      · cases hderivation
+        simp_all
+      · split at hderivation
+        · cases hderivation
+          simp_all
+        · contradiction
+  · intro subject slot capability otherSubject otherSlot otherCapability
+      hslot hother hidentity
+    simp only [returnWitnessCapabilities] at hslot hother
+    split at hslot
+    · cases hslot
+      split at hother
+      · cases hother
+        simp_all
+      · split at hother
+        · cases hother
+          simp at hidentity
+        · split at hother
+          · cases hother
+            simp at hidentity
+          · contradiction
+    · split at hslot
+      · cases hslot
+        split at hother
+        · cases hother
+          simp at hidentity
+        · split at hother
+          · cases hother
+            simp_all
+          · split at hother
+            · cases hother
+              simp at hidentity
+            · contradiction
+      · split at hslot
+        · cases hslot
+          split at hother
+          · cases hother
+            simp at hidentity
+          · split at hother
+            · cases hother
+              simp at hidentity
+            · split at hother
+              · cases hother
+                simp_all
+              · contradiction
+        · contradiction
+  · intro subject slot houtOfRange
+    change 4 ≤ slot at houtOfRange
+    simp only [returnWitnessCapabilities]
+    split
+    · simp_all
+    · split
+      · simp_all
+      · split
+        · simp_all
+        · rfl
+
+@[simp] private theorem returnWitnessLifecycle_capabilities :
+    returnWitnessLifecycle.capabilities = returnWitnessCapabilities := rfl
+
+@[simp] private theorem returnWitnessLifecycle_issuedSubjects subject :
+    returnWitnessLifecycle.issuedSubjects subject = decide (subject = 1) := rfl
+
+@[simp] private theorem returnWitnessLifecycle_ownedMemory object :
+    returnWitnessLifecycle.ownedMemory object =
+      if object = 100 then some (1, 100)
+      else if object = 101 then some (1, 101)
+      else none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_addressOwner addressSpace :
+    returnWitnessLifecycle.addressOwner addressSpace =
+      if addressSpace = 1 then some 1 else none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_mapping addressSpace page :
+    returnWitnessLifecycle.mapping addressSpace page =
+      if addressSpace = 1 ∧ page = 100 then some 100
+      else if addressSpace = 1 ∧ page = 101 then some 101
+      else none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_endpointOwner object :
+    returnWitnessLifecycle.endpointOwner object = none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_mailbox object :
+    returnWitnessLifecycle.mailbox object = none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_frameOwner frame :
+    returnWitnessLifecycle.frameOwner frame =
+      if frame = 100 then some 1 else if frame = 101 then some 1 else none := rfl
+
+@[simp] private theorem returnWitnessLifecycle_freeFrame frame :
+    returnWitnessLifecycle.freeFrame frame =
+      if frame = 100 then false else if frame = 101 then false else true := rfl
+
+@[simp] private theorem returnWitnessLifecycle_runnable subject :
+    returnWitnessLifecycle.runnable subject = decide (subject = 1) := rfl
+
+@[simp] private theorem returnWitnessLifecycle_current :
+    returnWitnessLifecycle.current = some 1 := rfl
+
+@[simp] private theorem returnWitnessLifecycle_wellFormed :
+    SubjectLifecycle.WellFormed returnWitnessLifecycle := by
+  simp [SubjectLifecycle.WellFormed, returnWitnessLifecycle,
+    returnWitnessCapabilities]
+  intro object subject frame howned
+  by_cases h100 : object = 100
+  · subst object
+    simp at howned
+    cases howned
+    simp_all
+  · by_cases h101 : object = 101
+    · subst object
+      simp [h100] at howned
+      cases howned
+      simp_all
+    · simp [h100, h101] at howned
+
+@[simp] private theorem returnWitnessCapabilities_nextIdentity :
+    returnWitnessCapabilities.nextIdentity = 3 := rfl
+
+@[simp] private theorem returnWitnessCapabilities_derivations identity :
+    returnWitnessCapabilities.derivations identity =
+      if identity = 0 then
+        some (none, 1, .addressSpace, { revoke := true })
+      else if identity = 1 then
+        some (none, 100, .memory, { read := true })
+      else if identity = 2 then
+        some (none, 101, .memory, { read := true, write := true })
+      else none := rfl
+
+@[simp] private theorem returnWitnessCapabilities_subjects subject :
+    returnWitnessCapabilities.subjects subject = decide (subject = 1) := rfl
+
+@[simp] private theorem returnWitnessCapabilities_objects object :
+    returnWitnessCapabilities.objects object =
+      (object = 1 || object = 100 || object = 101) := rfl
+
+@[simp] private theorem returnWitnessCapabilities_kinds object :
+    returnWitnessCapabilities.kinds object =
+      if object = 1 then some .addressSpace
+      else if object = 100 || object = 101 then some .memory
+      else none := rfl
+
+@[simp] private theorem returnWitnessCapabilities_slotCapacity subject :
+    returnWitnessCapabilities.slotCapacity subject = 4 := rfl
+
+@[simp] private theorem returnWitnessCapabilities_slots subject slot :
+    returnWitnessCapabilities.slots subject slot =
+      if subject = 1 ∧ slot = 0 then
+        some { object := 1, kind := .addressSpace, rights := { revoke := true }, identity := 0 }
+      else if subject = 1 ∧ slot = 1 then
+        some { object := 100, kind := .memory, rights := { read := true }, identity := 1 }
+      else if subject = 1 ∧ slot = 2 then
+        some { object := 101, kind := .memory, rights := { read := true, write := true }, identity := 2 }
+      else none := rfl
+
+@[simp] private theorem returnWitnessCapabilities_readAuthority subject object :
+    Capability.HasAuthority returnWitnessCapabilities subject object .read ↔
+      subject = 1 ∧ (object = 100 ∨ object = 101) := by
+  constructor
+  · rintro ⟨slot, capability, hslot, hobject, hright⟩
+    simp only [returnWitnessCapabilities] at hslot
+    split at hslot
+    · cases hslot
+      simp [Capability.hasRight, Capability.permits] at hright
+    · split at hslot
+      · cases hslot
+        simp_all [Capability.hasRight, Capability.permits]
+      · split at hslot
+        · cases hslot
+          simp_all [Capability.hasRight, Capability.permits]
+        · contradiction
+  · rintro ⟨rfl, rfl | rfl⟩
+    · refine ⟨1, {
+        object := 100
+        kind := .memory
+        rights := { read := true }
+        identity := 1 }, rfl, rfl, rfl⟩
+    · refine ⟨2, {
+        object := 101
+        kind := .memory
+        rights := { read := true, write := true }
+        identity := 2 }, rfl, rfl, rfl⟩
+
+@[simp] private theorem returnWitnessCapabilities_writeAuthority subject object :
+    Capability.HasAuthority returnWitnessCapabilities subject object .write ↔
+      subject = 1 ∧ object = 101 := by
+  constructor
+  · rintro ⟨slot, capability, hslot, hobject, hright⟩
+    simp only [returnWitnessCapabilities] at hslot
+    split at hslot
+    · cases hslot
+      simp [Capability.hasRight, Capability.permits] at hright
+    · split at hslot
+      · cases hslot
+        simp [Capability.hasRight, Capability.permits] at hright
+      · split at hslot
+        · cases hslot
+          simp_all [Capability.hasRight, Capability.permits]
+        · contradiction
+  · rintro ⟨rfl, rfl⟩
+    refine ⟨2, {
+      object := 101
+      kind := .memory
+      rights := { read := true, write := true }
+      identity := 2 }, rfl, rfl, rfl⟩
+
+@[simp] private theorem returnWitnessCapabilities_revokeAuthority subject object :
+    Capability.HasAuthority returnWitnessCapabilities subject object .revoke ↔
+      subject = 1 ∧ object = 1 := by
+  constructor
+  · rintro ⟨slot, capability, hslot, hobject, hright⟩
+    simp only [returnWitnessCapabilities] at hslot
+    split at hslot
+    · cases hslot
+      simp_all [Capability.hasRight, Capability.permits]
+    · split at hslot
+      · cases hslot
+        simp [Capability.hasRight, Capability.permits] at hright
+      · split at hslot
+        · cases hslot
+          simp [Capability.hasRight, Capability.permits] at hright
+        · contradiction
+  · rintro ⟨rfl, rfl⟩
+    refine ⟨0, {
+      object := 1
+      kind := .addressSpace
+      rights := { revoke := true }
+      identity := 0 }, rfl, rfl, rfl⟩
 
 private def returnWitnessPlan : Option BootPageTablePlan.Plan :=
   (BootPageTablePlan.compile BootPageTablePlan.sampleInput).toOption
@@ -527,7 +1882,8 @@ theorem user_return_authority_reachable_witness :
   constructor
   · apply FailStop.selectReturnAuthority_wellFormed
     simp [returnWitnessBase, returnWitnessLifecycle, FailStop.WellFormed,
-      Interrupt.WellFormed, SubjectLifecycle.WellFormed]
+      returnWitnessCapabilities, Interrupt.WellFormed,
+      SubjectLifecycle.WellFormed]
     intro object subject frame howned
     by_cases h100 : object = 100
     · subst object
@@ -552,7 +1908,18 @@ private def returnWitnessMemory : MemoryLifecycle.State :=
           else .reserved }
     binding := fun object =>
       if object = 100 then some 100 else if object = 101 then some 101 else none
-    issued := fun object => object = 100 || object = 101 }
+    issued := fun object => object = 1 || object = 100 || object = 101 }
+
+@[simp] private theorem returnWitnessMemory_capabilities :
+    returnWitnessMemory.capabilities = returnWitnessCapabilities := rfl
+
+@[simp] private theorem returnWitnessMemory_binding object :
+    returnWitnessMemory.binding object =
+      if object = 100 then some 100 else if object = 101 then some 101 else none := rfl
+
+@[simp] private theorem returnWitnessMemory_issued object :
+    returnWitnessMemory.issued object =
+      (object = 1 || object = 100 || object = 101) := rfl
 
 private def returnWitnessVirtualMemory : VirtualMapping.State :=
   { memory := returnWitnessMemory
@@ -564,6 +1931,64 @@ private def returnWitnessVirtualMemory : VirtualMapping.State :=
         some { object := 101, permissions := { read := true, write := true } }
       else none
     issuedAddressSpace := fun space => space = 1 }
+
+@[simp] private theorem returnWitnessVirtualMemory_capabilities :
+    returnWitnessVirtualMemory.memory.capabilities = returnWitnessCapabilities := rfl
+
+@[simp] private theorem returnWitnessVirtualMemory_owner addressSpace :
+    returnWitnessVirtualMemory.owner addressSpace =
+      if addressSpace = 1 then some 1 else none := rfl
+
+@[simp] private theorem returnWitnessVirtualMemory_owner_lifecycle :
+    returnWitnessVirtualMemory.owner = returnWitnessLifecycle.addressOwner := rfl
+
+@[simp] private theorem returnWitnessVirtualMemory_wellFormed :
+    VirtualMapping.LifecycleWellFormed returnWitnessVirtualMemory := by
+  refine ⟨?_, returnWitnessCapabilities_wellFormed, ?_, ?_⟩
+  · constructor
+    · intro addressSpace subject howner
+      simp [returnWitnessVirtualMemory, returnWitnessLifecycle] at howner
+      rcases howner with ⟨rfl, rfl⟩
+      rfl
+    · intro addressSpace page mapping hmapping
+      simp only [returnWitnessVirtualMemory] at hmapping
+      split at hmapping
+      next hselected =>
+        rcases hselected with ⟨rfl, rfl⟩
+        cases hmapping
+        refine ⟨1, 100, rfl, rfl, rfl, rfl, ?_, ?_⟩
+        · intro
+          change Capability.HasAuthority returnWitnessCapabilities 1 100 .read
+          simp
+        · simp
+      next hnotSelected =>
+        split at hmapping
+        next hselected =>
+          rcases hselected with ⟨rfl, rfl⟩
+          cases hmapping
+          refine ⟨1, 101, rfl, rfl, rfl, rfl, ?_, ?_⟩
+          · intro
+            change Capability.HasAuthority returnWitnessCapabilities 1 101 .read
+            simp
+          · intro
+            change Capability.HasAuthority returnWitnessCapabilities 1 101 .write
+            simp
+        next hnotSelected => contradiction
+  · intro addressSpace subject howner
+    simp [returnWitnessVirtualMemory, returnWitnessLifecycle] at howner
+    rcases howner with ⟨rfl, rfl⟩
+    have hauthority :
+        Capability.HasAuthority returnWitnessCapabilities 1 1 .revoke := by
+      simp
+    exact ⟨rfl, rfl, rfl, rfl, hauthority⟩
+  · intro addressSpace hlive hkind
+    by_cases hspace : addressSpace = 1
+    · subst addressSpace
+      exact ⟨1, rfl⟩
+    · change returnWitnessCapabilities.kinds addressSpace =
+        some .addressSpace at hkind
+      rw [returnWitnessCapabilities_kinds] at hkind
+      simp [hspace] at hkind
 
 private def returnWitnessEndpoints : EndpointIPC.State :=
   { capabilities := returnWitnessLifecycle.capabilities
@@ -577,13 +2002,85 @@ private def returnWitnessEndpoints : EndpointIPC.State :=
 private def returnWitnessComposite : FailStop.CompositeState :=
   let scheduler : Scheduler.State :=
     { lifecycle := returnWitnessLifecycle, ready := [], capacity := 0 }
+  let resumable : ResumablePreemption.State :=
+    { scheduler
+      contexts := []
+      capacity := 0
+      translations := { virtual := returnWitnessVirtualMemory, active := some 1, entries := [] } }
+  let transfers : CapabilityTransfer.State :=
+    { toEndpointState := returnWitnessEndpoints
+      pending := fun _ => none }
   { execution := returnWitnessBase
     scheduler
     preemption := { scheduler, timerArmed := false, acceptedTicks := 1 }
     virtualMemory := returnWitnessVirtualMemory
     ipc := { virtualMemory := returnWitnessVirtualMemory, endpoints := returnWitnessEndpoints }
     capabilities := returnWitnessLifecycle.capabilities
-    lifecycle := returnWitnessLifecycle }
+    lifecycle := returnWitnessLifecycle
+    resumable
+    transfers
+    blockingIPC :=
+      { scheduler
+        mailbox := fun _ => none
+        waiters := fun _ => []
+        waiterEndpoint := fun _ => none
+        waiterCapacity := 0
+        completion := fun _ => none }
+    blockingContexts := fun _ => none }
+
+private def containedFaultWitnessFrame : Interrupt.HardwareFrame :=
+  { returnWitnessRequest.hardware with vector := 14 }
+
+set_option maxRecDepth 100000 in
+/-- Concrete non-vacuity for the contained-cleanup contract: the live
+return-authority fixture binds execution subject `1` to the authoritative
+lifecycle, and a user page fault reaches contained cleanup plus an empty
+deferred-drain suffix while preserving the complete deferred invariant. -/
+theorem composite_contained_fault_cleanup_reachable_witness :
+    FailStop.DeferredBlockingRuntimeWellFormed returnWitnessComposite ∧
+      FailStop.ContainedFaultIdentityBound returnWitnessComposite ∧
+      (FailStop.dispatchHardware returnWitnessComposite.execution
+        containedFaultWitnessFrame).action = .contained 1 ∧
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (FailStop.runAuthoritativeOperations returnWitnessComposite
+          [.ordinary (.interrupt containedFaultWitnessFrame)]) := by
+  have hstate :
+      FailStop.DeferredBlockingRuntimeWellFormed returnWitnessComposite := by
+    simp [FailStop.DeferredBlockingRuntimeWellFormed,
+      FailStop.RuntimeWellFormed, FailStop.CompositeState.Coherent,
+      FailStop.CompositeState.DeferredCancellationWellFormed,
+      FailStop.CompositeState.BlockingIPCCoherent,
+      FailStop.CompositeState.blockingIPCContext,
+      BlockingIPCContext.DeferredWellFormed, BlockingIPCContext.WellFormed,
+      BlockingIPCContext.ContextAgreement, returnWitnessComposite,
+      returnWitnessBase,
+      returnWitnessEndpoints,
+      FailStop.WellFormed, Interrupt.WellFormed,
+      returnWitnessCapabilities_wellFormed,
+      IPCSyscall.WellFormed, EndpointIPC.WellFormed,
+      Scheduler.WellFormed, Scheduler.ownsAddressSpace,
+      Preemption.WellFormed, ResumablePreemption.WellFormed,
+      ResumablePreemption.contextFor,
+      ResumablePreemption.ReadyContextAgreement,
+      ResumablePreemption.TranslationAgreement,
+      ResumablePreemption.VirtualAgreement,
+      ResumablePreemption.ResourceKindAgreement,
+      CapabilityTransfer.WellFormed, BlockingIPC.WellFormed,
+      DirectPortIO.AcceptedControls,
+      DMAQuarantine.q35Accepted,
+      Capability.rightsValid, Capability.nonemptyRights,
+      Capability.rightsSubset, TLB.Coherent,
+      BlockingIPCContext.emptyDeferred] <;> grind
+  have hbound : FailStop.ContainedFaultIdentityBound returnWitnessComposite := by
+    rfl
+  have hcontained :
+      (FailStop.dispatchHardware returnWitnessComposite.execution
+        containedFaultWitnessFrame).action = .contained 1 := by
+    native_decide
+  exact ⟨hstate, hbound, hcontained,
+    composite_contained_fault_then_deferred_trace_preserves
+      returnWitnessComposite containedFaultWitnessFrame 1 []
+      hstate hbound hcontained⟩
 
 private def nmiWitnessContext (mode : InterruptEntry.InterruptedMode) :
     InterruptEntry.NmiContext :=
@@ -754,11 +2251,43 @@ private def returnWitnessSyscallRequest : Interrupt.UserReturnRequest :=
     hardware := returnWitnessSyscallFrame
     purpose := .syscallResume }
 
-private def returnWitnessSyscallContext : Syscall.TrustedContext :=
-  { caller := 1, activeAddressSpace := 1 }
-
 private def returnWitnessSyscallCall : Syscall.UntrustedCall :=
+  { number := 2, arg0 := 100, arg1 := 0, arg2 := 0 }
+
+private def returnWitnessRejectedCall : Syscall.UntrustedCall :=
   { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 }
+
+/-- Non-vacuity witness for the composite gate contract: an unknown syscall
+is classified as a typed subsystem rejection and preserves the literal
+composite pre-state. -/
+theorem composite_subsystem_rejection_reachable_witness :
+    (FailStop.gate returnWitnessComposite
+        (.syscall returnWitnessRejectedCall)).result =
+      .completed (.syscall (.rejected (.decode .unknownSyscall))) ∧
+    FailStop.SubsystemRejection returnWitnessComposite
+      (.syscall returnWitnessRejectedCall)
+      (.syscall (.rejected (.decode .unknownSyscall))) ∧
+    (FailStop.operationReply returnWitnessComposite
+      (.syscall returnWitnessRejectedCall)).isNonfatalRejection = true ∧
+    (FailStop.gate returnWitnessComposite
+        (.syscall returnWitnessRejectedCall)).state = returnWitnessComposite := by
+  have hresult :
+      (FailStop.gate returnWitnessComposite
+          (.syscall returnWitnessRejectedCall)).result =
+        .completed (.syscall (.rejected (.decode .unknownSyscall))) := by
+    native_decide
+  have hrejected :
+      FailStop.SubsystemRejection returnWitnessComposite
+        (.syscall returnWitnessRejectedCall)
+        (.syscall (.rejected (.decode .unknownSyscall))) :=
+    .syscall returnWitnessRejectedCall (.decode .unknownSyscall) (by native_decide)
+  have hclassified :
+      (FailStop.operationReply returnWitnessComposite
+        (.syscall returnWitnessRejectedCall)).isNonfatalRejection = true := by
+    native_decide
+  exact ⟨hresult, hrejected, hclassified,
+    FailStop.gate_classified_rejection_global_atomicity returnWitnessComposite
+      (.syscall returnWitnessRejectedCall) hclassified⟩
 
 set_option maxRecDepth 100000 in
 /-- Concrete typed composite trace: syscall entry clears old authority, the
@@ -768,7 +2297,7 @@ theorem user_return_composite_entry_witness :
     let entered := (FailStop.gate returnWitnessComposite
       (.interrupt returnWitnessSyscallFrame)).state
     let called := (FailStop.gate entered
-      (.syscall returnWitnessSyscallContext returnWitnessSyscallCall)).state
+      (.syscall returnWitnessSyscallCall)).state
     called.ReturnPlanLive = true ∧
       called.execution.returnAuthorityArmed = true ∧
       (FailStop.gate called (.userReturn returnWitnessSyscallRequest)).state = called := by

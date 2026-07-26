@@ -20,6 +20,7 @@ import LeanOS.BootAllocation
 import LeanOS.BootInterruptPhase
 import LeanOS.BootPageTablePlan
 import LeanOS.BlockingIPC
+import LeanOS.BlockingIPCContext
 import LeanOS.EndpointIPC
 import LeanOS.ExtendedState
 import LeanOS.IPCSyscall
@@ -39,6 +40,7 @@ import LeanOS.MemoryLifecycle
 import LeanOS.Observation
 import LeanOS.Preemption
 import LeanOS.ResumablePreemption
+import LeanOS.ResumableContext
 import LeanOS.Syscall
 import LeanOS.UserCopy
 import LeanOS.UserCopyWindow

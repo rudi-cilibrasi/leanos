@@ -446,6 +446,32 @@ theorem map_preserves_wellFormed (state : State) actor slot addressSpace page pe
                 · simpa [setMapping] using hmappings candidate candidatePage mapping
                     (by simpa [setMapping, htarget] using hmapped)
 
+@[simp] theorem map_memory (state : State) actor slot addressSpace page permissions :
+    (map state actor slot addressSpace page permissions).state.memory = state.memory := by
+  simp only [map]
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> rfl
+
+@[simp] theorem map_owner (state : State) actor slot addressSpace page permissions :
+    (map state actor slot addressSpace page permissions).state.owner = state.owner := by
+  simp only [map]
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> rfl
+
 theorem unmap_preserves_wellFormed (state : State) actor addressSpace page
     (hstate : WellFormed state) : WellFormed (unmap state actor addressSpace page).state := by
   simp only [unmap]
@@ -459,6 +485,20 @@ theorem unmap_preserves_wellFormed (state : State) actor addressSpace page
   · simp [setMapping, htarget] at hmapped
   · exact hmappings candidate candidatePage mapping
       (by simpa [setMapping, htarget] using hmapped)
+
+@[simp] theorem unmap_memory (state : State) actor addressSpace page :
+    (unmap state actor addressSpace page).state.memory = state.memory := by
+  simp only [unmap]
+  split <;> try rfl
+  split <;> try rfl
+  split <;> rfl
+
+@[simp] theorem unmap_owner (state : State) actor addressSpace page :
+    (unmap state actor addressSpace page).state.owner = state.owner := by
+  simp only [unmap]
+  split <;> try rfl
+  split <;> try rfl
+  split <;> rfl
 
 theorem map_preserves_lifecycleWellFormed (state : State) actor slot addressSpace page permissions
     (hstate : LifecycleWellFormed state) :

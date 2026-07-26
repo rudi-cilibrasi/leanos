@@ -70,6 +70,13 @@ subtree removal is `O(S·I)` time and retains `O(I)` append-only derivation
 history. Bounding live slots does **not** bound lifetime identity metadata;
 identity-history exhaustion and reclamation remain a precise non-goal.
 
+The composite-facing `revokeRuntimeSafe` and `revokeSubtreeRuntimeSafe` guards
+fail closed when a selected capability or descendant carries read, write,
+revoke, or receive authority. The receive case is required by the authoritative
+blocking invariant: an accepted revoke cannot remove the endpoint authority
+that witnesses an indexed waiter's right to remain blocked. This conservative
+policy may reject removal even when redundant authority exists elsewhere.
+
 Holder-facing authority uses the canonical generation-bound resolver described
 in [capability handles](capability-handles.md). A numeric slot is an internal
 table coordinate, not a durable authority reference: issuance pairs it with the

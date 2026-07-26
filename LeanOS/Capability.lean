@@ -156,7 +156,7 @@ def HasAuthority (state : State) (subject : SubjectId) (object : ObjectId)
 inductive Denial where
   | invalidSubject | staleSlot | outOfRange | occupiedSlot | full | emptyRights
   | missingGrant | rightsNotSubset | missingRevoke | objectMismatch | kindMismatch
-  | invalidRights | generationExhausted
+  | invalidRights | generationExhausted | runtimeAuthorityRequired
   deriving DecidableEq, Repr
 
 inductive Result where
@@ -446,6 +446,210 @@ def revokeSubtree (state : State) (actor : SubjectId) (authoritySlot : SlotId)
             else reject state .objectMismatch
       else reject state .missingRevoke
 
+/-- Rights consumed by the composite runtime's live virtual-memory,
+address-space, and blocking-waiter invariants.  The capability layer exposes
+this finite guard so the composite adapter can reject a revocation before
+publishing a state that would lose required authority. -/
+def hasRuntimeCriticalRight (rights : Rights) : Bool :=
+  rights.read || rights.write || rights.revoke || rights.receive
+
+/-- Direct revocation is conservatively publishable when the selected live
+capability carries no runtime-critical right.  This deliberately rejects some
+redundant-authority removals: the executable state has no finite global subject
+index with which to decide that stronger property. -/
+def directRevocationRuntimeSafe (state : State) (victim : SubjectId)
+    (victimSlot : SlotId) : Bool :=
+  match lookup state victim victimSlot with
+  | .found target => !hasRuntimeCriticalRight target.rights
+  | _ => true
+
+/-- A subtree is conservatively publishable when every allocated descendant's
+recorded rights are non-critical.  The bounded derivation frontier makes this
+check executable even though holders are represented by an unbounded subject
+function. -/
+def subtreeRevocationRuntimeSafe (state : State) (victim : SubjectId)
+    (victimSlot : SlotId) : Bool :=
+  match lookup state victim victimSlot with
+  | .found target =>
+      (List.range state.nextIdentity).all fun identity =>
+        if descendsFrom state identity target.identity state.nextIdentity then
+          match state.derivations identity with
+          | some (_, _, _, rights) => !hasRuntimeCriticalRight rights
+          | none => true
+        else true
+  | _ => true
+
+/-- Composite-facing direct revocation: ordinary capability denials pass
+through, while an accepted raw removal is converted into a typed, atomic
+denial if it could consume runtime-critical authority. -/
+def revokeRuntimeSafe (state : State) (actor : SubjectId) (authoritySlot : SlotId)
+    (victim : SubjectId) (victimSlot : SlotId) : Outcome :=
+  let outcome := revoke state actor authoritySlot victim victimSlot
+  match outcome.result with
+  | .rejected _ => outcome
+  | .accepted =>
+      if directRevocationRuntimeSafe state victim victimSlot then outcome
+      else reject state .runtimeAuthorityRequired
+
+/-- Composite-facing transitive revocation with the same typed fail-closed
+publication boundary. -/
+def revokeSubtreeRuntimeSafe (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId) : Outcome :=
+  let outcome := revokeSubtree state actor authoritySlot victim victimSlot
+  match outcome.result with
+  | .rejected _ => outcome
+  | .accepted =>
+      if subtreeRevocationRuntimeSafe state victim victimSlot then outcome
+      else reject state .runtimeAuthorityRequired
+
+theorem hasRuntimeCriticalRight_of_hasRight (rights : Rights) (right : Right)
+    (hcritical : right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive)
+    (hright : hasRight rights right) : hasRuntimeCriticalRight rights = true := by
+  rcases hcritical with rfl | rfl | rfl | rfl <;>
+    simp_all [hasRight, permits, hasRuntimeCriticalRight]
+
+theorem revokeRuntimeSafe_accepted_raw state actor authoritySlot victim victimSlot next
+    (haccepted : revokeRuntimeSafe state actor authoritySlot victim victimSlot =
+      { state := next, result := .accepted }) :
+    revoke state actor authoritySlot victim victimSlot =
+        { state := next, result := .accepted } ∧
+      directRevocationRuntimeSafe state victim victimSlot = true := by
+  simp only [revokeRuntimeSafe] at haccepted
+  cases hraw : revoke state actor authoritySlot victim victimSlot with
+  | mk rawState result =>
+      cases result with
+      | rejected reason => simp [hraw] at haccepted
+      | accepted =>
+          simp only [hraw] at haccepted
+          split at haccepted
+          next hsafe =>
+            rcases haccepted with ⟨rfl, rfl⟩
+            exact ⟨rfl, hsafe⟩
+          next hunsafe => simp [reject] at haccepted
+
+theorem revokeSubtreeRuntimeSafe_accepted_raw state actor authoritySlot victim victimSlot next
+    (haccepted : revokeSubtreeRuntimeSafe state actor authoritySlot victim victimSlot =
+      { state := next, result := .accepted }) :
+    revokeSubtree state actor authoritySlot victim victimSlot =
+        { state := next, result := .accepted } ∧
+      subtreeRevocationRuntimeSafe state victim victimSlot = true := by
+  simp only [revokeSubtreeRuntimeSafe] at haccepted
+  cases hraw : revokeSubtree state actor authoritySlot victim victimSlot with
+  | mk rawState result =>
+      cases result with
+      | rejected reason => simp [hraw] at haccepted
+      | accepted =>
+          simp only [hraw] at haccepted
+          split at haccepted
+          next hsafe =>
+            rcases haccepted with ⟨rfl, rfl⟩
+            exact ⟨rfl, hsafe⟩
+          next hunsafe => simp [reject] at haccepted
+
+/-- Accepted composite-facing direct revocation retains every authority in the
+runtime-critical fragment. -/
+theorem revokeRuntimeSafe_accepted_preserves_critical_authority state actor authoritySlot
+    victim victimSlot next
+    (haccepted : revokeRuntimeSafe state actor authoritySlot victim victimSlot =
+      { state := next, result := .accepted }) :
+    ∀ subject object right,
+      (right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive) →
+      HasAuthority state subject object right →
+      HasAuthority next subject object right := by
+  obtain ⟨hraw, hsafe⟩ := revokeRuntimeSafe_accepted_raw state actor authoritySlot
+    victim victimSlot next haccepted
+  simp only [revoke] at hraw
+  split at hraw
+  · simp [reject] at hraw
+  · simp [reject] at hraw
+  next authority hactor =>
+    split at hraw
+    · split at hraw
+      · simp [reject] at hraw
+      · simp [reject] at hraw
+      next target htarget =>
+        split at hraw
+        next hmatch =>
+          rcases hraw with ⟨rfl, rfl⟩
+          intro subject object
+          have hpreserve : ∀ right,
+              (right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive) →
+              HasAuthority state subject object right →
+              HasAuthority (clear state victim victimSlot) subject object right := by
+            intro right hcritical hauthority
+            rcases hauthority with ⟨slot, capability, hslot, hobject, hright⟩
+            by_cases hremoved : subject = victim ∧ slot = victimSlot
+            · rcases hremoved with ⟨rfl, rfl⟩
+              have heq : capability = target := by
+                apply Option.some.inj
+                exact hslot.symm.trans (lookup_found_slot state _ _ target htarget)
+              subst capability
+              have hcriticalRight := hasRuntimeCriticalRight_of_hasRight target.rights right
+                hcritical hright
+              simp [directRevocationRuntimeSafe, htarget, hcriticalRight] at hsafe
+            · exact ⟨slot, capability, by simpa [clear, hremoved] using hslot,
+                hobject, hright⟩
+          exact hpreserve
+        next => simp [reject] at hraw
+    · simp [reject] at hraw
+
+/-- Accepted composite-facing subtree revocation retains the same fragment.
+Well-formed derivation metadata supplies the finite witness used by the guard. -/
+theorem revokeSubtreeRuntimeSafe_accepted_preserves_critical_authority state actor
+    authoritySlot victim victimSlot next
+    (hstate : WellFormed state)
+    (haccepted : revokeSubtreeRuntimeSafe state actor authoritySlot victim victimSlot =
+      { state := next, result := .accepted }) :
+    ∀ subject object right,
+      (right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive) →
+      HasAuthority state subject object right →
+      HasAuthority next subject object right := by
+  obtain ⟨hraw, hsafe⟩ := revokeSubtreeRuntimeSafe_accepted_raw state actor authoritySlot
+    victim victimSlot next haccepted
+  simp only [revokeSubtree] at hraw
+  split at hraw
+  · simp [reject] at hraw
+  · simp [reject] at hraw
+  next authority hactor =>
+    split at hraw
+    · split at hraw
+      · simp [reject] at hraw
+      · simp [reject] at hraw
+      next target htarget =>
+        split at hraw
+        next hmatch =>
+          rcases hraw with ⟨rfl, rfl⟩
+          intro subject object
+          have hpreserve : ∀ right,
+              (right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive) →
+              HasAuthority state subject object right →
+              HasAuthority (clearSubtree state target.identity) subject object right := by
+            intro right hcritical hauthority
+            rcases hauthority with ⟨slot, capability, hslot, hobject, hright⟩
+            by_cases hdescendant :
+                descendsFrom state capability.identity target.identity state.nextIdentity = true
+            · have hslotWellFormed := hstate.1 subject slot capability hslot
+              have hidentity : capability.identity < state.nextIdentity :=
+                hslotWellFormed.2.2.2.2.1
+              have hderivation : state.derivations capability.identity =
+                  some (capability.parent, capability.object, capability.kind,
+                    capability.rights) := hslotWellFormed.2.2.2.2.2.1
+              have hall : ∀ identity, identity < state.nextIdentity →
+                  descendsFrom state identity target.identity state.nextIdentity = false ∨
+                    (match state.derivations identity with
+                      | some (_, _, _, rights) => !hasRuntimeCriticalRight rights
+                      | none => true) = true := by
+                simpa [subtreeRevocationRuntimeSafe, htarget] using hsafe
+              have hitem := hall capability.identity hidentity
+              have hcriticalRight := hasRuntimeCriticalRight_of_hasRight capability.rights right
+                hcritical hright
+              simp [hdescendant, hderivation, hcriticalRight] at hitem
+            · exact ⟨slot, capability,
+                by simp [clearSubtree, hslot, hdescendant], hobject, hright⟩
+          exact hpreserve
+        next => simp [reject] at hraw
+    · simp [reject] at hraw
+
 theorem revokeSubtree_preserves_registry (state : State) actor authoritySlot victim victimSlot :
     let next := (revokeSubtree state actor authoritySlot victim victimSlot).state
     next.subjects = state.subjects ∧ next.objects = state.objects ∧
@@ -602,6 +806,181 @@ theorem copy_preserves_wellFormed (state : State) (actor : SubjectId)
             simpa [install, htarget] using hspaces subject slot hout
       · simpa [reject]
 
+/-- Delegation is monotonic for authority already present in the source state.
+The accepted branch installs into a slot proved empty, so every old witness
+remains available; every rejected branch returns the literal pre-state. -/
+theorem copy_preserves_authority (state : State) (actor : SubjectId)
+    (source : SlotId) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) (subject : SubjectId) (object : ObjectId) (right : Right)
+    (hauthority : HasAuthority state subject object right) :
+    HasAuthority (copy state actor source destination destinationSlot requested).state
+      subject object right := by
+  rcases hauthority with ⟨slot, capability, hslot, hobject, hright⟩
+  simp only [copy]
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  split <;> try exact ⟨slot, capability, hslot, hobject, hright⟩
+  next copied hlookup hlive hinRange hempty hrights hgrant hsubset =>
+    refine ⟨slot, capability, ?_, hobject, hright⟩
+    by_cases htarget : subject = destination ∧ slot = destinationSlot
+    · rcases htarget with ⟨rfl, rfl⟩
+      rw [hslot] at hempty
+      simp at hempty
+    · simpa [install, htarget] using hslot
+
+/-- Delegation changes only the capability-space contents and monotonic
+identity history.  The live subject/object registries, object kinds, and
+per-subject slot bounds remain byte-for-byte identical.  Composite
+publication proofs use this boundary to retain lifecycle and resource
+validity while separately proving facts about the newly installed slot. -/
+theorem copy_preserves_registries (state : State) (actor : SubjectId)
+    (source : SlotId) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) :
+    let next := (copy state actor source destination destinationSlot requested).state
+    next.subjects = state.subjects ∧
+      next.objects = state.objects ∧
+      next.kinds = state.kinds ∧
+      next.slotCapacity = state.slotCapacity := by
+  simp only [copy]
+  split <;> try simp [reject]
+  next capability =>
+    split <;> try simp_all
+    split <;> try simp_all
+    split <;> try simp_all
+    split <;> try simp_all
+    split <;> try simp_all
+    split <;> try simp_all
+    simp [install]
+
+/-- Copy appends one derivation record, so every older identity retains its
+exact provenance entry. -/
+theorem copy_preserves_derivation_of_lt (state : State) (actor : SubjectId)
+    (source : SlotId) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) (identity : Nat) (hidentity : identity < state.nextIdentity) :
+    (copy state actor source destination destinationSlot requested).state.derivations identity =
+      state.derivations identity := by
+  simp only [copy]
+  split <;> try rfl
+  next capability =>
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    simp [install, Nat.ne_of_lt hidentity]
+
+/-- A sealed identity below the allocation frontier remains absent from every
+live slot after copy.  The sole new slot receives the frontier identity, while
+all older slots are retained exactly. -/
+theorem copy_preserves_absent_identity (state : State) (actor : SubjectId)
+    (source : SlotId) (destination : SubjectId) (destinationSlot : SlotId)
+    (requested : Rights) (identity : Nat) (hidentity : identity < state.nextIdentity)
+    (habsent : ∀ subject slot capability,
+      state.slots subject slot = some capability → capability.identity ≠ identity) :
+    ∀ subject slot capability,
+      (copy state actor source destination destinationSlot requested).state.slots subject slot =
+        some capability → capability.identity ≠ identity := by
+  simp only [copy]
+  split <;> try exact habsent
+  next sourceCapability =>
+    split <;> try exact habsent
+    split <;> try exact habsent
+    split <;> try exact habsent
+    split <;> try exact habsent
+    split <;> try exact habsent
+    split <;> try exact habsent
+    intro subject slot capability hslot
+    by_cases htarget : subject = destination ∧ slot = destinationSlot
+    · rcases htarget with ⟨rfl, rfl⟩
+      have hcapability : capability.identity = state.nextIdentity := by
+        symm
+        simpa [install] using congrArg (fun found => found.map Capability.identity) hslot
+      rw [hcapability]
+      exact Nat.ne_of_gt hidentity
+    · apply habsent subject slot capability
+      simpa [install, htarget] using hslot
+
+/-- Single-slot revocation changes only the live slot projection.  Registry,
+allocation-frontier, derivation-history, and bounded-space metadata remain
+exactly unchanged. -/
+theorem revoke_preserves_metadata (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId) :
+    let next := (revoke state actor authoritySlot victim victimSlot).state
+    next.subjects = state.subjects ∧
+      next.objects = state.objects ∧
+      next.kinds = state.kinds ∧
+      next.slotCapacity = state.slotCapacity ∧
+      next.nextIdentity = state.nextIdentity ∧
+      next.derivations = state.derivations := by
+  simp only [revoke]
+  split <;> try simp [reject]
+  next authority =>
+    split <;> try simp
+    split <;> try simp
+    next target =>
+      split <;> simp [clear]
+
+/-- Every capability surviving direct revocation occupied the same slot in the
+pre-state.  This projection is reusable for sealed-identity disjointness. -/
+theorem revoke_slot_survives (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
+    (subject : SubjectId) (slot : SlotId) (capability : Capability)
+    (hslot : (revoke state actor authoritySlot victim victimSlot).state.slots subject slot =
+      some capability) :
+    state.slots subject slot = some capability := by
+  simp only [revoke] at hslot
+  split at hslot <;> try simpa [reject] using hslot
+  next authority =>
+    split at hslot <;> try simpa [reject] using hslot
+    split at hslot <;> try simpa [reject] using hslot
+    next target =>
+      split at hslot
+      · by_cases htarget : subject = victim ∧ slot = victimSlot
+        · simp [clear, htarget] at hslot
+        · simpa [clear, htarget] using hslot
+      · simpa [reject] using hslot
+
+/-- Subtree revocation retains every non-slot component exactly. -/
+theorem revokeSubtree_preserves_metadata (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId) :
+    let next := (revokeSubtree state actor authoritySlot victim victimSlot).state
+    next.subjects = state.subjects ∧
+      next.objects = state.objects ∧
+      next.kinds = state.kinds ∧
+      next.slotCapacity = state.slotCapacity ∧
+      next.nextIdentity = state.nextIdentity ∧
+      next.derivations = state.derivations := by
+  simp only [revokeSubtree]
+  split <;> try simp [reject]
+  next authority =>
+    split <;> try simp
+    split <;> try simp
+    next target =>
+      split <;> simp [clearSubtree]
+
+/-- Every capability surviving subtree revocation occupied the same slot in
+the pre-state. -/
+theorem revokeSubtree_slot_survives (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
+    (subject : SubjectId) (slot : SlotId) (capability : Capability)
+    (hslot : (revokeSubtree state actor authoritySlot victim victimSlot).state.slots
+      subject slot = some capability) :
+    state.slots subject slot = some capability := by
+  simp only [revokeSubtree] at hslot
+  split at hslot <;> try simpa [reject] using hslot
+  next authority =>
+    split at hslot <;> try simpa [reject] using hslot
+    split at hslot <;> try simpa [reject] using hslot
+    next target _ =>
+      split at hslot
+      · exact clearSubtree_slot_survives state target.identity subject slot capability hslot
+      · simpa [reject] using hslot
+
 theorem revoke_preserves_wellFormed (state : State) (actor : SubjectId)
     (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
     (hstate : WellFormed state) :
@@ -724,6 +1103,49 @@ theorem revokeSubtree_rejected_unchanged (state : State) (actor : SubjectId)
     split <;> try simp_all
     split <;> try simp_all
     next target => split <;> try simp_all
+
+/-- Every typed denial from the composite-facing direct guard is atomic,
+including the additional runtime-authority denial. -/
+theorem revokeRuntimeSafe_rejected_unchanged (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
+    (reason : Denial)
+    (hrejected : (revokeRuntimeSafe state actor authoritySlot victim victimSlot).result =
+      .rejected reason) :
+    (revokeRuntimeSafe state actor authoritySlot victim victimSlot).state = state := by
+  cases hraw : revoke state actor authoritySlot victim victimSlot with
+  | mk rawState result =>
+      cases result with
+      | rejected rawReason =>
+          have hstate := revoke_rejected_unchanged state actor authoritySlot victim victimSlot
+            rawReason (by simp [hraw])
+          simpa [revokeRuntimeSafe, hraw] using hstate
+      | accepted =>
+          simp only [revokeRuntimeSafe, hraw] at hrejected ⊢
+          split at *
+          · contradiction
+          · simp_all [reject]
+
+/-- Every typed denial from guarded subtree revocation is a literal rejection
+of the complete pre-state. -/
+theorem revokeSubtreeRuntimeSafe_rejected_unchanged (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)
+    (reason : Denial)
+    (hrejected :
+      (revokeSubtreeRuntimeSafe state actor authoritySlot victim victimSlot).result =
+        .rejected reason) :
+    (revokeSubtreeRuntimeSafe state actor authoritySlot victim victimSlot).state = state := by
+  cases hraw : revokeSubtree state actor authoritySlot victim victimSlot with
+  | mk rawState result =>
+      cases result with
+      | rejected rawReason =>
+          have hstate := revokeSubtree_rejected_unchanged state actor authoritySlot victim
+            victimSlot rawReason (by simp [hraw])
+          simpa [revokeSubtreeRuntimeSafe, hraw] using hstate
+      | accepted =>
+          simp only [revokeSubtreeRuntimeSafe, hraw] at hrejected ⊢
+          split at *
+          · contradiction
+          · simp_all [reject]
 
 theorem revokeSubtree_no_authority_amplification (state : State) (actor : SubjectId)
     (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId)

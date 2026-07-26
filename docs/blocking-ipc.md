@@ -21,6 +21,59 @@ same transition. Termination removes the dead identity without requeuing it.
 Repeated cleanup is idempotent. Malformed stale waiters are removed by the
 same authority filter.
 
+The composite idle-block path is now part of the stable runtime claim. When a
+typed blocking receive completes as `blocked` and its published scheduler has
+no selected peer, the proof connects the dependency's exact caller and
+scheduler mutation to the composite publisher: the caller is non-runnable,
+the ready queue remains empty, the active translation is cleared, and both the
+global runtime invariant and waiter/saved-context agreement are preserved.
+The complementary immediate-handoff path is also part of the stable claim.
+When the post-state names a selected peer, the proof fixes that peer as the
+old ready-queue head, consumes exactly its kernel-owned resumable context, and
+switches the modeled active translation to the same identity. Restore failure
+remains a typed, state-preserving rejection rather than a partial block.
+
+The typed blocked-context successor also exposes one atomic subject-termination
+publication law: after lifecycle termination accepts, the same composite
+post-state contains neither the dead subject's waiter index nor its suspended
+blocked context. A lifecycle rejection publishes nothing and returns the
+identical typed context and composite states. The public explicit-termination
+gate and its scheduler-selected `terminateCurrent` spelling now use this
+publisher before committing resumable/resource cleanup, so waiter and blocked
+context absence are part of the same typed global result as lifecycle, ready
+queue, resumable-context, and transfer cleanup. Terminating an endpoint owner
+also applies the contained-cleanup authority filter: every peer waiter whose
+endpoint is retired loses its waiter index and blocked-context entry, the exact
+saved context moves to the quiescent deferred-cancellation bank, and the dead
+endpoint mailbox is cleared atomically. Arbitrary ordinary successor-gate
+traces, including either termination spelling and raw scheduler requests,
+preserve the folded runtime/waiter-context invariant without a reconstructed
+readiness premise. Both explicit and scheduler-selected termination preserve
+the complete retained-context classification, so either may be followed
+immediately by any finite capacity-checked deferred-drain suffix through the
+authoritative gate without an `AuthoritativeTraceCompatible` witness. Explicit
+termination covers live identities that begin blocked, already deferred, or
+otherwise non-current. More generally, finite interleavings of the
+readiness-free ordinary family with block, wake,
+delivery, and cancellation operations carry one state-independent trace
+certificate; no intermediate state is exposed through a recursive readiness
+gate. This readiness-free slice preserves `BlockingRuntimeWellFormed`, not the
+folded deferred-cancellation invariant. The broader
+`AuthoritativeRuntimeWellFormed` theorem remains conditional on an
+`AuthoritativeTraceCompatible` certificate whose dormant-cancellation laws are
+not yet derived for every public constructor.
+
+Contained-fault cleanup uses a separate deferred-cancellation bank for peers
+whose endpoint authority was invalidated. Each retained context stays valid,
+live, non-runnable, non-current, absent from the ready queue, and disjoint from
+the resumable bank. The public authoritative gate exposes a typed
+`drainDeferred` operation: it revalidates those facts, reserves ready-queue and
+resumable-bank capacity, and publishes the cancellation, restored context, and
+synchronized scheduler views together. Exhausting either finite bank is a
+distinct typed rejection with the literal pre-state. The one-step theorem and
+the finite drain-trace theorem preserve the strengthened deferred runtime
+invariant; they do not claim a machine restore or automatic progress policy.
+
 ## Bounds, observations, and progress
 
 Wait queues and the scheduler ready queue have explicit fixed capacities.
