@@ -112,6 +112,29 @@ theorem accepted_authority_chain (authority : Authority)
         .ok authority.allocation :=
   ⟨authority.decodedBy, authority.reservedBy, authority.allocatedBy⟩
 
+/-- The exact rich transition cannot replace any of its three authoritative
+inputs when it constructs a successful result.  This projection lemma lets
+proof-only production compositions bind raw bytes and the complete manifest
+without unfolding the decoder or allocator. -/
+theorem accepted_inputs (input : Input)
+    (manifest : List BootReservation.Reservation) (owner : FrameAllocator.OwnerId)
+    (authority : Authority) (h : run input manifest owner = .ok authority) :
+    authority.input = input ∧ authority.manifest = manifest ∧ authority.owner = owner := by
+  unfold run at h
+  split at h <;> try contradiction
+  next decoded hdecode =>
+    split at h <;> try contradiction
+    next reserved hreserve =>
+      split at h <;> try contradiction
+      next allocation hallocate =>
+        split at h <;> try contradiction
+        next hsound =>
+          split at h <;> try contradiction
+          next hbound =>
+            injection h with hauthority
+            subst authority
+            exact ⟨rfl, rfl, rfl⟩
+
 theorem accepted_selection_sound (authority : Authority)
     (_h : run authority.input authority.manifest authority.owner = .ok authority) :
     usableFrameSound authority.decoded.entries authority.allocation.frame = true ∧

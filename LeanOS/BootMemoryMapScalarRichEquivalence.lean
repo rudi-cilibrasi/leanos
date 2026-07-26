@@ -460,6 +460,63 @@ theorem canonicalManifest_validate_of_manifestValid
     guardStart guardLength entryStart entryLength usersStart usersLength
     infoStart infoLength _ hround hcontained⟩
 
+/-- The manifest intervals retained by an accepted allocator initialization
+are extensionally the same intervals returned by the manifest validator. -/
+theorem initialized_intervals_eq_validated
+    (handoff : Handoff) (manifest : List BootReservation.Reservation)
+    (intervals : List BootReservation.Interval) (result : BootReservation.Result)
+    (hvalidated : BootReservation.validateManifest manifest = .ok intervals)
+    (hinitialized :
+      BootReservation.initializeAllocator handoff manifest = .ok result) :
+    result.intervals = intervals := by
+  unfold BootReservation.initializeAllocator at hinitialized
+  cases hnormalize : normalize handoff with
+  | error reason =>
+      rw [hnormalize] at hinitialized
+      contradiction
+  | ok firmware =>
+      rw [hnormalize] at hinitialized
+      change (do
+        let intervals ← BootReservation.validateManifest manifest
+        let regions := BootReservation.overlay intervals firmware.regions
+        if hnonempty : regions.isEmpty then throw BootReservation.Error.emptyOutput
+        else if hshape : regionShape regions then
+          if hdisjoint : pairwiseDisjoint regions then
+            if hprecedence : BootReservation.reservationPrecedence intervals regions then
+              if hsound : usableSound firmware.entries regions then
+                if hentry : BootReservation.ordinaryEntrySeparated intervals then
+                  match hinit : FrameAllocator.init regions with
+                  | .error _ => throw BootReservation.Error.allocatorRejected
+                  | .ok allocator =>
+                      if hexcluded :
+                          BootReservation.reservationsNonfree intervals allocator then
+                        pure
+                          (BootReservation.Result.mk firmware intervals regions
+                            (Bool.eq_false_iff.mpr hnonempty) hshape hdisjoint
+                            hprecedence hsound hentry allocator hinit hexcluded)
+                      else throw BootReservation.Error.normalizationInvariant
+                else throw BootReservation.Error.ordinaryEntryOverlap
+              else throw BootReservation.Error.normalizationInvariant
+            else throw BootReservation.Error.normalizationInvariant
+          else throw BootReservation.Error.normalizationInvariant
+        else throw BootReservation.Error.normalizationInvariant) = .ok result at hinitialized
+      rw [hvalidated] at hinitialized
+      dsimp only [pure, Except.pure, bind, Except.bind] at hinitialized
+      split at hinitialized <;> try contradiction
+      split at hinitialized <;> try contradiction
+      split at hinitialized <;> try contradiction
+      split at hinitialized <;> try contradiction
+      split at hinitialized <;> try contradiction
+      split at hinitialized <;> try contradiction
+      next hnonempty hshape hdisjoint hprecedence hsound hentry =>
+        split at hinitialized <;> try contradiction
+        next allocator hallocator =>
+          split at hinitialized <;> try contradiction
+          next hexcluded =>
+            injection hinitialized with hresult
+            subst result
+            rfl
+
 /-- The proof-side form of the production range-overlap test.  Keeping this in
 `Nat` makes its relationship to `BootReservation.roundInterval` explicit;
 accepted production range words are all below the 16 MiB physical limit, so
@@ -640,5 +697,146 @@ theorem accepted_authority_projection_consumable
     authority.selectedWithinBound
   rw [authority.selectedUsable, hreserved] at heq
   simpa using heq
+
+/-! ## Raw-byte/canonical-manifest production composition
+
+This proof-only composition mirrors the production gates without adding a
+freestanding export.  The immutable raw input is passed unchanged to the exact
+rich transition, while the positional ABI words construct the only manifest
+that can reach it. -/
+
+def runCanonical
+    (input : BootMemoryMapDecoder.Input)
+    (lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength : UInt64)
+    (owner : FrameAllocator.OwnerId) :
+    Except BootMemoryMapFullProjectionABI.Error
+      BootMemoryMapFullProjectionABI.Authority :=
+  if manifestValid lowStart lowLength imageStart imageLength pageStart pageLength
+      descriptorStart descriptorLength stacksStart stacksLength
+      guardStart guardLength entryStart entryLength usersStart usersLength
+      infoStart infoLength then
+    BootMemoryMapFullProjectionABI.run input
+      (canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength) owner
+  else
+    .error (.reservation .inconsistentImage)
+
+/-- Acceptance of the composed production specification universally binds the
+immutable raw bytes to the rich decoder, all canonical manifest identities to
+the rich validator, and the selected rich authority to the exact scalar
+consumer.  There are no fixture, entry-order, or memory-size premises. -/
+theorem runCanonical_acceptance_binding
+    (input : BootMemoryMapDecoder.Input)
+    (lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength : UInt64)
+    (owner : FrameAllocator.OwnerId)
+    (authority : BootMemoryMapFullProjectionABI.Authority)
+    (haccepted :
+      runCanonical input lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength owner = .ok authority) :
+    let manifest :=
+      canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength
+    let intervals :=
+      canonicalIntervals lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength
+    manifestValid lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength = true ∧
+      authority.input = input ∧
+      authority.manifest = manifest ∧
+      BootMemoryMapDecoder.decode input = .ok authority.decoded ∧
+      BootReservation.validateManifest manifest = .ok intervals ∧
+      authority.reserved.intervals = intervals ∧
+      consumeExactProjection 4096 (UInt64.ofNat authority.allocation.frame) complete
+          (usableWord authority.decoded.entries authority.allocation.frame)
+          (blockedWord authority.decoded.entries authority.allocation.frame)
+          (manifestWord authority.reserved.intervals authority.allocation.frame) =
+        UInt64.ofNat authority.allocation.frame := by
+  dsimp only
+  unfold runCanonical at haccepted
+  split at haccepted
+  · rename_i hvalid
+    have hinputs := BootMemoryMapFullProjectionABI.accepted_inputs
+      input
+      (canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength)
+      owner authority haccepted
+    have hvalidated := canonicalManifest_validate_of_manifestValid
+      lowStart lowLength imageStart imageLength pageStart pageLength
+      descriptorStart descriptorLength stacksStart stacksLength
+      guardStart guardLength entryStart entryLength usersStart usersLength
+      infoStart infoLength hvalid
+    have hdecoded : BootMemoryMapDecoder.decode input = .ok authority.decoded := by
+      rw [← hinputs.1]
+      exact authority.decodedBy
+    have hintervals : authority.reserved.intervals =
+        canonicalIntervals lowStart lowLength imageStart imageLength pageStart pageLength
+          descriptorStart descriptorLength stacksStart stacksLength
+          guardStart guardLength entryStart entryLength usersStart usersLength
+          infoStart infoLength := by
+      apply initialized_intervals_eq_validated authority.decoded.handoff
+        (canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+          descriptorStart descriptorLength stacksStart stacksLength
+          guardStart guardLength entryStart entryLength usersStart usersLength
+          infoStart infoLength)
+      · exact hvalidated.2.2
+      · rw [← hinputs.2.1]
+        exact authority.reservedBy
+    exact ⟨hvalid, hinputs.1, hinputs.2.1, hdecoded,
+      hvalidated.2.2, hintervals, accepted_authority_projection_consumable authority⟩
+  · contradiction
+
+/-- Equal immutable raw inputs and equal canonical manifest words cannot yield
+different complete rich projections.  This is the extensional raw-byte
+determinism statement consumed by later production-equivalence proofs. -/
+theorem runCanonical_raw_bytes_extensional
+    (firstInput secondInput : BootMemoryMapDecoder.Input)
+    (lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength : UInt64)
+    (owner : FrameAllocator.OwnerId)
+    (first second : BootMemoryMapFullProjectionABI.Authority)
+    (hmagic : firstInput.magic = secondInput.magic)
+    (hinfo : firstInput.infoAddress = secondInput.infoAddress)
+    (hbytes : firstInput.bytes = secondInput.bytes)
+    (hfirst :
+      runCanonical firstInput lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength owner = .ok first)
+    (hsecond :
+      runCanonical secondInput lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength owner = .ok second) :
+    BootMemoryMapFullProjectionABI.projection first =
+      BootMemoryMapFullProjectionABI.projection second := by
+  have hinput : firstInput = secondInput := by
+    cases firstInput
+    cases secondInput
+    simp_all
+  subst secondInput
+  rw [hfirst] at hsecond
+  injection hsecond with heq
+  subst second
+  rfl
 
 end LeanOS.BootMemoryMapScalarRichEquivalence
