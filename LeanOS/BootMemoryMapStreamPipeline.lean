@@ -123,6 +123,8 @@ structure Authority where
   assembled :
     assemble magic infoAddress extent chunks = .ok input
   decodedBy : BootMemoryMapDecoder.decode input = .ok decoded
+  decodedTraversal :
+    BootMemoryMapDecoder.SuccessfulRichDecodeTraversal input decoded
   reservedBy :
     BootReservation.initializeAllocator decoded.handoff manifest = .ok reserved
   allocatedBy :
@@ -152,6 +154,9 @@ def run (magic infoAddress : UInt64) (extent : Nat) (chunks : List ModelChunk)
                       .ok
                         { magic, infoAddress, extent, chunks, manifest, owner, input, decoded,
                           reserved, allocation, assembled := hassemble, decodedBy := hdecode,
+                          decodedTraversal :=
+                            BootMemoryMapDecoder.successful_decode_constructs_traversal
+                              input decoded hdecode,
                           reservedBy := hreserve, allocatedBy := hallocate,
                           selectedUsable := hsound, selectedWithinBound := hbound }
                     else .error .internalSelectionInvariant
