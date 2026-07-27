@@ -14783,6 +14783,100 @@ theorem authoritativeGate_syscall_preserves_authoritativeRuntimeWellFormed
     (.ordinary (.syscall call)) hstate
     (syscall_authoritativeOperationCompatible state call hstate)
 
+/-- Capability publication changes the blocking scheduler's capability view,
+but retains every dormant-cancellation observation.  Registry preservation is
+the only non-structural premise needed for retained dead-runner validity. -/
+private theorem installCopiedCapabilities_dormantCancellationCompatible
+    state capabilities
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hsubjects : capabilities.subjects = state.capabilities.subjects) :
+    DormantCancellationCompatible state
+      (installCopiedCapabilities state capabilities) := by
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro subject hblocked
+    apply hstate.2.1.2.1 subject
+    exact hblocked
+  · simpa [installCopiedCapabilities] using hstate.2.2.1
+  · intro subject saved hretained
+    have hvalid := hstate.2.1.2.2 subject saved hretained
+    have hcontext := hstate.2.2.2 subject saved hretained
+    rcases hstate.1.1 with
+      ⟨_, hschedulerLifecycle, _, hcapabilities, _, _, _, _, _, _, _, _, _⟩
+    have hbase :
+        state.capabilities =
+          state.blockingIPC.scheduler.lifecycle.capabilities :=
+      hcapabilities.trans
+        (congrArg SubjectLifecycle.State.capabilities
+          hstate.1.blockingLifecycle.symm)
+    have hlive : capabilities.subjects subject = true := by
+      rw [hsubjects, hbase]
+      exact hvalid.2.2.1
+    simpa [installCopiedCapabilities, CompositeState.blockingIPCContext,
+        hstate.1.blockingScheduler, hstate.1.blockingLifecycle,
+        hschedulerLifecycle, hsubjects, hcapabilities,
+        Scheduler.ownsAddressSpace] using
+      And.intro hvalid.2.1
+        (And.intro hlive
+          (And.intro hvalid.2.2.2.1
+            (And.intro hvalid.2.2.2.2.1
+              (And.intro hvalid.2.2.2.2.2.1
+                (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
+
+/-- Delegation either rejects atomically or publishes a capability state with
+the same live-subject registry, so its dormant cancellation obligations are
+derived entirely from the authoritative pre-state. -/
+theorem capabilityCopy_authoritativeOperationCompatible state source destination
+    destinationSlot rights
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.capabilityCopy source destination destinationSlot rights)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary (.capabilityCopy source destination destinationSlot rights))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hcopy : Capability.copy state.capabilities
+          state.execution.core.context.currentSubject source destination
+          destinationSlot rights with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hcopy] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted =>
+              have hregistries := Capability.copy_preserves_registries
+                state.capabilities state.execution.core.context.currentSubject
+                source destination destinationSlot rights
+              rw [hcopy] at hregistries
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hcopy] using
+                installCopiedCapabilities_dormantCancellationCompatible
+                  state next hstate hregistries.1
+
+/-- Capability delegation has a closed folded-invariant theorem, including
+blocking waiter authority and deferred cancellation validity. -/
+theorem authoritativeGate_capabilityCopy_preserves_authoritativeRuntimeWellFormed
+    state source destination destinationSlot rights
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary
+          (.capabilityCopy source destination destinationSlot rights))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.capabilityCopy source destination destinationSlot rights)) hstate
+    (capabilityCopy_authoritativeOperationCompatible state source destination
+      destinationSlot rights hstate)
+
 /-- Delivery changes only mailbox/completion payload state.  Every projection
 observed by dormant cancellation remains literally unchanged. -/
 theorem dispatchBlockingReceive_delivered_dormant_projections_exact
