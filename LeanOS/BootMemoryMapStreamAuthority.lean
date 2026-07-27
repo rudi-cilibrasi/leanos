@@ -488,6 +488,91 @@ theorem ignoredTagBodyStepWords_of_admitted
     hpaddedNotLow, hcontentNotHigh, hoffsetNotFinal, phaseInfo, phaseTag,
     phaseDone, phaseIgnored, phaseEntryBase, phaseEntryLength, phaseEntryType]
 
+/-- An admitted unique memory-map header advances the scalar parser into its
+layout phase.  It installs the exact entry-byte count, marks the map as seen,
+and preserves all pending-entry and classification fields. -/
+theorem memoryMapTagHeaderStepWords_of_admitted
+    (identity extent offset chain content padded entries base length
+      usable blocked target highest tagCount chunk : UInt64)
+    (hidentityAligned : identity % 8 = 0)
+    (hextentLow : 16 ≤ extent)
+    (hextentHigh : extent ≤ 65536)
+    (hextentAligned : extent % 8 = 0)
+    (hoffset : offset < extent)
+    (hoffsetNotFinal : offset + 8 ≠ extent)
+    (husable : usable ≤ 1)
+    (hblocked : blocked ≤ 1)
+    (htarget : target < 4096)
+    (htagCount : tagCount < 64)
+    (htype : low32 chunk = 6)
+    (hsizeLow : 16 ≤ high32 chunk)
+    (hsizeFits : high32 chunk ≤ extent - offset)
+    (hsizeNoOverflow : high32 chunk ≤ 0xfffffffffffffff8)
+    (hroundedFits :
+      ((high32 chunk + 7) &&& 0xfffffffffffffff8) ≤ extent - offset)
+    (halignedEntries : (high32 chunk - 16) % 24 = 0)
+    (hentryBound : (high32 chunk - 16) / 24 ≤ entryLimit) :
+    let next := fun query =>
+      stepWord
+        abiVersion active noError identity extent offset chain phaseTag
+        content padded 0 entries base length usable blocked target highest
+        tagCount identity offset chunk 0 query
+    next 0 = abiVersion ∧
+      next 1 = active ∧
+      next 2 = noError ∧
+      next 3 = identity ∧
+      next 4 = extent ∧
+      next 5 = offset + 8 ∧
+      next 7 = phaseMapLayout ∧
+      next 8 = high32 chunk - 16 ∧
+      next 9 = 0 ∧
+      next 10 = 1 ∧
+      next 11 = entries ∧
+      next 12 = base ∧
+      next 13 = length ∧
+      next 14 = usable ∧
+      next 15 = blocked ∧
+      next 16 = target ∧
+      next 17 = highest ∧
+      next 18 = tagCount + 1 := by
+  dsimp only
+  have hextentNotLow : ¬extent < 16 := by simpa using hextentLow
+  have hextentNotHigh : ¬65536 < extent := by simpa using hextentHigh
+  have hoffsetNotHigh : ¬extent ≤ offset := by simpa using hoffset
+  have htargetNotHigh : ¬4096 ≤ target := by simpa using htarget
+  have husableNotHigh : ¬1 < usable := by simpa using husable
+  have hblockedNotHigh : ¬1 < blocked := by simpa using hblocked
+  have htagCountLimit : ¬64 ≤ tagCount := by simpa using htagCount
+  have htagCountNotBad : ¬64 < tagCount := by
+    intro h
+    rw [UInt64.lt_iff_toNat_lt] at h
+    rw [UInt64.lt_iff_toNat_lt] at htagCount
+    omega
+  have hsizeNotLow : ¬high32 chunk < 8 := by
+    intro h
+    rw [UInt64.le_iff_toNat_le] at hsizeLow
+    rw [UInt64.lt_iff_toNat_lt] at h
+    simp only [UInt64.toNat_ofNat] at hsizeLow h
+    omega
+  have hmapSizeNotLow : ¬high32 chunk < 16 := by simpa using hsizeLow
+  have hsizeNotFits : ¬extent - offset < high32 chunk := by
+    simpa using hsizeFits
+  have hsizeNotOverflow : ¬0xfffffffffffffff8 < high32 chunk := by
+    simpa using hsizeNoOverflow
+  have hroundedNotFits :
+      ¬extent - offset < ((high32 chunk + 7) &&& 0xfffffffffffffff8) := by
+    simpa using hroundedFits
+  have hentryNotHigh : ¬entryLimit < (high32 chunk - 16) / 24 := by
+    simpa using hentryBound
+  simp [stepWord, transitionError, completedError, nextPhase,
+    nextContent, nextPadded, hidentityAligned, hextentNotLow,
+    hextentNotHigh, hextentAligned, hoffsetNotHigh, htargetNotHigh,
+    husableNotHigh, hblockedNotHigh, htagCountLimit, htagCountNotBad,
+    htype, hsizeNotLow, hmapSizeNotLow, hsizeNotFits, hsizeNotOverflow,
+    hroundedNotFits, halignedEntries, hentryNotHigh, hoffsetNotFinal,
+    phaseInfo, phaseTag, phaseDone, phaseMapLayout,
+    phaseEntryBase, phaseEntryLength, phaseEntryType]
+
 /-- An admitted tag cursor consuming the unique terminal end-tag word reaches
 the exact successful scalar terminal state.  This is the terminal constructor
 of the rich/scalar phase induction; it is stated over the production
