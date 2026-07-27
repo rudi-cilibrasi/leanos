@@ -477,6 +477,29 @@ theorem successfulEntryDecodeTraversal_length
   | entry =>
       simp_all
 
+/-- Every successful tag traversal starts at a complete source header strictly
+before the advertised terminal extent.  This supplies the local byte bound
+needed to select the corresponding canonical eight-byte scalar chunk at each
+tag-phase induction step. -/
+theorem successfulTagDecodeTraversal_offset_lt_total
+    (bytes : List UInt8) (total offset fuel : Nat)
+    (sawMemoryMap : Bool) (tagsRev tags : List Tag)
+    (h :
+      SuccessfulTagDecodeTraversal bytes total offset fuel sawMemoryMap tagsRev tags) :
+    offset + 8 ≤ total := by
+  induction h with
+  | endTag offset fuel tagWord tagsRev hread htype hsize hend =>
+      omega
+  | ignoredTag offset fuel tagWord sawMemoryMap tagsRev tags hread hsize
+      hcontent hadvance htypeEnd htypeMap hrest ih =>
+      unfold aligned8 at ih
+      omega
+  | memoryMapTag offset fuel tagWord layoutWord tagsRev tags entries hread
+      hsize hcontent hadvance htype hlayout hentrySize hentryVersion
+      halignedEntries hentryBound hentries hrest ih =>
+      unfold aligned8 at ih
+      omega
+
 /-- After the unique memory-map tag has been seen, a successful traversal can
 consume only ignored tags before the terminal end tag.  The exact ignored-tag
 sizes are retained so the source order can subsequently be reconstructed. -/
