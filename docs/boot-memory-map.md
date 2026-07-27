@@ -234,7 +234,12 @@ published that exact rich-selected frame. Its complete-authority theorem
 derives exact scalar selection, publication, freshness, and allocator
 ownership from the rich result and accepted scrub transition, without
 accepting rescan identity or scrub-success scalar words as independent
-authority.
+authority. `sharedAllocatorScrubState` now constructs the scrub pre-state with
+the exact reservation-overlaid allocator retained by the rich authority.
+`scrubbedPublicationOfAuthority_complete` rewrites the scrub model's sole
+allocator call with the rich `allocatedBy` equation, constructing the complete
+certificate for arbitrary prior bytes without a second allocator state,
+accepted bit, rescan identity, or selected-frame equality premise.
 
 `runCanonical` is the proof-only composition of those production gates for an
 arbitrary immutable raw input. It first requires the scalar
