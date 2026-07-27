@@ -15110,6 +15110,107 @@ theorem authoritativeGate_createSubject_preserves_authoritativeRuntimeWellFormed
     (.ordinary (.createSubject subject)) hstate
     (createSubject_authoritativeOperationCompatible state subject hstate)
 
+/-- Queue admission changes only the synchronized scheduler projections.
+When the admitted identity has no undrained cancellation, every retained
+identity is distinct from the appended ready member and therefore remains
+quiescent. -/
+private theorem installSchedulerAdmission_dormantCancellationCompatible
+    state subject context next
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hnotRetained : state.deferredCancels.retained subject = none)
+    (haccepted : Scheduler.add state.scheduler subject =
+      { state := next, result := .accepted context }) :
+    DormantCancellationCompatible state
+      (installSchedulerAdmission state next) := by
+  obtain ⟨hlifecycle, hready⟩ :=
+    schedulerAdd_accepted_projections state.scheduler subject context next haccepted
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro candidate hblocked
+    apply hstate.2.1.2.1 candidate
+    exact hblocked
+  · intro candidate saved hblocked
+    simpa [installSchedulerAdmission] using
+      hstate.2.2.1 candidate saved hblocked
+  · intro candidate saved hretained
+    have hvalid := hstate.2.1.2.2 candidate saved hretained
+    simp only [CompositeState.blockingIPCContext] at hvalid
+    have hcontext := hstate.2.2.2 candidate saved hretained
+    have hne : candidate ≠ subject := by
+      intro heq
+      subst candidate
+      rw [hnotRetained] at hretained
+      contradiction
+    have hblockingScheduler :
+        state.blockingIPC.scheduler = state.scheduler :=
+      hstate.1.blockingScheduler
+    have hreadyBefore : candidate ∉ state.scheduler.ready := by
+      rw [← hblockingScheduler]
+      exact hvalid.2.2.2.2.2.1
+    have hreadyAfter : candidate ∉ next.ready := by
+      rw [hready]
+      simp [hreadyBefore, hne]
+    simpa [installSchedulerAdmission, CompositeState.blockingIPCContext,
+        Scheduler.ownsAddressSpace, hlifecycle, hblockingScheduler] using
+      And.intro hvalid.2.1
+        (And.intro hvalid.2.2.1
+          (And.intro hvalid.2.2.2.1
+            (And.intro hvalid.2.2.2.2.1
+              (And.intro hreadyAfter
+                (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
+
+/-- Scheduler admission derives its dormant-cancellation compatibility from
+the authoritative pre-state and the explicit requirement that the candidate
+is not awaiting a capacity-checked cancellation drain.  Rejections remain
+globally atomic. -/
+theorem scheduleAdd_authoritativeOperationCompatible state subject
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hnotRetained : state.deferredCancels.retained subject = none) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.scheduleAdd subject)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state (.ordinary (.scheduleAdd subject))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hadmission : schedulerAdmission state subject with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              have hnext := schedulerAdmission_rejected_unchanged
+                state subject reason (by simp [hadmission])
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hadmission, hnext] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted context =>
+              obtain ⟨hadd, _⟩ :=
+                schedulerAdmission_accepted_exact
+                  state subject context next hadmission
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hadmission] using
+                installSchedulerAdmission_dormantCancellationCompatible
+                  state subject context next hstate hnotRetained hadd
+
+/-- Admission of an identity with no undrained cancellation preserves the
+complete folded authoritative invariant through every typed result. -/
+theorem authoritativeGate_scheduleAdd_preserves_authoritativeRuntimeWellFormed
+    state subject (hstate : AuthoritativeRuntimeWellFormed state)
+    (hnotRetained : state.deferredCancels.retained subject = none) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.scheduleAdd subject))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.scheduleAdd subject)) hstate
+    (scheduleAdd_authoritativeOperationCompatible
+      state subject hstate hnotRetained)
+
 /-- Delegation either rejects atomically or publishes a capability state with
 the same live-subject registry, so its dormant cancellation obligations are
 derived entirely from the authoritative pre-state. -/
