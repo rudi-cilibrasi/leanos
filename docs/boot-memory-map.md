@@ -299,11 +299,17 @@ offset in the retained recursive tag traversal, including the exact terminal
 bit for the end tag. `endTagStepWords_of_admitted` derives the production
 scalar `complete`/`noError`/`phaseDone` state for that exact end word, and
 `successfulScalarRichTraversal_endTag` packages the canonical final chunk as
-the terminal base case of `SuccessfulScalarRichTraversal`. The remaining
-induction must propagate the scalar parser state through ignored contents and
-padding, the unique map layout, and each base/length/type triple to construct
-`SuccessfulScalarRichTraversal`. Until that final derivation exists, the
-fail-closed terminal comparison remains in place.
+the terminal base case of `SuccessfulScalarRichTraversal`.
+`ignoredTagHeaderStepWords_of_admitted` now proves that an admitted non-map,
+non-end tag header advances the production cursor by exactly eight bytes,
+installs its exact content and aligned-padding counters, and preserves all
+map, entry, and classification fields;
+`successfulScalarRichTraversal_ignoredTagHeader` packages that header as the
+next non-entry traversal step. The remaining induction must consume each
+ignored content/padding chunk, the unique map layout, and every
+base/length/type triple to construct `SuccessfulScalarRichTraversal`. Until
+that final derivation exists, the fail-closed terminal comparison remains in
+place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
