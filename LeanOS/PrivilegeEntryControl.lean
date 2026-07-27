@@ -348,7 +348,7 @@ def CompositePolicyInvariant (state : CompositeRuntimeState) : Prop :=
   Accepted state.control ∧ state.liveControl = state.control
 
 inductive CompositeGateResult where
-  | published (result : FailStop.GateResult)
+  | published (result : FailStop.AuthoritativeGateResult)
   | fatal (reason : FatalReason)
   | alreadyFatal
   deriving DecidableEq, Repr
@@ -363,15 +363,16 @@ private def haltComposite (state : CompositeRuntimeState)
 
 /-- Fast-entry control state is not part of any operation payload.  Every
 interrupt, return, syscall, preemption, IPC, capability, mapping, lifecycle,
-and scheduler step crosses this prefix before `FailStop.gate`. -/
+scheduler, blocking, and deferred-drain step crosses this prefix before
+`FailStop.authoritativeGate`. -/
 def compositeGate (state : CompositeRuntimeState)
-    (operation : FailStop.Operation) : CompositeGateOutcome :=
+    (operation : FailStop.AuthoritativeOperation) : CompositeGateOutcome :=
   if state.policyHalted then { state, result := .alreadyFatal }
   else if !validate state.control then haltComposite state .policyMismatch
   else if decide (state.liveControl ≠ state.control) then
     haltComposite state .liveControlMismatch
   else
-    let outcome := FailStop.gate state.composite operation
+    let outcome := FailStop.authoritativeGate state.composite operation
     { state := { state with composite := outcome.state }
       result := .published outcome.result }
 
@@ -389,11 +390,12 @@ theorem compositeGate_published_requires_single_entry state operation result
   exact ⟨(validate_accepted_iff _).mp hvalid, by simp_all⟩
 
 theorem accepted_composite_user_return_requires_single_entry state request
-    (h : (compositeGate state (.userReturn request)).result =
-      .published (.completed (.userReturn .accepted))) :
+    (h : (compositeGate state (.ordinary (.userReturn request))).result =
+      .published (.completed (.ordinary (.userReturn .accepted)))) :
     CompositePolicyInvariant state :=
-  compositeGate_published_requires_single_entry state (.userReturn request)
-    (.completed (.userReturn .accepted)) h
+  compositeGate_published_requires_single_entry state
+    (.ordinary (.userReturn request))
+    (.completed (.ordinary (.userReturn .accepted))) h
 
 theorem compositeGate_preserves_policy state operation
     (hinvariant : CompositePolicyInvariant state) :
@@ -403,7 +405,7 @@ theorem compositeGate_preserves_policy state operation
   split <;> simp_all [haltComposite, CompositePolicyInvariant]
 
 def runComposite (state : CompositeRuntimeState) :
-    List FailStop.Operation → CompositeRuntimeState
+    List FailStop.AuthoritativeOperation → CompositeRuntimeState
   | [] => state
   | operation :: rest =>
     let outcome := compositeGate state operation
