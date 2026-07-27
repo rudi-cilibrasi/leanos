@@ -89,14 +89,18 @@ normalization, `authorize_page_fault_snapshot` constructs the record once as a
 SMEP, and SMAP into it, and invokes the generated provenance adapter. It then
 samples the selected compiled root/report and fault-page leaf and passes those
 independent observations to the allocation-free generated strengthened
-agreement transition. The machine lowering admits two fixed, separately
-booted CPL3 probes: the page-zero supervisor read and a write to an exported
-byte in A's present user read-only text leaf. Immediately before the transition
+agreement transition. The machine lowering admits three fixed, separately
+booted CPL3 probes: the page-zero supervisor read, a write to an exported
+byte in A's present user read-only text leaf, and an instruction fetch from an
+exported payload in A's present user writable NX stack leaf. Immediately before the transition
 it executes `invlpg` on the immutable snapshot's exact fault address, closing
 the single-core stale-translation assumption for the live leaf consumed by the
 generated agreement result. The write image also verifies in the handler that
-the target byte retains its linked `0xa5` canary. NX denial remains model
-coverage and is not yet a runtime-lowering claim. The generated result
+the target byte retains its linked `0xa5` canary. The NX image verifies that
+the fixed payload was written before the fetch and requires hardware error
+word 21 with CR2 and saved RIP both equal to the payload. If NX execution
+unexpectedly succeeds, the payload invokes an unsupported syscall and reaches
+the guest-error path instead of a containment pass. The generated result
 carries an explicit contain,
 fatal, kernel-diagnostic, or reject tag; handwritten C only decodes that tag.
 Only a contain tag can call `page_fault_handler`, which receives the same
@@ -119,7 +123,10 @@ access, protection violation, CR2 zero, and the saved RIP to that exported site
 before containment. The separate read-only-write image similarly direct-branches
 to the exported `movb` site, binds error 7, write access, CR2 to
 `user_a_write_target`, and retains the unchanged-target canary. The emitted
-hardware-fault record also names the exact
+NX image direct-branches through the exported preparation site, checks the
+four fixed payload stores and final direct branch in the linked ELF, binds
+error 21 and execute access, and requires the target to remain within the
+model-generated NX stack extent. The emitted hardware-fault record also names the exact
 generated dispatch word, complete cleanup mask, and selected survivor.
 Independent runner fixtures reject a changed or zeroed raw error word, CR2,
 RIP, access kind, dispatch word, or live leaf permissions. A separate ordered
@@ -134,11 +141,24 @@ requires every fixed word and the exact generated authorization/route, and
 publishes that one record as `fault-containment-snapshot.txt`. Missing,
 duplicated, malformed, corrupted, or reordered snapshot/replay records are
 controlled failures.
-Tagged builds retain both fault ISOs, final ELFs and maps, serial transcripts,
-canonical snapshots, disassemblies, final page-table plans, and policy reports
-in the attested release bundle. `SHA256SUMS` covers each retained file.
-Wrong-instruction, indirect-entry, and wrong-handler-binding fixtures must be
-rejected.
+Two additional fresh images exercise the integrity boundary. The reserved-bit
+image pins QEMU's `max` CPU to `MAXPHYADDR=48` and sets physical-address bit 51
+in only the selected user stack leaf after the reviewed
+plan/read-back checks, invalidates that exact page, and executes a real CPL3
+read whose hardware snapshot carries RSVD. The walk-mismatch image preserves
+the hardware error, CR2, saved RIP, and live walk while changing exactly one
+expected-leaf permission bit supplied to the same generated transition. Both
+must produce one typed `PF-TERMINAL` record, the generated fatal route, and
+debug-exit status 37. The runner rejects normal-success or generic-error
+statuses and any containment, cleanup, B-dispatch, user-return, final-success,
+duplicate, or post-terminal record.
+
+Tagged builds retain all three containment ISOs and both integrity-fatal ISOs,
+final ELFs and maps, serial transcripts, canonical snapshots or terminal
+records, disassemblies, final page-table plans, and policy reports in the
+attested release bundle. `SHA256SUMS` covers each retained file.
+Wrong-instruction, indirect-entry, wrong-handler-binding, changed NX payload,
+indirect NX branch, and wrong NX error-binding fixtures must be rejected.
 Negative fixtures also reject a forged diagnostic purpose, both a direct
 handler bypass, and routing a generated fatal result to containment. A
 separately labeled EFER read is

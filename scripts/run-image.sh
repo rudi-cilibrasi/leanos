@@ -43,6 +43,10 @@ elif [[ "$scenario" == fault-readonly-write ]]; then
   fault_scenario=1
   fault_probe=readonly-write
   default_image="build/boot/leanos-${version}-x86_64-fault-readonly-write.iso"
+elif [[ "$scenario" == fault-nx-execute ]]; then
+  fault_scenario=1
+  fault_probe=nx-execute
+  default_image="build/boot/leanos-${version}-x86_64-fault-nx-execute.iso"
 elif [[ "$scenario" == entry-adversarial ]]; then
   default_image="build/boot/leanos-${version}-x86_64-entry-adversarial.iso"
 elif [[ "$scenario" == direct-port-serial ]]; then
@@ -95,7 +99,19 @@ if (( fault_scenario )); then
     echo "error: required fault final-ELF symbol missing" >&2
     exit 1
   }
-  if [[ "$fault_probe" == readonly-write ]]; then
+  if [[ "$fault_probe" == nx-execute ]]; then
+    fault_error=21
+    fault_access=execute
+    fault_access_code=2
+    fault_rip_label=user-a-nx-fault-instruction
+    fault_rip="$(symbol_value user_a_nx_fault_instruction)"
+    fault_address="$fault_rip"
+    fault_page=$((fault_address / 4096))
+    printf -v fault_leaf '%u' \
+      "$(( (1 << 63) + fault_page * 4096 + 7 ))"
+    fault_cause=no-execute
+    fault_canary=' payload-canary=armed'
+  elif [[ "$fault_probe" == readonly-write ]]; then
     fault_error=7
     fault_access=write
     fault_access_code=1

@@ -100,6 +100,9 @@ jobs:
             build/boot/leanos-0.1.0-x86_64-preemption.iso
             build/boot/leanos-0.1.0-x86_64-fault-containment.iso
             build/boot/leanos-0.1.0-x86_64-fault-readonly-write.iso
+            build/boot/leanos-0.1.0-x86_64-fault-nx-execute.iso
+            build/boot/leanos-0.1.0-x86_64-fault-reserved-bit.iso
+            build/boot/leanos-0.1.0-x86_64-fault-walk-mismatch.iso
             build/boot/leanos-0.1.0-x86_64-extended-state.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-mmx.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-sse.iso
@@ -121,6 +124,9 @@ jobs:
             build/boot/leanos-preemption.elf
             build/boot/leanos-fault-containment.elf
             build/boot/leanos-fault-readonly-write.elf
+            build/boot/leanos-fault-nx-execute.elf
+            build/boot/leanos-fault-reserved-bit.elf
+            build/boot/leanos-fault-walk-mismatch.elf
             build/boot/leanos-extended-state.elf
             build/boot/leanos-extended-state-mmx.elf
             build/boot/leanos-extended-state-sse.elf
@@ -142,6 +148,9 @@ jobs:
             build/boot/leanos-preemption.map
             build/boot/leanos-fault-containment.map
             build/boot/leanos-fault-readonly-write.map
+            build/boot/leanos-fault-nx-execute.map
+            build/boot/leanos-fault-reserved-bit.map
+            build/boot/leanos-fault-walk-mismatch.map
             build/boot/leanos-extended-state.map
             build/boot/leanos-extended-state-mmx.map
             build/boot/leanos-extended-state-sse.map
@@ -166,6 +175,12 @@ jobs:
             build/boot/boot-page-plan-fault-containment.final.h
             build/boot/boot-page-plan-fault-readonly-write.h
             build/boot/boot-page-plan-fault-readonly-write.final.h
+            build/boot/boot-page-plan-fault-nx-execute.h
+            build/boot/boot-page-plan-fault-nx-execute.final.h
+            build/boot/boot-page-plan-fault-reserved-bit.h
+            build/boot/boot-page-plan-fault-reserved-bit.final.h
+            build/boot/boot-page-plan-fault-walk-mismatch.h
+            build/boot/boot-page-plan-fault-walk-mismatch.final.h
             build/boot/boot-page-plan-extended-state.h
             build/boot/boot-page-plan-extended-state.final.h
             build/boot/boot-page-plan-extended-state-mmx.final.h
@@ -187,6 +202,9 @@ jobs:
             build/boot/preemption.serial.log
             build/boot/fault-containment.serial.log
             build/boot/fault-readonly-write.serial.log
+            build/boot/fault-nx-execute.serial.log
+            build/boot/fault-reserved-bit.serial.log
+            build/boot/fault-walk-mismatch.serial.log
             build/boot/extended-state.serial.log
             build/boot/extended-state-mmx.serial.log
             build/boot/extended-state-sse.serial.log
@@ -225,6 +243,9 @@ jobs:
             build/boot/*.su
             build/boot/fault-containment.disassembly.txt
             build/boot/fault-readonly-write.disassembly.txt
+            build/boot/fault-nx-execute.disassembly.txt
+            build/boot/fault-reserved-bit.disassembly.txt
+            build/boot/fault-walk-mismatch.disassembly.txt
             build/boot/extended-state.disassembly.txt
             build/boot/extended-state-mmx.disassembly.txt
             build/boot/extended-state-sse.disassembly.txt
@@ -248,6 +269,12 @@ jobs:
             build/boot/fault-containment-snapshot.txt
             build/boot/fault-readonly-write-policy-report.txt
             build/boot/fault-readonly-write-snapshot.txt
+            build/boot/fault-nx-execute-policy-report.txt
+            build/boot/fault-nx-execute-snapshot.txt
+            build/boot/fault-reserved-bit-policy-report.txt
+            build/boot/fault-reserved-bit-terminal.txt
+            build/boot/fault-walk-mismatch-policy-report.txt
+            build/boot/fault-walk-mismatch-terminal.txt
             build/boot/return-corruption-*.serial.log
             build/boot/return-*-policy.log
             build/boot/leanos-0.1.0-x86_64-return-*.iso

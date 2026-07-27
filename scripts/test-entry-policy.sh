@@ -2,6 +2,7 @@
 set -euo pipefail
 
 elf="${1:-build/boot/leanos.elf}"
+nx_elf="${2:-build/boot/leanos-fault-nx-execute.elf}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -40,6 +41,27 @@ run_page_fault_fixture() {
   fi
   grep -Fq "$expected" "$tmp/$name.log" || {
     echo "error: page-fault site fixture '$name' lacked '$expected'" >&2
+    cat "$tmp/$name.log" >&2
+    exit 1
+  }
+  echo "ENTRY-POLICY fixture=$name $expected result=REJECTED"
+}
+
+run_nx_page_fault_fixture() {
+  local name="$1" expected="$2"
+  shift 2
+  cp boot/kernel.c "$tmp/kernel.c"
+  cp boot/boot.S "$tmp/boot.S"
+  "$@"
+  if LEANOS_PAGE_FAULT_PROBE=nx-execute \
+      LEANOS_ENTRY_KERNEL_SOURCE="$tmp/kernel.c" \
+      LEANOS_ENTRY_BOOT_SOURCE="$tmp/boot.S" \
+      ./scripts/check-entry-policy.sh "$nx_elf" >"$tmp/$name.log" 2>&1; then
+    echo "error: NX page-fault site fixture '$name' unexpectedly passed" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$tmp/$name.log" || {
+    echo "error: NX page-fault site fixture '$name' lacked '$expected'" >&2
     cat "$tmp/$name.log" >&2
     exit 1
   }
@@ -114,7 +136,7 @@ page_fault_handler_before_generated() {
     page_fault_handler(&transition);' "$tmp/kernel.c"
 }
 page_fault_fatal_route_to_handler() {
-  sed -i '/case PAGE_FAULT_TRANSITION_FATAL:/{n;s/fail("page-fault-fatal");/return page_fault_handler(\&transition);/;}' \
+  sed -i '/case PAGE_FAULT_TRANSITION_FATAL:/,/case PAGE_FAULT_TRANSITION_REJECTED:/s/fail("page-fault-fatal");/return page_fault_handler(\&transition);/' \
     "$tmp/kernel.c"
 }
 page_fault_live_leaf_bypass() {
@@ -156,6 +178,19 @@ page_fault_indirect_entry() {
 page_fault_wrong_handler_binding() {
   sed -i \
     's/page_fault_probe_class == 1 ? 7u : 5u/page_fault_probe_class == 1 ? 5u : 5u/' \
+    "$tmp/kernel.c"
+}
+page_fault_nx_wrong_payload() {
+  sed -i \
+    's/movl \$0x000000ff, user_a_nx_fault_instruction+1/movl $0x000000fe, user_a_nx_fault_instruction+1/' \
+    "$tmp/boot.S"
+}
+page_fault_nx_indirect_branch() {
+  sed -i 's/jmp user_a_nx_fault_instruction/jmp *%rax/' "$tmp/boot.S"
+}
+page_fault_nx_wrong_handler_binding() {
+  sed -i \
+    's/page_fault_probe_class == 2 ? 21u/page_fault_probe_class == 2 ? 5u/' \
     "$tmp/kernel.c"
 }
 page_fault_c_only_snapshot_route() {
@@ -254,6 +289,15 @@ run_page_fault_fixture page-fault-indirect-entry \
 run_page_fault_fixture page-fault-wrong-handler-binding \
   'vector=14 field=deliberate-cpl3-handler-binding source' \
   page_fault_wrong_handler_binding
+run_nx_page_fault_fixture page-fault-nx-wrong-payload \
+  'vector=14 field=deliberate-cpl3-site source' \
+  page_fault_nx_wrong_payload
+run_nx_page_fault_fixture page-fault-nx-indirect-branch \
+  'vector=14 field=deliberate-cpl3-site source' \
+  page_fault_nx_indirect_branch
+run_nx_page_fault_fixture page-fault-nx-wrong-handler-binding \
+  'vector=14 field=deliberate-cpl3-handler-binding source' \
+  page_fault_nx_wrong_handler_binding
 run_fixture page-fault-c-only-snapshot-route \
   'vector=14 field=canonical-snapshot-binding source' \
   page_fault_c_only_snapshot_route

@@ -8,15 +8,17 @@ char page_map_level_4_a[4096];
 char user_a_fault_instruction[8];
 char user_a_write_fault_instruction[8];
 char user_a_write_target[1];
+char user_a_nx_fault_instruction[16];
 char user_a_stack_top[1];
 void _start(void) {}
 EOF
 invoke() {
-  LEANOS_BOOT_SCENARIO=fault-containment \
+  local mode="$1" scenario="${2:-fault-containment}"
+  LEANOS_BOOT_SCENARIO="$scenario" \
   LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
-  LEANOS_QEMU="$root/tests/qemu-fixture.sh" LEANOS_QEMU_FIXTURE_MODE="$1" \
-  LEANOS_QEMU_TIMEOUT_SECONDS=1 LEANOS_SERIAL_LOG="$tmp/$1.serial" \
-  LEANOS_FAULT_SNAPSHOT_ARTIFACT="$tmp/$1.snapshot" \
+  LEANOS_QEMU="$root/tests/qemu-fixture.sh" LEANOS_QEMU_FIXTURE_MODE="$mode" \
+  LEANOS_QEMU_TIMEOUT_SECONDS=1 LEANOS_SERIAL_LOG="$tmp/$mode.serial" \
+  LEANOS_FAULT_SNAPSHOT_ARTIFACT="$tmp/$mode.snapshot" \
   LEANOS_FAULT_CONTAINMENT_ELF="$tmp/fault-symbols.elf" \
   ./scripts/run-image.sh "$tmp/image.iso"
 }
@@ -28,6 +30,19 @@ LEANOS_BOOT_SCENARIO=fault-readonly-write \
   LEANOS_FAULT_SNAPSHOT_ARTIFACT="$tmp/write.snapshot" \
   LEANOS_FAULT_CONTAINMENT_ELF="$tmp/fault-symbols.elf" \
   ./scripts/run-image.sh "$tmp/image.iso" >/dev/null 2>&1
+invoke success fault-nx-execute >/dev/null 2>&1
+for mode in fault-nx-wrong-error fault-nx-mapping-permission-drift \
+    fault-nx-payload-forged; do
+  set +e
+  invoke "$mode" fault-nx-execute >"$tmp/$mode.output" 2>&1
+  status=$?
+  set -e
+  [[ $status -ne 0 ]] && grep -q 'failure_class=serial-protocol' \
+      "$tmp/$mode.output" || {
+    cat "$tmp/$mode.output" >&2
+    exit 1
+  }
+done
 for spec in \
   'fault-direct-call serial-protocol' \
   'fault-wrong-error serial-protocol' \

@@ -119,6 +119,9 @@ extern char user_a_stack[];
 extern char user_a_fault_instruction[], user_a_fault_recovered[];
 extern char user_a_write_fault_instruction[], user_a_write_fault_recovered[];
 extern char user_a_write_target[];
+extern char user_a_nx_fault_instruction[], user_a_nx_fault_recovered[];
+extern char user_a_reserved_fault_instruction[], user_a_reserved_fault_recovered[];
+extern void disable_nxe_for_reserved_fault(void);
 #if defined(LEANOS_ENTRY_ADVERSARIAL) || defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
 extern char user_a_direct_port_probe[];
 #endif
@@ -292,10 +295,15 @@ static __attribute__((noreturn)) void fail(const char *reason);
 static void serial_puts(const char *text);
 static void serial_putc(char value);
 static void serial_u64(uint64_t value);
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
 static void report_page_fault_snapshot(
     const struct page_fault_entry_record *snapshot,
     uint64_t authorization, uint64_t route,
     uint64_t expected_leaf, uint64_t live_leaf);
+static __attribute__((noreturn)) void report_page_fault_terminal(
+    const struct page_fault_entry_record *snapshot, uint64_t authorization,
+    uint64_t route, uint64_t expected_leaf, uint64_t live_leaf);
+#endif
 static void arm_timer(void);
 static uint64_t stack_marker(uint64_t stack_pointer);
 static void check_cross_bank_negative(void);
@@ -758,6 +766,7 @@ static void serial_u64(uint64_t value) {
     while (length != 0) serial_putc(digits[--length]);
 }
 
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
 static void report_page_fault_snapshot(
     const struct page_fault_entry_record *snapshot,
     uint64_t authorization, uint64_t route,
@@ -766,7 +775,9 @@ static void report_page_fault_snapshot(
     serial_puts("LEANOS/14 PF-WALK page="); serial_u64(snapshot->fault_page);
     serial_puts(" expected-leaf="); serial_u64(expected_leaf);
     serial_puts(" live-leaf="); serial_u64(live_leaf);
-    serial_puts(page_fault_probe_class == 1
+    serial_puts(page_fault_probe_class == 2
+        ? " cause=no-execute denial=no-execute result=PASS\n"
+        : page_fault_probe_class == 1
         ? " cause=not-writable denial=not-writable result=PASS\n"
         : " cause=supervisor denial=supervisor result=PASS\n");
     serial_puts("LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=");
@@ -778,6 +789,28 @@ static void report_page_fault_snapshot(
     serial_puts(" route="); serial_u64(route);
     serial_puts(" result=PASS\n");
 }
+
+static __attribute__((noreturn)) void report_page_fault_terminal(
+    const struct page_fault_entry_record *snapshot, uint64_t authorization,
+    uint64_t route, uint64_t expected_leaf, uint64_t live_leaf) {
+    serial_puts("LEANOS/14 PF-TERMINAL codec=1 case=");
+    serial_puts(page_fault_probe_class == 3 ? "reserved-bit" : "walk-mismatch");
+    serial_puts(" vector=14 error="); serial_u64(snapshot->error);
+    serial_puts(" access="); serial_puts(snapshot->access == 2 ? "execute" :
+        snapshot->access == 1 ? "write" : "read");
+    serial_puts(" cr2="); serial_u64(snapshot->fault_address);
+    serial_puts(" rip=");
+    serial_puts(page_fault_probe_class == 3
+        ? "user-a-reserved-fault-instruction"
+        : "user-a-fault-instruction");
+    serial_puts(" expected-leaf="); serial_u64(expected_leaf);
+    serial_puts(" live-leaf="); serial_u64(live_leaf);
+    serial_puts(" authorization="); serial_u64(authorization);
+    serial_puts(" route="); serial_u64(route);
+    serial_puts(" halt=absorbing containment=0 cleanup=0 dispatch=0 return=none\n");
+    finish(0x12);
+}
+#endif
 
 static unsigned canonical(uint64_t value) {
     uint64_t high = value >> 47;
@@ -2163,11 +2196,16 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
     if (transition->kind != PAGE_FAULT_TRANSITION_CONTAIN)
         fail("page-fault-containment-bypass");
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
-    const uint64_t expected_error = page_fault_probe_class == 1 ? 7u : 5u;
-    const uint64_t expected_rip = page_fault_probe_class == 1
+    const uint64_t expected_error = page_fault_probe_class == 2 ? 21u :
+        page_fault_probe_class == 1 ? 7u : 5u;
+    const uint64_t expected_rip = page_fault_probe_class == 2
+        ? (uint64_t)user_a_nx_fault_instruction
+        : page_fault_probe_class == 1
         ? (uint64_t)user_a_write_fault_instruction
         : (uint64_t)user_a_fault_instruction;
-    const uint64_t expected_address = page_fault_probe_class == 1
+    const uint64_t expected_address = page_fault_probe_class == 2
+        ? (uint64_t)user_a_nx_fault_instruction
+        : page_fault_probe_class == 1
         ? (uint64_t)user_a_write_target : 0u;
     if (error == expected_error && rip == expected_rip &&
         fault_address == expected_address) {
@@ -2182,6 +2220,16 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
             smap_copy_from(&write_canary, user_a_write_target, 1);
             if (write_canary != 0xa5u)
                 fail("fault-write-canary");
+        } else if (page_fault_probe_class == 2) {
+            static const uint8_t expected_payload[9] = {
+                0xb8, 0xff, 0x00, 0x00, 0x00, 0xcd, 0x80, 0x0f, 0x0b
+            };
+            uint8_t payload[9];
+            smap_copy_from(payload, user_a_nx_fault_instruction,
+                           sizeof(payload));
+            for (unsigned i = 0; i < sizeof(payload); ++i)
+                if (payload[i] != expected_payload[i])
+                    fail("fault-nx-payload");
         }
         uint64_t result = transition->result;
         if (result != UINT64_C(0x00000000ff020202))
@@ -2196,7 +2244,11 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
             peer_capability_witness != 1 || peer_resource_witness != 1 ||
             selected != saved_context_owner_b || address_space != 2)
             fail("fault-model-encoding");
-        if (page_fault_probe_class == 1) {
+        if (page_fault_probe_class == 2) {
+            serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=21 access=execute protection=1 cr2=");
+            serial_u64((uint64_t)user_a_nx_fault_instruction);
+            serial_puts(" rip=user-a-nx-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 payload-canary=armed result=PASS\n");
+        } else if (page_fault_probe_class == 1) {
             serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=7 access=write protection=1 cr2=");
             serial_u64((uint64_t)user_a_write_target);
             serial_puts(" rip=user-a-write-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 write-canary=unchanged result=PASS\n");
@@ -2342,9 +2394,37 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
               snapshot.error == 7 && snapshot.access == 1 &&
               snapshot.protection == 1 &&
               snapshot.rip == (uint64_t)user_a_write_fault_instruction
+            : page_fault_probe_class == 2
+            ? user &&
+              snapshot.fault_address ==
+                  (uint64_t)user_a_nx_fault_instruction &&
+              snapshot.fault_page ==
+                  (uint64_t)user_a_nx_fault_instruction / PAGE_BYTES &&
+              snapshot.error == 21 && snapshot.access == 2 &&
+              snapshot.protection == 1 &&
+              snapshot.rip == (uint64_t)user_a_nx_fault_instruction
+            : page_fault_probe_class == 3
+            ? user &&
+              snapshot.fault_address ==
+                  (uint64_t)user_a_nx_fault_instruction &&
+              snapshot.fault_page ==
+                  (uint64_t)user_a_nx_fault_instruction / PAGE_BYTES &&
+              snapshot.error == 13 && snapshot.access == 0 &&
+              snapshot.protection == 1 &&
+              snapshot.rip == (uint64_t)user_a_reserved_fault_instruction
+            : page_fault_probe_class == 4
+            ? user && snapshot.fault_address == 0 &&
+              snapshot.fault_page == 0 && snapshot.error == 5 &&
+              snapshot.access == 0 && snapshot.protection == 1 &&
+              snapshot.rip == (uint64_t)user_a_fault_instruction
             : 0;
     invalidate_snapshot_fault_page(&snapshot);
     const uint64_t checked_exact_fault_page_invalidation = reviewed_fault;
+    /* The mismatch fixture changes exactly one expected-walk bit.  The
+       hardware snapshot, decoded live walk, and all trusted bindings remain
+       untouched inputs to the generated #170 policy adapter. */
+    const uint64_t policy_expected_leaf = page_fault_probe_class == 4
+        ? expected_leaf ^ PTE_WRITABLE : expected_leaf;
     const uint64_t route = leanos_page_fault_dispatch_transition(
         snapshot.version, snapshot.vector, snapshot.error,
         snapshot.fault_address, snapshot.fault_page, snapshot.access,
@@ -2363,7 +2443,7 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
         (uint64_t)smap_probe_recovered,
         active_address_space, (uint64_t)root,
         active_address_space, (uint64_t)root, report_agrees,
-        expected_leaf, live_leaf,
+        policy_expected_leaf, live_leaf,
         current_subject == snapshot.current_subject, 1, current_subject,
         active_address_space, active_address_space, active_address_space,
         0, 0, checked_exact_fault_page_invalidation, current_subject,
@@ -2376,16 +2456,27 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
     };
     if (snapshot.active_address_space == 0 ||
         snapshot.current_subject != snapshot.active_address_space ||
-        canonical == 0)
+        (user && page_fault_probe_class == 3
+            ? canonical != 0 : canonical == 0))
         fail("page-fault-provenance");
     switch (transition.kind) {
     case PAGE_FAULT_TRANSITION_CONTAIN:
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+        /* The reason-sensitive images publish the canonical evidence record.
+           Preserve the ordinary #102 transcript while still routing its
+           baseline probe through this same generated production adapter. */
         report_page_fault_snapshot(
             &snapshot, canonical, route, expected_leaf, live_leaf);
+#endif
         return page_fault_handler(&transition);
     case PAGE_FAULT_TRANSITION_KERNEL_DIAGNOSTIC:
         return page_fault_diagnostic_handler(&transition);
     case PAGE_FAULT_TRANSITION_FATAL:
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+        if (page_fault_probe_class == 3 || page_fault_probe_class == 4)
+            report_page_fault_terminal(
+                &snapshot, canonical, route, policy_expected_leaf, live_leaf);
+#endif
         fail("page-fault-fatal");
     case PAGE_FAULT_TRANSITION_REJECTED:
     default:
@@ -2566,7 +2657,13 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off\n"
         : "LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
-    serial_puts(page_fault_probe_class == 1
+    serial_puts(page_fault_probe_class == 4
+        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-integrity probe=walk-mismatch contract=v1 controls=wp,smep,smap\n"
+        : page_fault_probe_class == 3
+        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-integrity probe=reserved-bit contract=v1 controls=wp,smep,smap\n"
+        : page_fault_probe_class == 2
+        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=nx-execute contract=v1 controls=wp,smep,smap\n"
+        : page_fault_probe_class == 1
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=readonly-write contract=v1 controls=wp,smep,smap\n"
         : "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=supervisor-read contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
@@ -2675,7 +2772,26 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
-    serial_puts("LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
+#ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
+    {
+        const uint64_t page =
+            (uint64_t)user_a_nx_fault_instruction / PAGE_BYTES;
+        /* TCG does not consistently raise RSVD for address bits above its
+           configured MAXPHYADDR.  Use the other architectural reserved-leaf
+           condition instead: remove NX from every active A leaf, clear
+           EFER.NXE, then retain NX only on the target leaf.  Any access through
+           that PTE must therefore raise a real vector-14 RSVD violation. */
+        for (unsigned i = 0; i < BOOT_LEAF_COUNT; ++i)
+            page_table_a[i] &= ~PTE_NX;
+        disable_nxe_for_reserved_fault();
+        page_table_a[page] |= PTE_NX;
+        __asm__ volatile ("invlpg (%0)" :
+                          : "r"(user_a_nx_fault_instruction) : "memory");
+    }
+#endif
+    serial_puts(page_fault_probe_class >= 3
+        ? "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned fatal-only=1\n"
+        : "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
     current_subject = 1;
