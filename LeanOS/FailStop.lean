@@ -14933,6 +14933,295 @@ theorem dispatchBlockingReceive_selected_block_projection_exact
                     simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
                       hpublishedIdle] at hselected
 
+/-- A composite block retains the dependency proof that the authoritative
+blocking scheduler selected the execution-derived caller in the pre-state. -/
+theorem dispatchBlockingReceive_blocked_current
+    state handleWord frame registers
+    (hblocked :
+      (dispatchBlockingReceive state handleWord frame registers).reply = .blocked) :
+    state.blockingIPC.scheduler.lifecycle.current =
+      some state.execution.core.context.currentSubject := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hblocked
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk blocking result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | delivered envelope =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | blocked =>
+                  have hcompleted :
+                      (BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+                        state.execution.core.context.currentSubject
+                        resolution.handle.slot saved).result =
+                          .completed .blocked := by
+                    simp [houtcome]
+                  have hraw :=
+                    (BlockingIPCContext.receive_blocked_ipc_exact
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject
+                      resolution.handle.slot saved hcompleted).2
+                  exact BlockingIPC.receive_blocked_current state.blockingIPC
+                    state.execution.core.context.currentSubject
+                    resolution.handle.slot hraw
+
+/-- Every outcome of authoritative blocking receive preserves the dormant
+cancellation classification.  Delivery leaves its observed projections
+literal, while blocking adds only the selected current caller and consumes at
+most the old ready-queue head, neither of which can be retained. -/
+theorem blockingReceive_authoritativeOperationCompatible
+    state handleWord frame registers
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.blocking (.receive handleWord frame registers)) := by
+  cases hmode : state.execution.mode with
+  | handling active =>
+      apply dormantCancellationCompatible_of_exact_projections state _ hstate
+      all_goals simp [authoritativeGate, hmode]
+  | halted record =>
+      apply dormantCancellationCompatible_of_exact_projections state _ hstate
+      all_goals simp [authoritativeGate, hmode]
+  | running =>
+      have hgate :
+          (authoritativeGate state
+            (.blocking (.receive handleWord frame registers))).state =
+              (dispatchBlockingReceive state handleWord frame registers).state := by
+        simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+          applyBlockingOperation]
+      change DormantCancellationCompatible state
+        (authoritativeGate state
+          (.blocking (.receive handleWord frame registers))).state
+      rw [hgate]
+      cases hreply :
+          (dispatchBlockingReceive state handleWord frame registers).reply with
+      | handleRejected reason =>
+          rw [dispatchBlockingReceive_rejected_atomic
+            state handleWord frame registers _ (.handle reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | contextRejected reason =>
+          rw [dispatchBlockingReceive_rejected_atomic
+            state handleWord frame registers _ (.context reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | switchRequired =>
+          rw [dispatchBlockingReceive_rejected_atomic
+            state handleWord frame registers _ .switchRequired hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | rejected reason =>
+          rw [dispatchBlockingReceive_rejected_atomic
+            state handleWord frame registers _ (.ipc reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | delivered envelope =>
+          have hshape :=
+            dispatchBlockingReceive_delivered_dormant_projections_exact
+              state handleWord frame registers envelope hreply
+          dsimp only at hshape
+          rcases hshape with
+            ⟨hdeferred, hblocked, hcontexts, hwaiter, hscheduler⟩
+          refine ⟨hdeferred, ?_, ?_, ?_⟩
+          · intro subject hsome
+            rw [hblocked] at hsome
+            rw [hdeferred]
+            exact hstate.2.1.2.1 subject hsome
+          · intro subject saved hsaved
+            rw [hblocked] at hsaved
+            rw [hcontexts]
+            exact hstate.2.2.1 subject saved hsaved
+          · intro subject saved hretained
+            have hvalid := hstate.2.1.2.2 subject saved hretained
+            rw [hwaiter, hscheduler, hcontexts]
+            exact ⟨hvalid.2.1, hvalid.2.2.1, hvalid.2.2.2.1,
+              hvalid.2.2.2.2.1, hvalid.2.2.2.2.2.1,
+              hvalid.2.2.2.2.2.2, hstate.2.2.2 subject saved hretained⟩
+      | blocked =>
+          have hcurrent := dispatchBlockingReceive_blocked_current
+            state handleWord frame registers hreply
+          have hcallerAbsent :
+              ResumablePreemption.contextFor state.resumable.contexts
+                state.execution.core.context.currentSubject = none := by
+            rcases hstate.1 with
+              ⟨hcoherent, _, _, _, _, _, _, _, hresumable, _, _, _, _, _⟩
+            have hresumableScheduler :
+                state.resumable.scheduler = state.scheduler := by
+              rcases hcoherent with ⟨_, _, _, _, _, _, _, hscheduler, _, _, _, _, _⟩
+              exact hscheduler
+            exact hresumable.2.2.2.2.1
+              state.execution.core.context.currentSubject
+              (by simpa [hstate.1.blockingScheduler, hresumableScheduler] using hcurrent)
+          have hcallerNotRetained :
+              state.deferredCancels.retained
+                state.execution.core.context.currentSubject = none := by
+            cases hretained :
+                state.deferredCancels.retained
+                  state.execution.core.context.currentSubject with
+            | none => rfl
+            | some saved =>
+                have hquiescent :=
+                  (hstate.2.1.2.2 state.execution.core.context.currentSubject
+                    saved hretained).2.2.2.2.1
+                exact False.elim (hquiescent hcurrent)
+          have hpostCoherent :
+              (dispatchBlockingReceive state handleWord frame registers).state.BlockingIPCCoherent := by
+            have hcoherent : state.BlockingIPCCoherent := by
+              rcases hstate.blocking.1 with
+                ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking, _⟩
+              exact hblocking
+            exact dispatchBlockingReceive_preserves_coherent
+              state handleWord frame registers hcoherent
+          cases hnext :
+              (dispatchBlockingReceive state handleWord frame registers).state.blockingIPC.scheduler.lifecycle.current with
+          | none =>
+              have hnextScheduler :
+                  (dispatchBlockingReceive state handleWord frame registers).state.scheduler.lifecycle.current =
+                    none := by
+                rw [← hpostCoherent.1]
+                exact hnext
+              have hshape :=
+                dispatchBlockingReceive_idle_block_projection_exact
+                  state handleWord frame registers hreply hnextScheduler
+              dsimp only at hshape
+              obtain ⟨endpoint, hdeferred, hblocked, hcontexts, hwaiter,
+                hready, hscheduler⟩ := hshape
+              refine ⟨hdeferred, ?_, ?_, ?_⟩
+              · intro candidate hsome
+                rw [hblocked] at hsome
+                by_cases heq :
+                    candidate = state.execution.core.context.currentSubject
+                · subst candidate
+                  simpa [hdeferred] using hcallerNotRetained
+                · rw [hdeferred]
+                  apply hstate.2.1.2.1 candidate
+                  change (state.blockingContexts candidate).isSome = true
+                  simpa [BlockingIPCContext.setBlocked, heq] using hsome
+              · intro candidate saved hsaved
+                rw [hblocked] at hsaved
+                by_cases heq :
+                    candidate = state.execution.core.context.currentSubject
+                · subst candidate
+                  simpa [hcontexts] using hcallerAbsent
+                · have hbefore :
+                      state.blockingContexts candidate = some saved := by
+                    simpa [BlockingIPCContext.setBlocked, heq] using hsaved
+                  rw [hcontexts]
+                  exact hstate.2.2.1 candidate saved hbefore
+              · intro candidate saved hretained
+                have hvalid := hstate.2.1.2.2 candidate saved hretained
+                have hne :
+                    candidate ≠ state.execution.core.context.currentSubject := by
+                  intro heq
+                  subst candidate
+                  rw [hcallerNotRetained] at hretained
+                  contradiction
+                rw [hwaiter, hscheduler, hcontexts]
+                simp only [CompositeState.blockingIPCContext] at hvalid
+                refine ⟨?_, hvalid.2.2.1, ?_, ?_, ?_, hvalid.2.2.2.2.2.2,
+                  hstate.2.2.2 candidate saved hretained⟩
+                · simpa [BlockingIPC.setWaiterEndpoint, hne] using hvalid.2.1
+                · simpa [SubjectLifecycle.setBool, hne] using hvalid.2.2.2.1
+                · simp
+                · simp [hready]
+          | some selected =>
+              have hshape :=
+                dispatchBlockingReceive_selected_block_projection_exact
+                  state handleWord frame registers selected hreply hnext
+              dsimp only at hshape
+              obtain ⟨endpoint, rest, destination, hdeferred, hblocked,
+                hcontexts, hdestination, howner, hwaiter, hready,
+                hscheduler⟩ := hshape
+              refine ⟨hdeferred, ?_, ?_, ?_⟩
+              · intro candidate hsome
+                rw [hblocked] at hsome
+                by_cases heq :
+                    candidate = state.execution.core.context.currentSubject
+                · subst candidate
+                  simpa [hdeferred] using hcallerNotRetained
+                · rw [hdeferred]
+                  apply hstate.2.1.2.1 candidate
+                  change (state.blockingContexts candidate).isSome = true
+                  simpa [BlockingIPCContext.setBlocked, heq] using hsome
+              · intro candidate saved hsaved
+                rw [hblocked] at hsaved
+                by_cases hcaller :
+                    candidate = state.execution.core.context.currentSubject
+                · subst candidate
+                  rw [hcontexts]
+                  by_cases heq :
+                      state.execution.core.context.currentSubject = selected
+                  · rw [← heq]
+                    exact ResumablePreemption.contextFor_erase_self _ _
+                  · exact
+                      (ResumablePreemption.contextFor_erase_other
+                        state.resumable.contexts selected
+                        state.execution.core.context.currentSubject heq).trans
+                        hcallerAbsent
+                · have hbefore :
+                      state.blockingContexts candidate = some saved := by
+                    simpa [BlockingIPCContext.setBlocked, hcaller] using hsaved
+                  have habsent := hstate.2.2.1 candidate saved hbefore
+                  rw [hcontexts]
+                  by_cases heq : candidate = selected
+                  · rw [← heq]
+                    exact ResumablePreemption.contextFor_erase_self _ _
+                  · exact
+                      (ResumablePreemption.contextFor_erase_other
+                        state.resumable.contexts selected candidate heq).trans habsent
+              · intro candidate saved hretained
+                have hvalid := hstate.2.1.2.2 candidate saved hretained
+                have hnotCaller :
+                    candidate ≠ state.execution.core.context.currentSubject := by
+                  intro heq
+                  subst candidate
+                  rw [hcallerNotRetained] at hretained
+                  contradiction
+                have hnotSelected : candidate ≠ selected := by
+                  have hnotReady := hvalid.2.2.2.2.2.1
+                  simp only [CompositeState.blockingIPCContext] at hnotReady
+                  rw [hready] at hnotReady
+                  intro heq
+                  subst candidate
+                  exact hnotReady (by simp)
+                simp only [CompositeState.blockingIPCContext] at hvalid
+                rw [hwaiter, hscheduler, hcontexts]
+                refine ⟨?_, hvalid.2.2.1, ?_, ?_, ?_,
+                  hvalid.2.2.2.2.2.2, ?_⟩
+                · simpa [BlockingIPC.setWaiterEndpoint, hnotCaller] using hvalid.2.1
+                · simpa [SubjectLifecycle.setBool, hnotCaller] using hvalid.2.2.2.1
+                · simpa using Ne.symm hnotSelected
+                · intro hmember
+                  exact hvalid.2.2.2.2.2.1 (by
+                    rw [hready]
+                    exact List.mem_cons_of_mem selected hmember)
+                · exact
+                    (ResumablePreemption.contextFor_erase_other
+                      state.resumable.contexts selected candidate hnotSelected).trans
+                      (hstate.2.2.2 candidate saved hretained)
+
+/-- Blocking receive has a closed preservation theorem at the folded
+authoritative boundary; callers need no post-state compatibility witness. -/
+theorem authoritativeGate_blockingReceive_preserves_authoritativeRuntimeWellFormed
+    state handleWord frame registers
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.blocking (.receive handleWord frame registers))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.blocking (.receive handleWord frame registers)) hstate
+    (blockingReceive_authoritativeOperationCompatible
+      state handleWord frame registers hstate)
+
 /-- A successful blocking receive cannot select an identity held in the
 dormant cancellation bank: blocking requires that identity to be the current
 subject, while retained cancellation requires it to be quiescent. -/
