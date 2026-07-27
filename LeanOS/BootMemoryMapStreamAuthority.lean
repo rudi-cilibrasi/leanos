@@ -78,6 +78,38 @@ def initWord (magic address extent target query : UInt64) : UInt64 :=
   else if query == 16 then target
   else 0
 
+/-- Once the scalar initializer's admission conditions hold, every query is
+the canonical active parser state.  This isolates initialization from the
+later per-chunk parser/coverage induction. -/
+theorem initWord_of_admitted
+    (address extent target query : UInt64)
+    (haligned : address % 8 = 0)
+    (hlow : 4096 ≤ address)
+    (hextentLow : 16 ≤ extent)
+    (hextentHigh : extent ≤ 65536)
+    (hextentAligned : extent % 8 = 0)
+    (hnoOverflow : extent ≤ 0xffffffffffffffff - address)
+    (htarget : target < 4096) :
+    initWord 0x36d76289 address extent target query =
+      if query == 0 then abiVersion
+      else if query == 1 then active
+      else if query == 2 then noError
+      else if query == 3 then address
+      else if query == 4 then extent
+      else if query == 5 then 0
+      else if query == 6 then initialChain
+      else if query == 7 then phaseInfo
+      else if query == 16 then target
+      else 0 := by
+  have hnlow : ¬address < 4096 := by simpa using hlow
+  have hnextentLow : ¬extent < 16 := by simpa using hextentLow
+  have hnextentHigh : ¬65536 < extent := by simpa using hextentHigh
+  have hnOverflow : ¬0xffffffffffffffff - address < extent :=
+    by simpa using hnoOverflow
+  have hntarget : ¬4096 ≤ target := by simpa using htarget
+  simp [initWord, initialError, haligned, hextentAligned, hnlow,
+    hnextentLow, hnextentHigh, hnOverflow, hntarget]
+
 private def overlap (base stop first past : UInt64) : Bool :=
   base < past && first < stop
 

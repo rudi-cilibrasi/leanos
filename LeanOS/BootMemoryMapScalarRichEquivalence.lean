@@ -1052,6 +1052,29 @@ theorem runCanonical_acceptance_binding
       hvalidated.2.2, hintervals, accepted_authority_projection_consumable authority⟩
   · contradiction
 
+/-- Every rich authority structurally initializes its canonical scalar replay
+with the admitted parser header and the exact rich-selected target.  The next
+refinement slice can therefore induct over chunks without assuming an initial
+status, diagnostic, identity, extent, parser phase, or coverage accumulator. -/
+theorem canonicalScalarInitial_of_authority
+    (authority : BootMemoryMapFullProjectionABI.Authority) :
+    let initial :=
+      BootMemoryMapStreamPipeline.scalarInitialAt
+        (UInt64.ofNat authority.input.infoAddress)
+        authority.input.bytes.length authority.allocation.frame
+    initial.word[1]! = active ∧
+      initial.word[2]! = noError ∧
+      initial.word[3]! = UInt64.ofNat authority.input.infoAddress ∧
+      initial.word[4]! = UInt64.ofNat authority.input.bytes.length ∧
+      initial.word[5]! = 0 ∧
+      initial.word[7]! = phaseInfo ∧
+      initial.word[14]! = 0 ∧
+      initial.word[15]! = 0 ∧
+      initial.word[16]! = UInt64.ofNat authority.allocation.frame := by
+  exact BootMemoryMapStreamPipeline.scalarInitialAt_of_decode
+    authority.input authority.decoded authority.allocation.frame
+    authority.decodedBy authority.selectedWithinBound
+
 /-- The actual terminal scalar replay paired with one rich authority.  Its
 stream identity comes from the immutable decoder input, and its candidate is
 the frame selected by the rich allocator. -/
