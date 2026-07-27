@@ -334,6 +334,16 @@ version-zero layout word and selects the first-entry phase (or the following
 tag for an empty map), preserving the exact entry-byte count and accumulated
 classification state; `successfulScalarRichTraversal_memoryMapLayout`
 packages that transition as the next non-entry traversal step.
+`canonicalMemoryMapLayoutStep_source_refines` now binds the retained rich
+layout word to the canonical chunk immediately after its map header, including
+the exact source slice, packed word, nonterminal bit, and every production
+transition query. The following retained tag header proves that even an empty
+map's layout word cannot be presented as terminal. Its dropped-list equation
+lets the continuation-style layout constructor consume that same canonical
+sequence without rebuilding or splicing chunks.
+`successfulScalarRichTraversal_canonicalMemoryMapLayout` performs that
+composition, lifting a traversal over the canonical suffix after the layout
+word to the exact suffix beginning at the retained layout word.
 `entryBaseStepWords_of_admitted`, `entryLengthStepWords_of_admitted`, and
 `entryTypeStepError_of_admitted` now derive the three production phase
 transitions for one retained rich entry. They preserve the exact pending
