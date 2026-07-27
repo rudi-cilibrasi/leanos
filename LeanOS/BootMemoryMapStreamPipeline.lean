@@ -1681,7 +1681,7 @@ for its base, length, and type.  The first two words are non-entry traversal
 steps; the third is the entry constructor that attaches the exact decoded
 `RawEntry`.  This packages the production phase transitions as the unit used
 by the recursive entry/source induction. -/
-theorem successfulScalarRichTraversal_memoryMapEntry
+theorem successfulScalarRichTraversal_memoryMapEntry_with_successor
     (identity extent offset : UInt64) (target base length kindWord : Nat)
     (entries : List RawEntry) (state terminal : ScalarState)
     (baseChunk lengthChunk kindChunk : ModelChunk) (rest : List ModelChunk)
@@ -1736,8 +1736,31 @@ theorem successfulScalarRichTraversal_memoryMapEntry
           kindChunk)
         rest terminal) :
     SuccessfulScalarRichTraversal target
-      ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
-      state (baseChunk :: lengthChunk :: kindChunk :: rest) terminal := by
+        ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
+        state (baseChunk :: lengthChunk :: kindChunk :: rest) terminal ∧
+      let next :=
+        scalarStep (scalarStep (scalarStep state baseChunk) lengthChunk)
+          kindChunk
+      next.word[0]! = BootMemoryMapStreamAuthority.abiVersion ∧
+        next.word[1]! = BootMemoryMapStreamAuthority.active ∧
+        next.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+        next.word[3]! = identity ∧
+        next.word[4]! = extent ∧
+        next.word[5]! = offset + 8 + 8 + 8 ∧
+        next.word[7]! =
+          (if state.word[8]! = 24
+            then BootMemoryMapStreamAuthority.phaseTag
+            else BootMemoryMapStreamAuthority.phaseEntryBase) ∧
+        next.word[8]! = state.word[8]! - 24 ∧
+        next.word[9]! = 0 ∧
+        next.word[10]! = 1 ∧
+        next.word[11]! = state.word[11]! + 1 ∧
+        next.word[12]! = UInt64.ofNat base ∧
+        next.word[13]! = UInt64.ofNat length ∧
+        next.word[14]! ≤ 1 ∧
+        next.word[15]! ≤ 1 ∧
+        next.word[16]! = UInt64.ofNat target ∧
+        next.word[18]! = state.word[18]! := by
   have htargetLt : target < UInt64.size :=
     Nat.lt_trans htarget (by decide)
   have htargetBound : UInt64.ofNat target < 4096 := by
@@ -1930,7 +1953,7 @@ theorem successfulScalarRichTraversal_memoryMapEntry
     exact (hlengthRefines (⟨18, by decide⟩ : Fin 19)).trans
       hlengthTagCountRaw
   have hkindRaw :=
-    BootMemoryMapStreamAuthority.entryTypeStepError_of_admitted
+    BootMemoryMapStreamAuthority.entryTypeStepWords_of_admitted
       identity extent (offset + 8 + 8)
       (scalarStep (scalarStep state baseChunk) lengthChunk).word[6]!
       state.word[8]! state.word[11]! (UInt64.ofNat base)
@@ -1940,47 +1963,113 @@ theorem successfulScalarRichTraversal_memoryMapEntry
       hidentityAligned hextentLow hextentHigh hextentAligned hkindOffsetLt
       hkindOffsetNotFinal husable hblocked htargetBound htagCount hkindHigh
       hlengthWordNonzero hstopWord hentryCount
-  have hkindStep :
+  have hkindRefines (query : Fin 19) :
       (scalarStep (scalarStep (scalarStep state baseChunk) lengthChunk)
-          kindChunk).word[2]! =
-        BootMemoryMapStreamAuthority.noError := by
-    apply (scalarStep_word
-      (scalarStep (scalarStep state baseChunk) lengthChunk) kindChunk
-      (⟨2, by decide⟩ : Fin 19)).trans
-    simpa only [hkindIdentity, hkindOffset, hkindTerminal, hkindChunkWord,
+          kindChunk).word[query.val]! =
+        BootMemoryMapStreamAuthority.stepWord
+          BootMemoryMapStreamAuthority.abiVersion
+          BootMemoryMapStreamAuthority.active
+          BootMemoryMapStreamAuthority.noError identity extent
+          (offset + 8 + 8)
+          (scalarStep (scalarStep state baseChunk) lengthChunk).word[6]!
+          BootMemoryMapStreamAuthority.phaseEntryType state.word[8]! 0 1
+          state.word[11]! (UInt64.ofNat base) (UInt64.ofNat length)
+          state.word[14]! state.word[15]! (UInt64.ofNat target)
+          state.word[17]! state.word[18]! identity (offset + 8 + 8)
+          (UInt64.ofNat kindWord) 0 (UInt64.ofNat query.val) := by
+    rw [scalarStep_word]
+    simp only [hkindIdentity, hkindOffset, hkindTerminal, hkindChunkWord,
       hlengthVersion, hlengthStatus, hlengthError, hlengthIdentityWord,
       hlengthExtent, hlengthCursor, hlengthPhase, hlengthContent,
       hlengthPadded, hlengthSawMap, hlengthEntries, hlengthBaseWord,
       hlengthWord, hlengthUsable, hlengthBlocked, hlengthTarget,
       hlengthHighest, hlengthTagCount, Bool.false_eq_true,
-      ↓reduceIte, show UInt64.ofNat 2 = (2 : UInt64) by decide] using hkindRaw
-  apply SuccessfulScalarRichTraversal.nonEntry
-    ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
-    state terminal baseChunk (lengthChunk :: kindChunk :: rest)
-  · rw [hphase]
-    decide
-  · exact hbaseError
-  apply SuccessfulScalarRichTraversal.nonEntry
-    ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
-    (scalarStep state baseChunk) terminal lengthChunk (kindChunk :: rest)
-  · rw [hbasePhase]
-    decide
-  · exact hlengthError
-  apply SuccessfulScalarRichTraversal.entry
-    base length kindWord entries
-    (scalarStep (scalarStep state baseChunk) lengthChunk)
-    terminal kindChunk rest
-  · exact hlengthPhase
-  · exact hlengthBaseWord
-  · exact hlengthWord
-  · exact hlengthTarget
-  · exact hkindChunkWord
-  · exact hkindStep
-  · exact hbaseBound
-  · exact hstopBound
-  · exact hkindBound
-  · exact htarget
-  · exact hrest
+      ↓reduceIte]
+  rcases hkindRaw with ⟨hkindVersionRaw, hkindStatusRaw, hkindErrorRaw,
+    hkindIdentityRaw, hkindExtentRaw, hkindCursorRaw, hkindPhaseRaw,
+    hkindContentRaw, hkindPaddedRaw, hkindSawMapRaw, hkindEntriesRaw,
+    hkindBaseRaw, hkindLengthRaw, hkindUsableRaw, hkindBlockedRaw,
+    hkindTargetRaw, hkindHighestRaw, hkindTagCountRaw⟩
+  have hkindVersion :=
+    (hkindRefines (⟨0, by decide⟩ : Fin 19)).trans hkindVersionRaw
+  have hkindStatus :=
+    (hkindRefines (⟨1, by decide⟩ : Fin 19)).trans hkindStatusRaw
+  have hkindStep :=
+    (hkindRefines (⟨2, by decide⟩ : Fin 19)).trans hkindErrorRaw
+  have hkindIdentityWord :=
+    (hkindRefines (⟨3, by decide⟩ : Fin 19)).trans hkindIdentityRaw
+  have hkindExtent :=
+    (hkindRefines (⟨4, by decide⟩ : Fin 19)).trans hkindExtentRaw
+  have hkindCursor :=
+    (hkindRefines (⟨5, by decide⟩ : Fin 19)).trans hkindCursorRaw
+  have hkindPhase :=
+    (hkindRefines (⟨7, by decide⟩ : Fin 19)).trans hkindPhaseRaw
+  have hkindContent :=
+    (hkindRefines (⟨8, by decide⟩ : Fin 19)).trans hkindContentRaw
+  have hkindPadded :=
+    (hkindRefines (⟨9, by decide⟩ : Fin 19)).trans hkindPaddedRaw
+  have hkindSawMap :=
+    (hkindRefines (⟨10, by decide⟩ : Fin 19)).trans hkindSawMapRaw
+  have hkindEntries :=
+    (hkindRefines (⟨11, by decide⟩ : Fin 19)).trans hkindEntriesRaw
+  have hkindBase :=
+    (hkindRefines (⟨12, by decide⟩ : Fin 19)).trans hkindBaseRaw
+  have hkindLength :=
+    (hkindRefines (⟨13, by decide⟩ : Fin 19)).trans hkindLengthRaw
+  have hkindUsable :=
+    (hkindRefines (⟨14, by decide⟩ : Fin 19)).trans hkindUsableRaw
+  have hkindBlocked :=
+    (hkindRefines (⟨15, by decide⟩ : Fin 19)).trans hkindBlockedRaw
+  have hkindTarget :=
+    (hkindRefines (⟨16, by decide⟩ : Fin 19)).trans hkindTargetRaw
+  have hkindTagCount :=
+    (hkindRefines (⟨18, by decide⟩ : Fin 19)).trans hkindTagCountRaw
+  have hkindUsableBound :
+      (scalarStep (scalarStep (scalarStep state baseChunk) lengthChunk)
+          kindChunk).word[14]! ≤ 1 := by
+    rw [hkindUsable]
+    split <;> simp_all
+  have hkindBlockedBound :
+      (scalarStep (scalarStep (scalarStep state baseChunk) lengthChunk)
+          kindChunk).word[15]! ≤ 1 := by
+    rw [hkindBlocked]
+    split <;> simp_all
+  have hcomposed :
+      SuccessfulScalarRichTraversal target
+        ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } ::
+          entries)
+        state (baseChunk :: lengthChunk :: kindChunk :: rest) terminal := by
+    apply SuccessfulScalarRichTraversal.nonEntry
+      ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
+      state terminal baseChunk (lengthChunk :: kindChunk :: rest)
+    · rw [hphase]
+      decide
+    · exact hbaseError
+    apply SuccessfulScalarRichTraversal.nonEntry
+      ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
+      (scalarStep state baseChunk) terminal lengthChunk (kindChunk :: rest)
+    · rw [hbasePhase]
+      decide
+    · exact hlengthError
+    apply SuccessfulScalarRichTraversal.entry
+      base length kindWord entries
+      (scalarStep (scalarStep state baseChunk) lengthChunk)
+      terminal kindChunk rest
+    · exact hlengthPhase
+    · exact hlengthBaseWord
+    · exact hlengthWord
+    · exact hlengthTarget
+    · exact hkindChunkWord
+    · exact hkindStep
+    · exact hbaseBound
+    · exact hstopBound
+    · exact hkindBound
+    · exact htarget
+    · exact hrest
+  exact ⟨hcomposed, hkindVersion, hkindStatus, hkindStep,
+    hkindIdentityWord, hkindExtent, hkindCursor, hkindPhase, hkindContent,
+    hkindPadded, hkindSawMap, hkindEntries, hkindBase, hkindLength,
+    hkindUsableBound, hkindBlockedBound, hkindTarget, hkindTagCount⟩
 
 /-- The retained rich end-tag constructor and an admitted scalar tag cursor
 construct the terminal one-chunk tail of `SuccessfulScalarRichTraversal`.
@@ -2718,7 +2807,7 @@ be consumed by the production scalar entry transition.  Thus any traversal
 over the following canonical suffix lifts to the suffix beginning at this
 entry, with the precise decoded `RawEntry` attached to its classification
 fold. -/
-theorem successfulScalarRichTraversal_canonicalMemoryMapEntry
+theorem successfulScalarRichTraversal_canonicalMemoryMapEntry_with_successor
     (identity : UInt64) (bytes : List UInt8) (total entryOffset target : Nat)
     (base length kindWord : Nat) (restEntries : List RawEntry)
     (state terminal : ScalarState)
@@ -2788,15 +2877,51 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapEntry
         ((canonicalChunks identity bytes).drop (entryOffset / 8 + 3))
         terminal) :
     SuccessfulScalarRichTraversal target
-      ({ base, length, kind := memoryKind (low32Nat kindWord) } :: restEntries)
-      state ((canonicalChunks identity bytes).drop (entryOffset / 8))
-      terminal := by
+        ({ base, length, kind := memoryKind (low32Nat kindWord) } :: restEntries)
+        state ((canonicalChunks identity bytes).drop (entryOffset / 8))
+        terminal ∧
+      let next :=
+        scalarStep
+          (scalarStep
+            (scalarStep state
+              { identity
+                offset := entryOffset
+                bytes := (bytes.drop entryOffset).take 8
+                terminal := false })
+            { identity
+              offset := entryOffset + 8
+              bytes := (bytes.drop (entryOffset + 8)).take 8
+              terminal := false })
+          { identity
+            offset := entryOffset + 16
+            bytes := (bytes.drop (entryOffset + 16)).take 8
+            terminal := false }
+      next.word[0]! = BootMemoryMapStreamAuthority.abiVersion ∧
+        next.word[1]! = BootMemoryMapStreamAuthority.active ∧
+        next.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+        next.word[3]! = identity ∧
+        next.word[4]! = UInt64.ofNat total ∧
+        next.word[5]! = UInt64.ofNat entryOffset + 8 + 8 + 8 ∧
+        next.word[7]! =
+          (if state.word[8]! = 24
+            then BootMemoryMapStreamAuthority.phaseTag
+            else BootMemoryMapStreamAuthority.phaseEntryBase) ∧
+        next.word[8]! = state.word[8]! - 24 ∧
+        next.word[9]! = 0 ∧
+        next.word[10]! = 1 ∧
+        next.word[11]! = state.word[11]! + 1 ∧
+        next.word[12]! = UInt64.ofNat base ∧
+        next.word[13]! = UInt64.ofNat length ∧
+        next.word[14]! ≤ 1 ∧
+        next.word[15]! ≤ 1 ∧
+        next.word[16]! = UInt64.ofNat target ∧
+        next.word[18]! = state.word[18]! := by
       obtain ⟨hchunks, hbaseWord, hlengthWord, hkindWord⟩ :=
         canonicalMemoryMapEntrySteps_source_refines identity bytes total
           entryOffset base length kindWord htotal htotalAligned
           hentryOffsetAligned hroom hbase hlength hkind
       rw [hchunks]
-      apply successfulScalarRichTraversal_memoryMapEntry
+      apply successfulScalarRichTraversal_memoryMapEntry_with_successor
         identity (UInt64.ofNat total) (UInt64.ofNat entryOffset) target
         base length (low32Nat kindWord) restEntries state terminal
         { identity
