@@ -178,6 +178,7 @@ jobs:
             build/boot/boot-page-plan-bootstrap64-nmi.final.h
             build/boot/SHA256SUMS
             build/boot/serial.log
+            build/boot/dma-quarantine-snapshot-*.tsv
             build/boot/malformed-handoff.serial.log
             build/boot/preemption.serial.log
             build/boot/fault-containment.serial.log

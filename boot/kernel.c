@@ -1262,7 +1262,7 @@ struct pci_manifest_entry {
     uint8_t device, function;
     uint16_t vendor, product;
     uint32_t class_code;
-    uint8_t required, multifunction;
+    uint8_t required, bridge, multifunction;
 };
 
 /* This is the C rendering of DMAQuarantine.q35Manifest for topology version
@@ -1270,12 +1270,17 @@ struct pci_manifest_entry {
    devices remain trusted hardware/QEMU inputs; acceptance is integration
    evidence and is not a refinement theorem for the Lean snapshot. */
 static const struct pci_manifest_entry q35_pci_manifest[] = {
-    { 0, 0, 0x8086, 0x29c0, 0x060000, 1, 0 },
-    { 1, 0, 0x1234, 0x1111, 0x030000, 1, 0 },
-    { 3, 0, 0x1af4, 0x1000, 0x020000, 0, 0 },
-    { 31, 0, 0x8086, 0x2918, 0x060100, 1, 1 },
-    { 31, 2, 0x8086, 0x2922, 0x010601, 1, 1 },
-    { 31, 3, 0x8086, 0x2930, 0x0c0500, 1, 1 },
+    { 0, 0, 0x8086, 0x29c0, 0x060000, 1, 0, 0 },
+    { 1, 0, 0x1234, 0x1111, 0x030000, 1, 0, 0 },
+    { 3, 0, 0x1af4, 0x1000, 0x020000, 0, 0, 0 },
+    { 31, 0, 0x8086, 0x2918, 0x060100, 1, 1, 1 },
+    { 31, 2, 0x8086, 0x2922, 0x010601, 1, 0, 1 },
+    { 31, 3, 0x8086, 0x2930, 0x0c0500, 1, 0, 1 },
+};
+
+struct pci_snapshot_entry {
+    uint16_t command_before, command_after;
+    uint8_t present;
 };
 
 static __attribute__((noinline, noipa)) uint32_t pci_config_dword(
@@ -1317,6 +1322,8 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     unsigned seen = 0, present = 0, writes = 0, readbacks = 0;
     unsigned initially_bus_mastering = 0;
     unsigned initial_bus_master_mask = 0;
+    struct pci_snapshot_entry snapshot[
+        sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0])] = { 0 };
     for (unsigned device = 0; device < 32; ++device) {
         for (unsigned function = 0; function < 8; ++function) {
             uint32_t identity = pci_config_dword(device, function, 0x00);
@@ -1345,9 +1352,12 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
             }
             uint16_t expected_command =
                 (uint16_t)(command & ~PCI_COMMAND_BUS_MASTER);
+            snapshot[index].present = 1;
+            snapshot[index].command_before = command;
             pci_config_command(device, function, expected_command);
             ++writes;
             command = (uint16_t)pci_config_dword(device, function, 0x04);
+            snapshot[index].command_after = command;
             ++readbacks;
             if (command != expected_command ||
                 (command & PCI_COMMAND_BUS_MASTER) != 0 ||
@@ -1369,6 +1379,31 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     if (present != 5 || optional_absent != 1 || writes != present ||
         readbacks != present)
         fail("dma-q35-nic-none");
+    for (unsigned i = 0;
+         i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
+        const struct pci_manifest_entry *entry = &q35_pci_manifest[i];
+        serial_puts("LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:");
+        serial_u64(entry->device);
+        serial_putc('.');
+        serial_u64(entry->function);
+        serial_puts(" present=");
+        serial_u64(snapshot[i].present);
+        serial_puts(" vendor=");
+        serial_u64(snapshot[i].present ? entry->vendor : 0);
+        serial_puts(" device=");
+        serial_u64(snapshot[i].present ? entry->product : 0);
+        serial_puts(" class=");
+        serial_u64(snapshot[i].present ? entry->class_code : 0);
+        serial_puts(" command-before=");
+        serial_u64(snapshot[i].command_before);
+        serial_puts(" command-after=");
+        serial_u64(snapshot[i].command_after);
+        serial_puts(" assigned=0 bridge=");
+        serial_u64(entry->bridge);
+        serial_puts(" multifunction=");
+        serial_u64(entry->multifunction);
+        serial_puts(" policy=accepted\n");
+    }
     serial_puts("LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=");
     serial_u64(initially_bus_mastering);
     serial_puts(" initial-bus-master-mask=");

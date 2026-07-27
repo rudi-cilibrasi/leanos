@@ -169,6 +169,18 @@ device obedience remain tested assumptions. The C manifest and the final
 binary are not proved to refine `q35Manifest`, so the boot checkpoint does not
 upgrade the Lean theorem into a hardware claim.
 
+Every accepted image runner also validates six ordered `DMA-FUNCTION` records
+independently of the aggregate PASS line and writes
+`dma-quarantine-snapshot-<scenario>.tsv`. The fixed-schema artifact binds the
+QEMU version, q35/TCG construction, snapshot/topology/manifest versions, full
+source revision, every admitted or explicitly absent BDF and identity, Command
+word before and after quarantine, assignment/bridge/multifunction fields, and
+the typed `accepted:0` policy result. Missing, duplicate, reordered, drifted,
+noncanonical, or inexact function records reject the runner even when the
+aggregate line remains intact. The shared evidence report hashes each boot
+scenario's snapshot, CI and tagged-release diagnostics retain all of them, and
+the normal blocking-IPC snapshot is included in the checksummed release bundle.
+
 Issue #104's authoritative `FailStop.CompositeState` now embeds the
 proof-carrying accepted snapshot and latest control observation directly;
 `RuntimeWellFormed` includes their exact `DMAQuarantined` agreement, and

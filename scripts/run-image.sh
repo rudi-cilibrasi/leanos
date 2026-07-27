@@ -64,6 +64,8 @@ else
 fi
 image="${1:-$default_image}"
 log="${LEANOS_SERIAL_LOG:-build/boot/serial.log}"
+dma_snapshot="${LEANOS_DMA_SNAPSHOT:-build/boot/dma-quarantine-snapshot-${scenario}.tsv}"
+source_revision_file="${LEANOS_SOURCE_REVISION_FILE:-build/boot/SOURCE_REVISION}"
 high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 and coreutils=9.4-3ubuntu6.2" >&2; exit 1; }; done
@@ -74,8 +76,8 @@ reported_top_mib=$((memory_mib - 1))
 mkdir -p "$(dirname "$log")"; : > "$log"
 command=()
 leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
-version="$($qemu --version 2>&1 | head -n 1 || true)"
-printf 'QEMU version: %s\nQEMU command:' "${version:-unknown}" >&2; printf ' %q' "${command[@]}" >&2; printf '\nSerial log: %s\n' "$log" >&2
+qemu_version="$($qemu --version 2>&1 | head -n 1 || true)"
+printf 'QEMU version: %s\nQEMU command:' "${qemu_version:-unknown}" >&2; printf ' %q' "${command[@]}" >&2; printf '\nSerial log: %s\n' "$log" >&2
 set +e; timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"; status=$?; set -e
 expected="$(mktemp)"; without_allocation="$(mktemp)"
 trap 'rm -f "$expected" "$without_allocation"' EXIT
@@ -260,7 +262,8 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
     exit 1
   fi
 done
-sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
+sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' \
+  -e '/^LEANOS\/15 DMA-FUNCTION /d' "$log" > "$without_allocation"
 if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
   final_high_water_path="syscall"
   [[ "$scenario" == preemption ]] && final_high_water_path="timer-context-switch"
@@ -288,6 +291,14 @@ if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
   sed -i '/^LEANOS\/11 ENTRY-HIGH-WATER /d' "$without_allocation"
 fi
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
+if ! ./scripts/write-dma-snapshot.py \
+    --serial-log "$log" \
+    --source-revision "$source_revision_file" \
+    --qemu-version "${qemu_version:-unknown}" \
+    --output "$dma_snapshot"; then
+  echo "failure_class=dma-snapshot: canonical per-function snapshot rejected" >&2
+  exit 1
+fi
 if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
       "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||
       "$scenario" == extended-state-avx ]]; then
