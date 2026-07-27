@@ -183,6 +183,15 @@ master and manifest mask 16, followed by final disabled state. Removing or
 misaddressing `pci_config_command` leaves that SATA bit set and fails the guest
 read-back.
 
+The accepted post-quarantine Command words remain kernel-owned state. Every
+later outbound CPL3 gate exhaustively re-enumerates bus 0, rechecks each
+identity/class/header tuple and required function, and requires the complete
+live Command word to equal that boot observation with bus mastering still
+clear. The `dma-bus-master-reenable` controlled image sets the SATA
+bus-master bit after boot acceptance and immediately before the production
+return validator; the same validator must emit typed `dma-live-command`
+failure before `iretq` or any CPL3 record.
+
 This adapter intentionally treats an all-ones vendor read as architectural
 absence. A missing required function is fatal; for the optional network slot,
 distinguishing genuine absence from an underlying read transport failure is a
@@ -241,10 +250,12 @@ encoding, and the generated stateful dispatcher. No composite-state codec or
 decode/encode round-trip theorem is present here, so
 this DMA slice deliberately proves constructor-level model preservation and
 does not invent a parallel ABI or claim a generated-C refinement.
-Issue #129's final-ELF inventory now classifies the boot-only `0xcf8`/`0xcfc`
-mechanism accesses as `DMAQuarantine.boot-pci-config`. The exact `out16`,
+Issue #129's final-ELF inventory now classifies the fixed `0xcf8`/`0xcfc`
+mechanism accesses as `DMAQuarantine.pci-config`. The exact `out16`,
 `out32`, and `in32` wrapper sites are reviewed exceptions, while the source
 contract fixes their arguments to the PCI configuration address/data constants.
-The final-ELF call graph additionally pins the wrappers to the two PCI helpers,
-the helpers to this boot checkpoint, and the checkpoint before the first CPL3
-return. They are not members of the ordinary direct-port authority manifest.
+The final-ELF call graph pins the wrappers to the two PCI helpers, the helpers
+to the boot checkpoint and read-only outbound validator, and the boot
+checkpoint before the first CPL3 return. Only the named controlled-negative
+image may call the Command writer from its injection helper. These sites are
+not members of the ordinary direct-port authority manifest.
