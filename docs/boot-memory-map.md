@@ -250,10 +250,16 @@ directly. `authorizeCanonical_acceptance_binding` preserves the raw decoder,
 canonical interval, reservation, allocation, and exact scalar-consumer
 equations while additionally proving that every claimed decoded entry,
 normalized region, checked interval, overlaid region, and selected frame is
-the canonical projection of the returned authority. This is the next
-dependency-ordered authority boundary after canonical whole-replay byte
-agreement; a universal theorem equating the scalar parser's semantic state to
-the rich decoder state remains outstanding.
+the canonical projection of the returned authority. The gate now also replays
+the canonical scalar stream at the rich-selected frame and rejects unless its
+terminal status, diagnostic, usable-coverage, and non-usable-overlap words
+agree with the rich authority. `authorizeCanonical_acceptance_scalar_agreement`
+universally exposes that agreement for every accepted authorization, and
+`authorizeCanonical_scalarReplay_projection_binding` feeds those actual replay
+words into `consumeExactProjection` without a caller-supplied agreement
+premise. A direct structural refinement theorem showing that every rich
+decoder success passes this comparison, rather than relying on the fail-closed
+comparison at the composed authorization gate, remains outstanding.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
