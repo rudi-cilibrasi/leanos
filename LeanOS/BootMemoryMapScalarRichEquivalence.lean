@@ -1,5 +1,6 @@
 import LeanOS.BootMemoryMapFullProjectionABI
 import LeanOS.BootMemoryMapStreamAuthority
+import LeanOS.BootMemoryMapStreamPipeline
 
 /-!
 # Universal scalar/rich boot-memory projection equivalence
@@ -698,6 +699,20 @@ theorem accepted_authority_projection_consumable
   rw [authority.selectedUsable, hreserved] at heq
   simpa using heq
 
+/-- The exact terminal scalar fields that still require semantic refinement
+from the rich decoder.  Naming this relation keeps the production composition
+honest: chunk reconstruction alone does not establish parser-state agreement,
+and callers cannot substitute synthetic readiness or coverage words. -/
+def ScalarTerminalProjectionAgrees
+    (scalar : BootMemoryMapStreamPipeline.ScalarState)
+    (authority : BootMemoryMapFullProjectionABI.Authority) : Prop :=
+  scalar.word[1]! = complete ∧
+    scalar.word[2]! = noError ∧
+    scalar.word[14]! =
+      usableWord authority.decoded.entries authority.allocation.frame ∧
+    scalar.word[15]! =
+      blockedWord authority.decoded.entries authority.allocation.frame
+
 /-! ## Raw-byte/canonical-manifest production composition
 
 This proof-only composition mirrors the production gates without adding a
@@ -902,6 +917,59 @@ theorem authorizeCanonical_acceptance_binding
       hbinding.2.2.2.2.1, hbinding.2.2.2.2.2.1,
       hbinding.2.2.2.2.2.2, hauthorize.2⟩
   · contradiction
+
+/-- Once the canonical scalar replay's terminal fields are semantically tied
+to an accepted rich authority, the production consumer uses those actual
+replay fields—not rich-side substitutes—and returns exactly the rich-selected
+frame.  The identity premise additionally binds the replay chunks to the
+accepted immutable input address.  Proving `ScalarTerminalProjectionAgrees`
+universally is the remaining parser-state refinement obligation. -/
+theorem authorizeCanonical_scalarReplay_projection_binding
+    (input : BootMemoryMapDecoder.Input) (identity : UInt64)
+    (lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength : UInt64)
+    (owner : FrameAllocator.OwnerId)
+    (claimed : BootMemoryMapFullProjectionABI.Projection)
+    (authority : BootMemoryMapFullProjectionABI.Authority)
+    (hidentity : identity.toNat = input.infoAddress)
+    (haccepted :
+      authorizeCanonical input lowStart lowLength imageStart imageLength
+        pageStart pageLength descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength owner claimed = .ok authority)
+    (hagrees :
+      let scalar :=
+        BootMemoryMapStreamPipeline.scalarReplay
+          (BootMemoryMapStreaming.canonicalChunks identity input.bytes)
+          (BootMemoryMapStreamPipeline.scalarInitialAt identity input.bytes.length
+            authority.allocation.frame)
+      ScalarTerminalProjectionAgrees scalar authority) :
+    let scalar :=
+      BootMemoryMapStreamPipeline.scalarReplay
+        (BootMemoryMapStreaming.canonicalChunks identity input.bytes)
+        (BootMemoryMapStreamPipeline.scalarInitialAt identity input.bytes.length
+          authority.allocation.frame)
+    identity.toNat = authority.input.infoAddress ∧
+      scalar.word[2]! = noError ∧
+      consumeExactProjection 4096 (UInt64.ofNat authority.allocation.frame)
+          scalar.word[1]! scalar.word[14]! scalar.word[15]!
+          (manifestWord authority.reserved.intervals authority.allocation.frame) =
+        UInt64.ofNat authority.allocation.frame ∧
+      claimed = BootMemoryMapFullProjectionABI.projection authority := by
+  dsimp only at hagrees ⊢
+  have hbinding := authorizeCanonical_acceptance_binding input
+    lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength owner claimed authority haccepted
+  unfold ScalarTerminalProjectionAgrees at hagrees
+  refine ⟨?_, hagrees.2.1, ?_, hbinding.2.2.2.2.2.2.2⟩
+  · rw [hbinding.2.1]
+    exact hidentity
+  · rw [hagrees.1, hagrees.2.2.1, hagrees.2.2.2]
+    exact hbinding.2.2.2.2.2.2.1
 
 /-- Equal immutable raw inputs and equal canonical manifest words cannot yield
 different complete rich projections.  This is the extensional raw-byte
