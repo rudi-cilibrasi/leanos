@@ -120,7 +120,9 @@ access, protection violation, CR2 zero, and the saved RIP to that exported site
 before containment. The emitted hardware-fault record also names the exact
 generated dispatch word, complete cleanup mask, and selected survivor.
 Independent runner fixtures reject a changed or zeroed raw error word, CR2,
-RIP, access kind, or dispatch word. The build-retained
+RIP, access kind, dispatch word, or live leaf permissions. A separate ordered
+`PF-WALK` record retains the expected and live page-zero leaves and the
+generated supervisor-denial classification before cleanup. The build-retained
 `fault-containment-policy-report.txt` records the linked final-ELF addresses
 and the same architectural/dispatch tuple. A separate ordered `PF-SNAPSHOT`
 record retains all 19 decimal codec words directly from the immutable

@@ -344,7 +344,7 @@ source_invalidation="$(grep -n -m1 'invalidate_fixed_fault_page();' \
 source_agreement="$(grep -n -m1 'leanos_page_fault_dispatch_transition(' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
 source_snapshot_report="$(grep -n -m1 \
-  'report_page_fault_snapshot(&snapshot, canonical, route);' \
+  'report_page_fault_snapshot(' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
 source_operation="$(grep -n -m1 'page_fault_handler(&transition)' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
@@ -376,7 +376,7 @@ page_fault_snapshot_report_source="$(
   ' "$kernel_source"
 )"
 snapshot_report_calls="$(
-  grep -Fc 'report_page_fault_snapshot(&snapshot, canonical, route);' \
+  grep -Fc 'report_page_fault_snapshot(' \
     <<<"$page_fault_adapter_source" || true
 )"
 if ! grep -Fq 'const uint64_t *words = (const uint64_t *)snapshot;' \
@@ -384,9 +384,15 @@ if ! grep -Fq 'const uint64_t *words = (const uint64_t *)snapshot;' \
     ! grep -Fq 'for (unsigned i = 0; i < 19; ++i) {' \
       <<<"$page_fault_snapshot_report_source" ||
     ! grep -Fq 'serial_u64(words[i]);' <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'serial_u64(expected_leaf);' \
+      <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'serial_u64(live_leaf);' \
+      <<<"$page_fault_snapshot_report_source" ||
     ! grep -Fq 'serial_u64(authorization);' \
       <<<"$page_fault_snapshot_report_source" ||
     ! grep -Fq 'serial_u64(route);' <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq '&snapshot, canonical, route, expected_leaf, live_leaf);' \
+      <<<"$page_fault_adapter_source" ||
     [[ "$snapshot_report_calls" -ne 1 ]]; then
   echo "error: vector=14 field=canonical-snapshot-binding source" >&2
   exit 1

@@ -27,6 +27,7 @@ for spec in \
   'fault-wrong-rip serial-protocol' \
   'fault-wrong-access serial-protocol' \
   'fault-wrong-dispatch serial-protocol' \
+  'fault-mapping-permission-drift serial-protocol' \
   'fault-snapshot-missing page-fault-snapshot' \
   'fault-snapshot-duplicate page-fault-snapshot' \
   'fault-snapshot-version page-fault-snapshot' \

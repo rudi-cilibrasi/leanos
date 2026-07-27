@@ -161,7 +161,7 @@ page_fault_wrong_handler_binding() {
 }
 page_fault_c_only_snapshot_route() {
   sed -i \
-    's/, canonical, route);/, 1, UINT64_C(0x01000000ff020202));/' \
+    's/&snapshot, canonical, route, expected_leaf, live_leaf);/\&snapshot, 1, UINT64_C(0x01000000ff020202), expected_leaf, live_leaf);/' \
     "$tmp/kernel.c"
 }
 stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $user_a_text, %eax' "$tmp/boot.S"; }

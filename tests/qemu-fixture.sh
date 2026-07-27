@@ -55,6 +55,9 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
 LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS
 LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned
 EOF
+  printf '%s\n' \
+    'LEANOS/14 PF-WALK page=0 expected-leaf=9223372036854775811 live-leaf=9223372036854775811 cause=supervisor denial=supervisor result=PASS' \
+    >> "$log"
   printf 'LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=1,14,5,0,0,0,1,1,1,1,%s,15,%s,35,534,%s,27,1,0 authorization=1 route=72057598316249602 result=PASS\n' \
     "$(fault_symbol_value page_map_level_4_a)" \
     "$(fault_symbol_value user_a_fault_instruction)" \
@@ -70,7 +73,7 @@ EOF
   exit "$status"
 fi
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-fault-direct-call|fault-wrong-error|fault-zero-error|fault-wrong-cr2|fault-wrong-rip|fault-wrong-access|fault-wrong-dispatch|fault-snapshot-missing|fault-snapshot-duplicate|fault-snapshot-version|fault-snapshot-rip|fault-snapshot-authorization|fault-snapshot-route|fault-snapshot-reordered|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-a-queued|fault-attacker-selection|fault-return-unvalidated|fault-peer-corrupt|fault-peer-cleaned|fault-forged-pass|fault-reordered|fault-kernel-relabeled|fault-global-fail)
+fault-direct-call|fault-wrong-error|fault-zero-error|fault-wrong-cr2|fault-wrong-rip|fault-wrong-access|fault-wrong-dispatch|fault-mapping-permission-drift|fault-snapshot-missing|fault-snapshot-duplicate|fault-snapshot-version|fault-snapshot-rip|fault-snapshot-authorization|fault-snapshot-route|fault-snapshot-reordered|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-a-queued|fault-attacker-selection|fault-return-unvalidated|fault-peer-corrupt|fault-peer-cleaned|fault-forged-pass|fault-reordered|fault-kernel-relabeled|fault-global-fail)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
@@ -83,6 +86,9 @@ fault-direct-call|fault-wrong-error|fault-zero-error|fault-wrong-cr2|fault-wrong
     fault-wrong-rip) sed -i 's/rip=user-a-fault-instruction/rip=user-a-fault-recovered/' "$log" ;;
     fault-wrong-access) sed -i 's/access=read/access=write/' "$log" ;;
     fault-wrong-dispatch) sed -i 's/dispatch=0x00000000ff020202/dispatch=0x00000000ff020203/' "$log" ;;
+    fault-mapping-permission-drift)
+      sed -i 's/live-leaf=9223372036854775811/live-leaf=9223372036854775815/' "$log"
+      ;;
     fault-snapshot-missing) sed -i '/^LEANOS\/14 PF-SNAPSHOT /d' "$log" ;;
     fault-snapshot-duplicate) sed -i '/^LEANOS\/14 PF-SNAPSHOT /p' "$log" ;;
     fault-snapshot-version) sed -i 's/PF-SNAPSHOT codec=1/PF-SNAPSHOT codec=2/' "$log" ;;

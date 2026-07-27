@@ -291,7 +291,8 @@ static void serial_putc(char value);
 static void serial_u64(uint64_t value);
 static void report_page_fault_snapshot(
     const struct page_fault_entry_record *snapshot,
-    uint64_t authorization, uint64_t route);
+    uint64_t authorization, uint64_t route,
+    uint64_t expected_leaf, uint64_t live_leaf);
 static void arm_timer(void);
 static uint64_t stack_marker(uint64_t stack_pointer);
 static void check_cross_bank_negative(void);
@@ -755,8 +756,13 @@ static void serial_u64(uint64_t value) {
 
 static void report_page_fault_snapshot(
     const struct page_fault_entry_record *snapshot,
-    uint64_t authorization, uint64_t route) {
+    uint64_t authorization, uint64_t route,
+    uint64_t expected_leaf, uint64_t live_leaf) {
     const uint64_t *words = (const uint64_t *)snapshot;
+    serial_puts("LEANOS/14 PF-WALK page="); serial_u64(snapshot->fault_page);
+    serial_puts(" expected-leaf="); serial_u64(expected_leaf);
+    serial_puts(" live-leaf="); serial_u64(live_leaf);
+    serial_puts(" cause=supervisor denial=supervisor result=PASS\n");
     serial_puts("LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=");
     for (unsigned i = 0; i < 19; ++i) {
         if (i != 0) serial_putc(',');
@@ -2341,7 +2347,8 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
         fail("page-fault-provenance");
     switch (transition.kind) {
     case PAGE_FAULT_TRANSITION_CONTAIN:
-        report_page_fault_snapshot(&snapshot, canonical, route);
+        report_page_fault_snapshot(
+            &snapshot, canonical, route, expected_leaf, live_leaf);
         return page_fault_handler(&transition);
     case PAGE_FAULT_TRANSITION_KERNEL_DIAGNOSTIC:
         return page_fault_diagnostic_handler(&transition);

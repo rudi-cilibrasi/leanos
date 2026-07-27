@@ -139,6 +139,7 @@ elif [[ "$scenario" == fault-containment ]]; then
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
   'LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned' \
+  'LEANOS/14 PF-WALK page=0 expected-leaf=9223372036854775811 live-leaf=9223372036854775811 cause=supervisor denial=supervisor result=PASS' \
   'LEANOS/14 FAULT-ENTRY vector=14 error=5 access=read protection=1 cr2=0 rip=user-a-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 result=PASS' \
   'LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS' \
   'LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS' \
