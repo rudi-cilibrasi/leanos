@@ -276,10 +276,17 @@ decoder now retains a proof-only `SuccessfulTagDecodeTraversal` for every
 successful recursive tag walk. Its constructors bind each accepted tag header
 to the exact source word and aligned advance, bind a memory-map tag to its
 layout word and `SuccessfulEntryDecodeTraversal`, and bind the terminal end tag
-to the advertised extent. This supplies the missing tag-level induction
-principle for deriving `SuccessfulScalarRichTraversal` through canonical
-chunks; that final derivation and removal of the terminal comparison remain
-outstanding.
+to the advertised extent. `successfulTagDecodeTraversal_extracts_entry_traversal`
+now inducts through ignored tags on both sides of the unique map, reconstructs
+their exact typed order through the terminal end tag, and proves that typed
+extraction returns the source-certified map entries.
+`successfulRichDecodeTraversal_entries_source` then uses the retained
+`validateHandoff` equation to identify that source walk with exactly
+`decoded.entries`; an existential shadow entry list cannot satisfy the bridge.
+The remaining induction must align those source offsets with each canonical
+eight-byte scalar phase to construct `SuccessfulScalarRichTraversal`. Until
+that final derivation exists, the fail-closed terminal comparison remains in
+place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
