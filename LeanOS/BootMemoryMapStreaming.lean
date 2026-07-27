@@ -307,6 +307,24 @@ buffer with the allocation-free scalar stream decoder. -/
 def canonicalChunks (identity : UInt64) (bytes : List UInt8) : List ModelChunk :=
   canonicalChunksAux identity 0 (bytes.length / 8) bytes
 
+/-- The canonical decomposition has exactly one chunk for every complete
+eight-byte source word. -/
+theorem canonicalChunks_length (identity : UInt64) (bytes : List UInt8) :
+    (canonicalChunks identity bytes).length = bytes.length / 8 := by
+  have aux :
+      ∀ count offset (tail : List UInt8),
+        (canonicalChunksAux identity offset count tail).length = count := by
+    intro count
+    induction count with
+    | zero =>
+        intro offset tail
+        rfl
+    | succ count ih =>
+        intro offset tail
+        simp only [canonicalChunksAux, List.length_cons]
+        exact congrArg Nat.succ (ih (offset + 8) (tail.drop 8))
+  exact aux (bytes.length / 8) 0 bytes
+
 /-- Every position in the canonical decomposition is the exact eight-byte
 slice at the corresponding source offset.  The offset and terminal flag are
 derived from the list index, so later decoder/scalar refinements cannot pair a

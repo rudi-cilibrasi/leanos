@@ -1021,6 +1021,427 @@ inductive SuccessfulIgnoredTagSpan :
         SuccessfulIgnoredTagSpan (scalarStep state chunk) rest terminal) :
       SuccessfulIgnoredTagSpan state (chunk :: rest) terminal
 
+/-- Canonical source chunks for an ignored tag body and its alignment padding
+form one exact accepted scalar span.  The induction is indexed by the retained
+source position and word count: every head is selected from
+`canonicalChunks`, and the production transition supplies the next cursor,
+remaining byte counters, and parser phase. -/
+theorem successfulIgnoredTagSpan_canonical
+    (identity : UInt64) (bytes : List UInt8) (total index count target : Nat)
+    (state : ScalarState)
+    (htotal : total = bytes.length)
+    (htotalLow : 16 ≤ total)
+    (htotalHigh : total ≤ maxTagBytes)
+    (htotalAligned : total % 8 = 0)
+    (hidentityAligned : identity % 8 = 0)
+    (hroom : index + count < total / 8)
+    (hversion :
+      state.word[0]! = BootMemoryMapStreamAuthority.abiVersion)
+    (hstatus :
+      state.word[1]! = BootMemoryMapStreamAuthority.active)
+    (herror :
+      state.word[2]! = BootMemoryMapStreamAuthority.noError)
+    (hidentity : state.word[3]! = identity)
+    (hextent : state.word[4]! = UInt64.ofNat total)
+    (hoffset : state.word[5]! = UInt64.ofNat (index * 8))
+    (hphase :
+      state.word[7]! =
+        if count = 0 then BootMemoryMapStreamAuthority.phaseTag
+        else BootMemoryMapStreamAuthority.phaseIgnored)
+    (hcontent : state.word[8]! ≤ state.word[9]!)
+    (hpadded : state.word[9]! = UInt64.ofNat (count * 8))
+    (hsawMap : state.word[10]! ≤ 1)
+    (husable : state.word[14]! ≤ 1)
+    (hblocked : state.word[15]! ≤ 1)
+    (htargetWord : state.word[16]! = UInt64.ofNat target)
+    (htarget : target < frameLimit)
+    (htagCount : state.word[18]! ≤ 64) :
+    let body :=
+      ((canonicalChunks identity bytes).drop index).take count
+    ∃ after,
+      SuccessfulIgnoredTagSpan state body after ∧
+        after.word[0]! = BootMemoryMapStreamAuthority.abiVersion ∧
+        after.word[1]! = BootMemoryMapStreamAuthority.active ∧
+        after.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+        after.word[3]! = identity ∧
+        after.word[4]! = UInt64.ofNat total ∧
+        after.word[5]! = UInt64.ofNat ((index + count) * 8) ∧
+        after.word[7]! = BootMemoryMapStreamAuthority.phaseTag ∧
+        after.word[8]! = 0 ∧
+        after.word[9]! = 0 ∧
+        after.word[10]! ≤ 1 ∧
+        after.word[14]! ≤ 1 ∧
+        after.word[15]! ≤ 1 ∧
+        after.word[16]! = UInt64.ofNat target ∧
+        after.word[18]! ≤ 64 := by
+  dsimp only
+  induction count generalizing index state with
+  | zero =>
+      refine ⟨state, ?_, hversion, hstatus, herror, hidentity, hextent, ?_,
+        ?_, ?_, ?_, hsawMap, husable, hblocked, htargetWord, htagCount⟩
+      · exact SuccessfulIgnoredTagSpan.done state
+      · simpa using hoffset
+      · simpa using hphase
+      · have : state.word[8]! = 0 := by
+          rw [hpadded] at hcontent
+          simpa using hcontent
+        exact this
+      · simpa using hpadded
+  | succ count ih =>
+      have htotalLt : total < UInt64.size :=
+        Nat.lt_of_le_of_lt htotalHigh (by decide)
+      have htargetLt : target < UInt64.size :=
+        Nat.lt_trans htarget (by decide)
+      have hindex : index < bytes.length / 8 := by
+        rw [← htotal]
+        omega
+      let chunk : ModelChunk :=
+        { identity
+          offset := index * 8
+          bytes := (bytes.drop (index * 8)).take 8
+          terminal := false }
+      have hchunkSource :=
+        canonicalChunks_get?_source identity bytes (by simpa [← htotal])
+          index hindex
+      have hterminal : (index + 1 == bytes.length / 8) = false := by
+        rw [← htotal]
+        exact beq_false_of_ne (by omega)
+      rw [hterminal] at hchunkSource
+      have hchunksLength :=
+        canonicalChunks_length identity bytes
+      have hchunkGet :
+          (canonicalChunks identity bytes)[index] = chunk := by
+        have hsome :
+            (canonicalChunks identity bytes)[index]? = some chunk := by
+          simpa [chunk] using hchunkSource
+        have hindexChunks :
+            index < (canonicalChunks identity bytes).length := by
+          simpa [hchunksLength] using hindex
+        rw [List.getElem?_eq_getElem hindexChunks] at hsome
+        exact Option.some.inj hsome
+      have hbody :
+          ((canonicalChunks identity bytes).drop index).take (count + 1) =
+            chunk ::
+              ((canonicalChunks identity bytes).drop (index + 1)).take count := by
+        rw [List.drop_eq_getElem_cons]
+        · rw [hchunkGet]
+          rfl
+        · simpa [hchunksLength] using hindex
+      have hextentLow : 16 ≤ UInt64.ofNat total := by
+        rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' htotalLt]
+        exact htotalLow
+      have hextentHigh : UInt64.ofNat total ≤ 65536 := by
+        rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' htotalLt]
+        simpa [maxTagBytes] using htotalHigh
+      have hextentAligned : UInt64.ofNat total % 8 = 0 := by
+        apply UInt64.toNat.inj
+        simp [UInt64.toNat_ofNat_of_lt' htotalLt, htotalAligned]
+      have htotalWords : total / 8 * 8 = total := by
+        have := Nat.mod_add_div total 8
+        rw [htotalAligned, Nat.zero_add] at this
+        simpa [Nat.mul_comm] using this
+      have hoffsetNat : index * 8 < total := by
+        omega
+      have hoffsetLt :
+          UInt64.ofNat (index * 8) < UInt64.ofNat total := by
+        rw [UInt64.lt_iff_toNat_lt,
+          UInt64.toNat_ofNat_of_lt' htotalLt]
+        have hoffsetLt : index * 8 < UInt64.size := by
+          exact Nat.lt_trans hoffsetNat htotalLt
+        rw [UInt64.toNat_ofNat_of_lt' hoffsetLt]
+        exact hoffsetNat
+      have hoffsetNotFinal :
+          UInt64.ofNat (index * 8) + 8 ≠ UInt64.ofNat total := by
+        intro heq
+        have hwordAdd :
+            UInt64.ofNat (index * 8) + 8 =
+              UInt64.ofNat (index * 8 + 8) := by
+          simp
+        rw [hwordAdd] at heq
+        have := congrArg UInt64.toNat heq
+        have hoffsetNextLt : index * 8 + 8 < UInt64.size := by
+          have : index * 8 + 8 < total := by omega
+          exact Nat.lt_trans this htotalLt
+        rw [UInt64.toNat_ofNat_of_lt' hoffsetNextLt,
+          UInt64.toNat_ofNat_of_lt' htotalLt] at this
+        omega
+      have htargetBound : UInt64.ofNat target < 4096 := by
+        rw [UInt64.lt_iff_toNat_lt,
+          UInt64.toNat_ofNat_of_lt' htargetLt]
+        simpa [frameLimit, physicalLimit, pageBytes] using htarget
+      have hpaddedLow : (8 : UInt64) ≤ state.word[9]! := by
+        rw [hpadded]
+        have hpaddedLt : (count + 1) * 8 < UInt64.size := by
+          have : (count + 1) * 8 < total := by omega
+          exact Nat.lt_trans this htotalLt
+        have h8Nat : (8 : UInt64).toNat = 8 := by decide
+        rw [UInt64.le_iff_toNat_le, h8Nat,
+          UInt64.toNat_ofNat_of_lt' hpaddedLt]
+        omega
+      have hstep :=
+        BootMemoryMapStreamAuthority.ignoredTagBodyStepWords_of_admitted
+          identity (UInt64.ofNat total) (UInt64.ofNat (index * 8))
+          state.word[6]! state.word[8]! state.word[9]!
+          state.word[10]! state.word[11]! state.word[12]! state.word[13]!
+          state.word[14]! state.word[15]! (UInt64.ofNat target)
+          state.word[17]! state.word[18]! (chunkWord chunk.bytes)
+          hidentityAligned hextentLow hextentHigh hextentAligned hoffsetLt
+          hoffsetNotFinal husable hblocked hsawMap htargetBound htagCount
+          hpaddedLow hcontent
+      have hphaseIgnored :
+          state.word[7]! = BootMemoryMapStreamAuthority.phaseIgnored := by
+        simpa using hphase
+      have hnext :
+          let next := scalarStep state chunk
+          next.word[0]! = BootMemoryMapStreamAuthority.abiVersion ∧
+            next.word[1]! = BootMemoryMapStreamAuthority.active ∧
+            next.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+            next.word[3]! = identity ∧
+            next.word[4]! = UInt64.ofNat total ∧
+            next.word[5]! = UInt64.ofNat (index * 8) + 8 ∧
+            next.word[7]! =
+              (if state.word[9]! == 8
+                then BootMemoryMapStreamAuthority.phaseTag
+                else BootMemoryMapStreamAuthority.phaseIgnored) ∧
+            next.word[8]! =
+              (if state.word[8]! > 8 then state.word[8]! - 8 else 0) ∧
+            next.word[9]! = state.word[9]! - 8 ∧
+            next.word[10]! = state.word[10]! ∧
+            next.word[11]! = state.word[11]! ∧
+            next.word[12]! = state.word[12]! ∧
+            next.word[13]! = state.word[13]! ∧
+            next.word[14]! = state.word[14]! ∧
+            next.word[15]! = state.word[15]! ∧
+            next.word[16]! = UInt64.ofNat target ∧
+            next.word[17]! = state.word[17]! ∧
+            next.word[18]! = state.word[18]! := by
+        dsimp only
+        simpa [scalarStep, chunk, hversion, hstatus, herror, hidentity,
+          hextent, hoffset, hphaseIgnored, htargetWord] using hstep
+      rcases hnext with ⟨hnextVersion, hnextStatus, haccepted,
+        hnextIdentity, hnextExtent, hnextOffsetRaw, hnextPhaseRaw,
+        hnextContentRaw, hnextPaddedRaw, hnextSawMapRaw, hnextEntries,
+        hnextBase, hnextLength, hnextUsableRaw, hnextBlockedRaw,
+        hnextTarget, hnextHighest, hnextTagCountRaw⟩
+      have hnextOffset :
+          (scalarStep state chunk).word[5]! =
+            UInt64.ofNat ((index + 1) * 8) := by
+        simpa [Nat.add_mul] using hnextOffsetRaw
+      have hnextPhase :
+          (scalarStep state chunk).word[7]! =
+            if count = 0 then BootMemoryMapStreamAuthority.phaseTag
+            else BootMemoryMapStreamAuthority.phaseIgnored := by
+        by_cases hcountZero : count = 0
+        · subst count
+          simpa [hpadded] using hnextPhaseRaw
+        · have hcountPositive : 0 < count := Nat.pos_of_ne_zero hcountZero
+          have hpaddedNe : state.word[9]! ≠ 8 := by
+            rw [hpadded]
+            intro heq
+            have := congrArg UInt64.toNat heq
+            have hpaddedLt : (count + 1) * 8 < UInt64.size := by
+              omega
+            rw [UInt64.toNat_ofNat_of_lt' hpaddedLt] at this
+            simp at this
+            omega
+          simpa [hcountZero, hpaddedNe] using hnextPhaseRaw
+      have hnextContent :
+          (scalarStep state chunk).word[8]! ≤
+            (scalarStep state chunk).word[9]! := by
+        have hcontentNext :
+            (if state.word[8]! > 8 then state.word[8]! - 8 else 0) ≤
+              state.word[9]! - 8 := by
+          by_cases hcontentHigh : state.word[8]! > 8
+          · simp only [hcontentHigh, ↓reduceIte]
+            have h8Content : (8 : UInt64) ≤ state.word[8]! :=
+              Nat.le_of_lt hcontentHigh
+            have h8Padded : (8 : UInt64) ≤ state.word[9]! :=
+              Nat.le_trans h8Content hcontent
+            rw [UInt64.le_iff_toNat_le,
+              UInt64.toNat_sub_of_le _ _ h8Content,
+              UInt64.toNat_sub_of_le _ _ h8Padded]
+            rw [UInt64.le_iff_toNat_le] at hcontent
+            omega
+          · simp only [hcontentHigh, ↓reduceIte, UInt64.zero_le]
+        rw [hnextContentRaw, hnextPaddedRaw]
+        exact hcontentNext
+      have hnextPadded :
+          (scalarStep state chunk).word[9]! = UInt64.ofNat (count * 8) := by
+        rw [hnextPaddedRaw, hpadded]
+        have hpaddedLt : (count + 1) * 8 < UInt64.size := by
+          have : (count + 1) * 8 < total := by omega
+          exact Nat.lt_trans this htotalLt
+        have h8Nat : (8 : UInt64).toNat = 8 := by decide
+        apply UInt64.toNat.inj
+        rw [UInt64.toNat_sub_of_le]
+        · rw [UInt64.toNat_ofNat_of_lt' hpaddedLt]
+          have hcountLt : count * 8 < UInt64.size := by omega
+          rw [UInt64.toNat_ofNat_of_lt' hcountLt, h8Nat]
+          omega
+        · rw [UInt64.le_iff_toNat_le, h8Nat,
+            UInt64.toNat_ofNat_of_lt' hpaddedLt]
+          omega
+      have hnextSawMap :
+          (scalarStep state chunk).word[10]! ≤ 1 := by
+        rw [hnextSawMapRaw]
+        exact hsawMap
+      have hnextUsable :
+          (scalarStep state chunk).word[14]! ≤ 1 := by
+        rw [hnextUsableRaw]
+        exact husable
+      have hnextBlocked :
+          (scalarStep state chunk).word[15]! ≤ 1 := by
+        rw [hnextBlockedRaw]
+        exact hblocked
+      have hnextTagCount :
+          (scalarStep state chunk).word[18]! ≤ 64 := by
+        rw [hnextTagCountRaw]
+        exact htagCount
+      obtain ⟨after, hspan, hafter⟩ :=
+        ih (index := index + 1) (state := scalarStep state chunk)
+          (by omega) hnextVersion hnextStatus haccepted hnextIdentity
+          hnextExtent hnextOffset hnextPhase hnextContent hnextPadded
+          hnextSawMap hnextUsable hnextBlocked hnextTarget hnextTagCount
+      refine ⟨after, ?_, ?_⟩
+      · rw [hbody]
+        exact SuccessfulIgnoredTagSpan.step state after chunk
+          (((canonicalChunks identity bytes).drop (index + 1)).take count)
+          hphaseIgnored haccepted hspan
+      · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hafter
+
+/-- The continuation retained by one rich ignored-tag constructor fixes the
+next tag header after its aligned body.  Consequently the intervening
+canonical chunks satisfy the source-indexed span theorem above: their count is
+the rounded tag size minus the already-consumed header, and the next retained
+header proves that none of them is terminal. -/
+theorem successfulIgnoredTagSpan_of_ignoredTagTraversal
+    (identity : UInt64) (bytes : List UInt8)
+    (total offset fuel tagWord target : Nat) (sawMemoryMap : Bool)
+    (tagsRev tags : List Tag) (state : ScalarState)
+    (htotal : total = bytes.length)
+    (htotalLow : 16 ≤ total)
+    (htotalHigh : total ≤ maxTagBytes)
+    (htotalAligned : total % 8 = 0)
+    (hoffsetAligned : offset % 8 = 0)
+    (hidentityAligned : identity % 8 = 0)
+    (hsize : 8 ≤ high32Nat tagWord)
+    (hrest :
+      SuccessfulTagDecodeTraversal bytes total
+        (offset + aligned8 (high32Nat tagWord)) fuel sawMemoryMap
+        (.ignored (high32Nat tagWord) :: tagsRev) tags)
+    (hversion :
+      state.word[0]! = BootMemoryMapStreamAuthority.abiVersion)
+    (hstatus :
+      state.word[1]! = BootMemoryMapStreamAuthority.active)
+    (herror :
+      state.word[2]! = BootMemoryMapStreamAuthority.noError)
+    (hidentity : state.word[3]! = identity)
+    (hextent : state.word[4]! = UInt64.ofNat total)
+    (hoffset : state.word[5]! = UInt64.ofNat (offset + 8))
+    (hphase :
+      state.word[7]! =
+        if aligned8 (high32Nat tagWord) = 8
+        then BootMemoryMapStreamAuthority.phaseTag
+        else BootMemoryMapStreamAuthority.phaseIgnored)
+    (hcontent : state.word[8]! ≤ state.word[9]!)
+    (hpadded :
+      state.word[9]! =
+        UInt64.ofNat (aligned8 (high32Nat tagWord) - 8))
+    (hsawMap : state.word[10]! ≤ 1)
+    (husable : state.word[14]! ≤ 1)
+    (hblocked : state.word[15]! ≤ 1)
+    (htargetWord : state.word[16]! = UInt64.ofNat target)
+    (htarget : target < frameLimit)
+    (htagCount : state.word[18]! ≤ 64) :
+    let bodyIndex := offset / 8 + 1
+    let bodyCount := aligned8 (high32Nat tagWord) / 8 - 1
+    let body :=
+      ((canonicalChunks identity bytes).drop bodyIndex).take bodyCount
+    ∃ after,
+      SuccessfulIgnoredTagSpan state body after ∧
+        after.word[0]! = BootMemoryMapStreamAuthority.abiVersion ∧
+        after.word[1]! = BootMemoryMapStreamAuthority.active ∧
+        after.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+        after.word[3]! = identity ∧
+        after.word[4]! = UInt64.ofNat total ∧
+        after.word[5]! =
+          UInt64.ofNat (offset + aligned8 (high32Nat tagWord)) ∧
+        after.word[7]! = BootMemoryMapStreamAuthority.phaseTag ∧
+        after.word[8]! = 0 ∧
+        after.word[9]! = 0 ∧
+        after.word[10]! ≤ 1 ∧
+        after.word[14]! ≤ 1 ∧
+        after.word[15]! ≤ 1 ∧
+        after.word[16]! = UInt64.ofNat target ∧
+        after.word[18]! ≤ 64 := by
+  dsimp only
+  let advance := aligned8 (high32Nat tagWord)
+  let bodyIndex := offset / 8 + 1
+  let bodyCount := advance / 8 - 1
+  have hadvanceLow : 8 ≤ advance := by
+    unfold advance aligned8
+    omega
+  have hadvanceAligned : advance % 8 = 0 := by
+    unfold advance aligned8
+    omega
+  have hoffsetWords : offset / 8 * 8 = offset := by
+    have := Nat.mod_add_div offset 8
+    rw [hoffsetAligned, Nat.zero_add] at this
+    simpa [Nat.mul_comm] using this
+  have hadvanceWords : advance / 8 * 8 = advance := by
+    have := Nat.mod_add_div advance 8
+    rw [hadvanceAligned, Nat.zero_add] at this
+    simpa [Nat.mul_comm] using this
+  have hbodyBytes : bodyCount * 8 = advance - 8 := by
+    unfold bodyCount
+    omega
+  have hbodyOffset : bodyIndex * 8 = offset + 8 := by
+    unfold bodyIndex
+    omega
+  have hnextBound :=
+    successfulTagDecodeTraversal_offset_lt_total bytes total
+      (offset + aligned8 (high32Nat tagWord)) fuel sawMemoryMap
+      (.ignored (high32Nat tagWord) :: tagsRev) tags hrest
+  have htotalWords : total / 8 * 8 = total := by
+    have := Nat.mod_add_div total 8
+    rw [htotalAligned, Nat.zero_add] at this
+    simpa [Nat.mul_comm] using this
+  have hroom : bodyIndex + bodyCount < total / 8 := by
+    unfold bodyIndex bodyCount advance at *
+    omega
+  have hbodyPhase :
+      state.word[7]! =
+        if bodyCount = 0 then BootMemoryMapStreamAuthority.phaseTag
+        else BootMemoryMapStreamAuthority.phaseIgnored := by
+    unfold bodyCount advance
+    by_cases hrounded : aligned8 (high32Nat tagWord) = 8
+    · simp [hrounded, hphase]
+    · have : aligned8 (high32Nat tagWord) / 8 - 1 ≠ 0 := by
+        omega
+      simp [hrounded, this, hphase]
+  have hbodyPadded :
+      state.word[9]! = UInt64.ofNat (bodyCount * 8) := by
+    rw [hbodyBytes]
+    exact hpadded
+  obtain ⟨after, hspan, hafter⟩ :=
+    successfulIgnoredTagSpan_canonical identity bytes total bodyIndex
+      bodyCount target state htotal htotalLow htotalHigh htotalAligned
+      hidentityAligned hroom hversion hstatus herror hidentity hextent
+      (by simpa [hbodyOffset] using hoffset) hbodyPhase hcontent hbodyPadded
+      hsawMap husable hblocked htargetWord htarget htagCount
+  rcases hafter with ⟨hafterVersion, hafterStatus, hafterError,
+    hafterIdentity, hafterExtent, hafterOffset, hafterPhase,
+    hafterContent, hafterPadded, hafterSawMap, hafterUsable,
+    hafterBlocked, hafterTarget, hafterTagCount⟩
+  have hafterOffsetNat :
+      (bodyIndex + bodyCount) * 8 = offset + advance := by
+    omega
+  refine ⟨after, hspan, ?_⟩
+  refine ⟨hafterVersion, hafterStatus, hafterError, hafterIdentity,
+    hafterExtent, ?_, hafterPhase, hafterContent, hafterPadded,
+    hafterSawMap, hafterUsable, hafterBlocked, hafterTarget, hafterTagCount⟩
+  simpa [hafterOffsetNat, advance] using hafterOffset
+
 /-- A complete accepted ignored-tag span composes around any later
 scalar/rich traversal.  This turns the one-word body rule into the induction
 step needed for arbitrary ignored payload and alignment padding. -/
@@ -1044,6 +1465,74 @@ theorem successfulScalarRichTraversal_ignoredTagSpan
         decide
       · exact haccepted
       · exact ih hrest
+
+/-- A rich ignored-tag continuation now supplies the exact canonical body
+certificate expected by `successfulScalarRichTraversal_ignoredTagSpan`.
+This corollary exposes the composition step without inventing a shadow body
+list or a caller-selected intermediate scalar state. -/
+theorem successfulScalarRichTraversal_ignoredTagTraversal
+    (identity : UInt64) (bytes : List UInt8)
+    (total offset fuel tagWord target : Nat) (sawMemoryMap : Bool)
+    (tagsRev tags : List Tag) (state terminal : ScalarState)
+    (entries : List RawEntry) (rest : List ModelChunk)
+    (htotal : total = bytes.length)
+    (htotalLow : 16 ≤ total)
+    (htotalHigh : total ≤ maxTagBytes)
+    (htotalAligned : total % 8 = 0)
+    (hoffsetAligned : offset % 8 = 0)
+    (hidentityAligned : identity % 8 = 0)
+    (hsize : 8 ≤ high32Nat tagWord)
+    (htagRest :
+      SuccessfulTagDecodeTraversal bytes total
+        (offset + aligned8 (high32Nat tagWord)) fuel sawMemoryMap
+        (.ignored (high32Nat tagWord) :: tagsRev) tags)
+    (hversion :
+      state.word[0]! = BootMemoryMapStreamAuthority.abiVersion)
+    (hstatus :
+      state.word[1]! = BootMemoryMapStreamAuthority.active)
+    (herror :
+      state.word[2]! = BootMemoryMapStreamAuthority.noError)
+    (hidentity : state.word[3]! = identity)
+    (hextent : state.word[4]! = UInt64.ofNat total)
+    (hoffset : state.word[5]! = UInt64.ofNat (offset + 8))
+    (hphase :
+      state.word[7]! =
+        if aligned8 (high32Nat tagWord) = 8
+        then BootMemoryMapStreamAuthority.phaseTag
+        else BootMemoryMapStreamAuthority.phaseIgnored)
+    (hcontent : state.word[8]! ≤ state.word[9]!)
+    (hpadded :
+      state.word[9]! =
+        UInt64.ofNat (aligned8 (high32Nat tagWord) - 8))
+    (hsawMap : state.word[10]! ≤ 1)
+    (husable : state.word[14]! ≤ 1)
+    (hblocked : state.word[15]! ≤ 1)
+    (htargetWord : state.word[16]! = UInt64.ofNat target)
+    (htarget : target < frameLimit)
+    (htagCount : state.word[18]! ≤ 64) :
+    let bodyIndex := offset / 8 + 1
+    let bodyCount := aligned8 (high32Nat tagWord) / 8 - 1
+    let body :=
+      ((canonicalChunks identity bytes).drop bodyIndex).take bodyCount
+    ∃ after,
+      SuccessfulIgnoredTagSpan state body after ∧
+        (SuccessfulScalarRichTraversal target entries after rest terminal →
+          SuccessfulScalarRichTraversal target entries state
+            (body ++ rest) terminal) := by
+  dsimp only
+  obtain ⟨after, hspan, hafter⟩ :=
+    successfulIgnoredTagSpan_of_ignoredTagTraversal identity bytes total
+      offset fuel tagWord target sawMemoryMap tagsRev tags state htotal
+      htotalLow htotalHigh htotalAligned hoffsetAligned hidentityAligned
+      hsize htagRest hversion hstatus herror hidentity hextent hoffset hphase
+      hcontent hpadded hsawMap husable hblocked htargetWord htarget htagCount
+  refine ⟨after, hspan, ?_⟩
+  exact fun htail =>
+    successfulScalarRichTraversal_ignoredTagSpan target entries state after
+      terminal
+      (((canonicalChunks identity bytes).drop (offset / 8 + 1)).take
+        (aligned8 (high32Nat tagWord) / 8 - 1))
+      rest hspan htail
 
 /-- One admitted unique memory-map header is a non-entry traversal step.  The
 production transition enters the layout phase with the exact entry-byte count
