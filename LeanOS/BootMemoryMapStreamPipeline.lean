@@ -1676,6 +1676,312 @@ theorem successfulScalarRichTraversal_memoryMapLayout
       hpadded, hsawMap, htargetWord] using hstep.2.2.1
   · exact hrest
 
+/-- One admitted rich memory-map entry supplies the exact three scalar words
+for its base, length, and type.  The first two words are non-entry traversal
+steps; the third is the entry constructor that attaches the exact decoded
+`RawEntry`.  This packages the production phase transitions as the unit used
+by the recursive entry/source induction. -/
+theorem successfulScalarRichTraversal_memoryMapEntry
+    (identity extent offset : UInt64) (target base length kindWord : Nat)
+    (entries : List RawEntry) (state terminal : ScalarState)
+    (baseChunk lengthChunk kindChunk : ModelChunk) (rest : List ModelChunk)
+    (hbaseIdentity : baseChunk.identity = identity)
+    (hlengthIdentity : lengthChunk.identity = identity)
+    (hkindIdentity : kindChunk.identity = identity)
+    (hbaseOffset : UInt64.ofNat baseChunk.offset = offset)
+    (hlengthOffset : UInt64.ofNat lengthChunk.offset = offset + 8)
+    (hkindOffset : UInt64.ofNat kindChunk.offset = offset + 8 + 8)
+    (hbaseTerminal : baseChunk.terminal = false)
+    (hlengthTerminal : lengthChunk.terminal = false)
+    (hkindTerminal : kindChunk.terminal = false)
+    (hbaseChunkWord : chunkWord baseChunk.bytes = UInt64.ofNat base)
+    (hlengthChunkWord : chunkWord lengthChunk.bytes = UInt64.ofNat length)
+    (hkindChunkWord : chunkWord kindChunk.bytes = UInt64.ofNat kindWord)
+    (hversion :
+      state.word[0]! = BootMemoryMapStreamAuthority.abiVersion)
+    (hstatus :
+      state.word[1]! = BootMemoryMapStreamAuthority.active)
+    (herror :
+      state.word[2]! = BootMemoryMapStreamAuthority.noError)
+    (hidentity : state.word[3]! = identity)
+    (hidentityAligned : identity % 8 = 0)
+    (hextent : state.word[4]! = extent)
+    (hextentLow : 16 ≤ extent)
+    (hextentHigh : extent ≤ 65536)
+    (hextentAligned : extent % 8 = 0)
+    (hoffset : state.word[5]! = offset)
+    (hbaseOffsetLt : offset < extent)
+    (hbaseOffsetNotFinal : offset + 8 ≠ extent)
+    (hlengthOffsetLt : offset + 8 < extent)
+    (hlengthOffsetNotFinal : offset + 8 + 8 ≠ extent)
+    (hkindOffsetLt : offset + 8 + 8 < extent)
+    (hkindOffsetNotFinal : offset + 8 + 8 + 8 ≠ extent)
+    (hphase :
+      state.word[7]! = BootMemoryMapStreamAuthority.phaseEntryBase)
+    (hpadded : state.word[9]! = 0)
+    (hsawMap : state.word[10]! = 1)
+    (hentryCount : state.word[11]! < BootMemoryMapStreamAuthority.entryLimit)
+    (husable : state.word[14]! ≤ 1)
+    (hblocked : state.word[15]! ≤ 1)
+    (htargetWord : state.word[16]! = UInt64.ofNat target)
+    (htarget : target < frameLimit)
+    (htagCount : state.word[18]! ≤ 64)
+    (hlengthNonzero : length ≠ 0)
+    (hbaseBound : base < wordLimit)
+    (hstopBound : base + length < wordLimit)
+    (hkindBound : kindWord < 2 ^ 32)
+    (hrest :
+      SuccessfulScalarRichTraversal target entries
+        (scalarStep (scalarStep (scalarStep state baseChunk) lengthChunk)
+          kindChunk)
+        rest terminal) :
+    SuccessfulScalarRichTraversal target
+      ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
+      state (baseChunk :: lengthChunk :: kindChunk :: rest) terminal := by
+  have htargetLt : target < UInt64.size :=
+    Nat.lt_trans htarget (by decide)
+  have htargetBound : UInt64.ofNat target < 4096 := by
+    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_ofNat_of_lt' htargetLt]
+    simpa [frameLimit, physicalLimit, pageBytes] using htarget
+  have hbaseLt : base < UInt64.size := by
+    simpa [wordLimit] using hbaseBound
+  have hlengthLt : length < UInt64.size := by
+    have : length < wordLimit := by omega
+    simpa [wordLimit] using this
+  have hkindLt : kindWord < UInt64.size := by
+    exact Nat.lt_trans hkindBound (by decide)
+  have hkindHigh :
+      BootMemoryMapStreamAuthority.high32 (UInt64.ofNat kindWord) = 0 := by
+    rw [BootMemoryMapStreamAuthority.high32,
+      high32Word_ofNat kindWord hkindLt]
+    apply UInt64.toNat.inj
+    simp [BootMemoryMapDecoder.high32Nat]
+    omega
+  have hlengthWordNonzero : UInt64.ofNat length ≠ 0 := by
+    intro hzero
+    have hzeroNat := congrArg UInt64.toNat hzero
+    rw [UInt64.toNat_ofNat_of_lt' hlengthLt] at hzeroNat
+    simp only [UInt64.toNat_ofNat, Nat.reducePow, Nat.reduceMod] at hzeroNat
+    exact hlengthNonzero hzeroNat
+  have hbaseMax :
+      UInt64.ofNat base ≤ 0xffffffffffffffff := by
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' hbaseLt]
+    simp only [UInt64.toNat_ofNat, Nat.reducePow, Nat.reduceMod]
+    simpa [UInt64.size] using Nat.le_pred_of_lt hbaseLt
+  have hstopWord :
+      UInt64.ofNat length ≤
+        0xffffffffffffffff - UInt64.ofNat base := by
+    have hstopNat :
+        length ≤ (2 ^ 64 - 1) - base := by
+      unfold wordLimit at hstopBound
+      omega
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' hlengthLt,
+      UInt64.toNat_sub_of_le _ _ hbaseMax,
+      UInt64.toNat_ofNat_of_lt' hbaseLt]
+    simp only [UInt64.toNat_ofNat, Nat.reducePow, Nat.reduceMod]
+    exact hstopNat
+  have hbaseRaw :=
+    BootMemoryMapStreamAuthority.entryBaseStepWords_of_admitted
+      identity extent offset state.word[6]! state.word[8]!
+      state.word[11]! state.word[12]! state.word[13]!
+      state.word[14]! state.word[15]! (UInt64.ofNat target)
+      state.word[17]! state.word[18]! (UInt64.ofNat base)
+      hidentityAligned hextentLow hextentHigh hextentAligned hbaseOffsetLt
+      hbaseOffsetNotFinal husable hblocked htargetBound htagCount
+  have hbaseStep :
+      (scalarStep state baseChunk).word[0]! =
+          BootMemoryMapStreamAuthority.abiVersion ∧
+        (scalarStep state baseChunk).word[1]! =
+          BootMemoryMapStreamAuthority.active ∧
+        (scalarStep state baseChunk).word[2]! =
+          BootMemoryMapStreamAuthority.noError ∧
+        (scalarStep state baseChunk).word[3]! = identity ∧
+        (scalarStep state baseChunk).word[4]! = extent ∧
+        (scalarStep state baseChunk).word[5]! = offset + 8 ∧
+        (scalarStep state baseChunk).word[7]! =
+          BootMemoryMapStreamAuthority.phaseEntryLength ∧
+        (scalarStep state baseChunk).word[8]! = state.word[8]! ∧
+        (scalarStep state baseChunk).word[9]! = 0 ∧
+        (scalarStep state baseChunk).word[10]! = 1 ∧
+        (scalarStep state baseChunk).word[11]! = state.word[11]! ∧
+        (scalarStep state baseChunk).word[12]! = UInt64.ofNat base ∧
+        (scalarStep state baseChunk).word[13]! = state.word[13]! ∧
+        (scalarStep state baseChunk).word[14]! = state.word[14]! ∧
+        (scalarStep state baseChunk).word[15]! = state.word[15]! ∧
+        (scalarStep state baseChunk).word[16]! = UInt64.ofNat target ∧
+        (scalarStep state baseChunk).word[17]! = state.word[17]! ∧
+        (scalarStep state baseChunk).word[18]! = state.word[18]! := by
+    simpa [scalarStep, hbaseIdentity, hbaseOffset, hbaseTerminal,
+      hbaseChunkWord, hversion, hstatus, herror, hidentity, hextent, hoffset,
+      hphase, hpadded, hsawMap, htargetWord] using hbaseRaw
+  rcases hbaseStep with ⟨hbaseVersion, hbaseStatus, hbaseError,
+    hbaseIdentityWord, hbaseExtent, hbaseCursor, hbasePhase, hbaseContent,
+    hbasePadded, hbaseSawMap, hbaseEntries, hbaseWord, hbaseLength,
+    hbaseUsable, hbaseBlocked, hbaseTarget, hbaseHighest, hbaseTagCount⟩
+  have hlengthRaw :=
+    BootMemoryMapStreamAuthority.entryLengthStepWords_of_admitted
+      identity extent (offset + 8) (scalarStep state baseChunk).word[6]!
+      state.word[8]! state.word[11]! (UInt64.ofNat base) state.word[13]!
+      state.word[14]! state.word[15]! (UInt64.ofNat target)
+      state.word[17]! state.word[18]! (UInt64.ofNat length)
+      hidentityAligned hextentLow hextentHigh hextentAligned hlengthOffsetLt
+      hlengthOffsetNotFinal husable hblocked htargetBound htagCount
+  rcases hlengthRaw with ⟨hlengthVersionRaw, hlengthStatusRaw,
+    hlengthErrorRaw, hlengthIdentityRaw, hlengthExtentRaw, hlengthCursorRaw,
+    hlengthPhaseRaw, hlengthContentRaw, hlengthPaddedRaw, hlengthSawMapRaw,
+    hlengthEntriesRaw, hlengthBaseRaw, hlengthWordRaw, hlengthUsableRaw,
+    hlengthBlockedRaw, hlengthTargetRaw, hlengthHighestRaw,
+    hlengthTagCountRaw⟩
+  have hlengthRefines (query : Fin 19) :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[query.val]! =
+        BootMemoryMapStreamAuthority.stepWord
+          BootMemoryMapStreamAuthority.abiVersion
+          BootMemoryMapStreamAuthority.active
+          BootMemoryMapStreamAuthority.noError identity extent (offset + 8)
+          (scalarStep state baseChunk).word[6]!
+          BootMemoryMapStreamAuthority.phaseEntryLength state.word[8]! 0 1
+          state.word[11]! (UInt64.ofNat base) state.word[13]!
+          state.word[14]! state.word[15]! (UInt64.ofNat target)
+          state.word[17]! state.word[18]! identity (offset + 8)
+          (UInt64.ofNat length) 0 (UInt64.ofNat query.val) := by
+    rw [scalarStep_word]
+    simp only [hlengthIdentity, hlengthOffset, hlengthTerminal,
+      hlengthChunkWord, hbaseVersion, hbaseStatus, hbaseError,
+      hbaseIdentityWord, hbaseExtent, hbaseCursor, hbasePhase, hbaseContent,
+      hbasePadded, hbaseSawMap, hbaseEntries, hbaseWord, hbaseLength,
+      hbaseUsable, hbaseBlocked, hbaseTarget, hbaseHighest, hbaseTagCount,
+      Bool.false_eq_true, ↓reduceIte]
+  have hlengthVersion :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[0]! =
+        BootMemoryMapStreamAuthority.abiVersion := by
+    exact (hlengthRefines (⟨0, by decide⟩ : Fin 19)).trans hlengthVersionRaw
+  have hlengthStatus :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[1]! =
+        BootMemoryMapStreamAuthority.active := by
+    exact (hlengthRefines (⟨1, by decide⟩ : Fin 19)).trans hlengthStatusRaw
+  have hlengthError :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[2]! =
+        BootMemoryMapStreamAuthority.noError := by
+    exact (hlengthRefines (⟨2, by decide⟩ : Fin 19)).trans hlengthErrorRaw
+  have hlengthIdentityWord :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[3]! =
+        identity := by
+    exact (hlengthRefines (⟨3, by decide⟩ : Fin 19)).trans
+      hlengthIdentityRaw
+  have hlengthExtent :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[4]! =
+        extent := by
+    exact (hlengthRefines (⟨4, by decide⟩ : Fin 19)).trans hlengthExtentRaw
+  have hlengthCursor :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[5]! =
+        offset + 8 + 8 := by
+    exact (hlengthRefines (⟨5, by decide⟩ : Fin 19)).trans hlengthCursorRaw
+  have hlengthPhase :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[7]! =
+        BootMemoryMapStreamAuthority.phaseEntryType := by
+    exact (hlengthRefines (⟨7, by decide⟩ : Fin 19)).trans hlengthPhaseRaw
+  have hlengthContent :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[8]! =
+        state.word[8]! := by
+    exact (hlengthRefines (⟨8, by decide⟩ : Fin 19)).trans hlengthContentRaw
+  have hlengthPadded :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[9]! = 0 := by
+    exact (hlengthRefines (⟨9, by decide⟩ : Fin 19)).trans hlengthPaddedRaw
+  have hlengthSawMap :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[10]! = 1 := by
+    exact (hlengthRefines (⟨10, by decide⟩ : Fin 19)).trans
+      hlengthSawMapRaw
+  have hlengthEntries :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[11]! =
+        state.word[11]! := by
+    exact (hlengthRefines (⟨11, by decide⟩ : Fin 19)).trans
+      hlengthEntriesRaw
+  have hlengthBaseWord :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[12]! =
+        UInt64.ofNat base := by
+    exact (hlengthRefines (⟨12, by decide⟩ : Fin 19)).trans hlengthBaseRaw
+  have hlengthWord :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[13]! =
+        UInt64.ofNat length := by
+    exact (hlengthRefines (⟨13, by decide⟩ : Fin 19)).trans hlengthWordRaw
+  have hlengthUsable :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[14]! =
+        state.word[14]! := by
+    exact (hlengthRefines (⟨14, by decide⟩ : Fin 19)).trans
+      hlengthUsableRaw
+  have hlengthBlocked :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[15]! =
+        state.word[15]! := by
+    exact (hlengthRefines (⟨15, by decide⟩ : Fin 19)).trans
+      hlengthBlockedRaw
+  have hlengthTarget :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[16]! =
+        UInt64.ofNat target := by
+    exact (hlengthRefines (⟨16, by decide⟩ : Fin 19)).trans
+      hlengthTargetRaw
+  have hlengthHighest :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[17]! =
+        state.word[17]! := by
+    exact (hlengthRefines (⟨17, by decide⟩ : Fin 19)).trans
+      hlengthHighestRaw
+  have hlengthTagCount :
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[18]! =
+        state.word[18]! := by
+    exact (hlengthRefines (⟨18, by decide⟩ : Fin 19)).trans
+      hlengthTagCountRaw
+  have hkindRaw :=
+    BootMemoryMapStreamAuthority.entryTypeStepError_of_admitted
+      identity extent (offset + 8 + 8)
+      (scalarStep (scalarStep state baseChunk) lengthChunk).word[6]!
+      state.word[8]! state.word[11]! (UInt64.ofNat base)
+      (UInt64.ofNat length) state.word[14]! state.word[15]!
+      (UInt64.ofNat target) state.word[17]! state.word[18]!
+      (UInt64.ofNat kindWord)
+      hidentityAligned hextentLow hextentHigh hextentAligned hkindOffsetLt
+      hkindOffsetNotFinal husable hblocked htargetBound htagCount hkindHigh
+      hlengthWordNonzero hstopWord hentryCount
+  have hkindStep :
+      (scalarStep (scalarStep (scalarStep state baseChunk) lengthChunk)
+          kindChunk).word[2]! =
+        BootMemoryMapStreamAuthority.noError := by
+    apply (scalarStep_word
+      (scalarStep (scalarStep state baseChunk) lengthChunk) kindChunk
+      (⟨2, by decide⟩ : Fin 19)).trans
+    simpa only [hkindIdentity, hkindOffset, hkindTerminal, hkindChunkWord,
+      hlengthVersion, hlengthStatus, hlengthError, hlengthIdentityWord,
+      hlengthExtent, hlengthCursor, hlengthPhase, hlengthContent,
+      hlengthPadded, hlengthSawMap, hlengthEntries, hlengthBaseWord,
+      hlengthWord, hlengthUsable, hlengthBlocked, hlengthTarget,
+      hlengthHighest, hlengthTagCount, Bool.false_eq_true,
+      ↓reduceIte, show UInt64.ofNat 2 = (2 : UInt64) by decide] using hkindRaw
+  apply SuccessfulScalarRichTraversal.nonEntry
+    ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
+    state terminal baseChunk (lengthChunk :: kindChunk :: rest)
+  · rw [hphase]
+    decide
+  · exact hbaseError
+  apply SuccessfulScalarRichTraversal.nonEntry
+    ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
+    (scalarStep state baseChunk) terminal lengthChunk (kindChunk :: rest)
+  · rw [hbasePhase]
+    decide
+  · exact hlengthError
+  apply SuccessfulScalarRichTraversal.entry
+    base length kindWord entries
+    (scalarStep (scalarStep state baseChunk) lengthChunk)
+    terminal kindChunk rest
+  · exact hlengthPhase
+  · exact hlengthBaseWord
+  · exact hlengthWord
+  · exact hlengthTarget
+  · exact hkindChunkWord
+  · exact hkindStep
+  · exact hbaseBound
+  · exact hstopBound
+  · exact hkindBound
+  · exact htarget
+  · exact hrest
+
 /-- The retained rich end-tag constructor and an admitted scalar tag cursor
 construct the terminal one-chunk tail of `SuccessfulScalarRichTraversal`.
 The scalar completion status is derived from `stepWord`; no terminal word is

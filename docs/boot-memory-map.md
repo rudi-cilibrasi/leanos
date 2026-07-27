@@ -333,11 +333,19 @@ that transition around the remaining layout and entry traversal.
 version-zero layout word and selects the first-entry phase (or the following
 tag for an empty map), preserving the exact entry-byte count and accumulated
 classification state; `successfulScalarRichTraversal_memoryMapLayout`
-packages that transition as the next non-entry traversal step. The remaining
-induction must consume every base/length/type triple and recursively assemble
-these tag-local pieces into the universal `SuccessfulScalarRichTraversal`.
-Until that final derivation exists, the fail-closed terminal comparison
-remains in place.
+packages that transition as the next non-entry traversal step.
+`entryBaseStepWords_of_admitted`, `entryLengthStepWords_of_admitted`, and
+`entryTypeStepError_of_admitted` now derive the three production phase
+transitions for one retained rich entry. They preserve the exact pending
+base/length words and validate the rich decoder's reserved high word,
+nonzero length, overflow bound, and entry limit.
+`successfulScalarRichTraversal_memoryMapEntry` composes that exact source
+triple around an arbitrary later traversal and attaches the corresponding
+decoded `RawEntry`. The remaining induction must recursively select every
+canonical triple from `SuccessfulEntryDecodeTraversal`, thread the updated
+entry count/content/classification state, and assemble these tag-local pieces
+into the universal `SuccessfulScalarRichTraversal`. Until that final
+derivation exists, the fail-closed terminal comparison remains in place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
