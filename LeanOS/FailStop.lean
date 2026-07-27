@@ -14877,6 +14877,129 @@ theorem authoritativeGate_capabilityCopy_preserves_authoritativeRuntimeWellForme
     (capabilityCopy_authoritativeOperationCompatible state source destination
       destinationSlot rights hstate)
 
+/-- Direct revocation either rejects atomically or publishes a capability
+state with the same subject registry.  The runtime-safe wrapper's accepted
+raw transition supplies the registry law consumed by the common publication
+compatibility boundary. -/
+theorem capabilityRevoke_authoritativeOperationCompatible state authoritySlot
+    victim victimSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.capabilityRevoke authoritySlot victim victimSlot)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary (.capabilityRevoke authoritySlot victim victimSlot))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hrevoke : Capability.revokeRuntimeSafe state.capabilities
+          state.execution.core.context.currentSubject authoritySlot victim
+          victimSlot with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hrevoke] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted =>
+              obtain ⟨hraw, _⟩ :=
+                Capability.revokeRuntimeSafe_accepted_raw state.capabilities
+                  state.execution.core.context.currentSubject authoritySlot
+                  victim victimSlot next hrevoke
+              have hmetadata := Capability.revoke_preserves_metadata
+                state.capabilities state.execution.core.context.currentSubject
+                authoritySlot victim victimSlot
+              rw [hraw] at hmetadata
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hrevoke] using
+                installCopiedCapabilities_dormantCancellationCompatible
+                  state next hstate hmetadata.1
+
+/-- Direct capability revocation has a closed folded-invariant theorem,
+including retained blocking-context and deferred-cancellation validity. -/
+theorem authoritativeGate_capabilityRevoke_preserves_authoritativeRuntimeWellFormed
+    state authoritySlot victim victimSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary
+          (.capabilityRevoke authoritySlot victim victimSlot))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.capabilityRevoke authoritySlot victim victimSlot)) hstate
+    (capabilityRevoke_authoritativeOperationCompatible state authoritySlot
+      victim victimSlot hstate)
+
+/-- Transitive revocation has the same dormant-publication boundary as direct
+revocation.  Accepted subtree removal retains the subject registry even while
+clearing every capability in the selected derivation subtree. -/
+theorem capabilityRevokeSubtree_authoritativeOperationCompatible state
+    authoritySlot victim victimSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.capabilityRevokeSubtree authoritySlot victim victimSlot)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary
+        (.capabilityRevokeSubtree authoritySlot victim victimSlot))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hrevoke : Capability.revokeSubtreeRuntimeSafe state.capabilities
+          state.execution.core.context.currentSubject authoritySlot victim
+          victimSlot with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hrevoke] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted =>
+              obtain ⟨hraw, _⟩ :=
+                Capability.revokeSubtreeRuntimeSafe_accepted_raw
+                  state.capabilities
+                  state.execution.core.context.currentSubject authoritySlot
+                  victim victimSlot next hrevoke
+              have hmetadata := Capability.revokeSubtree_preserves_metadata
+                state.capabilities state.execution.core.context.currentSubject
+                authoritySlot victim victimSlot
+              rw [hraw] at hmetadata
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hrevoke] using
+                installCopiedCapabilities_dormantCancellationCompatible
+                  state next hstate hmetadata.1
+
+/-- Capability-subtree revocation has a closed folded-invariant theorem across
+the sole authoritative runtime state. -/
+theorem
+    authoritativeGate_capabilityRevokeSubtree_preserves_authoritativeRuntimeWellFormed
+    state authoritySlot victim victimSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary
+          (.capabilityRevokeSubtree authoritySlot victim victimSlot))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary
+      (.capabilityRevokeSubtree authoritySlot victim victimSlot)) hstate
+    (capabilityRevokeSubtree_authoritativeOperationCompatible state
+      authoritySlot victim victimSlot hstate)
+
 /-- Delivery changes only mailbox/completion payload state.  Every projection
 observed by dormant cancellation remains literally unchanged. -/
 theorem dispatchBlockingReceive_delivered_dormant_projections_exact
