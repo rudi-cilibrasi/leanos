@@ -293,9 +293,12 @@ production scalar definition rather than a shadow parser.
 step begins with a complete header inside the advertised extent, and
 `canonicalFirstTagStep_source_refines` binds the first tag header at offset
 eight to canonical chunk index one, its exact rich-decoder word, nonterminal
-bit, and every production scalar query. The remaining induction must split
-that tag phase into ignored contents and padding, the unique map layout, each
-base/length/type triple, and the terminal end tag to construct
+bit, and every production scalar query.
+`canonicalTagStep_source_refines` lifts that source agreement to every aligned
+offset in the retained recursive tag traversal, including the exact terminal
+bit for the end tag. The remaining induction must propagate the scalar parser
+state through ignored contents and padding, the unique map layout, and each
+base/length/type triple to construct
 `SuccessfulScalarRichTraversal`. Until that final derivation exists, the
 fail-closed terminal comparison remains in place.
 
