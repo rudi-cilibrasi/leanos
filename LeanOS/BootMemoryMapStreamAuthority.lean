@@ -635,6 +635,155 @@ theorem memoryMapLayoutStepWords_of_admitted
     phaseInfo, phaseTag, phaseDone, phaseMapLayout, phaseIgnored,
     phaseEntryBase, phaseEntryLength, phaseEntryType]
 
+/-- An admitted entry-base word advances to the length phase and retains the
+exact source word as the pending base. -/
+theorem entryBaseStepWords_of_admitted
+    (identity extent offset chain content entries base length usable blocked
+      target highest tagCount chunk : UInt64)
+    (hidentityAligned : identity % 8 = 0)
+    (hextentLow : 16 ≤ extent)
+    (hextentHigh : extent ≤ 65536)
+    (hextentAligned : extent % 8 = 0)
+    (hoffset : offset < extent)
+    (hoffsetNotFinal : offset + 8 ≠ extent)
+    (husable : usable ≤ 1)
+    (hblocked : blocked ≤ 1)
+    (htarget : target < 4096)
+    (htagCount : tagCount ≤ 64) :
+    let next := fun query =>
+      stepWord
+        abiVersion active noError identity extent offset chain phaseEntryBase
+        content 0 1 entries base length usable blocked target highest
+        tagCount identity offset chunk 0 query
+    next 0 = abiVersion ∧
+      next 1 = active ∧
+      next 2 = noError ∧
+      next 3 = identity ∧
+      next 4 = extent ∧
+      next 5 = offset + 8 ∧
+      next 7 = phaseEntryLength ∧
+      next 8 = content ∧
+      next 9 = 0 ∧
+      next 10 = 1 ∧
+      next 11 = entries ∧
+      next 12 = chunk ∧
+      next 13 = length ∧
+      next 14 = usable ∧
+      next 15 = blocked ∧
+      next 16 = target ∧
+      next 17 = highest ∧
+      next 18 = tagCount := by
+  dsimp only
+  have hextentNotLow : ¬extent < 16 := by simpa using hextentLow
+  have hextentNotHigh : ¬65536 < extent := by simpa using hextentHigh
+  have hoffsetNotHigh : ¬extent ≤ offset := by simpa using hoffset
+  have htargetNotHigh : ¬4096 ≤ target := by simpa using htarget
+  have husableNotHigh : ¬1 < usable := by simpa using husable
+  have hblockedNotHigh : ¬1 < blocked := by simpa using hblocked
+  have htagCountNotHigh : ¬64 < tagCount := by simpa using htagCount
+  simp [stepWord, transitionError, completedError, nextPhase, nextContent,
+    nextPadded, hidentityAligned, hextentNotLow,
+    hextentNotHigh, hextentAligned, hoffsetNotHigh, hoffsetNotFinal,
+    htargetNotHigh, husableNotHigh, hblockedNotHigh, htagCountNotHigh,
+    phaseInfo, phaseTag, phaseDone, phaseMapLayout, phaseIgnored,
+    phaseEntryBase, phaseEntryLength, phaseEntryType]
+
+/-- An admitted entry-length word advances to the type phase and retains both
+pending entry fields exactly. -/
+theorem entryLengthStepWords_of_admitted
+    (identity extent offset chain content entries base length usable blocked
+      target highest tagCount chunk : UInt64)
+    (hidentityAligned : identity % 8 = 0)
+    (hextentLow : 16 ≤ extent)
+    (hextentHigh : extent ≤ 65536)
+    (hextentAligned : extent % 8 = 0)
+    (hoffset : offset < extent)
+    (hoffsetNotFinal : offset + 8 ≠ extent)
+    (husable : usable ≤ 1)
+    (hblocked : blocked ≤ 1)
+    (htarget : target < 4096)
+    (htagCount : tagCount ≤ 64) :
+    let next := fun query =>
+      stepWord
+        abiVersion active noError identity extent offset chain phaseEntryLength
+        content 0 1 entries base length usable blocked target highest
+        tagCount identity offset chunk 0 query
+    next 0 = abiVersion ∧
+      next 1 = active ∧
+      next 2 = noError ∧
+      next 3 = identity ∧
+      next 4 = extent ∧
+      next 5 = offset + 8 ∧
+      next 7 = phaseEntryType ∧
+      next 8 = content ∧
+      next 9 = 0 ∧
+      next 10 = 1 ∧
+      next 11 = entries ∧
+      next 12 = base ∧
+      next 13 = chunk ∧
+      next 14 = usable ∧
+      next 15 = blocked ∧
+      next 16 = target ∧
+      next 17 = highest ∧
+      next 18 = tagCount := by
+  dsimp only
+  have hextentNotLow : ¬extent < 16 := by simpa using hextentLow
+  have hextentNotHigh : ¬65536 < extent := by simpa using hextentHigh
+  have hoffsetNotHigh : ¬extent ≤ offset := by simpa using hoffset
+  have htargetNotHigh : ¬4096 ≤ target := by simpa using htarget
+  have husableNotHigh : ¬1 < usable := by simpa using husable
+  have hblockedNotHigh : ¬1 < blocked := by simpa using hblocked
+  have htagCountNotHigh : ¬64 < tagCount := by simpa using htagCount
+  simp [stepWord, transitionError, completedError, nextPhase, nextContent,
+    nextPadded, hidentityAligned, hextentNotLow,
+    hextentNotHigh, hextentAligned, hoffsetNotHigh, hoffsetNotFinal,
+    htargetNotHigh, husableNotHigh, hblockedNotHigh, htagCountNotHigh,
+    phaseInfo, phaseTag, phaseDone, phaseMapLayout, phaseIgnored,
+    phaseEntryBase, phaseEntryLength, phaseEntryType]
+
+/-- An admitted entry-type word is accepted by the production transition.
+The rich decoder's reserved-high-word, nonzero-length, overflow, and entry
+limit checks are exactly the checks needed here. -/
+theorem entryTypeStepError_of_admitted
+    (identity extent offset chain content entries base length usable blocked
+      target highest tagCount chunk : UInt64)
+    (hidentityAligned : identity % 8 = 0)
+    (hextentLow : 16 ≤ extent)
+    (hextentHigh : extent ≤ 65536)
+    (hextentAligned : extent % 8 = 0)
+    (hoffset : offset < extent)
+    (hoffsetNotFinal : offset + 8 ≠ extent)
+    (husable : usable ≤ 1)
+    (hblocked : blocked ≤ 1)
+    (htarget : target < 4096)
+    (htagCount : tagCount ≤ 64)
+    (hchunkHigh : high32 chunk = 0)
+    (hlength : length ≠ 0)
+    (hstop : length ≤ 0xffffffffffffffff - base)
+    (hentries : entries < entryLimit) :
+    stepWord
+      abiVersion active noError identity extent offset chain phaseEntryType
+      content 0 1 entries base length usable blocked target highest
+      tagCount identity offset chunk 0 2 = noError := by
+  have hextentNotLow : ¬extent < 16 := by simpa using hextentLow
+  have hextentNotHigh : ¬65536 < extent := by simpa using hextentHigh
+  have hoffsetNotHigh : ¬extent ≤ offset := by simpa using hoffset
+  have htargetNotHigh : ¬4096 ≤ target := by simpa using htarget
+  have husableNotHigh : ¬1 < usable := by simpa using husable
+  have hblockedNotHigh : ¬1 < blocked := by simpa using hblocked
+  have htagCountNotHigh : ¬64 < tagCount := by simpa using htagCount
+  have hstopNotHigh : ¬0xffffffffffffffff - base < length := by
+    simpa using hstop
+  have hentriesNotHigh : ¬entryLimit ≤ entries := by
+    simpa using hentries
+  simp [stepWord, transitionError, completedError, nextPhase,
+    hidentityAligned, hextentNotLow,
+    hextentNotHigh, hextentAligned, hoffsetNotHigh, hoffsetNotFinal,
+    htargetNotHigh, husableNotHigh, hblockedNotHigh, htagCountNotHigh,
+    hchunkHigh, hlength, hstopNotHigh, hentriesNotHigh, phaseInfo,
+    phaseTag, phaseDone, phaseMapLayout, phaseIgnored, phaseEntryBase,
+    phaseEntryLength, phaseEntryType]
+
 /-- An admitted tag cursor consuming the unique terminal end-tag word reaches
 the exact successful scalar terminal state.  This is the terminal constructor
 of the rich/scalar phase induction; it is stated over the production
