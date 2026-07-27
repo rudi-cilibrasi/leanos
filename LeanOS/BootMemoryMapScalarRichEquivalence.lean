@@ -767,6 +767,68 @@ structure ScrubbedPublication where
     (FrameScrub.allocate before rich.owner subject slot).state.memory.binding rich.owner =
       some rich.allocation.frame
 
+/-- Minimal fresh lifetime state whose allocator is exactly the reservation-
+overlaid allocator retained by the rich authority.  Bytes are an explicit
+input because their pre-scrub contents are irrelevant; all capability and
+lifetime authority begins empty. -/
+def sharedAllocatorScrubState
+    (rich : BootMemoryMapFullProjectionABI.Authority)
+    (bytes : FrameScrub.FrameBytes) : FrameScrub.State :=
+  { memory :=
+      { capabilities :=
+          { subjects := fun subject => subject == 0
+            objects := fun _ => false
+            kinds := fun _ => none
+            slots := fun _ _ => none }
+        allocator := rich.reserved.allocator
+        binding := fun _ => none
+        issued := fun _ => false }
+    bytes
+    written := fun _ => false }
+
+/-- The shared allocator transition is accepted by the scrub model without a
+second selection premise.  The accepted rich allocation equation rewrites the
+only allocator call made by `FrameScrub.allocate`. -/
+theorem sharedAllocatorScrubState_accepts
+    (rich : BootMemoryMapFullProjectionABI.Authority)
+    (bytes : FrameScrub.FrameBytes) :
+    (FrameScrub.allocate (sharedAllocatorScrubState rich bytes)
+      rich.owner 0 0).result = .accepted := by
+  have hslot : CapabilityHandle.slotRadix - 1 ≠ 0 := by native_decide
+  have hgeneration : ¬CapabilityHandle.generationRadix ≤ 2 := by native_decide
+  simp [FrameScrub.allocate, sharedAllocatorScrubState,
+    MemoryLifecycle.allocate, Capability.slotInRange,
+    CapabilityHandle.slotReserved, CapabilityHandle.generationReserved,
+    hslot, hgeneration, rich.allocatedBy, MemoryLifecycle.setBinding]
+
+/-- The binding published by the shared scrub transition is the exact frame
+selected by the rich decoder/reservation/allocator chain. -/
+theorem sharedAllocatorScrubState_selects
+    (rich : BootMemoryMapFullProjectionABI.Authority)
+    (bytes : FrameScrub.FrameBytes) :
+    (FrameScrub.allocate (sharedAllocatorScrubState rich bytes)
+      rich.owner 0 0).state.memory.binding rich.owner =
+        some rich.allocation.frame := by
+  have hslot : CapabilityHandle.slotRadix - 1 ≠ 0 := by native_decide
+  have hgeneration : ¬CapabilityHandle.generationRadix ≤ 2 := by native_decide
+  simp [FrameScrub.allocate, sharedAllocatorScrubState,
+    MemoryLifecycle.allocate, Capability.slotInRange,
+    CapabilityHandle.slotReserved, CapabilityHandle.generationReserved,
+    hslot, hgeneration, rich.allocatedBy, MemoryLifecycle.setBinding]
+
+/-- Construct scrub/publication authority directly from one rich authority and
+arbitrary prior frame bytes.  No caller supplies an accepted bit, rescanned
+identity, selected-frame equality, or independent allocator state. -/
+def scrubbedPublicationOfAuthority
+    (rich : BootMemoryMapFullProjectionABI.Authority)
+    (bytes : FrameScrub.FrameBytes) : ScrubbedPublication :=
+  { rich
+    before := sharedAllocatorScrubState rich bytes
+    subject := 0
+    slot := 0
+    accepted := sharedAllocatorScrubState_accepts rich bytes
+    selected := sharedAllocatorScrubState_selects rich bytes }
+
 /-- A scrubbed publication certificate binds all three production decisions
 to the complete rich result: exact scalar selection returns its frame,
 publication derives its token without caller-supplied decision words, and the
@@ -814,6 +876,37 @@ theorem scrubbedPublication_complete_authority
   injection hbinding with hframe
   subst frame
   exact ⟨hselection, hpublication, hfresh, howned⟩
+
+/-- Every rich authority constructs the complete scrub/publication
+certificate when paired with arbitrary prior frame bytes.  The pre-state
+shares `rich.reserved.allocator`, so `rich.allocatedBy` proves both selections
+are the same transition rather than merely equal post-hoc observations. -/
+theorem scrubbedPublicationOfAuthority_complete
+    (rich : BootMemoryMapFullProjectionABI.Authority)
+    (bytes : FrameScrub.FrameBytes) :
+    let publication := scrubbedPublicationOfAuthority rich bytes
+    consumeExactProjection 4096
+        (UInt64.ofNat rich.allocation.frame) complete
+        (usableWord rich.decoded.entries rich.allocation.frame)
+        (blockedWord rich.decoded.entries rich.allocation.frame)
+        (manifestWord rich.reserved.intervals rich.allocation.frame) =
+      UInt64.ofNat rich.allocation.frame ∧
+    publishAuthority
+        (UInt64.ofNat rich.allocation.frame)
+        (UInt64.ofNat rich.allocation.frame) complete
+        (usableWord rich.decoded.entries rich.allocation.frame)
+        (blockedWord rich.decoded.entries rich.allocation.frame)
+        (manifestWord rich.reserved.intervals rich.allocation.frame) 1 =
+      UInt64.ofNat rich.allocation.frame + 1 ∧
+    FrameScrub.Fresh
+      (FrameScrub.allocate publication.before rich.owner
+        publication.subject publication.slot).state rich.owner ∧
+    FrameAllocator.IsOwnedBy
+      (FrameScrub.allocate publication.before rich.owner
+        publication.subject publication.slot).state.memory.allocator
+      rich.allocation.frame rich.owner := by
+  exact scrubbedPublication_complete_authority
+    (scrubbedPublicationOfAuthority rich bytes)
 
 /-- The exact terminal scalar fields that still require semantic refinement
 from the rich decoder.  Naming this relation keeps the production composition
