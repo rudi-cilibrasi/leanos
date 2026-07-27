@@ -513,6 +513,152 @@ def scalarStep (state : ScalarState) (chunk : ModelChunk) : ScalarState :=
         chunk.identity (UInt64.ofNat chunk.offset) (chunkWord chunk.bytes)
         (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) }
 
+/-- Every successful rich traversal takes the same first canonical
+information-header step as the scalar production parser.  The step consumes
+the exact source slice, preserves the immutable stream identity and extent,
+and establishes the tag-phase cursor from which tag/layout/entry induction
+continues. -/
+theorem canonicalInfoStep_of_richTraversal
+    (input : Input) (decoded : Decoded) (target : Nat)
+    (hdecode : decode input = .ok decoded)
+    (htraversal : SuccessfulRichDecodeTraversal input decoded)
+    (htarget : target < frameLimit) :
+    let identity := UInt64.ofNat input.infoAddress
+    let initial := scalarInitialAt identity input.bytes.length target
+    ∃ first rest,
+      canonicalChunks identity input.bytes = first :: rest ∧
+      first =
+        { identity
+          offset := 0
+          bytes := input.bytes.take 8
+          terminal := false } ∧
+      let next := scalarStep initial first
+      next.word[0]! = BootMemoryMapStreamAuthority.abiVersion ∧
+        next.word[1]! = BootMemoryMapStreamAuthority.active ∧
+        next.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+        next.word[3]! = identity ∧
+        next.word[4]! = UInt64.ofNat input.bytes.length ∧
+        next.word[5]! = 8 ∧
+        next.word[7]! = BootMemoryMapStreamAuthority.phaseTag ∧
+        next.word[8]! = 0 ∧
+        next.word[9]! = 0 ∧
+        next.word[10]! = 0 ∧
+        next.word[11]! = 0 ∧
+        next.word[12]! = 0 ∧
+        next.word[13]! = 0 ∧
+        next.word[14]! = 0 ∧
+        next.word[15]! = 0 ∧
+        next.word[16]! = UInt64.ofNat target ∧
+        next.word[17]! = 0 ∧
+        next.word[18]! = 0 := by
+  dsimp only
+  obtain ⟨infoWord, tags, hinfo, hlow, hhigh, htags, htagTraversal,
+    hhandoff, hvalid, hentries, hbounds⟩ := htraversal.traversed
+  have hheader := accepted_input_scalar_header input decoded hdecode
+  have haligned := hheader.2.2.2.2.2.2.1
+  have hcount : 0 < input.bytes.length / 8 := by omega
+  have hget :=
+    canonicalChunks_get?_source
+      (UInt64.ofNat input.infoAddress) input.bytes haligned 0 hcount
+  cases hchunks :
+      canonicalChunks (UInt64.ofNat input.infoAddress) input.bytes with
+  | nil =>
+      rw [hchunks] at hget
+      contradiction
+  | cons first rest =>
+      rw [hchunks] at hget
+      simp only [List.getElem?_cons_zero, Option.some.injEq, Nat.zero_mul,
+        List.drop_zero, Nat.zero_add] at hget
+      have hterminal :
+          (1 == input.bytes.length / 8) = false := by
+        exact beq_false_of_ne (by omega)
+      rw [hterminal] at hget
+      subst first
+      refine ⟨
+        { identity := UInt64.ofNat input.infoAddress
+          offset := 0
+          bytes := input.bytes.take 8
+          terminal := false },
+        rest, ?_, rfl, ?_⟩
+      · rfl
+      have haddressLt : input.infoAddress < UInt64.size := by
+        simpa [wordLimit] using hheader.2.1
+      have hextentLt : input.bytes.length < UInt64.size := by
+        simpa [wordLimit] using hheader.2.2.1
+      have htargetLt : target < UInt64.size :=
+        Nat.lt_trans htarget (by decide)
+      have hinfoLt := readU64_lt_wordLimit input.bytes 0 infoWord hinfo
+      have hchunkWord :
+          chunkWord (input.bytes.take 8) = UInt64.ofNat infoWord := by
+        apply chunkWord_readU64_agreement
+        rw [show input.bytes.take 8 =
+            (input.bytes.drop 0).take 8 by simp]
+        rw [readU64_drop_take]
+        exact hinfo
+      have hlowWord :
+          UInt64.ofNat infoWord &&& 0xffffffff =
+            UInt64.ofNat input.bytes.length := by
+        rw [low32Word_ofNat infoWord hinfoLt, hlow]
+      have hhighWord :
+          UInt64.ofNat infoWord >>> 32 = 0 := by
+        rw [high32Word_ofNat infoWord hinfoLt, hhigh]
+        rfl
+      have haddressAligned :
+          UInt64.ofNat input.infoAddress % 8 = 0 := by
+        apply UInt64.toNat.inj
+        simp [UInt64.toNat_ofNat_of_lt' haddressLt,
+          hheader.2.2.2.2.1]
+      have hextentLow : 16 ≤ UInt64.ofNat input.bytes.length := by
+        rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' hextentLt]
+        exact hheader.2.2.2.2.2.1
+      have hextentHigh : UInt64.ofNat input.bytes.length ≤ 65536 := by
+        rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' hextentLt]
+        exact hheader.2.2.2.2.2.2.2.1
+      have hextentAligned :
+          UInt64.ofNat input.bytes.length % 8 = 0 := by
+        apply UInt64.toNat.inj
+        simp [UInt64.toNat_ofNat_of_lt' hextentLt, haligned]
+      have htargetWord : UInt64.ofNat target < 4096 := by
+        rw [UInt64.lt_iff_toNat_lt,
+          UInt64.toNat_ofNat_of_lt' htargetLt]
+        simpa [frameLimit, physicalLimit, pageBytes] using htarget
+      have hextentNe8 : UInt64.ofNat input.bytes.length ≠ 8 := by
+        intro heq
+        have := congrArg UInt64.toNat heq
+        simp [UInt64.toNat_ofNat_of_lt' hextentLt] at this
+        omega
+      have haddressLow : 4096 ≤ UInt64.ofNat input.infoAddress := by
+        rw [UInt64.le_iff_toNat_le,
+          UInt64.toNat_ofNat_of_lt' haddressLt]
+        exact hheader.2.2.2.2.2.2.2.2
+      have hnoOverflow :
+          UInt64.ofNat input.bytes.length ≤
+            0xffffffffffffffff - UInt64.ofNat input.infoAddress := by
+        have haddressMax :
+            UInt64.ofNat input.infoAddress ≤ 0xffffffffffffffff := by
+          rw [UInt64.le_iff_toNat_le,
+            UInt64.toNat_ofNat_of_lt' haddressLt]
+          simp only [UInt64.toNat_ofNat, Nat.reducePow, Nat.reduceMod]
+          simpa [UInt64.size] using Nat.le_pred_of_lt haddressLt
+        rw [UInt64.le_iff_toNat_le,
+          UInt64.toNat_ofNat_of_lt' hextentLt,
+          UInt64.toNat_sub_of_le _ _ haddressMax,
+          UInt64.toNat_ofNat_of_lt' haddressLt]
+        simp only [UInt64.toNat_ofNat, Nat.reducePow, Nat.reduceMod]
+        exact hheader.2.2.2.1
+      have h8NeExtent : 8 ≠ UInt64.ofNat input.bytes.length :=
+        Ne.symm hextentNe8
+      have hstep :=
+        BootMemoryMapStreamAuthority.infoStepWords_of_admitted
+          (UInt64.ofNat input.infoAddress)
+          (UInt64.ofNat input.bytes.length)
+          (UInt64.ofNat target) (UInt64.ofNat infoWord)
+          haddressAligned haddressLow hextentLow hextentHigh
+          hextentAligned hnoOverflow htargetWord hlowWord hhighWord
+          h8NeExtent
+      simpa [scalarStep, scalarInitialAt, multiboot2Magic, hchunkWord]
+        using hstep
+
 def scalarReplay : List ModelChunk → ScalarState → ScalarState
   | [], state => state
   | chunk :: rest, state =>

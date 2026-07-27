@@ -283,10 +283,16 @@ extraction returns the source-certified map entries.
 `successfulRichDecodeTraversal_entries_source` then uses the retained
 `validateHandoff` equation to identify that source walk with exactly
 `decoded.entries`; an existential shadow entry list cannot satisfy the bridge.
-The remaining induction must align those source offsets with each canonical
-eight-byte scalar phase to construct `SuccessfulScalarRichTraversal`. Until
-that final derivation exists, the fail-closed terminal comparison remains in
-place.
+`canonicalInfoStep_of_richTraversal` now consumes the retained information
+header from that source certificate, proves its 64-bit word is represented
+without truncation, selects the exact first canonical chunk, and establishes
+the complete admitted scalar cursor at offset eight in the tag phase.
+`infoStepWords_of_admitted` proves that phase transition directly from the
+production scalar definition rather than a shadow parser. The remaining
+induction starts at tag headers and must traverse ignored contents and padding,
+the unique map layout, each base/length/type triple, and the terminal end tag
+to construct `SuccessfulScalarRichTraversal`. Until that final derivation
+exists, the fail-closed terminal comparison remains in place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
