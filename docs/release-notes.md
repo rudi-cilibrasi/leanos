@@ -21,6 +21,11 @@ The vector-14 path additionally carries a version-one canonical page-fault
 snapshot binding supported error bits, CR2/page, saved frame,
 subject/address-space/CR3, and paging controls before policy; x86 delivery,
 error-word/CR2 ordering, and assembly sampling remain trusted.
+The gated release bundle retains the fault-containment ISO, final ELF and map,
+serial transcript, final disassembly, page-table plan, and exact entry-policy
+report. These records make the fixed supervisor-read probe reproducible and
+auditable; they do not extend that tested probe to other page-fault reasons or
+establish binary refinement.
 For extended-state denial this inventory specifically includes CPUID and
 CR0/CR4 reads, #UD/#NM priority and delivery, probe decoding, vector 6/7 entry
 and cleanup assembly, generated scalar dispatch, peer restore, and transcript

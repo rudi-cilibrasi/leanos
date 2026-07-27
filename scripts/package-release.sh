@@ -34,6 +34,20 @@ cp build/boot/leanos-preemption.map \
   "$release/leanos-${version}-x86_64-preemption.map"
 cp build/boot/preemption.serial.log \
   "$release/leanos-${version}-preemption-serial.log"
+cp "build/boot/leanos-${version}-x86_64-fault-containment.iso" \
+  "$release/leanos-${version}-x86_64-fault-containment.iso"
+cp build/boot/leanos-fault-containment.elf \
+  "$release/leanos-${version}-x86_64-fault-containment.elf"
+cp build/boot/leanos-fault-containment.map \
+  "$release/leanos-${version}-x86_64-fault-containment.map"
+cp build/boot/fault-containment.serial.log \
+  "$release/leanos-${version}-fault-containment-serial.log"
+cp build/boot/fault-containment.disassembly.txt \
+  "$release/leanos-${version}-fault-containment-disassembly.txt"
+cp build/boot/fault-containment-policy-report.txt \
+  "$release/leanos-${version}-fault-containment-policy-report.txt"
+cp build/boot/boot-page-plan-fault-containment.final.h \
+  "$release/leanos-${version}-fault-containment-page-plan.h"
 cp build/boot/entry-adversarial.serial.log \
   "$release/leanos-${version}-entry-adversarial-serial.log"
 cp build/boot/double-fault.serial.log \
@@ -54,6 +68,13 @@ LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
   "leanos-${version}-x86_64-preemption.elf" \
   "leanos-${version}-x86_64-preemption.map" \
   "leanos-${version}-preemption-serial.log" \
+  "leanos-${version}-x86_64-fault-containment.iso" \
+  "leanos-${version}-x86_64-fault-containment.elf" \
+  "leanos-${version}-x86_64-fault-containment.map" \
+  "leanos-${version}-fault-containment-serial.log" \
+  "leanos-${version}-fault-containment-disassembly.txt" \
+  "leanos-${version}-fault-containment-policy-report.txt" \
+  "leanos-${version}-fault-containment-page-plan.h" \
   "leanos-${version}-entry-adversarial-serial.log" \
   "leanos-${version}-double-fault-serial.log" \
   "leanos-${version}-double-fault-guard-mapped-serial.log" \
