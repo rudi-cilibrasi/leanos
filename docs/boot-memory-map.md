@@ -229,6 +229,12 @@ decode/reserve/allocate authority into the same decision without an external
 readiness premise. Final-ELF policy requires
 `leanos_boot_consume_exact_projection`, rejects the superseded selector, and
 QEMU requires `projection=exact-rich` from the production path.
+`ScrubbedPublication` additionally retains proof that the atomic scrub model
+published that exact rich-selected frame. Its complete-authority theorem
+derives exact scalar selection, publication, freshness, and allocator
+ownership from the rich result and accepted scrub transition, without
+accepting rescan identity or scrub-success scalar words as independent
+authority.
 
 `runCanonical` is the proof-only composition of those production gates for an
 arbitrary immutable raw input. It first requires the scalar

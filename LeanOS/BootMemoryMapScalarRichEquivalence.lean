@@ -1,6 +1,7 @@
 import LeanOS.BootMemoryMapFullProjectionABI
 import LeanOS.BootMemoryMapStreamAuthority
 import LeanOS.BootMemoryMapStreamPipeline
+import LeanOS.FrameScrub
 
 /-!
 # Universal scalar/rich boot-memory projection equivalence
@@ -750,6 +751,69 @@ theorem accepted_authority_publishes_after_rescan_and_scrub
     exact
       (UInt64.ofNat_lt_iff_lt hsize (by decide)).2 authority.selectedWithinBound
   simp [hframe]
+
+/-- The proof-relevant boundary between one complete rich boot-memory result
+and one accepted scrub publication.  The scrub model must publish the exact
+frame retained by the rich allocation witness; no scalar rescan identity or
+scrub-success word is stored in this certificate. -/
+structure ScrubbedPublication where
+  rich : BootMemoryMapFullProjectionABI.Authority
+  before : FrameScrub.State
+  subject : FrameScrub.SubjectId
+  slot : FrameScrub.SlotId
+  accepted :
+    (FrameScrub.allocate before rich.owner subject slot).result = .accepted
+  selected :
+    (FrameScrub.allocate before rich.owner subject slot).state.memory.binding rich.owner =
+      some rich.allocation.frame
+
+/-- A scrubbed publication certificate binds all three production decisions
+to the complete rich result: exact scalar selection returns its frame,
+publication derives its token without caller-supplied decision words, and the
+same published lifetime is completely scrubbed and allocator-owned. -/
+theorem scrubbedPublication_complete_authority
+    (publication : ScrubbedPublication) :
+    consumeExactProjection 4096
+        (UInt64.ofNat publication.rich.allocation.frame) complete
+        (usableWord publication.rich.decoded.entries
+          publication.rich.allocation.frame)
+        (blockedWord publication.rich.decoded.entries
+          publication.rich.allocation.frame)
+        (manifestWord publication.rich.reserved.intervals
+          publication.rich.allocation.frame) =
+      UInt64.ofNat publication.rich.allocation.frame ∧
+    publishAuthority
+        (UInt64.ofNat publication.rich.allocation.frame)
+        (UInt64.ofNat publication.rich.allocation.frame) complete
+        (usableWord publication.rich.decoded.entries
+          publication.rich.allocation.frame)
+        (blockedWord publication.rich.decoded.entries
+          publication.rich.allocation.frame)
+        (manifestWord publication.rich.reserved.intervals
+          publication.rich.allocation.frame) 1 =
+      UInt64.ofNat publication.rich.allocation.frame + 1 ∧
+    FrameScrub.Fresh
+      (FrameScrub.allocate publication.before publication.rich.owner
+        publication.subject publication.slot).state publication.rich.owner ∧
+    FrameAllocator.IsOwnedBy
+      (FrameScrub.allocate publication.before publication.rich.owner
+        publication.subject publication.slot).state.memory.allocator
+      publication.rich.allocation.frame publication.rich.owner := by
+  have hselection :=
+    accepted_authority_projection_consumable publication.rich
+  have hpublication :=
+    accepted_authority_publishes_after_rescan_and_scrub publication.rich
+      (UInt64.ofNat publication.rich.allocation.frame) 1 rfl rfl
+  have hfresh :=
+    FrameScrub.allocation_publishes_scrubbed publication.before
+      publication.rich.owner publication.subject publication.slot publication.accepted
+  obtain ⟨frame, hbinding, howned⟩ :=
+    FrameScrub.allocation_publishes_owned publication.before
+      publication.rich.owner publication.subject publication.slot publication.accepted
+  rw [publication.selected] at hbinding
+  injection hbinding with hframe
+  subst frame
+  exact ⟨hselection, hpublication, hfresh, howned⟩
 
 /-- The exact terminal scalar fields that still require semantic refinement
 from the rich decoder.  Naming this relation keeps the production composition
