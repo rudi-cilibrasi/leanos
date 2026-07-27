@@ -167,6 +167,35 @@ theorem accepted_claim_is_canonical (input : Input)
       · rw [if_neg heq] at h
         contradiction
 
+/-- Full authorization acceptance retains both halves of the boundary:
+`run` produced the returned authority from the exact three authoritative
+inputs, and every field of the caller-visible rich projection equals the
+canonical projection of that authority.  Later production compositions can
+use this lemma without unfolding the decoder, reservation overlay, allocator,
+or projection comparison. -/
+theorem authorize_acceptance_binding (input : Input)
+    (manifest : List BootReservation.Reservation) (owner : FrameAllocator.OwnerId)
+    (claimed : Projection) (authority : Authority)
+    (h : authorize input manifest owner claimed = .ok authority) :
+    run input manifest owner = .ok authority ∧
+      claimed = projection authority := by
+  unfold authorize at h
+  cases hrun : run input manifest owner with
+  | error reason =>
+      rw [hrun] at h
+      contradiction
+  | ok canonical =>
+      rw [hrun] at h
+      change (if claimed = projection canonical then Except.ok canonical
+        else Except.error Error.outputMutation) = Except.ok authority at h
+      by_cases heq : claimed = projection canonical
+      · rw [if_pos heq] at h
+        injection h with hauthority
+        subst authority
+        exact ⟨rfl, heq⟩
+      · rw [if_neg heq] at h
+        contradiction
+
 def abiVersion : UInt64 := 1
 def accepted : UInt64 := 1
 def rejected : UInt64 := 2

@@ -803,6 +803,106 @@ theorem runCanonical_acceptance_binding
       hvalidated.2.2, hintervals, accepted_authority_projection_consumable authority⟩
   · contradiction
 
+/-- Canonical production composition with the complete rich projection as an
+explicit claimed output.  Unlike `runCanonical`, this boundary cannot return
+authority after a caller mutates an entry, normalized region, checked
+reservation interval, overlaid region, or selected frame. -/
+def authorizeCanonical
+    (input : BootMemoryMapDecoder.Input)
+    (lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength : UInt64)
+    (owner : FrameAllocator.OwnerId)
+    (claimed : BootMemoryMapFullProjectionABI.Projection) :
+    Except BootMemoryMapFullProjectionABI.Error
+      BootMemoryMapFullProjectionABI.Authority :=
+  if manifestValid lowStart lowLength imageStart imageLength pageStart pageLength
+      descriptorStart descriptorLength stacksStart stacksLength
+      guardStart guardLength entryStart entryLength usersStart usersLength
+      infoStart infoLength then
+    BootMemoryMapFullProjectionABI.authorize input
+      (canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength) owner claimed
+  else
+    .error (.reservation .inconsistentImage)
+
+/-- Acceptance through the complete-output gate implies the existing
+raw-byte/canonical-manifest binding and additionally fixes the entire claimed
+rich projection to the returned authority.  This is the dependency-ordered
+authority boundary after byte/chunk replay equivalence; scalar parser-state
+semantic refinement remains a separate stronger theorem. -/
+theorem authorizeCanonical_acceptance_binding
+    (input : BootMemoryMapDecoder.Input)
+    (lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength : UInt64)
+    (owner : FrameAllocator.OwnerId)
+    (claimed : BootMemoryMapFullProjectionABI.Projection)
+    (authority : BootMemoryMapFullProjectionABI.Authority)
+    (haccepted :
+      authorizeCanonical input lowStart lowLength imageStart imageLength
+        pageStart pageLength descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength owner claimed = .ok authority) :
+    let manifest :=
+      canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength
+    let intervals :=
+      canonicalIntervals lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength
+    manifestValid lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength = true ∧
+      authority.input = input ∧
+      authority.manifest = manifest ∧
+      BootMemoryMapDecoder.decode input = .ok authority.decoded ∧
+      BootReservation.validateManifest manifest = .ok intervals ∧
+      authority.reserved.intervals = intervals ∧
+      consumeExactProjection 4096 (UInt64.ofNat authority.allocation.frame) complete
+          (usableWord authority.decoded.entries authority.allocation.frame)
+          (blockedWord authority.decoded.entries authority.allocation.frame)
+          (manifestWord authority.reserved.intervals authority.allocation.frame) =
+        UInt64.ofNat authority.allocation.frame ∧
+      claimed = BootMemoryMapFullProjectionABI.projection authority := by
+  dsimp only
+  unfold authorizeCanonical at haccepted
+  split at haccepted
+  · rename_i hvalid
+    let manifest :=
+      canonicalManifest lowStart lowLength imageStart imageLength pageStart pageLength
+        descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength
+    have hauthorize :=
+      BootMemoryMapFullProjectionABI.authorize_acceptance_binding
+        input manifest owner claimed authority haccepted
+    have hrunCanonical :
+        runCanonical input lowStart lowLength imageStart imageLength pageStart pageLength
+          descriptorStart descriptorLength stacksStart stacksLength
+          guardStart guardLength entryStart entryLength usersStart usersLength
+          infoStart infoLength owner = .ok authority := by
+      unfold runCanonical
+      rw [if_pos hvalid]
+      exact hauthorize.1
+    have hbinding := runCanonical_acceptance_binding input
+      lowStart lowLength imageStart imageLength pageStart pageLength
+      descriptorStart descriptorLength stacksStart stacksLength
+      guardStart guardLength entryStart entryLength usersStart usersLength
+      infoStart infoLength owner authority hrunCanonical
+    exact ⟨hbinding.1, hbinding.2.1, hbinding.2.2.1, hbinding.2.2.2.1,
+      hbinding.2.2.2.2.1, hbinding.2.2.2.2.2.1,
+      hbinding.2.2.2.2.2.2, hauthorize.2⟩
+  · contradiction
+
 /-- Equal immutable raw inputs and equal canonical manifest words cannot yield
 different complete rich projections.  This is the extensional raw-byte
 determinism statement consumed by later production-equivalence proofs. -/
