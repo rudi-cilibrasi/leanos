@@ -13463,6 +13463,66 @@ private theorem schedulerTick_preserves_blockedView scheduler subject
                   rcases hselect with ⟨rfl, _⟩
                   grind
 
+/-- A resumable switch cannot select or save a subject that was neither the
+current subject nor a member of the ready queue.  Therefore an existing
+absence from the kernel-owned context bank remains an absence after every
+accepted switch, typed rejection, and fatal entry. -/
+private theorem resumeSwitch_preserves_quiescent_context_absence
+    state interruptState frame registers subject
+    (hcurrent : state.scheduler.lifecycle.current ≠ some subject)
+    (hready : subject ∉ state.scheduler.ready)
+    (habsent : ResumablePreemption.contextFor state.contexts subject = none) :
+    ResumablePreemption.contextFor
+      (ResumablePreemption.switch state interruptState frame registers).state.contexts
+      subject = none := by
+  have hschedulerView :=
+    schedulerTick_preserves_blockedView state.scheduler subject hcurrent hready
+  simp only [ResumablePreemption.switch]
+  split <;> try simp_all [ResumablePreemption.reject, ResumablePreemption.halt]
+  split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals
+    simp_all [ResumablePreemption.contextFor, ResumablePreemption.eraseContext]
+
+/-- The scheduler projection of a resumable switch leaves a quiescent subject
+quiescent.  Rejections and fatal entry preserve the scheduler literally;
+accepted switching publishes exactly the scheduler tick covered above. -/
+private theorem resumeSwitch_preserves_quiescent_scheduler_view
+    state interruptState frame registers subject
+    (hcurrent : state.scheduler.lifecycle.current ≠ some subject)
+    (hready : subject ∉ state.scheduler.ready) :
+    let next :=
+      (ResumablePreemption.switch state interruptState frame registers).state.scheduler
+    next.lifecycle.capabilities = state.scheduler.lifecycle.capabilities ∧
+      next.lifecycle.runnable = state.scheduler.lifecycle.runnable ∧
+      next.lifecycle.addressOwner = state.scheduler.lifecycle.addressOwner ∧
+      next.lifecycle.current ≠ some subject ∧
+      subject ∉ next.ready := by
+  have hschedulerView :=
+    schedulerTick_preserves_blockedView state.scheduler subject hcurrent hready
+  simp only [ResumablePreemption.switch]
+  split <;> try simp_all [ResumablePreemption.reject, ResumablePreemption.halt]
+  split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals
+    exact hschedulerView
+
 /-- A scheduler tick cannot make an existing endpoint waiter runnable, current,
 or ready.  The tick rotates only the old current subject and the existing ready
 queue, both of which are disjoint from every well-formed waiter. -/
@@ -14286,6 +14346,71 @@ theorem dormantCancellationCompatible_of_exact_projections before after
       hvalid.2.2.2.2.2.2,
       hbefore.2.2.2 subject saved hretainedBefore⟩
 
+/-- Publishing any resumable-switch outcome preserves every dormant
+cancellation observation.  Accepted switches rotate only the old current and
+ready subjects, while blocked and retained subjects are disjoint from both;
+typed rejection and fatal entry leave the scheduler and context bank exact. -/
+private theorem installResumableSwitch_dormantCancellationCompatible
+    state frame registers
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    DormantCancellationCompatible state
+      (installResumable state
+        (ResumablePreemption.switch state.resumable state.execution.core
+          frame registers).state) := by
+  rcases hstate.2.1.1 with ⟨hblocking, hagreement⟩
+  rcases hblocking with
+    ⟨_hscheduler, _hqueues, hwaiters, _hunique, hindex, _hmailbox,
+      _hcapabilities⟩
+  simp only [CompositeState.blockingIPCContext] at hagreement hwaiters hindex
+  have hshared :
+      state.resumable.scheduler = state.blockingIPC.scheduler :=
+    hstate.1.1.2.2.2.2.2.2.2.1.trans hstate.1.blockingScheduler.symm
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro subject hblocked
+    exact hstate.2.1.2.1 subject hblocked
+  · intro subject saved hblocked
+    change state.blockingContexts subject = some saved at hblocked
+    cases hendpoint : state.blockingIPC.waiterEndpoint subject with
+    | none =>
+        have hprojection := hagreement.1 subject
+        simp [CompositeState.blockingIPCContext, hblocked, hendpoint] at hprojection
+    | some endpoint =>
+        have hvalid :=
+          hwaiters endpoint subject ((hindex endpoint subject).mpr hendpoint)
+        have hcurrent :
+            state.resumable.scheduler.lifecycle.current ≠ some subject := by
+          simpa [hshared] using hvalid.2.2.2.2.2.1
+        have hready : subject ∉ state.resumable.scheduler.ready := by
+          simpa [hshared] using hvalid.2.2.2.2.2.2
+        simpa [installResumable] using
+          resumeSwitch_preserves_quiescent_context_absence
+            state.resumable state.execution.core frame registers subject
+            hcurrent hready (hstate.2.2.1 subject saved hblocked)
+  · intro subject saved hretained
+    have hvalid := hstate.2.1.2.2 subject saved hretained
+    simp only [CompositeState.blockingIPCContext] at hvalid
+    have hcurrent :
+        state.resumable.scheduler.lifecycle.current ≠ some subject := by
+      simpa [hshared] using hvalid.2.2.2.2.1
+    have hready : subject ∉ state.resumable.scheduler.ready := by
+      simpa [hshared] using hvalid.2.2.2.2.2.1
+    have hview :=
+      resumeSwitch_preserves_quiescent_scheduler_view
+        state.resumable state.execution.core frame registers subject
+          hcurrent hready
+    have hcontext :=
+      resumeSwitch_preserves_quiescent_context_absence
+        state.resumable state.execution.core frame registers subject
+          hcurrent hready (hstate.2.2.2 subject saved hretained)
+    simp only [installResumable]
+    refine ⟨hvalid.2.1, ?_, ?_, hview.2.2.2.1, hview.2.2.2.2, ?_, hcontext⟩
+    · rw [hview.1, hshared]
+      exact hvalid.2.2.1
+    · rw [hview.2.1, hshared]
+      exact hvalid.2.2.2.1
+    · simpa [Scheduler.ownsAddressSpace, hview.2.2.1, hshared] using
+        hvalid.2.2.2.2.2.2
+
 private theorem dormantCancellationCompatible_preserves
     before after (hbefore : DeferredBlockingRuntimeWellFormed before)
     (hblocking : BlockingRuntimeWellFormed after)
@@ -14590,6 +14715,75 @@ theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
               state subject hstate
       | handling active => simpa [authoritativeGate, hmode] using hstate
       | halted record => simpa [authoritativeGate, hmode] using hstate
+
+/-- Resumable preemption derives its dormant-cancellation compatibility from
+the folded pre-state alone.  A successful save/restore switch cannot select,
+save, or queue a blocked or retained subject; all typed denials are atomic and
+fatal entry republishes only the unchanged scheduler/context bank under the
+terminal latch. -/
+theorem resumePreempt_authoritativeOperationCompatible state frame registers
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.resumePreempt frame registers)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary (.resumePreempt frame registers))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      have hswitch :=
+        installResumableSwitch_dormantCancellationCompatible
+          state frame registers hstate
+      cases herror : (ResumablePreemption.switch state.resumable
+          state.execution.core frame registers).error with
+      | none =>
+          simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+            applyOperation, herror] using hswitch
+      | some reason =>
+          cases reason with
+          | fatalEntry =>
+              cases hhalted : (ResumablePreemption.switch state.resumable
+                  state.execution.core frame registers).state.halted with
+              | false =>
+                  simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                    applyOperation, herror, hhalted] using
+                      dormantCancellationCompatible_of_exact_projections
+                        state state hstate rfl rfl rfl rfl
+              | true =>
+                  simp only [authoritativeGate, hmode, applyAuthoritativeOperation,
+                    applyOperation, herror, hhalted]
+                  refine ⟨?_, ?_, ?_, ?_⟩
+                  · exact hswitch.deferredExact
+                  · exact hswitch.blockedDeferredDisjoint
+                  · exact hswitch.blockedResumableDisjoint
+                  · exact hswitch.retainedQuiescent
+          | nonTimer | malformedIncoming | noCurrent | contextMismatch |
+              duplicateSave | staleActiveSpace | bankFull | schedulerRejected |
+              noDestination | staleDestination =>
+                simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                  applyOperation, herror] using
+                    dormantCancellationCompatible_of_exact_projections
+                      state state hstate rfl rfl rfl rfl
+
+/-- Every resumable-preemption result unconditionally preserves the complete
+folded authoritative invariant.  In particular, callers supply neither a
+post-state compatibility law nor a per-state readiness witness. -/
+theorem authoritativeGate_resumePreempt_preserves_authoritativeRuntimeWellFormed
+    state frame registers (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.resumePreempt frame registers))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.resumePreempt frame registers)) hstate
+    (resumePreempt_authoritativeOperationCompatible
+      state frame registers hstate)
 
 /-- Every ordinary constructor in the blocking-state-neutral family now has a
 closed successor-gate preservation theorem.  Its compatibility evidence is
@@ -17035,6 +17229,45 @@ theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
       exact ih (authoritativeGate state operation).state
         (authoritativeGate_preserves_authoritativeRuntimeWellFormed
           state operation hstate hcompatible.1) hcompatible.2
+
+/-- Any finite sequence of resumable-preemption attempts has a closed
+recursive compatibility certificate.  Each successor certificate is derived
+from the invariant preserved by the preceding switch, so no intermediate
+post-state law or readiness witness is supplied by the caller. -/
+theorem authoritativeTraceCompatible_resumePreempts state
+    (steps : List (Interrupt.HardwareFrame × ResumablePreemption.Registers))
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeTraceCompatible state
+      (steps.map fun step =>
+        AuthoritativeOperation.ordinary
+          (.resumePreempt step.1 step.2)) := by
+  induction steps generalizing state with
+  | nil => trivial
+  | cons step rest ih =>
+      simp only [List.map_cons, AuthoritativeTraceCompatible]
+      exact
+        ⟨resumePreempt_authoritativeOperationCompatible
+            state step.1 step.2 hstate,
+          ih (authoritativeGate state
+              (.ordinary (.resumePreempt step.1 step.2))).state
+            (authoritativeGate_resumePreempt_preserves_authoritativeRuntimeWellFormed
+              state step.1 step.2 hstate)⟩
+
+/-- The authoritative trace runner unconditionally preserves the complete
+folded runtime invariant across arbitrary finite resumable-preemption
+sequences, including accepted switches, typed denials, and fatal suffixes. -/
+theorem runAuthoritativeResumePreempts_preserves_authoritativeRuntimeWellFormed
+    state
+    (steps : List (Interrupt.HardwareFrame × ResumablePreemption.Registers))
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (steps.map fun step =>
+          AuthoritativeOperation.ordinary
+            (.resumePreempt step.1 step.2))) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state _ hstate
+    (authoritativeTraceCompatible_resumePreempts state steps hstate)
 
 /-- Arbitrary authoritative successor traces retain the exact boot-accepted
 PCI observation.  This proof ranges over ordinary, blocking, and deferred
