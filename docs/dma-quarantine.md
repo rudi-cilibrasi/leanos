@@ -200,9 +200,14 @@ source revision, every admitted or explicitly absent BDF and identity, Command
 word before and after quarantine, assignment/bridge/multifunction fields, and
 the typed `accepted:0` policy result. Missing, duplicate, reordered, drifted,
 noncanonical, or inexact function records reject the runner even when the
-aggregate line remains intact. The shared evidence report hashes each boot
-scenario's snapshot, CI and tagged-release diagnostics retain all of them, and
-the normal blocking-IPC snapshot is included in the checksummed release bundle.
+aggregate line remains intact. Required host fixtures independently corrupt a
+BDF, identity, class, presence status, absent-function control state, initial
+bus-master state, modeled Command bits, read-back, bridge flag, and
+multifunction flag; every corruption must stop snapshot retention with the
+typed `dma-snapshot` runner failure. The shared evidence report hashes each
+boot scenario's snapshot, CI and tagged-release diagnostics retain all of them,
+and the normal blocking-IPC snapshot is included in the checksummed release
+bundle.
 
 Issue #104's authoritative `FailStop.CompositeState` now embeds the
 proof-carrying accepted snapshot and latest control observation directly;

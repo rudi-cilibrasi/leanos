@@ -11,7 +11,7 @@ add_nmi_guard_fixture() {
   sed -i '/^LEANOS\/8 PAGING fixture=extra-mapping /a LEANOS/8 PAGING fixture=nmi-guard-mapping root=B level=pt page=6 expected=0 actual=9223372036854800387 result=REJECTED' "$log"
 }
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-  dma-missing|dma-forged|dma-prestate-forged|dma-topology-forged|dma-control-forged|dma-readback-forged|dma-function-missing|dma-function-readback-forged)
+  dma-missing|dma-forged|dma-prestate-forged|dma-topology-forged|dma-control-forged|dma-readback-forged|dma-function-missing|dma-function-duplicate|dma-function-identity-forged|dma-function-class-forged|dma-function-status-forged|dma-function-absent-command-forged|dma-function-command-forged|dma-function-prestate-forged|dma-function-bridge-forged|dma-function-multifunction-forged|dma-function-readback-forged)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
@@ -28,6 +28,24 @@ case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
     sed -i 's/bus-master=disabled/bus-master=enabled/' "$log"
   elif [[ "$mode" == dma-function-missing ]]; then
     sed -i '/DMA-FUNCTION .*bdf=0:31.3 /d' "$log"
+  elif [[ "$mode" == dma-function-duplicate ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.2 /p' "$log"
+  elif [[ "$mode" == dma-function-identity-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.3 /s/vendor=32902/vendor=4660/' "$log"
+  elif [[ "$mode" == dma-function-class-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.3 /s/class=787712/class=787713/' "$log"
+  elif [[ "$mode" == dma-function-status-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:3.0 /s/present=0/present=1/' "$log"
+  elif [[ "$mode" == dma-function-absent-command-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:3.0 /s/command-before=0/command-before=4/' "$log"
+  elif [[ "$mode" == dma-function-command-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.3 /s/command-before=1/command-before=2049/' "$log"
+  elif [[ "$mode" == dma-function-prestate-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.2 /s/command-before=7/command-before=3/' "$log"
+  elif [[ "$mode" == dma-function-bridge-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.0 /s/bridge=1/bridge=0/' "$log"
+  elif [[ "$mode" == dma-function-multifunction-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.3 /s/multifunction=1/multifunction=0/' "$log"
   elif [[ "$mode" == dma-function-readback-forged ]]; then
     sed -i '/DMA-FUNCTION .*bdf=0:31.2 /s/command-after=3/command-after=7/' "$log"
   else
