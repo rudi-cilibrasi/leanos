@@ -157,9 +157,17 @@ canonical constructor instead of a parallel fixture-only chunker.
 `chunkWord_readU64_agreement` additionally binds byte-to-`UInt64` packing to
 the rich decoder's little-endian eight-byte reader for arbitrary successful
 reads. `scalarStep_readU64_refines` lifts that agreement to every one of the
-nineteen words returned from an arbitrary scalar state transition. Terminal
-parser errors now participate in the same fail-closed result as transition
-errors: `rejected_step_exposes_no_state` and
+nineteen words returned from an arbitrary scalar state transition.
+`checkedScalarReplay_eq_scalarReplay` then lifts the checked byte reads across
+the complete replay, including the production loop's first-error stop.
+`canonicalChunks_readU64` proves that every chunk of any aligned canonical
+decomposition supplies such a read, while
+`assembled_canonical_checkedScalarReplay` binds that whole replay to the exact
+immutable input reconstructed for the rich decoder. These remain proof-side
+model statements: they do not refine generated C, the Lean compiler/runtime,
+the linker, GRUB, firmware, QEMU, or hardware. Terminal parser errors now
+participate in the same fail-closed result as transition errors:
+`rejected_step_exposes_no_state` and
 `scalarStep_rejected_exposes_no_state` prove that every rejected transition
 zeros all parser, classification, target-frame, and tag-counter state words.
 The freestanding replay checks that complete non-projection contract across
