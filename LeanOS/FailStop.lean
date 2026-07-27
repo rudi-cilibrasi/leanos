@@ -4487,16 +4487,21 @@ private def installSchedulerAdmission (state : CompositeState)
     blockingIPC := { state.blockingIPC with scheduler } }
 
 /-- Admit a runnable subject only when its kernel-owned initial context is
-already staged.  The raw scheduler owns queue policy; this composite wrapper
-owns the additional context-bank obligation needed by `RuntimeWellFormed`. -/
+already staged and no retained cancellation awaits its capacity-checked drain.
+The raw scheduler owns queue policy; this composite wrapper owns the additional
+context-bank and deferred-cancellation obligations needed by
+`AuthoritativeRuntimeWellFormed`. -/
 private def schedulerAdmission (state : CompositeState)
     (subject : Scheduler.SubjectId) : Scheduler.Outcome :=
-  match Scheduler.add state.scheduler subject with
-  | { result := .rejected reason, .. } => Scheduler.reject state.scheduler reason
-  | { state := scheduler, result := .accepted context } =>
-      match ResumablePreemption.contextFor state.resumable.contexts subject with
-      | none => Scheduler.reject state.scheduler .noResumableContext
-      | some _ => { state := scheduler, result := .accepted context }
+  match state.deferredCancels.retained subject with
+  | some _ => Scheduler.reject state.scheduler .undrainedCancellation
+  | none =>
+      match Scheduler.add state.scheduler subject with
+      | { result := .rejected reason, .. } => Scheduler.reject state.scheduler reason
+      | { state := scheduler, result := .accepted context } =>
+          match ResumablePreemption.contextFor state.resumable.contexts subject with
+          | none => Scheduler.reject state.scheduler .noResumableContext
+          | some _ => { state := scheduler, result := .accepted context }
 
 /-- Raw scheduler selection has no context-restore payload.  Empty selection
 is a genuine no-op success, but selecting a subject must be performed through
@@ -4603,6 +4608,7 @@ theorem schedulerAdmission_rejected_unchanged state subject reason
     (hrejected : (schedulerAdmission state subject).result = .rejected reason) :
     (schedulerAdmission state subject).state = state.scheduler := by
   unfold schedulerAdmission at hrejected ⊢
+  split <;> try simp [Scheduler.reject]
   generalize hadd : Scheduler.add state.scheduler subject = outcome at hrejected ⊢
   cases outcome with
   | mk scheduler result =>
@@ -4616,37 +4622,45 @@ theorem schedulerAdmission_rejected_unchanged state subject reason
 theorem schedulerAdmission_accepted_exact state subject context next
     (haccepted : schedulerAdmission state subject =
       { state := next, result := .accepted context }) :
-    Scheduler.add state.scheduler subject =
+    state.deferredCancels.retained subject = none ∧
+      Scheduler.add state.scheduler subject =
         { state := next, result := .accepted context } ∧
       ∃ saved, saved ∈ state.resumable.contexts ∧ saved.owner = subject := by
   unfold schedulerAdmission at haccepted
-  generalize hadd : Scheduler.add state.scheduler subject = outcome at haccepted
-  cases outcome with
-  | mk scheduler result =>
-      cases result with
-      | rejected reason => simp [Scheduler.reject] at haccepted
-      | accepted actual =>
-          cases hcontext : ResumablePreemption.contextFor
-              state.resumable.contexts subject with
-          | none => simp [hcontext, Scheduler.reject] at haccepted
-          | some saved =>
-              simp only [hcontext] at haccepted
-              injection haccepted with hnext hresult
-              subst next
-              cases hresult
-              refine ⟨rfl, saved, ?_, ?_⟩
-              · exact List.mem_of_find?_eq_some hcontext
-              · exact ResumablePreemption.contextFor_owner
-                  state.resumable.contexts subject saved hcontext
+  cases hretained : state.deferredCancels.retained subject with
+  | some saved => simp [hretained, Scheduler.reject] at haccepted
+  | none =>
+      simp only [hretained] at haccepted
+      refine ⟨rfl, ?_⟩
+      generalize hadd : Scheduler.add state.scheduler subject = outcome at haccepted
+      cases outcome with
+      | mk scheduler result =>
+          cases result with
+          | rejected reason => simp [Scheduler.reject] at haccepted
+          | accepted actual =>
+              cases hcontext : ResumablePreemption.contextFor
+                  state.resumable.contexts subject with
+              | none => simp [hcontext, Scheduler.reject] at haccepted
+              | some saved =>
+                  simp only [hcontext] at haccepted
+                  injection haccepted with hnext hresult
+                  subst next
+                  cases hresult
+                  refine ⟨rfl, saved, ?_, ?_⟩
+                  · exact List.mem_of_find?_eq_some hcontext
+                  · exact ResumablePreemption.contextFor_owner
+                      state.resumable.contexts subject saved hcontext
 
 theorem schedulerAdmission_eq_add_of_staged state subject saved
-    (hsaved : saved ∈ state.resumable.contexts ∧ saved.owner = subject) :
+    (hsaved : saved ∈ state.resumable.contexts ∧ saved.owner = subject)
+    (hnotRetained : state.deferredCancels.retained subject = none) :
     schedulerAdmission state subject = Scheduler.add state.scheduler subject := by
   have hsome : ResumablePreemption.contextFor state.resumable.contexts subject ≠ none := by
     intro hnone
     rw [ResumablePreemption.contextFor, List.find?_eq_none] at hnone
     exact hnone saved hsaved.1 (by simp [hsaved.2])
   unfold schedulerAdmission
+  simp only [hnotRetained]
   generalize hadd : Scheduler.add state.scheduler subject = outcome
   cases outcome with
   | mk scheduler result =>
@@ -7147,7 +7161,7 @@ theorem gate_scheduleAdd_accepted_sound state subject context next
         .completed (.scheduler (.accepted context)) ∧
       (gate state (.scheduleAdd subject)).state.scheduler = next ∧
       Scheduler.WellFormed (gate state (.scheduleAdd subject)).state.scheduler := by
-  obtain ⟨hadd, _hsaved⟩ := schedulerAdmission_accepted_exact
+  obtain ⟨_hnotRetained, hadd, _hsaved⟩ := schedulerAdmission_accepted_exact
     state subject context next haccepted
   have hpreserved := Scheduler.add_preserves_wellFormed state.scheduler subject hwellFormed
   rw [hadd] at hpreserved
@@ -9883,7 +9897,7 @@ theorem gate_scheduleAdd_accepted_runtimeWellFormed_requires_staged_context
     (haccepted : schedulerAdmission state subject =
       { state := next, result := .accepted context }) :
     ∃ saved, saved ∈ state.resumable.contexts ∧ saved.owner = subject := by
-  exact (schedulerAdmission_accepted_exact state subject context next haccepted).2
+  exact (schedulerAdmission_accepted_exact state subject context next haccepted).2.2
 
 /-- Queue admission retains the authoritative lifecycle and appends exactly
 the admitted subject.  These small projections keep the composite proof from
@@ -9913,13 +9927,15 @@ theorem gate_scheduleAdd_accepted_preserves_runtimeWellFormed
     (hmode : state.execution.mode = .running)
     (haccepted : Scheduler.add state.scheduler subject =
       { state := next, result := .accepted context })
-    (hsaved : saved ∈ state.resumable.contexts ∧ saved.owner = subject) :
+    (hsaved : saved ∈ state.resumable.contexts ∧ saved.owner = subject)
+    (hnotRetained : state.deferredCancels.retained subject = none) :
     RuntimeWellFormed (gate state (.scheduleAdd subject)).state ∧
       (gate state (.scheduleAdd subject)).result =
         .completed (.scheduler (.accepted context)) := by
   have hadmission : schedulerAdmission state subject =
       { state := next, result := .accepted context } := by
-    rw [schedulerAdmission_eq_add_of_staged state subject saved hsaved, haccepted]
+    rw [schedulerAdmission_eq_add_of_staged state subject saved hsaved hnotRetained,
+      haccepted]
   rcases hstate with
     ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
       hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
@@ -10002,12 +10018,13 @@ theorem scheduleAdd_missing_context_rejected_atomic state subject context next
     (hmode : state.execution.mode = .running)
     (hadd : Scheduler.add state.scheduler subject =
       { state := next, result := .accepted context })
+    (hnotRetained : state.deferredCancels.retained subject = none)
     (hmissing : ResumablePreemption.contextFor state.resumable.contexts subject = none) :
     (gate state (.scheduleAdd subject)).result =
         .completed (.scheduler (.rejected .noResumableContext)) ∧
       (gate state (.scheduleAdd subject)).state = state := by
   simp [gate, hmode, operationReply, applyOperation, schedulerAdmission,
-    hadd, hmissing, Scheduler.reject]
+    hnotRetained, hadd, hmissing, Scheduler.reject]
 
 /-- Queue admission is a complete public operation family: raw scheduler
 rejections and missing-context integration failures are atomic, while every
@@ -10026,10 +10043,11 @@ theorem scheduleAdd_operationPreservesRuntimeWellFormed subject :
               (by simp [gate, hmode, operationReply, hadmission])
               (.scheduleAdd subject reason (by simp [hadmission]))).1
         | accepted context =>
-            obtain ⟨hadd, saved, hmember, howner⟩ :=
+            obtain ⟨hnotRetained, hadd, saved, hmember, howner⟩ :=
               schedulerAdmission_accepted_exact state subject context next hadmission
             exact (gate_scheduleAdd_accepted_preserves_runtimeWellFormed
-              state subject context next saved hstate hmode hadd ⟨hmember, howner⟩).1
+              state subject context next saved hstate hmode hadd ⟨hmember, howner⟩
+                hnotRetained).1
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.scheduleAdd subject) hstate hmode
 
@@ -13369,12 +13387,12 @@ theorem gate_scheduleAdd_preserves_blockingRuntimeWellFormed state subject
                 state subject reason (by simp [hadmission])
               simpa [gate, hmode, applyOperation, hadmission, hunchanged] using hstate
           | accepted context =>
-              obtain ⟨hadd, saved, hmember, howner⟩ :=
+              obtain ⟨hnotRetained, hadd, saved, hmember, howner⟩ :=
                 schedulerAdmission_accepted_exact state subject context next hadmission
               have hglobal :=
                 (gate_scheduleAdd_accepted_preserves_runtimeWellFormed
                   state subject context next saved hstate.1 hmode hadd
-                    ⟨hmember, howner⟩).1
+                    ⟨hmember, howner⟩ hnotRetained).1
               refine ⟨hglobal, ?_⟩
               rcases hstate.2 with ⟨hblocking, hagreement⟩
               change BlockingIPC.WellFormed state.blockingIPC at hblocking
@@ -15364,12 +15382,11 @@ private theorem installSchedulerAdmission_dormantCancellationCompatible
                 (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
 
 /-- Scheduler admission derives its dormant-cancellation compatibility from
-the authoritative pre-state and the explicit requirement that the candidate
-is not awaiting a capacity-checked cancellation drain.  Rejections remain
-globally atomic. -/
+the authoritative pre-state.  The composite transition itself rejects a
+candidate awaiting a capacity-checked cancellation drain, so callers no
+longer supply that post-state safety condition. -/
 theorem scheduleAdd_authoritativeOperationCompatible state subject
-    (hstate : AuthoritativeRuntimeWellFormed state)
-    (hnotRetained : state.deferredCancels.retained subject = none) :
+    (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeOperationCompatible state
       (.ordinary (.scheduleAdd subject)) := by
   change DormantCancellationCompatible state
@@ -15395,7 +15412,7 @@ theorem scheduleAdd_authoritativeOperationCompatible state subject
                 dormantCancellationCompatible_of_exact_projections
                   state state hstate rfl rfl rfl rfl
           | accepted context =>
-              obtain ⟨hadd, _⟩ :=
+              obtain ⟨hnotRetained, hadd, _⟩ :=
                 schedulerAdmission_accepted_exact
                   state subject context next hadmission
               simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
@@ -15403,18 +15420,35 @@ theorem scheduleAdd_authoritativeOperationCompatible state subject
                 installSchedulerAdmission_dormantCancellationCompatible
                   state subject context next hstate hnotRetained hadd
 
-/-- Admission of an identity with no undrained cancellation preserves the
-complete folded authoritative invariant through every typed result. -/
+/-- Every scheduler-admission result preserves the complete folded
+authoritative invariant.  An undrained identity is now a typed, atomic
+rejection rather than an external readiness premise. -/
 theorem authoritativeGate_scheduleAdd_preserves_authoritativeRuntimeWellFormed
-    state subject (hstate : AuthoritativeRuntimeWellFormed state)
-    (hnotRetained : state.deferredCancels.retained subject = none) :
+    state subject (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.ordinary (.scheduleAdd subject))).state :=
   authoritativeGate_preserves_authoritativeRuntimeWellFormed state
     (.ordinary (.scheduleAdd subject)) hstate
     (scheduleAdd_authoritativeOperationCompatible
-      state subject hstate hnotRetained)
+      state subject hstate)
+
+/-- A retained cancellation cannot be reactivated through scheduler
+admission.  The public successor reports the dedicated typed denial and
+preserves the complete composite state byte-for-byte. -/
+theorem authoritativeGate_scheduleAdd_retained_rejected_atomic
+    state subject saved
+    (hmode : state.execution.mode = .running)
+    (hretained : state.deferredCancels.retained subject = some saved) :
+    authoritativeGate state (.ordinary (.scheduleAdd subject)) =
+      { state
+        result :=
+          .completed
+            (.ordinary
+              (.scheduler (.rejected .undrainedCancellation))) } := by
+  simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+    authoritativeOperationReply, operationReply, applyOperation,
+    schedulerAdmission, hretained, Scheduler.reject]
 
 /-- Resumable-aware scheduler removal cannot invalidate a blocking waiter.
 Every waiter is already neither current nor queued, so an accepted raw
@@ -17268,6 +17302,40 @@ theorem runAuthoritativeResumePreempts_preserves_authoritativeRuntimeWellFormed
   exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
     state _ hstate
     (authoritativeTraceCompatible_resumePreempts state steps hstate)
+
+/-- Arbitrary finite scheduler-admission sequences have a closed recursive
+compatibility certificate.  Each undrained candidate is rejected atomically;
+every accepted member establishes the invariant consumed by the next member. -/
+theorem authoritativeTraceCompatible_scheduleAdds state
+    (subjects : List Scheduler.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeTraceCompatible state
+      (subjects.map fun subject =>
+        AuthoritativeOperation.ordinary (.scheduleAdd subject)) := by
+  induction subjects generalizing state with
+  | nil => trivial
+  | cons subject rest ih =>
+      simp only [List.map_cons, AuthoritativeTraceCompatible]
+      exact
+        ⟨scheduleAdd_authoritativeOperationCompatible state subject hstate,
+          ih (authoritativeGate state
+              (.ordinary (.scheduleAdd subject))).state
+            (authoritativeGate_scheduleAdd_preserves_authoritativeRuntimeWellFormed
+              state subject hstate)⟩
+
+/-- The authoritative runner unconditionally preserves the complete folded
+runtime invariant across arbitrary scheduler-admission traces, including any
+number of typed undrained-cancellation denials. -/
+theorem runAuthoritativeScheduleAdds_preserves_authoritativeRuntimeWellFormed
+    state (subjects : List Scheduler.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (subjects.map fun subject =>
+          AuthoritativeOperation.ordinary (.scheduleAdd subject))) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state _ hstate
+    (authoritativeTraceCompatible_scheduleAdds state subjects hstate)
 
 /-- Arbitrary authoritative successor traces retain the exact boot-accepted
 PCI observation.  This proof ranges over ordinary, blocking, and deferred
