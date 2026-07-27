@@ -2577,6 +2577,296 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapLayout
   · exact hentryBound
   · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hrest
 
+/-- The three exact source reads retained by one rich entry traversal fix
+three consecutive canonical chunks.  The following-header room supplied by
+the tag traversal makes the type chunk nonterminal even for the final map
+entry.  This packages the source slices and packed words needed by the
+continuation-style entry constructor. -/
+theorem canonicalMemoryMapEntrySteps_source_refines
+    (identity : UInt64) (bytes : List UInt8) (total entryOffset : Nat)
+    (base length kindWord : Nat)
+    (htotal : total = bytes.length)
+    (htotalAligned : total % 8 = 0)
+    (hentryOffsetAligned : entryOffset % 8 = 0)
+    (hroom : entryOffset + memoryMapEntrySize + 8 ≤ total)
+    (hbase : readU64 bytes entryOffset = .ok base)
+    (hlength : readU64 bytes (entryOffset + 8) = .ok length)
+    (hkind : readU64 bytes (entryOffset + 16) = .ok kindWord) :
+    let index := entryOffset / 8
+    let baseChunk : ModelChunk :=
+      { identity
+        offset := entryOffset
+        bytes := (bytes.drop entryOffset).take 8
+        terminal := false }
+    let lengthChunk : ModelChunk :=
+      { identity
+        offset := entryOffset + 8
+        bytes := (bytes.drop (entryOffset + 8)).take 8
+        terminal := false }
+    let kindChunk : ModelChunk :=
+      { identity
+        offset := entryOffset + 16
+        bytes := (bytes.drop (entryOffset + 16)).take 8
+        terminal := false }
+    (canonicalChunks identity bytes).drop index =
+        baseChunk :: lengthChunk :: kindChunk ::
+          (canonicalChunks identity bytes).drop (index + 3) ∧
+      chunkWord baseChunk.bytes = UInt64.ofNat base ∧
+      chunkWord lengthChunk.bytes = UInt64.ofNat length ∧
+      chunkWord kindChunk.bytes = UInt64.ofNat kindWord := by
+  dsimp only
+  next =>
+      simp only [memoryMapEntrySize] at hroom
+      have hoffsetWords : entryOffset / 8 * 8 = entryOffset := by
+        have h := Nat.mod_add_div entryOffset 8
+        rw [hentryOffsetAligned, Nat.zero_add] at h
+        simpa [Nat.mul_comm] using h
+      have htotalWords : total / 8 * 8 = total := by
+        have h := Nat.mod_add_div total 8
+        rw [htotalAligned, Nat.zero_add] at h
+        simpa [Nat.mul_comm] using h
+      have haligned : bytes.length % 8 = 0 := by
+        simpa [← htotal] using htotalAligned
+      have hindex0 : entryOffset / 8 < bytes.length / 8 := by
+        rw [← htotal]
+        omega
+      have hindex1 : entryOffset / 8 + 1 < bytes.length / 8 := by
+        rw [← htotal]
+        omega
+      have hindex2 : entryOffset / 8 + 2 < bytes.length / 8 := by
+        rw [← htotal]
+        omega
+      have hterminal0 :
+          (entryOffset / 8 + 1 == bytes.length / 8) = false := by
+        apply beq_false_of_ne
+        rw [← htotal]
+        omega
+      have hterminal1 :
+          (entryOffset / 8 + 1 + 1 == bytes.length / 8) = false := by
+        apply beq_false_of_ne
+        rw [← htotal]
+        omega
+      have hterminal2 :
+          (entryOffset / 8 + 2 + 1 == bytes.length / 8) = false := by
+        apply beq_false_of_ne
+        rw [← htotal]
+        omega
+      have hget0 :=
+        canonicalChunks_get?_source identity bytes haligned
+          (entryOffset / 8) hindex0
+      have hget1 :=
+        canonicalChunks_get?_source identity bytes haligned
+          (entryOffset / 8 + 1) hindex1
+      have hget2 :=
+        canonicalChunks_get?_source identity bytes haligned
+          (entryOffset / 8 + 2) hindex2
+      have hbaseGet :
+          (canonicalChunks identity bytes)[entryOffset / 8]? =
+            some
+              { identity
+                offset := entryOffset
+                bytes := (bytes.drop entryOffset).take 8
+                terminal := false } := by
+        simpa only [hoffsetWords, hterminal0] using hget0
+      have hlengthGet :
+          (canonicalChunks identity bytes)[entryOffset / 8 + 1]? =
+            some
+              { identity
+                offset := entryOffset + 8
+                bytes := (bytes.drop (entryOffset + 8)).take 8
+                terminal := false } := by
+        simpa only [hoffsetWords, Nat.add_mul, Nat.one_mul, hterminal1] using
+          hget1
+      have hkindGet :
+          (canonicalChunks identity bytes)[entryOffset / 8 + 2]? =
+            some
+              { identity
+                offset := entryOffset + 16
+                bytes := (bytes.drop (entryOffset + 16)).take 8
+                terminal := false } := by
+        simpa only [hoffsetWords, Nat.add_mul, hterminal2] using hget2
+      have hdrop0 :=
+        drop_eq_cons_drop_succ_of_get?_eq_some
+          (canonicalChunks identity bytes) (entryOffset / 8) _ hbaseGet
+      have hdrop1 :=
+        drop_eq_cons_drop_succ_of_get?_eq_some
+          (canonicalChunks identity bytes) (entryOffset / 8 + 1) _ hlengthGet
+      have hdrop2 :=
+        drop_eq_cons_drop_succ_of_get?_eq_some
+          (canonicalChunks identity bytes) (entryOffset / 8 + 2) _ hkindGet
+      have hbaseRead :
+          readU64 ((bytes.drop entryOffset).take 8) 0 = .ok base := by
+        rw [readU64_drop_take]
+        exact hbase
+      have hlengthRead :
+          readU64 ((bytes.drop (entryOffset + 8)).take 8) 0 = .ok length := by
+        rw [readU64_drop_take]
+        exact hlength
+      have hkindRead :
+          readU64 ((bytes.drop (entryOffset + 16)).take 8) 0 =
+            .ok kindWord := by
+        rw [readU64_drop_take]
+        exact hkind
+      refine ⟨?_,
+        chunkWord_readU64_agreement _ _ hbaseRead,
+        chunkWord_readU64_agreement _ _ hlengthRead,
+        chunkWord_readU64_agreement _ _ hkindRead⟩
+      rw [hdrop0, hdrop1, hdrop2]
+
+/-- The exact three canonical chunks retained by one rich entry traversal can
+be consumed by the production scalar entry transition.  Thus any traversal
+over the following canonical suffix lifts to the suffix beginning at this
+entry, with the precise decoded `RawEntry` attached to its classification
+fold. -/
+theorem successfulScalarRichTraversal_canonicalMemoryMapEntry
+    (identity : UInt64) (bytes : List UInt8) (total entryOffset target : Nat)
+    (base length kindWord : Nat) (restEntries : List RawEntry)
+    (state terminal : ScalarState)
+    (htotal : total = bytes.length)
+    (htotalAligned : total % 8 = 0)
+    (hentryOffsetAligned : entryOffset % 8 = 0)
+    (hroom : entryOffset + memoryMapEntrySize + 8 ≤ total)
+    (hbaseOffsetLt : UInt64.ofNat entryOffset < UInt64.ofNat total)
+    (hbaseOffsetNotFinal :
+      UInt64.ofNat entryOffset + 8 ≠ UInt64.ofNat total)
+    (hlengthOffsetLt :
+      UInt64.ofNat entryOffset + 8 < UInt64.ofNat total)
+    (hlengthOffsetNotFinal :
+      UInt64.ofNat entryOffset + 8 + 8 ≠ UInt64.ofNat total)
+    (hkindOffsetLt :
+      UInt64.ofNat entryOffset + 8 + 8 < UInt64.ofNat total)
+    (hkindOffsetNotFinal :
+      UInt64.ofNat entryOffset + 8 + 8 + 8 ≠ UInt64.ofNat total)
+    (hbase : readU64 bytes entryOffset = .ok base)
+    (hlength : readU64 bytes (entryOffset + 8) = .ok length)
+    (hkind : readU64 bytes (entryOffset + 16) = .ok kindWord)
+    (hreserved : high32Nat kindWord = 0)
+    (hlengthNonzero : length ≠ 0)
+    (hbaseBound : base < wordLimit)
+    (hstopBound : length < wordLimit - base)
+    (hidentityAligned : identity % 8 = 0)
+    (hextentLow : 16 ≤ UInt64.ofNat total)
+    (hextentHigh : UInt64.ofNat total ≤ 65536)
+    (hextentAligned : UInt64.ofNat total % 8 = 0)
+    (hversion :
+      state.word[0]! = BootMemoryMapStreamAuthority.abiVersion)
+    (hstatus :
+      state.word[1]! = BootMemoryMapStreamAuthority.active)
+    (herror :
+      state.word[2]! = BootMemoryMapStreamAuthority.noError)
+    (hidentity : state.word[3]! = identity)
+    (hextent : state.word[4]! = UInt64.ofNat total)
+    (hoffset : state.word[5]! = UInt64.ofNat entryOffset)
+    (hphase :
+      state.word[7]! = BootMemoryMapStreamAuthority.phaseEntryBase)
+    (hpadded : state.word[9]! = 0)
+    (hsawMap : state.word[10]! = 1)
+    (hentryCount :
+      state.word[11]! < BootMemoryMapStreamAuthority.entryLimit)
+    (husable : state.word[14]! ≤ 1)
+    (hblocked : state.word[15]! ≤ 1)
+    (htargetWord : state.word[16]! = UInt64.ofNat target)
+    (htarget : target < frameLimit)
+    (htagCount : state.word[18]! ≤ 64)
+    (hrest :
+      SuccessfulScalarRichTraversal target restEntries
+        (scalarStep
+          (scalarStep
+            (scalarStep state
+              { identity
+                offset := entryOffset
+                bytes := (bytes.drop entryOffset).take 8
+                terminal := false })
+            { identity
+              offset := entryOffset + 8
+              bytes := (bytes.drop (entryOffset + 8)).take 8
+              terminal := false })
+          { identity
+            offset := entryOffset + 16
+            bytes := (bytes.drop (entryOffset + 16)).take 8
+            terminal := false })
+        ((canonicalChunks identity bytes).drop (entryOffset / 8 + 3))
+        terminal) :
+    SuccessfulScalarRichTraversal target
+      ({ base, length, kind := memoryKind (low32Nat kindWord) } :: restEntries)
+      state ((canonicalChunks identity bytes).drop (entryOffset / 8))
+      terminal := by
+      obtain ⟨hchunks, hbaseWord, hlengthWord, hkindWord⟩ :=
+        canonicalMemoryMapEntrySteps_source_refines identity bytes total
+          entryOffset base length kindWord htotal htotalAligned
+          hentryOffsetAligned hroom hbase hlength hkind
+      rw [hchunks]
+      apply successfulScalarRichTraversal_memoryMapEntry
+        identity (UInt64.ofNat total) (UInt64.ofNat entryOffset) target
+        base length (low32Nat kindWord) restEntries state terminal
+        { identity
+          offset := entryOffset
+          bytes := (bytes.drop entryOffset).take 8
+          terminal := false }
+        { identity
+          offset := entryOffset + 8
+          bytes := (bytes.drop (entryOffset + 8)).take 8
+          terminal := false }
+        { identity
+          offset := entryOffset + 16
+          bytes := (bytes.drop (entryOffset + 16)).take 8
+          terminal := false }
+        ((canonicalChunks identity bytes).drop (entryOffset / 8 + 3))
+      · rfl
+      · rfl
+      · rfl
+      · rfl
+      · simp [UInt64.ofNat_add]
+      · calc
+          UInt64.ofNat (entryOffset + 16) =
+              UInt64.ofNat entryOffset + UInt64.ofNat 16 := by
+                rw [UInt64.ofNat_add]
+          _ = UInt64.ofNat entryOffset + 8 + 8 := by
+            rw [show UInt64.ofNat 16 = 8 + 8 by decide]
+            exact (UInt64.add_assoc _ _ _).symm
+      · rfl
+      · rfl
+      · rfl
+      · exact hbaseWord
+      · exact hlengthWord
+      · have hkindEq : kindWord = low32Nat kindWord := by
+          unfold high32Nat at hreserved
+          unfold low32Nat
+          omega
+        rw [← hkindEq]
+        exact hkindWord
+      · exact hversion
+      · exact hstatus
+      · exact herror
+      · exact hidentity
+      · exact hidentityAligned
+      · exact hextent
+      · exact hextentLow
+      · exact hextentHigh
+      · exact hextentAligned
+      · exact hoffset
+      · exact hbaseOffsetLt
+      · exact hbaseOffsetNotFinal
+      · exact hlengthOffsetLt
+      · exact hlengthOffsetNotFinal
+      · exact hkindOffsetLt
+      · exact hkindOffsetNotFinal
+      · exact hphase
+      · exact hpadded
+      · exact hsawMap
+      · exact hentryCount
+      · exact husable
+      · exact hblocked
+      · exact htargetWord
+      · exact htarget
+      · exact htagCount
+      · exact hlengthNonzero
+      · exact hbaseBound
+      · omega
+      · unfold low32Nat
+        omega
+      · simpa using hrest
+
 /-- The retained rich tag traversal selects the exact first tag-header chunk
 immediately after the information header.  Its source word, stream identity,
 offset, terminal bit, and every scalar transition query are therefore fixed
