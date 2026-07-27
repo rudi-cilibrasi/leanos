@@ -519,6 +519,42 @@ theorem checkedScalarReplay_canonical_eq
   intro chunk hchunk
   exact canonicalChunks_readU64 identity bytes haligned chunk hchunk
 
+/-- Universal rich-decoder-to-scalar terminal-state structural refinement.
+Every successful rich decode and bounded target supplies the admitted scalar
+initial state, and the checked byte-side replay terminates at exactly the same
+state as the production-model scalar replay.  This theorem is deliberately
+structural: semantic agreement of the terminal coverage words remains the
+subsequent entry/classification refinement obligation. -/
+theorem canonicalTerminalReplay_of_decode
+    (input : Input) (decoded : Decoded) (target : Nat)
+    (hdecode : BootMemoryMapDecoder.decode input = .ok decoded)
+    (htarget : target < frameLimit) :
+    let identity := UInt64.ofNat input.infoAddress
+    let initial := scalarInitialAt identity input.bytes.length target
+    initial.word[1]! = BootMemoryMapStreamAuthority.active ∧
+      initial.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+      initial.word[3]! = identity ∧
+      initial.word[4]! = UInt64.ofNat input.bytes.length ∧
+      initial.word[5]! = 0 ∧
+      initial.word[7]! = BootMemoryMapStreamAuthority.phaseInfo ∧
+      initial.word[14]! = 0 ∧
+      initial.word[15]! = 0 ∧
+      initial.word[16]! = UInt64.ofNat target ∧
+      checkedScalarReplay (canonicalChunks identity input.bytes) initial =
+        .ok (scalarReplay (canonicalChunks identity input.bytes) initial) := by
+  dsimp only
+  have hinitial := scalarInitialAt_of_decode input decoded target hdecode htarget
+  have hheader :=
+    BootMemoryMapDecoder.accepted_input_scalar_header input decoded hdecode
+  refine ⟨hinitial.1, hinitial.2.1, hinitial.2.2.1,
+    hinitial.2.2.2.1, hinitial.2.2.2.2.1,
+    hinitial.2.2.2.2.2.1, hinitial.2.2.2.2.2.2.1,
+    hinitial.2.2.2.2.2.2.2.1, hinitial.2.2.2.2.2.2.2.2, ?_⟩
+  exact checkedScalarReplay_canonical_eq
+    (UInt64.ofNat input.infoAddress) input.bytes
+    (scalarInitialAt (UInt64.ofNat input.infoAddress) input.bytes.length target)
+    hheader.2.2.2.2.2.2.1
+
 /-- The immutable rich-decoder input and the checked/scalar whole replays are
 bound to one canonical chunk decomposition.  This is a proof-side production
 boundary statement only: it does not refine generated C, the compiler, or the
