@@ -287,6 +287,122 @@ theorem replay_continuity state chunks final
           · simp only [List.map_cons, List.sum_cons]
             omega
 
+/-- Proof-side canonical decomposition into exactly `count` eight-byte chunks.
+The scalar production decoder consumes this fixed chunk width.  The explicit
+count makes the construction structurally recursive; the public theorem below
+binds it to an arbitrary aligned byte buffer. -/
+def canonicalChunksAux (identity : UInt64) :
+    (offset count : Nat) → List UInt8 → List ModelChunk
+  | _, 0, _ => []
+  | offset, count + 1, bytes =>
+      let part := bytes.take 8
+      { identity
+        offset
+        bytes := part
+        terminal := count == 0 } ::
+        canonicalChunksAux identity (offset + 8) count (bytes.drop 8)
+
+/-- The unique proof-side chunking used to compare a complete immutable byte
+buffer with the allocation-free scalar stream decoder. -/
+def canonicalChunks (identity : UInt64) (bytes : List UInt8) : List ModelChunk :=
+  canonicalChunksAux identity 0 (bytes.length / 8) bytes
+
+/-- Canonical chunks reconstruct every aligned byte buffer exactly, not merely
+the finite regression corpus. -/
+theorem canonicalChunks_reconstruct (identity : UInt64) (bytes : List UInt8)
+    (haligned : bytes.length % 8 = 0) :
+    (canonicalChunks identity bytes).flatMap (·.bytes) = bytes := by
+  have aux :
+      ∀ count offset (tail : List UInt8),
+        tail.length = count * 8 →
+        (canonicalChunksAux identity offset count tail).flatMap (·.bytes) = tail := by
+    intro count
+    induction count with
+    | zero =>
+        intro offset tail hlength
+        simp_all [canonicalChunksAux]
+    | succ count ih =>
+        intro offset tail hlength
+        simp only [canonicalChunksAux, List.flatMap_cons]
+        rw [ih]
+        · exact List.take_append_drop 8 tail
+        · simp only [List.length_drop]
+          omega
+  unfold canonicalChunks
+  apply aux
+  omega
+
+/-- Replaying the canonical chunks for any nonempty aligned buffer preserves
+one identity and extent, consumes every byte exactly once, and reaches the
+complete state. -/
+theorem canonicalChunks_replay (identity : UInt64) (bytes : List UInt8)
+    (hnonempty : 0 < bytes.length) (haligned : bytes.length % 8 = 0) :
+    replay
+        { identity, extent := bytes.length, offset := 0, complete := false }
+        (canonicalChunks identity bytes) =
+      some
+        { identity, extent := bytes.length, offset := bytes.length,
+          complete := true } := by
+  have aux :
+      ∀ count offset extent (tail : List UInt8),
+        0 < count →
+        tail.length = count * 8 →
+        offset + tail.length = extent →
+        replay
+            { identity, extent, offset, complete := false }
+            (canonicalChunksAux identity offset count tail) =
+          some { identity, extent, offset := extent, complete := true } := by
+    intro count
+    induction count with
+    | zero =>
+        intro offset extent tail hpositive
+        omega
+    | succ count ih =>
+        intro offset extent tail _ hlength hextent
+        simp only [canonicalChunksAux, replay]
+        have hpart : (tail.take 8).length = 8 := by
+          simp [List.length_take]
+          omega
+        have htail : tail ≠ [] := by
+          intro hempty
+          simp_all
+        cases count with
+        | zero =>
+            have hextent' : offset + 8 = extent := by omega
+            have hstep :
+                modelStep
+                    { identity, extent, offset, complete := false }
+                    { identity, offset, bytes := tail.take 8, terminal := true } =
+                  some
+                    { identity, extent, offset := offset + 8, complete := true } := by
+              simp [modelStep, hpart, hextent', htail]
+            simp only [beq_self_eq_true]
+            rw [hstep]
+            simp [canonicalChunksAux, replay, hextent']
+        | succ count =>
+            have hbefore : offset + 8 < extent := by omega
+            have hstep :
+                modelStep
+                    { identity, extent, offset, complete := false }
+                    { identity, offset, bytes := tail.take 8, terminal := false } =
+                  some
+                    { identity, extent, offset := offset + 8, complete := false } := by
+              simp [modelStep, hpart, htail]
+              omega
+            have hterminal : (count + 1 == 0) = false := by simp
+            rw [hterminal]
+            rw [hstep]
+            have hdrop : (tail.drop 8).length = (count + 1) * 8 := by
+              simp only [List.length_drop]
+              omega
+            apply ih (offset + 8) extent (tail.drop 8) (by omega) hdrop
+            omega
+  unfold canonicalChunks
+  apply aux (bytes.length / 8) 0 bytes.length bytes
+  · omega
+  · omega
+  · omega
+
 namespace Fixtures
 
 def magic : UInt64 := 0x36d76289
