@@ -142,14 +142,18 @@ publishes that one record as `fault-containment-snapshot.txt`. Missing,
 duplicated, malformed, corrupted, or reordered snapshot/replay records are
 controlled failures.
 Two additional fresh images exercise the integrity boundary. The reserved-bit
-image pins QEMU's `max` CPU to `MAXPHYADDR=48` and sets physical-address bit 51
-in only the selected user stack leaf after the reviewed
-plan/read-back checks, invalidates that exact page, and executes a real CPL3
-read whose hardware snapshot carries RSVD. The walk-mismatch image preserves
-the hardware error, CR2, saved RIP, and live walk while changing exactly one
+image clears NX from every active A leaf, disables `EFER.NXE`, restores NX only
+on the selected instruction leaf, invalidates that exact page, and executes a
+real CPL3 read whose hardware snapshot carries RSVD because NX is reserved
+while NXE is disabled. This intentionally changes the paging-controls snapshot
+and complete live page-table report. The walk-mismatch image preserves the
+hardware error, CR2, saved RIP, and live walk while changing exactly one
 expected-leaf permission bit supplied to the same generated transition. Both
-must produce one typed `PF-TERMINAL` record, the generated fatal route, and
-debug-exit status 37. The runner rejects normal-success or generic-error
+must produce one typed `PF-TERMINAL` record and debug-exit status 37. The
+reserved-bit image retains the canonical authorization-failure route
+`0x0200000000000002`; the walk-mismatch image retains the snapshot/walk
+disagreement route `0x0200000000000003`. The runner rejects normal-success or
+generic-error
 statuses and any containment, cleanup, B-dispatch, user-return, final-success,
 duplicate, or post-terminal record.
 

@@ -1676,10 +1676,9 @@ user_a_write_fault_recovered:
 .global user_a_write_target
 user_a_write_target:
     .byte 0xa5
-/* The integrity-negative image sets an address bit above its runner-pinned
-   MAXPHYADDR in only the target stack PTE after the reviewed page-table
-   checks.  This instruction performs the real CPL3 read that must carry RSVD
-   in #PF. */
+/* The integrity-negative image clears NX from every active A leaf, disables
+   EFER.NXE, then restores NX only on this instruction's leaf.  NX is therefore
+   reserved in that PTE, and this real CPL3 read must carry RSVD in #PF. */
 .global user_a_reserved_fault_instruction
 user_a_reserved_fault_instruction:
     mov user_a_nx_fault_instruction(%rip), %rax
