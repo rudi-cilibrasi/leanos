@@ -584,6 +584,213 @@ theorem scalarStep_entryType_classifies_rich
   rw [hbaseWord, hlengthWord, htargetWord, hchunkWord]
   simpa using hclassification
 
+/-- Every accepted scalar transition outside the entry-type phase preserves
+both rich classification accumulators. -/
+theorem scalarStep_nonEntry_preserves_classification
+    (state : ScalarState) (chunk : ModelChunk)
+    (hphase :
+      state.word[7]! ≠ BootMemoryMapStreamAuthority.phaseEntryType)
+    (haccepted :
+      (scalarStep state chunk).word[2]! =
+        BootMemoryMapStreamAuthority.noError) :
+    (scalarStep state chunk).word[14]! = state.word[14]! ∧
+      (scalarStep state chunk).word[15]! = state.word[15]! := by
+  have hacceptedStep := haccepted
+  rw [scalarStep_word state chunk (⟨2, by decide⟩ : Fin 19)] at hacceptedStep
+  have hpreserved :=
+    BootMemoryMapStreamAuthority.accepted_nonEntry_preserves_classification_words
+      state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+      state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+      state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+      state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+      state.word[16]! state.word[17]! state.word[18]!
+      chunk.identity (UInt64.ofNat chunk.offset) (chunkWord chunk.bytes)
+      (if chunk.terminal then 1 else 0) hphase hacceptedStep
+  rw [scalarStep_word state chunk (⟨14, by decide⟩ : Fin 19),
+    scalarStep_word state chunk (⟨15, by decide⟩ : Fin 19)]
+  exact hpreserved
+
+def updateUsableClassification
+    (target : Nat) (current : UInt64) (entry : RawEntry) : UInt64 :=
+  if entry.kind == MemoryKind.usable &&
+      covers entry (target * pageBytes) (target * pageBytes + pageBytes)
+    then 1 else current
+
+def updateBlockedClassification
+    (target : Nat) (current : UInt64) (entry : RawEntry) : UInt64 :=
+  if entry.kind != MemoryKind.usable &&
+      overlaps entry (target * pageBytes) (target * pageBytes + pageBytes)
+    then 1 else current
+
+/-- A proof-side certificate for an arbitrary successful rich/scalar
+traversal.  Non-entry words preserve the classification state; each entry-type
+word is tied to the exact rich entry decoded from its base, length, and type
+words.  The terminal constructor fixes successful completion.  No fixture or
+canonical-output comparison appears in this relation. -/
+inductive SuccessfulScalarRichTraversal (target : Nat) :
+    List RawEntry → ScalarState → List ModelChunk → ScalarState → Prop
+  | done (state : ScalarState)
+      (hstatus : state.word[1]! = BootMemoryMapStreamAuthority.complete)
+      (herror : state.word[2]! = BootMemoryMapStreamAuthority.noError) :
+      SuccessfulScalarRichTraversal target [] state [] state
+  | nonEntry (entries : List RawEntry) (state terminal : ScalarState)
+      (chunk : ModelChunk) (rest : List ModelChunk)
+      (hphase :
+        state.word[7]! ≠ BootMemoryMapStreamAuthority.phaseEntryType)
+      (haccepted :
+        (scalarStep state chunk).word[2]! =
+          BootMemoryMapStreamAuthority.noError)
+      (hrest :
+        SuccessfulScalarRichTraversal target entries
+          (scalarStep state chunk) rest terminal) :
+      SuccessfulScalarRichTraversal target entries state (chunk :: rest) terminal
+  | entry (base length kind : Nat) (entries : List RawEntry)
+      (state terminal : ScalarState) (chunk : ModelChunk) (rest : List ModelChunk)
+      (hphase :
+        state.word[7]! = BootMemoryMapStreamAuthority.phaseEntryType)
+      (hbaseWord : state.word[12]! = UInt64.ofNat base)
+      (hlengthWord : state.word[13]! = UInt64.ofNat length)
+      (htargetWord : state.word[16]! = UInt64.ofNat target)
+      (hchunkWord : chunkWord chunk.bytes = UInt64.ofNat kind)
+      (haccepted :
+        (scalarStep state chunk).word[2]! =
+          BootMemoryMapStreamAuthority.noError)
+      (hbase : base < wordLimit)
+      (hstop : base + length < wordLimit)
+      (hkind : kind < 2 ^ 32)
+      (htarget : target < frameLimit)
+      (hrest :
+        SuccessfulScalarRichTraversal target entries
+          (scalarStep state chunk) rest terminal) :
+      SuccessfulScalarRichTraversal target
+        ({ base, length, kind := BootMemoryMapDecoder.memoryKind kind } :: entries)
+        state (chunk :: rest) terminal
+
+/-- Direct whole-replay induction over an arbitrary successful traversal.
+The terminal status and diagnostic are fixed by successful completion, while
+words 14 and 15 are the left folds of every exact rich entry encountered by
+the traversal. -/
+theorem successfulScalarRichTraversal_terminal_words
+    (target : Nat) (entries : List RawEntry)
+    (initial terminal : ScalarState) (chunks : List ModelChunk)
+    (h :
+      SuccessfulScalarRichTraversal target entries initial chunks terminal) :
+    scalarReplay chunks initial = terminal ∧
+      terminal.word[1]! = BootMemoryMapStreamAuthority.complete ∧
+      terminal.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+      terminal.word[14]! =
+        entries.foldl (updateUsableClassification target) initial.word[14]! ∧
+      terminal.word[15]! =
+        entries.foldl (updateBlockedClassification target) initial.word[15]! := by
+  induction h with
+  | done state hstatus herror =>
+      exact ⟨rfl, hstatus, herror, rfl, rfl⟩
+  | nonEntry entries state terminal chunk rest hphase haccepted hrest ih =>
+      have hpreserved :=
+        scalarStep_nonEntry_preserves_classification state chunk hphase haccepted
+      simp [scalarReplay, haccepted]
+      exact ⟨ih.1, ih.2.1, ih.2.2.1,
+        by simpa [hpreserved.1] using ih.2.2.2.1,
+        by simpa [hpreserved.2] using ih.2.2.2.2⟩
+  | entry base length kind entries state terminal chunk rest hphase hbaseWord
+      hlengthWord htargetWord hchunkWord haccepted hbase hstop hkind htarget
+      hrest ih =>
+      have hclassified :=
+        scalarStep_entryType_classifies_rich state chunk base length kind target
+          hphase hbaseWord hlengthWord htargetWord hchunkWord haccepted
+          hbase hstop hkind htarget
+      simp [scalarReplay, haccepted]
+      refine ⟨ih.1, ih.2.1, ih.2.2.1, ?_, ?_⟩
+      · simpa [List.foldl_cons, updateUsableClassification, hclassified.1]
+          using ih.2.2.2.1
+      · simpa [List.foldl_cons, updateBlockedClassification, hclassified.2]
+          using ih.2.2.2.2
+
+/-- Folding the usable classification from the canonical zero accumulator is
+exactly the complete-list usable word consumed by the rich/scalar boundary. -/
+theorem foldl_updateUsableClassification_zero
+    (entries : List RawEntry) (target : Nat) :
+    entries.foldl (updateUsableClassification target) 0 =
+      (if entries.any (fun entry =>
+          entry.kind == MemoryKind.usable &&
+            covers entry (target * pageBytes) (target * pageBytes + pageBytes))
+        then 1 else 0) := by
+  have sticky (rest : List RawEntry) :
+      rest.foldl (updateUsableClassification target) 1 = 1 := by
+    induction rest with
+    | nil => rfl
+    | cons entry rest ih =>
+        simp only [List.foldl_cons]
+        simp [updateUsableClassification, ih]
+  induction entries with
+  | nil =>
+      rfl
+  | cons entry entries ih =>
+      simp only [List.foldl_cons, List.any_cons]
+      by_cases hentry :
+          entry.kind == MemoryKind.usable &&
+            covers entry (target * pageBytes) (target * pageBytes + pageBytes)
+      · simp [updateUsableClassification, hentry, sticky]
+      · simp [updateUsableClassification, hentry, ih]
+
+/-- Folding the non-usable overlap classification from zero is exactly the
+complete-list blocked word. -/
+theorem foldl_updateBlockedClassification_zero
+    (entries : List RawEntry) (target : Nat) :
+    entries.foldl (updateBlockedClassification target) 0 =
+      (if entries.any (fun entry =>
+          entry.kind != MemoryKind.usable &&
+            overlaps entry (target * pageBytes) (target * pageBytes + pageBytes))
+        then 1 else 0) := by
+  have sticky (rest : List RawEntry) :
+      rest.foldl (updateBlockedClassification target) 1 = 1 := by
+    induction rest with
+    | nil => rfl
+    | cons entry rest ih =>
+        simp only [List.foldl_cons]
+        simp [updateBlockedClassification, ih]
+  induction entries with
+  | nil =>
+      rfl
+  | cons entry entries ih =>
+      simp only [List.foldl_cons, List.any_cons]
+      by_cases hentry :
+          entry.kind != MemoryKind.usable &&
+            overlaps entry (target * pageBytes) (target * pageBytes + pageBytes)
+      · simp [updateBlockedClassification, hentry, sticky]
+      · simp [updateBlockedClassification, hentry, ih]
+
+/-- Whole-replay terminal classification from the canonical zero
+accumulators.  This is the direct-induction replacement for a terminal
+fail-closed comparison once the rich decoder supplies a
+`SuccessfulScalarRichTraversal` certificate. -/
+theorem successfulScalarRichTraversal_canonical_terminal
+    (target : Nat) (entries : List RawEntry)
+    (initial terminal : ScalarState) (chunks : List ModelChunk)
+    (husable : initial.word[14]! = 0)
+    (hblocked : initial.word[15]! = 0)
+    (h :
+      SuccessfulScalarRichTraversal target entries initial chunks terminal) :
+    scalarReplay chunks initial = terminal ∧
+      terminal.word[1]! = BootMemoryMapStreamAuthority.complete ∧
+      terminal.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+      terminal.word[14]! =
+        (if entries.any (fun entry =>
+            entry.kind == MemoryKind.usable &&
+              covers entry (target * pageBytes) (target * pageBytes + pageBytes))
+          then 1 else 0) ∧
+      terminal.word[15]! =
+        (if entries.any (fun entry =>
+            entry.kind != MemoryKind.usable &&
+              overlaps entry (target * pageBytes) (target * pageBytes + pageBytes))
+          then 1 else 0) := by
+  have hterminal :=
+    successfulScalarRichTraversal_terminal_words target entries initial terminal chunks h
+  rw [husable, hblocked,
+    foldl_updateUsableClassification_zero entries target,
+    foldl_updateBlockedClassification_zero entries target] at hterminal
+  exact hterminal
+
 /-- Each word of an arbitrary accepted rich-byte scalar step is exactly the
 corresponding generated transition queried with the decoder-agreed packed
 word.  No fixture, initial-state, or parser-phase assumption is required. -/

@@ -323,6 +323,35 @@ theorem accepted_entryType_classification_words
     entryNonUsableOverlap, low32, frameFirst, framePast, entryStop, overlap,
     and_assoc]
 
+/-- An accepted transition outside the entry-type phase cannot alter either
+entry-classification accumulator.  This is the complementary local case used
+by whole-replay induction: headers, tag headers, ignored contents, map layout,
+entry bases, and entry lengths all preserve the accumulated classification. -/
+theorem accepted_nonEntry_preserves_classification_words
+    version status error identity extent offset chain phase content padded
+    sawMap entries base length usable blocked target highest tagCount
+    streamIdentity streamOffset chunk terminal
+    (hphase : phase ≠ phaseEntryType)
+    (haccepted :
+      stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 2 = noError) :
+    stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 14 = usable ∧
+    stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 15 = blocked := by
+  have hfinal :
+      completedError
+          (transitionError version status error identity extent offset phase content padded
+            sawMap entries base length usable blocked target highest tagCount
+            streamIdentity streamOffset chunk terminal)
+          (offset + 8) extent (nextPhase phase chunk content padded) =
+        noError := by
+    simpa [stepWord] using haccepted
+  simp [stepWord, hfinal, hphase]
+
 /-- Every rejected scalar transition is fail-closed for arbitrary caller state:
 only ABI version, rejected status, and the typed error remain observable. -/
 theorem rejected_step_exposes_no_state
