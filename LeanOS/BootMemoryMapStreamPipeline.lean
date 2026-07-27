@@ -2992,6 +2992,81 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapEntry_with_successor
         omega
       · simpa using hrest
 
+/-- The raw successor returned by one canonical entry step preserves the
+induction invariant for the exact number of entries still encoded in the
+memory-map payload.  In particular, the rich entry count fixes whether the
+next canonical word is another entry base or the following tag header; the
+remaining byte count and bounded scalar entry counter cannot be supplied
+independently by a caller. -/
+theorem canonicalMemoryMapEntrySuccessor_threads_remaining
+    (state next : ScalarState) (remaining : Nat)
+    (hremaining : remaining < maxEntries)
+    (hcontent :
+      state.word[8]! =
+        UInt64.ofNat ((remaining + 1) * memoryMapEntrySize))
+    (hentryBudget :
+      state.word[11]!.toNat + remaining + 1 ≤ maxEntries)
+    (hphase :
+      next.word[7]! =
+        (if state.word[8]! = 24
+          then BootMemoryMapStreamAuthority.phaseTag
+          else BootMemoryMapStreamAuthority.phaseEntryBase))
+    (hbytes : next.word[8]! = state.word[8]! - 24)
+    (hcount : next.word[11]! = state.word[11]! + 1) :
+    next.word[7]! =
+        (if remaining = 0
+          then BootMemoryMapStreamAuthority.phaseTag
+          else BootMemoryMapStreamAuthority.phaseEntryBase) ∧
+      next.word[8]! = UInt64.ofNat (remaining * memoryMapEntrySize) ∧
+      next.word[11]!.toNat + remaining ≤ maxEntries := by
+  have hremainingBytes :
+      (remaining + 1) * memoryMapEntrySize < UInt64.size := by
+    have hremainingNat : remaining < 256 := by
+      simpa [maxEntries] using hremaining
+    unfold memoryMapEntrySize UInt64.size
+    omega
+  have hphaseTest :
+      (UInt64.ofNat ((remaining + 1) * memoryMapEntrySize) = 24) =
+        (remaining = 0) := by
+    apply propext
+    constructor
+    · intro heq
+      have := congrArg UInt64.toNat heq
+      rw [UInt64.toNat_ofNat_of_lt' hremainingBytes] at this
+      change (remaining + 1) * memoryMapEntrySize = 24 at this
+      unfold memoryMapEntrySize at this
+      omega
+    · rintro rfl
+      unfold memoryMapEntrySize
+      decide
+  have hnextBytes :
+      next.word[8]! = UInt64.ofNat (remaining * memoryMapEntrySize) := by
+    rw [hbytes, hcontent]
+    rw [show (24 : UInt64) = UInt64.ofNat 24 by decide]
+    rw [← UInt64.ofNat_sub (by
+      simp [memoryMapEntrySize]
+      omega)]
+    congr 1
+    unfold memoryMapEntrySize
+    omega
+  have hstateCount : state.word[11]!.toNat + 1 < UInt64.size := by
+    have hbudgetNat : state.word[11]!.toNat + remaining + 1 ≤ 256 := by
+      simpa [maxEntries] using hentryBudget
+    unfold UInt64.size
+    omega
+  have hnextCount :
+      next.word[11]!.toNat = state.word[11]!.toNat + 1 := by
+    rw [hcount, UInt64.toNat_add]
+    simp only [UInt64.toNat_ofNat]
+    exact Nat.mod_eq_of_lt hstateCount
+  refine ⟨?_, hnextBytes, ?_⟩
+  · rw [hphase, hcontent]
+    by_cases hzero : remaining = 0
+    · rw [if_pos (hphaseTest.mpr hzero), if_pos hzero]
+    · rw [if_neg (fun heq => hzero (hphaseTest.mp heq)), if_neg hzero]
+  · rw [hnextCount]
+    omega
+
 /-- The retained rich tag traversal selects the exact first tag-header chunk
 immediately after the information header.  Its source word, stream identity,
 offset, terminal bit, and every scalar transition query are therefore fixed

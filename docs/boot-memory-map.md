@@ -368,12 +368,18 @@ from caller-invented counters or classification words.
 `successfulScalarRichTraversal_memoryMapEntry_with_successor` lifts that full
 contract into the proof-side traversal relation. Its canonical-source
 corollary fixes both the attached entry and successor state to the immutable
-buffer's exact dropped suffix. The remaining induction must recursively
-select every canonical triple from `SuccessfulEntryDecodeTraversal`, pass
-this returned state to the next entry or tag constructor, and assemble these
-tag-local pieces into the universal `SuccessfulScalarRichTraversal`. Until
-that final derivation exists, the fail-closed terminal comparison remains in
-place.
+buffer's exact dropped suffix.
+`canonicalMemoryMapEntrySuccessor_threads_remaining` now consumes the
+successor's phase, remaining-byte, and entry-count equations together with
+the rich traversal's exact remaining entry count. It resolves the conditional
+successor to either the next entry-base phase or the following tag phase,
+proves the remaining byte count is exactly that count times 24, and preserves
+the 256-entry budget without relying on wrapped scalar arithmetic. The
+remaining induction must recursively select every canonical triple from
+`SuccessfulEntryDecodeTraversal`, apply this invariant at each successor, and
+assemble these tag-local pieces into the universal
+`SuccessfulScalarRichTraversal`. Until that final derivation exists, the
+fail-closed terminal comparison remains in place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
