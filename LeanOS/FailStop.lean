@@ -15009,6 +15009,107 @@ theorem authoritativeGate_transferAccept_preserves_authoritativeRuntimeWellForme
     (transferAccept_authoritativeOperationCompatible state endpointWord
       destinationSlot hstate)
 
+/-- Fresh-subject publication retains the dormant cancellation store, blocked
+contexts, and resumable bank exactly.  It only promotes the subject registry
+and issuance history; every already-retained subject therefore remains live
+while its runnable, current, ready, ownership, and context projections stay
+unchanged. -/
+private theorem installCreatedSubject_dormantCancellationCompatible
+    state subject
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    DormantCancellationCompatible state
+      (installCreatedSubject state subject) := by
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro candidate hblocked
+    apply hstate.2.1.2.1 candidate
+    exact hblocked
+  · intro candidate saved hblocked
+    simpa [installCreatedSubject] using
+      hstate.2.2.1 candidate saved hblocked
+  · intro candidate saved hretained
+    have hvalid := hstate.2.1.2.2 candidate saved hretained
+    simp only [CompositeState.blockingIPCContext] at hvalid
+    have hcontext := hstate.2.2.2 candidate saved hretained
+    have hblockingLifecycle :
+        state.blockingIPC.scheduler.lifecycle = state.lifecycle :=
+      hstate.1.blockingLifecycle
+    have hblockingScheduler :
+        state.blockingIPC.scheduler = state.scheduler :=
+      hstate.1.blockingScheduler
+    have hliveBefore :
+        state.lifecycle.capabilities.subjects candidate = true := by
+      rw [← hblockingLifecycle]
+      exact hvalid.2.2.1
+    have hlive :
+        (SubjectLifecycle.create state.lifecycle subject).state.capabilities.subjects
+          candidate = true :=
+      createSubject_preserves_live state.lifecycle subject candidate hliveBefore
+    have hrunnable : state.lifecycle.runnable candidate = false := by
+      rw [← hblockingLifecycle]
+      exact hvalid.2.2.2.1
+    have hcurrent : state.lifecycle.current ≠ some candidate := by
+      rw [← hblockingLifecycle]
+      exact hvalid.2.2.2.2.1
+    have hready : candidate ∉ state.scheduler.ready := by
+      rw [← hblockingScheduler]
+      exact hvalid.2.2.2.2.2.1
+    have howner :
+        state.lifecycle.addressOwner candidate = some candidate := by
+      rw [← hblockingLifecycle]
+      simpa [Scheduler.ownsAddressSpace] using hvalid.2.2.2.2.2.2
+    simpa [installCreatedSubject, CompositeState.blockingIPCContext,
+        Scheduler.ownsAddressSpace] using
+      And.intro hvalid.2.1
+        (And.intro hlive
+          (And.intro hrunnable
+            (And.intro hcurrent
+              (And.intro hready
+                (And.intro howner hcontext)))))
+
+/-- Subject creation either rejects atomically or monotonically publishes one
+fresh live identity.  Neither branch can reactivate or attach a dormant
+cancellation. -/
+theorem createSubject_authoritativeOperationCompatible state subject
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.createSubject subject)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state (.ordinary (.createSubject subject))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hcreate : SubjectLifecycle.create state.lifecycle subject with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hcreate] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hcreate] using
+                installCreatedSubject_dormantCancellationCompatible
+                  state subject hstate
+
+/-- Fresh-subject publication has a closed folded-invariant theorem across the
+authoritative runtime; callers supply only the well-formed pre-state. -/
+theorem authoritativeGate_createSubject_preserves_authoritativeRuntimeWellFormed
+    state subject (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.createSubject subject))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.createSubject subject)) hstate
+    (createSubject_authoritativeOperationCompatible state subject hstate)
+
 /-- Delegation either rejects atomically or publishes a capability state with
 the same live-subject registry, so its dormant cancellation obligations are
 derived entirely from the authoritative pre-state. -/
