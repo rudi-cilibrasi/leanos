@@ -1197,6 +1197,9 @@ done
   "$build/leanos-extended-state-sse2.elf" \
   "$build/leanos-extended-state-avx.elf"
 ./scripts/check-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-report.txt"
+LEANOS_PAGE_FAULT_PROBE=supervisor-read \
+  ./scripts/check-entry-policy.sh "$build/leanos-fault-containment.elf" \
+  | tee "$build/fault-containment-policy-report.txt"
 ./scripts/test-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-fixtures.log"
 direct_port_report="$build/direct-port-sites-report.txt"
 : > "$direct_port_report"

@@ -112,7 +112,14 @@ read, exactly one typed containment-handler and diagnostic-handler call site,
 the complete fixed diagnostic tuple arguments, and a page-zero
 invalidation operand: source policy fixes the helper input to zero, while the
 final-ELF policy requires the zeroing instruction immediately before `invlpg`
-through that same register. A wrong-target negative fixture must be rejected.
+through that same register. The fault-containment image additionally selects
+the `supervisor-read` probe policy. It requires subject A's first instruction
+to be a direct branch to `user_a_fault_instruction`, requires that site to be
+the exact eight-byte page-zero read in the final ELF, and binds error 5, CR2
+zero, and the saved RIP to that exported site before containment. The
+build-retained `fault-containment-policy-report.txt` records this check.
+Wrong-instruction, indirect-entry, and wrong-handler-binding fixtures must be
+rejected.
 Negative fixtures also reject a forged diagnostic purpose, both a direct
 handler bypass, and routing a generated fatal result to containment. A
 separately labeled EFER read is

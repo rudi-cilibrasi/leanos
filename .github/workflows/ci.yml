@@ -237,6 +237,7 @@ jobs:
             build/boot/fast-entry-control-snapshot-sysenter.txt
             build/boot/fast-entry-syscall-policy-report.txt
             build/boot/fast-entry-sysenter-policy-report.txt
+            build/boot/fault-containment-policy-report.txt
             build/boot/return-corruption-*.serial.log
             build/boot/return-*-policy.log
             build/boot/leanos-0.1.0-x86_64-return-*.iso

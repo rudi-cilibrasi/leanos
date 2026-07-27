@@ -165,6 +165,75 @@ else
   echo "error: unknown LEANOS_FAST_ENTRY_PROBE '$fast_probe'" >&2; exit 1
 fi
 
+page_fault_probe="${LEANOS_PAGE_FAULT_PROBE:-}"
+if [[ -n "$page_fault_probe" && "$page_fault_probe" != supervisor-read ]]; then
+  echo "error: unknown LEANOS_PAGE_FAULT_PROBE '$page_fault_probe'" >&2
+  exit 1
+fi
+if [[ "$page_fault_probe" == supervisor-read ]]; then
+  for symbol in user_a_entry user_a_fault_instruction user_a_fault_recovered; do
+    grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+      echo "error: vector=14 field=deliberate-cpl3-site final-elf missing=$symbol" >&2
+      exit 1
+    }
+  done
+
+  fault_source="$(
+    sed -n '/^\.global user_a_fault_instruction$/,/^user_a_fault_recovered:$/p' \
+      "$boot_source"
+  )"
+  [[ "$fault_source" == $'.global user_a_fault_instruction\nuser_a_fault_instruction:\n    mov 0, %rax\n.global user_a_fault_recovered\nuser_a_fault_recovered:' ]] || {
+    echo "error: vector=14 field=deliberate-cpl3-site source" >&2
+    exit 1
+  }
+  fault_entry_source="$(
+    sed -n '/^#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO$/{N;N;p;q;}' \
+      "$boot_source"
+  )"
+  [[ "$fault_entry_source" == \
+      $'#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO\n    jmp user_a_fault_instruction\n#endif' ]] || {
+    echo "error: vector=14 field=deliberate-cpl3-entry source" >&2
+    exit 1
+  }
+  grep -Fq 'if (error == 5u && rip == (uint64_t)user_a_fault_instruction &&' \
+      "$kernel_source" &&
+    grep -Fq 'fault_address == 0u)' "$kernel_source" || {
+    echo "error: vector=14 field=deliberate-cpl3-handler-binding source" >&2
+    exit 1
+  }
+
+  fault_address="$(nm -n "$elf" | awk '$3 == "user_a_fault_instruction" { print "0x" $1 }')"
+  recovered_address="$(nm -n "$elf" | awk '$3 == "user_a_fault_recovered" { print "0x" $1 }')"
+  fault_site="$(
+    objdump -d --insn-width=16 --start-address="$fault_address" \
+      --stop-address="$recovered_address" "$elf"
+  )"
+  [[ "$((recovered_address - fault_address))" -eq 8 ]] &&
+    grep -Eq '48 8b 04 25 00 00 00 00[[:space:]]+mov[[:space:]]+0x0,%rax$' \
+      <<<"$fault_site" || {
+    echo "error: vector=14 field=deliberate-cpl3-site final-elf" >&2
+    exit 1
+  }
+  entry_site="$(
+    objdump -d --no-show-raw-insn \
+      --start-address="$(nm -n "$elf" |
+        awk '$3 == "user_a_entry" { print "0x" $1 }')" \
+      --stop-address="$fault_address" "$elf"
+  )"
+  first_entry_instruction="$(
+    awk '/^[[:space:]]*[[:xdigit:]]+:/ {
+      sub(/^[[:space:]]*[[:xdigit:]]+:[[:space:]]*/, "")
+      print
+      exit
+    }' <<<"$entry_site"
+  )"
+  [[ "$first_entry_instruction" =~ ^jmp[[:space:]]+.*\<user_a_fault_instruction\>$ ]] || {
+    echo "error: vector=14 field=deliberate-cpl3-entry final-elf" >&2
+    exit 1
+  }
+  echo "ENTRY-POLICY vector=14 probe=supervisor-read site=final-elf route=immutable-generated result=PASS"
+fi
+
 [[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 11 ]] || {
   echo "error: vector=77 field=present violated=unexpected-installed-gate-count" >&2; exit 1;
 }

@@ -25,6 +25,27 @@ run_fixture() {
   echo "ENTRY-POLICY fixture=$name $expected result=REJECTED"
 }
 
+run_page_fault_fixture() {
+  local name="$1" expected="$2"
+  shift 2
+  cp boot/kernel.c "$tmp/kernel.c"
+  cp boot/boot.S "$tmp/boot.S"
+  "$@"
+  if LEANOS_PAGE_FAULT_PROBE=supervisor-read \
+      LEANOS_ENTRY_KERNEL_SOURCE="$tmp/kernel.c" \
+      LEANOS_ENTRY_BOOT_SOURCE="$tmp/boot.S" \
+      ./scripts/check-entry-policy.sh "$elf" >"$tmp/$name.log" 2>&1; then
+    echo "error: page-fault site fixture '$name' unexpectedly passed" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$tmp/$name.log" || {
+    echo "error: page-fault site fixture '$name' lacked '$expected'" >&2
+    cat "$tmp/$name.log" >&2
+    exit 1
+  }
+  echo "ENTRY-POLICY fixture=$name $expected result=REJECTED"
+}
+
 wrong_target() { sed -i 's/set_gate(14, isr14,/set_gate(14, isr32,/' "$tmp/kernel.c"; }
 nmi_wrong_target() { sed -i 's/set_gate(2, isr2,/set_gate(2, isr8,/' "$tmp/kernel.c"; }
 nmi_wrong_ist() { sed -i 's/set_gate(2, isr2, 2,/set_gate(2, isr2, 1,/' "$tmp/kernel.c"; }
@@ -125,6 +146,19 @@ mutate_page_fault_rip_after_authorization() {
   sed -i '/if (snapshot.active_address_space == 0/i\
     snapshot.rip ^= 1;' "$tmp/kernel.c"
 }
+page_fault_wrong_instruction() {
+  sed -i '/^user_a_fault_instruction:$/{n;s/mov 0, %rax/mov 8, %rax/}' \
+    "$tmp/boot.S"
+}
+page_fault_indirect_entry() {
+  sed -i '/#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO/{n;s/jmp user_a_fault_instruction/jmp *%rax/;}' \
+    "$tmp/boot.S"
+}
+page_fault_wrong_handler_binding() {
+  sed -i \
+    's/error == 5u && rip == (uint64_t)user_a_fault_instruction/error == 7u \&\& rip == (uint64_t)user_a_fault_instruction/' \
+    "$tmp/kernel.c"
+}
 stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $user_a_text, %eax' "$tmp/boot.S"; }
 noncanonical_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $0x00008000, %edx' "$tmp/boot.S"; }
 non_denying_sysenter() { sed -i '/normalize_fast_entry_sysenter_cs_write:/i\    mov $1, %eax' "$tmp/boot.S"; }
@@ -207,6 +241,15 @@ run_fixture page-fault-refilled-after-recorded-reload \
 run_fixture page-fault-rip-post-authorization-mutation \
   'vector=14 field=immutable-snapshot source' \
   mutate_page_fault_rip_after_authorization
+run_page_fault_fixture page-fault-wrong-instruction \
+  'vector=14 field=deliberate-cpl3-site source' \
+  page_fault_wrong_instruction
+run_page_fault_fixture page-fault-indirect-entry \
+  'vector=14 field=deliberate-cpl3-entry source' \
+  page_fault_indirect_entry
+run_page_fault_fixture page-fault-wrong-handler-binding \
+  'vector=14 field=deliberate-cpl3-handler-binding source' \
+  page_fault_wrong_handler_binding
 run_fixture stale-lstar 'fast-entry target write recipe can introduce nonzero state' stale_lstar
 run_fixture noncanonical-lstar 'fast-entry target write recipe can introduce nonzero state' noncanonical_lstar
 run_fixture non-denying-sysenter 'fast-entry target write recipe can introduce nonzero state' non_denying_sysenter
