@@ -147,6 +147,14 @@ the selected frame; changing any projection field rejects with
 selection plus cross-identity splicing, reordered chunks, and selected-frame
 mutation.
 
+The reconstruction premise is universal rather than corpus-specific:
+`canonicalChunks_reconstruct` proves that canonical fixed-width chunking
+flattens to every aligned byte buffer exactly, `canonicalChunks_replay` proves
+the same chunks consume the complete extent with one identity and no offset
+gap, and `assemble_canonicalChunks` packages those facts as the exact immutable
+input accepted by the rich decoder boundary. Corpus fixtures now use this
+canonical constructor instead of a parallel fixture-only chunker.
+
 `BootMemoryMapFullProjectionABI` makes the exact rich transition executable as
 a hosted generated-C boundary without calling the scalar parser. Its sole
 fixture export starts from immutable raw bytes, calls

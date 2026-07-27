@@ -88,6 +88,27 @@ theorem assemble_exact_bytes magic infoAddress extent chunks input
           · rw [if_pos (by simpa using hlength)] at h
             contradiction
 
+/-- Every arbitrary aligned buffer within the reviewed bound has one canonical
+continuous chunk replay, and assembling that replay returns exactly the
+immutable decoder input.  This replaces fixture-only byte reconstruction with
+the universal precondition needed by scalar/rich decoder refinement. -/
+theorem assemble_canonicalChunks (magic infoAddress : UInt64) (bytes : List UInt8)
+    (hsmall : 16 ≤ bytes.length) (hlarge : bytes.length ≤ maxTagBytes)
+    (haligned : bytes.length % 8 = 0) :
+    assemble magic infoAddress bytes.length (canonicalChunks infoAddress bytes) =
+      .ok { magic := magic.toNat, infoAddress := infoAddress.toNat, bytes } := by
+  unfold assemble
+  have hreplay := canonicalChunks_replay infoAddress bytes (by omega) haligned
+  have hbound : (bytes.length < 16 || bytes.length > maxTagBytes ||
+      bytes.length % 8 != 0) ≠ true := by
+    intro h
+    simp at h
+    omega
+  rw [if_neg hbound]
+  unfold initialState at hreplay ⊢
+  rw [hreplay]
+  simp [streamBytes, canonicalChunks_reconstruct infoAddress bytes haligned]
+
 structure Authority where
   magic : UInt64
   infoAddress : UInt64
@@ -251,13 +272,7 @@ def allocationBytes : List UInt8 :=
     (memoryMapTag [entry 0 (14 * pageBytes) 1] ++ endTag)
 
 def chunkedAt (streamIdentity : UInt64) (bytes : List UInt8) : List ModelChunk :=
-  (List.range ((bytes.length + 7) / 8)).map fun index =>
-    let offset := index * 8
-    let part := (bytes.drop offset).take 8
-    { identity := streamIdentity
-      offset
-      bytes := part
-      terminal := offset + part.length == bytes.length }
+  canonicalChunks streamIdentity bytes
 
 def chunked (bytes : List UInt8) : List ModelChunk :=
   chunkedAt identity bytes
