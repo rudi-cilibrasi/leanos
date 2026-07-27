@@ -390,6 +390,163 @@ inductive SuccessfulTagDecodeTraversal (bytes : List UInt8) (total : Nat) :
             (high32Nat layoutWord) entries :: tagsRev) tags) :
       SuccessfulTagDecodeTraversal bytes total offset (fuel + 1) false tagsRev tags
 
+/-- The entry traversal consumes exactly the number of entries carried by its
+index.  This small structural fact is needed when the tag-level certificate is
+converted from byte counts to the typed memory-map list. -/
+theorem successfulEntryDecodeTraversal_length
+    (bytes : List UInt8) (offset count : Nat) (entries : List RawEntry)
+    (h : SuccessfulEntryDecodeTraversal bytes offset count entries) :
+    entries.length = count := by
+  induction h with
+  | done =>
+      rfl
+  | entry =>
+      simp_all
+
+/-- After the unique memory-map tag has been seen, a successful traversal can
+consume only ignored tags before the terminal end tag.  The exact ignored-tag
+sizes are retained so the source order can subsequently be reconstructed. -/
+private theorem successfulTagDecodeTraversal_afterMap_shape
+    (bytes : List UInt8) (total offset fuel : Nat)
+    (sawMemoryMap : Bool) (tagsRev tags : List Tag)
+    (hsaw : sawMemoryMap = true)
+    (h :
+      SuccessfulTagDecodeTraversal bytes total offset fuel sawMemoryMap tagsRev tags) :
+    ∃ ignoredSizes : List Nat,
+      tags =
+        tagsRev.reverse ++ ignoredSizes.map Tag.ignored ++ [.end 8] := by
+  induction h with
+  | endTag =>
+      exact ⟨[], by simp⟩
+  | ignoredTag offset fuel tagWord sawMemoryMap tagsRev tags _ _ _ _ _ _
+      hrest ih =>
+      subst sawMemoryMap
+      obtain ⟨ignoredSizes, hshape⟩ := ih rfl
+      refine ⟨high32Nat tagWord :: ignoredSizes, ?_⟩
+      rw [hshape]
+      simp
+  | memoryMapTag =>
+      contradiction
+
+/-- Ignored tags on either side of one well-shaped memory-map tag do not
+change the typed entry list extracted from that tag. -/
+private theorem extractMemoryMap_ignored_around
+    (beforeSizes afterSizes : List Nat) (size : Nat) (entries : List RawEntry)
+    (hsize : size = memoryMapTagHeaderSize + memoryMapEntrySize * entries.length)
+    (hbound : entries.length ≤ maxEntries) :
+    extractMemoryMap
+        (beforeSizes.map Tag.ignored ++
+          [.memoryMap size memoryMapEntrySize 0 entries] ++
+          afterSizes.map Tag.ignored ++ [.end 8]) =
+      .ok entries := by
+  have hlast :
+      (afterSizes.map Tag.ignored ++ [Tag.end 8]).getLast? =
+        some (Tag.end 8) := by
+    simp [List.getLast?_append]
+  have hdrop :
+      (afterSizes.map Tag.ignored ++ [Tag.end 8]).dropLast =
+        afterSizes.map Tag.ignored := by
+    induction afterSizes with
+    | nil =>
+        rfl
+    | cons afterHead afterTail ih =>
+        cases afterTail <;> simp [List.dropLast]
+  induction beforeSizes with
+  | nil =>
+      simp only [List.map_nil, List.nil_append, List.singleton_append]
+      cases afterSizes with
+      | nil =>
+          simp [extractMemoryMap.eq_4, hsize, memoryMapTagHeaderSize,
+            memoryMapEntrySize, hbound]
+      | cons afterHead afterTail =>
+          simp only [List.map_cons, List.cons_append] at hlast hdrop ⊢
+          rw [extractMemoryMap.eq_6 _ _ _ _ _
+            (by intro endSize heq; cases heq) (by simp)]
+          have hnotTooMany : ¬entries.length > maxEntries := by omega
+          simp [hsize, memoryMapTagHeaderSize, memoryMapEntrySize,
+            hnotTooMany, hlast, show
+              (some (Tag.end 8) != some (Tag.end 8)) = false by decide,
+            hdrop]
+  | cons prefixHead prefixTail ih =>
+      simpa [extractMemoryMap] using ih
+
+/-- Starting before the unique memory-map tag with only ignored tags already
+accumulated, every successful tag traversal exposes the exact entry-level
+source certificate for the list returned by typed tag extraction.  This is the
+tag/entry induction bridge required before constructing the scalar traversal
+over canonical chunks. -/
+private theorem successfulTagDecodeTraversal_extracts_entry_traversal_aux
+    (bytes : List UInt8) (total offset fuel : Nat)
+    (sawMemoryMap : Bool) (tagsRev tags : List Tag)
+    (hsaw : sawMemoryMap = false)
+    (h :
+      SuccessfulTagDecodeTraversal bytes total offset fuel sawMemoryMap tagsRev tags)
+    (beforeSizes : List Nat)
+    (hprefix : tagsRev.reverse = beforeSizes.map Tag.ignored) :
+    ∃ entryOffset entryCount entries,
+      SuccessfulEntryDecodeTraversal bytes entryOffset entryCount entries ∧
+      extractMemoryMap tags = .ok entries := by
+  induction h generalizing beforeSizes with
+  | ignoredTag offset fuel tagWord sawMemoryMap tagsRev tags hread hsize
+      hcontent hadvance htypeEnd htypeMap hrest ih =>
+      subst sawMemoryMap
+      exact ih rfl (beforeSizes ++ [high32Nat tagWord]) (by simp [hprefix])
+  | memoryMapTag offset fuel tagWord layoutWord tagsRev tags entries hread
+      hsize hcontent hadvance htype hlayout hentrySize hentryVersion
+      halignedEntries hentryBound hentries hrest =>
+      obtain ⟨afterSizes, hshape⟩ :=
+        successfulTagDecodeTraversal_afterMap_shape
+          bytes total
+          (offset + aligned8 (high32Nat tagWord)) fuel
+          true
+          (.memoryMap (high32Nat tagWord) (low32Nat layoutWord)
+            (high32Nat layoutWord) entries :: tagsRev)
+          tags rfl hrest
+      have hlength :=
+        successfulEntryDecodeTraversal_length bytes
+          (offset + memoryMapTagHeaderSize)
+          ((high32Nat tagWord - memoryMapTagHeaderSize) /
+            memoryMapEntrySize)
+          entries hentries
+      have htagSize :
+          high32Nat tagWord =
+            memoryMapTagHeaderSize + memoryMapEntrySize * entries.length := by
+        have hdiv :=
+          Nat.mod_add_div
+            (high32Nat tagWord - memoryMapTagHeaderSize)
+            memoryMapEntrySize
+        rw [halignedEntries, Nat.zero_add, ← hlength] at hdiv
+        omega
+      refine ⟨offset + memoryMapTagHeaderSize,
+        (high32Nat tagWord - memoryMapTagHeaderSize) / memoryMapEntrySize,
+        entries, hentries, ?_⟩
+      rw [hshape]
+      simp only [List.reverse_cons, List.append_assoc]
+      rw [hprefix, hentrySize, hentryVersion]
+      simpa only [List.append_assoc] using
+        extractMemoryMap_ignored_around beforeSizes afterSizes
+          (high32Nat tagWord) entries htagSize (by
+            rw [hlength]
+            exact hentryBound)
+  | endTag =>
+      contradiction
+
+/-- Starting before the unique memory-map tag with only ignored tags already
+accumulated, every successful tag traversal exposes the exact entry-level
+source certificate for the list returned by typed tag extraction. -/
+theorem successfulTagDecodeTraversal_extracts_entry_traversal
+    (bytes : List UInt8) (total offset fuel : Nat)
+    (tagsRev tags : List Tag)
+    (h :
+      SuccessfulTagDecodeTraversal bytes total offset fuel false tagsRev tags)
+    (beforeSizes : List Nat)
+    (hprefix : tagsRev.reverse = beforeSizes.map Tag.ignored) :
+    ∃ entryOffset entryCount entries,
+      SuccessfulEntryDecodeTraversal bytes entryOffset entryCount entries ∧
+      extractMemoryMap tags = .ok entries :=
+  successfulTagDecodeTraversal_extracts_entry_traversal_aux
+    bytes total offset fuel false tagsRev tags rfl h beforeSizes hprefix
+
 /-- Every successful recursive tag decode constructs the exact tag/source
 traversal certificate.  The proof follows the decoder's fuel recursion and
 therefore introduces no second parser or acceptance assumption. -/
@@ -610,6 +767,69 @@ structure SuccessfulRichDecodeTraversal (input : Input) (decoded : Decoded) : Pr
       validateHandoff decoded.handoff = .ok decoded.entries ∧
       validateEntries decoded.entries = .ok () ∧
       withinBounds decoded.handoff decoded.entries = true
+
+/-- A retained successful rich traversal binds the unique memory-map entry
+walk to exactly `decoded.entries`, not merely to an existential list decoded
+somewhere in the tag stream.  The proof first extracts the source walk from
+the tag induction above and then uses the already-retained typed handoff
+validation equation to identify its result. -/
+theorem successfulRichDecodeTraversal_entries_source
+    (input : Input) (decoded : Decoded)
+    (h : SuccessfulRichDecodeTraversal input decoded) :
+    ∃ entryOffset entryCount,
+      SuccessfulEntryDecodeTraversal input.bytes entryOffset entryCount
+        decoded.entries := by
+  obtain ⟨infoWord, tags, hinfo, htags, htraversal, hhandoff,
+    hvalid, hentries, hbounds⟩ := h.traversed
+  obtain ⟨entryOffset, entryCount, sourceEntries, hsource, hextract⟩ :=
+    successfulTagDecodeTraversal_extracts_entry_traversal
+      input.bytes (low32Nat infoWord) 8 maxTags [] tags htraversal [] rfl
+  rw [hhandoff] at hvalid
+  unfold validateHandoff at hvalid
+  simp only [bind, Except.bind] at hvalid
+  by_cases hmagic : input.magic != multiboot2Magic
+  · rw [if_pos hmagic] at hvalid
+    contradiction
+  · rw [if_neg hmagic] at hvalid
+    by_cases haddress :
+        input.infoAddress ≥ wordLimit || low32Nat infoWord ≥ wordLimit ||
+          low32Nat infoWord > wordLimit - 1 - input.infoAddress
+    · rw [if_pos haddress] at hvalid
+      contradiction
+    · rw [if_neg haddress] at hvalid
+      by_cases halignment : input.infoAddress % 8 != 0
+      · rw [if_pos halignment] at hvalid
+        contradiction
+      · rw [if_neg halignment] at hvalid
+        by_cases hsize :
+            low32Nat infoWord < 16 || low32Nat infoWord % 8 != 0
+        · rw [if_pos hsize] at hvalid
+          contradiction
+        · rw [if_neg hsize] at hvalid
+          by_cases htagCount : tags.length > maxTags
+          · rw [if_pos htagCount] at hvalid
+            contradiction
+          · rw [if_neg htagCount] at hvalid
+            by_cases hshape :
+                tags.any (fun tag => !tagShapeValid tag)
+            · rw [if_pos hshape] at hvalid
+              contradiction
+            · rw [if_neg hshape] at hvalid
+              let byteCount :=
+                8 + (tags.map (aligned8 ∘ Tag.size)).foldl (· + ·) 0
+              by_cases hbyteCount : byteCount != low32Nat infoWord
+              · rw [if_pos hbyteCount] at hvalid
+                contradiction
+              · rw [if_neg hbyteCount] at hvalid
+                by_cases hbound : byteCount > maxTagBytes
+                · rw [if_pos hbound] at hvalid
+                  contradiction
+                · rw [if_neg hbound] at hvalid
+                  have hsame : sourceEntries = decoded.entries := by
+                    rw [hextract] at hvalid
+                    injection hvalid
+                  subst sourceEntries
+                  exact ⟨entryOffset, entryCount, hsource⟩
 
 structure ValidInfoAddress (address : Nat) : Type where
   atLeastPage : pageBytes ≤ address
