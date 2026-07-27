@@ -397,14 +397,14 @@ theorem malformedRawCorpus_scalar_rich_exactDiagnostics :
         some .badEntrySize ∧
       (scalarFor badMapLayoutBytes).word[2]! = badMapLayout ∧
       errorOf (richRunFor zeroLengthEntryBytes) =
-        some (.reservation .normalizationInvariant) ∧
+        some (.decode .zeroLengthEntry) ∧
       (scalarFor zeroLengthEntryBytes).word[2]! = badEntry ∧
       BootMemoryMapDecoder.Fixtures.errorOf
         (BootMemoryMapDecoder.decode (rawInput reservedEntryWordBytes)) =
         some .nonzeroEntryReserved ∧
       (scalarFor reservedEntryWordBytes).word[2]! = badEntry ∧
       errorOf (richRunFor overflowingEntryBytes) =
-        some (.reservation .normalizationInvariant) ∧
+        some (.decode .entryAddressOverflow) ∧
       (scalarFor overflowingEntryBytes).word[2]! = badEntry ∧
       BootMemoryMapDecoder.Fixtures.errorOf
         (BootMemoryMapDecoder.decode (rawInput missingMapBytes)) =

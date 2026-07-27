@@ -17,7 +17,9 @@ total size against the immutable copy, the reserved information-header word,
 every little-endian load, aligned tag advance, tag extent, and alignment
 padding extent. Multiboot2 does not define alignment padding bytes, so their
 values are ignored while reserved information-header and entry words must be
-zero.
+zero. Zero-length entries and fixed-width base-plus-length overflow are also
+rejected here, matching the production streaming parser's accepted-state
+language rather than deferring those failures to normalization.
 
 Exactly one version-zero memory-map tag with 24-byte entries and one final
 8-byte end tag are accepted. Unknown tags are retained as typed ignored tags;

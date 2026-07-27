@@ -190,8 +190,10 @@ def decoderErrorCode : BootMemoryMapDecoder.Error → UInt64
   | .unsupportedEntryVersion => 16
   | .tooManyEntries => 17
   | .nonzeroEntryReserved => 18
-  | .typedHandoffRejected _ => 19
-  | .internalBounds => 20
+  | .zeroLengthEntry => 19
+  | .entryAddressOverflow => 20
+  | .typedHandoffRejected _ => 21
+  | .internalBounds => 22
 
 def reservationErrorCode : BootReservation.Error → UInt64
   | .missingIdentity => 1
@@ -444,7 +446,7 @@ def errorOf {α : Type} : Except Error α → Option Error
 example : errorOf (fixtureResult 2) = some (.decode .missingEndTag) := by
   native_decide
 
-example : errorOf (fixtureResult 3) = some (.reservation .normalizationInvariant) := by
+example : errorOf (fixtureResult 3) = some (.decode .entryAddressOverflow) := by
   native_decide
 
 example : errorOf (fixtureResult 4) = some .outputMutation := by
