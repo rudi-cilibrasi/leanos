@@ -198,7 +198,7 @@ private def decodeEntries (bytes : List UInt8) (offset count : Nat) :
       if reserved != 0 then throw .nonzeroEntryReserved
       if length == 0 then throw .zeroLengthEntry
       if base ≥ wordLimit || length ≥ wordLimit ||
-          length > wordLimit - base then throw .entryAddressOverflow
+          length ≥ wordLimit - base then throw .entryAddressOverflow
       let rest ← decodeEntries bytes (offset + memoryMapEntrySize) count
       pure ({ base, length, kind := memoryKind kind } :: rest)
 
@@ -219,7 +219,7 @@ inductive SuccessfulEntryDecodeTraversal (bytes : List UInt8) :
       (hlengthNonzero : length ≠ 0)
       (hbaseBound : base < wordLimit)
       (hlengthBound : length < wordLimit)
-      (hstopBound : length ≤ wordLimit - base)
+      (hstopBound : length < wordLimit - base)
       (hrest :
         SuccessfulEntryDecodeTraversal bytes
           (offset + memoryMapEntrySize) count rest) :
@@ -269,7 +269,7 @@ private theorem decodeEntries_constructs_traversal
                     · rw [if_neg hzero] at hdecode
                       by_cases hoverflow :
                           base ≥ wordLimit || length ≥ wordLimit ||
-                            length > wordLimit - base
+                            length ≥ wordLimit - base
                       · rw [if_pos hoverflow] at hdecode
                         contradiction
                       · rw [if_neg hoverflow] at hdecode
@@ -764,6 +764,10 @@ example : errorOf (decode (withBytes
 
 example : errorOf (decode (withBytes
     (information (memoryMapTag [entry (wordLimit - 1) 2 1] ++ endTag)))) =
+    some .entryAddressOverflow := by native_decide
+
+example : errorOf (decode (withBytes
+    (information (memoryMapTag [entry 1 (wordLimit - 1) 1] ++ endTag)))) =
     some .entryAddressOverflow := by native_decide
 
 example : ((decode (withBytes
