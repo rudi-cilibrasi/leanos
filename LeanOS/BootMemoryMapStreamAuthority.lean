@@ -165,6 +165,11 @@ private def nextPadded (phase chunk padded : UInt64) : UInt64 :=
   else if phase == phaseIgnored then padded - 8
   else padded
 
+private def completedError (reason advanced extent nphase : UInt64) : UInt64 :=
+  if reason != noError then reason
+  else if advanced == extent && nphase != phaseDone then missingEnd
+  else noError
+
 private def entryStop (base length : UInt64) : UInt64 := base + length
 private def frameFirst (target : UInt64) : UInt64 := target * 4096
 private def framePast (target : UInt64) : UInt64 := target * 4096 + 4096
@@ -193,15 +198,14 @@ def stepWord (version status error identity extent offset chain phase content pa
   let ntagCount := if phase == phaseTag then tagCount + 1 else tagCount
   let nhighest :=
     if phase == phaseEntryType && entryKind == 1 && stop > highest then stop else highest
+  let finalReason := completedError reason advanced extent nphase
   if query == 0 then abiVersion
   else if query == 1 then
-    if reason != noError then rejected
+    if finalReason != noError then rejected
     else if advanced == extent && nphase == phaseDone then complete
-    else if advanced == extent then rejected else active
-  else if query == 2 then
-    if reason != noError then reason
-    else if advanced == extent && nphase != phaseDone then missingEnd else noError
-  else if reason != noError then 0
+    else active
+  else if query == 2 then finalReason
+  else if finalReason != noError then 0
   else if query == 3 then identity
   else if query == 4 then extent
   else if query == 5 then advanced
@@ -219,6 +223,38 @@ def stepWord (version status error identity extent offset chain phase content pa
   else if query == 17 then nhighest
   else if query == 18 then ntagCount
   else 0
+
+theorem step_error_word
+    version status error identity extent offset chain phase content padded
+    sawMap entries base length usable blocked target highest tagCount
+    streamIdentity streamOffset chunk terminal :
+    stepWord version status error identity extent offset chain phase content padded
+      sawMap entries base length usable blocked target highest tagCount
+      streamIdentity streamOffset chunk terminal 2 =
+      completedError
+        (transitionError version status error identity extent offset phase content padded
+          sawMap entries base length usable blocked target highest tagCount
+          streamIdentity streamOffset chunk terminal)
+        (offset + 8) extent (nextPhase phase chunk content padded) := by
+  simp [stepWord]
+
+/-- Every rejected scalar transition is fail-closed for arbitrary caller state:
+only ABI version, rejected status, and the typed error remain observable. -/
+theorem rejected_step_exposes_no_state
+    version status error identity extent offset chain phase content padded
+    sawMap entries base length usable blocked target highest tagCount
+    streamIdentity streamOffset chunk terminal query
+    (hrejected :
+      stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 2 != noError)
+    (hzero : query ≠ 0) (hone : query ≠ 1) (htwo : query ≠ 2) :
+    stepWord version status error identity extent offset chain phase content padded
+      sawMap entries base length usable blocked target highest tagCount
+      streamIdentity streamOffset chunk terminal query = 0 := by
+  rw [step_error_word] at hrejected
+  simp only [stepWord, hzero, hone, htwo, beq_iff_eq, ↓reduceIte]
+  rw [if_pos hrejected]
 
 def validRange (start length : UInt64) : Bool :=
   length != 0 && length <= 0xffffffffffffffff - start
