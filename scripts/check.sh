@@ -12,6 +12,7 @@ lake build leanos-boot-plan
 ./tests/test-q35-pci-construction.py
 ./scripts/test-q35-platform.sh
 ./scripts/check-q35-edu-dma.py
+./scripts/test-run-dma-unknown-device.sh
 
 ./scripts/check-dma-quarantine-corpus.sh
 

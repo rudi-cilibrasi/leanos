@@ -138,6 +138,18 @@ retains it, so observing only a clear Command bit or a non-crashing guest cannot
 satisfy this fixture. This controlled extra function is never admitted to the
 production topology or its manifest.
 
+`scripts/run-dma-unknown-device.sh` supplies the first guest-level controlled
+negative after that canary oracle. It reuses the normal production image and
+the shared q35 construction, then adds exactly one pinned `edu` function at
+`00:02.0`. The post-firmware guest enumeration must emit the typed
+`dma-inventory` fatal result and the debug-exit value for that failure before
+any DMA-quarantine PASS or CPL3 entry. The runner rejects a missing, duplicate,
+or different fatal result, any apparent CPL3 entry or success record, reset,
+unrelated guest failure, and timeout. CI executes the real QEMU negative after
+building the image and retains its serial transcript. This finite adversarial
+boot is tested behavior, not proof of enumeration completeness or device
+semantics.
+
 `scripts/check-q35-pci-construction.py` supplies a narrower integration
 checkpoint against the pinned QEMU 8.2.2 binary. It pauses the same explicit
 q35/TCG, CPU, memory, vCPU, network, VGA, and debug-exit construction used by

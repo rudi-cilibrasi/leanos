@@ -54,6 +54,7 @@ for runner in \
   scripts/run-bootstrap32-ud.sh \
   scripts/run-bootstrap64-nmi.sh \
   scripts/run-double-fault.sh \
+  scripts/run-dma-unknown-device.sh \
   scripts/run-entry-stack-overflow.sh \
   scripts/run-extended-state-peer-pke.sh \
   scripts/run-image.sh \
