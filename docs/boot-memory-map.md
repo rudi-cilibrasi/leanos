@@ -11,7 +11,8 @@ boot integration step.
 ## Immutable byte boundary
 
 `BootMemoryMapDecoder.Input` contains the preserved boot magic, information
-address, and a finite byte list. The decoder rejects buffers smaller than 16
+address, and a finite byte list. The decoder rejects information addresses
+below the scalar production boundary's 4 KiB minimum and buffers smaller than 16
 bytes or larger than 64 KiB before tag traversal. It checks the advertised
 total size against the immutable copy, the reserved information-header word,
 every little-endian load, aligned tag advance, tag extent, and alignment
