@@ -1002,6 +1002,124 @@ theorem successfulScalarRichTraversal_ignoredTagBody
       htargetWord] using hstep.2.2.1
   · exact hrest
 
+/-- Exact list-level evidence that a sequence consists only of accepted
+ignored-tag body or padding words.  The state is threaded through the
+production scalar transition, so adjacent words cannot be reordered or
+spliced without invalidating the certificate. -/
+inductive SuccessfulIgnoredTagSpan :
+    ScalarState → List ModelChunk → ScalarState → Prop
+  | done (state : ScalarState) :
+      SuccessfulIgnoredTagSpan state [] state
+  | step (state terminal : ScalarState) (chunk : ModelChunk)
+      (rest : List ModelChunk)
+      (hphase :
+        state.word[7]! = BootMemoryMapStreamAuthority.phaseIgnored)
+      (haccepted :
+        (scalarStep state chunk).word[2]! =
+          BootMemoryMapStreamAuthority.noError)
+      (hrest :
+        SuccessfulIgnoredTagSpan (scalarStep state chunk) rest terminal) :
+      SuccessfulIgnoredTagSpan state (chunk :: rest) terminal
+
+/-- A complete accepted ignored-tag span composes around any later
+scalar/rich traversal.  This turns the one-word body rule into the induction
+step needed for arbitrary ignored payload and alignment padding. -/
+theorem successfulScalarRichTraversal_ignoredTagSpan
+    (target : Nat) (entries : List RawEntry)
+    (state after terminal : ScalarState)
+    (body rest : List ModelChunk)
+    (hspan : SuccessfulIgnoredTagSpan state body after)
+    (hrest :
+      SuccessfulScalarRichTraversal target entries after rest terminal) :
+    SuccessfulScalarRichTraversal target entries state
+      (body ++ rest) terminal := by
+  induction hspan with
+  | done state =>
+      exact hrest
+  | step state after chunk body hphase haccepted hbody ih =>
+      rw [List.cons_append]
+      apply SuccessfulScalarRichTraversal.nonEntry entries state terminal
+        chunk (body ++ rest)
+      · rw [hphase]
+        decide
+      · exact haccepted
+      · exact ih hrest
+
+/-- One admitted unique memory-map header is a non-entry traversal step.  The
+production transition enters the layout phase with the exact entry-byte count
+and the continuation carries the subsequent layout and entry traversal. -/
+theorem successfulScalarRichTraversal_memoryMapTagHeader
+    (identity extent offset word : UInt64) (target : Nat)
+    (entries : List RawEntry) (state terminal : ScalarState)
+    (chunk : ModelChunk) (rest : List ModelChunk)
+    (hchunkIdentity : chunk.identity = identity)
+    (hchunkOffset : UInt64.ofNat chunk.offset = offset)
+    (hchunkTerminal : chunk.terminal = false)
+    (hchunkWord : chunkWord chunk.bytes = word)
+    (hversion :
+      state.word[0]! = BootMemoryMapStreamAuthority.abiVersion)
+    (hstatus :
+      state.word[1]! = BootMemoryMapStreamAuthority.active)
+    (herror :
+      state.word[2]! = BootMemoryMapStreamAuthority.noError)
+    (hidentity : state.word[3]! = identity)
+    (hidentityAligned : identity % 8 = 0)
+    (hextent : state.word[4]! = extent)
+    (hextentLow : 16 ≤ extent)
+    (hextentHigh : extent ≤ 65536)
+    (hextentAligned : extent % 8 = 0)
+    (hoffset : state.word[5]! = offset)
+    (hoffsetLt : offset < extent)
+    (hoffsetNotFinal : offset + 8 ≠ extent)
+    (hphase :
+      state.word[7]! = BootMemoryMapStreamAuthority.phaseTag)
+    (hsawMap : state.word[10]! = 0)
+    (husable : state.word[14]! ≤ 1)
+    (hblocked : state.word[15]! ≤ 1)
+    (htargetWord : state.word[16]! = UInt64.ofNat target)
+    (htarget : target < frameLimit)
+    (htagCount : state.word[18]! < 64)
+    (htype : BootMemoryMapStreamAuthority.low32 word = 6)
+    (hsizeLow : 16 ≤ BootMemoryMapStreamAuthority.high32 word)
+    (hsizeFits :
+      BootMemoryMapStreamAuthority.high32 word ≤ extent - offset)
+    (hsizeNoOverflow :
+      BootMemoryMapStreamAuthority.high32 word ≤ 0xfffffffffffffff8)
+    (hroundedFits :
+      ((BootMemoryMapStreamAuthority.high32 word + 7) &&&
+          0xfffffffffffffff8) ≤ extent - offset)
+    (halignedEntries :
+      (BootMemoryMapStreamAuthority.high32 word - 16) % 24 = 0)
+    (hentryBound :
+      (BootMemoryMapStreamAuthority.high32 word - 16) / 24 ≤
+        BootMemoryMapStreamAuthority.entryLimit)
+    (hrest :
+      SuccessfulScalarRichTraversal target entries
+        (scalarStep state chunk) rest terminal) :
+    SuccessfulScalarRichTraversal target entries state
+      (chunk :: rest) terminal := by
+  have htargetLt : target < UInt64.size :=
+    Nat.lt_trans htarget (by decide)
+  have htargetBound : UInt64.ofNat target < 4096 := by
+    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_ofNat_of_lt' htargetLt]
+    simpa [frameLimit, physicalLimit, pageBytes] using htarget
+  have hstep :=
+    BootMemoryMapStreamAuthority.memoryMapTagHeaderStepWords_of_admitted
+      identity extent offset state.word[6]! state.word[8]! state.word[9]!
+      state.word[11]! state.word[12]! state.word[13]!
+      state.word[14]! state.word[15]! (UInt64.ofNat target)
+      state.word[17]! state.word[18]! word
+      hidentityAligned hextentLow hextentHigh hextentAligned hoffsetLt
+      hoffsetNotFinal husable hblocked htargetBound htagCount htype hsizeLow
+      hsizeFits hsizeNoOverflow hroundedFits halignedEntries hentryBound
+  apply SuccessfulScalarRichTraversal.nonEntry entries state terminal chunk rest
+  · rw [hphase]
+    decide
+  · simpa [scalarStep, hchunkIdentity, hchunkOffset, hchunkTerminal, hchunkWord,
+      hversion, hstatus, herror, hidentity, hextent, hoffset, hphase,
+      hsawMap, htargetWord] using hstep.2.2.1
+  · exact hrest
+
 /-- The retained rich end-tag constructor and an admitted scalar tag cursor
 construct the terminal one-chunk tail of `SuccessfulScalarRichTraversal`.
 The scalar completion status is derived from `stepWord`; no terminal word is

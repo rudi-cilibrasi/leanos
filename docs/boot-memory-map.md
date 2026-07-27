@@ -311,11 +311,19 @@ each ignored content or alignment-padding word: the cursor advances by eight,
 the padded counter decreases by eight, the content counter drains to zero,
 and map, entry, and classification fields are preserved.
 `successfulScalarRichTraversal_ignoredTagBody` packages that word around an
-arbitrary continuation. The remaining induction must connect this local walk
-to each retained ignored-tag span, consume the unique map layout, and consume
-every base/length/type triple to construct
-`SuccessfulScalarRichTraversal`. Until that final derivation exists, the
-fail-closed terminal comparison remains in place.
+arbitrary continuation. `SuccessfulIgnoredTagSpan` threads the exact scalar
+state through every accepted ignored content/padding word, and
+`successfulScalarRichTraversal_ignoredTagSpan` composes the complete span
+around the later traversal without permitting reordering or splicing.
+`memoryMapTagHeaderStepWords_of_admitted` next proves that the unique admitted
+map header enters the layout phase with its exact entry-byte count and marks
+the map as seen; `successfulScalarRichTraversal_memoryMapTagHeader` packages
+that transition around the remaining layout and entry traversal. The
+remaining induction must derive each ignored-span certificate from the
+retained tag traversal, consume the map layout, and consume every
+base/length/type triple to construct `SuccessfulScalarRichTraversal`. Until
+that final derivation exists, the fail-closed terminal comparison remains in
+place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
