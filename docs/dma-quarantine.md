@@ -115,10 +115,23 @@ read-back behavior of the Command register, QEMU/device obedience, generated C,
 assembly, compiler/linker behavior, and the final binary are not proved. QEMU
 inventory and boot tests are integration evidence only.
 
+`scripts/q35-platform.sh` owns the emulator construction used by every
+mandatory runner. It selects q35/TCG with `-nodefaults`, pins the VGA function
+at `00:01.0`, explicitly attaches the boot ISO to the machine-integrated AHCI
+controller through `ide.0`, disables networking, and adds only the ISA
+debug-exit device. q35 still creates the manifest's host bridge, ISA bridge,
+AHCI, and SMBus functions as machine-integrated devices. The shared builder
+does not make those QEMU semantics proved; it makes the repository's requested
+construction explicit and keeps runner topology from drifting independently.
+Its positive and controlled-negative gate rejects omitted `-nodefaults`, an
+extra PCI device, an unpinned VGA BDF, or a mandatory runner that bypasses the
+builder.
+
 `scripts/check-q35-pci-construction.py` supplies a narrower integration
-checkpoint against the pinned QEMU 8.2.2 binary. It pauses the same q35/TCG,
-CPU, memory, vCPU, network, and debug-exit construction used by the image
-runner, exhaustively reads all 256 functions on manifest bus 0 through qtest's
+checkpoint against the pinned QEMU 8.2.2 binary. It pauses the same explicit
+q35/TCG, CPU, memory, vCPU, network, VGA, and debug-exit construction used by
+the image runners before their boot media is attached, then exhaustively reads
+all 256 functions on manifest bus 0 through qtest's
 PCI configuration mechanism #1 interface, and rejects identity/class/header
 drift, duplicate BDF observations, missing or extra functions, or a set
 bus-master bit. Focused negative regressions exercise each rejection class so
