@@ -347,6 +347,98 @@ theorem infoStepWords_of_admitted
     htargetNotHigh, hnotFinal, phaseInfo, phaseTag, phaseDone,
     phaseIgnored, phaseEntryBase, phaseEntryLength, phaseEntryType]
 
+/-- An admitted tag cursor consuming the unique terminal end-tag word reaches
+the exact successful scalar terminal state.  This is the terminal constructor
+of the rich/scalar phase induction; it is stated over the production
+transition and does not assume a caller-supplied terminal comparison. -/
+theorem endTagStepWords_of_admitted
+    (identity extent offset chain content padded entries base length
+      usable blocked target highest tagCount chunk : UInt64)
+    (hidentityAligned : identity % 8 = 0)
+    (hextentLow : 16 ≤ extent)
+    (hextentHigh : extent ≤ 65536)
+    (hextentAligned : extent % 8 = 0)
+    (hoffset : offset + 8 = extent)
+    (husable : usable ≤ 1)
+    (hblocked : blocked ≤ 1)
+    (htarget : target < 4096)
+    (htagCount : tagCount < 64)
+    (hchunkLow : low32 chunk = 0)
+    (hchunkHigh : high32 chunk = 8) :
+    let next := fun query =>
+      stepWord
+        abiVersion active noError identity extent offset chain phaseTag
+        content padded 1 entries base length usable blocked target highest
+        tagCount identity offset chunk 1 query
+    next 0 = abiVersion ∧
+      next 1 = complete ∧
+      next 2 = noError ∧
+      next 3 = identity ∧
+      next 4 = extent ∧
+      next 5 = extent ∧
+      next 7 = phaseDone ∧
+      next 8 = 0 ∧
+      next 9 = 0 ∧
+      next 10 = 1 ∧
+      next 11 = entries ∧
+      next 12 = base ∧
+      next 13 = length ∧
+      next 14 = usable ∧
+      next 15 = blocked ∧
+      next 16 = target ∧
+      next 17 = highest ∧
+      next 18 = tagCount + 1 := by
+  dsimp only
+  have hextentNotLow : ¬extent < 16 := by simpa using hextentLow
+  have hextentNotHigh : ¬65536 < extent := by simpa using hextentHigh
+  have hoffsetLt : offset < extent := by
+    have hnat := congrArg UInt64.toNat hoffset
+    simp only [UInt64.toNat_add, UInt64.toNat_ofNat] at hnat
+    rw [UInt64.le_iff_toNat_le] at hextentHigh
+    rw [UInt64.le_iff_toNat_le] at hextentLow
+    rw [UInt64.lt_iff_toNat_lt]
+    simp only [UInt64.toNat_ofNat, Nat.reducePow, Nat.reduceMod] at *
+    have hoffsetBound := UInt64.toNat_lt offset
+    omega
+  have htargetNotHigh : ¬4096 ≤ target := by simpa using htarget
+  have hoffsetNotHigh : ¬extent ≤ offset := by
+    intro h
+    rw [UInt64.le_iff_toNat_le] at h
+    rw [UInt64.lt_iff_toNat_lt] at hoffsetLt
+    omega
+  have husableNotHigh : ¬1 < usable := by
+    intro h
+    rw [UInt64.lt_iff_toNat_lt] at h
+    rw [UInt64.le_iff_toNat_le] at husable
+    omega
+  have hblockedNotHigh : ¬1 < blocked := by
+    intro h
+    rw [UInt64.lt_iff_toNat_lt] at h
+    rw [UInt64.le_iff_toNat_le] at hblocked
+    omega
+  have htagCountLimit : ¬64 ≤ tagCount := by
+    intro h
+    rw [UInt64.le_iff_toNat_le] at h
+    rw [UInt64.lt_iff_toNat_lt] at htagCount
+    omega
+  have htagCountNotBad : ¬64 < tagCount := by
+    intro h
+    rw [UInt64.lt_iff_toNat_lt] at h
+    rw [UInt64.lt_iff_toNat_lt] at htagCount
+    omega
+  have hremaining : extent - offset = 8 := by
+    symm
+    rw [UInt64.eq_sub_iff_add_eq]
+    simpa [UInt64.add_comm] using hoffset
+  have hrounded : ¬(8 : UInt64) < (15 &&& 0xfffffffffffffff8) := by
+    decide
+  simp [stepWord, transitionError, completedError, nextPhase,
+    nextContent, nextPadded, hidentityAligned, hextentNotLow,
+    hextentNotHigh, hextentAligned, hoffsetNotHigh, htargetNotHigh,
+    husableNotHigh, hblockedNotHigh, htagCountLimit, htagCountNotBad,
+    hremaining, hrounded, hchunkLow, hchunkHigh, hoffset, phaseInfo,
+    phaseTag, phaseDone, phaseEntryBase, phaseEntryLength, phaseEntryType]
+
 theorem step_error_word
     version status error identity extent offset chain phase content padded
     sawMap entries base length usable blocked target highest tagCount

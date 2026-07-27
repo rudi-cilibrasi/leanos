@@ -296,9 +296,12 @@ eight to canonical chunk index one, its exact rich-decoder word, nonterminal
 bit, and every production scalar query.
 `canonicalTagStep_source_refines` lifts that source agreement to every aligned
 offset in the retained recursive tag traversal, including the exact terminal
-bit for the end tag. The remaining induction must propagate the scalar parser
-state through ignored contents and padding, the unique map layout, and each
-base/length/type triple to construct
+bit for the end tag. `endTagStepWords_of_admitted` derives the production
+scalar `complete`/`noError`/`phaseDone` state for that exact end word, and
+`successfulScalarRichTraversal_endTag` packages the canonical final chunk as
+the terminal base case of `SuccessfulScalarRichTraversal`. The remaining
+induction must propagate the scalar parser state through ignored contents and
+padding, the unique map layout, and each base/length/type triple to construct
 `SuccessfulScalarRichTraversal`. Until that final derivation exists, the
 fail-closed terminal comparison remains in place.
 
