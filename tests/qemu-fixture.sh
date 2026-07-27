@@ -48,7 +48,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   cat >> "$log" <<'EOF'
 LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS
 LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned
-LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS
+LEANOS/14 FAULT-ENTRY vector=14 error=5 access=read protection=1 cr2=0 rip=user-a-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 result=PASS
 LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS
 LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS
 LEANOS/8 PAGING root=B selected=1 result=PASS
@@ -58,13 +58,17 @@ EOF
   exit "$status"
 fi
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-fault-direct-call|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-a-queued|fault-attacker-selection|fault-return-unvalidated|fault-peer-corrupt|fault-peer-cleaned|fault-forged-pass|fault-reordered|fault-kernel-relabeled|fault-global-fail)
+fault-direct-call|fault-wrong-cr2|fault-wrong-rip|fault-wrong-access|fault-wrong-dispatch|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-a-queued|fault-attacker-selection|fault-return-unvalidated|fault-peer-corrupt|fault-peer-cleaned|fault-forged-pass|fault-reordered|fault-kernel-relabeled|fault-global-fail)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
   set -e
   case "$mode" in
     fault-direct-call) sed -i 's/direct-call=0/direct-call=1/' "$log" ;;
+    fault-wrong-cr2) sed -i 's/cr2=0/cr2=4096/' "$log" ;;
+    fault-wrong-rip) sed -i 's/rip=user-a-fault-instruction/rip=user-a-fault-recovered/' "$log" ;;
+    fault-wrong-access) sed -i 's/access=read/access=write/' "$log" ;;
+    fault-wrong-dispatch) sed -i 's/dispatch=0x00000000ff020202/dispatch=0x00000000ff020203/' "$log" ;;
     fault-old-recovery) sed -i '/^LEANOS\/14 TERMINATE /d; /^LEANOS\/14 DISPATCH /d' "$log" ;;
     fault-stale-cr3) sed -i 's/subject=2 address-space=2 source/subject=2 address-space=1 source/' "$log" ;;
     fault-cleanup-missing) sed -i 's/resumable=0/resumable=1/' "$log" ;;

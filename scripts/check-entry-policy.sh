@@ -197,7 +197,12 @@ if [[ "$page_fault_probe" == supervisor-read ]]; then
   }
   grep -Fq 'if (error == 5u && rip == (uint64_t)user_a_fault_instruction &&' \
       "$kernel_source" &&
-    grep -Fq 'fault_address == 0u)' "$kernel_source" || {
+    grep -Fq 'fault_address == 0u)' "$kernel_source" &&
+    grep -Fq 'result != UINT64_C(0x00000000ff020202)' "$kernel_source" &&
+    grep -Fq 'cleanup != 0x1fu || peer_context_witness != 1 ||' \
+      "$kernel_source" &&
+    grep -Fq 'selected != saved_context_owner_b || address_space != 2)' \
+      "$kernel_source" || {
     echo "error: vector=14 field=deliberate-cpl3-handler-binding source" >&2
     exit 1
   }
@@ -231,7 +236,8 @@ if [[ "$page_fault_probe" == supervisor-read ]]; then
     echo "error: vector=14 field=deliberate-cpl3-entry final-elf" >&2
     exit 1
   }
-  echo "ENTRY-POLICY vector=14 probe=supervisor-read site=final-elf route=immutable-generated result=PASS"
+  printf 'ENTRY-POLICY vector=14 probe=supervisor-read error=5 access=read protection=1 cr2=0 rip=%s recovered=%s dispatch=0x00000000ff020202 cleanup=31 survivor=2 site=final-elf route=immutable-generated result=PASS\n' \
+    "$fault_address" "$recovered_address"
 fi
 
 [[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 11 ]] || {

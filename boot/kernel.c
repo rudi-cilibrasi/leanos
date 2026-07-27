@@ -2142,7 +2142,6 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
             saved_context_owner_b != 2 ||
             !initial_b_frame_valid(initial_context_b))
             fail("fault-authority-binding");
-        serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS\n");
         uint64_t result = transition->result;
         if (result != UINT64_C(0x00000000ff020202))
             fail("fault-model-dispatch");
@@ -2156,6 +2155,7 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
             peer_capability_witness != 1 || peer_resource_witness != 1 ||
             selected != saved_context_owner_b || address_space != 2)
             fail("fault-model-encoding");
+        serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 access=read protection=1 cr2=0 rip=user-a-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 result=PASS\n");
         fault_dispatch_attestation = result;
         current_subject = selected;
         serial_puts("LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");

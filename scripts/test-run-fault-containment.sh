@@ -13,6 +13,10 @@ invoke() {
 invoke success >/dev/null 2>&1
 for spec in \
   'fault-direct-call serial-protocol' \
+  'fault-wrong-cr2 serial-protocol' \
+  'fault-wrong-rip serial-protocol' \
+  'fault-wrong-access serial-protocol' \
+  'fault-wrong-dispatch serial-protocol' \
   'fault-old-recovery serial-protocol' \
   'fault-stale-cr3 serial-protocol' \
   'fault-cleanup-missing serial-protocol' \

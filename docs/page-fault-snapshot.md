@@ -115,9 +115,13 @@ final-ELF policy requires the zeroing instruction immediately before `invlpg`
 through that same register. The fault-containment image additionally selects
 the `supervisor-read` probe policy. It requires subject A's first instruction
 to be a direct branch to `user_a_fault_instruction`, requires that site to be
-the exact eight-byte page-zero read in the final ELF, and binds error 5, CR2
-zero, and the saved RIP to that exported site before containment. The
-build-retained `fault-containment-policy-report.txt` records this check.
+the exact eight-byte page-zero read in the final ELF, and binds error 5, read
+access, protection violation, CR2 zero, and the saved RIP to that exported site
+before containment. The emitted hardware-fault record also names the exact
+generated dispatch word, complete cleanup mask, and selected survivor.
+Independent runner fixtures reject a changed CR2, RIP, access kind, or dispatch
+word. The build-retained `fault-containment-policy-report.txt` records the
+linked final-ELF addresses and the same architectural/dispatch tuple.
 Wrong-instruction, indirect-entry, and wrong-handler-binding fixtures must be
 rejected.
 Negative fixtures also reject a forged diagnostic purpose, both a direct
