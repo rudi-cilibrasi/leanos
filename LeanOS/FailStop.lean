@@ -17174,6 +17174,103 @@ theorem authoritativeGate_restart_preserves_authoritativeRuntimeWellFormed
     (.ordinary .restart) hstate
     (restart_authoritativeOperationCompatible state hstate)
 
+/-- The only public authoritative operation admission fact not already carried
+by `AuthoritativeRuntimeWellFormed` is the trusted identity binding consumed
+by contained interrupt cleanup.  In particular, this predicate contains no
+fact about a gate-selected post-state and no subsystem readiness premise. -/
+def AuthoritativeOperationAdmissible (state : CompositeState) :
+    AuthoritativeOperation → Prop
+  | .ordinary (.interrupt _) => ContainedFaultIdentityBound state
+  | _ => True
+
+/-- Every post-state compatibility obligation is derived from the
+authoritative pre-invariant.  The contained-interrupt branch consumes only its
+explicit trusted identity admission fact; every other ordinary, blocking, and
+deferred-drain constructor is closed. -/
+theorem authoritativeOperationCompatible_of_admissible state operation
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hadmissible : AuthoritativeOperationAdmissible state operation) :
+    AuthoritativeOperationCompatible state operation := by
+  cases operation with
+  | ordinary operation =>
+      cases operation with
+      | interrupt frame =>
+          exact interrupt_authoritativeOperationCompatible state frame hadmissible
+      | nmi raw context => trivial
+      | selectUserReturn purpose =>
+          exact selectUserReturn_authoritativeOperationCompatible state purpose hstate
+      | userReturn request =>
+          exact userReturn_authoritativeOperationCompatible state request hstate
+      | syscall call =>
+          exact syscall_authoritativeOperationCompatible state call hstate
+      | ipc call =>
+          exact blockingStateNeutral_authoritativeOperationCompatible state
+            (.ipc call) (.ipc call) hstate
+      | resumePreempt frame registers =>
+          exact resumePreempt_authoritativeOperationCompatible
+            state frame registers hstate
+      | transferOffer endpointWord sourceWord sourceKind payload rights =>
+          exact transferOffer_authoritativeOperationCompatible state endpointWord
+            sourceWord sourceKind payload rights hstate
+      | transferAccept endpointWord destinationSlot =>
+          exact transferAccept_authoritativeOperationCompatible
+            state endpointWord destinationSlot hstate
+      | capabilityCopy source destination destinationSlot rights =>
+          exact capabilityCopy_authoritativeOperationCompatible state source
+            destination destinationSlot rights hstate
+      | capabilityRevoke authoritySlot victim victimSlot =>
+          exact capabilityRevoke_authoritativeOperationCompatible state authoritySlot
+            victim victimSlot hstate
+      | capabilityRevokeSubtree authoritySlot victim victimSlot =>
+          exact capabilityRevokeSubtree_authoritativeOperationCompatible state
+            authoritySlot victim victimSlot hstate
+      | map slot page permissions =>
+          exact map_authoritativeOperationCompatible state slot page permissions hstate
+      | unmap page =>
+          exact unmap_authoritativeOperationCompatible state page hstate
+      | createSubject subject =>
+          exact createSubject_authoritativeOperationCompatible state subject hstate
+      | terminateSubject subject => trivial
+      | scheduleAdd subject =>
+          exact scheduleAdd_authoritativeOperationCompatible state subject hstate
+      | scheduleRemove subject =>
+          exact scheduleRemove_authoritativeOperationCompatible state subject hstate
+      | scheduleNext =>
+          exact blockingStateNeutral_authoritativeOperationCompatible state
+            .scheduleNext .scheduleNext hstate
+      | scheduleYield =>
+          exact blockingStateNeutral_authoritativeOperationCompatible state
+            .scheduleYield .scheduleYield hstate
+      | scheduleTick =>
+          exact blockingStateNeutral_authoritativeOperationCompatible state
+            .scheduleTick .scheduleTick hstate
+      | terminateCurrent => trivial
+      | restart =>
+          exact restart_authoritativeOperationCompatible state hstate
+  | blocking operation =>
+      cases operation with
+      | receive handleWord frame registers =>
+          exact blockingReceive_authoritativeOperationCompatible state handleWord
+            frame registers hstate
+      | send handleWord word0 word1 =>
+          exact blockingSend_authoritativeOperationCompatible state handleWord
+            word0 word1 hstate
+      | cancel subject =>
+          exact blockingCancel_authoritativeOperationCompatible state subject hstate
+  | drainDeferred subject => trivial
+
+/-- The strengthened authoritative gate preserves the complete folded runtime
+invariant from pre-state evidence alone.  The admission premise is vacuous for
+every constructor except identity-bound contained interrupt cleanup. -/
+theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state operation (hstate : AuthoritativeRuntimeWellFormed state)
+    (hadmissible : AuthoritativeOperationAdmissible state operation) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state operation).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state operation hstate
+    (authoritativeOperationCompatible_of_admissible
+      state operation hstate hadmissible)
+
 /-- The self-contained neutral-constructor compatibility laws preserve the
 authoritative DMA conjunct as a consequence of complete global preservation.
 No compatibility premise for any unfinished constructor enters this slice. -/
@@ -17248,6 +17345,16 @@ def AuthoritativeTraceCompatible (state : CompositeState) :
       AuthoritativeOperationCompatible state operation ∧
       AuthoritativeTraceCompatible (authoritativeGate state operation).state rest
 
+/-- Recursive admission for an arbitrary finite authoritative trace.  Each
+member records only the trusted contained-fault identity binding selected by
+its own pre-state; all non-interrupt constructors contribute `True`. -/
+def AuthoritativeTraceAdmissible (state : CompositeState) :
+    List AuthoritativeOperation → Prop
+  | [] => True
+  | operation :: rest =>
+      AuthoritativeOperationAdmissible state operation ∧
+      AuthoritativeTraceAdmissible (authoritativeGate state operation).state rest
+
 /-- Every compatibility-certified finite interleaving of ordinary and blocking
 operations preserves the complete authoritative global invariant without
 assuming any intermediate preservation conclusion.  This is intentionally not
@@ -17263,6 +17370,22 @@ theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
       exact ih (authoritativeGate state operation).state
         (authoritativeGate_preserves_authoritativeRuntimeWellFormed
           state operation hstate hcompatible.1) hcompatible.2
+
+/-- Arbitrary admitted finite traces preserve the authoritative invariant.
+Unlike `AuthoritativeTraceCompatible`, callers never prove a fact about a
+gate-selected post-state: compatibility for each member is reconstructed from
+the invariant established by its predecessor. -/
+theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state operations (hstate : AuthoritativeRuntimeWellFormed state)
+    (hadmissible : AuthoritativeTraceAdmissible state operations) :
+    AuthoritativeRuntimeWellFormed (runAuthoritativeOperations state operations) := by
+  induction operations generalizing state with
+  | nil => exact hstate
+  | cons operation rest ih =>
+      have hnext :=
+        authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_admissible
+          state operation hstate hadmissible.1
+      exact ih (authoritativeGate state operation).state hnext hadmissible.2
 
 /-- Any finite sequence of resumable-preemption attempts has a closed
 recursive compatibility certificate.  Each successor certificate is derived

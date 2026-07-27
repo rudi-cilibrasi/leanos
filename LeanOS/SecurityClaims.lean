@@ -404,13 +404,14 @@ theorem failstop_halted_suffix_absorbing state record proposals
 
 /-- SC-COMPOSITE-AUTHORITATIVE-COMPATIBLE-GATE: the successor gate embeds both
 ordinary and blocking operation families under one latch and typed reply.
-The complete blocking/deferred invariant supplies structural readiness.
-Preservation remains explicitly conditional on caller-supplied dormant-store
-and operation-local compatibility facts; classified denial is atomic, and
-fatal mode absorbs arbitrary mixed suffixes. -/
+The complete blocking/deferred invariant now derives every post-state
+compatibility fact.  The sole admission premise is the trusted current-identity
+binding consumed by contained interrupt cleanup; classified denial is atomic,
+and fatal mode absorbs arbitrary mixed suffixes.  The stable theorem name is
+retained for the security-claim contract. -/
 theorem composite_authoritative_compatible_gate_contract state operation
     (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
-    (hcompatible : FailStop.AuthoritativeOperationCompatible state operation) :
+    (hadmissible : FailStop.AuthoritativeOperationAdmissible state operation) :
     FailStop.AuthoritativeRuntimeWellFormed
         (FailStop.authoritativeGate state operation).state ∧
       FailStop.AuthoritativeOperationReady state operation ∧
@@ -431,8 +432,8 @@ theorem composite_authoritative_compatible_gate_contract state operation
       (∀ record suffix,
         state.execution.mode = .halted record →
         FailStop.runAuthoritativeOperations state suffix = state) := by
-  refine ⟨FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
-      state operation hstate hcompatible, hstate.operationReady operation,
+  refine ⟨FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_admissible
+      state operation hstate hadmissible, hstate.operationReady operation,
       ?_, ?_, ?_, ?_⟩
   · intro reply hcompleted
     exact FailStop.authoritativeGate_completed_sound state operation reply hcompleted
@@ -440,8 +441,9 @@ theorem composite_authoritative_compatible_gate_contract state operation
     exact FailStop.authoritativeGate_rejection_atomic state operation _rejection
   · intro blocking hoperation
     subst operation
-    exact (FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
-      state (.blocking blocking) hstate hcompatible).blocking
+    exact
+      (FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_admissible
+        state (.blocking blocking) hstate hadmissible).blocking
   · intro record suffix hmode
     exact FailStop.authoritative_halted_suffix_absorbing state record suffix hmode
 
@@ -455,6 +457,18 @@ theorem composite_authoritative_compatible_mixed_trace_preserves_runtimeWellForm
       (FailStop.runAuthoritativeOperations state operations) := by
   exact FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
     state operations hstate hcompatible
+
+/-- An arbitrary finite successor-gate trace preserves the complete folded
+invariant from operation admission alone.  Admission is vacuous except for the
+trusted identity binding consumed by a contained interrupt member. -/
+theorem composite_authoritative_admitted_trace_preserves_runtimeWellFormed
+    state operations (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
+    (hadmissible : FailStop.AuthoritativeTraceAdmissible state operations) :
+    FailStop.AuthoritativeRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state operations) := by
+  exact
+    FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_admissible
+      state operations hstate hadmissible
 
 /-- Mapping changes retain the complete authoritative-gate
 blocking precondition, so either raw mapping mutation can be followed directly
