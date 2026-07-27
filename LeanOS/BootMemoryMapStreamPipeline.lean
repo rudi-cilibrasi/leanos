@@ -814,6 +814,52 @@ theorem scalarStep_readU64_refines
         (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) := by
   simp [scalarStep, chunkWord_readU64_agreement _ _ hread]
 
+/-- At every canonical list index, the scalar transition consumes the exact
+rich-decoder word at the corresponding immutable source offset.  This is the
+index-local checkpoint needed before inducting over parser phases: identity,
+offset, bytes, terminal status, and packed word all come from one canonical
+source position. -/
+theorem canonicalScalarStep_source_refines
+    (identity : UInt64) (bytes : List UInt8)
+    (haligned : bytes.length % 8 = 0)
+    (index : Nat) (hindex : index < bytes.length / 8)
+    (state : ScalarState) (value : Nat)
+    (hread :
+      BootMemoryMapDecoder.readU64 bytes (index * 8) = .ok value)
+    (query : Fin 19) :
+    let chunk : ModelChunk :=
+      { identity
+        offset := index * 8
+        bytes := (bytes.drop (index * 8)).take 8
+        terminal := index + 1 == bytes.length / 8 }
+    (canonicalChunks identity bytes)[index]? = some chunk ∧
+      (scalarStep state chunk).word[query.val]! =
+        BootMemoryMapStreamAuthority.stepWord
+          state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+          state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+          state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+          state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+          state.word[16]! state.word[17]! state.word[18]!
+          identity (UInt64.ofNat (index * 8)) (UInt64.ofNat value)
+          (if index + 1 == bytes.length / 8 then 1 else 0)
+          (UInt64.ofNat query.val) := by
+  dsimp only
+  have hchunk :=
+    canonicalChunks_get?_source identity bytes haligned index hindex
+  have hchunkRead :
+      BootMemoryMapDecoder.readU64
+          ((bytes.drop (index * 8)).take 8) 0 =
+        .ok value := by
+    rw [BootMemoryMapDecoder.readU64_drop_take]
+    exact hread
+  exact ⟨hchunk,
+    scalarStep_readU64_refines state
+      { identity
+        offset := index * 8
+        bytes := (bytes.drop (index * 8)).take 8
+        terminal := index + 1 == bytes.length / 8 }
+      value hchunkRead query⟩
+
 /-- Checked byte-side form of one scalar transition.  Unlike `scalarStep`, a
 short chunk remains an explicit rich-decoder error rather than being packed as
 zero. -/
