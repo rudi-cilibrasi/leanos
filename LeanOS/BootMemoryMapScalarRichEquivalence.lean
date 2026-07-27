@@ -1284,6 +1284,62 @@ theorem authorizeCanonical_acceptance_binding
     hbinding.2.2.2.2.1, hbinding.2.2.2.2.2.1,
     hbinding.2.2.2.2.2.2, hauthorize.2⟩
 
+/-- At the accepted canonical production boundary, the checked immutable-byte
+replay, the generated scalar replay, and the complete rich authority have one
+terminal result.  In particular, the terminal usable and non-usable words are
+the classifications of the returned rich decoded entries, not caller-supplied
+substitutes. -/
+theorem authorizeCanonical_checkedReplay_semantic_agreement
+    (input : BootMemoryMapDecoder.Input)
+    (lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength : UInt64)
+    (owner : FrameAllocator.OwnerId)
+    (claimed : BootMemoryMapFullProjectionABI.Projection)
+    (authority : BootMemoryMapFullProjectionABI.Authority)
+    (haccepted :
+      authorizeCanonical input lowStart lowLength imageStart imageLength
+        pageStart pageLength descriptorStart descriptorLength stacksStart stacksLength
+        guardStart guardLength entryStart entryLength usersStart usersLength
+        infoStart infoLength owner claimed = .ok authority) :
+    let identity := UInt64.ofNat authority.input.infoAddress
+    let initial :=
+      BootMemoryMapStreamPipeline.scalarInitialAt identity
+        authority.input.bytes.length authority.allocation.frame
+    let terminal := canonicalScalarReplay authority.input authority
+    BootMemoryMapStreamPipeline.checkedScalarReplay
+          (BootMemoryMapStreaming.canonicalChunks identity authority.input.bytes)
+          initial = .ok terminal ∧
+      terminal.word[1]! = complete ∧
+      terminal.word[2]! = noError ∧
+      terminal.word[14]! =
+        usableWord authority.decoded.entries authority.allocation.frame ∧
+      terminal.word[15]! =
+        blockedWord authority.decoded.entries authority.allocation.frame := by
+  dsimp only
+  have hstructural :=
+    canonicalScalarReplay_structurally_refines_authority authority
+  have hscalar := authorizeCanonical_acceptance_scalar_agreement input
+    lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength owner claimed authority haccepted
+  have hbinding := authorizeCanonical_acceptance_binding input
+    lowStart lowLength imageStart imageLength pageStart pageLength
+    descriptorStart descriptorLength stacksStart stacksLength
+    guardStart guardLength entryStart entryLength usersStart usersLength
+    infoStart infoLength owner claimed authority haccepted
+  have hagreement :
+      ScalarTerminalProjectionAgrees
+        (canonicalScalarReplay authority.input authority) authority := by
+    rw [hbinding.2.1]
+    exact hscalar.2.2
+  unfold ScalarTerminalProjectionAgrees at hagreement
+  exact ⟨hstructural.2.2.2.2.2.2.2.2.2,
+    hagreement.1, hagreement.2.1,
+    hagreement.2.2.1, hagreement.2.2.2⟩
+
 /-- The canonical authorization gate feeds the actual scalar replay's terminal
 fields—not rich-side substitutes—into the production consumer and returns
 exactly the rich-selected frame. -/

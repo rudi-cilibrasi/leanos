@@ -359,6 +359,144 @@ theorem chunkWord_readU64_agreement (bytes : List UInt8) (value : Nat)
     chunkWord bytes = UInt64.ofNat value := by
   simp [chunkWord, hread]
 
+/-- The generated usable-entry predicate and the rich typed-entry predicate
+agree for every decoder-admitted entry word and bounded target frame. -/
+theorem entryUsableCoverage_rich_agreement
+    (base length kind target : Nat)
+    (hbase : base < wordLimit)
+    (hstop : base + length < wordLimit)
+    (hkind : kind < 2 ^ 32)
+    (htarget : target < frameLimit) :
+    BootMemoryMapStreamAuthority.entryUsableCoverage
+        (UInt64.ofNat base) (UInt64.ofNat length)
+        (UInt64.ofNat kind) (UInt64.ofNat target) =
+      (BootMemoryMapDecoder.memoryKind kind == MemoryKind.usable &&
+        covers { base, length, kind := BootMemoryMapDecoder.memoryKind kind }
+          (target * pageBytes) (target * pageBytes + pageBytes)) := by
+  have hfirst : target * pageBytes < UInt64.size := by
+    unfold frameLimit physicalLimit pageBytes at htarget
+    unfold pageBytes UInt64.size
+    omega
+  have hpast : target * pageBytes + pageBytes < UInt64.size := by
+    unfold frameLimit physicalLimit pageBytes at htarget
+    unfold pageBytes UInt64.size
+    omega
+  have hkind64 : kind < wordLimit := by
+    unfold wordLimit
+    omega
+  have hkindWord :=
+    BootMemoryMapDecoder.low32Word_ofNat kind hkind64
+  apply Bool.eq_iff_iff.mpr
+  simp only [BootMemoryMapStreamAuthority.entryUsableCoverage,
+    Bool.and_eq_true, beq_iff_eq, covers, decide_eq_true_eq]
+  rw [hkindWord]
+  have hfirstWord :
+      UInt64.ofNat target * 4096 =
+        UInt64.ofNat (target * pageBytes) := by
+    simp [pageBytes]
+  have hpastWord :
+      UInt64.ofNat target * 4096 + 4096 =
+        UInt64.ofNat (target * pageBytes + pageBytes) := by
+    rw [hfirstWord]
+    simp [pageBytes]
+  have hstopWord :
+      UInt64.ofNat base + UInt64.ofNat length =
+        UInt64.ofNat (base + length) := by
+    simp
+  rw [hpastWord, hfirstWord, hstopWord]
+  rw [UInt64.ofNat_le_iff_le hbase hfirst,
+    UInt64.ofNat_le_iff_le hpast hstop]
+  have hkindEq :
+      UInt64.ofNat (BootMemoryMapDecoder.low32Nat kind) = 1 ↔
+        BootMemoryMapDecoder.low32Nat kind = 1 := by
+    have hlow :
+        BootMemoryMapDecoder.low32Nat kind < UInt64.size := by
+      unfold BootMemoryMapDecoder.low32Nat UInt64.size
+      omega
+    constructor
+    · intro heq
+      have := congrArg UInt64.toNat heq
+      simpa [UInt64.toNat_ofNat_of_lt' hlow] using this
+    · intro heq
+      rw [heq]
+      decide
+  rw [hkindEq]
+  rw [BootMemoryMapDecoder.memoryKind_usable_word]
+  simp [BootMemoryMapDecoder.low32Nat, Nat.mod_eq_of_lt hkind,
+    pageBytes, and_assoc]
+
+/-- The generated non-usable-overlap predicate and the rich typed-entry
+predicate agree under the same decoder bounds. -/
+theorem entryNonUsableOverlap_rich_agreement
+    (base length kind target : Nat)
+    (hbase : base < wordLimit)
+    (hstop : base + length < wordLimit)
+    (hkind : kind < 2 ^ 32)
+    (htarget : target < frameLimit) :
+    BootMemoryMapStreamAuthority.entryNonUsableOverlap
+        (UInt64.ofNat base) (UInt64.ofNat length)
+        (UInt64.ofNat kind) (UInt64.ofNat target) =
+      (BootMemoryMapDecoder.memoryKind kind != MemoryKind.usable &&
+        overlaps { base, length, kind := BootMemoryMapDecoder.memoryKind kind }
+          (target * pageBytes) (target * pageBytes + pageBytes)) := by
+  have hfirst : target * pageBytes < UInt64.size := by
+    unfold frameLimit physicalLimit pageBytes at htarget
+    unfold pageBytes UInt64.size
+    omega
+  have hpast : target * pageBytes + pageBytes < UInt64.size := by
+    unfold frameLimit physicalLimit pageBytes at htarget
+    unfold pageBytes UInt64.size
+    omega
+  have hkind64 : kind < wordLimit := by
+    unfold wordLimit
+    omega
+  have hkindWord :=
+    BootMemoryMapDecoder.low32Word_ofNat kind hkind64
+  apply Bool.eq_iff_iff.mpr
+  simp only [BootMemoryMapStreamAuthority.entryNonUsableOverlap,
+    Bool.and_eq_true, bne_iff_ne, overlaps, decide_eq_true_eq]
+  rw [hkindWord]
+  have hfirstWord :
+      UInt64.ofNat target * 4096 =
+        UInt64.ofNat (target * pageBytes) := by
+    simp [pageBytes]
+  have hpastWord :
+      UInt64.ofNat target * 4096 + 4096 =
+        UInt64.ofNat (target * pageBytes + pageBytes) := by
+    rw [hfirstWord]
+    simp [pageBytes]
+  have hstopWord :
+      UInt64.ofNat base + UInt64.ofNat length =
+        UInt64.ofNat (base + length) := by
+    simp
+  rw [hpastWord, hfirstWord, hstopWord]
+  rw [UInt64.ofNat_lt_iff_lt hbase hpast,
+    UInt64.ofNat_lt_iff_lt hfirst hstop]
+  have hkindEq :
+      UInt64.ofNat (BootMemoryMapDecoder.low32Nat kind) ≠ 1 ↔
+        BootMemoryMapDecoder.low32Nat kind ≠ 1 := by
+    have hlow :
+        BootMemoryMapDecoder.low32Nat kind < UInt64.size := by
+      unfold BootMemoryMapDecoder.low32Nat UInt64.size
+      omega
+    constructor
+    · intro hne heq
+      apply hne
+      rw [heq]
+      decide
+    · intro hne heq
+      apply hne
+      have := congrArg UInt64.toNat heq
+      simpa [UInt64.toNat_ofNat_of_lt' hlow] using this
+  rw [hkindEq]
+  rw [show
+      (BootMemoryMapDecoder.memoryKind kind != MemoryKind.usable) =
+        (kind != 1) by
+    simp only [bne]
+    rw [BootMemoryMapDecoder.memoryKind_usable_word]]
+  simp [BootMemoryMapDecoder.low32Nat, Nat.mod_eq_of_lt hkind,
+    pageBytes, and_assoc]
+
 def scalarStep (state : ScalarState) (chunk : ModelChunk) : ScalarState :=
   { word := Array.ofFn fun query : Fin 19 =>
       BootMemoryMapStreamAuthority.stepWord
@@ -390,6 +528,61 @@ theorem scalarStep_word (state : ScalarState) (chunk : ModelChunk) (query : Fin 
         chunk.identity (UInt64.ofNat chunk.offset) (chunkWord chunk.bytes)
         (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) := by
   simp [scalarStep]
+
+/-- Every accepted scalar entry-type transition classifies the same rich
+decoded entry fields with the same usable-coverage and non-usable-overlap
+predicates.  The existing accumulator is retained when the current entry does
+not satisfy the corresponding predicate. -/
+theorem scalarStep_entryType_classifies_rich
+    (state : ScalarState) (chunk : ModelChunk)
+    (base length kind target : Nat)
+    (hphase :
+      state.word[7]! = BootMemoryMapStreamAuthority.phaseEntryType)
+    (hbaseWord : state.word[12]! = UInt64.ofNat base)
+    (hlengthWord : state.word[13]! = UInt64.ofNat length)
+    (htargetWord : state.word[16]! = UInt64.ofNat target)
+    (hchunkWord : chunkWord chunk.bytes = UInt64.ofNat kind)
+    (haccepted :
+      (scalarStep state chunk).word[2]! =
+        BootMemoryMapStreamAuthority.noError)
+    (hbase : base < wordLimit)
+    (hstop : base + length < wordLimit)
+    (hkind : kind < 2 ^ 32)
+    (htarget : target < frameLimit) :
+    (scalarStep state chunk).word[14]! =
+        (if BootMemoryMapDecoder.memoryKind kind == MemoryKind.usable &&
+            covers
+              { base, length,
+                kind := BootMemoryMapDecoder.memoryKind kind }
+              (target * pageBytes) (target * pageBytes + pageBytes)
+          then (1 : UInt64) else state.word[14]!) ∧
+      (scalarStep state chunk).word[15]! =
+        (if BootMemoryMapDecoder.memoryKind kind != MemoryKind.usable &&
+            overlaps
+              { base, length,
+                kind := BootMemoryMapDecoder.memoryKind kind }
+              (target * pageBytes) (target * pageBytes + pageBytes)
+          then (1 : UInt64) else state.word[15]!) := by
+  have hacceptedStep := haccepted
+  rw [scalarStep_word state chunk (⟨2, by decide⟩ : Fin 19)] at hacceptedStep
+  have hclassification :=
+    BootMemoryMapStreamAuthority.accepted_entryType_classification_words
+      state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+      state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+      state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+      state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+      state.word[16]! state.word[17]! state.word[18]!
+      chunk.identity (UInt64.ofNat chunk.offset) (chunkWord chunk.bytes)
+      (if chunk.terminal then 1 else 0) hphase hacceptedStep
+  rw [hbaseWord, hlengthWord, htargetWord, hchunkWord] at hclassification
+  rw [entryUsableCoverage_rich_agreement base length kind target
+      hbase hstop hkind htarget,
+    entryNonUsableOverlap_rich_agreement base length kind target
+      hbase hstop hkind htarget] at hclassification
+  rw [scalarStep_word state chunk (⟨14, by decide⟩ : Fin 19),
+    scalarStep_word state chunk (⟨15, by decide⟩ : Fin 19)]
+  rw [hbaseWord, hlengthWord, htargetWord, hchunkWord]
+  simpa using hclassification
 
 /-- Each word of an arbitrary accepted rich-byte scalar step is exactly the
 corresponding generated transition queried with the decoder-agreed packed
