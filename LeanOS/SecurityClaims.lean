@@ -151,6 +151,27 @@ theorem dma_quarantine_global_runtime_preservation
   exact FailStop.runAuthoritativeOperations_preserves_dmaQuarantined
     state operations hinvariant.dmaQuarantined
 
+set_option maxRecDepth 100000 in
+/-- Concrete non-vacuity witness: the accepted bounded sample boot input
+produces an authoritative runtime satisfying the global DMA claim's premise. -/
+theorem dma_quarantine_global_runtime_nonvacuous :
+    match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+    | .ok plan =>
+        FailStop.AuthoritativeRuntimeWellFormed (FailStop.bootRuntime plan)
+    | .error _ => False := by
+  generalize hresult : BootPageTablePlan.compile BootPageTablePlan.sampleInput = result
+  cases result with
+  | error reason =>
+      have hsuccess :
+          (match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+            | .ok _ => true
+            | .error _ => false) = true := by
+        native_decide
+      simp [hresult] at hsuccess
+  | ok plan =>
+      exact (FailStop.bootRuntime_deferredBlockingRuntimeWellFormed
+        BootPageTablePlan.sampleInput plan hresult).authoritative
+
 /-- SC-DMA-AUTHORITATIVE-PROJECTION: under an explicit caller-supplied
 `DeviceContract` assumption over the authoritative live PCI observation, a
 named present device preserves the complete modeled memory projection.
