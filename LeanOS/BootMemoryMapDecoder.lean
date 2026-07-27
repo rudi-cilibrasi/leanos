@@ -253,6 +253,26 @@ structure Decoded where
   bounds : withinBounds handoff entries = true
   infoAddressAtLeastPage : pageBytes ≤ handoff.infoAddress
 
+/-- Kernel-checked evidence that one successful rich result came from the
+recursive byte traversal, rather than from caller-supplied typed fields.  The
+certificate retains the exact information-header word, the exact tag list
+returned by `decodeTags`, and the validation/bounds equations carried by the
+public result.  It is proof-side evidence only and is erased by code
+generation. -/
+structure SuccessfulRichDecodeTraversal (input : Input) (decoded : Decoded) : Prop where
+  traversed :
+    ∃ infoWord tags,
+      readU64 input.bytes 0 = .ok infoWord ∧
+      decodeTags input.bytes (low32Nat infoWord) 8 maxTags false [] = .ok tags ∧
+      decoded.handoff =
+        { magic := input.magic
+          infoAddress := input.infoAddress
+          totalSize := low32Nat infoWord
+          tags } ∧
+      validateHandoff decoded.handoff = .ok decoded.entries ∧
+      validateEntries decoded.entries = .ok () ∧
+      withinBounds decoded.handoff decoded.entries = true
+
 structure ValidInfoAddress (address : Nat) : Type where
   atLeastPage : pageBytes ≤ address
 
@@ -294,6 +314,68 @@ theorem decode_functional (input : Input) (first second : Except Error Decoded)
     (hfirst : decode input = first) (hsecond : decode input = second) : first = second := by
   rw [hfirst] at hsecond
   exact hsecond
+
+/-- Every successful arbitrary rich decode constructs the recursive traversal
+certificate.  No canonical fixture, scalar terminal word, or caller-provided
+projection is used to obtain this evidence. -/
+theorem successful_decode_constructs_traversal (input : Input) (decoded : Decoded)
+    (h : decode input = .ok decoded) :
+    SuccessfulRichDecodeTraversal input decoded := by
+  unfold decode at h
+  simp only [bind, Except.bind] at h
+  by_cases hmagic : input.magic != multiboot2Magic
+  · rw [if_pos hmagic] at h
+    contradiction
+  · rw [if_neg hmagic] at h
+    cases haddress : validateInfoAddress input.infoAddress with
+    | error reason =>
+        simp only [haddress] at h
+        contradiction
+    | ok infoAddressValid =>
+        simp only [haddress] at h
+        by_cases hsmall : input.bytes.length < 16
+        · rw [if_pos hsmall] at h
+          contradiction
+        · rw [if_neg hsmall] at h
+          by_cases hlarge : input.bytes.length > maxTagBytes
+          · rw [if_pos hlarge] at h
+            contradiction
+          · rw [if_neg hlarge] at h
+            cases hword : readU64 input.bytes 0 with
+            | error reason =>
+                simp only [hword] at h
+                contradiction
+            | ok infoWord =>
+                simp only [hword] at h
+                by_cases hlength : low32Nat infoWord != input.bytes.length
+                · rw [if_pos hlength] at h
+                  contradiction
+                · rw [if_neg hlength] at h
+                  by_cases haligned : low32Nat infoWord % 8 != 0
+                  · rw [if_pos haligned] at h
+                    contradiction
+                  · rw [if_neg haligned] at h
+                    by_cases hzero : high32Nat infoWord != 0
+                    · rw [if_pos hzero] at h
+                      contradiction
+                    · rw [if_neg hzero] at h
+                      cases htags :
+                          decodeTags input.bytes (low32Nat infoWord) 8 maxTags false [] with
+                      | error reason =>
+                          simp only [htags] at h
+                          contradiction
+                      | ok tags =>
+                          simp only [htags] at h
+                          split at h <;> try contradiction
+                          next entries hvalid =>
+                            split at h <;> try contradiction
+                            next _ hentries =>
+                              split at h <;> try contradiction
+                              next hbounds =>
+                                injection h with hdecoded
+                                subst decoded
+                                exact ⟨⟨infoWord, tags, hword, htags, rfl,
+                                  hvalid, hentries, hbounds⟩⟩
 
 /-- Successful decoding retains the exact scalar header fields supplied by the
 immutable input.  This is the structural bridge used before proving the

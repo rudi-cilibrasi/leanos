@@ -37,6 +37,8 @@ structure Authority where
   reserved : BootReservation.Result
   allocation : FrameAllocator.Allocation
   decodedBy : BootMemoryMapDecoder.decode input = .ok decoded
+  decodedTraversal :
+    BootMemoryMapDecoder.SuccessfulRichDecodeTraversal input decoded
   reservedBy :
     BootReservation.initializeAllocator decoded.handoff manifest = .ok reserved
   allocatedBy :
@@ -65,6 +67,9 @@ def run (input : Input) (manifest : List BootReservation.Reservation)
                   .ok
                     { input, manifest, owner, decoded, reserved, allocation,
                       decodedBy := hdecode, reservedBy := hreserve,
+                      decodedTraversal :=
+                        BootMemoryMapDecoder.successful_decode_constructs_traversal
+                          input decoded hdecode,
                       allocatedBy := hallocate, selectedUsable := hsound,
                       selectedWithinBound := hbound }
                 else .error .internalSelectionInvariant
@@ -111,6 +116,14 @@ theorem accepted_authority_chain (authority : Authority)
       FrameAllocator.allocate authority.reserved.allocator authority.owner =
         .ok authority.allocation :=
   ⟨authority.decodedBy, authority.reservedBy, authority.allocatedBy⟩
+
+/-- Every full-projection authority carries the recursive rich byte traversal
+that produced its decoded handoff and entries.  This evidence is available
+before the scalar terminal gate and does not depend on a claimed projection. -/
+theorem accepted_decode_traversal (authority : Authority) :
+    BootMemoryMapDecoder.SuccessfulRichDecodeTraversal
+      authority.input authority.decoded :=
+  authority.decodedTraversal
 
 /-- The exact rich transition cannot replace any of its three authoritative
 inputs when it constructs a successful result.  This projection lemma lets

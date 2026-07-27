@@ -1117,6 +1117,39 @@ theorem canonicalScalarReplay_structurally_refines_authority
       authority.input authority.decoded authority.allocation.frame
       authority.decodedBy authority.selectedWithinBound)
 
+/-- The structural scalar/rich traversal certificate is sufficient to prove
+the four terminal fields currently rechecked by `authorizeCanonical`.
+Consequently the executable terminal comparison can be removed once the rich
+decoder traversal above is converted to `SuccessfulScalarRichTraversal`; no
+additional terminal-value assumption is needed at that point. -/
+theorem successfulScalarRichTraversal_agrees_authority
+    (authority : BootMemoryMapFullProjectionABI.Authority)
+    (htraversal :
+      BootMemoryMapStreamPipeline.SuccessfulScalarRichTraversal
+        authority.allocation.frame authority.decoded.entries
+        (BootMemoryMapStreamPipeline.scalarInitialAt
+          (UInt64.ofNat authority.input.infoAddress) authority.input.bytes.length
+          authority.allocation.frame)
+        (BootMemoryMapStreaming.canonicalChunks
+          (UInt64.ofNat authority.input.infoAddress) authority.input.bytes)
+        (canonicalScalarReplay authority.input authority)) :
+    ScalarTerminalProjectionAgrees
+      (canonicalScalarReplay authority.input authority) authority := by
+  have hinitial := canonicalScalarInitial_of_authority authority
+  have hterminal :=
+    BootMemoryMapStreamPipeline.successfulScalarRichTraversal_canonical_terminal
+      authority.allocation.frame authority.decoded.entries
+      (BootMemoryMapStreamPipeline.scalarInitialAt
+        (UInt64.ofNat authority.input.infoAddress) authority.input.bytes.length
+        authority.allocation.frame)
+      (canonicalScalarReplay authority.input authority)
+      (BootMemoryMapStreaming.canonicalChunks
+        (UInt64.ofNat authority.input.infoAddress) authority.input.bytes)
+      hinitial.2.2.2.2.2.2.1 hinitial.2.2.2.2.2.2.2.1 htraversal
+  exact ⟨hterminal.2.1, hterminal.2.2.1,
+    by simpa [usableWord] using hterminal.2.2.2.1,
+    by simpa [blockedWord] using hterminal.2.2.2.2⟩
+
 /-- Canonical production composition with the complete rich projection as an
 explicit claimed output.  Unlike `runCanonical`, this boundary cannot return
 authority after a caller mutates an entry, normalized region, checked
