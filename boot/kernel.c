@@ -760,10 +760,11 @@ static void activate_user_address_space(uint64_t *root) {
 }
 
 __attribute__((noinline, used))
-__attribute__((noinline))
-static void invalidate_snapshot_fault_page(
+static uint64_t invalidate_snapshot_fault_page(
     const struct page_fault_entry_record *snapshot) {
-    __asm__ volatile ("invlpg (%0)" : : "r"(snapshot->fault_address) : "memory");
+    const uint64_t fault_address = snapshot->fault_address;
+    __asm__ volatile ("invlpg (%0)" : : "r"(fault_address) : "memory");
+    return fault_address / PAGE_BYTES == snapshot->fault_page;
 }
 
 static void serial_u64(uint64_t value) {
@@ -2424,8 +2425,8 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
                   (uint64_t)user_a_nx_fault_instruction &&
               snapshot.fault_page ==
                   (uint64_t)user_a_nx_fault_instruction / PAGE_BYTES &&
-              snapshot.error == 13 && snapshot.access == 0 &&
-              snapshot.protection == 1 &&
+              snapshot.error == 12 && snapshot.access == 0 &&
+              snapshot.protection == 0 &&
               snapshot.rip == (uint64_t)user_a_reserved_fault_instruction
             : page_fault_probe_class == 4
             ? user && snapshot.fault_address == 0 &&
@@ -2433,8 +2434,10 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
               snapshot.access == 0 && snapshot.protection == 1 &&
               snapshot.rip == (uint64_t)user_a_fault_instruction
             : 0;
-    invalidate_snapshot_fault_page(&snapshot);
-    const uint64_t checked_exact_fault_page_invalidation = reviewed_fault;
+    const uint64_t exact_fault_page_invalidation =
+        invalidate_snapshot_fault_page(&snapshot);
+    const uint64_t checked_exact_fault_page_invalidation =
+        reviewed_fault && exact_fault_page_invalidation;
     /* The mismatch fixture changes exactly one expected-walk bit.  The
        hardware snapshot, decoded live walk, and all trusted bindings remain
        untouched inputs to the generated #170 policy adapter. */
@@ -2488,9 +2491,12 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
         return page_fault_diagnostic_handler(&transition);
     case PAGE_FAULT_TRANSITION_FATAL:
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
-        if (page_fault_probe_class == 3 || page_fault_probe_class == 4)
+        if (page_fault_probe_class == 3 || page_fault_probe_class == 4) {
+            if (!checked_exact_fault_page_invalidation)
+                fail("page-fault-terminal-witness");
             report_page_fault_terminal(
                 &snapshot, canonical, route, policy_expected_leaf, live_leaf);
+        }
 #endif
         fail("page-fault-fatal");
     case PAGE_FAULT_TRANSITION_REJECTED:

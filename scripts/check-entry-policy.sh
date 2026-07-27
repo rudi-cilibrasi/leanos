@@ -600,7 +600,7 @@ snapshot_report_calls="$(
   grep -Fc 'report_page_fault_snapshot(' \
     <<<"$page_fault_adapter_source" || true
 )"
-if ! grep -Fq 'const uint64_t *words = (const uint64_t *)snapshot;' \
+if ! grep -Fq 'const uint64_t words[19] = {' \
       <<<"$page_fault_snapshot_report_source" ||
     ! grep -Fq 'for (unsigned i = 0; i < 19; ++i) {' \
       <<<"$page_fault_snapshot_report_source" ||
@@ -633,7 +633,7 @@ agreement_arguments="$(
     sed 's/^.*leanos_page/leanos_page/'
 )"
 invalidation_helper_source="$(
-  sed -n '/^static void invalidate_snapshot_fault_page(/,/^}/p' \
+  sed -n '/^static uint64_t invalidate_snapshot_fault_page(/,/^}/p' \
     "$kernel_source"
 )"
 expected_agreement_arguments='leanos_page_fault_dispatch_transition(snapshot.version,snapshot.vector,snapshot.error,snapshot.fault_address,snapshot.fault_page,snapshot.access,snapshot.protection,snapshot.user,snapshot.current_subject,snapshot.active_address_space,snapshot.active_cr3,snapshot.paging_controls,snapshot.rip,snapshot.saved_cs,snapshot.rflags,snapshot.user_rsp,snapshot.user_ss,snapshot.stack_identity,snapshot.reserved,trusted_subject,active_address_space,cr3,paging_controls,trusted_stack_identity,canonical,supervisor_probe,(uint64_t)wp_probe_instruction,(uint64_t)wp_probe_target,(uint64_t)wp_probe_recovered,(uint64_t)user_a_entry,(uint64_t)user_a_entry,(uint64_t)smep_probe_recovered,(uint64_t)smap_probe_instruction,(uint64_t)user_a_stack,(uint64_t)smap_probe_recovered,active_address_space,(uint64_t)root,active_address_space,(uint64_t)root,report_agrees,policy_expected_leaf,live_leaf,current_subject==snapshot.current_subject,1,current_subject,active_address_space,active_address_space,active_address_space,0,0,checked_exact_fault_page_invalidation,current_subject,active_address_space,saved_context_owner_b,saved_context_owner_b);'
@@ -658,16 +658,38 @@ grep -Fq 'page_fault_probe_class == 0' \
     <<<"$page_fault_adapter_source" &&
   grep -Fq 'snapshot.error == 21 && snapshot.access == 2 &&' \
     <<<"$page_fault_adapter_source" &&
+  grep -Fq ': page_fault_probe_class == 3' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'snapshot.error == 12 && snapshot.access == 0 &&' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'snapshot.protection == 0 &&' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'snapshot.rip == (uint64_t)user_a_reserved_fault_instruction' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'const uint64_t exact_fault_page_invalidation =' \
+    <<<"$page_fault_adapter_source" &&
   grep -Fq 'invalidate_snapshot_fault_page(&snapshot);' \
     <<<"$page_fault_adapter_source" &&
-  grep -Fq 'static void invalidate_snapshot_fault_page(' \
+  grep -Fq 'const uint64_t checked_exact_fault_page_invalidation =' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'reviewed_fault && exact_fault_page_invalidation;' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'if (!checked_exact_fault_page_invalidation)' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'fail("page-fault-terminal-witness");' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'static uint64_t invalidate_snapshot_fault_page(' \
     <<<"$invalidation_helper_source" &&
   grep -Fq 'const struct page_fault_entry_record *snapshot)' \
     <<<"$invalidation_helper_source" &&
-  grep -Fq '"invlpg (%0)" : : "r"(snapshot->fault_address) : "memory");' \
+  grep -Fq 'const uint64_t fault_address = snapshot->fault_address;' \
+    <<<"$invalidation_helper_source" &&
+  grep -Fq '"invlpg (%0)" : : "r"(fault_address) : "memory");' \
+    <<<"$invalidation_helper_source" &&
+  grep -Fq 'return fault_address / PAGE_BYTES == snapshot->fault_page;' \
     <<<"$invalidation_helper_source" &&
   ! grep -Fq 'page_fault_tlb_flush_cr3' "$kernel_source" || {
-  echo "error: vector=14 field=exact-fault-page-invalidation source" >&2; exit 1;
+  echo "error: vector=14 field=terminal-reviewed-binding source" >&2; exit 1;
 }
 snapshot_mutations="$(
   grep -E 'snapshot\.(version|vector|error|fault_address|fault_page|access|protection|user|current_subject|active_address_space|active_cr3|paging_controls|rip|saved_cs|rflags|user_rsp|user_ss|stack_identity|reserved)[[:space:]]*(\\+\\+|--|[+*/%^|&-]?=)' \

@@ -154,6 +154,16 @@ page_fault_wrong_invalidation_target() {
   sed -i 's/invalidate_snapshot_fault_page(&snapshot);/invalidate_snapshot_fault_page((const struct page_fault_entry_record *)((const char *)\&snapshot + 8));/' \
     "$tmp/kernel.c"
 }
+page_fault_reserved_wrong_error() {
+  sed -i \
+    '/page_fault_probe_class == 3/,/: page_fault_probe_class == 4/s/snapshot.error == 12/snapshot.error == 13/' \
+    "$tmp/kernel.c"
+}
+page_fault_reserved_wrong_rip() {
+  sed -i \
+    '/page_fault_probe_class == 3/,/: page_fault_probe_class == 4/s/user_a_reserved_fault_instruction/user_a_nx_fault_instruction/' \
+    "$tmp/kernel.c"
+}
 page_fault_refilled_after_recorded_reload() {
   sed -i '/const uint64_t route = leanos_page_fault_dispatch_transition(/i\
     const uint64_t recorded_reload_cr3 = cr3;\
@@ -272,8 +282,14 @@ run_fixture page-fault-forged-diagnostic-purpose \
   'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
   page_fault_forged_diagnostic_purpose
 run_fixture page-fault-wrong-invalidation-target \
-  'vector=14 field=exact-fault-page-invalidation source' \
+  'vector=14 field=terminal-reviewed-binding source' \
   page_fault_wrong_invalidation_target
+run_fixture page-fault-reserved-wrong-error \
+  'vector=14 field=terminal-reviewed-binding source' \
+  page_fault_reserved_wrong_error
+run_fixture page-fault-reserved-wrong-rip \
+  'vector=14 field=terminal-reviewed-binding source' \
+  page_fault_reserved_wrong_rip
 run_fixture page-fault-refilled-after-recorded-reload \
   'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
   page_fault_refilled_after_recorded_reload
