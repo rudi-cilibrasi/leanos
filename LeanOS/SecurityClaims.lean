@@ -137,31 +137,151 @@ theorem dma_quarantine_q35_trace_nonvacuous :
       DMAQuarantine.QuarantineTrace middle DMAQuarantine.q35Runtime :=
   DMAQuarantine.q35_mixed_trace_nonvacuous
 
-/-- SC-DMA-QUARANTINE-GLOBAL: the sole composite runtime invariant contains
-the exact boot-accepted PCI control observation, and every finite ordinary
-composite suffix preserves that nonempty deny-all quarantine. -/
+/-- SC-DMA-QUARANTINE-GLOBAL: the sole authoritative runtime invariant
+contains the exact boot-accepted PCI control observation, and every finite
+ordinary/blocking/deferred successor suffix preserves that nonempty deny-all
+quarantine. -/
 theorem dma_quarantine_global_runtime_preservation
-    (state : FailStop.CompositeState) (operations : List FailStop.Operation)
-    (hinvariant : FailStop.RuntimeWellFormed state) :
-    let next := FailStop.runOperations state operations
+    (state : FailStop.CompositeState)
+    (operations : List FailStop.AuthoritativeOperation)
+    (hinvariant : FailStop.AuthoritativeRuntimeWellFormed state) :
+    let next := FailStop.runAuthoritativeOperations state operations
     next.DMAQuarantined ∧
       DMAQuarantine.quarantine next.dmaObserved = true := by
-  exact FailStop.runOperations_preserves_dmaQuarantined
+  exact FailStop.runAuthoritativeOperations_preserves_dmaQuarantined
     state operations hinvariant.dmaQuarantined
 
+set_option maxRecDepth 100000 in
+/-- Concrete non-vacuity witness: the accepted bounded sample boot input
+produces an authoritative runtime satisfying the global DMA claim's premise. -/
+theorem dma_quarantine_global_runtime_nonvacuous :
+    match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+    | .ok plan =>
+        FailStop.AuthoritativeRuntimeWellFormed (FailStop.bootRuntime plan)
+    | .error _ => False := by
+  generalize hresult : BootPageTablePlan.compile BootPageTablePlan.sampleInput = result
+  cases result with
+  | error reason =>
+      have hsuccess :
+          (match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+            | .ok _ => true
+            | .error _ => false) = true := by
+        native_decide
+      simp [hresult] at hsuccess
+  | ok plan =>
+      exact (FailStop.bootRuntime_deferredBlockingRuntimeWellFormed
+        BootPageTablePlan.sampleInput plan hresult).authoritative
+
+/-- SC-DMA-AUTHORITATIVE-PROJECTION: under an explicit caller-supplied
+`DeviceContract` assumption over the authoritative live PCI observation, a
+named present device preserves the complete modeled memory projection.
+Neither `DMAQuarantined` nor the authoritative runtime invariant proves or
+discharges that trusted hardware contract. This is an IOMMU-independent model
+theorem, not a claim about hardware obedience to the PCI Command register. -/
+theorem dma_authoritative_unowned_device_preservation
+    (state : FailStop.CompositeState)
+    (hinvariant : FailStop.AuthoritativeRuntimeWellFormed state)
+    (target : DMAQuarantine.BDF)
+    (before after : DMAQuarantine.MemoryProjection)
+    (hcontract : DMAQuarantine.DeviceContract
+      state.dmaObserved target before after)
+    (hknown : ∃ function ∈ state.dmaObserved.functions,
+      function.bdf = target ∧ function.status = .present) :
+    after.physicalMemory = before.physicalMemory ∧
+      after.allocatorOwnership = before.allocatorOwnership ∧
+      after.pageTableFrames = before.pageTableFrames ∧
+      after.kernelOwnedFrames = before.kernelOwnedFrames ∧
+      after.kernelState = before.kernelState ∧
+      after.subjectVisible = before.subjectVisible :=
+  hinvariant.dmaQuarantined.unownedDevicePreservesCompleteProjection
+    target before after hcontract hknown
+
 /-- SC-DMA-CONTROL-FAILSTOP: an invalid live PCI observation is a fatal
-composite transition, and every subsequent ordinary operation is absorbed. -/
+composite transition, and every subsequent authoritative successor operation
+is absorbed. -/
 theorem dma_invalid_live_control_is_fatal_and_absorbing
     (state : FailStop.CompositeState) (snapshot : DMAQuarantine.Snapshot)
-    (reason : DMAQuarantine.RejectReason) (operations : List FailStop.Operation)
+    (reason : DMAQuarantine.RejectReason)
+    (operations : List FailStop.AuthoritativeOperation)
     (hrunning : state.execution.mode = .running)
     (hinvalid : DMAQuarantine.validate snapshot = .rejected reason) :
     let next := (FailStop.observeDMAControl state snapshot).state
     (∃ record, next.execution.mode = .halted record) ∧
-      FailStop.runOperations next operations = next := by
-  have h := FailStop.observeDMAControl_invalid_suffix_absorbing
+      FailStop.runAuthoritativeOperations next operations = next := by
+  have h := FailStop.observeDMAControl_invalid_authoritative_suffix_absorbing
     state snapshot reason operations hrunning hinvalid
   exact ⟨⟨_, h.1⟩, h.2⟩
+
+/-- SC-DMA-CONTROL-DRIFT-FAILSTOP: a valid live PCI observation that differs from
+the boot-accepted authority is also a fatal composite transition, and every
+subsequent authoritative successor operation is absorbed. -/
+theorem dma_changed_live_control_is_fatal_and_absorbing
+    (state : FailStop.CompositeState) (snapshot : DMAQuarantine.Snapshot)
+    (accepted : DMAQuarantine.AcceptedSnapshot)
+    (operations : List FailStop.AuthoritativeOperation)
+    (hrunning : state.execution.mode = .running)
+    (hvalid : DMAQuarantine.validate snapshot = .accepted accepted)
+    (hchanged : snapshot ≠ state.dmaAccepted.snapshot) :
+    let next := (FailStop.observeDMAControl state snapshot).state
+    (∃ record, next.execution.mode = .halted record) ∧
+      FailStop.runAuthoritativeOperations next operations = next := by
+  have h := FailStop.observeDMAControl_changed_authoritative_suffix_absorbing
+    state snapshot accepted operations hrunning hvalid hchanged
+  exact ⟨⟨_, h.1⟩, h.2⟩
+
+set_option maxRecDepth 100000 in
+/-- Concrete non-vacuity witness: the accepted bounded sample boot runtime and
+the q35 Command-bit drift satisfy the stable claim's validation and inequality
+premises, then enter a fatal state that absorbs every authoritative suffix. -/
+theorem dma_changed_live_control_nonvacuous :
+    match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+    | .ok plan =>
+        ∃ accepted,
+          DMAQuarantine.validate DMAQuarantine.q35CommandBitFlipSnapshot =
+              .accepted accepted ∧
+            DMAQuarantine.q35CommandBitFlipSnapshot ≠
+              (FailStop.bootRuntime plan).dmaAccepted.snapshot ∧
+            ∀ operations,
+              let next := (FailStop.observeDMAControl (FailStop.bootRuntime plan)
+                DMAQuarantine.q35CommandBitFlipSnapshot).state
+              (∃ record, next.execution.mode = .halted record) ∧
+                FailStop.runAuthoritativeOperations next operations = next
+    | .error _ => False := by
+  generalize hresult : BootPageTablePlan.compile BootPageTablePlan.sampleInput = result
+  cases result with
+  | error reason =>
+      have hsuccess :
+          (match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+            | .ok _ => true
+            | .error _ => false) = true := by
+        native_decide
+      simp [hresult] at hsuccess
+  | ok plan =>
+      generalize hvalid :
+        DMAQuarantine.validate DMAQuarantine.q35CommandBitFlipSnapshot = validation
+      cases validation with
+      | rejected reason =>
+          have haccepted :
+              (DMAQuarantine.validate
+                DMAQuarantine.q35CommandBitFlipSnapshot).isAccepted = true := by
+            native_decide
+          rw [hvalid] at haccepted
+          change false = true at haccepted
+          exact Bool.noConfusion haccepted
+      | accepted accepted =>
+          have hchangedAccepted :
+              DMAQuarantine.q35CommandBitFlipSnapshot ≠
+                DMAQuarantine.q35Accepted.snapshot := by
+            native_decide
+          have hchanged :
+              DMAQuarantine.q35CommandBitFlipSnapshot ≠
+                (FailStop.bootRuntime plan).dmaAccepted.snapshot := by
+            simpa [FailStop.bootRuntime] using hchangedAccepted
+          refine ⟨accepted, rfl, hchanged, ?_⟩
+          intro operations
+          exact dma_changed_live_control_is_fatal_and_absorbing
+            (FailStop.bootRuntime plan) DMAQuarantine.q35CommandBitFlipSnapshot
+            accepted operations rfl hvalid hchanged
 
 /-- SC-LIFETIME-IDENTITY-NO-REUSE: under the bounded-issuer runtime invariant,
 every finite sequence of composite lifecycle operations preserves
