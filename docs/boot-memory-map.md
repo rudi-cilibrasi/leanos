@@ -344,6 +344,15 @@ sequence without rebuilding or splicing chunks.
 `successfulScalarRichTraversal_canonicalMemoryMapLayout` performs that
 composition, lifting a traversal over the canonical suffix after the layout
 word to the exact suffix beginning at the retained layout word.
+`canonicalMemoryMapEntrySteps_source_refines` similarly binds the three exact
+source reads retained by each rich entry traversal to consecutive canonical
+chunks for its base, length, and type words. The following tag header supplies
+the room proving that even the final type word is nonterminal. Its
+dropped-suffix equation prevents any of the three words from being reordered
+or replaced by an equal packed value from another position.
+`successfulScalarRichTraversal_canonicalMemoryMapEntry` then consumes that
+exact triple through the production transition and attaches the precise
+decoded `RawEntry` to the classification fold.
 `entryBaseStepWords_of_admitted`, `entryLengthStepWords_of_admitted`, and
 `entryTypeStepError_of_admitted` now derive the three production phase
 transitions for one retained rich entry. They preserve the exact pending
