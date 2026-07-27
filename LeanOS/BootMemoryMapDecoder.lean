@@ -38,6 +38,8 @@ inductive Error where
   | unsupportedEntryVersion
   | tooManyEntries
   | nonzeroEntryReserved
+  | zeroLengthEntry
+  | entryAddressOverflow
   | typedHandoffRejected (reason : BootMemoryMap.Error)
   | internalBounds
   deriving BEq, DecidableEq, Repr
@@ -82,6 +84,9 @@ private def decodeEntries (bytes : List UInt8) (offset count : Nat) :
       let kind ← readU32 bytes (offset + 16)
       let reserved ← readU32 bytes (offset + 20)
       if reserved != 0 then throw .nonzeroEntryReserved
+      if length == 0 then throw .zeroLengthEntry
+      if base ≥ wordLimit || length ≥ wordLimit ||
+          length > wordLimit - base then throw .entryAddressOverflow
       let rest ← decodeEntries bytes (offset + memoryMapEntrySize) count
       pure ({ base, length, kind := memoryKind kind } :: rest)
 
@@ -130,6 +135,7 @@ structure Decoded where
   handoff : Handoff
   entries : List RawEntry
   handoffValid : validateHandoff handoff = .ok entries
+  entriesValid : validateEntries entries = .ok ()
   bounds : withinBounds handoff entries = true
 
 def decode (input : Input) : Except Error Decoded := do
@@ -148,9 +154,14 @@ def decode (input : Input) : Except Error Decoded := do
   match hvalid : validateHandoff handoff with
   | .error reason => throw (.typedHandoffRejected reason)
   | .ok entries =>
-      if hbounds : withinBounds handoff entries then
-        pure ⟨handoff, entries, hvalid, hbounds⟩
-      else throw .internalBounds
+      match hentries : validateEntries entries with
+      | .error .zeroLength => throw .zeroLengthEntry
+      | .error .addressOverflow => throw .entryAddressOverflow
+      | .error reason => throw (.typedHandoffRejected reason)
+      | .ok _ =>
+          if hbounds : withinBounds handoff entries then
+            pure ⟨handoff, entries, hvalid, hentries, hbounds⟩
+          else throw .internalBounds
 
 theorem decode_functional (input : Input) (first second : Except Error Decoded)
     (hfirst : decode input = first) (hsecond : decode input = second) : first = second := by
@@ -166,6 +177,11 @@ theorem accepted_within_bounds (input : Input) (decoded : Decoded)
     (_h : decode input = .ok decoded) :
     withinBounds decoded.handoff decoded.entries = true :=
   decoded.bounds
+
+theorem accepted_entries_valid (input : Input) (decoded : Decoded)
+    (_h : decode input = .ok decoded) :
+    validateEntries decoded.entries = .ok () :=
+  decoded.entriesValid
 
 def decodeHandoff (input : Input) : Except Error Handoff :=
   (decode input).map (·.handoff)
@@ -308,6 +324,14 @@ example : errorOf (decode (withBytes
     (information (memoryMapTag [entry 0 0x1000 1 1] ++ endTag)))) =
     some .nonzeroEntryReserved := by native_decide
 
+example : errorOf (decode (withBytes
+    (information (memoryMapTag [entry 0 0 1] ++ endTag)))) =
+    some .zeroLengthEntry := by native_decide
+
+example : errorOf (decode (withBytes
+    (information (memoryMapTag [entry (wordLimit - 1) 2 1] ++ endTag)))) =
+    some .entryAddressOverflow := by native_decide
+
 example : ((decode (withBytes
     (information (tag 42 [byte 0xaa] (paddingByte := byte 1) ++
       memoryMapTag sampleEntries ++ endTag)))).toOption.map (·.handoff)) =
@@ -360,11 +384,11 @@ example : errorOf (decode (withBytes
 
 example : pipelineErrorOf (decodeAndNormalize (withBytes
     (information (memoryMapTag [entry (wordLimit - 1) 2 1] ++ endTag)))) =
-    some (.normalize .addressOverflow) := by native_decide
+    some (.decode .entryAddressOverflow) := by native_decide
 
 example : pipelineErrorOf (decodeAndNormalize (withBytes
     (information (memoryMapTag [entry 0 0 1] ++ endTag)))) =
-    some (.normalize .zeroLength) := by native_decide
+    some (.decode .zeroLengthEntry) := by native_decide
 
 end Fixtures
 

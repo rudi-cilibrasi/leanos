@@ -80,7 +80,7 @@ static lean_object *run_host(int argc, char **argv) {
     expect("address overflow rejected status",
            leanos_boot_full_projection_fixture_query(3, 1), 2);
     expect("address overflow model error",
-           leanos_boot_full_projection_fixture_query(3, 2), 210);
+           leanos_boot_full_projection_fixture_query(3, 2), 120);
     expect("address overflow exposes no projection",
            leanos_boot_full_projection_fixture_query(3, 8), 0);
 
@@ -107,7 +107,7 @@ static lean_object *run_host(int argc, char **argv) {
 
     puts("NEGATIVE missing-end status=2 error=111 projection=none");
     puts("NEGATIVE truncated status=2 error=106 projection=none");
-    puts("NEGATIVE address-overflow status=2 error=210 projection=none");
+    puts("NEGATIVE address-overflow status=2 error=120 projection=none");
     puts("NEGATIVE output-mutation status=2 error=401 projection=none");
     puts("Hosted generated-C full boot-memory projection replay passed");
     return lean_io_result_mk_ok(lean_box(0));
