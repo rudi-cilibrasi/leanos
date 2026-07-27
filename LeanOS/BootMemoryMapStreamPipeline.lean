@@ -260,6 +260,115 @@ theorem rejected_exposes_no_authority magic infoAddress extent chunks manifest o
   rw [h]
   rfl
 
+/-! ## Universal scalar/rich chunk refinement
+
+These definitions are proof-side only.  They model the production loop that
+queries all nineteen words from one pure generated transition.  Packing is
+defined through the rich decoder's little-endian `readU64`, so the scalar word
+and the byte decoder cannot silently adopt different byte order. -/
+
+structure ScalarState where
+  word : Array UInt64
+
+def scalarInitialAt (streamIdentity : UInt64) (extent target : Nat) : ScalarState :=
+  { word := Array.ofFn fun query : Fin 19 =>
+      BootMemoryMapStreamAuthority.initWord
+        (UInt64.ofNat multiboot2Magic) streamIdentity (UInt64.ofNat extent)
+        (UInt64.ofNat target) (UInt64.ofNat query.val) }
+
+def chunkWord (bytes : List UInt8) : UInt64 :=
+  match BootMemoryMapDecoder.readU64 bytes 0 with
+  | .ok value => UInt64.ofNat value
+  | .error _ => 0
+
+/-- Byte-to-word packing agrees with the rich decoder for every successfully
+read eight-byte sequence, rather than only for checked-in fixtures. -/
+theorem chunkWord_readU64_agreement (bytes : List UInt8) (value : Nat)
+    (hread : BootMemoryMapDecoder.readU64 bytes 0 = .ok value) :
+    chunkWord bytes = UInt64.ofNat value := by
+  simp [chunkWord, hread]
+
+def scalarStep (state : ScalarState) (chunk : ModelChunk) : ScalarState :=
+  { word := Array.ofFn fun query : Fin 19 =>
+      BootMemoryMapStreamAuthority.stepWord
+        state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+        state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+        state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+        state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+        state.word[16]! state.word[17]! state.word[18]!
+        chunk.identity (UInt64.ofNat chunk.offset) (chunkWord chunk.bytes)
+        (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) }
+
+def scalarReplay : List ModelChunk → ScalarState → ScalarState
+  | [], state => state
+  | chunk :: rest, state =>
+      let next := scalarStep state chunk
+      if next.word[2]! != BootMemoryMapStreamAuthority.noError then next
+      else scalarReplay rest next
+
+/-- Querying the proof-side state is definitionally the corresponding query of
+the generated scalar transition. -/
+theorem scalarStep_word (state : ScalarState) (chunk : ModelChunk) (query : Fin 19) :
+    (scalarStep state chunk).word[query.val]! =
+      BootMemoryMapStreamAuthority.stepWord
+        state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+        state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+        state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+        state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+        state.word[16]! state.word[17]! state.word[18]!
+        chunk.identity (UInt64.ofNat chunk.offset) (chunkWord chunk.bytes)
+        (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) := by
+  simp [scalarStep]
+
+/-- Each word of an arbitrary accepted rich-byte scalar step is exactly the
+corresponding generated transition queried with the decoder-agreed packed
+word.  No fixture, initial-state, or parser-phase assumption is required. -/
+theorem scalarStep_readU64_refines
+    (state : ScalarState) (chunk : ModelChunk) (value : Nat)
+    (hread : BootMemoryMapDecoder.readU64 chunk.bytes 0 = .ok value)
+    (query : Fin 19) :
+    (scalarStep state chunk).word[query.val]! =
+      BootMemoryMapStreamAuthority.stepWord
+        state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+        state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+        state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+        state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+        state.word[16]! state.word[17]! state.word[18]!
+        chunk.identity (UInt64.ofNat chunk.offset) (UInt64.ofNat value)
+        (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) := by
+  simp [scalarStep, chunkWord_readU64_agreement _ _ hread]
+
+/-- Any arbitrary rejected scalar step exposes no parser state, entry
+classification, target, or tag counter. -/
+theorem scalarStep_rejected_exposes_no_state
+    (state : ScalarState) (chunk : ModelChunk)
+    (hrejected :
+      (scalarStep state chunk).word[2]! != BootMemoryMapStreamAuthority.noError)
+    (query : Fin 19) (hstate : 3 ≤ query.val) :
+    (scalarStep state chunk).word[query.val]! = 0 := by
+  rw [scalarStep_word state chunk query]
+  apply BootMemoryMapStreamAuthority.rejected_step_exposes_no_state
+  · have hscalar :
+        (scalarStep state chunk).word[2]! ≠
+          BootMemoryMapStreamAuthority.noError := by
+      intro heq
+      simp [heq] at hrejected
+    have herrorWord :=
+      scalarStep_word state chunk (⟨2, by decide⟩ : Fin 19)
+    simpa using herrorWord ▸ hscalar
+  · intro h
+    have heq := congrArg UInt64.toNat h
+    simp at heq
+    omega
+  · intro h
+    have heq := congrArg UInt64.toNat h
+    simp at heq
+    omega
+  · intro h
+    have heq := congrArg UInt64.toNat h
+    simp at heq
+    omega
+
 namespace Fixtures
 
 open BootMemoryMapDecoder.Fixtures
@@ -279,42 +388,8 @@ def chunked (bytes : List UInt8) : List ModelChunk :=
 
 def allocationChunks : List ModelChunk := chunked allocationBytes
 
-structure ScalarState where
-  word : Array UInt64
-
-def scalarInitialAt (streamIdentity : UInt64) (extent target : Nat) : ScalarState :=
-  { word := Array.ofFn fun query : Fin 19 =>
-      BootMemoryMapStreamAuthority.initWord
-        (UInt64.ofNat multiboot2Magic) streamIdentity (UInt64.ofNat extent)
-        (UInt64.ofNat target) (UInt64.ofNat query.val) }
-
 def scalarInitial (extent target : Nat) : ScalarState :=
   scalarInitialAt identity extent target
-
-private def chunkWordAux : List UInt8 → UInt64 → UInt64 → UInt64
-  | [], _, result => result
-  | byte :: rest, factor, result =>
-      chunkWordAux rest (factor * 256) (result + UInt64.ofNat byte.toNat * factor)
-
-def chunkWord (bytes : List UInt8) : UInt64 :=
-  chunkWordAux bytes 1 0
-
-def scalarStep (state : ScalarState) (chunk : ModelChunk) : ScalarState :=
-  { word := Array.ofFn fun query : Fin 19 =>
-      BootMemoryMapStreamAuthority.stepWord
-        state.word[0]! state.word[1]! state.word[2]! state.word[3]!
-        state.word[4]! state.word[5]! state.word[6]! state.word[7]!
-        state.word[8]! state.word[9]! state.word[10]! state.word[11]!
-        state.word[12]! state.word[13]! state.word[14]! state.word[15]!
-        state.word[16]! state.word[17]! state.word[18]!
-        chunk.identity (UInt64.ofNat chunk.offset) (chunkWord chunk.bytes)
-        (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) }
-
-def scalarReplay : List ModelChunk → ScalarState → ScalarState
-  | [], state => state
-  | chunk :: rest, state =>
-      let next := scalarStep state chunk
-      if next.word[2]! != noError then next else scalarReplay rest next
 
 def accepted : Except Error Authority :=
   run (UInt64.ofNat multiboot2Magic) identity allocationBytes.length allocationChunks

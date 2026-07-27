@@ -60,8 +60,12 @@ static struct decode_state decode(const uint64_t chunks[12], uint64_t target) {
 static int expect_decode_error(
         const uint64_t *chunks, uint64_t count, uint64_t expected) {
     const struct decode_state decoded = decode_extent(chunks, count, 1);
-    return decoded.word[0] == 4 && decoded.word[1] == 2 &&
-        decoded.word[2] == expected;
+    if (decoded.word[0] != 4 || decoded.word[1] != 2 ||
+        decoded.word[2] != expected)
+        return 0;
+    for (uint64_t query = 3; query < 19; ++query)
+        if (decoded.word[query] != 0) return 0;
+    return 1;
 }
 
 static struct decode_state decode_entry_count(uint64_t entry_count) {
