@@ -14594,6 +14594,106 @@ theorem authoritativeGate_blockingStateNeutral_preserves_authoritativeRuntimeWel
     (blockingStateNeutral_authoritativeOperationCompatible
       state operation hoperation hstate)
 
+/-- Mapping publication changes the blocking scheduler's lifecycle mapping,
+but leaves every field observed by dormant cancellation exact. -/
+private theorem installVirtualMemory_dormantCancellationCompatible
+    state virtualMemory translations
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    DormantCancellationCompatible state
+      (installVirtualMemory state virtualMemory translations) := by
+  refine ⟨rfl, hstate.2.1.2.1, hstate.2.2.1, ?_⟩
+  intro subject saved hretained
+  have hvalid := hstate.2.1.2.2 subject saved hretained
+  simp only [CompositeState.blockingIPCContext] at hvalid
+  have hblockingScheduler :
+      state.blockingIPC.scheduler = state.scheduler :=
+    hstate.1.blockingScheduler
+  have hschedulerLifecycle :
+      state.scheduler.lifecycle = state.lifecycle :=
+    hstate.1.1.2.1
+  simpa [installVirtualMemory, Scheduler.ownsAddressSpace,
+      hblockingScheduler, hschedulerLifecycle] using
+    And.intro hvalid.2.1
+      (And.intro hvalid.2.2.1
+        (And.intro hvalid.2.2.2.1
+          (And.intro hvalid.2.2.2.2.1
+            (And.intro hvalid.2.2.2.2.2.1
+              (And.intro hvalid.2.2.2.2.2.2
+                (hstate.2.2.2 subject saved hretained))))))
+
+/-- Raw mapping changes only virtual-memory, translation, and derived mapping
+projections.  Every waiter, saved context, retained cancellation, and
+resumable context observed by the dormant-cancellation invariant is retained. -/
+theorem map_authoritativeOperationCompatible state slot page permissions
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.map slot page permissions)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary (.map slot page permissions))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      simp only [authoritativeGate, hmode, applyAuthoritativeOperation,
+        applyOperation]
+      split
+      · exact dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+      · exact installVirtualMemory_dormantCancellationCompatible state _ _ hstate
+
+/-- Raw unmapping and its page-local TLB invalidation likewise leave every
+projection observed by dormant cancellation exact. -/
+theorem unmap_authoritativeOperationCompatible state page
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state (.ordinary (.unmap page)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state (.ordinary (.unmap page))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      simp only [authoritativeGate, hmode, applyAuthoritativeOperation,
+        applyOperation]
+      split
+      · exact dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+      · exact installVirtualMemory_dormantCancellationCompatible state _ _ hstate
+
+/-- Raw mapping has a closed preservation theorem at the folded authoritative
+boundary; callers need no post-state compatibility witness. -/
+theorem authoritativeGate_map_preserves_authoritativeRuntimeWellFormed
+    state slot page permissions
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.map slot page permissions))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.map slot page permissions)) hstate
+    (map_authoritativeOperationCompatible state slot page permissions hstate)
+
+/-- Raw unmapping has the corresponding closed folded-invariant theorem,
+including its page-local TLB invalidation. -/
+theorem authoritativeGate_unmap_preserves_authoritativeRuntimeWellFormed
+    state page (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.unmap page))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.unmap page)) hstate
+    (unmap_authoritativeOperationCompatible state page hstate)
+
 /-- Delivery changes only mailbox/completion payload state.  Every projection
 observed by dormant cancellation remains literally unchanged. -/
 theorem dispatchBlockingReceive_delivered_dormant_projections_exact
