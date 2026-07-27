@@ -202,6 +202,100 @@ private def decodeEntries (bytes : List UInt8) (offset count : Nat) :
       let rest ← decodeEntries bytes (offset + memoryMapEntrySize) count
       pure ({ base, length, kind := memoryKind kind } :: rest)
 
+/-- Structural evidence for every entry returned by the recursive rich
+decoder.  Each constructor retains the exact three source words and the
+admission checks that made the entry acceptable.  This is the entry-level
+induction principle used when relating the rich traversal to canonical
+eight-byte scalar chunks. -/
+inductive SuccessfulEntryDecodeTraversal (bytes : List UInt8) :
+    Nat → Nat → List RawEntry → Prop
+  | done (offset : Nat) :
+      SuccessfulEntryDecodeTraversal bytes offset 0 []
+  | entry (offset count base length kindWord : Nat) (rest : List RawEntry)
+      (hbase : readU64 bytes offset = .ok base)
+      (hlength : readU64 bytes (offset + 8) = .ok length)
+      (hkindWord : readU64 bytes (offset + 16) = .ok kindWord)
+      (hreserved : high32Nat kindWord = 0)
+      (hlengthNonzero : length ≠ 0)
+      (hbaseBound : base < wordLimit)
+      (hlengthBound : length < wordLimit)
+      (hstopBound : length ≤ wordLimit - base)
+      (hrest :
+        SuccessfulEntryDecodeTraversal bytes
+          (offset + memoryMapEntrySize) count rest) :
+      SuccessfulEntryDecodeTraversal bytes offset (count + 1)
+        ({ base, length, kind := memoryKind (low32Nat kindWord) } :: rest)
+
+/-- Every successful recursive entry decode constructs the exact structural
+entry witness.  No typed entry supplied by a caller can satisfy this theorem
+without the corresponding checked source words. -/
+private theorem decodeEntries_constructs_traversal
+    (bytes : List UInt8) (offset count : Nat) (entries : List RawEntry)
+    (hdecode : decodeEntries bytes offset count = .ok entries) :
+    SuccessfulEntryDecodeTraversal bytes offset count entries := by
+  induction count generalizing offset entries with
+  | zero =>
+      simp [decodeEntries] at hdecode
+      subst entries
+      exact .done offset
+  | succ count ih =>
+      unfold decodeEntries at hdecode
+      simp only [bind, Except.bind] at hdecode
+      cases hbase : readU64 bytes offset with
+      | error reason =>
+          simp only [hbase] at hdecode
+          contradiction
+      | ok base =>
+          simp only [hbase] at hdecode
+          cases hlength : readU64 bytes (offset + 8) with
+          | error reason =>
+              simp only [hlength] at hdecode
+              contradiction
+          | ok length =>
+              simp only [hlength] at hdecode
+              cases hkindWord : readU64 bytes (offset + 16) with
+              | error reason =>
+                  simp only [hkindWord] at hdecode
+                  contradiction
+              | ok kindWord =>
+                  simp only [hkindWord] at hdecode
+                  by_cases hreserved : high32Nat kindWord != 0
+                  · rw [if_pos hreserved] at hdecode
+                    contradiction
+                  · rw [if_neg hreserved] at hdecode
+                    by_cases hzero : length == 0
+                    · rw [if_pos hzero] at hdecode
+                      contradiction
+                    · rw [if_neg hzero] at hdecode
+                      by_cases hoverflow :
+                          base ≥ wordLimit || length ≥ wordLimit ||
+                            length > wordLimit - base
+                      · rw [if_pos hoverflow] at hdecode
+                        contradiction
+                      · rw [if_neg hoverflow] at hdecode
+                        cases hrest :
+                            decodeEntries bytes
+                              (offset + memoryMapEntrySize) count with
+                        | error reason =>
+                            simp only [hrest] at hdecode
+                            contradiction
+                        | ok rest =>
+                            simp only [hrest] at hdecode
+                            injection hdecode with hentries
+                            subst entries
+                            apply SuccessfulEntryDecodeTraversal.entry
+                              offset count base length kindWord rest
+                              hbase hlength hkindWord
+                            · simpa using hreserved
+                            · simpa using hzero
+                            · simp at hoverflow
+                              omega
+                            · simp at hoverflow
+                              omega
+                            · simp at hoverflow
+                              omega
+                            · exact ih (offset + memoryMapEntrySize) rest hrest
+
 private def decodeTags (bytes : List UInt8) (total offset fuel : Nat)
     (sawMemoryMap : Bool) (tagsRev : List Tag) : Except Error (List Tag) := do
   if offset == total then throw .missingEndTag
