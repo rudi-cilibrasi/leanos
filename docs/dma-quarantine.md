@@ -168,10 +168,14 @@ certificate. The already-derived exact-projection compatibility laws for
 return-authority selection, user-return completion, and restart are also
 consumed directly: each constructor preserves the complete authoritative
 invariant and therefore its DMA conjunct, without importing compatibility
-premises for unfinished constructors. The authoritative live observation also
-instantiates the explicit `DeviceContract`: a named present unowned-device
-attempt preserves the complete physical-memory projection without assuming an
-IOMMU. Trusted
+premises for unfinished constructors. Under an explicit caller-supplied
+`DeviceContract` assumption over the authoritative live observation, a named
+present unowned-device attempt preserves the complete physical-memory
+projection. Neither `DMAQuarantined` nor `AuthoritativeRuntimeWellFormed`
+proves or discharges that trusted hardware contract; they supply the accepted
+observation and its deny-all control facts. This remains an IOMMU-independent
+model result, not a proof of hardware obedience to the PCI Command register.
+Trusted
 `observeDMAControl` revalidates a live hardware snapshot: an exact observation
 continues atomically, while an invalid or valid-but-changed observation
 publishes the diagnostic snapshot, latches a typed DMA fatal record, and is

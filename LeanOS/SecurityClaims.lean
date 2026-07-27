@@ -151,10 +151,12 @@ theorem dma_quarantine_global_runtime_preservation
   exact FailStop.runAuthoritativeOperations_preserves_dmaQuarantined
     state operations hinvariant.dmaQuarantined
 
-/-- SC-DMA-AUTHORITATIVE-PROJECTION: the authoritative live PCI observation instantiates the explicit
-device-control contract used by the complete-memory preservation result.
-This is an IOMMU-independent model theorem, not a claim about hardware
-obedience to the PCI Command register. -/
+/-- SC-DMA-AUTHORITATIVE-PROJECTION: under an explicit caller-supplied
+`DeviceContract` assumption over the authoritative live PCI observation, a
+named present device preserves the complete modeled memory projection.
+Neither `DMAQuarantined` nor the authoritative runtime invariant proves or
+discharges that trusted hardware contract. This is an IOMMU-independent model
+theorem, not a claim about hardware obedience to the PCI Command register. -/
 theorem dma_authoritative_unowned_device_preservation
     (state : FailStop.CompositeState)
     (hinvariant : FailStop.AuthoritativeRuntimeWellFormed state)
