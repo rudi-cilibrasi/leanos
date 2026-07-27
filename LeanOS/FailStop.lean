@@ -14936,6 +14936,79 @@ theorem authoritativeGate_transferOffer_preserves_authoritativeRuntimeWellFormed
     (transferOffer_authoritativeOperationCompatible state endpointWord sourceWord
       sourceKind payload rights hstate)
 
+/-- A sealed capability receipt either rejects atomically or publishes a
+transfer state with the exact pre-state subject registry.  Delivery may
+consume one mailbox and install its checked descendant, but cannot make a
+retained cancellation live, runnable, current, queued, or resumable. -/
+theorem transferAccept_authoritativeOperationCompatible state endpointWord
+    destinationSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.transferAccept endpointWord destinationSlot)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary (.transferAccept endpointWord destinationSlot))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases haccept : CapabilityTransfer.acceptWord state.transfers
+          state.execution.core.context.currentSubject endpointWord
+          destinationSlot with
+      | mk next result deliveredWord =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, haccept] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | delivered envelope =>
+              have hregistry :=
+                CapabilityTransfer.acceptWord_delivered_preserves_registry_and_authority
+                  state.transfers state.execution.core.context.currentSubject
+                  endpointWord destinationSlot envelope (by simp [haccept])
+              rw [haccept] at hregistry
+              have htransferCapabilities :
+                  state.transfers.capabilities = state.capabilities := by
+                rcases hstate.1.1 with
+                  ⟨_, _, _, hcapabilities, _, _, hipcCapabilities, _, _,
+                    htransferEndpoints, _, _, _⟩
+                calc
+                  state.transfers.capabilities =
+                      state.ipc.endpoints.capabilities :=
+                    congrArg (fun endpoints => endpoints.capabilities)
+                      htransferEndpoints
+                  _ = state.lifecycle.capabilities := hipcCapabilities
+                  _ = state.capabilities := hcapabilities.symm
+              have hsubjects :
+                  next.capabilities.subjects =
+                    state.capabilities.subjects := by
+                exact hregistry.1.trans
+                  (congrArg Capability.State.subjects htransferCapabilities)
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, haccept] using
+                installTransfers_dormantCancellationCompatible
+                  state next hstate hsubjects
+
+/-- Sealed capability receipts have a closed folded-invariant theorem across
+the authoritative runtime, including dormant cancellation validity. -/
+theorem authoritativeGate_transferAccept_preserves_authoritativeRuntimeWellFormed
+    state endpointWord destinationSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.transferAccept endpointWord destinationSlot))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.transferAccept endpointWord destinationSlot)) hstate
+    (transferAccept_authoritativeOperationCompatible state endpointWord
+      destinationSlot hstate)
+
 /-- Delegation either rejects atomically or publishes a capability state with
 the same live-subject registry, so its dormant cancellation obligations are
 derived entirely from the authoritative pre-state. -/
