@@ -776,6 +776,19 @@ theorem receive_delivered_ipc_exact state caller slot saved envelope
   cases outcome with
   | mk next result => cases result <;> simp_all
 
+/-- Delivery consumes only IPC payload state and leaves the complete saved
+blocking-context bank unchanged. -/
+theorem receive_delivered_blocked_unchanged state caller slot saved envelope
+    (hcompleted : (receiveOrBlock state caller slot saved).result =
+      .completed (.delivered envelope)) :
+    (receiveOrBlock state caller slot saved).state.blocked = state.blocked := by
+  unfold receiveOrBlock at hcompleted ⊢
+  split at hcompleted <;> simp_all
+  split at hcompleted <;> simp_all
+  generalize hraw : BlockingIPC.receiveOrBlock state.ipc caller slot = outcome at hcompleted ⊢
+  cases outcome with
+  | mk next result => cases result <;> simp_all
+
 /-- A successful typed block likewise publishes the exact raw waiter and
 scheduler post-state rather than reconstructing it. -/
 theorem receive_blocked_ipc_exact state caller slot saved
@@ -783,6 +796,20 @@ theorem receive_blocked_ipc_exact state caller slot saved
     (receiveOrBlock state caller slot saved).state.ipc =
         (BlockingIPC.receiveOrBlock state.ipc caller slot).state ∧
       (BlockingIPC.receiveOrBlock state.ipc caller slot).result = .blocked := by
+  unfold receiveOrBlock at hcompleted ⊢
+  split at hcompleted <;> simp_all
+  split at hcompleted <;> simp_all
+  generalize hraw : BlockingIPC.receiveOrBlock state.ipc caller slot = outcome at hcompleted ⊢
+  cases outcome with
+  | mk next result => cases result <;> simp_all
+
+/-- Blocking publishes exactly one new saved-context binding and leaves every
+other binding untouched. -/
+theorem receive_blocked_blocked_exact state caller slot saved
+    (hcompleted : (receiveOrBlock state caller slot saved).result =
+      .completed .blocked) :
+    (receiveOrBlock state caller slot saved).state.blocked =
+      setBlocked state.blocked caller (some saved) := by
   unfold receiveOrBlock at hcompleted ⊢
   split at hcompleted <;> simp_all
   split at hcompleted <;> simp_all

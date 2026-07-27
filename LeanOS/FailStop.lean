@@ -2564,6 +2564,40 @@ theorem restoreBlockingPeer_context_exact state blocking next
     restoreBlockingPeer_exact state blocking next hrestore
   exact hcontext
 
+/-- The selected-peer restore consumes exactly the selected identity from the
+resumable-context bank. -/
+theorem restoreBlockingPeer_resumableContexts_exact state blocking next
+    (hrestore : restoreBlockingPeer state blocking = .ok next) :
+    ∃ selected destination,
+      blocking.ipc.scheduler.lifecycle.current = some selected ∧
+      ResumablePreemption.contextFor state.resumable.contexts selected =
+        some destination ∧
+      destination.owner = selected ∧
+      next.resumable.contexts =
+        ResumablePreemption.eraseContext state.resumable.contexts selected := by
+  simp only [restoreBlockingPeer] at hrestore
+  split at hrestore <;> try contradiction
+  next selected hselected =>
+    split at hrestore <;> try contradiction
+    next destination hdestination =>
+      split at hrestore <;> try contradiction
+      simp only [Except.ok.injEq] at hrestore
+      subst next
+      have howner : destination.owner = selected := by simp_all
+      refine ⟨selected, destination, hselected, hdestination, howner, ?_⟩
+      simp [howner]
+
+theorem restoreBlockingPeer_deferredExact state blocking next
+    (hrestore : restoreBlockingPeer state blocking = .ok next) :
+    next.deferredCancels = state.deferredCancels := by
+  simp only [restoreBlockingPeer] at hrestore
+  split at hrestore <;> try contradiction
+  split at hrestore <;> try contradiction
+  split at hrestore <;> try contradiction
+  simp only [Except.ok.injEq] at hrestore
+  subst next
+  rfl
+
 theorem restoreBlockingPeer_blockingCoherent state blocking next
     (hrestore : restoreBlockingPeer state blocking = .ok next) :
     next.BlockingIPCCoherent := by
@@ -14559,6 +14593,345 @@ theorem authoritativeGate_blockingStateNeutral_preserves_authoritativeRuntimeWel
     (.ordinary operation) hstate
     (blockingStateNeutral_authoritativeOperationCompatible
       state operation hoperation hstate)
+
+/-- Delivery changes only mailbox/completion payload state.  Every projection
+observed by dormant cancellation remains literally unchanged. -/
+theorem dispatchBlockingReceive_delivered_dormant_projections_exact
+    state handleWord frame registers envelope
+    (hdelivered :
+      (dispatchBlockingReceive state handleWord frame registers).reply =
+        .delivered envelope) :
+    let next := (dispatchBlockingReceive state handleWord frame registers).state
+    next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts = state.blockingContexts ∧
+      next.resumable.contexts = state.resumable.contexts ∧
+      next.blockingIPC.waiterEndpoint = state.blockingIPC.waiterEndpoint ∧
+      next.blockingIPC.scheduler = state.blockingIPC.scheduler := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hdelivered
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk blocking result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hdelivered
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hdelivered
+              | blocked =>
+                  by_cases hsome : blocking.ipc.scheduler.lifecycle.current.isSome = true
+                  · cases hrestore : restoreBlockingPeer state blocking <;>
+                      simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                        hrestore] at hdelivered
+                  · simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome]
+                      at hdelivered
+              | delivered actual =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hdelivered
+                  subst actual
+                  have hcompleted :
+                      (BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+                        state.execution.core.context.currentSubject
+                        resolution.handle.slot saved).result =
+                          .completed (.delivered envelope) := by
+                    simp [houtcome]
+                  have hblocked :=
+                    BlockingIPCContext.receive_delivered_blocked_unchanged
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject resolution.handle.slot
+                      saved envelope hcompleted
+                  have hexact :=
+                    BlockingIPCContext.receive_delivered_ipc_exact
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject resolution.handle.slot
+                      saved envelope hcompleted
+                  have hwaiter :=
+                    BlockingIPC.receive_delivered_waiterEndpoint_unchanged
+                      state.blockingIPC state.execution.core.context.currentSubject
+                      resolution.handle.slot envelope hexact.2
+                  have hscheduler :=
+                    BlockingIPC.receive_delivered_scheduler_unchanged
+                      state.blockingIPC state.execution.core.context.currentSubject
+                      resolution.handle.slot envelope hexact.2
+                  rw [houtcome] at hblocked hexact
+                  have hblocked' : blocking.blocked = state.blockingContexts := by
+                    simpa [CompositeState.blockingIPCContext] using hblocked
+                  have hipc : blocking.ipc =
+                      (BlockingIPC.receiveOrBlock state.blockingIPC
+                        state.execution.core.context.currentSubject
+                        resolution.handle.slot).state := by
+                    simpa [CompositeState.blockingIPCContext] using hexact.1
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome,
+                    publishBlockingIPCContext, hblocked', hipc, hwaiter, hscheduler]
+
+/-- An idle block publishes exactly the caller's waiter/context entries and
+the canonical scheduler transition, leaving the resumable bank untouched. -/
+theorem dispatchBlockingReceive_idle_block_projection_exact
+    state handleWord frame registers
+    (hblocked :
+      (dispatchBlockingReceive state handleWord frame registers).reply = .blocked)
+    (hidle :
+      (dispatchBlockingReceive state handleWord frame registers).state.scheduler.lifecycle.current =
+        none) :
+    let next := (dispatchBlockingReceive state handleWord frame registers).state
+    let caller := state.execution.core.context.currentSubject
+    let saved := state.blockingSavedContext frame registers
+    ∃ endpoint,
+      next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts =
+        BlockingIPCContext.setBlocked state.blockingContexts caller (some saved) ∧
+      next.resumable.contexts = state.resumable.contexts ∧
+      next.blockingIPC.waiterEndpoint =
+        BlockingIPC.setWaiterEndpoint state.blockingIPC.waiterEndpoint caller
+          (some endpoint) ∧
+      state.blockingIPC.scheduler.ready = [] ∧
+      next.blockingIPC.scheduler =
+        { state.blockingIPC.scheduler with
+          lifecycle := { state.blockingIPC.scheduler.lifecycle with
+            runnable := SubjectLifecycle.setBool
+              state.blockingIPC.scheduler.lifecycle.runnable caller false
+            current := none } } := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hblocked
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk blocking result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | delivered envelope =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | blocked =>
+                  by_cases hsome : blocking.ipc.scheduler.lifecycle.current.isSome = true
+                  · cases hrestore : restoreBlockingPeer state blocking with
+                    | error reason =>
+                        simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore] at hblocked
+                    | ok published =>
+                        obtain ⟨selected, destination, hselected, _, _, _, _, _, _, hcontext⟩ :=
+                          restoreBlockingPeer_exact state blocking published hrestore
+                        have hpublishedCurrent :
+                            published.scheduler.lifecycle.current = some selected := by
+                          rw [← (restoreBlockingPeer_blockingCoherent
+                            state blocking published hrestore).1]
+                          change
+                            published.blockingIPC.scheduler.lifecycle.current = some selected
+                          have hipc : published.blockingIPC = blocking.ipc := congrArg
+                            BlockingIPCContext.State.ipc hcontext
+                          rw [hipc]
+                          exact hselected
+                        have hpublishedIdle :
+                            published.scheduler.lifecycle.current = none := by
+                          simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                            hrestore] using hidle
+                        rw [hpublishedCurrent] at hpublishedIdle
+                        contradiction
+                  · have hcompleted :
+                        (BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+                          state.execution.core.context.currentSubject
+                          resolution.handle.slot saved).result =
+                            .completed .blocked := by
+                      simp [houtcome]
+                    have hipcExact :=
+                      BlockingIPCContext.receive_blocked_ipc_exact
+                        state.blockingIPCContext
+                        state.execution.core.context.currentSubject resolution.handle.slot
+                        saved hcompleted
+                    have hblockedExact :=
+                      BlockingIPCContext.receive_blocked_blocked_exact
+                        state.blockingIPCContext
+                        state.execution.core.context.currentSubject resolution.handle.slot
+                        saved hcompleted
+                    have hraw := hipcExact.2
+                    obtain ⟨endpoint, hwaiter⟩ :=
+                      BlockingIPC.receive_blocked_waiterEndpoint_exact
+                        state.blockingIPC
+                        state.execution.core.context.currentSubject
+                        resolution.handle.slot hraw
+                    rw [houtcome] at hipcExact hblockedExact
+                    have hipc : blocking.ipc =
+                        (BlockingIPC.receiveOrBlock state.blockingIPC
+                          state.execution.core.context.currentSubject
+                          resolution.handle.slot).state := by
+                      simpa [CompositeState.blockingIPCContext] using hipcExact.1
+                    have hblockingIdle :
+                        blocking.ipc.scheduler.lifecycle.current = none := by
+                      cases hcurrent : blocking.ipc.scheduler.lifecycle.current <;>
+                        simp_all
+                    have hscheduler :=
+                      BlockingIPC.receive_blocked_idle_scheduler_exact
+                        state.blockingIPC
+                        state.execution.core.context.currentSubject
+                        resolution.handle.slot hraw (by
+                          rw [← hipc]
+                          exact hblockingIdle)
+                    have hblocked' :
+                        blocking.blocked =
+                          BlockingIPCContext.setBlocked state.blockingContexts
+                            state.execution.core.context.currentSubject (some saved) := by
+                      simpa [CompositeState.blockingIPCContext] using hblockedExact
+                    refine ⟨endpoint, ?_⟩
+                    simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                      publishBlockingIPCContext, hblocked', hipc, hwaiter, hscheduler]
+
+/-- A block with an immediate peer handoff publishes the caller's exact
+waiter/context entries, consumes exactly the selected peer context, and
+performs the canonical head-selection scheduler transition. -/
+theorem dispatchBlockingReceive_selected_block_projection_exact
+    state handleWord frame registers selected
+    (hblocked :
+      (dispatchBlockingReceive state handleWord frame registers).reply = .blocked)
+    (hselected : (dispatchBlockingReceive state handleWord frame registers).state.blockingIPC.scheduler.lifecycle.current =
+      some selected) :
+    let next := (dispatchBlockingReceive state handleWord frame registers).state
+    let caller := state.execution.core.context.currentSubject
+    let saved := state.blockingSavedContext frame registers
+    ∃ endpoint rest destination,
+      next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts =
+        BlockingIPCContext.setBlocked state.blockingContexts caller (some saved) ∧
+      next.resumable.contexts =
+        ResumablePreemption.eraseContext state.resumable.contexts selected ∧
+      ResumablePreemption.contextFor state.resumable.contexts selected =
+        some destination ∧
+      destination.owner = selected ∧
+      next.blockingIPC.waiterEndpoint =
+        BlockingIPC.setWaiterEndpoint state.blockingIPC.waiterEndpoint caller
+          (some endpoint) ∧
+      state.blockingIPC.scheduler.ready = selected :: rest ∧
+      next.blockingIPC.scheduler =
+        { state.blockingIPC.scheduler with
+          ready := rest
+          lifecycle := { state.blockingIPC.scheduler.lifecycle with
+            runnable := SubjectLifecycle.setBool
+              state.blockingIPC.scheduler.lifecycle.runnable caller false
+            current := some selected } } := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hblocked
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk blocking result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | delivered envelope =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | blocked =>
+                  by_cases hsome : blocking.ipc.scheduler.lifecycle.current.isSome = true
+                  · cases hrestore : restoreBlockingPeer state blocking with
+                    | error reason =>
+                        simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore] at hblocked
+                    | ok published =>
+                        have hcompleted :
+                            (BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+                              state.execution.core.context.currentSubject
+                              resolution.handle.slot saved).result =
+                                .completed .blocked := by
+                          simp [houtcome]
+                        have hipcExact :=
+                          BlockingIPCContext.receive_blocked_ipc_exact
+                            state.blockingIPCContext
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot saved hcompleted
+                        have hblockedExact :=
+                          BlockingIPCContext.receive_blocked_blocked_exact
+                            state.blockingIPCContext
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot saved hcompleted
+                        have hraw := hipcExact.2
+                        obtain ⟨endpoint, hwaiter⟩ :=
+                          BlockingIPC.receive_blocked_waiterEndpoint_exact
+                            state.blockingIPC
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot hraw
+                        rw [houtcome] at hipcExact hblockedExact
+                        have hipc : blocking.ipc =
+                            (BlockingIPC.receiveOrBlock state.blockingIPC
+                              state.execution.core.context.currentSubject
+                              resolution.handle.slot).state := by
+                          simpa [CompositeState.blockingIPCContext] using hipcExact.1
+                        obtain ⟨actual, destination, hactual, hcontext, howner,
+                          hcontexts⟩ :=
+                          restoreBlockingPeer_resumableContexts_exact
+                            state blocking published hrestore
+                        have hpublishedIPC : published.blockingIPC = blocking.ipc := by
+                          exact congrArg BlockingIPCContext.State.ipc
+                            (restoreBlockingPeer_context_exact
+                              state blocking published hrestore)
+                        have hactualSelected : actual = selected := by
+                          have hpublishedSelected :
+                              published.blockingIPC.scheduler.lifecycle.current =
+                                some selected := by
+                            simpa [dispatchBlockingReceive, hresolve, saved, houtcome,
+                              hsome, hrestore] using hselected
+                          rw [hpublishedIPC, hactual] at hpublishedSelected
+                          injection hpublishedSelected
+                        obtain ⟨rest, hready, hscheduler⟩ :=
+                          BlockingIPC.receive_blocked_selected_scheduler_exact
+                            state.blockingIPC
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot actual hraw (by
+                              rw [← hipc]
+                              exact hactual)
+                        have hblocked' :
+                            blocking.blocked =
+                              BlockingIPCContext.setBlocked state.blockingContexts
+                                state.execution.core.context.currentSubject
+                                (some saved) := by
+                          simpa [CompositeState.blockingIPCContext] using hblockedExact
+                        simp only [dispatchBlockingReceive, hresolve, saved, houtcome,
+                          hsome, hrestore, if_true]
+                        refine ⟨endpoint, rest, destination, ?_⟩
+                        have hdeferred :=
+                          restoreBlockingPeer_deferredExact
+                            state blocking published hrestore
+                        have hpublishedBlocked :
+                            published.blockingContexts = blocking.blocked := by
+                          exact congrArg BlockingIPCContext.State.blocked
+                            (restoreBlockingPeer_context_exact
+                              state blocking published hrestore)
+                        refine ⟨hdeferred, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                        · rw [hpublishedBlocked]
+                          exact hblocked'
+                        · simpa [hactualSelected] using hcontexts
+                        · simpa [hactualSelected] using hcontext
+                        · exact howner.trans hactualSelected
+                        · rw [hpublishedIPC, hipc]
+                          exact hwaiter
+                        · simpa [hactualSelected] using hready
+                        · rw [hpublishedIPC, hipc]
+                          simpa [hactualSelected] using hscheduler
+                  · have hblockingIdle :
+                        blocking.ipc.scheduler.lifecycle.current = none := by
+                      cases hcurrent : blocking.ipc.scheduler.lifecycle.current <;>
+                        simp_all
+                    have hpublishedIdle :
+                        (publishBlockingIPCContext state blocking).blockingIPC.scheduler.lifecycle.current =
+                          none := by
+                      simpa [publishBlockingIPCContext] using hblockingIdle
+                    simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                      hpublishedIdle] at hselected
 
 /-- A successful blocking receive cannot select an identity held in the
 dormant cancellation bank: blocking requires that identity to be the current
