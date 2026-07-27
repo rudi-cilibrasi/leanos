@@ -14822,6 +14822,120 @@ private theorem installCopiedCapabilities_dormantCancellationCompatible
               (And.intro hvalid.2.2.2.2.2.1
                 (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
 
+/-- Publishing a sealed-transfer state has the same dormant-cancellation
+boundary as direct capability publication.  Transfer offer/receipt may change
+the endpoint mailbox and capability derivation state, but a stable subject
+registry keeps every retained dead runner classified by the authoritative
+blocking scheduler. -/
+private theorem installTransfers_dormantCancellationCompatible
+    state transfers
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hsubjects :
+      transfers.capabilities.subjects = state.capabilities.subjects) :
+    DormantCancellationCompatible state
+      (installTransfers state transfers) := by
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro subject hblocked
+    apply hstate.2.1.2.1 subject
+    exact hblocked
+  · simpa [installTransfers] using hstate.2.2.1
+  · intro subject saved hretained
+    have hvalid := hstate.2.1.2.2 subject saved hretained
+    have hcontext := hstate.2.2.2 subject saved hretained
+    rcases hstate.1.1 with
+      ⟨_, hschedulerLifecycle, _, hcapabilities, _, _, _, _, _, _, _, _, _⟩
+    have hlive : transfers.capabilities.subjects subject = true := by
+      rw [hsubjects, hcapabilities, ← hstate.1.blockingLifecycle]
+      exact hvalid.2.2.1
+    simpa [installTransfers, CompositeState.blockingIPCContext,
+        hstate.1.blockingScheduler, hstate.1.blockingLifecycle,
+        hschedulerLifecycle, hsubjects, hcapabilities,
+        Scheduler.ownsAddressSpace] using
+      And.intro hvalid.2.1
+        (And.intro hlive
+          (And.intro hvalid.2.2.2.1
+            (And.intro hvalid.2.2.2.2.1
+              (And.intro hvalid.2.2.2.2.2.1
+                (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
+
+/-- A sealed capability offer either rejects atomically or publishes a
+transfer state with the exact pre-state subject registry.  The endpoint
+mailbox and pending descendant may change, but no retained cancellation can
+become live, runnable, current, queued, or resumable as a consequence. -/
+theorem transferOffer_authoritativeOperationCompatible state endpointWord
+    sourceWord sourceKind payload rights
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary
+        (.transferOffer endpointWord sourceWord sourceKind payload rights)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary
+        (.transferOffer endpointWord sourceWord sourceKind payload rights))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hoffer : CapabilityTransfer.offerWords state.transfers
+          state.execution.core.context.currentSubject endpointWord sourceWord
+          sourceKind payload rights with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hoffer] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted =>
+              have hregistry :=
+                CapabilityTransfer.offerWords_accepted_preserves_authority_registry
+                  state.transfers state.execution.core.context.currentSubject
+                  endpointWord sourceWord sourceKind payload rights
+                  (by simp [hoffer])
+              rw [hoffer] at hregistry
+              have htransferCapabilities :
+                  state.transfers.capabilities = state.capabilities := by
+                rcases hstate.1.1 with
+                  ⟨_, _, _, hcapabilities, _, _, hipcCapabilities, _, _,
+                    htransferEndpoints, _, _, _⟩
+                calc
+                  state.transfers.capabilities =
+                      state.ipc.endpoints.capabilities :=
+                    congrArg (fun endpoints => endpoints.capabilities)
+                      htransferEndpoints
+                  _ = state.lifecycle.capabilities := hipcCapabilities
+                  _ = state.capabilities := hcapabilities.symm
+              have hsubjects :
+                  next.capabilities.subjects =
+                    state.capabilities.subjects := by
+                exact hregistry.1.trans
+                  (congrArg Capability.State.subjects htransferCapabilities)
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hoffer] using
+                installTransfers_dormantCancellationCompatible
+                  state next hstate hsubjects
+
+/-- Sealed capability offers have a closed folded-invariant theorem across
+the authoritative runtime, including dormant cancellation validity. -/
+theorem authoritativeGate_transferOffer_preserves_authoritativeRuntimeWellFormed
+    state endpointWord sourceWord sourceKind payload rights
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary
+          (.transferOffer endpointWord sourceWord sourceKind payload rights))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary
+      (.transferOffer endpointWord sourceWord sourceKind payload rights)) hstate
+    (transferOffer_authoritativeOperationCompatible state endpointWord sourceWord
+      sourceKind payload rights hstate)
+
 /-- Delegation either rejects atomically or publishes a capability state with
 the same live-subject registry, so its dormant cancellation obligations are
 derived entirely from the authoritative pre-state. -/
