@@ -288,11 +288,16 @@ header from that source certificate, proves its 64-bit word is represented
 without truncation, selects the exact first canonical chunk, and establishes
 the complete admitted scalar cursor at offset eight in the tag phase.
 `infoStepWords_of_admitted` proves that phase transition directly from the
-production scalar definition rather than a shadow parser. The remaining
-induction starts at tag headers and must traverse ignored contents and padding,
-the unique map layout, each base/length/type triple, and the terminal end tag
-to construct `SuccessfulScalarRichTraversal`. Until that final derivation
-exists, the fail-closed terminal comparison remains in place.
+production scalar definition rather than a shadow parser.
+`successfulTagDecodeTraversal_offset_lt_total` proves that every retained tag
+step begins with a complete header inside the advertised extent, and
+`canonicalFirstTagStep_source_refines` binds the first tag header at offset
+eight to canonical chunk index one, its exact rich-decoder word, nonterminal
+bit, and every production scalar query. The remaining induction must split
+that tag phase into ignored contents and padding, the unique map layout, each
+base/length/type triple, and the terminal end tag to construct
+`SuccessfulScalarRichTraversal`. Until that final derivation exists, the
+fail-closed terminal comparison remains in place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB

@@ -1055,6 +1055,91 @@ theorem canonicalScalarStep_source_refines
         terminal := index + 1 == bytes.length / 8 }
       value hchunkRead query⟩
 
+/-- The retained rich tag traversal selects the exact first tag-header chunk
+immediately after the information header.  Its source word, stream identity,
+offset, terminal bit, and every scalar transition query are therefore fixed
+by the immutable input.  This is the tag-phase source checkpoint used before
+splitting the structural induction into ignored, map, and end-tag cases. -/
+theorem canonicalFirstTagStep_source_refines
+    (input : Input) (decoded : Decoded) (state : ScalarState)
+    (hdecode : decode input = .ok decoded)
+    (htraversal : SuccessfulRichDecodeTraversal input decoded) :
+    ∃ tagWord,
+      let identity := UInt64.ofNat input.infoAddress
+      let chunk : ModelChunk :=
+        { identity
+          offset := 8
+          bytes := (input.bytes.drop 8).take 8
+          terminal := false }
+      BootMemoryMapDecoder.readU64 input.bytes 8 = .ok tagWord ∧
+        (canonicalChunks identity input.bytes)[1]? = some chunk ∧
+        ∀ query : Fin 19,
+          (scalarStep state chunk).word[query.val]! =
+            BootMemoryMapStreamAuthority.stepWord
+              state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+              state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+              state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+              state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+              state.word[16]! state.word[17]! state.word[18]!
+              identity 8 (UInt64.ofNat tagWord) 0
+              (UInt64.ofNat query.val) := by
+  obtain ⟨infoWord, tags, hinfo, htotal, hreserved, htags, htagTraversal,
+    hhandoff, hvalid, hentries, hbounds⟩ := htraversal.traversed
+  have htagBound :=
+    successfulTagDecodeTraversal_offset_lt_total
+      input.bytes (low32Nat infoWord) 8 maxTags false [] tags htagTraversal
+  have hheader := accepted_input_scalar_header input decoded hdecode
+  have haligned : input.bytes.length % 8 = 0 :=
+    hheader.2.2.2.2.2.2.1
+  have hindex : 1 < input.bytes.length / 8 := by
+    rw [htotal] at htagBound
+    have hdiv := Nat.mod_add_div input.bytes.length 8
+    rw [haligned, Nat.zero_add] at hdiv
+    omega
+  cases htagTraversal with
+  | ignoredTag offset fuel tagWord sawMemoryMap tagsRev tags hread hsize
+      hcontent hadvance htypeEnd htypeMap hrest =>
+      have hrestBound :=
+        successfulTagDecodeTraversal_offset_lt_total
+          input.bytes (low32Nat infoWord)
+          (8 + aligned8 (high32Nat tagWord)) (maxTags - 1)
+          false [Tag.ignored (high32Nat tagWord)] tags hrest
+      rw [htotal] at hrestBound
+      have hdiv := Nat.mod_add_div input.bytes.length 8
+      rw [haligned, Nat.zero_add] at hdiv
+      have hterminal : (2 == input.bytes.length / 8) = false := by
+        exact beq_false_of_ne (by
+          unfold aligned8 at hrestBound
+          omega)
+      refine ⟨tagWord, ?_⟩
+      dsimp only
+      have hrefines :=
+        canonicalScalarStep_source_refines
+          (UInt64.ofNat input.infoAddress) input.bytes haligned
+          1 hindex state tagWord hread
+      simp only [hterminal] at hrefines
+      exact ⟨hread, (hrefines (⟨0, by decide⟩ : Fin 19)).1,
+        fun query => (hrefines query).2⟩
+  | memoryMapTag offset fuel tagWord layoutWord tagsRev tags entries hread
+      hsize hcontent hadvance htype hlayout hentrySize hentryVersion
+      halignedEntries hentryBound hentryTraversal hrest =>
+      have hdiv := Nat.mod_add_div input.bytes.length 8
+      rw [haligned, Nat.zero_add] at hdiv
+      have hterminal : (2 == input.bytes.length / 8) = false := by
+        exact beq_false_of_ne (by
+          rw [htotal] at hcontent
+          simp [memoryMapTagHeaderSize] at hsize
+          omega)
+      refine ⟨tagWord, ?_⟩
+      dsimp only
+      have hrefines :=
+        canonicalScalarStep_source_refines
+          (UInt64.ofNat input.infoAddress) input.bytes haligned
+          1 hindex state tagWord hread
+      simp only [hterminal] at hrefines
+      exact ⟨hread, (hrefines (⟨0, by decide⟩ : Fin 19)).1,
+        fun query => (hrefines query).2⟩
+
 /-- Checked byte-side form of one scalar transition.  Unlike `scalarStep`, a
 short chunk remains an explicit rich-decoder error rather than being packed as
 zero. -/
