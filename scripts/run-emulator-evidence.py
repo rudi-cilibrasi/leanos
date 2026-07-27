@@ -847,6 +847,21 @@ def check_workflows() -> None:
             + ", ".join(missing)
         )
     release_diagnostics = workflow_contents[".github/workflows/release.yml"]
+    release_gate = re.search(
+        r"(?ms)^  gate:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+        release_diagnostics,
+    )
+    if release_gate is None:
+        raise EvidenceError("release workflow does not define the gated evidence job")
+    release_timeout = re.search(
+        r"(?m)^    timeout-minutes:\s*(\d+)\s*$",
+        release_gate.group("body"),
+    )
+    if release_timeout is None or int(release_timeout.group(1)) < 60:
+        raise EvidenceError(
+            "release evidence gate must allow at least 60 minutes for proof, "
+            "reproducibility, image, and emulator checks"
+        )
     for artifact in (
         "build/boot/*.map",
         "build/boot/*.disassembly.txt",
