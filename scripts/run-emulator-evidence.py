@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 
@@ -18,6 +19,40 @@ DEFAULT_MATRIX = ROOT / "scripts/emulator-evidence-matrix.tsv"
 DEFAULT_BUILD = ROOT / "build/boot"
 DEFAULT_OUTPUT = ROOT / "build/evidence/emulator-evidence.json"
 DEFAULT_TOOLS = ROOT / "build/ci/tool-versions.txt"
+REQUIRED_FAULT_RELEASE_ARTIFACTS = (
+    (
+        "build/boot/leanos-${version}-x86_64-fault-containment.iso",
+        "leanos-${version}-x86_64-fault-containment.iso",
+    ),
+    (
+        "build/boot/leanos-fault-containment.elf",
+        "leanos-${version}-x86_64-fault-containment.elf",
+    ),
+    (
+        "build/boot/leanos-fault-containment.map",
+        "leanos-${version}-x86_64-fault-containment.map",
+    ),
+    (
+        "build/boot/fault-containment.serial.log",
+        "leanos-${version}-fault-containment-serial.log",
+    ),
+    (
+        "build/boot/fault-containment.disassembly.txt",
+        "leanos-${version}-fault-containment-disassembly.txt",
+    ),
+    (
+        "build/boot/fault-containment-policy-report.txt",
+        "leanos-${version}-fault-containment-policy-report.txt",
+    ),
+    (
+        "build/boot/fault-containment-snapshot.txt",
+        "leanos-${version}-fault-containment-snapshot.txt",
+    ),
+    (
+        "build/boot/boot-page-plan-fault-containment.final.h",
+        "leanos-${version}-fault-containment-page-plan.h",
+    ),
+)
 RESULT_CLASSES = {"accepted-boot", "controlled-rejection", "fail-stop"}
 RUNNERS = {
     "boot",
@@ -570,6 +605,39 @@ def verify_report(
             raise EvidenceError(f"scenario {row['id']} runner environment differs")
 
 
+def check_release_package(package: str) -> None:
+    normalized = package.replace("\\\n", " ")
+    commands = []
+    for line in normalized.splitlines():
+        try:
+            commands.append(shlex.split(line, comments=True, posix=True))
+        except ValueError as error:
+            raise EvidenceError(f"package-release.sh cannot be parsed: {error}") from error
+    copies = {
+        (tokens[1], tokens[2])
+        for tokens in commands
+        if len(tokens) == 3 and tokens[0] == "cp"
+    }
+    checksum_tokens = next(
+        (tokens for tokens in commands if "sha256sum" in tokens),
+        None,
+    )
+    if checksum_tokens is None:
+        raise EvidenceError("package-release.sh does not generate SHA256SUMS")
+    for source, destination in REQUIRED_FAULT_RELEASE_ARTIFACTS:
+        release_destination = f"$release/{destination}"
+        if (source, release_destination) not in copies:
+            raise EvidenceError(
+                "package-release.sh does not copy mandatory fault evidence "
+                f"{source} to {destination}"
+            )
+        if destination not in checksum_tokens:
+            raise EvidenceError(
+                "package-release.sh does not checksum mandatory fault evidence "
+                f"{destination}"
+            )
+
+
 def check_workflows() -> None:
     parse_matrix(DEFAULT_MATRIX)
     workflow_contents: dict[str, str] = {}
@@ -627,6 +695,7 @@ def check_workflows() -> None:
     package = (ROOT / "scripts/package-release.sh").read_text(encoding="utf-8")
     if "run-emulator-evidence.py verify" not in package:
         raise EvidenceError("package-release.sh does not verify shared emulator evidence")
+    check_release_package(package)
     print("Emulator evidence matrix and workflow consistency checks passed")
 
 
