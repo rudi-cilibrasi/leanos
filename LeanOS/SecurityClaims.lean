@@ -229,6 +229,60 @@ theorem dma_changed_live_control_is_fatal_and_absorbing
     state snapshot accepted operations hrunning hvalid hchanged
   exact ⟨⟨_, h.1⟩, h.2⟩
 
+set_option maxRecDepth 100000 in
+/-- Concrete non-vacuity witness: the accepted bounded sample boot runtime and
+the q35 Command-bit drift satisfy the stable claim's validation and inequality
+premises, then enter a fatal state that absorbs every authoritative suffix. -/
+theorem dma_changed_live_control_nonvacuous :
+    match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+    | .ok plan =>
+        ∃ accepted,
+          DMAQuarantine.validate DMAQuarantine.q35CommandBitFlipSnapshot =
+              .accepted accepted ∧
+            DMAQuarantine.q35CommandBitFlipSnapshot ≠
+              (FailStop.bootRuntime plan).dmaAccepted.snapshot ∧
+            ∀ operations,
+              let next := (FailStop.observeDMAControl (FailStop.bootRuntime plan)
+                DMAQuarantine.q35CommandBitFlipSnapshot).state
+              (∃ record, next.execution.mode = .halted record) ∧
+                FailStop.runAuthoritativeOperations next operations = next
+    | .error _ => False := by
+  generalize hresult : BootPageTablePlan.compile BootPageTablePlan.sampleInput = result
+  cases result with
+  | error reason =>
+      have hsuccess :
+          (match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+            | .ok _ => true
+            | .error _ => false) = true := by
+        native_decide
+      simp [hresult] at hsuccess
+  | ok plan =>
+      generalize hvalid :
+        DMAQuarantine.validate DMAQuarantine.q35CommandBitFlipSnapshot = validation
+      cases validation with
+      | rejected reason =>
+          have haccepted :
+              (DMAQuarantine.validate
+                DMAQuarantine.q35CommandBitFlipSnapshot).isAccepted = true := by
+            native_decide
+          rw [hvalid] at haccepted
+          change false = true at haccepted
+          exact Bool.noConfusion haccepted
+      | accepted accepted =>
+          have hchangedAccepted :
+              DMAQuarantine.q35CommandBitFlipSnapshot ≠
+                DMAQuarantine.q35Accepted.snapshot := by
+            native_decide
+          have hchanged :
+              DMAQuarantine.q35CommandBitFlipSnapshot ≠
+                (FailStop.bootRuntime plan).dmaAccepted.snapshot := by
+            simpa [FailStop.bootRuntime] using hchangedAccepted
+          refine ⟨accepted, rfl, hchanged, ?_⟩
+          intro operations
+          exact dma_changed_live_control_is_fatal_and_absorbing
+            (FailStop.bootRuntime plan) DMAQuarantine.q35CommandBitFlipSnapshot
+            accepted operations rfl hvalid hchanged
+
 /-- SC-LIFETIME-IDENTITY-NO-REUSE: under the bounded-issuer runtime invariant,
 every finite sequence of composite lifecycle operations preserves
 counter/history agreement, can never make a retired object identity or a
