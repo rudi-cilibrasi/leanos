@@ -127,6 +127,17 @@ Its positive and controlled-negative gate rejects omitted `-nodefaults`, an
 extra PCI device, an unpinned VGA BDF, or a mandatory runner that bypasses the
 builder.
 
+`scripts/check-q35-edu-dma.py` supplies the distinct DMA-sensitive oracle. It
+uses QEMU's pinned `edu` function at `00:02.0`, assigns and reads back its BAR,
+loads its internal DMA buffer from guest physical memory, and then requests the
+same device-to-guest transfer in two isolated runs. With PCI Command bus
+mastering clear, the protected guest-memory canary remains byte-for-byte
+unchanged. With bus mastering deliberately enabled, the device replaces that
+canary with the known payload. The versioned TSV records both outcomes and CI
+retains it, so observing only a clear Command bit or a non-crashing guest cannot
+satisfy this fixture. This controlled extra function is never admitted to the
+production topology or its manifest.
+
 `scripts/check-q35-pci-construction.py` supplies a narrower integration
 checkpoint against the pinned QEMU 8.2.2 binary. It pauses the same explicit
 q35/TCG, CPU, memory, vCPU, network, VGA, and debug-exit construction used by

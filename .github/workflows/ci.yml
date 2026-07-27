@@ -74,6 +74,8 @@ jobs:
         run: |
           ./scripts/check-q35-pci-construction.py \
             --output build/evidence/q35-pci-construction.tsv
+          ./scripts/check-q35-edu-dma.py \
+            --output build/evidence/q35-edu-dma.tsv
 
       - name: Verify image-build failures propagate
         run: ./scripts/test-build-image.sh
@@ -137,6 +139,7 @@ jobs:
             build/boot/leanos-bootstrap64-nmi.elf
             build/boot/leanos.map
             build/evidence/q35-pci-construction.tsv
+            build/evidence/q35-edu-dma.tsv
             build/boot/leanos-preemption.map
             build/boot/leanos-fault-containment.map
             build/boot/leanos-extended-state.map
