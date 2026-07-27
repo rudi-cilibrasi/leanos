@@ -271,7 +271,15 @@ universally exposes that agreement for every accepted authorization, and
 words into `consumeExactProjection` without a caller-supplied agreement
 premise. A direct structural refinement theorem showing that every rich
 decoder success passes this comparison, rather than relying on the fail-closed
-comparison at the composed authorization gate, remains outstanding.
+comparison at the composed authorization gate, remains outstanding. The rich
+decoder now retains a proof-only `SuccessfulTagDecodeTraversal` for every
+successful recursive tag walk. Its constructors bind each accepted tag header
+to the exact source word and aligned advance, bind a memory-map tag to its
+layout word and `SuccessfulEntryDecodeTraversal`, and bind the terminal end tag
+to the advertised extent. This supplies the missing tag-level induction
+principle for deriving `SuccessfulScalarRichTraversal` through canonical
+chunks; that final derivation and removal of the terminal comparison remain
+outstanding.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
