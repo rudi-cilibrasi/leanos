@@ -17210,6 +17210,29 @@ theorem runAuthoritativeInterruptThenDeferredDrains_preserves
     (authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
       state frame hstate hbound)
 
+/-- Every finite deferred-drain suffix carries a recursive compatibility
+certificate independently of its starting state.  Capacity-checked drains
+have no caller-supplied post-state law, so this certificate can be reused
+after any constructor whose own operation-local compatibility is closed. -/
+theorem authoritativeTraceCompatible_deferredDrains
+    state (subjects : List BlockingIPC.SubjectId) :
+    AuthoritativeTraceCompatible state
+      (subjects.map AuthoritativeOperation.drainDeferred) := by
+  induction subjects generalizing state with
+  | nil => trivial
+  | cons subject rest ih =>
+      exact ⟨trivial, ih _⟩
+
+/-- Any operation-local compatibility certificate composes with an arbitrary
+capacity-checked deferred-drain suffix.  The suffix consumes the invariant
+established by the head transition through the common trace runner. -/
+theorem authoritativeTraceCompatible_thenDeferredDrains
+    state operation (subjects : List BlockingIPC.SubjectId)
+    (hoperation : AuthoritativeOperationCompatible state operation) :
+    AuthoritativeTraceCompatible state
+      (operation :: subjects.map AuthoritativeOperation.drainDeferred) :=
+  ⟨hoperation, authoritativeTraceCompatible_deferredDrains _ subjects⟩
+
 /-- The interrupt identity binding and the premise-free deferred-drain
 constructors form a compatibility certificate for the complete public mixed
 trace.  This is the trace-level bridge to the general authoritative
@@ -17220,19 +17243,41 @@ theorem authoritativeTraceCompatible_interruptThenDeferredDrains
     AuthoritativeTraceCompatible state
       (.ordinary (.interrupt frame) ::
         subjects.map AuthoritativeOperation.drainDeferred) := by
-  have hdrains : ∀ candidate,
-      AuthoritativeTraceCompatible candidate
-        (subjects.map AuthoritativeOperation.drainDeferred) := by
-    induction subjects with
-    | nil =>
-        intro candidate
-        trivial
-    | cons subject rest ih =>
-        intro candidate
-        exact ⟨trivial, ih _⟩
-  constructor
-  · exact interrupt_authoritativeOperationCompatible state frame hbound
-  · exact hdrains _
+  exact authoritativeTraceCompatible_thenDeferredDrains state
+    (.ordinary (.interrupt frame)) subjects
+    (interrupt_authoritativeOperationCompatible state frame hbound)
+
+/-- Explicit termination and any capacity-checked drain continuation form a
+closed compatibility certificate.  Termination needs no independently
+supplied post-state law, and each drain member is likewise premise-free. -/
+theorem authoritativeTraceCompatible_terminateSubjectThenDeferredDrains
+    state subject (subjects : List BlockingIPC.SubjectId) :
+    AuthoritativeTraceCompatible state
+      (.ordinary (.terminateSubject subject) ::
+        subjects.map AuthoritativeOperation.drainDeferred) := by
+  exact authoritativeTraceCompatible_thenDeferredDrains state
+    (.ordinary (.terminateSubject subject)) subjects trivial
+
+/-- Scheduler-selected termination has the same closed mixed-trace
+compatibility certificate as explicit identity termination. -/
+theorem authoritativeTraceCompatible_terminateCurrentThenDeferredDrains
+    state (subjects : List BlockingIPC.SubjectId) :
+    AuthoritativeTraceCompatible state
+      (.ordinary .terminateCurrent ::
+        subjects.map AuthoritativeOperation.drainDeferred) := by
+  exact authoritativeTraceCompatible_thenDeferredDrains state
+    (.ordinary .terminateCurrent) subjects trivial
+
+/-- NMI fail-stop followed by proposed deferred drains is a closed
+compatibility-certified trace.  The outer execution latch absorbs the suffix,
+while the general runner retains the complete folded invariant. -/
+theorem authoritativeTraceCompatible_nmiThenDeferredDrains
+    state raw context (subjects : List BlockingIPC.SubjectId) :
+    AuthoritativeTraceCompatible state
+      (.ordinary (.nmi raw context) ::
+        subjects.map AuthoritativeOperation.drainDeferred) := by
+  exact authoritativeTraceCompatible_thenDeferredDrains state
+    (.ordinary (.nmi raw context)) subjects trivial
 
 /-- The general compatibility-certified trace theorem now covers an
 identity-bound interrupt followed by any finite sequence of capacity-checked
@@ -17249,6 +17294,50 @@ theorem runAuthoritativeCompatibleInterruptThenDeferredDrains_preserves
     state _ hstate
     (authoritativeTraceCompatible_interruptThenDeferredDrains
       state frame subjects hbound)
+
+/-- Explicit termination followed by arbitrary capacity-checked drains now
+crosses the general compatibility-certified trace theorem and preserves the
+complete folded authoritative invariant, not only its deferred projection. -/
+theorem runAuthoritativeCompatibleTerminateSubjectThenDeferredDrains_preserves
+    state subject (subjects : List BlockingIPC.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary (.terminateSubject subject) ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state _ hstate
+    (authoritativeTraceCompatible_terminateSubjectThenDeferredDrains
+      state subject subjects)
+
+/-- Scheduler-selected termination followed by arbitrary capacity-checked
+drains likewise preserves the complete folded authoritative invariant. -/
+theorem runAuthoritativeCompatibleTerminateCurrentThenDeferredDrains_preserves
+    state (subjects : List BlockingIPC.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary .terminateCurrent ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state _ hstate
+    (authoritativeTraceCompatible_terminateCurrentThenDeferredDrains
+      state subjects)
+
+/-- NMI fail-stop followed by arbitrary capacity-checked drains is covered by
+the same general authoritative trace theorem; terminal absorption is no
+longer proved only through a weaker parallel runner. -/
+theorem runAuthoritativeCompatibleNmiThenDeferredDrains_preserves
+    state raw context (subjects : List BlockingIPC.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary (.nmi raw context) ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state _ hstate
+    (authoritativeTraceCompatible_nmiThenDeferredDrains
+      state raw context subjects)
 
 /-- NMI fail-stop and any proposed deferred-drain suffix form one public
 authoritative trace.  The first step preserves the strongest invariant and
