@@ -374,10 +374,19 @@ successor's phase, remaining-byte, and entry-count equations together with
 the rich traversal's exact remaining entry count. It resolves the conditional
 successor to either the next entry-base phase or the following tag phase,
 proves the remaining byte count is exactly that count times 24, and preserves
-the 256-entry budget without relying on wrapped scalar arithmetic. The
-remaining induction must recursively select every canonical triple from
-`SuccessfulEntryDecodeTraversal`, apply this invariant at each successor, and
-assemble these tag-local pieces into the universal
+the 256-entry budget without relying on wrapped scalar arithmetic.
+`CanonicalMemoryMapEntryState` packages that boundary as one reusable
+predicate: source cursor, phase, remaining byte count, entry budget, sticky
+classification bounds, target, and tag count must all describe the same
+canonical suffix. The
+`successfulScalarRichTraversal_canonicalMemoryMapEntry_threads_remaining`
+step now consumes one exact rich entry and an already-constructed continuation,
+attaches the corresponding `RawEntry`, and returns the successor with that
+predicate instantiated for precisely one fewer entry. The remaining induction
+must recursively select every canonical triple from
+`SuccessfulEntryDecodeTraversal`, construct its continuation from the final
+entry backward, and assemble those entry-local pieces with the ignored-tag
+span into the universal
 `SuccessfulScalarRichTraversal`. Until that final derivation exists, the
 fail-closed terminal comparison remains in place.
 
