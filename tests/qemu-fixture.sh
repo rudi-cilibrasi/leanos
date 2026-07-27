@@ -58,13 +58,15 @@ EOF
   exit "$status"
 fi
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-fault-direct-call|fault-wrong-cr2|fault-wrong-rip|fault-wrong-access|fault-wrong-dispatch|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-a-queued|fault-attacker-selection|fault-return-unvalidated|fault-peer-corrupt|fault-peer-cleaned|fault-forged-pass|fault-reordered|fault-kernel-relabeled|fault-global-fail)
+fault-direct-call|fault-wrong-error|fault-zero-error|fault-wrong-cr2|fault-wrong-rip|fault-wrong-access|fault-wrong-dispatch|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-a-queued|fault-attacker-selection|fault-return-unvalidated|fault-peer-corrupt|fault-peer-cleaned|fault-forged-pass|fault-reordered|fault-kernel-relabeled|fault-global-fail)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
   set -e
   case "$mode" in
     fault-direct-call) sed -i 's/direct-call=0/direct-call=1/' "$log" ;;
+    fault-wrong-error) sed -i 's/error=5/error=7/' "$log" ;;
+    fault-zero-error) sed -i 's/error=5/error=0/' "$log" ;;
     fault-wrong-cr2) sed -i 's/cr2=0/cr2=4096/' "$log" ;;
     fault-wrong-rip) sed -i 's/rip=user-a-fault-instruction/rip=user-a-fault-recovered/' "$log" ;;
     fault-wrong-access) sed -i 's/access=read/access=write/' "$log" ;;
