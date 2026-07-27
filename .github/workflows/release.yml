@@ -69,6 +69,7 @@ jobs:
             build/boot/*.elf
             build/boot/*.map
             build/boot/*.disassembly.txt
+            build/boot/fault-containment-snapshot.txt
             build/boot/boot-page-plan*.h
             build/boot/SHA256SUMS
             build/boot/SOURCE_REVISION

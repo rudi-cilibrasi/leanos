@@ -159,6 +159,11 @@ page_fault_wrong_handler_binding() {
     's/error == 5u && rip == (uint64_t)user_a_fault_instruction/error == 7u \&\& rip == (uint64_t)user_a_fault_instruction/' \
     "$tmp/kernel.c"
 }
+page_fault_c_only_snapshot_route() {
+  sed -i \
+    's/, canonical, route);/, 1, UINT64_C(0x01000000ff020202));/' \
+    "$tmp/kernel.c"
+}
 stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $user_a_text, %eax' "$tmp/boot.S"; }
 noncanonical_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $0x00008000, %edx' "$tmp/boot.S"; }
 non_denying_sysenter() { sed -i '/normalize_fast_entry_sysenter_cs_write:/i\    mov $1, %eax' "$tmp/boot.S"; }
@@ -250,6 +255,9 @@ run_page_fault_fixture page-fault-indirect-entry \
 run_page_fault_fixture page-fault-wrong-handler-binding \
   'vector=14 field=deliberate-cpl3-handler-binding source' \
   page_fault_wrong_handler_binding
+run_fixture page-fault-c-only-snapshot-route \
+  'vector=14 field=canonical-snapshot-binding source' \
+  page_fault_c_only_snapshot_route
 run_fixture stale-lstar 'fast-entry target write recipe can introduce nonzero state' stale_lstar
 run_fixture noncanonical-lstar 'fast-entry target write recipe can introduce nonzero state' noncanonical_lstar
 run_fixture non-denying-sysenter 'fast-entry target write recipe can introduce nonzero state' non_denying_sysenter

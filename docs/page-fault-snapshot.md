@@ -122,10 +122,17 @@ generated dispatch word, complete cleanup mask, and selected survivor.
 Independent runner fixtures reject a changed or zeroed raw error word, CR2,
 RIP, access kind, or dispatch word. The build-retained
 `fault-containment-policy-report.txt` records the linked final-ELF addresses
-and the same architectural/dispatch tuple.
+and the same architectural/dispatch tuple. A separate ordered `PF-SNAPSHOT`
+record retains all 19 decimal codec words directly from the immutable
+production object after generated authorization and dispatch. The runner
+independently resolves CR3, saved RIP, and user RSP against the final ELF,
+requires every fixed word and the exact generated authorization/route, and
+publishes that one record as `fault-containment-snapshot.txt`. Missing,
+duplicated, malformed, corrupted, or reordered snapshot/replay records are
+controlled failures.
 Tagged builds also retain the fault-containment ISO, final ELF and map, serial
-transcript, disassembly, final page-table plan, and policy report in the
-attested release bundle. `SHA256SUMS` covers each retained file.
+transcript, canonical snapshot, disassembly, final page-table plan, and policy
+report in the attested release bundle. `SHA256SUMS` covers each retained file.
 Wrong-instruction, indirect-entry, and wrong-handler-binding fixtures must be
 rejected.
 Negative fixtures also reject a forged diagnostic purpose, both a direct

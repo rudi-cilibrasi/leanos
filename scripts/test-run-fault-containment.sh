@@ -3,11 +3,19 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$root"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT; touch "$tmp/image.iso"
 ./scripts/generate-oracle.sh "$tmp/oracle" >/dev/null
+${CC:-gcc} -nostdlib -no-pie -Wl,-e,_start -x c -o "$tmp/fault-symbols.elf" - <<'EOF'
+char page_map_level_4_a[4096];
+char user_a_fault_instruction[8];
+char user_a_stack_top[1];
+void _start(void) {}
+EOF
 invoke() {
   LEANOS_BOOT_SCENARIO=fault-containment \
   LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
   LEANOS_QEMU="$root/tests/qemu-fixture.sh" LEANOS_QEMU_FIXTURE_MODE="$1" \
   LEANOS_QEMU_TIMEOUT_SECONDS=1 LEANOS_SERIAL_LOG="$tmp/$1.serial" \
+  LEANOS_FAULT_SNAPSHOT_ARTIFACT="$tmp/$1.snapshot" \
+  LEANOS_FAULT_CONTAINMENT_ELF="$tmp/fault-symbols.elf" \
   ./scripts/run-image.sh "$tmp/image.iso"
 }
 invoke success >/dev/null 2>&1
@@ -19,6 +27,13 @@ for spec in \
   'fault-wrong-rip serial-protocol' \
   'fault-wrong-access serial-protocol' \
   'fault-wrong-dispatch serial-protocol' \
+  'fault-snapshot-missing page-fault-snapshot' \
+  'fault-snapshot-duplicate page-fault-snapshot' \
+  'fault-snapshot-version page-fault-snapshot' \
+  'fault-snapshot-rip page-fault-snapshot' \
+  'fault-snapshot-authorization page-fault-snapshot' \
+  'fault-snapshot-route page-fault-snapshot' \
+  'fault-snapshot-reordered page-fault-snapshot' \
   'fault-old-recovery serial-protocol' \
   'fault-stale-cr3 serial-protocol' \
   'fault-cleanup-missing serial-protocol' \

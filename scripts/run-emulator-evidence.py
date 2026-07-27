@@ -600,6 +600,7 @@ def check_workflows() -> None:
         "build/boot/boot-page-plan-fault-containment.final.h",
         "build/boot/fault-containment.disassembly.txt",
         "build/boot/fault-containment.serial.log",
+        "build/boot/fault-containment-snapshot.txt",
         "build/boot/corpus.tsv",
         "build/oracle/host-results.txt",
         "build/evidence/*",
@@ -615,6 +616,7 @@ def check_workflows() -> None:
     for artifact in (
         "build/boot/*.map",
         "build/boot/*.disassembly.txt",
+        "build/boot/fault-containment-snapshot.txt",
         "build/boot/boot-page-plan*.h",
         "build/oracle/host-results.txt",
     ):

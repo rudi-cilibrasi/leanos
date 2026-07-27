@@ -64,6 +64,8 @@ fi
 image="${1:-$default_image}"
 log="${LEANOS_SERIAL_LOG:-build/boot/serial.log}"
 high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
+fault_snapshot_artifact="${LEANOS_FAULT_SNAPSHOT_ARTIFACT:-build/boot/fault-containment-snapshot.txt}"
+fault_elf="${LEANOS_FAULT_CONTAINMENT_ELF:-build/boot/leanos-fault-containment.elf}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 and coreutils=9.4-3ubuntu6.2" >&2; exit 1; }; done
 [[ "$limit" =~ ^[1-9][0-9]*$ ]] || { echo "error: timeout must be a positive integer" >&2; exit 1; }
@@ -259,6 +261,58 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
   fi
 done
 sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
+if [[ "$scenario" == fault-containment ]]; then
+  [[ -f "$fault_elf" ]] || {
+    echo "failure_class=page-fault-snapshot: final ELF '$fault_elf' missing" >&2
+    exit 1
+  }
+  mkdir -p "$(dirname "$fault_snapshot_artifact")"
+  grep '^LEANOS/14 PF-SNAPSHOT ' "$log" > "$fault_snapshot_artifact" || {
+    echo "failure_class=page-fault-snapshot: canonical snapshot missing" >&2
+    exit 1
+  }
+  mapfile -t fault_snapshot_lines < "$fault_snapshot_artifact"
+  if [[ ${#fault_snapshot_lines[@]} -ne 1 ]]; then
+    echo "failure_class=page-fault-snapshot: snapshot missing or duplicated" >&2
+    exit 1
+  fi
+  snapshot_line="${fault_snapshot_lines[0]}"
+  if [[ ! "$snapshot_line" =~ ^LEANOS/14\ PF-SNAPSHOT\ codec=1\ width=19\ words=([0-9]+(,[0-9]+){18})\ authorization=1\ route=72057598316249602\ result=PASS$ ]]; then
+    echo "failure_class=page-fault-snapshot: malformed codec or generated replay result" >&2
+    exit 1
+  fi
+  IFS=, read -r -a snapshot_words <<< "${BASH_REMATCH[1]}"
+  symbol_value() {
+    local symbol="$1" address
+    address="$(nm -n "$fault_elf" | awk -v wanted="$symbol" '$3 == wanted { print $1 }')"
+    [[ "$address" =~ ^[[:xdigit:]]+$ ]] || return 1
+    printf '%u' "$((16#$address))"
+  }
+  fault_cr3="$(symbol_value page_map_level_4_a)" &&
+    fault_rip="$(symbol_value user_a_fault_instruction)" &&
+    fault_rsp="$(symbol_value user_a_stack_top)" || {
+    echo "failure_class=page-fault-snapshot: required final-ELF symbol missing" >&2
+    exit 1
+  }
+  expected_snapshot_words=(
+    1 14 5 0 0 0 1 1 1 1 "$fault_cr3" 15 "$fault_rip"
+    35 534 "$fault_rsp" 27 1 0
+  )
+  for ((i = 0; i < 19; ++i)); do
+    if [[ "${snapshot_words[i]}" != "${expected_snapshot_words[i]}" ]]; then
+      echo "failure_class=page-fault-snapshot: word $i disagrees with canonical production snapshot" >&2
+      exit 1
+    fi
+  done
+  snapshot_line_number="$(grep -n '^LEANOS/14 PF-SNAPSHOT ' "$log" | cut -d: -f1 || true)"
+  entry_line_number="$(grep -n '^LEANOS/14 FAULT-ENTRY ' "$log" | cut -d: -f1 || true)"
+  if [[ "$entry_line_number" =~ ^[0-9]+$ &&
+        "$snapshot_line_number" -ge "$entry_line_number" ]]; then
+    echo "failure_class=page-fault-snapshot: snapshot/replay record reordered" >&2
+    exit 1
+  fi
+  sed -i '/^LEANOS\/14 PF-SNAPSHOT /d' "$without_allocation"
+fi
 if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
   final_high_water_path="syscall"
   [[ "$scenario" == preemption ]] && final_high_water_path="timer-context-switch"

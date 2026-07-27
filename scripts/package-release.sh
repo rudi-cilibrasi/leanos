@@ -46,6 +46,8 @@ cp build/boot/fault-containment.disassembly.txt \
   "$release/leanos-${version}-fault-containment-disassembly.txt"
 cp build/boot/fault-containment-policy-report.txt \
   "$release/leanos-${version}-fault-containment-policy-report.txt"
+cp build/boot/fault-containment-snapshot.txt \
+  "$release/leanos-${version}-fault-containment-snapshot.txt"
 cp build/boot/boot-page-plan-fault-containment.final.h \
   "$release/leanos-${version}-fault-containment-page-plan.h"
 cp build/boot/entry-adversarial.serial.log \
@@ -74,6 +76,7 @@ LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
   "leanos-${version}-fault-containment-serial.log" \
   "leanos-${version}-fault-containment-disassembly.txt" \
   "leanos-${version}-fault-containment-policy-report.txt" \
+  "leanos-${version}-fault-containment-snapshot.txt" \
   "leanos-${version}-fault-containment-page-plan.h" \
   "leanos-${version}-entry-adversarial-serial.log" \
   "leanos-${version}-double-fault-serial.log" \

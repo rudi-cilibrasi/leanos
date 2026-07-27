@@ -343,6 +343,9 @@ source_invalidation="$(grep -n -m1 'invalidate_fixed_fault_page();' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
 source_agreement="$(grep -n -m1 'leanos_page_fault_dispatch_transition(' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
+source_snapshot_report="$(grep -n -m1 \
+  'report_page_fault_snapshot(&snapshot, canonical, route);' \
+  <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
 source_operation="$(grep -n -m1 'page_fault_handler(&transition)' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
 source_diagnostic_operation="$(grep -n -m1 'page_fault_diagnostic_handler(&transition)' \
@@ -366,6 +369,28 @@ grep -Fq 'const struct page_fault_transition transition = {' \
     <<<"$page_fault_adapter_source" || {
   echo "error: vector=14 field=typed-generated-route source" >&2; exit 1;
 }
+page_fault_snapshot_report_source="$(
+  awk '
+    /^static void report_page_fault_snapshot\(/ { ++seen }
+    seen == 2 { print; if ($0 == "}") exit }
+  ' "$kernel_source"
+)"
+snapshot_report_calls="$(
+  grep -Fc 'report_page_fault_snapshot(&snapshot, canonical, route);' \
+    <<<"$page_fault_adapter_source" || true
+)"
+if ! grep -Fq 'const uint64_t *words = (const uint64_t *)snapshot;' \
+      <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'for (unsigned i = 0; i < 19; ++i) {' \
+      <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'serial_u64(words[i]);' <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'serial_u64(authorization);' \
+      <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'serial_u64(route);' <<<"$page_fault_snapshot_report_source" ||
+    [[ "$snapshot_report_calls" -ne 1 ]]; then
+  echo "error: vector=14 field=canonical-snapshot-binding source" >&2
+  exit 1
+fi
 generated_arguments="$(
   sed -n '/leanos_authorize_page_fault_snapshot(/,/trusted_stack_identity)/p' \
     <<<"$page_fault_adapter_source" | tr -d '[:space:]' |
@@ -411,10 +436,13 @@ if [[ -n "$snapshot_mutations" ]]; then
   echo "error: vector=14 field=immutable-snapshot source" >&2; exit 1
 fi
 [[ -n "$source_generated" && -n "$source_invalidation" && -n "$source_agreement" &&
+   -n "$source_snapshot_report" &&
    -n "$source_operation" && -n "$source_diagnostic_operation" &&
    "$source_generated" -lt "$source_agreement" &&
    "$source_generated" -lt "$source_invalidation" &&
    "$source_invalidation" -lt "$source_agreement" &&
+   "$source_agreement" -lt "$source_snapshot_report" &&
+   "$source_snapshot_report" -lt "$source_operation" &&
    "$source_agreement" -lt "$source_operation" &&
    "$source_agreement" -lt "$source_diagnostic_operation" ]] || {
   echo "error: vector=14 path=generated-agreement-before-handler source" >&2

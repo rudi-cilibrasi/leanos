@@ -289,6 +289,9 @@ static __attribute__((noreturn)) void fail(const char *reason);
 static void serial_puts(const char *text);
 static void serial_putc(char value);
 static void serial_u64(uint64_t value);
+static void report_page_fault_snapshot(
+    const struct page_fault_entry_record *snapshot,
+    uint64_t authorization, uint64_t route);
 static void arm_timer(void);
 static uint64_t stack_marker(uint64_t stack_pointer);
 static void check_cross_bank_negative(void);
@@ -748,6 +751,20 @@ static void serial_u64(uint64_t value) {
     if (value == 0) { serial_putc('0'); return; }
     while (value != 0) { digits[length++] = (char)('0' + value % 10); value /= 10; }
     while (length != 0) serial_putc(digits[--length]);
+}
+
+static void report_page_fault_snapshot(
+    const struct page_fault_entry_record *snapshot,
+    uint64_t authorization, uint64_t route) {
+    const uint64_t *words = (const uint64_t *)snapshot;
+    serial_puts("LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=");
+    for (unsigned i = 0; i < 19; ++i) {
+        if (i != 0) serial_putc(',');
+        serial_u64(words[i]);
+    }
+    serial_puts(" authorization="); serial_u64(authorization);
+    serial_puts(" route="); serial_u64(route);
+    serial_puts(" result=PASS\n");
 }
 
 static unsigned canonical(uint64_t value) {
@@ -2324,6 +2341,7 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
         fail("page-fault-provenance");
     switch (transition.kind) {
     case PAGE_FAULT_TRANSITION_CONTAIN:
+        report_page_fault_snapshot(&snapshot, canonical, route);
         return page_fault_handler(&transition);
     case PAGE_FAULT_TRANSITION_KERNEL_DIAGNOSTIC:
         return page_fault_diagnostic_handler(&transition);
