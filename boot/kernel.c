@@ -209,6 +209,9 @@ static uint8_t entry_stack[16384]
     __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
+#ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
+volatile uint64_t reserved_fault_nxe_disabled;
+#endif
 
 /* The machine-facing spelling of InterruptEntry's version-one canonical
    page-fault encoding.  Construction is confined to
@@ -390,7 +393,11 @@ static void check_fast_entry_control(void) {
     read_fast_entry_msrs(state);
     const uint64_t efer_model_mask = (1ull << 0) | (1ull << 8) |
         (1ull << 10) | (1ull << 11);
-    const uint64_t efer_denied = (1ull << 8) | (1ull << 10) | (1ull << 11);
+    uint64_t efer_denied = (1ull << 8) | (1ull << 10) | (1ull << 11);
+#ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
+    if (reserved_fault_nxe_disabled)
+        efer_denied &= ~(1ull << 11);
+#endif
     if ((state[0] & efer_model_mask) != efer_denied)
         fail("fast-entry-efer-readback");
     for (unsigned i = 1; i < 8; ++i)
@@ -2784,6 +2791,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         for (unsigned i = 0; i < BOOT_LEAF_COUNT; ++i)
             page_table_a[i] &= ~PTE_NX;
         disable_nxe_for_reserved_fault();
+        reserved_fault_nxe_disabled = 1;
         page_table_a[page] |= PTE_NX;
         __asm__ volatile ("invlpg (%0)" :
                           : "r"(user_a_nx_fault_instruction) : "memory");

@@ -1687,6 +1687,7 @@ user_a_reserved_fault_recovered:
     mov $0xff, %rax
     int $0x80
 
+.section .text
 .global disable_nxe_for_reserved_fault
 disable_nxe_for_reserved_fault:
 #ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
@@ -1705,6 +1706,7 @@ fault_reserved_efer_write:
 #endif
     ret
     ud2
+.section .user.a.text,"ax",@progbits
 /* The execute-denial image arms a fixed payload in A's model-generated
    writable/NX stack leaf, then transfers control to that exact address.  If
    instruction fetch ever succeeds, the payload invokes an unsupported

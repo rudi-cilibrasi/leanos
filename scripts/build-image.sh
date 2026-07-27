@@ -230,6 +230,13 @@ mv "$build/FaultDispatchAndDirectPortIO.o" "$build/FaultDispatch.o"
   -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
   -c boot/kernel.c -o "$build/kernel-fault-containment.o"
+for probe in "${fault_fatal_probes[@]}"; do
+  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+    -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+    "${fault_fatal_probe_flags[$probe]}" \
+    -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
+    -c boot/kernel.c -o "$build/kernel-fault-${probe}.o"
+done
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
@@ -429,7 +436,7 @@ for probe in "${fault_fatal_probes[@]}"; do
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
     -T boot/linker.ld -Map "$build/leanos-fault-${probe}-prelink.map" \
     -o "$build/leanos-fault-${probe}-prelink.elf" \
-    "$build/boot-fault-${probe}.o" "$build/kernel-fault-containment.o" \
+    "$build/boot-fault-${probe}.o" "$build/kernel-fault-${probe}.o" \
     "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
     "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
     "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
@@ -696,6 +703,13 @@ cmp "$build/boot-page-plan-integer-fault.h" \
   -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
   -c boot/kernel.c -o "$build/kernel-fault-containment.o"
+for probe in "${fault_fatal_probes[@]}"; do
+  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+    -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+    "${fault_fatal_probe_flags[$probe]}" \
+    -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
+    -c boot/kernel.c -o "$build/kernel-fault-${probe}.o"
+done
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
@@ -852,7 +866,7 @@ for probe in "${fault_fatal_probes[@]}"; do
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
     -T boot/linker.ld -Map "$build/leanos-fault-${probe}.map" \
     -o "$build/leanos-fault-${probe}.elf" \
-    "$build/boot-fault-${probe}.o" "$build/kernel-fault-containment.o" \
+    "$build/boot-fault-${probe}.o" "$build/kernel-fault-${probe}.o" \
     "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
     "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
     "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
