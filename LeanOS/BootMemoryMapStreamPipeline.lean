@@ -1055,6 +1055,98 @@ theorem canonicalScalarStep_source_refines
         terminal := index + 1 == bytes.length / 8 }
       value hchunkRead query⟩
 
+/-- Every retained tag traversal exposes its current header as the canonical
+chunk at the corresponding byte offset.  This offset-parametric form carries
+the exact terminal bit as well as the rich-decoder word, so a structural
+induction can reuse one source lemma for ignored, map, and end-tag cases. -/
+theorem canonicalTagStep_source_refines
+    (identity : UInt64) (bytes : List UInt8) (total offset fuel : Nat)
+    (sawMemoryMap : Bool) (tagsRev tags : List Tag) (state : ScalarState)
+    (htotal : total = bytes.length)
+    (haligned : bytes.length % 8 = 0)
+    (hoffsetAligned : offset % 8 = 0)
+    (htraversal :
+      SuccessfulTagDecodeTraversal bytes total offset fuel
+        sawMemoryMap tagsRev tags) :
+    ∃ tagWord,
+      let terminal := offset + 8 == total
+      let chunk : ModelChunk :=
+        { identity
+          offset
+          bytes := (bytes.drop offset).take 8
+          terminal }
+      BootMemoryMapDecoder.readU64 bytes offset = .ok tagWord ∧
+        (canonicalChunks identity bytes)[offset / 8]? = some chunk ∧
+        ∀ query : Fin 19,
+          (scalarStep state chunk).word[query.val]! =
+            BootMemoryMapStreamAuthority.stepWord
+              state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+              state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+              state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+              state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+              state.word[16]! state.word[17]! state.word[18]!
+              identity (UInt64.ofNat offset) (UInt64.ofNat tagWord)
+              (if terminal then 1 else 0) (UInt64.ofNat query.val) := by
+  have hbound :=
+    successfulTagDecodeTraversal_offset_lt_total
+      bytes total offset fuel sawMemoryMap tagsRev tags htraversal
+  have hoffset := Nat.mod_add_div offset 8
+  rw [hoffsetAligned, Nat.zero_add] at hoffset
+  have hposition : offset / 8 * 8 = offset := by
+    omega
+  have hbytes := Nat.mod_add_div bytes.length 8
+  rw [haligned, Nat.zero_add] at hbytes
+  have hindex : offset / 8 < bytes.length / 8 := by
+    omega
+  have hterminal :
+      (offset / 8 + 1 == bytes.length / 8) =
+        (offset + 8 == total) := by
+    rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
+    omega
+  cases htraversal with
+  | endTag offset fuel tagWord tagsRev hread htype hsize hend =>
+      refine ⟨tagWord, ?_⟩
+      dsimp only
+      have hrefines :=
+        canonicalScalarStep_source_refines
+          identity bytes haligned (offset / 8) hindex state tagWord (by
+            rw [hposition]
+            exact hread)
+      refine ⟨hread, ?_, ?_⟩
+      · simpa only [hposition, hterminal] using
+          (hrefines (⟨0, by decide⟩ : Fin 19)).1
+      · intro query
+        simpa only [hposition, hterminal] using (hrefines query).2
+  | ignoredTag offset fuel tagWord sawMemoryMap tagsRev tags hread hsize
+      hcontent hadvance htypeEnd htypeMap hrest =>
+      refine ⟨tagWord, ?_⟩
+      dsimp only
+      have hrefines :=
+        canonicalScalarStep_source_refines
+          identity bytes haligned (offset / 8) hindex state tagWord (by
+            rw [hposition]
+            exact hread)
+      refine ⟨hread, ?_, ?_⟩
+      · simpa only [hposition, hterminal] using
+          (hrefines (⟨0, by decide⟩ : Fin 19)).1
+      · intro query
+        simpa only [hposition, hterminal] using (hrefines query).2
+  | memoryMapTag offset fuel tagWord layoutWord tagsRev tags entries hread
+      hsize hcontent hadvance htype hlayout hentrySize hentryVersion
+      halignedEntries hentryBound hentryTraversal hrest =>
+      refine ⟨tagWord, ?_⟩
+      dsimp only
+      have hrefines :=
+        canonicalScalarStep_source_refines
+          identity bytes haligned (offset / 8) hindex state tagWord (by
+            rw [hposition]
+            exact hread)
+      refine ⟨hread, ?_, ?_⟩
+      · simpa only [hposition, hterminal] using
+          (hrefines (⟨0, by decide⟩ : Fin 19)).1
+      · intro query
+        simpa only [hposition, hterminal] using (hrefines query).2
+
 /-- The retained rich tag traversal selects the exact first tag-header chunk
 immediately after the information header.  Its source word, stream identity,
 offset, terminal bit, and every scalar transition query are therefore fixed
