@@ -10,6 +10,18 @@ trap 'rm -rf "$first"' EXIT
 ./scripts/build-image.sh
 cp "build/boot/leanos-${version}-x86_64.iso" build/boot/leanos.elf \
   build/boot/leanos.map build/boot/SOURCE_REVISION \
+  "build/boot/leanos-${version}-x86_64-fault-containment.iso" \
+  build/boot/leanos-fault-containment.elf \
+  build/boot/leanos-fault-containment.map \
+  build/boot/boot-page-plan-fault-containment.final.h \
+  build/boot/fault-containment.disassembly.txt \
+  build/boot/fault-containment-policy-report.txt \
+  "build/boot/leanos-${version}-x86_64-fault-readonly-write.iso" \
+  build/boot/leanos-fault-readonly-write.elf \
+  build/boot/leanos-fault-readonly-write.map \
+  build/boot/boot-page-plan-fault-readonly-write.final.h \
+  build/boot/fault-readonly-write.disassembly.txt \
+  build/boot/fault-readonly-write-policy-report.txt \
   "build/boot/leanos-${version}-x86_64-fault-nx-execute.iso" \
   build/boot/leanos-fault-nx-execute.elf \
   build/boot/leanos-fault-nx-execute.map \
@@ -31,7 +43,16 @@ cp "build/boot/leanos-${version}-x86_64.iso" build/boot/leanos.elf \
 ./scripts/build-image.sh
 
 for artifact in "leanos-${version}-x86_64.iso" leanos.elf leanos.map \
-  SOURCE_REVISION "leanos-${version}-x86_64-fault-nx-execute.iso" \
+  SOURCE_REVISION "leanos-${version}-x86_64-fault-containment.iso" \
+  leanos-fault-containment.elf leanos-fault-containment.map \
+  boot-page-plan-fault-containment.final.h \
+  fault-containment.disassembly.txt fault-containment-policy-report.txt \
+  "leanos-${version}-x86_64-fault-readonly-write.iso" \
+  leanos-fault-readonly-write.elf leanos-fault-readonly-write.map \
+  boot-page-plan-fault-readonly-write.final.h \
+  fault-readonly-write.disassembly.txt \
+  fault-readonly-write-policy-report.txt \
+  "leanos-${version}-x86_64-fault-nx-execute.iso" \
   leanos-fault-nx-execute.elf leanos-fault-nx-execute.map \
   boot-page-plan-fault-nx-execute.final.h \
   fault-nx-execute.disassembly.txt fault-nx-execute-policy-report.txt \
@@ -50,4 +71,4 @@ for artifact in "leanos-${version}-x86_64.iso" leanos.elf leanos.map \
   fi
 done
 
-echo "Repeated base/NX/fatal images, ELFs, maps, plans, policies, and revision are byte-identical"
+echo "Repeated base/reason-sensitive fault images, ELFs, maps, plans, policies, and revision are byte-identical"
