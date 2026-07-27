@@ -307,6 +307,61 @@ buffer with the allocation-free scalar stream decoder. -/
 def canonicalChunks (identity : UInt64) (bytes : List UInt8) : List ModelChunk :=
   canonicalChunksAux identity 0 (bytes.length / 8) bytes
 
+/-- Every position in the canonical decomposition is the exact eight-byte
+slice at the corresponding source offset.  The offset and terminal flag are
+derived from the list index, so later decoder/scalar refinements cannot pair a
+rich source read with a different scalar chunk. -/
+theorem canonicalChunksAux_get?_source
+    (identity : UInt64) (offset count : Nat) (bytes : List UInt8)
+    (hbytes : bytes.length = count * 8) (index : Nat) (hindex : index < count) :
+    (canonicalChunksAux identity offset count bytes)[index]? =
+      some
+        { identity
+          offset := offset + index * 8
+          bytes := (bytes.drop (index * 8)).take 8
+          terminal := index + 1 == count } := by
+  induction count generalizing offset bytes index with
+  | zero =>
+      omega
+  | succ count ih =>
+      cases index with
+      | zero =>
+          simp only [canonicalChunksAux, List.getElem?_cons_zero, Nat.zero_mul,
+            List.drop_zero, Nat.zero_add]
+          cases count <;> rfl
+      | succ index =>
+          simp only [canonicalChunksAux, List.getElem?_cons_succ]
+          have hdrop : (bytes.drop 8).length = count * 8 := by
+            simp only [List.length_drop]
+            omega
+          rw [ih (offset := offset + 8) (bytes := bytes.drop 8)
+            hdrop index (by omega)]
+          congr 2
+          · omega
+          · rw [List.drop_drop]
+            congr 2
+            omega
+          · rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
+            omega
+
+/-- Public specialization of `canonicalChunksAux_get?_source`: every aligned
+source offset names exactly one canonical chunk with the source bytes, stream
+identity, scalar offset, and final-chunk bit fixed by the immutable input. -/
+theorem canonicalChunks_get?_source
+    (identity : UInt64) (bytes : List UInt8)
+    (haligned : bytes.length % 8 = 0)
+    (index : Nat) (hindex : index < bytes.length / 8) :
+    (canonicalChunks identity bytes)[index]? =
+      some
+        { identity
+          offset := index * 8
+          bytes := (bytes.drop (index * 8)).take 8
+          terminal := index + 1 == bytes.length / 8 } := by
+  unfold canonicalChunks
+  simpa only [Nat.zero_add] using
+    canonicalChunksAux_get?_source identity 0 (bytes.length / 8) bytes
+      (by omega) index hindex
+
 /-- Canonical chunks reconstruct every aligned byte buffer exactly, not merely
 the finite regression corpus. -/
 theorem canonicalChunks_reconstruct (identity : UInt64) (bytes : List UInt8)
