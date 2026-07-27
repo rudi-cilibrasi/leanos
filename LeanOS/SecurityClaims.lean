@@ -212,6 +212,23 @@ theorem dma_invalid_live_control_is_fatal_and_absorbing
     state snapshot reason operations hrunning hinvalid
   exact ⟨⟨_, h.1⟩, h.2⟩
 
+/-- SC-DMA-CONTROL-DRIFT-FAILSTOP: a valid live PCI observation that differs from
+the boot-accepted authority is also a fatal composite transition, and every
+subsequent authoritative successor operation is absorbed. -/
+theorem dma_changed_live_control_is_fatal_and_absorbing
+    (state : FailStop.CompositeState) (snapshot : DMAQuarantine.Snapshot)
+    (accepted : DMAQuarantine.AcceptedSnapshot)
+    (operations : List FailStop.AuthoritativeOperation)
+    (hrunning : state.execution.mode = .running)
+    (hvalid : DMAQuarantine.validate snapshot = .accepted accepted)
+    (hchanged : snapshot ≠ state.dmaAccepted.snapshot) :
+    let next := (FailStop.observeDMAControl state snapshot).state
+    (∃ record, next.execution.mode = .halted record) ∧
+      FailStop.runAuthoritativeOperations next operations = next := by
+  have h := FailStop.observeDMAControl_changed_authoritative_suffix_absorbing
+    state snapshot accepted operations hrunning hvalid hchanged
+  exact ⟨⟨_, h.1⟩, h.2⟩
+
 /-- SC-LIFETIME-IDENTITY-NO-REUSE: under the bounded-issuer runtime invariant,
 every finite sequence of composite lifecycle operations preserves
 counter/history agreement, can never make a retired object identity or a
