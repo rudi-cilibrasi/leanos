@@ -14342,6 +14342,17 @@ def AuthoritativeOperationCompatible (state : CompositeState) :
         (authoritativeGate state (.blocking operation)).state
   | .drainDeferred _ => True
 
+/-- Contained entry has no caller-supplied post-state compatibility law.  Its
+sole operation-local premise is the trusted execution/lifecycle identity
+binding consumed by atomic cleanup.  Naming this constructor explicitly lets
+finite authoritative traces certify an interrupt member without unfolding the
+complete compatibility classifier. -/
+theorem interrupt_authoritativeOperationCompatible state frame
+    (hbound : ContainedFaultIdentityBound state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.interrupt frame)) :=
+  hbound
+
 /-- Control, data-only IPC, and raw scheduler constructors retain every
 projection observed by dormant cancellation.  Their shared public operation
 class can therefore discharge the successor-gate compatibility boundary
@@ -17105,6 +17116,20 @@ theorem authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
   exact gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
     state frame hstate hbound
 
+/-- An identity-bound interrupt is a closed authoritative-gate transition: its
+explicit constructor compatibility law feeds the common successor theorem, so
+contained cleanup and every non-contained outcome preserve the complete folded
+runtime invariant through the same public gate. -/
+theorem authoritativeGate_interrupt_preserves_authoritativeRuntimeWellFormed
+    state frame
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hbound : ContainedFaultIdentityBound state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.interrupt frame))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.interrupt frame)) hstate
+    (interrupt_authoritativeOperationCompatible state frame hbound)
+
 /-- The successor gate preserves the strongest deferred invariant across its
 out-of-band NMI operation, including the handling-mode path unavailable to
 ordinary operations. -/
@@ -17184,6 +17209,46 @@ theorem runAuthoritativeInterruptThenDeferredDrains_preserves
     (authoritativeGate state (.ordinary (.interrupt frame))).state subjects
     (authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
       state frame hstate hbound)
+
+/-- The interrupt identity binding and the premise-free deferred-drain
+constructors form a compatibility certificate for the complete public mixed
+trace.  This is the trace-level bridge to the general authoritative
+preservation theorem, rather than a parallel interrupt-specific runner. -/
+theorem authoritativeTraceCompatible_interruptThenDeferredDrains
+    state frame (subjects : List BlockingIPC.SubjectId)
+    (hbound : ContainedFaultIdentityBound state) :
+    AuthoritativeTraceCompatible state
+      (.ordinary (.interrupt frame) ::
+        subjects.map AuthoritativeOperation.drainDeferred) := by
+  have hdrains : ∀ candidate,
+      AuthoritativeTraceCompatible candidate
+        (subjects.map AuthoritativeOperation.drainDeferred) := by
+    induction subjects with
+    | nil =>
+        intro candidate
+        trivial
+    | cons subject rest ih =>
+        intro candidate
+        exact ⟨trivial, ih _⟩
+  constructor
+  · exact interrupt_authoritativeOperationCompatible state frame hbound
+  · exact hdrains _
+
+/-- The general compatibility-certified trace theorem now covers an
+identity-bound interrupt followed by any finite sequence of capacity-checked
+deferred drains while retaining the complete authoritative invariant. -/
+theorem runAuthoritativeCompatibleInterruptThenDeferredDrains_preserves
+    state frame (subjects : List BlockingIPC.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hbound : ContainedFaultIdentityBound state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary (.interrupt frame) ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state _ hstate
+    (authoritativeTraceCompatible_interruptThenDeferredDrains
+      state frame subjects hbound)
 
 /-- NMI fail-stop and any proposed deferred-drain suffix form one public
 authoritative trace.  The first step preserves the strongest invariant and
