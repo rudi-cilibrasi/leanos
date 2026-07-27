@@ -46,8 +46,8 @@ def entryLimit : UInt64 := UInt64.ofNat LeanOS.BootMemoryMap.maxEntries
 def initialChain : UInt64 := 0xcbf29ce484222325
 def chainPrime : UInt64 := 0x100000001b3
 
-private def low32 (word : UInt64) : UInt64 := word &&& 0xffffffff
-private def high32 (word : UInt64) : UInt64 := word >>> 32
+def low32 (word : UInt64) : UInt64 := word &&& 0xffffffff
+def high32 (word : UInt64) : UInt64 := word >>> 32
 private def nextChain (chain chunk : UInt64) : UInt64 :=
   (chain ^^^ chunk) * chainPrime
 
@@ -113,7 +113,7 @@ theorem initWord_of_admitted
 private def overlap (base stop first past : UInt64) : Bool :=
   base < past && first < stop
 
-private def transitionError (version status error identity extent offset phase
+def transitionError (version status error identity extent offset phase
     content padded sawMap entries base length usable blocked target
     _highest tagCount streamIdentity streamOffset chunk terminal : UInt64) : UInt64 :=
   if version != abiVersion || status != active || error != noError ||
@@ -157,7 +157,7 @@ private def transitionError (version status error identity extent offset phase
     else noError
   else noError
 
-private def nextPhase (phase chunk content padded : UInt64) : UInt64 :=
+def nextPhase (phase chunk content padded : UInt64) : UInt64 :=
   if phase == phaseInfo then phaseTag
   else if phase == phaseTag then
     let tagType := low32 chunk
@@ -176,7 +176,7 @@ private def nextPhase (phase chunk content padded : UInt64) : UInt64 :=
     if content == 24 then phaseTag else phaseEntryBase
   else phase
 
-private def nextContent (phase chunk content : UInt64) : UInt64 :=
+def nextContent (phase chunk content : UInt64) : UInt64 :=
   if phase == phaseTag then
     let tagType := low32 chunk
     let size := high32 chunk
@@ -188,7 +188,7 @@ private def nextContent (phase chunk content : UInt64) : UInt64 :=
   else if phase == phaseEntryType then content - 24
   else content
 
-private def nextPadded (phase chunk padded : UInt64) : UInt64 :=
+def nextPadded (phase chunk padded : UInt64) : UInt64 :=
   if phase == phaseTag then
     let tagType := low32 chunk
     let size := high32 chunk
@@ -197,7 +197,7 @@ private def nextPadded (phase chunk padded : UInt64) : UInt64 :=
   else if phase == phaseIgnored then padded - 8
   else padded
 
-private def completedError (reason advanced extent nphase : UInt64) : UInt64 :=
+def completedError (reason advanced extent nphase : UInt64) : UInt64 :=
   if reason != noError then reason
   else if advanced == extent && nphase != phaseDone then missingEnd
   else noError
