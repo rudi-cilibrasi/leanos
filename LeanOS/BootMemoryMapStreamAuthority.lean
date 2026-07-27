@@ -206,6 +206,23 @@ private def entryStop (base length : UInt64) : UInt64 := base + length
 private def frameFirst (target : UInt64) : UInt64 := target * 4096
 private def framePast (target : UInt64) : UInt64 := target * 4096 + 4096
 
+/-- The scalar entry-type word denotes full target-frame coverage by a usable
+Multiboot entry.  This public proof-side predicate names the exact generated
+classification test without exposing parser internals. -/
+def entryUsableCoverage
+    (base length kindWord target : UInt64) : Bool :=
+  kindWord &&& 0xffffffff == 1 &&
+    base <= target * 4096 &&
+    target * 4096 + 4096 <= base + length
+
+/-- The scalar entry-type word denotes any target-frame overlap by a
+non-usable Multiboot entry. -/
+def entryNonUsableOverlap
+    (base length kindWord target : UInt64) : Bool :=
+  kindWord &&& 0xffffffff != 1 &&
+    base < target * 4096 + 4096 &&
+    target * 4096 < base + length
+
 @[export leanos_boot_decode_step]
 def stepWord (version status error identity extent offset chain phase content padded
     sawMap entries base length usable blocked target highest tagCount
@@ -269,6 +286,42 @@ theorem step_error_word
           streamIdentity streamOffset chunk terminal)
         (offset + 8) extent (nextPhase phase chunk content padded) := by
   simp [stepWord]
+
+/-- An accepted entry-type transition updates the two coverage accumulators
+with exactly the public usable/non-usable classification predicates.  This is
+the local semantic bridge used when folding rich decoded entries into the
+terminal scalar words. -/
+theorem accepted_entryType_classification_words
+    version status error identity extent offset chain phase content padded
+    sawMap entries base length usable blocked target highest tagCount
+    streamIdentity streamOffset chunk terminal
+    (hphase : phase = phaseEntryType)
+    (haccepted :
+      stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 2 = noError) :
+    stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 14 =
+      (if entryUsableCoverage base length chunk target then 1 else usable) ∧
+    stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 15 =
+      (if entryNonUsableOverlap base length chunk target then 1 else blocked) := by
+  subst phase
+  have hfinal :
+      completedError
+          (transitionError version status error identity extent offset
+            phaseEntryType content padded
+            sawMap entries base length usable blocked target highest tagCount
+            streamIdentity streamOffset chunk terminal)
+          (offset + 8) extent
+            (nextPhase phaseEntryType chunk content padded) =
+        noError := by
+    simpa [stepWord] using haccepted
+  simp [stepWord, hfinal, entryUsableCoverage,
+    entryNonUsableOverlap, low32, frameFirst, framePast, entryStop, overlap,
+    and_assoc]
 
 /-- Every rejected scalar transition is fail-closed for arbitrary caller state:
 only ABI version, rejected status, and the typed error remain observable. -/

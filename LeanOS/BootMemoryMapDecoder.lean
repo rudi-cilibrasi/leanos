@@ -67,6 +67,81 @@ def readU32 (bytes : List UInt8) (offset : Nat) : Except Error Nat :=
 def readU64 (bytes : List UInt8) (offset : Nat) : Except Error Nat :=
   readLE bytes offset 8
 
+def low32Nat (word : Nat) : Nat := word % (2 ^ 32)
+def high32Nat (word : Nat) : Nat := word / (2 ^ 32)
+
+private theorem readLEAux_drop (bytes : List UInt8)
+    (offset remaining factor acc : Nat) :
+    readLEAux (bytes.drop offset) 0 remaining factor acc =
+      readLEAux bytes offset remaining factor acc := by
+  induction remaining generalizing bytes offset factor acc with
+  | zero =>
+      rfl
+  | succ remaining ih =>
+      simp only [readLEAux]
+      have hbyte :
+          readByte (bytes.drop offset) 0 = readByte bytes offset := by
+        simp [readByte, List.getElem?_drop]
+      rw [hbyte]
+      cases hread : readByte bytes offset with
+      | error reason =>
+          rfl
+      | ok byte =>
+          simp only [bind, Except.bind]
+          rw [← ih bytes (offset + 1) (factor * 256) (acc + byte * factor)]
+          rw [← ih (bytes.drop offset) 1 (factor * 256) (acc + byte * factor)]
+          simp [List.drop_drop]
+
+private theorem readLEAux_take (bytes : List UInt8)
+    (remaining factor acc : Nat) :
+    readLEAux (bytes.take remaining) 0 remaining factor acc =
+      readLEAux bytes 0 remaining factor acc := by
+  induction remaining generalizing bytes factor acc with
+  | zero =>
+      rfl
+  | succ remaining ih =>
+      cases bytes with
+      | nil =>
+          simp [readLEAux, readByte]
+      | cons byte bytes =>
+          simp only [List.take_succ_cons, readLEAux]
+          simp only [readByte, List.getElem?_cons_zero, bind, Except.bind]
+          rw [← readLEAux_drop (byte :: bytes.take remaining) 1
+            remaining (factor * 256) (acc + byte.toNat * factor)]
+          rw [← readLEAux_drop (byte :: bytes) 1
+            remaining (factor * 256) (acc + byte.toNat * factor)]
+          simp only [List.drop_succ_cons]
+          exact ih bytes (factor * 256) (acc + byte.toNat * factor)
+
+/-- Reading a fixed-width little-endian field is unchanged by first isolating
+the exact source slice.  Canonical scalar chunks use the left side, while the
+rich decoder uses the right side. -/
+theorem readLE_drop_take (bytes : List UInt8) (offset width : Nat) :
+    readLE ((bytes.drop offset).take width) 0 width =
+      readLE bytes offset width := by
+  unfold readLE
+  rw [readLEAux_take, readLEAux_drop]
+
+/-- Every aligned canonical chunk is read as the same 64-bit word by the rich
+decoder at its source offset and by the scalar replay from the isolated chunk. -/
+theorem readU64_drop_take (bytes : List UInt8) (offset : Nat) :
+    readU64 ((bytes.drop offset).take 8) 0 = readU64 bytes offset := by
+  exact readLE_drop_take bytes offset 8
+
+/-- The scalar low-half operation and the rich decoder's Nat projection agree
+for every admitted 64-bit word. -/
+theorem low32Word_ofNat (word : Nat) (hword : word < wordLimit) :
+    UInt64.ofNat word &&& 0xffffffff =
+      UInt64.ofNat (low32Nat word) := by
+  apply UInt64.toNat.inj
+  rw [UInt64.toNat_and, UInt64.toNat_ofNat_of_lt' hword]
+  have hlow : low32Nat word < UInt64.size := by
+    unfold low32Nat UInt64.size
+    omega
+  rw [UInt64.toNat_ofNat_of_lt' hlow]
+  change word &&& (2 ^ 32 - 1) = word % (2 ^ 32)
+  exact Nat.and_two_pow_sub_one_eq_mod word 32
+
 private theorem readLEAux_succeeds (bytes : List UInt8)
     (offset remaining factor acc : Nat)
     (hbound : offset + remaining ≤ bytes.length) :
@@ -98,6 +173,18 @@ def memoryKind (kind : Nat) : MemoryKind :=
   | 5 => .badMemory
   | _ => .reserved
 
+/-- The scalar raw entry type word and rich typed classification have one
+usable case: Multiboot type one. -/
+theorem memoryKind_usable_word (kind : Nat) :
+    (memoryKind kind == MemoryKind.usable) = (kind == 1) := by
+  unfold memoryKind
+  split <;> try rfl
+  next hkind _ _ _ =>
+    have heq : (kind == 1) = false := by
+      exact beq_false_of_ne hkind
+    rw [heq]
+    rfl
+
 private def decodeEntries (bytes : List UInt8) (offset count : Nat) :
     Except Error (List RawEntry) :=
   match count with
@@ -105,8 +192,9 @@ private def decodeEntries (bytes : List UInt8) (offset count : Nat) :
   | count + 1 => do
       let base ← readU64 bytes offset
       let length ← readU64 bytes (offset + 8)
-      let kind ← readU32 bytes (offset + 16)
-      let reserved ← readU32 bytes (offset + 20)
+      let kindWord ← readU64 bytes (offset + 16)
+      let kind := low32Nat kindWord
+      let reserved := high32Nat kindWord
       if reserved != 0 then throw .nonzeroEntryReserved
       if length == 0 then throw .zeroLengthEntry
       if base ≥ wordLimit || length ≥ wordLimit ||
@@ -121,8 +209,9 @@ private def decodeTags (bytes : List UInt8) (total offset fuel : Nat)
   | 0 => throw .tooManyTags
   | fuel + 1 =>
       if offset + 8 > total then throw .truncatedField
-      let tagType ← readU32 bytes offset
-      let tagSize ← readU32 bytes (offset + 4)
+      let tagWord ← readU64 bytes offset
+      let tagType := low32Nat tagWord
+      let tagSize := high32Nat tagWord
       if tagSize < 8 then throw .malformedTagSize
       if offset + tagSize > total then throw .tagOutOfBounds
       let advance := aligned8 tagSize
@@ -135,8 +224,9 @@ private def decodeTags (bytes : List UInt8) (total offset fuel : Nat)
       else if tagType == 6 then
         if sawMemoryMap then throw .duplicateMemoryMap
         if tagSize < memoryMapTagHeaderSize then throw .malformedTagSize
-        let entrySize ← readU32 bytes (offset + 8)
-        let entryVersion ← readU32 bytes (offset + 12)
+        let layoutWord ← readU64 bytes (offset + 8)
+        let entrySize := low32Nat layoutWord
+        let entryVersion := high32Nat layoutWord
         if entrySize != memoryMapEntrySize then throw .badEntrySize
         if entryVersion != 0 then throw .unsupportedEntryVersion
         let entryBytes := tagSize - memoryMapTagHeaderSize
@@ -178,8 +268,9 @@ def decode (input : Input) : Except Error Decoded := do
   let infoAddressValid ← validateInfoAddress input.infoAddress
   if input.bytes.length < 16 then throw .bufferTooSmall
   if input.bytes.length > maxTagBytes then throw .bufferTooLarge
-  let totalSize ← readU32 input.bytes 0
-  let reserved ← readU32 input.bytes 4
+  let infoWord ← readU64 input.bytes 0
+  let totalSize := low32Nat infoWord
+  let reserved := high32Nat infoWord
   if totalSize != input.bytes.length then throw .advertisedSizeMismatch
   if totalSize % 8 != 0 then throw .advertisedSizeMismatch
   if reserved != 0 then throw .nonzeroInfoReserved
@@ -232,47 +323,41 @@ theorem accepted_input_header (input : Input) (decoded : Decoded)
           · rw [if_pos hlarge] at h
             contradiction
           · rw [if_neg hlarge] at h
-            cases htotal : readU32 input.bytes 0 with
+            cases hword : readU64 input.bytes 0 with
             | error reason =>
-                simp only [htotal] at h
+                simp only [hword] at h
                 contradiction
-            | ok totalSize =>
-                simp only [htotal] at h
-                cases hreserved : readU32 input.bytes 4 with
-                | error reason =>
-                    simp only [hreserved] at h
+            | ok infoWord =>
+                simp only [hword] at h
+                by_cases hlength : low32Nat infoWord != input.bytes.length
+                · rw [if_pos hlength] at h
+                  contradiction
+                · rw [if_neg hlength] at h
+                  by_cases haligned : low32Nat infoWord % 8 != 0
+                  · rw [if_pos haligned] at h
                     contradiction
-                | ok reserved =>
-                    simp only [hreserved] at h
-                    by_cases hlength : totalSize != input.bytes.length
-                    · rw [if_pos hlength] at h
+                  · rw [if_neg haligned] at h
+                    by_cases hzero : high32Nat infoWord != 0
+                    · rw [if_pos hzero] at h
                       contradiction
-                    · rw [if_neg hlength] at h
-                      by_cases haligned : totalSize % 8 != 0
-                      · rw [if_pos haligned] at h
-                        contradiction
-                      · rw [if_neg haligned] at h
-                        by_cases hzero : reserved != 0
-                        · rw [if_pos hzero] at h
+                    · rw [if_neg hzero] at h
+                      cases htags :
+                          decodeTags input.bytes (low32Nat infoWord) 8 maxTags false [] with
+                      | error reason =>
+                          simp only [htags] at h
                           contradiction
-                        · rw [if_neg hzero] at h
-                          cases htags :
-                              decodeTags input.bytes totalSize 8 maxTags false [] with
-                          | error reason =>
-                              simp only [htags] at h
-                              contradiction
-                          | ok tags =>
-                              simp only [htags] at h
+                      | ok tags =>
+                          simp only [htags] at h
+                          split at h <;> try contradiction
+                          next entries hvalid =>
+                            split at h <;> try contradiction
+                            next _ hentries =>
                               split at h <;> try contradiction
-                              next entries hvalid =>
-                                split at h <;> try contradiction
-                                next _ hentries =>
-                                  split at h <;> try contradiction
-                                  next hbounds =>
-                                    injection h with hdecoded
-                                    subst decoded
-                                    exact ⟨rfl, rfl, by
-                                      simpa using hlength⟩
+                              next hbounds =>
+                                injection h with hdecoded
+                                subst decoded
+                                exact ⟨rfl, rfl, by
+                                  simpa using hlength⟩
 
 /-- The immutable source header of every successful rich decode satisfies all
 Nat-side admission conditions needed by the scalar streaming initializer.
