@@ -142,6 +142,80 @@ theorem low32Word_ofNat (word : Nat) (hword : word < wordLimit) :
   change word &&& (2 ^ 32 - 1) = word % (2 ^ 32)
   exact Nat.and_two_pow_sub_one_eq_mod word 32
 
+/-- The scalar high-half operation and the rich decoder's Nat projection
+agree for every admitted 64-bit word. -/
+theorem high32Word_ofNat (word : Nat) (hword : word < wordLimit) :
+    UInt64.ofNat word >>> 32 =
+      UInt64.ofNat (high32Nat word) := by
+  apply UInt64.toNat.inj
+  rw [UInt64.toNat_shiftRight, UInt64.toNat_ofNat_of_lt' hword]
+  have hhigh : high32Nat word < UInt64.size := by
+    unfold high32Nat UInt64.size
+    unfold wordLimit at hword
+    omega
+  rw [UInt64.toNat_ofNat_of_lt' hhigh]
+  simp [Nat.shiftRight_eq_div_pow, high32Nat]
+
+private theorem readByte_lt_byteLimit
+    (bytes : List UInt8) (offset byte : Nat)
+    (hread : readByte bytes offset = .ok byte) :
+    byte < 256 := by
+  unfold readByte at hread
+  cases hbyte : bytes[offset]? with
+  | none =>
+      rw [hbyte] at hread
+      contradiction
+  | some source =>
+      rw [hbyte] at hread
+      injection hread with heq
+      subst byte
+      exact source.toNat_lt
+
+private theorem readLEAux_lt_factor
+    (bytes : List UInt8) (offset remaining factor acc value : Nat)
+    (hacc : acc < factor)
+    (hread : readLEAux bytes offset remaining factor acc = .ok value) :
+    value < factor * 256 ^ remaining := by
+  induction remaining generalizing offset factor acc with
+  | zero =>
+      simp only [readLEAux] at hread
+      injection hread with heq
+      subst value
+      simpa using hacc
+  | succ remaining ih =>
+      simp only [readLEAux, bind, Except.bind] at hread
+      cases hbyte : readByte bytes offset with
+      | error reason =>
+          rw [hbyte] at hread
+          contradiction
+      | ok byte =>
+          rw [hbyte] at hread
+          have hbyteLt := readByte_lt_byteLimit bytes offset byte hbyte
+          have hnextAcc : acc + byte * factor < factor * 256 := by
+            calc
+              acc + byte * factor < factor + byte * factor :=
+                Nat.add_lt_add_right hacc (byte * factor)
+              _ = (byte + 1) * factor := by
+                simp [Nat.add_mul, Nat.add_comm]
+              _ ≤ 256 * factor :=
+                Nat.mul_le_mul_right factor (by omega)
+              _ = factor * 256 := Nat.mul_comm _ _
+          have hnext :=
+            ih (offset + 1) (factor * 256) (acc + byte * factor)
+              hnextAcc hread
+          rw [Nat.pow_succ]
+          simpa [Nat.mul_assoc, Nat.mul_comm, Nat.mul_left_comm] using hnext
+
+/-- Every successful checked eight-byte read is representable without
+truncation in the scalar decoder's `UInt64` word. -/
+theorem readU64_lt_wordLimit
+    (bytes : List UInt8) (offset value : Nat)
+    (hread : readU64 bytes offset = .ok value) :
+    value < wordLimit := by
+  have hbound :=
+    readLEAux_lt_factor bytes offset 8 1 0 value (by decide) hread
+  simpa [readU64, readLE, wordLimit] using hbound
+
 private theorem readLEAux_succeeds (bytes : List UInt8)
     (offset remaining factor acc : Nat)
     (hbound : offset + remaining ≤ bytes.length) :
