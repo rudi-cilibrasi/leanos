@@ -334,6 +334,248 @@ private def decodeTags (bytes : List UInt8) (total offset fuel : Nat)
         decodeTags bytes total (offset + advance) fuel sawMemoryMap
           (.ignored tagSize :: tagsRev)
 
+/-- Structural evidence for every tag consumed by a successful recursive byte
+walk.  Each constructor retains the exact source header word and all arithmetic
+that admitted its aligned advance.  A memory-map constructor additionally
+retains its layout word and the exact entry-level source traversal.  This
+proof-only relation is the tag-level induction principle needed to align the
+rich decoder with canonical eight-byte scalar chunks. -/
+inductive SuccessfulTagDecodeTraversal (bytes : List UInt8) (total : Nat) :
+    Nat → Nat → Bool → List Tag → List Tag → Prop
+  | endTag (offset fuel tagWord : Nat) (tagsRev : List Tag)
+      (hread : readU64 bytes offset = .ok tagWord)
+      (htype : low32Nat tagWord = 0)
+      (hsize : high32Nat tagWord = 8)
+      (hend : offset + 8 = total) :
+      SuccessfulTagDecodeTraversal bytes total offset (fuel + 1) true tagsRev
+        (tagsRev.reverse ++ [.end 8])
+  | ignoredTag (offset fuel tagWord : Nat) (sawMemoryMap : Bool)
+      (tagsRev tags : List Tag)
+      (hread : readU64 bytes offset = .ok tagWord)
+      (hsize : 8 ≤ high32Nat tagWord)
+      (hcontent : offset + high32Nat tagWord ≤ total)
+      (hadvance : offset + aligned8 (high32Nat tagWord) ≤ total)
+      (htypeEnd : low32Nat tagWord ≠ 0)
+      (htypeMap : low32Nat tagWord ≠ 6)
+      (hrest :
+        SuccessfulTagDecodeTraversal bytes total
+          (offset + aligned8 (high32Nat tagWord)) fuel sawMemoryMap
+          (.ignored (high32Nat tagWord) :: tagsRev) tags) :
+      SuccessfulTagDecodeTraversal bytes total offset (fuel + 1) sawMemoryMap
+        tagsRev tags
+  | memoryMapTag (offset fuel tagWord layoutWord : Nat)
+      (tagsRev tags : List Tag) (entries : List RawEntry)
+      (hread : readU64 bytes offset = .ok tagWord)
+      (hsize : memoryMapTagHeaderSize ≤ high32Nat tagWord)
+      (hcontent : offset + high32Nat tagWord ≤ total)
+      (hadvance : offset + aligned8 (high32Nat tagWord) ≤ total)
+      (htype : low32Nat tagWord = 6)
+      (hlayout : readU64 bytes (offset + 8) = .ok layoutWord)
+      (hentrySize : low32Nat layoutWord = memoryMapEntrySize)
+      (hentryVersion : high32Nat layoutWord = 0)
+      (halignedEntries :
+        (high32Nat tagWord - memoryMapTagHeaderSize) % memoryMapEntrySize = 0)
+      (hentryBound :
+        (high32Nat tagWord - memoryMapTagHeaderSize) / memoryMapEntrySize ≤
+          maxEntries)
+      (hentries :
+        SuccessfulEntryDecodeTraversal bytes
+          (offset + memoryMapTagHeaderSize)
+          ((high32Nat tagWord - memoryMapTagHeaderSize) / memoryMapEntrySize)
+          entries)
+      (hrest :
+        SuccessfulTagDecodeTraversal bytes total
+          (offset + aligned8 (high32Nat tagWord)) fuel true
+          (.memoryMap (high32Nat tagWord) (low32Nat layoutWord)
+            (high32Nat layoutWord) entries :: tagsRev) tags) :
+      SuccessfulTagDecodeTraversal bytes total offset (fuel + 1) false tagsRev tags
+
+/-- Every successful recursive tag decode constructs the exact tag/source
+traversal certificate.  The proof follows the decoder's fuel recursion and
+therefore introduces no second parser or acceptance assumption. -/
+private theorem decodeTags_constructs_traversal
+    (bytes : List UInt8) (total offset fuel : Nat)
+    (sawMemoryMap : Bool) (tagsRev tags : List Tag)
+    (hdecode :
+      decodeTags bytes total offset fuel sawMemoryMap tagsRev = .ok tags) :
+    SuccessfulTagDecodeTraversal bytes total offset fuel sawMemoryMap tagsRev tags := by
+  induction fuel generalizing offset sawMemoryMap tagsRev tags with
+  | zero =>
+      unfold decodeTags at hdecode
+      by_cases hoffset : offset == total
+      · rw [if_pos hoffset] at hdecode
+        contradiction
+      · rw [if_neg hoffset] at hdecode
+        contradiction
+  | succ fuel ih =>
+      unfold decodeTags at hdecode
+      simp only [bind, Except.bind] at hdecode
+      by_cases hoffset : offset == total
+      · rw [if_pos hoffset] at hdecode
+        contradiction
+      · rw [if_neg hoffset] at hdecode
+        by_cases hheader : offset + 8 > total
+        · rw [if_pos hheader] at hdecode
+          contradiction
+        · rw [if_neg hheader] at hdecode
+          cases htagWord : readU64 bytes offset with
+          | error reason =>
+              simp only [htagWord] at hdecode
+              contradiction
+          | ok tagWord =>
+              simp only [htagWord] at hdecode
+              by_cases hsize : high32Nat tagWord < 8
+              · rw [if_pos hsize] at hdecode
+                contradiction
+              · rw [if_neg hsize] at hdecode
+                by_cases hcontent : offset + high32Nat tagWord > total
+                · rw [if_pos hcontent] at hdecode
+                  contradiction
+                · rw [if_neg hcontent] at hdecode
+                  by_cases hadvance :
+                      offset + aligned8 (high32Nat tagWord) > total
+                  · rw [if_pos hadvance] at hdecode
+                    contradiction
+                  · rw [if_neg hadvance] at hdecode
+                    by_cases hend : low32Nat tagWord == 0
+                    · rw [if_pos hend] at hdecode
+                      by_cases hendSize : high32Nat tagWord != 8
+                      · rw [if_pos hendSize] at hdecode
+                        contradiction
+                      · rw [if_neg hendSize] at hdecode
+                        by_cases hendOffset :
+                            offset + aligned8 (high32Nat tagWord) != total
+                        · rw [if_pos hendOffset] at hdecode
+                          contradiction
+                        · rw [if_neg hendOffset] at hdecode
+                          by_cases hsaw : !sawMemoryMap
+                          · rw [if_pos hsaw] at hdecode
+                            contradiction
+                          · rw [if_neg hsaw] at hdecode
+                            injection hdecode with htags
+                            subst tags
+                            have hsawTrue : sawMemoryMap = true := by
+                              simpa using hsaw
+                            subst sawMemoryMap
+                            apply SuccessfulTagDecodeTraversal.endTag
+                              offset fuel tagWord tagsRev htagWord
+                            · simpa using hend
+                            · simpa using hendSize
+                            · have hsizeEq : high32Nat tagWord = 8 := by
+                                simpa using hendSize
+                              have haligned :
+                                  aligned8 (high32Nat tagWord) = 8 := by
+                                simp [hsizeEq, aligned8]
+                              rw [haligned] at hendOffset
+                              simpa using hendOffset
+                    · rw [if_neg hend] at hdecode
+                      by_cases hmap : low32Nat tagWord == 6
+                      · rw [if_pos hmap] at hdecode
+                        by_cases hsaw : sawMemoryMap
+                        · rw [if_pos hsaw] at hdecode
+                          contradiction
+                        · rw [if_neg hsaw] at hdecode
+                          by_cases hmapSize :
+                              high32Nat tagWord < memoryMapTagHeaderSize
+                          · rw [if_pos hmapSize] at hdecode
+                            contradiction
+                          · rw [if_neg hmapSize] at hdecode
+                            cases hlayout :
+                                readU64 bytes (offset + 8) with
+                            | error reason =>
+                                simp only [hlayout] at hdecode
+                                contradiction
+                            | ok layoutWord =>
+                                simp only [hlayout] at hdecode
+                                by_cases hentrySize :
+                                    low32Nat layoutWord != memoryMapEntrySize
+                                · rw [if_pos hentrySize] at hdecode
+                                  contradiction
+                                · rw [if_neg hentrySize] at hdecode
+                                  by_cases hentryVersion :
+                                      high32Nat layoutWord != 0
+                                  · rw [if_pos hentryVersion] at hdecode
+                                    contradiction
+                                  · rw [if_neg hentryVersion] at hdecode
+                                    by_cases hentryAlignment :
+                                        (high32Nat tagWord -
+                                            memoryMapTagHeaderSize) %
+                                            low32Nat layoutWord != 0
+                                    · rw [if_pos hentryAlignment] at hdecode
+                                      contradiction
+                                    · rw [if_neg hentryAlignment] at hdecode
+                                      by_cases hentryCount :
+                                          (high32Nat tagWord -
+                                              memoryMapTagHeaderSize) /
+                                              low32Nat layoutWord > maxEntries
+                                      · rw [if_pos hentryCount] at hdecode
+                                        contradiction
+                                      · rw [if_neg hentryCount] at hdecode
+                                        have hsawFalse : sawMemoryMap = false := by
+                                          simpa using hsaw
+                                        subst sawMemoryMap
+                                        have hentrySizeEq :
+                                            low32Nat layoutWord =
+                                              memoryMapEntrySize := by
+                                          simpa using hentrySize
+                                        have hentryVersionEq :
+                                            high32Nat layoutWord = 0 := by
+                                          simpa using hentryVersion
+                                        cases hdecodedEntries :
+                                            decodeEntries bytes
+                                              (offset + memoryMapTagHeaderSize)
+                                              ((high32Nat tagWord -
+                                                memoryMapTagHeaderSize) /
+                                                low32Nat layoutWord) with
+                                        | error reason =>
+                                            simp only [hdecodedEntries] at hdecode
+                                            contradiction
+                                        | ok entries =>
+                                            simp only [hdecodedEntries] at hdecode
+                                            apply
+                                              SuccessfulTagDecodeTraversal.memoryMapTag
+                                                offset fuel tagWord layoutWord
+                                                tagsRev tags entries htagWord
+                                            · simpa using hmapSize
+                                            · simpa using hcontent
+                                            · simpa using hadvance
+                                            · simpa using hmap
+                                            · exact hlayout
+                                            · exact hentrySizeEq
+                                            · exact hentryVersionEq
+                                            · simpa [hentrySizeEq] using hentryAlignment
+                                            · simpa [hentrySizeEq] using hentryCount
+                                            · simpa [hentrySizeEq] using
+                                                decodeEntries_constructs_traversal
+                                                  bytes
+                                                  (offset + memoryMapTagHeaderSize)
+                                                  ((high32Nat tagWord -
+                                                    memoryMapTagHeaderSize) /
+                                                    low32Nat layoutWord)
+                                                  entries hdecodedEntries
+                                            · exact ih
+                                                (offset +
+                                                  aligned8 (high32Nat tagWord))
+                                                true
+                                                (.memoryMap (high32Nat tagWord)
+                                                  (low32Nat layoutWord)
+                                                  (high32Nat layoutWord) entries ::
+                                                  tagsRev)
+                                                tags hdecode
+                      · rw [if_neg hmap] at hdecode
+                        apply SuccessfulTagDecodeTraversal.ignoredTag
+                          offset fuel tagWord sawMemoryMap tagsRev tags htagWord
+                        · simpa using hsize
+                        · simpa using hcontent
+                        · simpa using hadvance
+                        · simpa using hend
+                        · simpa using hmap
+                        · exact ih
+                            (offset + aligned8 (high32Nat tagWord))
+                            sawMemoryMap
+                            (.ignored (high32Nat tagWord) :: tagsRev)
+                            tags hdecode
+
 def withinBounds (handoff : Handoff) (entries : List RawEntry) : Bool :=
   handoff.totalSize ≤ maxTagBytes &&
     handoff.tags.length ≤ maxTags &&
@@ -358,6 +600,8 @@ structure SuccessfulRichDecodeTraversal (input : Input) (decoded : Decoded) : Pr
     ∃ infoWord tags,
       readU64 input.bytes 0 = .ok infoWord ∧
       decodeTags input.bytes (low32Nat infoWord) 8 maxTags false [] = .ok tags ∧
+      SuccessfulTagDecodeTraversal input.bytes (low32Nat infoWord)
+        8 maxTags false [] tags ∧
       decoded.handoff =
         { magic := input.magic
           infoAddress := input.infoAddress
@@ -468,8 +712,10 @@ theorem successful_decode_constructs_traversal (input : Input) (decoded : Decode
                               next hbounds =>
                                 injection h with hdecoded
                                 subst decoded
-                                exact ⟨⟨infoWord, tags, hword, htags, rfl,
-                                  hvalid, hentries, hbounds⟩⟩
+                                exact ⟨⟨infoWord, tags, hword, htags,
+                                  decodeTags_constructs_traversal input.bytes
+                                    (low32Nat infoWord) 8 maxTags false [] tags htags,
+                                  rfl, hvalid, hentries, hbounds⟩⟩
 
 /-- Successful decoding retains the exact scalar header fields supplied by the
 immutable input.  This is the structural bridge used before proving the
