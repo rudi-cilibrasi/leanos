@@ -315,15 +315,24 @@ arbitrary continuation. `SuccessfulIgnoredTagSpan` threads the exact scalar
 state through every accepted ignored content/padding word, and
 `successfulScalarRichTraversal_ignoredTagSpan` composes the complete span
 around the later traversal without permitting reordering or splicing.
+`canonicalChunks_length` fixes the number of chunks in that source sequence,
+while `successfulIgnoredTagSpan_canonical` now selects every body/padding word
+at its retained source index, proves its production transition accepted, and
+threads the exact cursor, counters, and phase to the next word.
+`successfulIgnoredTagSpan_of_ignoredTagTraversal` obtains each complete span
+directly from the rich ignored-tag continuation and rounded source advance;
+the following retained tag header proves that no body word can be terminal.
+`successfulScalarRichTraversal_ignoredTagTraversal` feeds that certificate
+into `successfulScalarRichTraversal_ignoredTagSpan`, fixing both the canonical
+body list and intermediate scalar state without a shadow traversal.
 `memoryMapTagHeaderStepWords_of_admitted` next proves that the unique admitted
 map header enters the layout phase with its exact entry-byte count and marks
 the map as seen; `successfulScalarRichTraversal_memoryMapTagHeader` packages
 that transition around the remaining layout and entry traversal. The
-remaining induction must derive each ignored-span certificate from the
-retained tag traversal, consume the map layout, and consume every
-base/length/type triple to construct `SuccessfulScalarRichTraversal`. Until
-that final derivation exists, the fail-closed terminal comparison remains in
-place.
+remaining induction must consume the map layout and every base/length/type
+triple, and recursively assemble these tag-local pieces into the universal
+`SuccessfulScalarRichTraversal`. Until that final derivation exists, the
+fail-closed terminal comparison remains in place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
