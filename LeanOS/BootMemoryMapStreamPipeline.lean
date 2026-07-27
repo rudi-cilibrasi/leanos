@@ -276,6 +276,77 @@ def scalarInitialAt (streamIdentity : UInt64) (extent target : Nat) : ScalarStat
         (UInt64.ofNat multiboot2Magic) streamIdentity (UInt64.ofNat extent)
         (UInt64.ofNat target) (UInt64.ofNat query.val) }
 
+/-- Every successful rich decode and bounded rich-selected target constructs
+the exact admitted scalar parser state.  This is the first structural slice of
+the terminal scalar/rich refinement: no terminal status or coverage word is
+assumed or checked here. -/
+theorem scalarInitialAt_of_decode
+    (input : Input) (decoded : Decoded) (target : Nat)
+    (hdecode : BootMemoryMapDecoder.decode input = .ok decoded)
+    (htarget : target < frameLimit) :
+    let initial :=
+      scalarInitialAt (UInt64.ofNat input.infoAddress) input.bytes.length target
+    initial.word[1]! = BootMemoryMapStreamAuthority.active ∧
+      initial.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+      initial.word[3]! = UInt64.ofNat input.infoAddress ∧
+      initial.word[4]! = UInt64.ofNat input.bytes.length ∧
+      initial.word[5]! = 0 ∧
+      initial.word[7]! = BootMemoryMapStreamAuthority.phaseInfo ∧
+      initial.word[14]! = 0 ∧
+      initial.word[15]! = 0 ∧
+      initial.word[16]! = UInt64.ofNat target := by
+  have hheader :=
+    BootMemoryMapDecoder.accepted_input_scalar_header input decoded hdecode
+  have haddressLt : input.infoAddress < UInt64.size := by
+    simpa [wordLimit] using hheader.2.1
+  have hextentLt : input.bytes.length < UInt64.size := by
+    simpa [wordLimit] using hheader.2.2.1
+  have htargetLt : target < UInt64.size := by
+    exact Nat.lt_trans htarget (by decide)
+  have haligned :
+      UInt64.ofNat input.infoAddress % 8 = 0 := by
+    apply UInt64.toNat.inj
+    simp [UInt64.toNat_ofNat_of_lt' haddressLt, hheader.2.2.2.2.1]
+  have hlow : 4096 ≤ UInt64.ofNat input.infoAddress := by
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' haddressLt]
+    exact hheader.2.2.2.2.2.2.2.2
+  have hextentLow : 16 ≤ UInt64.ofNat input.bytes.length := by
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' hextentLt]
+    exact hheader.2.2.2.2.2.1
+  have hextentHigh : UInt64.ofNat input.bytes.length ≤ 65536 := by
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' hextentLt]
+    exact hheader.2.2.2.2.2.2.2.1
+  have hextentAligned :
+      UInt64.ofNat input.bytes.length % 8 = 0 := by
+    apply UInt64.toNat.inj
+    simp [UInt64.toNat_ofNat_of_lt' hextentLt, hheader.2.2.2.2.2.2.1]
+  have hnoOverflow :
+      UInt64.ofNat input.bytes.length ≤
+        0xffffffffffffffff - UInt64.ofNat input.infoAddress := by
+    have haddressMax :
+        UInt64.ofNat input.infoAddress ≤ 0xffffffffffffffff := by
+      rw [UInt64.le_iff_toNat_le,
+        UInt64.toNat_ofNat_of_lt' haddressLt]
+      simp only [UInt64.toNat_ofNat, Nat.reducePow, Nat.reduceMod]
+      simpa [UInt64.size] using Nat.le_pred_of_lt haddressLt
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' hextentLt,
+      UInt64.toNat_sub_of_le _ _ haddressMax,
+      UInt64.toNat_ofNat_of_lt' haddressLt]
+    simp only [UInt64.toNat_ofNat, Nat.reducePow, Nat.reduceMod]
+    exact hheader.2.2.2.1
+  have htargetWord : UInt64.ofNat target < 4096 := by
+    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_ofNat_of_lt' htargetLt]
+    simpa [frameLimit, physicalLimit, pageBytes] using htarget
+  have hinit (query : UInt64) :=
+    BootMemoryMapStreamAuthority.initWord_of_admitted
+      (UInt64.ofNat input.infoAddress) (UInt64.ofNat input.bytes.length)
+      (UInt64.ofNat target) query haligned hlow hextentLow hextentHigh
+      hextentAligned hnoOverflow htargetWord
+  simp [scalarInitialAt, multiboot2Magic, hinit,
+    BootMemoryMapStreamAuthority.active,
+    BootMemoryMapStreamAuthority.noError,
+    BootMemoryMapStreamAuthority.phaseInfo]
+
 def chunkWord (bytes : List UInt8) : UInt64 :=
   match BootMemoryMapDecoder.readU64 bytes 0 with
   | .ok value => UInt64.ofNat value

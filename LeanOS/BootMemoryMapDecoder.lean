@@ -204,6 +204,123 @@ theorem decode_functional (input : Input) (first second : Except Error Decoded)
   rw [hfirst] at hsecond
   exact hsecond
 
+/-- Successful decoding retains the exact scalar header fields supplied by the
+immutable input.  This is the structural bridge used before proving the
+streaming parser's terminal state. -/
+theorem accepted_input_header (input : Input) (decoded : Decoded)
+    (h : decode input = .ok decoded) :
+    decoded.handoff.magic = input.magic ∧
+      decoded.handoff.infoAddress = input.infoAddress ∧
+      decoded.handoff.totalSize = input.bytes.length := by
+  unfold decode at h
+  simp only [bind, Except.bind] at h
+  by_cases hmagic : input.magic != multiboot2Magic
+  · rw [if_pos hmagic] at h
+    contradiction
+  · rw [if_neg hmagic] at h
+    cases haddress : validateInfoAddress input.infoAddress with
+    | error reason =>
+        simp only [haddress] at h
+        contradiction
+    | ok infoAddressValid =>
+        simp only [haddress] at h
+        by_cases hsmall : input.bytes.length < 16
+        · rw [if_pos hsmall] at h
+          contradiction
+        · rw [if_neg hsmall] at h
+          by_cases hlarge : input.bytes.length > maxTagBytes
+          · rw [if_pos hlarge] at h
+            contradiction
+          · rw [if_neg hlarge] at h
+            cases htotal : readU32 input.bytes 0 with
+            | error reason =>
+                simp only [htotal] at h
+                contradiction
+            | ok totalSize =>
+                simp only [htotal] at h
+                cases hreserved : readU32 input.bytes 4 with
+                | error reason =>
+                    simp only [hreserved] at h
+                    contradiction
+                | ok reserved =>
+                    simp only [hreserved] at h
+                    by_cases hlength : totalSize != input.bytes.length
+                    · rw [if_pos hlength] at h
+                      contradiction
+                    · rw [if_neg hlength] at h
+                      by_cases haligned : totalSize % 8 != 0
+                      · rw [if_pos haligned] at h
+                        contradiction
+                      · rw [if_neg haligned] at h
+                        by_cases hzero : reserved != 0
+                        · rw [if_pos hzero] at h
+                          contradiction
+                        · rw [if_neg hzero] at h
+                          cases htags :
+                              decodeTags input.bytes totalSize 8 maxTags false [] with
+                          | error reason =>
+                              simp only [htags] at h
+                              contradiction
+                          | ok tags =>
+                              simp only [htags] at h
+                              split at h <;> try contradiction
+                              next entries hvalid =>
+                                split at h <;> try contradiction
+                                next _ hentries =>
+                                  split at h <;> try contradiction
+                                  next hbounds =>
+                                    injection h with hdecoded
+                                    subst decoded
+                                    exact ⟨rfl, rfl, by
+                                      simpa using hlength⟩
+
+/-- The immutable source header of every successful rich decode satisfies all
+Nat-side admission conditions needed by the scalar streaming initializer.
+This lemma deliberately stops at initialization; terminal parser and coverage
+agreement remain the subsequent structural refinement. -/
+theorem accepted_input_scalar_header (input : Input) (decoded : Decoded)
+    (h : decode input = .ok decoded) :
+    input.magic = multiboot2Magic ∧
+      input.infoAddress < wordLimit ∧
+      input.bytes.length < wordLimit ∧
+      input.bytes.length ≤ wordLimit - 1 - input.infoAddress ∧
+      input.infoAddress % 8 = 0 ∧
+      16 ≤ input.bytes.length ∧
+      input.bytes.length % 8 = 0 ∧
+      input.bytes.length ≤ maxTagBytes ∧
+      pageBytes ≤ input.infoAddress := by
+  have hheader := accepted_input_header input decoded h
+  have hvalid := decoded.handoffValid
+  unfold validateHandoff at hvalid
+  simp only [bind, Except.bind] at hvalid
+  by_cases hmagic : decoded.handoff.magic != multiboot2Magic
+  · rw [if_pos hmagic] at hvalid
+    contradiction
+  · rw [if_neg hmagic] at hvalid
+    by_cases hoverflow :
+        decoded.handoff.infoAddress ≥ wordLimit ||
+          decoded.handoff.totalSize ≥ wordLimit ||
+          decoded.handoff.totalSize >
+            wordLimit - 1 - decoded.handoff.infoAddress
+    · rw [if_pos hoverflow] at hvalid
+      contradiction
+    · rw [if_neg hoverflow] at hvalid
+      by_cases haligned : decoded.handoff.infoAddress % 8 != 0
+      · rw [if_pos haligned] at hvalid
+        contradiction
+      · rw [if_neg haligned] at hvalid
+        by_cases hsize :
+            decoded.handoff.totalSize < 16 ||
+              decoded.handoff.totalSize % 8 != 0
+        · rw [if_pos hsize] at hvalid
+          contradiction
+        · have hbounds := decoded.bounds
+          simp only [withinBounds, Bool.and_eq_true, decide_eq_true_eq] at hbounds
+          simp at hoverflow hsize hmagic haligned
+          rw [← hheader.1, ← hheader.2.1, ← hheader.2.2]
+          exact ⟨hmagic, by omega, by omega, by omega, haligned,
+            by omega, by omega, hbounds.1.1, decoded.infoAddressAtLeastPage⟩
+
 /-- Every accepted rich result carries the same low-address admission fact as
 the scalar production initializer.  This removes the aligned-address gap where
 the rich decoder could previously accept an identity below 4 KiB that the
@@ -344,6 +461,15 @@ def pipelineErrorOf {α : Type} : Except PipelineError α → Option PipelineErr
 
 example : errorOf (decode { sampleInput with infoAddress := pageBytes - 8 }) =
     some .infoAddressBelowMinimum := by native_decide
+
+/-- A buffer ending exactly at `2^64` cannot be represented by the scalar
+initializer and is rejected by the rich decoder as well. -/
+example :
+    errorOf
+        (decode
+          { sampleInput with
+            infoAddress := wordLimit - sampleBytes.length }) =
+      some (.typedHandoffRejected .addressOverflow) := by native_decide
 
 example : errorOf (decode (withBytes (sampleBytes.take (sampleBytes.length - 1)))) =
     some .advertisedSizeMismatch := by native_decide
