@@ -350,9 +350,10 @@ chunks for its base, length, and type words. The following tag header supplies
 the room proving that even the final type word is nonterminal. Its
 dropped-suffix equation prevents any of the three words from being reordered
 or replaced by an equal packed value from another position.
-`successfulScalarRichTraversal_canonicalMemoryMapEntry` then consumes that
-exact triple through the production transition and attaches the precise
-decoded `RawEntry` to the classification fold.
+`successfulScalarRichTraversal_canonicalMemoryMapEntry_with_successor` then
+consumes that exact triple through the production transition, attaches the
+precise decoded `RawEntry` to the classification fold, and returns the exact
+post-entry scalar state over those same canonical chunks.
 `entryBaseStepWords_of_admitted`, `entryLengthStepWords_of_admitted`, and
 `entryTypeStepError_of_admitted` now derive the three production phase
 transitions for one retained rich entry. They preserve the exact pending
@@ -364,13 +365,15 @@ next phase, incremented entry count, sticky usable/non-usable classification,
 highest usable end, target, and tag count. This is the state-continuity
 contract needed by the recursive entry traversal; later entries cannot begin
 from caller-invented counters or classification words.
-`successfulScalarRichTraversal_memoryMapEntry` composes that exact source
-triple around an arbitrary later traversal and attaches the corresponding
-decoded `RawEntry`. The remaining induction must recursively select every
-canonical triple from `SuccessfulEntryDecodeTraversal`, instantiate the new
-successor-state contract at each type word, and assemble these tag-local
-pieces into the universal `SuccessfulScalarRichTraversal`. Until that final
-derivation exists, the fail-closed terminal comparison remains in place.
+`successfulScalarRichTraversal_memoryMapEntry_with_successor` lifts that full
+contract into the proof-side traversal relation. Its canonical-source
+corollary fixes both the attached entry and successor state to the immutable
+buffer's exact dropped suffix. The remaining induction must recursively
+select every canonical triple from `SuccessfulEntryDecodeTraversal`, pass
+this returned state to the next entry or tag constructor, and assemble these
+tag-local pieces into the universal `SuccessfulScalarRichTraversal`. Until
+that final derivation exists, the fail-closed terminal comparison remains in
+place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
