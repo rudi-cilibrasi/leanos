@@ -15716,6 +15716,135 @@ private def blockingContextEvidenceCancelled (state : CompositeState) :
     CompositeBlockingGateOutcome :=
   blockingGate (blockingContextEvidenceBlocked state).state (.cancel 2)
 
+private def authoritativeBlockingCancelSubject1Space : Capability.Capability :=
+  { object := 1, kind := .addressSpace, rights := { revoke := true },
+    identity := 2 }
+
+private def authoritativeBlockingCancelSubject2Space : Capability.Capability :=
+  { object := 2, kind := .addressSpace, rights := { revoke := true },
+    identity := 3 }
+
+private def authoritativeBlockingCancelCapabilities : Capability.State :=
+  let endpointReceive := blockingEvidenceCapability { receive := true }
+  { nextIdentity := 4
+    derivations := fun identity =>
+      if identity = 1 then
+        some (none, 10, .endpoint, { receive := true })
+      else if identity = 2 then
+        some (none, 1, .addressSpace, { revoke := true })
+      else if identity = 3 then
+        some (none, 2, .addressSpace, { revoke := true })
+      else none
+    subjects := fun subject => subject = 1 || subject = 2
+    objects := fun object => object = 1 || object = 2 || object = 10
+    kinds := fun object =>
+      if object = 1 || object = 2 then some .addressSpace
+      else if object = 10 then some .endpoint else none
+    slots := fun subject slot =>
+      if subject = 1 && slot = 0 then some authoritativeBlockingCancelSubject1Space
+      else if subject = 2 && slot = 0 then some endpointReceive
+      else if subject = 2 && slot = 1 then some authoritativeBlockingCancelSubject2Space
+      else none }
+
+private theorem authoritativeBlockingCancelCapabilities_wellFormed :
+    Capability.WellFormed authoritativeBlockingCancelCapabilities := by
+  simp only [Capability.WellFormed]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro subject slot capability hslot
+    simp only [authoritativeBlockingCancelCapabilities,
+      authoritativeBlockingCancelSubject1Space,
+      authoritativeBlockingCancelSubject2Space, blockingEvidenceCapability] at hslot
+    repeat' split at hslot
+    all_goals cases hslot <;>
+      simp [authoritativeBlockingCancelCapabilities,
+        authoritativeBlockingCancelSubject1Space,
+        authoritativeBlockingCancelSubject2Space,
+        blockingEvidenceCapability, Capability.rightsValid,
+        Capability.nonemptyRights]
+    all_goals grind
+  · intro identity parent object kind rights hderivation
+    simp only [authoritativeBlockingCancelCapabilities] at hderivation
+    repeat' split at hderivation
+    all_goals rcases hderivation with ⟨rfl, rfl, rfl, rfl⟩ <;>
+      simp [authoritativeBlockingCancelCapabilities]
+    all_goals grind
+  · intro subject slot capability otherSubject otherSlot otherCapability
+      hslot hother hidentity
+    simp only [authoritativeBlockingCancelCapabilities,
+      authoritativeBlockingCancelSubject1Space,
+      authoritativeBlockingCancelSubject2Space,
+      blockingEvidenceCapability] at hslot hother
+    repeat' split at hslot
+    all_goals repeat' split at hother
+    all_goals cases hslot <;> cases hother <;> simp_all
+  · intro subject slot hslot
+    change 4 ≤ slot at hslot
+    have hne0 : slot ≠ 0 := by omega
+    have hne1 : slot ≠ 1 := by omega
+    simp [authoritativeBlockingCancelCapabilities,
+      authoritativeBlockingCancelSubject1Space,
+      authoritativeBlockingCancelSubject2Space,
+      blockingEvidenceCapability, hne0, hne1]
+
+private def authoritativeBlockingCancelLifecycle : SubjectLifecycle.State :=
+  { capabilities := authoritativeBlockingCancelCapabilities
+    issuedSubjects := fun subject => subject = 1 || subject = 2
+    ownedMemory := fun _ => none
+    addressOwner := fun space => if space = 1 || space = 2 then some space else none
+    mapping := fun _ _ => none
+    endpointOwner := fun object => if object = 10 then some 1 else none
+    mailbox := fun _ => none
+    frameOwner := fun _ => none
+    freeFrame := fun _ => true
+    runnable := fun subject => subject = 1 || subject = 2
+    current := some 2 }
+
+private def authoritativeBlockingCancelStore : BlockingIPC.State :=
+  { scheduler :=
+      { lifecycle := authoritativeBlockingCancelLifecycle
+        ready := [1], capacity := 2 }
+    mailbox := fun _ => none
+    waiters := fun _ => []
+    waiterEndpoint := fun _ => none
+    waiterCapacity := 1
+    completion := fun _ => none }
+
+private def authoritativeBlockingCancelEvidence (plan : BootPageTablePlan.Plan) :
+    CompositeState :=
+  let scheduler := authoritativeBlockingCancelStore.scheduler
+  let virtualMemory :=
+    { (bootRuntime plan).virtualMemory with
+      memory :=
+        { (bootRuntime plan).virtualMemory.memory with
+          issued := fun object => object = 1 || object = 2 || object = 10 }
+      issuedAddressSpace := fun space => space = 1 || space = 2 }
+  let base :=
+    { blockingEvidenceComposite (bootRuntime plan) with
+      scheduler
+      lifecycle := authoritativeBlockingCancelLifecycle
+      blockingIPC := authoritativeBlockingCancelStore
+      virtualMemory
+      ipc :=
+        { (bootRuntime plan).ipc with
+          virtualMemory
+          endpoints :=
+            { (bootRuntime plan).ipc.endpoints with
+              issued := fun object => object = 1 || object = 2 || object = 10 } }
+      resumable :=
+        { (bootRuntime plan).resumable with
+          scheduler
+          contexts := [blockingEvidenceContext 1 0x10]
+          capacity := 2
+          translations :=
+            { (bootRuntime plan).resumable.translations with
+              virtual :=
+                { virtualMemory with
+                  owner := authoritativeBlockingCancelLifecycle.addressOwner }
+              active := some 2
+              entries := [] } }
+      blockingContexts := fun _ => none }
+  installLifecycle base authoritativeBlockingCancelLifecycle
+
 private def blockingContextEvidenceTerminated (state : CompositeState) : GateOutcome :=
   gate (blockingContextEvidenceBlocked state).state (.terminateSubject 2)
 
@@ -15740,6 +15869,110 @@ example (state : CompositeState) :
       (blockingContextEvidenceBlocked state).state.resumable.translations.active = some 1 ∧
       (blockingContextEvidenceBlocked state).state.resumable.translations.entries = [] := by
   exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+set_option maxHeartbeats 800000 in
+/-- A boot-rooted authoritative state reaches the successful cancellation
+branch: subject 2 blocks with its exact saved context, the blocking transition
+preserves the folded invariant, and cancellation returns that context. -/
+theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
+    (hcompiled : BootPageTablePlan.compile input = .ok plan) :
+    let initial := authoritativeBlockingCancelEvidence plan
+    let blocked := authoritativeGate initial
+      (.blocking (.receive 0x0000000000010000
+        blockingEvidenceFrame blockingEvidenceRegisters2))
+    AuthoritativeRuntimeWellFormed initial ∧
+      AuthoritativeRuntimeWellFormed blocked.state ∧
+      blocked.result = .completed (.blocking (.receive .blocked)) ∧
+      (authoritativeGate blocked.state (.blocking (.cancel 2))).result =
+        .completed (.blocking (.cancel
+          (.cancelled (initial.blockingSavedContext
+            blockingEvidenceFrame blockingEvidenceRegisters2)))) := by
+  have hboot :=
+    bootRuntime_deferredBlockingRuntimeWellFormed input plan hcompiled
+  have hcontrols := hboot.1.directPortControls
+  have hdma := hboot.1.dmaQuarantined
+  rcases authoritativeBlockingCancelCapabilities_wellFormed with
+    ⟨hslots, hderivations, hidentities, hslotSpaces⟩
+  have hspace1 :
+      Capability.HasAuthority authoritativeBlockingCancelCapabilities
+        1 1 .revoke := by
+    exact ⟨0, authoritativeBlockingCancelSubject1Space, rfl, rfl, rfl⟩
+  have hspace2 :
+      Capability.HasAuthority authoritativeBlockingCancelCapabilities
+        2 2 .revoke := by
+    exact ⟨1, authoritativeBlockingCancelSubject2Space, rfl, rfl, rfl⟩
+  have hinitial :
+      AuthoritativeRuntimeWellFormed
+        (authoritativeBlockingCancelEvidence plan) := by
+    simp [AuthoritativeRuntimeWellFormed, DeferredBlockingRuntimeWellFormed,
+      authoritativeBlockingCancelEvidence, blockingContextEvidenceComposite,
+      blockingEvidenceComposite, blockingEvidenceStore,
+      blockingEvidenceLifecycle, blockingEvidenceCapabilities,
+      blockingEvidenceCapability, blockingEvidenceContext,
+      authoritativeBlockingCancelStore, authoritativeBlockingCancelLifecycle,
+      blockingEvidenceRegisters, installLifecycle, synchronizeMemory,
+      restrictMappings, restrictMailboxes, CompositeState.Coherent,
+      RuntimeWellFormed, WellFormed, Interrupt.WellFormed,
+      SubjectLifecycle.WellFormed,
+      VirtualMapping.LifecycleWellFormed,
+      VirtualMapping.WellFormed, MemoryLifecycle.WellFormed,
+      IPCSyscall.WellFormed, EndpointIPC.WellFormed, Scheduler.WellFormed,
+      Preemption.WellFormed, ResumablePreemption.WellFormed,
+      ResumablePreemption.ReadyContextAgreement,
+      ResumablePreemption.TranslationAgreement,
+      ResumablePreemption.VirtualAgreement,
+      ResumablePreemption.ResourceKindAgreement, CapabilityTransfer.WellFormed,
+      TLB.Coherent, CompositeState.ReturnPlanLive,
+      CompositeState.blockingIPCContext, CompositeState.BlockingIPCCoherent,
+      CompositeState.DeferredCancellationWellFormed,
+      BlockingIPCContext.DeferredWellFormed, BlockingIPCContext.WellFormed,
+      BlockingIPCContext.ContextAgreement, BlockingIPC.WellFormed,
+      BlockingIPC.authorizedReceive, BlockingIPCContext.emptyDeferred,
+      BlockingIPCContext.validSaved, Scheduler.ownsAddressSpace,
+      ResumablePreemption.contextFor, ResumablePreemption.validContext,
+      Capability.hasRight, Capability.rightsValid,
+      Capability.rightsSubset, Capability.nonemptyRights, Capability.permits,
+      Interrupt.validSavedUserFrame, demoFrame,
+      DirectPortIO.AcceptedControls, DMAQuarantine.q35Accepted,
+      bootRuntime, bootLifecycle, bootCapabilities, bootVirtualMemory,
+      bootMemory, bootEndpoints]
+    repeat' apply And.intro
+    all_goals first
+      | assumption
+      | simp_all [authoritativeBlockingCancelCapabilities,
+          authoritativeBlockingCancelSubject1Space,
+          authoritativeBlockingCancelSubject2Space]
+    all_goals grind
+  have hdeferred :
+      (authoritativeGate (authoritativeBlockingCancelEvidence plan)
+        (.blocking (.receive 0x0000000000010000
+          blockingEvidenceFrame blockingEvidenceRegisters2))).state.deferredCancels =
+        (authoritativeBlockingCancelEvidence plan).deferredCancels := by
+    rfl
+  have hcontexts :
+      (authoritativeGate (authoritativeBlockingCancelEvidence plan)
+        (.blocking (.receive 0x0000000000010000
+          blockingEvidenceFrame blockingEvidenceRegisters2))).state.resumable.contexts =
+        [] := by
+    rfl
+  refine ⟨hinitial, ?_, rfl, rfl⟩
+  apply authoritativeGate_preserves_authoritativeRuntimeWellFormed _ _ hinitial
+  change DormantCancellationCompatible _ _
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro subject _
+    rw [hdeferred]
+    simp [authoritativeBlockingCancelEvidence, blockingContextEvidenceComposite,
+      blockingEvidenceComposite, BlockingIPCContext.emptyDeferred,
+      installLifecycle, bootRuntime]
+  · intro subject saved _
+    rw [hcontexts]
+    simp [ResumablePreemption.contextFor]
+  · intro subject saved hretained
+    have : False := by
+      simp [authoritativeBlockingCancelEvidence, blockingContextEvidenceComposite,
+        blockingEvidenceComposite, BlockingIPCContext.emptyDeferred,
+        installLifecycle, bootRuntime] at hretained
+    contradiction
 
 set_option maxHeartbeats 800000 in
 /-- Explicit global termination consumes the waiter and exact blocked context
