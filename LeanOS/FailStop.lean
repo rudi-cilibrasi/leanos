@@ -14633,6 +14633,343 @@ theorem dispatchBlockingSend_woke_not_retained state handleWord word0 word1 rest
   rw [hreceiver, hretained] at hnotRetained
   simp [hretained] at hnotRetained
 
+/-- A successful blocking send wake has one exact affected identity.  The
+released waiter is removed from the blocked bank, appended to the resumable
+bank, and is the only identity whose scheduler/waiter projections change. -/
+theorem dispatchBlockingSend_woke_projection_exact state handleWord word0 word1 saved
+    (hstate : BlockingReceiveWellFormed state)
+    (hwoke : (dispatchBlockingSend state handleWord word0 word1).reply = .woke saved) :
+    let next := (dispatchBlockingSend state handleWord word0 word1).state
+    ∃ endpoint receiver rest,
+      state.blockingContexts receiver = some saved ∧
+      saved.owner = receiver ∧
+      next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts =
+        BlockingIPCContext.setBlocked state.blockingContexts receiver none ∧
+      next.blockingIPC =
+        BlockingIPC.wakeState state.blockingIPC endpoint receiver
+          { endpoint
+            sender := state.execution.core.context.currentSubject
+            payload := { word0, word1 } } ∧
+      next.resumable.contexts = saved :: state.resumable.contexts ∧
+      state.blockingIPC.waiters endpoint = receiver :: rest := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingSend, hresolve] at hwoke
+  | ok resolution =>
+      let payload : BlockingIPC.Payload := { word0, word1 }
+      cases houtcome : BlockingIPCContext.send state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot payload with
+      | mk blocking result released =>
+          cases result with
+          | ipcRejected reason =>
+              simp [dispatchBlockingSend, hresolve, payload, houtcome] at hwoke
+          | contextRejected reason =>
+              simp [dispatchBlockingSend, hresolve, payload, houtcome] at hwoke
+          | accepted =>
+              cases released with
+              | none => simp [dispatchBlockingSend, hresolve, payload, houtcome] at hwoke
+              | some actual =>
+                  cases hrestore :
+                      publishReleasedBlockingContext state blocking actual with
+                  | error reason =>
+                      simp [dispatchBlockingSend, hresolve, payload, houtcome, hrestore] at hwoke
+                  | ok published =>
+                      simp [dispatchBlockingSend, hresolve, payload, houtcome, hrestore] at hwoke
+                      subst actual
+                      obtain ⟨endpoint, receiver, rest, hendpoint, hqueue, hstored,
+                        haccepted, hcleared⟩ :=
+                        BlockingIPCContext.send_released_exact state.blockingIPCContext
+                          state.execution.core.context.currentSubject resolution.handle.slot
+                          payload saved (by simp [houtcome])
+                      have hipcExact :=
+                        (BlockingIPCContext.send_accepted_ipc_exact
+                          state.blockingIPCContext
+                          state.execution.core.context.currentSubject resolution.handle.slot
+                          payload haccepted).1
+                      have hrawAccepted :=
+                        (BlockingIPCContext.send_accepted_ipc_exact
+                          state.blockingIPCContext
+                          state.execution.core.context.currentSubject resolution.handle.slot
+                          payload haccepted).2
+                      rw [houtcome] at hipcExact hcleared
+                      have hraw :
+                          (BlockingIPC.send state.blockingIPC
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot payload).state =
+                            BlockingIPC.wakeState state.blockingIPC endpoint receiver
+                              { endpoint
+                                sender := state.execution.core.context.currentSubject
+                                payload } :=
+                        BlockingIPC.send_accepted_wake_exact
+                          state.blockingIPC state.execution.core.context.currentSubject
+                          resolution.handle.slot payload endpoint receiver rest
+                          hendpoint hqueue hrawAccepted
+                      obtain ⟨actualReceiver, hstoredActual, hblockedExact⟩ :=
+                        BlockingIPCContext.send_released_blocked_exact
+                          state.blockingIPCContext
+                          state.execution.core.context.currentSubject resolution.handle.slot
+                          payload saved (by simp [houtcome])
+                      have hcontext :=
+                        (publishReleasedBlockingContext_restores_exact
+                          state blocking saved published hrestore).2
+                      have howner : saved.owner = receiver :=
+                        BlockingIPCContext.validSaved_owner receiver saved
+                          (hstate.1.2.2 receiver saved hstored)
+                      have hownerActual : saved.owner = actualReceiver :=
+                        BlockingIPCContext.validSaved_owner actualReceiver saved
+                          (hstate.1.2.2 actualReceiver saved hstoredActual)
+                      have hreceiver : actualReceiver = receiver :=
+                        hownerActual.symm.trans howner
+                      subst actualReceiver
+                      rw [houtcome] at hblockedExact
+                      have hrestoreExact := hrestore
+                      unfold publishReleasedBlockingContext at hrestoreExact
+                      split at hrestoreExact <;> try contradiction
+                      split at hrestoreExact <;> try contradiction
+                      split at hrestoreExact <;> try contradiction
+                      split at hrestoreExact <;> try contradiction
+                      simp only [Except.ok.injEq] at hrestoreExact
+                      subst published
+                      rw [howner] at hblockedExact
+                      have hblockedWake :
+                          blocking.blocked =
+                            BlockingIPCContext.setBlocked
+                              state.blockingContexts receiver none := by
+                        simpa [CompositeState.blockingIPCContext] using hblockedExact
+                      have hipcExact' :
+                          blocking.ipc =
+                            (BlockingIPC.send state.blockingIPC
+                              state.execution.core.context.currentSubject
+                              resolution.handle.slot payload).state := by
+                        simpa [CompositeState.blockingIPCContext] using hipcExact
+                      have hipcWake :
+                          blocking.ipc =
+                            BlockingIPC.wakeState state.blockingIPC endpoint receiver
+                              { endpoint
+                                sender := state.execution.core.context.currentSubject
+                                payload := { word0, word1 } } := by
+                        exact hipcExact'.trans (by simpa [payload] using hraw)
+                      refine ⟨endpoint, receiver, rest, hstored, howner, ?_⟩
+                      simp [dispatchBlockingSend, hresolve, payload, houtcome, hrestore,
+                        publishBlockingIPCContext, hipcWake]
+                      exact ⟨hblockedWake, hqueue⟩
+
+/-- A mailbox-only blocking send changes no projection observed by dormant
+cancellation except the mailbox itself. -/
+theorem dispatchBlockingSend_sent_dormant_projections_exact
+    state handleWord word0 word1
+    (hsent : (dispatchBlockingSend state handleWord word0 word1).reply = .sent) :
+    let next := (dispatchBlockingSend state handleWord word0 word1).state
+    next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts = state.blockingContexts ∧
+      next.resumable.contexts = state.resumable.contexts ∧
+      next.blockingIPC.waiterEndpoint = state.blockingIPC.waiterEndpoint ∧
+      next.blockingIPC.scheduler = state.blockingIPC.scheduler := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingSend, hresolve] at hsent
+  | ok resolution =>
+      let payload : BlockingIPC.Payload := { word0, word1 }
+      cases houtcome : BlockingIPCContext.send state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot payload with
+      | mk blocking result released =>
+          cases result with
+          | ipcRejected reason =>
+              simp [dispatchBlockingSend, hresolve, payload, houtcome] at hsent
+          | contextRejected reason =>
+              simp [dispatchBlockingSend, hresolve, payload, houtcome] at hsent
+          | accepted =>
+              cases released with
+              | some saved =>
+                  cases hrestore : publishReleasedBlockingContext state blocking saved <;>
+                    simp [dispatchBlockingSend, hresolve, payload, houtcome, hrestore] at hsent
+              | none =>
+                  have haccepted :
+                      (BlockingIPCContext.send state.blockingIPCContext
+                        state.execution.core.context.currentSubject resolution.handle.slot
+                        payload).result = .accepted := by
+                    simp [houtcome]
+                  have hunreleased :
+                      (BlockingIPCContext.send state.blockingIPCContext
+                        state.execution.core.context.currentSubject resolution.handle.slot
+                        payload).released = none := by
+                    simp [houtcome]
+                  have hscheduler :=
+                    BlockingIPCContext.send_accepted_unreleased_scheduler_unchanged
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject resolution.handle.slot
+                      payload haccepted hunreleased
+                  have hblocked :=
+                    BlockingIPCContext.send_accepted_unreleased_blocked_unchanged
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject resolution.handle.slot
+                      payload haccepted hunreleased
+                  have hwaiter :=
+                    BlockingIPCContext.send_accepted_unreleased_waiterEndpoint_unchanged
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject resolution.handle.slot
+                      payload haccepted hunreleased
+                  rw [houtcome] at hblocked hwaiter hscheduler
+                  have hblocked' : blocking.blocked = state.blockingContexts := by
+                    simpa [CompositeState.blockingIPCContext] using hblocked
+                  have hwaiter' :
+                      blocking.ipc.waiterEndpoint =
+                        state.blockingIPC.waiterEndpoint := by
+                    simpa [CompositeState.blockingIPCContext] using hwaiter
+                  have hscheduler' :
+                      blocking.ipc.scheduler = state.blockingIPC.scheduler := by
+                    simpa [CompositeState.blockingIPCContext] using hscheduler
+                  simp only [dispatchBlockingSend, hresolve, payload, houtcome]
+                  simp [publishBlockingIPCContext, hblocked', hwaiter', hscheduler']
+
+/-- Every outcome of the authoritative blocking send constructor preserves
+the dormant-cancellation classification.  Rejections are atomic, mailbox-only
+sends leave all observed control projections exact, and wakes affect only the
+proved non-retained receiver. -/
+theorem blockingSend_authoritativeOperationCompatible state handleWord word0 word1
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.blocking (.send handleWord word0 word1)) := by
+  cases hmode : state.execution.mode with
+  | handling active =>
+      apply dormantCancellationCompatible_of_exact_projections state _ hstate
+      all_goals simp [authoritativeGate, hmode]
+  | halted record =>
+      apply dormantCancellationCompatible_of_exact_projections state _ hstate
+      all_goals simp [authoritativeGate, hmode]
+  | running =>
+      have hgate :
+          (authoritativeGate state
+            (.blocking (.send handleWord word0 word1))).state =
+              (dispatchBlockingSend state handleWord word0 word1).state := by
+        simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+          applyBlockingOperation]
+      change DormantCancellationCompatible state
+        (authoritativeGate state
+          (.blocking (.send handleWord word0 word1))).state
+      rw [hgate]
+      cases hreply : (dispatchBlockingSend state handleWord word0 word1).reply with
+      | handleRejected reason =>
+          rw [dispatchBlockingSend_rejected_atomic state handleWord word0 word1 _
+            (.handle reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | contextRejected reason =>
+          rw [dispatchBlockingSend_rejected_atomic state handleWord word0 word1 _
+            (.context reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | restoreRejected reason =>
+          rw [dispatchBlockingSend_rejected_atomic state handleWord word0 word1 _
+            (.restore reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | rejected reason =>
+          rw [dispatchBlockingSend_rejected_atomic state handleWord word0 word1 _
+            (.ipc reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | sent =>
+          have hshape := dispatchBlockingSend_sent_dormant_projections_exact
+            state handleWord word0 word1 hreply
+          dsimp only at hshape
+          rcases hshape with ⟨hdeferred, hblocked, hcontexts, hwaiter, hscheduler⟩
+          refine ⟨hdeferred, ?_, ?_, ?_⟩
+          · intro subject hsome
+            rw [hblocked] at hsome
+            rw [hdeferred]
+            exact hstate.2.1.2.1 subject hsome
+          · intro subject saved hsaved
+            rw [hblocked] at hsaved
+            rw [hcontexts]
+            exact hstate.2.2.1 subject saved hsaved
+          · intro subject saved hretained
+            have hvalid := hstate.2.1.2.2 subject saved hretained
+            rw [hwaiter, hscheduler, hcontexts]
+            exact ⟨hvalid.2.1, hvalid.2.2.1, hvalid.2.2.2.1,
+              hvalid.2.2.2.2.1, hvalid.2.2.2.2.2.1,
+              hvalid.2.2.2.2.2.2, hstate.2.2.2 subject saved hretained⟩
+      | woke saved =>
+          have hcoherent : state.BlockingIPCCoherent := by
+            rcases hstate.blocking.1 with
+              ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking, _⟩
+            exact hblocking
+          have hshape := dispatchBlockingSend_woke_projection_exact
+            state handleWord word0 word1 saved
+              ⟨hstate.blocking.2, hcoherent⟩ hreply
+          dsimp only at hshape
+          obtain ⟨endpoint, receiver, rest, hstored, howner, hdeferred,
+            hblocked, hipc, hcontexts, hqueue⟩ := hshape
+          refine ⟨hdeferred, ?_, ?_, ?_⟩
+          · intro candidate hsome
+            rw [hblocked] at hsome
+            by_cases heq : candidate = receiver
+            · subst candidate
+              simp [BlockingIPCContext.setBlocked] at hsome
+            · rw [hdeferred]
+              apply hstate.2.1.2.1 candidate
+              change (state.blockingContexts candidate).isSome = true
+              simpa [BlockingIPCContext.setBlocked, heq] using hsome
+          · intro candidate blockedSaved hsome
+            rw [hblocked] at hsome
+            by_cases heq : candidate = receiver
+            · subst candidate
+              simp [BlockingIPCContext.setBlocked] at hsome
+            · have hbefore :
+                  state.blockingContexts candidate = some blockedSaved := by
+                simpa [BlockingIPCContext.setBlocked, heq] using hsome
+              rw [hcontexts]
+              simpa [ResumablePreemption.contextFor, howner, heq, Ne.symm heq] using
+                hstate.2.2.1 candidate blockedSaved hbefore
+          · intro candidate retained hretained
+            have hvalid := hstate.2.1.2.2 candidate retained hretained
+            have hnotReceiver : receiver ≠ candidate := by
+              intro heq
+              have hnotOwner := dispatchBlockingSend_woke_not_retained
+                state handleWord word0 word1 saved candidate retained
+                  hstate hretained hreply
+              exact hnotOwner (howner.trans heq)
+            rw [hipc, hcontexts]
+            have hbefore :
+                state.blockingIPC.waiterEndpoint candidate = none ∧
+                  state.blockingIPC.scheduler.lifecycle.capabilities.subjects candidate =
+                    true ∧
+                  state.blockingIPC.scheduler.lifecycle.runnable candidate = false ∧
+                  state.blockingIPC.scheduler.lifecycle.current ≠ some candidate ∧
+                  candidate ∉ state.blockingIPC.scheduler.ready ∧
+                  Scheduler.ownsAddressSpace state.blockingIPC.scheduler candidate =
+                    some candidate ∧
+                  ResumablePreemption.contextFor state.resumable.contexts candidate =
+                    none := by
+              simpa [CompositeState.blockingIPCContext] using
+                And.intro hvalid.2.1
+                  (And.intro hvalid.2.2.1
+                    (And.intro hvalid.2.2.2.1
+                      (And.intro hvalid.2.2.2.2.1
+                        (And.intro hvalid.2.2.2.2.2.1
+                          (And.intro hvalid.2.2.2.2.2.2
+                            (hstate.2.2.2 candidate retained hretained))))))
+            simpa [BlockingIPC.wakeState, BlockingIPC.setWaiterEndpoint,
+              SubjectLifecycle.setBool, Scheduler.ownsAddressSpace,
+              ResumablePreemption.contextFor, howner, hnotReceiver,
+              Ne.symm hnotReceiver] using hbefore
+
+/-- Blocking send has a closed preservation theorem at the folded
+authoritative boundary; callers need no post-state compatibility witness. -/
+theorem authoritativeGate_blockingSend_preserves_authoritativeRuntimeWellFormed
+    state handleWord word0 word1
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.blocking (.send handleWord word0 word1))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.blocking (.send handleWord word0 word1)) hstate
+    (blockingSend_authoritativeOperationCompatible
+      state handleWord word0 word1 hstate)
+
 /-- Cancelling a dormant retained identity is exactly atomic.  The retained
 classification supplies the missing-waiter fact consumed directly by the
 blocking cancellation transition. -/
