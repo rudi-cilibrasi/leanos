@@ -14694,6 +14694,95 @@ theorem authoritativeGate_unmap_preserves_authoritativeRuntimeWellFormed
     (.ordinary (.unmap page)) hstate
     (unmap_authoritativeOperationCompatible state page hstate)
 
+/-- Selecting a live return plan changes only execution authority, so it can
+be appended to any already-compatible dormant-cancellation mutation. -/
+private theorem selectLiveReturnAuthority_dormantCancellationCompatible
+    before state purpose
+    (hcompatible : DormantCancellationCompatible before state) :
+    DormantCancellationCompatible before
+      (selectLiveReturnAuthority state purpose) := by
+  rw [selectLiveReturnAuthority_eq_execution_update]
+  exact
+    ⟨hcompatible.deferredExact, hcompatible.blockedDeferredDisjoint,
+      hcompatible.blockedResumableDisjoint, hcompatible.retainedQuiescent⟩
+
+/-- The raw syscall family derives caller and active address space from the
+execution latch.  Rejections are atomic, access acceptance changes only
+return authority, and accepted map/unmap publication reuses the authoritative
+virtual-memory compatibility law before selecting that return authority. -/
+theorem syscall_authoritativeOperationCompatible state call
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state (.ordinary (.syscall call)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state (.ordinary (.syscall call))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      simp only [authoritativeGate, hmode, applyAuthoritativeOperation,
+        applyOperation]
+      cases hreply :
+          (Syscall.dispatch state.virtualMemory state.syscallContext call).reply with
+      | rejected reason =>
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | accepted =>
+          cases hdecode : Syscall.decode call with
+          | error reason =>
+              simp [Syscall.dispatch, hdecode] at hreply
+          | ok operation =>
+              cases operation with
+              | access page access =>
+                  exact
+                    selectLiveReturnAuthority_dormantCancellationCompatible
+                      state state .syscallResume
+                      (dormantCancellationCompatible_of_exact_projections
+                        state state hstate rfl rfl rfl rfl)
+              | map handleWord page permissions =>
+                  exact
+                    selectLiveReturnAuthority_dormantCancellationCompatible state
+                      (installVirtualMemory state
+                        (Syscall.dispatch state.virtualMemory
+                          state.syscallContext call).state
+                        { state.resumable.translations with
+                          virtual :=
+                            (Syscall.dispatch state.virtualMemory
+                              state.syscallContext call).state })
+                      .syscallResume
+                      (installVirtualMemory_dormantCancellationCompatible
+                        state _ _ hstate)
+              | unmap page =>
+                  exact
+                    selectLiveReturnAuthority_dormantCancellationCompatible state
+                      (installVirtualMemory state
+                        (Syscall.dispatch state.virtualMemory
+                          state.syscallContext call).state
+                        (TLB.invalidatePage
+                          { state.resumable.translations with
+                            virtual :=
+                              (Syscall.dispatch state.virtualMemory
+                                state.syscallContext call).state }
+                          state.execution.core.context.activeAddressSpace page))
+                      .syscallResume
+                      (installVirtualMemory_dormantCancellationCompatible
+                        state _ _ hstate)
+
+/-- Every decoded syscall now has a closed preservation theorem at the folded
+authoritative boundary, without a caller-supplied post-state law. -/
+theorem authoritativeGate_syscall_preserves_authoritativeRuntimeWellFormed
+    state call (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.syscall call))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.syscall call)) hstate
+    (syscall_authoritativeOperationCompatible state call hstate)
+
 /-- Delivery changes only mailbox/completion payload state.  Every projection
 observed by dormant cancellation remains literally unchanged. -/
 theorem dispatchBlockingReceive_delivered_dormant_projections_exact
