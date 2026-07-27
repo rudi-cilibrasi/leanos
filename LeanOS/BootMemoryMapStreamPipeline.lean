@@ -866,6 +866,103 @@ theorem successfulScalarRichTraversal_prepend_info
     decide
   · exact hnext.2.2.1
 
+/-- The retained rich end-tag constructor and an admitted scalar tag cursor
+construct the terminal one-chunk tail of `SuccessfulScalarRichTraversal`.
+The scalar completion status is derived from `stepWord`; no terminal word is
+assumed or compared against a caller-provided rich result. -/
+theorem successfulScalarRichTraversal_endTag
+    (identity : UInt64) (total offset tagWord target : Nat)
+    (state : ScalarState) (chunk : ModelChunk)
+    (htotalLow : 16 ≤ total)
+    (htotalHigh : total ≤ maxTagBytes)
+    (htotalAligned : total % 8 = 0)
+    (hoffsetEnd : offset + 8 = total)
+    (hchunkIdentity : chunk.identity = identity)
+    (hchunkOffset : chunk.offset = offset)
+    (hchunkTerminal : chunk.terminal = true)
+    (hread : readU64 chunk.bytes 0 = .ok tagWord)
+    (htype : low32Nat tagWord = 0)
+    (hsize : high32Nat tagWord = 8)
+    (hversion :
+      state.word[0]! = BootMemoryMapStreamAuthority.abiVersion)
+    (hstatus :
+      state.word[1]! = BootMemoryMapStreamAuthority.active)
+    (herror :
+      state.word[2]! = BootMemoryMapStreamAuthority.noError)
+    (hidentity : state.word[3]! = identity)
+    (hidentityAligned : identity % 8 = 0)
+    (hextent : state.word[4]! = UInt64.ofNat total)
+    (hoffset : state.word[5]! = UInt64.ofNat offset)
+    (hphase :
+      state.word[7]! = BootMemoryMapStreamAuthority.phaseTag)
+    (hsawMap : state.word[10]! = 1)
+    (husable : state.word[14]! ≤ 1)
+    (hblocked : state.word[15]! ≤ 1)
+    (htargetWord : state.word[16]! = UInt64.ofNat target)
+    (htarget : target < frameLimit)
+    (htagCount : state.word[18]! < 64) :
+    SuccessfulScalarRichTraversal target [] state [chunk]
+      (scalarStep state chunk) := by
+  have htotalLt : total < UInt64.size :=
+    Nat.lt_of_le_of_lt htotalHigh (by decide)
+  have htargetLt : target < UInt64.size :=
+    Nat.lt_trans htarget (by decide)
+  have hextentLow : 16 ≤ UInt64.ofNat total := by
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' htotalLt]
+    exact htotalLow
+  have hextentHigh : UInt64.ofNat total ≤ 65536 := by
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' htotalLt]
+    simpa [maxTagBytes] using htotalHigh
+  have hextentAligned : UInt64.ofNat total % 8 = 0 := by
+    apply UInt64.toNat.inj
+    simp [UInt64.toNat_ofNat_of_lt' htotalLt, htotalAligned]
+  have hoffsetWord :
+      UInt64.ofNat offset + 8 = UInt64.ofNat total := by
+    rw [← hoffsetEnd]
+    simp
+  have htargetBound : UInt64.ofNat target < 4096 := by
+    rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_ofNat_of_lt' htargetLt]
+    simpa [frameLimit, physicalLimit, pageBytes] using htarget
+  have htagWordLt := readU64_lt_wordLimit chunk.bytes 0 tagWord hread
+  have hchunkWord : chunkWord chunk.bytes = UInt64.ofNat tagWord :=
+    chunkWord_readU64_agreement chunk.bytes tagWord hread
+  have hchunkLow :
+      BootMemoryMapStreamAuthority.low32 (UInt64.ofNat tagWord) = 0 := by
+    rw [BootMemoryMapStreamAuthority.low32, low32Word_ofNat tagWord htagWordLt,
+      htype]
+    rfl
+  have hchunkHigh :
+      BootMemoryMapStreamAuthority.high32 (UInt64.ofNat tagWord) = 8 := by
+    rw [BootMemoryMapStreamAuthority.high32,
+      high32Word_ofNat tagWord htagWordLt, hsize]
+    rfl
+  have hstep :=
+    BootMemoryMapStreamAuthority.endTagStepWords_of_admitted
+      identity (UInt64.ofNat total) (UInt64.ofNat offset)
+      state.word[6]! state.word[8]! state.word[9]!
+      state.word[11]! state.word[12]! state.word[13]!
+      state.word[14]! state.word[15]! (UInt64.ofNat target)
+      state.word[17]! state.word[18]! (UInt64.ofNat tagWord)
+      hidentityAligned hextentLow hextentHigh hextentAligned
+      hoffsetWord husable hblocked htargetBound htagCount
+      hchunkLow hchunkHigh
+  have haccepted :
+      (scalarStep state chunk).word[2]! =
+        BootMemoryMapStreamAuthority.noError := by
+    simpa [scalarStep, hchunkWord, hchunkIdentity, hchunkOffset,
+      hchunkTerminal, hversion, hstatus, herror, hidentity, hextent,
+      hoffset, hphase, hsawMap, htargetWord] using hstep.2.2.1
+  apply SuccessfulScalarRichTraversal.nonEntry [] state
+    (scalarStep state chunk) chunk []
+  · rw [hphase]
+    decide
+  · exact haccepted
+  · apply SuccessfulScalarRichTraversal.done
+    · simpa [scalarStep, hchunkWord, hchunkIdentity, hchunkOffset,
+        hchunkTerminal, hversion, hstatus, herror, hidentity, hextent,
+        hoffset, hphase, hsawMap, htargetWord] using hstep.2.1
+    · exact haccepted
+
 /-- Direct whole-replay induction over an arbitrary successful traversal.
 The terminal status and diagnostic are fixed by successful completion, while
 words 14 and 15 are the left folds of every exact rich entry encountered by
