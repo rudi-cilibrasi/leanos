@@ -2360,6 +2360,223 @@ theorem canonicalTagStep_source_refines
       · intro query
         simpa only [hposition, hterminal] using (hrefines query).2
 
+/-- A successful indexed lookup fixes the corresponding dropped-list head.
+This small list fact lets source-indexed canonical chunk certificates feed the
+continuation-style scalar/rich traversal constructors without reassembling a
+second chunk list. -/
+private theorem drop_eq_cons_drop_succ_of_get?_eq_some
+    {α : Type} (values : List α) (index : Nat) (value : α)
+    (hget : values[index]? = some value) :
+    values.drop index = value :: values.drop (index + 1) := by
+  induction values generalizing index with
+  | nil =>
+      simp at hget
+  | cons head tail ih =>
+      cases index with
+      | zero =>
+          simp at hget
+          subst value
+          rfl
+      | succ index =>
+          simp only [List.getElem?_cons_succ] at hget
+          simpa [Nat.add_assoc] using ih index hget
+
+/-- The layout word retained by a successful memory-map tag is the exact
+canonical chunk immediately after that tag's header.  The following retained
+tag header makes the layout chunk nonterminal even for an empty map.  Besides
+binding identity, offset, bytes, and packed word, the result exposes every
+production scalar query so it can be consumed directly by the admitted layout
+transition theorem. -/
+theorem canonicalMemoryMapLayoutStep_source_refines
+    (identity : UInt64) (bytes : List UInt8)
+    (total offset fuel tagWord layoutWord : Nat)
+    (tagsRev tags : List Tag) (entries : List RawEntry)
+    (htotal : total = bytes.length)
+    (htotalAligned : total % 8 = 0)
+    (hoffsetAligned : offset % 8 = 0)
+    (hsize : memoryMapTagHeaderSize ≤ high32Nat tagWord)
+    (hrest :
+      SuccessfulTagDecodeTraversal bytes total
+        (offset + aligned8 (high32Nat tagWord)) fuel true
+        (.memoryMap (high32Nat tagWord) (low32Nat layoutWord)
+          (high32Nat layoutWord) entries :: tagsRev) tags)
+    (hlayout : readU64 bytes (offset + 8) = .ok layoutWord)
+    (state : ScalarState) :
+    let index := offset / 8 + 1
+    let chunk : ModelChunk :=
+      { identity
+        offset := offset + 8
+        bytes := (bytes.drop (offset + 8)).take 8
+        terminal := false }
+    (canonicalChunks identity bytes)[index]? = some chunk ∧
+      (canonicalChunks identity bytes).drop index =
+        chunk :: (canonicalChunks identity bytes).drop (index + 1) ∧
+      chunkWord chunk.bytes = UInt64.ofNat layoutWord ∧
+      ∀ query : Fin 19,
+        (scalarStep state chunk).word[query.val]! =
+          BootMemoryMapStreamAuthority.stepWord
+            state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+            state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+            state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+            state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+            state.word[16]! state.word[17]! state.word[18]!
+            identity (UInt64.ofNat (offset + 8)) (UInt64.ofNat layoutWord) 0
+            (UInt64.ofNat query.val) := by
+  dsimp only
+  have hnextBound :=
+    successfulTagDecodeTraversal_offset_lt_total bytes total
+      (offset + aligned8 (high32Nat tagWord)) fuel true
+      (.memoryMap (high32Nat tagWord) (low32Nat layoutWord)
+        (high32Nat layoutWord) entries :: tagsRev) tags hrest
+  have htotalWords : total / 8 * 8 = total := by
+    have h := Nat.mod_add_div total 8
+    rw [htotalAligned, Nat.zero_add] at h
+    simpa [Nat.mul_comm] using h
+  have hoffsetWords : offset / 8 * 8 = offset := by
+    have h := Nat.mod_add_div offset 8
+    rw [hoffsetAligned, Nat.zero_add] at h
+    simpa [Nat.mul_comm] using h
+  have hadvanceLow : 16 ≤ aligned8 (high32Nat tagWord) := by
+    simp only [memoryMapTagHeaderSize, aligned8] at hsize ⊢
+    omega
+  have hindex : offset / 8 + 1 < bytes.length / 8 := by
+    rw [← htotal]
+    omega
+  have hterminal : (offset / 8 + 1 + 1 == bytes.length / 8) = false := by
+    apply beq_false_of_ne
+    rw [← htotal]
+    omega
+  have hrefines :=
+    canonicalScalarStep_source_refines identity bytes
+      (by simpa [← htotal] using htotalAligned)
+      (offset / 8 + 1) hindex state layoutWord (by
+        simpa [hoffsetWords, Nat.add_mul] using hlayout)
+  have hget :
+      (canonicalChunks identity bytes)[offset / 8 + 1]? =
+        some
+          { identity
+            offset := offset + 8
+            bytes := (bytes.drop (offset + 8)).take 8
+            terminal := false } := by
+    simpa only [hoffsetWords, Nat.add_mul, hterminal] using
+      (hrefines (⟨0, by decide⟩ : Fin 19)).1
+  have hreadChunk :
+      readU64 ((bytes.drop (offset + 8)).take 8) 0 = .ok layoutWord := by
+    rw [readU64_drop_take]
+    exact hlayout
+  refine ⟨hget,
+    drop_eq_cons_drop_succ_of_get?_eq_some
+      (canonicalChunks identity bytes) (offset / 8 + 1) _ hget,
+    chunkWord_readU64_agreement _ _ hreadChunk, ?_⟩
+  intro query
+  simpa only [hoffsetWords, Nat.add_mul, Nat.one_mul, hterminal,
+    Bool.false_eq_true, ↓reduceIte] using (hrefines query).2
+
+/-- The canonical layout source certificate is directly consumable by the
+continuation-style scalar/rich layout constructor.  In particular, the chunk
+list in the resulting traversal is the exact dropped suffix of the immutable
+buffer's canonical decomposition; callers cannot substitute an equal packed
+word at a different source position. -/
+theorem successfulScalarRichTraversal_canonicalMemoryMapLayout
+    (identity : UInt64) (bytes : List UInt8)
+    (total offset fuel tagWord layoutWord target : Nat)
+    (tagsRev tags : List Tag) (entries : List RawEntry)
+    (state terminal : ScalarState)
+    (htotal : total = bytes.length)
+    (htotalAligned : total % 8 = 0)
+    (hoffsetAligned : offset % 8 = 0)
+    (hsize : memoryMapTagHeaderSize ≤ high32Nat tagWord)
+    (htagRest :
+      SuccessfulTagDecodeTraversal bytes total
+        (offset + aligned8 (high32Nat tagWord)) fuel true
+        (.memoryMap (high32Nat tagWord) (low32Nat layoutWord)
+          (high32Nat layoutWord) entries :: tagsRev) tags)
+    (hlayout : readU64 bytes (offset + 8) = .ok layoutWord)
+    (hidentityAligned : identity % 8 = 0)
+    (hextentLow : 16 ≤ UInt64.ofNat total)
+    (hextentHigh : UInt64.ofNat total ≤ 65536)
+    (hextentAligned : UInt64.ofNat total % 8 = 0)
+    (hoffsetLt : UInt64.ofNat (offset + 8) < UInt64.ofNat total)
+    (hoffsetNotFinal :
+      UInt64.ofNat (offset + 8) + 8 ≠ UInt64.ofNat total)
+    (hversion :
+      state.word[0]! = BootMemoryMapStreamAuthority.abiVersion)
+    (hstatus :
+      state.word[1]! = BootMemoryMapStreamAuthority.active)
+    (herror :
+      state.word[2]! = BootMemoryMapStreamAuthority.noError)
+    (hidentity : state.word[3]! = identity)
+    (hextent : state.word[4]! = UInt64.ofNat total)
+    (hoffset : state.word[5]! = UInt64.ofNat (offset + 8))
+    (hphase :
+      state.word[7]! = BootMemoryMapStreamAuthority.phaseMapLayout)
+    (hcontentAligned : state.word[8]! % 24 = 0)
+    (hpadded : state.word[9]! = 0)
+    (hsawMap : state.word[10]! = 1)
+    (husable : state.word[14]! ≤ 1)
+    (hblocked : state.word[15]! ≤ 1)
+    (htargetWord : state.word[16]! = UInt64.ofNat target)
+    (htarget : target < frameLimit)
+    (htagCount : state.word[18]! ≤ 64)
+    (hlayoutLow :
+      BootMemoryMapStreamAuthority.low32 (UInt64.ofNat layoutWord) = 24)
+    (hlayoutHigh :
+      BootMemoryMapStreamAuthority.high32 (UInt64.ofNat layoutWord) = 0)
+    (hentryBound :
+      state.word[8]! / 24 ≤ BootMemoryMapStreamAuthority.entryLimit)
+    (hrest :
+      SuccessfulScalarRichTraversal target entries
+        (scalarStep state
+          { identity
+            offset := offset + 8
+            bytes := (bytes.drop (offset + 8)).take 8
+            terminal := false })
+        ((canonicalChunks identity bytes).drop (offset / 8 + 2)) terminal) :
+    SuccessfulScalarRichTraversal target entries state
+      ((canonicalChunks identity bytes).drop (offset / 8 + 1)) terminal := by
+  obtain ⟨hget, hdrop, hword, hrefines⟩ :=
+    canonicalMemoryMapLayoutStep_source_refines identity bytes total offset
+      fuel tagWord layoutWord tagsRev tags entries htotal htotalAligned
+      hoffsetAligned hsize htagRest hlayout state
+  rw [hdrop]
+  apply successfulScalarRichTraversal_memoryMapLayout
+    identity (UInt64.ofNat total) (UInt64.ofNat (offset + 8))
+    (UInt64.ofNat layoutWord) target entries state terminal
+      { identity
+        offset := offset + 8
+        bytes := (bytes.drop (offset + 8)).take 8
+        terminal := false }
+      ((canonicalChunks identity bytes).drop (offset / 8 + 2))
+  · rfl
+  · rfl
+  · rfl
+  · exact hword
+  · exact hversion
+  · exact hstatus
+  · exact herror
+  · exact hidentity
+  · exact hidentityAligned
+  · exact hextent
+  · exact hextentLow
+  · exact hextentHigh
+  · exact hextentAligned
+  · exact hoffset
+  · exact hoffsetLt
+  · exact hoffsetNotFinal
+  · exact hphase
+  · exact hcontentAligned
+  · exact hpadded
+  · exact hsawMap
+  · exact husable
+  · exact hblocked
+  · exact htargetWord
+  · exact htarget
+  · exact htagCount
+  · exact hlayoutLow
+  · exact hlayoutHigh
+  · exact hentryBound
+  · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hrest
+
 /-- The retained rich tag traversal selects the exact first tag-header chunk
 immediately after the information header.  Its source word, stream identity,
 offset, terminal bit, and every scalar transition query are therefore fixed
