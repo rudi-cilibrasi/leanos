@@ -52,6 +52,38 @@ REQUIRED_FAULT_RELEASE_ARTIFACTS = (
         "build/boot/boot-page-plan-fault-containment.final.h",
         "leanos-${version}-fault-containment-page-plan.h",
     ),
+    (
+        "build/boot/leanos-${version}-x86_64-fault-readonly-write.iso",
+        "leanos-${version}-x86_64-fault-readonly-write.iso",
+    ),
+    (
+        "build/boot/leanos-fault-readonly-write.elf",
+        "leanos-${version}-x86_64-fault-readonly-write.elf",
+    ),
+    (
+        "build/boot/leanos-fault-readonly-write.map",
+        "leanos-${version}-x86_64-fault-readonly-write.map",
+    ),
+    (
+        "build/boot/fault-readonly-write.serial.log",
+        "leanos-${version}-fault-readonly-write-serial.log",
+    ),
+    (
+        "build/boot/fault-readonly-write.disassembly.txt",
+        "leanos-${version}-fault-readonly-write-disassembly.txt",
+    ),
+    (
+        "build/boot/fault-readonly-write-policy-report.txt",
+        "leanos-${version}-fault-readonly-write-policy-report.txt",
+    ),
+    (
+        "build/boot/fault-readonly-write-snapshot.txt",
+        "leanos-${version}-fault-readonly-write-snapshot.txt",
+    ),
+    (
+        "build/boot/boot-page-plan-fault-readonly-write.final.h",
+        "leanos-${version}-fault-readonly-write-page-plan.h",
+    ),
 )
 RESULT_CLASSES = {"accepted-boot", "controlled-rejection", "fail-stop"}
 RUNNERS = {
@@ -669,6 +701,14 @@ def check_workflows() -> None:
         "build/boot/fault-containment.disassembly.txt",
         "build/boot/fault-containment.serial.log",
         "build/boot/fault-containment-snapshot.txt",
+        "build/boot/leanos-0.1.0-x86_64-fault-readonly-write.iso",
+        "build/boot/leanos-fault-readonly-write.elf",
+        "build/boot/leanos-fault-readonly-write.map",
+        "build/boot/boot-page-plan-fault-readonly-write.h",
+        "build/boot/boot-page-plan-fault-readonly-write.final.h",
+        "build/boot/fault-readonly-write.disassembly.txt",
+        "build/boot/fault-readonly-write.serial.log",
+        "build/boot/fault-readonly-write-snapshot.txt",
         "build/boot/corpus.tsv",
         "build/oracle/host-results.txt",
         "build/evidence/*",
@@ -685,6 +725,7 @@ def check_workflows() -> None:
         "build/boot/*.map",
         "build/boot/*.disassembly.txt",
         "build/boot/fault-containment-snapshot.txt",
+        "build/boot/fault-readonly-write-snapshot.txt",
         "build/boot/boot-page-plan*.h",
         "build/oracle/host-results.txt",
     ):

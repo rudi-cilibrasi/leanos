@@ -129,7 +129,7 @@ page_fault_forged_diagnostic_purpose() {
   sed -i 's/canonical, supervisor_probe,/canonical, 1,/' "$tmp/kernel.c"
 }
 page_fault_wrong_invalidation_target() {
-  sed -i 's/const uint64_t fixed_page_address = 0;/const uint64_t fixed_page_address = PAGE_BYTES;/' \
+  sed -i 's/invalidate_snapshot_fault_page(&snapshot);/invalidate_snapshot_fault_page((const struct page_fault_entry_record *)((const char *)\&snapshot + 8));/' \
     "$tmp/kernel.c"
 }
 page_fault_refilled_after_recorded_reload() {
@@ -151,12 +151,11 @@ page_fault_wrong_instruction() {
     "$tmp/boot.S"
 }
 page_fault_indirect_entry() {
-  sed -i '/#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO/{n;s/jmp user_a_fault_instruction/jmp *%rax/;}' \
-    "$tmp/boot.S"
+  sed -i '0,/jmp user_a_fault_instruction/s//jmp *%rax/' "$tmp/boot.S"
 }
 page_fault_wrong_handler_binding() {
   sed -i \
-    's/error == 5u && rip == (uint64_t)user_a_fault_instruction/error == 7u \&\& rip == (uint64_t)user_a_fault_instruction/' \
+    's/page_fault_probe_class == 1 ? 7u : 5u/page_fault_probe_class == 1 ? 5u : 5u/' \
     "$tmp/kernel.c"
 }
 page_fault_c_only_snapshot_route() {

@@ -89,12 +89,14 @@ normalization, `authorize_page_fault_snapshot` constructs the record once as a
 SMEP, and SMAP into it, and invokes the generated provenance adapter. It then
 samples the selected compiled root/report and fault-page leaf and passes those
 independent observations to the allocation-free generated strengthened
-agreement transition. The machine lowering is restricted to its fixed CPL3
-page-zero read probe. Immediately before the transition it executes `invlpg`
-on the recorded fault address; the reviewed interval does not access page
-zero, so a translation refilled after address-space activation cannot satisfy
-the checked lookup-absence input. Present write and NX denial cases remain
-model coverage and are not runtime-lowering claims. The generated result
+agreement transition. The machine lowering admits two fixed, separately
+booted CPL3 probes: the page-zero supervisor read and a write to an exported
+byte in A's present user read-only text leaf. Immediately before the transition
+it executes `invlpg` on the immutable snapshot's exact fault address, closing
+the single-core stale-translation assumption for the live leaf consumed by the
+generated agreement result. The write image also verifies in the handler that
+the target byte retains its linked `0xa5` canary. NX denial remains model
+coverage and is not yet a runtime-lowering claim. The generated result
 carries an explicit contain,
 fatal, kernel-diagnostic, or reject tag; handwritten C only decodes that tag.
 Only a contain tag can call `page_fault_handler`, which receives the same
@@ -109,15 +111,15 @@ Diagnostic recovery cannot enter user containment.
 Source and final-ELF policy gates require capture-before-normalization,
 provenance-before-strengthened-agreement-before-handler order, exactly one CR2
 read, exactly one typed containment-handler and diagnostic-handler call site,
-the complete fixed diagnostic tuple arguments, and a page-zero
-invalidation operand: source policy fixes the helper input to zero, while the
-final-ELF policy requires the zeroing instruction immediately before `invlpg`
-through that same register. The fault-containment image additionally selects
-the `supervisor-read` probe policy. It requires subject A's first instruction
+the complete fixed diagnostic tuple arguments, and one snapshot-derived
+`invlpg` helper. The supervisor-read image requires subject A's first instruction
 to be a direct branch to `user_a_fault_instruction`, requires that site to be
 the exact eight-byte page-zero read in the final ELF, and binds error 5, read
 access, protection violation, CR2 zero, and the saved RIP to that exported site
-before containment. The emitted hardware-fault record also names the exact
+before containment. The separate read-only-write image similarly direct-branches
+to the exported `movb` site, binds error 7, write access, CR2 to
+`user_a_write_target`, and retains the unchanged-target canary. The emitted
+hardware-fault record also names the exact
 generated dispatch word, complete cleanup mask, and selected survivor.
 Independent runner fixtures reject a changed or zeroed raw error word, CR2,
 RIP, access kind, dispatch word, or live leaf permissions. A separate ordered
@@ -132,9 +134,9 @@ requires every fixed word and the exact generated authorization/route, and
 publishes that one record as `fault-containment-snapshot.txt`. Missing,
 duplicated, malformed, corrupted, or reordered snapshot/replay records are
 controlled failures.
-Tagged builds also retain the fault-containment ISO, final ELF and map, serial
-transcript, canonical snapshot, disassembly, final page-table plan, and policy
-report in the attested release bundle. `SHA256SUMS` covers each retained file.
+Tagged builds retain both fault ISOs, final ELFs and maps, serial transcripts,
+canonical snapshots, disassemblies, final page-table plans, and policy reports
+in the attested release bundle. `SHA256SUMS` covers each retained file.
 Wrong-instruction, indirect-entry, and wrong-handler-binding fixtures must be
 rejected.
 Negative fixtures also reject a forged diagnostic purpose, both a direct

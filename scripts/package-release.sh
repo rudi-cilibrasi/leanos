@@ -50,6 +50,22 @@ cp build/boot/fault-containment-snapshot.txt \
   "$release/leanos-${version}-fault-containment-snapshot.txt"
 cp build/boot/boot-page-plan-fault-containment.final.h \
   "$release/leanos-${version}-fault-containment-page-plan.h"
+cp "build/boot/leanos-${version}-x86_64-fault-readonly-write.iso" \
+  "$release/leanos-${version}-x86_64-fault-readonly-write.iso"
+cp build/boot/leanos-fault-readonly-write.elf \
+  "$release/leanos-${version}-x86_64-fault-readonly-write.elf"
+cp build/boot/leanos-fault-readonly-write.map \
+  "$release/leanos-${version}-x86_64-fault-readonly-write.map"
+cp build/boot/fault-readonly-write.serial.log \
+  "$release/leanos-${version}-fault-readonly-write-serial.log"
+cp build/boot/fault-readonly-write.disassembly.txt \
+  "$release/leanos-${version}-fault-readonly-write-disassembly.txt"
+cp build/boot/fault-readonly-write-policy-report.txt \
+  "$release/leanos-${version}-fault-readonly-write-policy-report.txt"
+cp build/boot/fault-readonly-write-snapshot.txt \
+  "$release/leanos-${version}-fault-readonly-write-snapshot.txt"
+cp build/boot/boot-page-plan-fault-readonly-write.final.h \
+  "$release/leanos-${version}-fault-readonly-write-page-plan.h"
 cp build/boot/entry-adversarial.serial.log \
   "$release/leanos-${version}-entry-adversarial-serial.log"
 cp build/boot/double-fault.serial.log \
@@ -78,6 +94,14 @@ LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
   "leanos-${version}-fault-containment-policy-report.txt" \
   "leanos-${version}-fault-containment-snapshot.txt" \
   "leanos-${version}-fault-containment-page-plan.h" \
+  "leanos-${version}-x86_64-fault-readonly-write.iso" \
+  "leanos-${version}-x86_64-fault-readonly-write.elf" \
+  "leanos-${version}-x86_64-fault-readonly-write.map" \
+  "leanos-${version}-fault-readonly-write-serial.log" \
+  "leanos-${version}-fault-readonly-write-disassembly.txt" \
+  "leanos-${version}-fault-readonly-write-policy-report.txt" \
+  "leanos-${version}-fault-readonly-write-snapshot.txt" \
+  "leanos-${version}-fault-readonly-write-page-plan.h" \
   "leanos-${version}-entry-adversarial-serial.log" \
   "leanos-${version}-double-fault-serial.log" \
   "leanos-${version}-double-fault-guard-mapped-serial.log" \

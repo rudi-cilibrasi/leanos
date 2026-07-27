@@ -1510,7 +1510,11 @@ user_a_entry:
     jmp 1b
 #endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+#ifdef LEANOS_PAGE_FAULT_PROBE_READONLY_WRITE
+    jmp user_a_write_fault_instruction
+#else
     jmp user_a_fault_instruction
+#endif
 #endif
 #ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
     mov $0x1b, %ax
@@ -1646,6 +1650,22 @@ user_a_fault_instruction:
     mov 0, %rax
 .global user_a_fault_recovered
 user_a_fault_recovered:
+#ifdef LEANOS_PAGE_FAULT_PROBE_READONLY_WRITE
+    jmp user_copy_fail
+#endif
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+    jmp user_copy_fail
+#endif
+.global user_a_write_fault_instruction
+user_a_write_fault_instruction:
+    movb $0x5a, user_a_write_target(%rip)
+.global user_a_write_fault_recovered
+user_a_write_fault_recovered:
+    jmp user_copy_fail
+.balign 8
+.global user_a_write_target
+user_a_write_target:
+    .byte 0xa5
 #ifdef LEANOS_PREEMPTION_SCENARIO
     mov $1, %rax
     xor %rbx, %rbx
@@ -1730,6 +1750,17 @@ direct_port_probe_class:
 .global integer_fault_probe_class
 integer_fault_probe_class:
 #ifdef LEANOS_INTEGER_FAULT_PROBE_BP
+    .quad 1
+#else
+    .quad 0
+#endif
+
+/* Reason-sensitive page-fault probe selector consumed by the shared
+   production adapter.  0 is the existing supervisor-page read and 1 is the
+   real write to the present user read-only text leaf above. */
+.global page_fault_probe_class
+page_fault_probe_class:
+#ifdef LEANOS_PAGE_FAULT_PROBE_READONLY_WRITE
     .quad 1
 #else
     .quad 0

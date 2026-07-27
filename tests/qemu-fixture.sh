@@ -39,13 +39,17 @@ case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
   ;;
 esac
 if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
-      "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == fault-containment ]]; then
+      ( "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == fault-containment ||
+        "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == fault-readonly-write ) ]]; then
+  fault_scenario="${LEANOS_BOOT_SCENARIO}"
   set +e
   LEANOS_BOOT_SCENARIO=blocking-ipc LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
   status=$?
   set -e
+  fault_probe=supervisor-read
+  [[ "$fault_scenario" == fault-readonly-write ]] && fault_probe=readonly-write
   sed -i \
-    -e 's|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap|LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap|' \
+    -e "s|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap|LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=${fault_probe} contract=v1 controls=wp,smep,smap|" \
     -e '/^LEANOS\/9 /d' -e '/^LEANOS\/10 /d' \
     -e '/^LEANOS\/6 COPY /d' -e '/^LEANOS\/11 USER-FAULT /d' \
     -e '/^LEANOS\/11 ENTRY-HIGH-WATER /d' \
@@ -55,15 +59,32 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
 LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS
 LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned
 EOF
-  printf '%s\n' \
-    'LEANOS/14 PF-WALK page=0 expected-leaf=9223372036854775811 live-leaf=9223372036854775811 cause=supervisor denial=supervisor result=PASS' \
-    >> "$log"
-  printf 'LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=1,14,5,0,0,0,1,1,1,1,%s,15,%s,35,534,%s,27,1,0 authorization=1 route=72057598316249602 result=PASS\n' \
-    "$(fault_symbol_value page_map_level_4_a)" \
-    "$(fault_symbol_value user_a_fault_instruction)" \
-    "$(fault_symbol_value user_a_stack_top)" >> "$log"
-  cat >> "$log" <<'EOF'
+  if [[ "$fault_scenario" == fault-readonly-write ]]; then
+    fault_address="$(fault_symbol_value user_a_write_target)"
+    fault_page=$((fault_address / 4096))
+    fault_leaf=$((fault_page * 4096 + 5))
+    printf 'LEANOS/14 PF-WALK page=%s expected-leaf=%s live-leaf=%s cause=not-writable denial=not-writable result=PASS\n' \
+      "$fault_page" "$fault_leaf" "$fault_leaf" >> "$log"
+    printf 'LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=1,14,7,%s,%s,1,1,1,1,1,%s,15,%s,35,534,%s,27,1,0 authorization=1 route=72057598316249602 result=PASS\n' \
+      "$fault_address" "$fault_page" \
+      "$(fault_symbol_value page_map_level_4_a)" \
+      "$(fault_symbol_value user_a_write_fault_instruction)" \
+      "$(fault_symbol_value user_a_stack_top)" >> "$log"
+    printf 'LEANOS/14 FAULT-ENTRY vector=14 error=7 access=write protection=1 cr2=%s rip=user-a-write-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 write-canary=unchanged result=PASS\n' \
+      "$fault_address" >> "$log"
+  else
+    printf '%s\n' \
+      'LEANOS/14 PF-WALK page=0 expected-leaf=9223372036854775811 live-leaf=9223372036854775811 cause=supervisor denial=supervisor result=PASS' \
+      >> "$log"
+    printf 'LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=1,14,5,0,0,0,1,1,1,1,%s,15,%s,35,534,%s,27,1,0 authorization=1 route=72057598316249602 result=PASS\n' \
+      "$(fault_symbol_value page_map_level_4_a)" \
+      "$(fault_symbol_value user_a_fault_instruction)" \
+      "$(fault_symbol_value user_a_stack_top)" >> "$log"
+    cat >> "$log" <<'EOF'
 LEANOS/14 FAULT-ENTRY vector=14 error=5 access=read protection=1 cr2=0 rip=user-a-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 result=PASS
+EOF
+  fi
+  cat >> "$log" <<'EOF'
 LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS
 LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS
 LEANOS/8 PAGING root=B selected=1 result=PASS

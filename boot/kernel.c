@@ -117,6 +117,8 @@ extern const uint8_t user_a_extended_state_probe[];
 #endif
 extern char user_a_stack[];
 extern char user_a_fault_instruction[], user_a_fault_recovered[];
+extern char user_a_write_fault_instruction[], user_a_write_fault_recovered[];
+extern char user_a_write_target[];
 #if defined(LEANOS_ENTRY_ADVERSARIAL) || defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
 extern char user_a_direct_port_probe[];
 #endif
@@ -127,6 +129,7 @@ extern const uint64_t direct_port_probe_class;
 extern const uint64_t integer_fault_probe_class;
 extern char user_a_divide_instruction[], user_a_breakpoint_after[];
 #endif
+extern const uint64_t page_fault_probe_class;
 extern char user_b_entry[];
 extern char user_b_stack[], user_b_stack_top[];
 extern uint64_t saved_context_a[], saved_context_b[];
@@ -742,9 +745,10 @@ static void activate_user_address_space(uint64_t *root) {
 }
 
 __attribute__((noinline, used))
-static void invalidate_fixed_fault_page(void) {
-    const uint64_t fixed_page_address = 0;
-    __asm__ volatile ("invlpg (%0)" : : "r"(fixed_page_address) : "memory");
+__attribute__((noinline))
+static void invalidate_snapshot_fault_page(
+    const struct page_fault_entry_record *snapshot) {
+    __asm__ volatile ("invlpg (%0)" : : "r"(snapshot->fault_address) : "memory");
 }
 
 static void serial_u64(uint64_t value) {
@@ -762,7 +766,9 @@ static void report_page_fault_snapshot(
     serial_puts("LEANOS/14 PF-WALK page="); serial_u64(snapshot->fault_page);
     serial_puts(" expected-leaf="); serial_u64(expected_leaf);
     serial_puts(" live-leaf="); serial_u64(live_leaf);
-    serial_puts(" cause=supervisor denial=supervisor result=PASS\n");
+    serial_puts(page_fault_probe_class == 1
+        ? " cause=not-writable denial=not-writable result=PASS\n"
+        : " cause=supervisor denial=supervisor result=PASS\n");
     serial_puts("LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=");
     for (unsigned i = 0; i < 19; ++i) {
         if (i != 0) serial_putc(',');
@@ -2157,14 +2163,26 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
     if (transition->kind != PAGE_FAULT_TRANSITION_CONTAIN)
         fail("page-fault-containment-bypass");
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
-    if (error == 5u && rip == (uint64_t)user_a_fault_instruction &&
-        fault_address == 0u) {
+    const uint64_t expected_error = page_fault_probe_class == 1 ? 7u : 5u;
+    const uint64_t expected_rip = page_fault_probe_class == 1
+        ? (uint64_t)user_a_write_fault_instruction
+        : (uint64_t)user_a_fault_instruction;
+    const uint64_t expected_address = page_fault_probe_class == 1
+        ? (uint64_t)user_a_write_target : 0u;
+    if (error == expected_error && rip == expected_rip &&
+        fault_address == expected_address) {
         if (snapshot->current_subject != 1 ||
             snapshot->active_address_space != 1 ||
             snapshot->active_cr3 != (uint64_t)page_map_level_4_a ||
             saved_context_owner_b != 2 ||
             !initial_b_frame_valid(initial_context_b))
             fail("fault-authority-binding");
+        if (page_fault_probe_class == 1) {
+            uint8_t write_canary;
+            smap_copy_from(&write_canary, user_a_write_target, 1);
+            if (write_canary != 0xa5u)
+                fail("fault-write-canary");
+        }
         uint64_t result = transition->result;
         if (result != UINT64_C(0x00000000ff020202))
             fail("fault-model-dispatch");
@@ -2178,7 +2196,13 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
             peer_capability_witness != 1 || peer_resource_witness != 1 ||
             selected != saved_context_owner_b || address_space != 2)
             fail("fault-model-encoding");
-        serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 access=read protection=1 cr2=0 rip=user-a-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 result=PASS\n");
+        if (page_fault_probe_class == 1) {
+            serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=7 access=write protection=1 cr2=");
+            serial_u64((uint64_t)user_a_write_target);
+            serial_puts(" rip=user-a-write-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 write-canary=unchanged result=PASS\n");
+        } else {
+            serial_puts("LEANOS/14 FAULT-ENTRY vector=14 error=5 access=read protection=1 cr2=0 rip=user-a-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 result=PASS\n");
+        }
         fault_dispatch_attestation = result;
         current_subject = selected;
         serial_puts("LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS\n");
@@ -2299,19 +2323,28 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
     const uint64_t live_leaf =
         user && pt != 0 && snapshot.fault_page < BOOT_LEAF_COUNT ?
             pt[snapshot.fault_page] & ~(PTE_ACCESSED | PTE_DIRTY) : 0;
-    /* The boot lowering is deliberately limited to its one production
-       containment probe: CPL3 reads linear page zero, which the kernel never
-       accesses between this instruction and the generated transition.  An
-       exact invalidation here establishes absence for snapshot.fault_page
-       even if that translation was refilled after the earlier CR3 reload.
-       Broader present write/NX cases remain modeled but are not claimed by
-       this machine adapter. */
-    const uint64_t fixed_fault_page =
-        user && snapshot.fault_address == 0 && snapshot.fault_page == 0 &&
-        snapshot.error == 5 && snapshot.access == 0 &&
-        snapshot.protection == 1;
-    invalidate_fixed_fault_page();
-    const uint64_t checked_exact_fault_page_invalidation = fixed_fault_page;
+    /* Each admitted production probe binds one reviewed instruction, address,
+       architectural error/access class, and the active generated leaf.  The
+       immutable snapshot itself selects the exact INVLPG operand; this closes
+       the single-core stale-translation assumption before the generated
+       agreement transition consumes its live walk. */
+    const uint64_t reviewed_fault =
+        page_fault_probe_class == 0
+            ? user && snapshot.fault_address == 0 &&
+              snapshot.fault_page == 0 && snapshot.error == 5 &&
+              snapshot.access == 0 && snapshot.protection == 1 &&
+              snapshot.rip == (uint64_t)user_a_fault_instruction
+            : page_fault_probe_class == 1
+            ? user &&
+              snapshot.fault_address == (uint64_t)user_a_write_target &&
+              snapshot.fault_page ==
+                  (uint64_t)user_a_write_target / PAGE_BYTES &&
+              snapshot.error == 7 && snapshot.access == 1 &&
+              snapshot.protection == 1 &&
+              snapshot.rip == (uint64_t)user_a_write_fault_instruction
+            : 0;
+    invalidate_snapshot_fault_page(&snapshot);
+    const uint64_t checked_exact_fault_page_invalidation = reviewed_fault;
     const uint64_t route = leanos_page_fault_dispatch_transition(
         snapshot.version, snapshot.vector, snapshot.error,
         snapshot.fault_address, snapshot.fault_page, snapshot.access,
@@ -2533,7 +2566,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off\n"
         : "LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
-    serial_puts("LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap\n");
+    serial_puts(page_fault_probe_class == 1
+        ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=readonly-write contract=v1 controls=wp,smep,smap\n"
+        : "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=supervisor-read contract=v1 controls=wp,smep,smap\n");
 #elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
     serial_puts(direct_port_probe_class == 1
         ? "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=debug-exit contract=v1 controls=wp,smep,smap\n"

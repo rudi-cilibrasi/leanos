@@ -6,6 +6,8 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT; touch "$tmp/image.iso"
 ${CC:-gcc} -nostdlib -no-pie -Wl,-e,_start -x c -o "$tmp/fault-symbols.elf" - <<'EOF'
 char page_map_level_4_a[4096];
 char user_a_fault_instruction[8];
+char user_a_write_fault_instruction[8];
+char user_a_write_target[1];
 char user_a_stack_top[1];
 void _start(void) {}
 EOF
@@ -19,6 +21,13 @@ invoke() {
   ./scripts/run-image.sh "$tmp/image.iso"
 }
 invoke success >/dev/null 2>&1
+LEANOS_BOOT_SCENARIO=fault-readonly-write \
+  LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
+  LEANOS_QEMU="$root/tests/qemu-fixture.sh" LEANOS_QEMU_FIXTURE_MODE=success \
+  LEANOS_QEMU_TIMEOUT_SECONDS=1 LEANOS_SERIAL_LOG="$tmp/write.serial" \
+  LEANOS_FAULT_SNAPSHOT_ARTIFACT="$tmp/write.snapshot" \
+  LEANOS_FAULT_CONTAINMENT_ELF="$tmp/fault-symbols.elf" \
+  ./scripts/run-image.sh "$tmp/image.iso" >/dev/null 2>&1
 for spec in \
   'fault-direct-call serial-protocol' \
   'fault-wrong-error serial-protocol' \
