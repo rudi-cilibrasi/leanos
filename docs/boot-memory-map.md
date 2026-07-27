@@ -328,11 +328,16 @@ body list and intermediate scalar state without a shadow traversal.
 `memoryMapTagHeaderStepWords_of_admitted` next proves that the unique admitted
 map header enters the layout phase with its exact entry-byte count and marks
 the map as seen; `successfulScalarRichTraversal_memoryMapTagHeader` packages
-that transition around the remaining layout and entry traversal. The
-remaining induction must consume the map layout and every base/length/type
-triple, and recursively assemble these tag-local pieces into the universal
-`SuccessfulScalarRichTraversal`. Until that final derivation exists, the
-fail-closed terminal comparison remains in place.
+that transition around the remaining layout and entry traversal.
+`memoryMapLayoutStepWords_of_admitted` then validates the retained 24-byte,
+version-zero layout word and selects the first-entry phase (or the following
+tag for an empty map), preserving the exact entry-byte count and accumulated
+classification state; `successfulScalarRichTraversal_memoryMapLayout`
+packages that transition as the next non-entry traversal step. The remaining
+induction must consume every base/length/type triple and recursively assemble
+these tag-local pieces into the universal `SuccessfulScalarRichTraversal`.
+Until that final derivation exists, the fail-closed terminal comparison
+remains in place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
