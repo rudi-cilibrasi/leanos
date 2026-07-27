@@ -1088,6 +1088,35 @@ def canonicalScalarReplay
     (BootMemoryMapStreamPipeline.scalarInitialAt identity input.bytes.length
       authority.allocation.frame)
 
+/-- The universal terminal-state structural refinement specialized to one
+complete rich authority.  The checked rich-byte replay cannot terminate at a
+different scalar state, and its initial identity, extent, phase, accumulators,
+and selected target are derived from the authority rather than supplied by a
+caller. -/
+theorem canonicalScalarReplay_structurally_refines_authority
+    (authority : BootMemoryMapFullProjectionABI.Authority) :
+    let identity := UInt64.ofNat authority.input.infoAddress
+    let initial :=
+      BootMemoryMapStreamPipeline.scalarInitialAt identity
+        authority.input.bytes.length authority.allocation.frame
+    initial.word[1]! = active ∧
+      initial.word[2]! = noError ∧
+      initial.word[3]! = identity ∧
+      initial.word[4]! = UInt64.ofNat authority.input.bytes.length ∧
+      initial.word[5]! = 0 ∧
+      initial.word[7]! = phaseInfo ∧
+      initial.word[14]! = 0 ∧
+      initial.word[15]! = 0 ∧
+      initial.word[16]! = UInt64.ofNat authority.allocation.frame ∧
+      BootMemoryMapStreamPipeline.checkedScalarReplay
+          (BootMemoryMapStreaming.canonicalChunks identity authority.input.bytes)
+          initial =
+        .ok (canonicalScalarReplay authority.input authority) := by
+  simpa [canonicalScalarReplay] using
+    (BootMemoryMapStreamPipeline.canonicalTerminalReplay_of_decode
+      authority.input authority.decoded authority.allocation.frame
+      authority.decodedBy authority.selectedWithinBound)
+
 /-- Canonical production composition with the complete rich projection as an
 explicit claimed output.  Unlike `runCanonical`, this boundary cannot return
 authority after a caller mutates an entry, normalized region, checked
