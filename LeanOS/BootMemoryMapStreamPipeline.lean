@@ -338,6 +338,131 @@ theorem scalarStep_readU64_refines
         (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) := by
   simp [scalarStep, chunkWord_readU64_agreement _ _ hread]
 
+/-- Checked byte-side form of one scalar transition.  Unlike `scalarStep`, a
+short chunk remains an explicit rich-decoder error rather than being packed as
+zero. -/
+def checkedScalarStep (state : ScalarState) (chunk : ModelChunk) :
+    Except BootMemoryMapDecoder.Error ScalarState := do
+  let value ← BootMemoryMapDecoder.readU64 chunk.bytes 0
+  pure
+    { word := Array.ofFn fun query : Fin 19 =>
+        BootMemoryMapStreamAuthority.stepWord
+          state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+          state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+          state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+          state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+          state.word[16]! state.word[17]! state.word[18]!
+          chunk.identity (UInt64.ofNat chunk.offset) (UInt64.ofNat value)
+          (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) }
+
+/-- The checked rich-byte step and scalar step coincide whenever the decoder
+can read the complete chunk. -/
+theorem checkedScalarStep_eq_scalarStep
+    (state : ScalarState) (chunk : ModelChunk) (value : Nat)
+    (hread : BootMemoryMapDecoder.readU64 chunk.bytes 0 = .ok value) :
+    checkedScalarStep state chunk = .ok (scalarStep state chunk) := by
+  unfold checkedScalarStep scalarStep
+  rw [hread]
+  rw [chunkWord_readU64_agreement chunk.bytes value hread]
+  simp [bind, Except.bind, pure, Except.pure]
+
+/-- Whole checked-byte replay.  It mirrors the production loop's early stop on
+a scalar diagnostic while retaining short-chunk rejection in the rich
+decoder's typed error vocabulary. -/
+def checkedScalarReplay : List ModelChunk → ScalarState →
+    Except BootMemoryMapDecoder.Error ScalarState
+  | [], state => .ok state
+  | chunk :: rest, state => do
+      let next ← checkedScalarStep state chunk
+      if next.word[2]! != BootMemoryMapStreamAuthority.noError then
+        pure next
+      else
+        checkedScalarReplay rest next
+
+/-- If every chunk admits the rich decoder's checked eight-byte read, the
+entire checked replay equals the scalar production-model replay, including its
+first-error stopping point. -/
+theorem checkedScalarReplay_eq_scalarReplay
+    (chunks : List ModelChunk) (state : ScalarState)
+    (hreads : ∀ chunk ∈ chunks,
+      ∃ value, BootMemoryMapDecoder.readU64 chunk.bytes 0 = .ok value) :
+    checkedScalarReplay chunks state = .ok (scalarReplay chunks state) := by
+  induction chunks generalizing state with
+  | nil =>
+      rfl
+  | cons chunk rest ih =>
+      obtain ⟨value, hread⟩ := hreads chunk (by simp)
+      rw [checkedScalarReplay, checkedScalarStep_eq_scalarStep state chunk value hread]
+      simp only [bind, Except.bind]
+      by_cases hrejected :
+          (scalarStep state chunk).word[2]! !=
+            BootMemoryMapStreamAuthority.noError
+      · simp [scalarReplay, hrejected, pure, Except.pure]
+      · simp only [scalarReplay, hrejected, Bool.false_eq_true, ↓reduceIte]
+        apply ih
+        intro member hmember
+        exact hreads member (by simp [hmember])
+
+/-- Canonical decomposition of any aligned byte buffer supplies exactly the
+checked reads required above. -/
+theorem canonicalChunks_readU64
+    (identity : UInt64) (bytes : List UInt8)
+    (haligned : bytes.length % 8 = 0)
+    (chunk : ModelChunk) (hchunk : chunk ∈ canonicalChunks identity bytes) :
+    ∃ value, BootMemoryMapDecoder.readU64 chunk.bytes 0 = .ok value := by
+  have hlength : chunk.bytes.length = 8 := by
+    have aux :
+        ∀ count offset (tail : List UInt8) (member : ModelChunk),
+          tail.length = count * 8 →
+          member ∈ canonicalChunksAux identity offset count tail →
+          member.bytes.length = 8 := by
+      intro count
+      induction count with
+      | zero =>
+          intro offset tail member _ hmember
+          simp [canonicalChunksAux] at hmember
+      | succ count ih =>
+          intro offset tail member htail hmember
+          simp only [canonicalChunksAux, List.mem_cons] at hmember
+          rcases hmember with heq | hrest
+          · subst member
+            simp [List.length_take]
+            omega
+          · exact ih (offset + 8) (tail.drop 8) member (by
+              simp [List.length_drop]
+              omega) hrest
+    unfold canonicalChunks at hchunk
+    apply aux (bytes.length / 8) 0 bytes chunk
+    · omega
+    · exact hchunk
+  exact BootMemoryMapDecoder.readU64_succeeds_of_length chunk.bytes (by omega)
+
+/-- Universal whole-replay scalar/rich chunk equivalence for the canonical
+decomposition of an arbitrary aligned immutable byte buffer. -/
+theorem checkedScalarReplay_canonical_eq
+    (identity : UInt64) (bytes : List UInt8) (state : ScalarState)
+    (haligned : bytes.length % 8 = 0) :
+    checkedScalarReplay (canonicalChunks identity bytes) state =
+      .ok (scalarReplay (canonicalChunks identity bytes) state) := by
+  apply checkedScalarReplay_eq_scalarReplay
+  intro chunk hchunk
+  exact canonicalChunks_readU64 identity bytes haligned chunk hchunk
+
+/-- The immutable rich-decoder input and the checked/scalar whole replays are
+bound to one canonical chunk decomposition.  This is a proof-side production
+boundary statement only: it does not refine generated C, the compiler, or the
+boot chain. -/
+theorem assembled_canonical_checkedScalarReplay
+    (magic identity : UInt64) (bytes : List UInt8) (state : ScalarState)
+    (hsmall : 16 ≤ bytes.length) (hlarge : bytes.length ≤ maxTagBytes)
+    (haligned : bytes.length % 8 = 0) :
+    assemble magic identity bytes.length (canonicalChunks identity bytes) =
+        .ok { magic := magic.toNat, infoAddress := identity.toNat, bytes } ∧
+      checkedScalarReplay (canonicalChunks identity bytes) state =
+        .ok (scalarReplay (canonicalChunks identity bytes) state) := by
+  exact ⟨assemble_canonicalChunks magic identity bytes hsmall hlarge haligned,
+    checkedScalarReplay_canonical_eq identity bytes state haligned⟩
+
 /-- Any arbitrary rejected scalar step exposes no parser state, entry
 classification, target, or tag counter. -/
 theorem scalarStep_rejected_exposes_no_state

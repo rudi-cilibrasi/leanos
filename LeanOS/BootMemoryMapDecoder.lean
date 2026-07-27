@@ -66,6 +66,29 @@ def readU32 (bytes : List UInt8) (offset : Nat) : Except Error Nat :=
 def readU64 (bytes : List UInt8) (offset : Nat) : Except Error Nat :=
   readLE bytes offset 8
 
+private theorem readLEAux_succeeds (bytes : List UInt8)
+    (offset remaining factor acc : Nat)
+    (hbound : offset + remaining ≤ bytes.length) :
+    ∃ value, readLEAux bytes offset remaining factor acc = .ok value := by
+  induction remaining generalizing offset factor acc with
+  | zero =>
+      simp [readLEAux]
+  | succ remaining ih =>
+      have hoffset : offset < bytes.length := by omega
+      rw [readLEAux]
+      unfold readByte
+      rw [List.getElem?_eq_getElem hoffset]
+      apply ih
+      omega
+
+/-- An eight-byte chunk is sufficient for the decoder's checked scalar read.
+This is the byte-side precondition used by the stream replay refinement; it
+does not assume any particular byte values. -/
+theorem readU64_succeeds_of_length (bytes : List UInt8)
+    (hlength : 8 ≤ bytes.length) :
+    ∃ value, readU64 bytes 0 = .ok value := by
+  exact readLEAux_succeeds bytes 0 8 1 0 hlength
+
 def memoryKind (kind : Nat) : MemoryKind :=
   match kind with
   | 1 => .usable
