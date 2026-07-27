@@ -15,7 +15,7 @@ the bus-master bit clear. Required functions cannot be absent. Optional absent
 functions retain an explicit canonical record. Missing, unreadable, stale,
 unexpected, assigned, or bus-master-enabled records produce typed rejection.
 
-## Canonical corpus encoding
+## Typed serialization boundary
 
 `encodeSnapshot` emits exactly 210 64-bit words: snapshot and topology version,
 then sixteen 13-word slots. Each occupied slot contains an occupancy tag, BDF,
@@ -29,7 +29,12 @@ proves the length of every successful snapshot encoding.
 means accepted and stable tags 1 through 8 identify each typed rejection.
 `encodeValidationResult_length` proves that result width. These are the
 quarantine-owned inputs for issue #105's later composite-state codec; they are
-not a second runtime dispatcher.
+not a validator, decoder, or second runtime dispatcher. In particular,
+`encodeSnapshot` serializes any bounded typed `Snapshot`, including stale or
+otherwise invalid values. `validate` separately decides semantic acceptance.
+`stale_snapshot_serializes_but_rejects` makes that distinction executable.
+Issue #105 remains responsible for canonical byte-level decoding, rejection of
+noncanonical wire representations, and the global composite-state ABI.
 
 `LeanOS.DMAQuarantineCorpus` makes the issue-local control boundary executable
 without importing or approximating #104's composite state. Each of its six
@@ -52,7 +57,7 @@ has a manifest BDF occurring exactly once, and
 `accepted_unassigned_busMaster_disabled` proves the deny-all control fact for
 every present function.
 
-`DeviceContract` is the explicit boundary assumption: if a modeled
+`DeviceContract` is the explicit integrity-only boundary assumption: if a modeled
 device-originated step changes memory, the named function is present and has
 bus mastering enabled. Assignment is kernel policy rather than a hardware
 precondition for DMA. From an accepted snapshot, which separately establishes
@@ -62,6 +67,15 @@ entire physical-memory, allocator-ownership, page-table-frame,
 kernel-owned-frame, kernel-state, and per-subject-visible-byte projections.
 `q35Snapshot` is an executable accepted nonempty witness, so this result cannot
 be satisfied by assuming an empty inventory.
+
+This is memory-mutation integrity, not device-read confidentiality. The
+contract has no device-read premise or conclusion and does not prevent a device
+from observing physical bytes, retaining previously observed data, or leaking
+data through timing, MMIO, interrupts, or another channel.
+`device_contract_allows_distinct_reads` formally witnesses that the same
+contracted memory stutter is compatible with distinct device-read observations.
+The required-to-fail `DMADeviceReadConfidentiality` fixture prevents the
+integrity theorem from being advertised as read confidentiality.
 
 The runtime control model makes re-observation explicit. Ordinary public
 operations contain no BDF, assignment, or Command word. Every continued step
@@ -92,7 +106,10 @@ and does not pre-empt that issue's state design.
 
 ## Trusted boundary and dependency
 
-The proofs start after a complete hardware snapshot. PCI configuration reads,
+The proofs start after a complete hardware snapshot and assume direct physical
+DMA is disabled by the observed bus-master control. There is no modeled IOMMU,
+DMA remapping table, interrupt remapping, translated device address space, or
+device-assignment refinement. PCI configuration reads,
 enumeration completeness, firmware initialization, architectural meaning and
 read-back behavior of the Command register, QEMU/device obedience, generated C,
 assembly, compiler/linker behavior, and the final binary are not proved. QEMU
@@ -141,14 +158,36 @@ upgrade the Lean theorem into a hardware claim.
 
 Issue #104's authoritative `FailStop.CompositeState` now embeds the
 proof-carrying accepted snapshot and latest control observation directly;
-`RuntimeWellFormed` includes their exact `DMAQuarantined` agreement. Ordinary
-public operations preserve both fields and finite ordinary traces preserve the
-nonempty deny-all quarantine. Trusted `observeDMAControl` revalidates a live
-hardware snapshot: an exact observation continues atomically, while an invalid
-or valid-but-changed observation publishes the diagnostic snapshot, latches a
-typed DMA fatal record, and is absorbed by every later public-operation suffix.
-This integration does not fork `DMAQuarantine.RuntimeState` or its parallel
-memory projection into the composite runtime.
+`RuntimeWellFormed` includes their exact `DMAQuarantined` agreement, and
+`AuthoritativeRuntimeWellFormed` exposes that same conjunct.
+Every authoritative ordinary, blocking, and deferred-drain constructor retains
+the accepted and observed PCI authority fields literally. Consequently an
+arbitrary finite successor trace preserves the nonempty deny-all quarantine
+without #104's stronger, still-partial dormant-cancellation compatibility
+certificate. The already-derived exact-projection compatibility laws for
+return-authority selection, user-return completion, and restart are also
+consumed directly: each constructor preserves the complete authoritative
+invariant and therefore its DMA conjunct, without importing compatibility
+premises for unfinished constructors. Under an explicit caller-supplied
+`DeviceContract` assumption over the authoritative live observation, a named
+present unowned-device attempt preserves the complete physical-memory
+projection. Neither `DMAQuarantined` nor `AuthoritativeRuntimeWellFormed`
+proves or discharges that trusted hardware contract; they supply the accepted
+observation and its deny-all control facts. This remains an IOMMU-independent
+model result, not a proof of hardware obedience to the PCI Command register.
+Trusted
+`observeDMAControl` revalidates a live hardware snapshot: an exact observation
+continues atomically, while an invalid or valid-but-changed observation
+publishes the diagnostic snapshot, latches a typed DMA fatal record, and is
+absorbed by every later authoritative successor operation. This integration
+does not fork `DMAQuarantine.RuntimeState` or its parallel memory projection
+into the composite runtime.
+
+Issue #105 remains the owner of canonical decoding, the global fixed-width
+encoding, and the generated stateful dispatcher. No composite-state codec or
+decode/encode round-trip theorem is present here, so
+this DMA slice deliberately proves constructor-level model preservation and
+does not invent a parallel ABI or claim a generated-C refinement.
 Issue #129's final-ELF inventory now classifies the boot-only `0xcf8`/`0xcfc`
 mechanism accesses as `DMAQuarantine.boot-pci-config`. The exact `out16`,
 `out32`, and `in32` wrapper sites are reviewed exceptions, while the source

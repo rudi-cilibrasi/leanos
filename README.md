@@ -122,9 +122,10 @@ the restricted Lean runtime shim, Lean code generation and generated C, the C
 compiler and binutils, linker scripts, GRUB, SeaBIOS, QEMU/TCG, host-side
 evidence scripts, and the assumed x86-64 and device semantics. The boot scenarios
 test only the fixed single-core paths and adversarial cases documented by their
-ADRs. General concurrency, DMA, timing and covert channels, arbitrary hardware,
-arbitrary faults, and full implementation refinement remain outside the current
-claims. [ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md) defines
+ADRs. General concurrency, DMA outside the finite integrity-only q35 quarantine
+model, device-read confidentiality, timing and covert channels, arbitrary
+hardware, arbitrary faults, and full implementation refinement remain outside
+the current claims. [ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md) defines
 the evidence vocabulary and baseline boundary; later ADRs record each addition.
 
 ## Why LeanOS?
@@ -242,7 +243,9 @@ The finite [PCI DMA-quarantine model](docs/dma-quarantine.md) validates a
 versioned q35 manifest and proves, under an explicit device-control contract,
 that a named present unassigned function cannot change physical memory,
 allocator ownership, page-table or kernel-owned frames, kernel state, or any
-subject-visible bytes. The guest also exhaustively checks that manifest after
+subject-visible bytes. This is an integrity claim only: it does not constrain
+device reads or prove confidentiality, IOMMU isolation, or refinement from the
+Lean snapshot to the implementation. The guest also exhaustively checks that manifest after
 firmware, clears bus mastering on every present function, and reads each
 Command register back before CPL3. PCI enumeration and Command-register
 semantics, QEMU/device obedience, the handwritten C adapter, and final-binary

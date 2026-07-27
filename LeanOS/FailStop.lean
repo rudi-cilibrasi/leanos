@@ -1396,6 +1396,23 @@ def drainDeferredCancellation (state : CompositeState)
   | .rejected reason => ⟨state, .rejected reason⟩
   | .drained saved => ⟨publishDeferredDrain state outcome, .drained saved⟩
 
+/-- Deferred cancellation drains cannot replace either proof-carrying PCI
+authority field.  Successful publication changes only scheduler, lifecycle,
+context, and deferred-cancellation projections; every denial is atomic. -/
+@[simp] theorem drainDeferredCancellation_dmaAuthority state subject :
+    (drainDeferredCancellation state subject).state.dmaAccepted =
+        state.dmaAccepted ∧
+      (drainDeferredCancellation state subject).state.dmaObserved =
+        state.dmaObserved := by
+  simp only [drainDeferredCancellation]
+  generalize houtcome : BlockingIPCContext.drainDeferred
+    state.blockingIPCContext state.deferredCancels state.resumable.contexts
+    state.resumable.capacity subject = outcome
+  cases outcome with
+  | mk next nextDeferred nextResumable result =>
+      cases result <;>
+        simp [publishDeferredDrain, publishBlockingIPCContext]
+
 theorem drainDeferredCancellation_rejected_unchanged state subject reason
     (h : (drainDeferredCancellation state subject).result = .rejected reason) :
     (drainDeferredCancellation state subject).state = state := by
@@ -3897,6 +3914,50 @@ theorem blockingGate_running_exact state operation
       { state := applyBlockingOperation state operation
         result := .completed (blockingOperationReply state operation) } := by
   simp [blockingGate, hmode]
+
+private theorem restoreBlockingPeer_dmaAuthority state blocking next
+    (hnext : restoreBlockingPeer state blocking = .ok next) :
+    next.dmaAccepted = state.dmaAccepted ∧
+      next.dmaObserved = state.dmaObserved := by
+  unfold restoreBlockingPeer at hnext
+  repeat' first | split at hnext
+  all_goals try contradiction
+  all_goals injection hnext with hnext
+  all_goals subst next
+  all_goals exact ⟨rfl, rfl⟩
+
+private theorem publishReleasedBlockingContext_dmaAuthority
+    state blocking saved next
+    (hnext : publishReleasedBlockingContext state blocking saved = .ok next) :
+    next.dmaAccepted = state.dmaAccepted ∧
+      next.dmaObserved = state.dmaObserved := by
+  unfold publishReleasedBlockingContext at hnext
+  repeat' first | split at hnext
+  all_goals try contradiction
+  all_goals injection hnext with hnext
+  all_goals subst next
+  all_goals exact ⟨rfl, rfl⟩
+
+/-- Blocking receive, send/wake, and cancellation retain the accepted and
+observed PCI authority fields for every typed success, denial, and outer-latch
+result.  This is a structural operation law and needs no global compatibility
+premise. -/
+@[simp] theorem blockingGate_dmaAuthority state operation :
+    (blockingGate state operation).state.dmaAccepted = state.dmaAccepted ∧
+      (blockingGate state operation).state.dmaObserved = state.dmaObserved := by
+  cases hmode : state.execution.mode with
+  | handling entry => simp [blockingGate, hmode]
+  | halted record => simp [blockingGate, hmode]
+  | running =>
+      cases operation <;>
+        simp only [blockingGate, hmode, applyBlockingOperation,
+          dispatchBlockingReceive, dispatchBlockingSend, dispatchBlockingCancel]
+      all_goals
+        repeat' first | split
+        all_goals first
+          | exact ⟨rfl, rfl⟩
+          | exact restoreBlockingPeer_dmaAuthority _ _ _ ‹_›
+          | exact publishReleasedBlockingContext_dmaAuthority _ _ _ _ ‹_›
 
 /-- A completed blocking result proves that the execution latch was running
 and fixes both the exact typed dependency reply and exact composite post-state.
@@ -13823,6 +13884,13 @@ theorem AuthoritativeRuntimeWellFormed.blocking {state : CompositeState}
     BlockingRuntimeWellFormed state :=
   ⟨hstate.1, hstate.2.1.1⟩
 
+/-- The successor invariant exposes the same proof-carrying PCI quarantine
+carried by the sole global runtime invariant. -/
+theorem AuthoritativeRuntimeWellFormed.dmaQuarantined {state : CompositeState}
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    state.DMAQuarantined :=
+  hstate.1.dmaQuarantined
+
 def applyAuthoritativeOperation (state : CompositeState) :
     AuthoritativeOperation → CompositeState
   | .ordinary operation => applyOperation state operation
@@ -13874,6 +13942,62 @@ def authoritativeGate (state : CompositeState) (operation : AuthoritativeOperati
       | .handling _ | .halted _ => state := by
   cases hmode : state.execution.mode <;>
     simp [authoritativeGate, applyAuthoritativeOperation, hmode]
+
+/-- No authoritative ordinary, blocking, or deferred-drain operation can
+replace the boot-accepted PCI authority or the current live observation.
+Unlike complete global preservation, this structural field law is
+unconditional: it does not depend on unfinished operation-compatibility
+constructors. -/
+@[simp] theorem authoritativeGate_dmaAuthority state operation :
+    (authoritativeGate state operation).state.dmaAccepted =
+        state.dmaAccepted ∧
+      (authoritativeGate state operation).state.dmaObserved =
+        state.dmaObserved := by
+  cases operation with
+  | ordinary operation =>
+      rw [authoritativeGate_ordinary_state]
+      exact gate_dmaAuthority state operation
+  | blocking operation =>
+      rw [authoritativeGate_blocking_state]
+      exact blockingGate_dmaAuthority state operation
+  | drainDeferred subject =>
+      cases hmode : state.execution.mode <;>
+        simp [authoritativeGate, applyAuthoritativeOperation, hmode]
+
+/-- Every authoritative constructor preserves the live DMA quarantine
+projection without requiring the stronger global compatibility certificate. -/
+theorem authoritativeGate_preserves_dmaQuarantined state operation
+    (hstate : state.DMAQuarantined) :
+    (authoritativeGate state operation).state.DMAQuarantined := by
+  obtain ⟨haccepted, hobserved⟩ :=
+    authoritativeGate_dmaAuthority state operation
+  unfold CompositeState.DMAQuarantined at hstate ⊢
+  simpa [haccepted, hobserved] using hstate
+
+/-- The authoritative live observation supplies the same explicit hardware
+contract used by the issue-local complete-memory theorem.  Thus a named
+present device attempt is a stutter on physical memory, allocator ownership,
+page-table frames, kernel-owned frames, kernel state, and every
+subject-visible byte without assuming an IOMMU. -/
+theorem CompositeState.DMAQuarantined.unownedDevicePreservesCompleteProjection
+    {state : CompositeState} (hstate : state.DMAQuarantined)
+    (target : DMAQuarantine.BDF)
+    (before after : DMAQuarantine.MemoryProjection)
+    (hcontract : DMAQuarantine.DeviceContract
+      state.dmaObserved target before after)
+    (hknown : ∃ function ∈ state.dmaObserved.functions,
+      function.bdf = target ∧ function.status = .present) :
+    after.physicalMemory = before.physicalMemory ∧
+      after.allocatorOwnership = before.allocatorOwnership ∧
+      after.pageTableFrames = before.pageTableFrames ∧
+      after.kernelOwnedFrames = before.kernelOwnedFrames ∧
+      after.kernelState = before.kernelState ∧
+      after.subjectVisible = before.subjectVisible := by
+  rw [hstate] at hcontract hknown
+  apply DMAQuarantine.unowned_device_preserves_complete_projection
+    state.dmaAccepted target before after
+  · exact hcontract
+  · exact hknown
 
 theorem authoritativeGate_deterministic state operation first second
     (hfirst : authoritativeGate state operation = first)
@@ -14781,6 +14905,31 @@ theorem authoritativeGate_restart_preserves_authoritativeRuntimeWellFormed
     (.ordinary .restart) hstate
     (restart_authoritativeOperationCompatible state hstate)
 
+/-- The self-contained neutral-constructor compatibility laws preserve the
+authoritative DMA conjunct as a consequence of complete global preservation.
+No compatibility premise for any unfinished constructor enters this slice. -/
+theorem authoritativeGate_neutralConstructors_preserve_dmaQuarantined
+    state (hstate : AuthoritativeRuntimeWellFormed state) :
+    (∀ purpose,
+      (authoritativeGate state
+        (.ordinary (.selectUserReturn purpose))).state.DMAQuarantined) ∧
+    (∀ request,
+      (authoritativeGate state
+        (.ordinary (.userReturn request))).state.DMAQuarantined) ∧
+    (authoritativeGate state (.ordinary .restart)).state.DMAQuarantined := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro purpose
+    exact
+      (authoritativeGate_selectUserReturn_preserves_authoritativeRuntimeWellFormed
+        state purpose hstate).dmaQuarantined
+  · intro request
+    exact
+      (authoritativeGate_userReturn_preserves_authoritativeRuntimeWellFormed
+        state request hstate).dmaQuarantined
+  · exact
+      (authoritativeGate_restart_preserves_authoritativeRuntimeWellFormed
+        state hstate).dmaQuarantined
+
 def runAuthoritativeOperations (state : CompositeState) :
     List AuthoritativeOperation → CompositeState
   | [] => state
@@ -14845,6 +14994,22 @@ theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
       exact ih (authoritativeGate state operation).state
         (authoritativeGate_preserves_authoritativeRuntimeWellFormed
           state operation hstate hcompatible.1) hcompatible.2
+
+/-- Arbitrary authoritative successor traces retain the exact boot-accepted
+PCI observation.  This proof ranges over ordinary, blocking, and deferred
+drain constructors directly and therefore needs neither the stronger global
+invariant nor its still-partial operation compatibility certificate. -/
+theorem runAuthoritativeOperations_preserves_dmaQuarantined
+    state operations (hstate : state.DMAQuarantined) :
+    let next := runAuthoritativeOperations state operations
+    next.DMAQuarantined ∧
+      DMAQuarantine.quarantine next.dmaObserved = true := by
+  induction operations generalizing state with
+  | nil => exact ⟨hstate, hstate.quarantine⟩
+  | cons operation rest ih =>
+      simp only [runAuthoritativeOperations]
+      exact ih (authoritativeGate state operation).state
+        (authoritativeGate_preserves_dmaQuarantined state operation hstate)
 
 /-- Arbitrary finite ordinary traces need no reconstructed blocking or drain
 readiness.  Their recursive compatibility evidence composes operation-local
@@ -15054,6 +15219,40 @@ theorem authoritative_halted_suffix_absorbing state record operations
         | drainDeferred subject => simp [authoritativeGate, hmode]
       rw [hgate]
       exact ih state hmode
+
+/-- A validator-rejected live PCI observation is absorbed by the complete
+successor vocabulary, including blocking operations and deferred drains. -/
+theorem observeDMAControl_invalid_authoritative_suffix_absorbing
+    state snapshot reason operations
+    (hrunning : state.execution.mode = .running)
+    (hinvalid : DMAQuarantine.validate snapshot = .rejected reason) :
+    let next := (observeDMAControl state snapshot).state
+    next.execution.mode =
+        .halted (dmaHaltRecord .dmaInvalidControlSnapshot) ∧
+      runAuthoritativeOperations next operations = next := by
+  rw [observeDMAControl_invalid_exact_fatal state snapshot reason hrunning hinvalid]
+  dsimp [latchDMAControlFailure]
+  constructor
+  · rfl
+  · exact authoritative_halted_suffix_absorbing _ _ operations rfl
+
+/-- A valid but changed PCI observation receives its distinct fatal reason and
+is likewise absorbed by every authoritative successor operation. -/
+theorem observeDMAControl_changed_authoritative_suffix_absorbing
+    state snapshot accepted operations
+    (hrunning : state.execution.mode = .running)
+    (hvalid : DMAQuarantine.validate snapshot = .accepted accepted)
+    (hchanged : snapshot ≠ state.dmaAccepted.snapshot) :
+    let next := (observeDMAControl state snapshot).state
+    next.execution.mode =
+        .halted (dmaHaltRecord .dmaControlSnapshotChanged) ∧
+      runAuthoritativeOperations next operations = next := by
+  rw [observeDMAControl_changed_exact_fatal state snapshot accepted
+    hrunning hvalid hchanged]
+  dsimp [latchDMAControlFailure]
+  constructor
+  · rfl
+  · exact authoritative_halted_suffix_absorbing _ _ operations rfl
 
 /-- Concrete reachability for the successor rejection class: the boot-produced
 empty waiter store rejects cancellation without mutation. -/
