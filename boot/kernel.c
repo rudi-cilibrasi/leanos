@@ -778,7 +778,15 @@ static void report_page_fault_snapshot(
     const struct page_fault_entry_record *snapshot,
     uint64_t authorization, uint64_t route,
     uint64_t expected_leaf, uint64_t live_leaf) {
-    const uint64_t *words = (const uint64_t *)snapshot;
+    const uint64_t words[19] = {
+        snapshot->version, snapshot->vector, snapshot->error,
+        snapshot->fault_address, snapshot->fault_page, snapshot->access,
+        snapshot->protection, snapshot->user, snapshot->current_subject,
+        snapshot->active_address_space, snapshot->active_cr3,
+        snapshot->paging_controls, snapshot->rip, snapshot->saved_cs,
+        snapshot->rflags, snapshot->user_rsp, snapshot->user_ss,
+        snapshot->stack_identity, snapshot->reserved
+    };
     serial_puts("LEANOS/14 PF-WALK page="); serial_u64(snapshot->fault_page);
     serial_puts(" expected-leaf="); serial_u64(expected_leaf);
     serial_puts(" live-leaf="); serial_u64(live_leaf);
