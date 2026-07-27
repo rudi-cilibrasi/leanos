@@ -427,6 +427,67 @@ theorem ignoredTagHeaderStepWords_of_admitted
     phaseInfo, phaseTag, phaseDone, phaseIgnored, phaseEntryBase,
     phaseEntryLength, phaseEntryType]
 
+/-- An admitted ignored-tag body word advances the scalar cursor through
+content or alignment padding.  The remaining padded count decreases by one
+word, content decreases only while content bytes remain, and every map, entry,
+and classification field is preserved. -/
+theorem ignoredTagBodyStepWords_of_admitted
+    (identity extent offset chain content padded sawMap entries base length
+      usable blocked target highest tagCount chunk : UInt64)
+    (hidentityAligned : identity % 8 = 0)
+    (hextentLow : 16 ≤ extent)
+    (hextentHigh : extent ≤ 65536)
+    (hextentAligned : extent % 8 = 0)
+    (hoffset : offset < extent)
+    (hoffsetNotFinal : offset + 8 ≠ extent)
+    (husable : usable ≤ 1)
+    (hblocked : blocked ≤ 1)
+    (hsawMap : sawMap ≤ 1)
+    (htarget : target < 4096)
+    (htagCount : tagCount ≤ 64)
+    (hpadded : 8 ≤ padded)
+    (hcontent : content ≤ padded) :
+    let next := fun query =>
+      stepWord
+        abiVersion active noError identity extent offset chain phaseIgnored
+        content padded sawMap entries base length usable blocked target highest
+        tagCount identity offset chunk 0 query
+    next 0 = abiVersion ∧
+      next 1 = active ∧
+      next 2 = noError ∧
+      next 3 = identity ∧
+      next 4 = extent ∧
+      next 5 = offset + 8 ∧
+      next 7 = (if padded == 8 then phaseTag else phaseIgnored) ∧
+      next 8 = (if content > 8 then content - 8 else 0) ∧
+      next 9 = padded - 8 ∧
+      next 10 = sawMap ∧
+      next 11 = entries ∧
+      next 12 = base ∧
+      next 13 = length ∧
+      next 14 = usable ∧
+      next 15 = blocked ∧
+      next 16 = target ∧
+      next 17 = highest ∧
+      next 18 = tagCount := by
+  dsimp only
+  have hextentNotLow : ¬extent < 16 := by simpa using hextentLow
+  have hextentNotHigh : ¬65536 < extent := by simpa using hextentHigh
+  have hoffsetNotHigh : ¬extent ≤ offset := by simpa using hoffset
+  have htargetNotHigh : ¬4096 ≤ target := by simpa using htarget
+  have husableNotHigh : ¬1 < usable := by simpa using husable
+  have hblockedNotHigh : ¬1 < blocked := by simpa using hblocked
+  have hsawMapNotHigh : ¬1 < sawMap := by simpa using hsawMap
+  have htagCountNotBad : ¬64 < tagCount := by simpa using htagCount
+  have hpaddedNotLow : ¬padded < 8 := by simpa using hpadded
+  have hcontentNotHigh : ¬padded < content := by simpa using hcontent
+  simp [stepWord, transitionError, completedError, nextPhase,
+    nextContent, nextPadded, hidentityAligned, hextentNotLow,
+    hextentNotHigh, hextentAligned, hoffsetNotHigh, htargetNotHigh,
+    husableNotHigh, hblockedNotHigh, hsawMapNotHigh, htagCountNotBad,
+    hpaddedNotLow, hcontentNotHigh, hoffsetNotFinal, phaseInfo, phaseTag,
+    phaseDone, phaseIgnored, phaseEntryBase, phaseEntryLength, phaseEntryType]
+
 /-- An admitted tag cursor consuming the unique terminal end-tag word reaches
 the exact successful scalar terminal state.  This is the terminal constructor
 of the rich/scalar phase induction; it is stated over the production

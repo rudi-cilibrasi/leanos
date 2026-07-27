@@ -305,11 +305,17 @@ non-end tag header advances the production cursor by exactly eight bytes,
 installs its exact content and aligned-padding counters, and preserves all
 map, entry, and classification fields;
 `successfulScalarRichTraversal_ignoredTagHeader` packages that header as the
-next non-entry traversal step. The remaining induction must consume each
-ignored content/padding chunk, the unique map layout, and every
-base/length/type triple to construct `SuccessfulScalarRichTraversal`. Until
-that final derivation exists, the fail-closed terminal comparison remains in
-place.
+next non-entry traversal step.
+`ignoredTagBodyStepWords_of_admitted` proves the matching production step for
+each ignored content or alignment-padding word: the cursor advances by eight,
+the padded counter decreases by eight, the content counter drains to zero,
+and map, entry, and classification fields are preserved.
+`successfulScalarRichTraversal_ignoredTagBody` packages that word around an
+arbitrary continuation. The remaining induction must connect this local walk
+to each retained ignored-tag span, consume the unique map layout, and consume
+every base/length/type triple to construct
+`SuccessfulScalarRichTraversal`. Until that final derivation exists, the
+fail-closed terminal comparison remains in place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
