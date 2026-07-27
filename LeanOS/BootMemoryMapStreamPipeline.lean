@@ -1729,15 +1729,14 @@ theorem successfulScalarRichTraversal_memoryMapEntry_with_successor
     (hlengthNonzero : length ≠ 0)
     (hbaseBound : base < wordLimit)
     (hstopBound : base + length < wordLimit)
-    (hkindBound : kindWord < 2 ^ 32)
-    (hrest :
-      SuccessfulScalarRichTraversal target entries
-        (scalarStep (scalarStep (scalarStep state baseChunk) lengthChunk)
-          kindChunk)
-        rest terminal) :
-    SuccessfulScalarRichTraversal target
-        ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
-        state (baseChunk :: lengthChunk :: kindChunk :: rest) terminal ∧
+    (hkindBound : kindWord < 2 ^ 32) :
+    (SuccessfulScalarRichTraversal target entries
+          (scalarStep (scalarStep (scalarStep state baseChunk) lengthChunk)
+            kindChunk)
+          rest terminal →
+        SuccessfulScalarRichTraversal target
+          ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
+          state (baseChunk :: lengthChunk :: kindChunk :: rest) terminal) ∧
       let next :=
         scalarStep (scalarStep (scalarStep state baseChunk) lengthChunk)
           kindChunk
@@ -2035,10 +2034,15 @@ theorem successfulScalarRichTraversal_memoryMapEntry_with_successor
     rw [hkindBlocked]
     split <;> simp_all
   have hcomposed :
-      SuccessfulScalarRichTraversal target
-        ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } ::
-          entries)
-        state (baseChunk :: lengthChunk :: kindChunk :: rest) terminal := by
+      SuccessfulScalarRichTraversal target entries
+          (scalarStep (scalarStep (scalarStep state baseChunk) lengthChunk)
+            kindChunk)
+          rest terminal →
+        SuccessfulScalarRichTraversal target
+          ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } ::
+            entries)
+          state (baseChunk :: lengthChunk :: kindChunk :: rest) terminal := by
+    intro hrest
     apply SuccessfulScalarRichTraversal.nonEntry
       ({ base, length, kind := BootMemoryMapDecoder.memoryKind kindWord } :: entries)
       state terminal baseChunk (lengthChunk :: kindChunk :: rest)
@@ -2856,30 +2860,29 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapEntry_with_successor
     (hblocked : state.word[15]! ≤ 1)
     (htargetWord : state.word[16]! = UInt64.ofNat target)
     (htarget : target < frameLimit)
-    (htagCount : state.word[18]! ≤ 64)
-    (hrest :
-      SuccessfulScalarRichTraversal target restEntries
-        (scalarStep
+    (htagCount : state.word[18]! ≤ 64) :
+    (SuccessfulScalarRichTraversal target restEntries
           (scalarStep
-            (scalarStep state
+            (scalarStep
+              (scalarStep state
+                { identity
+                  offset := entryOffset
+                  bytes := (bytes.drop entryOffset).take 8
+                  terminal := false })
               { identity
-                offset := entryOffset
-                bytes := (bytes.drop entryOffset).take 8
+                offset := entryOffset + 8
+                bytes := (bytes.drop (entryOffset + 8)).take 8
                 terminal := false })
             { identity
-              offset := entryOffset + 8
-              bytes := (bytes.drop (entryOffset + 8)).take 8
+              offset := entryOffset + 16
+              bytes := (bytes.drop (entryOffset + 16)).take 8
               terminal := false })
-          { identity
-            offset := entryOffset + 16
-            bytes := (bytes.drop (entryOffset + 16)).take 8
-            terminal := false })
-        ((canonicalChunks identity bytes).drop (entryOffset / 8 + 3))
-        terminal) :
-    SuccessfulScalarRichTraversal target
-        ({ base, length, kind := memoryKind (low32Nat kindWord) } :: restEntries)
-        state ((canonicalChunks identity bytes).drop (entryOffset / 8))
-        terminal ∧
+          ((canonicalChunks identity bytes).drop (entryOffset / 8 + 3))
+          terminal →
+        SuccessfulScalarRichTraversal target
+          ({ base, length, kind := memoryKind (low32Nat kindWord) } :: restEntries)
+          state ((canonicalChunks identity bytes).drop (entryOffset / 8))
+          terminal) ∧
       let next :=
         scalarStep
           (scalarStep
@@ -2990,7 +2993,6 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapEntry_with_successor
       · omega
       · unfold low32Nat
         omega
-      · simpa using hrest
 
 /-- The raw successor returned by one canonical entry step preserves the
 induction invariant for the exact number of entries still encoded in the
@@ -3095,6 +3097,56 @@ def CanonicalMemoryMapEntryState
     target < frameLimit ∧
     state.word[18]! ≤ 64
 
+/-- The complete canonical entry-boundary invariant follows from the raw
+production successor equations alone.  In particular, this theorem has no
+scalar/rich continuation premise: the successor state can be established
+before recursively constructing the traversal over later entries. -/
+theorem canonicalMemoryMapEntryState_of_successor
+    (identity : UInt64) (total offset target remaining : Nat)
+    (state next : ScalarState)
+    (hstate :
+      CanonicalMemoryMapEntryState identity total offset target
+        (remaining + 1) state)
+    (hversion :
+      next.word[0]! = BootMemoryMapStreamAuthority.abiVersion)
+    (hstatus :
+      next.word[1]! = BootMemoryMapStreamAuthority.active)
+    (herror :
+      next.word[2]! = BootMemoryMapStreamAuthority.noError)
+    (hidentity : next.word[3]! = identity)
+    (hextent : next.word[4]! = UInt64.ofNat total)
+    (hoffset :
+      next.word[5]! = UInt64.ofNat offset + 8 + 8 + 8)
+    (hphase :
+      next.word[7]! =
+        (if state.word[8]! = 24
+          then BootMemoryMapStreamAuthority.phaseTag
+          else BootMemoryMapStreamAuthority.phaseEntryBase))
+    (hcontent : next.word[8]! = state.word[8]! - 24)
+    (hpadded : next.word[9]! = 0)
+    (hsawMap : next.word[10]! = 1)
+    (hentryCount : next.word[11]! = state.word[11]! + 1)
+    (husable : next.word[14]! ≤ 1)
+    (hblocked : next.word[15]! ≤ 1)
+    (htargetWord : next.word[16]! = UInt64.ofNat target)
+    (htagCount : next.word[18]! = state.word[18]!) :
+    CanonicalMemoryMapEntryState identity total
+      (offset + memoryMapEntrySize) target remaining next := by
+  rcases hstate with ⟨_, _, _, _, _, _, _, hstateContent, _, _,
+    hentryBudget, _, _, _, htarget, hstateTagCount⟩
+  have hremaining : remaining < maxEntries := by
+    omega
+  obtain ⟨hnextPhase, hnextContent, hnextBudget⟩ :=
+    canonicalMemoryMapEntrySuccessor_threads_remaining state next remaining
+      hremaining hstateContent hentryBudget hphase hcontent hentryCount
+  refine ⟨hversion, hstatus, herror, hidentity, hextent, ?_, hnextPhase,
+    hnextContent, hpadded, hsawMap, hnextBudget, husable, hblocked,
+    htargetWord, htarget, ?_⟩
+  · simpa [memoryMapEntrySize, UInt64.ofNat_add, UInt64.add_assoc] using
+      hoffset
+  · rw [htagCount]
+    exact hstateTagCount
+
 /-- One canonical rich entry and its production scalar successor preserve the
 complete entry-boundary invariant.  This is the recursive step needed by the
 universal entry traversal: it composes the immutable three-chunk source
@@ -3180,6 +3232,12 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapEntry_threads_remaining
   rcases hstate with ⟨hversion, hstatus, herror, hidentity, hextent,
     hoffset, hphase, hcontent, hpadded, hsawMap, hentryBudget, husable,
     hblocked, htargetWord, htarget, htagCount⟩
+  have hstateOriginal :
+      CanonicalMemoryMapEntryState identity total entryOffset target
+        (remaining + 1) state := by
+    exact ⟨hversion, hstatus, herror, hidentity, hextent, hoffset, hphase,
+      hcontent, hpadded, hsawMap, hentryBudget, husable, hblocked,
+      htargetWord, htarget, htagCount⟩
   have hremaining : remaining < maxEntries := by
     omega
   have hentryCount :
@@ -3193,7 +3251,7 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapEntry_threads_remaining
   have hphaseEntry :
       state.word[7]! = BootMemoryMapStreamAuthority.phaseEntryBase := by
     simpa using hphase
-  obtain ⟨htraversal, hnextVersion, hnextStatus, hnextError,
+  obtain ⟨hprepend, hnextVersion, hnextStatus, hnextError,
     hnextIdentity, hnextExtent, hnextOffset, hnextPhase, hnextContent,
     hnextPadded, hnextSawMap, hnextCount, hnextBase, hnextLength,
     hnextUsable, hnextBlocked, hnextTarget, hnextTagCount⟩ :=
@@ -3205,9 +3263,10 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapEntry_threads_remaining
       hkind hreserved hlengthNonzero hbaseBound hstopBound hidentityAligned
       hextentLow hextentHigh hextentAligned hversion hstatus herror hidentity
       hextent hoffset hphaseEntry hpadded hsawMap hentryCount husable hblocked
-      htargetWord htarget htagCount hrest
-  obtain ⟨hnextPhaseExact, hnextContentExact, hnextBudget⟩ :=
-    canonicalMemoryMapEntrySuccessor_threads_remaining state
+      htargetWord htarget htagCount
+  refine ⟨hprepend hrest, ?_⟩
+  apply canonicalMemoryMapEntryState_of_successor
+    identity total entryOffset target remaining state
       (scalarStep
         (scalarStep
           (scalarStep state
@@ -3223,16 +3282,216 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapEntry_threads_remaining
           offset := entryOffset + 16
           bytes := (bytes.drop (entryOffset + 16)).take 8
           terminal := false })
-      remaining hremaining hcontent hentryBudget hnextPhase hnextContent
-      hnextCount
-  refine ⟨htraversal, hnextVersion, hnextStatus, hnextError, hnextIdentity,
-    hnextExtent, ?_, hnextPhaseExact, hnextContentExact, hnextPadded,
-    hnextSawMap, hnextBudget, hnextUsable, hnextBlocked, hnextTarget,
-    htarget, ?_⟩
-  · simpa [memoryMapEntrySize, UInt64.ofNat_add, UInt64.add_assoc] using
-      hnextOffset
-  · rw [hnextTagCount]
-    exact htagCount
+    hstateOriginal hnextVersion hnextStatus hnextError hnextIdentity
+    hnextExtent hnextOffset hnextPhase hnextContent hnextPadded hnextSawMap
+    hnextCount hnextUsable hnextBlocked hnextTarget hnextTagCount
+
+/-- Every rich entry traversal can be consumed from one packaged canonical
+entry-boundary state.  The continuation begins only after all retained entries
+have advanced that same state to the following tag-header boundary, so neither
+an intermediate scalar state nor its remaining-entry count can be supplied
+independently. -/
+theorem successfulScalarRichTraversal_canonicalMemoryMapEntries
+    (identity : UInt64) (bytes : List UInt8)
+    (total entryOffset target count : Nat) (entries : List RawEntry)
+    (state terminal : ScalarState)
+    (htotal : total = bytes.length)
+    (htotalLow : 16 ≤ total)
+    (htotalHigh : total ≤ maxTagBytes)
+    (htotalAligned : total % 8 = 0)
+    (hentryOffsetAligned : entryOffset % 8 = 0)
+    (hroom : entryOffset + count * memoryMapEntrySize + 8 ≤ total)
+    (hidentityAligned : identity % 8 = 0)
+    (hentries :
+      SuccessfulEntryDecodeTraversal bytes entryOffset count entries)
+    (hstate :
+      CanonicalMemoryMapEntryState identity total entryOffset target count state)
+    (hcontinuation :
+      ∀ after,
+        CanonicalMemoryMapEntryState identity total
+            (entryOffset + count * memoryMapEntrySize) target 0 after →
+          SuccessfulScalarRichTraversal target [] after
+            ((canonicalChunks identity bytes).drop
+              ((entryOffset + count * memoryMapEntrySize) / 8))
+            terminal) :
+    SuccessfulScalarRichTraversal target entries state
+      ((canonicalChunks identity bytes).drop (entryOffset / 8)) terminal := by
+  induction hentries generalizing state with
+  | done offset =>
+      simpa using hcontinuation state hstate
+  | entry offset count base length kindWord rest hbase hlength hkind
+      hreserved hlengthNonzero hbaseBound hlengthBound hstopBound hrest ih =>
+      have htotalHigh' : total ≤ 65536 := by
+        simpa [maxTagBytes] using htotalHigh
+      have htotalLt : total < UInt64.size :=
+        Nat.lt_of_le_of_lt htotalHigh' (by
+          unfold UInt64.size
+          omega)
+      have hcurrentRoom : offset + memoryMapEntrySize + 8 ≤ total := by
+        unfold memoryMapEntrySize at hroom ⊢
+        omega
+      have hoffsetLtNat : offset < total := by
+        unfold memoryMapEntrySize at hcurrentRoom
+        omega
+      have hoffset8LtNat : offset + 8 < total := by
+        unfold memoryMapEntrySize at hcurrentRoom
+        omega
+      have hoffset16LtNat : offset + 16 < total := by
+        unfold memoryMapEntrySize at hcurrentRoom
+        omega
+      have hoffset24LtNat : offset + 24 < total := by
+        unfold memoryMapEntrySize at hcurrentRoom
+        omega
+      have hbaseOffsetLt :
+          UInt64.ofNat offset < UInt64.ofNat total := by
+        rw [UInt64.lt_iff_toNat_lt,
+          UInt64.toNat_ofNat_of_lt' htotalLt]
+        rw [UInt64.toNat_ofNat_of_lt'
+          (Nat.lt_trans hoffsetLtNat htotalLt)]
+        exact hoffsetLtNat
+      have hbaseOffsetNotFinal :
+          UInt64.ofNat offset + 8 ≠ UInt64.ofNat total := by
+        intro heq
+        have := congrArg UInt64.toNat heq
+        rw [show UInt64.ofNat offset + 8 = UInt64.ofNat (offset + 8) by
+          rw [UInt64.ofNat_add]
+          rfl] at this
+        rw [UInt64.toNat_ofNat_of_lt' (Nat.lt_trans hoffset8LtNat htotalLt),
+          UInt64.toNat_ofNat_of_lt' htotalLt] at this
+        omega
+      have hlengthOffsetLt :
+          UInt64.ofNat offset + 8 < UInt64.ofNat total := by
+        rw [show UInt64.ofNat offset + 8 = UInt64.ofNat (offset + 8) by
+          rw [UInt64.ofNat_add]
+          rfl]
+        rw [UInt64.lt_iff_toNat_lt,
+          UInt64.toNat_ofNat_of_lt' htotalLt]
+        rw [UInt64.toNat_ofNat_of_lt'
+          (Nat.lt_trans hoffset8LtNat htotalLt)]
+        exact hoffset8LtNat
+      have hlengthOffsetNotFinal :
+          UInt64.ofNat offset + 8 + 8 ≠ UInt64.ofNat total := by
+        intro heq
+        have := congrArg UInt64.toNat heq
+        rw [show UInt64.ofNat offset + 8 + 8 =
+          UInt64.ofNat (offset + 16) by
+            rw [show offset + 16 = (offset + 8) + 8 by omega,
+              UInt64.ofNat_add, UInt64.ofNat_add]
+            rfl] at this
+        rw [UInt64.toNat_ofNat_of_lt'
+            (Nat.lt_trans hoffset16LtNat htotalLt),
+          UInt64.toNat_ofNat_of_lt' htotalLt] at this
+        omega
+      have hkindOffsetLt :
+          UInt64.ofNat offset + 8 + 8 < UInt64.ofNat total := by
+        rw [show UInt64.ofNat offset + 8 + 8 =
+          UInt64.ofNat (offset + 16) by
+            rw [show offset + 16 = (offset + 8) + 8 by omega,
+              UInt64.ofNat_add, UInt64.ofNat_add]
+            rfl]
+        rw [UInt64.lt_iff_toNat_lt,
+          UInt64.toNat_ofNat_of_lt' htotalLt]
+        rw [UInt64.toNat_ofNat_of_lt'
+          (Nat.lt_trans hoffset16LtNat htotalLt)]
+        exact hoffset16LtNat
+      have hkindOffsetNotFinal :
+          UInt64.ofNat offset + 8 + 8 + 8 ≠ UInt64.ofNat total := by
+        intro heq
+        have := congrArg UInt64.toNat heq
+        rw [show UInt64.ofNat offset + 8 + 8 + 8 =
+          UInt64.ofNat (offset + 24) by
+            rw [show offset + 24 = ((offset + 8) + 8) + 8 by omega,
+              UInt64.ofNat_add, UInt64.ofNat_add, UInt64.ofNat_add]
+            rfl] at this
+        rw [UInt64.toNat_ofNat_of_lt'
+            (Nat.lt_trans hoffset24LtNat htotalLt),
+          UInt64.toNat_ofNat_of_lt' htotalLt] at this
+        omega
+      have hextentLow : 16 ≤ UInt64.ofNat total := by
+        rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' htotalLt]
+        exact htotalLow
+      have hextentHigh : UInt64.ofNat total ≤ 65536 := by
+        rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' htotalLt]
+        simpa [maxTagBytes] using htotalHigh
+      have hextentAligned : UInt64.ofNat total % 8 = 0 := by
+        apply UInt64.toNat.inj
+        simp [UInt64.toNat_ofNat_of_lt' htotalLt, htotalAligned]
+      let next :=
+        scalarStep
+          (scalarStep
+            (scalarStep state
+              { identity
+                offset
+                bytes := (bytes.drop offset).take 8
+                terminal := false })
+            { identity
+              offset := offset + 8
+              bytes := (bytes.drop (offset + 8)).take 8
+              terminal := false })
+          { identity
+            offset := offset + 16
+            bytes := (bytes.drop (offset + 16)).take 8
+            terminal := false }
+      have hstateOriginal := hstate
+      rcases hstate with ⟨hversion, hstatus, herror, hidentity, hextent,
+        hoffset, hphase, hcontent, hpadded, hsawMap, hentryBudget, husable,
+        hblocked, htargetWord, htarget, htagCount⟩
+      have hentryCount :
+          state.word[11]! < BootMemoryMapStreamAuthority.entryLimit := by
+        rw [UInt64.lt_iff_toNat_lt]
+        change state.word[11]!.toNat < (UInt64.ofNat maxEntries).toNat
+        rw [UInt64.toNat_ofNat_of_lt' (by
+          unfold maxEntries UInt64.size
+          omega)]
+        omega
+      have hphaseEntry :
+          state.word[7]! = BootMemoryMapStreamAuthority.phaseEntryBase := by
+        simpa using hphase
+      obtain ⟨hprepend, hnextVersion, hnextStatus, hnextError,
+        hnextIdentity, hnextExtent, hnextOffset, hnextPhase, hnextContent,
+        hnextPadded, hnextSawMap, hnextCount, hnextBase, hnextLength,
+        hnextUsable, hnextBlocked, hnextTarget, hnextTagCount⟩ :=
+        successfulScalarRichTraversal_canonicalMemoryMapEntry_with_successor
+          identity bytes total offset target base length kindWord rest
+          state terminal htotal htotalAligned hentryOffsetAligned
+          hcurrentRoom hbaseOffsetLt hbaseOffsetNotFinal hlengthOffsetLt
+          hlengthOffsetNotFinal hkindOffsetLt hkindOffsetNotFinal hbase
+          hlength hkind hreserved hlengthNonzero hbaseBound hstopBound
+          hidentityAligned hextentLow hextentHigh hextentAligned hversion
+          hstatus herror hidentity hextent hoffset hphaseEntry hpadded hsawMap
+          hentryCount husable hblocked htargetWord htarget htagCount
+      have hnextState :
+          CanonicalMemoryMapEntryState identity total
+            (offset + memoryMapEntrySize) target count next := by
+        apply canonicalMemoryMapEntryState_of_successor
+          identity total offset target count state next hstateOriginal
+          hnextVersion hnextStatus hnextError hnextIdentity hnextExtent
+          hnextOffset hnextPhase hnextContent hnextPadded hnextSawMap
+          hnextCount hnextUsable hnextBlocked hnextTarget hnextTagCount
+      have hnextTraversal :
+          SuccessfulScalarRichTraversal target rest next
+            ((canonicalChunks identity bytes).drop ((offset + 24) / 8))
+            terminal := by
+        apply ih (state := next)
+        · simp [memoryMapEntrySize, Nat.add_mod, hentryOffsetAligned]
+        · unfold memoryMapEntrySize at hroom ⊢
+          omega
+        · exact hnextState
+        · intro after hafter
+          have hendOffset :
+              offset + memoryMapEntrySize + count * memoryMapEntrySize =
+                offset + (count + 1) * memoryMapEntrySize := by
+            unfold memoryMapEntrySize
+            omega
+          rw [hendOffset]
+          apply hcontinuation
+          rw [← hendOffset]
+          exact hafter
+      have hoffsetWords : (offset + 24) / 8 = offset / 8 + 3 := by
+        have hdiv := Nat.mod_add_div offset 8
+        rw [hentryOffsetAligned, Nat.zero_add] at hdiv
+        omega
+      exact hprepend (by simpa [next, hoffsetWords] using hnextTraversal)
 
 /-- The retained rich tag traversal selects the exact first tag-header chunk
 immediately after the information header.  Its source word, stream identity,
