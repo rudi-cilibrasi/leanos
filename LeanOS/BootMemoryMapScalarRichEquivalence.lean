@@ -699,6 +699,58 @@ theorem accepted_authority_projection_consumable
   rw [authority.selectedUsable, hreserved] at heq
   simpa using heq
 
+/-- The three scalar decision words are fixed consequences of the returned
+rich authority.  In particular, production publication cannot ask a caller to
+restate usability or reservation exclusion as independent Boolean premises. -/
+theorem accepted_authority_field_words
+    (authority : BootMemoryMapFullProjectionABI.Authority) :
+    usableWord authority.decoded.entries authority.allocation.frame = 1 ∧
+      blockedWord authority.decoded.entries authority.allocation.frame = 0 ∧
+      manifestWord authority.reserved.intervals authority.allocation.frame = 1 := by
+  have husable := authority.selectedUsable
+  have hreserved :=
+    BootReservation.allocation_excludes_reservations authority.reserved authority.owner
+      authority.allocation authority.allocatedBy
+  simp only [usableFrameSound, Bool.and_eq_true] at husable
+  have hblocked :
+      (authority.decoded.entries.any fun entry =>
+        entry.kind != .usable &&
+          overlaps entry (authority.allocation.frame * pageBytes)
+            (authority.allocation.frame * pageBytes + pageBytes)) = false := by
+    simpa using husable.2
+  unfold usableWord blockedWord manifestWord
+  rw [husable.1, hblocked, hreserved]
+  simp
+
+/-- Once a separate rescan names the same selected frame and the frame-scrub
+boundary supplies its success word, production publication is determined by
+the complete rich authority.  Decode status and all candidate predicates are
+constructed here rather than accepted from the caller.  Scrub success remains
+an explicit premise until the boot allocator is composed with `FrameScrub`. -/
+theorem accepted_authority_publishes_after_rescan_and_scrub
+    (authority : BootMemoryMapFullProjectionABI.Authority)
+    (rescanned scrubbed : UInt64)
+    (hrescanned : rescanned = UInt64.ofNat authority.allocation.frame)
+    (hscrubbed : scrubbed = 1) :
+    publishAuthority (UInt64.ofNat authority.allocation.frame) rescanned complete
+        (usableWord authority.decoded.entries authority.allocation.frame)
+        (blockedWord authority.decoded.entries authority.allocation.frame)
+        (manifestWord authority.reserved.intervals authority.allocation.frame)
+        scrubbed =
+      UInt64.ofNat authority.allocation.frame + 1 := by
+  obtain ⟨husable, hblocked, hmanifest⟩ :=
+    accepted_authority_field_words authority
+  subst rescanned
+  subst scrubbed
+  rw [husable, hblocked, hmanifest]
+  unfold publishAuthority
+  have hframe : UInt64.ofNat authority.allocation.frame < 4096 := by
+    have hsize : authority.allocation.frame < UInt64.size :=
+      Nat.lt_trans authority.selectedWithinBound (by decide)
+    exact
+      (UInt64.ofNat_lt_iff_lt hsize (by decide)).2 authority.selectedWithinBound
+  simp [hframe]
+
 /-- The exact terminal scalar fields that still require semantic refinement
 from the rich decoder.  Naming this relation keeps the production composition
 honest: chunk reconstruction alone does not establish parser-state agreement,
