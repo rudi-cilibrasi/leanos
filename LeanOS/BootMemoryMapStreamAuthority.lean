@@ -273,6 +273,80 @@ def stepWord (version status error identity extent offset chain phase content pa
   else if query == 18 then ntagCount
   else 0
 
+/-- The admitted scalar initializer and the rich information-header word take
+one exact canonical step into the tag phase.  This is the first phase-local
+induction rule used by the proof-side rich/scalar traversal: every exposed
+field is computed by the production transition, not by a parallel parser. -/
+theorem infoStepWords_of_admitted
+    (address extent target chunk : UInt64)
+    (haligned : address % 8 = 0)
+    (hlow : 4096 ≤ address)
+    (hextentLow : 16 ≤ extent)
+    (hextentHigh : extent ≤ 65536)
+    (hextentAligned : extent % 8 = 0)
+    (hnoOverflow : extent ≤ 0xffffffffffffffff - address)
+    (htarget : target < 4096)
+    (hchunkLow : low32 chunk = extent)
+    (hchunkHigh : high32 chunk = 0)
+    (hnotFinal : 8 ≠ extent) :
+    let initial := fun query =>
+      initWord 0x36d76289 address extent target query
+    let next := fun query =>
+      stepWord
+        (initial 0) (initial 1) (initial 2) (initial 3)
+        (initial 4) (initial 5) (initial 6) (initial 7)
+        (initial 8) (initial 9) (initial 10) (initial 11)
+        (initial 12) (initial 13) (initial 14) (initial 15)
+        (initial 16) (initial 17) (initial 18)
+        address 0 chunk 0 query
+    next 0 = abiVersion ∧
+      next 1 = active ∧
+      next 2 = noError ∧
+      next 3 = address ∧
+      next 4 = extent ∧
+      next 5 = 8 ∧
+      next 7 = phaseTag ∧
+      next 8 = 0 ∧
+      next 9 = 0 ∧
+      next 10 = 0 ∧
+      next 11 = 0 ∧
+      next 12 = 0 ∧
+      next 13 = 0 ∧
+      next 14 = 0 ∧
+      next 15 = 0 ∧
+      next 16 = target ∧
+      next 17 = 0 ∧
+      next 18 = 0 := by
+  dsimp only
+  have hinit (query : UInt64) :=
+    initWord_of_admitted address extent target query haligned hlow
+      hextentLow hextentHigh hextentAligned hnoOverflow htarget
+  have hextentNotLow : ¬extent < 16 := by
+    intro h
+    rw [UInt64.lt_iff_toNat_lt] at h
+    rw [UInt64.le_iff_toNat_le] at hextentLow
+    omega
+  have hextentNotHigh : ¬65536 < extent := by
+    intro h
+    rw [UInt64.lt_iff_toNat_lt] at h
+    rw [UInt64.le_iff_toNat_le] at hextentHigh
+    omega
+  have hextentNonzero : extent ≠ 0 := by
+    intro h
+    rw [h] at hextentLow
+    rw [UInt64.le_iff_toNat_le] at hextentLow
+    simp at hextentLow
+  have htargetNotHigh : ¬4096 ≤ target := by
+    intro h
+    rw [UInt64.le_iff_toNat_le] at h
+    rw [UInt64.lt_iff_toNat_lt] at htarget
+    omega
+  simp [stepWord, transitionError, completedError, nextPhase,
+    nextContent, nextPadded, hinit, hchunkLow, hchunkHigh, haligned,
+    hextentNotLow, hextentNotHigh, hextentAligned, hextentNonzero,
+    htargetNotHigh, hnotFinal, phaseInfo, phaseTag, phaseDone,
+    phaseIgnored, phaseEntryBase, phaseEntryLength, phaseEntryType]
+
 theorem step_error_word
     version status error identity extent offset chain phase content padded
     sawMap entries base length usable blocked target highest tagCount

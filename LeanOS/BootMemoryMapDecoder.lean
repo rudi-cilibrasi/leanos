@@ -830,6 +830,8 @@ structure SuccessfulRichDecodeTraversal (input : Input) (decoded : Decoded) : Pr
   traversed :
     ∃ infoWord tags,
       readU64 input.bytes 0 = .ok infoWord ∧
+      low32Nat infoWord = input.bytes.length ∧
+      high32Nat infoWord = 0 ∧
       decodeTags input.bytes (low32Nat infoWord) 8 maxTags false [] = .ok tags ∧
       SuccessfulTagDecodeTraversal input.bytes (low32Nat infoWord)
         8 maxTags false [] tags ∧
@@ -853,7 +855,7 @@ theorem successfulRichDecodeTraversal_entries_source
     ∃ entryOffset entryCount,
       SuccessfulEntryDecodeTraversal input.bytes entryOffset entryCount
         decoded.entries := by
-  obtain ⟨infoWord, tags, hinfo, htags, htraversal, hhandoff,
+  obtain ⟨infoWord, tags, hinfo, htotal, hreserved, htags, htraversal, hhandoff,
     hvalid, hentries, hbounds⟩ := h.traversed
   obtain ⟨entryOffset, entryCount, sourceEntries, hsource, hextract⟩ :=
     successfulTagDecodeTraversal_extracts_entry_traversal
@@ -1006,7 +1008,10 @@ theorem successful_decode_constructs_traversal (input : Input) (decoded : Decode
                               next hbounds =>
                                 injection h with hdecoded
                                 subst decoded
-                                exact ⟨⟨infoWord, tags, hword, htags,
+                                exact ⟨⟨infoWord, tags, hword,
+                                  by simpa using hlength,
+                                  by simpa using hzero,
+                                  htags,
                                   decodeTags_constructs_traversal input.bytes
                                     (low32Nat infoWord) 8 maxTags false [] tags htags,
                                   rfl, hvalid, hentries, hbounds⟩⟩
