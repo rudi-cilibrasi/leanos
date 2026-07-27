@@ -15211,6 +15211,242 @@ theorem authoritativeGate_scheduleAdd_preserves_authoritativeRuntimeWellFormed
     (scheduleAdd_authoritativeOperationCompatible
       state subject hstate hnotRetained)
 
+/-- Resumable-aware scheduler removal cannot invalidate a blocking waiter.
+Every waiter is already neither current nor queued, so an accepted raw
+removal necessarily targets a different identity and leaves all waiter
+authority projections unchanged. -/
+private theorem installSchedulerRemoval_blockingIPCContext_wellFormed
+    state subject context next
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (haccepted : ResumablePreemption.remove state.resumable subject =
+      { state := next, result := .accepted context }) :
+    BlockingIPCContext.WellFormed
+      (installSchedulerRemoval state next).blockingIPCContext := by
+  obtain ⟨scheduler, hschedulerRemove, hnext, _hpeer⟩ :=
+    ResumablePreemption.remove_accepted_exact state.resumable subject context
+      (by simp [haccepted])
+  rw [haccepted] at hnext
+  change next = ResumablePreemption.removeState
+    state.resumable subject scheduler at hnext
+  subst next
+  rcases hstate.1 with
+    ⟨hcoherent, _hexecution, _hlifecycle, _hcapabilities, _hvirtual,
+      _hipc, _hschedulerRuntime, _hpreemption, hresumableWellFormed,
+      _htransfers, _hhalted, _hlive, hblockingCoherent, _hdevices⟩
+  have hshared :
+      state.resumable.scheduler = state.blockingIPC.scheduler :=
+    hcoherent.2.2.2.2.2.2.2.1.trans hblockingCoherent.1.symm
+  have htarget :
+      state.resumable.scheduler.lifecycle.current = some subject ∨
+        subject ∈ state.resumable.scheduler.ready := by
+    simp only [Scheduler.remove] at hschedulerRemove
+    split at hschedulerRemove
+    · rename_i hselected
+      simpa only [Bool.or_eq_true, decide_eq_true_eq] using hselected
+    · simp [Scheduler.reject] at hschedulerRemove
+  have hschedulerEq : scheduler =
+      { state.resumable.scheduler with
+        ready := state.resumable.scheduler.ready.filter (· ≠ subject)
+        lifecycle := { state.resumable.scheduler.lifecycle with
+          runnable := SubjectLifecycle.setBool
+            state.resumable.scheduler.lifecycle.runnable subject false
+          current := if state.resumable.scheduler.lifecycle.current = some subject
+            then none else state.resumable.scheduler.lifecycle.current } } := by
+    simp only [Scheduler.remove] at hschedulerRemove
+    split at hschedulerRemove
+    · simp_all
+    · simp_all [Scheduler.reject]
+  subst scheduler
+  have hresumable :=
+    ResumablePreemption.remove_preserves_wellFormed
+      state.resumable subject hresumableWellFormed
+  rw [haccepted] at hresumable
+  rcases hstate.2.1.1 with
+    ⟨⟨_hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox,
+      hcapabilities⟩, hagreement⟩
+  simp only [CompositeState.blockingIPCContext] at hqueues
+  simp only [CompositeState.blockingIPCContext] at hwaiters
+  simp only [CompositeState.blockingIPCContext] at hunique
+  simp only [CompositeState.blockingIPCContext] at hindex
+  simp only [CompositeState.blockingIPCContext] at hmailbox
+  simp only [CompositeState.blockingIPCContext] at hcapabilities
+  simp only [CompositeState.blockingIPCContext] at hagreement
+  refine ⟨⟨hresumable.1, hqueues, ?_, hunique, hindex, ?_, ?_⟩, hagreement⟩
+  · intro endpoint candidate hmember
+    have hvalid := hwaiters endpoint candidate hmember
+    simp only [BlockingIPC.authorizedReceive] at hvalid
+    rw [← hshared] at hvalid
+    have hne : candidate ≠ subject := by
+      intro heq
+      subst candidate
+      exact htarget.elim hvalid.2.2.2.2.2.1 hvalid.2.2.2.2.2.2
+    have hne' : subject ≠ candidate := Ne.symm hne
+    by_cases hcurrent :
+        state.resumable.scheduler.lifecycle.current = some subject
+    · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+          CompositeState.blockingIPCContext, BlockingIPC.authorizedReceive,
+          SubjectLifecycle.setBool, Scheduler.ownsAddressSpace, hne,
+          hne', hcurrent] using hvalid
+    · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+          CompositeState.blockingIPCContext, BlockingIPC.authorizedReceive,
+          SubjectLifecycle.setBool, Scheduler.ownsAddressSpace, hne,
+          hcurrent] using hvalid
+  · intro endpoint envelope hstored
+    rw [← hshared] at hmailbox
+    simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+        CompositeState.blockingIPCContext] using hmailbox endpoint envelope hstored
+  · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+      CompositeState.blockingIPCContext, hshared] using hcapabilities
+
+/-- Accepted removal only erases the target's resumable context.  A retained
+cancellation is already neither current nor queued, so it cannot be that
+target; all of its quiescent authority facts and its exact saved context
+therefore survive. -/
+private theorem installSchedulerRemoval_dormantCancellationCompatible
+    state subject context next
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (haccepted : ResumablePreemption.remove state.resumable subject =
+      { state := next, result := .accepted context }) :
+    DormantCancellationCompatible state
+      (installSchedulerRemoval state next) := by
+  obtain ⟨scheduler, hschedulerRemove, hnext, _hpeer⟩ :=
+    ResumablePreemption.remove_accepted_exact state.resumable subject context
+      (by simp [haccepted])
+  rw [haccepted] at hnext
+  change next = ResumablePreemption.removeState
+    state.resumable subject scheduler at hnext
+  subst next
+  have hshared :
+      state.resumable.scheduler = state.blockingIPC.scheduler :=
+    hstate.1.1.2.2.2.2.2.2.2.1.trans hstate.1.blockingScheduler.symm
+  have htarget :
+      state.resumable.scheduler.lifecycle.current = some subject ∨
+        subject ∈ state.resumable.scheduler.ready := by
+    simp only [Scheduler.remove] at hschedulerRemove
+    split at hschedulerRemove
+    · rename_i hselected
+      simpa only [Bool.or_eq_true, decide_eq_true_eq] using hselected
+    · simp [Scheduler.reject] at hschedulerRemove
+  have hschedulerEq : scheduler =
+      { state.resumable.scheduler with
+        ready := state.resumable.scheduler.ready.filter (· ≠ subject)
+        lifecycle := { state.resumable.scheduler.lifecycle with
+          runnable := SubjectLifecycle.setBool
+            state.resumable.scheduler.lifecycle.runnable subject false
+          current := if state.resumable.scheduler.lifecycle.current = some subject
+            then none else state.resumable.scheduler.lifecycle.current } } := by
+    simp only [Scheduler.remove] at hschedulerRemove
+    split at hschedulerRemove
+    · simp_all
+    · simp_all [Scheduler.reject]
+  subst scheduler
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro candidate hblocked
+    apply hstate.2.1.2.1 candidate
+    exact hblocked
+  · intro candidate saved hblocked
+    have hold := hstate.2.2.1 candidate saved hblocked
+    by_cases hsame : candidate = subject
+    · subst candidate
+      simp [installSchedulerRemoval, ResumablePreemption.removeState,
+        ResumablePreemption.contextFor_erase_self]
+    · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+        ResumablePreemption.contextFor_erase_other, hsame] using hold
+  · intro candidate saved hretained
+    have hvalid := hstate.2.1.2.2 candidate saved hretained
+    simp only [CompositeState.blockingIPCContext] at hvalid
+    rw [← hshared] at hvalid
+    have hcontext := hstate.2.2.2 candidate saved hretained
+    have hne : candidate ≠ subject := by
+      intro heq
+      subst candidate
+      exact htarget.elim hvalid.2.2.2.2.1 hvalid.2.2.2.2.2.1
+    have hne' : subject ≠ candidate := Ne.symm hne
+    by_cases hcurrent :
+        state.resumable.scheduler.lifecycle.current = some subject
+    · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+          CompositeState.blockingIPCContext, SubjectLifecycle.setBool,
+          Scheduler.ownsAddressSpace, hne, hne', hcurrent,
+          ResumablePreemption.contextFor_erase_other] using
+        And.intro hvalid.2.1
+          (And.intro hvalid.2.2.1
+            (And.intro hvalid.2.2.2.1
+              (And.intro hvalid.2.2.2.2.1
+                (And.intro hvalid.2.2.2.2.2.1
+                  (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
+    · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+          CompositeState.blockingIPCContext, SubjectLifecycle.setBool,
+          Scheduler.ownsAddressSpace, hne, hcurrent,
+          ResumablePreemption.contextFor_erase_other] using
+        And.intro hvalid.2.1
+          (And.intro hvalid.2.2.1
+            (And.intro hvalid.2.2.2.1
+              (And.intro hvalid.2.2.2.2.1
+                (And.intro hvalid.2.2.2.2.2.1
+                  (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
+
+/-- Resumable-aware scheduler removal derives both of its formerly external
+blocking obligations from the authoritative pre-state.  Rejections and
+non-running modes remain byte-for-byte atomic. -/
+theorem scheduleRemove_authoritativeOperationCompatible state subject
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.scheduleRemove subject)) := by
+  change
+    BlockingIPCContext.WellFormed
+        (authoritativeGate state
+          (.ordinary (.scheduleRemove subject))).state.blockingIPCContext ∧
+      DormantCancellationCompatible state
+        (authoritativeGate state (.ordinary (.scheduleRemove subject))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      refine ⟨?_, ?_⟩
+      · simpa [authoritativeGate, hmode] using hstate.2.1.1
+      · simpa [authoritativeGate, hmode] using
+          dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+  | halted record =>
+      refine ⟨?_, ?_⟩
+      · simpa [authoritativeGate, hmode] using hstate.2.1.1
+      · simpa [authoritativeGate, hmode] using
+          dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hremove : ResumablePreemption.remove state.resumable subject with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              have hnext := ResumablePreemption.remove_rejected_unchanged
+                state.resumable subject reason (by simp [hremove])
+              refine ⟨?_, ?_⟩
+              · simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                  applyOperation, hremove, hnext] using hstate.2.1.1
+              · simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                  applyOperation, hremove, hnext] using
+                    dormantCancellationCompatible_of_exact_projections
+                      state state hstate rfl rfl rfl rfl
+          | accepted context =>
+              refine ⟨?_, ?_⟩
+              · simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                  applyOperation, hremove] using
+                    installSchedulerRemoval_blockingIPCContext_wellFormed
+                      state subject context next hstate hremove
+              · simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                  applyOperation, hremove] using
+                    installSchedulerRemoval_dormantCancellationCompatible
+                      state subject context next hstate hremove
+
+/-- Scheduler removal now has a closed folded-invariant theorem with no
+caller-supplied post-state compatibility premise. -/
+theorem authoritativeGate_scheduleRemove_preserves_authoritativeRuntimeWellFormed
+    state subject (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.scheduleRemove subject))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+    (.ordinary (.scheduleRemove subject)) hstate
+    (scheduleRemove_authoritativeOperationCompatible state subject hstate)
+
 /-- Delegation either rejects atomically or publishes a capability state with
 the same live-subject registry, so its dormant cancellation obligations are
 derived entirely from the authoritative pre-state. -/
