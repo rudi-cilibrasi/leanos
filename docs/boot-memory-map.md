@@ -358,12 +358,18 @@ decoded `RawEntry` to the classification fold.
 transitions for one retained rich entry. They preserve the exact pending
 base/length words and validate the rich decoder's reserved high word,
 nonzero length, overflow bound, and entry limit.
+`entryTypeStepWords_of_admitted` strengthens the final transition to expose
+the complete canonical successor state: cursor, remaining entry bytes,
+next phase, incremented entry count, sticky usable/non-usable classification,
+highest usable end, target, and tag count. This is the state-continuity
+contract needed by the recursive entry traversal; later entries cannot begin
+from caller-invented counters or classification words.
 `successfulScalarRichTraversal_memoryMapEntry` composes that exact source
 triple around an arbitrary later traversal and attaches the corresponding
 decoded `RawEntry`. The remaining induction must recursively select every
-canonical triple from `SuccessfulEntryDecodeTraversal`, thread the updated
-entry count/content/classification state, and assemble these tag-local pieces
-into the universal `SuccessfulScalarRichTraversal`. Until that final
+canonical triple from `SuccessfulEntryDecodeTraversal`, instantiate the new
+successor-state contract at each type word, and assemble these tag-local
+pieces into the universal `SuccessfulScalarRichTraversal`. Until that final
 derivation exists, the fail-closed terminal comparison remains in place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
