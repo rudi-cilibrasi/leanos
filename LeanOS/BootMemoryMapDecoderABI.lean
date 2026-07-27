@@ -38,6 +38,7 @@ def errorCode : BootMemoryMapDecoder.Error → UInt64
   | .entryAddressOverflow => 21
   | .typedHandoffRejected _ => 22
   | .internalBounds => 23
+  | .infoAddressBelowMinimum => 24
 
 def normalizeErrorCode : BootMemoryMap.Error → UInt64
   | .badMagic => 1

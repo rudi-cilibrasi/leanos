@@ -223,6 +223,7 @@ def decoderErrorCode : BootMemoryMapDecoder.Error → UInt64
   | .entryAddressOverflow => 20
   | .typedHandoffRejected _ => 21
   | .internalBounds => 22
+  | .infoAddressBelowMinimum => 23
 
 def reservationErrorCode : BootReservation.Error → UInt64
   | .missingIdentity => 1

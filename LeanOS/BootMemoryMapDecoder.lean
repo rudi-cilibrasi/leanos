@@ -22,6 +22,7 @@ structure Input where
 inductive Error where
   | badMagic
   | unalignedInfo
+  | infoAddressBelowMinimum
   | bufferTooSmall
   | bufferTooLarge
   | truncatedField
@@ -160,10 +161,21 @@ structure Decoded where
   handoffValid : validateHandoff handoff = .ok entries
   entriesValid : validateEntries entries = .ok ()
   bounds : withinBounds handoff entries = true
+  infoAddressAtLeastPage : pageBytes ≤ handoff.infoAddress
+
+structure ValidInfoAddress (address : Nat) : Type where
+  atLeastPage : pageBytes ≤ address
+
+def validateInfoAddress (address : Nat) : Except Error (ValidInfoAddress address) := do
+  if address % 8 != 0 then throw .unalignedInfo
+  if hbelow : address < pageBytes then
+    throw .infoAddressBelowMinimum
+  else
+    pure ⟨Nat.le_of_not_gt hbelow⟩
 
 def decode (input : Input) : Except Error Decoded := do
   if input.magic != multiboot2Magic then throw .badMagic
-  if input.infoAddress % 8 != 0 then throw .unalignedInfo
+  let infoAddressValid ← validateInfoAddress input.infoAddress
   if input.bytes.length < 16 then throw .bufferTooSmall
   if input.bytes.length > maxTagBytes then throw .bufferTooLarge
   let totalSize ← readU32 input.bytes 0
@@ -183,13 +195,22 @@ def decode (input : Input) : Except Error Decoded := do
       | .error reason => throw (.typedHandoffRejected reason)
       | .ok _ =>
           if hbounds : withinBounds handoff entries then
-            pure ⟨handoff, entries, hvalid, hentries, hbounds⟩
+            pure ⟨handoff, entries, hvalid, hentries, hbounds,
+              infoAddressValid.atLeastPage⟩
           else throw .internalBounds
 
 theorem decode_functional (input : Input) (first second : Except Error Decoded)
     (hfirst : decode input = first) (hsecond : decode input = second) : first = second := by
   rw [hfirst] at hsecond
   exact hsecond
+
+/-- Every accepted rich result carries the same low-address admission fact as
+the scalar production initializer.  This removes the aligned-address gap where
+the rich decoder could previously accept an identity below 4 KiB that the
+scalar replay necessarily rejected before reading any bytes. -/
+theorem accepted_infoAddress_at_least_page (decoded : Decoded) :
+    pageBytes ≤ decoded.handoff.infoAddress :=
+  decoded.infoAddressAtLeastPage
 
 theorem accepted_handoff_valid (input : Input) (decoded : Decoded)
     (_h : decode input = .ok decoded) :
@@ -320,6 +341,9 @@ def errorOf {α : Type} : Except Error α → Option Error
 def pipelineErrorOf {α : Type} : Except PipelineError α → Option PipelineError
   | .error reason => some reason
   | .ok _ => none
+
+example : errorOf (decode { sampleInput with infoAddress := pageBytes - 8 }) =
+    some .infoAddressBelowMinimum := by native_decide
 
 example : errorOf (decode (withBytes (sampleBytes.take (sampleBytes.length - 1)))) =
     some .advertisedSizeMismatch := by native_decide
