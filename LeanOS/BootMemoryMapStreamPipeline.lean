@@ -817,6 +817,55 @@ inductive SuccessfulScalarRichTraversal (target : Nat) :
         ({ base, length, kind := BootMemoryMapDecoder.memoryKind kind } :: entries)
         state (chunk :: rest) terminal
 
+/-- The canonical information-header step is the first constructive phase of
+the scalar/rich traversal.  Any continuation certificate over the remaining
+canonical chunks therefore lifts to a certificate over the complete source
+stream.  This theorem fixes the phase boundary without assuming any terminal
+status or classification agreement. -/
+theorem successfulScalarRichTraversal_prepend_info
+    (input : Input) (decoded : Decoded) (target : Nat)
+    (terminal : ScalarState)
+    (hdecode : decode input = .ok decoded)
+    (htraversal : SuccessfulRichDecodeTraversal input decoded)
+    (htarget : target < frameLimit)
+    (hrest :
+      let identity := UInt64.ofNat input.infoAddress
+      let initial := scalarInitialAt identity input.bytes.length target
+      let first : ModelChunk :=
+        { identity
+          offset := 0
+          bytes := input.bytes.take 8
+          terminal := false }
+      SuccessfulScalarRichTraversal target decoded.entries
+        (scalarStep initial first)
+        (canonicalChunks identity input.bytes).tail terminal) :
+    let identity := UInt64.ofNat input.infoAddress
+    let initial := scalarInitialAt identity input.bytes.length target
+    SuccessfulScalarRichTraversal target decoded.entries initial
+      (canonicalChunks identity input.bytes) terminal := by
+  dsimp only at hrest ⊢
+  obtain ⟨first, rest, hchunks, hfirst, hnext⟩ :=
+    canonicalInfoStep_of_richTraversal
+      input decoded target hdecode htraversal htarget
+  have hinitial :=
+    scalarInitialAt_of_decode input decoded target hdecode htarget
+  rw [hchunks] at hrest ⊢
+  simp only [List.tail_cons] at hrest
+  subst first
+  refine SuccessfulScalarRichTraversal.nonEntry
+    decoded.entries
+    (scalarInitialAt (UInt64.ofNat input.infoAddress)
+      input.bytes.length target)
+    terminal
+    { identity := UInt64.ofNat input.infoAddress
+      offset := 0
+      bytes := input.bytes.take 8
+      terminal := false }
+    rest ?_ ?_ hrest
+  · rw [hinitial.2.2.2.2.2.1]
+    decide
+  · exact hnext.2.2.1
+
 /-- Direct whole-replay induction over an arbitrary successful traversal.
 The terminal status and diagnostic are fixed by successful completion, while
 words 14 and 15 are the left folds of every exact rich entry encountered by
