@@ -244,6 +244,16 @@ information address, and immutable bytes cannot produce different complete
 rich projections for equal manifest words and owner. These theorems are
 universal over byte buffers and contain no fixture or entry-order premise; they
 add no generated export.
+`authorizeCanonical` now routes the same proof-only composition through the
+complete rich-projection comparison rather than returning `run` authority
+directly. `authorizeCanonical_acceptance_binding` preserves the raw decoder,
+canonical interval, reservation, allocation, and exact scalar-consumer
+equations while additionally proving that every claimed decoded entry,
+normalized region, checked interval, overlaid region, and selected frame is
+the canonical projection of the returned authority. This is the next
+dependency-ordered authority boundary after canonical whole-replay byte
+agreement; a universal theorem equating the scalar parser's semantic state to
+the rich decoder state remains outstanding.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
