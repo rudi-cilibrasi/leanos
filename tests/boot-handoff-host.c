@@ -8,6 +8,9 @@ extern uint64_t leanos_boot_handoff_query(uint64_t, uint64_t, lean_object *, uin
 extern char **lean_setup_args(int, char **);
 extern void lean_initialize(void);
 extern lean_object *initialize_leanos_LeanOS_BootMemoryMapDecoderABI(uint8_t);
+extern void leanos_register_boundary_target(const char *, void *);
+#define REGISTER_BOUNDARY(symbol) \
+    leanos_register_boundary_target(#symbol, (void *)(uintptr_t)&symbol)
 
 static void expect(const char *name, uint64_t actual, uint64_t expected) {
     if (actual != expected) {
@@ -20,6 +23,8 @@ static void expect(const char *name, uint64_t actual, uint64_t expected) {
 static lean_object *run_host(int argc, char **argv) {
     (void)argc;
     (void)argv;
+    REGISTER_BOUNDARY(leanos_boot_handoff_query);
+    REGISTER_BOUNDARY(leanos_boot_handoff_fixture_query);
     const uint64_t expected[] = {
         1, 1, 96, 2, 3,
         0x1000, 0x4000, 1,

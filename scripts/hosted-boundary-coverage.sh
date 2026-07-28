@@ -7,20 +7,31 @@ leanos_prepare_boundary_coverage() {
   local expected="$build/boundary-coverage.expected"
   : >"$expected"
   {
-    printf '%s\n' '#include <stdio.h>' '#include <stdlib.h>'
+    printf '%s\n' \
+      '#include <stdio.h>' \
+      '#include <stdlib.h>'
     IFS=',' read -ra symbols <<<"$exports"
     for symbol in "${symbols[@]}"; do
-      printf 'extern char %s;\n' "$symbol"
       printf '%s\n' "$symbol" >>"$expected"
     done
     printf '%s\n' \
       'struct target { void *address; const char *name; unsigned char hit; };' \
       'static struct target targets[] = {'
     for symbol in "${symbols[@]}"; do
-      printf '  { (void *)&%s, "%s", 0 },\n' "$symbol" "$symbol"
+      printf '  { NULL, "%s", 0 },\n' "$symbol"
     done
     printf '%s\n' \
       '};' \
+      'void leanos_register_boundary_target(const char *, void *) __attribute__((no_instrument_function));' \
+      'void leanos_register_boundary_target(const char *name, void *address) {' \
+      '  for (unsigned i = 0; i < sizeof(targets) / sizeof(targets[0]); ++i) {' \
+      '    if (__builtin_strcmp(targets[i].name, name) != 0) continue;' \
+      '    targets[i].address = address;' \
+      '    return;' \
+      '  }' \
+      '  fprintf(stderr, "error: unmanifested hosted boundary target %s\n", name);' \
+      '  exit(1);' \
+      '}' \
       'void __cyg_profile_func_enter(void *, void *) __attribute__((no_instrument_function));' \
       'void __cyg_profile_func_exit(void *, void *) __attribute__((no_instrument_function));' \
       'void __cyg_profile_func_enter(void *fn, void *caller) {' \

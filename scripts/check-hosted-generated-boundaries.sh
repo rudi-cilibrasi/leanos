@@ -79,6 +79,30 @@ while IFS=$'\t' read -r id runner harness generation target modules exports asse
   done
 done <"$manifest"
 
+# BootAllocation is retired from the image's generated-object inventory, but
+# keep its exception export-specific so another adapter cannot hide behind the
+# module-wide exclusion below.
+declare -A retired_boot_allocation_exports=(
+  [leanos_boot_allocation_check]=1
+)
+declare -A observed_boot_allocation_exports=()
+while IFS= read -r symbol; do
+  observed_boot_allocation_exports["$symbol"]=1
+  [[ -n "${retired_boot_allocation_exports[$symbol]+x}" ]] || {
+    echo "error: BootAllocation introduces untracked export '$symbol'" >&2
+    exit 1
+  }
+done < <(
+  sed -n 's/^[[:space:]]*@\[export \([^]]*\)\].*/\1/p' \
+    LeanOS/BootAllocation.lean
+)
+for symbol in "${!retired_boot_allocation_exports[@]}"; do
+  [[ -n "${observed_boot_allocation_exports[$symbol]+x}" ]] || {
+    echo "error: retired BootAllocation export '$symbol' is missing" >&2
+    exit 1
+  }
+done
+
 for symbol in "${!all_source_exports[@]}"; do
   [[ -n "${manifest_exports[$symbol]+x}" ]] || {
     echo "error: generated source export '$symbol' is absent from $manifest" >&2
