@@ -139,7 +139,7 @@ if [[ "$mode" == sanitized ]]; then
     objects+=("$build/dependency_$object_name.o")
   done
 fi
-"$cc_command" -std=c11 -Wall -Wextra -Werror -I"$build" "${cflags[@]}" \
+"$cc_command" -std=c11 -Wall -Wextra -Werror -I"$build" -Iinclude "${cflags[@]}" \
   -c "$harness" -o "$build/host.o"
 "$cc_command" -std=c11 -Wall -Wextra -Werror \
   -c "$build/boundary-coverage.c" -o "$build/boundary-coverage.o"
@@ -179,5 +179,62 @@ if [[ "$mode" == sanitized ]]; then
       sed 's/^/sanitized: /' >&2
     exit 1
   fi
+else
+  compile_fixture() {
+    local name="$1"
+    local define="$2"
+    "$cc_command" -std=c11 -Wall -Wextra -Werror -I"$build" -Iinclude \
+      "${cflags[@]}" "-D$define" -c "$harness" -o "$build/host-$name.o"
+    "$cc_command" -Wl,--gc-sections "${cflags[@]}" "$build/host-$name.o" \
+      "$build/boundary-coverage.o" "${objects[@]}" -o "$build/host-$name"
+  }
+  fixtures=(
+    "truncated:LEANOS_FIXTURE_COMPOSITE_TRUNCATED:oracle malformed arity"
+    "output-corruption:LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION:oracle mismatch"
+    "old-stateless:LEANOS_FIXTURE_COMPOSITE_OLD_STATELESS:oracle mismatch"
+    "wrong-version:LEANOS_FIXTURE_COMPOSITE_WRONG_VERSION:field=reply"
+    "reserved-bits:LEANOS_FIXTURE_COMPOSITE_RESERVED_BITS:field=reply"
+    "stale-replay:LEANOS_FIXTURE_COMPOSITE_STALE_REPLAY:field=reply"
+    "forged-context:LEANOS_FIXTURE_COMPOSITE_FORGED_CONTEXT:field=reply"
+    "handle-corruption:LEANOS_FIXTURE_COMPOSITE_HANDLE_CORRUPTION:field=reply"
+  )
+  : >"$build/negative-fixtures.tsv"
+  for fixture in "${fixtures[@]}"; do
+    IFS=: read -r name define diagnostic <<<"$fixture"
+    compile_fixture "$name" "$define"
+    if "$build/host-$name" >"$build/host-$name.txt" 2>&1; then
+      echo "error: composite oracle fixture '$name' unexpectedly passed" >&2
+      exit 1
+    fi
+    grep -q "$diagnostic" "$build/host-$name.txt" || {
+      echo "error: composite oracle fixture '$name' lacked '$diagnostic'" >&2
+      exit 1
+    }
+    printf '%s\t%s\t%s\n' "$name" "$define" "$diagnostic" \
+      >>"$build/negative-fixtures.tsv"
+  done
+  {
+    printf 'schema\tleanos-oracle-evidence-v1\n'
+    printf 'source_revision\t%s\n' "$(git rev-parse HEAD)"
+    printf 'generated_c_flags\t%s\n' \
+      "-std=c11 -I<lean-prefix>/include -Ibuild/oracle -ffunction-sections -fdata-sections"
+    printf 'host_c_flags\t%s\n' \
+      "-std=c11 -Wall -Wextra -Werror -Ibuild/oracle -Iinclude"
+    printf 'link_flags\t%s\n' "-Wl,--gc-sections"
+    printf 'lean_version\t%s\n' "$(lake env lean --version | head -n 1)"
+    printf 'cc_version\t%s\n' "$("$cc_command" --version | head -n 1)"
+  } >"$build/toolchain-and-flags.tsv"
+  {
+    printf 'schema\tleanos-oracle-manifest-v1\n'
+    printf 'source_revision\t%s\n' "$(git rev-parse HEAD)"
+    sha256sum \
+      LeanOS/CompositeDispatcher.lean \
+      "$generated/CompositeDispatcher.c" \
+      include/leanos/composite-dispatcher.h \
+      "$build/corpus.tsv" \
+      "$build/host-results.txt" \
+      "$build/negative-fixtures.tsv" \
+      "$build/toolchain-and-flags.tsv"
+  } >"$build/manifest.tsv"
 fi
 echo "Hosted generated-code oracle $mode replay passed ($expected_lines vectors)"

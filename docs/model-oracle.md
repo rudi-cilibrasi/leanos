@@ -11,8 +11,9 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `DirectPortIO.directPortIODemo`, `InterruptEntry.nmiDemo`,
 `InterruptEntry.bootPhaseDemo`, and
 `StaleTranslation.staleTranslationDemo`, and
-`InterruptEntry.pageFaultDemo`. Its stable
-292-vector order covers accepted calls,
+`InterruptEntry.pageFaultDemo`, plus the stateful
+`CompositeDispatcher.dispatch`. Its stable
+330-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -35,6 +36,81 @@ progress after the latch, malformed phase codes, and an opaque business token
 that must round-trip unchanged. The Lean checks evaluate every expected result
 from the adapter definition and connect the accepted and rejected examples to
 the source models.
+
+The final thirty-eight composite-dispatch records are the version-one traces
+for the shared stateful boundary. Six input words carry a canonical state token,
+command tag, and four scalar arguments. The seven positive sequence edges create
+one subject, observe typed unknown-syscall and malformed-map rejections, run
+the scheduler observation, terminate the subject, enter a fatal kernel
+page-fault state, and verify that a subsequent scheduler request is rejected
+by the absorbing fatal latch. Each state token materializes the complete
+`FailStop.CompositeState` by replaying the exact
+`FailStop.authoritativeGate`; it is not a reduced transition or a C shadow
+state. Ten negative records reject stale replay, cross-trace splicing,
+nonzero reserved arguments, forged context arguments, wrong versions, reserved
+state or command bits, maximum words, and unknown commands before policy
+evaluation. Lean proves canonical complete-state, command, and reply round
+trips and injectivity over this bounded domain, one-step equality with the
+authoritative gate for every successful scalar result, and the exact predecessor
+relation for the seven-edge sequence. The general finite-list theorem
+additionally proves that every accepted command list materializes to the exact
+result of
+`FailStop.runAuthoritativeOperations` over the same normalized operations.
+Its append-continuity corollary requires every prefix and suffix to share one
+canonical intermediate state token, so stale replay or cross-trace splicing
+cannot be accepted between adjacent steps.
+
+The final sixteen records form one positive mixed trace rooted in a
+kernel-owned, complete two-subject state. In order, it offers and accepts a
+sealed endpoint descendant, revokes its send-only generation, rejects the
+stale handle, copies a fresh generation into the reused slot, accepts both
+syscall-mediated and direct mapping, rejects an unknown syscall without
+mutation, completes nonblocking send/receive, blocks and wakes the receiver,
+switches back to it on a timer entry, contains its user page fault with
+complete subject cleanup, enters a fatal kernel fault, and rejects a
+post-fatal scheduler attempt. Lean checks the exact typed result at each named
+boundary, including the timer-selected subject and the faulting subject's
+retired identity. The scalar export remains allocation-free; generated C and
+its calling convention remain trusted hosted-test boundaries.
+
+Five additional Phase 2 records invoke that same dispatcher for a canonical
+generation-bound map handle, nonblocking IPC, capability copy, blocking
+cancellation, and deferred cancellation drain. The handle word `0x10000` is
+proved to round-trip through `CapabilityHandle` as slot 0, generation 1;
+trusted caller and address-space identity still come only from the reconstructed
+composite state. `CanonicalCompositeState` is the decoded ABI object and
+contains the full state plus its exact materialization equality.
+`CanonicalTypedStep` retains the literal `AuthoritativeGateResult` and
+post-state returned by the sole `authoritativeGate` invocation rather than
+manufacturing a generic success result. These five probes remain independently
+proved one-step rejections. The positive mixed sequence covers the accepted
+mapping, IPC, transfer/reuse, timer, and cleanup paths without weakening those
+negative fixtures.
+
+Every boot image retains that same generated `leanos_composite_dispatch` symbol
+and routes adapter 18 through it during the ordered oracle replay. Unknown
+adapter identifiers fail closed rather than falling through to another witness.
+
+The hosted replay also compiles eight deliberately invalid harness variants.
+They truncate the composite record arity, corrupt the generated dispatcher's
+result word, route the record through the old stateless syscall witness, or
+corrupt the ABI version, reserved bits, predecessor state, forged context
+argument, or canonical capability handle.
+Each variant must stop at the first malformed record or mismatch. Unknown
+adapter identifiers fail closed instead of falling through to the composite
+export. Every mismatch names the first operation and divergent reply field.
+Buffer aliasing, alignment, and partial-write fixtures do not apply to this
+six-scalar-input, one-scalar-result ABI, which owns no caller buffer or
+generated state cell.
+
+The proof job preserves a reviewable `leanos-oracle-<commit>` artifact for this
+boundary. It contains the generated `CompositeDispatcher.c`, the public
+version-one scalar ABI header, the versioned corpus, exact per-step hosted
+results and negative-fixture diagnostics, compiler flags and tool versions,
+and a SHA-256 manifest tied to the source revision. The manifest records
+reproducible differential evidence, not verified compilation: Lean code
+generation, the C compiler, the scalar calling convention, and the hosted
+harness remain explicit trusted boundaries.
 
 The interrupt-entry corpus also includes the user-only vector-13 hardware-error
 shape and its broad general-protection purpose. The live handler refines that

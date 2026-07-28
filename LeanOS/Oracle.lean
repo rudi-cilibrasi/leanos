@@ -13,6 +13,7 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.FaultDispatch
 import LeanOS.DirectPortIO
 import LeanOS.StaleTranslation
+import LeanOS.CompositeDispatcher
 
 /-!
 # Bounded scalar boundary oracle
@@ -127,6 +128,41 @@ private def staleTranslation (id : String) (kind actor addressSpace page aux sel
     words := [kind, actor, addressSpace, page, aux, selector],
     expected := StaleTranslation.staleTranslationModelExpected
       kind actor addressSpace page aux selector }
+
+private def composite (id : String) (state tag arg0 arg1 arg2 arg3 : UInt64) : Vector :=
+  { id, adapter := "CompositeDispatcher.stateful",
+    words := [state, tag, arg0, arg1, arg2, arg3],
+    expected := CompositeDispatcher.dispatch state tag arg0 arg1 arg2 arg3 }
+
+private def mixedEdgeId : CompositeDispatcher.MixedReplyId → String
+  | .transferOffered => "composite.mixed-transfer-offer"
+  | .transferAccepted => "composite.mixed-transfer-accept"
+  | .transferredCapabilityRevoked => "composite.mixed-capability-revoke"
+  | .staleHandleRejected => "composite.mixed-stale-handle-reject"
+  | .freshCapabilityCopied => "composite.mixed-capability-copy"
+  | .syscallMapped => "composite.mixed-syscall-map"
+  | .directMapped => "composite.mixed-direct-map"
+  | .unknownSyscallRejected => "composite.mixed-unknown-syscall-reject"
+  | .nonblockingSent => "composite.mixed-nonblocking-send"
+  | .nonblockingReceived => "composite.mixed-nonblocking-receive"
+  | .blockingReceiverBlocked => "composite.mixed-blocking-receive"
+  | .blockingReceiverWoken => "composite.mixed-blocking-send"
+  | .timerSwitched => "composite.mixed-timer-switch"
+  | .userFaultCleaned => "composite.mixed-user-fault-cleanup"
+  | .fatalEntered => "composite.mixed-fatal-entry"
+  | .postFatalRejected => "composite.mixed-post-fatal-reject"
+
+/-- The hosted representation of one canonical accepted mixed edge.  State,
+command arguments, and expected reply all come from the same edge definition
+used by `mixedCanonicalEdges_refine`. -/
+def mixedEdgeVector (edge : CompositeDispatcher.CanonicalMixedEdge) : Vector :=
+  let words := CompositeDispatcher.encodeMixedCommand edge.command
+  composite (mixedEdgeId edge.reply)
+    (CompositeDispatcher.encodeMixedState edge.state)
+    words.tag words.arg0 words.arg1 words.arg2 words.arg3
+
+def mixedVectors : List Vector :=
+  CompositeDispatcher.mixedCanonicalEdges.map mixedEdgeVector
 
 private def nmiUserFrame : UInt64 :=
   0x23 + 0x1b * 256 + 0x10000 + 0x20000 + 0x40000
@@ -466,9 +502,55 @@ def vectors : List Vector := [
   pageFault "page-fault.authority-wp-mutated" 4 0x400123 0 0x10000101 115,
   pageFault "page-fault.authority-nxe-mutated" 4 0x400123 0 0x10000101 107,
   pageFault "page-fault.authority-smep-mutated" 4 0x400123 0 0x10000101 91,
-  pageFault "page-fault.authority-smap-mutated" 4 0x400123 0 0x10000101 59]
+  pageFault "page-fault.authority-smap-mutated" 4 0x400123 0 0x10000101 59,
+  composite "composite.create-subject" 0x0001 0x0101 1 0 0 0,
+  composite "composite.reject-unknown-syscall" 0x0101 0x0201 99 0 0 0,
+  composite "composite.reject-malformed-map" 0x0201 0x0301 0 0 0 0,
+  composite "composite.observe-scheduler" 0x0301 0x0401 0 0 0 0,
+  composite "composite.terminate-subject" 0x0401 0x0501 1 0 0 0,
+  composite "composite.enter-fatal-kernel-fault" 0x0501 0x0601 0 0 0 0,
+  composite "composite.reject-post-fatal-schedule" 0x0601 0x0701 0 0 0 0,
+  composite "composite.reject-stale-map-handle" 0x0101 0x0801 0x10000 7 1 0,
+  composite "composite.reject-nonblocking-receive-handle" 0x0101 0x0901
+    0x10000 0 0 0,
+  composite "composite.reject-capability-copy" 0x0101 0x0a01 0 0 1 0,
+  composite "composite.reject-blocking-cancel" 0x0101 0x0b01 0 0 0 0,
+  composite "composite.reject-deferred-drain" 0x0101 0x0c01 0 0 0 0,
+  composite "composite.stale-state-replay" 0x0001 0x0201 99 0 0 0,
+  composite "composite.cross-trace-splice" 0x0201 0x0401 0 0 0 0,
+  composite "composite.noncanonical-argument" 0x0101 0x0201 99 1 0 0,
+  composite "composite.wrong-state-version" 0x0002 0x0101 1 0 0 0,
+  composite "composite.reserved-state-bits" 0x10001 0x0101 1 0 0 0,
+  composite "composite.wrong-command-version" 0x0001 0x0102 1 0 0 0,
+  composite "composite.reserved-command-bits" 0x0001 0x10001 1 0 0 0,
+  composite "composite.forged-context-argument" 0x0001 0x0101 1 1 0 0,
+  composite "composite.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
+    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
+  composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0] ++
+  mixedVectors
 
-theorem corpus_shape : vectors.length = 292 := by decide
+theorem corpus_shape : vectors.length = 330 := by decide
+/-- Oracle indices 314--329 are definitionally the complete canonical mixed
+edge corpus, rather than a second hand-maintained scalar table. -/
+theorem hosted_mixed_vectors_exact :
+    vectors.drop 314 =
+      CompositeDispatcher.mixedCanonicalEdges.map mixedEdgeVector := by
+  rfl
+
+/-- Consequently every hosted mixed vector is backed by the non-circular
+scalar-to-authoritative refinement theorem for its source edge. -/
+theorem hosted_mixed_vectors_refine :
+    ∀ edge ∈ CompositeDispatcher.mixedCanonicalEdges, edge.Refines :=
+  CompositeDispatcher.mixedCanonicalEdges_refine
+
+theorem composite_mixed_trace_agrees :
+    (vectors[314]).expected = 0x200901 ∧
+    (vectors[319]).expected = 0x250e01 ∧
+    (vectors[324]).expected = 0x2a1301 ∧
+    (vectors[326]).expected = 0x2c1501 ∧
+    (vectors[327]).expected = 0x2d1601 ∧
+    (vectors[329]).expected = 0x2f1801 := by
+  native_decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
