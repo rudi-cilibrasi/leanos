@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "corpus.h"
+#include "generated-boundary-abi.h"
 #if defined(LEANOS_BOOT_PAGE_PLAN_HEADER)
 #include LEANOS_BOOT_PAGE_PLAN_HEADER
 #elif defined(LEANOS_DF_MAP_GUARD)
@@ -71,22 +72,6 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                        uint64_t);
-extern uint64_t leanos_authorize_page_fault_snapshot(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_page_fault_dispatch_transition(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);
@@ -2100,6 +2085,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if (copy_step != 2) fail("copy-missing");
         serial_puts("LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0\n");
         preemption_step = 1;
+        arm_timer();
         return 0;
     }
     if (preemption_step == 3 && current_subject == 2 && number == 2) {
@@ -2931,7 +2917,6 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts("LEANOS/18 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
-    arm_timer();
     enter_user(user_a_entry, user_a_stack_top);
 #else
     current_subject = 2;

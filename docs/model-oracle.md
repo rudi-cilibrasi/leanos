@@ -120,6 +120,32 @@ results while exercising same-slot replacement; ordered serial checks and
 negative fixtures establish reproducible integration evidence for stale denial
 and fresh success, not a proof of the boot binary.
 
+The repository-owned
+`scripts/hosted-generated-boundaries.tsv` is the authoritative inventory for
+host-runnable generated-C replays. Both the ordinary optimized replay and the
+additional AddressSanitizer/UndefinedBehaviorSanitizer replay consume that
+inventory, so a new hosted boundary (including the future stateful composite
+dispatcher) must declare its generated modules, real harness, and per-result
+assertion there. The gate also compares that inventory with every generated
+module named by image construction, so a new boot-reachable generated adapter
+cannot silently bypass the hosted lane. The sanitizer configuration is fixed in
+`scripts/hosted-sanitizer-config.sh`, applies to every generated object and C
+harness, aborts on the first finding, and records its compiler, flags, source
+revision, and runtime options under `build/hosted-sanitizer-negatives/`.
+Controlled heap-overflow and invalid-shift fixtures demonstrate that both
+sanitizer classes are active; separate negatives reject an uninstrumented
+generated-object surrogate and a link that omits the sanitizer runtime.
+
+This is finite dynamic implementation-boundary evidence. It does not prove
+memory safety, remove generated C or the compiler from the TCB, or turn a
+sanitizer report into a modeled rejection. The allocation-free boot-handoff
+stream still builds and executes as a freestanding static ELF with no hosted
+runtime, retaining its undefined-symbol and complete text-symbol inventory.
+The same C fixture and generated stream objects additionally execute as a
+hosted sanitizer process; that replay does not instrument the freestanding
+artifact. Privileged instructions, physical-memory reads, MMIO/PIO, interrupt
+stubs, QEMU devices, and firmware remain outside the hosted process.
+
 The return adapter uses one bounded synthetic subject/address-space fixture.
 Its five scalar words encode a kernel-owned purpose/context mode, RIP, RSP,
 packed CS/SS selectors, and RFLAGS. The negative matrix covers noncanonical and

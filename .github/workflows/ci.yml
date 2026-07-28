@@ -28,8 +28,8 @@ jobs:
 
   lean:
     name: Lean build and proof checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -37,8 +37,30 @@ jobs:
       - name: Install pinned Lean toolchain
         uses: ./.github/actions/setup-lean
 
+      - name: Install pinned hosted-boundary compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-13=13.3.0-6ubuntu2~24.04.1 \
+            libasan8=14.2.0-4ubuntu2~24.04.1 \
+            libubsan1=14.2.0-4ubuntu2~24.04.1 \
+            binutils=2.42-4ubuntu2.10
+
       - name: Build and check proofs
         run: ./scripts/check.sh
+
+      - name: Preserve hosted sanitizer evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hosted-sanitizers-${{ github.sha }}
+          path: |
+            build/oracle-sanitized/
+            build/boot-handoff-host-sanitized/
+            build/boot-handoff-stream-sanitized/
+            build/hosted-sanitizer-evidence/
+            build/hosted-sanitizer-negatives/
+            scripts/hosted-generated-boundaries.tsv
 
   emulator:
     name: Deterministic QEMU smoke test

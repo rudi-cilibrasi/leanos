@@ -1,63 +1,183 @@
 #!/usr/bin/env bash
 set -euo pipefail
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$root"
-build=build/oracle
-rm -rf "$build"; mkdir -p "$build"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+mode="${1:-ordinary}"
+id="${LEANOS_HOSTED_BOUNDARY_ID:-oracle}"
+manifest=scripts/hosted-generated-boundaries.tsv
+row="$(awk -F '\t' -v id="$id" '$1 == id { print; found=1 } END { exit !found }' "$manifest")" || {
+  echo "error: hosted boundary '$id' is absent from $manifest" >&2
+  exit 1
+}
+IFS=$'\t' read -r _ _ harness generation _ modules exports assertion <<<"$row"
+[[ "$id" == oracle && "$generation" == direct ]] || {
+  echo "error: $id is not the direct oracle boundary" >&2
+  exit 1
+}
+source scripts/hosted-sanitizer-config.sh
+source scripts/hosted-boundary-coverage.sh
+
+if [[ "$mode" == sanitized ]]; then
+  build=build/oracle-sanitized
+  cc_command="$leanos_host_cc"
+  cflags=("${leanos_host_sanitizer_flags[@]}" -finstrument-functions)
+  run=(leanos_run_sanitized)
+elif [[ "$mode" == ordinary ]]; then
+  build=build/oracle
+  cc_command="${LEANOS_HOST_CC:-cc}"
+  cflags=(-ffunction-sections -fdata-sections -finstrument-functions)
+  run=()
+else
+  echo "usage: $0 [ordinary|sanitized]" >&2
+  exit 2
+fi
+
+rm -rf "$build"
+mkdir -p "$build"
+leanos_prepare_boundary_coverage "$build" "$exports"
 ./scripts/generate-oracle.sh "$build"
-lake env lean --c="$build/KernelTransition.c" LeanOS/KernelTransition.lean
-lake env lean --c="$build/Syscall.c" LeanOS/Syscall.lean
-lake env lean --c="$build/IPCSyscall.c" LeanOS/IPCSyscall.lean
-lake env lean --c="$build/Preemption.c" LeanOS/Preemption.lean
-lake env lean --c="$build/BootMemoryMapStreamAuthority.c" \
-  LeanOS/BootMemoryMapStreamAuthority.lean
-lake env lean --c="$build/Interrupt.c" LeanOS/Interrupt.lean
-lake env lean --c="$build/InterruptEntry.c" LeanOS/InterruptEntry.lean
-lake env lean --c="$build/BlockingIPC.c" LeanOS/BlockingIPC.lean
-lake env lean --c="$build/CapabilityReuse.c" LeanOS/CapabilityReuse.lean
-lake env lean --c="$build/ExtendedState.c" LeanOS/ExtendedState.lean
-lake env lean --c="$build/PrivilegeEntryControl.c" LeanOS/PrivilegeEntryControl.lean
-lake env lean --c="$build/FaultDispatch.c" LeanOS/FaultDispatch.lean
-lake env lean --c="$build/DirectPortIO.c" LeanOS/DirectPortIO.lean
-lake env lean --c="$build/StaleTranslation.c" LeanOS/StaleTranslation.lean
 prefix="$(lake env lean --print-prefix)"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/KernelTransition.c" -o "$build/KernelTransition.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/Syscall.c" -o "$build/Syscall.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/IPCSyscall.c" -o "$build/IPCSyscall.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/Preemption.c" -o "$build/Preemption.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/BootMemoryMapStreamAuthority.c" \
-  -o "$build/BootMemoryMapStreamAuthority.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/Interrupt.c" -o "$build/Interrupt.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/InterruptEntry.c" -o "$build/InterruptEntry.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/BlockingIPC.c" -o "$build/BlockingIPC.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/CapabilityReuse.c" -o "$build/CapabilityReuse.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/ExtendedState.c" -o "$build/ExtendedState.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/PrivilegeEntryControl.c" \
-  -o "$build/PrivilegeEntryControl.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/FaultDispatch.c" -o "$build/FaultDispatch.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/DirectPortIO.c" -o "$build/DirectPortIO.o"
-cc -std=c11 -I"$prefix/include" -I"$build" \
-  -ffunction-sections -fdata-sections -c "$build/StaleTranslation.c" -o "$build/StaleTranslation.o"
-cc -std=c11 -Wall -Wextra -Werror -I"$build" -c tests/oracle-host.c -o "$build/host.o"
-cc -Wl,--gc-sections "$build/host.o" "$build/KernelTransition.o" "$build/Syscall.o" \
-  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootMemoryMapStreamAuthority.o" \
-  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o" "$build/DirectPortIO.o" \
-  "$build/StaleTranslation.o" \
-  -o "$build/host"
-"$build/host" > "$build/host-results.txt"
-[[ "$(wc -l < "$build/host-results.txt")" -eq 292 ]]
-echo "Hosted generated-code oracle replay passed (292 vectors)"
+generated=build/hosted-generated-sources/oracle
+objects=()
+generated_sources=()
+root_modules=()
+declare -A root_module_set=()
+IFS=',' read -ra module_specs <<<"$modules"
+for spec in "${module_specs[@]}"; do
+  module="${spec%%=*}"
+  source="${spec#*=}"
+  [[ "$module" != "$source" && -f "$source" ]] || {
+    echo "error: invalid direct generated-module inventory '$spec'" >&2
+    exit 1
+  }
+  root_modules+=("$module")
+  root_module_set["$module"]=1
+done
+if [[ "$mode" == ordinary ]]; then
+  rm -rf "$generated"
+  mkdir -p "$generated"
+else
+  leanos_assert_pinned_toolchain
+  [[ -d "$generated" ]] || {
+    echo "error: ordinary replay must generate $generated first" >&2
+    exit 1
+  }
+fi
+for module in "${root_modules[@]}"; do
+  object_name="${module//\//_}"
+  generated_source="$generated/$object_name.c"
+  source="LeanOS/$module.lean"
+  if [[ "$mode" == ordinary ]]; then
+    lake env lean --c="$generated_source" "$source"
+  elif [[ ! -f "$generated_source" ]]; then
+    echo "error: ordinary replay did not generate $generated_source" >&2
+    exit 1
+  fi
+  generated_sources+=("$generated_source")
+done
+source_hashes="$generated/SHA256SUMS"
+if [[ "$mode" == ordinary ]]; then
+  sha256sum "${generated_sources[@]}" >"$source_hashes"
+else
+  [[ -f "$source_hashes" ]] || {
+    echo "error: ordinary replay did not record $source_hashes" >&2
+    exit 1
+  }
+  sha256sum --check --status "$source_hashes" || {
+    echo "error: direct-generated oracle sources changed after ordinary replay" >&2
+    exit 1
+  }
+fi
+for module in "${root_modules[@]}"; do
+  object_name="${module//\//_}"
+  generated_source="$generated/$object_name.c"
+  "$cc_command" -std=c11 -I"$prefix/include" -I"$build" "${cflags[@]}" \
+    -c "$generated_source" -o "$build/$object_name.o"
+  if [[ "$mode" == sanitized ]]; then
+    leanos_require_sanitized_object "$build/$object_name.o"
+  fi
+  objects+=("$build/$object_name.o")
+done
+if [[ "$mode" == sanitized ]]; then
+  # The direct-generated root files above are the exact production oracle
+  # sources used by the ordinary replay. Their retained initialization
+  # sections reference imported module symbols that ordinary --gc-sections
+  # discards, so provide only those transitive dependencies from Lake's IR.
+  # Package-scoped copies of root modules are also needed because roots import
+  # one another under the package prefix. Rename only their duplicate public
+  # definitions so calls from the harness still select the exact direct files.
+  direct_symbols="$build/direct-defined-symbols.txt"
+  nm -g --defined-only "${objects[@]}" |
+    awk 'NF >= 3 { print $3 }' | sort -u >"$direct_symbols"
+  mapfile -t dependency_modules < <(
+    leanos_project_module_closure "${root_modules[@]}"
+  )
+  for module in "${dependency_modules[@]}"; do
+    object_name="${module//\//_}"
+    dependency_source=".lake/build/ir/LeanOS/$module.c"
+    [[ -f "$dependency_source" ]] || {
+      echo "error: generated dependency inventory is missing $dependency_source" >&2
+      exit 1
+    }
+    "$cc_command" -std=c11 -I"$prefix/include" -I"$build" "${cflags[@]}" \
+      -c "$dependency_source" -o "$build/dependency_$object_name.o"
+    leanos_require_sanitized_object "$build/dependency_$object_name.o"
+    if [[ -n "${root_module_set[$module]+x}" ]]; then
+      redefine="$build/dependency_$object_name.redefine"
+      comm -12 "$direct_symbols" <(
+        nm -g --defined-only "$build/dependency_$object_name.o" |
+          awk 'NF >= 3 { print $3 }' | sort -u
+      ) | while IFS= read -r symbol; do
+        printf '%s %s\n' "$symbol" \
+          "__leanos_dependency_${object_name}_${symbol}"
+      done >"$redefine"
+      if [[ -s "$redefine" ]]; then
+        objcopy --redefine-syms="$redefine" \
+          "$build/dependency_$object_name.o"
+      fi
+    fi
+    objects+=("$build/dependency_$object_name.o")
+  done
+fi
+"$cc_command" -std=c11 -Wall -Wextra -Werror -I"$build" "${cflags[@]}" \
+  -c "$harness" -o "$build/host.o"
+"$cc_command" -std=c11 -Wall -Wextra -Werror \
+  -c "$build/boundary-coverage.c" -o "$build/boundary-coverage.o"
+if [[ "$mode" == sanitized ]]; then
+  # ASan registers generated globals and therefore retains initialization
+  # sections that the ordinary allocation-free replay garbage-collects. Link
+  # the hosted sanitizer replay against the pinned Lean runtime.
+  leanos_link_sanitized_host "$build/host" "$build/host.o" \
+    "$build/boundary-coverage.o" "${objects[@]}"
+else
+  "$cc_command" -Wl,--gc-sections "${cflags[@]}" \
+    "$build/host.o" "$build/boundary-coverage.o" "${objects[@]}" -o "$build/host"
+fi
+LEANOS_BOUNDARY_COVERAGE_FILE="$build/boundary-coverage.actual" \
+  "${run[@]}" "$build/host" >"$build/host-results.txt"
+leanos_check_boundary_coverage "$build"
+expected_lines="${assertion#lines=}"
+[[ "$assertion" == lines=* && \
+    "$(wc -l < "$build/host-results.txt")" -eq "$expected_lines" ]] || {
+  echo "error: hosted oracle did not produce $expected_lines per-vector results" >&2
+  exit 1
+}
+if [[ "$mode" == sanitized ]]; then
+  ordinary=build/oracle/host-results.txt
+  [[ -f "$ordinary" ]] || {
+    echo "error: ordinary oracle results are required before sanitized replay" >&2
+    exit 1
+  }
+  if ! cmp -s "$ordinary" "$build/host-results.txt"; then
+    first="$(
+      paste "$ordinary" "$build/host-results.txt" |
+        awk -F '\t' '$1 != $2 { print NR; exit }'
+    )"
+    echo "error: oracle replay first diverged at vector $first" >&2
+    sed -n "${first}p" "$ordinary" | sed 's/^/ordinary: /' >&2
+    sed -n "${first}p" "$build/host-results.txt" |
+      sed 's/^/sanitized: /' >&2
+    exit 1
+  fi
+fi
+echo "Hosted generated-code oracle $mode replay passed ($expected_lines vectors)"

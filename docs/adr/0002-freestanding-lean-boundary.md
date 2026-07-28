@@ -4,7 +4,8 @@
 - Date: 2026-07-14
 - Related issues: [#4](https://github.com/rudi-cilibrasi/leanos/issues/4),
   [#5](https://github.com/rudi-cilibrasi/leanos/issues/5), and
-  [#6](https://github.com/rudi-cilibrasi/leanos/issues/6)
+  [#6](https://github.com/rudi-cilibrasi/leanos/issues/6), and
+  [#190](https://github.com/rudi-cilibrasi/leanos/issues/190)
 
 ## Context
 
@@ -105,6 +106,10 @@ evidence and must not extend those proofs across this boundary.
 - The first transition stays deliberately scalar and allocation-free.
 - Compiler output changes can add runtime calls; the symbol gate makes this a
   visible failure rather than an implicit TCB expansion.
+- Every currently host-runnable generated-C boundary is also replayed under the
+  repository's pinned AddressSanitizer/UndefinedBehaviorSanitizer
+  configuration. This is dynamic bug-detection evidence only: it neither
+  instruments the freestanding image nor reduces the trusted boundary.
 - Linker garbage collection is correctness-critical: retained initialization or
   boxed paths would require runtime services not present at boot.
 - ABI mismatch, miscompilation, a faulty shim, or boot memory corruption can

@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "corpus.h"
+#include "../boot/generated-boundary-abi.h"
 
 extern uint64_t leanos_boot_transition(uint64_t, uint64_t);
 extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
@@ -31,9 +32,51 @@ extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
 extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
 extern uint64_t leanos_page_fault_diagnostic_regression_demo(uint64_t);
+extern void leanos_register_boundary_target(const char *, void *);
+#define REGISTER_BOUNDARY(symbol) \
+    leanos_register_boundary_target(#symbol, (void *)(uintptr_t)&symbol)
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) { return left == right; }
 
 int main(void) {
+    REGISTER_BOUNDARY(leanos_boot_transition);
+    REGISTER_BOUNDARY(leanos_syscall_demo);
+    REGISTER_BOUNDARY(leanos_ipc_demo);
+    REGISTER_BOUNDARY(leanos_preemption_demo);
+    REGISTER_BOUNDARY(leanos_resumable_preemption_demo);
+    REGISTER_BOUNDARY(leanos_boot_select_frame);
+    REGISTER_BOUNDARY(leanos_user_return_demo);
+    REGISTER_BOUNDARY(leanos_authorize_page_fault_snapshot);
+    REGISTER_BOUNDARY(leanos_page_fault_demo);
+    REGISTER_BOUNDARY(leanos_nmi_demo);
+    REGISTER_BOUNDARY(leanos_entry_demo);
+    REGISTER_BOUNDARY(leanos_boot_phase_demo);
+    REGISTER_BOUNDARY(leanos_blocking_ipc_demo);
+    REGISTER_BOUNDARY(leanos_capability_reuse_demo);
+    REGISTER_BOUNDARY(leanos_extended_state_denial_demo);
+    REGISTER_BOUNDARY(leanos_privilege_entry_control_demo);
+    REGISTER_BOUNDARY(leanos_fault_dispatch_demo);
+    REGISTER_BOUNDARY(leanos_page_fault_dispatch_transition);
+    REGISTER_BOUNDARY(leanos_page_fault_dispatch_regression_demo);
+    REGISTER_BOUNDARY(leanos_page_fault_diagnostic_regression_demo);
+    REGISTER_BOUNDARY(leanos_direct_port_io_demo);
+    REGISTER_BOUNDARY(leanos_stale_translation_demo);
+
+    /* Exercise the production ABI wrappers themselves so --gc-sections cannot
+       discard them from the ordinary or sanitizer replay. Invalid all-zero
+       snapshots must be rejected, but still traverse each generated wrapper. */
+    if (leanos_authorize_page_fault_snapshot(
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) != 0) {
+        fputs("invalid canonical page-fault snapshot was accepted\n", stderr);
+        return 1;
+    }
+    (void)leanos_page_fault_dispatch_transition(
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
     for (unsigned i = 0; i < ORACLE_VECTOR_COUNT; ++i) {
         const struct oracle_vector *v = &oracle_vectors[i];
         uint64_t got = v->adapter == 0
