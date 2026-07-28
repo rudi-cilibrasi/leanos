@@ -130,13 +130,17 @@ builder.
 `scripts/check-q35-edu-dma.py` supplies the distinct DMA-sensitive oracle. It
 uses QEMU's pinned `edu` function at `00:02.0`, assigns and reads back its BAR,
 loads its internal DMA buffer from guest physical memory, and then requests the
-same device-to-guest transfer in two isolated runs. With PCI Command bus
-mastering clear, the protected guest-memory canary remains byte-for-byte
-unchanged. With bus mastering deliberately enabled, the device replaces that
-canary with the known payload. The versioned TSV records both outcomes and CI
-retains it, so observing only a clear Command bit or a non-crashing guest cannot
-satisfy this fixture. This controlled extra function is never admitted to the
-production topology or its manifest.
+same device-to-guest transfer in two isolated runs. The protected physical
+record contains the canary, its fixture-owned physical-frame identity, and an
+allocator-owner identity. With PCI Command bus mastering clear, that complete
+record remains byte-for-byte unchanged. With bus mastering deliberately
+enabled, the device replaces the complete record with the known payload. The
+versioned TSV records the canary and both identity fields before and after each
+case, and CI retains it, so observing only a clear Command bit or a non-crashing
+guest cannot satisfy this fixture. These identity words are a finite QEMU
+mutation oracle, not evidence that the QTest fixture reconstructs the kernel's
+authoritative allocator state or refines the Lean projection. This controlled
+extra function is never admitted to the production topology or its manifest.
 
 `scripts/run-dma-unknown-device.sh` supplies the first guest-level controlled
 negative after that canary oracle. It reuses the normal production image and

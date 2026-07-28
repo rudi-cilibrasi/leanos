@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Exercise QEMU's edu DMA engine against a protected guest-memory canary.
+"""Exercise QEMU's edu DMA engine against a protected guest-memory record.
 
 This is deterministic QEMU integration evidence, not a hardware or refinement
 proof.  The enabled control proves that the oracle observes a real device DMA
-write.  The production-style control then clears PCI Command.bus-master,
-reads it back, and proves the same requested transfer leaves the canary intact.
+write.  The production-style control then clears PCI Command.bus-master, reads
+it back, and proves the same requested transfer leaves the canary and its
+fixture-owned allocator/frame identity metadata intact.
 """
 
 from __future__ import annotations
@@ -25,8 +26,19 @@ EDU_BAR = 0xFEA00000
 SOURCE = 0x04000000
 PROTECTED = 0x04001000
 DEVICE_BUFFER = 0x40000
-PAYLOAD = bytes.fromhex("4c65616e4f532136")
 CANARY = bytes.fromhex("c35ac35ac35ac35a")
+FRAME_IDENTITY = PROTECTED // 4096
+ALLOCATOR_OWNER = 1
+PROTECTED_RECORD = (
+    CANARY
+    + FRAME_IDENTITY.to_bytes(8, "little")
+    + ALLOCATOR_OWNER.to_bytes(8, "little")
+)
+PAYLOAD = bytes.fromhex(
+    "4c65616e4f532136"
+    "ffffffffffffffff"
+    "eeeeeeeeeeeeeeee"
+)
 PCI_COMMAND_MEMORY = 1 << 1
 PCI_COMMAND_BUS_MASTER = 1 << 2
 DMA_SOURCE = 0x80
@@ -190,7 +202,7 @@ def exercise_case(executable: str, bus_master_enabled: bool) -> bytes:
         qtest.write_bytes(SOURCE, PAYLOAD)
         qtest.transfer(SOURCE, DEVICE_BUFFER, len(PAYLOAD), DMA_START)
 
-        qtest.write_bytes(PROTECTED, CANARY)
+        qtest.write_bytes(PROTECTED, PROTECTED_RECORD)
         final_command = (
             enabled if bus_master_enabled else PCI_COMMAND_MEMORY
         )
@@ -204,7 +216,7 @@ def exercise_case(executable: str, bus_master_enabled: bool) -> bytes:
             DMA_START | DMA_FROM_DEVICE,
             await_completion=bus_master_enabled,
         )
-        observed = qtest.read_bytes(PROTECTED, len(PAYLOAD))
+        observed = qtest.read_bytes(PROTECTED, len(PROTECTED_RECORD))
     finally:
         qtest.close()
     return observed
@@ -213,19 +225,37 @@ def exercise_case(executable: str, bus_master_enabled: bool) -> bytes:
 def exercise(executable: str) -> str:
     version = qemu_version(executable)
     quarantined_observed = exercise_case(executable, False)
-    if quarantined_observed != CANARY:
-        raise RuntimeError("bus-master-disabled edu changed the protected canary")
+    if quarantined_observed != PROTECTED_RECORD:
+        raise RuntimeError(
+            "bus-master-disabled edu changed the protected canary or "
+            "allocator/frame identity"
+        )
     enabled_observed = exercise_case(executable, True)
     if enabled_observed != PAYLOAD:
-        raise RuntimeError("enabled edu control did not change the protected canary")
+        raise RuntimeError(
+            "enabled edu control did not change the complete protected record"
+        )
 
     return (
-        "# leanos-q35-edu-dma-v1\n"
+        "# leanos-q35-edu-dma-v2\n"
         f"# {version}\n"
-        "bdf\tcommand\ttransfer\tprotected-before\tprotected-after\tresult\n"
-        f"00:02.0\t0002\tedu-to-guest\t{CANARY.hex()}\t{CANARY.hex()}"
+        "bdf\tcommand\ttransfer\tprotected-frame\t"
+        "canary-before\tcanary-after\tframe-identity-before\t"
+        "frame-identity-after\tallocator-owner-before\t"
+        "allocator-owner-after\tresult\n"
+        f"00:02.0\t0002\tedu-to-guest\t{FRAME_IDENTITY}\t"
+        f"{CANARY.hex()}\t{quarantined_observed[:8].hex()}\t"
+        f"{FRAME_IDENTITY}\t"
+        f"{int.from_bytes(quarantined_observed[8:16], 'little')}\t"
+        f"{ALLOCATOR_OWNER}\t"
+        f"{int.from_bytes(quarantined_observed[16:24], 'little')}"
         "\tQUARANTINED\n"
-        f"00:02.0\t0006\tedu-to-guest\t{CANARY.hex()}\t{PAYLOAD.hex()}"
+        f"00:02.0\t0006\tedu-to-guest\t{FRAME_IDENTITY}\t"
+        f"{CANARY.hex()}\t{enabled_observed[:8].hex()}\t"
+        f"{FRAME_IDENTITY}\t"
+        f"{int.from_bytes(enabled_observed[8:16], 'little')}\t"
+        f"{ALLOCATOR_OWNER}\t"
+        f"{int.from_bytes(enabled_observed[16:24], 'little')}"
         "\tDMA-WRITE-OBSERVED\n"
     )
 
