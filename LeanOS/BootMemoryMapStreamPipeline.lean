@@ -737,6 +737,44 @@ theorem scalarStep_word (state : ScalarState) (chunk : ModelChunk) (query : Fin 
         (if chunk.terminal then 1 else 0) (UInt64.ofNat query.val) := by
   simp [scalarStep]
 
+/-- Substitute the admitted stream fields into one scalar query without
+unfolding the generated transition.  Keeping this bridge outside larger
+structural proofs gives every phase-local use a small, reusable proof term. -/
+theorem scalarStep_word_of_stream_fields
+    (state : ScalarState) (chunk : ModelChunk)
+    (identity extent offset phase padded saw target word terminal : UInt64)
+    (query : Fin 19)
+    (hversion :
+      state.word[0]! = BootMemoryMapStreamAuthority.abiVersion)
+    (hstatus :
+      state.word[1]! = BootMemoryMapStreamAuthority.active)
+    (herror :
+      state.word[2]! = BootMemoryMapStreamAuthority.noError)
+    (hidentity : state.word[3]! = identity)
+    (hextent : state.word[4]! = extent)
+    (hoffset : state.word[5]! = offset)
+    (hphase : state.word[7]! = phase)
+    (hpadded : state.word[9]! = padded)
+    (hsaw : state.word[10]! = saw)
+    (htarget : state.word[16]! = target)
+    (hchunkIdentity : chunk.identity = identity)
+    (hchunkOffset : UInt64.ofNat chunk.offset = offset)
+    (hchunkWord : chunkWord chunk.bytes = word)
+    (hchunkTerminal :
+      (if chunk.terminal then 1 else 0) = terminal) :
+    (scalarStep state chunk).word[query.val]! =
+      BootMemoryMapStreamAuthority.stepWord
+        BootMemoryMapStreamAuthority.abiVersion
+        BootMemoryMapStreamAuthority.active
+        BootMemoryMapStreamAuthority.noError
+        identity extent offset state.word[6]! phase state.word[8]! padded saw
+        state.word[11]! state.word[12]! state.word[13]! state.word[14]!
+        state.word[15]! target state.word[17]! state.word[18]!
+        identity offset word terminal (UInt64.ofNat query.val) := by
+  rw [scalarStep_word, hversion, hstatus, herror, hidentity, hextent, hoffset,
+    hphase, hpadded, hsaw, htarget, hchunkIdentity, hchunkOffset, hchunkWord,
+    hchunkTerminal]
+
 /-- Every accepted scalar entry-type transition classifies the same rich
 decoded entry fields with the same usable-coverage and non-usable-overlap
 predicates.  The existing accumulator is retained when the current entry does
@@ -3599,6 +3637,225 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapEntries
         omega
       exact hprepend (by simpa [next, hoffsetWords] using hnextTraversal)
 
+/-- The existential-continuation form of the canonical entry traversal.
+Unlike the fixed-terminal theorem above, this theorem carries the terminal
+state produced by the post-entry continuation through the entry induction.
+This avoids constructing a dependent choice function over every hypothetical
+entry successor merely to consume the one canonical successor. -/
+theorem successfulScalarRichTraversal_canonicalMemoryMapEntries_exists
+    (identity : UInt64) (bytes : List UInt8)
+    (total entryOffset target count : Nat) (entries : List RawEntry)
+    (state : ScalarState)
+    (htotal : total = bytes.length)
+    (htotalLow : 16 ≤ total)
+    (htotalHigh : total ≤ maxTagBytes)
+    (htotalAligned : total % 8 = 0)
+    (hentryOffsetAligned : entryOffset % 8 = 0)
+    (hroom : entryOffset + count * memoryMapEntrySize + 8 ≤ total)
+    (hidentityAligned : identity % 8 = 0)
+    (hentries :
+      SuccessfulEntryDecodeTraversal bytes entryOffset count entries)
+    (hstate :
+      CanonicalMemoryMapEntryState identity total entryOffset target count state)
+    (hcontinuation :
+      ∀ after,
+        CanonicalMemoryMapEntryState identity total
+            (entryOffset + count * memoryMapEntrySize) target 0 after →
+          after.word[18]! = state.word[18]! →
+          ∃ terminal,
+            SuccessfulScalarRichTraversal target [] after
+              ((canonicalChunks identity bytes).drop
+                ((entryOffset + count * memoryMapEntrySize) / 8))
+              terminal) :
+    ∃ terminal,
+      SuccessfulScalarRichTraversal target entries state
+        ((canonicalChunks identity bytes).drop (entryOffset / 8)) terminal := by
+  induction hentries generalizing state with
+  | done offset =>
+      simpa using hcontinuation state hstate rfl
+  | entry offset count base length kindWord rest hbase hlength hkind
+      hreserved hlengthNonzero hbaseBound hlengthBound hstopBound hrest ih =>
+      have htotalHigh' : total ≤ 65536 := by
+        simpa [maxTagBytes] using htotalHigh
+      have htotalLt : total < UInt64.size :=
+        Nat.lt_of_le_of_lt htotalHigh' (by
+          unfold UInt64.size
+          omega)
+      have hcurrentRoom : offset + memoryMapEntrySize + 8 ≤ total := by
+        unfold memoryMapEntrySize at hroom ⊢
+        omega
+      have hoffsetLtNat : offset < total := by
+        unfold memoryMapEntrySize at hcurrentRoom
+        omega
+      have hoffset8LtNat : offset + 8 < total := by
+        unfold memoryMapEntrySize at hcurrentRoom
+        omega
+      have hoffset16LtNat : offset + 16 < total := by
+        unfold memoryMapEntrySize at hcurrentRoom
+        omega
+      have hoffset24LtNat : offset + 24 < total := by
+        unfold memoryMapEntrySize at hcurrentRoom
+        omega
+      have hbaseOffsetLt :
+          UInt64.ofNat offset < UInt64.ofNat total := by
+        rw [UInt64.lt_iff_toNat_lt,
+          UInt64.toNat_ofNat_of_lt' htotalLt,
+          UInt64.toNat_ofNat_of_lt' (Nat.lt_trans hoffsetLtNat htotalLt)]
+        exact hoffsetLtNat
+      have hbaseOffsetNotFinal :
+          UInt64.ofNat offset + 8 ≠ UInt64.ofNat total := by
+        intro heq
+        have heqNat := congrArg UInt64.toNat heq
+        rw [show UInt64.ofNat offset + 8 = UInt64.ofNat (offset + 8) by
+          rw [UInt64.ofNat_add]
+          rfl] at heqNat
+        rw [UInt64.toNat_ofNat_of_lt' (Nat.lt_trans hoffset8LtNat htotalLt),
+          UInt64.toNat_ofNat_of_lt' htotalLt] at heqNat
+        omega
+      have hlengthOffsetLt :
+          UInt64.ofNat offset + 8 < UInt64.ofNat total := by
+        rw [show UInt64.ofNat offset + 8 = UInt64.ofNat (offset + 8) by
+          rw [UInt64.ofNat_add]
+          rfl]
+        rw [UInt64.lt_iff_toNat_lt,
+          UInt64.toNat_ofNat_of_lt' htotalLt,
+          UInt64.toNat_ofNat_of_lt' (Nat.lt_trans hoffset8LtNat htotalLt)]
+        exact hoffset8LtNat
+      have hlengthOffsetNotFinal :
+          UInt64.ofNat offset + 8 + 8 ≠ UInt64.ofNat total := by
+        intro heq
+        have heqNat := congrArg UInt64.toNat heq
+        rw [show UInt64.ofNat offset + 8 + 8 =
+          UInt64.ofNat (offset + 16) by
+            rw [show offset + 16 = (offset + 8) + 8 by omega,
+              UInt64.ofNat_add, UInt64.ofNat_add]
+            rfl] at heqNat
+        rw [UInt64.toNat_ofNat_of_lt'
+            (Nat.lt_trans hoffset16LtNat htotalLt),
+          UInt64.toNat_ofNat_of_lt' htotalLt] at heqNat
+        omega
+      have hkindOffsetLt :
+          UInt64.ofNat offset + 8 + 8 < UInt64.ofNat total := by
+        rw [show UInt64.ofNat offset + 8 + 8 =
+          UInt64.ofNat (offset + 16) by
+            rw [show offset + 16 = (offset + 8) + 8 by omega,
+              UInt64.ofNat_add, UInt64.ofNat_add]
+            rfl]
+        rw [UInt64.lt_iff_toNat_lt,
+          UInt64.toNat_ofNat_of_lt' htotalLt,
+          UInt64.toNat_ofNat_of_lt' (Nat.lt_trans hoffset16LtNat htotalLt)]
+        exact hoffset16LtNat
+      have hkindOffsetNotFinal :
+          UInt64.ofNat offset + 8 + 8 + 8 ≠ UInt64.ofNat total := by
+        intro heq
+        have heqNat := congrArg UInt64.toNat heq
+        rw [show UInt64.ofNat offset + 8 + 8 + 8 =
+          UInt64.ofNat (offset + 24) by
+            rw [show offset + 24 = ((offset + 8) + 8) + 8 by omega,
+              UInt64.ofNat_add, UInt64.ofNat_add, UInt64.ofNat_add]
+            rfl] at heqNat
+        rw [UInt64.toNat_ofNat_of_lt'
+            (Nat.lt_trans hoffset24LtNat htotalLt),
+          UInt64.toNat_ofNat_of_lt' htotalLt] at heqNat
+        omega
+      have hextentLow : 16 ≤ UInt64.ofNat total := by
+        rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' htotalLt]
+        exact htotalLow
+      have hextentHigh : UInt64.ofNat total ≤ 65536 := by
+        rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' htotalLt]
+        simpa [maxTagBytes] using htotalHigh
+      have hextentAligned : UInt64.ofNat total % 8 = 0 := by
+        apply UInt64.toNat.inj
+        simp [UInt64.toNat_ofNat_of_lt' htotalLt, htotalAligned]
+      let next :=
+        scalarStep
+          (scalarStep
+            (scalarStep state
+              { identity
+                offset
+                bytes := (bytes.drop offset).take 8
+                terminal := false })
+            { identity
+              offset := offset + 8
+              bytes := (bytes.drop (offset + 8)).take 8
+              terminal := false })
+          { identity
+            offset := offset + 16
+            bytes := (bytes.drop (offset + 16)).take 8
+            terminal := false }
+      have hstateOriginal := hstate
+      rcases hstate with ⟨hversion, hstatus, herror, hidentity, hextent,
+        hoffset, hphase, hcontent, hpadded, hsawMap, hentryBudget, husable,
+        hblocked, htargetWord, htarget, htagCount⟩
+      have hentryCount :
+          state.word[11]! < BootMemoryMapStreamAuthority.entryLimit := by
+        rw [UInt64.lt_iff_toNat_lt]
+        change state.word[11]!.toNat < (UInt64.ofNat maxEntries).toNat
+        rw [UInt64.toNat_ofNat_of_lt' (by
+          unfold maxEntries UInt64.size
+          omega)]
+        omega
+      have hphaseEntry :
+          state.word[7]! = BootMemoryMapStreamAuthority.phaseEntryBase := by
+        simpa using hphase
+      obtain ⟨_, hnextVersion, hnextStatus, hnextError,
+        hnextIdentity, hnextExtent, hnextOffset, hnextPhase, hnextContent,
+        hnextPadded, hnextSawMap, hnextCount, _hnextBase, _hnextLength,
+        hnextUsable, hnextBlocked, hnextTarget, hnextTagCount⟩ :=
+        successfulScalarRichTraversal_canonicalMemoryMapEntry_with_successor
+          identity bytes total offset target base length kindWord rest
+          state state htotal htotalAligned hentryOffsetAligned
+          hcurrentRoom hbaseOffsetLt hbaseOffsetNotFinal hlengthOffsetLt
+          hlengthOffsetNotFinal hkindOffsetLt hkindOffsetNotFinal hbase
+          hlength hkind hreserved hlengthNonzero hbaseBound hstopBound
+          hidentityAligned hextentLow hextentHigh hextentAligned hversion
+          hstatus herror hidentity hextent hoffset hphaseEntry hpadded hsawMap
+          hentryCount husable hblocked htargetWord htarget htagCount
+      have hnextState :
+          CanonicalMemoryMapEntryState identity total
+            (offset + memoryMapEntrySize) target count next := by
+        apply canonicalMemoryMapEntryState_of_successor
+          identity total offset target count state next hstateOriginal
+          hnextVersion hnextStatus hnextError hnextIdentity hnextExtent
+          hnextOffset hnextPhase hnextContent hnextPadded hnextSawMap
+          hnextCount hnextUsable hnextBlocked hnextTarget hnextTagCount
+      obtain ⟨terminal, hnextTraversal⟩ := ih (state := next)
+        (by simp [memoryMapEntrySize, Nat.add_mod, hentryOffsetAligned])
+        (by
+          unfold memoryMapEntrySize at hroom ⊢
+          omega)
+        hnextState
+        (by
+          intro after hafter hafterTagCount
+          have hendOffset :
+              offset + memoryMapEntrySize + count * memoryMapEntrySize =
+                offset + (count + 1) * memoryMapEntrySize := by
+            unfold memoryMapEntrySize
+            omega
+          rw [hendOffset]
+          apply hcontinuation
+          rw [← hendOffset]
+          · exact hafter
+          · exact hafterTagCount.trans hnextTagCount)
+      obtain ⟨hprepend, _⟩ :=
+        successfulScalarRichTraversal_canonicalMemoryMapEntry_with_successor
+          identity bytes total offset target base length kindWord rest
+          state terminal htotal htotalAligned hentryOffsetAligned
+          hcurrentRoom hbaseOffsetLt hbaseOffsetNotFinal hlengthOffsetLt
+          hlengthOffsetNotFinal hkindOffsetLt hkindOffsetNotFinal hbase
+          hlength hkind hreserved hlengthNonzero hbaseBound hstopBound
+          hidentityAligned hextentLow hextentHigh hextentAligned hversion
+          hstatus herror hidentity hextent hoffset hphaseEntry hpadded hsawMap
+          hentryCount husable hblocked htargetWord htarget htagCount
+      have hoffsetWords : (offset + 24) / 8 = offset / 8 + 3 := by
+        have hdiv := Nat.mod_add_div offset 8
+        rw [hentryOffsetAligned, Nat.zero_add] at hdiv
+        omega
+      exact ⟨terminal,
+        hprepend (by
+          simpa [next, hoffsetWords, memoryMapEntrySize]
+            using hnextTraversal)⟩
+
 /-- A complete canonical rich entry traversal fixes both production
 classification words to the folds over exactly those decoded entries.  This
 is the field-agreement projection consumed by the later whole-tag refinement:
@@ -3666,6 +3923,29 @@ def CanonicalTagState
     target < frameLimit ∧
     state.word[18]!.toNat + fuel ≤ maxTags
 
+/-- Finishing the exact memory-map entry walk re-establishes the canonical tag
+cursor.  This phase bridge is kept separate so large structural traversals do
+not repeatedly normalize the zero-entry endpoint inside their heartbeat
+budget. -/
+theorem canonicalTagState_of_completedMemoryMapEntries
+    (identity : UInt64) (total entryOffset tagOffset target fuel : Nat)
+    (state : ScalarState)
+    (hoffset : entryOffset = tagOffset)
+    (hstate :
+      CanonicalMemoryMapEntryState identity total entryOffset target 0 state)
+    (htagBudget : state.word[18]!.toNat + fuel ≤ maxTags) :
+    CanonicalTagState identity total tagOffset target fuel true state := by
+  subst tagOffset
+  rcases hstate with ⟨hversion, hstatus, herror, hidentity, hextent,
+    hoffset, hphase, hcontent, hpadded, hsaw, hentryBudget, husable,
+    hblocked, htarget, htargetBound, _htagBound⟩
+  simp only [Nat.zero_mul] at hcontent
+  simp only [Nat.add_zero] at hentryBudget
+  exact ⟨hversion, hstatus, herror, hidentity, hextent, hoffset, hphase,
+    hcontent, hpadded, hsaw, hentryBudget, by intro h; contradiction,
+    husable, hblocked, htarget, htargetBound, htagBudget⟩
+
+set_option maxHeartbeats 2000000 in
 /-- Consume one retained ignored tag, including all payload and alignment
 padding, while preserving the exact canonical tag-boundary invariant. -/
 theorem canonicalIgnoredTag_successor
@@ -3746,6 +4026,7 @@ theorem canonicalIgnoredTag_successor
     omega
   have htagCount : state.word[18]! < 64 := by
     rw [UInt64.lt_iff_toNat_lt]
+    simp only [UInt64.toNat_ofNat]
     have hbudget := htagBudget
     simp only [maxTags] at hbudget
     omega
@@ -3766,7 +4047,14 @@ theorem canonicalIgnoredTag_successor
       Nat.lt_of_le_of_lt (by omega) htotalLt
     rw [UInt64.le_iff_toNat_le,
       UInt64.toNat_ofNat_of_lt' hsizeBound]
-    omega
+    simp only [UInt64.toNat_ofNat]
+    change high32Nat tagWord ≤ 18446744073709551608
+    calc
+      high32Nat tagWord ≤ offset + high32Nat tagWord :=
+        Nat.le_add_left _ _
+      _ ≤ total := hcontent
+      _ ≤ maxTagBytes := htotalHigh
+      _ ≤ 18446744073709551608 := by decide
   have hroundedNat :
       ((UInt64.ofNat (high32Nat tagWord) + 7) &&& 0xfffffffffffffff8) =
         UInt64.ofNat (aligned8 (high32Nat tagWord)) := by
@@ -3839,13 +4127,19 @@ theorem canonicalIgnoredTag_successor
       (by
         rw [hhigh, UInt64.le_iff_toNat_le]
         have hhighBound : high32Nat tagWord < UInt64.size := by
-          unfold high32Nat UInt64.size
-          omega
+          exact Nat.lt_of_le_of_lt
+            (Nat.le_trans (Nat.le_add_left _ _) hcontent) htotalLt
         simpa [UInt64.toNat_ofNat_of_lt' hhighBound] using hsize)
       (by simpa [hhigh] using hsizeFits)
       (by simpa [hhigh] using hsizeNoOverflow)
       (by simpa [hhigh] using hroundedFits)
   let next := scalarStep state chunk
+  have halignedBound :
+      aligned8 (high32Nat tagWord) < UInt64.size :=
+    Nat.lt_of_le_of_lt (by omega) htotalLt
+  have hhighBound : high32Nat tagWord < UInt64.size :=
+    Nat.lt_of_le_of_lt
+      (Nat.le_trans (Nat.le_add_left _ _) hcontent) htotalLt
   have hnext :
       next.word[0]! = BootMemoryMapStreamAuthority.abiVersion ∧
         next.word[1]! = BootMemoryMapStreamAuthority.active ∧
@@ -3865,38 +4159,89 @@ theorem canonicalIgnoredTag_successor
         next.word[15]! = state.word[15]! ∧
         next.word[16]! = UInt64.ofNat target ∧
         next.word[18]! = state.word[18]! + 1 := by
+    rcases hheaderStep with ⟨hnVersion, hnStatus, hnError, hnIdentity,
+      hnExtent, hnOffset, hnPhase, hnContent, hnPadded, hnSaw, hnEntries,
+      _hnBase, _hnLength, hnUsable, hnBlocked, hnTarget, _hnHighest,
+      hnTagCount⟩
+    rw [hhigh] at hnPhase hnContent hnPadded
+    rw [hroundedNat] at hnPhase hnPadded
+    have hphaseBridge :
+        (if UInt64.ofNat (aligned8 (high32Nat tagWord)) == 8
+          then BootMemoryMapStreamAuthority.phaseTag
+          else BootMemoryMapStreamAuthority.phaseIgnored) =
+        (if aligned8 (high32Nat tagWord) = 8
+          then BootMemoryMapStreamAuthority.phaseTag
+          else BootMemoryMapStreamAuthority.phaseIgnored) := by
+      by_cases heq : aligned8 (high32Nat tagWord) = 8
+      · simp [heq]
+      · have hwordNe :
+            UInt64.ofNat (aligned8 (high32Nat tagWord)) ≠ 8 := by
+          intro hword
+          apply heq
+          have := congrArg UInt64.toNat hword
+          simpa [UInt64.toNat_ofNat_of_lt' halignedBound] using this
+        simp [heq, hwordNe]
+    rw [hphaseBridge] at hnPhase
     simpa [next, scalarStep, chunk, hchunkWord, hversion, hstatus, herror,
       hidentity, hextent, hoffset, hphase, htargetWord, hroundedNat, hhigh]
-      using ⟨hheaderStep.1, hheaderStep.2.1, hheaderStep.2.2.1,
-        hheaderStep.2.2.2.1, hheaderStep.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.1, hheaderStep.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+      using ⟨hnVersion, hnStatus, hnError, hnIdentity, hnExtent, hnOffset,
+        hnPhase, hnContent, hnPadded, hnSaw, hnEntries, hnUsable, hnBlocked,
+        hnTarget, hnTagCount⟩
+  have hnextFields := hnext
+  rcases hnextFields with ⟨nxVersion, nxStatus, nxError, nxIdentity,
+    nxExtent, nxOffset, nxPhase, nxContent, nxPadded, nxSaw, nxEntries,
+    nxUsable, nxBlocked, nxTarget, nxTagCount⟩
+  have h8High :
+      (8 : UInt64) ≤ UInt64.ofNat (high32Nat tagWord) := by
+    rw [UInt64.le_iff_toNat_le,
+      UInt64.toNat_ofNat_of_lt' hhighBound]
+    simpa using hsize
+  have h8AlignedNat : 8 ≤ aligned8 (high32Nat tagWord) := by
+    have hdiv :=
+      Nat.mod_add_div (high32Nat tagWord + 7) 8
+    have hmod :
+        (high32Nat tagWord + 7) % 8 < 8 :=
+      Nat.mod_lt _ (by decide)
+    unfold aligned8
+    omega
+  have h8Aligned :
+      (8 : UInt64) ≤ UInt64.ofNat (aligned8 (high32Nat tagWord)) := by
+    rw [UInt64.le_iff_toNat_le,
+      UInt64.toNat_ofNat_of_lt' halignedBound]
+    simpa using h8AlignedNat
   obtain ⟨after, hspan, hafter⟩ :=
     successfulIgnoredTagSpan_of_ignoredTagTraversal identity bytes total
       offset fuel tagWord target sawMemoryMap tagsRev tags next htotal
       htotalLow htotalHigh htotalAligned hoffsetAligned hidentityAligned
-      hsize hrest hnext.1 hnext.2.1 hnext.2.2.1 hnext.2.2.2.1
-      hnext.2.2.2.2.1 hnext.2.2.2.2.2.1 hnext.2.2.2.2.2.2.1
+      hsize hrest nxVersion nxStatus nxError nxIdentity nxExtent nxOffset nxPhase
       (by
-        rw [hnext.2.2.2.2.2.2.2.2.1]
-        exact UInt64.sub_le_sub_right
-          (by rw [UInt64.le_iff_toNat_le]; simpa using hsize) 8)
-      hnext.2.2.2.2.2.2.2.2.2.1
-      (by rw [hnext.2.2.2.2.2.2.2.2.2.2.1, hsawMap]; split <;> decide)
-      (by rw [hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.1]; exact husable)
-      (by rw [hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]; exact hblocked)
-      hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 htarget
+        rw [nxContent, nxPadded, UInt64.le_iff_toNat_le,
+          UInt64.toNat_sub_of_le _ _ h8High,
+          UInt64.toNat_sub_of_le _ _ h8Aligned,
+          UInt64.toNat_ofNat_of_lt' hhighBound,
+          UInt64.toNat_ofNat_of_lt' halignedBound]
+        unfold aligned8
+        omega)
       (by
-        rw [hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2]
+        rw [nxPadded]
+        change UInt64.ofNat (aligned8 (high32Nat tagWord)) -
+            UInt64.ofNat 8 =
+          UInt64.ofNat (aligned8 (high32Nat tagWord) - 8)
+        exact (UInt64.ofNat_sub h8AlignedNat).symm)
+      (by rw [nxSaw, hsawMap]; split <;> decide)
+      (by rw [nxUsable]; exact husable)
+      (by rw [nxBlocked]; exact hblocked)
+      nxTarget htarget
+      (by
+        rw [nxTagCount]
         rw [UInt64.le_iff_toNat_le, UInt64.toNat_add]
         simp only [UInt64.toNat_ofNat]
+        have hcountNat : state.word[18]!.toNat < 64 := by
+          rw [UInt64.lt_iff_toNat_lt] at htagCount
+          simpa using htagCount
+        have hsumLt : state.word[18]!.toNat + 1 < UInt64.size :=
+          Nat.lt_trans (by omega : state.word[18]!.toNat + 1 < 65) (by decide)
+        rw [Nat.mod_eq_of_lt hsumLt]
         omega)
   have hpreserved :=
     successfulIgnoredTagSpan_preserves_tag_fields next after
@@ -3913,13 +4258,13 @@ theorem canonicalIgnoredTag_successor
     refine ⟨hafterVersion, hafterStatus, hafterError, hafterIdentity,
       hafterExtent, hafterOffset, hafterPhase, hafterContent, hafterPadded,
       ?_, ?_, ?_, hafterUsableBound, hafterBlockedBound, hafterTarget, htarget, ?_⟩
-    · rw [hpreserved.1, hnext.2.2.2.2.2.2.2.2.2.2.1, hsawMap]
-    · rw [hpreserved.2.1, hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
+    · rw [hpreserved.1, nxSaw, hsawMap]
+    · rw [hpreserved.2.1, nxEntries]
       exact hentryCount
     · intro hsawFalse
-      rw [hpreserved.2.1, hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
+      rw [hpreserved.2.1, nxEntries]
       exact hentryCountZero hsawFalse
-    · rw [hpreserved.2.2.2.2, hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2]
+    · rw [hpreserved.2.2.2.2, nxTagCount]
       rw [UInt64.toNat_add]
       simp only [UInt64.toNat_ofNat]
       omega
@@ -3946,26 +4291,45 @@ theorem canonicalIgnoredTag_successor
         (canonicalChunks identity bytes).drop
           ((offset + aligned8 (high32Nat tagWord)) / 8) =
       (canonicalChunks identity bytes).drop (offset / 8 + 1) := by
-    rw [← List.take_append_drop
-      (aligned8 (high32Nat tagWord) / 8 - 1)
-      ((canonicalChunks identity bytes).drop (offset / 8 + 1))]
-    congr 1
-    simp only [List.drop_drop]
-    have hadvanceWords :=
-      Nat.mod_add_div (aligned8 (high32Nat tagWord)) 8
-    rw [hadvanceAligned, Nat.zero_add] at hadvanceWords
-    omega
+    have hadvanceWords :
+        aligned8 (high32Nat tagWord) / 8 * 8 =
+          aligned8 (high32Nat tagWord) := by
+      have h := Nat.mod_add_div (aligned8 (high32Nat tagWord)) 8
+      rw [hadvanceAligned, Nat.zero_add] at h
+      omega
+    have hindexEq :
+        offset / 8 + 1 + (aligned8 (high32Nat tagWord) / 8 - 1) =
+          (offset + aligned8 (high32Nat tagWord)) / 8 := by
+      rw [← hoffsetWords, ← hadvanceWords, ← Nat.add_mul,
+        Nat.mul_div_cancel _ (by decide : 0 < 8)]
+      have : 1 ≤ aligned8 (high32Nat tagWord) / 8 := by
+        omega
+      omega
+    have htailEq :
+        (canonicalChunks identity bytes).drop
+            ((offset + aligned8 (high32Nat tagWord)) / 8) =
+          ((canonicalChunks identity bytes).drop (offset / 8 + 1)).drop
+            (aligned8 (high32Nat tagWord) / 8 - 1) := by
+      simp only [List.drop_drop, hindexEq]
+    rw [htailEq]
+    exact List.take_append_drop _ _
   rw [hsplit] at hbody
-  obtain ⟨_, hget, _⟩ :=
+  obtain ⟨_, _, hget, _⟩ :=
     canonicalTagStep_source_refines identity bytes total offset (fuel + 1)
       sawMemoryMap tagsRev tags state htotal
       (by simpa [← htotal] using htotalAligned) hoffsetAligned
       (.ignoredTag offset fuel tagWord sawMemoryMap tagsRev tags hread hsize
         hcontent hadvance htypeEnd htypeMap hrest)
+  have hterminalFalse : (offset + 8 == total) = false := by
+    apply beq_false_of_ne
+    intro heq
+    apply hoffsetNotFinal
+    rw [show UInt64.ofNat offset + 8 = UInt64.ofNat (offset + 8) by
+      exact (UInt64.ofNat_add offset 8).symm, heq]
   have hdrop :=
     drop_eq_cons_drop_succ_of_get?_eq_some
       (canonicalChunks identity bytes) (offset / 8) chunk
-      (by simpa [chunk, hoffsetWords] using hget)
+      (by simpa [chunk, hoffsetWords, hterminalFalse] using hget)
   rw [hdrop]
   apply successfulScalarRichTraversal_ignoredTagHeader
     identity (UInt64.ofNat total) (UInt64.ofNat offset)
@@ -3995,9 +4359,6 @@ theorem canonicalIgnoredTag_successor
       simpa [UInt64.toNat_ofNat_of_lt' hlowBound] using this)
     (by
       rw [hhigh, UInt64.le_iff_toNat_le]
-      have hhighBound : high32Nat tagWord < UInt64.size := by
-        unfold high32Nat UInt64.size
-        omega
       simpa [UInt64.toNat_ofNat_of_lt' hhighBound] using hsize)
     (by simpa [hhigh] using hsizeFits)
     (by simpa [hhigh] using hsizeNoOverflow)
@@ -4027,14 +4388,15 @@ theorem successfulScalarRichTraversal_afterMemoryMap
         ((canonicalChunks identity bytes).drop (offset / 8)) terminal := by
   induction htraversal generalizing state with
   | endTag offset fuel tagWord tagsRev hread htype hsize hend =>
-      subst sawMemoryMap
       rcases hstate with ⟨hversion, hstatus, herror, hidentity, hextent,
         hoffset, hphase, hcontent, hpadded, hsawMap, hentryCount,
         hentryCountZero, husable, hblocked, htargetWord, htarget, htagBudget⟩
       have htagCount : state.word[18]! < 64 := by
         rw [UInt64.lt_iff_toNat_lt]
-        simpa [maxTags] using
-          (show state.word[18]!.toNat < 64 by omega)
+        simp only [UInt64.toNat_ofNat]
+        have hbudget := htagBudget
+        simp only [maxTags] at hbudget
+        omega
       have htotalWords : total / 8 * 8 = total := by
         have := Nat.mod_add_div total 8
         rw [htotalAligned, Nat.zero_add] at this
@@ -4051,7 +4413,7 @@ theorem successfulScalarRichTraversal_afterMemoryMap
       have hchunkRead : readU64 chunk.bytes 0 = .ok tagWord := by
         rw [readU64_drop_take]
         exact hread
-      obtain ⟨_, hget, _⟩ :=
+      obtain ⟨_, _, hget, _⟩ :=
         canonicalTagStep_source_refines identity bytes total offset (fuel + 1)
           true tagsRev (tagsRev.reverse ++ [.end 8]) state htotal
           (by simpa [← htotal] using htotalAligned) hoffsetAligned
@@ -4086,15 +4448,14 @@ theorem successfulScalarRichTraversal_afterMemoryMap
           htotalAligned hoffsetAligned hidentityAligned hread hsize hcontent
           hadvance htypeEnd htypeMap hrest hstate
       obtain ⟨terminal, htail⟩ :=
-        ih htotal htotalLow htotalHigh htotalAligned hnextAligned
-          hidentityAligned after hafter rfl
+        ih after hnextAligned hafter rfl
       exact ⟨terminal, hwrap [] terminal htail⟩
   | memoryMapTag =>
       contradiction
 
+set_option maxHeartbeats 2000000 in
 /-- Consume the unique retained map header, layout, and complete entry walk,
 then continue through the post-map ignored/end suffix. -/
-set_option maxHeartbeats 800000 in
 theorem successfulScalarRichTraversal_memoryMapTag_complete
     (identity : UInt64) (bytes : List UInt8)
     (total offset fuel tagWord layoutWord target : Nat)
@@ -4151,7 +4512,9 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
   have hextentAligned : UInt64.ofNat total % 8 = 0 := by
     apply UInt64.toNat.inj
     simp [UInt64.toNat_ofNat_of_lt' htotalLt, htotalAligned]
-  have hoffsetLtNat : offset < total := by omega
+  have hoffsetLtNat : offset < total := by
+    simp only [memoryMapTagHeaderSize] at hsize
+    omega
   have hoffsetLt :
       UInt64.ofNat offset < UInt64.ofNat total := by
     rw [UInt64.lt_iff_toNat_lt,
@@ -4171,8 +4534,19 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
     omega
   have htagCount : state.word[18]! < 64 := by
     rw [UInt64.lt_iff_toNat_lt]
+    simp only [UInt64.toNat_ofNat]
     have hbudget := htagBudget
     simp only [maxTags] at hbudget
+    omega
+  have htagCountSucc : state.word[18]! + 1 ≤ 64 := by
+    rw [UInt64.le_iff_toNat_le, UInt64.toNat_add]
+    simp only [UInt64.toNat_ofNat]
+    have hcountNat : state.word[18]!.toNat < 64 := by
+      rw [UInt64.lt_iff_toNat_lt] at htagCount
+      simpa using htagCount
+    have hsumLt : state.word[18]!.toNat + 1 < UInt64.size :=
+      Nat.lt_trans (by omega : state.word[18]!.toNat + 1 < 65) (by decide)
+    rw [Nat.mod_eq_of_lt hsumLt]
     omega
   have htargetBound : UInt64.ofNat target < 4096 := by
     rw [UInt64.lt_iff_toNat_lt, UInt64.toNat_ofNat_of_lt' htargetLt]
@@ -4190,6 +4564,11 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
       high32Word_ofNat tagWord htagWordLt]
   have hhighBound : high32Nat tagWord < UInt64.size :=
     Nat.lt_of_le_of_lt (by omega) htotalLt
+  have h16High :
+      (16 : UInt64) ≤ UInt64.ofNat (high32Nat tagWord) := by
+    rw [UInt64.le_iff_toNat_le,
+      UInt64.toNat_ofNat_of_lt' hhighBound]
+    simpa [memoryMapTagHeaderSize] using hsize
   have hsizeFits :
       UInt64.ofNat (high32Nat tagWord) ≤
         UInt64.ofNat total - UInt64.ofNat offset := by
@@ -4202,7 +4581,14 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
   have hsizeNoOverflow :
       UInt64.ofNat (high32Nat tagWord) ≤ 0xfffffffffffffff8 := by
     rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' hhighBound]
-    omega
+    simp only [UInt64.toNat_ofNat]
+    change high32Nat tagWord ≤ 18446744073709551608
+    calc
+      high32Nat tagWord ≤ offset + high32Nat tagWord :=
+        Nat.le_add_left _ _
+      _ ≤ total := hcontent
+      _ ≤ maxTagBytes := htotalHigh
+      _ ≤ 18446744073709551608 := by decide
   have hroundedNat :
       ((UInt64.ofNat (high32Nat tagWord) + 7) &&& 0xfffffffffffffff8) =
         UInt64.ofNat (aligned8 (high32Nat tagWord)) := by
@@ -4238,7 +4624,7 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
       state.word[17]! state.word[18]! (UInt64.ofNat tagWord)
       hidentityAligned hextentLow hextentHigh hextentAligned hoffsetLt
       hoffsetNotFinal husable hblocked htargetBound htagCount
-      (by simpa [hlow, htype])
+      (by simp [hlow, htype])
       (by
         rw [hhigh, UInt64.le_iff_toNat_le]
         simpa [UInt64.toNat_ofNat_of_lt' hhighBound,
@@ -4249,11 +4635,15 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
       (by
         rw [hhigh]
         apply UInt64.toNat.inj
-        simp [halignedEntries, memoryMapTagHeaderSize, memoryMapEntrySize])
+        rw [UInt64.toNat_mod,
+          UInt64.toNat_sub_of_le _ _ h16High,
+          UInt64.toNat_ofNat_of_lt' hhighBound]
+        simpa [memoryMapTagHeaderSize, memoryMapEntrySize] using
+          halignedEntries)
       (by
-        rw [hhigh, UInt64.le_iff_toNat_le]
-        simpa [UInt64.toNat_div, UInt64.toNat_sub,
-          UInt64.toNat_ofNat_of_lt' hhighBound,
+        rw [hhigh, UInt64.le_iff_toNat_le, UInt64.toNat_div,
+          UInt64.toNat_sub_of_le _ _ h16High]
+        simpa [UInt64.toNat_ofNat_of_lt' hhighBound,
           memoryMapTagHeaderSize, memoryMapEntrySize,
           BootMemoryMapStreamAuthority.entryLimit, maxEntries]
           using hentryBound)
@@ -4274,20 +4664,22 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
         afterHeader.word[15]! = state.word[15]! ∧
         afterHeader.word[16]! = UInt64.ofNat target ∧
         afterHeader.word[18]! = state.word[18]! + 1 := by
+    rcases hheaderStep with ⟨haVersion, haStatus, haError, haIdentity,
+      haExtent, haOffset, haPhase, haContent, haPadded, haSaw, haEntries,
+      _haBase, _haLength, haUsable, haBlocked, haTarget, _haHighest,
+      haTagCount⟩
+    rw [hhigh] at haContent
+    rw [hstateEntryZero] at haEntries
     simpa [afterHeader, scalarStep, header, hheaderWord, hversion, hstatus,
       herror, hidentity, hextent, hoffset, hphase, hsawMap, hstateEntryZero,
       htargetWord, hhigh] using
-      ⟨hheaderStep.1, hheaderStep.2.1, hheaderStep.2.2.1,
-        hheaderStep.2.2.2.1, hheaderStep.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.1, hheaderStep.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-        hheaderStep.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+      ⟨haVersion, haStatus, haError, haIdentity, haExtent, haOffset,
+        haPhase, haContent, haPadded, haSaw, haEntries, haUsable, haBlocked,
+        haTarget, haTagCount⟩
+  have hafterHeaderFields := hafterHeader
+  rcases hafterHeaderFields with ⟨haVersion, haStatus, haError, haIdentity,
+    haExtent, haOffset, haPhase, haContent, haPadded, haSaw, haEntries,
+    haUsable, haBlocked, haTarget, haTagCount⟩
   let layout : ModelChunk :=
     { identity
       offset := offset + 8
@@ -4310,7 +4702,12 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
       high32Word_ofNat layoutWord hlayoutWordLt, hentryVersion]
     rfl
   have hlayoutOffsetLtNat : offset + 8 < total := by
+    have hnextBound := successfulTagDecodeTraversal_offset_lt_total
+      bytes total (offset + aligned8 (high32Nat tagWord)) fuel true
+      (.memoryMap (high32Nat tagWord) (low32Nat layoutWord)
+        (high32Nat layoutWord) entries :: tagsRev) tags hrest
     simp only [memoryMapTagHeaderSize] at hsize
+    unfold aligned8 at hnextBound
     omega
   have hlayoutOffsetLt :
       UInt64.ofNat (offset + 8) < UInt64.ofNat total := by
@@ -4325,15 +4722,26 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
       bytes total (offset + aligned8 (high32Nat tagWord)) fuel true
       (.memoryMap (high32Nat tagWord) (low32Nat layoutWord)
         (high32Nat layoutWord) entries :: tagsRev) tags hrest
-    have : offset + 16 < total := by
+    have h16Lt : offset + 16 < total := by
       simp only [memoryMapTagHeaderSize, aligned8] at hsize hnextBound
       omega
-    have := congrArg UInt64.toNat heq
-    rw [show UInt64.ofNat (offset + 8) + 8 =
-        UInt64.ofNat (offset + 16) by simp,
-      UInt64.toNat_ofNat_of_lt' (Nat.lt_trans this htotalLt),
-      UInt64.toNat_ofNat_of_lt' htotalLt] at this
+    have hoffset16 :
+        UInt64.ofNat (offset + 8) + 8 =
+          UInt64.ofNat (offset + 16) := by
+      change UInt64.ofNat (offset + 8) + UInt64.ofNat 8 =
+        UInt64.ofNat (offset + 16)
+      rw [← UInt64.ofNat_add]
+    have heqNat := congrArg UInt64.toNat heq
+    rw [hoffset16,
+      UInt64.toNat_ofNat_of_lt' (Nat.lt_trans h16Lt htotalLt),
+      UInt64.toNat_ofNat_of_lt' htotalLt] at heqNat
     omega
+  have hoffset16Word :
+      UInt64.ofNat (offset + 8) + 8 =
+        UInt64.ofNat (offset + memoryMapTagHeaderSize) := by
+    change UInt64.ofNat (offset + 8) + UInt64.ofNat 8 =
+      UInt64.ofNat (offset + 16)
+    rw [← UInt64.ofNat_add]
   have hentryBytesNat :
       high32Nat tagWord - memoryMapTagHeaderSize =
         ((high32Nat tagWord - memoryMapTagHeaderSize) /
@@ -4341,6 +4749,7 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
     have hdiv := Nat.mod_add_div
       (high32Nat tagWord - memoryMapTagHeaderSize) memoryMapEntrySize
     rw [halignedEntries, Nat.zero_add] at hdiv
+    unfold memoryMapEntrySize at hdiv ⊢
     omega
   have hcontentWord :
       UInt64.ofNat (high32Nat tagWord) - 16 =
@@ -4348,10 +4757,13 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
           (((high32Nat tagWord - memoryMapTagHeaderSize) /
             memoryMapEntrySize) * memoryMapEntrySize) := by
     rw [← hentryBytesNat]
-    rw [show (16 : UInt64) = UInt64.ofNat memoryMapTagHeaderSize by decide,
-      ← UInt64.ofNat_sub]
-    · rfl
-    · exact hsize
+    rw [show (16 : UInt64) = UInt64.ofNat memoryMapTagHeaderSize by decide]
+    rw [← UInt64.ofNat_sub hsize]
+  have hentryBytesLt :
+      ((high32Nat tagWord - memoryMapTagHeaderSize) /
+          memoryMapEntrySize) * memoryMapEntrySize < UInt64.size := by
+    rw [← hentryBytesNat]
+    omega
   let afterLayout := scalarStep afterHeader layout
   have hlayoutStep :=
     BootMemoryMapStreamAuthority.memoryMapLayoutStepWords_of_admitted
@@ -4362,110 +4774,146 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
       afterHeader.word[18]! (UInt64.ofNat layoutWord)
       hidentityAligned hextentLow hextentHigh hextentAligned hlayoutOffsetLt
       hlayoutNotFinal
-      (by rw [hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.1]; exact husable)
-      (by rw [hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]; exact hblocked)
+      (by rw [haUsable]; exact husable)
+      (by rw [haBlocked]; exact hblocked)
       htargetBound
       (by
-        rw [hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2]
-        exact Nat.le_of_lt htagCount |>.add_le_add_right 1)
+        rw [haTagCount]
+        exact htagCountSucc)
       hlayoutLow hlayoutHigh
       (by
-        rw [hafterHeader.2.2.2.2.2.2.2.2.1, hcontentWord]
+        rw [haContent, hcontentWord]
         apply UInt64.toNat.inj
-        simp [halignedEntries, memoryMapEntrySize])
+        rw [UInt64.toNat_mod,
+          UInt64.toNat_ofNat_of_lt' hentryBytesLt]
+        simp [memoryMapEntrySize] at halignedEntries ⊢)
       (by
-        rw [hafterHeader.2.2.2.2.2.2.2.2.1, hcontentWord,
-          UInt64.le_iff_toNat_le]
-        simpa [UInt64.toNat_div, memoryMapEntrySize,
+        rw [haContent, hcontentWord, UInt64.le_iff_toNat_le]
+        rw [UInt64.toNat_div,
+          UInt64.toNat_ofNat_of_lt' hentryBytesLt]
+        simpa [memoryMapEntrySize,
           BootMemoryMapStreamAuthority.entryLimit, maxEntries]
           using hentryBound)
+  rcases hlayoutStep with ⟨hlVersion, hlStatus, hlError, hlIdentity,
+    hlExtent, hlOffset, hlPhase, hlContent, hlPadded, hlSaw, hlEntries,
+    _hlBase, _hlLength, hlUsable, hlBlocked, hlTarget, _hlHighest,
+    hlTagCount⟩
+  rw [hoffset16Word] at hlOffset
+  have hafterLayoutWord (query : Fin 19) :
+      afterLayout.word[query.val]! =
+        BootMemoryMapStreamAuthority.stepWord
+          BootMemoryMapStreamAuthority.abiVersion
+          BootMemoryMapStreamAuthority.active
+          BootMemoryMapStreamAuthority.noError
+          identity (UInt64.ofNat total) (UInt64.ofNat (offset + 8))
+          afterHeader.word[6]!
+          BootMemoryMapStreamAuthority.phaseMapLayout
+          afterHeader.word[8]! 0 1 afterHeader.word[11]!
+          afterHeader.word[12]! afterHeader.word[13]!
+          afterHeader.word[14]! afterHeader.word[15]!
+          (UInt64.ofNat target) afterHeader.word[17]!
+          afterHeader.word[18]! identity (UInt64.ofNat (offset + 8))
+          (UInt64.ofNat layoutWord) 0 (UInt64.ofNat query.val) := by
+    apply scalarStep_word_of_stream_fields
+    · exact haVersion
+    · exact haStatus
+    · exact haError
+    · exact haIdentity
+    · exact haExtent
+    · exact haOffset
+    · exact haPhase
+    · exact haPadded
+    · exact haSaw
+    · exact haTarget
+    · rfl
+    · rfl
+    · exact hlayoutWord
+    · rfl
+  have hafterLayoutTagCount :
+      afterLayout.word[18]! = state.word[18]! + 1 := by
+    exact ((hafterLayoutWord ⟨18, by decide⟩).trans hlTagCount).trans
+      haTagCount
   have hafterLayout :
       CanonicalMemoryMapEntryState identity total
         (offset + memoryMapTagHeaderSize) target
         ((high32Nat tagWord - memoryMapTagHeaderSize) / memoryMapEntrySize)
         afterLayout := by
+    let remaining :=
+      (high32Nat tagWord - memoryMapTagHeaderSize) / memoryMapEntrySize
     have hcountBudget :
         afterHeader.word[11]!.toNat +
-            (high32Nat tagWord - memoryMapTagHeaderSize) /
-              memoryMapEntrySize ≤ maxEntries := by
-      rw [hafterHeader.2.2.2.2.2.2.2.2.2.2.2.1]
+            remaining ≤ maxEntries := by
+      rw [haEntries]
+      unfold remaining
       simpa using hentryBound
+    have hremainingBound : remaining ≤ maxEntries := by
+      simpa [remaining] using hentryBound
+    have hremainingBytesLt :
+        remaining * memoryMapEntrySize < UInt64.size := by
+      calc
+        remaining * memoryMapEntrySize ≤ maxEntries * memoryMapEntrySize :=
+          Nat.mul_le_mul_right memoryMapEntrySize hremainingBound
+        _ < UInt64.size := by decide
+    have hphaseBridge :
+        (if afterHeader.word[8]! = 0
+          then BootMemoryMapStreamAuthority.phaseTag
+          else BootMemoryMapStreamAuthority.phaseEntryBase) =
+        (if remaining = 0
+          then BootMemoryMapStreamAuthority.phaseTag
+          else BootMemoryMapStreamAuthority.phaseEntryBase) := by
+      by_cases hzero : remaining = 0
+      · have hcontentZero : afterHeader.word[8]! = 0 := by
+          rw [haContent, hcontentWord]
+          simp [remaining, hzero]
+        simp [hzero, hcontentZero]
+      · have hcontentNe : afterHeader.word[8]! ≠ 0 := by
+          rw [haContent, hcontentWord]
+          intro heq
+          apply hzero
+          have := congrArg UInt64.toNat heq
+          rw [UInt64.toNat_ofNat_of_lt' hremainingBytesLt] at this
+          have hmul : remaining * 24 = 0 := by
+            simpa only [memoryMapEntrySize, UInt64.toNat_zero] using this
+          rcases Nat.mul_eq_zero.mp hmul with hremaining | himpossible
+          · exact hremaining
+          · exact False.elim ((by decide : (24 : Nat) ≠ 0) himpossible)
+        simp [hzero, hcontentNe]
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
       htarget, ?_⟩
-    · simpa [afterLayout, scalarStep, layout, hlayoutWord,
-        hafterHeader.1, hafterHeader.2.1, hafterHeader.2.2.1,
-        hafterHeader.2.2.2.1, hafterHeader.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.1, hafterHeader.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
-        using hlayoutStep.1
-    · simpa [afterLayout, scalarStep, layout, hlayoutWord,
-        hafterHeader.1, hafterHeader.2.1, hafterHeader.2.2.1,
-        hafterHeader.2.2.2.1, hafterHeader.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.1, hafterHeader.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
-        using hlayoutStep.2.1
-    · simpa [afterLayout, scalarStep, layout, hlayoutWord,
-        hafterHeader.1, hafterHeader.2.1, hafterHeader.2.2.1,
-        hafterHeader.2.2.2.1, hafterHeader.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.1, hafterHeader.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
-        using hlayoutStep.2.2.1
-    · simpa [afterLayout, scalarStep, layout, hlayoutWord,
-        hafterHeader.1, hafterHeader.2.1, hafterHeader.2.2.1,
-        hafterHeader.2.2.2.1, hafterHeader.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.1, hafterHeader.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
-        using hlayoutStep.2.2.2.1
-    · simpa [afterLayout, scalarStep, layout, hlayoutWord,
-        hafterHeader.1, hafterHeader.2.1, hafterHeader.2.2.1,
-        hafterHeader.2.2.2.1, hafterHeader.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.1, hafterHeader.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
-        using hlayoutStep.2.2.2.2.1
-    · simpa [memoryMapTagHeaderSize, afterLayout, scalarStep, layout,
-        hlayoutWord, hafterHeader.1, hafterHeader.2.1,
-        hafterHeader.2.2.1, hafterHeader.2.2.2.1,
-        hafterHeader.2.2.2.2.1, hafterHeader.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.1, hafterHeader.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.1,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
-        using hlayoutStep.2.2.2.2.2.1
-    · simpa [hcontentWord] using hlayoutStep.2.2.2.2.2.2.1
-    · simpa [hcontentWord] using hlayoutStep.2.2.2.2.2.2.2.1
-    · exact hlayoutStep.2.2.2.2.2.2.2.2.1
-    · exact hlayoutStep.2.2.2.2.2.2.2.2.2.1
-    · exact hcountBudget
-    · simpa [hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.1] using
-        hlayoutStep.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-    · simpa [hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1] using
-        hlayoutStep.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-    · exact hlayoutStep.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-    · rw [hlayoutStep.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2]
+    · exact (hafterLayoutWord ⟨0, by decide⟩).trans hlVersion
+    · exact (hafterLayoutWord ⟨1, by decide⟩).trans hlStatus
+    · exact (hafterLayoutWord ⟨2, by decide⟩).trans hlError
+    · exact (hafterLayoutWord ⟨3, by decide⟩).trans hlIdentity
+    · exact (hafterLayoutWord ⟨4, by decide⟩).trans hlExtent
+    · simpa [memoryMapTagHeaderSize] using
+        (hafterLayoutWord ⟨5, by decide⟩).trans hlOffset
+    · have hphaseRaw :
+          afterLayout.word[7]! =
+            if afterHeader.word[8]! = 0
+            then BootMemoryMapStreamAuthority.phaseTag
+            else BootMemoryMapStreamAuthority.phaseEntryBase := by
+        exact (hafterLayoutWord ⟨7, by decide⟩).trans hlPhase
+      rw [hphaseRaw, hphaseBridge]
+    · rw [(hafterLayoutWord ⟨8, by decide⟩).trans hlContent, haContent,
+        hcontentWord]
+    · exact (hafterLayoutWord ⟨9, by decide⟩).trans hlPadded
+    · exact (hafterLayoutWord ⟨10, by decide⟩).trans hlSaw
+    · rw [(hafterLayoutWord ⟨11, by decide⟩).trans hlEntries]
+      exact hcountBudget
+    · rw [(hafterLayoutWord ⟨14, by decide⟩).trans hlUsable, haUsable]
+      exact husable
+    · rw [(hafterLayoutWord ⟨15, by decide⟩).trans hlBlocked, haBlocked]
+      exact hblocked
+    · exact (hafterLayoutWord ⟨16, by decide⟩).trans hlTarget
+    · rw [hafterLayoutTagCount]
       rw [UInt64.le_iff_toNat_le, UInt64.toNat_add]
       simp only [UInt64.toNat_ofNat]
+      have hcountNat : state.word[18]!.toNat < 64 := by
+        rw [UInt64.lt_iff_toNat_lt] at htagCount
+        simpa using htagCount
+      have hsumLt : state.word[18]!.toNat + 1 < UInt64.size :=
+        Nat.lt_trans (by omega : state.word[18]!.toNat + 1 < 65) (by decide)
+      rw [Nat.mod_eq_of_lt hsumLt]
       omega
   have hentryOffsetAligned :
       (offset + memoryMapTagHeaderSize) % 8 = 0 := by
@@ -4497,35 +4945,49 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
                     memoryMapEntrySize) * memoryMapEntrySize) / 8))
               terminal := by
     intro after hafter htagEq
-    rcases hafter with ⟨haVersion, haStatus, haError, haIdentity, haExtent,
-      haOffset, haPhase, haContent, haPadded, haSaw, haEntryBudget,
-      haUsable, haBlocked, haTarget, haTargetBound, haTagBound⟩
     have hendOffset :
         offset + memoryMapTagHeaderSize +
             ((high32Nat tagWord - memoryMapTagHeaderSize) /
               memoryMapEntrySize) * memoryMapEntrySize =
           offset + aligned8 (high32Nat tagWord) := by
-      rw [← hentryBytesNat]
-      simp only [memoryMapTagHeaderSize, aligned8] at hsize hnextBound ⊢
+      have hhighDecomp :
+          high32Nat tagWord =
+            memoryMapTagHeaderSize +
+              ((high32Nat tagWord - memoryMapTagHeaderSize) /
+                memoryMapEntrySize) * memoryMapEntrySize := by
+        omega
+      rw [hhighDecomp]
+      unfold memoryMapTagHeaderSize memoryMapEntrySize aligned8
+      have hmultiple :
+          16 + (high32Nat tagWord - 16) / 24 * 24 =
+            (2 + 3 * ((high32Nat tagWord - 16) / 24)) * 8 := by
+        omega
+      rw [hmultiple]
       omega
     have hafterTagBudget :
         after.word[18]!.toNat + fuel ≤ maxTags := by
-      rw [htagEq,
-        hlayoutStep.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2,
-        hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2]
+      rw [htagEq, hafterLayoutTagCount]
       rw [UInt64.toNat_add]
       simp only [UInt64.toNat_ofNat]
+      have hcountNat : state.word[18]!.toNat < 64 := by
+        rw [UInt64.lt_iff_toNat_lt] at htagCount
+        simpa using htagCount
+      have hsumLt : state.word[18]!.toNat + 1 < UInt64.size :=
+        Nat.lt_trans (by omega : state.word[18]!.toNat + 1 < 65) (by decide)
+      rw [Nat.mod_eq_of_lt hsumLt]
       have hbudget := htagBudget
       simp only [maxTags] at hbudget ⊢
       omega
     have htagState :
         CanonicalTagState identity total
           (offset + aligned8 (high32Nat tagWord)) target fuel true after := by
-      rw [← hendOffset]
-      exact ⟨haVersion, haStatus, haError, haIdentity, haExtent, haOffset,
-        by simpa using haPhase, haContent, haPadded, haSaw,
-        by omega, by intro h; contradiction, haUsable, haBlocked, haTarget,
-        haTargetBound, hafterTagBudget⟩
+      exact canonicalTagState_of_completedMemoryMapEntries
+        identity total
+        (offset + memoryMapTagHeaderSize +
+          ((high32Nat tagWord - memoryMapTagHeaderSize) /
+            memoryMapEntrySize) * memoryMapEntrySize)
+        (offset + aligned8 (high32Nat tagWord)) target fuel after
+        hendOffset hafter hafterTagBudget
     simpa [hendOffset] using
       successfulScalarRichTraversal_afterMemoryMap identity bytes total
         (offset + aligned8 (high32Nat tagWord)) fuel target true
@@ -4534,48 +4996,62 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
         tags after htotal htotalLow htotalHigh htotalAligned
         (by simp [Nat.add_mod, hoffsetAligned, aligned8])
         hidentityAligned hrest htagState rfl
-  choose terminal htail using hcontinuation
-  have hentriesTraversal :=
-    successfulScalarRichTraversal_canonicalMemoryMapEntries identity bytes total
+  obtain ⟨terminal, hentriesTraversal⟩ :=
+    successfulScalarRichTraversal_canonicalMemoryMapEntries_exists
+      identity bytes total
       (offset + memoryMapTagHeaderSize) target
       ((high32Nat tagWord - memoryMapTagHeaderSize) / memoryMapEntrySize)
       entries afterLayout
-      (terminal afterLayout hafterLayout rfl)
       htotal htotalLow htotalHigh htotalAligned hentryOffsetAligned hroom
       hidentityAligned hentries hafterLayout
-      (fun after hafter htagEq => htail after hafter htagEq)
+      hcontinuation
+  have hentryDrop :
+      (offset + memoryMapTagHeaderSize) / 8 = offset / 8 + 2 := by
+    have hdiv := Nat.mod_add_div offset 8
+    rw [hoffsetAligned, Nat.zero_add] at hdiv
+    unfold memoryMapTagHeaderSize
+    omega
+  have hentriesTraversal' :
+      SuccessfulScalarRichTraversal target entries
+        (scalarStep afterHeader layout)
+        ((canonicalChunks identity bytes).drop (offset / 8 + 2))
+        terminal := by
+    simpa [afterLayout, hentryDrop] using hentriesTraversal
   have hlayoutTraversal :=
     successfulScalarRichTraversal_canonicalMemoryMapLayout identity bytes total
       offset fuel tagWord layoutWord target tagsRev tags entries afterHeader
-      (terminal afterLayout hafterLayout rfl) htotal htotalAligned
+      terminal htotal htotalAligned
       hoffsetAligned hsize hrest hlayout hidentityAligned hextentLow
       hextentHigh hextentAligned hlayoutOffsetLt hlayoutNotFinal
-      hafterHeader.1 hafterHeader.2.1 hafterHeader.2.2.1
-      hafterHeader.2.2.2.1 hafterHeader.2.2.2.2.1
-      hafterHeader.2.2.2.2.2.1 hafterHeader.2.2.2.2.2.2.1
-      (by rw [hafterHeader.2.2.2.2.2.2.2.2.1, hcontentWord];
-          simp [memoryMapEntrySize])
-      hafterHeader.2.2.2.2.2.2.2.2.2.1
-      hafterHeader.2.2.2.2.2.2.2.2.2.2.1
-      (by rw [hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.1]; exact husable)
-      (by rw [hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]; exact hblocked)
-      hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 htarget
+      haVersion haStatus haError haIdentity haExtent haOffset haPhase
       (by
-        rw [hafterHeader.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2]
-        exact Nat.le_of_lt htagCount |>.add_le_add_right 1)
+        rw [haContent, hcontentWord]
+        apply UInt64.toNat.inj
+        rw [UInt64.toNat_mod,
+          UInt64.toNat_ofNat_of_lt' hentryBytesLt]
+        simp [memoryMapEntrySize] at halignedEntries ⊢)
+      haPadded haSaw
+      (by rw [haUsable]; exact husable)
+      (by rw [haBlocked]; exact hblocked)
+      haTarget htarget
+      (by
+        rw [haTagCount]
+        exact htagCountSucc)
       hlayoutLow hlayoutHigh
       (by
-        rw [hafterHeader.2.2.2.2.2.2.2.2.1, hcontentWord,
+        rw [haContent, hcontentWord,
           UInt64.le_iff_toNat_le]
-        simpa [UInt64.toNat_div, memoryMapEntrySize,
+        rw [UInt64.toNat_div,
+          UInt64.toNat_ofNat_of_lt' hentryBytesLt]
+        simpa [memoryMapEntrySize,
           BootMemoryMapStreamAuthority.entryLimit, maxEntries]
           using hentryBound)
-      hentriesTraversal
+      hentriesTraversal'
   have hoffsetWords : offset / 8 * 8 = offset := by
     have := Nat.mod_add_div offset 8
     rw [hoffsetAligned, Nat.zero_add] at this
     omega
-  obtain ⟨_, hheaderGet, _⟩ :=
+  obtain ⟨_, _, hheaderGet, _⟩ :=
     canonicalTagStep_source_refines identity bytes total offset (fuel + 1)
       false tagsRev tags state htotal
       (by simpa [← htotal] using htotalAligned) hoffsetAligned
@@ -4585,19 +5061,26 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
   have hdrop :=
     drop_eq_cons_drop_succ_of_get?_eq_some
       (canonicalChunks identity bytes) (offset / 8) header
-      (by simpa [header, hoffsetWords] using hheaderGet)
-  refine ⟨terminal afterLayout hafterLayout rfl, ?_⟩
+      (by
+        have hterminalFalse : (offset + 8 == total) = false := by
+          apply beq_false_of_ne
+          intro heq
+          apply hoffsetNotFinal
+          simpa [UInt64.ofNat_add] using
+            congrArg UInt64.ofNat heq
+        simpa [header, hoffsetWords, hterminalFalse] using hheaderGet)
+  refine ⟨terminal, ?_⟩
   rw [hdrop]
   apply successfulScalarRichTraversal_memoryMapTagHeader
     identity (UInt64.ofNat total) (UInt64.ofNat offset)
       (UInt64.ofNat tagWord) target entries state
-      (terminal afterLayout hafterLayout rfl) header
+      terminal header
       ((canonicalChunks identity bytes).drop (offset / 8 + 1))
     rfl rfl rfl hheaderWord hversion hstatus herror hidentity
     hidentityAligned hextent hextentLow hextentHigh hextentAligned
     hoffset hoffsetLt hoffsetNotFinal hphase (by simpa using hsawMap)
     husable hblocked htargetWord htarget htagCount
-    (by simpa [hlow, htype])
+    (by simp [hlow, htype])
     (by
       rw [hhigh, UInt64.le_iff_toNat_le]
       simpa [UInt64.toNat_ofNat_of_lt' hhighBound,
@@ -4606,24 +5089,27 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
     (by simpa [hhigh] using hsizeNoOverflow)
     (by simpa [hhigh] using hroundedFits)
     (by
-      rw [hhigh]
+      rw [hhigh, hcontentWord]
       apply UInt64.toNat.inj
-      simp [halignedEntries, memoryMapTagHeaderSize, memoryMapEntrySize])
+      rw [UInt64.toNat_mod,
+        UInt64.toNat_ofNat_of_lt' hentryBytesLt]
+      simp [memoryMapTagHeaderSize, memoryMapEntrySize] at halignedEntries ⊢)
     (by
-      rw [hhigh, UInt64.le_iff_toNat_le]
-      simpa [UInt64.toNat_div, UInt64.toNat_sub,
-        UInt64.toNat_ofNat_of_lt' hhighBound,
+      rw [hhigh, hcontentWord, UInt64.le_iff_toNat_le]
+      rw [UInt64.toNat_div,
+        UInt64.toNat_ofNat_of_lt' hentryBytesLt]
+      simpa [
         memoryMapTagHeaderSize, memoryMapEntrySize,
         BootMemoryMapStreamAuthority.entryLimit, maxEntries]
         using hentryBound)
     (by simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
       hlayoutTraversal)
 
+set_option maxHeartbeats 800000 in
 /-- Whole retained tag induction before the unique map.  Ignored spans are
 composed on the way down, the map case consumes its exact entries and the
 post-map suffix, and the extracted typed entry list is retained in the
 result. -/
-set_option maxHeartbeats 800000 in
 theorem successfulScalarRichTraversal_beforeMemoryMap
     (identity : UInt64) (bytes : List UInt8)
     (total offset fuel target : Nat) (sawMemoryMap : Bool)
@@ -4661,14 +5147,12 @@ theorem successfulScalarRichTraversal_beforeMemoryMap
           htotalAligned hoffsetAligned hidentityAligned hread hsize hcontent
           hadvance htypeEnd htypeMap hrest hstate
       obtain ⟨entries, terminal, htail, hextract⟩ :=
-        ih htotal htotalLow htotalHigh htotalAligned hnextAligned
-          hidentityAligned after (beforeSizes ++ [high32Nat tagWord])
+        ih after (beforeSizes ++ [high32Nat tagWord]) hnextAligned
           (by simp [hprefix]) hafter rfl
       exact ⟨entries, terminal, hwrap entries terminal htail, hextract⟩
   | memoryMapTag offset fuel tagWord layoutWord tagsRev tags entries hread
       hsize hcontent hadvance htype hlayout hentrySize hentryVersion
       halignedEntries hentryBound hentries hrest =>
-      subst sawMemoryMap
       obtain ⟨terminal, hwhole⟩ :=
         successfulScalarRichTraversal_memoryMapTag_complete identity bytes
           total offset fuel tagWord layoutWord target tagsRev tags entries
@@ -4707,20 +5191,79 @@ theorem successfulScalarRichTraversal_beforeMemoryMap
             rw [hlength]
             exact hentryBound)
 
-/-- Universal whole-buffer structural refinement.  Every successful rich
-decode induces a scalar/rich traversal over the immutable buffer's complete
-canonical chunk list, with exactly the entries returned by rich handoff
-validation. -/
 set_option maxHeartbeats 800000 in
-theorem successfulScalarRichTraversal_of_decode
+/-- A successful decode establishes the canonical tag-boundary scalar state
+after its independently certified information-header step.  Keeping this
+initializer normalization out of tag induction prevents the generated
+nineteen-query transition from being normalized again during final
+composition. -/
+theorem canonicalTagState_afterInfo_of_decode
+    (input : Input) (decoded : Decoded) (target : Nat)
+    (hdecode : decode input = .ok decoded)
+    (htarget : target < frameLimit) :
+    CanonicalTagState (UInt64.ofNat input.infoAddress) input.bytes.length
+      8 target maxTags false
+      (scalarStep
+        (scalarInitialAt (UInt64.ofNat input.infoAddress)
+          input.bytes.length target)
+        { identity := UInt64.ofNat input.infoAddress
+          offset := 0
+          bytes := input.bytes.take 8
+          terminal := false }) := by
+  have hrich := successful_decode_constructs_traversal input decoded hdecode
+  have hheader := accepted_input_scalar_header input decoded hdecode
+  have hidentityAligned :
+      UInt64.ofNat input.infoAddress % 8 = 0 := by
+    have haddressLt : input.infoAddress < UInt64.size := by
+      simpa [wordLimit] using hheader.2.1
+    apply UInt64.toNat.inj
+    simp [UInt64.toNat_ofNat_of_lt' haddressLt,
+      hheader.2.2.2.2.1]
+  obtain ⟨first, _rest, _hchunks, _hfirst, hnext⟩ :=
+    canonicalInfoStep_of_richTraversal input decoded target hdecode hrich htarget
+  let initial :=
+    scalarInitialAt (UInt64.ofNat input.infoAddress)
+      input.bytes.length target
+  let afterInfo := scalarStep initial first
+  rcases hnext with ⟨hiVersion, hiStatus, hiError, hiIdentity, hiExtent,
+    hiOffset, hiPhase, hiContent, hiPadded, hiSaw, hiEntries, _hiBase,
+    _hiLength, hiUsable, hiBlocked, hiTarget, _hiHighest, hiTagCount⟩
+  subst first
+  change CanonicalTagState (UInt64.ofNat input.infoAddress)
+    input.bytes.length 8 target maxTags false afterInfo
+  refine ⟨hiVersion, hiStatus, hiError, hiIdentity, hiExtent, hiOffset,
+    hiPhase, hiContent, hiPadded, hiSaw, ?_, ?_, ?_, ?_, hiTarget, htarget,
+    ?_⟩
+  · rw [hiEntries]
+    simp [maxEntries]
+  · intro _
+    exact hiEntries
+  · rw [hiUsable]
+    decide
+  · rw [hiBlocked]
+    decide
+  · rw [hiTagCount]
+    simp [maxTags]
+
+set_option maxHeartbeats 800000 in
+/-- The independently checked post-information-header composition for a
+successful rich decode.  This packages tag induction, typed-map extraction,
+and the exact canonical tail before the inexpensive information-header
+prepend is elaborated. -/
+theorem successfulScalarRichTraversal_decode_tail
     (input : Input) (decoded : Decoded) (target : Nat)
     (hdecode : decode input = .ok decoded)
     (htarget : target < frameLimit) :
     ∃ terminal,
       SuccessfulScalarRichTraversal target decoded.entries
-        (scalarInitialAt (UInt64.ofNat input.infoAddress)
-          input.bytes.length target)
-        (canonicalChunks (UInt64.ofNat input.infoAddress) input.bytes)
+        (scalarStep
+          (scalarInitialAt (UInt64.ofNat input.infoAddress)
+            input.bytes.length target)
+          { identity := UInt64.ofNat input.infoAddress
+            offset := 0
+            bytes := input.bytes.take 8
+            terminal := false })
+        (canonicalChunks (UInt64.ofNat input.infoAddress) input.bytes).tail
         terminal := by
   have hrich := successful_decode_constructs_traversal input decoded hdecode
   obtain ⟨infoWord, tags, hinfo, htotal, hreserved, htags, htagTraversal,
@@ -4743,32 +5286,21 @@ theorem successfulScalarRichTraversal_of_decode
     apply UInt64.toNat.inj
     simp [UInt64.toNat_ofNat_of_lt' haddressLt,
       hheader.2.2.2.2.1]
-  obtain ⟨first, rest, hchunks, hfirst, hnext⟩ :=
-    canonicalInfoStep_of_richTraversal input decoded target hdecode hrich htarget
   let initial :=
     scalarInitialAt (UInt64.ofNat input.infoAddress)
       input.bytes.length target
+  let first : ModelChunk :=
+    { identity := UInt64.ofNat input.infoAddress
+      offset := 0
+      bytes := input.bytes.take 8
+      terminal := false }
   let afterInfo := scalarStep initial first
+  have htagStateInput :=
+    canonicalTagState_afterInfo_of_decode input decoded target hdecode htarget
   have htagState :
       CanonicalTagState (UInt64.ofNat input.infoAddress)
         (low32Nat infoWord) 8 target maxTags false afterInfo := by
-    subst first
-    dsimp only [afterInfo, initial] at hnext ⊢
-    refine ⟨hnext.1, hnext.2.1, hnext.2.2.1, hnext.2.2.2.1,
-      ?_, hnext.2.2.2.2.2.1, hnext.2.2.2.2.2.2.1,
-      hnext.2.2.2.2.2.2.2.1, hnext.2.2.2.2.2.2.2.2.1,
-      hnext.2.2.2.2.2.2.2.2.2.1, ?_, ?_,
-      hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-      hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-      hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-      htarget, ?_⟩
-    · simpa [htotalEq] using hnext.2.2.2.2.1
-    · rw [hnext.2.2.2.2.2.2.2.2.2.2.1]
-      simp [maxEntries]
-    · intro _
-      exact hnext.2.2.2.2.2.2.2.2.2.2.1
-    · rw [hnext.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2]
-      simp [maxTags]
+    simpa [htotalEq, afterInfo, initial, first] using htagStateInput
   obtain ⟨sourceEntries, terminal, htagWhole, hextract⟩ :=
     successfulScalarRichTraversal_beforeMemoryMap
       (UInt64.ofNat input.infoAddress) input.bytes (low32Nat infoWord) 8
@@ -4786,15 +5318,36 @@ theorem successfulScalarRichTraversal_of_decode
     exact Except.ok.inj hvalidExtract
   subst sourceEntries
   refine ⟨terminal, ?_⟩
-  apply successfulScalarRichTraversal_prepend_info input decoded target terminal
-    hdecode hrich htarget
-  dsimp only
   have htail :
       (canonicalChunks (UInt64.ofNat input.infoAddress) input.bytes).tail =
         (canonicalChunks (UInt64.ofNat input.infoAddress) input.bytes).drop 1 := by
     simp
   rw [htail]
   simpa [afterInfo, initial] using htagWhole
+
+set_option maxHeartbeats 800000 in
+/-- Universal whole-buffer structural refinement.  Every successful rich
+decode induces a scalar/rich traversal over the immutable buffer's complete
+canonical chunk list, with exactly the entries returned by rich handoff
+validation. -/
+theorem successfulScalarRichTraversal_of_decode
+    (input : Input) (decoded : Decoded) (target : Nat)
+    (hdecode : decode input = .ok decoded)
+    (htarget : target < frameLimit) :
+    ∃ terminal,
+      SuccessfulScalarRichTraversal target decoded.entries
+        (scalarInitialAt (UInt64.ofNat input.infoAddress)
+          input.bytes.length target)
+        (canonicalChunks (UInt64.ofNat input.infoAddress) input.bytes)
+        terminal := by
+  obtain ⟨terminal, htail⟩ :=
+    successfulScalarRichTraversal_decode_tail
+      input decoded target hdecode htarget
+  refine ⟨terminal, ?_⟩
+  exact successfulScalarRichTraversal_prepend_info
+    input decoded target terminal hdecode
+      (successful_decode_constructs_traversal input decoded hdecode)
+      htarget htail
 
 /-- The retained rich tag traversal selects the exact first tag-header chunk
 immediately after the information header.  Its source word, stream identity,
