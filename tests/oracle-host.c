@@ -44,7 +44,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_ipc_demo);
     REGISTER_BOUNDARY(leanos_preemption_demo);
     REGISTER_BOUNDARY(leanos_resumable_preemption_demo);
-    REGISTER_BOUNDARY(leanos_boot_select_frame);
+    REGISTER_BOUNDARY(leanos_boot_consume_exact_projection);
     REGISTER_BOUNDARY(leanos_user_return_demo);
     REGISTER_BOUNDARY(leanos_authorize_page_fault_snapshot);
     REGISTER_BOUNDARY(leanos_page_fault_demo);

@@ -129,7 +129,7 @@ int check_stream(void) {
     REGISTER_BOUNDARY(leanos_boot_decode_step);
     REGISTER_BOUNDARY(leanos_boot_manifest_candidate);
     REGISTER_BOUNDARY(leanos_boot_manifest_start);
-    REGISTER_BOUNDARY(leanos_boot_select_frame);
+    REGISTER_BOUNDARY(leanos_boot_consume_exact_projection);
     REGISTER_BOUNDARY(leanos_boot_publish_authority);
 #endif
     const uint64_t identity = 0x1000;
