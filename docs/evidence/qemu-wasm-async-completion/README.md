@@ -45,6 +45,42 @@ The more narrowly instrumented
 its decoded transcript has SHA-256
 `b35fcb5eb13d7c32b91acd7bfaf151cb855cf15f8331417fbb537b1c4d4daf80`.
 
+## Source-level blocker
+
+The pinned build has `CONFIG_EVENTFD` undefined. Consequently QEMU
+`event_notifier_init` uses `g_unix_open_pipe`, and `aio_notify` depends on
+pipe readiness to interrupt GLib's wait.
+
+That contract is unavailable in the pinned Emscripten runtime. In the exact
+build image (digest
+`sha256:c9ce53b140c7e9c2e5bbbfacb5c27680fc5b49d94c896b56cbefd29898eb8b32`),
+Emscripten 3.1.50's `library_syscall.js` implements `__syscall_poll` as one
+readiness scan and never reads its `timeout` argument. Its
+`__syscall__newselect` explicitly says that timeouts on `PIPEFS` are ignored
+and treated as zero. There is therefore no blocking browser primitive behind
+QEMU's pipe EventNotifier that another pthread can interrupt.
+
+Three Emscripten-only experiments were rejected:
+
+1. Capping QEMU's host-loop timeout at 1 ms compiled successfully but produced
+   the exact original `browser-result.json` SHA-256
+   `6d6e7c3bc08d8834c9f3024348003bb936018b72e8ad10c4c39e3e336d0d405b`.
+2. Replacing the Emscripten wait with `emscripten_sleep(1)` plus a nonblocking
+   readiness scan produced the same exact result hash.
+3. Having the worker additionally enqueue a no-op on Emscripten's system proxy
+   queue for `emscripten_main_runtime_thread_id()` also failed to re-enter
+   `aio_ctx_prepare`, `aio_ctx_check`, or `aio_ctx_dispatch`.
+
+The retained
+[`proxy-wakeup-result.json`](proxy-wakeup-result.json) has SHA-256
+`dd4ee2049f5613e8d85d2a500f7a0b9a59b7f350912901c57788e60d2946f942`.
+It preloaded the unchanged 14,749,696-byte ISO and records the third
+experiment's 180-second bound. These results rule out a timeout cap, an
+Asyncify timer yield, and a generic Emscripten proxy notification as
+upstreamable fixes. Closing the wakeup requires either an Emscripten-aware
+QEMU main-loop integration that owns completion dispatch, or a pinned unforked
+runtime where QEMU's EventNotifier has supported cross-thread wake semantics.
+
 ## Reproduction
 
 Apply [`thread-pool-trace.patch`](thread-pool-trace.patch) to the pinned
