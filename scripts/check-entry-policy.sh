@@ -11,13 +11,15 @@ boot_source="${LEANOS_ENTRY_BOOT_SOURCE:-boot/boot.S}"
 
 symbols="$(nm "$elf")"
 control_disassembly="$(objdump -d --no-show-raw-insn "$elf")"
+page_fault_probe="${LEANOS_PAGE_FAULT_PROBE:-}"
+page_fault_fatal_probe="${LEANOS_PAGE_FAULT_FATAL_PROBE:-}"
 for symbol in isr0 isr2 isr3 isr6 isr7 isr13 isr14 isr32 isr80 \
   authorize_interrupt_entry integer_fault_restore_peer \
   divide_error_handler breakpoint_handler \
   complete_interrupt_entry extended_state_denial_handler syscall_handler \
   authorize_page_fault_snapshot page_fault_handler page_fault_diagnostic_handler \
   leanos_authorize_page_fault_snapshot leanos_page_fault_dispatch_transition \
-  page_fault_provenance_efer_read invalidate_fixed_fault_page \
+  page_fault_provenance_efer_read invalidate_snapshot_fault_page \
   timer_handler entry_stack boot_stack boot_stack_top \
   normalize_fast_entry_msrs read_fast_entry_msrs check_fast_entry_cpuid; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
@@ -64,10 +66,15 @@ for symbol in read_fast_entry_efer read_fast_entry_star read_fast_entry_lstar \
   read_fast_entry_sysenter_esp read_fast_entry_sysenter_eip; do
   require_fast_entry_site "$symbol" rdmsr
 done
-[[ "$(grep -Ec '^[[:space:]]+wrmsr$' "$boot_source")" -eq 8 ]] || {
+[[ "$(grep -Ec '^[[:space:]]+wrmsr$' "$boot_source")" -eq 9 ]] &&
+  grep -Fq '.global fault_reserved_efer_write' "$boot_source" &&
+  grep -A1 -F 'fault_reserved_efer_write:' "$boot_source" |
+    grep -Eq '^[[:space:]]+wrmsr$' || {
   echo "error: fast-entry control write inventory drifted" >&2; exit 1;
 }
-[[ "$(grep -Ec '^[[:space:]]+rdmsr$' "$boot_source")" -eq 9 ]] || {
+[[ "$(grep -Ec '^[[:space:]]+rdmsr$' "$boot_source")" -eq 10 ]] &&
+  grep -A8 -F 'disable_nxe_for_reserved_fault:' "$boot_source" |
+    grep -Eq '^[[:space:]]+rdmsr$' || {
   echo "error: fast-entry control read inventory drifted" >&2; exit 1;
 }
 grep -Fq '"page_fault_provenance_efer_read:\n"' "$kernel_source" &&
@@ -119,7 +126,22 @@ done
 [[ "$(grep -Ec '[[:space:]]cpuid([[:space:]]|$)' <<<"$control_disassembly")" -ge 6 ]] || {
   echo "error: fast-entry CPUID snapshot missing from final ELF" >&2; exit 1;
 }
-[[ "$(grep -Ec '[[:space:]]wrmsr$' <<<"$control_disassembly")" -eq 8 ]] || {
+expected_wrmsr_count=8
+if [[ "$page_fault_fatal_probe" == reserved-bit ]]; then
+  expected_wrmsr_count=9
+  grep -Eq '[[:space:]]fault_reserved_efer_write$' <<<"$symbols" || {
+    echo "error: page-fault reserved-bit EFER write symbol missing" >&2
+    exit 1
+  }
+  fault_reserved_efer_site="$(
+    sed -n '/<fault_reserved_efer_write>:/{n;p;q;}' <<<"$control_disassembly"
+  )"
+  [[ "$fault_reserved_efer_site" =~ ^[[:space:]]*[[:xdigit:]]+:[[:space:]]+wrmsr([[:space:]]|$) ]] || {
+    echo "error: page-fault reserved-bit EFER final-ELF site drifted" >&2
+    exit 1
+  }
+fi
+[[ "$(grep -Ec '[[:space:]]wrmsr$' <<<"$control_disassembly")" -eq "$expected_wrmsr_count" ]] || {
   echo "error: fast-entry final-ELF write inventory drifted" >&2; exit 1;
 }
 page_fault_efer_site="$(
@@ -138,7 +160,11 @@ page_fault_disassembly="$(
   echo "error: page-fault-provenance EFER final-ELF inventory drifted" >&2; exit 1;
 }
 final_rdmsr_count="$(grep -Ec '[[:space:]]rdmsr$' <<<"$control_disassembly")"
-[[ "$((final_rdmsr_count - 1))" -eq 9 ]] || {
+expected_non_provenance_rdmsr_count=9
+if [[ "$page_fault_fatal_probe" == reserved-bit ]]; then
+  expected_non_provenance_rdmsr_count=10
+fi
+[[ "$((final_rdmsr_count - 1))" -eq "$expected_non_provenance_rdmsr_count" ]] || {
   echo "error: fast-entry final-ELF read inventory drifted" >&2; exit 1;
 }
 fast_probe="${LEANOS_FAST_ENTRY_PROBE:-}"
@@ -163,6 +189,276 @@ elif [[ "$fast_probe" == syscall || "$fast_probe" == sysenter ]]; then
   }
 else
   echo "error: unknown LEANOS_FAST_ENTRY_PROBE '$fast_probe'" >&2; exit 1
+fi
+
+if [[ -n "$page_fault_probe" && "$page_fault_probe" != supervisor-read &&
+      "$page_fault_probe" != readonly-write &&
+      "$page_fault_probe" != nx-execute ]]; then
+  echo "error: unknown LEANOS_PAGE_FAULT_PROBE '$page_fault_probe'" >&2
+  exit 1
+fi
+if [[ -n "$page_fault_fatal_probe" &&
+      "$page_fault_fatal_probe" != reserved-bit &&
+      "$page_fault_fatal_probe" != walk-mismatch ]]; then
+  echo "error: unknown LEANOS_PAGE_FAULT_FATAL_PROBE '$page_fault_fatal_probe'" >&2
+  exit 1
+fi
+if [[ -n "$page_fault_probe" && -n "$page_fault_fatal_probe" ]]; then
+  echo "error: containment and fatal page-fault probes are mutually exclusive" >&2
+  exit 1
+fi
+if [[ -n "$page_fault_fatal_probe" ]]; then
+  fatal_class=4
+  fatal_entry_symbol=user_a_fault_instruction
+  if [[ "$page_fault_fatal_probe" == reserved-bit ]]; then
+    fatal_class=3
+    fatal_entry_symbol=user_a_reserved_fault_instruction
+  fi
+  for symbol in user_a_entry "$fatal_entry_symbol" page_fault_probe_class; do
+    grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+      echo "error: vector=14 field=integrity-fatal-site final-elf missing=$symbol" >&2
+      exit 1
+    }
+  done
+  fatal_class_address="$(nm -n "$elf" |
+    awk '$3 == "page_fault_probe_class" { print "0x" $1 }')"
+  fatal_class_dump="$(objdump -s --start-address="$fatal_class_address" \
+    --stop-address="$((fatal_class_address + 8))" "$elf")"
+  printf -v fatal_class_little_endian '%02x000000 00000000' "$fatal_class"
+  grep -Fq "$fatal_class_little_endian" <<<"$fatal_class_dump" || {
+    echo "error: vector=14 field=integrity-fatal-class final-elf" >&2
+    exit 1
+  }
+  fatal_entry_address="$(nm -n "$elf" |
+    awk '$3 == "user_a_entry" { print "0x" $1 }')"
+  fatal_target_address="$(nm -n "$elf" |
+    awk -v wanted="$fatal_entry_symbol" '$3 == wanted { print "0x" $1 }')"
+  fatal_entry_site="$(objdump -d --no-show-raw-insn \
+    --start-address="$fatal_entry_address" \
+    --stop-address="$fatal_target_address" "$elf")"
+  fatal_first_instruction="$(awk '/^[[:space:]]*[[:xdigit:]]+:/ {
+    line = $0
+    sub(/^[[:space:]]*[[:xdigit:]]+:[[:space:]]*/, "", line)
+    print line
+    exit
+  }' <<<"$fatal_entry_site")"
+  [[ "$fatal_first_instruction" =~ ^jmp[[:space:]]+.*\<$fatal_entry_symbol\>$ ]] || {
+    echo "error: vector=14 field=integrity-fatal-site final-elf" >&2
+    exit 1
+  }
+  grep -Fq 'leanos_page_fault_dispatch_transition(' "$kernel_source" &&
+    grep -Fq 'case PAGE_FAULT_TRANSITION_FATAL:' "$kernel_source" &&
+    grep -Fq 'report_page_fault_terminal(' "$kernel_source" &&
+    grep -Fq 'finish(0x12);' "$kernel_source" &&
+    grep -Fq 'halt=absorbing containment=0 cleanup=0 dispatch=0 return=none' \
+      "$kernel_source" || {
+    echo "error: vector=14 field=integrity-fatal-generated-policy source" >&2
+    exit 1
+  }
+  if [[ "$page_fault_fatal_probe" == reserved-bit ]]; then
+    grep -Fq 'mov user_a_nx_fault_instruction(%rip), %rax' "$boot_source" &&
+      grep -Fq 'page_table_a[i] &= ~PTE_NX;' "$kernel_source" &&
+      grep -Fq 'and $~(1 << 11), %eax' "$boot_source" &&
+      grep -Fq 'page_table_a[page] |= PTE_NX;' "$kernel_source" || {
+      echo "error: vector=14 field=integrity-reserved-bit source" >&2
+      exit 1
+    }
+  else
+    grep -Fq 'policy_expected_leaf = page_fault_probe_class == 4' \
+      "$kernel_source" &&
+      grep -Fq '? expected_leaf ^ PTE_WRITABLE : expected_leaf;' \
+        "$kernel_source" || {
+      echo "error: vector=14 field=integrity-walk-mismatch source" >&2
+      exit 1
+    }
+  fi
+fi
+if [[ -n "$page_fault_probe" ]]; then
+  fault_symbol=user_a_fault_instruction
+  recovered_symbol=user_a_fault_recovered
+  expected_error=5
+  expected_access=read
+  expected_cr2=0
+  entry_target_symbol="$fault_symbol"
+  if [[ "$page_fault_probe" == nx-execute ]]; then
+    fault_symbol=user_a_nx_fault_instruction
+    recovered_symbol=user_a_nx_fault_recovered
+    entry_target_symbol=user_a_nx_prepare
+    expected_error=21
+    expected_access=execute
+    expected_cr2=user_a_nx_fault_instruction
+  elif [[ "$page_fault_probe" == readonly-write ]]; then
+    fault_symbol=user_a_write_fault_instruction
+    recovered_symbol=user_a_write_fault_recovered
+    entry_target_symbol="$fault_symbol"
+    expected_error=7
+    expected_access=write
+    expected_cr2=user_a_write_target
+  fi
+  for symbol in user_a_entry "$fault_symbol" "$recovered_symbol" \
+      "$entry_target_symbol"; do
+    grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+      echo "error: vector=14 field=deliberate-cpl3-site final-elf missing=$symbol" >&2
+      exit 1
+    }
+  done
+
+  if [[ "$page_fault_probe" == supervisor-read ]]; then
+    fault_source="$(
+      sed -n '/^\.global user_a_fault_instruction$/,/^user_a_fault_recovered:$/p' \
+        "$boot_source"
+    )"
+    [[ "$fault_source" == $'.global user_a_fault_instruction\nuser_a_fault_instruction:\n    mov 0, %rax\n.global user_a_fault_recovered\nuser_a_fault_recovered:' ]] || {
+      echo "error: vector=14 field=deliberate-cpl3-site source" >&2
+      exit 1
+    }
+    grep -Fq '    jmp user_a_fault_instruction' "$boot_source" || {
+      echo "error: vector=14 field=deliberate-cpl3-entry source" >&2
+      exit 1
+    }
+  elif [[ "$page_fault_probe" == readonly-write ]]; then
+    write_source="$(
+      sed -n '/^\.global user_a_write_fault_instruction$/,/^    \.byte 0xa5$/p' \
+        "$boot_source"
+    )"
+    grep -Fq '    movb $0x5a, user_a_write_target(%rip)' \
+        <<<"$write_source" &&
+      grep -Fq 'user_a_write_fault_recovered:' <<<"$write_source" &&
+      grep -Fq 'user_a_write_target:' <<<"$write_source" &&
+      grep -Fq '    .byte 0xa5' <<<"$write_source" || {
+      echo "error: vector=14 field=deliberate-cpl3-site source" >&2
+      exit 1
+    }
+    grep -Fq '    jmp user_a_write_fault_instruction' "$boot_source" || {
+      echo "error: vector=14 field=deliberate-cpl3-entry source" >&2
+      exit 1
+    }
+  else
+    nx_source="$(
+      sed -n '/^\.global user_a_nx_prepare$/,/^user_a_nx_fault_recovered:$/p' \
+        "$boot_source"
+    )"
+    for instruction in \
+      '    movb $0xb8, user_a_nx_fault_instruction(%rip)' \
+      '    movl $0x000000ff, user_a_nx_fault_instruction+1(%rip)' \
+      '    movw $0x80cd, user_a_nx_fault_instruction+5(%rip)' \
+      '    movw $0x0b0f, user_a_nx_fault_instruction+7(%rip)' \
+      '    jmp user_a_nx_fault_instruction'; do
+      grep -Fq "$instruction" <<<"$nx_source" || {
+        echo "error: vector=14 field=deliberate-cpl3-site source" >&2
+        exit 1
+      }
+    done
+    grep -Fq '    jmp user_a_nx_prepare' "$boot_source" || {
+      echo "error: vector=14 field=deliberate-cpl3-entry source" >&2
+      exit 1
+    }
+  fi
+  grep -Fq 'const uint64_t expected_error = page_fault_probe_class == 2 ? 21u :' \
+      "$kernel_source" &&
+    grep -Fq 'page_fault_probe_class == 1 ? 7u : 5u;' "$kernel_source" &&
+    grep -Fq '? (uint64_t)user_a_nx_fault_instruction' "$kernel_source" &&
+    grep -Fq '? (uint64_t)user_a_write_fault_instruction' "$kernel_source" &&
+    grep -Fq '? (uint64_t)user_a_write_target : 0u;' "$kernel_source" &&
+    grep -Fq 'if (error == expected_error && rip == expected_rip &&' \
+      "$kernel_source" &&
+    grep -Fq 'fault_address == expected_address)' "$kernel_source" &&
+    grep -Fq 'smap_copy_from(&write_canary, user_a_write_target, 1);' \
+      "$kernel_source" &&
+    grep -Fq 'if (write_canary != 0xa5u)' \
+      "$kernel_source" &&
+    grep -Fq 'smap_copy_from(payload, user_a_nx_fault_instruction,' \
+      "$kernel_source" &&
+    grep -Fq 'fail("fault-nx-payload");' "$kernel_source" &&
+    grep -Fq 'result != UINT64_C(0x00000000ff020202)' "$kernel_source" &&
+    grep -Fq 'cleanup != 0x1fu || peer_context_witness != 1 ||' \
+      "$kernel_source" &&
+    grep -Fq 'selected != saved_context_owner_b || address_space != 2)' \
+      "$kernel_source" || {
+    echo "error: vector=14 field=deliberate-cpl3-handler-binding source" >&2
+    exit 1
+  }
+
+  fault_address="$(nm -n "$elf" | awk -v wanted="$fault_symbol" \
+    '$3 == wanted { print "0x" $1 }')"
+  recovered_address="$(nm -n "$elf" | awk -v wanted="$recovered_symbol" \
+    '$3 == wanted { print "0x" $1 }')"
+  if [[ "$page_fault_probe" == supervisor-read ]]; then
+    fault_site="$(
+      objdump -d --insn-width=16 --start-address="$fault_address" \
+        --stop-address="$recovered_address" "$elf"
+    )"
+    [[ "$((recovered_address - fault_address))" -eq 8 ]] &&
+      grep -Eq '48 8b 04 25 00 00 00 00[[:space:]]+mov[[:space:]]+0x0,%rax$' \
+        <<<"$fault_site" || {
+      echo "error: vector=14 field=deliberate-cpl3-site final-elf" >&2
+      exit 1
+    }
+  elif [[ "$page_fault_probe" == readonly-write ]]; then
+    fault_site="$(
+      objdump -d --insn-width=16 --start-address="$fault_address" \
+        --stop-address="$recovered_address" "$elf"
+    )"
+    grep -Eq 'movb?[[:space:]]+\$0x5a,.*<user_a_write_target>' \
+        <<<"$fault_site" || {
+      echo "error: vector=14 field=deliberate-cpl3-site final-elf" >&2
+      exit 1
+    }
+  else
+    user_stack_start="$(
+      nm -n "$elf" | awk '$3 == "__user_a_stack_start" { print "0x" $1 }'
+    )"
+    user_stack_end="$(
+      nm -n "$elf" | awk '$3 == "__user_a_stack_end" { print "0x" $1 }'
+    )"
+    [[ "$fault_address" -ge "$user_stack_start" &&
+       "$fault_address" -lt "$user_stack_end" ]] || {
+      echo "error: vector=14 field=deliberate-cpl3-site final-elf" >&2
+      exit 1
+    }
+    prepare_address="$(
+      nm -n "$elf" | awk '$3 == "user_a_nx_prepare" { print "0x" $1 }'
+    )"
+    branch_address="$(
+      nm -n "$elf" | awk '$3 == "user_a_nx_branch" { print "0x" $1 }'
+    )"
+    nx_prepare_site="$(
+      objdump -d --no-show-raw-insn --start-address="$prepare_address" \
+        --stop-address="$recovered_address" "$elf"
+    )"
+    [[ "$(grep -Ec 'mov[bwl]?[[:space:]]+\$0x(b8|ff|80cd|b0f),' \
+      <<<"$nx_prepare_site")" -eq 4 ]] &&
+      grep -Eq "jmp[[:space:]]+.*<user_a_nx_fault_instruction>" \
+        <<<"$nx_prepare_site" &&
+      [[ "$branch_address" -gt "$prepare_address" ]] || {
+      echo "error: vector=14 field=deliberate-cpl3-site final-elf" >&2
+      exit 1
+    }
+  fi
+  entry_target_address="$(
+    nm -n "$elf" | awk -v wanted="$entry_target_symbol" \
+      '$3 == wanted { print "0x" $1 }'
+  )"
+  entry_site="$(
+    objdump -d --no-show-raw-insn \
+      --start-address="$(nm -n "$elf" |
+        awk '$3 == "user_a_entry" { print "0x" $1 }')" \
+      --stop-address="$entry_target_address" "$elf"
+  )"
+  first_entry_instruction="$(
+    awk '/^[[:space:]]*[[:xdigit:]]+:/ {
+      sub(/^[[:space:]]*[[:xdigit:]]+:[[:space:]]*/, "")
+      print
+      exit
+    }' <<<"$entry_site"
+  )"
+  [[ "$first_entry_instruction" =~ ^jmp[[:space:]]+.*\<$entry_target_symbol\>$ ]] || {
+    echo "error: vector=14 field=deliberate-cpl3-entry source" >&2
+    exit 1
+  }
+  printf 'ENTRY-POLICY vector=14 probe=%s error=%s access=%s protection=1 cr2=%s rip=%s recovered=%s dispatch=0x00000000ff020202 cleanup=31 survivor=2 site=final-elf route=immutable-generated result=PASS\n' \
+    "$page_fault_probe" "$expected_error" "$expected_access" "$expected_cr2" \
+    "$fault_address" "$recovered_address"
 fi
 
 [[ "$(grep -Ec 'set_gate\(' "$kernel_source")" -eq 11 ]] || {
@@ -264,9 +560,12 @@ page_fault_adapter_source="$(
 )"
 source_generated="$(grep -n -m1 'leanos_authorize_page_fault_snapshot(' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
-source_invalidation="$(grep -n -m1 'invalidate_fixed_fault_page();' \
+source_invalidation="$(grep -n -m1 'invalidate_snapshot_fault_page(&snapshot);' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
 source_agreement="$(grep -n -m1 'leanos_page_fault_dispatch_transition(' \
+  <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
+source_snapshot_report="$(grep -n -m1 \
+  'report_page_fault_snapshot(' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
 source_operation="$(grep -n -m1 'page_fault_handler(&transition)' \
   <<<"$page_fault_adapter_source" | cut -d: -f1 || true)"
@@ -291,6 +590,34 @@ grep -Fq 'const struct page_fault_transition transition = {' \
     <<<"$page_fault_adapter_source" || {
   echo "error: vector=14 field=typed-generated-route source" >&2; exit 1;
 }
+page_fault_snapshot_report_source="$(
+  awk '
+    /^static void report_page_fault_snapshot\(/ { ++seen }
+    seen == 2 { print; if ($0 == "}") exit }
+  ' "$kernel_source"
+)"
+snapshot_report_calls="$(
+  grep -Fc 'report_page_fault_snapshot(' \
+    <<<"$page_fault_adapter_source" || true
+)"
+if ! grep -Fq 'const uint64_t words[19] = {' \
+      <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'for (unsigned i = 0; i < 19; ++i) {' \
+      <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'serial_u64(words[i]);' <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'serial_u64(expected_leaf);' \
+      <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'serial_u64(live_leaf);' \
+      <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'serial_u64(authorization);' \
+      <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq 'serial_u64(route);' <<<"$page_fault_snapshot_report_source" ||
+    ! grep -Fq '&snapshot, canonical, route, expected_leaf, live_leaf);' \
+      <<<"$page_fault_adapter_source" ||
+    [[ "$snapshot_report_calls" -ne 1 ]]; then
+  echo "error: vector=14 field=canonical-snapshot-binding source" >&2
+  exit 1
+fi
 generated_arguments="$(
   sed -n '/leanos_authorize_page_fault_snapshot(/,/trusted_stack_identity)/p' \
     <<<"$page_fault_adapter_source" | tr -d '[:space:]' |
@@ -306,27 +633,63 @@ agreement_arguments="$(
     sed 's/^.*leanos_page/leanos_page/'
 )"
 invalidation_helper_source="$(
-  sed -n '/^static void invalidate_fixed_fault_page(void) {/,/^}/p' \
+  sed -n '/^static uint64_t invalidate_snapshot_fault_page(/,/^}/p' \
     "$kernel_source"
 )"
-expected_agreement_arguments='leanos_page_fault_dispatch_transition(snapshot.version,snapshot.vector,snapshot.error,snapshot.fault_address,snapshot.fault_page,snapshot.access,snapshot.protection,snapshot.user,snapshot.current_subject,snapshot.active_address_space,snapshot.active_cr3,snapshot.paging_controls,snapshot.rip,snapshot.saved_cs,snapshot.rflags,snapshot.user_rsp,snapshot.user_ss,snapshot.stack_identity,snapshot.reserved,trusted_subject,active_address_space,cr3,paging_controls,trusted_stack_identity,canonical,supervisor_probe,(uint64_t)wp_probe_instruction,(uint64_t)wp_probe_target,(uint64_t)wp_probe_recovered,(uint64_t)user_a_entry,(uint64_t)user_a_entry,(uint64_t)smep_probe_recovered,(uint64_t)smap_probe_instruction,(uint64_t)user_a_stack,(uint64_t)smap_probe_recovered,active_address_space,(uint64_t)root,active_address_space,(uint64_t)root,report_agrees,expected_leaf,live_leaf,current_subject==snapshot.current_subject,1,current_subject,active_address_space,active_address_space,active_address_space,0,0,checked_exact_fault_page_invalidation,current_subject,active_address_space,saved_context_owner_b,saved_context_owner_b);'
+expected_agreement_arguments='leanos_page_fault_dispatch_transition(snapshot.version,snapshot.vector,snapshot.error,snapshot.fault_address,snapshot.fault_page,snapshot.access,snapshot.protection,snapshot.user,snapshot.current_subject,snapshot.active_address_space,snapshot.active_cr3,snapshot.paging_controls,snapshot.rip,snapshot.saved_cs,snapshot.rflags,snapshot.user_rsp,snapshot.user_ss,snapshot.stack_identity,snapshot.reserved,trusted_subject,active_address_space,cr3,paging_controls,trusted_stack_identity,canonical,supervisor_probe,(uint64_t)wp_probe_instruction,(uint64_t)wp_probe_target,(uint64_t)wp_probe_recovered,(uint64_t)user_a_entry,(uint64_t)user_a_entry,(uint64_t)smep_probe_recovered,(uint64_t)smap_probe_instruction,(uint64_t)user_a_stack,(uint64_t)smap_probe_recovered,active_address_space,(uint64_t)root,active_address_space,(uint64_t)root,report_agrees,policy_expected_leaf,live_leaf,current_subject==snapshot.current_subject,1,current_subject,active_address_space,active_address_space,active_address_space,0,0,checked_exact_fault_page_invalidation,current_subject,active_address_space,saved_context_owner_b,saved_context_owner_b);'
 [[ "$agreement_arguments" == "$expected_agreement_arguments" ]] || {
   echo "error: vector=14 field=diagnostic-and-strengthened-agreement-inputs source" >&2; exit 1;
 }
-grep -Fq 'user && snapshot.fault_address == 0 && snapshot.fault_page == 0 &&' \
+grep -Fq 'page_fault_probe_class == 0' \
     <<<"$page_fault_adapter_source" &&
-  grep -Fq 'snapshot.error == 5 && snapshot.access == 0 &&' \
+  grep -Fq '? user && snapshot.fault_address == 0 &&' \
     <<<"$page_fault_adapter_source" &&
-  grep -Fq 'snapshot.protection == 1;' <<<"$page_fault_adapter_source" &&
-  grep -Fq 'invalidate_fixed_fault_page();' <<<"$page_fault_adapter_source" &&
-  grep -Fq 'static void invalidate_fixed_fault_page(void)' \
+  grep -Fq 'snapshot.access == 0 && snapshot.protection == 1 &&' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq ': page_fault_probe_class == 1' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'snapshot.fault_address == (uint64_t)user_a_write_target &&' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'snapshot.error == 7 && snapshot.access == 1 &&' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq ': page_fault_probe_class == 2' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq '(uint64_t)user_a_nx_fault_instruction &&' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'snapshot.error == 21 && snapshot.access == 2 &&' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq ': page_fault_probe_class == 3' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'snapshot.error == 12 && snapshot.access == 0 &&' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'snapshot.protection == 0 &&' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'snapshot.rip == (uint64_t)user_a_reserved_fault_instruction' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'const uint64_t exact_fault_page_invalidation =' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'invalidate_snapshot_fault_page(&snapshot);' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'const uint64_t checked_exact_fault_page_invalidation =' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'reviewed_fault && exact_fault_page_invalidation;' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'if (!checked_exact_fault_page_invalidation)' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'fail("page-fault-terminal-witness");' \
+    <<<"$page_fault_adapter_source" &&
+  grep -Fq 'static uint64_t invalidate_snapshot_fault_page(' \
     <<<"$invalidation_helper_source" &&
-  grep -Fq 'const uint64_t fixed_page_address = 0;' \
+  grep -Fq 'const struct page_fault_entry_record *snapshot)' \
     <<<"$invalidation_helper_source" &&
-  grep -Fq '"invlpg (%0)" : : "r"(fixed_page_address) : "memory");' \
+  grep -Fq 'const uint64_t fault_address = snapshot->fault_address;' \
+    <<<"$invalidation_helper_source" &&
+  grep -Fq '"invlpg (%0)" : : "r"(fault_address) : "memory");' \
+    <<<"$invalidation_helper_source" &&
+  grep -Fq 'return fault_address / PAGE_BYTES == snapshot->fault_page;' \
     <<<"$invalidation_helper_source" &&
   ! grep -Fq 'page_fault_tlb_flush_cr3' "$kernel_source" || {
-  echo "error: vector=14 field=exact-fault-page-invalidation source" >&2; exit 1;
+  echo "error: vector=14 field=terminal-reviewed-binding source" >&2; exit 1;
 }
 snapshot_mutations="$(
   grep -E 'snapshot\.(version|vector|error|fault_address|fault_page|access|protection|user|current_subject|active_address_space|active_cr3|paging_controls|rip|saved_cs|rflags|user_rsp|user_ss|stack_identity|reserved)[[:space:]]*(\\+\\+|--|[+*/%^|&-]?=)' \
@@ -336,10 +699,13 @@ if [[ -n "$snapshot_mutations" ]]; then
   echo "error: vector=14 field=immutable-snapshot source" >&2; exit 1
 fi
 [[ -n "$source_generated" && -n "$source_invalidation" && -n "$source_agreement" &&
+   -n "$source_snapshot_report" &&
    -n "$source_operation" && -n "$source_diagnostic_operation" &&
    "$source_generated" -lt "$source_agreement" &&
    "$source_generated" -lt "$source_invalidation" &&
    "$source_invalidation" -lt "$source_agreement" &&
+   "$source_agreement" -lt "$source_snapshot_report" &&
+   "$source_snapshot_report" -lt "$source_operation" &&
    "$source_agreement" -lt "$source_operation" &&
    "$source_agreement" -lt "$source_diagnostic_operation" ]] || {
   echo "error: vector=14 path=generated-agreement-before-handler source" >&2
@@ -464,7 +830,7 @@ page_fault_adapter_disassembly="$(
 )"
 elf_generated="$(grep -n -m1 'call.*<leanos_authorize_page_fault_snapshot>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
-elf_invalidation="$(grep -n -m1 'call.*<invalidate_fixed_fault_page>' \
+elf_invalidation="$(grep -n -m1 'call.*<invalidate_snapshot_fault_page>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
 elf_agreement="$(grep -n -m1 'call.*<leanos_page_fault_dispatch_transition>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
@@ -472,7 +838,7 @@ elf_operation="$(grep -n -m1 'call.*<page_fault_handler>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
 elf_diagnostic_operation="$(grep -n -m1 'call.*<page_fault_diagnostic_handler>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
-invalidation_start="$(address invalidate_fixed_fault_page)"
+invalidation_start="$(address invalidate_snapshot_fault_page)"
 invalidation_stop="$(nm -n "$elf" | awk -v start="${invalidation_start#0x}" '
   $1 == start { found = 1; next }
   found && NF >= 3 { print "0x" $1; exit }
@@ -494,15 +860,7 @@ mapfile -t elf_invalidation_instructions < <(
     print
   }' <<<"$elf_invalidation_disassembly"
 )
-elf_invalidation_zero_bound=0
-for ((i = 1; i < ${#elf_invalidation_instructions[@]}; i++)); do
-  if [[ "${elf_invalidation_instructions[$i]}" == 'invlpg (%rax)' &&
-        "${elf_invalidation_instructions[$((i - 1))]}" == 'xor    %eax,%eax' ]]; then
-    elf_invalidation_zero_bound=1
-  fi
-done
-[[ "$elf_invalidation_site" =~ [[:space:]]invlpg[[:space:]]+\(%rax\)$ &&
-   "$elf_invalidation_zero_bound" -eq 1 ]] || {
+[[ "$elf_invalidation_site" =~ [[:space:]]invlpg[[:space:]]+\(%r[a-z]+\)$ ]] || {
   echo "error: vector=14 field=exact-fault-page-invalidation final-elf" >&2
   exit 1
 }

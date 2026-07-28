@@ -34,6 +34,86 @@ cp build/boot/leanos-preemption.map \
   "$release/leanos-${version}-x86_64-preemption.map"
 cp build/boot/preemption.serial.log \
   "$release/leanos-${version}-preemption-serial.log"
+cp "build/boot/leanos-${version}-x86_64-fault-containment.iso" \
+  "$release/leanos-${version}-x86_64-fault-containment.iso"
+cp build/boot/leanos-fault-containment.elf \
+  "$release/leanos-${version}-x86_64-fault-containment.elf"
+cp build/boot/leanos-fault-containment.map \
+  "$release/leanos-${version}-x86_64-fault-containment.map"
+cp build/boot/fault-containment.serial.log \
+  "$release/leanos-${version}-fault-containment-serial.log"
+cp build/boot/fault-containment.disassembly.txt \
+  "$release/leanos-${version}-fault-containment-disassembly.txt"
+cp build/boot/fault-containment-policy-report.txt \
+  "$release/leanos-${version}-fault-containment-policy-report.txt"
+cp build/boot/fault-containment-snapshot.txt \
+  "$release/leanos-${version}-fault-containment-snapshot.txt"
+cp build/boot/boot-page-plan-fault-containment.final.h \
+  "$release/leanos-${version}-fault-containment-page-plan.h"
+cp "build/boot/leanos-${version}-x86_64-fault-readonly-write.iso" \
+  "$release/leanos-${version}-x86_64-fault-readonly-write.iso"
+cp build/boot/leanos-fault-readonly-write.elf \
+  "$release/leanos-${version}-x86_64-fault-readonly-write.elf"
+cp build/boot/leanos-fault-readonly-write.map \
+  "$release/leanos-${version}-x86_64-fault-readonly-write.map"
+cp build/boot/fault-readonly-write.serial.log \
+  "$release/leanos-${version}-fault-readonly-write-serial.log"
+cp build/boot/fault-readonly-write.disassembly.txt \
+  "$release/leanos-${version}-fault-readonly-write-disassembly.txt"
+cp build/boot/fault-readonly-write-policy-report.txt \
+  "$release/leanos-${version}-fault-readonly-write-policy-report.txt"
+cp build/boot/fault-readonly-write-snapshot.txt \
+  "$release/leanos-${version}-fault-readonly-write-snapshot.txt"
+cp build/boot/boot-page-plan-fault-readonly-write.final.h \
+  "$release/leanos-${version}-fault-readonly-write-page-plan.h"
+cp "build/boot/leanos-${version}-x86_64-fault-nx-execute.iso" \
+  "$release/leanos-${version}-x86_64-fault-nx-execute.iso"
+cp build/boot/leanos-fault-nx-execute.elf \
+  "$release/leanos-${version}-x86_64-fault-nx-execute.elf"
+cp build/boot/leanos-fault-nx-execute.map \
+  "$release/leanos-${version}-x86_64-fault-nx-execute.map"
+cp build/boot/fault-nx-execute.serial.log \
+  "$release/leanos-${version}-fault-nx-execute-serial.log"
+cp build/boot/fault-nx-execute.disassembly.txt \
+  "$release/leanos-${version}-fault-nx-execute-disassembly.txt"
+cp build/boot/fault-nx-execute-policy-report.txt \
+  "$release/leanos-${version}-fault-nx-execute-policy-report.txt"
+cp build/boot/fault-nx-execute-snapshot.txt \
+  "$release/leanos-${version}-fault-nx-execute-snapshot.txt"
+cp build/boot/boot-page-plan-fault-nx-execute.final.h \
+  "$release/leanos-${version}-fault-nx-execute-page-plan.h"
+cp "build/boot/leanos-${version}-x86_64-fault-reserved-bit.iso" \
+  "$release/leanos-${version}-x86_64-fault-reserved-bit.iso"
+cp build/boot/leanos-fault-reserved-bit.elf \
+  "$release/leanos-${version}-x86_64-fault-reserved-bit.elf"
+cp build/boot/leanos-fault-reserved-bit.map \
+  "$release/leanos-${version}-x86_64-fault-reserved-bit.map"
+cp build/boot/fault-reserved-bit.serial.log \
+  "$release/leanos-${version}-fault-reserved-bit-serial.log"
+cp build/boot/fault-reserved-bit.disassembly.txt \
+  "$release/leanos-${version}-fault-reserved-bit-disassembly.txt"
+cp build/boot/fault-reserved-bit-policy-report.txt \
+  "$release/leanos-${version}-fault-reserved-bit-policy-report.txt"
+cp build/boot/fault-reserved-bit-terminal.txt \
+  "$release/leanos-${version}-fault-reserved-bit-terminal.txt"
+cp build/boot/boot-page-plan-fault-reserved-bit.final.h \
+  "$release/leanos-${version}-fault-reserved-bit-page-plan.h"
+cp "build/boot/leanos-${version}-x86_64-fault-walk-mismatch.iso" \
+  "$release/leanos-${version}-x86_64-fault-walk-mismatch.iso"
+cp build/boot/leanos-fault-walk-mismatch.elf \
+  "$release/leanos-${version}-x86_64-fault-walk-mismatch.elf"
+cp build/boot/leanos-fault-walk-mismatch.map \
+  "$release/leanos-${version}-x86_64-fault-walk-mismatch.map"
+cp build/boot/fault-walk-mismatch.serial.log \
+  "$release/leanos-${version}-fault-walk-mismatch-serial.log"
+cp build/boot/fault-walk-mismatch.disassembly.txt \
+  "$release/leanos-${version}-fault-walk-mismatch-disassembly.txt"
+cp build/boot/fault-walk-mismatch-policy-report.txt \
+  "$release/leanos-${version}-fault-walk-mismatch-policy-report.txt"
+cp build/boot/fault-walk-mismatch-terminal.txt \
+  "$release/leanos-${version}-fault-walk-mismatch-terminal.txt"
+cp build/boot/boot-page-plan-fault-walk-mismatch.final.h \
+  "$release/leanos-${version}-fault-walk-mismatch-page-plan.h"
 cp build/boot/entry-adversarial.serial.log \
   "$release/leanos-${version}-entry-adversarial-serial.log"
 cp build/boot/double-fault.serial.log \
@@ -54,6 +134,46 @@ LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
   "leanos-${version}-x86_64-preemption.elf" \
   "leanos-${version}-x86_64-preemption.map" \
   "leanos-${version}-preemption-serial.log" \
+  "leanos-${version}-x86_64-fault-containment.iso" \
+  "leanos-${version}-x86_64-fault-containment.elf" \
+  "leanos-${version}-x86_64-fault-containment.map" \
+  "leanos-${version}-fault-containment-serial.log" \
+  "leanos-${version}-fault-containment-disassembly.txt" \
+  "leanos-${version}-fault-containment-policy-report.txt" \
+  "leanos-${version}-fault-containment-snapshot.txt" \
+  "leanos-${version}-fault-containment-page-plan.h" \
+  "leanos-${version}-x86_64-fault-readonly-write.iso" \
+  "leanos-${version}-x86_64-fault-readonly-write.elf" \
+  "leanos-${version}-x86_64-fault-readonly-write.map" \
+  "leanos-${version}-fault-readonly-write-serial.log" \
+  "leanos-${version}-fault-readonly-write-disassembly.txt" \
+  "leanos-${version}-fault-readonly-write-policy-report.txt" \
+  "leanos-${version}-fault-readonly-write-snapshot.txt" \
+  "leanos-${version}-fault-readonly-write-page-plan.h" \
+  "leanos-${version}-x86_64-fault-nx-execute.iso" \
+  "leanos-${version}-x86_64-fault-nx-execute.elf" \
+  "leanos-${version}-x86_64-fault-nx-execute.map" \
+  "leanos-${version}-fault-nx-execute-serial.log" \
+  "leanos-${version}-fault-nx-execute-disassembly.txt" \
+  "leanos-${version}-fault-nx-execute-policy-report.txt" \
+  "leanos-${version}-fault-nx-execute-snapshot.txt" \
+  "leanos-${version}-fault-nx-execute-page-plan.h" \
+  "leanos-${version}-x86_64-fault-reserved-bit.iso" \
+  "leanos-${version}-x86_64-fault-reserved-bit.elf" \
+  "leanos-${version}-x86_64-fault-reserved-bit.map" \
+  "leanos-${version}-fault-reserved-bit-serial.log" \
+  "leanos-${version}-fault-reserved-bit-disassembly.txt" \
+  "leanos-${version}-fault-reserved-bit-policy-report.txt" \
+  "leanos-${version}-fault-reserved-bit-terminal.txt" \
+  "leanos-${version}-fault-reserved-bit-page-plan.h" \
+  "leanos-${version}-x86_64-fault-walk-mismatch.iso" \
+  "leanos-${version}-x86_64-fault-walk-mismatch.elf" \
+  "leanos-${version}-x86_64-fault-walk-mismatch.map" \
+  "leanos-${version}-fault-walk-mismatch-serial.log" \
+  "leanos-${version}-fault-walk-mismatch-disassembly.txt" \
+  "leanos-${version}-fault-walk-mismatch-policy-report.txt" \
+  "leanos-${version}-fault-walk-mismatch-terminal.txt" \
+  "leanos-${version}-fault-walk-mismatch-page-plan.h" \
   "leanos-${version}-entry-adversarial-serial.log" \
   "leanos-${version}-double-fault-serial.log" \
   "leanos-${version}-double-fault-guard-mapped-serial.log" \
