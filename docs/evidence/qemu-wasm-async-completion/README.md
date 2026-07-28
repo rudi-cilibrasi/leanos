@@ -11,7 +11,7 @@ The unchanged canonical ISO has SHA-256
 The instrumented runtime was built from qemu-wasm revision
 `0ef7b4e2814b231705d8371dd7997f5b72e70baf` with Emscripten 3.1.50. Its
 WebAssembly file has SHA-256
-`ca59e9c60925a0e929fd11bdbf141d36b65c534e2997864ebe4265e4a22ee640`.
+`30db2e429f641a6f90b4f901bf9c716474806469017c47de4dc95b20c2625a05`.
 Chrome was 150.0.7871.128.
 
 The browser was cross-origin isolated, preloaded all 14,749,696 ISO bytes, and
@@ -23,18 +23,27 @@ reached SeaBIOS READ(10) for LBA 17. The trace then proves this sequence:
 4. The worker scheduled `thread_pool_completion_bh`.
 5. `aio_bh_enqueue` made the bottom half pending and called `aio_notify` while
    `notify_me=1`.
-6. No `bh-consume`, `thread_pool_complete`, coroutine wake, or ATAPI DMA
-   completion occurred before the 180-second bound.
+6. A marker armed at that enqueue point observed no later
+   `aio_ctx_prepare`, `aio_ctx_check`, or `aio_ctx_dispatch` call for the same
+   context during the 180-second bound.
+7. No `bh-consume`, `thread_pool_complete`, coroutine wake, or ATAPI DMA
+   completion occurred.
 
 This distinguishes the failure from worker non-execution. The completed worker
-notification is lost or not consumed by the qemu-wasm AioContext event loop.
-SeaBIOS consequently reports CD-ROM error `0003`.
+notification does not cause the GLib event loop to re-enter the marked
+AioContext; the loss occurs before its check/dispatch consumption path. SeaBIOS
+consequently reports CD-ROM error `0003`.
 
 The retained
 [`browser-result.json`](browser-result.json) has SHA-256
 `6d6e7c3bc08d8834c9f3024348003bb936018b72e8ad10c4c39e3e336d0d405b`.
 Its decoded transcript has SHA-256
 `cc4959ad701f565c04dd35e9b51e06bd99defdc96293ca1758ffa44d7884a504`.
+The more narrowly instrumented
+[`aio-context-result.json`](aio-context-result.json) has SHA-256
+`c4e745f49485803da2e343fa100fe66eba35e268f5def815688101d27f444867`;
+its decoded transcript has SHA-256
+`b35fcb5eb13d7c32b91acd7bfaf151cb855cf15f8331417fbb537b1c4d4daf80`.
 
 ## Reproduction
 
@@ -44,7 +53,7 @@ existing trace arguments and add no guest or device changes:
 
 ```sh
 git -C qemu-wasm checkout 0ef7b4e2814b231705d8371dd7997f5b72e70baf
-git -C qemu-wasm apply \
+git -C qemu-wasm apply --unidiff-zero --whitespace=nowarn \
   /path/to/leanos/docs/evidence/qemu-wasm-async-completion/thread-pool-trace.patch
 
 emconfigure /src/configure --static --target-list=x86_64-softmmu \
@@ -56,7 +65,7 @@ emmake make -j1 qemu-system-x86_64
 
 LEANOS_QEMU_WASM_TIMEOUT_MS=180000 \
   node build/qemu-wasm-source-browser/probe.mjs \
-  build/qemu-wasm-source-browser/thread-pool-result.json
+  build/qemu-wasm-source-browser/aio-context-result.json
 ```
 
 Use the same Emscripten flags, preload construction, QEMU arguments, firmware,

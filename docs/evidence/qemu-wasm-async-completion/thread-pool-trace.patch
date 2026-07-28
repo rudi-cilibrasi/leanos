@@ -1,27 +1,36 @@
 diff --git a/util/async.c b/util/async.c
-index 8f90ddc304..529a992388 100644
+index 8f90ddc304..83a1f02f5b 100644
 --- a/util/async.c
 +++ b/util/async.c
-@@ -75,0 +76,2 @@ static void aio_bh_enqueue(QEMUBH *bh, unsigned new_flags)
-+    bool trace_thread_pool_bh = strstr(bh->name, "thread_pool") ||
-+                                strstr(bh->name, "spawn_thread");
-@@ -95,0 +98,7 @@ static void aio_bh_enqueue(QEMUBH *bh, unsigned new_flags)
-+    if (trace_thread_pool_bh) {
+@@ -70,0 +71,5 @@ struct QEMUBH {
++static QEMUBH *leanos_thread_pool_completion_bh;
++static unsigned leanos_prepare_traces;
++static unsigned leanos_check_traces;
++static unsigned leanos_dispatch_traces;
++
+@@ -75,0 +81,2 @@ static void aio_bh_enqueue(QEMUBH *bh, unsigned new_flags)
++    bool trace_thread_pool_enqueue = strstr(bh->name, "thread_pool") ||
++                                     strstr(bh->name, "spawn_thread");
+@@ -95,0 +103,10 @@ static void aio_bh_enqueue(QEMUBH *bh, unsigned new_flags)
++    if (trace_thread_pool_enqueue) {
++        if (strstr(bh->name, "thread_pool_completion")) {
++            qatomic_set(&leanos_thread_pool_completion_bh, bh);
++        }
 +        fprintf(stderr,
 +                "LEANOS_AIO bh-enqueue name=%s bh=%p ctx=%p old_flags=0x%x "
 +                "new_flags=0x%x notified=%d notify_me=%u\n",
 +                bh->name, bh, ctx, old_flags, new_flags,
 +                qatomic_read(&ctx->notified), qatomic_read(&ctx->notify_me));
 +    }
-@@ -96,0 +106,7 @@ static void aio_bh_enqueue(QEMUBH *bh, unsigned new_flags)
-+    if (trace_thread_pool_bh) {
+@@ -96,0 +114,7 @@ static void aio_bh_enqueue(QEMUBH *bh, unsigned new_flags)
++    if (trace_thread_pool_enqueue) {
 +        fprintf(stderr,
 +                "LEANOS_AIO bh-notified name=%s bh=%p ctx=%p notified=%d "
 +                "notify_me=%u\n",
 +                bh->name, bh, ctx, qatomic_read(&ctx->notified),
 +                qatomic_read(&ctx->notify_me));
 +    }
-@@ -211,0 +228,7 @@ int aio_bh_poll(AioContext *ctx)
+@@ -211,0 +236,7 @@ int aio_bh_poll(AioContext *ctx)
 +            if (strstr(bh->name, "thread_pool") ||
 +                strstr(bh->name, "spawn_thread")) {
 +                fprintf(stderr,
@@ -29,6 +38,40 @@ index 8f90ddc304..529a992388 100644
 +                        "flags=0x%x\n",
 +                        bh->name, bh, ctx, flags);
 +            }
+@@ -302,0 +334 @@ aio_ctx_prepare(GSource *source, gint    *timeout)
++    QEMUBH *trace_bh;
+@@ -319,0 +352,10 @@ aio_ctx_prepare(GSource *source, gint    *timeout)
++    trace_bh = qatomic_read(&leanos_thread_pool_completion_bh);
++    if (trace_bh && trace_bh->ctx == ctx && leanos_prepare_traces++ < 8) {
++        fprintf(stderr,
++                "LEANOS_AIO ctx-prepare ctx=%p bh=%p flags=0x%x "
++                "notified=%d notify_me=%u timeout_ms=%d\n",
++                ctx, trace_bh, qatomic_read(&trace_bh->flags),
++                qatomic_read(&ctx->notified), qatomic_read(&ctx->notify_me),
++                *timeout);
++    }
++
+@@ -327,0 +370 @@ aio_ctx_check(GSource *source)
++    QEMUBH *trace_bh = qatomic_read(&leanos_thread_pool_completion_bh);
+@@ -329,0 +373,8 @@ aio_ctx_check(GSource *source)
++    if (trace_bh && trace_bh->ctx == ctx && leanos_check_traces++ < 8) {
++        fprintf(stderr,
++                "LEANOS_AIO ctx-check ctx=%p bh=%p flags=0x%x notified=%d "
++                "notify_me=%u\n",
++                ctx, trace_bh, qatomic_read(&trace_bh->flags),
++                qatomic_read(&ctx->notified), qatomic_read(&ctx->notify_me));
++    }
++
+@@ -355,0 +407 @@ aio_ctx_dispatch(GSource     *source,
++    QEMUBH *trace_bh = qatomic_read(&leanos_thread_pool_completion_bh);
+@@ -357,0 +410,7 @@ aio_ctx_dispatch(GSource     *source,
++    if (trace_bh && trace_bh->ctx == ctx && leanos_dispatch_traces++ < 8) {
++        fprintf(stderr,
++                "LEANOS_AIO ctx-dispatch ctx=%p bh=%p flags=0x%x "
++                "notified=%d notify_me=%u\n",
++                ctx, trace_bh, qatomic_read(&trace_bh->flags),
++                qatomic_read(&ctx->notified), qatomic_read(&ctx->notify_me));
++    }
 diff --git a/util/thread-pool.c b/util/thread-pool.c
 index 27eb777e85..45f14f36ab 100644
 --- a/util/thread-pool.c
