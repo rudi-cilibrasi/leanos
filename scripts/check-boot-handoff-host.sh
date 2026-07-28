@@ -95,7 +95,8 @@ if [[ "$mode" == sanitized ]]; then
       paste "$ordinary" "$build/results.txt" |
         awk -F '\t' '$1 != $2 { print NR; exit }'
     )"
-    echo "error: boot-handoff replay first diverged at result $first" >&2
+    field="$(sed -n "${first}p" "$ordinary" | awk '{print $2}')"
+    echo "error: boot-handoff replay first diverged at field $field (row $first)" >&2
     sed -n "${first}p" "$ordinary" | sed 's/^/ordinary: /' >&2
     sed -n "${first}p" "$build/results.txt" |
       sed 's/^/sanitized: /' >&2

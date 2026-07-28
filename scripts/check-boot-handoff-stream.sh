@@ -101,7 +101,7 @@ if [[ "$mode" == sanitized ]]; then
   done
   "$leanos_host_cc" -std=c11 -Wall -Wextra -Werror \
     "${leanos_host_sanitizer_flags[@]}" -finstrument-functions \
-    -DLEANOS_HOSTED_SANITIZER=1 \
+    -DLEANOS_HOSTED_REPLAY=1 -DLEANOS_HOSTED_SANITIZER=1 \
     -c "$harness" -o "$build/host.o"
   "$leanos_host_cc" -std=c11 -Wall -Wextra -Werror \
     -c "$build/boundary-coverage.c" -o "$build/boundary-coverage.o"
@@ -122,8 +122,15 @@ if [[ "$mode" == sanitized ]]; then
     exit 1
   }
   if ! cmp -s "$ordinary" "$build/results.txt"; then
-    echo "error: freestanding-stream replay diverged from ordinary result" >&2
-    diff -u "$ordinary" "$build/results.txt" >&2 || true
+    first="$(
+      paste "$ordinary" "$build/results.txt" |
+        awk -F '\t' '$1 != $2 { print NR; exit }'
+    )"
+    operation="$(sed -n "${first}p" "$ordinary" | awk '{print $2}')"
+    echo "error: freestanding-stream replay first diverged at operation/field $operation (row $first)" >&2
+    sed -n "${first}p" "$ordinary" | sed 's/^/ordinary: /' >&2
+    sed -n "${first}p" "$build/results.txt" |
+      sed 's/^/sanitized: /' >&2
     exit 1
   fi
   echo "Hosted generated-C freestanding stream sanitized replay passed"
@@ -138,8 +145,13 @@ lake env leanc "${cflags[@]}" -I"$prefix/include" \
 lake env leanc "${cflags[@]}" -I"$prefix/include" \
   -c .lake/build/ir/LeanOS/BootMemoryMapStreamAuthority.c -o "$build/authority.o"
 cc "${cflags[@]}" -c tests/boot-handoff-stream-freestanding.c -o "$build/test.o"
+cc -m64 -std=c11 -O2 -Wall -Wextra -Werror \
+  -DLEANOS_HOSTED_REPLAY=1 \
+  -c tests/boot-handoff-stream-freestanding.c -o "$build/host.o"
 cc -m64 -nostdlib -static -no-pie -Wl,--gc-sections -Wl,-e,_start \
   "$build/test.o" "$build/stream.o" "$build/authority.o" -o "$build/stream.elf"
+cc -m64 -no-pie -Wl,--gc-sections \
+  "$build/host.o" "$build/stream.o" "$build/authority.o" -o "$build/host"
 
 undefined="$(nm -u "$build/stream.elf")"
 if [[ -n "$undefined" ]]; then
@@ -200,5 +212,5 @@ if grep -Eq "$forbidden" \
 fi
 
 "$build/stream.elf"
-printf 'stream-result 0\n' | tee "$build/results.txt"
+"$build/host" | tee "$build/results.txt"
 echo "Freestanding generated-C handoff stream replay passed"
