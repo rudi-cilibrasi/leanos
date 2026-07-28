@@ -2,6 +2,7 @@ import LeanOS.BootMemoryMapDecoder
 import LeanOS.BootMemoryMapStreamAuthority
 import LeanOS.BootMemoryMapStreaming
 import LeanOS.BootReservation
+import Std.Tactic.BVDecide
 
 /-!
 # Exact stream-to-allocation composition
@@ -26,6 +27,62 @@ open LeanOS
 open LeanOS.BootMemoryMap
 open LeanOS.BootMemoryMapDecoder
 open LeanOS.BootMemoryMapStreaming
+
+/-- The scalar parser's fixed-width alignment expression is exactly the rich
+decoder's `aligned8` advance throughout the admitted 64 KiB handoff bound.
+The addition is kept inside the quotient on both sides; replacing it with a
+floor-alignment identity is false for non-aligned ignored-tag sizes. -/
+theorem scalarAligned8_eq_richAligned8
+    (size : Nat) (hsize : size ≤ maxTagBytes) :
+    ((UInt64.ofNat size + 7) &&& 0xfffffffffffffff8) =
+      UInt64.ofNat (aligned8 size) := by
+  have hsum : size + 7 < UInt64.size := by
+    have hword : maxTagBytes + 7 < UInt64.size := by decide
+    omega
+  have hmask (value : UInt64) :
+      ((value + 7) &&& 0xfffffffffffffff8) = (value + 7) / 8 * 8 := by
+    bv_decide
+  rw [hmask]
+  apply UInt64.toNat.inj
+  simp [aligned8, UInt64.toNat_div, UInt64.toNat_mul,
+    Nat.mod_eq_of_lt hsum]
+
+/-- A retained rich tag traversal exposes one exact source header and the same
+rounded cursor advance used by the scalar parser.  This packages the local
+cursor/fuel induction step without assuming an aligned tag size: ignored tags
+may have arbitrary admitted sizes, while their scalar and rich successors
+still coincide. -/
+theorem successfulTagDecodeTraversal_header_advance
+    (bytes : List UInt8) (total offset fuel : Nat)
+    (sawMemoryMap : Bool) (tagsRev tags : List Tag)
+    (htotal : total ≤ maxTagBytes)
+    (h :
+      SuccessfulTagDecodeTraversal bytes total offset fuel sawMemoryMap
+        tagsRev tags) :
+    ∃ tagWord,
+      readU64 bytes offset = .ok tagWord ∧
+        offset + aligned8 (high32Nat tagWord) ≤ total ∧
+        ((UInt64.ofNat (high32Nat tagWord) + 7) &&& 0xfffffffffffffff8) =
+          UInt64.ofNat (aligned8 (high32Nat tagWord)) := by
+  cases h with
+  | endTag offset fuel tagWord tagsRev hread htype hsize hend =>
+      refine ⟨tagWord, hread, ?_, ?_⟩
+      · simp [hsize, aligned8]
+        omega
+      · apply scalarAligned8_eq_richAligned8
+        rw [hsize]
+        omega
+  | ignoredTag offset fuel tagWord sawMemoryMap tagsRev tags hread hsize
+      hcontent hadvance htypeEnd htypeMap hrest =>
+      refine ⟨tagWord, hread, hadvance, ?_⟩
+      apply scalarAligned8_eq_richAligned8
+      omega
+  | memoryMapTag offset fuel tagWord layoutWord tagsRev tags entries hread
+      hsize hcontent hadvance htype hlayout hentrySize hentryVersion
+      halignedEntries hentryBound hentries hrest =>
+      refine ⟨tagWord, hread, hadvance, ?_⟩
+      apply scalarAligned8_eq_richAligned8
+      omega
 
 inductive Error where
   | invalidExtent
