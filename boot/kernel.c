@@ -1373,21 +1373,37 @@ static const struct pci_manifest_entry q35_pci_manifest[] = {
 };
 
 struct pci_snapshot_entry {
+    uint16_t vendor, product;
+    uint32_t class_code;
     uint16_t command_before, command_after;
-    uint8_t present;
+    uint8_t present, bridge, multifunction;
 };
 
-/* The one canonical live PCI observation.  Boot fills it from hardware, the
-   generated global transition consumes its exact accepted model counterpart,
+/* The one canonical live PCI observation. Boot fills it from hardware, the
+   generated q35 snapshot validator consumes its compact canonical projection,
    and every later CPL3 return compares hardware with this same state. */
 struct pci_live_snapshot {
     struct pci_snapshot_entry functions[
         sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0])];
-    uint64_t composite_state;
-    uint64_t composite_result;
+    uint64_t generated_result;
 };
 
 static struct pci_live_snapshot q35_live_pci_snapshot;
+
+static uint64_t pci_snapshot_identity_word(
+        const struct pci_snapshot_entry *entry) {
+    return (uint64_t)entry->vendor |
+        (uint64_t)entry->product << 16 |
+        (uint64_t)entry->class_code << 32;
+}
+
+static uint64_t pci_snapshot_control_word(
+        const struct pci_snapshot_entry *entry) {
+    return (uint64_t)(entry->present ? 1u : 0u) |
+        (uint64_t)entry->command_after << 2 |
+        (uint64_t)entry->bridge << 14 |
+        (uint64_t)entry->multifunction << 15;
+}
 
 static __attribute__((noinline, noipa)) uint32_t pci_config_dword(
         uint8_t device, uint8_t function, uint8_t offset) {
@@ -1460,6 +1476,9 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
                projection, not merely any state with bus mastering clear. */
             uint16_t expected_command = 0;
             q35_live_pci_snapshot.functions[index].present = 1;
+            q35_live_pci_snapshot.functions[index].vendor = vendor;
+            q35_live_pci_snapshot.functions[index].product = product;
+            q35_live_pci_snapshot.functions[index].class_code = class_code;
             q35_live_pci_snapshot.functions[index].command_before = command;
             pci_config_command(device, function, expected_command);
             ++writes;
@@ -1476,6 +1495,10 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     unsigned optional_absent = 0;
     for (unsigned i = 0;
          i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
+        q35_live_pci_snapshot.functions[i].bridge =
+            q35_pci_manifest[i].bridge;
+        q35_live_pci_snapshot.functions[i].multifunction =
+            q35_pci_manifest[i].multifunction;
         if (seen & (1u << i)) continue;
         if (q35_pci_manifest[i].required) fail("dma-required-missing");
         ++optional_absent;
@@ -1485,26 +1508,25 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
         readbacks != present)
         fail("dma-q35-nic-none");
 
-    /* The scalar dispatcher reconstructs the complete canonical global state,
-       whose DMA authority is #135's q35Accepted/q35Snapshot pair.  Reaching
-       subject-created is accepted only after the live observation above has
-       matched that exact finite snapshot; retain the generated result in the
-       same object instead of publishing a second C policy state. */
-    q35_live_pci_snapshot.composite_result = leanos_composite_dispatch(
-        LEANOS_COMPOSITE_STATE_INITIAL,
-        LEANOS_COMPOSITE_COMMAND_CREATE_SUBJECT_ONE, 1, 0, 0, 0);
-    const uint64_t expected_composite_result =
-        LEANOS_COMPOSITE_ABI_VERSION |
-        (LEANOS_COMPOSITE_STATE_SUBJECT_CREATED & UINT64_C(0xff00)) |
-        (UINT64_C(1) << 16);
-    if (q35_live_pci_snapshot.composite_result != expected_composite_result)
+    /* Feed the canonical live identity/status/Command/assignment/bridge
+       projection itself through the generated q35Snapshot boundary. */
+    q35_live_pci_snapshot.generated_result =
+        leanos_validate_q35_dma_snapshot(
+            1, UINT64_C(0x000800020002),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[0]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[0]),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[1]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[1]),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[2]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[2]),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[3]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[3]),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[4]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[4]),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[5]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[5]));
+    if (q35_live_pci_snapshot.generated_result != 0)
         fail("dma-global-policy");
-    q35_live_pci_snapshot.composite_state =
-        (q35_live_pci_snapshot.composite_result & UINT64_C(0xff00)) |
-        (q35_live_pci_snapshot.composite_result & UINT64_C(0xff));
-    if (q35_live_pci_snapshot.composite_state !=
-        LEANOS_COMPOSITE_STATE_SUBJECT_CREATED)
-        fail("dma-global-state");
 
     for (unsigned i = 0;
          i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
@@ -1535,10 +1557,8 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     serial_u64(initially_bus_mastering);
     serial_puts(" initial-bus-master-mask=");
     serial_u64(initial_bus_master_mask);
-    serial_puts(" bus-master=disabled readback=exact global-state=");
-    serial_u64(q35_live_pci_snapshot.composite_state);
-    serial_puts(" generated-result=");
-    serial_u64(q35_live_pci_snapshot.composite_result);
+    serial_puts(" bus-master=disabled readback=exact generated-result=");
+    serial_u64(q35_live_pci_snapshot.generated_result);
     serial_puts(" stage=pre-cpl3 result=PASS\n");
 }
 

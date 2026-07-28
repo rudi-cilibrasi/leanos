@@ -22,7 +22,7 @@ SUMMARY_RE = re.compile(
     rf"^LEANOS/15 DMA snapshot=1 topology={TOPOLOGY} bus=0 scanned=256 "
     r"present=5 optional-absent=1 writes=5 readbacks=5 "
     r"initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled "
-    r"readback=exact global-state=257 generated-result=65793 "
+    r"readback=exact generated-result=0 "
     r"stage=pre-cpl3 result=PASS$"
 )
 EXPECTED = {
@@ -108,8 +108,7 @@ def write_snapshot(
         "meta\tsnapshot-version\t1",
         f"meta\ttopology-version\t{TOPOLOGY}",
         "meta\tmanifest-version\t1",
-        "meta\tglobal-composite-state\t257",
-        "meta\tgenerated-policy-result\t65793",
+        "meta\tgenerated-policy-result\t0",
         f"meta\tsource-revision\t{revision}",
         "bdf\tpresent\tvendor\tdevice\tclass\tcommand-before\tcommand-after"
         "\tassigned\tbridge\tmultifunction\tpolicy-result",

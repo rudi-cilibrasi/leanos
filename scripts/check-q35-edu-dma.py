@@ -155,18 +155,15 @@ class QTest:
         destination: int,
         count: int,
         command: int,
-        *,
-        await_completion: bool = True,
-    ) -> None:
+    ) -> int:
         self.writeq(DMA_SOURCE, source)
         self.writeq(DMA_DESTINATION, destination)
         self.writeq(DMA_COUNT, count)
         self.writeq(DMA_COMMAND, command)
-        if not await_completion:
-            return
-        for _ in range(200):
-            if self.readq(DMA_COMMAND) & DMA_START == 0:
-                return
+        for _ in range(500):
+            observed = self.readq(DMA_COMMAND)
+            if observed & DMA_START == 0:
+                return observed
             time.sleep(0.001)
         raise RuntimeError("edu DMA transfer did not complete")
 
@@ -200,7 +197,8 @@ def exercise_case(executable: str, bus_master_enabled: bool) -> bytes:
         if qtest.config_dword(0x04) & 0xFFFF != enabled:
             raise RuntimeError("edu enabled Command word did not read back exactly")
         qtest.write_bytes(SOURCE, PAYLOAD)
-        qtest.transfer(SOURCE, DEVICE_BUFFER, len(PAYLOAD), DMA_START)
+        if qtest.transfer(SOURCE, DEVICE_BUFFER, len(PAYLOAD), DMA_START) & DMA_START:
+            raise RuntimeError("edu source transfer retained its run bit")
 
         qtest.write_bytes(PROTECTED, PROTECTED_RECORD)
         final_command = (
@@ -209,13 +207,14 @@ def exercise_case(executable: str, bus_master_enabled: bool) -> bytes:
         qtest.set_config_dword(0x04, final_command)
         if qtest.config_dword(0x04) & 0xFFFF != final_command:
             raise RuntimeError("edu final Command word did not read back exactly")
-        qtest.transfer(
+        completed_command = qtest.transfer(
             DEVICE_BUFFER,
             PROTECTED,
             len(PAYLOAD),
             DMA_START | DMA_FROM_DEVICE,
-            await_completion=bus_master_enabled,
         )
+        if completed_command & DMA_START:
+            raise RuntimeError("edu protected transfer retained its run bit")
         observed = qtest.read_bytes(PROTECTED, len(PROTECTED_RECORD))
     finally:
         qtest.close()

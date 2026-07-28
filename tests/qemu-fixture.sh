@@ -17,7 +17,7 @@ fault_symbol_value() {
   printf '%u' "$((16#$address))"
 }
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-  dma-missing|dma-forged|dma-prestate-forged|dma-topology-forged|dma-control-forged|dma-readback-forged|dma-global-state-forged|dma-generated-result-forged|dma-function-missing|dma-function-duplicate|dma-function-identity-forged|dma-function-class-forged|dma-function-status-forged|dma-function-absent-command-forged|dma-function-command-forged|dma-function-prestate-forged|dma-function-bridge-forged|dma-function-multifunction-forged|dma-function-readback-forged)
+  dma-missing|dma-forged|dma-prestate-forged|dma-topology-forged|dma-control-forged|dma-readback-forged|dma-generated-result-forged|dma-function-missing|dma-function-duplicate|dma-function-identity-forged|dma-function-class-forged|dma-function-status-forged|dma-function-absent-command-forged|dma-function-command-forged|dma-function-prestate-forged|dma-function-bridge-forged|dma-function-multifunction-forged|dma-function-readback-forged)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
@@ -32,10 +32,8 @@ case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
     sed -i 's/topology=000800020002/topology=000800020003/' "$log"
   elif [[ "$mode" == dma-control-forged ]]; then
     sed -i 's/bus-master=disabled/bus-master=enabled/' "$log"
-  elif [[ "$mode" == dma-global-state-forged ]]; then
-    sed -i 's/global-state=257/global-state=1/' "$log"
   elif [[ "$mode" == dma-generated-result-forged ]]; then
-    sed -i 's/generated-result=65793/generated-result=65792/' "$log"
+    sed -i 's/generated-result=0/generated-result=1/' "$log"
   elif [[ "$mode" == dma-function-missing ]]; then
     sed -i '/DMA-FUNCTION .*bdf=0:31.3 /d' "$log"
   elif [[ "$mode" == dma-function-duplicate ]]; then
@@ -205,7 +203,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   set -e
   add_nmi_guard_fixture
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
-  sed -i 's/readback=exact stage=/readback=exact global-state=257 generated-result=65793 stage=/' "$log"
+  sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
   sed -i '/^LEANOS\/15 DMA snapshot=/i\
 LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:0.0 present=1 vendor=32902 device=10688 class=393216 command-before=0 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
 LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:1.0 present=1 vendor=4660 device=4369 class=196608 command-before=3 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
@@ -231,7 +229,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   set -e
   add_nmi_guard_fixture
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
-  sed -i 's/readback=exact stage=/readback=exact global-state=257 generated-result=65793 stage=/' "$log"
+  sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
   sed -i '/^LEANOS\/15 DMA snapshot=/i\
 LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:0.0 present=1 vendor=32902 device=10688 class=393216 command-before=0 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
 LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:1.0 present=1 vendor=4660 device=4369 class=196608 command-before=3 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\

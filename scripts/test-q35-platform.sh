@@ -54,7 +54,7 @@ if leanos_validate_q35_command negative 2>/dev/null; then
 fi
 
 mapfile -t raw_q35 < <(
-  rg -l --glob 'run-*.sh' -- '-machine[[:space:]]+q35' scripts || true
+  grep -El -- '-machine[[:space:]]+q35' scripts/run-*.sh || true
 )
 [[ ${#raw_q35[@]} -eq 0 ]] || {
   printf 'error: mandatory runners bypass the q35 platform builder: %s\n' \
@@ -75,8 +75,8 @@ for runner in \
   scripts/run-nmi.sh \
   scripts/run-return-corruptions.sh
 do
-  rg -q 'source .*q35-platform\.sh' "$runner" &&
-    rg -q 'leanos_q35_command command ' "$runner" || {
+  grep -Eq 'source .*q35-platform\.sh' "$runner" &&
+    grep -Eq 'leanos_q35_command command ' "$runner" || {
       echo "error: runner does not consume the q35 platform builder: $runner" >&2
       exit 1
     }

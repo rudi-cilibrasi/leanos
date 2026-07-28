@@ -193,14 +193,15 @@ The accepted post-quarantine Command words remain kernel-owned state. Every
 later outbound CPL3 gate exhaustively re-enumerates bus 0, rechecks each
 identity/class/header tuple and required function, and requires the complete
 live Command word to equal that same canonical boot observation with bus
-mastering still clear. After the exact live observation is accepted, the guest
-invokes the generated global composite dispatcher from its initial state
-through `createSubjectOne`. That dispatcher reconstructs the authoritative
-global state whose DMA fields are #135's `q35Accepted` and `q35Snapshot`; the
-guest requires its exact subject-created result and retains the generated
-successor and typed result in the canonical live PCI snapshot. There is no
-second Command-word array or C policy result. The `dma-bus-master-reenable`
-controlled image sets the SATA
+mastering still clear. The guest packs every canonical identity, status,
+Command, assignment, bridge, and multifunction field from that observation
+and passes the result to the allocation-free generated
+`leanos_validate_q35_dma_snapshot` boundary. The generated boundary accepts
+only the exact production `q35Snapshot` projection and returns the stable
+typed rejection tags for version, topology, inventory, control, or bus-master
+drift. Its result is retained in the canonical live PCI snapshot; there is no
+unrelated composite transition standing in for DMA acceptance. The
+`dma-bus-master-reenable` controlled image sets the SATA
 bus-master bit after boot acceptance and immediately before the production
 return validator; the same validator must emit typed `dma-live-command`
 failure before `iretq` or any CPL3 record.
@@ -258,11 +259,10 @@ absorbed by every later authoritative successor operation. This integration
 does not fork `DMAQuarantine.RuntimeState` or its parallel memory projection
 into the composite runtime.
 
-Issue #105 remains the owner of canonical decoding, the global fixed-width
-encoding, and the generated stateful dispatcher. No composite-state codec or
-decode/encode round-trip theorem is present here, so
-this DMA slice deliberately proves constructor-level model preservation and
-does not invent a parallel ABI or claim a generated-C refinement.
+Issue #105 remains the owner of canonical decoding and the global fixed-width
+composite encoding. The finite q35 scalar transport is only the allocation-free
+generated boot boundary for the already canonical live PCI projection; it is
+not a composite-state codec or a generated-C refinement theorem.
 Issue #129's final-ELF inventory now classifies the fixed `0xcf8`/`0xcfc`
 mechanism accesses as `DMAQuarantine.pci-config`. The exact `out16`,
 `out32`, and `in32` wrapper sites are reviewed exceptions, while the source

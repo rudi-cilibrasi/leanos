@@ -1263,6 +1263,10 @@ if ! grep -q ' T leanos_composite_dispatch$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_composite_dispatch" >&2
   exit 1
 fi
+if ! grep -q ' T leanos_validate_q35_dma_snapshot$' <<<"$symbols"; then
+  echo "error: generated image does not retain leanos_validate_q35_dma_snapshot" >&2
+  exit 1
+fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   echo "error: kernel ELF has no valid Multiboot2 header" >&2
   exit 1

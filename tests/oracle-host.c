@@ -62,6 +62,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_direct_port_io_demo);
     REGISTER_BOUNDARY(leanos_stale_translation_demo);
     REGISTER_BOUNDARY(leanos_composite_dispatch);
+    REGISTER_BOUNDARY(leanos_validate_q35_dma_snapshot);
 
     /* Exercise the production ABI wrappers themselves so --gc-sections cannot
        discard them from the ordinary or sanitizer replay. Invalid all-zero
@@ -78,6 +79,28 @@ int main(void) {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    if (leanos_validate_q35_dma_snapshot(
+            1, UINT64_C(0x000800020002),
+            UINT64_C(0x0006000029c08086), UINT64_C(0x0001),
+            UINT64_C(0x0003000011111234), UINT64_C(0x0001),
+            0, 0,
+            UINT64_C(0x0006010029188086), UINT64_C(0xc001),
+            UINT64_C(0x0001060129228086), UINT64_C(0x8001),
+            UINT64_C(0x000c050029308086), UINT64_C(0x8001)) != 0) {
+        fputs("canonical q35 DMA snapshot was rejected\n", stderr);
+        return 1;
+    }
+    if (leanos_validate_q35_dma_snapshot(
+            1, UINT64_C(0x000800020002),
+            UINT64_C(0x0006000029c08086), UINT64_C(0x0001),
+            UINT64_C(0x0003000011111234), UINT64_C(0x0011),
+            0, 0,
+            UINT64_C(0x0006010029188086), UINT64_C(0xc001),
+            UINT64_C(0x0001060129228086), UINT64_C(0x8001),
+            UINT64_C(0x000c050029308086), UINT64_C(0x8001)) != 8) {
+        fputs("bus-master-enabled q35 DMA snapshot was not rejected\n", stderr);
+        return 1;
+    }
 
     for (unsigned i = 0; i < ORACLE_VECTOR_COUNT; ++i) {
         const struct oracle_vector *v = &oracle_vectors[i];

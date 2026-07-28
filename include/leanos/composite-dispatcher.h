@@ -104,4 +104,25 @@ uint64_t leanos_composite_dispatch(
     uint64_t arg2,
     uint64_t arg3);
 
+/*
+ * Allocation-free generated validation of the exact canonical q35 DMA
+ * snapshot. Each manifest slot supplies identity and control words in the
+ * compact format documented by LeanOS.CompositeDispatcher.
+ */
+uint64_t leanos_validate_q35_dma_snapshot(
+    uint64_t version,
+    uint64_t topology,
+    uint64_t identity0,
+    uint64_t control0,
+    uint64_t identity1,
+    uint64_t control1,
+    uint64_t identity2,
+    uint64_t control2,
+    uint64_t identity3,
+    uint64_t control3,
+    uint64_t identity4,
+    uint64_t control4,
+    uint64_t identity5,
+    uint64_t control5);
+
 #endif
