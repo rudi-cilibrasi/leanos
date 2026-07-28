@@ -167,6 +167,14 @@ That is a successful security boundary, not a browser-demo success.
 
 ## Reproduction boundary
 
+The exact browser module variants, HTML, Puppeteer harness, preload metadata,
+preparation commands, input hashes, observation bounds, and retained output
+are checked in under
+[`docs/evidence/qemu-wasm-feasibility/`](../evidence/qemu-wasm-feasibility/README.md).
+That evidence bundle preserves the probe-specific replacement for the
+upstream `pc`, kernel/initrd, VirtIO, networking, and hard-coded demo-path
+configuration.
+
 Build and verify the native control first:
 
 ```sh

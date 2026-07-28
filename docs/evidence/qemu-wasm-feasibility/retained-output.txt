@@ -1,0 +1,21 @@
+IDE observation
+bound_seconds=60
+elapsed_seconds=62.69
+maximum_resident_set_kib=211624
+result=no LeanOS protocol record
+
+CD-ROM observation
+bound_seconds=180
+elapsed_seconds=181.57
+maximum_resident_set_kib=229312
+result=no LeanOS protocol record
+
+Captured terminal transcript (both observations)
+SeaBIOS (version rel-1.16.3-0-ga6ed6b701f0a-prebuilt.qemu.org)
+Booting from Hard Disk...
+Boot failed: could not read the boot disk
+Booting from DVD/CD...
+Boot failed: Could not read from CDROM (code 0003)
+Booting from Floppy...
+Boot failed: could not read the boot disk
+No bootable device
