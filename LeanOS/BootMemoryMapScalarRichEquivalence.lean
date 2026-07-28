@@ -1118,10 +1118,8 @@ theorem canonicalScalarReplay_structurally_refines_authority
       authority.decodedBy authority.selectedWithinBound)
 
 /-- The structural scalar/rich traversal certificate is sufficient to prove
-the four terminal fields currently rechecked by `authorizeCanonical`.
-Consequently the executable terminal comparison can be removed once the rich
-decoder traversal above is converted to `SuccessfulScalarRichTraversal`; no
-additional terminal-value assumption is needed at that point. -/
+the four terminal fields rechecked by `authorizeCanonical`; no additional
+terminal-value assumption is needed. -/
 theorem successfulScalarRichTraversal_agrees_authority
     (authority : BootMemoryMapFullProjectionABI.Authority)
     (htraversal :
@@ -1149,6 +1147,40 @@ theorem successfulScalarRichTraversal_agrees_authority
   exact ⟨hterminal.2.1, hterminal.2.2.1,
     by simpa [usableWord] using hterminal.2.2.2.1,
     by simpa [blockedWord] using hterminal.2.2.2.2⟩
+
+/-- Every rich authority necessarily passes the scalar terminal projection:
+the whole-tag structural induction constructs the traversal, and whole-replay
+folding fixes completion, diagnostics, usable coverage, and blocked overlap. -/
+theorem canonicalScalarReplay_agrees_authority
+    (authority : BootMemoryMapFullProjectionABI.Authority) :
+    ScalarTerminalProjectionAgrees
+      (canonicalScalarReplay authority.input authority) authority := by
+  obtain ⟨terminal, htraversal⟩ :=
+    BootMemoryMapStreamPipeline.successfulScalarRichTraversal_of_decode
+      authority.input authority.decoded authority.allocation.frame
+      authority.decodedBy authority.selectedWithinBound
+  have hterminal :=
+    BootMemoryMapStreamPipeline.successfulScalarRichTraversal_terminal_words
+      authority.allocation.frame authority.decoded.entries
+      (BootMemoryMapStreamPipeline.scalarInitialAt
+        (UInt64.ofNat authority.input.infoAddress) authority.input.bytes.length
+        authority.allocation.frame)
+      terminal
+      (BootMemoryMapStreaming.canonicalChunks
+        (UInt64.ofNat authority.input.infoAddress) authority.input.bytes)
+      htraversal
+  have hterminalEq :
+      terminal = canonicalScalarReplay authority.input authority := by
+    simpa [canonicalScalarReplay] using hterminal.1.symm
+  subst terminal
+  exact successfulScalarRichTraversal_agrees_authority authority htraversal
+
+theorem scalarTerminalProjectionMatches_canonicalScalarReplay
+    (authority : BootMemoryMapFullProjectionABI.Authority) :
+    scalarTerminalProjectionMatches
+        (canonicalScalarReplay authority.input authority) authority = true :=
+  (scalarTerminalProjectionMatches_iff _ _).2
+    (canonicalScalarReplay_agrees_authority authority)
 
 /-- Canonical production composition with the complete rich projection as an
 explicit claimed output.  Unlike `runCanonical`, this boundary cannot return
