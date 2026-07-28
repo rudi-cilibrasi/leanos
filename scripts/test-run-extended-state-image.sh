@@ -19,7 +19,10 @@ invoke() {
     ./scripts/run-image.sh "$tmp/image.iso"
 }
 
-invoke success >/dev/null 2>&1
+if ! invoke success >"$tmp/success.output" 2>&1; then
+  cat "$tmp/success.output" >&2
+  exit 1
+fi
 for spec in \
     'missing-cpuid serial-protocol' \
     'missing-control serial-protocol' \

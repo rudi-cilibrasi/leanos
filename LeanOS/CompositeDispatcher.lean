@@ -478,6 +478,34 @@ assignmentOwner << 16`). This compact transport contains every field of the
 fixed q35 snapshot; BDF and slot order are fixed by `q35Manifest`.
 -/
 
+def q35IdentityWord (function : DMAQuarantine.FunctionState) : UInt64 :=
+  function.identity.vendor |||
+    function.identity.device <<< 16 |||
+    function.identity.classCode <<< 32
+
+def q35ControlWord (function : DMAQuarantine.FunctionState) : UInt64 :=
+  DMAQuarantine.statusTag function.status |||
+    function.command <<< 2 |||
+    DMAQuarantine.assignmentTag function.assignment <<< 13 |||
+    (if function.bridge then (1 : UInt64) else 0) <<< 14 |||
+    (if function.multifunction then (1 : UInt64) else 0) <<< 15 |||
+    DMAQuarantine.assignmentOwner function.assignment <<< 16
+
+/-- Checked source of the scalar export's literal table. This binds all
+identity/control words and the otherwise implicit BDF slot order to the
+canonical rich snapshot rather than treating the generated boundary and
+`DMAQuarantine.validate` as independent policies. -/
+theorem q35_scalar_projection_matches_canonical_snapshot :
+    DMAQuarantine.q35Snapshot.functions.map
+        (fun function => (function.bdf, q35IdentityWord function, q35ControlWord function)) =
+      [ (⟨0, 0, 0⟩, 0x0006000029c08086, 0x0001),
+        (⟨0, 1, 0⟩, 0x0003000011111234, 0x0001),
+        (⟨0, 3, 0⟩, 0, 0),
+        (⟨0, 31, 0⟩, 0x0006010029188086, 0xc001),
+        (⟨0, 31, 2⟩, 0x0001060129228086, 0x8001),
+        (⟨0, 31, 3⟩, 0x000c050029308086, 0x8001) ] := by
+  native_decide
+
 /-- Generated, allocation-free validation of the exact production
 `DMAQuarantine.q35Snapshot`. Stable nonzero results reuse
 `DMAQuarantine.rejectReasonTag`. -/
@@ -507,6 +535,36 @@ def validateQ35DMASnapshot
     4
   else
     0
+
+/-- The generated scalar boundary and the canonical rich validator agree on
+the production snapshot selected by the checked projection table above. -/
+theorem validate_q35_dma_snapshot_canonical_correspondence :
+    validateQ35DMASnapshot
+        DMAQuarantine.snapshotVersion DMAQuarantine.q35TopologyVersion
+        0x0006000029c08086 0x0001
+        0x0003000011111234 0x0001
+        0 0
+        0x0006010029188086 0xc001
+        0x0001060129228086 0x8001
+        0x000c050029308086 0x8001 =
+      (DMAQuarantine.encodeValidationResult
+        (DMAQuarantine.validate DMAQuarantine.q35Snapshot)).head! := by
+  native_decide
+
+/-- The scalar fast rejection for a live bus-master bit is the canonical
+validator's rejection for the corresponding rich q35 snapshot. -/
+theorem validate_q35_dma_snapshot_bus_master_correspondence :
+    validateQ35DMASnapshot
+        DMAQuarantine.snapshotVersion DMAQuarantine.q35TopologyVersion
+        0x0006000029c08086 0x0001
+        0x0003000011111234 0x0011
+        0 0
+        0x0006010029188086 0xc001
+        0x0001060129228086 0x8001
+        0x000c050029308086 0x8001 =
+      (DMAQuarantine.encodeValidationResult
+        (DMAQuarantine.validate DMAQuarantine.q35BusMasterBitFlipSnapshot)).head! := by
+  native_decide
 
 /-- The scalar export and the logical adapter use one canonical edge table. -/
 theorem dispatch_canonical state command :
