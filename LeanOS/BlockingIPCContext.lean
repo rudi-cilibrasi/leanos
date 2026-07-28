@@ -776,6 +776,19 @@ theorem receive_delivered_ipc_exact state caller slot saved envelope
   cases outcome with
   | mk next result => cases result <;> simp_all
 
+/-- Delivery consumes only IPC payload state and leaves the complete saved
+blocking-context bank unchanged. -/
+theorem receive_delivered_blocked_unchanged state caller slot saved envelope
+    (hcompleted : (receiveOrBlock state caller slot saved).result =
+      .completed (.delivered envelope)) :
+    (receiveOrBlock state caller slot saved).state.blocked = state.blocked := by
+  unfold receiveOrBlock at hcompleted ⊢
+  split at hcompleted <;> simp_all
+  split at hcompleted <;> simp_all
+  generalize hraw : BlockingIPC.receiveOrBlock state.ipc caller slot = outcome at hcompleted ⊢
+  cases outcome with
+  | mk next result => cases result <;> simp_all
+
 /-- A successful typed block likewise publishes the exact raw waiter and
 scheduler post-state rather than reconstructing it. -/
 theorem receive_blocked_ipc_exact state caller slot saved
@@ -783,6 +796,20 @@ theorem receive_blocked_ipc_exact state caller slot saved
     (receiveOrBlock state caller slot saved).state.ipc =
         (BlockingIPC.receiveOrBlock state.ipc caller slot).state ∧
       (BlockingIPC.receiveOrBlock state.ipc caller slot).result = .blocked := by
+  unfold receiveOrBlock at hcompleted ⊢
+  split at hcompleted <;> simp_all
+  split at hcompleted <;> simp_all
+  generalize hraw : BlockingIPC.receiveOrBlock state.ipc caller slot = outcome at hcompleted ⊢
+  cases outcome with
+  | mk next result => cases result <;> simp_all
+
+/-- Blocking publishes exactly one new saved-context binding and leaves every
+other binding untouched. -/
+theorem receive_blocked_blocked_exact state caller slot saved
+    (hcompleted : (receiveOrBlock state caller slot saved).result =
+      .completed .blocked) :
+    (receiveOrBlock state caller slot saved).state.blocked =
+      setBlocked state.blocked caller (some saved) := by
   unfold receiveOrBlock at hcompleted ⊢
   split at hcompleted <;> simp_all
   split at hcompleted <;> simp_all
@@ -824,6 +851,57 @@ theorem send_accepted_unreleased_scheduler_unchanged state caller slot payload
           next endpoint hendpoint =>
             split at *
             · grind [BlockingIPC.send, BlockingIPC.reject, BlockingIPC.endpointOf]
+            · split at hunreleased <;> simp_all
+
+/-- A mailbox-only accepted send also leaves the complete waiter index
+unchanged. -/
+theorem send_accepted_unreleased_waiterEndpoint_unchanged state caller slot payload
+    (haccepted : (send state caller slot payload).result = .accepted)
+    (hunreleased : (send state caller slot payload).released = none) :
+    (send state caller slot payload).state.ipc.waiterEndpoint =
+      state.ipc.waiterEndpoint := by
+  unfold send at haccepted hunreleased ⊢
+  generalize hraw : BlockingIPC.send state.ipc caller slot payload = outcome at haccepted hunreleased ⊢
+  cases outcome with
+  | mk next result =>
+      cases result with
+      | rejected reason => simp at haccepted
+      | accepted =>
+          have hresult :
+              (BlockingIPC.send state.ipc caller slot payload).result = .accepted := by
+            rw [hraw]
+          obtain ⟨actualEndpoint, hactualEndpoint, hprojection⟩ :=
+            BlockingIPC.send_accepted_waiterEndpoint_exact
+              state.ipc caller slot payload hresult
+          rw [hraw] at hprojection
+          split at * <;> try simp_all
+          next endpoint hendpoint =>
+            subst endpoint
+            cases hqueue : state.ipc.waiters actualEndpoint with
+            | nil => simpa [hqueue] using hprojection
+            | cons receiver rest =>
+                rw [hqueue] at haccepted hunreleased hprojection
+                cases hsaved : state.blocked receiver with
+                | none => simp [hsaved] at haccepted
+                | some saved => simp [hsaved] at hunreleased
+
+/-- A mailbox-only accepted send leaves the exact blocked-context bank
+unchanged. -/
+theorem send_accepted_unreleased_blocked_unchanged state caller slot payload
+    (haccepted : (send state caller slot payload).result = .accepted)
+    (hunreleased : (send state caller slot payload).released = none) :
+    (send state caller slot payload).state.blocked = state.blocked := by
+  unfold send at haccepted hunreleased ⊢
+  generalize hraw : BlockingIPC.send state.ipc caller slot payload = outcome at haccepted hunreleased ⊢
+  cases outcome with
+  | mk next result =>
+      cases result with
+      | rejected reason => simp at haccepted
+      | accepted =>
+          split at * <;> try simp_all
+          next endpoint hendpoint =>
+            split at *
+            · rfl
             · split at hunreleased <;> simp_all
 
 /-- Every context-layer accepted send is the exact accepted raw IPC send. -/
@@ -878,6 +956,35 @@ theorem send_released_exact state caller slot payload saved
                 subst actual
                 exact ⟨endpoint, receiver, rest, hendpoint, hwaiters, hsaved,
                   rfl, by simp [setBlocked]⟩
+
+/-- Releasing a saved waiter clears exactly that receiver in the complete
+blocked-context function. -/
+theorem send_released_blocked_exact state caller slot payload saved
+    (hreleased : (send state caller slot payload).released = some saved) :
+    ∃ receiver,
+      state.blocked receiver = some saved ∧
+      (send state caller slot payload).state.blocked =
+        setBlocked state.blocked receiver none := by
+  unfold send at hreleased ⊢
+  generalize hraw : BlockingIPC.send state.ipc caller slot payload = outcome at hreleased ⊢
+  cases outcome with
+  | mk next result =>
+      cases result with
+      | rejected reason => simp at hreleased
+      | accepted =>
+          split at hreleased
+          · simp at hreleased
+          next endpoint hendpoint =>
+            split at hreleased
+            · simp at hreleased
+            next receiver rest hwaiters =>
+              split at hreleased
+              · simp at hreleased
+              next actual hsaved =>
+                simp only at hreleased
+                injection hreleased with heq
+                subst actual
+                exact ⟨receiver, hsaved, rfl⟩
 
 theorem cancel_preserves_wellFormed state subject
     (hwf : WellFormed state) :

@@ -244,11 +244,11 @@ theorem return_allowed_requires_denial state subject
 
 /-! ## Global composite-runtime policy
 
-The denial controls wrap the authoritative `FailStop.gate`; they are not an
+The denial controls wrap `FailStop.authoritativeGate`; they are not an
 operation payload and cannot be rewritten by a syscall, timer, IPC, mapping,
-capability, lifecycle, scheduler, or return operation.  A mismatch is latched
-before the underlying composite gate runs, leaving its complete pre-state
-untouched. -/
+capability, lifecycle, scheduler, blocking, deferred-drain, or return
+operation.  A mismatch is latched before the underlying composite gate runs,
+leaving its complete pre-state untouched. -/
 
 structure CompositeRuntimeState where
   features : Features
@@ -260,7 +260,7 @@ def CompositePolicyInvariant (state : CompositeRuntimeState) : Prop :=
   Denied state.features state.controls
 
 inductive CompositeGateResult where
-  | published (result : FailStop.GateResult)
+  | published (result : FailStop.AuthoritativeGateResult)
   | fatal (reason : FatalReason)
   | alreadyFatal
   deriving DecidableEq, Repr
@@ -274,16 +274,18 @@ private def haltCompositePolicy (state : CompositeRuntimeState)
   { state := { state with policyHalted := true }, result := .fatal reason }
 
 /-- Every authoritative composite operation first validates the live denial
-controls.  The operation vocabulary is exactly `FailStop.Operation`, so this
-single gate covers interrupt, return, syscall, preemption, IPC, capability,
-mapping, lifecycle, and scheduler transitions. -/
+controls.  The operation vocabulary is exactly
+`FailStop.AuthoritativeOperation`, so this single gate covers interrupt,
+return, syscall, preemption, IPC, capability, mapping, lifecycle, scheduler,
+blocking, and deferred-drain transitions without re-exposing the legacy
+ordinary gate. -/
 def compositeGate (state : CompositeRuntimeState)
-    (operation : FailStop.Operation) : CompositeGateOutcome :=
+    (operation : FailStop.AuthoritativeOperation) : CompositeGateOutcome :=
   if state.policyHalted then { state, result := .alreadyFatal }
   else if !validatePolicy state.features state.controls then
     haltCompositePolicy state .policyMismatch
   else
-    let outcome := FailStop.gate state.composite operation
+    let outcome := FailStop.authoritativeGate state.composite operation
     { state := { state with composite := outcome.state }
       result := .published outcome.result }
 
@@ -319,11 +321,12 @@ theorem compositeGate_published_requires_denial state operation result
   exact (validatePolicy_accepted_iff _ _).mp haccepted
 
 theorem accepted_composite_user_return_requires_denial state request
-    (haccepted : (compositeGate state (.userReturn request)).result =
-      .published (.completed (.userReturn .accepted))) :
+    (haccepted : (compositeGate state (.ordinary (.userReturn request))).result =
+      .published (.completed (.ordinary (.userReturn .accepted)))) :
     CompositePolicyInvariant state := by
-  exact compositeGate_published_requires_denial state (.userReturn request)
-    (.completed (.userReturn .accepted)) haccepted
+  exact compositeGate_published_requires_denial state
+    (.ordinary (.userReturn request))
+    (.completed (.ordinary (.userReturn .accepted))) haccepted
 
 /-- Once established, the global policy predicate is invariant under every
 modeled composite operation; the wrapper changes only the composite projection
@@ -336,7 +339,7 @@ theorem compositeGate_preserves_policy state operation
   split <;> simp_all [haltCompositePolicy, CompositePolicyInvariant]
 
 def runComposite (state : CompositeRuntimeState) :
-    List FailStop.Operation → CompositeRuntimeState
+    List FailStop.AuthoritativeOperation → CompositeRuntimeState
   | [] => state
   | operation :: rest =>
     let outcome := compositeGate state operation

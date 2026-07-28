@@ -2,6 +2,7 @@
 set -euo pipefail
 
 elf="${1:-build/boot/leanos.elf}"
+nx_elf="${2:-build/boot/leanos-fault-nx-execute.elf}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
@@ -19,6 +20,48 @@ run_fixture() {
   fi
   grep -Fq "$expected" "$tmp/$name.log" || {
     echo "error: entry-policy fixture '$name' lacked '$expected'" >&2
+    cat "$tmp/$name.log" >&2
+    exit 1
+  }
+  echo "ENTRY-POLICY fixture=$name $expected result=REJECTED"
+}
+
+run_page_fault_fixture() {
+  local name="$1" expected="$2"
+  shift 2
+  cp boot/kernel.c "$tmp/kernel.c"
+  cp boot/boot.S "$tmp/boot.S"
+  "$@"
+  if LEANOS_PAGE_FAULT_PROBE=supervisor-read \
+      LEANOS_ENTRY_KERNEL_SOURCE="$tmp/kernel.c" \
+      LEANOS_ENTRY_BOOT_SOURCE="$tmp/boot.S" \
+      ./scripts/check-entry-policy.sh "$elf" >"$tmp/$name.log" 2>&1; then
+    echo "error: page-fault site fixture '$name' unexpectedly passed" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$tmp/$name.log" || {
+    echo "error: page-fault site fixture '$name' lacked '$expected'" >&2
+    cat "$tmp/$name.log" >&2
+    exit 1
+  }
+  echo "ENTRY-POLICY fixture=$name $expected result=REJECTED"
+}
+
+run_nx_page_fault_fixture() {
+  local name="$1" expected="$2"
+  shift 2
+  cp boot/kernel.c "$tmp/kernel.c"
+  cp boot/boot.S "$tmp/boot.S"
+  "$@"
+  if LEANOS_PAGE_FAULT_PROBE=nx-execute \
+      LEANOS_ENTRY_KERNEL_SOURCE="$tmp/kernel.c" \
+      LEANOS_ENTRY_BOOT_SOURCE="$tmp/boot.S" \
+      ./scripts/check-entry-policy.sh "$nx_elf" >"$tmp/$name.log" 2>&1; then
+    echo "error: NX page-fault site fixture '$name' unexpectedly passed" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$tmp/$name.log" || {
+    echo "error: NX page-fault site fixture '$name' lacked '$expected'" >&2
     cat "$tmp/$name.log" >&2
     exit 1
   }
@@ -93,7 +136,7 @@ page_fault_handler_before_generated() {
     page_fault_handler(&transition);' "$tmp/kernel.c"
 }
 page_fault_fatal_route_to_handler() {
-  sed -i '/case PAGE_FAULT_TRANSITION_FATAL:/{n;s/fail("page-fault-fatal");/return page_fault_handler(\&transition);/;}' \
+  sed -i '/case PAGE_FAULT_TRANSITION_FATAL:/,/case PAGE_FAULT_TRANSITION_REJECTED:/s/fail("page-fault-fatal");/return page_fault_handler(\&transition);/' \
     "$tmp/kernel.c"
 }
 page_fault_live_leaf_bypass() {
@@ -108,7 +151,17 @@ page_fault_forged_diagnostic_purpose() {
   sed -i 's/canonical, supervisor_probe,/canonical, 1,/' "$tmp/kernel.c"
 }
 page_fault_wrong_invalidation_target() {
-  sed -i 's/const uint64_t fixed_page_address = 0;/const uint64_t fixed_page_address = PAGE_BYTES;/' \
+  sed -i 's/invalidate_snapshot_fault_page(&snapshot);/invalidate_snapshot_fault_page((const struct page_fault_entry_record *)((const char *)\&snapshot + 8));/' \
+    "$tmp/kernel.c"
+}
+page_fault_reserved_wrong_error() {
+  sed -i \
+    '/page_fault_probe_class == 3/,/: page_fault_probe_class == 4/s/snapshot.error == 12/snapshot.error == 13/' \
+    "$tmp/kernel.c"
+}
+page_fault_reserved_wrong_rip() {
+  sed -i \
+    '/page_fault_probe_class == 3/,/: page_fault_probe_class == 4/s/user_a_reserved_fault_instruction/user_a_nx_fault_instruction/' \
     "$tmp/kernel.c"
 }
 page_fault_refilled_after_recorded_reload() {
@@ -124,6 +177,36 @@ page_fault_refilled_after_recorded_reload() {
 mutate_page_fault_rip_after_authorization() {
   sed -i '/if (snapshot.active_address_space == 0/i\
     snapshot.rip ^= 1;' "$tmp/kernel.c"
+}
+page_fault_wrong_instruction() {
+  sed -i '/^user_a_fault_instruction:$/{n;s/mov 0, %rax/mov 8, %rax/}' \
+    "$tmp/boot.S"
+}
+page_fault_indirect_entry() {
+  sed -i '0,/jmp user_a_fault_instruction/s//jmp *%rax/' "$tmp/boot.S"
+}
+page_fault_wrong_handler_binding() {
+  sed -i \
+    's/page_fault_probe_class == 1 ? 7u : 5u/page_fault_probe_class == 1 ? 5u : 5u/' \
+    "$tmp/kernel.c"
+}
+page_fault_nx_wrong_payload() {
+  sed -i \
+    's/movl \$0x000000ff, user_a_nx_fault_instruction+1/movl $0x000000fe, user_a_nx_fault_instruction+1/' \
+    "$tmp/boot.S"
+}
+page_fault_nx_indirect_branch() {
+  sed -i 's/jmp user_a_nx_fault_instruction/jmp *%rax/' "$tmp/boot.S"
+}
+page_fault_nx_wrong_handler_binding() {
+  sed -i \
+    's/page_fault_probe_class == 2 ? 21u/page_fault_probe_class == 2 ? 5u/' \
+    "$tmp/kernel.c"
+}
+page_fault_c_only_snapshot_route() {
+  sed -i \
+    's/&snapshot, canonical, route, expected_leaf, live_leaf);/\&snapshot, 1, UINT64_C(0x01000000ff020202), expected_leaf, live_leaf);/' \
+    "$tmp/kernel.c"
 }
 stale_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $user_a_text, %eax' "$tmp/boot.S"; }
 noncanonical_lstar() { sed -i '/normalize_fast_entry_lstar_write:/i\    mov $0x00008000, %edx' "$tmp/boot.S"; }
@@ -199,14 +282,41 @@ run_fixture page-fault-forged-diagnostic-purpose \
   'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
   page_fault_forged_diagnostic_purpose
 run_fixture page-fault-wrong-invalidation-target \
-  'vector=14 field=exact-fault-page-invalidation source' \
+  'vector=14 field=terminal-reviewed-binding source' \
   page_fault_wrong_invalidation_target
+run_fixture page-fault-reserved-wrong-error \
+  'vector=14 field=terminal-reviewed-binding source' \
+  page_fault_reserved_wrong_error
+run_fixture page-fault-reserved-wrong-rip \
+  'vector=14 field=terminal-reviewed-binding source' \
+  page_fault_reserved_wrong_rip
 run_fixture page-fault-refilled-after-recorded-reload \
   'vector=14 field=diagnostic-and-strengthened-agreement-inputs source' \
   page_fault_refilled_after_recorded_reload
 run_fixture page-fault-rip-post-authorization-mutation \
   'vector=14 field=immutable-snapshot source' \
   mutate_page_fault_rip_after_authorization
+run_page_fault_fixture page-fault-wrong-instruction \
+  'vector=14 field=deliberate-cpl3-site source' \
+  page_fault_wrong_instruction
+run_page_fault_fixture page-fault-indirect-entry \
+  'vector=14 field=deliberate-cpl3-entry source' \
+  page_fault_indirect_entry
+run_page_fault_fixture page-fault-wrong-handler-binding \
+  'vector=14 field=deliberate-cpl3-handler-binding source' \
+  page_fault_wrong_handler_binding
+run_nx_page_fault_fixture page-fault-nx-wrong-payload \
+  'vector=14 field=deliberate-cpl3-site source' \
+  page_fault_nx_wrong_payload
+run_nx_page_fault_fixture page-fault-nx-indirect-branch \
+  'vector=14 field=deliberate-cpl3-site source' \
+  page_fault_nx_indirect_branch
+run_nx_page_fault_fixture page-fault-nx-wrong-handler-binding \
+  'vector=14 field=deliberate-cpl3-handler-binding source' \
+  page_fault_nx_wrong_handler_binding
+run_fixture page-fault-c-only-snapshot-route \
+  'vector=14 field=canonical-snapshot-binding source' \
+  page_fault_c_only_snapshot_route
 run_fixture stale-lstar 'fast-entry target write recipe can introduce nonzero state' stale_lstar
 run_fixture noncanonical-lstar 'fast-entry target write recipe can introduce nonzero state' noncanonical_lstar
 run_fixture non-denying-sysenter 'fast-entry target write recipe can introduce nonzero state' non_denying_sysenter

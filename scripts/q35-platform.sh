@@ -12,10 +12,19 @@ leanos_validate_q35_command() {
   local command_name="$1"
   local -n q35_command="$command_name"
   local machine=0 nodefaults=0 vga=0 cdrom=0 cdrom_drive=0
-  local debug_exit=0 devices=0
-  local argument
+  local debug_exit=0 devices=0 cpu_options=0
+  local argument previous=
 
   for argument in "${q35_command[@]}"; do
+    if [[ "$previous" == -cpu ]]; then
+      case "$argument" in
+        max|max,phys-bits=48) ((cpu_options += 1)) ;;
+        *)
+          echo "error: q35 platform CPU options drifted" >&2
+          return 1
+          ;;
+      esac
+    fi
     case "$argument" in
       q35,accel=tcg) ((machine += 1)) ;;
       -nodefaults) ((nodefaults += 1)) ;;
@@ -31,13 +40,14 @@ leanos_validate_q35_command() {
         return 1
         ;;
     esac
+    previous="$argument"
   done
   [[ $machine -eq 1 && $nodefaults -eq 1 ]] || {
     echo "error: q35 platform requires the exact q35/TCG machine and -nodefaults" >&2
     return 1
   }
   [[ $devices -eq 3 && $vga -eq 1 && $cdrom -eq 1 && $cdrom_drive -eq 1 &&
-     $debug_exit -eq 1 ]] || {
+     $debug_exit -eq 1 && $cpu_options -eq 1 ]] || {
     echo "error: q35 platform device topology drifted" >&2
     return 1
   }
@@ -49,13 +59,14 @@ leanos_q35_command() {
   local memory_mib="$3"
   local serial_log="$4"
   local image="$5"
+  local cpu="${6:-max}"
   local -n q35_command="$command_name"
 
   q35_command=(
     "$qemu"
     -machine q35,accel=tcg
     -nodefaults
-    -cpu max
+    -cpu "$cpu"
     -smp 1
     -m "${memory_mib}M"
     -display none

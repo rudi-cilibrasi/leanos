@@ -44,7 +44,7 @@ structure TrustedContext where
 
 inductive Error where
   | notLive | notRunnable | noAddressSpace | duplicate | queueFull
-  | notQueued | noCurrent | noResumableContext
+  | notQueued | noCurrent | noResumableContext | undrainedCancellation
   | lifecycle (reason : SubjectLifecycle.TerminateError)
   deriving DecidableEq, Repr
 

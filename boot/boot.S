@@ -1510,7 +1510,15 @@ user_a_entry:
     jmp 1b
 #endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+#ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
+    jmp user_a_reserved_fault_instruction
+#elif defined(LEANOS_PAGE_FAULT_PROBE_NX_EXECUTE)
+    jmp user_a_nx_prepare
+#elif defined(LEANOS_PAGE_FAULT_PROBE_READONLY_WRITE)
+    jmp user_a_write_fault_instruction
+#else
     jmp user_a_fault_instruction
+#endif
 #endif
 #ifdef LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO
     mov $0x1b, %ax
@@ -1646,6 +1654,77 @@ user_a_fault_instruction:
     mov 0, %rax
 .global user_a_fault_recovered
 user_a_fault_recovered:
+#ifndef LEANOS_FAULT_CONTAINMENT_SCENARIO
+    /* The ordinary image resumes its baseline #102 probe here.  Keep the
+       dedicated reason-sensitive write/execute sites unreachable unless a
+       fault-containment image selected one directly from user_a_entry. */
+    jmp user_a_fault_probe_done
+#endif
+#ifdef LEANOS_PAGE_FAULT_PROBE_READONLY_WRITE
+    jmp user_copy_fail
+#endif
+#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+    jmp user_copy_fail
+#endif
+.global user_a_write_fault_instruction
+user_a_write_fault_instruction:
+    movb $0x5a, user_a_write_target(%rip)
+.global user_a_write_fault_recovered
+user_a_write_fault_recovered:
+    jmp user_copy_fail
+.balign 8
+.global user_a_write_target
+user_a_write_target:
+    .byte 0xa5
+/* The integrity-negative image clears NX from every active A leaf, disables
+   EFER.NXE, then restores NX only on this instruction's leaf.  NX is therefore
+   reserved in that PTE, and this real CPL3 read must carry RSVD in #PF. */
+.global user_a_reserved_fault_instruction
+user_a_reserved_fault_instruction:
+    mov user_a_nx_fault_instruction(%rip), %rax
+.global user_a_reserved_fault_recovered
+user_a_reserved_fault_recovered:
+    mov $0xff, %rax
+    int $0x80
+
+.section .text
+.global disable_nxe_for_reserved_fault
+disable_nxe_for_reserved_fault:
+#ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
+    push %rax
+    push %rcx
+    push %rdx
+    mov $0xc0000080, %ecx
+    rdmsr
+    and $~(1 << 11), %eax
+.global fault_reserved_efer_write
+fault_reserved_efer_write:
+    wrmsr
+    pop %rdx
+    pop %rcx
+    pop %rax
+#endif
+    ret
+    ud2
+.section .user.a.text,"ax",@progbits
+/* The execute-denial image arms a fixed payload in A's model-generated
+   writable/NX stack leaf, then transfers control to that exact address.  If
+   instruction fetch ever succeeds, the payload invokes an unsupported
+   syscall and the kernel exits with the independent guest-error status. */
+.global user_a_nx_prepare
+user_a_nx_prepare:
+    movb $0xb8, user_a_nx_fault_instruction(%rip)
+    movl $0x000000ff, user_a_nx_fault_instruction+1(%rip)
+    movw $0x80cd, user_a_nx_fault_instruction+5(%rip)
+    movw $0x0b0f, user_a_nx_fault_instruction+7(%rip)
+.global user_a_nx_branch
+user_a_nx_branch:
+    jmp user_a_nx_fault_instruction
+.global user_a_nx_fault_recovered
+user_a_nx_fault_recovered:
+    jmp user_copy_fail
+.global user_a_fault_probe_done
+user_a_fault_probe_done:
 #ifdef LEANOS_PREEMPTION_SCENARIO
     mov $1, %rax
     xor %rbx, %rbx
@@ -1682,7 +1761,11 @@ user_copy_fail:
 .align 4096
 .global user_a_stack
 user_a_stack:
-    .skip 8192
+    .skip 64
+.global user_a_nx_fault_instruction
+user_a_nx_fault_instruction:
+    .skip 16
+    .skip 8112
 .global user_a_stack_top
 user_a_stack_top:
 
@@ -1730,6 +1813,26 @@ direct_port_probe_class:
 .global integer_fault_probe_class
 integer_fault_probe_class:
 #ifdef LEANOS_INTEGER_FAULT_PROBE_BP
+    .quad 1
+#else
+    .quad 0
+#endif
+
+/* Reason-sensitive page-fault probe selector consumed by the shared
+   production adapter.  0 is the existing supervisor-page read, 1 is the real
+   write to the present user read-only text leaf, 2 is instruction fetch from
+   A's present writable/NX stack leaf, 3 is a real reserved-bit walk fault,
+   and 4 is the supervisor read with one deliberately changed expected-walk
+   field. */
+.global page_fault_probe_class
+page_fault_probe_class:
+#ifdef LEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH
+    .quad 4
+#elif defined(LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT)
+    .quad 3
+#elif defined(LEANOS_PAGE_FAULT_PROBE_NX_EXECUTE)
+    .quad 2
+#elif defined(LEANOS_PAGE_FAULT_PROBE_READONLY_WRITE)
     .quad 1
 #else
     .quad 0

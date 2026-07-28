@@ -2564,6 +2564,40 @@ theorem restoreBlockingPeer_context_exact state blocking next
     restoreBlockingPeer_exact state blocking next hrestore
   exact hcontext
 
+/-- The selected-peer restore consumes exactly the selected identity from the
+resumable-context bank. -/
+theorem restoreBlockingPeer_resumableContexts_exact state blocking next
+    (hrestore : restoreBlockingPeer state blocking = .ok next) :
+    ∃ selected destination,
+      blocking.ipc.scheduler.lifecycle.current = some selected ∧
+      ResumablePreemption.contextFor state.resumable.contexts selected =
+        some destination ∧
+      destination.owner = selected ∧
+      next.resumable.contexts =
+        ResumablePreemption.eraseContext state.resumable.contexts selected := by
+  simp only [restoreBlockingPeer] at hrestore
+  split at hrestore <;> try contradiction
+  next selected hselected =>
+    split at hrestore <;> try contradiction
+    next destination hdestination =>
+      split at hrestore <;> try contradiction
+      simp only [Except.ok.injEq] at hrestore
+      subst next
+      have howner : destination.owner = selected := by simp_all
+      refine ⟨selected, destination, hselected, hdestination, howner, ?_⟩
+      simp [howner]
+
+theorem restoreBlockingPeer_deferredExact state blocking next
+    (hrestore : restoreBlockingPeer state blocking = .ok next) :
+    next.deferredCancels = state.deferredCancels := by
+  simp only [restoreBlockingPeer] at hrestore
+  split at hrestore <;> try contradiction
+  split at hrestore <;> try contradiction
+  split at hrestore <;> try contradiction
+  simp only [Except.ok.injEq] at hrestore
+  subst next
+  rfl
+
 theorem restoreBlockingPeer_blockingCoherent state blocking next
     (hrestore : restoreBlockingPeer state blocking = .ok next) :
     next.BlockingIPCCoherent := by
@@ -4453,16 +4487,21 @@ private def installSchedulerAdmission (state : CompositeState)
     blockingIPC := { state.blockingIPC with scheduler } }
 
 /-- Admit a runnable subject only when its kernel-owned initial context is
-already staged.  The raw scheduler owns queue policy; this composite wrapper
-owns the additional context-bank obligation needed by `RuntimeWellFormed`. -/
+already staged and no retained cancellation awaits its capacity-checked drain.
+The raw scheduler owns queue policy; this composite wrapper owns the additional
+context-bank and deferred-cancellation obligations needed by
+`AuthoritativeRuntimeWellFormed`. -/
 private def schedulerAdmission (state : CompositeState)
     (subject : Scheduler.SubjectId) : Scheduler.Outcome :=
-  match Scheduler.add state.scheduler subject with
-  | { result := .rejected reason, .. } => Scheduler.reject state.scheduler reason
-  | { state := scheduler, result := .accepted context } =>
-      match ResumablePreemption.contextFor state.resumable.contexts subject with
-      | none => Scheduler.reject state.scheduler .noResumableContext
-      | some _ => { state := scheduler, result := .accepted context }
+  match state.deferredCancels.retained subject with
+  | some _ => Scheduler.reject state.scheduler .undrainedCancellation
+  | none =>
+      match Scheduler.add state.scheduler subject with
+      | { result := .rejected reason, .. } => Scheduler.reject state.scheduler reason
+      | { state := scheduler, result := .accepted context } =>
+          match ResumablePreemption.contextFor state.resumable.contexts subject with
+          | none => Scheduler.reject state.scheduler .noResumableContext
+          | some _ => { state := scheduler, result := .accepted context }
 
 /-- Raw scheduler selection has no context-restore payload.  Empty selection
 is a genuine no-op success, but selecting a subject must be performed through
@@ -4569,6 +4608,7 @@ theorem schedulerAdmission_rejected_unchanged state subject reason
     (hrejected : (schedulerAdmission state subject).result = .rejected reason) :
     (schedulerAdmission state subject).state = state.scheduler := by
   unfold schedulerAdmission at hrejected ⊢
+  split <;> try simp [Scheduler.reject]
   generalize hadd : Scheduler.add state.scheduler subject = outcome at hrejected ⊢
   cases outcome with
   | mk scheduler result =>
@@ -4582,37 +4622,45 @@ theorem schedulerAdmission_rejected_unchanged state subject reason
 theorem schedulerAdmission_accepted_exact state subject context next
     (haccepted : schedulerAdmission state subject =
       { state := next, result := .accepted context }) :
-    Scheduler.add state.scheduler subject =
+    state.deferredCancels.retained subject = none ∧
+      Scheduler.add state.scheduler subject =
         { state := next, result := .accepted context } ∧
       ∃ saved, saved ∈ state.resumable.contexts ∧ saved.owner = subject := by
   unfold schedulerAdmission at haccepted
-  generalize hadd : Scheduler.add state.scheduler subject = outcome at haccepted
-  cases outcome with
-  | mk scheduler result =>
-      cases result with
-      | rejected reason => simp [Scheduler.reject] at haccepted
-      | accepted actual =>
-          cases hcontext : ResumablePreemption.contextFor
-              state.resumable.contexts subject with
-          | none => simp [hcontext, Scheduler.reject] at haccepted
-          | some saved =>
-              simp only [hcontext] at haccepted
-              injection haccepted with hnext hresult
-              subst next
-              cases hresult
-              refine ⟨rfl, saved, ?_, ?_⟩
-              · exact List.mem_of_find?_eq_some hcontext
-              · exact ResumablePreemption.contextFor_owner
-                  state.resumable.contexts subject saved hcontext
+  cases hretained : state.deferredCancels.retained subject with
+  | some saved => simp [hretained, Scheduler.reject] at haccepted
+  | none =>
+      simp only [hretained] at haccepted
+      refine ⟨rfl, ?_⟩
+      generalize hadd : Scheduler.add state.scheduler subject = outcome at haccepted
+      cases outcome with
+      | mk scheduler result =>
+          cases result with
+          | rejected reason => simp [Scheduler.reject] at haccepted
+          | accepted actual =>
+              cases hcontext : ResumablePreemption.contextFor
+                  state.resumable.contexts subject with
+              | none => simp [hcontext, Scheduler.reject] at haccepted
+              | some saved =>
+                  simp only [hcontext] at haccepted
+                  injection haccepted with hnext hresult
+                  subst next
+                  cases hresult
+                  refine ⟨rfl, saved, ?_, ?_⟩
+                  · exact List.mem_of_find?_eq_some hcontext
+                  · exact ResumablePreemption.contextFor_owner
+                      state.resumable.contexts subject saved hcontext
 
 theorem schedulerAdmission_eq_add_of_staged state subject saved
-    (hsaved : saved ∈ state.resumable.contexts ∧ saved.owner = subject) :
+    (hsaved : saved ∈ state.resumable.contexts ∧ saved.owner = subject)
+    (hnotRetained : state.deferredCancels.retained subject = none) :
     schedulerAdmission state subject = Scheduler.add state.scheduler subject := by
   have hsome : ResumablePreemption.contextFor state.resumable.contexts subject ≠ none := by
     intro hnone
     rw [ResumablePreemption.contextFor, List.find?_eq_none] at hnone
     exact hnone saved hsaved.1 (by simp [hsaved.2])
   unfold schedulerAdmission
+  simp only [hnotRetained]
   generalize hadd : Scheduler.add state.scheduler subject = outcome
   cases outcome with
   | mk scheduler result =>
@@ -5053,6 +5101,7 @@ inductive CompositeIPCReply where
 
 inductive OperationReply where
   | interrupt (action : EntryAction)
+  | interruptIdentityRejected (subject : Interrupt.SubjectId)
   | nmi (action : EntryAction)
   | returnSelection (armed : Bool)
   | userReturn (reply : UserReturnReply)
@@ -5079,6 +5128,7 @@ class without manufacturing an operation-specific proof witness.  Entry and
 user-return failures are excluded: they are transactional or fatal results,
 not state-preserving subsystem rejections. -/
 def OperationReply.isNonfatalRejection : OperationReply → Bool
+  | .interruptIdentityRejected _ => true
   | .syscall (.rejected _) => true
   | .ipc (.syscall (.sendHandleRejected _)) => true
   | .ipc (.syscall (.sendRejected _)) => true
@@ -5179,7 +5229,10 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
   | .interrupt frame =>
       let entry := dispatchHardware state.execution frame
       match entry.action with
-      | .contained subject => publishInterruptCleanup state subject
+      | .contained subject =>
+          if state.lifecycle.current = some subject then
+            publishInterruptCleanup state subject
+          else state
       | .fatal _ =>
           installResumable { state with execution := entry.state }
             { state.resumable with halted := true }
@@ -5433,7 +5486,13 @@ private theorem applyNmi_preserves_runtimeWellFormed state raw context
 operation.  Unlike the former generic `accepted`, this cannot erase an
 operation-specific rejection. -/
 def operationReply (state : CompositeState) : Operation → OperationReply
-  | .interrupt frame => .interrupt (dispatchHardware state.execution frame).action
+  | .interrupt frame =>
+      match (dispatchHardware state.execution frame).action with
+      | .contained subject =>
+          if state.lifecycle.current = some subject then
+            .interrupt (.contained subject)
+          else .interruptIdentityRejected subject
+      | action => .interrupt action
   | .nmi raw context => .nmi (dispatchNmi state.execution raw context).action
   | .selectUserReturn purpose =>
       .returnSelection (selectLiveReturnAuthority state purpose).execution.returnAuthorityArmed
@@ -5496,6 +5555,10 @@ def operationReply (state : CompositeState) : Operation → OperationReply
 subsystem rejections.  Fatal entry/return results and busy/terminal gate
 rejections are deliberately separate. -/
 inductive SubsystemRejection (state : CompositeState) : Operation → OperationReply → Prop
+  | interruptIdentity frame subject
+      (haction : (dispatchHardware state.execution frame).action = .contained subject)
+      (hmismatch : state.lifecycle.current ≠ some subject) :
+      SubsystemRejection state (.interrupt frame) (.interruptIdentityRejected subject)
   | syscall call reason
       (h : (Syscall.dispatch state.virtualMemory state.syscallContext call).reply = .rejected reason) :
       SubsystemRejection state (.syscall call) (.syscall (.rejected reason))
@@ -5581,11 +5644,12 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
 /-- A contained user fault is published to both scheduler views in the same
 composite step, so neither can select from the pre-termination lifecycle. -/
 theorem interrupt_contained_synchronizes_lifecycle state frame subject
+    (hcurrent : state.lifecycle.current = some subject)
     (hcontained : (dispatchHardware state.execution frame).action = .contained subject) :
     let next := applyOperation state (.interrupt frame)
     next.scheduler.lifecycle = next.execution.core.lifecycle ∧
       next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
-  simp [applyOperation, hcontained, publishInterruptCleanup,
+  simp [applyOperation, hcontained, hcurrent, publishInterruptCleanup,
     installTerminatedResumable]
 
 /-- A contained user fault publishes the complete terminal post-state for the
@@ -5631,7 +5695,7 @@ theorem interrupt_contained_cleans_faulting_subject state frame subject
         detached.1.blocked subject = none := by
     simp [BlockingIPCContext.detachInvalidated,
       hblockingClean.1, hblockingClean.2]
-  simp [applyOperation, hcontained, publishInterruptCleanup,
+  simp [applyOperation, hcontained, hcurrent, publishInterruptCleanup,
     installTerminatedResumable, hdead, hscheduler.1, hscheduler.2, hcontext,
     hdetached.1, hdetached.2]
 
@@ -5915,7 +5979,17 @@ private theorem classified_rejection_is_subsystem state operation
   cases operation with
   | nmi raw context =>
       simp [operationReply, OperationReply.isNonfatalRejection] at hrejected
-  | interrupt frame | selectUserReturn purpose | restart =>
+  | interrupt frame =>
+      cases haction : (dispatchHardware state.execution frame).action with
+      | contained subject =>
+          by_cases hcurrent : state.lifecycle.current = some subject
+          · simp [operationReply, haction, hcurrent,
+              OperationReply.isNonfatalRejection] at hrejected
+          · simpa [operationReply, haction, hcurrent] using
+              SubsystemRejection.interruptIdentity frame subject haction hcurrent
+      | fatal reason | timer | syscall | rejected reason | alreadyHalted reason =>
+          simp [operationReply, haction, OperationReply.isNonfatalRejection] at hrejected
+  | selectUserReturn purpose | restart =>
       simp [operationReply, OperationReply.isNonfatalRejection] at hrejected
   | userReturn request =>
       simp only [operationReply] at hrejected
@@ -7113,7 +7187,7 @@ theorem gate_scheduleAdd_accepted_sound state subject context next
         .completed (.scheduler (.accepted context)) ∧
       (gate state (.scheduleAdd subject)).state.scheduler = next ∧
       Scheduler.WellFormed (gate state (.scheduleAdd subject)).state.scheduler := by
-  obtain ⟨hadd, _hsaved⟩ := schedulerAdmission_accepted_exact
+  obtain ⟨_hnotRetained, hadd, _hsaved⟩ := schedulerAdmission_accepted_exact
     state subject context next haccepted
   have hpreserved := Scheduler.add_preserves_wellFormed state.scheduler subject hwellFormed
   rw [hadd] at hpreserved
@@ -8389,7 +8463,10 @@ theorem select_user_return_is_reachable state purpose
   simp [gate, hmode, applyOperation]
 
 theorem syscall_entry_leaves_return_unarmed state frame
-    (hmode : state.execution.mode = .running) :
+    (hmode : state.execution.mode = .running)
+    (hidentity : ∀ subject,
+      (dispatchHardware state.execution frame).action = .contained subject →
+        state.lifecycle.current = some subject) :
     (gate state (.interrupt frame)).state.execution.returnAuthorityArmed = false := by
   have hunarmed := dispatchHardware_running_returnAuthority_unarmed
     state.execution frame hmode
@@ -8399,7 +8476,9 @@ theorem syscall_entry_leaves_return_unarmed state frame
   generalize hdispatch : dispatchHardware state.execution frame = entry at hunarmed
   cases haction : entry.action with
   | contained subject =>
-      simp [publishInterruptCleanup, installTerminatedResumable]
+      have hcurrent : state.lifecycle.current = some subject :=
+        hidentity subject (by rw [hdispatch]; exact haction)
+      simp [hcurrent, publishInterruptCleanup, installTerminatedResumable]
   | fatal reason => simp [installResumable]
   | timer => simpa using hunarmed
   | syscall => simpa using hunarmed
@@ -9849,7 +9928,7 @@ theorem gate_scheduleAdd_accepted_runtimeWellFormed_requires_staged_context
     (haccepted : schedulerAdmission state subject =
       { state := next, result := .accepted context }) :
     ∃ saved, saved ∈ state.resumable.contexts ∧ saved.owner = subject := by
-  exact (schedulerAdmission_accepted_exact state subject context next haccepted).2
+  exact (schedulerAdmission_accepted_exact state subject context next haccepted).2.2
 
 /-- Queue admission retains the authoritative lifecycle and appends exactly
 the admitted subject.  These small projections keep the composite proof from
@@ -9879,13 +9958,15 @@ theorem gate_scheduleAdd_accepted_preserves_runtimeWellFormed
     (hmode : state.execution.mode = .running)
     (haccepted : Scheduler.add state.scheduler subject =
       { state := next, result := .accepted context })
-    (hsaved : saved ∈ state.resumable.contexts ∧ saved.owner = subject) :
+    (hsaved : saved ∈ state.resumable.contexts ∧ saved.owner = subject)
+    (hnotRetained : state.deferredCancels.retained subject = none) :
     RuntimeWellFormed (gate state (.scheduleAdd subject)).state ∧
       (gate state (.scheduleAdd subject)).result =
         .completed (.scheduler (.accepted context)) := by
   have hadmission : schedulerAdmission state subject =
       { state := next, result := .accepted context } := by
-    rw [schedulerAdmission_eq_add_of_staged state subject saved hsaved, haccepted]
+    rw [schedulerAdmission_eq_add_of_staged state subject saved hsaved hnotRetained,
+      haccepted]
   rcases hstate with
     ⟨hcoherent, hexecution, hlifecycle, hcapabilities, hvirtual, hipc,
       hscheduler, hpreemption, hresumable, htransfers, hhalted, hlive⟩
@@ -9968,12 +10049,13 @@ theorem scheduleAdd_missing_context_rejected_atomic state subject context next
     (hmode : state.execution.mode = .running)
     (hadd : Scheduler.add state.scheduler subject =
       { state := next, result := .accepted context })
+    (hnotRetained : state.deferredCancels.retained subject = none)
     (hmissing : ResumablePreemption.contextFor state.resumable.contexts subject = none) :
     (gate state (.scheduleAdd subject)).result =
         .completed (.scheduler (.rejected .noResumableContext)) ∧
       (gate state (.scheduleAdd subject)).state = state := by
   simp [gate, hmode, operationReply, applyOperation, schedulerAdmission,
-    hadd, hmissing, Scheduler.reject]
+    hnotRetained, hadd, hmissing, Scheduler.reject]
 
 /-- Queue admission is a complete public operation family: raw scheduler
 rejections and missing-context integration failures are atomic, while every
@@ -9992,10 +10074,11 @@ theorem scheduleAdd_operationPreservesRuntimeWellFormed subject :
               (by simp [gate, hmode, operationReply, hadmission])
               (.scheduleAdd subject reason (by simp [hadmission]))).1
         | accepted context =>
-            obtain ⟨hadd, saved, hmember, howner⟩ :=
+            obtain ⟨hnotRetained, hadd, saved, hmember, howner⟩ :=
               schedulerAdmission_accepted_exact state subject context next hadmission
             exact (gate_scheduleAdd_accepted_preserves_runtimeWellFormed
-              state subject context next saved hstate hmode hadd ⟨hmember, howner⟩).1
+              state subject context next saved hstate hmode hadd ⟨hmember, howner⟩
+                hnotRetained).1
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.scheduleAdd subject) hstate hmode
 
@@ -10663,7 +10746,9 @@ theorem interrupt_operationPreservesRuntimeWellFormed frame :
     | contained subject =>
         have hpublished := publishInterruptCleanup_preserves_runtimeWellFormed
           state subject hstate hmode
-        simpa [gate, hmode, applyOperation, entry, haction] using hpublished
+        by_cases hcurrent : state.lifecycle.current = some subject
+        · simpa [gate, hmode, applyOperation, entry, haction, hcurrent] using hpublished
+        · simpa [gate, hmode, applyOperation, entry, haction, hcurrent] using hstate
     | fatal reason =>
         have hentryMode : ∃ record, entry.state.mode = .halted record := by
           apply dispatchHardware_fatal_halts state.execution frame reason
@@ -10920,11 +11005,12 @@ private theorem publishInterruptCleanup_preserves_contextAgreement state subject
 /-- Contained cleanup preserves exact waiter/saved-context agreement while
 invalidated peers move into the disjoint deferred-cancel bank. -/
 theorem interrupt_contained_preserves_contextAgreement state frame subject
+    (hcurrent : state.lifecycle.current = some subject)
     (hcontained : (dispatchHardware state.execution frame).action = .contained subject)
     (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
     BlockingIPCContext.ContextAgreement
       (applyOperation state (.interrupt frame)).blockingIPCContext := by
-  simpa [applyOperation, hcontained] using
+  simpa [applyOperation, hcontained, hcurrent] using
     publishInterruptCleanup_preserves_contextAgreement state subject hstate
 
 /-- Readiness for a contained fault binds the trusted execution identity to
@@ -12132,7 +12218,7 @@ theorem interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
     | handling active => simp [dispatchHardware, hmode, halt] at hcontained
     | halted record => simp [dispatchHardware, hmode] at hcontained
     | running => rfl
-  simpa [applyOperation, hcontained] using
+  simpa [applyOperation, hcontained, hcurrent] using
     publishInterruptCleanup_preserves_deferredBlockingRuntimeWellFormed
       state faulting hstate hcurrent hmode
 
@@ -12191,6 +12277,8 @@ theorem interrupt_contained_clears_faulting_deferred
     (hbound : ContainedFaultIdentityBound state)
     (hcontained : (dispatchHardware state.execution frame).action = .contained faulting) :
     (applyOperation state (.interrupt frame)).deferredCancels.retained faulting = none := by
+  have hcurrent : state.lifecycle.current = some faulting :=
+    contained_faulting_identity_is_current state frame faulting hbound hcontained
   have hpost := interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
     state frame faulting hstate hbound hcontained
   cases hretained :
@@ -12203,7 +12291,7 @@ theorem interrupt_contained_clears_faulting_deferred
       have hdeadLifecycle :
           (applyOperation state (.interrupt frame)).lifecycle.capabilities.subjects
             faulting = false := by
-        simpa [applyOperation, hcontained, publishInterruptCleanup,
+        simpa [applyOperation, hcontained, hcurrent, publishInterruptCleanup,
           installTerminatedResumable] using hdead
       have :
           (applyOperation state (.interrupt frame)).blockingIPCContext.ipc.scheduler.lifecycle.capabilities.subjects
@@ -12221,6 +12309,7 @@ theorem interrupt_contained_clears_faulting_deferred
 quiescence, and its remaining address-space authority. -/
 theorem interrupt_contained_defers_invalidated_waiter
     state frame faulting peer endpoint saved
+    (hcurrentFaulting : state.lifecycle.current = some faulting)
     (hcontained : (dispatchHardware state.execution frame).action = .contained faulting)
     (hendpoint :
       (BlockingIPCContext.terminate state.blockingIPCContext faulting).ipc.waiterEndpoint peer =
@@ -12260,7 +12349,7 @@ theorem interrupt_contained_defers_invalidated_waiter
     state.deferredCancels
     (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler
     peer endpoint saved hendpoint hsaved hretired
-  simpa [applyOperation, hcontained, publishInterruptCleanup,
+  simpa [applyOperation, hcontained, hcurrentFaulting, publishInterruptCleanup,
     installTerminatedResumable] using
     And.intro hexact.1
       (And.intro hexact.2.1
@@ -12356,7 +12445,7 @@ theorem gate_preserves_blockingContextAgreement state operation
   | halted record => cases operation <;> simpa [gate, hmode] using hstate
   | running =>
       cases operation <;> simp only [gate, hmode, applyOperation]
-      all_goals try split
+      all_goals repeat' first | split
       all_goals try exact hstate
       all_goals try exact publishInterruptCleanup_preserves_contextAgreement state _ hstate
       all_goals try
@@ -13335,12 +13424,12 @@ theorem gate_scheduleAdd_preserves_blockingRuntimeWellFormed state subject
                 state subject reason (by simp [hadmission])
               simpa [gate, hmode, applyOperation, hadmission, hunchanged] using hstate
           | accepted context =>
-              obtain ⟨hadd, saved, hmember, howner⟩ :=
+              obtain ⟨hnotRetained, hadd, saved, hmember, howner⟩ :=
                 schedulerAdmission_accepted_exact state subject context next hadmission
               have hglobal :=
                 (gate_scheduleAdd_accepted_preserves_runtimeWellFormed
                   state subject context next saved hstate.1 hmode hadd
-                    ⟨hmember, howner⟩).1
+                    ⟨hmember, howner⟩ hnotRetained).1
               refine ⟨hglobal, ?_⟩
               rcases hstate.2 with ⟨hblocking, hagreement⟩
               change BlockingIPC.WellFormed state.blockingIPC at hblocking
@@ -13428,6 +13517,66 @@ private theorem schedulerTick_preserves_blockedView scheduler subject
                   split at hselect <;> try simp_all [Scheduler.reject]
                   rcases hselect with ⟨rfl, _⟩
                   grind
+
+/-- A resumable switch cannot select or save a subject that was neither the
+current subject nor a member of the ready queue.  Therefore an existing
+absence from the kernel-owned context bank remains an absence after every
+accepted switch, typed rejection, and fatal entry. -/
+private theorem resumeSwitch_preserves_quiescent_context_absence
+    state interruptState frame registers subject
+    (hcurrent : state.scheduler.lifecycle.current ≠ some subject)
+    (hready : subject ∉ state.scheduler.ready)
+    (habsent : ResumablePreemption.contextFor state.contexts subject = none) :
+    ResumablePreemption.contextFor
+      (ResumablePreemption.switch state interruptState frame registers).state.contexts
+      subject = none := by
+  have hschedulerView :=
+    schedulerTick_preserves_blockedView state.scheduler subject hcurrent hready
+  simp only [ResumablePreemption.switch]
+  split <;> try simp_all [ResumablePreemption.reject, ResumablePreemption.halt]
+  split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals
+    simp_all [ResumablePreemption.contextFor, ResumablePreemption.eraseContext]
+
+/-- The scheduler projection of a resumable switch leaves a quiescent subject
+quiescent.  Rejections and fatal entry preserve the scheduler literally;
+accepted switching publishes exactly the scheduler tick covered above. -/
+private theorem resumeSwitch_preserves_quiescent_scheduler_view
+    state interruptState frame registers subject
+    (hcurrent : state.scheduler.lifecycle.current ≠ some subject)
+    (hready : subject ∉ state.scheduler.ready) :
+    let next :=
+      (ResumablePreemption.switch state interruptState frame registers).state.scheduler
+    next.lifecycle.capabilities = state.scheduler.lifecycle.capabilities ∧
+      next.lifecycle.runnable = state.scheduler.lifecycle.runnable ∧
+      next.lifecycle.addressOwner = state.scheduler.lifecycle.addressOwner ∧
+      next.lifecycle.current ≠ some subject ∧
+      subject ∉ next.ready := by
+  have hschedulerView :=
+    schedulerTick_preserves_blockedView state.scheduler subject hcurrent hready
+  simp only [ResumablePreemption.switch]
+  split <;> try simp_all [ResumablePreemption.reject, ResumablePreemption.halt]
+  split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals split <;> try simp_all [ResumablePreemption.reject]
+  all_goals
+    exact hschedulerView
 
 /-- A scheduler tick cannot make an existing endpoint waiter runnable, current,
 or ready.  The tick rotates only the old current subject and the existing ready
@@ -13630,21 +13779,22 @@ user-fault branch; all other typed outcomes preserve the same invariant
 without an additional readiness fact. -/
 theorem gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
     state frame
-    (hstate : DeferredBlockingRuntimeWellFormed state)
-    (hbound : ContainedFaultIdentityBound state) :
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
     DeferredBlockingRuntimeWellFormed (gate state (.interrupt frame)).state := by
   by_cases hcontained :
       ∃ subject, (dispatchHardware state.execution frame).action = .contained subject
   · obtain ⟨subject, haction⟩ := hcontained
-    have hpreserved :=
-      interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
-        state frame subject hstate hbound haction
     have hmode : state.execution.mode = .running := by
       cases hmode : state.execution.mode with
       | handling active => simp [dispatchHardware, hmode, halt] at haction
       | halted record => simp [dispatchHardware, hmode] at haction
       | running => rfl
-    simpa [gate, hmode] using hpreserved
+    by_cases hcurrent : state.lifecycle.current = some subject
+    · have hpreserved :=
+        publishInterruptCleanup_preserves_deferredBlockingRuntimeWellFormed
+          state subject hstate hcurrent hmode
+      simpa [gate, hmode, applyOperation, haction, hcurrent] using hpreserved
+    · simpa [gate, hmode, applyOperation, haction, hcurrent] using hstate
   · exact gate_interrupt_noncontained_preserves_deferredBlockingRuntimeWellFormed
       state frame (fun subject haction => hcontained ⟨subject, haction⟩) hstate
 
@@ -13830,18 +13980,17 @@ theorem observeDMAControl_changed_suffix_absorbing state snapshot accepted propo
   · rfl
   · exact halted_suffix_absorbing _ _ proposals rfl
 
-/-! ## Conditional authoritative ordinary/blocking gate successor
+/-! ## Authoritative ordinary/blocking gate
 
 The ordinary gate and the blocking gate were developed independently while
 their operation-specific preservation proofs were completed.  The vocabulary
 below is their migration boundary: it uses the same `CompositeState`, one
 execution latch, and one typed result family.  The successor invariant folds
 the complete blocking/deferred classification into the global boundary.
-Lower blocking and drain readiness are projections of that invariant;
-ordinary and blocking operations additionally carry public compatibility
-facts about their dormant-cancellation effects.  Those facts are not yet
-derived for every constructor, so this section does not establish universal
-successor-gate preservation. -/
+Lower blocking and drain readiness are projections of that invariant.
+Operation-local compatibility lemmas remain as proof decomposition, while the
+published gate and trace preservation boundaries derive them entirely from the
+authoritative pre-invariant. -/
 
 /-- Every currently modeled runtime event admitted by the successor gate. -/
 inductive AuthoritativeOperation where
@@ -14252,6 +14401,71 @@ theorem dormantCancellationCompatible_of_exact_projections before after
       hvalid.2.2.2.2.2.2,
       hbefore.2.2.2 subject saved hretainedBefore⟩
 
+/-- Publishing any resumable-switch outcome preserves every dormant
+cancellation observation.  Accepted switches rotate only the old current and
+ready subjects, while blocked and retained subjects are disjoint from both;
+typed rejection and fatal entry leave the scheduler and context bank exact. -/
+private theorem installResumableSwitch_dormantCancellationCompatible
+    state frame registers
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    DormantCancellationCompatible state
+      (installResumable state
+        (ResumablePreemption.switch state.resumable state.execution.core
+          frame registers).state) := by
+  rcases hstate.2.1.1 with ⟨hblocking, hagreement⟩
+  rcases hblocking with
+    ⟨_hscheduler, _hqueues, hwaiters, _hunique, hindex, _hmailbox,
+      _hcapabilities⟩
+  simp only [CompositeState.blockingIPCContext] at hagreement hwaiters hindex
+  have hshared :
+      state.resumable.scheduler = state.blockingIPC.scheduler :=
+    hstate.1.1.2.2.2.2.2.2.2.1.trans hstate.1.blockingScheduler.symm
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro subject hblocked
+    exact hstate.2.1.2.1 subject hblocked
+  · intro subject saved hblocked
+    change state.blockingContexts subject = some saved at hblocked
+    cases hendpoint : state.blockingIPC.waiterEndpoint subject with
+    | none =>
+        have hprojection := hagreement.1 subject
+        simp [CompositeState.blockingIPCContext, hblocked, hendpoint] at hprojection
+    | some endpoint =>
+        have hvalid :=
+          hwaiters endpoint subject ((hindex endpoint subject).mpr hendpoint)
+        have hcurrent :
+            state.resumable.scheduler.lifecycle.current ≠ some subject := by
+          simpa [hshared] using hvalid.2.2.2.2.2.1
+        have hready : subject ∉ state.resumable.scheduler.ready := by
+          simpa [hshared] using hvalid.2.2.2.2.2.2
+        simpa [installResumable] using
+          resumeSwitch_preserves_quiescent_context_absence
+            state.resumable state.execution.core frame registers subject
+            hcurrent hready (hstate.2.2.1 subject saved hblocked)
+  · intro subject saved hretained
+    have hvalid := hstate.2.1.2.2 subject saved hretained
+    simp only [CompositeState.blockingIPCContext] at hvalid
+    have hcurrent :
+        state.resumable.scheduler.lifecycle.current ≠ some subject := by
+      simpa [hshared] using hvalid.2.2.2.2.1
+    have hready : subject ∉ state.resumable.scheduler.ready := by
+      simpa [hshared] using hvalid.2.2.2.2.2.1
+    have hview :=
+      resumeSwitch_preserves_quiescent_scheduler_view
+        state.resumable state.execution.core frame registers subject
+          hcurrent hready
+    have hcontext :=
+      resumeSwitch_preserves_quiescent_context_absence
+        state.resumable state.execution.core frame registers subject
+          hcurrent hready (hstate.2.2.2 subject saved hretained)
+    simp only [installResumable]
+    refine ⟨hvalid.2.1, ?_, ?_, hview.2.2.2.1, hview.2.2.2.2, ?_, hcontext⟩
+    · rw [hview.1, hshared]
+      exact hvalid.2.2.1
+    · rw [hview.2.1, hshared]
+      exact hvalid.2.2.2.1
+    · simpa [Scheduler.ownsAddressSpace, hview.2.2.1, hshared] using
+        hvalid.2.2.2.2.2.2
+
 private theorem dormantCancellationCompatible_preserves
     before after (hbefore : DeferredBlockingRuntimeWellFormed before)
     (hblocking : BlockingRuntimeWellFormed after)
@@ -14279,8 +14493,8 @@ private theorem dormantCancellationCompatible_preserves
       exact hretained
     exact hcompatible.retainedQuiescent subject saved hretainedBefore |>.2.2.2.2.2.2
 
-/-- Independently stated compatibility premises for every public operation.
-Contained entry consumes its trusted identity binding.  Termination, NMI, and
+/-- Independently stated compatibility facts for every public operation.
+Contained entry validates identity inside the transition.  Termination, NMI, and
 capacity-checked drains have direct preservation proofs.  Scheduler admission
 must not target an undrained cancellation.  Operations already proved to
 preserve the blocking runtime expose only exact dormant-store effect laws.
@@ -14290,7 +14504,7 @@ the authoritative invariant of the gate-selected post-state, but most branches
 still require the caller to establish laws about that exact post-state. -/
 def AuthoritativeOperationCompatible (state : CompositeState) :
     AuthoritativeOperation → Prop
-  | .ordinary (.interrupt _) => ContainedFaultIdentityBound state
+  | .ordinary (.interrupt _) => True
   | .ordinary (.nmi _ _) => True
   | .ordinary (.terminateSubject _) => True
   | .ordinary .terminateCurrent => True
@@ -14307,6 +14521,16 @@ def AuthoritativeOperationCompatible (state : CompositeState) :
       DormantCancellationCompatible state
         (authoritativeGate state (.blocking operation)).state
   | .drainDeferred _ => True
+
+/-- Contained entry has no caller-supplied post-state compatibility law.  Its
+sole operation-local premise is the trusted execution/lifecycle identity
+binding consumed by atomic cleanup.  Naming this constructor explicitly lets
+finite authoritative traces certify an interrupt member without unfolding the
+complete compatibility classifier. -/
+theorem interrupt_authoritativeOperationCompatible state frame
+    : AuthoritativeOperationCompatible state
+      (.ordinary (.interrupt frame)) :=
+  trivial
 
 /-- Control, data-only IPC, and raw scheduler constructors retain every
 projection observed by dormant cancellation.  Their shared public operation
@@ -14372,7 +14596,7 @@ private theorem authoritativeGate_ordinary_preserves_deferredBlockingRuntimeWell
   | interrupt frame =>
       rw [authoritativeGate_ordinary_state]
       exact gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
-        state frame hstate hcompatible
+        state frame hstate
   | nmi raw context =>
       rw [authoritativeGate_ordinary_state]
       exact gate_nmi_preserves_deferredBlockingRuntimeWellFormed
@@ -14519,7 +14743,7 @@ theorem authoritativeGate_preserves_runtimeWellFormed state operation
       | handling active => simpa [authoritativeGate, hmode] using hstate
       | halted record => simpa [authoritativeGate, hmode] using hstate
 
-theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
+theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible
     state operation (hstate : AuthoritativeRuntimeWellFormed state)
     (hcompatible : AuthoritativeOperationCompatible state operation) :
     AuthoritativeRuntimeWellFormed (authoritativeGate state operation).state := by
@@ -14546,6 +14770,75 @@ theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
       | handling active => simpa [authoritativeGate, hmode] using hstate
       | halted record => simpa [authoritativeGate, hmode] using hstate
 
+/-- Resumable preemption derives its dormant-cancellation compatibility from
+the folded pre-state alone.  A successful save/restore switch cannot select,
+save, or queue a blocked or retained subject; all typed denials are atomic and
+fatal entry republishes only the unchanged scheduler/context bank under the
+terminal latch. -/
+theorem resumePreempt_authoritativeOperationCompatible state frame registers
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.resumePreempt frame registers)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary (.resumePreempt frame registers))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      have hswitch :=
+        installResumableSwitch_dormantCancellationCompatible
+          state frame registers hstate
+      cases herror : (ResumablePreemption.switch state.resumable
+          state.execution.core frame registers).error with
+      | none =>
+          simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+            applyOperation, herror] using hswitch
+      | some reason =>
+          cases reason with
+          | fatalEntry =>
+              cases hhalted : (ResumablePreemption.switch state.resumable
+                  state.execution.core frame registers).state.halted with
+              | false =>
+                  simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                    applyOperation, herror, hhalted] using
+                      dormantCancellationCompatible_of_exact_projections
+                        state state hstate rfl rfl rfl rfl
+              | true =>
+                  simp only [authoritativeGate, hmode, applyAuthoritativeOperation,
+                    applyOperation, herror, hhalted]
+                  refine ⟨?_, ?_, ?_, ?_⟩
+                  · exact hswitch.deferredExact
+                  · exact hswitch.blockedDeferredDisjoint
+                  · exact hswitch.blockedResumableDisjoint
+                  · exact hswitch.retainedQuiescent
+          | nonTimer | malformedIncoming | noCurrent | contextMismatch |
+              duplicateSave | staleActiveSpace | bankFull | schedulerRejected |
+              noDestination | staleDestination =>
+                simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                  applyOperation, herror] using
+                    dormantCancellationCompatible_of_exact_projections
+                      state state hstate rfl rfl rfl rfl
+
+/-- Every resumable-preemption result unconditionally preserves the complete
+folded authoritative invariant.  In particular, callers supply neither a
+post-state compatibility law nor a per-state readiness witness. -/
+theorem authoritativeGate_resumePreempt_preserves_authoritativeRuntimeWellFormed
+    state frame registers (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.resumePreempt frame registers))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.resumePreempt frame registers)) hstate
+    (resumePreempt_authoritativeOperationCompatible
+      state frame registers hstate)
+
 /-- Every ordinary constructor in the blocking-state-neutral family now has a
 closed successor-gate preservation theorem.  Its compatibility evidence is
 derived from exact transition projections, never from the desired post-state
@@ -14555,10 +14848,1685 @@ theorem authoritativeGate_blockingStateNeutral_preserves_authoritativeRuntimeWel
     (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary operation)).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary operation) hstate
     (blockingStateNeutral_authoritativeOperationCompatible
       state operation hoperation hstate)
+
+/-- Mapping publication changes the blocking scheduler's lifecycle mapping,
+but leaves every field observed by dormant cancellation exact. -/
+private theorem installVirtualMemory_dormantCancellationCompatible
+    state virtualMemory translations
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    DormantCancellationCompatible state
+      (installVirtualMemory state virtualMemory translations) := by
+  refine ⟨rfl, hstate.2.1.2.1, hstate.2.2.1, ?_⟩
+  intro subject saved hretained
+  have hvalid := hstate.2.1.2.2 subject saved hretained
+  simp only [CompositeState.blockingIPCContext] at hvalid
+  have hblockingScheduler :
+      state.blockingIPC.scheduler = state.scheduler :=
+    hstate.1.blockingScheduler
+  have hschedulerLifecycle :
+      state.scheduler.lifecycle = state.lifecycle :=
+    hstate.1.1.2.1
+  simpa [installVirtualMemory, Scheduler.ownsAddressSpace,
+      hblockingScheduler, hschedulerLifecycle] using
+    And.intro hvalid.2.1
+      (And.intro hvalid.2.2.1
+        (And.intro hvalid.2.2.2.1
+          (And.intro hvalid.2.2.2.2.1
+            (And.intro hvalid.2.2.2.2.2.1
+              (And.intro hvalid.2.2.2.2.2.2
+                (hstate.2.2.2 subject saved hretained))))))
+
+/-- Raw mapping changes only virtual-memory, translation, and derived mapping
+projections.  Every waiter, saved context, retained cancellation, and
+resumable context observed by the dormant-cancellation invariant is retained. -/
+theorem map_authoritativeOperationCompatible state slot page permissions
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.map slot page permissions)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary (.map slot page permissions))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      simp only [authoritativeGate, hmode, applyAuthoritativeOperation,
+        applyOperation]
+      split
+      · exact dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+      · exact installVirtualMemory_dormantCancellationCompatible state _ _ hstate
+
+/-- Raw unmapping and its page-local TLB invalidation likewise leave every
+projection observed by dormant cancellation exact. -/
+theorem unmap_authoritativeOperationCompatible state page
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state (.ordinary (.unmap page)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state (.ordinary (.unmap page))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      simp only [authoritativeGate, hmode, applyAuthoritativeOperation,
+        applyOperation]
+      split
+      · exact dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+      · exact installVirtualMemory_dormantCancellationCompatible state _ _ hstate
+
+/-- Raw mapping has a closed preservation theorem at the folded authoritative
+boundary; callers need no post-state compatibility witness. -/
+theorem authoritativeGate_map_preserves_authoritativeRuntimeWellFormed
+    state slot page permissions
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.map slot page permissions))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.map slot page permissions)) hstate
+    (map_authoritativeOperationCompatible state slot page permissions hstate)
+
+/-- Raw unmapping has the corresponding closed folded-invariant theorem,
+including its page-local TLB invalidation. -/
+theorem authoritativeGate_unmap_preserves_authoritativeRuntimeWellFormed
+    state page (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.unmap page))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.unmap page)) hstate
+    (unmap_authoritativeOperationCompatible state page hstate)
+
+/-- Selecting a live return plan changes only execution authority, so it can
+be appended to any already-compatible dormant-cancellation mutation. -/
+private theorem selectLiveReturnAuthority_dormantCancellationCompatible
+    before state purpose
+    (hcompatible : DormantCancellationCompatible before state) :
+    DormantCancellationCompatible before
+      (selectLiveReturnAuthority state purpose) := by
+  rw [selectLiveReturnAuthority_eq_execution_update]
+  exact
+    ⟨hcompatible.deferredExact, hcompatible.blockedDeferredDisjoint,
+      hcompatible.blockedResumableDisjoint, hcompatible.retainedQuiescent⟩
+
+/-- The raw syscall family derives caller and active address space from the
+execution latch.  Rejections are atomic, access acceptance changes only
+return authority, and accepted map/unmap publication reuses the authoritative
+virtual-memory compatibility law before selecting that return authority. -/
+theorem syscall_authoritativeOperationCompatible state call
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state (.ordinary (.syscall call)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state (.ordinary (.syscall call))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      simp only [authoritativeGate, hmode, applyAuthoritativeOperation,
+        applyOperation]
+      cases hreply :
+          (Syscall.dispatch state.virtualMemory state.syscallContext call).reply with
+      | rejected reason =>
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | accepted =>
+          cases hdecode : Syscall.decode call with
+          | error reason =>
+              simp [Syscall.dispatch, hdecode] at hreply
+          | ok operation =>
+              cases operation with
+              | access page access =>
+                  exact
+                    selectLiveReturnAuthority_dormantCancellationCompatible
+                      state state .syscallResume
+                      (dormantCancellationCompatible_of_exact_projections
+                        state state hstate rfl rfl rfl rfl)
+              | map handleWord page permissions =>
+                  exact
+                    selectLiveReturnAuthority_dormantCancellationCompatible state
+                      (installVirtualMemory state
+                        (Syscall.dispatch state.virtualMemory
+                          state.syscallContext call).state
+                        { state.resumable.translations with
+                          virtual :=
+                            (Syscall.dispatch state.virtualMemory
+                              state.syscallContext call).state })
+                      .syscallResume
+                      (installVirtualMemory_dormantCancellationCompatible
+                        state _ _ hstate)
+              | unmap page =>
+                  exact
+                    selectLiveReturnAuthority_dormantCancellationCompatible state
+                      (installVirtualMemory state
+                        (Syscall.dispatch state.virtualMemory
+                          state.syscallContext call).state
+                        (TLB.invalidatePage
+                          { state.resumable.translations with
+                            virtual :=
+                              (Syscall.dispatch state.virtualMemory
+                                state.syscallContext call).state }
+                          state.execution.core.context.activeAddressSpace page))
+                      .syscallResume
+                      (installVirtualMemory_dormantCancellationCompatible
+                        state _ _ hstate)
+
+/-- Every decoded syscall now has a closed preservation theorem at the folded
+authoritative boundary, without a caller-supplied post-state law. -/
+theorem authoritativeGate_syscall_preserves_authoritativeRuntimeWellFormed
+    state call (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.syscall call))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.syscall call)) hstate
+    (syscall_authoritativeOperationCompatible state call hstate)
+
+/-- Capability publication changes the blocking scheduler's capability view,
+but retains every dormant-cancellation observation.  Registry preservation is
+the only non-structural premise needed for retained dead-runner validity. -/
+private theorem installCopiedCapabilities_dormantCancellationCompatible
+    state capabilities
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hsubjects : capabilities.subjects = state.capabilities.subjects) :
+    DormantCancellationCompatible state
+      (installCopiedCapabilities state capabilities) := by
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro subject hblocked
+    apply hstate.2.1.2.1 subject
+    exact hblocked
+  · simpa [installCopiedCapabilities] using hstate.2.2.1
+  · intro subject saved hretained
+    have hvalid := hstate.2.1.2.2 subject saved hretained
+    have hcontext := hstate.2.2.2 subject saved hretained
+    rcases hstate.1.1 with
+      ⟨_, hschedulerLifecycle, _, hcapabilities, _, _, _, _, _, _, _, _, _⟩
+    have hbase :
+        state.capabilities =
+          state.blockingIPC.scheduler.lifecycle.capabilities :=
+      hcapabilities.trans
+        (congrArg SubjectLifecycle.State.capabilities
+          hstate.1.blockingLifecycle.symm)
+    have hlive : capabilities.subjects subject = true := by
+      rw [hsubjects, hbase]
+      exact hvalid.2.2.1
+    simpa [installCopiedCapabilities, CompositeState.blockingIPCContext,
+        hstate.1.blockingScheduler, hstate.1.blockingLifecycle,
+        hschedulerLifecycle, hsubjects, hcapabilities,
+        Scheduler.ownsAddressSpace] using
+      And.intro hvalid.2.1
+        (And.intro hlive
+          (And.intro hvalid.2.2.2.1
+            (And.intro hvalid.2.2.2.2.1
+              (And.intro hvalid.2.2.2.2.2.1
+                (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
+
+/-- Publishing a sealed-transfer state has the same dormant-cancellation
+boundary as direct capability publication.  Transfer offer/receipt may change
+the endpoint mailbox and capability derivation state, but a stable subject
+registry keeps every retained dead runner classified by the authoritative
+blocking scheduler. -/
+private theorem installTransfers_dormantCancellationCompatible
+    state transfers
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hsubjects :
+      transfers.capabilities.subjects = state.capabilities.subjects) :
+    DormantCancellationCompatible state
+      (installTransfers state transfers) := by
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro subject hblocked
+    apply hstate.2.1.2.1 subject
+    exact hblocked
+  · simpa [installTransfers] using hstate.2.2.1
+  · intro subject saved hretained
+    have hvalid := hstate.2.1.2.2 subject saved hretained
+    have hcontext := hstate.2.2.2 subject saved hretained
+    rcases hstate.1.1 with
+      ⟨_, hschedulerLifecycle, _, hcapabilities, _, _, _, _, _, _, _, _, _⟩
+    have hlive : transfers.capabilities.subjects subject = true := by
+      rw [hsubjects, hcapabilities, ← hstate.1.blockingLifecycle]
+      exact hvalid.2.2.1
+    simpa [installTransfers, CompositeState.blockingIPCContext,
+        hstate.1.blockingScheduler, hstate.1.blockingLifecycle,
+        hschedulerLifecycle, hsubjects, hcapabilities,
+        Scheduler.ownsAddressSpace] using
+      And.intro hvalid.2.1
+        (And.intro hlive
+          (And.intro hvalid.2.2.2.1
+            (And.intro hvalid.2.2.2.2.1
+              (And.intro hvalid.2.2.2.2.2.1
+                (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
+
+/-- A sealed capability offer either rejects atomically or publishes a
+transfer state with the exact pre-state subject registry.  The endpoint
+mailbox and pending descendant may change, but no retained cancellation can
+become live, runnable, current, queued, or resumable as a consequence. -/
+theorem transferOffer_authoritativeOperationCompatible state endpointWord
+    sourceWord sourceKind payload rights
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary
+        (.transferOffer endpointWord sourceWord sourceKind payload rights)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary
+        (.transferOffer endpointWord sourceWord sourceKind payload rights))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hoffer : CapabilityTransfer.offerWords state.transfers
+          state.execution.core.context.currentSubject endpointWord sourceWord
+          sourceKind payload rights with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hoffer] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted =>
+              have hregistry :=
+                CapabilityTransfer.offerWords_accepted_preserves_authority_registry
+                  state.transfers state.execution.core.context.currentSubject
+                  endpointWord sourceWord sourceKind payload rights
+                  (by simp [hoffer])
+              rw [hoffer] at hregistry
+              have htransferCapabilities :
+                  state.transfers.capabilities = state.capabilities := by
+                rcases hstate.1.1 with
+                  ⟨_, _, _, hcapabilities, _, _, hipcCapabilities, _, _,
+                    htransferEndpoints, _, _, _⟩
+                calc
+                  state.transfers.capabilities =
+                      state.ipc.endpoints.capabilities :=
+                    congrArg (fun endpoints => endpoints.capabilities)
+                      htransferEndpoints
+                  _ = state.lifecycle.capabilities := hipcCapabilities
+                  _ = state.capabilities := hcapabilities.symm
+              have hsubjects :
+                  next.capabilities.subjects =
+                    state.capabilities.subjects := by
+                exact hregistry.1.trans
+                  (congrArg Capability.State.subjects htransferCapabilities)
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hoffer] using
+                installTransfers_dormantCancellationCompatible
+                  state next hstate hsubjects
+
+/-- Sealed capability offers have a closed folded-invariant theorem across
+the authoritative runtime, including dormant cancellation validity. -/
+theorem authoritativeGate_transferOffer_preserves_authoritativeRuntimeWellFormed
+    state endpointWord sourceWord sourceKind payload rights
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary
+          (.transferOffer endpointWord sourceWord sourceKind payload rights))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary
+      (.transferOffer endpointWord sourceWord sourceKind payload rights)) hstate
+    (transferOffer_authoritativeOperationCompatible state endpointWord sourceWord
+      sourceKind payload rights hstate)
+
+/-- A sealed capability receipt either rejects atomically or publishes a
+transfer state with the exact pre-state subject registry.  Delivery may
+consume one mailbox and install its checked descendant, but cannot make a
+retained cancellation live, runnable, current, queued, or resumable. -/
+theorem transferAccept_authoritativeOperationCompatible state endpointWord
+    destinationSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.transferAccept endpointWord destinationSlot)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary (.transferAccept endpointWord destinationSlot))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases haccept : CapabilityTransfer.acceptWord state.transfers
+          state.execution.core.context.currentSubject endpointWord
+          destinationSlot with
+      | mk next result deliveredWord =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, haccept] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | delivered envelope =>
+              have hregistry :=
+                CapabilityTransfer.acceptWord_delivered_preserves_registry_and_authority
+                  state.transfers state.execution.core.context.currentSubject
+                  endpointWord destinationSlot envelope (by simp [haccept])
+              rw [haccept] at hregistry
+              have htransferCapabilities :
+                  state.transfers.capabilities = state.capabilities := by
+                rcases hstate.1.1 with
+                  ⟨_, _, _, hcapabilities, _, _, hipcCapabilities, _, _,
+                    htransferEndpoints, _, _, _⟩
+                calc
+                  state.transfers.capabilities =
+                      state.ipc.endpoints.capabilities :=
+                    congrArg (fun endpoints => endpoints.capabilities)
+                      htransferEndpoints
+                  _ = state.lifecycle.capabilities := hipcCapabilities
+                  _ = state.capabilities := hcapabilities.symm
+              have hsubjects :
+                  next.capabilities.subjects =
+                    state.capabilities.subjects := by
+                exact hregistry.1.trans
+                  (congrArg Capability.State.subjects htransferCapabilities)
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, haccept] using
+                installTransfers_dormantCancellationCompatible
+                  state next hstate hsubjects
+
+/-- Sealed capability receipts have a closed folded-invariant theorem across
+the authoritative runtime, including dormant cancellation validity. -/
+theorem authoritativeGate_transferAccept_preserves_authoritativeRuntimeWellFormed
+    state endpointWord destinationSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.transferAccept endpointWord destinationSlot))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.transferAccept endpointWord destinationSlot)) hstate
+    (transferAccept_authoritativeOperationCompatible state endpointWord
+      destinationSlot hstate)
+
+/-- Fresh-subject publication retains the dormant cancellation store, blocked
+contexts, and resumable bank exactly.  It only promotes the subject registry
+and issuance history; every already-retained subject therefore remains live
+while its runnable, current, ready, ownership, and context projections stay
+unchanged. -/
+private theorem installCreatedSubject_dormantCancellationCompatible
+    state subject
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    DormantCancellationCompatible state
+      (installCreatedSubject state subject) := by
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro candidate hblocked
+    apply hstate.2.1.2.1 candidate
+    exact hblocked
+  · intro candidate saved hblocked
+    simpa [installCreatedSubject] using
+      hstate.2.2.1 candidate saved hblocked
+  · intro candidate saved hretained
+    have hvalid := hstate.2.1.2.2 candidate saved hretained
+    simp only [CompositeState.blockingIPCContext] at hvalid
+    have hcontext := hstate.2.2.2 candidate saved hretained
+    have hblockingLifecycle :
+        state.blockingIPC.scheduler.lifecycle = state.lifecycle :=
+      hstate.1.blockingLifecycle
+    have hblockingScheduler :
+        state.blockingIPC.scheduler = state.scheduler :=
+      hstate.1.blockingScheduler
+    have hliveBefore :
+        state.lifecycle.capabilities.subjects candidate = true := by
+      rw [← hblockingLifecycle]
+      exact hvalid.2.2.1
+    have hlive :
+        (SubjectLifecycle.create state.lifecycle subject).state.capabilities.subjects
+          candidate = true :=
+      createSubject_preserves_live state.lifecycle subject candidate hliveBefore
+    have hrunnable : state.lifecycle.runnable candidate = false := by
+      rw [← hblockingLifecycle]
+      exact hvalid.2.2.2.1
+    have hcurrent : state.lifecycle.current ≠ some candidate := by
+      rw [← hblockingLifecycle]
+      exact hvalid.2.2.2.2.1
+    have hready : candidate ∉ state.scheduler.ready := by
+      rw [← hblockingScheduler]
+      exact hvalid.2.2.2.2.2.1
+    have howner :
+        state.lifecycle.addressOwner candidate = some candidate := by
+      rw [← hblockingLifecycle]
+      simpa [Scheduler.ownsAddressSpace] using hvalid.2.2.2.2.2.2
+    simpa [installCreatedSubject, CompositeState.blockingIPCContext,
+        Scheduler.ownsAddressSpace] using
+      And.intro hvalid.2.1
+        (And.intro hlive
+          (And.intro hrunnable
+            (And.intro hcurrent
+              (And.intro hready
+                (And.intro howner hcontext)))))
+
+/-- Subject creation either rejects atomically or monotonically publishes one
+fresh live identity.  Neither branch can reactivate or attach a dormant
+cancellation. -/
+theorem createSubject_authoritativeOperationCompatible state subject
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.createSubject subject)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state (.ordinary (.createSubject subject))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hcreate : SubjectLifecycle.create state.lifecycle subject with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hcreate] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hcreate] using
+                installCreatedSubject_dormantCancellationCompatible
+                  state subject hstate
+
+/-- Fresh-subject publication has a closed folded-invariant theorem across the
+authoritative runtime; callers supply only the well-formed pre-state. -/
+theorem authoritativeGate_createSubject_preserves_authoritativeRuntimeWellFormed
+    state subject (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.createSubject subject))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.createSubject subject)) hstate
+    (createSubject_authoritativeOperationCompatible state subject hstate)
+
+/-- Queue admission changes only the synchronized scheduler projections.
+When the admitted identity has no undrained cancellation, every retained
+identity is distinct from the appended ready member and therefore remains
+quiescent. -/
+private theorem installSchedulerAdmission_dormantCancellationCompatible
+    state subject context next
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hnotRetained : state.deferredCancels.retained subject = none)
+    (haccepted : Scheduler.add state.scheduler subject =
+      { state := next, result := .accepted context }) :
+    DormantCancellationCompatible state
+      (installSchedulerAdmission state next) := by
+  obtain ⟨hlifecycle, hready⟩ :=
+    schedulerAdd_accepted_projections state.scheduler subject context next haccepted
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro candidate hblocked
+    apply hstate.2.1.2.1 candidate
+    exact hblocked
+  · intro candidate saved hblocked
+    simpa [installSchedulerAdmission] using
+      hstate.2.2.1 candidate saved hblocked
+  · intro candidate saved hretained
+    have hvalid := hstate.2.1.2.2 candidate saved hretained
+    simp only [CompositeState.blockingIPCContext] at hvalid
+    have hcontext := hstate.2.2.2 candidate saved hretained
+    have hne : candidate ≠ subject := by
+      intro heq
+      subst candidate
+      rw [hnotRetained] at hretained
+      contradiction
+    have hblockingScheduler :
+        state.blockingIPC.scheduler = state.scheduler :=
+      hstate.1.blockingScheduler
+    have hreadyBefore : candidate ∉ state.scheduler.ready := by
+      rw [← hblockingScheduler]
+      exact hvalid.2.2.2.2.2.1
+    have hreadyAfter : candidate ∉ next.ready := by
+      rw [hready]
+      simp [hreadyBefore, hne]
+    simpa [installSchedulerAdmission, CompositeState.blockingIPCContext,
+        Scheduler.ownsAddressSpace, hlifecycle, hblockingScheduler] using
+      And.intro hvalid.2.1
+        (And.intro hvalid.2.2.1
+          (And.intro hvalid.2.2.2.1
+            (And.intro hvalid.2.2.2.2.1
+              (And.intro hreadyAfter
+                (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
+
+/-- Scheduler admission derives its dormant-cancellation compatibility from
+the authoritative pre-state.  The composite transition itself rejects a
+candidate awaiting a capacity-checked cancellation drain, so callers no
+longer supply that post-state safety condition. -/
+theorem scheduleAdd_authoritativeOperationCompatible state subject
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.scheduleAdd subject)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state (.ordinary (.scheduleAdd subject))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hadmission : schedulerAdmission state subject with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              have hnext := schedulerAdmission_rejected_unchanged
+                state subject reason (by simp [hadmission])
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hadmission, hnext] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted context =>
+              obtain ⟨hnotRetained, hadd, _⟩ :=
+                schedulerAdmission_accepted_exact
+                  state subject context next hadmission
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hadmission] using
+                installSchedulerAdmission_dormantCancellationCompatible
+                  state subject context next hstate hnotRetained hadd
+
+/-- Every scheduler-admission result preserves the complete folded
+authoritative invariant.  An undrained identity is now a typed, atomic
+rejection rather than an external readiness premise. -/
+theorem authoritativeGate_scheduleAdd_preserves_authoritativeRuntimeWellFormed
+    state subject (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.scheduleAdd subject))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.scheduleAdd subject)) hstate
+    (scheduleAdd_authoritativeOperationCompatible
+      state subject hstate)
+
+/-- A retained cancellation cannot be reactivated through scheduler
+admission.  The public successor reports the dedicated typed denial and
+preserves the complete composite state byte-for-byte. -/
+theorem authoritativeGate_scheduleAdd_retained_rejected_atomic
+    state subject saved
+    (hmode : state.execution.mode = .running)
+    (hretained : state.deferredCancels.retained subject = some saved) :
+    authoritativeGate state (.ordinary (.scheduleAdd subject)) =
+      { state
+        result :=
+          .completed
+            (.ordinary
+              (.scheduler (.rejected .undrainedCancellation))) } := by
+  simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+    authoritativeOperationReply, operationReply, applyOperation,
+    schedulerAdmission, hretained, Scheduler.reject]
+
+/-- Resumable-aware scheduler removal cannot invalidate a blocking waiter.
+Every waiter is already neither current nor queued, so an accepted raw
+removal necessarily targets a different identity and leaves all waiter
+authority projections unchanged. -/
+private theorem installSchedulerRemoval_blockingIPCContext_wellFormed
+    state subject context next
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (haccepted : ResumablePreemption.remove state.resumable subject =
+      { state := next, result := .accepted context }) :
+    BlockingIPCContext.WellFormed
+      (installSchedulerRemoval state next).blockingIPCContext := by
+  obtain ⟨scheduler, hschedulerRemove, hnext, _hpeer⟩ :=
+    ResumablePreemption.remove_accepted_exact state.resumable subject context
+      (by simp [haccepted])
+  rw [haccepted] at hnext
+  change next = ResumablePreemption.removeState
+    state.resumable subject scheduler at hnext
+  subst next
+  rcases hstate.1 with
+    ⟨hcoherent, _hexecution, _hlifecycle, _hcapabilities, _hvirtual,
+      _hipc, _hschedulerRuntime, _hpreemption, hresumableWellFormed,
+      _htransfers, _hhalted, _hlive, hblockingCoherent, _hdevices⟩
+  have hshared :
+      state.resumable.scheduler = state.blockingIPC.scheduler :=
+    hcoherent.2.2.2.2.2.2.2.1.trans hblockingCoherent.1.symm
+  have htarget :
+      state.resumable.scheduler.lifecycle.current = some subject ∨
+        subject ∈ state.resumable.scheduler.ready := by
+    simp only [Scheduler.remove] at hschedulerRemove
+    split at hschedulerRemove
+    · rename_i hselected
+      simpa only [Bool.or_eq_true, decide_eq_true_eq] using hselected
+    · simp [Scheduler.reject] at hschedulerRemove
+  have hschedulerEq : scheduler =
+      { state.resumable.scheduler with
+        ready := state.resumable.scheduler.ready.filter (· ≠ subject)
+        lifecycle := { state.resumable.scheduler.lifecycle with
+          runnable := SubjectLifecycle.setBool
+            state.resumable.scheduler.lifecycle.runnable subject false
+          current := if state.resumable.scheduler.lifecycle.current = some subject
+            then none else state.resumable.scheduler.lifecycle.current } } := by
+    simp only [Scheduler.remove] at hschedulerRemove
+    split at hschedulerRemove
+    · simp_all
+    · simp_all [Scheduler.reject]
+  subst scheduler
+  have hresumable :=
+    ResumablePreemption.remove_preserves_wellFormed
+      state.resumable subject hresumableWellFormed
+  rw [haccepted] at hresumable
+  rcases hstate.2.1.1 with
+    ⟨⟨_hscheduler, hqueues, hwaiters, hunique, hindex, hmailbox,
+      hcapabilities⟩, hagreement⟩
+  simp only [CompositeState.blockingIPCContext] at hqueues
+  simp only [CompositeState.blockingIPCContext] at hwaiters
+  simp only [CompositeState.blockingIPCContext] at hunique
+  simp only [CompositeState.blockingIPCContext] at hindex
+  simp only [CompositeState.blockingIPCContext] at hmailbox
+  simp only [CompositeState.blockingIPCContext] at hcapabilities
+  simp only [CompositeState.blockingIPCContext] at hagreement
+  refine ⟨⟨hresumable.1, hqueues, ?_, hunique, hindex, ?_, ?_⟩, hagreement⟩
+  · intro endpoint candidate hmember
+    have hvalid := hwaiters endpoint candidate hmember
+    simp only [BlockingIPC.authorizedReceive] at hvalid
+    rw [← hshared] at hvalid
+    have hne : candidate ≠ subject := by
+      intro heq
+      subst candidate
+      exact htarget.elim hvalid.2.2.2.2.2.1 hvalid.2.2.2.2.2.2
+    have hne' : subject ≠ candidate := Ne.symm hne
+    by_cases hcurrent :
+        state.resumable.scheduler.lifecycle.current = some subject
+    · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+          CompositeState.blockingIPCContext, BlockingIPC.authorizedReceive,
+          SubjectLifecycle.setBool, Scheduler.ownsAddressSpace, hne,
+          hne', hcurrent] using hvalid
+    · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+          CompositeState.blockingIPCContext, BlockingIPC.authorizedReceive,
+          SubjectLifecycle.setBool, Scheduler.ownsAddressSpace, hne,
+          hcurrent] using hvalid
+  · intro endpoint envelope hstored
+    rw [← hshared] at hmailbox
+    simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+        CompositeState.blockingIPCContext] using hmailbox endpoint envelope hstored
+  · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+      CompositeState.blockingIPCContext, hshared] using hcapabilities
+
+/-- Accepted removal only erases the target's resumable context.  A retained
+cancellation is already neither current nor queued, so it cannot be that
+target; all of its quiescent authority facts and its exact saved context
+therefore survive. -/
+private theorem installSchedulerRemoval_dormantCancellationCompatible
+    state subject context next
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (haccepted : ResumablePreemption.remove state.resumable subject =
+      { state := next, result := .accepted context }) :
+    DormantCancellationCompatible state
+      (installSchedulerRemoval state next) := by
+  obtain ⟨scheduler, hschedulerRemove, hnext, _hpeer⟩ :=
+    ResumablePreemption.remove_accepted_exact state.resumable subject context
+      (by simp [haccepted])
+  rw [haccepted] at hnext
+  change next = ResumablePreemption.removeState
+    state.resumable subject scheduler at hnext
+  subst next
+  have hshared :
+      state.resumable.scheduler = state.blockingIPC.scheduler :=
+    hstate.1.1.2.2.2.2.2.2.2.1.trans hstate.1.blockingScheduler.symm
+  have htarget :
+      state.resumable.scheduler.lifecycle.current = some subject ∨
+        subject ∈ state.resumable.scheduler.ready := by
+    simp only [Scheduler.remove] at hschedulerRemove
+    split at hschedulerRemove
+    · rename_i hselected
+      simpa only [Bool.or_eq_true, decide_eq_true_eq] using hselected
+    · simp [Scheduler.reject] at hschedulerRemove
+  have hschedulerEq : scheduler =
+      { state.resumable.scheduler with
+        ready := state.resumable.scheduler.ready.filter (· ≠ subject)
+        lifecycle := { state.resumable.scheduler.lifecycle with
+          runnable := SubjectLifecycle.setBool
+            state.resumable.scheduler.lifecycle.runnable subject false
+          current := if state.resumable.scheduler.lifecycle.current = some subject
+            then none else state.resumable.scheduler.lifecycle.current } } := by
+    simp only [Scheduler.remove] at hschedulerRemove
+    split at hschedulerRemove
+    · simp_all
+    · simp_all [Scheduler.reject]
+  subst scheduler
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · intro candidate hblocked
+    apply hstate.2.1.2.1 candidate
+    exact hblocked
+  · intro candidate saved hblocked
+    have hold := hstate.2.2.1 candidate saved hblocked
+    by_cases hsame : candidate = subject
+    · subst candidate
+      simp [installSchedulerRemoval, ResumablePreemption.removeState,
+        ResumablePreemption.contextFor_erase_self]
+    · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+        ResumablePreemption.contextFor_erase_other, hsame] using hold
+  · intro candidate saved hretained
+    have hvalid := hstate.2.1.2.2 candidate saved hretained
+    simp only [CompositeState.blockingIPCContext] at hvalid
+    rw [← hshared] at hvalid
+    have hcontext := hstate.2.2.2 candidate saved hretained
+    have hne : candidate ≠ subject := by
+      intro heq
+      subst candidate
+      exact htarget.elim hvalid.2.2.2.2.1 hvalid.2.2.2.2.2.1
+    have hne' : subject ≠ candidate := Ne.symm hne
+    by_cases hcurrent :
+        state.resumable.scheduler.lifecycle.current = some subject
+    · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+          CompositeState.blockingIPCContext, SubjectLifecycle.setBool,
+          Scheduler.ownsAddressSpace, hne, hne', hcurrent,
+          ResumablePreemption.contextFor_erase_other] using
+        And.intro hvalid.2.1
+          (And.intro hvalid.2.2.1
+            (And.intro hvalid.2.2.2.1
+              (And.intro hvalid.2.2.2.2.1
+                (And.intro hvalid.2.2.2.2.2.1
+                  (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
+    · simpa [installSchedulerRemoval, ResumablePreemption.removeState,
+          CompositeState.blockingIPCContext, SubjectLifecycle.setBool,
+          Scheduler.ownsAddressSpace, hne, hcurrent,
+          ResumablePreemption.contextFor_erase_other] using
+        And.intro hvalid.2.1
+          (And.intro hvalid.2.2.1
+            (And.intro hvalid.2.2.2.1
+              (And.intro hvalid.2.2.2.2.1
+                (And.intro hvalid.2.2.2.2.2.1
+                  (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
+
+/-- Resumable-aware scheduler removal derives both of its formerly external
+blocking obligations from the authoritative pre-state.  Rejections and
+non-running modes remain byte-for-byte atomic. -/
+theorem scheduleRemove_authoritativeOperationCompatible state subject
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.scheduleRemove subject)) := by
+  change
+    BlockingIPCContext.WellFormed
+        (authoritativeGate state
+          (.ordinary (.scheduleRemove subject))).state.blockingIPCContext ∧
+      DormantCancellationCompatible state
+        (authoritativeGate state (.ordinary (.scheduleRemove subject))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      refine ⟨?_, ?_⟩
+      · simpa [authoritativeGate, hmode] using hstate.2.1.1
+      · simpa [authoritativeGate, hmode] using
+          dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+  | halted record =>
+      refine ⟨?_, ?_⟩
+      · simpa [authoritativeGate, hmode] using hstate.2.1.1
+      · simpa [authoritativeGate, hmode] using
+          dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hremove : ResumablePreemption.remove state.resumable subject with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              have hnext := ResumablePreemption.remove_rejected_unchanged
+                state.resumable subject reason (by simp [hremove])
+              refine ⟨?_, ?_⟩
+              · simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                  applyOperation, hremove, hnext] using hstate.2.1.1
+              · simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                  applyOperation, hremove, hnext] using
+                    dormantCancellationCompatible_of_exact_projections
+                      state state hstate rfl rfl rfl rfl
+          | accepted context =>
+              refine ⟨?_, ?_⟩
+              · simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                  applyOperation, hremove] using
+                    installSchedulerRemoval_blockingIPCContext_wellFormed
+                      state subject context next hstate hremove
+              · simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                  applyOperation, hremove] using
+                    installSchedulerRemoval_dormantCancellationCompatible
+                      state subject context next hstate hremove
+
+/-- Scheduler removal now has a closed folded-invariant theorem with no
+caller-supplied post-state compatibility premise. -/
+theorem authoritativeGate_scheduleRemove_preserves_authoritativeRuntimeWellFormed
+    state subject (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.scheduleRemove subject))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.scheduleRemove subject)) hstate
+    (scheduleRemove_authoritativeOperationCompatible state subject hstate)
+
+/-- Delegation either rejects atomically or publishes a capability state with
+the same live-subject registry, so its dormant cancellation obligations are
+derived entirely from the authoritative pre-state. -/
+theorem capabilityCopy_authoritativeOperationCompatible state source destination
+    destinationSlot rights
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.capabilityCopy source destination destinationSlot rights)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary (.capabilityCopy source destination destinationSlot rights))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hcopy : Capability.copy state.capabilities
+          state.execution.core.context.currentSubject source destination
+          destinationSlot rights with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hcopy] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted =>
+              have hregistries := Capability.copy_preserves_registries
+                state.capabilities state.execution.core.context.currentSubject
+                source destination destinationSlot rights
+              rw [hcopy] at hregistries
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hcopy] using
+                installCopiedCapabilities_dormantCancellationCompatible
+                  state next hstate hregistries.1
+
+/-- Capability delegation has a closed folded-invariant theorem, including
+blocking waiter authority and deferred cancellation validity. -/
+theorem authoritativeGate_capabilityCopy_preserves_authoritativeRuntimeWellFormed
+    state source destination destinationSlot rights
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary
+          (.capabilityCopy source destination destinationSlot rights))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.capabilityCopy source destination destinationSlot rights)) hstate
+    (capabilityCopy_authoritativeOperationCompatible state source destination
+      destinationSlot rights hstate)
+
+/-- Direct revocation either rejects atomically or publishes a capability
+state with the same subject registry.  The runtime-safe wrapper's accepted
+raw transition supplies the registry law consumed by the common publication
+compatibility boundary. -/
+theorem capabilityRevoke_authoritativeOperationCompatible state authoritySlot
+    victim victimSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.capabilityRevoke authoritySlot victim victimSlot)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary (.capabilityRevoke authoritySlot victim victimSlot))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hrevoke : Capability.revokeRuntimeSafe state.capabilities
+          state.execution.core.context.currentSubject authoritySlot victim
+          victimSlot with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hrevoke] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted =>
+              obtain ⟨hraw, _⟩ :=
+                Capability.revokeRuntimeSafe_accepted_raw state.capabilities
+                  state.execution.core.context.currentSubject authoritySlot
+                  victim victimSlot next hrevoke
+              have hmetadata := Capability.revoke_preserves_metadata
+                state.capabilities state.execution.core.context.currentSubject
+                authoritySlot victim victimSlot
+              rw [hraw] at hmetadata
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hrevoke] using
+                installCopiedCapabilities_dormantCancellationCompatible
+                  state next hstate hmetadata.1
+
+/-- Direct capability revocation has a closed folded-invariant theorem,
+including retained blocking-context and deferred-cancellation validity. -/
+theorem authoritativeGate_capabilityRevoke_preserves_authoritativeRuntimeWellFormed
+    state authoritySlot victim victimSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary
+          (.capabilityRevoke authoritySlot victim victimSlot))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.capabilityRevoke authoritySlot victim victimSlot)) hstate
+    (capabilityRevoke_authoritativeOperationCompatible state authoritySlot
+      victim victimSlot hstate)
+
+/-- Transitive revocation has the same dormant-publication boundary as direct
+revocation.  Accepted subtree removal retains the subject registry even while
+clearing every capability in the selected derivation subtree. -/
+theorem capabilityRevokeSubtree_authoritativeOperationCompatible state
+    authoritySlot victim victimSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.capabilityRevokeSubtree authoritySlot victim victimSlot)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state
+      (.ordinary
+        (.capabilityRevokeSubtree authoritySlot victim victimSlot))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      cases hrevoke : Capability.revokeSubtreeRuntimeSafe state.capabilities
+          state.execution.core.context.currentSubject authoritySlot victim
+          victimSlot with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hrevoke] using
+                dormantCancellationCompatible_of_exact_projections
+                  state state hstate rfl rfl rfl rfl
+          | accepted =>
+              obtain ⟨hraw, _⟩ :=
+                Capability.revokeSubtreeRuntimeSafe_accepted_raw
+                  state.capabilities
+                  state.execution.core.context.currentSubject authoritySlot
+                  victim victimSlot next hrevoke
+              have hmetadata := Capability.revokeSubtree_preserves_metadata
+                state.capabilities state.execution.core.context.currentSubject
+                authoritySlot victim victimSlot
+              rw [hraw] at hmetadata
+              simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
+                applyOperation, hrevoke] using
+                installCopiedCapabilities_dormantCancellationCompatible
+                  state next hstate hmetadata.1
+
+/-- Capability-subtree revocation has a closed folded-invariant theorem across
+the sole authoritative runtime state. -/
+theorem
+    authoritativeGate_capabilityRevokeSubtree_preserves_authoritativeRuntimeWellFormed
+    state authoritySlot victim victimSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary
+          (.capabilityRevokeSubtree authoritySlot victim victimSlot))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary
+      (.capabilityRevokeSubtree authoritySlot victim victimSlot)) hstate
+    (capabilityRevokeSubtree_authoritativeOperationCompatible state
+      authoritySlot victim victimSlot hstate)
+
+/-- Delivery changes only mailbox/completion payload state.  Every projection
+observed by dormant cancellation remains literally unchanged. -/
+theorem dispatchBlockingReceive_delivered_dormant_projections_exact
+    state handleWord frame registers envelope
+    (hdelivered :
+      (dispatchBlockingReceive state handleWord frame registers).reply =
+        .delivered envelope) :
+    let next := (dispatchBlockingReceive state handleWord frame registers).state
+    next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts = state.blockingContexts ∧
+      next.resumable.contexts = state.resumable.contexts ∧
+      next.blockingIPC.waiterEndpoint = state.blockingIPC.waiterEndpoint ∧
+      next.blockingIPC.scheduler = state.blockingIPC.scheduler := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hdelivered
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk blocking result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hdelivered
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hdelivered
+              | blocked =>
+                  by_cases hsome : blocking.ipc.scheduler.lifecycle.current.isSome = true
+                  · cases hrestore : restoreBlockingPeer state blocking <;>
+                      simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                        hrestore] at hdelivered
+                  · simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome]
+                      at hdelivered
+              | delivered actual =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hdelivered
+                  subst actual
+                  have hcompleted :
+                      (BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+                        state.execution.core.context.currentSubject
+                        resolution.handle.slot saved).result =
+                          .completed (.delivered envelope) := by
+                    simp [houtcome]
+                  have hblocked :=
+                    BlockingIPCContext.receive_delivered_blocked_unchanged
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject resolution.handle.slot
+                      saved envelope hcompleted
+                  have hexact :=
+                    BlockingIPCContext.receive_delivered_ipc_exact
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject resolution.handle.slot
+                      saved envelope hcompleted
+                  have hwaiter :=
+                    BlockingIPC.receive_delivered_waiterEndpoint_unchanged
+                      state.blockingIPC state.execution.core.context.currentSubject
+                      resolution.handle.slot envelope hexact.2
+                  have hscheduler :=
+                    BlockingIPC.receive_delivered_scheduler_unchanged
+                      state.blockingIPC state.execution.core.context.currentSubject
+                      resolution.handle.slot envelope hexact.2
+                  rw [houtcome] at hblocked hexact
+                  have hblocked' : blocking.blocked = state.blockingContexts := by
+                    simpa [CompositeState.blockingIPCContext] using hblocked
+                  have hipc : blocking.ipc =
+                      (BlockingIPC.receiveOrBlock state.blockingIPC
+                        state.execution.core.context.currentSubject
+                        resolution.handle.slot).state := by
+                    simpa [CompositeState.blockingIPCContext] using hexact.1
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome,
+                    publishBlockingIPCContext, hblocked', hipc, hwaiter, hscheduler]
+
+/-- An idle block publishes exactly the caller's waiter/context entries and
+the canonical scheduler transition, leaving the resumable bank untouched. -/
+theorem dispatchBlockingReceive_idle_block_projection_exact
+    state handleWord frame registers
+    (hblocked :
+      (dispatchBlockingReceive state handleWord frame registers).reply = .blocked)
+    (hidle :
+      (dispatchBlockingReceive state handleWord frame registers).state.scheduler.lifecycle.current =
+        none) :
+    let next := (dispatchBlockingReceive state handleWord frame registers).state
+    let caller := state.execution.core.context.currentSubject
+    let saved := state.blockingSavedContext frame registers
+    ∃ endpoint,
+      next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts =
+        BlockingIPCContext.setBlocked state.blockingContexts caller (some saved) ∧
+      next.resumable.contexts = state.resumable.contexts ∧
+      next.blockingIPC.waiterEndpoint =
+        BlockingIPC.setWaiterEndpoint state.blockingIPC.waiterEndpoint caller
+          (some endpoint) ∧
+      state.blockingIPC.scheduler.ready = [] ∧
+      next.blockingIPC.scheduler =
+        { state.blockingIPC.scheduler with
+          lifecycle := { state.blockingIPC.scheduler.lifecycle with
+            runnable := SubjectLifecycle.setBool
+              state.blockingIPC.scheduler.lifecycle.runnable caller false
+            current := none } } := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hblocked
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk blocking result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | delivered envelope =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | blocked =>
+                  by_cases hsome : blocking.ipc.scheduler.lifecycle.current.isSome = true
+                  · cases hrestore : restoreBlockingPeer state blocking with
+                    | error reason =>
+                        simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore] at hblocked
+                    | ok published =>
+                        obtain ⟨selected, destination, hselected, _, _, _, _, _, _, hcontext⟩ :=
+                          restoreBlockingPeer_exact state blocking published hrestore
+                        have hpublishedCurrent :
+                            published.scheduler.lifecycle.current = some selected := by
+                          rw [← (restoreBlockingPeer_blockingCoherent
+                            state blocking published hrestore).1]
+                          change
+                            published.blockingIPC.scheduler.lifecycle.current = some selected
+                          have hipc : published.blockingIPC = blocking.ipc := congrArg
+                            BlockingIPCContext.State.ipc hcontext
+                          rw [hipc]
+                          exact hselected
+                        have hpublishedIdle :
+                            published.scheduler.lifecycle.current = none := by
+                          simpa [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                            hrestore] using hidle
+                        rw [hpublishedCurrent] at hpublishedIdle
+                        contradiction
+                  · have hcompleted :
+                        (BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+                          state.execution.core.context.currentSubject
+                          resolution.handle.slot saved).result =
+                            .completed .blocked := by
+                      simp [houtcome]
+                    have hipcExact :=
+                      BlockingIPCContext.receive_blocked_ipc_exact
+                        state.blockingIPCContext
+                        state.execution.core.context.currentSubject resolution.handle.slot
+                        saved hcompleted
+                    have hblockedExact :=
+                      BlockingIPCContext.receive_blocked_blocked_exact
+                        state.blockingIPCContext
+                        state.execution.core.context.currentSubject resolution.handle.slot
+                        saved hcompleted
+                    have hraw := hipcExact.2
+                    obtain ⟨endpoint, hwaiter⟩ :=
+                      BlockingIPC.receive_blocked_waiterEndpoint_exact
+                        state.blockingIPC
+                        state.execution.core.context.currentSubject
+                        resolution.handle.slot hraw
+                    rw [houtcome] at hipcExact hblockedExact
+                    have hipc : blocking.ipc =
+                        (BlockingIPC.receiveOrBlock state.blockingIPC
+                          state.execution.core.context.currentSubject
+                          resolution.handle.slot).state := by
+                      simpa [CompositeState.blockingIPCContext] using hipcExact.1
+                    have hblockingIdle :
+                        blocking.ipc.scheduler.lifecycle.current = none := by
+                      cases hcurrent : blocking.ipc.scheduler.lifecycle.current <;>
+                        simp_all
+                    have hscheduler :=
+                      BlockingIPC.receive_blocked_idle_scheduler_exact
+                        state.blockingIPC
+                        state.execution.core.context.currentSubject
+                        resolution.handle.slot hraw (by
+                          rw [← hipc]
+                          exact hblockingIdle)
+                    have hblocked' :
+                        blocking.blocked =
+                          BlockingIPCContext.setBlocked state.blockingContexts
+                            state.execution.core.context.currentSubject (some saved) := by
+                      simpa [CompositeState.blockingIPCContext] using hblockedExact
+                    refine ⟨endpoint, ?_⟩
+                    simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                      publishBlockingIPCContext, hblocked', hipc, hwaiter, hscheduler]
+
+/-- A block with an immediate peer handoff publishes the caller's exact
+waiter/context entries, consumes exactly the selected peer context, and
+performs the canonical head-selection scheduler transition. -/
+theorem dispatchBlockingReceive_selected_block_projection_exact
+    state handleWord frame registers selected
+    (hblocked :
+      (dispatchBlockingReceive state handleWord frame registers).reply = .blocked)
+    (hselected : (dispatchBlockingReceive state handleWord frame registers).state.blockingIPC.scheduler.lifecycle.current =
+      some selected) :
+    let next := (dispatchBlockingReceive state handleWord frame registers).state
+    let caller := state.execution.core.context.currentSubject
+    let saved := state.blockingSavedContext frame registers
+    ∃ endpoint rest destination,
+      next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts =
+        BlockingIPCContext.setBlocked state.blockingContexts caller (some saved) ∧
+      next.resumable.contexts =
+        ResumablePreemption.eraseContext state.resumable.contexts selected ∧
+      ResumablePreemption.contextFor state.resumable.contexts selected =
+        some destination ∧
+      destination.owner = selected ∧
+      next.blockingIPC.waiterEndpoint =
+        BlockingIPC.setWaiterEndpoint state.blockingIPC.waiterEndpoint caller
+          (some endpoint) ∧
+      state.blockingIPC.scheduler.ready = selected :: rest ∧
+      next.blockingIPC.scheduler =
+        { state.blockingIPC.scheduler with
+          ready := rest
+          lifecycle := { state.blockingIPC.scheduler.lifecycle with
+            runnable := SubjectLifecycle.setBool
+              state.blockingIPC.scheduler.lifecycle.runnable caller false
+            current := some selected } } := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hblocked
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk blocking result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | delivered envelope =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | blocked =>
+                  by_cases hsome : blocking.ipc.scheduler.lifecycle.current.isSome = true
+                  · cases hrestore : restoreBlockingPeer state blocking with
+                    | error reason =>
+                        simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                          hrestore] at hblocked
+                    | ok published =>
+                        have hcompleted :
+                            (BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+                              state.execution.core.context.currentSubject
+                              resolution.handle.slot saved).result =
+                                .completed .blocked := by
+                          simp [houtcome]
+                        have hipcExact :=
+                          BlockingIPCContext.receive_blocked_ipc_exact
+                            state.blockingIPCContext
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot saved hcompleted
+                        have hblockedExact :=
+                          BlockingIPCContext.receive_blocked_blocked_exact
+                            state.blockingIPCContext
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot saved hcompleted
+                        have hraw := hipcExact.2
+                        obtain ⟨endpoint, hwaiter⟩ :=
+                          BlockingIPC.receive_blocked_waiterEndpoint_exact
+                            state.blockingIPC
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot hraw
+                        rw [houtcome] at hipcExact hblockedExact
+                        have hipc : blocking.ipc =
+                            (BlockingIPC.receiveOrBlock state.blockingIPC
+                              state.execution.core.context.currentSubject
+                              resolution.handle.slot).state := by
+                          simpa [CompositeState.blockingIPCContext] using hipcExact.1
+                        obtain ⟨actual, destination, hactual, hcontext, howner,
+                          hcontexts⟩ :=
+                          restoreBlockingPeer_resumableContexts_exact
+                            state blocking published hrestore
+                        have hpublishedIPC : published.blockingIPC = blocking.ipc := by
+                          exact congrArg BlockingIPCContext.State.ipc
+                            (restoreBlockingPeer_context_exact
+                              state blocking published hrestore)
+                        have hactualSelected : actual = selected := by
+                          have hpublishedSelected :
+                              published.blockingIPC.scheduler.lifecycle.current =
+                                some selected := by
+                            simpa [dispatchBlockingReceive, hresolve, saved, houtcome,
+                              hsome, hrestore] using hselected
+                          rw [hpublishedIPC, hactual] at hpublishedSelected
+                          injection hpublishedSelected
+                        obtain ⟨rest, hready, hscheduler⟩ :=
+                          BlockingIPC.receive_blocked_selected_scheduler_exact
+                            state.blockingIPC
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot actual hraw (by
+                              rw [← hipc]
+                              exact hactual)
+                        have hblocked' :
+                            blocking.blocked =
+                              BlockingIPCContext.setBlocked state.blockingContexts
+                                state.execution.core.context.currentSubject
+                                (some saved) := by
+                          simpa [CompositeState.blockingIPCContext] using hblockedExact
+                        simp only [dispatchBlockingReceive, hresolve, saved, houtcome,
+                          hsome, hrestore, if_true]
+                        refine ⟨endpoint, rest, destination, ?_⟩
+                        have hdeferred :=
+                          restoreBlockingPeer_deferredExact
+                            state blocking published hrestore
+                        have hpublishedBlocked :
+                            published.blockingContexts = blocking.blocked := by
+                          exact congrArg BlockingIPCContext.State.blocked
+                            (restoreBlockingPeer_context_exact
+                              state blocking published hrestore)
+                        refine ⟨hdeferred, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                        · rw [hpublishedBlocked]
+                          exact hblocked'
+                        · simpa [hactualSelected] using hcontexts
+                        · simpa [hactualSelected] using hcontext
+                        · exact howner.trans hactualSelected
+                        · rw [hpublishedIPC, hipc]
+                          exact hwaiter
+                        · simpa [hactualSelected] using hready
+                        · rw [hpublishedIPC, hipc]
+                          simpa [hactualSelected] using hscheduler
+                  · have hblockingIdle :
+                        blocking.ipc.scheduler.lifecycle.current = none := by
+                      cases hcurrent : blocking.ipc.scheduler.lifecycle.current <;>
+                        simp_all
+                    have hpublishedIdle :
+                        (publishBlockingIPCContext state blocking).blockingIPC.scheduler.lifecycle.current =
+                          none := by
+                      simpa [publishBlockingIPCContext] using hblockingIdle
+                    simp [dispatchBlockingReceive, hresolve, saved, houtcome, hsome,
+                      hpublishedIdle] at hselected
+
+/-- A composite block retains the dependency proof that the authoritative
+blocking scheduler selected the execution-derived caller in the pre-state. -/
+theorem dispatchBlockingReceive_blocked_current
+    state handleWord frame registers
+    (hblocked :
+      (dispatchBlockingReceive state handleWord frame registers).reply = .blocked) :
+    state.blockingIPC.scheduler.lifecycle.current =
+      some state.execution.core.context.currentSubject := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingReceive, hresolve] at hblocked
+  | ok resolution =>
+      let saved := state.blockingSavedContext frame registers
+      cases houtcome : BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot saved with
+      | mk blocking result =>
+          cases result with
+          | contextRejected reason =>
+              simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+          | completed result =>
+              cases result with
+              | rejected reason =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | delivered envelope =>
+                  simp [dispatchBlockingReceive, hresolve, saved, houtcome] at hblocked
+              | blocked =>
+                  have hcompleted :
+                      (BlockingIPCContext.receiveOrBlock state.blockingIPCContext
+                        state.execution.core.context.currentSubject
+                        resolution.handle.slot saved).result =
+                          .completed .blocked := by
+                    simp [houtcome]
+                  have hraw :=
+                    (BlockingIPCContext.receive_blocked_ipc_exact
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject
+                      resolution.handle.slot saved hcompleted).2
+                  exact BlockingIPC.receive_blocked_current state.blockingIPC
+                    state.execution.core.context.currentSubject
+                    resolution.handle.slot hraw
+
+/-- Every outcome of authoritative blocking receive preserves the dormant
+cancellation classification.  Delivery leaves its observed projections
+literal, while blocking adds only the selected current caller and consumes at
+most the old ready-queue head, neither of which can be retained. -/
+theorem blockingReceive_authoritativeOperationCompatible
+    state handleWord frame registers
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.blocking (.receive handleWord frame registers)) := by
+  cases hmode : state.execution.mode with
+  | handling active =>
+      apply dormantCancellationCompatible_of_exact_projections state _ hstate
+      all_goals simp [authoritativeGate, hmode]
+  | halted record =>
+      apply dormantCancellationCompatible_of_exact_projections state _ hstate
+      all_goals simp [authoritativeGate, hmode]
+  | running =>
+      have hgate :
+          (authoritativeGate state
+            (.blocking (.receive handleWord frame registers))).state =
+              (dispatchBlockingReceive state handleWord frame registers).state := by
+        simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+          applyBlockingOperation]
+      change DormantCancellationCompatible state
+        (authoritativeGate state
+          (.blocking (.receive handleWord frame registers))).state
+      rw [hgate]
+      cases hreply :
+          (dispatchBlockingReceive state handleWord frame registers).reply with
+      | handleRejected reason =>
+          rw [dispatchBlockingReceive_rejected_atomic
+            state handleWord frame registers _ (.handle reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | contextRejected reason =>
+          rw [dispatchBlockingReceive_rejected_atomic
+            state handleWord frame registers _ (.context reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | switchRequired =>
+          rw [dispatchBlockingReceive_rejected_atomic
+            state handleWord frame registers _ .switchRequired hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | rejected reason =>
+          rw [dispatchBlockingReceive_rejected_atomic
+            state handleWord frame registers _ (.ipc reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | delivered envelope =>
+          have hshape :=
+            dispatchBlockingReceive_delivered_dormant_projections_exact
+              state handleWord frame registers envelope hreply
+          dsimp only at hshape
+          rcases hshape with
+            ⟨hdeferred, hblocked, hcontexts, hwaiter, hscheduler⟩
+          refine ⟨hdeferred, ?_, ?_, ?_⟩
+          · intro subject hsome
+            rw [hblocked] at hsome
+            rw [hdeferred]
+            exact hstate.2.1.2.1 subject hsome
+          · intro subject saved hsaved
+            rw [hblocked] at hsaved
+            rw [hcontexts]
+            exact hstate.2.2.1 subject saved hsaved
+          · intro subject saved hretained
+            have hvalid := hstate.2.1.2.2 subject saved hretained
+            rw [hwaiter, hscheduler, hcontexts]
+            exact ⟨hvalid.2.1, hvalid.2.2.1, hvalid.2.2.2.1,
+              hvalid.2.2.2.2.1, hvalid.2.2.2.2.2.1,
+              hvalid.2.2.2.2.2.2, hstate.2.2.2 subject saved hretained⟩
+      | blocked =>
+          have hcurrent := dispatchBlockingReceive_blocked_current
+            state handleWord frame registers hreply
+          have hcallerAbsent :
+              ResumablePreemption.contextFor state.resumable.contexts
+                state.execution.core.context.currentSubject = none := by
+            rcases hstate.1 with
+              ⟨hcoherent, _, _, _, _, _, _, _, hresumable, _, _, _, _, _⟩
+            have hresumableScheduler :
+                state.resumable.scheduler = state.scheduler := by
+              rcases hcoherent with ⟨_, _, _, _, _, _, _, hscheduler, _, _, _, _, _⟩
+              exact hscheduler
+            exact hresumable.2.2.2.2.1
+              state.execution.core.context.currentSubject
+              (by simpa [hstate.1.blockingScheduler, hresumableScheduler] using hcurrent)
+          have hcallerNotRetained :
+              state.deferredCancels.retained
+                state.execution.core.context.currentSubject = none := by
+            cases hretained :
+                state.deferredCancels.retained
+                  state.execution.core.context.currentSubject with
+            | none => rfl
+            | some saved =>
+                have hquiescent :=
+                  (hstate.2.1.2.2 state.execution.core.context.currentSubject
+                    saved hretained).2.2.2.2.1
+                exact False.elim (hquiescent hcurrent)
+          have hpostCoherent :
+              (dispatchBlockingReceive state handleWord frame registers).state.BlockingIPCCoherent := by
+            have hcoherent : state.BlockingIPCCoherent := by
+              rcases hstate.blocking.1 with
+                ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking, _⟩
+              exact hblocking
+            exact dispatchBlockingReceive_preserves_coherent
+              state handleWord frame registers hcoherent
+          cases hnext :
+              (dispatchBlockingReceive state handleWord frame registers).state.blockingIPC.scheduler.lifecycle.current with
+          | none =>
+              have hnextScheduler :
+                  (dispatchBlockingReceive state handleWord frame registers).state.scheduler.lifecycle.current =
+                    none := by
+                rw [← hpostCoherent.1]
+                exact hnext
+              have hshape :=
+                dispatchBlockingReceive_idle_block_projection_exact
+                  state handleWord frame registers hreply hnextScheduler
+              dsimp only at hshape
+              obtain ⟨endpoint, hdeferred, hblocked, hcontexts, hwaiter,
+                hready, hscheduler⟩ := hshape
+              refine ⟨hdeferred, ?_, ?_, ?_⟩
+              · intro candidate hsome
+                rw [hblocked] at hsome
+                by_cases heq :
+                    candidate = state.execution.core.context.currentSubject
+                · subst candidate
+                  simpa [hdeferred] using hcallerNotRetained
+                · rw [hdeferred]
+                  apply hstate.2.1.2.1 candidate
+                  change (state.blockingContexts candidate).isSome = true
+                  simpa [BlockingIPCContext.setBlocked, heq] using hsome
+              · intro candidate saved hsaved
+                rw [hblocked] at hsaved
+                by_cases heq :
+                    candidate = state.execution.core.context.currentSubject
+                · subst candidate
+                  simpa [hcontexts] using hcallerAbsent
+                · have hbefore :
+                      state.blockingContexts candidate = some saved := by
+                    simpa [BlockingIPCContext.setBlocked, heq] using hsaved
+                  rw [hcontexts]
+                  exact hstate.2.2.1 candidate saved hbefore
+              · intro candidate saved hretained
+                have hvalid := hstate.2.1.2.2 candidate saved hretained
+                have hne :
+                    candidate ≠ state.execution.core.context.currentSubject := by
+                  intro heq
+                  subst candidate
+                  rw [hcallerNotRetained] at hretained
+                  contradiction
+                rw [hwaiter, hscheduler, hcontexts]
+                simp only [CompositeState.blockingIPCContext] at hvalid
+                refine ⟨?_, hvalid.2.2.1, ?_, ?_, ?_, hvalid.2.2.2.2.2.2,
+                  hstate.2.2.2 candidate saved hretained⟩
+                · simpa [BlockingIPC.setWaiterEndpoint, hne] using hvalid.2.1
+                · simpa [SubjectLifecycle.setBool, hne] using hvalid.2.2.2.1
+                · simp
+                · simp [hready]
+          | some selected =>
+              have hshape :=
+                dispatchBlockingReceive_selected_block_projection_exact
+                  state handleWord frame registers selected hreply hnext
+              dsimp only at hshape
+              obtain ⟨endpoint, rest, destination, hdeferred, hblocked,
+                hcontexts, hdestination, howner, hwaiter, hready,
+                hscheduler⟩ := hshape
+              refine ⟨hdeferred, ?_, ?_, ?_⟩
+              · intro candidate hsome
+                rw [hblocked] at hsome
+                by_cases heq :
+                    candidate = state.execution.core.context.currentSubject
+                · subst candidate
+                  simpa [hdeferred] using hcallerNotRetained
+                · rw [hdeferred]
+                  apply hstate.2.1.2.1 candidate
+                  change (state.blockingContexts candidate).isSome = true
+                  simpa [BlockingIPCContext.setBlocked, heq] using hsome
+              · intro candidate saved hsaved
+                rw [hblocked] at hsaved
+                by_cases hcaller :
+                    candidate = state.execution.core.context.currentSubject
+                · subst candidate
+                  rw [hcontexts]
+                  by_cases heq :
+                      state.execution.core.context.currentSubject = selected
+                  · rw [← heq]
+                    exact ResumablePreemption.contextFor_erase_self _ _
+                  · exact
+                      (ResumablePreemption.contextFor_erase_other
+                        state.resumable.contexts selected
+                        state.execution.core.context.currentSubject heq).trans
+                        hcallerAbsent
+                · have hbefore :
+                      state.blockingContexts candidate = some saved := by
+                    simpa [BlockingIPCContext.setBlocked, hcaller] using hsaved
+                  have habsent := hstate.2.2.1 candidate saved hbefore
+                  rw [hcontexts]
+                  by_cases heq : candidate = selected
+                  · rw [← heq]
+                    exact ResumablePreemption.contextFor_erase_self _ _
+                  · exact
+                      (ResumablePreemption.contextFor_erase_other
+                        state.resumable.contexts selected candidate heq).trans habsent
+              · intro candidate saved hretained
+                have hvalid := hstate.2.1.2.2 candidate saved hretained
+                have hnotCaller :
+                    candidate ≠ state.execution.core.context.currentSubject := by
+                  intro heq
+                  subst candidate
+                  rw [hcallerNotRetained] at hretained
+                  contradiction
+                have hnotSelected : candidate ≠ selected := by
+                  have hnotReady := hvalid.2.2.2.2.2.1
+                  simp only [CompositeState.blockingIPCContext] at hnotReady
+                  rw [hready] at hnotReady
+                  intro heq
+                  subst candidate
+                  exact hnotReady (by simp)
+                simp only [CompositeState.blockingIPCContext] at hvalid
+                rw [hwaiter, hscheduler, hcontexts]
+                refine ⟨?_, hvalid.2.2.1, ?_, ?_, ?_,
+                  hvalid.2.2.2.2.2.2, ?_⟩
+                · simpa [BlockingIPC.setWaiterEndpoint, hnotCaller] using hvalid.2.1
+                · simpa [SubjectLifecycle.setBool, hnotCaller] using hvalid.2.2.2.1
+                · simpa using Ne.symm hnotSelected
+                · intro hmember
+                  exact hvalid.2.2.2.2.2.1 (by
+                    rw [hready]
+                    exact List.mem_cons_of_mem selected hmember)
+                · exact
+                    (ResumablePreemption.contextFor_erase_other
+                      state.resumable.contexts selected candidate hnotSelected).trans
+                      (hstate.2.2.2 candidate saved hretained)
+
+/-- Blocking receive has a closed preservation theorem at the folded
+authoritative boundary; callers need no post-state compatibility witness. -/
+theorem authoritativeGate_blockingReceive_preserves_authoritativeRuntimeWellFormed
+    state handleWord frame registers
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.blocking (.receive handleWord frame registers))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.blocking (.receive handleWord frame registers)) hstate
+    (blockingReceive_authoritativeOperationCompatible
+      state handleWord frame registers hstate)
 
 /-- A successful blocking receive cannot select an identity held in the
 dormant cancellation bank: blocking requires that identity to be the current
@@ -14632,6 +16600,343 @@ theorem dispatchBlockingSend_woke_not_retained state handleWord word0 word1 rest
   have hreceiver : receiver = subject := howner.symm.trans heq
   rw [hreceiver, hretained] at hnotRetained
   simp [hretained] at hnotRetained
+
+/-- A successful blocking send wake has one exact affected identity.  The
+released waiter is removed from the blocked bank, appended to the resumable
+bank, and is the only identity whose scheduler/waiter projections change. -/
+theorem dispatchBlockingSend_woke_projection_exact state handleWord word0 word1 saved
+    (hstate : BlockingReceiveWellFormed state)
+    (hwoke : (dispatchBlockingSend state handleWord word0 word1).reply = .woke saved) :
+    let next := (dispatchBlockingSend state handleWord word0 word1).state
+    ∃ endpoint receiver rest,
+      state.blockingContexts receiver = some saved ∧
+      saved.owner = receiver ∧
+      next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts =
+        BlockingIPCContext.setBlocked state.blockingContexts receiver none ∧
+      next.blockingIPC =
+        BlockingIPC.wakeState state.blockingIPC endpoint receiver
+          { endpoint
+            sender := state.execution.core.context.currentSubject
+            payload := { word0, word1 } } ∧
+      next.resumable.contexts = saved :: state.resumable.contexts ∧
+      state.blockingIPC.waiters endpoint = receiver :: rest := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingSend, hresolve] at hwoke
+  | ok resolution =>
+      let payload : BlockingIPC.Payload := { word0, word1 }
+      cases houtcome : BlockingIPCContext.send state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot payload with
+      | mk blocking result released =>
+          cases result with
+          | ipcRejected reason =>
+              simp [dispatchBlockingSend, hresolve, payload, houtcome] at hwoke
+          | contextRejected reason =>
+              simp [dispatchBlockingSend, hresolve, payload, houtcome] at hwoke
+          | accepted =>
+              cases released with
+              | none => simp [dispatchBlockingSend, hresolve, payload, houtcome] at hwoke
+              | some actual =>
+                  cases hrestore :
+                      publishReleasedBlockingContext state blocking actual with
+                  | error reason =>
+                      simp [dispatchBlockingSend, hresolve, payload, houtcome, hrestore] at hwoke
+                  | ok published =>
+                      simp [dispatchBlockingSend, hresolve, payload, houtcome, hrestore] at hwoke
+                      subst actual
+                      obtain ⟨endpoint, receiver, rest, hendpoint, hqueue, hstored,
+                        haccepted, hcleared⟩ :=
+                        BlockingIPCContext.send_released_exact state.blockingIPCContext
+                          state.execution.core.context.currentSubject resolution.handle.slot
+                          payload saved (by simp [houtcome])
+                      have hipcExact :=
+                        (BlockingIPCContext.send_accepted_ipc_exact
+                          state.blockingIPCContext
+                          state.execution.core.context.currentSubject resolution.handle.slot
+                          payload haccepted).1
+                      have hrawAccepted :=
+                        (BlockingIPCContext.send_accepted_ipc_exact
+                          state.blockingIPCContext
+                          state.execution.core.context.currentSubject resolution.handle.slot
+                          payload haccepted).2
+                      rw [houtcome] at hipcExact hcleared
+                      have hraw :
+                          (BlockingIPC.send state.blockingIPC
+                            state.execution.core.context.currentSubject
+                            resolution.handle.slot payload).state =
+                            BlockingIPC.wakeState state.blockingIPC endpoint receiver
+                              { endpoint
+                                sender := state.execution.core.context.currentSubject
+                                payload } :=
+                        BlockingIPC.send_accepted_wake_exact
+                          state.blockingIPC state.execution.core.context.currentSubject
+                          resolution.handle.slot payload endpoint receiver rest
+                          hendpoint hqueue hrawAccepted
+                      obtain ⟨actualReceiver, hstoredActual, hblockedExact⟩ :=
+                        BlockingIPCContext.send_released_blocked_exact
+                          state.blockingIPCContext
+                          state.execution.core.context.currentSubject resolution.handle.slot
+                          payload saved (by simp [houtcome])
+                      have hcontext :=
+                        (publishReleasedBlockingContext_restores_exact
+                          state blocking saved published hrestore).2
+                      have howner : saved.owner = receiver :=
+                        BlockingIPCContext.validSaved_owner receiver saved
+                          (hstate.1.2.2 receiver saved hstored)
+                      have hownerActual : saved.owner = actualReceiver :=
+                        BlockingIPCContext.validSaved_owner actualReceiver saved
+                          (hstate.1.2.2 actualReceiver saved hstoredActual)
+                      have hreceiver : actualReceiver = receiver :=
+                        hownerActual.symm.trans howner
+                      subst actualReceiver
+                      rw [houtcome] at hblockedExact
+                      have hrestoreExact := hrestore
+                      unfold publishReleasedBlockingContext at hrestoreExact
+                      split at hrestoreExact <;> try contradiction
+                      split at hrestoreExact <;> try contradiction
+                      split at hrestoreExact <;> try contradiction
+                      split at hrestoreExact <;> try contradiction
+                      simp only [Except.ok.injEq] at hrestoreExact
+                      subst published
+                      rw [howner] at hblockedExact
+                      have hblockedWake :
+                          blocking.blocked =
+                            BlockingIPCContext.setBlocked
+                              state.blockingContexts receiver none := by
+                        simpa [CompositeState.blockingIPCContext] using hblockedExact
+                      have hipcExact' :
+                          blocking.ipc =
+                            (BlockingIPC.send state.blockingIPC
+                              state.execution.core.context.currentSubject
+                              resolution.handle.slot payload).state := by
+                        simpa [CompositeState.blockingIPCContext] using hipcExact
+                      have hipcWake :
+                          blocking.ipc =
+                            BlockingIPC.wakeState state.blockingIPC endpoint receiver
+                              { endpoint
+                                sender := state.execution.core.context.currentSubject
+                                payload := { word0, word1 } } := by
+                        exact hipcExact'.trans (by simpa [payload] using hraw)
+                      refine ⟨endpoint, receiver, rest, hstored, howner, ?_⟩
+                      simp [dispatchBlockingSend, hresolve, payload, houtcome, hrestore,
+                        publishBlockingIPCContext, hipcWake]
+                      exact ⟨hblockedWake, hqueue⟩
+
+/-- A mailbox-only blocking send changes no projection observed by dormant
+cancellation except the mailbox itself. -/
+theorem dispatchBlockingSend_sent_dormant_projections_exact
+    state handleWord word0 word1
+    (hsent : (dispatchBlockingSend state handleWord word0 word1).reply = .sent) :
+    let next := (dispatchBlockingSend state handleWord word0 word1).state
+    next.deferredCancels = state.deferredCancels ∧
+      next.blockingContexts = state.blockingContexts ∧
+      next.resumable.contexts = state.resumable.contexts ∧
+      next.blockingIPC.waiterEndpoint = state.blockingIPC.waiterEndpoint ∧
+      next.blockingIPC.scheduler = state.blockingIPC.scheduler := by
+  cases hresolve : CapabilityHandle.resolveCurrent
+      state.blockingIPC.scheduler.lifecycle.capabilities
+      { caller := state.execution.core.context.currentSubject } handleWord .endpoint with
+  | error reason => simp [dispatchBlockingSend, hresolve] at hsent
+  | ok resolution =>
+      let payload : BlockingIPC.Payload := { word0, word1 }
+      cases houtcome : BlockingIPCContext.send state.blockingIPCContext
+          state.execution.core.context.currentSubject resolution.handle.slot payload with
+      | mk blocking result released =>
+          cases result with
+          | ipcRejected reason =>
+              simp [dispatchBlockingSend, hresolve, payload, houtcome] at hsent
+          | contextRejected reason =>
+              simp [dispatchBlockingSend, hresolve, payload, houtcome] at hsent
+          | accepted =>
+              cases released with
+              | some saved =>
+                  cases hrestore : publishReleasedBlockingContext state blocking saved <;>
+                    simp [dispatchBlockingSend, hresolve, payload, houtcome, hrestore] at hsent
+              | none =>
+                  have haccepted :
+                      (BlockingIPCContext.send state.blockingIPCContext
+                        state.execution.core.context.currentSubject resolution.handle.slot
+                        payload).result = .accepted := by
+                    simp [houtcome]
+                  have hunreleased :
+                      (BlockingIPCContext.send state.blockingIPCContext
+                        state.execution.core.context.currentSubject resolution.handle.slot
+                        payload).released = none := by
+                    simp [houtcome]
+                  have hscheduler :=
+                    BlockingIPCContext.send_accepted_unreleased_scheduler_unchanged
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject resolution.handle.slot
+                      payload haccepted hunreleased
+                  have hblocked :=
+                    BlockingIPCContext.send_accepted_unreleased_blocked_unchanged
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject resolution.handle.slot
+                      payload haccepted hunreleased
+                  have hwaiter :=
+                    BlockingIPCContext.send_accepted_unreleased_waiterEndpoint_unchanged
+                      state.blockingIPCContext
+                      state.execution.core.context.currentSubject resolution.handle.slot
+                      payload haccepted hunreleased
+                  rw [houtcome] at hblocked hwaiter hscheduler
+                  have hblocked' : blocking.blocked = state.blockingContexts := by
+                    simpa [CompositeState.blockingIPCContext] using hblocked
+                  have hwaiter' :
+                      blocking.ipc.waiterEndpoint =
+                        state.blockingIPC.waiterEndpoint := by
+                    simpa [CompositeState.blockingIPCContext] using hwaiter
+                  have hscheduler' :
+                      blocking.ipc.scheduler = state.blockingIPC.scheduler := by
+                    simpa [CompositeState.blockingIPCContext] using hscheduler
+                  simp only [dispatchBlockingSend, hresolve, payload, houtcome]
+                  simp [publishBlockingIPCContext, hblocked', hwaiter', hscheduler']
+
+/-- Every outcome of the authoritative blocking send constructor preserves
+the dormant-cancellation classification.  Rejections are atomic, mailbox-only
+sends leave all observed control projections exact, and wakes affect only the
+proved non-retained receiver. -/
+theorem blockingSend_authoritativeOperationCompatible state handleWord word0 word1
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.blocking (.send handleWord word0 word1)) := by
+  cases hmode : state.execution.mode with
+  | handling active =>
+      apply dormantCancellationCompatible_of_exact_projections state _ hstate
+      all_goals simp [authoritativeGate, hmode]
+  | halted record =>
+      apply dormantCancellationCompatible_of_exact_projections state _ hstate
+      all_goals simp [authoritativeGate, hmode]
+  | running =>
+      have hgate :
+          (authoritativeGate state
+            (.blocking (.send handleWord word0 word1))).state =
+              (dispatchBlockingSend state handleWord word0 word1).state := by
+        simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+          applyBlockingOperation]
+      change DormantCancellationCompatible state
+        (authoritativeGate state
+          (.blocking (.send handleWord word0 word1))).state
+      rw [hgate]
+      cases hreply : (dispatchBlockingSend state handleWord word0 word1).reply with
+      | handleRejected reason =>
+          rw [dispatchBlockingSend_rejected_atomic state handleWord word0 word1 _
+            (.handle reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | contextRejected reason =>
+          rw [dispatchBlockingSend_rejected_atomic state handleWord word0 word1 _
+            (.context reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | restoreRejected reason =>
+          rw [dispatchBlockingSend_rejected_atomic state handleWord word0 word1 _
+            (.restore reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | rejected reason =>
+          rw [dispatchBlockingSend_rejected_atomic state handleWord word0 word1 _
+            (.ipc reason) hreply]
+          exact dormantCancellationCompatible_of_exact_projections
+            state state hstate rfl rfl rfl rfl
+      | sent =>
+          have hshape := dispatchBlockingSend_sent_dormant_projections_exact
+            state handleWord word0 word1 hreply
+          dsimp only at hshape
+          rcases hshape with ⟨hdeferred, hblocked, hcontexts, hwaiter, hscheduler⟩
+          refine ⟨hdeferred, ?_, ?_, ?_⟩
+          · intro subject hsome
+            rw [hblocked] at hsome
+            rw [hdeferred]
+            exact hstate.2.1.2.1 subject hsome
+          · intro subject saved hsaved
+            rw [hblocked] at hsaved
+            rw [hcontexts]
+            exact hstate.2.2.1 subject saved hsaved
+          · intro subject saved hretained
+            have hvalid := hstate.2.1.2.2 subject saved hretained
+            rw [hwaiter, hscheduler, hcontexts]
+            exact ⟨hvalid.2.1, hvalid.2.2.1, hvalid.2.2.2.1,
+              hvalid.2.2.2.2.1, hvalid.2.2.2.2.2.1,
+              hvalid.2.2.2.2.2.2, hstate.2.2.2 subject saved hretained⟩
+      | woke saved =>
+          have hcoherent : state.BlockingIPCCoherent := by
+            rcases hstate.blocking.1 with
+              ⟨_, _, _, _, _, _, _, _, _, _, _, _, hblocking, _⟩
+            exact hblocking
+          have hshape := dispatchBlockingSend_woke_projection_exact
+            state handleWord word0 word1 saved
+              ⟨hstate.blocking.2, hcoherent⟩ hreply
+          dsimp only at hshape
+          obtain ⟨endpoint, receiver, rest, hstored, howner, hdeferred,
+            hblocked, hipc, hcontexts, hqueue⟩ := hshape
+          refine ⟨hdeferred, ?_, ?_, ?_⟩
+          · intro candidate hsome
+            rw [hblocked] at hsome
+            by_cases heq : candidate = receiver
+            · subst candidate
+              simp [BlockingIPCContext.setBlocked] at hsome
+            · rw [hdeferred]
+              apply hstate.2.1.2.1 candidate
+              change (state.blockingContexts candidate).isSome = true
+              simpa [BlockingIPCContext.setBlocked, heq] using hsome
+          · intro candidate blockedSaved hsome
+            rw [hblocked] at hsome
+            by_cases heq : candidate = receiver
+            · subst candidate
+              simp [BlockingIPCContext.setBlocked] at hsome
+            · have hbefore :
+                  state.blockingContexts candidate = some blockedSaved := by
+                simpa [BlockingIPCContext.setBlocked, heq] using hsome
+              rw [hcontexts]
+              simpa [ResumablePreemption.contextFor, howner, heq, Ne.symm heq] using
+                hstate.2.2.1 candidate blockedSaved hbefore
+          · intro candidate retained hretained
+            have hvalid := hstate.2.1.2.2 candidate retained hretained
+            have hnotReceiver : receiver ≠ candidate := by
+              intro heq
+              have hnotOwner := dispatchBlockingSend_woke_not_retained
+                state handleWord word0 word1 saved candidate retained
+                  hstate hretained hreply
+              exact hnotOwner (howner.trans heq)
+            rw [hipc, hcontexts]
+            have hbefore :
+                state.blockingIPC.waiterEndpoint candidate = none ∧
+                  state.blockingIPC.scheduler.lifecycle.capabilities.subjects candidate =
+                    true ∧
+                  state.blockingIPC.scheduler.lifecycle.runnable candidate = false ∧
+                  state.blockingIPC.scheduler.lifecycle.current ≠ some candidate ∧
+                  candidate ∉ state.blockingIPC.scheduler.ready ∧
+                  Scheduler.ownsAddressSpace state.blockingIPC.scheduler candidate =
+                    some candidate ∧
+                  ResumablePreemption.contextFor state.resumable.contexts candidate =
+                    none := by
+              simpa [CompositeState.blockingIPCContext] using
+                And.intro hvalid.2.1
+                  (And.intro hvalid.2.2.1
+                    (And.intro hvalid.2.2.2.1
+                      (And.intro hvalid.2.2.2.2.1
+                        (And.intro hvalid.2.2.2.2.2.1
+                          (And.intro hvalid.2.2.2.2.2.2
+                            (hstate.2.2.2 candidate retained hretained))))))
+            simpa [BlockingIPC.wakeState, BlockingIPC.setWaiterEndpoint,
+              SubjectLifecycle.setBool, Scheduler.ownsAddressSpace,
+              ResumablePreemption.contextFor, howner, hnotReceiver,
+              Ne.symm hnotReceiver] using hbefore
+
+/-- Blocking send has a closed preservation theorem at the folded
+authoritative boundary; callers need no post-state compatibility witness. -/
+theorem authoritativeGate_blockingSend_preserves_authoritativeRuntimeWellFormed
+    state handleWord word0 word1
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.blocking (.send handleWord word0 word1))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.blocking (.send handleWord word0 word1)) hstate
+    (blockingSend_authoritativeOperationCompatible
+      state handleWord word0 word1 hstate)
 
 /-- Cancelling a dormant retained identity is exactly atomic.  The retained
 classification supplies the missing-waiter fact consumed directly by the
@@ -14833,7 +17138,7 @@ theorem authoritativeGate_blockingCancel_preserves_authoritativeRuntimeWellForme
     state subject (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.blocking (.cancel subject))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.blocking (.cancel subject)) hstate
     (blockingCancel_authoritativeOperationCompatible state subject hstate)
 
@@ -14881,7 +17186,7 @@ theorem authoritativeGate_selectUserReturn_preserves_authoritativeRuntimeWellFor
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.ordinary (.selectUserReturn purpose))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.selectUserReturn purpose)) hstate
     (selectUserReturn_authoritativeOperationCompatible state purpose hstate)
 
@@ -14891,7 +17196,7 @@ theorem authoritativeGate_userReturn_preserves_authoritativeRuntimeWellFormed
     state request (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary (.userReturn request))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.userReturn request)) hstate
     (userReturn_authoritativeOperationCompatible state request hstate)
 
@@ -14901,9 +17206,111 @@ theorem authoritativeGate_restart_preserves_authoritativeRuntimeWellFormed
     state (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary .restart)).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary .restart) hstate
     (restart_authoritativeOperationCompatible state hstate)
+
+/-- Legacy admission vocabulary retained for source compatibility.  It is
+vacuous for every operation and is not part of the published gate contract. -/
+def AuthoritativeOperationAdmissible (_state : CompositeState) :
+    AuthoritativeOperation → Prop
+  | _ => True
+
+/-- Every post-state compatibility obligation is derived from the
+authoritative pre-invariant.  The contained-interrupt branch consumes only its
+explicit trusted identity admission fact; every other ordinary, blocking, and
+deferred-drain constructor is closed. -/
+theorem authoritativeOperationCompatible_of_admissible state operation
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hadmissible : AuthoritativeOperationAdmissible state operation) :
+    AuthoritativeOperationCompatible state operation := by
+  cases operation with
+  | ordinary operation =>
+      cases operation with
+      | interrupt frame =>
+          exact interrupt_authoritativeOperationCompatible state frame
+      | nmi raw context => trivial
+      | selectUserReturn purpose =>
+          exact selectUserReturn_authoritativeOperationCompatible state purpose hstate
+      | userReturn request =>
+          exact userReturn_authoritativeOperationCompatible state request hstate
+      | syscall call =>
+          exact syscall_authoritativeOperationCompatible state call hstate
+      | ipc call =>
+          exact blockingStateNeutral_authoritativeOperationCompatible state
+            (.ipc call) (.ipc call) hstate
+      | resumePreempt frame registers =>
+          exact resumePreempt_authoritativeOperationCompatible
+            state frame registers hstate
+      | transferOffer endpointWord sourceWord sourceKind payload rights =>
+          exact transferOffer_authoritativeOperationCompatible state endpointWord
+            sourceWord sourceKind payload rights hstate
+      | transferAccept endpointWord destinationSlot =>
+          exact transferAccept_authoritativeOperationCompatible
+            state endpointWord destinationSlot hstate
+      | capabilityCopy source destination destinationSlot rights =>
+          exact capabilityCopy_authoritativeOperationCompatible state source
+            destination destinationSlot rights hstate
+      | capabilityRevoke authoritySlot victim victimSlot =>
+          exact capabilityRevoke_authoritativeOperationCompatible state authoritySlot
+            victim victimSlot hstate
+      | capabilityRevokeSubtree authoritySlot victim victimSlot =>
+          exact capabilityRevokeSubtree_authoritativeOperationCompatible state
+            authoritySlot victim victimSlot hstate
+      | map slot page permissions =>
+          exact map_authoritativeOperationCompatible state slot page permissions hstate
+      | unmap page =>
+          exact unmap_authoritativeOperationCompatible state page hstate
+      | createSubject subject =>
+          exact createSubject_authoritativeOperationCompatible state subject hstate
+      | terminateSubject subject => trivial
+      | scheduleAdd subject =>
+          exact scheduleAdd_authoritativeOperationCompatible state subject hstate
+      | scheduleRemove subject =>
+          exact scheduleRemove_authoritativeOperationCompatible state subject hstate
+      | scheduleNext =>
+          exact blockingStateNeutral_authoritativeOperationCompatible state
+            .scheduleNext .scheduleNext hstate
+      | scheduleYield =>
+          exact blockingStateNeutral_authoritativeOperationCompatible state
+            .scheduleYield .scheduleYield hstate
+      | scheduleTick =>
+          exact blockingStateNeutral_authoritativeOperationCompatible state
+            .scheduleTick .scheduleTick hstate
+      | terminateCurrent => trivial
+      | restart =>
+          exact restart_authoritativeOperationCompatible state hstate
+  | blocking operation =>
+      cases operation with
+      | receive handleWord frame registers =>
+          exact blockingReceive_authoritativeOperationCompatible state handleWord
+            frame registers hstate
+      | send handleWord word0 word1 =>
+          exact blockingSend_authoritativeOperationCompatible state handleWord
+            word0 word1 hstate
+      | cancel subject =>
+          exact blockingCancel_authoritativeOperationCompatible state subject hstate
+  | drainDeferred subject => trivial
+
+/-- The strengthened authoritative gate preserves the complete folded runtime
+invariant from pre-state evidence alone, with no operation-local premise. -/
+theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state operation (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state operation).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible
+    state operation hstate
+    (authoritativeOperationCompatible_of_admissible
+      state operation hstate trivial)
+
+/-- Final public gate contract: every authoritative operation preserves the
+complete folded invariant from pre-state evidence alone. -/
+theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
+    state operation (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state operation).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state operation hstate
 
 /-- The self-contained neutral-constructor compatibility laws preserve the
 authoritative DMA conjunct as a consequence of complete global preservation.
@@ -14979,12 +17386,17 @@ def AuthoritativeTraceCompatible (state : CompositeState) :
       AuthoritativeOperationCompatible state operation ∧
       AuthoritativeTraceCompatible (authoritativeGate state operation).state rest
 
+/-- Legacy trace-admission vocabulary retained for source compatibility.  It
+is vacuous and is not part of the published arbitrary-trace theorem. -/
+def AuthoritativeTraceAdmissible (_state : CompositeState) :
+    List AuthoritativeOperation → Prop := fun _ => True
+
 /-- Every compatibility-certified finite interleaving of ordinary and blocking
 operations preserves the complete authoritative global invariant without
 assuming any intermediate preservation conclusion.  This is intentionally not
 a universal trace theorem: no inhabitant is provided for an arbitrary
 operation list. -/
-theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state operations (hstate : AuthoritativeRuntimeWellFormed state)
     (hcompatible : AuthoritativeTraceCompatible state operations) :
     AuthoritativeRuntimeWellFormed (runAuthoritativeOperations state operations) := by
@@ -14992,8 +17404,131 @@ theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
   | nil => exact hstate
   | cons operation rest ih =>
       exact ih (authoritativeGate state operation).state
-        (authoritativeGate_preserves_authoritativeRuntimeWellFormed
+        (authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible
           state operation hstate hcompatible.1) hcompatible.2
+
+/-- Arbitrary admitted finite traces preserve the authoritative invariant.
+Unlike `AuthoritativeTraceCompatible`, callers never prove a fact about a
+gate-selected post-state: compatibility for each member is reconstructed from
+the invariant established by its predecessor. -/
+theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state operations (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed (runAuthoritativeOperations state operations) := by
+  induction operations generalizing state with
+  | nil => exact hstate
+  | cons operation rest ih =>
+      have hnext :=
+        authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_admissible
+          state operation hstate
+      exact ih (authoritativeGate state operation).state hnext
+
+/-- Final public trace contract: every finite authoritative operation list
+preserves the folded invariant from the initial pre-invariant alone. -/
+theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state operations (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state operations) :=
+  runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state operations hstate
+
+/-- A sealed capability send followed by revocation is an ordinary
+authoritative trace, with no trace-local admission or post-state premise. -/
+theorem runAuthoritativeRevokeAfterSend_preserves_authoritativeRuntimeWellFormed
+    state endpointWord sourceWord sourceKind payload rights
+    authoritySlot victim victimSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        [.ordinary (.transferOffer endpointWord sourceWord sourceKind payload rights),
+          .ordinary (.capabilityRevoke authoritySlot victim victimSlot)]) :=
+  runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state _ hstate
+
+/-- Retiring an identity before an attempted resumable-context restore is an
+explicit authoritative trace.  Any resulting stale-context denial is covered
+by the same unconditional preservation boundary and is therefore atomic. -/
+theorem runAuthoritativeStaleResumableContextTrace_preserves_authoritativeRuntimeWellFormed
+    state subject frame registers
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        [.ordinary (.terminateSubject subject),
+          .ordinary (.resumePreempt frame registers)]) :=
+  runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state _ hstate
+
+/-- Any finite sequence of resumable-preemption attempts has a closed
+recursive compatibility certificate.  Each successor certificate is derived
+from the invariant preserved by the preceding switch, so no intermediate
+post-state law or readiness witness is supplied by the caller. -/
+theorem authoritativeTraceCompatible_resumePreempts state
+    (steps : List (Interrupt.HardwareFrame × ResumablePreemption.Registers))
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeTraceCompatible state
+      (steps.map fun step =>
+        AuthoritativeOperation.ordinary
+          (.resumePreempt step.1 step.2)) := by
+  induction steps generalizing state with
+  | nil => trivial
+  | cons step rest ih =>
+      simp only [List.map_cons, AuthoritativeTraceCompatible]
+      exact
+        ⟨resumePreempt_authoritativeOperationCompatible
+            state step.1 step.2 hstate,
+          ih (authoritativeGate state
+              (.ordinary (.resumePreempt step.1 step.2))).state
+            (authoritativeGate_resumePreempt_preserves_authoritativeRuntimeWellFormed
+              state step.1 step.2 hstate)⟩
+
+/-- The authoritative trace runner unconditionally preserves the complete
+folded runtime invariant across arbitrary finite resumable-preemption
+sequences, including accepted switches, typed denials, and fatal suffixes. -/
+theorem runAuthoritativeResumePreempts_preserves_authoritativeRuntimeWellFormed
+    state
+    (steps : List (Interrupt.HardwareFrame × ResumablePreemption.Registers))
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (steps.map fun step =>
+          AuthoritativeOperation.ordinary
+            (.resumePreempt step.1 step.2))) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
+    state _ hstate
+    (authoritativeTraceCompatible_resumePreempts state steps hstate)
+
+/-- Arbitrary finite scheduler-admission sequences have a closed recursive
+compatibility certificate.  Each undrained candidate is rejected atomically;
+every accepted member establishes the invariant consumed by the next member. -/
+theorem authoritativeTraceCompatible_scheduleAdds state
+    (subjects : List Scheduler.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeTraceCompatible state
+      (subjects.map fun subject =>
+        AuthoritativeOperation.ordinary (.scheduleAdd subject)) := by
+  induction subjects generalizing state with
+  | nil => trivial
+  | cons subject rest ih =>
+      simp only [List.map_cons, AuthoritativeTraceCompatible]
+      exact
+        ⟨scheduleAdd_authoritativeOperationCompatible state subject hstate,
+          ih (authoritativeGate state
+              (.ordinary (.scheduleAdd subject))).state
+            (authoritativeGate_scheduleAdd_preserves_authoritativeRuntimeWellFormed
+              state subject hstate)⟩
+
+/-- The authoritative runner unconditionally preserves the complete folded
+runtime invariant across arbitrary scheduler-admission traces, including any
+number of typed undrained-cancellation denials. -/
+theorem runAuthoritativeScheduleAdds_preserves_authoritativeRuntimeWellFormed
+    state (subjects : List Scheduler.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (subjects.map fun subject =>
+          AuthoritativeOperation.ordinary (.scheduleAdd subject))) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
+    state _ hstate
+    (authoritativeTraceCompatible_scheduleAdds state subjects hstate)
 
 /-- Arbitrary authoritative successor traces retain the exact boot-accepted
 PCI observation.  This proof ranges over ordinary, blocking, and deferred
@@ -15023,7 +17558,7 @@ theorem runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFor
     AuthoritativeRuntimeWellFormed
       (runAuthoritativeOperations state
         (operations.map AuthoritativeOperation.ordinary)) := by
-  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state (operations.map AuthoritativeOperation.ordinary) hstate hcompatible
 
 /-- A public deferred-drain step preserves the full retained-context
@@ -15063,17 +17598,27 @@ theorem authoritativeGate_terminateCurrent_preserves_deferredBlockingRuntimeWell
     state hstate
 
 /-- The public successor gate retains the complete deferred blocking runtime
-across every inbound interrupt result under the explicit contained-entry
-identity binding. -/
+across every inbound interrupt result without an external identity premise. -/
 theorem authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
     state frame
-    (hstate : DeferredBlockingRuntimeWellFormed state)
-    (hbound : ContainedFaultIdentityBound state) :
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
     DeferredBlockingRuntimeWellFormed
       (authoritativeGate state (.ordinary (.interrupt frame))).state := by
   rw [authoritativeGate_ordinary_state]
   exact gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
-    state frame hstate hbound
+    state frame hstate
+
+/-- Interrupt identity validation is internal to the authoritative transition:
+matching identity cleans up, mismatch rejects atomically, and every outcome
+preserves the complete folded runtime invariant. -/
+theorem authoritativeGate_interrupt_preserves_authoritativeRuntimeWellFormed
+    state frame
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state (.ordinary (.interrupt frame))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.interrupt frame)) hstate
+    (interrupt_authoritativeOperationCompatible state frame)
 
 /-- The successor gate preserves the strongest deferred invariant across its
 out-of-band NMI operation, including the handling-mode path unavailable to
@@ -15143,8 +17688,7 @@ deferred-drain suffix without leaving the public authoritative gate or
 weakening the deferred blocking invariant between steps. -/
 theorem runAuthoritativeInterruptThenDeferredDrains_preserves
     state frame (subjects : List BlockingIPC.SubjectId)
-    (hstate : DeferredBlockingRuntimeWellFormed state)
-    (hbound : ContainedFaultIdentityBound state) :
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
     DeferredBlockingRuntimeWellFormed
       (runAuthoritativeOperations state
         (.ordinary (.interrupt frame) ::
@@ -15153,7 +17697,132 @@ theorem runAuthoritativeInterruptThenDeferredDrains_preserves
   exact runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
     (authoritativeGate state (.ordinary (.interrupt frame))).state subjects
     (authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
-      state frame hstate hbound)
+      state frame hstate)
+
+/-- Every finite deferred-drain suffix carries a recursive compatibility
+certificate independently of its starting state.  Capacity-checked drains
+have no caller-supplied post-state law, so this certificate can be reused
+after any constructor whose own operation-local compatibility is closed. -/
+theorem authoritativeTraceCompatible_deferredDrains
+    state (subjects : List BlockingIPC.SubjectId) :
+    AuthoritativeTraceCompatible state
+      (subjects.map AuthoritativeOperation.drainDeferred) := by
+  induction subjects generalizing state with
+  | nil => trivial
+  | cons subject rest ih =>
+      exact ⟨trivial, ih _⟩
+
+/-- Any operation-local compatibility certificate composes with an arbitrary
+capacity-checked deferred-drain suffix.  The suffix consumes the invariant
+established by the head transition through the common trace runner. -/
+theorem authoritativeTraceCompatible_thenDeferredDrains
+    state operation (subjects : List BlockingIPC.SubjectId)
+    (hoperation : AuthoritativeOperationCompatible state operation) :
+    AuthoritativeTraceCompatible state
+      (operation :: subjects.map AuthoritativeOperation.drainDeferred) :=
+  ⟨hoperation, authoritativeTraceCompatible_deferredDrains _ subjects⟩
+
+/-- Interrupt validation and premise-free deferred-drain constructors form a
+compatibility certificate for the complete public mixed trace. -/
+theorem authoritativeTraceCompatible_interruptThenDeferredDrains
+    state frame (subjects : List BlockingIPC.SubjectId) :
+    AuthoritativeTraceCompatible state
+      (.ordinary (.interrupt frame) ::
+        subjects.map AuthoritativeOperation.drainDeferred) := by
+  exact authoritativeTraceCompatible_thenDeferredDrains state
+    (.ordinary (.interrupt frame)) subjects
+    (interrupt_authoritativeOperationCompatible state frame)
+
+/-- Explicit termination and any capacity-checked drain continuation form a
+closed compatibility certificate.  Termination needs no independently
+supplied post-state law, and each drain member is likewise premise-free. -/
+theorem authoritativeTraceCompatible_terminateSubjectThenDeferredDrains
+    state subject (subjects : List BlockingIPC.SubjectId) :
+    AuthoritativeTraceCompatible state
+      (.ordinary (.terminateSubject subject) ::
+        subjects.map AuthoritativeOperation.drainDeferred) := by
+  exact authoritativeTraceCompatible_thenDeferredDrains state
+    (.ordinary (.terminateSubject subject)) subjects trivial
+
+/-- Scheduler-selected termination has the same closed mixed-trace
+compatibility certificate as explicit identity termination. -/
+theorem authoritativeTraceCompatible_terminateCurrentThenDeferredDrains
+    state (subjects : List BlockingIPC.SubjectId) :
+    AuthoritativeTraceCompatible state
+      (.ordinary .terminateCurrent ::
+        subjects.map AuthoritativeOperation.drainDeferred) := by
+  exact authoritativeTraceCompatible_thenDeferredDrains state
+    (.ordinary .terminateCurrent) subjects trivial
+
+/-- NMI fail-stop followed by proposed deferred drains is a closed
+compatibility-certified trace.  The outer execution latch absorbs the suffix,
+while the general runner retains the complete folded invariant. -/
+theorem authoritativeTraceCompatible_nmiThenDeferredDrains
+    state raw context (subjects : List BlockingIPC.SubjectId) :
+    AuthoritativeTraceCompatible state
+      (.ordinary (.nmi raw context) ::
+        subjects.map AuthoritativeOperation.drainDeferred) := by
+  exact authoritativeTraceCompatible_thenDeferredDrains state
+    (.ordinary (.nmi raw context)) subjects trivial
+
+/-- The general trace theorem covers every interrupt followed by any finite
+sequence of capacity-checked deferred drains while retaining the complete
+authoritative invariant. -/
+theorem runAuthoritativeCompatibleInterruptThenDeferredDrains_preserves
+    state frame (subjects : List BlockingIPC.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary (.interrupt frame) ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
+    state _ hstate
+    (authoritativeTraceCompatible_interruptThenDeferredDrains
+      state frame subjects)
+
+/-- Explicit termination followed by arbitrary capacity-checked drains now
+crosses the general compatibility-certified trace theorem and preserves the
+complete folded authoritative invariant, not only its deferred projection. -/
+theorem runAuthoritativeCompatibleTerminateSubjectThenDeferredDrains_preserves
+    state subject (subjects : List BlockingIPC.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary (.terminateSubject subject) ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
+    state _ hstate
+    (authoritativeTraceCompatible_terminateSubjectThenDeferredDrains
+      state subject subjects)
+
+/-- Scheduler-selected termination followed by arbitrary capacity-checked
+drains likewise preserves the complete folded authoritative invariant. -/
+theorem runAuthoritativeCompatibleTerminateCurrentThenDeferredDrains_preserves
+    state (subjects : List BlockingIPC.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary .terminateCurrent ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
+    state _ hstate
+    (authoritativeTraceCompatible_terminateCurrentThenDeferredDrains
+      state subjects)
+
+/-- NMI fail-stop followed by arbitrary capacity-checked drains is covered by
+the same general authoritative trace theorem; terminal absorption is no
+longer proved only through a weaker parallel runner. -/
+theorem runAuthoritativeCompatibleNmiThenDeferredDrains_preserves
+    state raw context (subjects : List BlockingIPC.SubjectId)
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        (.ordinary (.nmi raw context) ::
+          subjects.map AuthoritativeOperation.drainDeferred)) := by
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
+    state _ hstate
+    (authoritativeTraceCompatible_nmiThenDeferredDrains
+      state raw context subjects)
 
 /-- NMI fail-stop and any proposed deferred-drain suffix form one public
 authoritative trace.  The first step preserves the strongest invariant and
@@ -15956,7 +18625,7 @@ theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
         [] := by
     rfl
   refine ⟨hinitial, ?_, rfl, rfl⟩
-  apply authoritativeGate_preserves_authoritativeRuntimeWellFormed _ _ hinitial
+  apply authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible _ _ hinitial
   change DormantCancellationCompatible _ _
   refine ⟨rfl, ?_, ?_, ?_⟩
   · intro subject _
@@ -16219,6 +18888,129 @@ example (state : CompositeState) :
       runAuthoritativeOperations initial [.drainDeferred 1, .drainDeferred 1] =
         first.state := by
   exact ⟨rfl, rfl, rfl⟩
+
+/-- The authoritative trace cannot restore a context after its owner is
+retired.  Termination consumes subject `1`'s queued context; the following
+timer attempt reports the exact `noDestination` denial, exposes no restored
+context, and leaves the terminated post-state unchanged. -/
+theorem authoritativeStaleResumableContext_reachable_witness
+    input plan (hcompiled : BootPageTablePlan.compile input = .ok plan) :
+    let initial := authoritativeBlockingCancelEvidence plan
+    let terminated := authoritativeGate initial
+      (.ordinary (.terminateSubject 1))
+    let attempted := authoritativeGate terminated.state
+      (.ordinary (.resumePreempt blockingEvidenceFrame
+        blockingEvidenceRegisters2))
+    AuthoritativeRuntimeWellFormed initial ∧
+      terminated.result =
+        .completed (.ordinary (.terminateSubject .accepted)) ∧
+      ResumablePreemption.contextFor terminated.state.resumable.contexts 1 =
+        none ∧
+      attempted.result =
+        .completed (.ordinary (.resume none (some .noDestination))) ∧
+      attempted.state = terminated.state ∧
+      AuthoritativeRuntimeWellFormed attempted.state ∧
+      runAuthoritativeOperations initial
+        [.ordinary (.terminateSubject 1),
+          .ordinary (.resumePreempt blockingEvidenceFrame
+            blockingEvidenceRegisters2)] = terminated.state := by
+  have hinitial :
+      AuthoritativeRuntimeWellFormed
+        (authoritativeBlockingCancelEvidence plan) :=
+    (authoritativeGate_blockingCancel_cancelled_reachable_witness
+      input plan hcompiled).1
+  have htrace :=
+    runAuthoritativeStaleResumableContextTrace_preserves_authoritativeRuntimeWellFormed
+      (authoritativeBlockingCancelEvidence plan) 1 blockingEvidenceFrame
+      blockingEvidenceRegisters2 hinitial
+  exact ⟨hinitial, rfl, rfl, rfl, rfl, htrace, rfl⟩
+
+private def revokeAfterSendTarget : Capability.Capability :=
+  { object := 10, kind := .endpoint, rights := { send := true },
+    identity := 4 }
+
+private def revokeAfterSendAuthority : Capability.Capability :=
+  { object := 10, kind := .endpoint,
+    rights := { send := true, grant := true, revoke := true },
+    identity := 5 }
+
+private def revokeAfterSendCapabilities : Capability.State :=
+  { nextIdentity := 6
+    derivations := fun identity =>
+      if identity = 4 then
+        some (none, 10, .endpoint, { send := true })
+      else if identity = 5 then
+        some (none, 10, .endpoint,
+          { send := true, grant := true, revoke := true })
+      else none
+    subjects := fun subject => subject = 2
+    objects := fun object => object = 10
+    kinds := fun object => if object = 10 then some .endpoint else none
+    slots := fun subject slot =>
+      if subject = 2 ∧ slot = 2 then some revokeAfterSendTarget
+      else if subject = 2 ∧ slot = 3 then some revokeAfterSendAuthority
+      else none }
+
+private def revokeAfterSendTransfers : CapabilityTransfer.State :=
+  { toEndpointState :=
+      { capabilities := revokeAfterSendCapabilities
+        allocator := { frames := [], status := fun _ => .reserved }
+        binding := fun _ => none
+        issued := fun object => object = 10
+        issuedAddressSpace := fun _ => false
+        mailbox := fun _ => none
+        sendHistory := fun _ => [] }
+    pending := fun _ => none }
+
+private def revokeAfterSendEvidence (state : CompositeState) :
+    CompositeState :=
+  { state with
+    execution :=
+      { state.execution with
+        core :=
+          { state.execution.core with
+            context :=
+              { state.execution.core.context with
+                currentSubject := 2, activeAddressSpace := 2 } }
+        mode := .running }
+    capabilities := revokeAfterSendCapabilities
+    lifecycle :=
+      { state.lifecycle with
+        capabilities := revokeAfterSendCapabilities
+        current := some 2 }
+    transfers := revokeAfterSendTransfers }
+
+/-- A concrete sealed send followed by direct revocation executes both success
+branches through the authoritative gate.  The send reserves descendant `6`
+and publishes its tagged mailbox; revoking the independent send-only endpoint
+slot succeeds without consuming that sealed descendant. -/
+theorem authoritativeRevokeAfterSend_reachable_witness
+    (state : CompositeState) :
+    let initial := revokeAfterSendEvidence state
+    let offered := authoritativeGate initial
+      (.ordinary (.transferOffer 0x0000000000040002
+        0x0000000000050003 .endpoint
+        { word0 := 0xCAFE, word1 := 0xBEEF } { send := true }))
+    let revoked := authoritativeGate offered.state
+      (.ordinary (.capabilityRevoke 3 2 2))
+    offered.result = .completed (.ordinary (.transferOffer .accepted)) ∧
+      offered.state.transfers.pending 10 = some
+        { identity := 6
+          parent := 5
+          sender := 2
+          object := 10
+          kind := .endpoint
+          rights := { send := true } } ∧
+      revoked.result = .completed (.ordinary (.capability .accepted)) ∧
+      revoked.state.capabilities.slots 2 2 = none ∧
+      revoked.state.transfers.pending 10 =
+        offered.state.transfers.pending 10 ∧
+      runAuthoritativeOperations initial
+        [.ordinary (.transferOffer 0x0000000000040002
+          0x0000000000050003 .endpoint
+          { word0 := 0xCAFE, word1 := 0xBEEF } { send := true }),
+          .ordinary (.capabilityRevoke 3 2 2)] = revoked.state := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- A concrete kernel fault latches the runtime before a heterogeneous suffix;
 the stale handle, IPC, revoke, unmap, termination, and restart operations are

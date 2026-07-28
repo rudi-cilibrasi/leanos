@@ -1202,6 +1202,23 @@ theorem send_accepted_waiterEndpoint_exact state caller slot payload
   all_goals split at hresult ⊢ <;>
     simp_all [rejectReceive, blockState, setWaiterEndpoint]
 
+/-- An accepted send to a known nonempty FIFO publishes exactly the canonical
+wake state for that FIFO head. -/
+theorem send_accepted_wake_exact state caller slot payload endpoint receiver rest
+    (hendpoint : endpointOf state caller slot = some endpoint)
+    (hqueue : state.waiters endpoint = receiver :: rest)
+    (hresult : (send state caller slot payload).result = .accepted) :
+    (send state caller slot payload).state =
+      wakeState state endpoint receiver { endpoint, sender := caller, payload } := by
+  unfold send at hresult ⊢
+  split <;> simp_all [reject, endpointOf]
+  all_goals split <;> simp_all [reject, endpointOf]
+  all_goals split <;> simp_all [reject, endpointOf]
+  all_goals split <;> simp_all [reject, endpointOf]
+  all_goals split <;> simp_all [reject, endpointOf]
+  all_goals split <;> simp_all [reject, endpointOf]
+  all_goals split <;> simp_all [reject, endpointOf]
+
 theorem receiveOrBlockWord_preserves_wellFormed state caller word
     (hwf : WellFormed state) :
     WellFormed (receiveOrBlockWord state caller word).state := by

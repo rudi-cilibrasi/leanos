@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LeanOS qemu-wasm feasibility probe</title>
+<script src="./coi-serviceworker.js"></script>
+<script src="./module.js"></script>
+<script src="./load-rom.js"></script>
+<pre id="status">starting</pre>
+<div id="terminal"></div>
+<script type="module">
+  import './xterm.js';
+  import './xterm-pty.js';
+  import initEmscriptenModule from './out.js';
+
+  const status = document.getElementById('status');
+  status.textContent = `crossOriginIsolated=${crossOriginIsolated}`;
+  if (!crossOriginIsolated) {
+    throw new Error('cross-origin isolation unavailable');
+  }
+
+  const xterm = new Terminal({ cols: 120, rows: 60 });
+  window.testXterm = xterm;
+  xterm.open(document.getElementById('terminal'));
+  const { master, slave } = openpty();
+  xterm.loadAddon(master);
+  Module.pty = slave;
+  Module.onExit = (code) => {
+    status.textContent += `\nexit=${code}`;
+    document.title = `exit=${code}`;
+  };
+  Module.onAbort = (reason) => {
+    status.textContent += `\nabort=${reason}`;
+    document.title = 'abort';
+  };
+
+  await initEmscriptenModule(Module);
+</script>

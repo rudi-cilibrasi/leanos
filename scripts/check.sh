@@ -35,6 +35,7 @@ lake build leanos-boot-plan
 ./scripts/test-run-preemption-image.sh
 
 ./scripts/test-run-fault-containment.sh
+./scripts/test-run-fault-integrity.sh
 
 ./scripts/test-run-direct-port-pic.sh
 
@@ -134,7 +135,8 @@ fi
 
 for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlockingIPC \
     CallerSuppliedCompositeContext TautologicalAuthoritativeContract \
-    UniversalAuthoritativePreservation DroppedFaultClassKernelOrigin; do
+    UniversalAuthoritativePreservation GenericCompositeSuccess \
+    DroppedFaultClassKernelOrigin; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1

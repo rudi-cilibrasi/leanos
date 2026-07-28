@@ -404,13 +404,12 @@ theorem failstop_halted_suffix_absorbing state record proposals
 
 /-- SC-COMPOSITE-AUTHORITATIVE-COMPATIBLE-GATE: the successor gate embeds both
 ordinary and blocking operation families under one latch and typed reply.
-The complete blocking/deferred invariant supplies structural readiness.
-Preservation remains explicitly conditional on caller-supplied dormant-store
-and operation-local compatibility facts; classified denial is atomic, and
-fatal mode absorbs arbitrary mixed suffixes. -/
+The complete blocking/deferred invariant now derives every post-state
+compatibility fact.  Contained-entry identity validation occurs inside the
+transition, classified denial is atomic, and fatal mode absorbs arbitrary mixed
+suffixes.  The stable theorem name is retained for the security-claim contract. -/
 theorem composite_authoritative_compatible_gate_contract state operation
-    (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
-    (hcompatible : FailStop.AuthoritativeOperationCompatible state operation) :
+    (hstate : FailStop.AuthoritativeRuntimeWellFormed state) :
     FailStop.AuthoritativeRuntimeWellFormed
         (FailStop.authoritativeGate state operation).state ∧
       FailStop.AuthoritativeOperationReady state operation ∧
@@ -432,7 +431,7 @@ theorem composite_authoritative_compatible_gate_contract state operation
         state.execution.mode = .halted record →
         FailStop.runAuthoritativeOperations state suffix = state) := by
   refine ⟨FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
-      state operation hstate hcompatible, hstate.operationReady operation,
+      state operation hstate, hstate.operationReady operation,
       ?_, ?_, ?_, ?_⟩
   · intro reply hcompleted
     exact FailStop.authoritativeGate_completed_sound state operation reply hcompleted
@@ -440,8 +439,9 @@ theorem composite_authoritative_compatible_gate_contract state operation
     exact FailStop.authoritativeGate_rejection_atomic state operation _rejection
   · intro blocking hoperation
     subst operation
-    exact (FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
-      state (.blocking blocking) hstate hcompatible).blocking
+    exact
+      (FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
+        state (.blocking blocking) hstate).blocking
   · intro record suffix hmode
     exact FailStop.authoritative_halted_suffix_absorbing state record suffix hmode
 
@@ -453,8 +453,18 @@ theorem composite_authoritative_compatible_mixed_trace_preserves_runtimeWellForm
     (hcompatible : FailStop.AuthoritativeTraceCompatible state operations) :
     FailStop.AuthoritativeRuntimeWellFormed
       (FailStop.runAuthoritativeOperations state operations) := by
-  exact FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+  exact FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state operations hstate hcompatible
+
+/-- An arbitrary finite successor-gate trace preserves the complete folded
+invariant from the initial authoritative invariant alone. -/
+theorem composite_authoritative_admitted_trace_preserves_runtimeWellFormed
+    state operations (hstate : FailStop.AuthoritativeRuntimeWellFormed state) :
+    FailStop.AuthoritativeRuntimeWellFormed
+      (FailStop.runAuthoritativeOperations state operations) := by
+  exact
+    FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+      state operations hstate
 
 /-- Mapping changes retain the complete authoritative-gate
 blocking precondition, so either raw mapping mutation can be followed directly
@@ -835,6 +845,7 @@ saved-context agreement while invalidated peers move to typed deferred
 cancellation state. -/
 theorem composite_contained_fault_cleanup_preserves_context_boundary
     state frame subject
+    (hcurrent : state.lifecycle.current = some subject)
     (hcontained :
       (FailStop.dispatchHardware state.execution frame).action = .contained subject)
     (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
@@ -843,9 +854,9 @@ theorem composite_contained_fault_cleanup_preserves_context_boundary
       next.scheduler.lifecycle = next.execution.core.lifecycle ∧
       next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
   exact ⟨FailStop.interrupt_contained_preserves_contextAgreement
-      state frame subject hcontained hstate,
+      state frame subject hcurrent hcontained hstate,
     FailStop.interrupt_contained_synchronizes_lifecycle
-      state frame subject hcontained⟩
+      state frame subject hcurrent hcontained⟩
 
 /-- Supporting contained-cleanup theorem: the faulting identity is retired
 from every published lifecycle view and from every scheduler, resumable,
@@ -941,14 +952,13 @@ selects contained user-fault cleanup; all other typed interrupt outcomes retain
 the deferred store and context banks exactly. -/
 theorem composite_interrupt_then_deferred_trace_preserves
     state frame (subjects : List BlockingIPC.SubjectId)
-    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state)
-    (hbound : FailStop.ContainedFaultIdentityBound state) :
+    (hstate : FailStop.DeferredBlockingRuntimeWellFormed state) :
     FailStop.DeferredBlockingRuntimeWellFormed
       (FailStop.runAuthoritativeOperations state
         (.ordinary (.interrupt frame) ::
           subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
   exact FailStop.runAuthoritativeInterruptThenDeferredDrains_preserves
-    state frame subjects hstate hbound
+    state frame subjects hstate
 
 /-- Supporting authoritative-gate theorem: an NMI from running or handling
 mode preserves the complete deferred invariant while entering fail-stop, and
@@ -1001,8 +1011,11 @@ theorem composite_contained_fault_cleanup_and_deferred_trace_contract
       FailStop.DeferredBlockingRuntimeWellFormed
         (FailStop.runAuthoritativeOperations state
           (subjects.map FailStop.AuthoritativeOperation.drainDeferred)) := by
+  have hcurrent : state.lifecycle.current = some faultSubject :=
+    FailStop.contained_faulting_identity_is_current
+      state frame faultSubject hbound hcontained
   have hcleanup := composite_contained_fault_cleanup_preserves_context_boundary
-    state frame faultSubject hcontained hstate.2.1.1.2
+    state frame faultSubject hcurrent hcontained hstate.2.1.1.2
   have hcleaned := FailStop.interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
     state frame faultSubject hstate hbound hcontained
   have hmixed := composite_contained_fault_then_deferred_trace_preserves

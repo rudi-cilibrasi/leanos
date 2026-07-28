@@ -23,6 +23,18 @@ if leanos_validate_q35_command negative 2>/dev/null; then
   exit 1
 fi
 
+negative=("${command[@]}")
+for index in "${!negative[@]}"; do
+  if [[ "${negative[$index]}" == max ]]; then
+    negative[$index]=host
+    break
+  fi
+done
+if leanos_validate_q35_command negative 2>/dev/null; then
+  echo "error: q35 platform accepted unreviewed CPU options" >&2
+  exit 1
+fi
+
 negative=("${command[@]}" -device edu)
 if leanos_validate_q35_command negative 2>/dev/null; then
   echo "error: q35 platform accepted an unexpected PCI function" >&2
@@ -57,6 +69,7 @@ for runner in \
   scripts/run-dma-unknown-device.sh \
   scripts/run-entry-stack-overflow.sh \
   scripts/run-extended-state-peer-pke.sh \
+  scripts/run-fault-integrity.sh \
   scripts/run-image.sh \
   scripts/run-malformed-handoff.sh \
   scripts/run-nmi.sh \
