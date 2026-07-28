@@ -54,15 +54,51 @@ cc -std=c11 -I"$prefix/include" -I"$build" \
 cc -std=c11 -I"$prefix/include" -I"$build" \
   -ffunction-sections -fdata-sections -c "$build/CompositeDispatcher.c" \
   -o "$build/CompositeDispatcher.o"
-cc -std=c11 -Wall -Wextra -Werror -I"$build" -c tests/oracle-host.c -o "$build/host.o"
-cc -Wl,--gc-sections "$build/host.o" "$build/KernelTransition.o" "$build/Syscall.o" \
-  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootMemoryMapStreamAuthority.o" \
-  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o" "$build/DirectPortIO.o" \
-  "$build/StaleTranslation.o" \
-  "$build/CompositeDispatcher.o" \
-  -o "$build/host"
+objects=(
+  "$build/KernelTransition.o"
+  "$build/Syscall.o"
+  "$build/IPCSyscall.o"
+  "$build/Preemption.o"
+  "$build/BootMemoryMapStreamAuthority.o"
+  "$build/Interrupt.o"
+  "$build/InterruptEntry.o"
+  "$build/BlockingIPC.o"
+  "$build/CapabilityReuse.o"
+  "$build/ExtendedState.o"
+  "$build/PrivilegeEntryControl.o"
+  "$build/FaultDispatch.o"
+  "$build/DirectPortIO.o"
+  "$build/StaleTranslation.o"
+  "$build/CompositeDispatcher.o"
+)
+compile_host() {
+  local name="$1"
+  local define="${2:-}"
+  local flags=(-std=c11 -Wall -Wextra -Werror -I"$build")
+  [[ -z "$define" ]] || flags+=("-D$define")
+  cc "${flags[@]}" -c tests/oracle-host.c -o "$build/$name.o"
+  cc -Wl,--gc-sections "$build/$name.o" "${objects[@]}" -o "$build/$name"
+}
+compile_host host
 "$build/host" > "$build/host-results.txt"
-[[ "$(wc -l < "$build/host-results.txt")" -eq 302 ]]
-echo "Hosted generated-code oracle replay passed (302 vectors)"
+[[ "$(wc -l < "$build/host-results.txt")" -eq 306 ]]
+
+fixtures=(
+  "truncated:LEANOS_FIXTURE_COMPOSITE_TRUNCATED:oracle malformed arity"
+  "output-corruption:LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION:oracle mismatch"
+  "old-stateless:LEANOS_FIXTURE_COMPOSITE_OLD_STATELESS:oracle mismatch"
+)
+for fixture in "${fixtures[@]}"; do
+  IFS=: read -r name define diagnostic <<< "$fixture"
+  compile_host "host-$name" "$define"
+  if "$build/host-$name" > "$build/host-$name.txt" 2>&1; then
+    echo "error: composite oracle fixture '$name' unexpectedly passed" >&2
+    exit 1
+  fi
+  grep -q "$diagnostic" "$build/host-$name.txt" || {
+    echo "error: composite oracle fixture '$name' lacked '$diagnostic'" >&2
+    exit 1
+  }
+done
+
+echo "Hosted generated-code oracle replay passed (306 vectors, 3 negative fixtures)"

@@ -482,9 +482,14 @@ def vectors : List Vector := [
   composite "composite.noncanonical-argument" 0x0101 0x0201 99 1 0 0,
   composite "composite.wrong-state-version" 0x0002 0x0101 1 0 0 0,
   composite "composite.reserved-state-bits" 0x10001 0x0101 1 0 0 0,
+  composite "composite.wrong-command-version" 0x0001 0x0102 1 0 0 0,
+  composite "composite.reserved-command-bits" 0x0001 0x10001 1 0 0 0,
+  composite "composite.forged-context-argument" 0x0001 0x0101 1 1 0 0,
+  composite "composite.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
+    0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
   composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0]
 
-theorem corpus_shape : vectors.length = 302 := by decide
+theorem corpus_shape : vectors.length = 306 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide

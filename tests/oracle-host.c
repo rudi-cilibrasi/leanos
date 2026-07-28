@@ -38,6 +38,17 @@ uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) { return left == right
 int main(void) {
     for (unsigned i = 0; i < ORACLE_VECTOR_COUNT; ++i) {
         const struct oracle_vector *v = &oracle_vectors[i];
+        unsigned argc = v->argc;
+#ifdef LEANOS_FIXTURE_COMPOSITE_TRUNCATED
+        if (v->adapter == 18) {
+            argc = 5;
+        }
+#endif
+        if (v->adapter == 18 && argc != 6) {
+            fprintf(stderr, "oracle malformed arity: %u %s expected=6 got=%u\n",
+                i, v->id, argc);
+            return 1;
+        }
         uint64_t got = v->adapter == 0
             ? leanos_boot_transition(v->words[0], v->words[1])
             : v->adapter == 1
@@ -96,9 +107,21 @@ int main(void) {
                                                             ? leanos_page_fault_demo(v->words[0],
                                                             v->words[1], v->words[2],
                                                             v->words[3], v->words[4])
-                                                            : leanos_composite_dispatch(
+                                                            : v->adapter == 18
+#ifdef LEANOS_FIXTURE_COMPOSITE_OLD_STATELESS
+                                                            ? leanos_syscall_demo(v->words[0],
+                                                            v->words[1], v->words[2], v->words[3])
+#else
+                                                            ? leanos_composite_dispatch(
                                                             v->words[0], v->words[1], v->words[2],
-                                                            v->words[3], v->words[4], v->words[5]);
+                                                            v->words[3], v->words[4], v->words[5])
+#endif
+                                                            : UINT64_MAX;
+#ifdef LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION
+        if (v->adapter == 18) {
+            got ^= UINT64_C(1);
+        }
+#endif
         if (got != v->expected) {
             fprintf(stderr, "oracle mismatch: %u %s expected=%llu got=%llu\n", i, v->id,
                 v->expected, (unsigned long long)got);
