@@ -319,13 +319,81 @@ def errorWord : DecodeError → UInt64
   | .noncanonicalArguments => 0xff05
   | .invalidSequence => 0xff06
 
+/-- Allocation-free scalar table for the accepted hosted mixed trace.  The
+logical `MixedCommandId` table below proves that these exact edges invoke the
+same `authoritativeGate` operations; this raw table keeps the generated ABI
+free of heap-allocated decoded values. -/
+def mixedDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
+  if tag = 0x2001 then
+    if arg0 != 0x30000 || arg1 != 0x30000 ||
+        arg2 != 0xCAFE || arg3 != 0xBEEF then 0xff05
+    else if stateWord = 0x0801 then 0x200901 else 0xff06
+  else if tag = 0x2101 then
+    if arg0 != 0x30000 || arg1 != 3 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0901 then 0x210a01 else 0xff06
+  else if tag = 0x2201 then
+    if arg0 != 0 || arg1 != 2 || arg2 != 3 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0a01 then 0x220b01 else 0xff06
+  else if tag = 0x2301 then
+    if arg0 != 0x60003 || arg1 != 0xAAAA ||
+        arg2 != 0xBBBB || arg3 != 0 then 0xff05
+    else if stateWord = 0x0b01 then 0x230c01 else 0xff06
+  else if tag = 0x2401 then
+    if arg0 != 0 || arg1 != 2 || arg2 != 3 || arg3 != 4 then 0xff05
+    else if stateWord = 0x0c01 then 0x240d01 else 0xff06
+  else if tag = 0x2501 then
+    if arg0 != 0x50002 || arg1 != 7 || arg2 != 1 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0d01 then 0x250e01 else 0xff06
+  else if tag = 0x2601 then
+    if arg0 != 2 || arg1 != 8 || arg2 != 3 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0e01 then 0x260f01 else 0xff06
+  else if tag = 0x2701 then
+    if arg0 != 99 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0f01 then 0x271001 else 0xff06
+  else if tag = 0x2801 then
+    if arg0 != 0x70003 || arg1 != 0x1111 ||
+        arg2 != 0x2222 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1001 then 0x281101 else 0xff06
+  else if tag = 0x2901 then
+    if arg0 != 0x30000 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1101 then 0x291201 else 0xff06
+  else if tag = 0x2a01 then
+    if arg0 != 0x30000 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1201 then 0x2a1301 else 0xff06
+  else if tag = 0x2b01 then
+    if arg0 != 0x20001 || arg1 != 0x3333 ||
+        arg2 != 0x4444 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1301 then 0x2b1401 else 0xff06
+  else if tag = 0x2c01 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1401 then 0x2c1501 else 0xff06
+  else if tag = 0x2d01 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1501 then 0x2d1601 else 0xff06
+  else if tag = 0x2e01 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1601 then 0x2e1701 else 0xff06
+  else if tag = 0x2f01 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1701 then 0x2f1801 else 0xff06
+  else if tag % 256 != abiVersion then 0xff01
+  else if 0x3001 ≤ tag then 0xff02
+  else 0xff04
+
 /-- Allocation-free generated entry point.  It validates every scalar before
 selecting one exact trace edge.  The proof below connects each success word to
 the full authoritative gate; this executable definition intentionally contains
 no shadow kernel state. -/
 @[export leanos_composite_dispatch]
 def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
-  if stateWord != 0x0001 && stateWord != 0x0101 && stateWord != 0x0201 &&
+  if stateWord = 0x0801 || stateWord = 0x0901 || stateWord = 0x0a01 ||
+      stateWord = 0x0b01 || stateWord = 0x0c01 || stateWord = 0x0d01 ||
+      stateWord = 0x0e01 || stateWord = 0x0f01 || stateWord = 0x1001 ||
+      stateWord = 0x1101 || stateWord = 0x1201 || stateWord = 0x1301 ||
+      stateWord = 0x1401 || stateWord = 0x1501 || stateWord = 0x1601 ||
+      stateWord = 0x1701 || stateWord = 0x1801 then
+    mixedDispatchRaw stateWord tag arg0 arg1 arg2 arg3
+  else if stateWord != 0x0001 && stateWord != 0x0101 && stateWord != 0x0201 &&
       stateWord != 0x0301 && stateWord != 0x0401 && stateWord != 0x0501 &&
       stateWord != 0x0601 && stateWord != 0x0701 then
     if stateWord % 256 != abiVersion then 0xff01
@@ -868,6 +936,536 @@ theorem mixedPhaseTwoCommands_cover_authoritative_families :
        .blocking (.cancel 0),
        .drainDeferred 0] := by
   rfl
+
+/-! ## Accepted hosted mixed trace
+
+The seed trace above keeps useful denial probes.  The version-one hosted
+integration trace below is the positive end-to-end corpus required by the
+stateful ABI: its canonical pre-state is kernel-owned, and every successor is
+reconstructed by replaying the exact authoritative gate. -/
+
+inductive MixedStateId where
+  | initial
+  | transferOffered
+  | transferAccepted
+  | transferredCapabilityRevoked
+  | staleHandleRejected
+  | freshCapabilityCopied
+  | syscallMapped
+  | directMapped
+  | unknownSyscallRejected
+  | nonblockingSent
+  | nonblockingReceived
+  | blockingReceiverBlocked
+  | blockingReceiverWoken
+  | timerSwitched
+  | userFaultCleaned
+  | fatalEntered
+  | postFatalRejected
+  deriving DecidableEq, Repr
+
+def encodeMixedState : MixedStateId → UInt64
+  | .initial => 0x0801
+  | .transferOffered => 0x0901
+  | .transferAccepted => 0x0a01
+  | .transferredCapabilityRevoked => 0x0b01
+  | .staleHandleRejected => 0x0c01
+  | .freshCapabilityCopied => 0x0d01
+  | .syscallMapped => 0x0e01
+  | .directMapped => 0x0f01
+  | .unknownSyscallRejected => 0x1001
+  | .nonblockingSent => 0x1101
+  | .nonblockingReceived => 0x1201
+  | .blockingReceiverBlocked => 0x1301
+  | .blockingReceiverWoken => 0x1401
+  | .timerSwitched => 0x1501
+  | .userFaultCleaned => 0x1601
+  | .fatalEntered => 0x1701
+  | .postFatalRejected => 0x1801
+
+def decodeMixedState (word : UInt64) : Except DecodeError MixedStateId :=
+  if word = 0x0801 then .ok .initial
+  else if word = 0x0901 then .ok .transferOffered
+  else if word = 0x0a01 then .ok .transferAccepted
+  else if word = 0x0b01 then .ok .transferredCapabilityRevoked
+  else if word = 0x0c01 then .ok .staleHandleRejected
+  else if word = 0x0d01 then .ok .freshCapabilityCopied
+  else if word = 0x0e01 then .ok .syscallMapped
+  else if word = 0x0f01 then .ok .directMapped
+  else if word = 0x1001 then .ok .unknownSyscallRejected
+  else if word = 0x1101 then .ok .nonblockingSent
+  else if word = 0x1201 then .ok .nonblockingReceived
+  else if word = 0x1301 then .ok .blockingReceiverBlocked
+  else if word = 0x1401 then .ok .blockingReceiverWoken
+  else if word = 0x1501 then .ok .timerSwitched
+  else if word = 0x1601 then .ok .userFaultCleaned
+  else if word = 0x1701 then .ok .fatalEntered
+  else if word = 0x1801 then .ok .postFatalRejected
+  else if word % 256 != abiVersion then .error .wrongVersion
+  else if 0x1901 ≤ word then .error .reservedBits
+  else .error .unknownState
+
+theorem decode_encode_mixed_state state :
+    decodeMixedState (encodeMixedState state) = .ok state := by
+  cases state <;> rfl
+
+theorem mixed_state_encoding_injective first second
+    (hequal : encodeMixedState first = encodeMixedState second) :
+    first = second := by
+  cases first <;> cases second <;> simp_all [encodeMixedState]
+
+inductive MixedCommandId where
+  | offerTransfer
+  | acceptTransfer
+  | revokeTransferredCapability
+  | rejectStaleReusedHandle
+  | copyFreshCapability
+  | acceptedSyscallMap
+  | acceptedDirectMap
+  | rejectUnknownSyscall
+  | nonblockingSend
+  | nonblockingReceive
+  | blockingReceive
+  | blockingSend
+  | timerSwitch
+  | cleanupUserFault
+  | enterFatalKernelFault
+  | attemptPostFatalSchedule
+  deriving DecidableEq, Repr
+
+def encodeMixedCommand : MixedCommandId → CommandWords
+  | .offerTransfer =>
+      { tag := 0x2001, arg0 := 0x30000, arg1 := 0x30000,
+        arg2 := 0xCAFE, arg3 := 0xBEEF }
+  | .acceptTransfer =>
+      { tag := 0x2101, arg0 := 0x30000, arg1 := 3, arg2 := 0, arg3 := 0 }
+  | .revokeTransferredCapability =>
+      { tag := 0x2201, arg0 := 0, arg1 := 2, arg2 := 3, arg3 := 0 }
+  | .rejectStaleReusedHandle =>
+      { tag := 0x2301, arg0 := 0x60003, arg1 := 0xAAAA,
+        arg2 := 0xBBBB, arg3 := 0 }
+  | .copyFreshCapability =>
+      { tag := 0x2401, arg0 := 0, arg1 := 2, arg2 := 3, arg3 := 4 }
+  | .acceptedSyscallMap =>
+      { tag := 0x2501, arg0 := 0x50002, arg1 := 7, arg2 := 1, arg3 := 0 }
+  | .acceptedDirectMap =>
+      { tag := 0x2601, arg0 := 2, arg1 := 8, arg2 := 3, arg3 := 0 }
+  | .rejectUnknownSyscall =>
+      { tag := 0x2701, arg0 := 99, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .nonblockingSend =>
+      { tag := 0x2801, arg0 := 0x70003, arg1 := 0x1111,
+        arg2 := 0x2222, arg3 := 0 }
+  | .nonblockingReceive =>
+      { tag := 0x2901, arg0 := 0x30000, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .blockingReceive =>
+      { tag := 0x2a01, arg0 := 0x30000, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .blockingSend =>
+      { tag := 0x2b01, arg0 := 0x20001, arg1 := 0x3333,
+        arg2 := 0x4444, arg3 := 0 }
+  | .timerSwitch =>
+      { tag := 0x2c01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .cleanupUserFault =>
+      { tag := 0x2d01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .enterFatalKernelFault =>
+      { tag := 0x2e01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .attemptPostFatalSchedule =>
+      { tag := 0x2f01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+
+def decodeMixedCommand (words : CommandWords) :
+    Except DecodeError MixedCommandId :=
+  if words = encodeMixedCommand .offerTransfer then .ok .offerTransfer
+  else if words = encodeMixedCommand .acceptTransfer then .ok .acceptTransfer
+  else if words = encodeMixedCommand .revokeTransferredCapability then
+    .ok .revokeTransferredCapability
+  else if words = encodeMixedCommand .rejectStaleReusedHandle then
+    .ok .rejectStaleReusedHandle
+  else if words = encodeMixedCommand .copyFreshCapability then .ok .copyFreshCapability
+  else if words = encodeMixedCommand .acceptedSyscallMap then .ok .acceptedSyscallMap
+  else if words = encodeMixedCommand .acceptedDirectMap then .ok .acceptedDirectMap
+  else if words = encodeMixedCommand .rejectUnknownSyscall then .ok .rejectUnknownSyscall
+  else if words = encodeMixedCommand .nonblockingSend then .ok .nonblockingSend
+  else if words = encodeMixedCommand .nonblockingReceive then .ok .nonblockingReceive
+  else if words = encodeMixedCommand .blockingReceive then .ok .blockingReceive
+  else if words = encodeMixedCommand .blockingSend then .ok .blockingSend
+  else if words = encodeMixedCommand .timerSwitch then .ok .timerSwitch
+  else if words = encodeMixedCommand .cleanupUserFault then .ok .cleanupUserFault
+  else if words = encodeMixedCommand .enterFatalKernelFault then .ok .enterFatalKernelFault
+  else if words = encodeMixedCommand .attemptPostFatalSchedule then
+    .ok .attemptPostFatalSchedule
+  else if words.tag % 256 != abiVersion then .error .wrongVersion
+  else if 0x3001 ≤ words.tag then .error .reservedBits
+  else .error .noncanonicalArguments
+
+theorem decode_encode_mixed_command command :
+    decodeMixedCommand (encodeMixedCommand command) = .ok command := by
+  cases command <;> rfl
+
+theorem mixed_command_encoding_injective first second
+    (hequal : encodeMixedCommand first = encodeMixedCommand second) :
+    first = second := by
+  cases first <;> cases second <;> simp_all [encodeMixedCommand]
+
+def mixedCommandOperation : MixedCommandId → AuthoritativeOperation
+  | .offerTransfer =>
+      .ordinary (.transferOffer 0x30000 0x30000 .endpoint
+        { word0 := 0xCAFE, word1 := 0xBEEF } { send := true })
+  | .acceptTransfer => .ordinary (.transferAccept 0x30000 3)
+  | .revokeTransferredCapability => .ordinary (.capabilityRevoke 0 2 3)
+  | .rejectStaleReusedHandle =>
+      .ordinary (.ipc (.send 0x60003 0xAAAA 0xBBBB))
+  | .copyFreshCapability =>
+      .ordinary (.capabilityCopy 0 2 3 { send := true })
+  | .acceptedSyscallMap =>
+      .ordinary (.syscall { number := 0, arg0 := 0x50002, arg1 := 7, arg2 := 1 })
+  | .acceptedDirectMap =>
+      .ordinary (.map 2 8 { read := true, write := true })
+  | .rejectUnknownSyscall =>
+      .ordinary (.syscall { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 })
+  | .nonblockingSend => .ordinary (.ipc (.send 0x70003 0x1111 0x2222))
+  | .nonblockingReceive => .ordinary (.ipc (.receive 0x30000))
+  | .blockingReceive =>
+      .blocking (.receive 0x30000 compositeDispatcherBlockingFrame
+        compositeDispatcherBlockingRegisters)
+  | .blockingSend => .blocking (.send 0x20001 0x3333 0x4444)
+  | .timerSwitch =>
+      .ordinary (.resumePreempt compositeDispatcherTimerFrame
+        compositeDispatcherTimerRegisters)
+  | .cleanupUserFault => .ordinary (.interrupt compositeDispatcherUserFaultFrame)
+  | .enterFatalKernelFault => .ordinary (.interrupt compositeDispatcherKernelFaultFrame)
+  | .attemptPostFatalSchedule => .ordinary .scheduleNext
+
+def mixedNextState : MixedStateId → MixedCommandId → Option MixedStateId
+  | .initial, .offerTransfer => some .transferOffered
+  | .transferOffered, .acceptTransfer => some .transferAccepted
+  | .transferAccepted, .revokeTransferredCapability =>
+      some .transferredCapabilityRevoked
+  | .transferredCapabilityRevoked, .rejectStaleReusedHandle =>
+      some .staleHandleRejected
+  | .staleHandleRejected, .copyFreshCapability => some .freshCapabilityCopied
+  | .freshCapabilityCopied, .acceptedSyscallMap => some .syscallMapped
+  | .syscallMapped, .acceptedDirectMap => some .directMapped
+  | .directMapped, .rejectUnknownSyscall => some .unknownSyscallRejected
+  | .unknownSyscallRejected, .nonblockingSend => some .nonblockingSent
+  | .nonblockingSent, .nonblockingReceive => some .nonblockingReceived
+  | .nonblockingReceived, .blockingReceive => some .blockingReceiverBlocked
+  | .blockingReceiverBlocked, .blockingSend => some .blockingReceiverWoken
+  | .blockingReceiverWoken, .timerSwitch => some .timerSwitched
+  | .timerSwitched, .cleanupUserFault => some .userFaultCleaned
+  | .userFaultCleaned, .enterFatalKernelFault => some .fatalEntered
+  | .fatalEntered, .attemptPostFatalSchedule => some .postFatalRejected
+  | _, _ => none
+
+def mixedExpectedReply : MixedStateId → MixedCommandId → Option UInt64
+  | .initial, .offerTransfer => some 0x200901
+  | .transferOffered, .acceptTransfer => some 0x210a01
+  | .transferAccepted, .revokeTransferredCapability => some 0x220b01
+  | .transferredCapabilityRevoked, .rejectStaleReusedHandle => some 0x230c01
+  | .staleHandleRejected, .copyFreshCapability => some 0x240d01
+  | .freshCapabilityCopied, .acceptedSyscallMap => some 0x250e01
+  | .syscallMapped, .acceptedDirectMap => some 0x260f01
+  | .directMapped, .rejectUnknownSyscall => some 0x271001
+  | .unknownSyscallRejected, .nonblockingSend => some 0x281101
+  | .nonblockingSent, .nonblockingReceive => some 0x291201
+  | .nonblockingReceived, .blockingReceive => some 0x2a1301
+  | .blockingReceiverBlocked, .blockingSend => some 0x2b1401
+  | .blockingReceiverWoken, .timerSwitch => some 0x2c1501
+  | .timerSwitched, .cleanupUserFault => some 0x2d1601
+  | .userFaultCleaned, .enterFatalKernelFault => some 0x2e1701
+  | .fatalEntered, .attemptPostFatalSchedule => some 0x2f1801
+  | _, _ => none
+
+inductive MixedReplyId where
+  | transferOffered
+  | transferAccepted
+  | transferredCapabilityRevoked
+  | staleHandleRejected
+  | freshCapabilityCopied
+  | syscallMapped
+  | directMapped
+  | unknownSyscallRejected
+  | nonblockingSent
+  | nonblockingReceived
+  | blockingReceiverBlocked
+  | blockingReceiverWoken
+  | timerSwitched
+  | userFaultCleaned
+  | fatalEntered
+  | postFatalRejected
+  deriving DecidableEq, Repr
+
+def encodeMixedReply : MixedReplyId → UInt64
+  | .transferOffered => 0x200901
+  | .transferAccepted => 0x210a01
+  | .transferredCapabilityRevoked => 0x220b01
+  | .staleHandleRejected => 0x230c01
+  | .freshCapabilityCopied => 0x240d01
+  | .syscallMapped => 0x250e01
+  | .directMapped => 0x260f01
+  | .unknownSyscallRejected => 0x271001
+  | .nonblockingSent => 0x281101
+  | .nonblockingReceived => 0x291201
+  | .blockingReceiverBlocked => 0x2a1301
+  | .blockingReceiverWoken => 0x2b1401
+  | .timerSwitched => 0x2c1501
+  | .userFaultCleaned => 0x2d1601
+  | .fatalEntered => 0x2e1701
+  | .postFatalRejected => 0x2f1801
+
+def decodeMixedReply (word : UInt64) : Except DecodeError MixedReplyId :=
+  if word = 0x200901 then .ok .transferOffered
+  else if word = 0x210a01 then .ok .transferAccepted
+  else if word = 0x220b01 then .ok .transferredCapabilityRevoked
+  else if word = 0x230c01 then .ok .staleHandleRejected
+  else if word = 0x240d01 then .ok .freshCapabilityCopied
+  else if word = 0x250e01 then .ok .syscallMapped
+  else if word = 0x260f01 then .ok .directMapped
+  else if word = 0x271001 then .ok .unknownSyscallRejected
+  else if word = 0x281101 then .ok .nonblockingSent
+  else if word = 0x291201 then .ok .nonblockingReceived
+  else if word = 0x2a1301 then .ok .blockingReceiverBlocked
+  else if word = 0x2b1401 then .ok .blockingReceiverWoken
+  else if word = 0x2c1501 then .ok .timerSwitched
+  else if word = 0x2d1601 then .ok .userFaultCleaned
+  else if word = 0x2e1701 then .ok .fatalEntered
+  else if word = 0x2f1801 then .ok .postFatalRejected
+  else if word % 256 != abiVersion then .error .wrongVersion
+  else if 0x300001 ≤ word then .error .reservedBits
+  else .error .unknownCommand
+
+theorem decode_encode_mixed_reply reply :
+    decodeMixedReply (encodeMixedReply reply) = .ok reply := by
+  cases reply <;> rfl
+
+theorem mixed_reply_encoding_injective first second
+    (hequal : encodeMixedReply first = encodeMixedReply second) :
+    first = second := by
+  cases first <;> cases second <;> simp_all [encodeMixedReply]
+
+def mixedReplyId : MixedStateId → MixedCommandId → Option MixedReplyId
+  | .initial, .offerTransfer => some .transferOffered
+  | .transferOffered, .acceptTransfer => some .transferAccepted
+  | .transferAccepted, .revokeTransferredCapability =>
+      some .transferredCapabilityRevoked
+  | .transferredCapabilityRevoked, .rejectStaleReusedHandle =>
+      some .staleHandleRejected
+  | .staleHandleRejected, .copyFreshCapability => some .freshCapabilityCopied
+  | .freshCapabilityCopied, .acceptedSyscallMap => some .syscallMapped
+  | .syscallMapped, .acceptedDirectMap => some .directMapped
+  | .directMapped, .rejectUnknownSyscall => some .unknownSyscallRejected
+  | .unknownSyscallRejected, .nonblockingSend => some .nonblockingSent
+  | .nonblockingSent, .nonblockingReceive => some .nonblockingReceived
+  | .nonblockingReceived, .blockingReceive => some .blockingReceiverBlocked
+  | .blockingReceiverBlocked, .blockingSend => some .blockingReceiverWoken
+  | .blockingReceiverWoken, .timerSwitch => some .timerSwitched
+  | .timerSwitched, .cleanupUserFault => some .userFaultCleaned
+  | .userFaultCleaned, .enterFatalKernelFault => some .fatalEntered
+  | .fatalEntered, .attemptPostFatalSchedule => some .postFatalRejected
+  | _, _ => none
+
+theorem mixedExpectedReply_uses_canonical_codec state command :
+    mixedExpectedReply state command =
+      (mixedReplyId state command).map encodeMixedReply := by
+  cases state <;> cases command <;> rfl
+
+theorem mixed_dispatch_canonical state command :
+    let words := encodeMixedCommand command
+    dispatch (encodeMixedState state)
+      words.tag words.arg0 words.arg1 words.arg2 words.arg3 =
+      (mixedExpectedReply state command).getD (errorWord .invalidSequence) := by
+  cases state <;> cases command <;> native_decide
+
+def mixedCanonicalCommands : List MixedCommandId :=
+  [.offerTransfer, .acceptTransfer, .revokeTransferredCapability,
+   .rejectStaleReusedHandle, .copyFreshCapability, .acceptedSyscallMap,
+   .acceptedDirectMap, .rejectUnknownSyscall, .nonblockingSend,
+   .nonblockingReceive, .blockingReceive, .blockingSend, .timerSwitch,
+   .cleanupUserFault, .enterFatalKernelFault, .attemptPostFatalSchedule]
+
+def mixedPrefix : MixedStateId → List MixedCommandId
+  | .initial => []
+  | .transferOffered => mixedCanonicalCommands.take 1
+  | .transferAccepted => mixedCanonicalCommands.take 2
+  | .transferredCapabilityRevoked => mixedCanonicalCommands.take 3
+  | .staleHandleRejected => mixedCanonicalCommands.take 4
+  | .freshCapabilityCopied => mixedCanonicalCommands.take 5
+  | .syscallMapped => mixedCanonicalCommands.take 6
+  | .directMapped => mixedCanonicalCommands.take 7
+  | .unknownSyscallRejected => mixedCanonicalCommands.take 8
+  | .nonblockingSent => mixedCanonicalCommands.take 9
+  | .nonblockingReceived => mixedCanonicalCommands.take 10
+  | .blockingReceiverBlocked => mixedCanonicalCommands.take 11
+  | .blockingReceiverWoken => mixedCanonicalCommands.take 12
+  | .timerSwitched => mixedCanonicalCommands.take 13
+  | .userFaultCleaned => mixedCanonicalCommands.take 14
+  | .fatalEntered => mixedCanonicalCommands.take 15
+  | .postFatalRejected => mixedCanonicalCommands
+
+def mixedInitialState : Except DecodeError CompositeState :=
+  match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
+  | .ok plan => .ok (compositeDispatcherInitial plan)
+  | .error _ => .error .reservedBits
+
+def mixedMaterialize (id : MixedStateId) : Except DecodeError CompositeState := do
+  let initial ← mixedInitialState
+  pure (runAuthoritativeOperations initial
+    ((mixedPrefix id).map mixedCommandOperation))
+
+structure CanonicalMixedState where
+  id : MixedStateId
+  state : CompositeState
+  canonical : mixedMaterialize id = .ok state
+
+def encodeMixedCompositeState (state : CanonicalMixedState) : UInt64 :=
+  encodeMixedState state.id
+
+theorem CanonicalMixedState.eq_of_id_eq
+    (first second : CanonicalMixedState) (hid : first.id = second.id) :
+    first = second := by
+  cases first with
+  | mk firstId firstState firstCanonical =>
+      cases second with
+      | mk secondId secondState secondCanonical =>
+          dsimp at hid
+          subst secondId
+          have hstate : firstState = secondState :=
+            Except.ok.inj (firstCanonical.symm.trans secondCanonical)
+          subst secondState
+          rfl
+
+def decodeMixedCompositeState (word : UInt64) :
+    Except DecodeError CanonicalMixedState :=
+  match decodeMixedState word with
+  | .error reason => .error reason
+  | .ok id =>
+      match hstate : mixedMaterialize id with
+      | .ok state =>
+          .ok ({ id, state, canonical := hstate } : CanonicalMixedState)
+      | .error reason => .error reason
+
+theorem decode_encode_mixed_composite_state (state : CanonicalMixedState) :
+    decodeMixedCompositeState (encodeMixedCompositeState state) = .ok state := by
+  unfold decodeMixedCompositeState encodeMixedCompositeState
+  rw [decode_encode_mixed_state]
+  change (match hstate : mixedMaterialize state.id with
+    | .ok decoded =>
+        Except.ok (ε := DecodeError)
+          ({ id := state.id, state := decoded, canonical := hstate } :
+            CanonicalMixedState)
+    | .error reason =>
+        Except.error (α := CanonicalMixedState) reason) = .ok state
+  split
+  next decoded hmaterialize =>
+    have hdecoded : decoded = state.state :=
+      Except.ok.inj (hmaterialize.symm.trans state.canonical)
+    subst decoded
+    congr 1
+  next reason hmaterialize =>
+    have himpossible :
+        Except.error reason = Except.ok state.state :=
+      hmaterialize.symm.trans state.canonical
+    contradiction
+
+theorem mixed_composite_state_encoding_injective
+    (first second : CanonicalMixedState)
+    (hequal : encodeMixedCompositeState first = encodeMixedCompositeState second) :
+    first = second := by
+  apply CanonicalMixedState.eq_of_id_eq
+  apply mixed_state_encoding_injective
+  exact hequal
+
+theorem decodeMixedCompositeState_sound word state
+    (_hdecode : decodeMixedCompositeState word = .ok state) :
+    mixedMaterialize state.id = .ok state.state := by
+  exact state.canonical
+
+structure MixedLogicalStep where
+  pre : CompositeState
+  operation : AuthoritativeOperation
+  outcome : AuthoritativeGateOutcome
+
+def mixedLogicalStep (state : MixedStateId) (command : MixedCommandId) :
+    Except DecodeError MixedLogicalStep := do
+  let pre ← mixedMaterialize state
+  match mixedNextState state command with
+  | none => .error .invalidSequence
+  | some _ =>
+      .ok { pre
+            operation := mixedCommandOperation command
+            outcome := authoritativeGate pre (mixedCommandOperation command) }
+
+theorem mixedLogicalStep_refines_authoritativeGate state command step
+    (hstep : mixedLogicalStep state command = .ok step) :
+    step.outcome = authoritativeGate step.pre step.operation := by
+  unfold mixedLogicalStep at hstep
+  cases hmaterialize : mixedMaterialize state with
+  | error reason =>
+      rw [hmaterialize] at hstep
+      contradiction
+  | ok pre =>
+      rw [hmaterialize] at hstep
+      cases hnext : mixedNextState state command with
+      | none =>
+          rw [hnext] at hstep
+          contradiction
+      | some next =>
+          rw [hnext] at hstep
+          injection hstep with heq
+          subst step
+          rfl
+
+theorem mixed_state_continuity state command next
+    (hnext : mixedNextState state command = some next) :
+    encodeMixedState next = encodeMixedState state + 0x100 := by
+  cases state <;> cases command <;> simp [mixedNextState] at hnext
+  all_goals subst next <;> rfl
+
+/-- Finite-list refinement for the complete accepted mixed corpus.  Every
+intermediate state used by the hosted harness is the corresponding prefix of
+this exact authoritative execution. -/
+theorem mixedCanonicalCommands_refine initial
+    (hinitial : mixedInitialState = .ok initial) :
+    mixedMaterialize .postFatalRejected =
+      .ok (runAuthoritativeOperations initial
+        (mixedCanonicalCommands.map mixedCommandOperation)) := by
+  unfold mixedMaterialize
+  rw [hinitial]
+  rfl
+
+/-- Exact typed-result coverage prevents the scalar ABI from labeling a
+rejection as an accepted transition (or vice versa). -/
+def authoritativeResultCompleted : AuthoritativeGateResult → Bool
+  | .completed _ => true
+  | .rejectedBusy | .rejectedHalted _ => false
+
+def mixedOutcomeAt (state : MixedStateId) (command : MixedCommandId) :
+    Except DecodeError AuthoritativeGateOutcome := do
+  let pre ← mixedMaterialize state
+  pure (authoritativeGate pre (mixedCommandOperation command))
+
+theorem mixedCanonical_typed_results :
+    (mixedOutcomeAt .initial .offerTransfer).toOption.map (·.result) =
+        some (.completed (.ordinary (.transferOffer .accepted))) ∧
+    (mixedOutcomeAt .transferAccepted .revokeTransferredCapability).toOption.map
+        (·.result) = some (.completed (.ordinary (.capability .accepted))) ∧
+    (mixedOutcomeAt .freshCapabilityCopied .acceptedSyscallMap).toOption.map
+        (·.result) = some (.completed (.ordinary (.syscall .accepted))) ∧
+    (mixedOutcomeAt .syscallMapped .acceptedDirectMap).toOption.map
+        (·.result) = some (.completed (.ordinary (.map .accepted))) ∧
+    (mixedOutcomeAt .unknownSyscallRejected .nonblockingSend).toOption.map
+        (·.result) = some (.completed (.ordinary (.ipc (.syscall .sent)))) ∧
+    (mixedOutcomeAt .nonblockingReceived .blockingReceive).toOption.map
+        (·.result) = some (.completed (.blocking (.receive .blocked))) ∧
+    (mixedOutcomeAt .blockingReceiverWoken .timerSwitch).toOption.map
+        (fun outcome => authoritativeResultCompleted outcome.result) = some true ∧
+    (mixedOutcomeAt .blockingReceiverWoken .timerSwitch).toOption.map
+        (·.state.scheduler.lifecycle.current) = some (some 2) ∧
+    (mixedOutcomeAt .timerSwitched .cleanupUserFault).toOption.map
+        (·.result) = some (.completed (.ordinary (.interrupt (.contained 2)))) ∧
+    (mixedOutcomeAt .timerSwitched .cleanupUserFault).toOption.map
+        (fun outcome => outcome.state.lifecycle.capabilities.subjects 2) = some false ∧
+    (mixedOutcomeAt .fatalEntered .attemptPostFatalSchedule).toOption.map
+        (fun outcome => authoritativeResultCompleted outcome.result) = some false := by
+  native_decide
 
 example : dispatch 0x0001 0x0101 1 0 0 0 = encodeReply
     { next := .subjectCreated, reply := 1 } := by native_decide

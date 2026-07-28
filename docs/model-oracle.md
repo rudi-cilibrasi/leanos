@@ -13,7 +13,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-314-vector order covers accepted calls,
+330-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -37,8 +37,8 @@ that must round-trip unchanged. The Lean checks evaluate every expected result
 from the adapter definition and connect the accepted and rejected examples to
 the source models.
 
-The final twenty-two composite-dispatch records are the version-one seed trace for
-the shared stateful boundary. Six input words carry a canonical state token,
+The final thirty-eight composite-dispatch records are the version-one traces
+for the shared stateful boundary. Six input words carry a canonical state token,
 command tag, and four scalar arguments. The seven positive sequence edges create
 one subject, observe typed unknown-syscall and malformed-map rejections, run
 the scheduler observation, terminate the subject, enter a fatal kernel
@@ -58,9 +58,20 @@ result of
 `FailStop.runAuthoritativeOperations` over the same normalized operations.
 Its append-continuity corollary requires every prefix and suffix to share one
 canonical intermediate state token, so stale replay or cross-trace splicing
-cannot be accepted between adjacent steps. The scalar export remains
-allocation-free; generated C and its calling convention remain trusted
-hosted-test boundaries.
+cannot be accepted between adjacent steps.
+
+The final sixteen records form one positive mixed trace rooted in a
+kernel-owned, complete two-subject state. In order, it offers and accepts a
+sealed endpoint descendant, revokes its send-only generation, rejects the
+stale handle, copies a fresh generation into the reused slot, accepts both
+syscall-mediated and direct mapping, rejects an unknown syscall without
+mutation, completes nonblocking send/receive, blocks and wakes the receiver,
+switches back to it on a timer entry, contains its user page fault with
+complete subject cleanup, enters a fatal kernel fault, and rejects a
+post-fatal scheduler attempt. Lean checks the exact typed result at each named
+boundary, including the timer-selected subject and the faulting subject's
+retired identity. The scalar export remains allocation-free; generated C and
+its calling convention remain trusted hosted-test boundaries.
 
 Five additional Phase 2 records invoke that same dispatcher for a canonical
 generation-bound map handle, nonblocking IPC, capability copy, blocking
@@ -71,9 +82,10 @@ composite state. `CanonicalCompositeState` is the decoded ABI object and
 contains the full state plus its exact materialization equality.
 `CanonicalTypedStep` retains the literal `AuthoritativeGateResult` and
 post-state returned by the sole `authoritativeGate` invocation rather than
-manufacturing a generic success result. These five probes are independently
-proved one-step rejections; they are not yet accepted transitions in the
-finite-sequence graph.
+manufacturing a generic success result. These five probes remain independently
+proved one-step rejections. The positive mixed sequence covers the accepted
+mapping, IPC, transfer/reuse, timer, and cleanup paths without weakening those
+negative fixtures.
 
 Every boot image retains that same generated `leanos_composite_dispatch` symbol
 and routes adapter 18 through it during the ordered oracle replay. Unknown

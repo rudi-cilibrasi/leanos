@@ -496,9 +496,40 @@ def vectors : List Vector := [
   composite "composite.forged-context-argument" 0x0001 0x0101 1 1 0 0,
   composite "composite.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
     0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
-  composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0]
+  composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0,
+  composite "composite.mixed-transfer-offer" 0x0801 0x2001
+    0x30000 0x30000 0xCAFE 0xBEEF,
+  composite "composite.mixed-transfer-accept" 0x0901 0x2101
+    0x30000 3 0 0,
+  composite "composite.mixed-capability-revoke" 0x0a01 0x2201 0 2 3 0,
+  composite "composite.mixed-stale-handle-reject" 0x0b01 0x2301
+    0x60003 0xAAAA 0xBBBB 0,
+  composite "composite.mixed-capability-copy" 0x0c01 0x2401 0 2 3 4,
+  composite "composite.mixed-syscall-map" 0x0d01 0x2501 0x50002 7 1 0,
+  composite "composite.mixed-direct-map" 0x0e01 0x2601 2 8 3 0,
+  composite "composite.mixed-unknown-syscall-reject" 0x0f01 0x2701 99 0 0 0,
+  composite "composite.mixed-nonblocking-send" 0x1001 0x2801
+    0x70003 0x1111 0x2222 0,
+  composite "composite.mixed-nonblocking-receive" 0x1101 0x2901
+    0x30000 0 0 0,
+  composite "composite.mixed-blocking-receive" 0x1201 0x2a01
+    0x30000 0 0 0,
+  composite "composite.mixed-blocking-send" 0x1301 0x2b01
+    0x20001 0x3333 0x4444 0,
+  composite "composite.mixed-timer-switch" 0x1401 0x2c01 0 0 0 0,
+  composite "composite.mixed-user-fault-cleanup" 0x1501 0x2d01 0 0 0 0,
+  composite "composite.mixed-fatal-entry" 0x1601 0x2e01 0 0 0 0,
+  composite "composite.mixed-post-fatal-reject" 0x1701 0x2f01 0 0 0 0]
 
-theorem corpus_shape : vectors.length = 314 := by decide
+theorem corpus_shape : vectors.length = 330 := by decide
+theorem composite_mixed_trace_agrees :
+    (vectors[314]).expected = 0x200901 ∧
+    (vectors[319]).expected = 0x250e01 ∧
+    (vectors[324]).expected = 0x2a1301 ∧
+    (vectors[326]).expected = 0x2c1501 ∧
+    (vectors[327]).expected = 0x2d1601 ∧
+    (vectors[329]).expected = 0x2f1801 := by
+  native_decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
