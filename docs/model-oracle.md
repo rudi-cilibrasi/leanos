@@ -75,6 +75,10 @@ manufacturing a generic success result. These five probes are independently
 proved one-step rejections; they are not yet accepted transitions in the
 finite-sequence graph.
 
+Every boot image retains that same generated `leanos_composite_dispatch` symbol
+and routes adapter 18 through it during the ordered oracle replay. Unknown
+adapter identifiers fail closed rather than falling through to another witness.
+
 The hosted replay also compiles eight deliberately invalid harness variants.
 They truncate the composite record arity, corrupt the generated dispatcher's
 result word, route the record through the old stateless syscall witness, or

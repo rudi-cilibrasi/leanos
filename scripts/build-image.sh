@@ -162,6 +162,7 @@ lake env lean --c="$build/PrivilegeEntryControl.c" LeanOS/PrivilegeEntryControl.
 lake env lean --c="$build/FaultDispatch.c" LeanOS/FaultDispatch.lean
 lake env lean --c="$build/DirectPortIO.c" LeanOS/DirectPortIO.lean
 lake env lean --c="$build/StaleTranslation.c" LeanOS/StaleTranslation.lean
+lake env lean --c="$build/CompositeDispatcher.c" LeanOS/CompositeDispatcher.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -212,9 +213,12 @@ mv "$build/BootAllocationAndHandoffStream.o" "$build/BootAllocation.o"
   -o "$build/StaleTranslation.o"
 # Keep the existing bounded link inventory compact while retaining the
 # independently generated model adapters in every image variant.
-ld -r "$build/FaultDispatch.o" "$build/DirectPortIO.o" "$build/StaleTranslation.o" \
-  -o "$build/FaultDispatchAndDirectPortIO.o"
-mv "$build/FaultDispatchAndDirectPortIO.o" "$build/FaultDispatch.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
+  -c "$build/CompositeDispatcher.c" -o "$build/CompositeDispatcher.o"
+ld -r "$build/FaultDispatch.o" "$build/DirectPortIO.o" \
+  "$build/StaleTranslation.o" "$build/CompositeDispatcher.o" \
+  -o "$build/FaultDispatchAndCompositeAdapters.o"
+mv "$build/FaultDispatchAndCompositeAdapters.o" "$build/FaultDispatch.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel.o"
@@ -1253,6 +1257,10 @@ if ! grep -q ' T leanos_stale_translation_demo$' <<<"$symbols"; then
 fi
 if ! grep -q ' T leanos_page_fault_demo$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_page_fault_demo" >&2
+  exit 1
+fi
+if ! grep -q ' T leanos_composite_dispatch$' <<<"$symbols"; then
+  echo "error: generated image does not retain leanos_composite_dispatch" >&2
   exit 1
 fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then

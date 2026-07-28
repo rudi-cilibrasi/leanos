@@ -71,6 +71,8 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                        uint64_t);
+extern uint64_t leanos_composite_dispatch(uint64_t, uint64_t, uint64_t,
+                                          uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_authorize_page_fault_snapshot(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
@@ -1476,6 +1478,16 @@ static void serial_puts(const char *text) {
     }
 }
 
+static __attribute__((noinline, noipa)) uint64_t
+replay_composite_or_unknown(const struct oracle_vector *v) {
+    if (v->adapter == 18) {
+        return leanos_composite_dispatch(
+            v->words[0], v->words[1], v->words[2],
+            v->words[3], v->words[4], v->words[5]);
+    }
+    return UINT64_MAX;
+}
+
 static void replay_oracle(void) {
     for (unsigned i = 0; i < ORACLE_VECTOR_COUNT; ++i) {
         const struct oracle_vector *v = &oracle_vectors[i];
@@ -1533,9 +1545,11 @@ static void replay_oracle(void) {
                                                             ? leanos_stale_translation_demo(
                                                             v->words[0], v->words[1], v->words[2],
                                                             v->words[3], v->words[4], v->words[5])
-                                                            : leanos_page_fault_demo(v->words[0],
+                                                            : v->adapter == 17
+                                                            ? leanos_page_fault_demo(v->words[0],
                                                             v->words[1], v->words[2],
-                                                            v->words[3], v->words[4]);
+                                                            v->words[3], v->words[4])
+                                                            : replay_composite_or_unknown(v);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");
