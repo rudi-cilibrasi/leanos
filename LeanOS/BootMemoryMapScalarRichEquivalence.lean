@@ -922,8 +922,9 @@ def ScalarTerminalProjectionAgrees
     scalar.word[15]! =
       blockedWord authority.decoded.entries authority.allocation.frame
 
-/-- Executable form of `ScalarTerminalProjectionAgrees`, used by the
-fail-closed canonical authorization gate. -/
+/-- Executable form of `ScalarTerminalProjectionAgrees`, retained as a
+proof-side projection check.  Canonical authorization no longer depends on
+this comparison for acceptance. -/
 def scalarTerminalProjectionMatches
     (scalar : BootMemoryMapStreamPipeline.ScalarState)
     (authority : BootMemoryMapFullProjectionABI.Authority) : Bool :=
@@ -1118,10 +1119,8 @@ theorem canonicalScalarReplay_structurally_refines_authority
       authority.decodedBy authority.selectedWithinBound)
 
 /-- The structural scalar/rich traversal certificate is sufficient to prove
-the four terminal fields currently rechecked by `authorizeCanonical`.
-Consequently the executable terminal comparison can be removed once the rich
-decoder traversal above is converted to `SuccessfulScalarRichTraversal`; no
-additional terminal-value assumption is needed at that point. -/
+the four terminal fields formerly rechecked by `authorizeCanonical`; no
+additional terminal-value assumption is needed. -/
 theorem successfulScalarRichTraversal_agrees_authority
     (authority : BootMemoryMapFullProjectionABI.Authority)
     (htraversal :
@@ -1150,12 +1149,46 @@ theorem successfulScalarRichTraversal_agrees_authority
     by simpa [usableWord] using hterminal.2.2.2.1,
     by simpa [blockedWord] using hterminal.2.2.2.2⟩
 
+/-- Every rich authority necessarily passes the scalar terminal projection:
+the whole-tag structural induction constructs the traversal, and whole-replay
+folding fixes completion, diagnostics, usable coverage, and blocked overlap. -/
+theorem canonicalScalarReplay_agrees_authority
+    (authority : BootMemoryMapFullProjectionABI.Authority) :
+    ScalarTerminalProjectionAgrees
+      (canonicalScalarReplay authority.input authority) authority := by
+  obtain ⟨terminal, htraversal⟩ :=
+    BootMemoryMapStreamPipeline.successfulScalarRichTraversal_of_decode
+      authority.input authority.decoded authority.allocation.frame
+      authority.decodedBy authority.selectedWithinBound
+  have hterminal :=
+    BootMemoryMapStreamPipeline.successfulScalarRichTraversal_terminal_words
+      authority.allocation.frame authority.decoded.entries
+      (BootMemoryMapStreamPipeline.scalarInitialAt
+        (UInt64.ofNat authority.input.infoAddress) authority.input.bytes.length
+        authority.allocation.frame)
+      terminal
+      (BootMemoryMapStreaming.canonicalChunks
+        (UInt64.ofNat authority.input.infoAddress) authority.input.bytes)
+      htraversal
+  have hterminalEq :
+      terminal = canonicalScalarReplay authority.input authority := by
+    simpa [canonicalScalarReplay] using hterminal.1.symm
+  subst terminal
+  exact successfulScalarRichTraversal_agrees_authority authority htraversal
+
+theorem scalarTerminalProjectionMatches_canonicalScalarReplay
+    (authority : BootMemoryMapFullProjectionABI.Authority) :
+    scalarTerminalProjectionMatches
+        (canonicalScalarReplay authority.input authority) authority = true :=
+  (scalarTerminalProjectionMatches_iff _ _).2
+    (canonicalScalarReplay_agrees_authority authority)
+
 /-- Canonical production composition with the complete rich projection as an
 explicit claimed output.  Unlike `runCanonical`, this boundary cannot return
 authority after a caller mutates an entry, normalized region, checked
-reservation interval, overlaid region, or selected frame.  It also rejects
-unless the actual scalar replay's terminal parser and coverage fields agree
-with the rich authority. -/
+reservation interval, overlaid region, or selected frame.  Scalar terminal
+agreement is now a theorem of every returned rich authority rather than an
+additional fail-closed executable comparison. -/
 def authorizeCanonical
     (input : BootMemoryMapDecoder.Input)
     (lowStart lowLength imageStart imageLength pageStart pageLength
@@ -1177,10 +1210,7 @@ def authorizeCanonical
             descriptorStart descriptorLength stacksStart stacksLength
             guardStart guardLength entryStart entryLength usersStart usersLength
             infoStart infoLength) owner claimed
-      if scalarTerminalProjectionMatches (canonicalScalarReplay input authority) authority then
-        pure authority
-      else
-        throw .outputMutation
+      pure authority
   else
     .error (.reservation .inconsistentImage)
 
@@ -1231,16 +1261,17 @@ theorem authorizeCanonical_acceptance_scalar_agreement
     | ok canonical =>
         rw [hauthorize] at haccepted
         dsimp only [bind, Except.bind] at haccepted
-        by_cases hmatches :
-            scalarTerminalProjectionMatches
-              (canonicalScalarReplay input canonical) canonical = true
-        · rw [if_pos hmatches] at haccepted
-          injection haccepted with heq
-          subst authority
-          exact ⟨hvalid, rfl,
-            (scalarTerminalProjectionMatches_iff _ _).1 hmatches⟩
-        · rw [if_neg hmatches] at haccepted
-          contradiction
+        injection haccepted with heq
+        subst authority
+        have hbinding :=
+          BootMemoryMapFullProjectionABI.authorize_acceptance_binding
+            input manifest owner claimed canonical hauthorize
+        have hinputs :=
+          BootMemoryMapFullProjectionABI.accepted_inputs
+            input manifest owner canonical hbinding.1
+        refine ⟨hvalid, rfl, ?_⟩
+        rw [← hinputs.1]
+        exact canonicalScalarReplay_agrees_authority canonical
   · contradiction
 
 /-- Acceptance through the complete-output gate implies the existing
