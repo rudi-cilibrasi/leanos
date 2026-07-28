@@ -74,7 +74,7 @@ objects=(
 compile_host() {
   local name="$1"
   local define="${2:-}"
-  local flags=(-std=c11 -Wall -Wextra -Werror -I"$build")
+  local flags=(-std=c11 -Wall -Wextra -Werror -I"$build" -Iinclude)
   [[ -z "$define" ]] || flags+=("-D$define")
   cc "${flags[@]}" -c tests/oracle-host.c -o "$build/$name.o"
   cc -Wl,--gc-sections "$build/$name.o" "${objects[@]}" -o "$build/$name"
@@ -100,5 +100,29 @@ for fixture in "${fixtures[@]}"; do
     exit 1
   }
 done
+
+{
+  printf 'schema\tleanos-oracle-evidence-v1\n'
+  printf 'source_revision\t%s\n' "$(git rev-parse HEAD)"
+  printf 'generated_c_flags\t%s\n' \
+    "-std=c11 -I<lean-prefix>/include -Ibuild/oracle -ffunction-sections -fdata-sections"
+  printf 'host_c_flags\t%s\n' \
+    "-std=c11 -Wall -Wextra -Werror -Ibuild/oracle -Iinclude"
+  printf 'link_flags\t%s\n' "-Wl,--gc-sections"
+  printf 'lean_version\t%s\n' "$(lake env lean --version | head -n 1)"
+  printf 'cc_version\t%s\n' "$(cc --version | head -n 1)"
+} > "$build/toolchain-and-flags.tsv"
+
+{
+  printf 'schema\tleanos-oracle-manifest-v1\n'
+  printf 'source_revision\t%s\n' "$(git rev-parse HEAD)"
+  sha256sum \
+    LeanOS/CompositeDispatcher.lean \
+    "$build/CompositeDispatcher.c" \
+    include/leanos/composite-dispatcher.h \
+    "$build/corpus.tsv" \
+    "$build/host-results.txt" \
+    "$build/toolchain-and-flags.tsv"
+} > "$build/manifest.tsv"
 
 echo "Hosted generated-code oracle replay passed (309 vectors, 3 negative fixtures)"

@@ -68,6 +68,15 @@ Each variant must stop at the first malformed record or mismatch. Unknown
 adapter identifiers fail closed instead of falling through to the composite
 export.
 
+The proof job preserves a reviewable `leanos-oracle-<commit>` artifact for this
+boundary. It contains the generated `CompositeDispatcher.c`, the public
+version-one scalar ABI header, the versioned corpus, exact per-step hosted
+results and negative-fixture diagnostics, compiler flags and tool versions,
+and a SHA-256 manifest tied to the source revision. The manifest records
+reproducible differential evidence, not verified compilation: Lean code
+generation, the C compiler, the scalar calling convention, and the hosted
+harness remain explicit trusted boundaries.
+
 The interrupt-entry corpus also includes the user-only vector-13 hardware-error
 shape and its broad general-protection purpose. The live handler refines that
 class to direct-port denial only after checking `#GP(0)`, the reviewed RIP, and

@@ -40,6 +40,22 @@ jobs:
       - name: Build and check proofs
         run: ./scripts/check.sh
 
+      - name: Preserve generated-oracle evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-oracle-${{ github.sha }}
+          path: |
+            build/oracle/CompositeDispatcher.c
+            include/leanos/composite-dispatcher.h
+            build/oracle/corpus.tsv
+            build/oracle/host-results.txt
+            build/oracle/host-*.txt
+            build/oracle/toolchain-and-flags.tsv
+            build/oracle/manifest.tsv
+          if-no-files-found: warn
+          retention-days: 14
+
   emulator:
     name: Deterministic QEMU smoke test
     needs:

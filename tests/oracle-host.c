@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "corpus.h"
+#include "leanos/composite-dispatcher.h"
 
 extern uint64_t leanos_boot_transition(uint64_t, uint64_t);
 extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
@@ -31,8 +32,6 @@ extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
 extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
 extern uint64_t leanos_page_fault_diagnostic_regression_demo(uint64_t);
-extern uint64_t leanos_composite_dispatch(uint64_t, uint64_t, uint64_t, uint64_t,
-                                           uint64_t, uint64_t);
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) { return left == right; }
 
 int main(void) {
@@ -44,9 +43,9 @@ int main(void) {
             argc = 5;
         }
 #endif
-        if (v->adapter == 18 && argc != 6) {
-            fprintf(stderr, "oracle malformed arity: %u %s expected=6 got=%u\n",
-                i, v->id, argc);
+        if (v->adapter == 18 && argc != LEANOS_COMPOSITE_INPUT_WORDS) {
+            fprintf(stderr, "oracle malformed arity: %u %s expected=%u got=%u\n",
+                i, v->id, LEANOS_COMPOSITE_INPUT_WORDS, argc);
             return 1;
         }
         uint64_t got = v->adapter == 0
