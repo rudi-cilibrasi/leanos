@@ -291,6 +291,14 @@ the complete admitted scalar cursor at offset eight in the tag phase.
 production scalar definition rather than a shadow parser.
 `successfulTagDecodeTraversal_offset_lt_total` proves that every retained tag
 step begins with a complete header inside the advertised extent, and
+`scalarAligned8_eq_richAligned8` proves that the scalar parser's
+`(size + 7)` ceiling alignment is exactly the rich decoder's `aligned8`
+advance throughout the admitted 64 KiB bound. In particular, it does not use
+the false floor identity `size / 8 * 8` for non-aligned ignored tags.
+`successfulTagDecodeTraversal_header_advance` packages that equality with the
+exact retained source header and bounded successor cursor at every rich tag
+constructor, supplying the local cursor/fuel step needed by the remaining
+whole-tag induction. Finally,
 `canonicalFirstTagStep_source_refines` binds the first tag header at offset
 eight to canonical chunk index one, its exact rich-decoder word, nonterminal
 bit, and every production scalar query.
