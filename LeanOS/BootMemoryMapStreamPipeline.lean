@@ -3493,6 +3493,48 @@ theorem successfulScalarRichTraversal_canonicalMemoryMapEntries
         omega
       exact hprepend (by simpa [next, hoffsetWords] using hnextTraversal)
 
+/-- A complete canonical rich entry traversal fixes both production
+classification words to the folds over exactly those decoded entries.  This
+is the field-agreement projection consumed by the later whole-tag refinement:
+no caller-selected entry list or intermediate classification state appears in
+the conclusion. -/
+theorem canonicalMemoryMapEntries_terminal_classification
+    (identity : UInt64) (bytes : List UInt8)
+    (total entryOffset target count : Nat) (entries : List RawEntry)
+    (state terminal : ScalarState)
+    (htotal : total = bytes.length)
+    (htotalLow : 16 ≤ total)
+    (htotalHigh : total ≤ maxTagBytes)
+    (htotalAligned : total % 8 = 0)
+    (hentryOffsetAligned : entryOffset % 8 = 0)
+    (hroom : entryOffset + count * memoryMapEntrySize + 8 ≤ total)
+    (hidentityAligned : identity % 8 = 0)
+    (hentries :
+      SuccessfulEntryDecodeTraversal bytes entryOffset count entries)
+    (hstate :
+      CanonicalMemoryMapEntryState identity total entryOffset target count state)
+    (hcontinuation :
+      ∀ after,
+        CanonicalMemoryMapEntryState identity total
+            (entryOffset + count * memoryMapEntrySize) target 0 after →
+          SuccessfulScalarRichTraversal target [] after
+            ((canonicalChunks identity bytes).drop
+              ((entryOffset + count * memoryMapEntrySize) / 8))
+            terminal) :
+    scalarReplay ((canonicalChunks identity bytes).drop (entryOffset / 8))
+        state = terminal ∧
+      terminal.word[1]! = BootMemoryMapStreamAuthority.complete ∧
+      terminal.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+      terminal.word[14]! =
+        entries.foldl (updateUsableClassification target) state.word[14]! ∧
+      terminal.word[15]! =
+        entries.foldl (updateBlockedClassification target) state.word[15]! := by
+  apply successfulScalarRichTraversal_terminal_words target entries state terminal
+  exact successfulScalarRichTraversal_canonicalMemoryMapEntries
+    identity bytes total entryOffset target count entries state terminal
+    htotal htotalLow htotalHigh htotalAligned hentryOffsetAligned hroom
+    hidentityAligned hentries hstate hcontinuation
+
 /-- The retained rich tag traversal selects the exact first tag-header chunk
 immediately after the information header.  Its source word, stream identity,
 offset, terminal bit, and every scalar transition query are therefore fixed
