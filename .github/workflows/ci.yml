@@ -51,6 +51,7 @@ jobs:
             build/oracle/corpus.tsv
             build/oracle/host-results.txt
             build/oracle/host-*.txt
+            build/oracle/negative-fixtures.tsv
             build/oracle/toolchain-and-flags.tsv
             build/oracle/manifest.tsv
           if-no-files-found: warn

@@ -13,7 +13,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-309-vector order covers accepted calls,
+314-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -37,7 +37,7 @@ that must round-trip unchanged. The Lean checks evaluate every expected result
 from the adapter definition and connect the accepted and rejected examples to
 the source models.
 
-The final seventeen composite-dispatch records are the version-one seed trace for
+The final twenty-two composite-dispatch records are the version-one seed trace for
 the shared stateful boundary. Six input words carry a canonical state token,
 command tag, and four scalar arguments. The seven positive edges create one
 subject, observe typed unknown-syscall and malformed-map rejections, run
@@ -61,12 +61,28 @@ cannot be accepted between adjacent steps. The scalar export remains
 allocation-free; generated C and its calling convention remain trusted
 hosted-test boundaries.
 
-The hosted replay also compiles three deliberately invalid harness variants.
+Five additional Phase 2 records invoke that same dispatcher for a canonical
+generation-bound map handle, nonblocking IPC, capability copy, blocking
+cancellation, and deferred cancellation drain. The handle word `0x10000` is
+proved to round-trip through `CapabilityHandle` as slot 0, generation 1;
+trusted caller and address-space identity still come only from the reconstructed
+composite state. `CanonicalCompositeState` is the decoded ABI object and
+contains the full state plus its exact materialization equality.
+`CanonicalTypedStep` retains the literal `AuthoritativeGateResult` and
+post-state returned by the sole `authoritativeGate` invocation rather than
+manufacturing a generic success result.
+
+The hosted replay also compiles eight deliberately invalid harness variants.
 They truncate the composite record arity, corrupt the generated dispatcher's
-result word, or route the record through the old stateless syscall witness.
+result word, route the record through the old stateless syscall witness, or
+corrupt the ABI version, reserved bits, predecessor state, forged context
+argument, or canonical capability handle.
 Each variant must stop at the first malformed record or mismatch. Unknown
 adapter identifiers fail closed instead of falling through to the composite
-export.
+export. Every mismatch names the first operation and divergent reply field.
+Buffer aliasing, alignment, and partial-write fixtures do not apply to this
+six-scalar-input, one-scalar-result ABI, which owns no caller buffer or
+generated state cell.
 
 The proof job preserves a reviewable `leanos-oracle-<commit>` artifact for this
 boundary. It contains the generated `CompositeDispatcher.c`, the public

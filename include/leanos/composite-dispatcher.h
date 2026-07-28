@@ -6,9 +6,15 @@
 /*
  * Version-one scalar ABI for LeanOS.CompositeDispatcher.dispatch.
  *
- * Input words are ordered as state token, command tag, then arguments 0..3.
- * The result is one packed reply word.  All fields are logical uint64_t
- * values; there is no caller-owned buffer or byte-order-dependent structure.
+ * Input words are ordered as the canonical name of a complete bounded
+ * CompositeState, command tag, then arguments 0..3. Lean reconstructs the
+ * complete state by authoritative replay; callers cannot supply individual
+ * state projections or post-state fragments. The result canonically names
+ * the exact typed authoritativeGate result and next state.
+ *
+ * All fields are logical uint64_t values. There are no caller-owned buffers,
+ * so state/result aliasing, alignment, pointer identity, and partial writes are
+ * inapplicable. Calls are pure, reentrant, and have no generated state cell.
  */
 #define LEANOS_COMPOSITE_ABI_VERSION UINT64_C(1)
 #define LEANOS_COMPOSITE_INPUT_WORDS 6U

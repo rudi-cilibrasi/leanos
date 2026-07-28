@@ -81,13 +81,19 @@ compile_host() {
 }
 compile_host host
 "$build/host" > "$build/host-results.txt"
-[[ "$(wc -l < "$build/host-results.txt")" -eq 309 ]]
+[[ "$(wc -l < "$build/host-results.txt")" -eq 314 ]]
 
 fixtures=(
   "truncated:LEANOS_FIXTURE_COMPOSITE_TRUNCATED:oracle malformed arity"
   "output-corruption:LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION:oracle mismatch"
   "old-stateless:LEANOS_FIXTURE_COMPOSITE_OLD_STATELESS:oracle mismatch"
+  "wrong-version:LEANOS_FIXTURE_COMPOSITE_WRONG_VERSION:field=reply"
+  "reserved-bits:LEANOS_FIXTURE_COMPOSITE_RESERVED_BITS:field=reply"
+  "stale-replay:LEANOS_FIXTURE_COMPOSITE_STALE_REPLAY:field=reply"
+  "forged-context:LEANOS_FIXTURE_COMPOSITE_FORGED_CONTEXT:field=reply"
+  "handle-corruption:LEANOS_FIXTURE_COMPOSITE_HANDLE_CORRUPTION:field=reply"
 )
+: > "$build/negative-fixtures.tsv"
 for fixture in "${fixtures[@]}"; do
   IFS=: read -r name define diagnostic <<< "$fixture"
   compile_host "host-$name" "$define"
@@ -99,6 +105,8 @@ for fixture in "${fixtures[@]}"; do
     echo "error: composite oracle fixture '$name' lacked '$diagnostic'" >&2
     exit 1
   }
+  printf '%s\t%s\t%s\n' "$name" "$define" "$diagnostic" \
+    >> "$build/negative-fixtures.tsv"
 done
 
 {
@@ -122,7 +130,8 @@ done
     include/leanos/composite-dispatcher.h \
     "$build/corpus.tsv" \
     "$build/host-results.txt" \
+    "$build/negative-fixtures.tsv" \
     "$build/toolchain-and-flags.tsv"
 } > "$build/manifest.tsv"
 
-echo "Hosted generated-code oracle replay passed (309 vectors, 3 negative fixtures)"
+echo "Hosted generated-code oracle replay passed (314 vectors, 8 negative fixtures)"

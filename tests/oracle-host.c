@@ -48,6 +48,43 @@ int main(void) {
                 i, v->id, LEANOS_COMPOSITE_INPUT_WORDS, argc);
             return 1;
         }
+        uint64_t composite_state = v->words[0];
+        uint64_t composite_tag = v->words[1];
+        uint64_t composite_arg0 = v->words[2];
+        uint64_t composite_arg1 = v->words[3];
+        uint64_t composite_arg2 = v->words[4];
+        uint64_t composite_arg3 = v->words[5];
+        (void)composite_state;
+        (void)composite_tag;
+        (void)composite_arg0;
+        (void)composite_arg1;
+        (void)composite_arg2;
+        (void)composite_arg3;
+#ifdef LEANOS_FIXTURE_COMPOSITE_WRONG_VERSION
+        if (i == ORACLE_INDEX_COMPOSITE_CREATE_SUBJECT) {
+            composite_state = UINT64_C(2);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_COMPOSITE_RESERVED_BITS
+        if (i == ORACLE_INDEX_COMPOSITE_CREATE_SUBJECT) {
+            composite_tag = UINT64_C(0x10001);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_COMPOSITE_STALE_REPLAY
+        if (i == ORACLE_INDEX_COMPOSITE_REJECT_UNKNOWN_SYSCALL) {
+            composite_state = UINT64_C(1);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_COMPOSITE_FORGED_CONTEXT
+        if (i == ORACLE_INDEX_COMPOSITE_CREATE_SUBJECT) {
+            composite_arg3 = UINT64_C(1);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_COMPOSITE_HANDLE_CORRUPTION
+        if (i == ORACLE_INDEX_COMPOSITE_REJECT_STALE_MAP_HANDLE) {
+            composite_arg0 = UINT64_C(0xffff);
+        }
+#endif
         uint64_t got = v->adapter == 0
             ? leanos_boot_transition(v->words[0], v->words[1])
             : v->adapter == 1
@@ -112,8 +149,9 @@ int main(void) {
                                                             v->words[1], v->words[2], v->words[3])
 #else
                                                             ? leanos_composite_dispatch(
-                                                            v->words[0], v->words[1], v->words[2],
-                                                            v->words[3], v->words[4], v->words[5])
+                                                            composite_state, composite_tag,
+                                                            composite_arg0, composite_arg1,
+                                                            composite_arg2, composite_arg3)
 #endif
                                                             : UINT64_MAX;
 #ifdef LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION
@@ -122,7 +160,9 @@ int main(void) {
         }
 #endif
         if (got != v->expected) {
-            fprintf(stderr, "oracle mismatch: %u %s expected=%llu got=%llu\n", i, v->id,
+            fprintf(stderr,
+                "oracle mismatch: vector=%u operation=%s field=reply expected=%llu got=%llu\n",
+                i, v->id,
                 v->expected, (unsigned long long)got);
             return 1;
         }

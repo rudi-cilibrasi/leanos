@@ -29,6 +29,7 @@ namespace LeanOS.CompositeDispatcher
 
 open LeanOS
 open LeanOS.FailStop
+set_option maxRecDepth 16384
 
 def abiVersion : UInt64 := 1
 
@@ -87,6 +88,11 @@ theorem state_encoding_injective (first second : StateId)
 
 inductive CommandId where
   | createSubjectOne
+  | rejectStaleMapHandle
+  | rejectNonblockingReceiveHandle
+  | rejectCapabilityCopy
+  | rejectBlockingCancel
+  | rejectDeferredDrain
   | rejectUnknownSyscall
   | rejectMalformedMap
   | observeScheduler
@@ -105,6 +111,16 @@ structure CommandWords where
 
 def encodeCommand : CommandId → CommandWords
   | .createSubjectOne => { tag := 0x0101, arg0 := 1, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .rejectStaleMapHandle =>
+      { tag := 0x0801, arg0 := 0x10000, arg1 := 7, arg2 := 1, arg3 := 0 }
+  | .rejectNonblockingReceiveHandle =>
+      { tag := 0x0901, arg0 := 0x10000, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .rejectCapabilityCopy =>
+      { tag := 0x0a01, arg0 := 0, arg1 := 0, arg2 := 1, arg3 := 0 }
+  | .rejectBlockingCancel =>
+      { tag := 0x0b01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .rejectDeferredDrain =>
+      { tag := 0x0c01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
   | .rejectUnknownSyscall =>
       { tag := 0x0201, arg0 := 99, arg1 := 0, arg2 := 0, arg3 := 0 }
   | .rejectMalformedMap =>
@@ -122,6 +138,26 @@ def decodeCommand (words : CommandWords) : Except DecodeError CommandId :=
   if words.tag = 0x0101 then
     if words.arg0 = 1 && words.arg1 = 0 && words.arg2 = 0 && words.arg3 = 0 then
       .ok .createSubjectOne
+    else .error .noncanonicalArguments
+  else if words.tag = 0x0801 then
+    if words.arg0 = 0x10000 && words.arg1 = 7 && words.arg2 = 1 && words.arg3 = 0 then
+      .ok .rejectStaleMapHandle
+    else .error .noncanonicalArguments
+  else if words.tag = 0x0901 then
+    if words.arg0 = 0x10000 && words.arg1 = 0 && words.arg2 = 0 && words.arg3 = 0 then
+      .ok .rejectNonblockingReceiveHandle
+    else .error .noncanonicalArguments
+  else if words.tag = 0x0a01 then
+    if words.arg0 = 0 && words.arg1 = 0 && words.arg2 = 1 && words.arg3 = 0 then
+      .ok .rejectCapabilityCopy
+    else .error .noncanonicalArguments
+  else if words.tag = 0x0b01 then
+    if words.arg0 = 0 && words.arg1 = 0 && words.arg2 = 0 && words.arg3 = 0 then
+      .ok .rejectBlockingCancel
+    else .error .noncanonicalArguments
+  else if words.tag = 0x0c01 then
+    if words.arg0 = 0 && words.arg1 = 0 && words.arg2 = 0 && words.arg3 = 0 then
+      .ok .rejectDeferredDrain
     else .error .noncanonicalArguments
   else if words.tag = 0x0201 then
     if words.arg0 = 99 && words.arg1 = 0 && words.arg2 = 0 && words.arg3 = 0 then
@@ -148,7 +184,7 @@ def decodeCommand (words : CommandWords) : Except DecodeError CommandId :=
       .ok .attemptPostFatalSchedule
     else .error .noncanonicalArguments
   else if words.tag % 256 != abiVersion then .error .wrongVersion
-  else if 0x0801 ≤ words.tag then .error .reservedBits
+  else if 0x0d01 ≤ words.tag then .error .reservedBits
   else .error .unknownCommand
 
 theorem decode_encode_command (id : CommandId) :
@@ -176,6 +212,12 @@ def fatalKernelFrame : Interrupt.HardwareFrame :=
 
 def commandOperation : CommandId → AuthoritativeOperation
   | .createSubjectOne => .ordinary (.createSubject 1)
+  | .rejectStaleMapHandle =>
+      .ordinary (.syscall { number := 0, arg0 := 0x10000, arg1 := 7, arg2 := 1 })
+  | .rejectNonblockingReceiveHandle => .ordinary (.ipc (.receive 0x10000))
+  | .rejectCapabilityCopy => .ordinary (.capabilityCopy 0 0 1 {})
+  | .rejectBlockingCancel => .blocking (.cancel 0)
+  | .rejectDeferredDrain => .drainDeferred 0
   | .rejectUnknownSyscall =>
       .ordinary (.syscall { number := 99, arg0 := 0, arg1 := 0, arg2 := 0 })
   | .rejectMalformedMap =>
@@ -202,6 +244,16 @@ structure ReplyToken where
 
 def replyToken : StateId → CommandId → Option ReplyToken
   | .initial, .createSubjectOne => some { next := .subjectCreated, reply := 1 }
+  | .subjectCreated, .rejectStaleMapHandle =>
+      some { next := .subjectCreated, reply := 8 }
+  | .subjectCreated, .rejectNonblockingReceiveHandle =>
+      some { next := .subjectCreated, reply := 9 }
+  | .subjectCreated, .rejectCapabilityCopy =>
+      some { next := .subjectCreated, reply := 10 }
+  | .subjectCreated, .rejectBlockingCancel =>
+      some { next := .subjectCreated, reply := 11 }
+  | .subjectCreated, .rejectDeferredDrain =>
+      some { next := .subjectCreated, reply := 12 }
   | .subjectCreated, .rejectUnknownSyscall =>
       some { next := .unknownSyscallRejected, reply := 2 }
   | .unknownSyscallRejected, .rejectMalformedMap =>
@@ -222,6 +274,11 @@ def encodeReply (token : ReplyToken) : UInt64 :=
 
 def decodeReply (word : UInt64) : Except DecodeError ReplyToken :=
   if word = 0x010101 then .ok { next := .subjectCreated, reply := 1 }
+  else if word = 0x080101 then .ok { next := .subjectCreated, reply := 8 }
+  else if word = 0x090101 then .ok { next := .subjectCreated, reply := 9 }
+  else if word = 0x0a0101 then .ok { next := .subjectCreated, reply := 10 }
+  else if word = 0x0b0101 then .ok { next := .subjectCreated, reply := 11 }
+  else if word = 0x0c0101 then .ok { next := .subjectCreated, reply := 12 }
   else if word = 0x020201 then .ok { next := .unknownSyscallRejected, reply := 2 }
   else if word = 0x030301 then .ok { next := .malformedMapRejected, reply := 3 }
   else if word = 0x040401 then .ok { next := .schedulerObserved, reply := 4 }
@@ -229,7 +286,7 @@ def decodeReply (word : UInt64) : Except DecodeError ReplyToken :=
   else if word = 0x060601 then .ok { next := .fatalEntered, reply := 6 }
   else if word = 0x070701 then .ok { next := .postFatalRejected, reply := 7 }
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x080801 ≤ word then .error .reservedBits
+  else if 0x0d0801 ≤ word then .error .reservedBits
   else .error .unknownCommand
 
 theorem decode_encode_reply_for_trace state command token
@@ -315,8 +372,33 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
     else if stateWord = 0x0601 then
       0x070701
     else 0xff06
+  else if tag = 0x0801 then
+    if arg0 != 0x10000 || arg1 != 7 || arg2 != 1 || arg3 != 0 then
+      0xff05
+    else if stateWord = 0x0101 then 0x080101
+    else 0xff06
+  else if tag = 0x0901 then
+    if arg0 != 0x10000 || arg1 != 0 || arg2 != 0 || arg3 != 0 then
+      0xff05
+    else if stateWord = 0x0101 then 0x090101
+    else 0xff06
+  else if tag = 0x0a01 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 1 || arg3 != 0 then
+      0xff05
+    else if stateWord = 0x0101 then 0x0a0101
+    else 0xff06
+  else if tag = 0x0b01 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then
+      0xff05
+    else if stateWord = 0x0101 then 0x0b0101
+    else 0xff06
+  else if tag = 0x0c01 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then
+      0xff05
+    else if stateWord = 0x0101 then 0x0c0101
+    else 0xff06
   else if tag % 256 != abiVersion then 0xff01
-  else if 0x0801 ≤ tag then 0xff02
+  else if 0x0d01 ≤ tag then 0xff02
   else 0xff04
 
 /-- The scalar export and the logical adapter use one canonical edge table. -/
@@ -421,6 +503,7 @@ theorem logicalStep_refines_authoritativeGate state command step
 the finite state-continuity law used by the hosted sequence corpus. -/
 theorem state_continuity state command next
     (hnext : nextState state command = some next) :
+    next = state ∨
     (state = .initial ∧ command = .createSubjectOne ∧ next = .subjectCreated) ∨
     (state = .subjectCreated ∧ command = .rejectUnknownSyscall ∧
       next = .unknownSyscallRejected) ∨
@@ -570,6 +653,176 @@ theorem canonical_lifecycle_fatal_operations :
     commandOperation .attemptPostFatalSchedule = .ordinary .scheduleNext := by
   exact ⟨rfl, rfl, rfl⟩
 
+/-! ## Complete bounded codecs
+
+`StateId` is not itself the decoded state.  The public decoder below returns
+the complete `CompositeState` reconstructed by exact authoritative replay,
+together with the equality that makes the reconstruction canonical.  Thus no
+caller-supplied projection, post-state fragment, or pointer identity can enter
+the logical adapter. -/
+
+structure CanonicalCompositeState where
+  id : StateId
+  state : CompositeState
+  canonical : materialize id = .ok state
+
+def encodeCompositeState (state : CanonicalCompositeState) : UInt64 :=
+  encodeStateId state.id
+
+def decodeCompositeState (word : UInt64) :
+    Except DecodeError CanonicalCompositeState :=
+  match decodeStateId word with
+  | .error reason => .error reason
+  | .ok id =>
+      match hstate : materialize id with
+      | .error reason => .error reason
+      | .ok state => .ok { id, state, canonical := hstate }
+
+theorem CanonicalCompositeState.eq_of_id_eq
+    (first second : CanonicalCompositeState)
+    (hid : first.id = second.id) :
+    first = second := by
+  cases first with
+  | mk firstId firstState firstCanonical =>
+      cases second with
+      | mk secondId secondState secondCanonical =>
+          dsimp at hid
+          subst secondId
+          have hstate : firstState = secondState :=
+            Except.ok.inj (firstCanonical.symm.trans secondCanonical)
+          subst secondState
+          rfl
+
+theorem decodeCompositeState_sound word decoded
+    (_hdecode : decodeCompositeState word = .ok decoded) :
+    materialize decoded.id = .ok decoded.state :=
+  decoded.canonical
+
+/-- A normalized operation is the exact `AuthoritativeOperation` selected by
+its canonical command words. -/
+structure CanonicalOperation where
+  command : CommandId
+  operation : AuthoritativeOperation
+  exact : operation = commandOperation command
+
+def canonicalOperation (command : CommandId) : CanonicalOperation :=
+  { command, operation := commandOperation command, exact := rfl }
+
+def encodeOperation (operation : CanonicalOperation) : CommandWords :=
+  encodeCommand operation.command
+
+def decodeOperation (words : CommandWords) :
+    Except DecodeError CanonicalOperation := do
+  pure (canonicalOperation (← decodeCommand words))
+
+theorem CanonicalOperation.eq_of_command_eq
+    (first second : CanonicalOperation)
+    (hcommand : first.command = second.command) :
+    first = second := by
+  cases first with
+  | mk firstCommand firstOperation firstExact =>
+      cases second with
+      | mk secondCommand secondOperation secondExact =>
+          dsimp at hcommand
+          subst secondCommand
+          cases firstExact
+          cases secondExact
+          rfl
+
+theorem decode_encode_operation (operation : CanonicalOperation) :
+    decodeOperation (encodeOperation operation) = .ok operation := by
+  unfold decodeOperation encodeOperation
+  rw [decode_encode_command]
+  change Except.ok (canonicalOperation operation.command) = Except.ok operation
+  congr 1
+  exact CanonicalOperation.eq_of_command_eq _ _ rfl
+
+/-- The typed logical result contains the literal post-state and result of the
+one authoritative gate invocation.  This is the object denoted by an accepted
+reply word; the small word is only its bounded canonical name. -/
+structure CanonicalTypedStep where
+  pre : CanonicalCompositeState
+  command : CommandId
+  operation : AuthoritativeOperation
+  post : CompositeState
+  result : AuthoritativeGateResult
+  operation_exact : operation = commandOperation command
+  outcome_exact :
+    authoritativeGate pre.state operation = { state := post, result := result }
+
+def canonicalTypedStep (state : CanonicalCompositeState) (command : CommandId) :
+    CanonicalTypedStep :=
+  let operation := commandOperation command
+  let outcome := authoritativeGate state.state operation
+  { pre := state
+    command
+    operation
+    post := outcome.state
+    result := outcome.result
+    operation_exact := rfl
+    outcome_exact := rfl }
+
+theorem canonicalTypedStep_refines_authoritativeGate state command :
+    let step := canonicalTypedStep state command
+    authoritativeGate step.pre.state step.operation =
+      { state := step.post, result := step.result } := by
+  exact (canonicalTypedStep state command).outcome_exact
+
+def decodeTypedReply (stateWord : UInt64) (command : CommandId)
+    (replyWord : UInt64) : Except DecodeError CanonicalTypedStep := do
+  let state ← decodeCompositeState stateWord
+  let token ← decodeReply replyWord
+  match replyToken state.id command with
+  | some expected =>
+      if token = expected then .ok (canonicalTypedStep state command)
+      else .error .invalidSequence
+  | none => .error .invalidSequence
+
+theorem decode_encode_typed_reply state command token
+    (hstate :
+      decodeCompositeState (encodeCompositeState state) = .ok state)
+    (htoken : replyToken state.id command = some token) :
+    decodeTypedReply (encodeCompositeState state) command (encodeReply token) =
+      .ok (canonicalTypedStep state command) := by
+  unfold decodeTypedReply
+  rw [hstate]
+  rw [decode_encode_reply_for_trace state.id command token htoken]
+  change (match replyToken state.id command with
+    | some expected =>
+        if token = expected then
+          Except.ok (ε := DecodeError) (canonicalTypedStep state command)
+        else Except.error (α := CanonicalTypedStep) .invalidSequence
+    | none => Except.error (α := CanonicalTypedStep) .invalidSequence) =
+      Except.ok (ε := DecodeError) (canonicalTypedStep state command)
+  rw [htoken]
+  simp
+
+theorem capabilityHandle_command_uses_canonical_codec :
+    CapabilityHandle.decode 0x10000 =
+        .ok { slot := 0, identity := 1 } ∧
+      CapabilityHandle.encode { slot := 0, identity := 1 } = some 0x10000 ∧
+      commandOperation .rejectStaleMapHandle =
+        .ordinary (.syscall
+          { number := 0, arg0 := 0x10000, arg1 := 7, arg2 := 1 }) := by
+  constructor
+  · rfl
+  constructor
+  · rfl
+  · rfl
+
+def mixedPhaseTwoCommands : List CommandId :=
+  [.rejectStaleMapHandle, .rejectNonblockingReceiveHandle,
+   .rejectCapabilityCopy, .rejectBlockingCancel, .rejectDeferredDrain]
+
+theorem mixedPhaseTwoCommands_cover_authoritative_families :
+    mixedPhaseTwoCommands.map commandOperation =
+      [.ordinary (.syscall { number := 0, arg0 := 0x10000, arg1 := 7, arg2 := 1 }),
+       .ordinary (.ipc (.receive 0x10000)),
+       .ordinary (.capabilityCopy 0 0 1 {}),
+       .blocking (.cancel 0),
+       .drainDeferred 0] := by
+  rfl
+
 example : dispatch 0x0001 0x0101 1 0 0 0 = encodeReply
     { next := .subjectCreated, reply := 1 } := by native_decide
 example : dispatch 0x0101 0x0201 99 0 0 0 = encodeReply
@@ -588,5 +841,10 @@ example : dispatch 0x0002 0x0101 1 0 0 0 =
     0xff01 := by native_decide
 example : dispatch 0x10001 0x0101 1 0 0 0 =
     0xff02 := by native_decide
+example : dispatch 0x0101 0x0801 0x10000 7 1 0 = 0x080101 := by native_decide
+example : dispatch 0x0101 0x0901 0x10000 0 0 0 = 0x090101 := by native_decide
+example : dispatch 0x0101 0x0a01 0 0 1 0 = 0x0a0101 := by native_decide
+example : dispatch 0x0101 0x0b01 0 0 0 0 = 0x0b0101 := by native_decide
+example : dispatch 0x0101 0x0c01 0 0 0 0 = 0x0c0101 := by native_decide
 
 end LeanOS.CompositeDispatcher
