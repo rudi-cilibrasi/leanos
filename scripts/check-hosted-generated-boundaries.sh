@@ -21,6 +21,7 @@ esac
 declare -A manifest_ids=()
 declare -A manifest_modules=()
 declare -A manifest_exports=()
+declare -A all_source_exports=()
 while IFS=$'\t' read -r id runner harness generation target modules exports assertion; do
   [[ -n "$id" && "${id:0:1}" != "#" ]] || continue
   [[ -z "${manifest_ids[$id]+x}" ]] || {
@@ -62,6 +63,7 @@ while IFS=$'\t' read -r id runner harness generation target modules exports asse
         exit 1
       }
       source_exports["$symbol"]=1
+      all_source_exports["$symbol"]=1
     done < <(sed -n 's/^[[:space:]]*@\[export \([^]]*\)\].*/\1/p' "$source")
   done
   for symbol in "${export_specs[@]}"; do
@@ -76,6 +78,13 @@ while IFS=$'\t' read -r id runner harness generation target modules exports asse
     fi
   done
 done <"$manifest"
+
+for symbol in "${!all_source_exports[@]}"; do
+  [[ -n "${manifest_exports[$symbol]+x}" ]] || {
+    echo "error: generated source export '$symbol' is absent from $manifest" >&2
+    exit 1
+  }
+done
 
 while IFS= read -r source; do
   module="${source#LeanOS/}"
