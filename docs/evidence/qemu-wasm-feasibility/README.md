@@ -32,7 +32,8 @@ remain unchanged.
 probe=build/qemu-wasm-probe
 image=qemu-wasm-demo/docs/images/alpine-x86_64
 mkdir -p "$probe"
-cp "$image"/{coi-serviceworker.js,load-rom.data,load-rom.js,out.js,qemu-system-x86_64.wasm,qemu-system-x86_64.worker.js} "$probe"/
+cp "$image"/{load-rom.data,load-rom.js,out.js,qemu-system-x86_64.wasm,qemu-system-x86_64.worker.js} "$probe"/
+cp qemu-wasm-demo/docs/coi-serviceworker.js "$probe"/
 cp build/boot/leanos-0.1.0-x86_64.iso "$probe/leanos.iso"
 cp docs/evidence/qemu-wasm-feasibility/{index.html,module-cdrom.js,probe.mjs,package.json,package-lock.json} "$probe"/
 cp "$probe/module-cdrom.js" "$probe/module.js"

@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LeanOS qemu-wasm compatibility gate</title>
+<script src="./coi-serviceworker.js"></script>
+<script src="./module.js"></script>
+<script src="./load-rom.js"></script>
+<pre id="status">starting</pre>
+<div id="terminal"></div>
+<script type="module">
+  import './xterm.js';
+  import './xterm-pty.js';
+  import initEmscriptenModule from './out.js';
+
+  const status = document.getElementById('status');
+  window.leanosProbe = {
+    crossOriginIsolated,
+    mediaMapping: Module.leanosMediaMapping,
+  };
+  status.textContent = `crossOriginIsolated=${crossOriginIsolated}`;
+  if (crossOriginIsolated) {
+    const xterm = new Terminal({ cols: 240, rows: 80, scrollback: 10000 });
+    window.testXterm = xterm;
+    xterm.open(document.getElementById('terminal'));
+    const { master, slave } = openpty();
+    xterm.loadAddon(master);
+    Module.pty = slave;
+    Module.onExit = (code) => {
+      window.leanosProbe.exitCode = code;
+      status.textContent += `\nexit=${code}`;
+      document.title = `exit=${code}`;
+    };
+    Module.onAbort = (reason) => {
+      window.leanosProbe.abort = String(reason);
+      status.textContent += `\nabort=${reason}`;
+      document.title = 'abort';
+    };
+
+    try {
+      await initEmscriptenModule(Module);
+      window.leanosProbe.preloadSize = Module.leanosPreloadSize;
+    } catch (error) {
+      window.leanosProbe.abort = String(error);
+      document.title = 'abort';
+      throw error;
+    }
+  }
+</script>

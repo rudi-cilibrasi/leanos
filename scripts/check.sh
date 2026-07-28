@@ -58,6 +58,8 @@ lake build leanos-boot-plan
 
 ./scripts/test-emulator-evidence.py
 
+./scripts/test-qemu-wasm-result.py
+
 ./scripts/run-emulator-evidence.py check
 
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
