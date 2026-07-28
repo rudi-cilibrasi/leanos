@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "corpus.h"
 #include "generated-boundary-abi.h"
+#include "leanos/composite-dispatcher.h"
 #if defined(LEANOS_BOOT_PAGE_PLAN_HEADER)
 #include LEANOS_BOOT_PAGE_PLAN_HEADER
 #elif defined(LEANOS_DF_MAP_GUARD)
@@ -72,8 +73,6 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                        uint64_t);
-extern uint64_t leanos_composite_dispatch(uint64_t, uint64_t, uint64_t,
-                                          uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_authorize_page_fault_snapshot(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
@@ -1373,13 +1372,22 @@ static const struct pci_manifest_entry q35_pci_manifest[] = {
     { 31, 3, 0x8086, 0x2930, 0x0c0500, 1, 0, 1 },
 };
 
-static uint16_t q35_quarantined_commands[
-    sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0])];
-
 struct pci_snapshot_entry {
     uint16_t command_before, command_after;
     uint8_t present;
 };
+
+/* The one canonical live PCI observation.  Boot fills it from hardware, the
+   generated global transition consumes its exact accepted model counterpart,
+   and every later CPL3 return compares hardware with this same state. */
+struct pci_live_snapshot {
+    struct pci_snapshot_entry functions[
+        sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0])];
+    uint64_t composite_state;
+    uint64_t composite_result;
+};
+
+static struct pci_live_snapshot q35_live_pci_snapshot;
 
 static __attribute__((noinline, noipa)) uint32_t pci_config_dword(
         uint8_t device, uint8_t function, uint8_t offset) {
@@ -1420,8 +1428,6 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     unsigned seen = 0, present = 0, writes = 0, readbacks = 0;
     unsigned initially_bus_mastering = 0;
     unsigned initial_bus_master_mask = 0;
-    struct pci_snapshot_entry snapshot[
-        sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0])] = { 0 };
     for (unsigned device = 0; device < 32; ++device) {
         for (unsigned function = 0; function < 8; ++function) {
             uint32_t identity = pci_config_dword(device, function, 0x00);
@@ -1444,23 +1450,23 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
 
             uint16_t command = (uint16_t)pci_config_dword(
                 device, function, 0x04);
+            if ((command & ~PCI_COMMAND_MODEL_MASK) != 0)
+                fail("dma-command-model");
             if ((command & PCI_COMMAND_BUS_MASTER) != 0) {
                 ++initially_bus_mastering;
                 initial_bus_master_mask |= 1u << index;
             }
-            uint16_t expected_command =
-                (uint16_t)(command & ~PCI_COMMAND_BUS_MASTER);
-            snapshot[index].present = 1;
-            snapshot[index].command_before = command;
+            /* q35Snapshot's deny-all handoff is the exact all-zero Command
+               projection, not merely any state with bus mastering clear. */
+            uint16_t expected_command = 0;
+            q35_live_pci_snapshot.functions[index].present = 1;
+            q35_live_pci_snapshot.functions[index].command_before = command;
             pci_config_command(device, function, expected_command);
             ++writes;
             command = (uint16_t)pci_config_dword(device, function, 0x04);
-            snapshot[index].command_after = command;
-            q35_quarantined_commands[index] = command;
+            q35_live_pci_snapshot.functions[index].command_after = command;
             ++readbacks;
-            if (command != expected_command ||
-                (command & PCI_COMMAND_BUS_MASTER) != 0 ||
-                (command & ~PCI_COMMAND_MODEL_MASK) != 0)
+            if (command != expected_command)
                 fail("dma-command-readback");
             seen |= 1u << index;
             ++present;
@@ -1478,6 +1484,28 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     if (present != 5 || optional_absent != 1 || writes != present ||
         readbacks != present)
         fail("dma-q35-nic-none");
+
+    /* The scalar dispatcher reconstructs the complete canonical global state,
+       whose DMA authority is #135's q35Accepted/q35Snapshot pair.  Reaching
+       subject-created is accepted only after the live observation above has
+       matched that exact finite snapshot; retain the generated result in the
+       same object instead of publishing a second C policy state. */
+    q35_live_pci_snapshot.composite_result = leanos_composite_dispatch(
+        LEANOS_COMPOSITE_STATE_INITIAL,
+        LEANOS_COMPOSITE_COMMAND_CREATE_SUBJECT_ONE, 1, 0, 0, 0);
+    const uint64_t expected_composite_result =
+        LEANOS_COMPOSITE_ABI_VERSION |
+        (LEANOS_COMPOSITE_STATE_SUBJECT_CREATED & UINT64_C(0xff00)) |
+        (UINT64_C(1) << 16);
+    if (q35_live_pci_snapshot.composite_result != expected_composite_result)
+        fail("dma-global-policy");
+    q35_live_pci_snapshot.composite_state =
+        (q35_live_pci_snapshot.composite_result & UINT64_C(0xff00)) |
+        (q35_live_pci_snapshot.composite_result & UINT64_C(0xff));
+    if (q35_live_pci_snapshot.composite_state !=
+        LEANOS_COMPOSITE_STATE_SUBJECT_CREATED)
+        fail("dma-global-state");
+
     for (unsigned i = 0;
          i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
         const struct pci_manifest_entry *entry = &q35_pci_manifest[i];
@@ -1486,17 +1514,17 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
         serial_putc('.');
         serial_u64(entry->function);
         serial_puts(" present=");
-        serial_u64(snapshot[i].present);
+        serial_u64(q35_live_pci_snapshot.functions[i].present);
         serial_puts(" vendor=");
-        serial_u64(snapshot[i].present ? entry->vendor : 0);
+        serial_u64(q35_live_pci_snapshot.functions[i].present ? entry->vendor : 0);
         serial_puts(" device=");
-        serial_u64(snapshot[i].present ? entry->product : 0);
+        serial_u64(q35_live_pci_snapshot.functions[i].present ? entry->product : 0);
         serial_puts(" class=");
-        serial_u64(snapshot[i].present ? entry->class_code : 0);
+        serial_u64(q35_live_pci_snapshot.functions[i].present ? entry->class_code : 0);
         serial_puts(" command-before=");
-        serial_u64(snapshot[i].command_before);
+        serial_u64(q35_live_pci_snapshot.functions[i].command_before);
         serial_puts(" command-after=");
-        serial_u64(snapshot[i].command_after);
+        serial_u64(q35_live_pci_snapshot.functions[i].command_after);
         serial_puts(" assigned=0 bridge=");
         serial_u64(entry->bridge);
         serial_puts(" multifunction=");
@@ -1507,7 +1535,11 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     serial_u64(initially_bus_mastering);
     serial_puts(" initial-bus-master-mask=");
     serial_u64(initial_bus_master_mask);
-    serial_puts(" bus-master=disabled readback=exact stage=pre-cpl3 result=PASS\n");
+    serial_puts(" bus-master=disabled readback=exact global-state=");
+    serial_u64(q35_live_pci_snapshot.composite_state);
+    serial_puts(" generated-result=");
+    serial_u64(q35_live_pci_snapshot.composite_result);
+    serial_puts(" stage=pre-cpl3 result=PASS\n");
 }
 
 /* Re-observe the complete finite inventory at every outbound CPL3 gate.  The
@@ -1535,7 +1567,7 @@ static __attribute__((noinline, noipa)) void verify_q35_pci_dma(void) {
                 fail("dma-live-identity");
             uint16_t command = (uint16_t)pci_config_dword(
                 device, function, 0x04);
-            if (command != q35_quarantined_commands[index] ||
+            if (command != q35_live_pci_snapshot.functions[index].command_after ||
                 (command & PCI_COMMAND_BUS_MASTER) != 0 ||
                 (command & ~PCI_COMMAND_MODEL_MASK) != 0)
                 fail("dma-live-command");
@@ -1556,7 +1588,8 @@ static __attribute__((noinline, noipa)) void verify_q35_pci_dma(void) {
    accepted boot snapshot so the production outbound read-back must reject. */
 static __attribute__((noinline, noipa)) void inject_dma_bus_master_reenable(void) {
     pci_config_command(31, 2, (uint16_t)(
-        q35_quarantined_commands[4] | PCI_COMMAND_BUS_MASTER));
+        q35_live_pci_snapshot.functions[4].command_after |
+        PCI_COMMAND_BUS_MASTER));
 }
 #endif
 

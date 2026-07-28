@@ -164,7 +164,7 @@ lake env lean --c="$build/DirectPortIO.c" LeanOS/DirectPortIO.lean
 lake env lean --c="$build/StaleTranslation.c" LeanOS/StaleTranslation.lean
 lake env lean --c="$build/CompositeDispatcher.c" LeanOS/CompositeDispatcher.lean
 lean_prefix="$(lake env lean --print-prefix)"
-cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
+cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
   -fstack-usage
   -fdebug-prefix-map="$repo_root"=. -ffile-prefix-map="$repo_root"=.

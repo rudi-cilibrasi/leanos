@@ -22,7 +22,8 @@ SUMMARY_RE = re.compile(
     rf"^LEANOS/15 DMA snapshot=1 topology={TOPOLOGY} bus=0 scanned=256 "
     r"present=5 optional-absent=1 writes=5 readbacks=5 "
     r"initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled "
-    r"readback=exact stage=pre-cpl3 result=PASS$"
+    r"readback=exact global-state=257 generated-result=65793 "
+    r"stage=pre-cpl3 result=PASS$"
 )
 EXPECTED = {
     (0, 0, 0): (1, 0x8086, 0x29C0, 0x060000, 0, 0),
@@ -78,8 +79,8 @@ def parse(text: str) -> list[Function]:
             raise ValueError(f"DMA identity/status mismatch at {function.bdf}")
         if function.command_before & ~COMMAND_MASK:
             raise ValueError(f"noncanonical initial Command word at {function.bdf}")
-        if function.command_after != function.command_before & ~BUS_MASTER:
-            raise ValueError(f"inexact Command read-back at {function.bdf}")
+        if function.command_after != 0:
+            raise ValueError(f"noncanonical deny-all Command read-back at {function.bdf}")
         if not function.present and (
             function.command_before != 0 or function.command_after != 0
         ):
@@ -107,6 +108,8 @@ def write_snapshot(
         "meta\tsnapshot-version\t1",
         f"meta\ttopology-version\t{TOPOLOGY}",
         "meta\tmanifest-version\t1",
+        "meta\tglobal-composite-state\t257",
+        "meta\tgenerated-policy-result\t65793",
         f"meta\tsource-revision\t{revision}",
         "bdf\tpresent\tvendor\tdevice\tclass\tcommand-before\tcommand-after"
         "\tassigned\tbridge\tmultifunction\tpolicy-result",

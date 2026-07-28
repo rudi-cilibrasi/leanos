@@ -169,14 +169,16 @@ The guest now supplies the distinct post-firmware checkpoint. Immediately
 after its first serial boot record and before any CPL3 return, `boot/kernel.c`
 exhaustively reads all 256 functions on bus 0. It rejects any present BDF not
 in the same manifest, identity/class/header drift, or a missing required
-function. It writes the PCI Command register of every present function with
-bus mastering clear, then performs a separate read-back and rejects a set
-bus-master bit or any Command bit outside the model's 11-bit range. The exact
+function. It writes the PCI Command register of every present function to the
+canonical deny-all value zero, then performs a separate read-back and rejects
+any remaining Command bit. This makes the retained live observation equal
+#135's exact `q35Snapshot`, rather than merely satisfying its broader
+quarantine predicate. The exact
 `LEANOS/15 DMA` record is mandatory in `scripts/run-image.sh`; missing and
 forged records are negative runner fixtures. Thus the pinned emulator logs
 show five present functions, one absent optional network function, five writes,
 and five successful exact Command-word read-backs before CPL3. The guest
-compares each read-back with the complete word it wrote, not merely with a
+compares each read-back with the complete zero word it wrote, not merely with a
 cleared bus-master mask. Independent runner negatives mutate the topology
 version, final bus-master state, read-back count, and exact-read-back marker;
 each must be rejected as a serial-protocol failure. Although the construction-time
@@ -190,8 +192,15 @@ read-back.
 The accepted post-quarantine Command words remain kernel-owned state. Every
 later outbound CPL3 gate exhaustively re-enumerates bus 0, rechecks each
 identity/class/header tuple and required function, and requires the complete
-live Command word to equal that boot observation with bus mastering still
-clear. The `dma-bus-master-reenable` controlled image sets the SATA
+live Command word to equal that same canonical boot observation with bus
+mastering still clear. After the exact live observation is accepted, the guest
+invokes the generated global composite dispatcher from its initial state
+through `createSubjectOne`. That dispatcher reconstructs the authoritative
+global state whose DMA fields are #135's `q35Accepted` and `q35Snapshot`; the
+guest requires its exact subject-created result and retains the generated
+successor and typed result in the canonical live PCI snapshot. There is no
+second Command-word array or C policy result. The `dma-bus-master-reenable`
+controlled image sets the SATA
 bus-master bit after boot acceptance and immediately before the production
 return validator; the same validator must emit typed `dma-live-command`
 failure before `iretq` or any CPL3 record.
