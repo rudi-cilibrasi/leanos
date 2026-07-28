@@ -41,7 +41,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gcc=4:13.2.0-7ubuntu1 \
+            gcc-13=13.3.0-6ubuntu2~24.04.1 \
+            libasan8=14.2.0-4ubuntu2~24.04.1 \
+            libubsan1=14.2.0-4ubuntu2~24.04.1 \
             binutils=2.42-4ubuntu2.10
 
       - name: Build and check proofs

@@ -9,14 +9,14 @@ row="$(awk -F '\t' -v id="$id" '$1 == id { print; found=1 } END { exit !found }'
   echo "error: hosted boundary '$id' is absent from $manifest" >&2
   exit 1
 }
-IFS=$'\t' read -r _ _ harness generation _ modules assertion <<<"$row"
+IFS=$'\t' read -r _ _ harness generation _ modules exports assertion <<<"$row"
 [[ "$id" == oracle && "$generation" == direct ]] || {
   echo "error: $id is not the direct oracle boundary" >&2
   exit 1
 }
+source scripts/hosted-sanitizer-config.sh
 
 if [[ "$mode" == sanitized ]]; then
-  source scripts/hosted-sanitizer-config.sh
   build=build/oracle-sanitized
   cc_command="$leanos_host_cc"
   cflags=("${leanos_host_sanitizer_flags[@]}")
@@ -35,8 +35,11 @@ rm -rf "$build"
 mkdir -p "$build"
 ./scripts/generate-oracle.sh "$build"
 prefix="$(lake env lean --print-prefix)"
+generated=build/hosted-generated-sources/oracle
 objects=()
+generated_sources=()
 root_modules=()
+declare -A root_module_set=()
 IFS=',' read -ra module_specs <<<"$modules"
 for spec in "${module_specs[@]}"; do
   module="${spec%%=*}"
@@ -46,26 +49,93 @@ for spec in "${module_specs[@]}"; do
     exit 1
   }
   root_modules+=("$module")
+  root_module_set["$module"]=1
+done
+if [[ "$mode" == ordinary ]]; then
+  rm -rf "$generated"
+  mkdir -p "$generated"
+else
+  leanos_assert_pinned_toolchain
+  [[ -d "$generated" ]] || {
+    echo "error: ordinary replay must generate $generated first" >&2
+    exit 1
+  }
+fi
+for module in "${root_modules[@]}"; do
+  object_name="${module//\//_}"
+  generated_source="$generated/$object_name.c"
+  source="LeanOS/$module.lean"
   if [[ "$mode" == ordinary ]]; then
-    lake env lean --c="$build/$module.c" "$source"
-    "$cc_command" -std=c11 -I"$prefix/include" -I"$build" "${cflags[@]}" \
-      -c "$build/$module.c" -o "$build/$module.o"
-    objects+=("$build/$module.o")
+    lake env lean --c="$generated_source" "$source"
+  elif [[ ! -f "$generated_source" ]]; then
+    echo "error: ordinary replay did not generate $generated_source" >&2
+    exit 1
   fi
+  generated_sources+=("$generated_source")
+done
+source_hashes="$generated/SHA256SUMS"
+if [[ "$mode" == ordinary ]]; then
+  sha256sum "${generated_sources[@]}" >"$source_hashes"
+else
+  [[ -f "$source_hashes" ]] || {
+    echo "error: ordinary replay did not record $source_hashes" >&2
+    exit 1
+  }
+  sha256sum --check --status "$source_hashes" || {
+    echo "error: direct-generated oracle sources changed after ordinary replay" >&2
+    exit 1
+  }
+fi
+for module in "${root_modules[@]}"; do
+  object_name="${module//\//_}"
+  generated_source="$generated/$object_name.c"
+  "$cc_command" -std=c11 -I"$prefix/include" -I"$build" "${cflags[@]}" \
+    -c "$generated_source" -o "$build/$object_name.o"
+  if [[ "$mode" == sanitized ]]; then
+    leanos_require_sanitized_object "$build/$object_name.o"
+  fi
+  objects+=("$build/$object_name.o")
 done
 if [[ "$mode" == sanitized ]]; then
-  while IFS= read -r module; do
-    source=".lake/build/ir/LeanOS/$module.c"
+  # The direct-generated root files above are the exact production oracle
+  # sources used by the ordinary replay. Their retained initialization
+  # sections reference imported module symbols that ordinary --gc-sections
+  # discards, so provide only those transitive dependencies from Lake's IR.
+  # Package-scoped copies of root modules are also needed because roots import
+  # one another under the package prefix. Rename only their duplicate public
+  # definitions so calls from the harness still select the exact direct files.
+  direct_symbols="$build/direct-defined-symbols.txt"
+  nm -g --defined-only "${objects[@]}" |
+    awk 'NF >= 3 { print $3 }' | sort -u >"$direct_symbols"
+  mapfile -t dependency_modules < <(
+    leanos_project_module_closure "${root_modules[@]}"
+  )
+  for module in "${dependency_modules[@]}"; do
     object_name="${module//\//_}"
-    [[ -f "$source" ]] || {
-      echo "error: generated dependency inventory is missing $source" >&2
+    dependency_source=".lake/build/ir/LeanOS/$module.c"
+    [[ -f "$dependency_source" ]] || {
+      echo "error: generated dependency inventory is missing $dependency_source" >&2
       exit 1
     }
     "$cc_command" -std=c11 -I"$prefix/include" -I"$build" "${cflags[@]}" \
-      -c "$source" -o "$build/$object_name.o"
-    leanos_require_sanitized_object "$build/$object_name.o"
-    objects+=("$build/$object_name.o")
-  done < <(leanos_project_module_closure "${root_modules[@]}")
+      -c "$dependency_source" -o "$build/dependency_$object_name.o"
+    leanos_require_sanitized_object "$build/dependency_$object_name.o"
+    if [[ -n "${root_module_set[$module]+x}" ]]; then
+      redefine="$build/dependency_$object_name.redefine"
+      comm -12 "$direct_symbols" <(
+        nm -g --defined-only "$build/dependency_$object_name.o" |
+          awk 'NF >= 3 { print $3 }' | sort -u
+      ) | while IFS= read -r symbol; do
+        printf '%s %s\n' "$symbol" \
+          "__leanos_dependency_${object_name}_${symbol}"
+      done >"$redefine"
+      if [[ -s "$redefine" ]]; then
+        objcopy --redefine-syms="$redefine" \
+          "$build/dependency_$object_name.o"
+      fi
+    fi
+    objects+=("$build/dependency_$object_name.o")
+  done
 fi
 "$cc_command" -std=c11 -Wall -Wextra -Werror -I"$build" "${cflags[@]}" \
   -c "$harness" -o "$build/host.o"

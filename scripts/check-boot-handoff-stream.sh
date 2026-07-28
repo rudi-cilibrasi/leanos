@@ -9,7 +9,7 @@ row="$(awk -F '\t' -v id="$id" '$1 == id { print; found=1 } END { exit !found }'
   echo "error: hosted boundary '$id' is absent from $manifest" >&2
   exit 1
 }
-IFS=$'\t' read -r _ _ harness generation target modules assertion <<<"$row"
+IFS=$'\t' read -r _ _ harness generation target modules exports assertion <<<"$row"
 [[ "$id" == freestanding-stream && "$generation" == lake-ir ]] || {
   echo "error: $id is not the lake-ir freestanding-stream boundary" >&2
   exit 1
@@ -23,6 +23,7 @@ case "$mode" in
   ordinary) build=build/boot-handoff-stream ;;
   sanitized)
     source scripts/hosted-sanitizer-config.sh
+    leanos_assert_pinned_toolchain
     build=build/boot-handoff-stream-sanitized
     ;;
   *)

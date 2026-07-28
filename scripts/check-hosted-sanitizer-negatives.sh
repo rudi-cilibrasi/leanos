@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 source scripts/hosted-sanitizer-config.sh
+leanos_assert_pinned_toolchain
 build=build/hosted-sanitizer-negatives
 rm -rf "$build"
 mkdir -p "$build"
@@ -75,6 +76,12 @@ grep -Eq '__asan_|__ubsan_' "$runtime_log" || {
   printf 'source-revision: '
   git rev-parse HEAD
   "$leanos_host_cc" --version | head -n 1
+  printf 'compiler-package: gcc-13=%s\n' \
+    "$(dpkg-query -W -f='${Version}' gcc-13)"
+  printf 'asan-package: libasan8=%s\n' \
+    "$(dpkg-query -W -f='${Version}' libasan8)"
+  printf 'ubsan-package: libubsan1=%s\n' \
+    "$(dpkg-query -W -f='${Version}' libubsan1)"
   printf 'compile-flags:'
   printf ' %q' "${leanos_host_sanitizer_flags[@]}"
   printf '\nASAN_OPTIONS=%s\nUBSAN_OPTIONS=%s\n' \

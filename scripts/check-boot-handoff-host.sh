@@ -9,7 +9,7 @@ row="$(awk -F '\t' -v id="$id" '$1 == id { print; found=1 } END { exit !found }'
   echo "error: hosted boundary '$id' is absent from $manifest" >&2
   exit 1
 }
-IFS=$'\t' read -r _ _ harness generation target modules assertion <<<"$row"
+IFS=$'\t' read -r _ _ harness generation target modules exports assertion <<<"$row"
 [[ "$id" == boot-handoff && "$generation" == lake-ir ]] || {
   echo "error: $id is not the lake-ir boot-handoff boundary" >&2
   exit 1
@@ -17,6 +17,7 @@ IFS=$'\t' read -r _ _ harness generation target modules assertion <<<"$row"
 
 if [[ "$mode" == sanitized ]]; then
   source scripts/hosted-sanitizer-config.sh
+  leanos_assert_pinned_toolchain
   build=build/boot-handoff-host-sanitized
   cc_command="$leanos_host_cc"
   cflags=("${leanos_host_sanitizer_flags[@]}")

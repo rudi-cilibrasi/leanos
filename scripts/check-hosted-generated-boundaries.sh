@@ -20,7 +20,7 @@ esac
 # exported adapter to be absent.
 declare -A manifest_ids=()
 declare -A manifest_modules=()
-while IFS=$'\t' read -r id runner harness generation target modules assertion; do
+while IFS=$'\t' read -r id runner harness generation target modules exports assertion; do
   [[ -n "$id" && "${id:0:1}" != "#" ]] || continue
   [[ -z "${manifest_ids[$id]+x}" ]] || {
     echo "error: duplicate hosted generated-boundary id '$id'" >&2
@@ -35,6 +35,42 @@ while IFS=$'\t' read -r id runner harness generation target modules assertion; d
       exit 1
     }
     manifest_modules["$module"]=1
+  done
+  declare -A row_exports=()
+  declare -A source_exports=()
+  IFS=',' read -ra export_specs <<<"$exports"
+  for symbol in "${export_specs[@]}"; do
+    [[ -n "$symbol" ]] || {
+      echo "error: hosted boundary '$id' has an empty export entry" >&2
+      exit 1
+    }
+    [[ -z "${row_exports[$symbol]+x}" ]] || {
+      echo "error: hosted boundary '$id' repeats export '$symbol'" >&2
+      exit 1
+    }
+    row_exports["$symbol"]=1
+  done
+  for spec in "${module_specs[@]}"; do
+    source="${spec#*=}"
+    [[ "$source" != "$spec" ]] || source="LeanOS/$spec.lean"
+    [[ -f "$source" ]] || continue
+    while IFS= read -r symbol; do
+      [[ -z "${source_exports[$symbol]+x}" ]] || {
+        echo "error: hosted boundary '$id' has duplicate source export '$symbol'" >&2
+        exit 1
+      }
+      source_exports["$symbol"]=1
+      [[ -n "${row_exports[$symbol]+x}" ]] || {
+        echo "error: hosted boundary '$id' omits export '$symbol' from $source" >&2
+        exit 1
+      }
+    done < <(sed -n 's/^[[:space:]]*@\[export \([^]]*\)\].*/\1/p' "$source")
+  done
+  for symbol in "${export_specs[@]}"; do
+    [[ -n "${source_exports[$symbol]+x}" ]] || {
+      echo "error: hosted boundary '$id' inventories stale export '$symbol'" >&2
+      exit 1
+    }
   done
 done <"$manifest"
 
@@ -57,7 +93,7 @@ if [[ "$mode" == sanitized ]]; then
   mkdir -p "$evidence"
   : >"$evidence/first-failing-boundary.txt"
 fi
-while IFS=$'\t' read -r id runner harness generation target modules assertion; do
+while IFS=$'\t' read -r id runner harness generation target modules exports assertion; do
   [[ -n "$id" && "${id:0:1}" != "#" ]] || continue
   for path in "$runner" "$harness"; do
     [[ -f "$path" ]] || {
@@ -72,7 +108,7 @@ while IFS=$'\t' read -r id runner harness generation target modules assertion; d
       exit 1
       ;;
   esac
-  [[ -n "$modules" && -n "$assertion" ]] || {
+  [[ -n "$modules" && -n "$exports" && -n "$assertion" ]] || {
     echo "error: hosted boundary '$id' has an incomplete manifest row" >&2
     exit 1
   }
@@ -97,10 +133,17 @@ done < "$manifest"
 }
 if [[ "$mode" == sanitized ]]; then
   source scripts/hosted-sanitizer-config.sh
+  leanos_assert_pinned_toolchain
   {
     printf 'source-revision: '
     git rev-parse HEAD
     "$leanos_host_cc" --version | head -n 1
+    printf 'compiler-package: gcc-13=%s\n' \
+      "$(dpkg-query -W -f='${Version}' gcc-13)"
+    printf 'asan-package: libasan8=%s\n' \
+      "$(dpkg-query -W -f='${Version}' libasan8)"
+    printf 'ubsan-package: libubsan1=%s\n' \
+      "$(dpkg-query -W -f='${Version}' libubsan1)"
     printf 'compile-flags:'
     printf ' %q' "${leanos_host_sanitizer_flags[@]}"
     printf '\nASAN_OPTIONS=%s\nUBSAN_OPTIONS=%s\n' \
