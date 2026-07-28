@@ -4,14 +4,15 @@ open LeanOS
 
 namespace LeanOS.FailStop
 
--- The folded authoritative invariant alone does not yet discharge the
--- operation-local dormant-cancellation compatibility obligation.  This
--- fixture must keep failing until every public constructor has a derived law.
+-- The weaker legacy runtime invariant cannot establish the folded
+-- authoritative preservation contract because it omits deferred-cancellation
+-- and blocking-context classification.
 example state operation
-    (hstate : AuthoritativeRuntimeWellFormed state) :
+    (hstate : RuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state operation).state := by
+  have hstrong : AuthoritativeRuntimeWellFormed state := hstate
   exact authoritativeGate_preserves_authoritativeRuntimeWellFormed
-    state operation hstate
+    state operation hstrong
 
 end LeanOS.FailStop

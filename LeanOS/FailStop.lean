@@ -5101,6 +5101,7 @@ inductive CompositeIPCReply where
 
 inductive OperationReply where
   | interrupt (action : EntryAction)
+  | interruptIdentityRejected (subject : Interrupt.SubjectId)
   | nmi (action : EntryAction)
   | returnSelection (armed : Bool)
   | userReturn (reply : UserReturnReply)
@@ -5127,6 +5128,7 @@ class without manufacturing an operation-specific proof witness.  Entry and
 user-return failures are excluded: they are transactional or fatal results,
 not state-preserving subsystem rejections. -/
 def OperationReply.isNonfatalRejection : OperationReply → Bool
+  | .interruptIdentityRejected _ => true
   | .syscall (.rejected _) => true
   | .ipc (.syscall (.sendHandleRejected _)) => true
   | .ipc (.syscall (.sendRejected _)) => true
@@ -5227,7 +5229,10 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
   | .interrupt frame =>
       let entry := dispatchHardware state.execution frame
       match entry.action with
-      | .contained subject => publishInterruptCleanup state subject
+      | .contained subject =>
+          if state.lifecycle.current = some subject then
+            publishInterruptCleanup state subject
+          else state
       | .fatal _ =>
           installResumable { state with execution := entry.state }
             { state.resumable with halted := true }
@@ -5481,7 +5486,13 @@ private theorem applyNmi_preserves_runtimeWellFormed state raw context
 operation.  Unlike the former generic `accepted`, this cannot erase an
 operation-specific rejection. -/
 def operationReply (state : CompositeState) : Operation → OperationReply
-  | .interrupt frame => .interrupt (dispatchHardware state.execution frame).action
+  | .interrupt frame =>
+      match (dispatchHardware state.execution frame).action with
+      | .contained subject =>
+          if state.lifecycle.current = some subject then
+            .interrupt (.contained subject)
+          else .interruptIdentityRejected subject
+      | action => .interrupt action
   | .nmi raw context => .nmi (dispatchNmi state.execution raw context).action
   | .selectUserReturn purpose =>
       .returnSelection (selectLiveReturnAuthority state purpose).execution.returnAuthorityArmed
@@ -5544,6 +5555,10 @@ def operationReply (state : CompositeState) : Operation → OperationReply
 subsystem rejections.  Fatal entry/return results and busy/terminal gate
 rejections are deliberately separate. -/
 inductive SubsystemRejection (state : CompositeState) : Operation → OperationReply → Prop
+  | interruptIdentity frame subject
+      (haction : (dispatchHardware state.execution frame).action = .contained subject)
+      (hmismatch : state.lifecycle.current ≠ some subject) :
+      SubsystemRejection state (.interrupt frame) (.interruptIdentityRejected subject)
   | syscall call reason
       (h : (Syscall.dispatch state.virtualMemory state.syscallContext call).reply = .rejected reason) :
       SubsystemRejection state (.syscall call) (.syscall (.rejected reason))
@@ -5629,11 +5644,12 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
 /-- A contained user fault is published to both scheduler views in the same
 composite step, so neither can select from the pre-termination lifecycle. -/
 theorem interrupt_contained_synchronizes_lifecycle state frame subject
+    (hcurrent : state.lifecycle.current = some subject)
     (hcontained : (dispatchHardware state.execution frame).action = .contained subject) :
     let next := applyOperation state (.interrupt frame)
     next.scheduler.lifecycle = next.execution.core.lifecycle ∧
       next.preemption.scheduler.lifecycle = next.execution.core.lifecycle := by
-  simp [applyOperation, hcontained, publishInterruptCleanup,
+  simp [applyOperation, hcontained, hcurrent, publishInterruptCleanup,
     installTerminatedResumable]
 
 /-- A contained user fault publishes the complete terminal post-state for the
@@ -5679,7 +5695,7 @@ theorem interrupt_contained_cleans_faulting_subject state frame subject
         detached.1.blocked subject = none := by
     simp [BlockingIPCContext.detachInvalidated,
       hblockingClean.1, hblockingClean.2]
-  simp [applyOperation, hcontained, publishInterruptCleanup,
+  simp [applyOperation, hcontained, hcurrent, publishInterruptCleanup,
     installTerminatedResumable, hdead, hscheduler.1, hscheduler.2, hcontext,
     hdetached.1, hdetached.2]
 
@@ -5963,7 +5979,17 @@ private theorem classified_rejection_is_subsystem state operation
   cases operation with
   | nmi raw context =>
       simp [operationReply, OperationReply.isNonfatalRejection] at hrejected
-  | interrupt frame | selectUserReturn purpose | restart =>
+  | interrupt frame =>
+      cases haction : (dispatchHardware state.execution frame).action with
+      | contained subject =>
+          by_cases hcurrent : state.lifecycle.current = some subject
+          · simp [operationReply, haction, hcurrent,
+              OperationReply.isNonfatalRejection] at hrejected
+          · simpa [operationReply, haction, hcurrent] using
+              SubsystemRejection.interruptIdentity frame subject haction hcurrent
+      | fatal reason | timer | syscall | rejected reason | alreadyHalted reason =>
+          simp [operationReply, haction, OperationReply.isNonfatalRejection] at hrejected
+  | selectUserReturn purpose | restart =>
       simp [operationReply, OperationReply.isNonfatalRejection] at hrejected
   | userReturn request =>
       simp only [operationReply] at hrejected
@@ -8437,7 +8463,10 @@ theorem select_user_return_is_reachable state purpose
   simp [gate, hmode, applyOperation]
 
 theorem syscall_entry_leaves_return_unarmed state frame
-    (hmode : state.execution.mode = .running) :
+    (hmode : state.execution.mode = .running)
+    (hidentity : ∀ subject,
+      (dispatchHardware state.execution frame).action = .contained subject →
+        state.lifecycle.current = some subject) :
     (gate state (.interrupt frame)).state.execution.returnAuthorityArmed = false := by
   have hunarmed := dispatchHardware_running_returnAuthority_unarmed
     state.execution frame hmode
@@ -8447,7 +8476,9 @@ theorem syscall_entry_leaves_return_unarmed state frame
   generalize hdispatch : dispatchHardware state.execution frame = entry at hunarmed
   cases haction : entry.action with
   | contained subject =>
-      simp [publishInterruptCleanup, installTerminatedResumable]
+      have hcurrent : state.lifecycle.current = some subject :=
+        hidentity subject (by rw [hdispatch]; exact haction)
+      simp [hcurrent, publishInterruptCleanup, installTerminatedResumable]
   | fatal reason => simp [installResumable]
   | timer => simpa using hunarmed
   | syscall => simpa using hunarmed
@@ -10715,7 +10746,9 @@ theorem interrupt_operationPreservesRuntimeWellFormed frame :
     | contained subject =>
         have hpublished := publishInterruptCleanup_preserves_runtimeWellFormed
           state subject hstate hmode
-        simpa [gate, hmode, applyOperation, entry, haction] using hpublished
+        by_cases hcurrent : state.lifecycle.current = some subject
+        · simpa [gate, hmode, applyOperation, entry, haction, hcurrent] using hpublished
+        · simpa [gate, hmode, applyOperation, entry, haction, hcurrent] using hstate
     | fatal reason =>
         have hentryMode : ∃ record, entry.state.mode = .halted record := by
           apply dispatchHardware_fatal_halts state.execution frame reason
@@ -10972,11 +11005,12 @@ private theorem publishInterruptCleanup_preserves_contextAgreement state subject
 /-- Contained cleanup preserves exact waiter/saved-context agreement while
 invalidated peers move into the disjoint deferred-cancel bank. -/
 theorem interrupt_contained_preserves_contextAgreement state frame subject
+    (hcurrent : state.lifecycle.current = some subject)
     (hcontained : (dispatchHardware state.execution frame).action = .contained subject)
     (hstate : BlockingIPCContext.ContextAgreement state.blockingIPCContext) :
     BlockingIPCContext.ContextAgreement
       (applyOperation state (.interrupt frame)).blockingIPCContext := by
-  simpa [applyOperation, hcontained] using
+  simpa [applyOperation, hcontained, hcurrent] using
     publishInterruptCleanup_preserves_contextAgreement state subject hstate
 
 /-- Readiness for a contained fault binds the trusted execution identity to
@@ -12184,7 +12218,7 @@ theorem interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
     | handling active => simp [dispatchHardware, hmode, halt] at hcontained
     | halted record => simp [dispatchHardware, hmode] at hcontained
     | running => rfl
-  simpa [applyOperation, hcontained] using
+  simpa [applyOperation, hcontained, hcurrent] using
     publishInterruptCleanup_preserves_deferredBlockingRuntimeWellFormed
       state faulting hstate hcurrent hmode
 
@@ -12243,6 +12277,8 @@ theorem interrupt_contained_clears_faulting_deferred
     (hbound : ContainedFaultIdentityBound state)
     (hcontained : (dispatchHardware state.execution frame).action = .contained faulting) :
     (applyOperation state (.interrupt frame)).deferredCancels.retained faulting = none := by
+  have hcurrent : state.lifecycle.current = some faulting :=
+    contained_faulting_identity_is_current state frame faulting hbound hcontained
   have hpost := interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
     state frame faulting hstate hbound hcontained
   cases hretained :
@@ -12255,7 +12291,7 @@ theorem interrupt_contained_clears_faulting_deferred
       have hdeadLifecycle :
           (applyOperation state (.interrupt frame)).lifecycle.capabilities.subjects
             faulting = false := by
-        simpa [applyOperation, hcontained, publishInterruptCleanup,
+        simpa [applyOperation, hcontained, hcurrent, publishInterruptCleanup,
           installTerminatedResumable] using hdead
       have :
           (applyOperation state (.interrupt frame)).blockingIPCContext.ipc.scheduler.lifecycle.capabilities.subjects
@@ -12273,6 +12309,7 @@ theorem interrupt_contained_clears_faulting_deferred
 quiescence, and its remaining address-space authority. -/
 theorem interrupt_contained_defers_invalidated_waiter
     state frame faulting peer endpoint saved
+    (hcurrentFaulting : state.lifecycle.current = some faulting)
     (hcontained : (dispatchHardware state.execution frame).action = .contained faulting)
     (hendpoint :
       (BlockingIPCContext.terminate state.blockingIPCContext faulting).ipc.waiterEndpoint peer =
@@ -12312,7 +12349,7 @@ theorem interrupt_contained_defers_invalidated_waiter
     state.deferredCancels
     (ResumablePreemption.cleanupSubject state.resumable faulting).scheduler
     peer endpoint saved hendpoint hsaved hretired
-  simpa [applyOperation, hcontained, publishInterruptCleanup,
+  simpa [applyOperation, hcontained, hcurrentFaulting, publishInterruptCleanup,
     installTerminatedResumable] using
     And.intro hexact.1
       (And.intro hexact.2.1
@@ -12408,7 +12445,7 @@ theorem gate_preserves_blockingContextAgreement state operation
   | halted record => cases operation <;> simpa [gate, hmode] using hstate
   | running =>
       cases operation <;> simp only [gate, hmode, applyOperation]
-      all_goals try split
+      all_goals repeat' first | split
       all_goals try exact hstate
       all_goals try exact publishInterruptCleanup_preserves_contextAgreement state _ hstate
       all_goals try
@@ -13742,21 +13779,22 @@ user-fault branch; all other typed outcomes preserve the same invariant
 without an additional readiness fact. -/
 theorem gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
     state frame
-    (hstate : DeferredBlockingRuntimeWellFormed state)
-    (hbound : ContainedFaultIdentityBound state) :
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
     DeferredBlockingRuntimeWellFormed (gate state (.interrupt frame)).state := by
   by_cases hcontained :
       ∃ subject, (dispatchHardware state.execution frame).action = .contained subject
   · obtain ⟨subject, haction⟩ := hcontained
-    have hpreserved :=
-      interrupt_contained_preserves_deferredBlockingRuntimeWellFormed
-        state frame subject hstate hbound haction
     have hmode : state.execution.mode = .running := by
       cases hmode : state.execution.mode with
       | handling active => simp [dispatchHardware, hmode, halt] at haction
       | halted record => simp [dispatchHardware, hmode] at haction
       | running => rfl
-    simpa [gate, hmode] using hpreserved
+    by_cases hcurrent : state.lifecycle.current = some subject
+    · have hpreserved :=
+        publishInterruptCleanup_preserves_deferredBlockingRuntimeWellFormed
+          state subject hstate hcurrent hmode
+      simpa [gate, hmode, applyOperation, haction, hcurrent] using hpreserved
+    · simpa [gate, hmode, applyOperation, haction, hcurrent] using hstate
   · exact gate_interrupt_noncontained_preserves_deferredBlockingRuntimeWellFormed
       state frame (fun subject haction => hcontained ⟨subject, haction⟩) hstate
 
@@ -13942,18 +13980,17 @@ theorem observeDMAControl_changed_suffix_absorbing state snapshot accepted propo
   · rfl
   · exact halted_suffix_absorbing _ _ proposals rfl
 
-/-! ## Conditional authoritative ordinary/blocking gate successor
+/-! ## Authoritative ordinary/blocking gate
 
 The ordinary gate and the blocking gate were developed independently while
 their operation-specific preservation proofs were completed.  The vocabulary
 below is their migration boundary: it uses the same `CompositeState`, one
 execution latch, and one typed result family.  The successor invariant folds
 the complete blocking/deferred classification into the global boundary.
-Lower blocking and drain readiness are projections of that invariant;
-ordinary and blocking operations additionally carry public compatibility
-facts about their dormant-cancellation effects.  Those facts are not yet
-derived for every constructor, so this section does not establish universal
-successor-gate preservation. -/
+Lower blocking and drain readiness are projections of that invariant.
+Operation-local compatibility lemmas remain as proof decomposition, while the
+published gate and trace preservation boundaries derive them entirely from the
+authoritative pre-invariant. -/
 
 /-- Every currently modeled runtime event admitted by the successor gate. -/
 inductive AuthoritativeOperation where
@@ -14456,8 +14493,8 @@ private theorem dormantCancellationCompatible_preserves
       exact hretained
     exact hcompatible.retainedQuiescent subject saved hretainedBefore |>.2.2.2.2.2.2
 
-/-- Independently stated compatibility premises for every public operation.
-Contained entry consumes its trusted identity binding.  Termination, NMI, and
+/-- Independently stated compatibility facts for every public operation.
+Contained entry validates identity inside the transition.  Termination, NMI, and
 capacity-checked drains have direct preservation proofs.  Scheduler admission
 must not target an undrained cancellation.  Operations already proved to
 preserve the blocking runtime expose only exact dormant-store effect laws.
@@ -14467,7 +14504,7 @@ the authoritative invariant of the gate-selected post-state, but most branches
 still require the caller to establish laws about that exact post-state. -/
 def AuthoritativeOperationCompatible (state : CompositeState) :
     AuthoritativeOperation → Prop
-  | .ordinary (.interrupt _) => ContainedFaultIdentityBound state
+  | .ordinary (.interrupt _) => True
   | .ordinary (.nmi _ _) => True
   | .ordinary (.terminateSubject _) => True
   | .ordinary .terminateCurrent => True
@@ -14491,10 +14528,9 @@ binding consumed by atomic cleanup.  Naming this constructor explicitly lets
 finite authoritative traces certify an interrupt member without unfolding the
 complete compatibility classifier. -/
 theorem interrupt_authoritativeOperationCompatible state frame
-    (hbound : ContainedFaultIdentityBound state) :
-    AuthoritativeOperationCompatible state
+    : AuthoritativeOperationCompatible state
       (.ordinary (.interrupt frame)) :=
-  hbound
+  trivial
 
 /-- Control, data-only IPC, and raw scheduler constructors retain every
 projection observed by dormant cancellation.  Their shared public operation
@@ -14560,7 +14596,7 @@ private theorem authoritativeGate_ordinary_preserves_deferredBlockingRuntimeWell
   | interrupt frame =>
       rw [authoritativeGate_ordinary_state]
       exact gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
-        state frame hstate hcompatible
+        state frame hstate
   | nmi raw context =>
       rw [authoritativeGate_ordinary_state]
       exact gate_nmi_preserves_deferredBlockingRuntimeWellFormed
@@ -14707,7 +14743,7 @@ theorem authoritativeGate_preserves_runtimeWellFormed state operation
       | handling active => simpa [authoritativeGate, hmode] using hstate
       | halted record => simpa [authoritativeGate, hmode] using hstate
 
-theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
+theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible
     state operation (hstate : AuthoritativeRuntimeWellFormed state)
     (hcompatible : AuthoritativeOperationCompatible state operation) :
     AuthoritativeRuntimeWellFormed (authoritativeGate state operation).state := by
@@ -14798,7 +14834,7 @@ theorem authoritativeGate_resumePreempt_preserves_authoritativeRuntimeWellFormed
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.ordinary (.resumePreempt frame registers))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.resumePreempt frame registers)) hstate
     (resumePreempt_authoritativeOperationCompatible
       state frame registers hstate)
@@ -14812,7 +14848,7 @@ theorem authoritativeGate_blockingStateNeutral_preserves_authoritativeRuntimeWel
     (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary operation)).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary operation) hstate
     (blockingStateNeutral_authoritativeOperationCompatible
       state operation hoperation hstate)
@@ -14903,7 +14939,7 @@ theorem authoritativeGate_map_preserves_authoritativeRuntimeWellFormed
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.ordinary (.map slot page permissions))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.map slot page permissions)) hstate
     (map_authoritativeOperationCompatible state slot page permissions hstate)
 
@@ -14913,7 +14949,7 @@ theorem authoritativeGate_unmap_preserves_authoritativeRuntimeWellFormed
     state page (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary (.unmap page))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.unmap page)) hstate
     (unmap_authoritativeOperationCompatible state page hstate)
 
@@ -15002,7 +15038,7 @@ theorem authoritativeGate_syscall_preserves_authoritativeRuntimeWellFormed
     state call (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary (.syscall call))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.syscall call)) hstate
     (syscall_authoritativeOperationCompatible state call hstate)
 
@@ -15153,7 +15189,7 @@ theorem authoritativeGate_transferOffer_preserves_authoritativeRuntimeWellFormed
       (authoritativeGate state
         (.ordinary
           (.transferOffer endpointWord sourceWord sourceKind payload rights))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary
       (.transferOffer endpointWord sourceWord sourceKind payload rights)) hstate
     (transferOffer_authoritativeOperationCompatible state endpointWord sourceWord
@@ -15227,7 +15263,7 @@ theorem authoritativeGate_transferAccept_preserves_authoritativeRuntimeWellForme
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.ordinary (.transferAccept endpointWord destinationSlot))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.transferAccept endpointWord destinationSlot)) hstate
     (transferAccept_authoritativeOperationCompatible state endpointWord
       destinationSlot hstate)
@@ -15329,7 +15365,7 @@ theorem authoritativeGate_createSubject_preserves_authoritativeRuntimeWellFormed
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.ordinary (.createSubject subject))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.createSubject subject)) hstate
     (createSubject_authoritativeOperationCompatible state subject hstate)
 
@@ -15428,7 +15464,7 @@ theorem authoritativeGate_scheduleAdd_preserves_authoritativeRuntimeWellFormed
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.ordinary (.scheduleAdd subject))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.scheduleAdd subject)) hstate
     (scheduleAdd_authoritativeOperationCompatible
       state subject hstate)
@@ -15682,7 +15718,7 @@ theorem authoritativeGate_scheduleRemove_preserves_authoritativeRuntimeWellForme
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.ordinary (.scheduleRemove subject))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.scheduleRemove subject)) hstate
     (scheduleRemove_authoritativeOperationCompatible state subject hstate)
 
@@ -15736,7 +15772,7 @@ theorem authoritativeGate_capabilityCopy_preserves_authoritativeRuntimeWellForme
       (authoritativeGate state
         (.ordinary
           (.capabilityCopy source destination destinationSlot rights))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.capabilityCopy source destination destinationSlot rights)) hstate
     (capabilityCopy_authoritativeOperationCompatible state source destination
       destinationSlot rights hstate)
@@ -15796,7 +15832,7 @@ theorem authoritativeGate_capabilityRevoke_preserves_authoritativeRuntimeWellFor
       (authoritativeGate state
         (.ordinary
           (.capabilityRevoke authoritySlot victim victimSlot))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.capabilityRevoke authoritySlot victim victimSlot)) hstate
     (capabilityRevoke_authoritativeOperationCompatible state authoritySlot
       victim victimSlot hstate)
@@ -15858,7 +15894,7 @@ theorem
       (authoritativeGate state
         (.ordinary
           (.capabilityRevokeSubtree authoritySlot victim victimSlot))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary
       (.capabilityRevokeSubtree authoritySlot victim victimSlot)) hstate
     (capabilityRevokeSubtree_authoritativeOperationCompatible state
@@ -16487,7 +16523,7 @@ theorem authoritativeGate_blockingReceive_preserves_authoritativeRuntimeWellForm
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.blocking (.receive handleWord frame registers))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.blocking (.receive handleWord frame registers)) hstate
     (blockingReceive_authoritativeOperationCompatible
       state handleWord frame registers hstate)
@@ -16897,7 +16933,7 @@ theorem authoritativeGate_blockingSend_preserves_authoritativeRuntimeWellFormed
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.blocking (.send handleWord word0 word1))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.blocking (.send handleWord word0 word1)) hstate
     (blockingSend_authoritativeOperationCompatible
       state handleWord word0 word1 hstate)
@@ -17102,7 +17138,7 @@ theorem authoritativeGate_blockingCancel_preserves_authoritativeRuntimeWellForme
     state subject (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.blocking (.cancel subject))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.blocking (.cancel subject)) hstate
     (blockingCancel_authoritativeOperationCompatible state subject hstate)
 
@@ -17150,7 +17186,7 @@ theorem authoritativeGate_selectUserReturn_preserves_authoritativeRuntimeWellFor
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state
         (.ordinary (.selectUserReturn purpose))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.selectUserReturn purpose)) hstate
     (selectUserReturn_authoritativeOperationCompatible state purpose hstate)
 
@@ -17160,7 +17196,7 @@ theorem authoritativeGate_userReturn_preserves_authoritativeRuntimeWellFormed
     state request (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary (.userReturn request))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.userReturn request)) hstate
     (userReturn_authoritativeOperationCompatible state request hstate)
 
@@ -17170,17 +17206,14 @@ theorem authoritativeGate_restart_preserves_authoritativeRuntimeWellFormed
     state (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary .restart)).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary .restart) hstate
     (restart_authoritativeOperationCompatible state hstate)
 
-/-- The only public authoritative operation admission fact not already carried
-by `AuthoritativeRuntimeWellFormed` is the trusted identity binding consumed
-by contained interrupt cleanup.  In particular, this predicate contains no
-fact about a gate-selected post-state and no subsystem readiness premise. -/
-def AuthoritativeOperationAdmissible (state : CompositeState) :
+/-- Legacy admission vocabulary retained for source compatibility.  It is
+vacuous for every operation and is not part of the published gate contract. -/
+def AuthoritativeOperationAdmissible (_state : CompositeState) :
     AuthoritativeOperation → Prop
-  | .ordinary (.interrupt _) => ContainedFaultIdentityBound state
   | _ => True
 
 /-- Every post-state compatibility obligation is derived from the
@@ -17195,7 +17228,7 @@ theorem authoritativeOperationCompatible_of_admissible state operation
   | ordinary operation =>
       cases operation with
       | interrupt frame =>
-          exact interrupt_authoritativeOperationCompatible state frame hadmissible
+          exact interrupt_authoritativeOperationCompatible state frame
       | nmi raw context => trivial
       | selectUserReturn purpose =>
           exact selectUserReturn_authoritativeOperationCompatible state purpose hstate
@@ -17260,16 +17293,24 @@ theorem authoritativeOperationCompatible_of_admissible state operation
   | drainDeferred subject => trivial
 
 /-- The strengthened authoritative gate preserves the complete folded runtime
-invariant from pre-state evidence alone.  The admission premise is vacuous for
-every constructor except identity-bound contained interrupt cleanup. -/
+invariant from pre-state evidence alone, with no operation-local premise. -/
 theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_admissible
-    state operation (hstate : AuthoritativeRuntimeWellFormed state)
-    (hadmissible : AuthoritativeOperationAdmissible state operation) :
+    state operation (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state operation).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state operation hstate
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible
+    state operation hstate
     (authoritativeOperationCompatible_of_admissible
-      state operation hstate hadmissible)
+      state operation hstate trivial)
+
+/-- Final public gate contract: every authoritative operation preserves the
+complete folded invariant from pre-state evidence alone. -/
+theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed
+    state operation (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state operation).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state operation hstate
 
 /-- The self-contained neutral-constructor compatibility laws preserve the
 authoritative DMA conjunct as a consequence of complete global preservation.
@@ -17345,22 +17386,17 @@ def AuthoritativeTraceCompatible (state : CompositeState) :
       AuthoritativeOperationCompatible state operation ∧
       AuthoritativeTraceCompatible (authoritativeGate state operation).state rest
 
-/-- Recursive admission for an arbitrary finite authoritative trace.  Each
-member records only the trusted contained-fault identity binding selected by
-its own pre-state; all non-interrupt constructors contribute `True`. -/
-def AuthoritativeTraceAdmissible (state : CompositeState) :
-    List AuthoritativeOperation → Prop
-  | [] => True
-  | operation :: rest =>
-      AuthoritativeOperationAdmissible state operation ∧
-      AuthoritativeTraceAdmissible (authoritativeGate state operation).state rest
+/-- Legacy trace-admission vocabulary retained for source compatibility.  It
+is vacuous and is not part of the published arbitrary-trace theorem. -/
+def AuthoritativeTraceAdmissible (_state : CompositeState) :
+    List AuthoritativeOperation → Prop := fun _ => True
 
 /-- Every compatibility-certified finite interleaving of ordinary and blocking
 operations preserves the complete authoritative global invariant without
 assuming any intermediate preservation conclusion.  This is intentionally not
 a universal trace theorem: no inhabitant is provided for an arbitrary
 operation list. -/
-theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state operations (hstate : AuthoritativeRuntimeWellFormed state)
     (hcompatible : AuthoritativeTraceCompatible state operations) :
     AuthoritativeRuntimeWellFormed (runAuthoritativeOperations state operations) := by
@@ -17368,7 +17404,7 @@ theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
   | nil => exact hstate
   | cons operation rest ih =>
       exact ih (authoritativeGate state operation).state
-        (authoritativeGate_preserves_authoritativeRuntimeWellFormed
+        (authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible
           state operation hstate hcompatible.1) hcompatible.2
 
 /-- Arbitrary admitted finite traces preserve the authoritative invariant.
@@ -17376,16 +17412,50 @@ Unlike `AuthoritativeTraceCompatible`, callers never prove a fact about a
 gate-selected post-state: compatibility for each member is reconstructed from
 the invariant established by its predecessor. -/
 theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_admissible
-    state operations (hstate : AuthoritativeRuntimeWellFormed state)
-    (hadmissible : AuthoritativeTraceAdmissible state operations) :
+    state operations (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed (runAuthoritativeOperations state operations) := by
   induction operations generalizing state with
   | nil => exact hstate
   | cons operation rest ih =>
       have hnext :=
         authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_admissible
-          state operation hstate hadmissible.1
-      exact ih (authoritativeGate state operation).state hnext hadmissible.2
+          state operation hstate
+      exact ih (authoritativeGate state operation).state hnext
+
+/-- Final public trace contract: every finite authoritative operation list
+preserves the folded invariant from the initial pre-invariant alone. -/
+theorem runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    state operations (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state operations) :=
+  runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state operations hstate
+
+/-- A sealed capability send followed by revocation is an ordinary
+authoritative trace, with no trace-local admission or post-state premise. -/
+theorem runAuthoritativeRevokeAfterSend_preserves_authoritativeRuntimeWellFormed
+    state endpointWord sourceWord sourceKind payload rights
+    authoritySlot victim victimSlot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        [.ordinary (.transferOffer endpointWord sourceWord sourceKind payload rights),
+          .ordinary (.capabilityRevoke authoritySlot victim victimSlot)]) :=
+  runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state _ hstate
+
+/-- Retiring an identity before an attempted resumable-context restore is an
+explicit authoritative trace.  Any resulting stale-context denial is covered
+by the same unconditional preservation boundary and is therefore atomic. -/
+theorem runAuthoritativeStaleResumableContextTrace_preserves_authoritativeRuntimeWellFormed
+    state subject frame registers
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (runAuthoritativeOperations state
+        [.ordinary (.terminateSubject subject),
+          .ordinary (.resumePreempt frame registers)]) :=
+  runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_admissible
+    state _ hstate
 
 /-- Any finite sequence of resumable-preemption attempts has a closed
 recursive compatibility certificate.  Each successor certificate is derived
@@ -17422,7 +17492,7 @@ theorem runAuthoritativeResumePreempts_preserves_authoritativeRuntimeWellFormed
         (steps.map fun step =>
           AuthoritativeOperation.ordinary
             (.resumePreempt step.1 step.2))) := by
-  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state _ hstate
     (authoritativeTraceCompatible_resumePreempts state steps hstate)
 
@@ -17456,7 +17526,7 @@ theorem runAuthoritativeScheduleAdds_preserves_authoritativeRuntimeWellFormed
       (runAuthoritativeOperations state
         (subjects.map fun subject =>
           AuthoritativeOperation.ordinary (.scheduleAdd subject))) := by
-  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state _ hstate
     (authoritativeTraceCompatible_scheduleAdds state subjects hstate)
 
@@ -17488,7 +17558,7 @@ theorem runAuthoritativeOrdinaryOperations_preserves_authoritativeRuntimeWellFor
     AuthoritativeRuntimeWellFormed
       (runAuthoritativeOperations state
         (operations.map AuthoritativeOperation.ordinary)) := by
-  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state (operations.map AuthoritativeOperation.ordinary) hstate hcompatible
 
 /-- A public deferred-drain step preserves the full retained-context
@@ -17528,31 +17598,27 @@ theorem authoritativeGate_terminateCurrent_preserves_deferredBlockingRuntimeWell
     state hstate
 
 /-- The public successor gate retains the complete deferred blocking runtime
-across every inbound interrupt result under the explicit contained-entry
-identity binding. -/
+across every inbound interrupt result without an external identity premise. -/
 theorem authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
     state frame
-    (hstate : DeferredBlockingRuntimeWellFormed state)
-    (hbound : ContainedFaultIdentityBound state) :
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
     DeferredBlockingRuntimeWellFormed
       (authoritativeGate state (.ordinary (.interrupt frame))).state := by
   rw [authoritativeGate_ordinary_state]
   exact gate_interrupt_preserves_deferredBlockingRuntimeWellFormed
-    state frame hstate hbound
+    state frame hstate
 
-/-- An identity-bound interrupt is a closed authoritative-gate transition: its
-explicit constructor compatibility law feeds the common successor theorem, so
-contained cleanup and every non-contained outcome preserve the complete folded
-runtime invariant through the same public gate. -/
+/-- Interrupt identity validation is internal to the authoritative transition:
+matching identity cleans up, mismatch rejects atomically, and every outcome
+preserves the complete folded runtime invariant. -/
 theorem authoritativeGate_interrupt_preserves_authoritativeRuntimeWellFormed
     state frame
-    (hstate : AuthoritativeRuntimeWellFormed state)
-    (hbound : ContainedFaultIdentityBound state) :
+    (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary (.interrupt frame))).state :=
-  authoritativeGate_preserves_authoritativeRuntimeWellFormed state
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.interrupt frame)) hstate
-    (interrupt_authoritativeOperationCompatible state frame hbound)
+    (interrupt_authoritativeOperationCompatible state frame)
 
 /-- The successor gate preserves the strongest deferred invariant across its
 out-of-band NMI operation, including the handling-mode path unavailable to
@@ -17622,8 +17688,7 @@ deferred-drain suffix without leaving the public authoritative gate or
 weakening the deferred blocking invariant between steps. -/
 theorem runAuthoritativeInterruptThenDeferredDrains_preserves
     state frame (subjects : List BlockingIPC.SubjectId)
-    (hstate : DeferredBlockingRuntimeWellFormed state)
-    (hbound : ContainedFaultIdentityBound state) :
+    (hstate : DeferredBlockingRuntimeWellFormed state) :
     DeferredBlockingRuntimeWellFormed
       (runAuthoritativeOperations state
         (.ordinary (.interrupt frame) ::
@@ -17632,7 +17697,7 @@ theorem runAuthoritativeInterruptThenDeferredDrains_preserves
   exact runAuthoritativeDeferredDrains_preserves_deferredBlockingRuntimeWellFormed
     (authoritativeGate state (.ordinary (.interrupt frame))).state subjects
     (authoritativeGate_interrupt_preserves_deferredBlockingRuntimeWellFormed
-      state frame hstate hbound)
+      state frame hstate)
 
 /-- Every finite deferred-drain suffix carries a recursive compatibility
 certificate independently of its starting state.  Capacity-checked drains
@@ -17657,19 +17722,16 @@ theorem authoritativeTraceCompatible_thenDeferredDrains
       (operation :: subjects.map AuthoritativeOperation.drainDeferred) :=
   ⟨hoperation, authoritativeTraceCompatible_deferredDrains _ subjects⟩
 
-/-- The interrupt identity binding and the premise-free deferred-drain
-constructors form a compatibility certificate for the complete public mixed
-trace.  This is the trace-level bridge to the general authoritative
-preservation theorem, rather than a parallel interrupt-specific runner. -/
+/-- Interrupt validation and premise-free deferred-drain constructors form a
+compatibility certificate for the complete public mixed trace. -/
 theorem authoritativeTraceCompatible_interruptThenDeferredDrains
-    state frame (subjects : List BlockingIPC.SubjectId)
-    (hbound : ContainedFaultIdentityBound state) :
+    state frame (subjects : List BlockingIPC.SubjectId) :
     AuthoritativeTraceCompatible state
       (.ordinary (.interrupt frame) ::
         subjects.map AuthoritativeOperation.drainDeferred) := by
   exact authoritativeTraceCompatible_thenDeferredDrains state
     (.ordinary (.interrupt frame)) subjects
-    (interrupt_authoritativeOperationCompatible state frame hbound)
+    (interrupt_authoritativeOperationCompatible state frame)
 
 /-- Explicit termination and any capacity-checked drain continuation form a
 closed compatibility certificate.  Termination needs no independently
@@ -17703,21 +17765,20 @@ theorem authoritativeTraceCompatible_nmiThenDeferredDrains
   exact authoritativeTraceCompatible_thenDeferredDrains state
     (.ordinary (.nmi raw context)) subjects trivial
 
-/-- The general compatibility-certified trace theorem now covers an
-identity-bound interrupt followed by any finite sequence of capacity-checked
-deferred drains while retaining the complete authoritative invariant. -/
+/-- The general trace theorem covers every interrupt followed by any finite
+sequence of capacity-checked deferred drains while retaining the complete
+authoritative invariant. -/
 theorem runAuthoritativeCompatibleInterruptThenDeferredDrains_preserves
     state frame (subjects : List BlockingIPC.SubjectId)
-    (hstate : AuthoritativeRuntimeWellFormed state)
-    (hbound : ContainedFaultIdentityBound state) :
+    (hstate : AuthoritativeRuntimeWellFormed state) :
     AuthoritativeRuntimeWellFormed
       (runAuthoritativeOperations state
         (.ordinary (.interrupt frame) ::
           subjects.map AuthoritativeOperation.drainDeferred)) := by
-  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state _ hstate
     (authoritativeTraceCompatible_interruptThenDeferredDrains
-      state frame subjects hbound)
+      state frame subjects)
 
 /-- Explicit termination followed by arbitrary capacity-checked drains now
 crosses the general compatibility-certified trace theorem and preserves the
@@ -17729,7 +17790,7 @@ theorem runAuthoritativeCompatibleTerminateSubjectThenDeferredDrains_preserves
       (runAuthoritativeOperations state
         (.ordinary (.terminateSubject subject) ::
           subjects.map AuthoritativeOperation.drainDeferred)) := by
-  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state _ hstate
     (authoritativeTraceCompatible_terminateSubjectThenDeferredDrains
       state subject subjects)
@@ -17743,7 +17804,7 @@ theorem runAuthoritativeCompatibleTerminateCurrentThenDeferredDrains_preserves
       (runAuthoritativeOperations state
         (.ordinary .terminateCurrent ::
           subjects.map AuthoritativeOperation.drainDeferred)) := by
-  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state _ hstate
     (authoritativeTraceCompatible_terminateCurrentThenDeferredDrains
       state subjects)
@@ -17758,7 +17819,7 @@ theorem runAuthoritativeCompatibleNmiThenDeferredDrains_preserves
       (runAuthoritativeOperations state
         (.ordinary (.nmi raw context) ::
           subjects.map AuthoritativeOperation.drainDeferred)) := by
-  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+  exact runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed_of_compatible
     state _ hstate
     (authoritativeTraceCompatible_nmiThenDeferredDrains
       state raw context subjects)
@@ -18564,7 +18625,7 @@ theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
         [] := by
     rfl
   refine ⟨hinitial, ?_, rfl, rfl⟩
-  apply authoritativeGate_preserves_authoritativeRuntimeWellFormed _ _ hinitial
+  apply authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible _ _ hinitial
   change DormantCancellationCompatible _ _
   refine ⟨rfl, ?_, ?_, ?_⟩
   · intro subject _
