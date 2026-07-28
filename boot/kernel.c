@@ -1982,6 +1982,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if (copy_step != 2) fail("copy-missing");
         serial_puts("LEANOS/5 ENTRY subject=1 address-space=1 cpl=3 yielding=0\n");
         preemption_step = 1;
+        arm_timer();
         return 0;
     }
     if (preemption_step == 3 && current_subject == 2 && number == 2) {
@@ -2813,7 +2814,6 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     serial_puts("LEANOS/18 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_PREEMPTION_SCENARIO)
-    arm_timer();
     enter_user(user_a_entry, user_a_stack_top);
 #else
     current_subject = 2;
