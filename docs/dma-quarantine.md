@@ -172,7 +172,7 @@ in the same manifest, identity/class/header drift, or a missing required
 function. It writes the PCI Command register of every present function to the
 canonical deny-all value zero, then performs a separate read-back and rejects
 any remaining Command bit. This makes the retained live observation equal
-#135's exact `q35Snapshot`, rather than merely satisfying its broader
+issue #135's exact `q35Snapshot`, rather than merely satisfying its broader
 quarantine predicate. The exact
 `LEANOS/15 DMA` record is mandatory in `scripts/run-image.sh`; missing and
 forged records are negative runner fixtures. Thus the pinned emulator logs
