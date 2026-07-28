@@ -256,22 +256,23 @@ information address, and immutable bytes cannot produce different complete
 rich projections for equal manifest words and owner. These theorems are
 universal over byte buffers and contain no fixture or entry-order premise; they
 add no generated export.
-`authorizeCanonical` routes the same proof-only composition through the
+`authorizeCanonical` now routes the same proof-only composition through the
 complete rich-projection comparison rather than returning `run` authority
 directly. `authorizeCanonical_acceptance_binding` preserves the raw decoder,
 canonical interval, reservation, allocation, and exact scalar-consumer
 equations while additionally proving that every claimed decoded entry,
 normalized region, checked interval, overlaid region, and selected frame is
-the canonical projection of the returned authority. The proof also replays
-the canonical scalar stream at the rich-selected frame.
-`authorizeCanonical_acceptance_scalar_agreement` universally exposes its
-terminal status, diagnostic, usable-coverage, and non-usable-overlap agreement
-for every accepted authorization, and
+the canonical projection of the returned authority. The gate now also replays
+the canonical scalar stream at the rich-selected frame and rejects unless its
+terminal status, diagnostic, usable-coverage, and non-usable-overlap words
+agree with the rich authority. `authorizeCanonical_acceptance_scalar_agreement`
+universally exposes that agreement for every accepted authorization, and
 `authorizeCanonical_scalarReplay_projection_binding` feeds those actual replay
 words into `consumeExactProjection` without a caller-supplied agreement
-premise. This agreement no longer relies on a fail-closed executable
-comparison at the composed authorization gate. The rich decoder retains a
-proof-only `SuccessfulTagDecodeTraversal` for every
+premise. A direct structural refinement theorem showing that every rich
+decoder success passes this comparison, rather than relying on the fail-closed
+comparison at the composed authorization gate, remains outstanding. The rich
+decoder now retains a proof-only `SuccessfulTagDecodeTraversal` for every
 successful recursive tag walk. Its constructors bind each accepted tag header
 to the exact source word and aligned advance, bind a memory-map tag to its
 layout word and `SuccessfulEntryDecodeTraversal`, and bind the terminal end tag
@@ -386,24 +387,16 @@ predicate instantiated for precisely one fewer entry.
 every canonical triple from `SuccessfulEntryDecodeTraversal`, constructs the
 continuation from the final entry backward, and prevents an intermediate
 scalar state or remaining-entry count from being supplied independently.
-`canonicalMemoryMapEntries_terminal_classification` projects that complete
+`canonicalMemoryMapEntries_terminal_classification` then projects that complete
 entry traversal through `successfulScalarRichTraversal_terminal_words`: the
 terminal usable-coverage and non-usable-overlap words are exactly the folds
 over every accepted rich entry in source order.
 
-`successfulScalarRichTraversal_beforeMemoryMap` and
-`successfulScalarRichTraversal_afterMemoryMap` now perform the complete
-retained tag induction. They compose ignored spans around the unique map,
-consume its canonical header, layout, and complete entry traversal, and finish
-at the retained end tag. `successfulScalarRichTraversal_of_decode` prepends
-the information-header transition and identifies the source map entries with
-exactly `decoded.entries`. Finally,
-`canonicalScalarReplay_agrees_authority` folds that universal traversal to
-prove that every rich-decoder authority necessarily has scalar
-`complete`/`noError` terminal words and the exact usable and blocked
-classifications. `authorizeCanonical` therefore returns the already-validated
-rich authority without rechecking `scalarTerminalProjectionMatches`; the
-comparison theorem remains available as a derived projection.
+The remaining structural derivation must induct over the complete retained
+`SuccessfulTagDecodeTraversal`, compose ignored spans around the unique map
+header, layout, and completed entry traversal, and finish at the retained end
+tag. Until that whole-tag derivation shows every rich decoder success passes
+the scalar terminal comparison, the fail-closed comparison remains in place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
