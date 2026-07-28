@@ -1026,6 +1026,40 @@ theorem accepted_nonEntry_preserves_classification_words
     simpa [stepWord] using haccepted
   simp [stepWord, hfinal, hphase]
 
+/-- An accepted ignored-body transition cannot change whether the map was
+seen, the number of decoded entries, or the number of consumed tag headers.
+These fields are controlled by tag and entry-type phases only. -/
+theorem accepted_ignored_preserves_tag_fields
+    version status error identity extent offset chain phase content padded
+    sawMap entries base length usable blocked target highest tagCount
+    streamIdentity streamOffset chunk terminal
+    (hphase : phase = phaseIgnored)
+    (haccepted :
+      stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 2 = noError) :
+    stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 10 = sawMap ∧
+    stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 11 = entries ∧
+    stepWord version status error identity extent offset chain phase content padded
+        sawMap entries base length usable blocked target highest tagCount
+        streamIdentity streamOffset chunk terminal 18 = tagCount := by
+  subst phase
+  have hfinal :
+      completedError
+          (transitionError version status error identity extent offset
+            phaseIgnored content padded sawMap entries base length usable blocked
+            target highest tagCount streamIdentity streamOffset chunk terminal)
+          (offset + 8) extent
+          (nextPhase phaseIgnored chunk content padded) =
+        noError := by
+    simpa [stepWord] using haccepted
+  simp only [phaseIgnored] at hfinal
+  simp [stepWord, hfinal, phaseTag, phaseIgnored, phaseEntryType]
+
 /-- Every rejected scalar transition is fail-closed for arbitrary caller state:
 only ABI version, rejected status, and the typed error remain observable. -/
 theorem rejected_step_exposes_no_state

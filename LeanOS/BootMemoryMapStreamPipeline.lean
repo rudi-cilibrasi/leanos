@@ -1078,6 +1078,52 @@ inductive SuccessfulIgnoredTagSpan :
         SuccessfulIgnoredTagSpan (scalarStep state chunk) rest terminal) :
       SuccessfulIgnoredTagSpan state (chunk :: rest) terminal
 
+/-- Ignored payload and padding preserve the map-seen flag, entry count,
+classification accumulators, and consumed tag count.  This is the exact
+tag-budget preservation obligation needed by a whole-tag induction: ignored
+body words cannot spend another tag-header unit. -/
+theorem successfulIgnoredTagSpan_preserves_tag_fields
+    (state terminal : ScalarState) (chunks : List ModelChunk)
+    (hspan : SuccessfulIgnoredTagSpan state chunks terminal) :
+    terminal.word[10]! = state.word[10]! ∧
+      terminal.word[11]! = state.word[11]! ∧
+      terminal.word[14]! = state.word[14]! ∧
+      terminal.word[15]! = state.word[15]! ∧
+      terminal.word[18]! = state.word[18]! := by
+  induction hspan with
+  | done =>
+      exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+  | step state terminal chunk rest hphase haccepted hrest ih =>
+      have hacceptedStep := haccepted
+      rw [scalarStep_word state chunk (⟨2, by decide⟩ : Fin 19)]
+        at hacceptedStep
+      have htag :=
+        BootMemoryMapStreamAuthority.accepted_ignored_preserves_tag_fields
+          state.word[0]! state.word[1]! state.word[2]! state.word[3]!
+          state.word[4]! state.word[5]! state.word[6]! state.word[7]!
+          state.word[8]! state.word[9]! state.word[10]! state.word[11]!
+          state.word[12]! state.word[13]! state.word[14]! state.word[15]!
+          state.word[16]! state.word[17]! state.word[18]!
+          chunk.identity (UInt64.ofNat chunk.offset) (chunkWord chunk.bytes)
+          (if chunk.terminal then 1 else 0) hphase hacceptedStep
+      have hclassification :=
+        scalarStep_nonEntry_preserves_classification state chunk
+          (by rw [hphase]; decide) haccepted
+      have hstep :
+          (scalarStep state chunk).word[10]! = state.word[10]! ∧
+            (scalarStep state chunk).word[11]! = state.word[11]! ∧
+            (scalarStep state chunk).word[14]! = state.word[14]! ∧
+            (scalarStep state chunk).word[15]! = state.word[15]! ∧
+            (scalarStep state chunk).word[18]! = state.word[18]! := by
+        rw [scalarStep_word state chunk (⟨10, by decide⟩ : Fin 19),
+          scalarStep_word state chunk (⟨11, by decide⟩ : Fin 19),
+          scalarStep_word state chunk (⟨18, by decide⟩ : Fin 19)]
+        exact ⟨htag.1, htag.2.1, hclassification.1,
+          hclassification.2, htag.2.2⟩
+      exact ⟨ih.1.trans hstep.1, ih.2.1.trans hstep.2.1,
+        ih.2.2.1.trans hstep.2.2.1, ih.2.2.2.1.trans hstep.2.2.2.1,
+        ih.2.2.2.2.trans hstep.2.2.2.2⟩
+
 /-- Canonical source chunks for an ignored tag body and its alignment padding
 form one exact accepted scalar span.  The induction is indexed by the retained
 source position and word count: every head is selected from
