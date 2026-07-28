@@ -1,0 +1,64 @@
+diff --git a/include/block/aio.h b/include/block/aio.h
+index f08b358077..655b17452d 100644
+--- a/include/block/aio.h
++++ b/include/block/aio.h
+@@ -125,6 +125,10 @@ typedef QSLIST_HEAD(, AioHandler) AioHandlerSList;
+ struct AioContext {
+     GSource source;
+ 
++#ifdef __EMSCRIPTEN__
++    pthread_t home_thread;
++#endif
++
+     /* Used by AioContext users to protect from multi-threaded access.  */
+     QemuRecMutex lock;
+ 
+diff --git a/util/async.c b/util/async.c
+index 83a1f02f5b..6cf749f431 100644
+--- a/util/async.c
++++ b/util/async.c
+@@ -24,6 +24,9 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#ifdef __EMSCRIPTEN__
++#include <emscripten/threading_legacy.h>
++#endif
+ #include "qapi/error.h"
+ #include "block/aio.h"
+ #include "block/thread-pool.h"
+@@ -544,6 +547,13 @@ LuringState *aio_get_linux_io_uring(AioContext *ctx)
+ }
+ #endif
+ 
++#ifdef __EMSCRIPTEN__
++static void aio_emscripten_dispatch(void *opaque)
++{
++    aio_poll(opaque, false);
++}
++#endif
++
+ void aio_notify(AioContext *ctx)
+ {
+     /*
+@@ -558,6 +568,10 @@ void aio_notify(AioContext *ctx)
+     smp_mb();
+     if (qatomic_read(&ctx->notify_me)) {
+         event_notifier_set(&ctx->notifier);
++#ifdef __EMSCRIPTEN__
++        emscripten_dispatch_to_thread(ctx->home_thread, EM_FUNC_SIG_VI,
++                                      aio_emscripten_dispatch, NULL, ctx);
++#endif
+     }
+ }
+ 
+@@ -637,6 +651,9 @@ AioContext *aio_context_new(Error **errp)
+     AioContext *ctx;
+ 
+     ctx = (AioContext *) g_source_new(&aio_source_funcs, sizeof(AioContext));
++#ifdef __EMSCRIPTEN__
++    ctx->home_thread = pthread_self();
++#endif
+     QSLIST_INIT(&ctx->bh_list);
+     QSIMPLEQ_INIT(&ctx->bh_slice_list);
+     aio_context_setup(ctx);

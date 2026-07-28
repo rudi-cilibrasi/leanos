@@ -60,7 +60,7 @@ readiness scan and never reads its `timeout` argument. Its
 and treated as zero. There is therefore no blocking browser primitive behind
 QEMU's pipe EventNotifier that another pthread can interrupt.
 
-Three Emscripten-only experiments were rejected:
+Four Emscripten-only experiments were rejected:
 
 1. Capping QEMU's host-loop timeout at 1 ms compiled successfully but produced
    the exact original `browser-result.json` SHA-256
@@ -70,16 +70,31 @@ Three Emscripten-only experiments were rejected:
 3. Having the worker additionally enqueue a no-op on Emscripten's system proxy
    queue for `emscripten_main_runtime_thread_id()` also failed to re-enter
    `aio_ctx_prepare`, `aio_ctx_check`, or `aio_ctx_dispatch`.
+4. Recording the AioContext's creating pthread and proxying
+   `aio_poll(ctx, false)` directly to that thread from `aio_notify` also
+   failed. The 41,503,914-byte WebAssembly build had SHA-256
+   `afa65863198a2e5ddaf6e2aea57ef2a67f000b58936cf1c8f3045ba33042d6c2`.
+   During the 120-second bound, the raw worker again returned success and
+   enqueued its completion BH, but the proxied call did not consume the BH or
+   produce any AioContext check/dispatch trace.
 
 The retained
 [`proxy-wakeup-result.json`](proxy-wakeup-result.json) has SHA-256
 `dd4ee2049f5613e8d85d2a500f7a0b9a59b7f350912901c57788e60d2946f942`.
 It preloaded the unchanged 14,749,696-byte ISO and records the third
-experiment's 180-second bound. These results rule out a timeout cap, an
-Asyncify timer yield, and a generic Emscripten proxy notification as
-upstreamable fixes. Closing the wakeup requires either an Emscripten-aware
-QEMU main-loop integration that owns completion dispatch, or a pinned unforked
-runtime where QEMU's EventNotifier has supported cross-thread wake semantics.
+experiment's 180-second bound. The fourth experiment is retained as
+[`home-thread-aio-poll.patch`](home-thread-aio-poll.patch) and
+[`home-thread-aio-poll-result.json`](home-thread-aio-poll-result.json); the
+result has SHA-256
+`284095939fa8bc5526bbaa180079a36d31111bf8ba59b605f001d79d18fa8441`.
+These results rule out a timeout cap, an Asyncify timer yield, a generic
+Emscripten proxy notification, and proxying one nonblocking AioContext poll to
+its owner as upstreamable fixes. The target pthread is itself inside QEMU's
+non-yielding host loop, so work queued to its Emscripten proxy queue cannot
+provide the missing wakeup. Closing the wakeup requires an Emscripten-aware
+QEMU main-loop integration that yields control while preserving event-loop
+ownership, or a pinned unforked runtime where QEMU's EventNotifier has
+supported cross-thread wake semantics.
 
 ## Reproduction
 
@@ -91,6 +106,9 @@ existing trace arguments and add no guest or device changes:
 git -C qemu-wasm checkout 0ef7b4e2814b231705d8371dd7997f5b72e70baf
 git -C qemu-wasm apply --unidiff-zero --whitespace=nowarn \
   /path/to/leanos/docs/evidence/qemu-wasm-async-completion/thread-pool-trace.patch
+# For the rejected owner-thread dispatch experiment only:
+git -C qemu-wasm apply --whitespace=nowarn \
+  /path/to/leanos/docs/evidence/qemu-wasm-async-completion/home-thread-aio-poll.patch
 
 emconfigure /src/configure --static --target-list=x86_64-softmmu \
   --cpu=wasm32 --cross-prefix= --without-default-features \
