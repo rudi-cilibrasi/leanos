@@ -50,8 +50,14 @@ state or command bits, maximum words, and unknown commands before policy
 evaluation. Lean proves canonical state, command, and
 reply round trips and injectivity over this bounded domain, one-step equality
 with the authoritative gate, and the exact predecessor relation for the
-finite trace. The scalar export remains allocation-free; generated C and its
-calling convention remain trusted hosted-test boundaries.
+finite trace. The general finite-list theorem additionally proves that every
+accepted command list materializes to the exact result of
+`FailStop.runAuthoritativeOperations` over the same normalized operations.
+Its append-continuity corollary requires every prefix and suffix to share one
+canonical intermediate state token, so stale replay or cross-trace splicing
+cannot be accepted between adjacent steps. The scalar export remains
+allocation-free; generated C and its calling convention remain trusted
+hosted-test boundaries.
 
 The hosted replay also compiles three deliberately invalid harness variants.
 They truncate the composite record arity, corrupt the generated dispatcher's

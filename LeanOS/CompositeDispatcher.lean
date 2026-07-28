@@ -353,6 +353,84 @@ theorem materialize_next_exact state command next pre
     rw [hpre]
     rfl
 
+/-- Execute any finite command list through the canonical state-token graph.
+Unlike `runAuthoritativeOperations`, this function can reject: rejection means
+that some command was not paired with the unique state token produced by its
+predecessor. -/
+def runCommands : StateId → List CommandId → Except DecodeError StateId
+  | state, [] => .ok state
+  | state, command :: rest =>
+      match nextState state command with
+      | none => .error .invalidSequence
+      | some next => runCommands next rest
+
+/-- An accepted nonempty list exposes the exact first successor and continues
+only from that successor.  Thus no stale or cross-trace state can be inserted
+between adjacent commands. -/
+theorem runCommands_cons_continuity state command rest finish
+    (hrun : runCommands state (command :: rest) = .ok finish) :
+    ∃ next, nextState state command = some next ∧
+      runCommands next rest = .ok finish := by
+  unfold runCommands at hrun
+  cases hnext : nextState state command with
+  | none =>
+      rw [hnext] at hrun
+      contradiction
+  | some next =>
+      rw [hnext] at hrun
+      refine ⟨next, ?_, hrun⟩
+      rfl
+
+/-- The canonical intermediate token of an accepted command prefix is unique. -/
+theorem runCommands_result_unique start commands first second
+    (hfirst : runCommands start commands = .ok first)
+    (hsecond : runCommands start commands = .ok second) :
+    first = second := by
+  have hequal : Except.ok first = Except.ok second := hfirst.symm.trans hsecond
+  exact Except.ok.inj hequal
+
+/-- Every split of an accepted list has one canonical intermediate token.  A
+suffix cannot be spliced onto a different trace state while retaining
+acceptance. -/
+theorem runCommands_append_continuity start firstCommands remainingCommands finish
+    (hrun : runCommands start (firstCommands ++ remainingCommands) = .ok finish) :
+    ∃ middle, runCommands start firstCommands = .ok middle ∧
+      runCommands middle remainingCommands = .ok finish := by
+  induction firstCommands generalizing start with
+  | nil =>
+      exact ⟨start, rfl, hrun⟩
+  | cons command rest ih =>
+      rw [List.cons_append] at hrun
+      obtain ⟨next, hnext, hrest⟩ :=
+        runCommands_cons_continuity start command (rest ++ remainingCommands) finish hrun
+      obtain ⟨middle, hfirst, hremaining⟩ := ih next hrest
+      refine ⟨middle, ?_, hremaining⟩
+      simp only [runCommands, hnext]
+      exact hfirst
+
+/-- General finite-list refinement: every accepted encoded command sequence
+materializes to exactly the state obtained by running the same normalized
+operations through the authoritative composite gate.  The result applies to
+all lists accepted by the version-one graph, not only the repository corpus. -/
+theorem runCommands_refines_authoritativeOperations start commands finish pre
+    (hrun : runCommands start commands = .ok finish)
+    (hpre : materialize start = .ok pre) :
+    materialize finish =
+      .ok (runAuthoritativeOperations pre (commands.map commandOperation)) := by
+  induction commands generalizing start finish pre with
+  | nil =>
+      simp only [runCommands, Except.ok.injEq] at hrun
+      subst finish
+      simpa [runAuthoritativeOperations] using hpre
+  | cons command rest ih =>
+      obtain ⟨next, hnext, hrest⟩ :=
+        runCommands_cons_continuity start command rest finish hrun
+      have hmaterialized :=
+        materialize_next_exact start command next pre hnext hpre
+      have hrefined := ih next finish
+        (authoritativeGate pre (commandOperation command)).state hrest hmaterialized
+      simpa [runAuthoritativeOperations] using hrefined
+
 /-- Finite-list refinement for the complete version-one corpus. -/
 def canonicalTrace : List (StateId × CommandId) :=
   [(.initial, .createSubjectOne),
@@ -360,10 +438,25 @@ def canonicalTrace : List (StateId × CommandId) :=
    (.unknownSyscallRejected, .rejectMalformedMap),
    (.malformedMapRejected, .observeScheduler)]
 
+def canonicalCommands : List CommandId :=
+  [.createSubjectOne, .rejectUnknownSyscall, .rejectMalformedMap, .observeScheduler]
+
 theorem canonicalTrace_all_exact :
     canonicalTrace.all (fun edge =>
       (nextState edge.1 edge.2).isSome) = true := by
   native_decide
+
+theorem canonicalCommands_complete :
+    runCommands .initial canonicalCommands = .ok .schedulerObserved := by
+  rfl
+
+theorem canonicalCommands_refine start :
+    materialize .initial = .ok start →
+    materialize .schedulerObserved =
+      .ok (runAuthoritativeOperations start
+        (canonicalCommands.map commandOperation)) :=
+  runCommands_refines_authoritativeOperations .initial canonicalCommands
+    .schedulerObserved start canonicalCommands_complete
 
 example : dispatch 0x0001 0x0101 1 0 0 0 = encodeReply
     { next := .subjectCreated, reply := 1 } := by native_decide
