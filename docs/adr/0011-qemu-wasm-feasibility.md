@@ -33,6 +33,43 @@ and 2--3 days for browser fixtures, documentation, and CI.  Maintaining a
 qemu-wasm fork or expanding LeanOS's device model is unestimated until the
 media failure is diagnosed; either can exceed that range.
 
+## Conditional implementation steps
+
+The 6--10 day implementation starts only after the unchanged ISO boots through
+a pinned, unforked qemu-wasm build and produces the complete LeanOS protocol
+plus debug-exit status 33.  Diagnosing and closing that media gate is not part
+of the estimate.  Once it is closed:
+
+1. Add a repository-owned script that builds the existing ISO, verifies its
+   hash, copies the pinned qemu-wasm runtime and firmware into a staging
+   directory, and generates the Emscripten preload manifest containing
+   `/leanos.iso`.  Pin every upstream revision and tool version; fail on an
+   unexpected input hash.
+2. Add a minimal static browser entry point that starts
+   `qemu-system-x86_64.wasm` with the accepted media mapping and the exact
+   `q35`, memory, CPU, no-network, serial, and debug-exit arguments.  Connect
+   the pseudo-TTY to the terminal, surface startup failures, and install the
+   cross-origin-isolation service worker required by the threaded runtime.
+3. Add one repository-owned browser test command that serves the staged site,
+   waits through the service-worker reload, requires
+   `crossOriginIsolated=true`, and boots under a fixed timeout.  It must capture
+   the console and pass only on both the complete exact LeanOS protocol and
+   debug-exit status 33; add negative fixtures for missing preload data,
+   truncated protocol, guest failure, and timeout.
+4. Add a Pages build workflow that invokes only the repository-owned staging
+   and browser-test commands, uploads the tested staging directory unchanged,
+   and deploys that artifact.  Pin actions, set least-privilege permissions,
+   enforce Pages and repository object-size limits, and keep deployment
+   separate from pull-request validation.
+5. Inventory and preserve license notices for QEMU, firmware, Emscripten
+   runtime, terminal, and service-worker assets.  Document the pinned versions,
+   local reproduction command, browser support boundary, download size,
+   isolation requirement, cache/service-worker recovery, and the distinction
+   between emulator-tested behavior and proved LeanOS claims.
+6. Run the browser fixture in the supported desktop browser matrix on pull
+   requests, then perform first-load, cached-load, keyboard, accessibility, and
+   deployed-Pages smoke checks before enabling the public demo link.
+
 ## Tested facts
 
 The probe used LeanOS revision
