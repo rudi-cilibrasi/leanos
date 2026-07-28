@@ -18889,6 +18889,129 @@ example (state : CompositeState) :
         first.state := by
   exact ⟨rfl, rfl, rfl⟩
 
+/-- The authoritative trace cannot restore a context after its owner is
+retired.  Termination consumes subject `1`'s queued context; the following
+timer attempt reports the exact `noDestination` denial, exposes no restored
+context, and leaves the terminated post-state unchanged. -/
+theorem authoritativeStaleResumableContext_reachable_witness
+    input plan (hcompiled : BootPageTablePlan.compile input = .ok plan) :
+    let initial := authoritativeBlockingCancelEvidence plan
+    let terminated := authoritativeGate initial
+      (.ordinary (.terminateSubject 1))
+    let attempted := authoritativeGate terminated.state
+      (.ordinary (.resumePreempt blockingEvidenceFrame
+        blockingEvidenceRegisters2))
+    AuthoritativeRuntimeWellFormed initial ∧
+      terminated.result =
+        .completed (.ordinary (.terminateSubject .accepted)) ∧
+      ResumablePreemption.contextFor terminated.state.resumable.contexts 1 =
+        none ∧
+      attempted.result =
+        .completed (.ordinary (.resume none (some .noDestination))) ∧
+      attempted.state = terminated.state ∧
+      AuthoritativeRuntimeWellFormed attempted.state ∧
+      runAuthoritativeOperations initial
+        [.ordinary (.terminateSubject 1),
+          .ordinary (.resumePreempt blockingEvidenceFrame
+            blockingEvidenceRegisters2)] = terminated.state := by
+  have hinitial :
+      AuthoritativeRuntimeWellFormed
+        (authoritativeBlockingCancelEvidence plan) :=
+    (authoritativeGate_blockingCancel_cancelled_reachable_witness
+      input plan hcompiled).1
+  have htrace :=
+    runAuthoritativeStaleResumableContextTrace_preserves_authoritativeRuntimeWellFormed
+      (authoritativeBlockingCancelEvidence plan) 1 blockingEvidenceFrame
+      blockingEvidenceRegisters2 hinitial
+  exact ⟨hinitial, rfl, rfl, rfl, rfl, htrace, rfl⟩
+
+private def revokeAfterSendTarget : Capability.Capability :=
+  { object := 10, kind := .endpoint, rights := { send := true },
+    identity := 4 }
+
+private def revokeAfterSendAuthority : Capability.Capability :=
+  { object := 10, kind := .endpoint,
+    rights := { send := true, grant := true, revoke := true },
+    identity := 5 }
+
+private def revokeAfterSendCapabilities : Capability.State :=
+  { nextIdentity := 6
+    derivations := fun identity =>
+      if identity = 4 then
+        some (none, 10, .endpoint, { send := true })
+      else if identity = 5 then
+        some (none, 10, .endpoint,
+          { send := true, grant := true, revoke := true })
+      else none
+    subjects := fun subject => subject = 2
+    objects := fun object => object = 10
+    kinds := fun object => if object = 10 then some .endpoint else none
+    slots := fun subject slot =>
+      if subject = 2 ∧ slot = 2 then some revokeAfterSendTarget
+      else if subject = 2 ∧ slot = 3 then some revokeAfterSendAuthority
+      else none }
+
+private def revokeAfterSendTransfers : CapabilityTransfer.State :=
+  { toEndpointState :=
+      { capabilities := revokeAfterSendCapabilities
+        allocator := { frames := [], status := fun _ => .reserved }
+        binding := fun _ => none
+        issued := fun object => object = 10
+        issuedAddressSpace := fun _ => false
+        mailbox := fun _ => none
+        sendHistory := fun _ => [] }
+    pending := fun _ => none }
+
+private def revokeAfterSendEvidence (state : CompositeState) :
+    CompositeState :=
+  { state with
+    execution :=
+      { state.execution with
+        core :=
+          { state.execution.core with
+            context :=
+              { state.execution.core.context with
+                currentSubject := 2, activeAddressSpace := 2 } }
+        mode := .running }
+    capabilities := revokeAfterSendCapabilities
+    lifecycle :=
+      { state.lifecycle with
+        capabilities := revokeAfterSendCapabilities
+        current := some 2 }
+    transfers := revokeAfterSendTransfers }
+
+/-- A concrete sealed send followed by direct revocation executes both success
+branches through the authoritative gate.  The send reserves descendant `6`
+and publishes its tagged mailbox; revoking the independent send-only endpoint
+slot succeeds without consuming that sealed descendant. -/
+theorem authoritativeRevokeAfterSend_reachable_witness
+    (state : CompositeState) :
+    let initial := revokeAfterSendEvidence state
+    let offered := authoritativeGate initial
+      (.ordinary (.transferOffer 0x0000000000040002
+        0x0000000000050003 .endpoint
+        { word0 := 0xCAFE, word1 := 0xBEEF } { send := true }))
+    let revoked := authoritativeGate offered.state
+      (.ordinary (.capabilityRevoke 3 2 2))
+    offered.result = .completed (.ordinary (.transferOffer .accepted)) ∧
+      offered.state.transfers.pending 10 = some
+        { identity := 6
+          parent := 5
+          sender := 2
+          object := 10
+          kind := .endpoint
+          rights := { send := true } } ∧
+      revoked.result = .completed (.ordinary (.capability .accepted)) ∧
+      revoked.state.capabilities.slots 2 2 = none ∧
+      revoked.state.transfers.pending 10 =
+        offered.state.transfers.pending 10 ∧
+      runAuthoritativeOperations initial
+        [.ordinary (.transferOffer 0x0000000000040002
+          0x0000000000050003 .endpoint
+          { word0 := 0xCAFE, word1 := 0xBEEF } { send := true }),
+          .ordinary (.capabilityRevoke 3 2 2)] = revoked.state := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
 /-- A concrete kernel fault latches the runtime before a heterogeneous suffix;
 the stale handle, IPC, revoke, unmap, termination, and restart operations are
 all absorbed byte-for-byte. -/
