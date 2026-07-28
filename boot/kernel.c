@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "corpus.h"
+#include "generated-boundary-abi.h"
 #if defined(LEANOS_BOOT_PAGE_PLAN_HEADER)
 #include LEANOS_BOOT_PAGE_PLAN_HEADER
 #elif defined(LEANOS_DF_MAP_GUARD)
@@ -71,22 +72,6 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                        uint64_t);
-extern uint64_t leanos_authorize_page_fault_snapshot(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_page_fault_dispatch_transition(
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t, uint64_t,
-    uint64_t, uint64_t, uint64_t);
 extern uint64_t gdt64[];
 extern void load_tss(void);
 extern void read_fast_entry_msrs(uint64_t state[8]);

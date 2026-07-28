@@ -15,16 +15,17 @@ IFS=$'\t' read -r _ _ harness generation _ modules exports assertion <<<"$row"
   exit 1
 }
 source scripts/hosted-sanitizer-config.sh
+source scripts/hosted-boundary-coverage.sh
 
 if [[ "$mode" == sanitized ]]; then
   build=build/oracle-sanitized
   cc_command="$leanos_host_cc"
-  cflags=("${leanos_host_sanitizer_flags[@]}")
+  cflags=("${leanos_host_sanitizer_flags[@]}" -finstrument-functions)
   run=(leanos_run_sanitized)
 elif [[ "$mode" == ordinary ]]; then
   build=build/oracle
   cc_command="${LEANOS_HOST_CC:-cc}"
-  cflags=(-ffunction-sections -fdata-sections)
+  cflags=(-ffunction-sections -fdata-sections -finstrument-functions)
   run=()
 else
   echo "usage: $0 [ordinary|sanitized]" >&2
@@ -33,6 +34,7 @@ fi
 
 rm -rf "$build"
 mkdir -p "$build"
+leanos_prepare_boundary_coverage "$build" "$exports"
 ./scripts/generate-oracle.sh "$build"
 prefix="$(lake env lean --print-prefix)"
 generated=build/hosted-generated-sources/oracle
@@ -139,16 +141,21 @@ if [[ "$mode" == sanitized ]]; then
 fi
 "$cc_command" -std=c11 -Wall -Wextra -Werror -I"$build" "${cflags[@]}" \
   -c "$harness" -o "$build/host.o"
+"$cc_command" -std=c11 -Wall -Wextra -Werror \
+  -c "$build/boundary-coverage.c" -o "$build/boundary-coverage.o"
 if [[ "$mode" == sanitized ]]; then
   # ASan registers generated globals and therefore retains initialization
   # sections that the ordinary allocation-free replay garbage-collects. Link
   # the hosted sanitizer replay against the pinned Lean runtime.
-  leanos_link_sanitized_host "$build/host" "$build/host.o" "${objects[@]}"
+  leanos_link_sanitized_host "$build/host" "$build/host.o" \
+    "$build/boundary-coverage.o" "${objects[@]}"
 else
   "$cc_command" -Wl,--gc-sections "${cflags[@]}" \
-    "$build/host.o" "${objects[@]}" -o "$build/host"
+    "$build/host.o" "$build/boundary-coverage.o" "${objects[@]}" -o "$build/host"
 fi
-"${run[@]}" "$build/host" >"$build/host-results.txt"
+LEANOS_BOUNDARY_COVERAGE_FILE="$build/boundary-coverage.actual" \
+  "${run[@]}" "$build/host" >"$build/host-results.txt"
+leanos_check_boundary_coverage "$build"
 expected_lines="${assertion#lines=}"
 [[ "$assertion" == lines=* && \
     "$(wc -l < "$build/host-results.txt")" -eq "$expected_lines" ]] || {

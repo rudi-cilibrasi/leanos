@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "corpus.h"
+#include "../boot/generated-boundary-abi.h"
 
 extern uint64_t leanos_boot_transition(uint64_t, uint64_t);
 extern uint64_t leanos_syscall_demo(uint64_t, uint64_t, uint64_t, uint64_t);
@@ -29,8 +30,6 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t, uint
                                                uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
-extern uint64_t leanos_authorize_page_fault_snapshot(uint64_t, ...);
-extern uint64_t leanos_page_fault_dispatch_transition(uint64_t, ...);
 extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
 extern uint64_t leanos_page_fault_diagnostic_regression_demo(uint64_t);
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) { return left == right; }

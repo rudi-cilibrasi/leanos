@@ -10,6 +10,7 @@ row="$(awk -F '\t' -v id="$id" '$1 == id { print; found=1 } END { exit !found }'
   exit 1
 }
 IFS=$'\t' read -r _ _ harness generation target modules exports assertion <<<"$row"
+source scripts/hosted-boundary-coverage.sh
 [[ "$id" == boot-handoff && "$generation" == lake-ir ]] || {
   echo "error: $id is not the lake-ir boot-handoff boundary" >&2
   exit 1
@@ -20,12 +21,12 @@ if [[ "$mode" == sanitized ]]; then
   leanos_assert_pinned_toolchain
   build=build/boot-handoff-host-sanitized
   cc_command="$leanos_host_cc"
-  cflags=("${leanos_host_sanitizer_flags[@]}")
+  cflags=("${leanos_host_sanitizer_flags[@]}" -finstrument-functions)
   run=(leanos_run_sanitized)
 elif [[ "$mode" == ordinary ]]; then
   build=build/boot-handoff-host
   cc_command="${LEANOS_HOST_CC:-cc}"
-  cflags=(-O2 -ffunction-sections -fdata-sections)
+  cflags=(-O2 -ffunction-sections -fdata-sections -finstrument-functions)
   run=()
 else
   echo "usage: $0 [ordinary|sanitized]" >&2
@@ -34,6 +35,7 @@ fi
 
 rm -rf "$build"
 mkdir -p "$build"
+leanos_prepare_boundary_coverage "$build" "$exports"
 lake build "$target"
 prefix="$(lake env lean --print-prefix)"
 objects=()
@@ -64,13 +66,18 @@ for module in "${compiled_modules[@]}"; do
 done
 "$cc_command" -std=c11 -Wall -Wextra -Werror -I"$prefix/include" \
   "${cflags[@]}" -c "$harness" -o "$build/host.o"
+"$cc_command" -std=c11 -Wall -Wextra -Werror \
+  -c "$build/boundary-coverage.c" -o "$build/boundary-coverage.o"
 if [[ "$mode" == sanitized ]]; then
-  leanos_link_sanitized_host "$build/host" "$build/host.o" "${objects[@]}"
+  leanos_link_sanitized_host "$build/host" "$build/host.o" \
+    "$build/boundary-coverage.o" "${objects[@]}"
 else
   lake env leanc -Wl,--gc-sections "${cflags[@]}" \
-    "$build/host.o" "${objects[@]}" -o "$build/host"
+    "$build/host.o" "$build/boundary-coverage.o" "${objects[@]}" -o "$build/host"
 fi
-"${run[@]}" "$build/host" | tee "$build/results.txt"
+LEANOS_BOUNDARY_COVERAGE_FILE="$build/boundary-coverage.actual" \
+  "${run[@]}" "$build/host" | tee "$build/results.txt"
+leanos_check_boundary_coverage "$build"
 expected="${assertion#contains=}"
 expected="${expected//_/ }"
 [[ "$assertion" == contains=* ]] && grep -Fq "$expected" "$build/results.txt" || {
