@@ -380,15 +380,23 @@ predicate: source cursor, phase, remaining byte count, entry budget, sticky
 classification bounds, target, and tag count must all describe the same
 canonical suffix. The
 `successfulScalarRichTraversal_canonicalMemoryMapEntry_threads_remaining`
-step now consumes one exact rich entry and an already-constructed continuation,
+step consumes one exact rich entry and an already-constructed continuation,
 attaches the corresponding `RawEntry`, and returns the successor with that
-predicate instantiated for precisely one fewer entry. The remaining induction
-must recursively select every canonical triple from
-`SuccessfulEntryDecodeTraversal`, construct its continuation from the final
-entry backward, and assemble those entry-local pieces with the ignored-tag
-span into the universal
-`SuccessfulScalarRichTraversal`. Until that final derivation exists, the
-fail-closed terminal comparison remains in place.
+predicate instantiated for precisely one fewer entry.
+`successfulScalarRichTraversal_canonicalMemoryMapEntries` recursively selects
+every canonical triple from `SuccessfulEntryDecodeTraversal`, constructs the
+continuation from the final entry backward, and prevents an intermediate
+scalar state or remaining-entry count from being supplied independently.
+`canonicalMemoryMapEntries_terminal_classification` then projects that complete
+entry traversal through `successfulScalarRichTraversal_terminal_words`: the
+terminal usable-coverage and non-usable-overlap words are exactly the folds
+over every accepted rich entry in source order.
+
+The remaining structural derivation must induct over the complete retained
+`SuccessfulTagDecodeTraversal`, compose ignored spans around the unique map
+header, layout, and completed entry traversal, and finish at the retained end
+tag. Until that whole-tag derivation shows every rich decoder success passes
+the scalar terminal comparison, the fail-closed comparison remains in place.
 
 The controlled `malformed-handoff` image changes only the reserved high word
 of the copied Multiboot information header while preserving the real GRUB
