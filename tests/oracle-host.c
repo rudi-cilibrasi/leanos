@@ -31,6 +31,8 @@ extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
 extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
 extern uint64_t leanos_page_fault_diagnostic_regression_demo(uint64_t);
+extern uint64_t leanos_composite_dispatch(uint64_t, uint64_t, uint64_t, uint64_t,
+                                           uint64_t, uint64_t);
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) { return left == right; }
 
 int main(void) {
@@ -90,9 +92,13 @@ int main(void) {
                                                             ? leanos_stale_translation_demo(
                                                             v->words[0], v->words[1], v->words[2],
                                                             v->words[3], v->words[4], v->words[5])
-                                                            : leanos_page_fault_demo(v->words[0],
+                                                            : v->adapter == 17
+                                                            ? leanos_page_fault_demo(v->words[0],
                                                             v->words[1], v->words[2],
-                                                            v->words[3], v->words[4]);
+                                                            v->words[3], v->words[4])
+                                                            : leanos_composite_dispatch(
+                                                            v->words[0], v->words[1], v->words[2],
+                                                            v->words[3], v->words[4], v->words[5]);
         if (got != v->expected) {
             fprintf(stderr, "oracle mismatch: %u %s expected=%llu got=%llu\n", i, v->id,
                 v->expected, (unsigned long long)got);

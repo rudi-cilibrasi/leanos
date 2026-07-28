@@ -13,6 +13,7 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.FaultDispatch
 import LeanOS.DirectPortIO
 import LeanOS.StaleTranslation
+import LeanOS.CompositeDispatcher
 
 /-!
 # Bounded scalar boundary oracle
@@ -127,6 +128,11 @@ private def staleTranslation (id : String) (kind actor addressSpace page aux sel
     words := [kind, actor, addressSpace, page, aux, selector],
     expected := StaleTranslation.staleTranslationModelExpected
       kind actor addressSpace page aux selector }
+
+private def composite (id : String) (state tag arg0 arg1 arg2 arg3 : UInt64) : Vector :=
+  { id, adapter := "CompositeDispatcher.stateful",
+    words := [state, tag, arg0, arg1, arg2, arg3],
+    expected := CompositeDispatcher.dispatch state tag arg0 arg1 arg2 arg3 }
 
 private def nmiUserFrame : UInt64 :=
   0x23 + 0x1b * 256 + 0x10000 + 0x20000 + 0x40000
@@ -466,9 +472,19 @@ def vectors : List Vector := [
   pageFault "page-fault.authority-wp-mutated" 4 0x400123 0 0x10000101 115,
   pageFault "page-fault.authority-nxe-mutated" 4 0x400123 0 0x10000101 107,
   pageFault "page-fault.authority-smep-mutated" 4 0x400123 0 0x10000101 91,
-  pageFault "page-fault.authority-smap-mutated" 4 0x400123 0 0x10000101 59]
+  pageFault "page-fault.authority-smap-mutated" 4 0x400123 0 0x10000101 59,
+  composite "composite.create-subject" 0x0001 0x0101 1 0 0 0,
+  composite "composite.reject-unknown-syscall" 0x0101 0x0201 99 0 0 0,
+  composite "composite.reject-malformed-map" 0x0201 0x0301 0 0 0 0,
+  composite "composite.observe-scheduler" 0x0301 0x0401 0 0 0 0,
+  composite "composite.stale-state-replay" 0x0001 0x0201 99 0 0 0,
+  composite "composite.cross-trace-splice" 0x0201 0x0401 0 0 0 0,
+  composite "composite.noncanonical-argument" 0x0101 0x0201 99 1 0 0,
+  composite "composite.wrong-state-version" 0x0002 0x0101 1 0 0 0,
+  composite "composite.reserved-state-bits" 0x10001 0x0101 1 0 0 0,
+  composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0]
 
-theorem corpus_shape : vectors.length = 292 := by decide
+theorem corpus_shape : vectors.length = 302 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide

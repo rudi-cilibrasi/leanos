@@ -11,8 +11,9 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `DirectPortIO.directPortIODemo`, `InterruptEntry.nmiDemo`,
 `InterruptEntry.bootPhaseDemo`, and
 `StaleTranslation.staleTranslationDemo`, and
-`InterruptEntry.pageFaultDemo`. Its stable
-292-vector order covers accepted calls,
+`InterruptEntry.pageFaultDemo`, plus the stateful
+`CompositeDispatcher.dispatch`. Its stable
+302-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -35,6 +36,21 @@ progress after the latch, malformed phase codes, and an opaque business token
 that must round-trip unchanged. The Lean checks evaluate every expected result
 from the adapter definition and connect the accepted and rejected examples to
 the source models.
+
+The final ten composite-dispatch records are the version-one seed trace for
+the shared stateful boundary. Six input words carry a canonical state token,
+command tag, and four scalar arguments. The four positive edges create one
+subject, observe typed unknown-syscall and malformed-map rejections, and run
+the scheduler observation. Each state token materializes the complete
+`FailStop.CompositeState` by replaying the exact
+`FailStop.authoritativeGate`; it is not a reduced transition or a C shadow
+state. The remaining records reject stale replay, cross-trace splicing,
+nonzero reserved arguments, wrong versions, reserved state bits, and unknown
+commands before policy evaluation. Lean proves canonical state, command, and
+reply round trips and injectivity over this bounded domain, one-step equality
+with the authoritative gate, and the exact predecessor relation for the
+finite trace. The scalar export remains allocation-free; generated C and its
+calling convention remain trusted hosted-test boundaries.
 
 The interrupt-entry corpus also includes the user-only vector-13 hardware-error
 shape and its broad general-protection purpose. The live handler refines that

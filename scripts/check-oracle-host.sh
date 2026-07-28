@@ -19,6 +19,7 @@ lake env lean --c="$build/PrivilegeEntryControl.c" LeanOS/PrivilegeEntryControl.
 lake env lean --c="$build/FaultDispatch.c" LeanOS/FaultDispatch.lean
 lake env lean --c="$build/DirectPortIO.c" LeanOS/DirectPortIO.lean
 lake env lean --c="$build/StaleTranslation.c" LeanOS/StaleTranslation.lean
+lake env lean --c="$build/CompositeDispatcher.c" LeanOS/CompositeDispatcher.lean
 prefix="$(lake env lean --print-prefix)"
 cc -std=c11 -I"$prefix/include" -I"$build" \
   -ffunction-sections -fdata-sections -c "$build/KernelTransition.c" -o "$build/KernelTransition.o"
@@ -50,6 +51,9 @@ cc -std=c11 -I"$prefix/include" -I"$build" \
   -ffunction-sections -fdata-sections -c "$build/DirectPortIO.c" -o "$build/DirectPortIO.o"
 cc -std=c11 -I"$prefix/include" -I"$build" \
   -ffunction-sections -fdata-sections -c "$build/StaleTranslation.c" -o "$build/StaleTranslation.o"
+cc -std=c11 -I"$prefix/include" -I"$build" \
+  -ffunction-sections -fdata-sections -c "$build/CompositeDispatcher.c" \
+  -o "$build/CompositeDispatcher.o"
 cc -std=c11 -Wall -Wextra -Werror -I"$build" -c tests/oracle-host.c -o "$build/host.o"
 cc -Wl,--gc-sections "$build/host.o" "$build/KernelTransition.o" "$build/Syscall.o" \
   "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootMemoryMapStreamAuthority.o" \
@@ -57,7 +61,8 @@ cc -Wl,--gc-sections "$build/host.o" "$build/KernelTransition.o" "$build/Syscall
   "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
   "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o" "$build/DirectPortIO.o" \
   "$build/StaleTranslation.o" \
+  "$build/CompositeDispatcher.o" \
   -o "$build/host"
 "$build/host" > "$build/host-results.txt"
-[[ "$(wc -l < "$build/host-results.txt")" -eq 292 ]]
-echo "Hosted generated-code oracle replay passed (292 vectors)"
+[[ "$(wc -l < "$build/host-results.txt")" -eq 302 ]]
+echo "Hosted generated-code oracle replay passed (302 vectors)"
