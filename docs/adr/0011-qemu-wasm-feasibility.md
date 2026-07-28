@@ -175,13 +175,29 @@ That evidence bundle preserves the probe-specific replacement for the
 upstream `pc`, kernel/initrd, VirtIO, networking, and hard-coded demo-path
 configuration.
 
-Build and verify the native control first:
+Keep this evidence-bearing checkout at the revision containing this ADR and
+build the pinned native control in a separate detached worktree.  Copy the
+verified ISO back before preparing the browser probe:
 
 ```sh
-git checkout b5bb7fea627972dfbe682f777466af8a715f7cd8
-./scripts/build-image.sh
-./scripts/run-image.sh
-sha256sum build/boot/leanos-0.1.0-x86_64.iso
+set -eu
+native_parent="$(mktemp -d)"
+native_worktree="$native_parent/leanos-b5bb7fe"
+git worktree add --detach "$native_worktree" \
+  b5bb7fea627972dfbe682f777466af8a715f7cd8
+(
+  cd "$native_worktree"
+  ./scripts/build-image.sh
+  ./scripts/run-image.sh
+  printf '%s  %s\n' \
+    097914961a25ad1e2970c07b76ca58752779739e1e96213b97014c3cdd75e1a9 \
+    build/boot/leanos-0.1.0-x86_64.iso |
+    sha256sum --check --strict
+)
+mkdir -p build/boot
+cp "$native_worktree/build/boot/leanos-0.1.0-x86_64.iso" build/boot/
+git worktree remove --force "$native_worktree"
+rmdir "$native_parent"
 ```
 
 Fetch the exact upstream inputs:

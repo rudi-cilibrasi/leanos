@@ -19,9 +19,12 @@ Pinned inputs:
 - Chrome 150.0.7871.128, Node.js 24.18.0, and
   `puppeteer-core` 24.16.0
 
-From a clean checkout of the pinned demo, prepare the probe as follows.  The
-upstream `coi-serviceworker.js`, WebAssembly, worker, `out.js`, and firmware
-preload remain unchanged.
+First follow ADR 0011's separate-worktree native-control commands.  They leave
+the evidence-bearing LeanOS checkout unchanged and copy the hash-verified
+pinned ISO to `build/boot/leanos-0.1.0-x86_64.iso`.  From that checkout and a
+clean checkout of the pinned demo, prepare the probe as follows.  The upstream
+`coi-serviceworker.js`, WebAssembly, worker, `out.js`, and firmware preload
+remain unchanged.
 
 ```sh
 probe=build/qemu-wasm-probe
