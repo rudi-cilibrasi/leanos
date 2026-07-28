@@ -723,6 +723,196 @@ theorem accepted_authority_field_words
   rw [husable.1, hblocked, hreserved]
   simp
 
+/-! ## First-candidate scan refinement
+
+An isolated accepted candidate is not an inverse of rich allocation: a later
+candidate can satisfy all three predicates after the rich allocator has
+already selected an earlier frame.  The production loop instead has authority
+only through its *first* accepted candidate.  The definitions below model that
+observable scan contract without adding a freestanding export or changing the
+fixed-width production ABI.
+-/
+
+/-- The rich decoded/reserved predicate tested for one candidate. -/
+def richCandidateAccepted
+    (entries : List RawEntry) (intervals : List BootReservation.Interval)
+    (frame : Nat) : Bool :=
+  usableFrameSound entries frame &&
+    !BootReservation.reservedBy intervals frame
+
+/-- The actual canonical scalar replay used for an arbitrary scanned
+candidate, over the immutable input bytes and the candidate-specific initial
+target word. -/
+def canonicalScalarReplayAt
+    (input : BootMemoryMapDecoder.Input) (frame : Nat) :
+    BootMemoryMapStreamPipeline.ScalarState :=
+  let identity := UInt64.ofNat input.infoAddress
+  BootMemoryMapStreamPipeline.scalarReplay
+    (BootMemoryMapStreaming.canonicalChunks identity input.bytes)
+    (BootMemoryMapStreamPipeline.scalarInitialAt identity input.bytes.length frame)
+
+/-- The exact UInt64-only production decision for one canonical candidate. -/
+def scalarCandidateAccepted
+    (input : BootMemoryMapDecoder.Input)
+    (intervals : List BootReservation.Interval)
+    (frame : Nat) : Bool :=
+  let scalar := canonicalScalarReplayAt input frame
+  consumeExactProjection 4096 (UInt64.ofNat frame) complete
+      scalar.word[14]! scalar.word[15]!
+      (manifestWord intervals frame) == UInt64.ofNat frame
+
+set_option maxHeartbeats 2000000 in
+/-- Candidate-by-candidate acceptance and rejection agreement.  In particular,
+this supplies the rejection direction needed at every position preceding the
+first accepted production candidate. -/
+theorem scalarCandidateAccepted_eq_richCandidateAccepted
+    (input : BootMemoryMapDecoder.Input) (decoded : BootMemoryMapDecoder.Decoded)
+    (intervals : List BootReservation.Interval)
+    (frame : Nat)
+    (hdecode : BootMemoryMapDecoder.decode input = .ok decoded)
+    (hframe : frame < frameLimit) :
+    scalarCandidateAccepted input intervals frame =
+      richCandidateAccepted decoded.entries intervals frame := by
+  obtain ⟨terminal, htraversal⟩ :=
+    BootMemoryMapStreamPipeline.successfulScalarRichTraversal_of_decode
+      input decoded frame hdecode hframe
+  have hinitial :=
+    BootMemoryMapStreamPipeline.scalarInitialAt_of_decode
+      input decoded frame hdecode hframe
+  have hterminal :=
+    BootMemoryMapStreamPipeline.successfulScalarRichTraversal_canonical_terminal
+      frame decoded.entries
+      (BootMemoryMapStreamPipeline.scalarInitialAt
+        (UInt64.ofNat input.infoAddress) input.bytes.length frame)
+      terminal
+      (BootMemoryMapStreaming.canonicalChunks
+        (UInt64.ofNat input.infoAddress) input.bytes)
+      hinitial.2.2.2.2.2.2.1 hinitial.2.2.2.2.2.2.2.1 htraversal
+  have hterminalEq : terminal = canonicalScalarReplayAt input frame := by
+    simpa [canonicalScalarReplayAt] using hterminal.1.symm
+  subst terminal
+  have husable :
+      (canonicalScalarReplayAt input frame).word[14]! =
+        usableWord decoded.entries frame := by
+    simpa [usableWord] using hterminal.2.2.2.1
+  have hblocked :
+      (canonicalScalarReplayAt input frame).word[15]! =
+        blockedWord decoded.entries frame := by
+    simpa [blockedWord] using hterminal.2.2.2.2
+  dsimp only [scalarCandidateAccepted]
+  rw [husable, hblocked]
+  simpa [richCandidateAccepted] using
+    (consume_canonical_projection_iff decoded.entries intervals frame hframe)
+
+/-- A declarative model of the actual increasing production scan: `selected`
+is in the scanned interval, it accepts, and every earlier candidate rejects.
+This is deliberately stronger than merely exhibiting one accepted candidate. -/
+def FirstCandidateScan
+    (input : BootMemoryMapDecoder.Input)
+    (intervals : List BootReservation.Interval)
+    (start selected : Nat) : Prop :=
+  start ≤ selected ∧
+    selected < frameLimit ∧
+    scalarCandidateAccepted input intervals selected = true ∧
+    ∀ candidate, start ≤ candidate → candidate < selected →
+      scalarCandidateAccepted input intervals candidate = false
+
+/-- The first accepted result of an increasing scalar scan is unique. -/
+theorem firstCandidateScan_unique
+    (input : BootMemoryMapDecoder.Input)
+    (intervals : List BootReservation.Interval)
+    (start first second : Nat)
+    (hfirst : FirstCandidateScan input intervals start first)
+    (hsecond : FirstCandidateScan input intervals start second) :
+    first = second := by
+  by_cases hlt : first < second
+  · have hrejected := hsecond.2.2.2 first hfirst.1 hlt
+    rw [hfirst.2.2.1] at hrejected
+    contradiction
+  · by_cases heq : first = second
+    · exact heq
+    · have hgt : second < first := by omega
+      have hrejected := hfirst.2.2.2 second hsecond.1 hgt
+      rw [hsecond.2.2.1] at hrejected
+      contradiction
+
+/-- A rich authority whose allocator predicate rejects every earlier scanned
+candidate constructs the exact first-candidate scalar scan certificate.  The
+selected candidate's acceptance is derived from the rich allocation witness;
+all earlier scalar rejections are derived from scalar/rich predicate
+equivalence rather than assumed independently. -/
+theorem authority_constructs_firstCandidateScan
+    (authority : BootMemoryMapFullProjectionABI.Authority)
+    (start : Nat)
+    (hstart : start ≤ authority.allocation.frame)
+    (hearlier :
+      ∀ candidate, start ≤ candidate → candidate < authority.allocation.frame →
+        richCandidateAccepted authority.decoded.entries
+          authority.reserved.intervals candidate = false) :
+    FirstCandidateScan authority.input authority.reserved.intervals
+      start authority.allocation.frame := by
+  refine ⟨hstart, authority.selectedWithinBound, ?_, ?_⟩
+  · rw [scalarCandidateAccepted_eq_richCandidateAccepted
+      authority.input authority.decoded authority.reserved.intervals
+      authority.allocation.frame authority.decodedBy authority.selectedWithinBound]
+    unfold richCandidateAccepted
+    rw [authority.selectedUsable]
+    have hreserved :=
+      BootReservation.allocation_excludes_reservations authority.reserved
+        authority.owner authority.allocation authority.allocatedBy
+    rw [hreserved]
+    rfl
+  · intro candidate hcstart hclt
+    rw [scalarCandidateAccepted_eq_richCandidateAccepted
+      authority.input authority.decoded authority.reserved.intervals candidate
+      authority.decodedBy
+      (Nat.lt_trans hclt authority.selectedWithinBound)]
+    exact hearlier candidate hcstart hclt
+
+/-- Sound inverse binding for the production scan.  A claimed first scalar
+result over the same decoded entries and checked intervals must equal the rich
+allocator result, provided the rich allocator rejects every preceding numeric
+candidate.  The conclusion retains the complete decode/reserve/allocate chain
+and states scalar/rich rejection agreement for every earlier candidate.
+
+Unlike the false isolated-candidate converse, this theorem cannot identify a
+later accepted frame (for example 300) when the rich allocator and scalar scan
+both first accept an earlier frame (for example 256). -/
+theorem firstCandidateScan_binds_rich_authority
+    (authority : BootMemoryMapFullProjectionABI.Authority)
+    (start selected : Nat)
+    (hscan :
+      FirstCandidateScan authority.input authority.reserved.intervals
+        start selected)
+    (hstart : start ≤ authority.allocation.frame)
+    (hearlier :
+      ∀ candidate, start ≤ candidate → candidate < authority.allocation.frame →
+        richCandidateAccepted authority.decoded.entries
+          authority.reserved.intervals candidate = false) :
+    selected = authority.allocation.frame ∧
+      BootMemoryMapDecoder.decode authority.input = .ok authority.decoded ∧
+      BootReservation.initializeAllocator authority.decoded.handoff
+          authority.manifest = .ok authority.reserved ∧
+      FrameAllocator.allocate authority.reserved.allocator authority.owner =
+          .ok authority.allocation ∧
+      (∀ candidate, start ≤ candidate → candidate < selected →
+        (scalarCandidateAccepted authority.input authority.reserved.intervals
+            candidate = false ↔
+          richCandidateAccepted authority.decoded.entries
+            authority.reserved.intervals candidate = false)) := by
+  have hauthority :=
+    authority_constructs_firstCandidateScan authority start hstart hearlier
+  have hselected :=
+    firstCandidateScan_unique authority.input authority.reserved.intervals
+      start selected authority.allocation.frame hscan hauthority
+  subst selected
+  refine ⟨rfl, authority.decodedBy, authority.reservedBy, authority.allocatedBy, ?_⟩
+  intro candidate _ hcandidate
+  rw [scalarCandidateAccepted_eq_richCandidateAccepted
+    authority.input authority.decoded authority.reserved.intervals candidate
+    authority.decodedBy
+    (Nat.lt_trans hcandidate authority.selectedWithinBound)]
+
 /-- Once a separate rescan names the same selected frame and the frame-scrub
 boundary supplies its success word, production publication is determined by
 the complete rich authority.  Decode status and all candidate predicates are
