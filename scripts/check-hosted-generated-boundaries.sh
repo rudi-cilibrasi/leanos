@@ -20,6 +20,8 @@ esac
 # exported adapter to be absent.
 declare -A manifest_ids=()
 declare -A manifest_modules=()
+declare -A manifest_exports=()
+declare -A manifest_harnesses=()
 while IFS=$'\t' read -r id runner harness generation target modules exports assertion; do
   [[ -n "$id" && "${id:0:1}" != "#" ]] || continue
   [[ -z "${manifest_ids[$id]+x}" ]] || {
@@ -27,6 +29,7 @@ while IFS=$'\t' read -r id runner harness generation target modules exports asse
     exit 1
   }
   manifest_ids["$id"]=1
+  manifest_harnesses["$harness"]=1
   IFS=',' read -ra module_specs <<<"$modules"
   for spec in "${module_specs[@]}"; do
     module="${spec%%=*}"
@@ -49,6 +52,7 @@ while IFS=$'\t' read -r id runner harness generation target modules exports asse
       exit 1
     }
     row_exports["$symbol"]=1
+    manifest_exports["$symbol"]=1
   done
   for spec in "${module_specs[@]}"; do
     source="${spec#*=}"
@@ -73,6 +77,24 @@ while IFS=$'\t' read -r id runner harness generation target modules exports asse
     }
   done
 done <"$manifest"
+
+# Every inventoried export must be called by at least one hosted harness. Merely
+# declaring the symbol is insufficient: --gc-sections could otherwise discard
+# the generated wrapper without sanitizer instrumentation ever executing it.
+for symbol in "${!manifest_exports[@]}"; do
+  exercised=0
+  for harness in "${!manifest_harnesses[@]}"; do
+    if sed '/^[[:space:]]*extern[[:space:]]/d' "$harness" |
+        grep -Eq "(^|[^[:alnum:]_])${symbol}[[:space:]]*\\("; then
+      exercised=1
+      break
+    fi
+  done
+  [[ "$exercised" -eq 1 ]] || {
+    echo "error: hosted export '$symbol' is not called by any manifest harness" >&2
+    exit 1
+  }
+done
 
 while IFS= read -r source; do
   module="${source#LeanOS/}"

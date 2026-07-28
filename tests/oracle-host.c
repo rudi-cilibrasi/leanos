@@ -29,11 +29,29 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t, uint
                                                uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
+extern uint64_t leanos_authorize_page_fault_snapshot(uint64_t, ...);
+extern uint64_t leanos_page_fault_dispatch_transition(uint64_t, ...);
 extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
 extern uint64_t leanos_page_fault_diagnostic_regression_demo(uint64_t);
 uint8_t lean_uint64_dec_eq(uint64_t left, uint64_t right) { return left == right; }
 
 int main(void) {
+    /* Exercise the production ABI wrappers themselves so --gc-sections cannot
+       discard them from the ordinary or sanitizer replay. Invalid all-zero
+       snapshots must be rejected, but still traverse each generated wrapper. */
+    if (leanos_authorize_page_fault_snapshot(
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) != 0) {
+        fputs("invalid canonical page-fault snapshot was accepted\n", stderr);
+        return 1;
+    }
+    (void)leanos_page_fault_dispatch_transition(
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
     for (unsigned i = 0; i < ORACLE_VECTOR_COUNT; ++i) {
         const struct oracle_vector *v = &oracle_vectors[i];
         uint64_t got = v->adapter == 0

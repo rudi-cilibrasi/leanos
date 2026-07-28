@@ -57,6 +57,7 @@ jobs:
           path: |
             build/oracle-sanitized/
             build/boot-handoff-host-sanitized/
+            build/boot-handoff-stream-sanitized/
             build/hosted-sanitizer-evidence/
             build/hosted-sanitizer-negatives/
             scripts/hosted-generated-boundaries.tsv
