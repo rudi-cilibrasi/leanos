@@ -1,0 +1,14 @@
+{
+  "name": "leanos-qemu-wasm-feasibility-probe",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned browser harness for LeanOS ADR 0011",
+  "license": "MIT",
+  "engines": {
+    "node": "24.18.0",
+    "npm": "11.16.0"
+  },
+  "dependencies": {
+    "puppeteer-core": "24.16.0"
+  }
+}

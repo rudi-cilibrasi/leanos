@@ -17,7 +17,9 @@ Pinned inputs:
   - `xterm-pty` 0.12.0 SHA-256:
     `2e7cbffea02dad1f72637c564534d104a13f9eec306deb9cc34fffe1faa58947`
 - Chrome 150.0.7871.128, Node.js 24.18.0, and
-  `puppeteer-core` 24.16.0
+  npm 11.16.0
+- `puppeteer-core` 24.16.0 and its complete transitive dependency graph,
+  pinned by the checked-in `package-lock.json`
 
 First follow ADR 0011's separate-worktree native-control commands.  They leave
 the evidence-bearing LeanOS checkout unchanged and copy the hash-verified
@@ -32,7 +34,7 @@ image=qemu-wasm-demo/docs/images/alpine-x86_64
 mkdir -p "$probe"
 cp "$image"/{coi-serviceworker.js,load-rom.data,load-rom.js,out.js,qemu-system-x86_64.wasm,qemu-system-x86_64.worker.js} "$probe"/
 cp build/boot/leanos-0.1.0-x86_64.iso "$probe/leanos.iso"
-cp docs/evidence/qemu-wasm-feasibility/{index.html,module-cdrom.js,probe.mjs} "$probe"/
+cp docs/evidence/qemu-wasm-feasibility/{index.html,module-cdrom.js,probe.mjs,package.json,package-lock.json} "$probe"/
 cp "$probe/module-cdrom.js" "$probe/module.js"
 curl --fail --location --proto '=https' \
   https://unpkg.com/xterm@5.3.0/lib/xterm.js \
@@ -68,7 +70,11 @@ script.write_text(text)
 PY
 sha256sum "$probe/leanos.iso" "$probe/qemu-system-x86_64.wasm"
 test "$(wc -c < "$probe/load-rom.data")" -eq 15222784
-(cd "$probe" && npm install --save-exact puppeteer-core@24.16.0)
+test "$(node --version)" = v24.18.0
+test "$(npm --version)" = 11.16.0
+test "$(/usr/bin/google-chrome --version)" = \
+  "Google Chrome 150.0.7871.128 "
+(cd "$probe" && npm ci --ignore-scripts)
 ```
 
 Run the CD-ROM observation with the exact 180-second browser bound:
