@@ -698,6 +698,27 @@ theorem decodeCompositeState_sound word decoded
     materialize decoded.id = .ok decoded.state :=
   decoded.canonical
 
+theorem decode_encode_composite_state (state : CanonicalCompositeState) :
+    decodeCompositeState (encodeCompositeState state) = .ok state := by
+  unfold decodeCompositeState encodeCompositeState
+  rw [decode_encode_state]
+  simp only
+  split
+  · rename_i reason hmaterialize
+    have hfalse : Except.error reason = Except.ok state.state :=
+      hmaterialize.symm.trans state.canonical
+    contradiction
+  · congr 1
+    exact CanonicalCompositeState.eq_of_id_eq _ _ rfl
+
+theorem composite_state_encoding_injective
+    (first second : CanonicalCompositeState)
+    (hequal : encodeCompositeState first = encodeCompositeState second) :
+    first = second := by
+  apply CanonicalCompositeState.eq_of_id_eq
+  apply state_encoding_injective
+  exact hequal
+
 /-- A normalized operation is the exact `AuthoritativeOperation` selected by
 its canonical command words. -/
 structure CanonicalOperation where
@@ -736,6 +757,14 @@ theorem decode_encode_operation (operation : CanonicalOperation) :
   change Except.ok (canonicalOperation operation.command) = Except.ok operation
   congr 1
   exact CanonicalOperation.eq_of_command_eq _ _ rfl
+
+theorem operation_encoding_injective
+    (first second : CanonicalOperation)
+    (hequal : encodeOperation first = encodeOperation second) :
+    first = second := by
+  apply CanonicalOperation.eq_of_command_eq
+  apply command_encoding_injective
+  exact hequal
 
 /-- The typed logical result contains the literal post-state and result of the
 one authoritative gate invocation.  This is the object denoted by an accepted
@@ -796,6 +825,23 @@ theorem decode_encode_typed_reply state command token
       Except.ok (ε := DecodeError) (canonicalTypedStep state command)
   rw [htoken]
   simp
+
+/-- Every successful scalar export result decodes to the literal typed result
+and post-state of the same authoritative gate invocation. -/
+theorem decode_dispatch_success
+    (state : CanonicalCompositeState) command token
+    (htoken : replyToken state.id command = some token) :
+    let words := encodeCommand command
+    decodeTypedReply (encodeCompositeState state) command
+      (dispatch (encodeCompositeState state)
+        words.tag words.arg0 words.arg1 words.arg2 words.arg3) =
+      .ok (canonicalTypedStep state command) := by
+  dsimp
+  unfold encodeCompositeState
+  rw [dispatch_canonical]
+  simp only [expectedReplyWord, htoken, Option.map_some, Option.getD_some]
+  exact decode_encode_typed_reply state command token
+    (decode_encode_composite_state state) htoken
 
 theorem capabilityHandle_command_uses_canonical_codec :
     CapabilityHandle.decode 0x10000 =

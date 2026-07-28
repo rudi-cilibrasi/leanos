@@ -39,21 +39,22 @@ the source models.
 
 The final twenty-two composite-dispatch records are the version-one seed trace for
 the shared stateful boundary. Six input words carry a canonical state token,
-command tag, and four scalar arguments. The seven positive edges create one
-subject, observe typed unknown-syscall and malformed-map rejections, run
+command tag, and four scalar arguments. The seven positive sequence edges create
+one subject, observe typed unknown-syscall and malformed-map rejections, run
 the scheduler observation, terminate the subject, enter a fatal kernel
 page-fault state, and verify that a subsequent scheduler request is rejected
 by the absorbing fatal latch. Each state token materializes the complete
 `FailStop.CompositeState` by replaying the exact
 `FailStop.authoritativeGate`; it is not a reduced transition or a C shadow
-state. The remaining records reject stale replay, cross-trace splicing,
+state. Ten negative records reject stale replay, cross-trace splicing,
 nonzero reserved arguments, forged context arguments, wrong versions, reserved
 state or command bits, maximum words, and unknown commands before policy
-evaluation. Lean proves canonical state, command, and
-reply round trips and injectivity over this bounded domain, one-step equality
-with the authoritative gate, and the exact predecessor relation for the
-finite trace. The general finite-list theorem additionally proves that every
-accepted command list materializes to the exact result of
+evaluation. Lean proves canonical complete-state, command, and reply round
+trips and injectivity over this bounded domain, one-step equality with the
+authoritative gate for every successful scalar result, and the exact predecessor
+relation for the seven-edge sequence. The general finite-list theorem
+additionally proves that every accepted command list materializes to the exact
+result of
 `FailStop.runAuthoritativeOperations` over the same normalized operations.
 Its append-continuity corollary requires every prefix and suffix to share one
 canonical intermediate state token, so stale replay or cross-trace splicing
@@ -70,7 +71,9 @@ composite state. `CanonicalCompositeState` is the decoded ABI object and
 contains the full state plus its exact materialization equality.
 `CanonicalTypedStep` retains the literal `AuthoritativeGateResult` and
 post-state returned by the sole `authoritativeGate` invocation rather than
-manufacturing a generic success result.
+manufacturing a generic success result. These five probes are independently
+proved one-step rejections; they are not yet accepted transitions in the
+finite-sequence graph.
 
 The hosted replay also compiles eight deliberately invalid harness variants.
 They truncate the composite record arity, corrupt the generated dispatcher's
