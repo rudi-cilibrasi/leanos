@@ -1262,6 +1262,64 @@ def mixedReplyId : MixedStateId → MixedCommandId → Option MixedReplyId
   | .fatalEntered, .attemptPostFatalSchedule => some .postFatalRejected
   | _, _ => none
 
+/-- The full typed meaning of each mixed reply selector.  This table is
+independent of `dispatch` and `authoritativeGate`: a scalar selector can only
+claim one exact authoritative result. -/
+def mixedReplyResult : MixedReplyId → AuthoritativeGateResult
+  | .transferOffered =>
+      .completed (.ordinary (.transferOffer .accepted))
+  | .transferAccepted =>
+      .completed (.ordinary (.transferAccept
+        (.delivered
+          { endpoint := 10, sender := 2,
+            payload := { word0 := 0xCAFE, word1 := 0xBEEF } })
+        (some 0x60003)))
+  | .transferredCapabilityRevoked =>
+      .completed (.ordinary (.capability .accepted))
+  | .staleHandleRejected =>
+      .completed (.ordinary (.ipc (.syscall
+        (.sendHandleRejected (.denied .staleHandle)))))
+  | .freshCapabilityCopied =>
+      .completed (.ordinary (.capability .accepted))
+  | .syscallMapped =>
+      .completed (.ordinary (.syscall .accepted))
+  | .directMapped =>
+      .completed (.ordinary (.map .accepted))
+  | .unknownSyscallRejected =>
+      .completed (.ordinary (.syscall (.rejected (.decode .unknownSyscall))))
+  | .nonblockingSent =>
+      .completed (.ordinary (.ipc (.syscall .sent)))
+  | .nonblockingReceived =>
+      .completed (.ordinary (.ipc (.syscall (.delivered 2 0x1111 0x2222))))
+  | .blockingReceiverBlocked =>
+      .completed (.blocking (.receive .blocked))
+  | .blockingReceiverWoken =>
+      .completed (.blocking (.send (.woke
+        { owner := 2, addressSpace := 2
+          frame := compositeDispatcherBlockingFrame
+          registers := compositeDispatcherBlockingRegisters
+          kind := .suspended })))
+  | .timerSwitched =>
+      .completed (.ordinary (.resume
+        (some
+          { owner := 2, addressSpace := 2
+            frame := compositeDispatcherBlockingFrame
+            registers := compositeDispatcherBlockingRegisters
+            kind := .suspended })
+        none))
+  | .userFaultCleaned =>
+      .completed (.ordinary (.interrupt (.contained 2)))
+  | .fatalEntered =>
+      .completed (.ordinary (.interrupt (.fatal .kernelFault)))
+  | .postFatalRejected =>
+      .rejectedHalted
+        { reason := .kernelFault
+          active := some
+            { vector := 14, origin := .kernel,
+              frame := compositeDispatcherKernelFaultFrame }
+          incomingVector := 14
+          incomingOrigin := .kernel }
+
 theorem mixedExpectedReply_uses_canonical_codec state command :
     mixedExpectedReply state command =
       (mixedReplyId state command).map encodeMixedReply := by
@@ -1372,6 +1430,120 @@ theorem mixed_composite_state_encoding_injective
   apply CanonicalMixedState.eq_of_id_eq
   apply mixed_state_encoding_injective
   exact hequal
+
+/-- Every accepted scalar mixed edge decodes to an independently specified
+reply meaning and the exact next authoritative state.  Unlike
+`mixedLogicalStep`, this bridge starts from the exported scalar `dispatch`
+result and relates both decoded fields back to `authoritativeGate`. -/
+theorem mixed_dispatch_decodes_authoritative_edge
+    (state : MixedStateId) (command : MixedCommandId)
+    (next : MixedStateId) (reply : MixedReplyId)
+    (hnext : mixedNextState state command = some next)
+    (hreply : mixedReplyId state command = some reply) :
+    let words := encodeMixedCommand command
+    ∃ pre post,
+      mixedMaterialize state = .ok pre ∧
+      mixedMaterialize next = .ok post ∧
+      decodeMixedReply
+          (dispatch (encodeMixedState state)
+            words.tag words.arg0 words.arg1 words.arg2 words.arg3) =
+        .ok reply ∧
+      authoritativeGate pre (mixedCommandOperation command) =
+        { state := post, result := mixedReplyResult reply } := by
+  cases state <;> cases command <;> simp [mixedNextState] at hnext
+  all_goals subst next
+  all_goals simp [mixedReplyId] at hreply
+  all_goals subst reply
+  all_goals refine ⟨_, _, rfl, rfl, ?_, ?_⟩
+  all_goals rfl
+
+/-- One accepted corpus edge carries only the canonical scalar selectors and
+their table membership proofs.  Its semantic refinement is supplied by
+`mixed_dispatch_decodes_authoritative_edge`, not stored in this record. -/
+structure CanonicalMixedEdge where
+  state : MixedStateId
+  command : MixedCommandId
+  next : MixedStateId
+  reply : MixedReplyId
+  next_exact : mixedNextState state command = some next
+  reply_exact : mixedReplyId state command = some reply
+
+def mixedCanonicalEdges : List CanonicalMixedEdge :=
+  [{ state := .initial, command := .offerTransfer,
+     next := .transferOffered, reply := .transferOffered,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .transferOffered, command := .acceptTransfer,
+     next := .transferAccepted, reply := .transferAccepted,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .transferAccepted, command := .revokeTransferredCapability,
+     next := .transferredCapabilityRevoked,
+     reply := .transferredCapabilityRevoked,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .transferredCapabilityRevoked,
+     command := .rejectStaleReusedHandle,
+     next := .staleHandleRejected, reply := .staleHandleRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .staleHandleRejected, command := .copyFreshCapability,
+     next := .freshCapabilityCopied, reply := .freshCapabilityCopied,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .freshCapabilityCopied, command := .acceptedSyscallMap,
+     next := .syscallMapped, reply := .syscallMapped,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .syscallMapped, command := .acceptedDirectMap,
+     next := .directMapped, reply := .directMapped,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .directMapped, command := .rejectUnknownSyscall,
+     next := .unknownSyscallRejected, reply := .unknownSyscallRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .unknownSyscallRejected, command := .nonblockingSend,
+     next := .nonblockingSent, reply := .nonblockingSent,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .nonblockingSent, command := .nonblockingReceive,
+     next := .nonblockingReceived, reply := .nonblockingReceived,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .nonblockingReceived, command := .blockingReceive,
+     next := .blockingReceiverBlocked, reply := .blockingReceiverBlocked,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .blockingReceiverBlocked, command := .blockingSend,
+     next := .blockingReceiverWoken, reply := .blockingReceiverWoken,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .blockingReceiverWoken, command := .timerSwitch,
+     next := .timerSwitched, reply := .timerSwitched,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .timerSwitched, command := .cleanupUserFault,
+     next := .userFaultCleaned, reply := .userFaultCleaned,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .userFaultCleaned, command := .enterFatalKernelFault,
+     next := .fatalEntered, reply := .fatalEntered,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .fatalEntered, command := .attemptPostFatalSchedule,
+     next := .postFatalRejected, reply := .postFatalRejected,
+     next_exact := rfl, reply_exact := rfl }]
+
+def CanonicalMixedEdge.Refines (edge : CanonicalMixedEdge) : Prop :=
+  let words := encodeMixedCommand edge.command
+  ∃ pre post,
+    mixedMaterialize edge.state = .ok pre ∧
+    mixedMaterialize edge.next = .ok post ∧
+    decodeMixedReply
+        (dispatch (encodeMixedState edge.state)
+          words.tag words.arg0 words.arg1 words.arg2 words.arg3) =
+      .ok edge.reply ∧
+    authoritativeGate pre (mixedCommandOperation edge.command) =
+      { state := post, result := mixedReplyResult edge.reply }
+
+theorem canonicalMixedEdge_refines (edge : CanonicalMixedEdge) :
+    edge.Refines := by
+  exact mixed_dispatch_decodes_authoritative_edge
+    edge.state edge.command edge.next edge.reply
+    edge.next_exact edge.reply_exact
+
+/-- The hosted 16-edge corpus inherits its state/result meaning solely from
+the scalar-to-authoritative bridge above. -/
+theorem mixedCanonicalEdges_refine :
+    ∀ edge ∈ mixedCanonicalEdges, edge.Refines := by
+  intro edge _hmembership
+  exact canonicalMixedEdge_refines edge
 
 theorem decodeMixedCompositeState_sound word state
     (_hdecode : decodeMixedCompositeState word = .ok state) :
