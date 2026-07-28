@@ -81,7 +81,7 @@ compile_host() {
 }
 compile_host host
 "$build/host" > "$build/host-results.txt"
-[[ "$(wc -l < "$build/host-results.txt")" -eq 306 ]]
+[[ "$(wc -l < "$build/host-results.txt")" -eq 309 ]]
 
 fixtures=(
   "truncated:LEANOS_FIXTURE_COMPOSITE_TRUNCATED:oracle malformed arity"
@@ -101,4 +101,4 @@ for fixture in "${fixtures[@]}"; do
   }
 done
 
-echo "Hosted generated-code oracle replay passed (306 vectors, 3 negative fixtures)"
+echo "Hosted generated-code oracle replay passed (309 vectors, 3 negative fixtures)"

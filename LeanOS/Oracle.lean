@@ -477,6 +477,9 @@ def vectors : List Vector := [
   composite "composite.reject-unknown-syscall" 0x0101 0x0201 99 0 0 0,
   composite "composite.reject-malformed-map" 0x0201 0x0301 0 0 0 0,
   composite "composite.observe-scheduler" 0x0301 0x0401 0 0 0 0,
+  composite "composite.terminate-subject" 0x0401 0x0501 1 0 0 0,
+  composite "composite.enter-fatal-kernel-fault" 0x0501 0x0601 0 0 0 0,
+  composite "composite.reject-post-fatal-schedule" 0x0601 0x0701 0 0 0 0,
   composite "composite.stale-state-replay" 0x0001 0x0201 99 0 0 0,
   composite "composite.cross-trace-splice" 0x0201 0x0401 0 0 0 0,
   composite "composite.noncanonical-argument" 0x0101 0x0201 99 1 0 0,
@@ -489,7 +492,7 @@ def vectors : List Vector := [
     0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
   composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0]
 
-theorem corpus_shape : vectors.length = 306 := by decide
+theorem corpus_shape : vectors.length = 309 := by decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide

@@ -13,7 +13,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-306-vector order covers accepted calls,
+309-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -37,11 +37,13 @@ that must round-trip unchanged. The Lean checks evaluate every expected result
 from the adapter definition and connect the accepted and rejected examples to
 the source models.
 
-The final fourteen composite-dispatch records are the version-one seed trace for
+The final seventeen composite-dispatch records are the version-one seed trace for
 the shared stateful boundary. Six input words carry a canonical state token,
-command tag, and four scalar arguments. The four positive edges create one
-subject, observe typed unknown-syscall and malformed-map rejections, and run
-the scheduler observation. Each state token materializes the complete
+command tag, and four scalar arguments. The seven positive edges create one
+subject, observe typed unknown-syscall and malformed-map rejections, run
+the scheduler observation, terminate the subject, enter a fatal kernel
+page-fault state, and verify that a subsequent scheduler request is rejected
+by the absorbing fatal latch. Each state token materializes the complete
 `FailStop.CompositeState` by replaying the exact
 `FailStop.authoritativeGate`; it is not a reduced transition or a C shadow
 state. The remaining records reject stale replay, cross-trace splicing,

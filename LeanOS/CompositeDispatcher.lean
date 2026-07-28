@@ -49,6 +49,9 @@ inductive StateId where
   | unknownSyscallRejected
   | malformedMapRejected
   | schedulerObserved
+  | subjectTerminated
+  | fatalEntered
+  | postFatalRejected
   deriving DecidableEq, Repr
 
 def encodeStateId : StateId → UInt64
@@ -57,6 +60,9 @@ def encodeStateId : StateId → UInt64
   | .unknownSyscallRejected => 0x0201
   | .malformedMapRejected => 0x0301
   | .schedulerObserved => 0x0401
+  | .subjectTerminated => 0x0501
+  | .fatalEntered => 0x0601
+  | .postFatalRejected => 0x0701
 
 def decodeStateId (word : UInt64) : Except DecodeError StateId :=
   if word = 0x0001 then .ok .initial
@@ -64,8 +70,11 @@ def decodeStateId (word : UInt64) : Except DecodeError StateId :=
   else if word = 0x0201 then .ok .unknownSyscallRejected
   else if word = 0x0301 then .ok .malformedMapRejected
   else if word = 0x0401 then .ok .schedulerObserved
+  else if word = 0x0501 then .ok .subjectTerminated
+  else if word = 0x0601 then .ok .fatalEntered
+  else if word = 0x0701 then .ok .postFatalRejected
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x0501 ≤ word then .error .reservedBits
+  else if 0x0801 ≤ word then .error .reservedBits
   else .error .unknownState
 
 theorem decode_encode_state (id : StateId) :
@@ -81,6 +90,9 @@ inductive CommandId where
   | rejectUnknownSyscall
   | rejectMalformedMap
   | observeScheduler
+  | terminateSubjectOne
+  | enterFatalKernelFault
+  | attemptPostFatalSchedule
   deriving DecidableEq, Repr
 
 structure CommandWords where
@@ -99,6 +111,12 @@ def encodeCommand : CommandId → CommandWords
       { tag := 0x0301, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
   | .observeScheduler =>
       { tag := 0x0401, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .terminateSubjectOne =>
+      { tag := 0x0501, arg0 := 1, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .enterFatalKernelFault =>
+      { tag := 0x0601, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .attemptPostFatalSchedule =>
+      { tag := 0x0701, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
 
 def decodeCommand (words : CommandWords) : Except DecodeError CommandId :=
   if words.tag = 0x0101 then
@@ -117,8 +135,20 @@ def decodeCommand (words : CommandWords) : Except DecodeError CommandId :=
     if words.arg0 = 0 && words.arg1 = 0 && words.arg2 = 0 && words.arg3 = 0 then
       .ok .observeScheduler
     else .error .noncanonicalArguments
+  else if words.tag = 0x0501 then
+    if words.arg0 = 1 && words.arg1 = 0 && words.arg2 = 0 && words.arg3 = 0 then
+      .ok .terminateSubjectOne
+    else .error .noncanonicalArguments
+  else if words.tag = 0x0601 then
+    if words.arg0 = 0 && words.arg1 = 0 && words.arg2 = 0 && words.arg3 = 0 then
+      .ok .enterFatalKernelFault
+    else .error .noncanonicalArguments
+  else if words.tag = 0x0701 then
+    if words.arg0 = 0 && words.arg1 = 0 && words.arg2 = 0 && words.arg3 = 0 then
+      .ok .attemptPostFatalSchedule
+    else .error .noncanonicalArguments
   else if words.tag % 256 != abiVersion then .error .wrongVersion
-  else if 0x0501 ≤ words.tag then .error .reservedBits
+  else if 0x0801 ≤ words.tag then .error .reservedBits
   else .error .unknownCommand
 
 theorem decode_encode_command (id : CommandId) :
@@ -131,6 +161,19 @@ theorem command_encoding_injective (first second : CommandId)
 
 /-- The normalized public commands carry only raw syscall words or a bounded
 subject selector.  Caller and address-space identity remain absent. -/
+def fatalKernelFrame : Interrupt.HardwareFrame :=
+  { vector := 14
+    errorCode := 0
+    savedPrivilege := .kernel
+    instructionPointer := 0x400000
+    stackPointer := 0x500000
+    codeSelector := 0x23
+    stackSelector := 0x1b
+    flags := 2
+    canonicalInstructionPointer := true
+    canonicalStackPointer := true
+    flagsAllowed := true }
+
 def commandOperation : CommandId → AuthoritativeOperation
   | .createSubjectOne => .ordinary (.createSubject 1)
   | .rejectUnknownSyscall =>
@@ -138,12 +181,18 @@ def commandOperation : CommandId → AuthoritativeOperation
   | .rejectMalformedMap =>
       .ordinary (.syscall { number := 0, arg0 := 0, arg1 := 0, arg2 := 0 })
   | .observeScheduler => .ordinary .scheduleNext
+  | .terminateSubjectOne => .ordinary (.terminateSubject 1)
+  | .enterFatalKernelFault => .ordinary (.interrupt fatalKernelFrame)
+  | .attemptPostFatalSchedule => .ordinary .scheduleNext
 
 def nextState : StateId → CommandId → Option StateId
   | .initial, .createSubjectOne => some .subjectCreated
   | .subjectCreated, .rejectUnknownSyscall => some .unknownSyscallRejected
   | .unknownSyscallRejected, .rejectMalformedMap => some .malformedMapRejected
   | .malformedMapRejected, .observeScheduler => some .schedulerObserved
+  | .schedulerObserved, .terminateSubjectOne => some .subjectTerminated
+  | .subjectTerminated, .enterFatalKernelFault => some .fatalEntered
+  | .fatalEntered, .attemptPostFatalSchedule => some .postFatalRejected
   | _, _ => none
 
 structure ReplyToken where
@@ -159,6 +208,12 @@ def replyToken : StateId → CommandId → Option ReplyToken
       some { next := .malformedMapRejected, reply := 3 }
   | .malformedMapRejected, .observeScheduler =>
       some { next := .schedulerObserved, reply := 4 }
+  | .schedulerObserved, .terminateSubjectOne =>
+      some { next := .subjectTerminated, reply := 5 }
+  | .subjectTerminated, .enterFatalKernelFault =>
+      some { next := .fatalEntered, reply := 6 }
+  | .fatalEntered, .attemptPostFatalSchedule =>
+      some { next := .postFatalRejected, reply := 7 }
   | _, _ => none
 
 /-- Version byte, next-state byte, and reply byte; all upper bits are reserved. -/
@@ -170,8 +225,11 @@ def decodeReply (word : UInt64) : Except DecodeError ReplyToken :=
   else if word = 0x020201 then .ok { next := .unknownSyscallRejected, reply := 2 }
   else if word = 0x030301 then .ok { next := .malformedMapRejected, reply := 3 }
   else if word = 0x040401 then .ok { next := .schedulerObserved, reply := 4 }
+  else if word = 0x050501 then .ok { next := .subjectTerminated, reply := 5 }
+  else if word = 0x060601 then .ok { next := .fatalEntered, reply := 6 }
+  else if word = 0x070701 then .ok { next := .postFatalRejected, reply := 7 }
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x050501 ≤ word then .error .reservedBits
+  else if 0x080801 ≤ word then .error .reservedBits
   else .error .unknownCommand
 
 theorem decode_encode_reply_for_trace state command token
@@ -211,9 +269,10 @@ no shadow kernel state. -/
 @[export leanos_composite_dispatch]
 def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   if stateWord != 0x0001 && stateWord != 0x0101 && stateWord != 0x0201 &&
-      stateWord != 0x0301 && stateWord != 0x0401 then
+      stateWord != 0x0301 && stateWord != 0x0401 && stateWord != 0x0501 &&
+      stateWord != 0x0601 && stateWord != 0x0701 then
     if stateWord % 256 != abiVersion then 0xff01
-    else if 0x0501 ≤ stateWord then 0xff02
+    else if 0x0801 ≤ stateWord then 0xff02
     else 0xff03
   else if tag = 0x0101 then
     if arg0 != 1 || arg1 != 0 || arg2 != 0 || arg3 != 0 then
@@ -238,8 +297,26 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
     else if stateWord = 0x0301 then
       0x040401
     else 0xff06
+  else if tag = 0x0501 then
+    if arg0 != 1 || arg1 != 0 || arg2 != 0 || arg3 != 0 then
+      0xff05
+    else if stateWord = 0x0401 then
+      0x050501
+    else 0xff06
+  else if tag = 0x0601 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then
+      0xff05
+    else if stateWord = 0x0501 then
+      0x060601
+    else 0xff06
+  else if tag = 0x0701 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then
+      0xff05
+    else if stateWord = 0x0601 then
+      0x070701
+    else 0xff06
   else if tag % 256 != abiVersion then 0xff01
-  else if 0x0501 ≤ tag then 0xff02
+  else if 0x0801 ≤ tag then 0xff02
   else 0xff04
 
 /-- The scalar export and the logical adapter use one canonical edge table. -/
@@ -272,12 +349,27 @@ def schedulerObservedState : Except DecodeError CompositeState := do
   let state ← malformedMapRejectedState
   pure (authoritativeGate state (commandOperation .observeScheduler)).state
 
+def subjectTerminatedState : Except DecodeError CompositeState := do
+  let state ← schedulerObservedState
+  pure (authoritativeGate state (commandOperation .terminateSubjectOne)).state
+
+def fatalEnteredState : Except DecodeError CompositeState := do
+  let state ← subjectTerminatedState
+  pure (authoritativeGate state (commandOperation .enterFatalKernelFault)).state
+
+def postFatalRejectedState : Except DecodeError CompositeState := do
+  let state ← fatalEnteredState
+  pure (authoritativeGate state (commandOperation .attemptPostFatalSchedule)).state
+
 def materialize : StateId → Except DecodeError CompositeState
   | .initial => initialState
   | .subjectCreated => subjectCreatedState
   | .unknownSyscallRejected => unknownSyscallRejectedState
   | .malformedMapRejected => malformedMapRejectedState
   | .schedulerObserved => schedulerObservedState
+  | .subjectTerminated => subjectTerminatedState
+  | .fatalEntered => fatalEnteredState
+  | .postFatalRejected => postFatalRejectedState
 
 structure LogicalStep where
   pre : CompositeState
@@ -335,7 +427,13 @@ theorem state_continuity state command next
     (state = .unknownSyscallRejected ∧ command = .rejectMalformedMap ∧
       next = .malformedMapRejected) ∨
     (state = .malformedMapRejected ∧ command = .observeScheduler ∧
-      next = .schedulerObserved) := by
+      next = .schedulerObserved) ∨
+    (state = .schedulerObserved ∧ command = .terminateSubjectOne ∧
+      next = .subjectTerminated) ∨
+    (state = .subjectTerminated ∧ command = .enterFatalKernelFault ∧
+      next = .fatalEntered) ∨
+    (state = .fatalEntered ∧ command = .attemptPostFatalSchedule ∧
+      next = .postFatalRejected) := by
   cases state <;> cases command <;> simp_all [nextState]
 
 /-- The encoded successor materializes to the exact post-state returned by the
@@ -349,7 +447,8 @@ theorem materialize_next_exact state command next pre
   all_goals subst next
   all_goals
     simp only [materialize, subjectCreatedState, unknownSyscallRejectedState,
-      malformedMapRejectedState, schedulerObservedState] at hpre ⊢
+      malformedMapRejectedState, schedulerObservedState, subjectTerminatedState,
+      fatalEnteredState, postFatalRejectedState] at hpre ⊢
     rw [hpre]
     rfl
 
@@ -436,10 +535,14 @@ def canonicalTrace : List (StateId × CommandId) :=
   [(.initial, .createSubjectOne),
    (.subjectCreated, .rejectUnknownSyscall),
    (.unknownSyscallRejected, .rejectMalformedMap),
-   (.malformedMapRejected, .observeScheduler)]
+   (.malformedMapRejected, .observeScheduler),
+   (.schedulerObserved, .terminateSubjectOne),
+   (.subjectTerminated, .enterFatalKernelFault),
+   (.fatalEntered, .attemptPostFatalSchedule)]
 
 def canonicalCommands : List CommandId :=
-  [.createSubjectOne, .rejectUnknownSyscall, .rejectMalformedMap, .observeScheduler]
+  [.createSubjectOne, .rejectUnknownSyscall, .rejectMalformedMap, .observeScheduler,
+   .terminateSubjectOne, .enterFatalKernelFault, .attemptPostFatalSchedule]
 
 theorem canonicalTrace_all_exact :
     canonicalTrace.all (fun edge =>
@@ -447,21 +550,36 @@ theorem canonicalTrace_all_exact :
   native_decide
 
 theorem canonicalCommands_complete :
-    runCommands .initial canonicalCommands = .ok .schedulerObserved := by
+    runCommands .initial canonicalCommands = .ok .postFatalRejected := by
   rfl
 
 theorem canonicalCommands_refine start :
     materialize .initial = .ok start →
-    materialize .schedulerObserved =
+    materialize .postFatalRejected =
       .ok (runAuthoritativeOperations start
         (canonicalCommands.map commandOperation)) :=
   runCommands_refines_authoritativeOperations .initial canonicalCommands
-    .schedulerObserved start canonicalCommands_complete
+    .postFatalRejected start canonicalCommands_complete
+
+/-- The added lifecycle/fatal suffix selects subject termination, fatal entry,
+and an attempted post-fatal scheduler operation.  `logicalStep_refines_authoritativeGate`
+then retains each operation's exact typed result and successor. -/
+theorem canonical_lifecycle_fatal_operations :
+    commandOperation .terminateSubjectOne = .ordinary (.terminateSubject 1) ∧
+    commandOperation .enterFatalKernelFault = .ordinary (.interrupt fatalKernelFrame) ∧
+    commandOperation .attemptPostFatalSchedule = .ordinary .scheduleNext := by
+  exact ⟨rfl, rfl, rfl⟩
 
 example : dispatch 0x0001 0x0101 1 0 0 0 = encodeReply
     { next := .subjectCreated, reply := 1 } := by native_decide
 example : dispatch 0x0101 0x0201 99 0 0 0 = encodeReply
     { next := .unknownSyscallRejected, reply := 2 } := by native_decide
+example : dispatch 0x0401 0x0501 1 0 0 0 = encodeReply
+    { next := .subjectTerminated, reply := 5 } := by native_decide
+example : dispatch 0x0501 0x0601 0 0 0 0 = encodeReply
+    { next := .fatalEntered, reply := 6 } := by native_decide
+example : dispatch 0x0601 0x0701 0 0 0 0 = encodeReply
+    { next := .postFatalRejected, reply := 7 } := by native_decide
 example : dispatch 0x0101 0x0201 99 1 0 0 =
     0xff05 := by native_decide
 example : dispatch 0x0001 0x0201 99 0 0 0 =
