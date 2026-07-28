@@ -72,7 +72,7 @@ while IFS=$'\t' read -r id runner harness generation target modules exports asse
       exit 1
     }
     if ! sed '/^[[:space:]]*extern[[:space:]]/d' "$harness" |
-        grep -Eq "(^|[^[:alnum:]_])${symbol}[[:space:]]*\\("; then
+        grep -E "(^|[^[:alnum:]_])${symbol}[[:space:]]*\\(" >/dev/null; then
       echo "error: hosted boundary '$id' export '$symbol' is absent from its own harness" >&2
       exit 1
     fi
