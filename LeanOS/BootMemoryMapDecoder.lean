@@ -503,7 +503,7 @@ theorem successfulTagDecodeTraversal_offset_lt_total
 /-- After the unique memory-map tag has been seen, a successful traversal can
 consume only ignored tags before the terminal end tag.  The exact ignored-tag
 sizes are retained so the source order can subsequently be reconstructed. -/
-private theorem successfulTagDecodeTraversal_afterMap_shape
+theorem successfulTagDecodeTraversal_afterMap_shape
     (bytes : List UInt8) (total offset fuel : Nat)
     (sawMemoryMap : Bool) (tagsRev tags : List Tag)
     (hsaw : sawMemoryMap = true)
@@ -527,7 +527,7 @@ private theorem successfulTagDecodeTraversal_afterMap_shape
 
 /-- Ignored tags on either side of one well-shaped memory-map tag do not
 change the typed entry list extracted from that tag. -/
-private theorem extractMemoryMap_ignored_around
+theorem extractMemoryMap_ignored_around
     (beforeSizes afterSizes : List Nat) (size : Nat) (entries : List RawEntry)
     (hsize : size = memoryMapTagHeaderSize + memoryMapEntrySize * entries.length)
     (hbound : entries.length ≤ maxEntries) :
@@ -1162,6 +1162,60 @@ theorem accepted_handoff_valid (input : Input) (decoded : Decoded)
     (_h : decode input = .ok decoded) :
     validateHandoff decoded.handoff = .ok decoded.entries :=
   decoded.handoffValid
+
+set_option maxHeartbeats 800000 in
+/-- Successful handoff validation reaches the exact typed map extraction;
+none of the preceding shape checks can replace its returned entry list. -/
+theorem validateHandoff_extractMemoryMap
+    (handoff : Handoff) (entries : List RawEntry)
+    (hvalid : validateHandoff handoff = .ok entries) :
+    extractMemoryMap handoff.tags = .ok entries := by
+  unfold validateHandoff at hvalid
+  simp only [bind, Except.bind] at hvalid
+  by_cases hmagic : handoff.magic != multiboot2Magic
+  · rw [if_pos hmagic] at hvalid
+    contradiction
+  · rw [if_neg hmagic] at hvalid
+    by_cases hoverflow :
+        handoff.infoAddress ≥ wordLimit || handoff.totalSize ≥ wordLimit ||
+          handoff.totalSize > wordLimit - 1 - handoff.infoAddress
+    · rw [if_pos hoverflow] at hvalid
+      contradiction
+    · rw [if_neg hoverflow] at hvalid
+      by_cases haligned : handoff.infoAddress % 8 != 0
+      · rw [if_pos haligned] at hvalid
+        contradiction
+      · rw [if_neg haligned] at hvalid
+        by_cases hsize :
+            handoff.totalSize < 16 || handoff.totalSize % 8 != 0
+        · rw [if_pos hsize] at hvalid
+          contradiction
+        · rw [if_neg hsize] at hvalid
+          by_cases htags : handoff.tags.length > maxTags
+          · rw [if_pos htags] at hvalid
+            contradiction
+          · rw [if_neg htags] at hvalid
+            by_cases hshape : handoff.tags.any (fun tag => !tagShapeValid tag)
+            · rw [if_pos hshape] at hvalid
+              contradiction
+            · rw [if_neg hshape] at hvalid
+              let bytes :=
+                8 + (handoff.tags.map (aligned8 ∘ Tag.size)).foldl (· + ·) 0
+              change
+                (if bytes != handoff.totalSize then
+                  throw .malformedInfoSize
+                else if bytes > maxTagBytes then
+                  throw .tagBytesExceeded
+                else extractMemoryMap handoff.tags) = .ok entries at hvalid
+              by_cases hbytes : bytes != handoff.totalSize
+              · rw [if_pos hbytes] at hvalid
+                contradiction
+              · rw [if_neg hbytes] at hvalid
+                by_cases hbound : bytes > maxTagBytes
+                · rw [if_pos hbound] at hvalid
+                  contradiction
+                · rw [if_neg hbound] at hvalid
+                  exact hvalid
 
 theorem accepted_within_bounds (input : Input) (decoded : Decoded)
     (_h : decode input = .ok decoded) :
