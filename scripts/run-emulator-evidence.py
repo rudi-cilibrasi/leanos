@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 
@@ -18,9 +19,149 @@ DEFAULT_MATRIX = ROOT / "scripts/emulator-evidence-matrix.tsv"
 DEFAULT_BUILD = ROOT / "build/boot"
 DEFAULT_OUTPUT = ROOT / "build/evidence/emulator-evidence.json"
 DEFAULT_TOOLS = ROOT / "build/ci/tool-versions.txt"
+REQUIRED_FAULT_RELEASE_ARTIFACTS = (
+    (
+        "build/boot/leanos-${version}-x86_64-fault-containment.iso",
+        "leanos-${version}-x86_64-fault-containment.iso",
+    ),
+    (
+        "build/boot/leanos-fault-containment.elf",
+        "leanos-${version}-x86_64-fault-containment.elf",
+    ),
+    (
+        "build/boot/leanos-fault-containment.map",
+        "leanos-${version}-x86_64-fault-containment.map",
+    ),
+    (
+        "build/boot/fault-containment.serial.log",
+        "leanos-${version}-fault-containment-serial.log",
+    ),
+    (
+        "build/boot/fault-containment.disassembly.txt",
+        "leanos-${version}-fault-containment-disassembly.txt",
+    ),
+    (
+        "build/boot/fault-containment-policy-report.txt",
+        "leanos-${version}-fault-containment-policy-report.txt",
+    ),
+    (
+        "build/boot/fault-containment-snapshot.txt",
+        "leanos-${version}-fault-containment-snapshot.txt",
+    ),
+    (
+        "build/boot/boot-page-plan-fault-containment.final.h",
+        "leanos-${version}-fault-containment-page-plan.h",
+    ),
+    (
+        "build/boot/leanos-${version}-x86_64-fault-readonly-write.iso",
+        "leanos-${version}-x86_64-fault-readonly-write.iso",
+    ),
+    (
+        "build/boot/leanos-fault-readonly-write.elf",
+        "leanos-${version}-x86_64-fault-readonly-write.elf",
+    ),
+    (
+        "build/boot/leanos-fault-readonly-write.map",
+        "leanos-${version}-x86_64-fault-readonly-write.map",
+    ),
+    (
+        "build/boot/fault-readonly-write.serial.log",
+        "leanos-${version}-fault-readonly-write-serial.log",
+    ),
+    (
+        "build/boot/fault-readonly-write.disassembly.txt",
+        "leanos-${version}-fault-readonly-write-disassembly.txt",
+    ),
+    (
+        "build/boot/fault-readonly-write-policy-report.txt",
+        "leanos-${version}-fault-readonly-write-policy-report.txt",
+    ),
+    (
+        "build/boot/fault-readonly-write-snapshot.txt",
+        "leanos-${version}-fault-readonly-write-snapshot.txt",
+    ),
+    (
+        "build/boot/boot-page-plan-fault-readonly-write.final.h",
+        "leanos-${version}-fault-readonly-write-page-plan.h",
+    ),
+    (
+        "build/boot/leanos-${version}-x86_64-fault-nx-execute.iso",
+        "leanos-${version}-x86_64-fault-nx-execute.iso",
+    ),
+    (
+        "build/boot/leanos-fault-nx-execute.elf",
+        "leanos-${version}-x86_64-fault-nx-execute.elf",
+    ),
+    (
+        "build/boot/leanos-fault-nx-execute.map",
+        "leanos-${version}-x86_64-fault-nx-execute.map",
+    ),
+    (
+        "build/boot/fault-nx-execute.serial.log",
+        "leanos-${version}-fault-nx-execute-serial.log",
+    ),
+    (
+        "build/boot/fault-nx-execute.disassembly.txt",
+        "leanos-${version}-fault-nx-execute-disassembly.txt",
+    ),
+    (
+        "build/boot/fault-nx-execute-policy-report.txt",
+        "leanos-${version}-fault-nx-execute-policy-report.txt",
+    ),
+    (
+        "build/boot/fault-nx-execute-snapshot.txt",
+        "leanos-${version}-fault-nx-execute-snapshot.txt",
+    ),
+    (
+        "build/boot/boot-page-plan-fault-nx-execute.final.h",
+        "leanos-${version}-fault-nx-execute-page-plan.h",
+    ),
+)
+REQUIRED_FAULT_RELEASE_ARTIFACTS += tuple(
+    (
+        source.replace("@PROBE@", probe),
+        destination.replace("@PROBE@", probe),
+    )
+    for probe in ("reserved-bit", "walk-mismatch")
+    for source, destination in (
+        (
+            "build/boot/leanos-${version}-x86_64-fault-@PROBE@.iso",
+            "leanos-${version}-x86_64-fault-@PROBE@.iso",
+        ),
+        (
+            "build/boot/leanos-fault-@PROBE@.elf",
+            "leanos-${version}-x86_64-fault-@PROBE@.elf",
+        ),
+        (
+            "build/boot/leanos-fault-@PROBE@.map",
+            "leanos-${version}-x86_64-fault-@PROBE@.map",
+        ),
+        (
+            "build/boot/fault-@PROBE@.serial.log",
+            "leanos-${version}-fault-@PROBE@-serial.log",
+        ),
+        (
+            "build/boot/fault-@PROBE@.disassembly.txt",
+            "leanos-${version}-fault-@PROBE@-disassembly.txt",
+        ),
+        (
+            "build/boot/fault-@PROBE@-policy-report.txt",
+            "leanos-${version}-fault-@PROBE@-policy-report.txt",
+        ),
+        (
+            "build/boot/fault-@PROBE@-terminal.txt",
+            "leanos-${version}-fault-@PROBE@-terminal.txt",
+        ),
+        (
+            "build/boot/boot-page-plan-fault-@PROBE@.final.h",
+            "leanos-${version}-fault-@PROBE@-page-plan.h",
+        ),
+    )
+)
 RESULT_CLASSES = {"accepted-boot", "controlled-rejection", "fail-stop"}
 RUNNERS = {
     "boot",
+    "fault-integrity",
     "return",
     "peer-pke",
     "double-fault",
@@ -33,6 +174,7 @@ RUNNERS = {
 }
 RUNNER_RESULT_CLASSES = {
     "boot": "accepted-boot",
+    "fault-integrity": "fail-stop",
     "return": "controlled-rejection",
     "peer-pke": "controlled-rejection",
     "double-fault": "fail-stop",
@@ -98,6 +240,30 @@ REQUIRED_FAST_ENTRY_ROWS = {
         "scenario": "fast-entry-sysenter-eip-relaxation",
         "mode": "16",
         "reason": "fast-entry-target-readback",
+    },
+}
+REQUIRED_FAULT_INTEGRITY_ROWS = {
+    "fault-reserved-bit": {
+        "runner": "fault-integrity",
+        "result_class": "fail-stop",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fault-reserved-bit.iso",
+        "elf": "leanos-fault-reserved-bit.elf",
+        "serial_log": "fault-reserved-bit.serial.log",
+        "scenario": "reserved-bit",
+        "mode": "-",
+        "reason": "page-table-integrity",
+    },
+    "fault-walk-mismatch": {
+        "runner": "fault-integrity",
+        "result_class": "fail-stop",
+        "timeout": "30",
+        "image": "leanos-@VERSION@-x86_64-fault-walk-mismatch.iso",
+        "elf": "leanos-fault-walk-mismatch.elf",
+        "serial_log": "fault-walk-mismatch.serial.log",
+        "scenario": "walk-mismatch",
+        "mode": "-",
+        "reason": "error-address-walk-disagreement",
     },
 }
 for mechanism, mode in (
@@ -241,6 +407,18 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
                     f"mandatory fast-entry scenario {scenario_id} has "
                     f"unexpected {key} {row[key]!r}"
                 )
+    for scenario_id, expected in REQUIRED_FAULT_INTEGRITY_ROWS.items():
+        row = rows_by_id.get(scenario_id)
+        if row is None:
+            raise EvidenceError(
+                f"mandatory fault-integrity scenario is absent: {scenario_id}"
+            )
+        for key, value in expected.items():
+            if row[key] != value:
+                raise EvidenceError(
+                    f"mandatory fault-integrity scenario {scenario_id} has "
+                    f"unexpected {key} {row[key]!r}"
+                )
 
     serials = [row["serial_log"] for row in rows]
     if len(serials) != len(set(serials)):
@@ -273,6 +451,13 @@ def scenario_invocation(
     if row["runner"] == "boot":
         environment["LEANOS_BOOT_SCENARIO"] = row["scenario"]
         command = ["./scripts/run-image.sh", str(paths["image"])]
+    elif row["runner"] == "fault-integrity":
+        environment["LEANOS_FAULT_INTEGRITY_PROBE"] = row["scenario"]
+        environment["LEANOS_FAULT_INTEGRITY_ELF"] = str(paths["elf"])
+        environment["LEANOS_FAULT_TERMINAL_ARTIFACT"] = str(
+            build_dir / f"fault-{row['scenario']}-terminal.txt"
+        )
+        command = ["./scripts/run-fault-integrity.sh", str(paths["image"])]
     elif row["runner"] == "return":
         environment["LEANOS_BOOT_DIR"] = str(build_dir)
         environment["LEANOS_RETURN_CORRUPTION_FIXTURE"] = row["scenario"]
@@ -570,6 +755,39 @@ def verify_report(
             raise EvidenceError(f"scenario {row['id']} runner environment differs")
 
 
+def check_release_package(package: str) -> None:
+    normalized = package.replace("\\\n", " ")
+    commands = []
+    for line in normalized.splitlines():
+        try:
+            commands.append(shlex.split(line, comments=True, posix=True))
+        except ValueError as error:
+            raise EvidenceError(f"package-release.sh cannot be parsed: {error}") from error
+    copies = {
+        (tokens[1], tokens[2])
+        for tokens in commands
+        if len(tokens) == 3 and tokens[0] == "cp"
+    }
+    checksum_tokens = next(
+        (tokens for tokens in commands if "sha256sum" in tokens),
+        None,
+    )
+    if checksum_tokens is None:
+        raise EvidenceError("package-release.sh does not generate SHA256SUMS")
+    for source, destination in REQUIRED_FAULT_RELEASE_ARTIFACTS:
+        release_destination = f"$release/{destination}"
+        if (source, release_destination) not in copies:
+            raise EvidenceError(
+                "package-release.sh does not copy mandatory fault evidence "
+                f"{source} to {destination}"
+            )
+        if destination not in checksum_tokens:
+            raise EvidenceError(
+                "package-release.sh does not checksum mandatory fault evidence "
+                f"{destination}"
+            )
+
+
 def check_workflows() -> None:
     parse_matrix(DEFAULT_MATRIX)
     workflow_contents: dict[str, str] = {}
@@ -600,6 +818,23 @@ def check_workflows() -> None:
         "build/boot/boot-page-plan-fault-containment.final.h",
         "build/boot/fault-containment.disassembly.txt",
         "build/boot/fault-containment.serial.log",
+        "build/boot/fault-containment-snapshot.txt",
+        "build/boot/leanos-0.1.0-x86_64-fault-readonly-write.iso",
+        "build/boot/leanos-fault-readonly-write.elf",
+        "build/boot/leanos-fault-readonly-write.map",
+        "build/boot/boot-page-plan-fault-readonly-write.h",
+        "build/boot/boot-page-plan-fault-readonly-write.final.h",
+        "build/boot/fault-readonly-write.disassembly.txt",
+        "build/boot/fault-readonly-write.serial.log",
+        "build/boot/fault-readonly-write-snapshot.txt",
+        "build/boot/leanos-0.1.0-x86_64-fault-nx-execute.iso",
+        "build/boot/leanos-fault-nx-execute.elf",
+        "build/boot/leanos-fault-nx-execute.map",
+        "build/boot/boot-page-plan-fault-nx-execute.h",
+        "build/boot/boot-page-plan-fault-nx-execute.final.h",
+        "build/boot/fault-nx-execute.disassembly.txt",
+        "build/boot/fault-nx-execute.serial.log",
+        "build/boot/fault-nx-execute-snapshot.txt",
         "build/boot/corpus.tsv",
         "build/oracle/host-results.txt",
         "build/evidence/*",
@@ -612,9 +847,27 @@ def check_workflows() -> None:
             + ", ".join(missing)
         )
     release_diagnostics = workflow_contents[".github/workflows/release.yml"]
+    release_gate = re.search(
+        r"(?ms)^  gate:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+        release_diagnostics,
+    )
+    if release_gate is None:
+        raise EvidenceError("release workflow does not define the gated evidence job")
+    release_timeout = re.search(
+        r"(?m)^    timeout-minutes:\s*(\d+)\s*$",
+        release_gate.group("body"),
+    )
+    if release_timeout is None or int(release_timeout.group(1)) < 60:
+        raise EvidenceError(
+            "release evidence gate must allow at least 60 minutes for proof, "
+            "reproducibility, image, and emulator checks"
+        )
     for artifact in (
         "build/boot/*.map",
         "build/boot/*.disassembly.txt",
+        "build/boot/fault-containment-snapshot.txt",
+        "build/boot/fault-readonly-write-snapshot.txt",
+        "build/boot/fault-nx-execute-snapshot.txt",
         "build/boot/boot-page-plan*.h",
         "build/oracle/host-results.txt",
     ):
@@ -625,6 +878,7 @@ def check_workflows() -> None:
     package = (ROOT / "scripts/package-release.sh").read_text(encoding="utf-8")
     if "run-emulator-evidence.py verify" not in package:
         raise EvidenceError("package-release.sh does not verify shared emulator evidence")
+    check_release_package(package)
     print("Emulator evidence matrix and workflow consistency checks passed")
 
 

@@ -12,7 +12,11 @@ jobs:
   gate:
     name: Prove, reproduce, and collect release evidence
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The gate intentionally performs the proof suite, two clean
+    # reproducibility builds, a final image build, and the full QEMU matrix.
+    # A fresh hosted runner currently needs more than 20 minutes for that
+    # bounded workload, so leave enough room for installation and packaging.
+    timeout-minutes: 60
     steps:
       - name: Check out tagged source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -69,6 +73,11 @@ jobs:
             build/boot/*.elf
             build/boot/*.map
             build/boot/*.disassembly.txt
+            build/boot/fault-containment-snapshot.txt
+            build/boot/fault-readonly-write-snapshot.txt
+            build/boot/fault-nx-execute-snapshot.txt
+            build/boot/fault-reserved-bit-terminal.txt
+            build/boot/fault-walk-mismatch-terminal.txt
             build/boot/boot-page-plan*.h
             build/boot/SHA256SUMS
             build/boot/SOURCE_REVISION

@@ -37,6 +37,13 @@ def mutate_matrix(target: Path, transform) -> None:
     target.write_text("\n".join(transform(lines)) + "\n", encoding="utf-8")
 
 
+def replace_last(content: str, old: str, new: str) -> str:
+    before, separator, after = content.rpartition(old)
+    if not separator:
+        raise AssertionError(f"fixture source does not contain {old!r}")
+    return before + new + after
+
+
 def prepare_tree(tmp: Path) -> tuple[Path, Path, Path, argparse.Namespace]:
     build = tmp / "boot"
     output = tmp / "evidence/report.json"
@@ -371,6 +378,29 @@ def run_fixtures() -> None:
                 mock.patch.object(evidence.subprocess, "run", side_effect=side_effect),
             ):
                 expect_failure(lambda: evidence.run(case_args), fragment)
+
+        package = (ROOT / "scripts/package-release.sh").read_text(encoding="utf-8")
+        evidence.check_release_package(package)
+        missing_copy = package.replace(
+            "build/boot/fault-containment-snapshot.txt",
+            "build/boot/fault-containment-snapshot-omitted.txt",
+            1,
+        )
+        expect_failure(
+            lambda: evidence.check_release_package(missing_copy),
+            "does not copy mandatory fault evidence "
+            "build/boot/fault-containment-snapshot.txt",
+        )
+        missing_checksum = replace_last(
+            package,
+            '"leanos-${version}-fault-containment-snapshot.txt"',
+            '"leanos-${version}-fault-containment-snapshot-omitted.txt"',
+        )
+        expect_failure(
+            lambda: evidence.check_release_package(missing_checksum),
+            "does not checksum mandatory fault evidence "
+            "leanos-${version}-fault-containment-snapshot.txt",
+        )
 
         evidence.check_workflows()
 

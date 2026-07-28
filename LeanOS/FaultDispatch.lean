@@ -1893,6 +1893,43 @@ theorem page_fault_dispatch_transition_contained_nonvacuous :
         0x01000000ff020202 := by
   native_decide
 
+/-- The allocation-free policy itself distinguishes the four bounded denial
+classes required by the reason-sensitive machine matrix.  This is a
+model-level non-vacuity result: the production adapter must still supply the
+matching live leaf and an exact invalidation witness for the concrete faulting
+page before any of these words can authorize containment. -/
+theorem page_fault_dispatch_transition_reason_matrix_nonvacuous :
+    pageFaultDispatchTransition
+        1 14 4 0x32000 50 0 0 1 1 1 0xa000 15
+        0x400100 0x23 0x202 0x500ff8 0x1b 1 0
+        1 1 0xa000 15 1
+        1 0 0 0 0 0 0 0 0 0 0
+        1 0xa000 1 0xa000 1 0 0 1 1 1 1 1 1 0 0 1 1 1 2 2 =
+          0x01000000ff020202 ∧
+      pageFaultDispatchTransition
+        1 14 5 0 0 0 1 1 1 1 0xa000 15
+        0x400100 0x23 0x202 0x500ff8 0x1b 1 0
+        1 1 0xa000 15 1
+        1 0 0 0 0 0 0 0 0 0 0
+        1 0xa000 1 0xa000 1 1 1 1 1 1 1 1 1 0 0 1 1 1 2 2 =
+          0x01000000ff020202 ∧
+      pageFaultDispatchTransition
+        1 14 7 0x64000 100 1 1 1 1 1 0xa000 15
+        0x400100 0x23 0x202 0x500ff8 0x1b 1 0
+        1 1 0xa000 15 1
+        1 0 0 0 0 0 0 0 0 0 0
+        1 0xa000 1 0xa000 1 5 5 1 1 1 1 1 1 0 0 1 1 1 2 2 =
+          0x01000000ff020202 ∧
+      pageFaultDispatchTransition
+        1 14 21 0x65000 101 2 1 1 1 1 0xa000 15
+        0x400100 0x23 0x202 0x500ff8 0x1b 1 0
+        1 1 0xa000 15 1
+        1 0 0 0 0 0 0 0 0 0 0
+        1 0xa000 1 0xa000 1 0x8000000000000007
+        0x8000000000000007 1 1 1 1 1 1 0 0 1 1 1 2 2 =
+          0x01000000ff020202 := by
+  native_decide
+
 theorem page_fault_dispatch_transition_mismatch_is_fatal :
     pageFaultDispatchTransition
       1 14 4 0x32000 50 0 0 1 1 1 0xa000 15

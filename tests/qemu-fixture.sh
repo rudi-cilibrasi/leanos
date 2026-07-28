@@ -10,6 +10,12 @@ done
 add_nmi_guard_fixture() {
   sed -i '/^LEANOS\/8 PAGING fixture=extra-mapping /a LEANOS/8 PAGING fixture=nmi-guard-mapping root=B level=pt page=6 expected=0 actual=9223372036854800387 result=REJECTED' "$log"
 }
+fault_symbol_value() {
+  local symbol="$1" elf="${LEANOS_FAULT_CONTAINMENT_ELF:-build/boot/leanos-fault-containment.elf}"
+  local address
+  address="$(nm -n "$elf" | awk -v wanted="$symbol" '$3 == wanted { print $1 }')"
+  printf '%u' "$((16#$address))"
+}
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
   dma-missing|dma-forged|dma-prestate-forged|dma-topology-forged|dma-control-forged|dma-readback-forged)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
@@ -33,13 +39,19 @@ case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
   ;;
 esac
 if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
-      "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == fault-containment ]]; then
+      ( "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == fault-containment ||
+        "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == fault-readonly-write ||
+        "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == fault-nx-execute ) ]]; then
+  fault_scenario="${LEANOS_BOOT_SCENARIO}"
   set +e
   LEANOS_BOOT_SCENARIO=blocking-ipc LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
   status=$?
   set -e
+  fault_probe=supervisor-read
+  [[ "$fault_scenario" == fault-readonly-write ]] && fault_probe=readonly-write
+  [[ "$fault_scenario" == fault-nx-execute ]] && fault_probe=nx-execute
   sed -i \
-    -e 's|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap|LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap|' \
+    -e "s|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap|LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=${fault_probe} contract=v1 controls=wp,smep,smap|" \
     -e '/^LEANOS\/9 /d' -e '/^LEANOS\/10 /d' \
     -e '/^LEANOS\/6 COPY /d' -e '/^LEANOS\/11 USER-FAULT /d' \
     -e '/^LEANOS\/11 ENTRY-HIGH-WATER /d' \
@@ -48,7 +60,47 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   cat >> "$log" <<'EOF'
 LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS
 LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned
-LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS
+EOF
+  if [[ "$fault_scenario" == fault-nx-execute ]]; then
+    fault_address="$(fault_symbol_value user_a_nx_fault_instruction)"
+    fault_page=$((fault_address / 4096))
+    printf -v fault_leaf '%u' \
+      "$(( (1 << 63) + fault_page * 4096 + 7 ))"
+    printf 'LEANOS/14 PF-WALK page=%s expected-leaf=%s live-leaf=%s cause=no-execute denial=no-execute result=PASS\n' \
+      "$fault_page" "$fault_leaf" "$fault_leaf" >> "$log"
+    printf 'LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=1,14,21,%s,%s,2,1,1,1,1,%s,15,%s,35,534,%s,27,1,0 authorization=1 route=72057598316249602 result=PASS\n' \
+      "$fault_address" "$fault_page" \
+      "$(fault_symbol_value page_map_level_4_a)" \
+      "$fault_address" \
+      "$(fault_symbol_value user_a_stack_top)" >> "$log"
+    printf 'LEANOS/14 FAULT-ENTRY vector=14 error=21 access=execute protection=1 cr2=%s rip=user-a-nx-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 payload-canary=armed result=PASS\n' \
+      "$fault_address" >> "$log"
+  elif [[ "$fault_scenario" == fault-readonly-write ]]; then
+    fault_address="$(fault_symbol_value user_a_write_target)"
+    fault_page=$((fault_address / 4096))
+    fault_leaf=$((fault_page * 4096 + 5))
+    printf 'LEANOS/14 PF-WALK page=%s expected-leaf=%s live-leaf=%s cause=not-writable denial=not-writable result=PASS\n' \
+      "$fault_page" "$fault_leaf" "$fault_leaf" >> "$log"
+    printf 'LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=1,14,7,%s,%s,1,1,1,1,1,%s,15,%s,35,534,%s,27,1,0 authorization=1 route=72057598316249602 result=PASS\n' \
+      "$fault_address" "$fault_page" \
+      "$(fault_symbol_value page_map_level_4_a)" \
+      "$(fault_symbol_value user_a_write_fault_instruction)" \
+      "$(fault_symbol_value user_a_stack_top)" >> "$log"
+    printf 'LEANOS/14 FAULT-ENTRY vector=14 error=7 access=write protection=1 cr2=%s rip=user-a-write-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 write-canary=unchanged result=PASS\n' \
+      "$fault_address" >> "$log"
+  else
+    printf '%s\n' \
+      'LEANOS/14 PF-WALK page=0 expected-leaf=9223372036854775811 live-leaf=9223372036854775811 cause=supervisor denial=supervisor result=PASS' \
+      >> "$log"
+    printf 'LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=1,14,5,0,0,0,1,1,1,1,%s,15,%s,35,534,%s,27,1,0 authorization=1 route=72057598316249602 result=PASS\n' \
+      "$(fault_symbol_value page_map_level_4_a)" \
+      "$(fault_symbol_value user_a_fault_instruction)" \
+      "$(fault_symbol_value user_a_stack_top)" >> "$log"
+    cat >> "$log" <<'EOF'
+LEANOS/14 FAULT-ENTRY vector=14 error=5 access=read protection=1 cr2=0 rip=user-a-fault-instruction origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2 result=PASS
+EOF
+  fi
+  cat >> "$log" <<'EOF'
 LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS
 LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS
 LEANOS/8 PAGING root=B selected=1 result=PASS
@@ -58,13 +110,35 @@ EOF
   exit "$status"
 fi
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-fault-direct-call|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-a-queued|fault-attacker-selection|fault-return-unvalidated|fault-peer-corrupt|fault-peer-cleaned|fault-forged-pass|fault-reordered|fault-kernel-relabeled|fault-global-fail)
+fault-direct-call|fault-wrong-error|fault-zero-error|fault-wrong-cr2|fault-wrong-rip|fault-wrong-access|fault-wrong-dispatch|fault-mapping-permission-drift|fault-snapshot-missing|fault-snapshot-duplicate|fault-snapshot-version|fault-snapshot-rip|fault-snapshot-authorization|fault-snapshot-route|fault-snapshot-reordered|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault-a-queued|fault-attacker-selection|fault-return-unvalidated|fault-peer-corrupt|fault-peer-cleaned|fault-forged-pass|fault-reordered|fault-kernel-relabeled|fault-global-fail|fault-nx-wrong-error|fault-nx-mapping-permission-drift|fault-nx-payload-forged)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
   set -e
   case "$mode" in
     fault-direct-call) sed -i 's/direct-call=0/direct-call=1/' "$log" ;;
+    fault-wrong-error) sed -i 's/error=5/error=7/' "$log" ;;
+    fault-zero-error) sed -i 's/error=5/error=0/' "$log" ;;
+    fault-wrong-cr2) sed -i 's/cr2=0/cr2=4096/' "$log" ;;
+    fault-wrong-rip) sed -i 's/rip=user-a-fault-instruction/rip=user-a-fault-recovered/' "$log" ;;
+    fault-wrong-access) sed -i 's/access=read/access=write/' "$log" ;;
+    fault-wrong-dispatch) sed -i 's/dispatch=0x00000000ff020202/dispatch=0x00000000ff020203/' "$log" ;;
+    fault-mapping-permission-drift)
+      sed -i 's/live-leaf=9223372036854775811/live-leaf=9223372036854775815/' "$log"
+      ;;
+    fault-snapshot-missing) sed -i '/^LEANOS\/14 PF-SNAPSHOT /d' "$log" ;;
+    fault-snapshot-duplicate) sed -i '/^LEANOS\/14 PF-SNAPSHOT /p' "$log" ;;
+    fault-snapshot-version) sed -i 's/PF-SNAPSHOT codec=1/PF-SNAPSHOT codec=2/' "$log" ;;
+    fault-snapshot-rip)
+      sed -i -E 's/(PF-SNAPSHOT .*words=([^,]*,){12})[0-9]+/\1999/' "$log"
+      ;;
+    fault-snapshot-authorization) sed -i 's/ authorization=1 / authorization=0 /' "$log" ;;
+    fault-snapshot-route) sed -i 's/ route=72057598316249602 / route=72057598316249603 /' "$log" ;;
+    fault-snapshot-reordered)
+      snapshot="$(grep '^LEANOS/14 PF-SNAPSHOT ' "$log")"
+      sed -i '/^LEANOS\/14 PF-SNAPSHOT /d' "$log"
+      sed -i "/^LEANOS\\/14 FAULT-ENTRY /a $snapshot" "$log"
+      ;;
     fault-old-recovery) sed -i '/^LEANOS\/14 TERMINATE /d; /^LEANOS\/14 DISPATCH /d' "$log" ;;
     fault-stale-cr3) sed -i 's/subject=2 address-space=2 source/subject=2 address-space=1 source/' "$log" ;;
     fault-cleanup-missing) sed -i 's/resumable=0/resumable=1/' "$log" ;;
@@ -83,6 +157,15 @@ fault-direct-call|fault-old-recovery|fault-stale-cr3|fault-cleanup-missing|fault
     fault-global-fail)
       sed -i 's/^LEANOS\/14 FINAL .*/LEANOS\/14 FINAL status=FAIL reason=kernel-fault/' "$log"
       exit 35
+      ;;
+    fault-nx-wrong-error) sed -i 's/error=21/error=5/' "$log" ;;
+    fault-nx-mapping-permission-drift)
+      sed -i -E \
+        's/(PF-WALK page=[0-9]+ expected-leaf=[0-9]+) live-leaf=[0-9]+/\1 live-leaf=7/' \
+        "$log"
+      ;;
+    fault-nx-payload-forged)
+      sed -i 's/payload-canary=armed/payload-canary=executed/' "$log"
       ;;
   esac
   exit 33

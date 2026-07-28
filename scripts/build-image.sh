@@ -29,6 +29,13 @@ build="$repo_root/build/boot"
 iso_root="$build/iso"
 preemption_iso_root="$build/iso-preemption"
 fault_containment_iso_root="$build/iso-fault-containment"
+fault_readonly_write_iso_root="$build/iso-fault-readonly-write"
+fault_nx_execute_iso_root="$build/iso-fault-nx-execute"
+fault_fatal_probes=(reserved-bit walk-mismatch)
+declare -A fault_fatal_probe_flags=(
+  [reserved-bit]="-DLEANOS_PAGE_FAULT_PROBE_RESERVED_BIT=1"
+  [walk-mismatch]="-DLEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH=1"
+)
 extended_state_iso_root="$build/iso-extended-state"
 extended_state_mmx_iso_root="$build/iso-extended-state-mmx"
 extended_state_sse_iso_root="$build/iso-extended-state-sse"
@@ -86,6 +93,8 @@ fi
 rm -rf "$build"
 mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$fault_containment_iso_root/boot/grub" \
+  "$fault_readonly_write_iso_root/boot/grub" \
+  "$fault_nx_execute_iso_root/boot/grub" \
   "$extended_state_iso_root/boot/grub" "$extended_state_mmx_iso_root/boot/grub" \
   "$extended_state_sse_iso_root/boot/grub" \
   "$extended_state_sse2_iso_root/boot/grub" \
@@ -99,6 +108,9 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$nmi_cpl3_iso_root/boot/grub" "$bootstrap32_ud_iso_root/boot/grub" \
   "$bootstrap64_nmi_iso_root/boot/grub" \
   "$malformed_handoff_iso_root/boot/grub"
+for probe in "${fault_fatal_probes[@]}"; do
+  mkdir -p "$build/iso-fault-${probe}/boot/grub"
+done
 for probe in "${direct_port_probes[@]}"; do
   mkdir -p "$build/iso-direct-port-${probe}/boot/grub"
 done
@@ -111,6 +123,11 @@ done
   "$build/boot-page-plan-malformed-handoff.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-fault-containment.h"
+./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-fault-nx-execute.h"
+for probe in "${fault_fatal_probes[@]}"; do
+  ./scripts/generate-boot-page-plan.sh --stub \
+    "$build/boot-page-plan-fault-${probe}.h"
+done
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state-peer-pke.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-double-fault.h"
@@ -213,6 +230,13 @@ mv "$build/FaultDispatchAndDirectPortIO.o" "$build/FaultDispatch.o"
   -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
   -c boot/kernel.c -o "$build/kernel-fault-containment.o"
+for probe in "${fault_fatal_probes[@]}"; do
+  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+    -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+    "${fault_fatal_probe_flags[$probe]}" \
+    -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
+    -c boot/kernel.c -o "$build/kernel-fault-${probe}.o"
+done
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
@@ -260,6 +284,21 @@ cp scripts/entry-stack-extended-callgraph.tsv \
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
   -c boot/boot.S -o "$build/boot-fault-containment.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+  -DLEANOS_PAGE_FAULT_PROBE_READONLY_WRITE=1 \
+  -c boot/boot.S -o "$build/boot-fault-readonly-write.o"
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+  -DLEANOS_PAGE_FAULT_PROBE_NX_EXECUTE=1 \
+  -c boot/boot.S -o "$build/boot-fault-nx-execute.o"
+for probe in "${fault_fatal_probes[@]}"; do
+  "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
+    -ffile-prefix-map="$repo_root"=. -g3 \
+    -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+    ${fault_fatal_probe_flags[$probe]} \
+    -c boot/boot.S -o "$build/boot-fault-${probe}.o"
+done
 "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
   -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
   -c boot/boot.S -o "$build/boot-extended-state.o"
@@ -375,6 +414,35 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
   "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
   "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-fault-readonly-write-prelink.map" \
+  -o "$build/leanos-fault-readonly-write-prelink.elf" \
+  "$build/boot-fault-readonly-write.o" "$build/kernel-fault-containment.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-fault-nx-execute-prelink.map" \
+  -o "$build/leanos-fault-nx-execute-prelink.elf" \
+  "$build/boot-fault-nx-execute.o" "$build/kernel-fault-containment.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+for probe in "${fault_fatal_probes[@]}"; do
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-fault-${probe}-prelink.map" \
+    -o "$build/leanos-fault-${probe}-prelink.elf" \
+    "$build/boot-fault-${probe}.o" "$build/kernel-fault-${probe}.o" \
+    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+    "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+    "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+    "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+done
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state-prelink.map" \
   -o "$build/leanos-extended-state-prelink.elf" "$build/boot-extended-state.o" \
@@ -513,6 +581,32 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/boot-page-plan-preemption.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-fault-containment-prelink.elf" \
   "$build/boot-page-plan-fault-containment.h"
+./scripts/generate-boot-page-plan.sh \
+  "$build/leanos-fault-readonly-write-prelink.elf" \
+  "$build/boot-page-plan-fault-readonly-write.h"
+cmp "$build/boot-page-plan-fault-containment.h" \
+  "$build/boot-page-plan-fault-readonly-write.h" || {
+  echo "error: read-only-write probe changed shared fault page-table plan" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh \
+  "$build/leanos-fault-nx-execute-prelink.elf" \
+  "$build/boot-page-plan-fault-nx-execute.h"
+cmp "$build/boot-page-plan-fault-containment.h" \
+  "$build/boot-page-plan-fault-nx-execute.h" || {
+  echo "error: NX-execute probe changed shared fault page-table plan" >&2
+  exit 1
+}
+for probe in "${fault_fatal_probes[@]}"; do
+  ./scripts/generate-boot-page-plan.sh \
+    "$build/leanos-fault-${probe}-prelink.elf" \
+    "$build/boot-page-plan-fault-${probe}.h"
+  cmp "$build/boot-page-plan-fault-containment.h" \
+    "$build/boot-page-plan-fault-${probe}.h" || {
+    echo "error: $probe probe changed shared fault page-table plan" >&2
+    exit 1
+  }
+done
 ./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-prelink.elf" \
   "$build/boot-page-plan-extended-state.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-mmx-prelink.elf" \
@@ -609,6 +703,13 @@ cmp "$build/boot-page-plan-integer-fault.h" \
   -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
   -c boot/kernel.c -o "$build/kernel-fault-containment.o"
+for probe in "${fault_fatal_probes[@]}"; do
+  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+    -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+    "${fault_fatal_probe_flags[$probe]}" \
+    -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
+    -c boot/kernel.c -o "$build/kernel-fault-${probe}.o"
+done
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
@@ -743,6 +844,35 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
   "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
   "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-fault-readonly-write.map" \
+  -o "$build/leanos-fault-readonly-write.elf" \
+  "$build/boot-fault-readonly-write.o" "$build/kernel-fault-containment.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-fault-nx-execute.map" \
+  -o "$build/leanos-fault-nx-execute.elf" \
+  "$build/boot-fault-nx-execute.o" "$build/kernel-fault-containment.o" \
+  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+for probe in "${fault_fatal_probes[@]}"; do
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-fault-${probe}.map" \
+    -o "$build/leanos-fault-${probe}.elf" \
+    "$build/boot-fault-${probe}.o" "$build/kernel-fault-${probe}.o" \
+    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+    "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+    "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+    "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+done
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-extended-state.map" \
   -o "$build/leanos-extended-state.elf" "$build/boot-extended-state.o" \
@@ -914,6 +1044,29 @@ cmp "$build/boot-page-plan-fault-containment.h" \
   echo "error: fault-containment boot page-table plan drifted after final link" >&2
   exit 1
 }
+./scripts/generate-boot-page-plan.sh "$build/leanos-fault-readonly-write.elf" \
+  "$build/boot-page-plan-fault-readonly-write.final.h"
+cmp "$build/boot-page-plan-fault-containment.h" \
+  "$build/boot-page-plan-fault-readonly-write.final.h" || {
+  echo "error: read-only-write page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh "$build/leanos-fault-nx-execute.elf" \
+  "$build/boot-page-plan-fault-nx-execute.final.h"
+cmp "$build/boot-page-plan-fault-containment.h" \
+  "$build/boot-page-plan-fault-nx-execute.final.h" || {
+  echo "error: NX-execute page-table plan drifted after final link" >&2
+  exit 1
+}
+for probe in "${fault_fatal_probes[@]}"; do
+  ./scripts/generate-boot-page-plan.sh "$build/leanos-fault-${probe}.elf" \
+    "$build/boot-page-plan-fault-${probe}.final.h"
+  cmp "$build/boot-page-plan-fault-containment.h" \
+    "$build/boot-page-plan-fault-${probe}.final.h" || {
+    echo "error: $probe page-table plan drifted after final link" >&2
+    exit 1
+  }
+done
 ./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state.elf" \
   "$build/boot-page-plan-extended-state.final.h"
 cmp "$build/boot-page-plan-extended-state.h" \
@@ -1124,6 +1277,12 @@ LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
 ./scripts/check-image-policy.sh "$build/leanos-malformed-handoff.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
 ./scripts/check-image-policy.sh "$build/leanos-fault-containment.elf"
+./scripts/check-image-policy.sh "$build/leanos-fault-readonly-write.elf"
+./scripts/check-image-policy.sh "$build/leanos-fault-nx-execute.elf"
+for probe in "${fault_fatal_probes[@]}"; do
+  LEANOS_PAGE_FAULT_FATAL_PROBE="$probe" \
+    ./scripts/check-image-policy.sh "$build/leanos-fault-${probe}.elf"
+done
 ./scripts/check-image-policy.sh "$build/leanos-extended-state.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-mmx.elf"
 ./scripts/check-image-policy.sh "$build/leanos-extended-state-sse.elf"
@@ -1163,6 +1322,14 @@ objdump -d --no-show-raw-insn "$build/leanos-bootstrap64-nmi.elf" \
   > "$build/bootstrap64-nmi.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-fault-containment.elf" \
   > "$build/fault-containment.disassembly.txt"
+objdump -d --no-show-raw-insn "$build/leanos-fault-readonly-write.elf" \
+  > "$build/fault-readonly-write.disassembly.txt"
+objdump -d --no-show-raw-insn "$build/leanos-fault-nx-execute.elf" \
+  > "$build/fault-nx-execute.disassembly.txt"
+for probe in "${fault_fatal_probes[@]}"; do
+  objdump -d --no-show-raw-insn "$build/leanos-fault-${probe}.elf" \
+    > "$build/fault-${probe}.disassembly.txt"
+done
 objdump -d --no-show-raw-insn "$build/leanos-extended-state.elf" \
   > "$build/extended-state.disassembly.txt"
 objdump -d --no-show-raw-insn "$build/leanos-extended-state-mmx.elf" \
@@ -1197,7 +1364,22 @@ done
   "$build/leanos-extended-state-sse2.elf" \
   "$build/leanos-extended-state-avx.elf"
 ./scripts/check-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-report.txt"
-./scripts/test-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-fixtures.log"
+LEANOS_PAGE_FAULT_PROBE=supervisor-read \
+  ./scripts/check-entry-policy.sh "$build/leanos-fault-containment.elf" \
+  | tee "$build/fault-containment-policy-report.txt"
+LEANOS_PAGE_FAULT_PROBE=readonly-write \
+  ./scripts/check-entry-policy.sh "$build/leanos-fault-readonly-write.elf" \
+  | tee "$build/fault-readonly-write-policy-report.txt"
+LEANOS_PAGE_FAULT_PROBE=nx-execute \
+  ./scripts/check-entry-policy.sh "$build/leanos-fault-nx-execute.elf" \
+  | tee "$build/fault-nx-execute-policy-report.txt"
+for probe in "${fault_fatal_probes[@]}"; do
+  LEANOS_PAGE_FAULT_FATAL_PROBE="$probe" \
+    ./scripts/check-entry-policy.sh "$build/leanos-fault-${probe}.elf" \
+    | tee "$build/fault-${probe}-policy-report.txt"
+done
+./scripts/test-entry-policy.sh "$build/leanos.elf" \
+  "$build/leanos-fault-nx-execute.elf" | tee "$build/entry-policy-fixtures.log"
 direct_port_report="$build/direct-port-sites-report.txt"
 : > "$direct_port_report"
 direct_port_images=0
@@ -1240,7 +1422,7 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
   ((direct_port_images += 1))
 done < "$matrix"
-[[ "$direct_port_images" -eq 50 ]] || {
+[[ "$direct_port_images" -eq 54 ]] || {
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
   exit 1
 }
@@ -1291,6 +1473,17 @@ cp boot/grub.cfg "$preemption_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-fault-containment.elf" \
   "$fault_containment_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$fault_containment_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-fault-readonly-write.elf" \
+  "$fault_readonly_write_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$fault_readonly_write_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-fault-nx-execute.elf" \
+  "$fault_nx_execute_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$fault_nx_execute_iso_root/boot/grub/grub.cfg"
+for probe in "${fault_fatal_probes[@]}"; do
+  cp "$build/leanos-fault-${probe}.elf" \
+    "$build/iso-fault-${probe}/boot/leanos.elf"
+  cp boot/grub.cfg "$build/iso-fault-${probe}/boot/grub/grub.cfg"
+done
 cp "$build/leanos-extended-state.elf" "$extended_state_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$extended_state_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-extended-state-mmx.elf" \
@@ -1344,6 +1537,13 @@ printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
 cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$preemption_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$fault_containment_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" \
+  "$fault_readonly_write_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" "$fault_nx_execute_iso_root/boot/SOURCE_REVISION"
+for probe in "${fault_fatal_probes[@]}"; do
+  cp "$build/SOURCE_REVISION" \
+    "$build/iso-fault-${probe}/boot/SOURCE_REVISION"
+done
 cp "$build/SOURCE_REVISION" "$extended_state_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_mmx_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$extended_state_sse_iso_root/boot/SOURCE_REVISION"
@@ -1394,6 +1594,20 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-fault-containment.iso" \
   "$fault_containment_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-fault-readonly-write.iso" \
+  "$fault_readonly_write_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-fault-nx-execute.iso" \
+  "$fault_nx_execute_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+for probe in "${fault_fatal_probes[@]}"; do
+  grub-mkrescue -d /usr/lib/grub/i386-pc \
+    -o "$build/leanos-${version}-x86_64-fault-${probe}.iso" \
+    "$build/iso-fault-${probe}" -- -volume_date uuid 2000010100000000 \
+    -volume_date all_file_dates 2000010100000000 >/dev/null
+done
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-extended-state.iso" \
   "$extended_state_iso_root" -- -volume_date uuid 2000010100000000 \
@@ -1482,6 +1696,10 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-malformed-handoff.map" \
   "$build/leanos-${version}-x86_64-preemption.iso" \
   "$build/leanos-${version}-x86_64-fault-containment.iso" \
+  "$build/leanos-${version}-x86_64-fault-readonly-write.iso" \
+  "$build/leanos-${version}-x86_64-fault-nx-execute.iso" \
+  "$build/leanos-${version}-x86_64-fault-reserved-bit.iso" \
+  "$build/leanos-${version}-x86_64-fault-walk-mismatch.iso" \
   "$build/leanos-${version}-x86_64-extended-state.iso" \
   "$build/leanos-${version}-x86_64-extended-state-mmx.iso" \
   "$build/leanos-${version}-x86_64-extended-state-sse.iso" \
@@ -1492,6 +1710,14 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-preemption.elf" "$build/leanos-preemption.map" \
   "$build/leanos-fault-containment.elf" \
   "$build/leanos-fault-containment.map" \
+  "$build/leanos-fault-readonly-write.elf" \
+  "$build/leanos-fault-readonly-write.map" \
+  "$build/leanos-fault-nx-execute.elf" \
+  "$build/leanos-fault-nx-execute.map" \
+  "$build/leanos-fault-reserved-bit.elf" \
+  "$build/leanos-fault-reserved-bit.map" \
+  "$build/leanos-fault-walk-mismatch.elf" \
+  "$build/leanos-fault-walk-mismatch.map" \
   "$build/leanos-extended-state.elf" "$build/leanos-extended-state.map" \
   "$build/leanos-extended-state-mmx.elf" \
   "$build/leanos-extended-state-mmx.map" \

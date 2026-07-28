@@ -5,6 +5,7 @@ qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
 limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
+fault_scenario=0
 extended_instruction=x87
 extended_vector=7
 if [[ "$scenario" == fast-entry-syscall ]]; then
@@ -35,7 +36,17 @@ elif [[ "$scenario" == extended-state ]]; then
 elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
 elif [[ "$scenario" == fault-containment ]]; then
+  fault_scenario=1
+  fault_probe=supervisor-read
   default_image="build/boot/leanos-${version}-x86_64-fault-containment.iso"
+elif [[ "$scenario" == fault-readonly-write ]]; then
+  fault_scenario=1
+  fault_probe=readonly-write
+  default_image="build/boot/leanos-${version}-x86_64-fault-readonly-write.iso"
+elif [[ "$scenario" == fault-nx-execute ]]; then
+  fault_scenario=1
+  fault_probe=nx-execute
+  default_image="build/boot/leanos-${version}-x86_64-fault-nx-execute.iso"
 elif [[ "$scenario" == entry-adversarial ]]; then
   default_image="build/boot/leanos-${version}-x86_64-entry-adversarial.iso"
 elif [[ "$scenario" == direct-port-serial ]]; then
@@ -64,12 +75,66 @@ fi
 image="${1:-$default_image}"
 log="${LEANOS_SERIAL_LOG:-build/boot/serial.log}"
 high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
+fault_snapshot_artifact="${LEANOS_FAULT_SNAPSHOT_ARTIFACT:-build/boot/${scenario}-snapshot.txt}"
+fault_elf="${LEANOS_FAULT_CONTAINMENT_ELF:-build/boot/leanos-${scenario}.elf}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 and coreutils=9.4-3ubuntu6.2" >&2; exit 1; }; done
 [[ "$limit" =~ ^[1-9][0-9]*$ ]] || { echo "error: timeout must be a positive integer" >&2; exit 1; }
 [[ "$memory_mib" =~ ^(64|128)$ ]] || { echo "error: memory must be one of the checked configurations: 64 or 128 MiB" >&2; exit 1; }
 reported_top_mib=$((memory_mib - 1))
 [[ -f "$image" ]] || { echo "error: image '$image' not found; run ./scripts/build-image.sh first" >&2; exit 1; }
+if (( fault_scenario )); then
+  [[ -f "$fault_elf" ]] || {
+    echo "error: fault final ELF '$fault_elf' not found; run ./scripts/build-image.sh first" >&2
+    exit 1
+  }
+  symbol_value() {
+    local symbol="$1" address
+    address="$(nm -n "$fault_elf" | awk -v wanted="$symbol" '$3 == wanted { print $1 }')"
+    [[ "$address" =~ ^[[:xdigit:]]+$ ]] || return 1
+    printf '%u' "$((16#$address))"
+  }
+  fault_cr3="$(symbol_value page_map_level_4_a)" &&
+    fault_rsp="$(symbol_value user_a_stack_top)" || {
+    echo "error: required fault final-ELF symbol missing" >&2
+    exit 1
+  }
+  if [[ "$fault_probe" == nx-execute ]]; then
+    fault_error=21
+    fault_access=execute
+    fault_access_code=2
+    fault_rip_label=user-a-nx-fault-instruction
+    fault_rip="$(symbol_value user_a_nx_fault_instruction)"
+    fault_address="$fault_rip"
+    fault_page=$((fault_address / 4096))
+    printf -v fault_leaf '%u' \
+      "$(( (1 << 63) + fault_page * 4096 + 7 ))"
+    fault_cause=no-execute
+    fault_canary=' payload-canary=armed'
+  elif [[ "$fault_probe" == readonly-write ]]; then
+    fault_error=7
+    fault_access=write
+    fault_access_code=1
+    fault_rip_label=user-a-write-fault-instruction
+    fault_rip="$(symbol_value user_a_write_fault_instruction)"
+    fault_address="$(symbol_value user_a_write_target)"
+    fault_page=$((fault_address / 4096))
+    fault_leaf=$((fault_page * 4096 + 5))
+    fault_cause=not-writable
+    fault_canary=' write-canary=unchanged'
+  else
+    fault_error=5
+    fault_access=read
+    fault_access_code=0
+    fault_rip_label=user-a-fault-instruction
+    fault_rip="$(symbol_value user_a_fault_instruction)"
+    fault_address=0
+    fault_page=0
+    fault_leaf=9223372036854775811
+    fault_cause=supervisor
+    fault_canary=
+  fi
+fi
 mkdir -p "$(dirname "$log")"; : > "$log"
 command=("$qemu" -machine q35,accel=tcg -cpu max -smp 1 -m "${memory_mib}M" -display none -monitor none -serial "file:$log" -no-reboot -no-shutdown -nic none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -cdrom "$image")
 version="$($qemu --version 2>&1 | head -n 1 || true)"
@@ -87,8 +152,8 @@ elif [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
   echo 'LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts' > "$expected"
 elif [[ "$scenario" == preemption ]]; then
   echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap' > "$expected"
-elif [[ "$scenario" == fault-containment ]]; then
-  echo 'LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment contract=v1 controls=wp,smep,smap' > "$expected"
+elif (( fault_scenario )); then
+  echo "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=${fault_probe} contract=v1 controls=wp,smep,smap" > "$expected"
 elif [[ "$scenario" == direct-port-serial || "$scenario" == direct-port-debug ||
       "$scenario" == direct-port-in || "$scenario" == direct-port-pic ]]; then
   echo "LEANOS/16 BOOT target=x86_64-q35 subjects=2 schedule=direct-port-containment probe=${direct_port_probe_name} contract=v1 controls=wp,smep,smap" > "$expected"
@@ -133,11 +198,12 @@ printf '%s\n' \
   "LEANOS/13 EXTENDED-STATE event=deny subject=1 vector=${extended_vector} instruction=${extended_instruction} bank-write=prevented cleanup=complete peer=2" \
   'LEANOS/13 EXTENDED-STATE event=peer subject=2 address-space=2 cpl=3 return=validated controls=denied gpr-canaries=preserved' \
   'LEANOS/13 FINAL status=PASS denied=1 resumed-a=0 peer-ran=1' >> "$expected"
-elif [[ "$scenario" == fault-containment ]]; then
+elif (( fault_scenario )); then
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
   'LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned' \
-  'LEANOS/14 FAULT-ENTRY vector=14 error=5 origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 result=PASS' \
+  "LEANOS/14 PF-WALK page=${fault_page} expected-leaf=${fault_leaf} live-leaf=${fault_leaf} cause=${fault_cause} denial=${fault_cause} result=PASS" \
+  "LEANOS/14 FAULT-ENTRY vector=14 error=${fault_error} access=${fault_access} protection=1 cr2=${fault_address} rip=${fault_rip_label} origin=cpl3 hardware=1 direct-call=0 subject=1 address-space=1 dispatch=0x00000000ff020202 cleanup=31 survivor=2${fault_canary} result=PASS" \
   'LEANOS/14 TERMINATE subject=1 live=0 runnable=0 current=0 queued=0 resumable=0 resources=cap,memory,mapping,endpoint result=PASS' \
   'LEANOS/14 DISPATCH subject=2 address-space=2 source=lean-scheduler context=owned result=PASS' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
@@ -259,6 +325,44 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
   fi
 done
 sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
+if (( fault_scenario )); then
+  mkdir -p "$(dirname "$fault_snapshot_artifact")"
+  grep '^LEANOS/14 PF-SNAPSHOT ' "$log" > "$fault_snapshot_artifact" || {
+    echo "failure_class=page-fault-snapshot: canonical snapshot missing" >&2
+    exit 1
+  }
+  mapfile -t fault_snapshot_lines < "$fault_snapshot_artifact"
+  if [[ ${#fault_snapshot_lines[@]} -ne 1 ]]; then
+    echo "failure_class=page-fault-snapshot: snapshot missing or duplicated" >&2
+    exit 1
+  fi
+  snapshot_line="${fault_snapshot_lines[0]}"
+  if [[ ! "$snapshot_line" =~ ^LEANOS/14\ PF-SNAPSHOT\ codec=1\ width=19\ words=([0-9]+(,[0-9]+){18})\ authorization=1\ route=72057598316249602\ result=PASS$ ]]; then
+    echo "failure_class=page-fault-snapshot: malformed codec or generated replay result" >&2
+    exit 1
+  fi
+  IFS=, read -r -a snapshot_words <<< "${BASH_REMATCH[1]}"
+  expected_snapshot_words=(
+    1 14 "$fault_error" "$fault_address" "$fault_page"
+    "$fault_access_code"
+    1 1 1 1 "$fault_cr3" 15 "$fault_rip"
+    35 534 "$fault_rsp" 27 1 0
+  )
+  for ((i = 0; i < 19; ++i)); do
+    if [[ "${snapshot_words[i]}" != "${expected_snapshot_words[i]}" ]]; then
+      echo "failure_class=page-fault-snapshot: word $i disagrees with canonical production snapshot" >&2
+      exit 1
+    fi
+  done
+  snapshot_line_number="$(grep -n '^LEANOS/14 PF-SNAPSHOT ' "$log" | cut -d: -f1 || true)"
+  entry_line_number="$(grep -n '^LEANOS/14 FAULT-ENTRY ' "$log" | cut -d: -f1 || true)"
+  if [[ "$entry_line_number" =~ ^[0-9]+$ &&
+        "$snapshot_line_number" -ge "$entry_line_number" ]]; then
+    echo "failure_class=page-fault-snapshot: snapshot/replay record reordered" >&2
+    exit 1
+  fi
+  sed -i '/^LEANOS\/14 PF-SNAPSHOT /d' "$without_allocation"
+fi
 if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
   final_high_water_path="syscall"
   [[ "$scenario" == preemption ]] && final_high_water_path="timer-context-switch"

@@ -1,11 +1,15 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	50
+# mandatory-count	54
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 malformed-handoff	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-malformed-handoff.iso	leanos-malformed-handoff.elf	malformed-handoff.serial.log	malformed-handoff	-	decode-rejected
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
 preemption	boot	accepted-boot	30	leanos-@VERSION@-x86_64-preemption.iso	leanos-preemption.elf	preemption.serial.log	preemption	-	-
 fault-containment	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-containment.iso	leanos-fault-containment.elf	fault-containment.serial.log	fault-containment	-	-
+fault-readonly-write	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-readonly-write.iso	leanos-fault-readonly-write.elf	fault-readonly-write.serial.log	fault-readonly-write	-	-
+fault-nx-execute	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-nx-execute.iso	leanos-fault-nx-execute.elf	fault-nx-execute.serial.log	fault-nx-execute	-	-
+fault-reserved-bit	fault-integrity	fail-stop	30	leanos-@VERSION@-x86_64-fault-reserved-bit.iso	leanos-fault-reserved-bit.elf	fault-reserved-bit.serial.log	reserved-bit	-	page-table-integrity
+fault-walk-mismatch	fault-integrity	fail-stop	30	leanos-@VERSION@-x86_64-fault-walk-mismatch.iso	leanos-fault-walk-mismatch.elf	fault-walk-mismatch.serial.log	walk-mismatch	-	error-address-walk-disagreement
 extended-state-denial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-extended-state.iso	leanos-extended-state.elf	extended-state.serial.log	extended-state	-	-
 extended-state-denial-mmx	boot	accepted-boot	30	leanos-@VERSION@-x86_64-extended-state-mmx.iso	leanos-extended-state-mmx.elf	extended-state-mmx.serial.log	extended-state-mmx	-	-
 extended-state-denial-sse	boot	accepted-boot	30	leanos-@VERSION@-x86_64-extended-state-sse.iso	leanos-extended-state-sse.elf	extended-state-sse.serial.log	extended-state-sse	-	-
