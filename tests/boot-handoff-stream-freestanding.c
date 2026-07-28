@@ -1,6 +1,9 @@
 #include <stdint.h>
 #ifdef LEANOS_HOSTED_SANITIZER
 #include <stdio.h>
+extern void leanos_register_boundary_target(const char *, void *);
+#define REGISTER_BOUNDARY(symbol) \
+    leanos_register_boundary_target(#symbol, (void *)(uintptr_t)&symbol)
 #endif
 
 extern uint64_t leanos_boot_handoff_stream_init(
@@ -86,6 +89,16 @@ static uint64_t step_query(const struct stream_state *state, uint64_t identity,
 }
 
 int check_stream(void) {
+#ifdef LEANOS_HOSTED_SANITIZER
+    REGISTER_BOUNDARY(leanos_boot_handoff_stream_init);
+    REGISTER_BOUNDARY(leanos_boot_handoff_stream_step);
+    REGISTER_BOUNDARY(leanos_boot_decode_init);
+    REGISTER_BOUNDARY(leanos_boot_decode_step);
+    REGISTER_BOUNDARY(leanos_boot_manifest_candidate);
+    REGISTER_BOUNDARY(leanos_boot_manifest_start);
+    REGISTER_BOUNDARY(leanos_boot_select_frame);
+    REGISTER_BOUNDARY(leanos_boot_publish_authority);
+#endif
     const uint64_t identity = 0x1000;
     const uint64_t chunks[12] = {
         0x0000000000000060, 0x000000090000002a, 0x00000000000000aa,

@@ -5,6 +5,7 @@ cd "$root"
 mode="${1:-ordinary}"
 id="${LEANOS_HOSTED_BOUNDARY_ID:-freestanding-stream}"
 manifest=scripts/hosted-generated-boundaries.tsv
+source scripts/hosted-boundary-coverage.sh
 row="$(awk -F '\t' -v id="$id" '$1 == id { print; found=1 } END { exit !found }' "$manifest")" || {
   echo "error: hosted boundary '$id' is absent from $manifest" >&2
   exit 1
@@ -79,6 +80,7 @@ lake build "${targets[@]}" LeanOS.BootMemoryMapStreamPipeline
 prefix="$(lake env lean --print-prefix)"
 
 if [[ "$mode" == sanitized ]]; then
+  leanos_prepare_boundary_coverage "$build" "$exports"
   objects=()
   IFS=',' read -ra module_names <<<"$modules"
   mapfile -t compiled_modules < <(
@@ -92,15 +94,22 @@ if [[ "$mode" == sanitized ]]; then
       exit 1
     }
     "$leanos_host_cc" -std=c11 "${leanos_host_sanitizer_flags[@]}" \
+      -finstrument-functions \
       -I"$prefix/include" -c "$source" -o "$build/$object_name.o"
     leanos_require_sanitized_object "$build/$object_name.o"
     objects+=("$build/$object_name.o")
   done
   "$leanos_host_cc" -std=c11 -Wall -Wextra -Werror \
-    "${leanos_host_sanitizer_flags[@]}" -DLEANOS_HOSTED_SANITIZER=1 \
+    "${leanos_host_sanitizer_flags[@]}" -finstrument-functions \
+    -DLEANOS_HOSTED_SANITIZER=1 \
     -c "$harness" -o "$build/host.o"
-  leanos_link_sanitized_host "$build/host" "$build/host.o" "${objects[@]}"
-  leanos_run_sanitized "$build/host" | tee "$build/results.txt"
+  "$leanos_host_cc" -std=c11 -Wall -Wextra -Werror \
+    -c "$build/boundary-coverage.c" -o "$build/boundary-coverage.o"
+  leanos_link_sanitized_host "$build/host" "$build/host.o" \
+    "$build/boundary-coverage.o" "${objects[@]}"
+  LEANOS_BOUNDARY_COVERAGE_FILE="$build/boundary-coverage.actual" \
+    leanos_run_sanitized "$build/host" | tee "$build/results.txt"
+  leanos_check_boundary_coverage "$build"
   expected="${assertion#contains=}"
   expected="${expected//_/ }"
   [[ "$assertion" == contains=* ]] && grep -Fq "$expected" "$build/results.txt" || {
