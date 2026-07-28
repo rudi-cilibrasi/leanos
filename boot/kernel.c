@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "corpus.h"
+#include "generated-boundary-abi.h"
 #if defined(LEANOS_BOOT_PAGE_PLAN_HEADER)
 #include LEANOS_BOOT_PAGE_PLAN_HEADER
 #elif defined(LEANOS_DF_MAP_GUARD)

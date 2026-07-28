@@ -29,6 +29,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             gcc=4:13.2.0-7ubuntu1 \
+            gcc-13=13.3.0-6ubuntu2~24.04.1 \
+            libasan8=14.2.0-4ubuntu2~24.04.1 \
+            libubsan1=14.2.0-4ubuntu2~24.04.1 \
             binutils=2.42-4ubuntu2.10 \
             grub-common=2.12-1ubuntu7.3 \
             grub-pc-bin=2.12-1ubuntu7.3 \
@@ -84,6 +87,14 @@ jobs:
             build/boot/corpus.tsv
             docs/page-fault-snapshot.md
             build/oracle/host-results.txt
+            build/oracle-sanitized/host-results.txt
+            build/boot-handoff-host/results.txt
+            build/boot-handoff-host-sanitized/results.txt
+            build/boot-handoff-stream/results.txt
+            build/boot-handoff-stream-sanitized/results.txt
+            build/hosted-sanitizer-evidence/*
+            build/hosted-sanitizer-negatives/*
+            scripts/hosted-generated-boundaries.tsv
             build/evidence/*
             build/ci/*.txt
           if-no-files-found: warn
