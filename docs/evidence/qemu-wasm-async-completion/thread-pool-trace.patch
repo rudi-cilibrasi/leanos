@@ -1,0 +1,78 @@
+diff --git a/util/async.c b/util/async.c
+index 8f90ddc304..529a992388 100644
+--- a/util/async.c
++++ b/util/async.c
+@@ -75,0 +76,2 @@ static void aio_bh_enqueue(QEMUBH *bh, unsigned new_flags)
++    bool trace_thread_pool_bh = strstr(bh->name, "thread_pool") ||
++                                strstr(bh->name, "spawn_thread");
+@@ -95,0 +98,7 @@ static void aio_bh_enqueue(QEMUBH *bh, unsigned new_flags)
++    if (trace_thread_pool_bh) {
++        fprintf(stderr,
++                "LEANOS_AIO bh-enqueue name=%s bh=%p ctx=%p old_flags=0x%x "
++                "new_flags=0x%x notified=%d notify_me=%u\n",
++                bh->name, bh, ctx, old_flags, new_flags,
++                qatomic_read(&ctx->notified), qatomic_read(&ctx->notify_me));
++    }
+@@ -96,0 +106,7 @@ static void aio_bh_enqueue(QEMUBH *bh, unsigned new_flags)
++    if (trace_thread_pool_bh) {
++        fprintf(stderr,
++                "LEANOS_AIO bh-notified name=%s bh=%p ctx=%p notified=%d "
++                "notify_me=%u\n",
++                bh->name, bh, ctx, qatomic_read(&ctx->notified),
++                qatomic_read(&ctx->notify_me));
++    }
+@@ -211,0 +228,7 @@ int aio_bh_poll(AioContext *ctx)
++            if (strstr(bh->name, "thread_pool") ||
++                strstr(bh->name, "spawn_thread")) {
++                fprintf(stderr,
++                        "LEANOS_AIO bh-consume name=%s bh=%p ctx=%p "
++                        "flags=0x%x\n",
++                        bh->name, bh, ctx, flags);
++            }
+diff --git a/util/thread-pool.c b/util/thread-pool.c
+index 27eb777e85..45f14f36ab 100644
+--- a/util/thread-pool.c
++++ b/util/thread-pool.c
+@@ -80,0 +81 @@ static void *worker_thread(void *opaque)
++    fprintf(stderr, "LEANOS_TP worker-enter pool=%p\n", pool);
+@@ -82,0 +84,4 @@ static void *worker_thread(void *opaque)
++    fprintf(stderr,
++            "LEANOS_TP worker-locked pool=%p pending=%d cur=%d queued_empty=%d\n",
++            pool, pool->pending_threads, pool->cur_threads,
++            QTAILQ_EMPTY(&pool->request_list));
+@@ -108,0 +114,2 @@ static void *worker_thread(void *opaque)
++        fprintf(stderr, "LEANOS_TP worker-dequeue pool=%p req=%p\n",
++                pool, req);
+@@ -111,0 +119,3 @@ static void *worker_thread(void *opaque)
++        fprintf(stderr,
++                "LEANOS_TP worker-function-return pool=%p req=%p ret=%d\n",
++                pool, req, ret);
+@@ -117,0 +128,3 @@ static void *worker_thread(void *opaque)
++        fprintf(stderr,
++                "LEANOS_TP worker-schedule-completion pool=%p req=%p bh=%p\n",
++                pool, req, pool->completion_bh);
+@@ -145,0 +159,3 @@ static void do_spawn_thread(ThreadPool *pool)
++    fprintf(stderr,
++            "LEANOS_TP pthread-create-before pool=%p pending=%d cur=%d\n",
++            pool, pool->pending_threads, pool->cur_threads);
+@@ -146,0 +163 @@ static void do_spawn_thread(ThreadPool *pool)
++    fprintf(stderr, "LEANOS_TP pthread-create-after pool=%p\n", pool);
+@@ -152,0 +170 @@ static void spawn_thread_bh_fn(void *opaque)
++    fprintf(stderr, "LEANOS_TP spawn-bh-enter pool=%p\n", pool);
+@@ -155,0 +174 @@ static void spawn_thread_bh_fn(void *opaque)
++    fprintf(stderr, "LEANOS_TP spawn-bh-exit pool=%p\n", pool);
+@@ -169,0 +189,4 @@ static void spawn_thread(ThreadPool *pool)
++        fprintf(stderr,
++                "LEANOS_TP schedule-spawn-bh pool=%p bh=%p cur=%d new=%d\n",
++                pool, pool->new_thread_bh, pool->cur_threads,
++                pool->new_threads);
+@@ -178,0 +202 @@ static void thread_pool_completion_bh(void *opaque)
++    fprintf(stderr, "LEANOS_TP completion-bh-enter pool=%p\n", pool);
+@@ -261,0 +286,5 @@ BlockAIOCB *thread_pool_submit_aio(ThreadPoolFunc *func, void *arg,
++    fprintf(stderr,
++            "LEANOS_TP submit-locked pool=%p req=%p idle=%d cur=%d "
++            "pending=%d new=%d\n",
++            pool, req, pool->idle_threads, pool->cur_threads,
++            pool->pending_threads, pool->new_threads);
+@@ -265,0 +295 @@ BlockAIOCB *thread_pool_submit_aio(ThreadPoolFunc *func, void *arg,
++    fprintf(stderr, "LEANOS_TP submit-enqueued pool=%p req=%p\n", pool, req);

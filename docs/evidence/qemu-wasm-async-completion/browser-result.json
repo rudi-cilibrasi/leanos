@@ -1,0 +1,18 @@
+{
+  "title": "LeanOS qemu-wasm compatibility gate",
+  "status": "crossOriginIsolated=true",
+  "transcript": "SeaBIOS (version rel-1.16.3-0-ga6ed6b701f0a-prebuilt.qemu.orgide_atapi_cmd IDEState: 0x2c8d2960; cmd: 0x00\nide_atapi_cmd_packet IDEState: 0x2c8d2960; limit=0x0 packet: 00 00 00 00 00 00 00 00 00 00 00 00 \nide_atapi_cmd IDEState: 0x2c8d2960; cmd: 0x28\nide_atapi_cmd_packet IDEState: 0x2c8d2960; limit=0x800 packet: 28 00 00 00 00 11 00 00 01 00 00 00 \nide_atapi_cmd_read IDEState: 0x2c8d2960; read dma: LBA=17 nb_sectors=1\nide_atapi_cmd_read_dma_cb_aio IDEState: 0x2c8d2960; aio read: lba=17 n=1\nblk_co_preadv blk 0x14c0900 bs 0x1510000 offset 34816 bytes 2048 flags 0x0\nbdrv_co_preadv_part bs 0x1510000 offset 34816 bytes 2048 flags 0x0\nbdrv_co_preadv_part bs 0x1515000 offset 34816 bytes 2048 flags 0x0\nthread_pool_submit pool 0x14692c0 req 0x2908e40 opaque 0x30a1fcf0\nLEANOS_TP submit-locked pool=0x14692c0 req=0x2908e40 idle=1 cur=1 pending=0 new=0\nLEANOS_TP submit-enqueued pool=0x14692c0 req=0x2908e40\nLEANOS_TP worker-dequeue pool=0x14692c0 req=0x2908e40\nLEANOS_TP worker-function-return pool=0x14692c0 req=0x2908e40 ret=0\nLEANOS_TP worker-schedule-completion pool=0x14692c0 req=0x2908e40 bh=0x1463de0\nLEANOS_AIO bh-enqueue name=thread_pool_completion_bh bh=0x1463de0 ctx=0x108a200 old_flags=0x0 new_flags=0x2 notified=1 notify_me=1\nLEANOS_AIO bh-notified name=thread_pool_completion_bh bh=0x1463de0 ctx=0x108a200 notified=1 notify_me=1\n)\nBooting from Hard Disk...\nBoot failed: could not read the boot disk\nBooting from DVD/CD...\nBoot failed: Could not read from CDROM (code 0003)\nBooting from Floppy...\nBoot failed: could not read the boot disk\nNo bootable device",
+  "trace": "",
+  "probe": {
+    "crossOriginIsolated": true,
+    "mediaMapping": "cdrom:/leanos.iso",
+    "stderr": [],
+    "preloadSize": 14749696
+  },
+  "console": [
+    "COOP/COEP Service Worker registered http://127.0.0.1:8765/",
+    "Reloading page to make use of updated COOP/COEP Service Worker."
+  ],
+  "pageErrors": [],
+  "waitError": "Waiting failed: 180000ms exceeded"
+}
