@@ -31,6 +31,21 @@ cp "$image"/{coi-serviceworker.js,load-rom.data,load-rom.js,out.js,qemu-system-x
 cp build/boot/leanos-0.1.0-x86_64.iso "$probe/leanos.iso"
 cp docs/evidence/qemu-wasm-feasibility/{index.html,module-cdrom.js,probe.mjs} "$probe"/
 cp "$probe/module-cdrom.js" "$probe/module.js"
+curl --fail --location --proto '=https' \
+  https://unpkg.com/xterm@5.3.0/lib/xterm.js \
+  --output "$probe/xterm.js"
+curl --fail --location --proto '=https' \
+  https://unpkg.com/xterm-pty@0.12.0/index.js \
+  --output "$probe/xterm-pty.js"
+(
+  cd "$probe"
+  printf '%s  %s\n' \
+    f0aea0f75f48559013ae6643c2479dd737d26da42d5524e6d2b70915ae6523c7 \
+    xterm.js \
+    2e7cbffea02dad1f72637c564534d104a13f9eec306deb9cc34fffe1faa58947 \
+    xterm-pty.js |
+    sha256sum --check --strict
+)
 test "$(wc -c < "$probe/load-rom.data")" -eq 473088
 cat "$probe/leanos.iso" >> "$probe/load-rom.data"
 python3 - "$probe/load-rom.js" docs/evidence/qemu-wasm-feasibility/load-rom-metadata.json <<'PY'
@@ -77,8 +92,9 @@ kill "$server_pid"
 ```
 
 `index.html` loads the cross-origin-isolation service worker before checking
-`crossOriginIsolated`, connects the QEMU pseudo-TTY to xterm, and exposes the
-captured terminal to Puppeteer.  `probe.mjs` records console and page errors,
-waits for debug exit 33 or abort, and serializes the terminal.  The exact
-observed transcript and `/usr/bin/time -v` measurements are retained in
-`retained-output.txt`.
+`crossOriginIsolated`, imports only the locally served terminal dependencies
+after their SHA-256 verification, connects the QEMU pseudo-TTY to xterm, and
+exposes the captured terminal to Puppeteer.  `probe.mjs` records console and
+page errors, waits for debug exit 33 or abort, and serializes the terminal.
+The exact observed transcript and `/usr/bin/time -v` measurements are retained
+in `retained-output.txt`.
