@@ -15,9 +15,11 @@ lake build leanos-boot-plan
 
 ./scripts/test-capability-boundaries.sh
 
-./scripts/check-oracle-host.sh
+./scripts/check-hosted-generated-boundaries.sh ordinary
 
-./scripts/check-boot-handoff-host.sh
+./scripts/check-hosted-generated-boundaries.sh sanitized
+
+./scripts/check-hosted-sanitizer-negatives.sh
 
 ./scripts/check-boot-handoff-stream.sh
 

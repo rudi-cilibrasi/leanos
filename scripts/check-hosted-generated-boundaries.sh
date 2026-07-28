@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+mode="${1:-ordinary}"
+manifest=scripts/hosted-generated-boundaries.tsv
+
+case "$mode" in
+  ordinary|sanitized) ;;
+  *)
+    echo "usage: $0 [ordinary|sanitized]" >&2
+    exit 2
+    ;;
+esac
+
+# Fail before compiling if image construction introduces a generated module
+# without assigning it to a hosted boundary. BootAllocation is the one retired
+# exception: the focused freestanding final-ELF gate below requires its legacy
+# exported adapter to be absent.
+declare -A manifest_ids=()
+declare -A manifest_modules=()
+while IFS=$'\t' read -r id runner harness generation target modules assertion; do
+  [[ -n "$id" && "${id:0:1}" != "#" ]] || continue
+  [[ -z "${manifest_ids[$id]+x}" ]] || {
+    echo "error: duplicate hosted generated-boundary id '$id'" >&2
+    exit 1
+  }
+  manifest_ids["$id"]=1
+  IFS=',' read -ra module_specs <<<"$modules"
+  for spec in "${module_specs[@]}"; do
+    module="${spec%%=*}"
+    [[ -n "$module" ]] || {
+      echo "error: hosted boundary '$id' has an empty module entry" >&2
+      exit 1
+    }
+    manifest_modules["$module"]=1
+  done
+done <"$manifest"
+
+while IFS= read -r source; do
+  module="${source#LeanOS/}"
+  module="${module%.lean}"
+  [[ "$module" == BootAllocation ]] && continue
+  [[ -n "${manifest_modules[$module]+x}" ]] || {
+    echo "error: boot-reachable generated module '$module' is absent from $manifest" >&2
+    exit 1
+  }
+done < <(
+  sed -n 's#.*\(LeanOS/[A-Za-z0-9_/]*\.lean\).*#\1#p' \
+    scripts/build-image.sh | sort -u
+)
+
+boundaries=0
+evidence=build/hosted-sanitizer-evidence
+if [[ "$mode" == sanitized ]]; then
+  mkdir -p "$evidence"
+  : >"$evidence/first-failing-boundary.txt"
+fi
+while IFS=$'\t' read -r id runner harness generation target modules assertion; do
+  [[ -n "$id" && "${id:0:1}" != "#" ]] || continue
+  for path in "$runner" "$harness"; do
+    [[ -f "$path" ]] || {
+      echo "error: hosted boundary '$id' inventories missing path $path" >&2
+      exit 1
+    }
+  done
+  case "$generation" in
+    direct|lake-ir) ;;
+    *)
+      echo "error: hosted boundary '$id' has unknown generation mode '$generation'" >&2
+      exit 1
+      ;;
+  esac
+  [[ -n "$modules" && -n "$assertion" ]] || {
+    echo "error: hosted boundary '$id' has an incomplete manifest row" >&2
+    exit 1
+  }
+  if [[ "$mode" == sanitized ]]; then
+    log="$evidence/$id.log"
+    if ! LEANOS_HOSTED_BOUNDARY_ID="$id" "$runner" "$mode" \
+        >"$log" 2>&1; then
+      printf '%s\n' "$id" >"$evidence/first-failing-boundary.txt"
+      cat "$log" >&2
+      exit 1
+    fi
+    cat "$log"
+  else
+    LEANOS_HOSTED_BOUNDARY_ID="$id" "$runner" "$mode"
+  fi
+  boundaries=$((boundaries + 1))
+done < "$manifest"
+
+[[ "$boundaries" -gt 0 ]] || {
+  echo "error: hosted generated-boundary manifest is empty" >&2
+  exit 1
+}
+if [[ "$mode" == sanitized ]]; then
+  source scripts/hosted-sanitizer-config.sh
+  {
+    printf 'source-revision: '
+    git rev-parse HEAD
+    "$leanos_host_cc" --version | head -n 1
+    printf 'compile-flags:'
+    printf ' %q' "${leanos_host_sanitizer_flags[@]}"
+    printf '\nASAN_OPTIONS=%s\nUBSAN_OPTIONS=%s\n' \
+      "$leanos_host_asan_options" "$leanos_host_ubsan_options"
+  } >"$evidence/configuration.txt"
+fi
+echo "Hosted generated-boundary $mode replay passed ($boundaries boundaries)"

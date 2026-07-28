@@ -1,4 +1,7 @@
 #include <stdint.h>
+#ifdef LEANOS_HOSTED_SANITIZER
+#include <stdio.h>
+#endif
 
 extern uint64_t leanos_boot_handoff_stream_init(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
@@ -303,6 +306,13 @@ int check_stream(void) {
     return 0;
 }
 
+#ifdef LEANOS_HOSTED_SANITIZER
+int main(void) {
+    const int status = check_stream();
+    printf("stream-result %d\n", status);
+    return status;
+}
+#else
 __attribute__((naked, noreturn)) void _start(void) {
     __asm__ volatile(
         "andq $-16, %rsp\n"
@@ -311,3 +321,4 @@ __attribute__((naked, noreturn)) void _start(void) {
         "movq $60, %rax\n"
         "syscall\n");
 }
+#endif
