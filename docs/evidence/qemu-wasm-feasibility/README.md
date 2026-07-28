@@ -11,6 +11,11 @@ Pinned inputs:
   `097914961a25ad1e2970c07b76ca58752779739e1e96213b97014c3cdd75e1a9`
 - qemu-system-x86_64.wasm SHA-256:
   `f53107a35029d676aa551cd00d042f4f65af39a89bf72464494321fafdf54191`
+- browser terminal dependencies:
+  - `xterm` 5.3.0 SHA-256:
+    `f0aea0f75f48559013ae6643c2479dd737d26da42d5524e6d2b70915ae6523c7`
+  - `xterm-pty` 0.12.0 SHA-256:
+    `2e7cbffea02dad1f72637c564534d104a13f9eec306deb9cc34fffe1faa58947`
 - Chrome 150.0.7871.128, Node.js 24.18.0, and
   `puppeteer-core` 24.16.0
 
