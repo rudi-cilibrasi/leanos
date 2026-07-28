@@ -5,6 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 mode="${1:-ordinary}"
 manifest=scripts/hosted-generated-boundaries.tsv
+source scripts/hosted-boundary-harness-scan.sh
 
 case "$mode" in
   ordinary|sanitized) ;;
@@ -71,8 +72,7 @@ while IFS=$'\t' read -r id runner harness generation target modules exports asse
       echo "error: hosted boundary '$id' inventories stale export '$symbol'" >&2
       exit 1
     }
-    if ! sed '/^[[:space:]]*extern[[:space:]]/d' "$harness" |
-        grep -E "(^|[^[:alnum:]_])${symbol}[[:space:]]*\\(" >/dev/null; then
+    if ! leanos_harness_calls_export "$harness" "$symbol"; then
       echo "error: hosted boundary '$id' export '$symbol' is absent from its own harness" >&2
       exit 1
     fi

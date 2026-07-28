@@ -15,6 +15,8 @@ lake build leanos-boot-plan
 
 ./scripts/test-capability-boundaries.sh
 
+./scripts/test-hosted-boundary-harness-scan.sh
+
 ./scripts/check-hosted-generated-boundaries.sh ordinary
 
 ./scripts/check-hosted-generated-boundaries.sh sanitized
