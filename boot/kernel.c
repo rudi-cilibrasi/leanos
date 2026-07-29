@@ -211,9 +211,7 @@ static uint8_t entry_stack[16384]
     __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
 static unsigned preemption_step;
 uint64_t current_subject = 1;
-#ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
 volatile uint64_t reserved_fault_nxe_disabled;
-#endif
 
 /* The machine-facing spelling of InterruptEntry's version-one canonical
    page-fault encoding.  Construction is confined to
@@ -409,10 +407,8 @@ static void check_fast_entry_control(void) {
     const uint64_t efer_model_mask = (1ull << 0) | (1ull << 8) |
         (1ull << 10) | (1ull << 11);
     uint64_t efer_denied = (1ull << 8) | (1ull << 10) | (1ull << 11);
-#ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
     if (reserved_fault_nxe_disabled)
         efer_denied &= ~(1ull << 11);
-#endif
     if ((state[0] & efer_model_mask) != efer_denied)
         fail("fast-entry-efer-readback");
     for (unsigned i = 1; i < 8; ++i)
@@ -3182,8 +3178,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
-#ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
-    {
+    if (page_fault_probe_class == 3) {
         const uint64_t page =
             (uint64_t)user_a_nx_fault_instruction / PAGE_BYTES;
         /* TCG does not consistently raise RSVD for address bits above its
@@ -3199,7 +3194,6 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         __asm__ volatile ("invlpg (%0)" :
                           : "r"(user_a_nx_fault_instruction) : "memory");
     }
-#endif
     serial_puts(page_fault_probe_class >= 3
         ? "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned fatal-only=1\n"
         : "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");

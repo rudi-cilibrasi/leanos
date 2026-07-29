@@ -1726,6 +1726,10 @@ fault_reserved_efer_write:
     pop %rdx
     pop %rcx
     pop %rax
+#else
+    /* Keep every fault-probe image on the same linker-resolved page plan
+       without making the reserved-bit MSR write reachable or present. */
+    .fill 20, 1, 0x90
 #endif
     ret
     ud2
