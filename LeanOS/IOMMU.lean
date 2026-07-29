@@ -1166,6 +1166,213 @@ def TraceDoesNotTouch : State → List DeviceEvent → FrameId → Prop
       outcome.touchedFrame ≠ some frame ∧
         TraceDoesNotTouch outcome.state rest frame
 
+def ProtectedLiveFrame (state : State) (frame : FrameId) : Prop :=
+  ∃ candidate ∈ state.core.frames,
+    candidate.live = true ∧ candidate.handle.frame = frame ∧
+      (candidate.kernelOwned = true ∨ candidate.pageTable = true ∨
+        candidate.allocatorMetadata = true)
+
+def UnassignedLiveFrame (state : State) (frame : FrameId) : Prop :=
+  (∃ candidate ∈ state.core.frames,
+    candidate.live = true ∧ candidate.handle.frame = frame) ∧
+  ∀ mapping ∈ state.core.mappings, mapping.frame.frame ≠ frame
+
+def DeviceStepWritesOwnedBy
+    (state : State) (event : DeviceEvent) (owner : OwnerId) : Prop :=
+  match event with
+  | .read _ => True
+  | .write request bytes =>
+      match deviceWrite state request bytes with
+      | .rejected _ => True
+      | .written _ translation => translation.assignment.owner = owner
+
+def TraceWritesOwnedBy : State → List DeviceEvent → OwnerId → Prop
+  | _, [], _ => True
+  | state, event :: rest, owner =>
+      let outcome := deviceStep state event
+      DeviceStepWritesOwnedBy state event owner ∧
+        TraceWritesOwnedBy outcome.state rest owner
+
+def OtherOwnerLiveFrame
+    (state : State) (frame : FrameId) (owner : OwnerId) : Prop :=
+  ∃ candidate ∈ state.core.frames,
+    candidate.live = true ∧ candidate.handle.frame = frame ∧
+      candidate.owner ≠ owner
+
+def FrameIsolatedFromTrace
+    (state : State) (events : List DeviceEvent) (frame : FrameId) : Prop :=
+  ProtectedLiveFrame state frame ∨
+    UnassignedLiveFrame state frame ∨
+      ∃ owner, OtherOwnerLiveFrame state frame owner ∧
+        TraceWritesOwnedBy state events owner
+
+theorem deviceStep_authority_stutters (state : State) (event : DeviceEvent) :
+    (deviceStep state event).state.core.mappings = state.core.mappings ∧
+      (deviceStep state event).state.core.frames = state.core.frames := by
+  cases event with
+  | read request =>
+      cases hread : deviceRead state request <;> simp [deviceStep, hread]
+  | write request bytes =>
+      cases hwrite : deviceWrite state request bytes with
+      | rejected reason => simp [deviceStep, hwrite]
+      | written after translation =>
+          simp only [deviceStep, hwrite]
+          have hintegrity :=
+            write_integrity state request bytes after translation hwrite
+          exact ⟨hintegrity.2.2.2.2.2.1,
+            hintegrity.2.2.2.2.2.2.1⟩
+
+theorem protectedLiveFrame_deviceStep
+    (state : State) (event : DeviceEvent) (frame : FrameId)
+    (hprotected : ProtectedLiveFrame state frame) :
+    ProtectedLiveFrame (deviceStep state event).state frame := by
+  rcases hprotected with ⟨candidate, hmember, hlive, hframe, hprotected⟩
+  refine ⟨candidate, ?_, hlive, hframe, hprotected⟩
+  rw [deviceStep_authority_stutters state event |>.2]
+  exact hmember
+
+theorem unassignedLiveFrame_deviceStep
+    (state : State) (event : DeviceEvent) (frame : FrameId)
+    (hunassigned : UnassignedLiveFrame state frame) :
+    UnassignedLiveFrame (deviceStep state event).state frame := by
+  rcases hunassigned with
+    ⟨⟨candidate, hmember, hlive, hframe⟩, hmappings⟩
+  constructor
+  · refine ⟨candidate, ?_, hlive, hframe⟩
+    rw [deviceStep_authority_stutters state event |>.2]
+    exact hmember
+  · intro mapping hmember
+    apply hmappings mapping
+    rw [deviceStep_authority_stutters state event |>.1] at hmember
+    exact hmember
+
+theorem otherOwnerLiveFrame_deviceStep
+    (state : State) (event : DeviceEvent) (frame : FrameId) (owner : OwnerId)
+    (hother : OtherOwnerLiveFrame state frame owner) :
+    OtherOwnerLiveFrame (deviceStep state event).state frame owner := by
+  rcases hother with ⟨candidate, hmember, hlive, hframe, howner⟩
+  refine ⟨candidate, ?_, hlive, hframe, howner⟩
+  rw [deviceStep_authority_stutters state event |>.2]
+  exact hmember
+
+theorem protectedLiveFrame_deviceStep_untouched
+    (state : State) (event : DeviceEvent) (frame : FrameId)
+    (hprotected : ProtectedLiveFrame state frame) :
+    (deviceStep state event).touchedFrame ≠ some frame := by
+  cases event with
+  | read request =>
+      cases hread : deviceRead state request <;> simp [deviceStep, hread]
+  | write request bytes =>
+      cases hwrite : deviceWrite state request bytes with
+      | rejected reason => simp [deviceStep, hwrite]
+      | written after translation =>
+          simp only [deviceStep, hwrite]
+          intro hframe
+          injection hframe with hphysical
+          rcases hprotected with
+            ⟨candidate, hmember, hlive, hcandFrame, hprotected⟩
+          have htranslation : translation.frame ∈ state.core.frames := by
+            exact List.mem_of_find?_eq_some (by
+              simpa [findFrame] using translation.frameFound)
+          have hequal := state.liveFrameIdsExclusive
+            candidate hmember hlive translation.frame htranslation
+              translation.frameLive (hcandFrame.trans hphysical.symm)
+          subst candidate
+          rcases hprotected with hkernel | hpage | hmetadata
+          · simp [translation.frameNotKernel] at hkernel
+          · simp [translation.frameNotPageTable] at hpage
+          · simp [translation.frameNotAllocatorMetadata] at hmetadata
+
+theorem unassignedLiveFrame_deviceStep_untouched
+    (state : State) (event : DeviceEvent) (frame : FrameId)
+    (hunassigned : UnassignedLiveFrame state frame) :
+    (deviceStep state event).touchedFrame ≠ some frame := by
+  cases event with
+  | read request =>
+      cases hread : deviceRead state request <;> simp [deviceStep, hread]
+  | write request bytes =>
+      cases hwrite : deviceWrite state request bytes with
+      | rejected reason => simp [deviceStep, hwrite]
+      | written after translation =>
+          simp only [deviceStep, hwrite]
+          intro hframe
+          injection hframe with hphysical
+          have hmapping : translation.mapping ∈ state.core.mappings := by
+            exact List.mem_of_find?_eq_some translation.mappingFound
+          exact hunassigned.2 translation.mapping hmapping
+            (by rw [← translation.frameHandleBound, hphysical])
+
+theorem otherOwnerLiveFrame_deviceStep_untouched
+    (state : State) (event : DeviceEvent) (frame : FrameId) (owner : OwnerId)
+    (hother : OtherOwnerLiveFrame state frame owner)
+    (howned : DeviceStepWritesOwnedBy state event owner) :
+    (deviceStep state event).touchedFrame ≠ some frame := by
+  cases event with
+  | read request =>
+      cases hread : deviceRead state request <;> simp [deviceStep, hread]
+  | write request bytes =>
+      cases hwrite : deviceWrite state request bytes with
+      | rejected reason => simp [deviceStep, hwrite]
+      | written after translation =>
+          simp only [deviceStep, hwrite]
+          intro hframe
+          injection hframe with hphysical
+          rcases hother with
+            ⟨candidate, hmember, hlive, hcandFrame, howner⟩
+          have htranslation : translation.frame ∈ state.core.frames := by
+            exact List.mem_of_find?_eq_some (by
+              simpa [findFrame] using translation.frameFound)
+          have hequal := state.liveFrameIdsExclusive
+            candidate hmember hlive translation.frame htranslation
+              translation.frameLive (hcandFrame.trans hphysical.symm)
+          have htranslationOwner :
+              translation.frame.owner = owner := by
+            rw [translation.frameOwnerBound]
+            simpa [DeviceStepWritesOwnedBy, hwrite] using howned
+          exact howner (by rw [hequal, htranslationOwner])
+
+theorem protected_trace_does_not_touch
+    (state : State) (events : List DeviceEvent) (frame : FrameId)
+    (hprotected : ProtectedLiveFrame state frame) :
+    TraceDoesNotTouch state events frame := by
+  induction events generalizing state with
+  | nil => trivial
+  | cons event rest ih =>
+      constructor
+      · exact protectedLiveFrame_deviceStep_untouched
+          state event frame hprotected
+      · exact ih (deviceStep state event).state
+          (protectedLiveFrame_deviceStep state event frame hprotected)
+
+theorem unassigned_trace_does_not_touch
+    (state : State) (events : List DeviceEvent) (frame : FrameId)
+    (hunassigned : UnassignedLiveFrame state frame) :
+    TraceDoesNotTouch state events frame := by
+  induction events generalizing state with
+  | nil => trivial
+  | cons event rest ih =>
+      constructor
+      · exact unassignedLiveFrame_deviceStep_untouched
+          state event frame hunassigned
+      · exact ih (deviceStep state event).state
+          (unassignedLiveFrame_deviceStep state event frame hunassigned)
+
+theorem other_owner_trace_does_not_touch
+    (state : State) (events : List DeviceEvent) (frame : FrameId)
+    (owner : OwnerId)
+    (hother : OtherOwnerLiveFrame state frame owner)
+    (howned : TraceWritesOwnedBy state events owner) :
+    TraceDoesNotTouch state events frame := by
+  induction events generalizing state with
+  | nil => trivial
+  | cons event rest ih =>
+      constructor
+      · exact otherOwnerLiveFrame_deviceStep_untouched
+          state event frame owner hother howned.1
+      · exact ih (deviceStep state event).state
+          (otherOwnerLiveFrame_deviceStep state event frame owner hother)
+          howned.2
+
 theorem deviceStep_untouched_frame (state : State) (event : DeviceEvent)
     (frame : FrameId)
     (huntouched : (deviceStep state event).touchedFrame ≠ some frame) :
@@ -1187,11 +1394,10 @@ theorem deviceStep_untouched_frame (state : State) (event : DeviceEvent)
             ⟨_, _, _, _, _, _, _, _, _, _, hotherFrame, _⟩
           exact hotherFrame frame hne.symm
 
-/-- Finite-trace integrity: if no successful authorized write names a frame,
-every byte of that frame is identical after the trace.  Kernel-owned,
-page-table, allocator-metadata, unassigned, and unrelated-subject frames are
-instances because translation can never target the first three and owner
-isolation prevents the latter two from becoming an assigned mapping. -/
+/-- Low-level finite-trace integrity: if no successful authorized write names
+a frame, every byte of that frame is identical after the trace.  The
+classification lemmas above derive this premise for the advertised frame
+classes; callers should normally use `isolated_trace_integrity`. -/
 theorem trace_integrity (state : State) (events : List DeviceEvent) (frame : FrameId)
     (huntouched : TraceDoesNotTouch state events frame) :
     (runDeviceTrace state events).1.core.memory frame = state.core.memory frame := by
@@ -1205,6 +1411,21 @@ theorem trace_integrity (state : State) (events : List DeviceEvent) (frame : Fra
         deviceStep_untouched_frame state event frame huntouched.1
       have htail := ih outcome.state huntouched.2
       exact htail.trans hhead
+
+/-- The advertised finite-trace boundary derives no-touch from an invariant
+frame class: protected, physically unassigned, or live and owned by someone
+other than the owner of every successful write in the trace. -/
+theorem isolated_trace_integrity
+    (state : State) (events : List DeviceEvent) (frame : FrameId)
+    (hisolated : FrameIsolatedFromTrace state events frame) :
+    (runDeviceTrace state events).1.core.memory frame =
+      state.core.memory frame := by
+  apply trace_integrity
+  rcases hisolated with hprotected | hunassigned | ⟨owner, hother, howned⟩
+  · exact protected_trace_does_not_touch state events frame hprotected
+  · exact unassigned_trace_does_not_touch state events frame hunassigned
+  · exact other_owner_trace_does_not_touch
+      state events frame owner hother howned
 
 structure AuthorizedReadView (state : State) where
   request : TransferRequest

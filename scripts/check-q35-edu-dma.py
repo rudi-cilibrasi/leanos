@@ -74,6 +74,10 @@ class QTest:
             text=True,
             bufsize=1,
         )
+        # TCG starts the firmware CPU alongside qtest.  Let its initial PCI
+        # enumeration finish before this harness takes ownership of the EDU
+        # BAR and Command register, otherwise firmware and qtest race.
+        time.sleep(0.5)
 
     def close(self) -> None:
         forced = False

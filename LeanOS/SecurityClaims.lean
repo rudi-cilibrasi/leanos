@@ -306,16 +306,15 @@ theorem iommu_finite_read_confidentiality
     state.iommu alternateMemory views hequivalent
 
 /-- SC-IOMMU-WRITE-INTEGRITY: a finite device trace leaves every byte of a
-frame identical when no successful generation-, owner-, domain-, lifetime-,
-range-, and permission-checked write names that frame. -/
+protected, physically unassigned, or other-owner live frame identical. -/
 theorem iommu_finite_write_integrity
     (state : IOMMU.AuthoritativeExtension) (_hstate : state.Invariant)
     (events : List IOMMU.DeviceEvent)
     (frame : IOMMU.FrameId)
-    (huntouched : IOMMU.TraceDoesNotTouch state.iommu events frame) :
+    (hisolated : IOMMU.FrameIsolatedFromTrace state.iommu events frame) :
     (IOMMU.runDeviceTrace state.iommu events).1.core.memory frame =
       state.iommu.core.memory frame :=
-  IOMMU.trace_integrity state.iommu events frame huntouched
+  IOMMU.isolated_trace_integrity state.iommu events frame hisolated
 
 /-- SC-IOMMU-NONFORGERY: every successful translation binds source,
 assignment generation, domain, owner, and live backing frame to the exact

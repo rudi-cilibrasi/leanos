@@ -118,11 +118,11 @@ owner projections equal and changes only the exact authorized backing range.
 The live-physical-frame uniqueness theorem upgrades translation's record-level
 owner equality to the `FrameId` key used by memory, and
 `write_integrity_other_owner_frame` therefore preserves every byte of a live
-frame owned by another subject. The finite-trace theorem preserves every byte
-of any physical frame not touched by a successful authorized write.
-Translation's owner, physical-ID uniqueness, and special-frame proofs make
-unrelated-subject, unassigned, kernel-owned, page-table, and
-allocator-metadata frames instances of that result.
+frame owned by another subject. The trace-level protected, physically
+unassigned, and other-owner lemmas derive no-touch inductively while device
+steps preserve the frame, mapping, and ownership projections. The stable
+finite-trace theorem accepts one of those frame classifications, rather than
+assuming no-touch directly, and preserves every byte of the classified frame.
 
 ## Assumptions, TCB, and exclusions
 
