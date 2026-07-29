@@ -38,10 +38,10 @@ def main() -> None:
         fail("media-mapping", f"expected={MEDIA_MAPPING},actual={probe.get('mediaMapping')}")
     if probe.get("preloadSize") != ISO_BYTES:
         fail("preload", f"expected-bytes={ISO_BYTES},actual={probe.get('preloadSize')}")
-    if result.get("pageErrors"):
-        fail("browser-setup", "page-error")
     if result.get("title") == "abort" or probe.get("abort"):
         fail("runtime-abort", "qemu-wasm-aborted")
+    if result.get("pageErrors"):
+        fail("runtime-abort", "uncaught-page-error")
     actual = protocol_lines(result.get("transcript", ""))
     if result.get("waitError"):
         transcript = result.get("transcript", "")

@@ -53,6 +53,15 @@ def main():
         "extra-protocol": (result(transcript=PROTOCOL + "LEANOS/10 EXTRA status=PASS\n"), "protocol"),
         "guest-failure": (result(title="exit=35", probe_exitCode=35), "guest-status"),
         "runtime-abort": (result(title="abort", probe_abort="trap"), "runtime-abort"),
+        "runtime-abort-with-page-error": (
+            result(title="abort", probe_abort="trap", pageErrors=["worker error"]),
+            "runtime-abort",
+        ),
+        "uncaught-worker-error": (
+            result(title="LeanOS gate", probe_exitCode=None,
+                   pageErrors=["worker error"]),
+            "runtime-abort",
+        ),
         "timeout": (result(title="LeanOS gate", probe_exitCode=None,
                            waitError="TimeoutError"), "timeout"),
     }

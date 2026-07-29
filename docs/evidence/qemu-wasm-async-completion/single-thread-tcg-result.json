@@ -1,0 +1,24 @@
+{
+  "title": "LeanOS qemu-wasm compatibility gate",
+  "status": "crossOriginIsolated=true",
+  "transcript": "LEANOS_TP submit-locked pool=0x14692c0 req=0x13e7b40 idle=0 cur=0 pending=0 new=0\nLEANOS_TP schedule-spawn-bh pool=0x14692c0 bh=0x1463ca0 cur=1 new=1\nLEANOS_AIO bh-enqueue name=spawn_thread_bh_fn bh=0x1463ca0 ctx=0x108a200 old_flags=0x0 new_flags=0x2 notified=1 notify_me=0\nLEANOS_AIO bh-notified name=spawn_thread_bh_fn bh=0x1463ca0 ctx=0x108a200 notified=1 notify_me=0\nLEANOS_TP submit-enqueued pool=0x14692c0 req=0x13e7b40\nLEANOS_AIO bh-consume name=spawn_thread_bh_fn bh=0x1463ca0 ctx=0x108a200 flags=0x3\nLEANOS_TP spawn-bh-enter pool=0x14692c0\nLEANOS_TP pthread-create-before pool=0x14692c0 pending=1 cur=1\nLEANOS_TP pthread-create-after pool=0x14692c0\nLEANOS_TP spawn-bh-exit pool=0x14692c0\nLEANOS_TP worker-enter pool=0x14692c0\nLEANOS_TP worker-locked pool=0x14692c0 pending=0 cur=1 queued_empty=0\nLEANOS_TP worker-dequeue pool=0x14692c0 req=0x13e7b40\nLEANOS_TP worker-function-return pool=0x14692c0 req=0x13e7b40 ret=0\nLEANOS_TP worker-schedule-completion pool=0x14692c0 req=0x13e7b40 bh=0x1463de0\nLEANOS_AIO bh-enqueue name=thread_pool_completion_bh bh=0x1463de0 ctx=0x108a200 old_flags=0x0 new_flags=0x2 notified=0 notify_me=2\nLEANOS_AIO bh-notified name=thread_pool_completion_bh bh=0x1463de0 ctx=0x108a200 notified=1 notify_me=0\nLEANOS_AIO bh-consume name=thread_pool_completion_bh bh=0x1463de0 ctx=0x108a200 flags=0x3\nLEANOS_TP completion-bh-enter pool=0x14692c0\nLEANOS_AIO bh-enqueue name=thread_pool_completion_bh bh=0x1463de0 ctx=0x108a200 old_flags=0x0 new_flags=0x2 notified=1 notify_me=0\nLEANOS_AIO bh-notified name=thread_pool_completion_bh bh=0x1463de0 ctx=0x108a200 notified=1 notify_me=0\nLEANOS_AIO ctx-prepare ctx=0x108a200 bh=0x1463de0 flags=0x0 notified=1 notify_me=1 timeout_ms=0",
+  "trace": "",
+  "probe": {
+    "crossOriginIsolated": true,
+    "mediaMapping": "cdrom:/leanos.iso",
+    "stderr": [
+      "worker sent an error! http://127.0.0.1:8765/qemu-system-x86_64.worker.js:168: Uncaught TypeError: Cannot read properties of undefined (reading 'tb_ptr_ptr')"
+    ],
+    "preloadSize": 14749696
+  },
+  "console": [
+    "COOP/COEP Service Worker registered http://127.0.0.1:8765/",
+    "Reloading page to make use of updated COOP/COEP Service Worker.",
+    "worker sent an error! http://127.0.0.1:8765/qemu-system-x86_64.worker.js:168: Uncaught TypeError: Cannot read properties of undefined (reading 'tb_ptr_ptr')"
+  ],
+  "pageErrors": [
+    "ErrorEvent: ErrorEvent\n    at worker.onerror (http://127.0.0.1:8765/out.js:3507:4)",
+    "TypeError: Cannot read properties of undefined (reading 'tb_ptr_ptr')\n    at instantiate_wasm (http://127.0.0.1:8765/out.js:490:54)\n    at $tcg_qemu_tb_exec (http://127.0.0.1:8765/qemu-system-x86_64.wasm:1:6385855)\n    at $cpu_tb_exec (http://127.0.0.1:8765/qemu-system-x86_64.wasm:1:6453571)\n    at $cpu_exec_loop (http://127.0.0.1:8765/qemu-system-x86_64.wasm:1:6460672)\n    at $dynCall_iii (http://127.0.0.1:8765/qemu-system-x86_64.wasm:1:10558276)\n    at ret.<computed> (http://127.0.0.1:8765/out.js:6003:24)\n    at Module.dynCall_iii (http://127.0.0.1:8765/out.js:7410:125)\n    at invoke_iii (http://127.0.0.1:8765/out.js:7626:10)\n    at $cpu_exec_setjmp (http://127.0.0.1:8765/qemu-system-x86_64.wasm:1:6456639)\n    at $cpu_exec (http://127.0.0.1:8765/qemu-system-x86_64.wasm:1:6455886)"
+  ],
+  "waitError": "Waiting failed: 60000ms exceeded"
+}

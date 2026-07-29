@@ -24,7 +24,9 @@ done
 [[ "$(git -C "$images" rev-parse HEAD)" == b7c549b5e6f4c376f76483a03e983214421434ad ]]
 [[ "$(node --version)" == v24.18.0 ]]
 [[ "$(npm --version)" == 11.16.0 ]]
-[[ "$(google-chrome --version)" == "Google Chrome 150.0.7871.128" ]]
+browser_version="$(google-chrome --version)"
+browser_version="${browser_version%"${browser_version##*[![:space:]]}"}"
+[[ "$browser_version" == "Google Chrome 150.0.7871.128" ]]
 
 (
   cd "$runtime"
@@ -92,7 +94,7 @@ iso_sha256=$(sha256sum "$iso" | cut -d' ' -f1)
 qemu_wasm_demo_revision=0208c86ea45253c26c0ea6907f6db2dec89eb7b2
 qemu_wasm_images_revision=b7c549b5e6f4c376f76483a03e983214421434ad
 qemu_wasm_sha256=f53107a35029d676aa551cd00d042f4f65af39a89bf72464494321fafdf54191
-browser=$(google-chrome --version)
+browser=$browser_version
 node=$(node --version)
 media=cdrom:/leanos.iso
 machine=q35

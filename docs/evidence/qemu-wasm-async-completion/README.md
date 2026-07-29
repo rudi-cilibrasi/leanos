@@ -96,6 +96,38 @@ QEMU main-loop integration that yields control while preserving event-loop
 ownership, or a pinned unforked runtime where QEMU's EventNotifier has
 supported cross-thread wake semantics.
 
+### Single-thread TCG control
+
+The supported QEMU argument `-accel tcg,thread=single,tb-size=500` changes the
+failure boundary without changing the ISO, q35 devices, one-vCPU scope, or
+network policy. In a 60-second diagnostic run, the same worker completed and
+the owner loop consumed `thread_pool_completion_bh`. The runtime then aborted
+before firmware because qemu-wasm's dynamic TCG module called
+`instantiate_wasm` on a thread whose JavaScript module had no initialized
+`__wasm32_tb.tb_ptr_ptr`.
+
+The retained
+[`single-thread-tcg-result.json`](single-thread-tcg-result.json) has SHA-256
+`b719de2328c4f36c66ab6d3f8b32376c6da7752ebe36405dbb0f84ce000c4094`.
+It used the pinned source revision and Emscripten version above, the unchanged
+ISO, Chrome 150.0.7871.128, and the diagnostic runtime with SHA-256
+`46b189292f66d8f0d060d8f6f4e9237fc7ef577af64fbe46a72efe76bceda08a`.
+That runtime includes the trace instrumentation and rejected owner-thread
+experiment, so this is not acceptance evidence or a proposed configuration.
+It does establish a distinct runtime-abort boundary and prevents presenting
+single-thread TCG as an invocation-only media fix.
+
+Reproduce it by changing only the compatibility gate's accelerator argument
+to:
+
+```text
+-accel tcg,thread=single,tb-size=500
+```
+
+Then run the source-browser probe above with
+`LEANOS_QEMU_WASM_TIMEOUT_MS=60000`. The maintained gate remains on the
+original pinned accelerator configuration.
+
 ## Reproduction
 
 Apply [`thread-pool-trace.patch`](thread-pool-trace.patch) to the pinned
