@@ -166,6 +166,40 @@ def mixedEdgeVector (edge : CompositeDispatcher.CanonicalMixedEdge) : Vector :=
 def mixedVectors : List Vector :=
   CompositeDispatcher.mixedCanonicalEdges.map mixedEdgeVector
 
+private def invalidationEdgeId :
+    CompositeDispatcher.InvalidationReplyId → String
+  | .wrongOwnerRejected => "composite.invalidation-wrong-owner-reject"
+  | .protectPending => "composite.invalidation-protect-pending"
+  | .protectMismatchRejected => "composite.invalidation-protect-effect-mismatch"
+  | .protectedState => "composite.invalidation-protect-ack"
+  | .releasePending => "composite.invalidation-release-pending"
+  | .releaseMismatchRejected => "composite.invalidation-release-effect-mismatch"
+  | .released => "composite.invalidation-release-ack"
+  | .staleReleaseRejected => "composite.invalidation-stale-release-reject"
+  | .destroyPending => "composite.invalidation-destroy-pending"
+  | .destroyed => "composite.invalidation-destroy-ack"
+  | .switchPending => "composite.invalidation-switch-pending"
+  | .switched => "composite.invalidation-switch-ack"
+  | .reused => "composite.invalidation-reuse-published"
+
+def invalidationEdgeVector
+    (edge : CompositeDispatcher.CanonicalInvalidationEdge) : Vector :=
+  let words := CompositeDispatcher.encodeInvalidationCommand edge.command
+  composite (invalidationEdgeId edge.reply)
+    (CompositeDispatcher.encodeInvalidationState edge.state)
+    words.tag words.arg0 words.arg1 words.arg2 words.arg3
+
+def invalidationVectors : List Vector :=
+  CompositeDispatcher.invalidationCanonicalEdges.map invalidationEdgeVector
+
+def invalidationNegativeVectors : List Vector :=
+  [composite "composite.invalidation-malformed-effect"
+      0x1d01 0x3501 1 1 7 1,
+   composite "composite.invalidation-mismatched-state"
+      0x1f01 0x3501 1 1 7 0,
+   composite "composite.invalidation-stale-ticket-replay"
+      0x2501 0x3d01 3 0 0 1]
+
 private def nmiUserFrame : UInt64 :=
   0x23 + 0x1b * 256 + 0x10000 + 0x20000 + 0x40000
 
@@ -529,13 +563,13 @@ def vectors : List Vector := [
   composite "composite.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
     0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
   composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0] ++
-  mixedVectors
+  mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors
 
-theorem corpus_shape : vectors.length = 332 := by decide
+theorem corpus_shape : vectors.length = 348 := by decide
 /-- Oracle indices 314--331 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
-    vectors.drop 314 =
+    (vectors.drop 314).take 18 =
       CompositeDispatcher.mixedCanonicalEdges.map mixedEdgeVector := by
   rfl
 
@@ -544,6 +578,37 @@ scalar-to-authoritative refinement theorem for its source edge. -/
 theorem hosted_mixed_vectors_refine :
     ∀ edge ∈ CompositeDispatcher.mixedCanonicalEdges, edge.Refines :=
   CompositeDispatcher.mixedCanonicalEdges_refine
+
+/-- Oracle indices 332--344 are the exact stateful invalidation publication
+sequence; 345--347 are malformed-effect, mismatched-state, and stale-ticket
+negatives. -/
+theorem hosted_invalidation_vectors_exact :
+    vectors.drop 332 =
+      CompositeDispatcher.invalidationCanonicalEdges.map invalidationEdgeVector ++
+        invalidationNegativeVectors := by
+  rfl
+
+theorem hosted_invalidation_vectors_refine :
+    ∀ edge ∈ CompositeDispatcher.invalidationCanonicalEdges, edge.Refines :=
+  CompositeDispatcher.invalidationCanonicalEdges_refine
+
+theorem composite_invalidation_trace_agrees :
+    (vectors[332]).expected = 0x321b01 ∧
+    (vectors[333]).expected = 0x331c01 ∧
+    (vectors[336]).expected = 0x361f01 ∧
+    (vectors[340]).expected = 0x3a2301 ∧
+    (vectors[342]).expected = 0x3c2501 ∧
+    (vectors[344]).expected = 0x3e2701 ∧
+    (vectors[345]).expected = 0xff05 ∧
+    (vectors[346]).expected = 0xff06 ∧
+    (vectors[347]).expected = 0xff05 := by
+  native_decide
+
+/-- The hosted scalar ABI rejects replaying release ticket 1 as the later
+switch acknowledgement even though both require the same `.flush` effect. -/
+theorem composite_invalidation_same_effect_replay_rejected :
+    (vectors[347]).expected = 0xff05 := by
+  native_decide
 
 theorem composite_mixed_trace_agrees :
     (vectors[314]).expected = 0x200901 ∧

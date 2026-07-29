@@ -18,6 +18,7 @@ import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.StaleTranslation
+import LeanOS.InvalidationPublication
 
 /-! # Stable security-claim contract
 
@@ -2626,6 +2627,41 @@ theorem stale_translation_invalidation_nonvacuous :
       (StaleTranslation.step StaleTranslation.filled (.release 0 0)).state.entries = [] ∧
       (TLB.access StaleTranslation.reused 7 StaleTranslation.ctx).isOk = false := by
   native_decide
+
+/-- SC-INVALIDATION-PUBLICATION-ORDER: logical invalidation preparation retains
+the complete published state; only the exact fresh ticket/effect completion can
+publish its recorded successor; an older ticket is inert; and bounded reuse
+requires acknowledged release and destruction with no pending effect. -/
+theorem invalidation_publication_order :
+    (∀ state kind request,
+      (InvalidationPublication.prepare state kind request).state.published =
+        state.published) ∧
+    (∀ state ack,
+      (InvalidationPublication.acknowledge state ack).accepted = true →
+        ∃ pending,
+          state.pending = some pending ∧
+          ack.ticket = pending.ticket ∧
+          ack.effect = pending.step.effect ∧
+          (InvalidationPublication.acknowledge state ack).state.published =
+            pending.step.state ∧
+          (InvalidationPublication.acknowledge state ack).state.pending = none) ∧
+    (∀ state ack pending,
+      state.pending = some pending →
+      ack.ticket ≠ pending.ticket →
+        (InvalidationPublication.acknowledge state ack).accepted = false ∧
+        (InvalidationPublication.acknowledge state ack).state = state ∧
+        (InvalidationPublication.acknowledge state ack).effect = .none) ∧
+    (∀ state,
+      (InvalidationPublication.publishReuse state).accepted = true →
+        state.pending = none ∧
+        state.releaseAcknowledged = true ∧
+        state.destroyAcknowledged = true) := by
+  exact ⟨InvalidationPublication.prepare_retains_published,
+    InvalidationPublication.acknowledge_accepted_exact,
+    fun state ack pending hpending hticket =>
+      InvalidationPublication.acknowledge_wrong_ticket_inert
+        state ack pending hpending hticket,
+    InvalidationPublication.reuse_publication_requires_retirement_ack⟩
 
 /-- SC-USER-FAULT-SHARED-CONTAINMENT: over one shared two-subject pre-state the
 real CPL3 divide-error, breakpoint, page-fault, and denied-port entries drive a

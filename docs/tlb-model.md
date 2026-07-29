@@ -80,6 +80,19 @@ accepted effect from being spliced onto another canonical pre-state or command,
 and `mixed_accepted_unmap_publication_order` identifies the published
 translation state with the same `StaleTranslation.step` result.
 
+The dispatcher additionally carries a 13-edge prepare/acknowledge sequence from
+`LeanOS.InvalidationPublication`. An accepted writable-to-read-only protect,
+plus accepted release, destroy, and switch steps, retain the full published
+pre-state while their exact page/space/flush
+effect is pending. A fresh logical ticket binds each acknowledgement to the
+step that issued it, so an older flush cannot acknowledge a later switch flush.
+Wrong-owner and stale-release operations, mismatched effects, malformed
+encodings, and wrong-state acknowledgements are inert. Only an exact
+ticket/effect pair publishes the recorded successor, and bounded reuse is
+disabled until release and destruction are both acknowledged with no pending
+effect. The final allocation is the existing finite object-11 witness, not the
+authoritative quota/reclamation path deferred to issue #112.
+
 Every boot image then consumes that exact generated reply in a bounded
 runtime-mutable machine window at virtual page 7. Address space B is first
 backed by a reviewed “before” frame. The active-root path clears B's volatile

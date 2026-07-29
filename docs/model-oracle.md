@@ -13,7 +13,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-332-vector order covers accepted calls,
+348-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -42,7 +42,7 @@ that must round-trip unchanged. The Lean checks evaluate every expected result
 from the adapter definition and connect the accepted and rejected examples to
 the source models.
 
-The final thirty-eight composite-dispatch records are the version-one traces
+The final fifty-four composite-dispatch records are the version-one traces
 for the shared stateful boundary. Six input words carry a canonical state token,
 command tag, and four scalar arguments. The seven positive sequence edges create
 one subject, observe typed unknown-syscall and malformed-map rejections, run
@@ -65,7 +65,7 @@ Its append-continuity corollary requires every prefix and suffix to share one
 canonical intermediate state token, so stale replay or cross-trace splicing
 cannot be accepted between adjacent steps.
 
-The final sixteen records form one positive mixed trace rooted in a
+The next eighteen records form one positive mixed trace rooted in a
 kernel-owned, complete two-subject state. In order, it offers and accepts a
 sealed endpoint descendant, revokes its send-only generation, rejects the
 stale handle, copies a fresh generation into the reused slot, accepts both
@@ -77,6 +77,23 @@ post-fatal scheduler attempt. Lean checks the exact typed result at each named
 boundary, including the timer-selected subject and the faulting subject's
 retired identity. The scalar export remains allocation-free; generated C and
 its calling convention remain trusted hosted-test boundaries.
+
+The final sixteen records are the stateful invalidation-publication sequence.
+Thirteen canonical edges cover wrong-owner protection rejection, an accepted
+writable-to-read-only protection reduction, exact page-effect acknowledgement,
+accepted release and destruction,
+stale-release rejection, root switch, and bounded post-retirement reuse. Both
+protection and release include a mismatched-effect stutter before the exact
+acknowledgement. The three final negatives reject a malformed effect encoding,
+a valid page acknowledgement paired with the wrong pending state, and an old
+release-flush ticket replayed against the later switch flush. Pending state
+tokens retain the complete published pre-state: `prepare_retains_published` and
+`release_not_published_before_ack` prevent early retirement publication,
+`acknowledge_accepted_exact` requires the fresh ticket and exact effect before
+publishing the recorded successor, and
+`reuse_publication_requires_retirement_ack` requires acknowledged release and
+destruction with no pending effect. The object-11 reuse remains the existing
+finite fixture; it adds no authoritative quota or reclamation policy.
 
 Five additional Phase 2 records invoke that same dispatcher for a canonical
 generation-bound map handle, nonblocking IPC, capability copy, blocking

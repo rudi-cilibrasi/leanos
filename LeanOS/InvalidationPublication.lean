@@ -1,0 +1,339 @@
+import LeanOS.StaleTranslation
+
+/-!
+# Stateful invalidation publication protocol
+
+`StaleTranslation.step` computes an accepted logical mutation and its exact
+machine effect atomically.  A concrete runtime must still perform that effect
+before publishing the logical successor.  This module makes that ordering
+explicit for the bounded generated dispatcher:
+
+* `prepare` retains the complete published state and records one pending step;
+* `acknowledge` publishes the pending state only when the supplied effect is
+  exactly the effect computed by that step; and
+* `publishReuse` is disabled until both the release and destruction effects
+  have been acknowledged.
+
+The final reuse operation is only the existing finite model fixture.  It does
+not add an allocator quota, reclamation policy, or fresh-object runtime path.
+-/
+namespace LeanOS.InvalidationPublication
+
+open LeanOS
+open LeanOS.StaleTranslation
+
+inductive TransitionKind where
+  | protect
+  | release
+  | destroy
+  | switch
+  deriving DecidableEq, Repr
+
+structure Pending where
+  ticket : Nat
+  kind : TransitionKind
+  step : StaleTranslation.Step
+
+/-- A machine-effect completion is useful only for the exact pending
+publication that issued its ticket.  The ticket prevents an earlier completion
+with the same effect (for example, a release flush) from acknowledging a later
+pending flush. -/
+structure Acknowledgement where
+  ticket : Nat
+  effect : StaleTranslation.Effect
+  deriving DecidableEq, Repr
+
+structure State where
+  published : TLB.State
+  pending : Option Pending
+  nextTicket : Nat
+  releaseAcknowledged : Bool
+  destroyAcknowledged : Bool
+
+structure Outcome where
+  state : State
+  accepted : Bool
+  effect : StaleTranslation.Effect
+
+/-- The canonical sequence starts with a writable mapping and a translation
+filled from that exact PTE so the accepted protection step is a real permission
+reduction rather than a same-permission replacement. -/
+def writableCold : TLB.State :=
+  { StaleTranslation.cold with
+    virtual := VirtualMapping.setMapping StaleTranslation.cold.virtual 1 7
+      (some { object := 10, permissions := { read := true, write := true } }) }
+
+def writableFilled : TLB.State :=
+  match TLB.fill writableCold 7 StaleTranslation.ctx with
+  | .ok (_, state) => state
+  | .error _ => writableCold
+
+def initial : State :=
+  { published := writableFilled
+    pending := none
+    nextTicket := 0
+    releaseAcknowledged := false
+    destroyAcknowledged := false }
+
+/-- Compute one logical transition while retaining the complete caller-visible
+state.  Rejections and attempts to overlap pending effects are inert. -/
+def prepare (state : State) (kind : TransitionKind)
+    (request : StaleTranslation.Request) : Outcome :=
+  match state.pending with
+  | some _ => { state, accepted := false, effect := .none }
+  | none =>
+      let next := StaleTranslation.step state.published request
+      if next.accepted then
+        { state :=
+            { state with
+              pending := some { ticket := state.nextTicket, kind, step := next }
+              nextTicket := state.nextTicket + 1 }
+          accepted := true
+          effect := next.effect }
+      else
+        { state, accepted := false, effect := .none }
+
+/-- Publish exactly one pending logical successor only after an acknowledgement
+names both its fresh ticket and exact effect.  A missing, stale, or mismatched
+acknowledgement is a complete stutter. -/
+def acknowledge (state : State) (ack : Acknowledgement) : Outcome :=
+  match state.pending with
+  | none => { state, accepted := false, effect := .none }
+  | some pending =>
+      if ack.ticket = pending.ticket ∧ ack.effect = pending.step.effect then
+        { state :=
+            { published := pending.step.state
+              pending := none
+              nextTicket := state.nextTicket
+              releaseAcknowledged :=
+                state.releaseAcknowledged || pending.kind = .release
+              destroyAcknowledged :=
+                state.destroyAcknowledged || pending.kind = .destroy }
+          accepted := true
+          effect := ack.effect }
+      else
+        { state, accepted := false, effect := .none }
+
+/-- The issue-local bounded reuse witness.  The retired frame is allocated to
+object 11 using the existing finite lifecycle model; no quota/reclamation
+policy is introduced here. -/
+def reusedFixture (state : TLB.State) : TLB.State :=
+  { state with
+    virtual :=
+      { state.virtual with
+        memory := (MemoryLifecycle.allocate state.virtual.memory 11 0 0).state } }
+
+/-- Reallocation publication is guarded by acknowledged release and destruction
+and by the absence of any still-pending machine effect. -/
+def publishReuse (state : State) : Outcome :=
+  match state.pending with
+  | some _ => { state, accepted := false, effect := .none }
+  | none =>
+      if state.releaseAcknowledged && state.destroyAcknowledged then
+        let next := reusedFixture state.published
+        match (MemoryLifecycle.allocate state.published.virtual.memory 11 0 0).result with
+        | .accepted =>
+            { state := { state with published := next }
+              accepted := true
+              effect := .none }
+        | .rejected _ => { state, accepted := false, effect := .none }
+      else
+        { state, accepted := false, effect := .none }
+
+/-! ## General ordering laws -/
+
+theorem prepare_retains_published state kind request :
+    (prepare state kind request).state.published = state.published := by
+  simp only [prepare]
+  split <;> try rfl
+  split <;> rfl
+
+theorem prepare_rejected_inert state kind request
+    (h : (prepare state kind request).accepted = false) :
+    (prepare state kind request).state = state ∧
+      (prepare state kind request).effect = .none := by
+  simp only [prepare] at h ⊢
+  split at h <;> try simp_all
+  split at h <;> simp_all
+
+theorem acknowledge_rejected_inert state ack
+    (h : (acknowledge state ack).accepted = false) :
+    (acknowledge state ack).state = state ∧
+      (acknowledge state ack).effect = .none := by
+  unfold acknowledge at h ⊢
+  split
+  · simp
+  next pending hpending =>
+    split
+    · simp_all
+    next => simp
+
+theorem acknowledge_accepted_exact state ack
+    (h : (acknowledge state ack).accepted = true) :
+    ∃ pending,
+      state.pending = some pending ∧
+      ack.ticket = pending.ticket ∧
+      ack.effect = pending.step.effect ∧
+      (acknowledge state ack).state.published = pending.step.state ∧
+      (acknowledge state ack).state.pending = none := by
+  unfold acknowledge at h
+  split at h
+  · simp_all
+  next pending hpending =>
+    split at h
+    next hexact =>
+      refine ⟨pending, hpending, hexact.1, hexact.2, ?_, ?_⟩
+      · simp [acknowledge, hpending, hexact]
+      · simp [acknowledge, hpending, hexact]
+    next => simp_all
+
+/-- Every accepted preparation allocates the pending effect's ticket from the
+pre-state and advances the counter before any acknowledgement can arrive. -/
+theorem prepare_accepted_fresh_ticket state kind request
+    (h : (prepare state kind request).accepted = true) :
+    ∃ pending,
+      (prepare state kind request).state.pending = some pending ∧
+      pending.ticket = state.nextTicket ∧
+      (prepare state kind request).state.nextTicket = state.nextTicket + 1 := by
+  cases hpending : state.pending with
+  | some pending =>
+      simp [prepare, hpending] at h
+  | none =>
+      simp only [prepare, hpending] at h ⊢
+      split at h
+      next haccepted =>
+        simp only [haccepted, if_pos]
+        exact ⟨_, rfl, rfl, True.intro⟩
+      next => contradiction
+
+/-- A completion from any earlier pending publication cannot be spliced into a
+later one, even when both machine effects have the same shape. -/
+theorem acknowledge_wrong_ticket_inert state ack pending
+    (hpending : state.pending = some pending)
+    (hticket : ack.ticket ≠ pending.ticket) :
+    (acknowledge state ack).accepted = false ∧
+      (acknowledge state ack).state = state ∧
+      (acknowledge state ack).effect = .none := by
+  simp [acknowledge, hpending, hticket]
+
+/-- A prepared release cannot expose retirement: its complete published state
+is literally the pre-state until the required flush is acknowledged. -/
+theorem release_not_published_before_ack state subject slot :
+    (prepare state .release (.release subject slot)).state.published =
+      state.published :=
+  prepare_retains_published state .release (.release subject slot)
+
+/-- The bounded fresh-lifetime witness cannot publish unless both retirement
+effects were acknowledged and no effect remains pending. -/
+theorem reuse_publication_requires_retirement_ack state
+    (h : (publishReuse state).accepted = true) :
+    state.pending = none ∧
+      state.releaseAcknowledged = true ∧
+      state.destroyAcknowledged = true := by
+  simp only [publishReuse] at h
+  split at h
+  · simp_all
+  next hpending =>
+    split at h <;> try simp_all
+
+/-! ## Canonical stateful sequence
+
+This sequence covers a wrong-owner rejection, accepted protection, mismatched
+effect rejection, exact acknowledgement, release, stale-handle rejection,
+address-space destruction, root switch, and bounded reuse publication. -/
+
+def wrongOwnerRejected : State :=
+  (prepare initial .protect (.protect 1 1 7 { read := true })).state
+
+def protectPending : State :=
+  (prepare wrongOwnerRejected .protect (.protect 0 1 7 { read := true })).state
+
+def protectMismatchRejected : State :=
+  (acknowledge protectPending { ticket := 0, effect := .space 1 }).state
+
+def protectedState : State :=
+  (acknowledge protectMismatchRejected { ticket := 0, effect := .page 1 7 }).state
+
+def releasePending : State :=
+  (prepare protectedState .release (.release 0 0)).state
+
+def releaseMismatchRejected : State :=
+  (acknowledge releasePending { ticket := 1, effect := .page 1 7 }).state
+
+def released : State :=
+  (acknowledge releaseMismatchRejected { ticket := 1, effect := .flush }).state
+
+def staleReleaseRejected : State :=
+  (prepare released .release (.release 0 0)).state
+
+def destroyPending : State :=
+  (prepare staleReleaseRejected .destroy (.destroy 0 1)).state
+
+def destroyed : State :=
+  (acknowledge destroyPending { ticket := 2, effect := .space 1 }).state
+
+def switchPending : State :=
+  (prepare destroyed .switch (.switch 2)).state
+
+def switched : State :=
+  (acknowledge switchPending { ticket := 3, effect := .flush }).state
+
+def reused : State :=
+  (publishReuse switched).state
+
+theorem canonical_effects :
+    (prepare initial .protect (.protect 1 1 7 { read := true })).accepted = false ∧
+    (prepare initial .protect (.protect 1 1 7 { read := true })).effect = .none ∧
+    (prepare wrongOwnerRejected .protect
+        (.protect 0 1 7 { read := true })).effect = .page 1 7 ∧
+    (acknowledge protectPending { ticket := 0, effect := .space 1 }).accepted = false ∧
+    (acknowledge protectMismatchRejected
+        { ticket := 0, effect := .page 1 7 }).accepted = true ∧
+    (prepare protectedState .release (.release 0 0)).effect = .flush ∧
+    (acknowledge releasePending
+        { ticket := 1, effect := .page 1 7 }).accepted = false ∧
+    (acknowledge releaseMismatchRejected
+        { ticket := 1, effect := .flush }).accepted = true ∧
+    (prepare released .release (.release 0 0)).accepted = false ∧
+    (prepare released .release (.release 0 0)).effect = .none ∧
+    (prepare staleReleaseRejected .destroy (.destroy 0 1)).effect = .space 1 ∧
+    (acknowledge destroyPending
+        { ticket := 2, effect := .space 1 }).accepted = true ∧
+    (prepare destroyed .switch (.switch 2)).effect = .flush ∧
+    (acknowledge switchPending
+        { ticket := 3, effect := .flush }).accepted = true ∧
+    (publishReuse switched).accepted = true := by
+  native_decide
+
+/-- The release and root-switch stages both require `.flush`, but the release
+completion's old ticket cannot publish the later switch successor. -/
+theorem canonical_release_ack_cannot_splice_switch :
+    (acknowledge switchPending { ticket := 1, effect := .flush }).accepted = false ∧
+    (acknowledge switchPending { ticket := 1, effect := .flush }).state =
+      switchPending ∧
+    (acknowledge switchPending { ticket := 1, effect := .flush }).effect = .none := by
+  have hrejected :
+      (acknowledge switchPending { ticket := 1, effect := .flush }).accepted =
+        false := by
+    native_decide
+  exact ⟨hrejected,
+    acknowledge_rejected_inert switchPending { ticket := 1, effect := .flush }
+      hrejected⟩
+
+theorem canonical_retirement_and_reuse_order :
+    protectPending.published.virtual.mappings 1 7 =
+        some { object := 10, permissions := { read := true, write := true } } ∧
+    protectedState.published.virtual.mappings 1 7 =
+        some { object := 10, permissions := { read := true, write := false } } ∧
+    releasePending.published.virtual.memory.binding 10 = some 4 ∧
+    released.published.virtual.memory.binding 10 = none ∧
+    destroyPending.published.virtual.owner 1 = some 0 ∧
+    destroyed.published.virtual.owner 1 = none ∧
+    switched.releaseAcknowledged = true ∧
+    switched.destroyAcknowledged = true ∧
+    reused.published.virtual.memory.binding 11 = some 4 ∧
+    reused.published.virtual.mappings 1 7 = none ∧
+    (TLB.access reused.published 7 StaleTranslation.ctx).isOk = false := by
+  native_decide
+
+end LeanOS.InvalidationPublication
