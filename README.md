@@ -126,9 +126,10 @@ the restricted Lean runtime shim, Lean code generation and generated C, the C
 compiler and binutils, linker scripts, GRUB, SeaBIOS, QEMU/TCG, host-side
 evidence scripts, and the assumed x86-64 and device semantics. The boot scenarios
 test only the fixed single-core paths and adversarial cases documented by their
-ADRs. General concurrency, DMA outside the finite integrity-only q35 quarantine
-model, device-read confidentiality, timing and covert channels, arbitrary
-hardware, arbitrary faults, and full implementation refinement remain outside
+ADRs. General concurrency, DMA outside the finite q35 quarantine and static
+IOMMU models, device-read confidentiality outside explicitly authorized model
+views, timing and covert channels, arbitrary hardware, arbitrary faults, and
+full implementation refinement remain outside
 the current claims. [ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md) defines
 the evidence vocabulary and baseline boundary; later ADRs record each addition.
 
@@ -258,6 +259,15 @@ the complete live Command words to match that accepted boot observation.
 PCI enumeration and Command-register semantics, QEMU/device
 obedience, the handwritten C adapter, and final-binary correspondence remain
 trusted/tested boundaries rather than proof claims.
+
+The separate finite [static IOMMU confinement model](docs/iommu-confinement.md)
+adds generation-bound device assignments and domains, capability-derived IOVA
+mappings, live backing-frame lifetimes, and read/write direction checks.
+Lean proves model-level read confidentiality and write integrity for one step
+and finite traces, plus non-forgery, attenuation, cleanup, lifetime, and
+owner-isolation facts. The deny-all q35 snapshot remains unchanged. No VT-d
+programming, IOTLB mechanics, assigned-device QEMU path, generated boundary,
+or final-binary/hardware confinement claim is included.
 
 The bounded [direct-port-I/O authority model](docs/direct-port-io.md) separates
 untrusted port/value words from kernel-selected purpose, models the selected

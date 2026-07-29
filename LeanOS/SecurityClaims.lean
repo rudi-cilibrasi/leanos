@@ -14,6 +14,7 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.DMAQuarantine
+import LeanOS.IOMMU
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
 import LeanOS.UserFaultContainmentVocabulary
@@ -282,6 +283,76 @@ theorem dma_changed_live_control_nonvacuous :
           exact dma_changed_live_control_is_fatal_and_absorbing
             (FailStop.bootRuntime plan) DMAQuarantine.q35CommandBitFlipSnapshot
             accepted operations rfl hvalid hchanged
+
+/-! ## Static assigned-device confinement claims
+
+These wrappers are deliberately model-only.  The source identity and transfer
+submitted at the platform boundary are covered by `IOMMU.DeviceSemantics`;
+none of these claims proves VT-d, PCIe, generated code, QEMU, or a binary.
+-/
+
+/-- SC-IOMMU-READ-CONFIDENTIALITY: a finite sequence of authorized read views
+is insensitive to every byte outside the union of those exact readable
+backing-frame ranges. -/
+theorem iommu_finite_read_confidentiality
+    (state : IOMMU.State) first second
+    (views : List (IOMMU.AuthorizedReadView state))
+    (hequivalent : IOMMU.ReadViewsEquivalent first second views) :
+    IOMMU.observeReadViews first views = IOMMU.observeReadViews second views :=
+  IOMMU.read_trace_confidentiality state first second views hequivalent
+
+/-- SC-IOMMU-WRITE-INTEGRITY: a finite device trace leaves every byte of a
+frame identical when no successful generation-, owner-, domain-, lifetime-,
+range-, and permission-checked write names that frame. -/
+theorem iommu_finite_write_integrity
+    (state : IOMMU.State) (events : List IOMMU.DeviceEvent)
+    (frame : IOMMU.FrameId)
+    (huntouched : IOMMU.TraceDoesNotTouch state events frame) :
+    (IOMMU.runDeviceTrace state events).1.core.memory frame =
+      state.core.memory frame :=
+  IOMMU.trace_integrity state events frame huntouched
+
+/-- SC-IOMMU-NONFORGERY: every successful translation binds source,
+assignment generation, domain, owner, and live backing frame to the exact
+kernel-derived authority already in state. -/
+theorem iommu_translation_nonforgery
+    (translation : IOMMU.Translation state request direction) :
+    translation.assignment.source = request.source ∧
+      translation.assignment.handle.generation = request.assignmentGeneration ∧
+      translation.mapping.assignment = translation.assignment.handle ∧
+      translation.mapping.domain = translation.assignment.domain ∧
+      translation.mapping.owner = translation.assignment.owner ∧
+      translation.frame.handle = translation.mapping.frame ∧
+      translation.frame.owner = translation.assignment.owner :=
+  IOMMU.translation_nonforgery translation
+
+/-- SC-IOMMU-CLEANUP: accepted assignment teardown removes every mapping for
+the exact generation-checked assignment. -/
+theorem iommu_teardown_cleanup
+    (state : IOMMU.State) (handle : IOMMU.AssignmentHandle)
+    (after : IOMMU.State)
+    (haccepted :
+      IOMMU.gate state (.teardown handle) =
+        .accepted after .tornDown) :
+    after.core.mappings.all (·.assignment != handle) = true :=
+  IOMMU.teardown_removes_all_mappings state handle after haccepted
+
+/-- SC-IOMMU-LIFETIME: release of a frame generation reachable through an
+active DMA mapping is a typed, complete-state rejection. -/
+theorem iommu_reachable_frame_release_denied
+    (state : IOMMU.State) (handle : IOMMU.FrameHandle)
+    (hreachable : state.core.mappings.any (·.frame == handle) = true) :
+    ∃ reason, IOMMU.gate state (.releaseFrame handle) = .rejected reason :=
+  IOMMU.release_rejects_reachable_frame state handle hreachable
+
+/-- SC-IOMMU-FAILSTOP: once the authoritative global execution latch is
+halted, every finite IOMMU control suffix preserves the complete IOMMU state. -/
+theorem iommu_fatal_suffix_absorbing
+    (kernel : FailStop.CompositeState) (state : IOMMU.State)
+    (operations : List IOMMU.Operation) (record : FailStop.HaltRecord)
+    (hhalted : kernel.execution.mode = .halted record) :
+    IOMMU.runGated kernel state operations = state :=
+  IOMMU.halted_iommu_suffix_absorbing kernel state operations record hhalted
 
 /-- SC-LIFETIME-IDENTITY-NO-REUSE: under the bounded-issuer runtime invariant,
 every finite sequence of composite lifecycle operations preserves

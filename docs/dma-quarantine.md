@@ -259,6 +259,12 @@ absorbed by every later authoritative successor operation. This integration
 does not fork `DMAQuarantine.RuntimeState` or its parallel memory projection
 into the composite runtime.
 
+The later [static IOMMU confinement model](iommu-confinement.md) preserves this
+deny-all result unchanged and adds a separate assigned-device authority
+projection. This q35 validator still rejects every assignment; its
+integrity-only `DeviceContract` is not retroactively treated as a
+confidentiality or hardware-translation assumption.
+
 Issue #105 remains the owner of canonical decoding and the global fixed-width
 composite encoding. The finite q35 scalar transport is only the allocation-free
 generated boot boundary for the already canonical live PCI projection; it is

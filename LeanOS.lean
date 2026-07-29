@@ -23,6 +23,7 @@ import LeanOS.BlockingIPCContext
 import LeanOS.EndpointIPC
 import LeanOS.ExtendedState
 import LeanOS.IPCSyscall
+import LeanOS.IOMMU
 import LeanOS.Interrupt
 import LeanOS.InterruptEntry
 import LeanOS.PrivilegeEntryStack

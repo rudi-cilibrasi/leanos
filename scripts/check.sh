@@ -316,6 +316,21 @@ if ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
   exit 1
 fi
 
+for fixture in IOMMUCallerSuppliedPhysicalFrame IOMMUCrossDomainTranslation \
+    IOMMUOmittedSourceBinding IOMMUPermissionAmplification IOMMUStaleBDFReuse \
+    IOMMUDeviceReadOutsideRule IOMMUReleaseReachableFrame; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: IOMMU confinement fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error:' "$negative_log"; then
+    echo "error: IOMMU confinement fixture ${fixture} lacked a Lean diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
 if lake env lean tests/negative/WrappingIssuerReuse.lean >"$negative_log" 2>&1; then
   echo "error: wrapping-issuer reuse fixture unexpectedly type-checked" >&2
   exit 1
