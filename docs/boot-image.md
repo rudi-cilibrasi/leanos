@@ -192,6 +192,8 @@ The following new code and assumptions are trusted, not proved:
   handoff, and NMI non-delivery inside those two residual windows;
 - `boot/kernel.c`, including the bounded Multiboot2 byte parser, physical-frame
   scrub, UART polling, port I/O, QEMU debug-exit behavior, serial formatting,
+  the frame-budget canonical-token bridge, distinct boot/scenario frame
+  selection, and retire-before-republication ordering,
   and the manual `lean_uint64_dec_eq` implementation;
 - the fast-entry CPU/MSR bridge: CPUID vendor/feature decoding, privileged
   `rdmsr`/`wrmsr`, EFER reserved-bit handling, the assumed AMD long-mode

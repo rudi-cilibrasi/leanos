@@ -30,6 +30,7 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.Example
 import LeanOS.FrameAllocator
 import LeanOS.FrameBudget
+import LeanOS.FrameBudgetScenario
 import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.FaultDispatch

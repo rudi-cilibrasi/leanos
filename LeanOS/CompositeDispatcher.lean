@@ -1,6 +1,7 @@
 import LeanOS.FailStop
 import LeanOS.InvalidationPublication
 import LeanOS.StaleTranslation
+import LeanOS.FrameBudgetScenario
 
 /-!
 # Canonical bounded composite dispatcher
@@ -468,6 +469,9 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   if 0x1a01 ≤ stateWord && stateWord ≤ 0x2d01 then
     if stateWord % 256 != abiVersion then 0xff01
     else invalidationDispatchRaw stateWord tag arg0 arg1 arg2 arg3
+  else if 0x4001 ≤ stateWord && stateWord ≤ 0x4b01 then
+    if stateWord % 256 != abiVersion then 0xff01
+    else FrameBudgetScenario.dispatch stateWord tag arg0 arg1 arg2 arg3
   else if stateWord = 0x0801 || stateWord = 0x0901 || stateWord = 0x0a01 ||
       stateWord = 0x0b01 || stateWord = 0x0c01 || stateWord = 0x0d01 ||
       stateWord = 0x0e01 || stateWord = 0x0f01 || stateWord = 0x1001 ||

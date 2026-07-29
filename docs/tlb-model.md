@@ -143,6 +143,12 @@ tested rather than a refinement proof. The bounded C owner/lifetime metadata
 is scenario attestation; it is not a general allocator ABI or #112's quota
 policy.
 
+Because this image carries additional CPL3 probe code, it retains its own
+complete generated boot-page-table plan. The build requires that plan to match
+the final linked image byte-for-byte; the ordinary fault images continue to
+share their exact common plan. This separation does not exempt any immutable
+leaf from checking.
+
 The live page-table checker does not ignore those mutable leaves. Its
 kernel-owned phase is one of `boot`, `before`, `unmapped`, `after`, or `reused`,
 and each phase admits exactly one B/page-7 value: the generated boot leaf, the

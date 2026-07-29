@@ -61,6 +61,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_page_fault_diagnostic_regression_demo);
     REGISTER_BOUNDARY(leanos_direct_port_io_demo);
     REGISTER_BOUNDARY(leanos_stale_translation_demo);
+    REGISTER_BOUNDARY(leanos_frame_budget_mapping_page);
     REGISTER_BOUNDARY(leanos_composite_dispatch);
     REGISTER_BOUNDARY(leanos_validate_q35_dma_snapshot);
 
@@ -79,6 +80,18 @@ int main(void) {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    if (leanos_frame_budget_mapping_page(
+            LEANOS_COMPOSITE_STATE_BUDGET_INITIAL,
+            LEANOS_COMPOSITE_COMMAND_BUDGET_ALLOCATE_A) != 4095 ||
+        leanos_frame_budget_mapping_page(
+            LEANOS_COMPOSITE_STATE_BUDGET_A_TERMINATED,
+            LEANOS_COMPOSITE_COMMAND_BUDGET_PUBLISH_FRESH_B) != 4095 ||
+        leanos_frame_budget_mapping_page(
+            LEANOS_COMPOSITE_STATE_BUDGET_INITIAL,
+            LEANOS_COMPOSITE_COMMAND_BUDGET_PUBLISH_FRESH_B) != UINT64_MAX) {
+        fputs("generated frame-budget mapping policy drifted\n", stderr);
+        return 1;
+    }
     if (leanos_validate_q35_dma_snapshot(
             1, UINT64_C(0x000800020002),
             UINT64_C(0x0006000029c08086), UINT64_C(0x0001),
@@ -150,6 +163,21 @@ int main(void) {
 #ifdef LEANOS_FIXTURE_COMPOSITE_HANDLE_CORRUPTION
         if (i == ORACLE_INDEX_COMPOSITE_REJECT_STALE_MAP_HANDLE) {
             composite_arg0 = UINT64_C(0xffff);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_GLOBAL_COUNTER
+        if (i == ORACLE_INDEX_FRAME_BUDGET_B_PEER_ALLOCATE) {
+            composite_state = UINT64_C(0x4101);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_CROSS_CHARGE
+        if (i == ORACLE_INDEX_FRAME_BUDGET_B_PEER_ALLOCATE) {
+            composite_arg2 = UINT64_C(1);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_USER_OWNER
+        if (i == ORACLE_INDEX_FRAME_BUDGET_A_ALLOCATE) {
+            composite_arg2 = UINT64_C(2);
         }
 #endif
         uint64_t got = v->adapter == 0
@@ -224,6 +252,21 @@ int main(void) {
 #ifdef LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION
         if (v->adapter == 18) {
             got ^= UINT64_C(1);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_RELABEL_SUCCESS
+        if (i == ORACLE_INDEX_FRAME_BUDGET_A_AT_LIMIT) {
+            got = UINT64_C(0x404101);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_PARTIAL_PUBLICATION
+        if (i == ORACLE_INDEX_FRAME_BUDGET_A_AT_LIMIT) {
+            got ^= UINT64_C(0x100);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_DOUBLE_CREDIT
+        if (i == ORACLE_INDEX_FRAME_BUDGET_TERMINATE_A) {
+            got ^= UINT64_C(0x100);
         }
 #endif
         if (got != v->expected) {
