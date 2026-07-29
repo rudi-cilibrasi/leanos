@@ -55,13 +55,22 @@ and current-owner termination.
 - Old transfer requests carry the retired assignment generation and therefore
   reject after teardown and reassignment of the same device slot/source.
 
-Arbitrary #104 authoritative kernel operations retain the separate IOMMU
-authority projection literally. This covers scheduler, syscall, IPC,
-capability, CPU mapping, lifecycle, blocking, and deferred-cancellation
-transitions without adding IOMMU payloads to them. `gatedByKernel` admits IOMMU
-control only while the global execution latch is running; a busy handler or
-fatal latch rejects without a post-state, and every finite post-fatal suffix
-is absorbed.
+`AuthoritativeExtension.Coherent` relates the projections: the IOMMU current
+owner is the kernel-selected subject, its capability-provenance state is the
+kernel capability state, and every retained assignment, mapping, capability,
+and ordinary live frame belongs to a live kernel subject. Every local
+capability's object-to-frame binding must equal the kernel memory binding, and
+every mapping must remain range- and permission-attenuated from one such
+capability. Kernel and IOMMU updates commit atomically.
+Scheduler/current-subject changes synchronize the owner. A changed lifecycle
+or capability projection revokes DMA mappings and cached capability records,
+removes dead-owner assignments, and retires their ordinary frames; if
+reconciliation cannot validate, the complete extension stutters. Thus
+capability copy/revoke, CPU mapping, lifecycle, scheduler, blocking, and
+deferred-cancellation operations cannot publish a kernel post-state paired
+with detached authority. `gatedByKernel` admits IOMMU control only while the
+global execution latch is running; a busy handler or fatal latch rejects
+without a post-state, and every finite post-fatal suffix is absorbed.
 
 The existing `DMAQuarantine` projection is unchanged. `QuarantineExtension`
 composes an IOMMU state with that deny-all baseline. With no assignments or
@@ -84,9 +93,14 @@ IOVA, and complete length. Translation requires:
 6. exclusion of kernel, page-table, and allocator-metadata frames; and
 7. containment of the complete translated range in the frame lifetime.
 
-Reads return byte-list observations and do not change state. The one-step and
-finite-view confidentiality theorems show that changing every byte outside the
-authorized readable backing ranges cannot change those observations.
+Every successful `Translation` carries the exact successful assignment,
+mapping, and frame lookup equations from the authoritative state. Reads return
+byte-list observations and do not change state. `AuthorizedReadView` carries
+the exact successful `deviceRead` equation and observed bytes, so its finite
+confidentiality theorem begins with actual model observations rather than
+caller-constructed records. The one-step and finite-view results show that
+changing every byte outside the authorized readable backing ranges cannot
+change those observations.
 
 Writes are state transitions. The one-step integrity theorem leaves all
 assignment, domain, mapping, frame-ownership, capability, issuer, and current

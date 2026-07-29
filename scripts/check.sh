@@ -318,7 +318,8 @@ fi
 
 for fixture in IOMMUCallerSuppliedPhysicalFrame IOMMUCrossDomainTranslation \
     IOMMUOmittedSourceBinding IOMMUPermissionAmplification IOMMUStaleBDFReuse \
-    IOMMUDeviceReadOutsideRule IOMMUReleaseReachableFrame; do
+    IOMMUDeviceReadOutsideRule IOMMUReleaseReachableFrame \
+    IOMMUFabricatedReadView IOMMUDetachedAuthoritativeProjection; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: IOMMU confinement fixture ${fixture} unexpectedly type-checked" >&2
     exit 1

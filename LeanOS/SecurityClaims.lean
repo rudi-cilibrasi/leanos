@@ -295,11 +295,13 @@ none of these claims proves VT-d, PCIe, generated code, QEMU, or a binary.
 is insensitive to every byte outside the union of those exact readable
 backing-frame ranges. -/
 theorem iommu_finite_read_confidentiality
-    (state : IOMMU.State) first second
+    (state : IOMMU.State) alternateMemory
     (views : List (IOMMU.AuthorizedReadView state))
-    (hequivalent : IOMMU.ReadViewsEquivalent first second views) :
-    IOMMU.observeReadViews first views = IOMMU.observeReadViews second views :=
-  IOMMU.read_trace_confidentiality state first second views hequivalent
+    (hequivalent :
+      IOMMU.ReadViewsEquivalent state.core.memory alternateMemory views) :
+    IOMMU.actualReadObservations views =
+      IOMMU.observeReadViews alternateMemory views :=
+  IOMMU.actual_read_trace_confidentiality state alternateMemory views hequivalent
 
 /-- SC-IOMMU-WRITE-INTEGRITY: a finite device trace leaves every byte of a
 frame identical when no successful generation-, owner-, domain-, lifetime-,
@@ -317,7 +319,14 @@ assignment generation, domain, owner, and live backing frame to the exact
 kernel-derived authority already in state. -/
 theorem iommu_translation_nonforgery
     (translation : IOMMU.Translation state request direction) :
-    translation.assignment.source = request.source ∧
+    IOMMU.findAssignmentBySource state.core request.source
+        request.assignmentGeneration = some translation.assignment ∧
+      state.core.mappings.find? (fun candidate =>
+        candidate.assignment == translation.assignment.handle &&
+          IOMMU.rangeContained request.iova request.length
+            candidate.iova candidate.length) = some translation.mapping ∧
+      IOMMU.findFrame state.core translation.mapping.frame = some translation.frame ∧
+      translation.assignment.source = request.source ∧
       translation.assignment.handle.generation = request.assignmentGeneration ∧
       translation.mapping.assignment = translation.assignment.handle ∧
       translation.mapping.domain = translation.assignment.domain ∧

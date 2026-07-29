@@ -726,6 +726,15 @@ structure Translation (state : State) (request : TransferRequest)
   assignment : Assignment
   mapping : Mapping
   frame : Frame
+  assignmentFound :
+    findAssignmentBySource state.core request.source
+      request.assignmentGeneration = some assignment
+  mappingFound :
+    state.core.mappings.find? (fun candidate =>
+      candidate.assignment == assignment.handle &&
+        rangeContained request.iova request.length
+          candidate.iova candidate.length) = some mapping
+  frameFound : findFrame state.core mapping.frame = some frame
   sourceBound : assignment.source = request.source
   assignmentGenerationBound :
     assignment.handle.generation = request.assignmentGeneration
@@ -752,14 +761,14 @@ def translate (state : State) (request : TransferRequest) (direction : Direction
       request.iova + request.length > maxIOVA then
     .error .invalidRange
   else
-    match findAssignmentBySource state.core request.source
+    match hassignmentFound : findAssignmentBySource state.core request.source
         request.assignmentGeneration with
     | none => .error .staleAssignment
     | some assignment =>
         if hassignment :
             assignment.source = request.source ∧
               assignment.handle.generation = request.assignmentGeneration then
-          match state.core.mappings.find? fun mapping =>
+          match hmappingFound : state.core.mappings.find? fun mapping =>
               mapping.assignment == assignment.handle &&
                 rangeContained request.iova request.length mapping.iova mapping.length with
           | none => .error .invalidRange
@@ -771,7 +780,7 @@ def translate (state : State) (request : TransferRequest) (direction : Direction
                     rangeContained request.iova request.length
                       mapping.iova mapping.length = true then
                 if hpermission : directionAllowed mapping.permission direction = true then
-                  match findFrame state.core mapping.frame with
+                  match hframeFound : findFrame state.core mapping.frame with
                   | none => .error .staleFrame
                   | some frame =>
                       if hframe :
@@ -788,6 +797,9 @@ def translate (state : State) (request : TransferRequest) (direction : Direction
                           { assignment
                             mapping
                             frame
+                            assignmentFound := hassignmentFound
+                            mappingFound := hmappingFound
+                            frameFound := hframeFound
                             sourceBound := hassignment.1
                             assignmentGenerationBound := hassignment.2
                             mappingAssignmentBound := hmapping.1
@@ -976,17 +988,34 @@ theorem write_integrity (state : State) (request : TransferRequest)
 source, assignment generation, domain, owner, and backing frame are all the
 ones already bound in kernel state. -/
 theorem translation_nonforgery (translation : Translation state request direction) :
-    translation.assignment.source = request.source ∧
+    findAssignmentBySource state.core request.source
+        request.assignmentGeneration = some translation.assignment ∧
+      state.core.mappings.find? (fun candidate =>
+        candidate.assignment == translation.assignment.handle &&
+          rangeContained request.iova request.length
+            candidate.iova candidate.length) = some translation.mapping ∧
+      findFrame state.core translation.mapping.frame = some translation.frame ∧
+      translation.assignment.source = request.source ∧
       translation.assignment.handle.generation = request.assignmentGeneration ∧
       translation.mapping.assignment = translation.assignment.handle ∧
       translation.mapping.domain = translation.assignment.domain ∧
       translation.mapping.owner = translation.assignment.owner ∧
       translation.frame.handle = translation.mapping.frame ∧
       translation.frame.owner = translation.assignment.owner :=
-  ⟨translation.sourceBound, translation.assignmentGenerationBound,
+  ⟨translation.assignmentFound, translation.mappingFound, translation.frameFound,
+    translation.sourceBound, translation.assignmentGenerationBound,
     translation.mappingAssignmentBound, translation.domainBound,
     translation.ownerBound, translation.frameHandleBound,
     translation.frameOwnerBound⟩
+
+theorem no_translation_without_live_assignment
+    (state : State) (request : TransferRequest) (direction : Direction)
+    (habsent : findAssignmentBySource state.core request.source
+      request.assignmentGeneration = none) :
+    ¬ Nonempty (Translation state request direction) := by
+  rintro ⟨translation⟩
+  have hfound := translation.assignmentFound
+  simp [habsent] at hfound
 
 /-- A source assignment cannot translate to a frame owned by a different
 subject.  Combined with range-local reads/writes, this is the owner-isolation
@@ -1092,6 +1121,8 @@ theorem trace_integrity (state : State) (events : List DeviceEvent) (frame : Fra
 structure AuthorizedReadView (state : State) where
   request : TransferRequest
   translation : Translation state request .read
+  bytes : List UInt8
+  observed : deviceRead state request = .observed translation bytes
 
 def AuthorizedReadView.frame {state : State}
     (view : AuthorizedReadView state) : FrameId :=
@@ -1112,6 +1143,26 @@ def observeReadViews {state : State} (memory : FrameId → Nat → UInt8) :
   | view :: rest =>
       readBytes memory view.frame view.offset view.length ::
         observeReadViews memory rest
+
+def actualReadObservations {state : State} :
+    List (AuthorizedReadView state) → List (List UInt8)
+  | [] => []
+  | view :: rest => view.bytes :: actualReadObservations rest
+
+theorem actualReadObservations_eq_observeReadViews (state : State)
+    (views : List (AuthorizedReadView state)) :
+    actualReadObservations views = observeReadViews state.core.memory views := by
+  induction views with
+  | nil => rfl
+  | cons view rest ih =>
+      simp only [actualReadObservations, observeReadViews]
+      have hauthorized :=
+        read_observation_authorized state view.request view.translation
+          view.bytes view.observed
+      rw [ih]
+      simpa [AuthorizedReadView.frame, AuthorizedReadView.offset,
+        AuthorizedReadView.length] using congrArg (fun bytes => bytes ::
+          observeReadViews state.core.memory rest) hauthorized.1
 
 def ReadViewsEquivalent {state : State} (first second : FrameId → Nat → UInt8)
     (views : List (AuthorizedReadView state)) : Prop :=
@@ -1137,6 +1188,19 @@ theorem read_trace_confidentiality (state : State)
       · apply ih
         intro candidate hmember index hlower hupper
         exact hequivalent candidate (by simp [hmember]) index hlower hupper
+
+/-- The published finite confidentiality boundary starts with the bytes
+actually returned by `deviceRead`, not caller-fabricated translations or
+observations. -/
+theorem actual_read_trace_confidentiality (state : State)
+    (alternateMemory : FrameId → Nat → UInt8)
+    (views : List (AuthorizedReadView state))
+    (hequivalent :
+      ReadViewsEquivalent state.core.memory alternateMemory views) :
+    actualReadObservations views = observeReadViews alternateMemory views := by
+  rw [actualReadObservations_eq_observeReadViews]
+  exact read_trace_confidentiality state state.core.memory alternateMemory
+    views hequivalent
 
 /-! ## Lifecycle and deny-all composition facts -/
 
@@ -1196,7 +1260,11 @@ theorem retired_assignment_generation_rejects (state : State)
   simp only [translate]
   split
   · exact ⟨.invalidRange, rfl⟩
-  · simp [habsent]
+  · split
+    · exact ⟨.staleAssignment, rfl⟩
+    · next assignment hfound =>
+        rw [habsent] at hfound
+        contradiction
 
 def DenyAll (state : State) : Prop :=
   state.core.assignments = [] ∧ state.core.mappings = []
@@ -1219,24 +1287,130 @@ theorem deny_all_unassigned_device_stutters
     after = state.quarantine.memory :=
   DMAQuarantine.unowned_device_step_unchanged hstep
 
-/-- Static composition with the sole #104 authoritative runtime.  The existing
-deny-all snapshot stays in `kernel`; assigned-domain authority is the separate
-`iommu` projection and cannot be mutated by an ordinary scheduler, syscall,
-IPC, capability, mapping, lifecycle, or deferred-cancellation operation. -/
+/-- Static composition with the sole #104 authoritative runtime. -/
 structure AuthoritativeExtension where
   kernel : FailStop.CompositeState
   iommu : State
 
+/-- Cross-projection authority coherence.  The selected owner is the exact
+kernel-selected subject, capability provenance is the authoritative kernel
+capability state, and every retained device authority owner is live. -/
+def AuthoritativeExtension.Coherent (state : AuthoritativeExtension) : Prop :=
+  state.iommu.core.currentOwner =
+      state.kernel.execution.core.context.currentSubject ∧
+    state.iommu.core.capabilityAuthority = state.kernel.capabilities ∧
+    (∀ assignment ∈ state.iommu.core.assignments,
+      state.kernel.capabilities.subjects assignment.owner = true) ∧
+    (∀ capability ∈ state.iommu.core.capabilities,
+      state.kernel.capabilities.subjects capability.owner = true ∧
+        state.kernel.virtualMemory.memory.binding capability.object =
+          some capability.frame.frame) ∧
+    (∀ mapping ∈ state.iommu.core.mappings,
+      state.kernel.capabilities.subjects mapping.owner = true ∧
+        ∃ capability ∈ state.iommu.core.capabilities,
+          capability.owner = mapping.owner ∧
+            capability.frame = mapping.frame ∧
+            rangeContained mapping.frameOffset mapping.length
+              capability.offset capability.length = true ∧
+            mapping.permission.attenuates capability.permission = true) ∧
+    (∀ frame ∈ state.iommu.core.frames,
+      frame.live = true → frame.kernelOwned = false →
+        frame.pageTable = false → frame.allocatorMetadata = false →
+        state.kernel.capabilities.subjects frame.owner = true)
+
 def AuthoritativeExtension.Invariant (state : AuthoritativeExtension) : Prop :=
-  FailStop.AuthoritativeRuntimeWellFormed state.kernel ∧ state.iommu.Invariant
+  FailStop.AuthoritativeRuntimeWellFormed state.kernel ∧
+    state.iommu.Invariant ∧ state.Coherent
 
-def applyKernelOperation (state : AuthoritativeExtension)
-    (operation : FailStop.AuthoritativeOperation) : AuthoritativeExtension :=
-  { state with kernel := (FailStop.authoritativeGate state.kernel operation).state }
+def retireDeadOwnerFrames (kernel : FailStop.CompositeState)
+    (frames : List Frame) : List Frame :=
+  frames.map fun frame =>
+    if !kernel.capabilities.subjects frame.owner &&
+        !frame.kernelOwned && !frame.pageTable && !frame.allocatorMetadata then
+      { frame with live := false }
+    else frame
 
-theorem kernel_operation_preserves_iommu_authority
-    (state : AuthoritativeExtension) (operation : FailStop.AuthoritativeOperation) :
-    (applyKernelOperation state operation).iommu = state.iommu := rfl
+/-- Reconcile a kernel transition with device authority.  A scheduler-only
+transition retains authority and synchronizes the selected subject.  If the
+kernel capability projection changes, all DMA mappings and cached capability
+records are revoked, dead-owner assignments are removed, and their ordinary
+frames are retired before the new projection is admitted.  Any failed
+validation stutters the IOMMU projection; the outer atomic gate below then
+stutters the complete extension if coherence was not restored. -/
+noncomputable def reconcileKernelAuthority
+    (kernel : FailStop.CompositeState) (state : State) : State := by
+  classical
+  let authorityChanged :=
+    ¬ kernel.capabilities = state.core.capabilityAuthority
+  let candidate : Core :=
+    if authorityChanged then
+      { state.core with
+        currentOwner := kernel.execution.core.context.currentSubject
+        assignments := state.core.assignments.filter
+          (fun assignment => kernel.capabilities.subjects assignment.owner)
+        mappings := []
+        frames := retireDeadOwnerFrames kernel state.core.frames
+        capabilityAuthority := kernel.capabilities
+        capabilities := [] }
+    else
+      { state.core with
+        currentOwner := kernel.execution.core.context.currentSubject
+        capabilityAuthority := kernel.capabilities }
+  if hwell : LeanOS.Capability.WellFormed candidate.capabilityAuthority then
+    if hvalid : validateCore candidate = true then
+      exact ⟨candidate, hvalid, hwell⟩
+    else exact state
+  else exact state
+
+/-- Kernel and IOMMU projections commit atomically.  In particular, lifecycle,
+capability, mapping, and scheduler/current-subject operations cannot publish a
+kernel post-state paired with stale device authority. -/
+noncomputable def applyKernelOperation (state : AuthoritativeExtension)
+    (operation : FailStop.AuthoritativeOperation) : AuthoritativeExtension := by
+  classical
+  let kernel := (FailStop.authoritativeGate state.kernel operation).state
+  let candidate : AuthoritativeExtension :=
+    { kernel, iommu := reconcileKernelAuthority kernel state.iommu }
+  if candidate.Coherent then exact candidate else exact state
+
+theorem kernel_operation_preserves_authoritative_extension
+    (state : AuthoritativeExtension) (operation : FailStop.AuthoritativeOperation)
+    (hstate : state.Invariant) :
+    (applyKernelOperation state operation).Invariant := by
+  classical
+  simp only [applyKernelOperation]
+  split
+  · next hcoherent =>
+      exact
+        ⟨FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
+            state.kernel operation hstate.1,
+          (reconcileKernelAuthority
+            (FailStop.authoritativeGate state.kernel operation).state
+            state.iommu).invariant,
+          hcoherent⟩
+  · exact hstate
+
+theorem kernel_operation_current_owner_coherent
+    (state : AuthoritativeExtension) (operation : FailStop.AuthoritativeOperation)
+    (hstate : state.Invariant) :
+    (applyKernelOperation state operation).iommu.core.currentOwner =
+      (applyKernelOperation state operation).kernel.execution.core.context.currentSubject :=
+  (kernel_operation_preserves_authoritative_extension state operation hstate).2.2.1
+
+theorem mismatched_current_owner_is_not_coherent
+    (state : AuthoritativeExtension)
+    (hmismatch : state.iommu.core.currentOwner ≠
+      state.kernel.execution.core.context.currentSubject) :
+    ¬ state.Coherent := by
+  intro hcoherent
+  exact hmismatch hcoherent.1
+
+theorem detached_capability_authority_is_not_coherent
+    (state : AuthoritativeExtension)
+    (hmismatch : state.iommu.core.capabilityAuthority ≠ state.kernel.capabilities) :
+    ¬ state.Coherent := by
+  intro hcoherent
+  exact hmismatch hcoherent.2.1
 
 /-- IOMMU authority is admitted only while the global fatal latch is running.
 Busy and halted states reject definitionally without an IOMMU post-state. -/
