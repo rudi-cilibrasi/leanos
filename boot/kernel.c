@@ -3384,10 +3384,11 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         : page_fault_probe_class >= 3
         ? "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned fatal-only=1\n"
         : "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
-    if (page_fault_probe_class == 5)
-        enter_user(user_b_entry, user_b_stack_top);
-    else
-        enter_user(user_a_entry, user_a_stack_top);
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    enter_user(user_b_entry, user_b_stack_top);
+#else
+    enter_user(user_a_entry, user_a_stack_top);
+#endif
 #elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
