@@ -30,8 +30,10 @@ frames, canonical alignment, complete-range containment, permission
 nonemptiness, and pairwise IOVA disjointness. Each local frame-capability entry
 must resolve through the reused generation-bound `CapabilityHandle` in an
 existing well-formed `LeanOS.Capability.State`, agree on memory-object identity
-and provenance identity, and attenuate its read/write rights. `State` carries
-both successful finite validation and that capability-authority
+and provenance identity, resolve through the kernel-selected `frameAuthority`
+binding to the exact frame handle/lifetime, and attenuate its read/write
+rights. Same-owner equality alone is not object authority. `State` carries
+both successful finite validation and that capability/frame-authority
 well-formedness as proofs. Every accepted control transition returns another
 such state. A rejected `Outcome` has no post-state constructor, so its state
 projection is definitionally the complete input state.

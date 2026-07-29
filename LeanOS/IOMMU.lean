@@ -169,6 +169,9 @@ structure Core where
   mappings : List Mapping
   frames : List Frame
   capabilityAuthority : LeanOS.Capability.State
+  /-- Kernel-selected exact object-to-frame-lifetime binding.  Capabilities
+  cannot authorize an arbitrary same-owner live frame. -/
+  frameAuthority : LeanOS.Capability.ObjectId → Option FrameHandle
   capabilities : List Capability
   memory : FrameId → Nat → UInt8
 
@@ -234,17 +237,19 @@ def capabilityValid (core : Core) (capability : Capability) : Bool :=
     capability.owner < maxOwners &&
     capability.permission.nonempty &&
     match LeanOS.Capability.lookup core.capabilityAuthority
-        capability.owner capability.slot, findFrame core capability.frame with
-    | .found source, some frame =>
+        capability.owner capability.slot, core.frameAuthority capability.object,
+        findFrame core capability.frame with
+    | .found source, some authorizedFrame, some frame =>
         source.object == capability.object &&
           decide (source.kind = .memory) &&
           source.identity == capability.identity &&
+          authorizedFrame == capability.frame &&
           (!capability.permission.read || source.rights.read) &&
           (!capability.permission.write || source.rights.write) &&
           frame.live && !frame.kernelOwned && !frame.pageTable &&
           !frame.allocatorMetadata && frame.owner == capability.owner &&
           rangeContained capability.offset capability.length 0 frame.size
-    | _, _ => false
+    | _, _, _ => false
 
 def mappingValid (core : Core) (mapping : Mapping) : Bool :=
   mapping.handle.slot < maxMappings &&
@@ -497,6 +502,14 @@ def setFrameLive (frames : List Frame) (handle : FrameHandle) (live : Bool) :
     List Frame :=
   frames.map fun frame => if frame.handle == handle then { frame with live := live } else frame
 
+def clearFrameAuthority
+    (authority : LeanOS.Capability.ObjectId → Option FrameHandle)
+    (handles : List FrameHandle) : LeanOS.Capability.ObjectId → Option FrameHandle :=
+  fun object =>
+    match authority object with
+    | some handle => if handles.any (· == handle) then none else some handle
+    | none => none
+
 def mappingOverlaps (core : Core) (assignment : AssignmentHandle)
     (iova length : Nat) (ignore : Option MappingHandle := none) : Bool :=
   core.mappings.any fun mapping =>
@@ -648,6 +661,8 @@ def gate (state : State) : Operation → Outcome state
             commit state
               { state.core with
                 frames := setFrameLive state.core.frames handle false
+                frameAuthority :=
+                  clearFrameAuthority state.core.frameAuthority [handle]
                 capabilities := state.core.capabilities.filter (·.frame != handle) }
               state.capabilityWellFormed
               .frameReleased
@@ -658,6 +673,9 @@ def gate (state : State) : Operation → Outcome state
       let retainedMappings := state.core.mappings.filter fun mapping =>
         !(ownedAssignments.any (·.handle == mapping.assignment))
       let retainedCapabilities := state.core.capabilities.filter (·.owner != owner)
+      let retiredHandles := state.core.frames.filterMap fun frame =>
+        if frame.owner == owner && !frame.kernelOwned && !frame.pageTable &&
+            !frame.allocatorMetadata then some frame.handle else none
       let frames := state.core.frames.map fun frame =>
         if frame.owner == owner && !frame.kernelOwned && !frame.pageTable &&
             !frame.allocatorMetadata then
@@ -667,6 +685,8 @@ def gate (state : State) : Operation → Outcome state
         { state.core with
           assignments := retainedAssignments
           mappings := retainedMappings
+          frameAuthority :=
+            clearFrameAuthority state.core.frameAuthority retiredHandles
           capabilities := retainedCapabilities
           frames := frames }
         state.capabilityWellFormed
@@ -958,6 +978,7 @@ theorem write_integrity (state : State) (request : TransferRequest)
       after.core.mappings = state.core.mappings ∧
       after.core.frames = state.core.frames ∧
       after.core.capabilityAuthority = state.core.capabilityAuthority ∧
+      after.core.frameAuthority = state.core.frameAuthority ∧
       after.core.capabilities = state.core.capabilities ∧
       (∀ candidate, candidate ≠ translation.frame.handle.frame →
         after.core.memory candidate = state.core.memory candidate) ∧
@@ -978,7 +999,7 @@ theorem write_integrity (state : State) (request : TransferRequest)
       | ok actual =>
           simp [htranslate] at hwrite
           rcases hwrite with ⟨rfl, rfl⟩
-          refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_⟩
+          refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_⟩
           · intro candidate hne
             exact writeMemory_other_frame _ _ _ _ _ hne
           · intro index houtside
@@ -1096,7 +1117,7 @@ theorem deviceStep_untouched_frame (state : State) (event : DeviceEvent)
             simp [hequal]
           have hintegrity := write_integrity state request bytes after translation hwrite
           rcases hintegrity with
-            ⟨_, _, _, _, _, _, _, _, _, hotherFrame, _⟩
+            ⟨_, _, _, _, _, _, _, _, _, _, hotherFrame, _⟩
           exact hotherFrame frame hne.symm
 
 /-- Finite-trace integrity: if no successful authorized write names a frame,
@@ -1514,6 +1535,8 @@ def emptyCore : Core :=
     mappings := []
     frames := sampleFrames
     capabilityAuthority := sampleCapabilityAuthority
+    frameAuthority := fun object =>
+      if object == 10 then some ⟨0, 1⟩ else none
     capabilities := sampleCapabilities
     memory := zeroMemory }
 
