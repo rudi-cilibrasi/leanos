@@ -56,6 +56,15 @@ structure Outcome where
   accepted : Bool
   effect : StaleTranslation.Effect
 
+/-- The publication protocol carries the bounded-cache invariant for both the
+currently visible state and the exact logical successor retained behind a
+pending machine effect.  This is deliberately narrower than the full
+authoritative composite invariant: release and destruction are not yet public
+operations of that composite runtime. -/
+def WellFormed (state : State) : Prop :=
+  TLB.Coherent state.published ∧
+    ∀ pending, state.pending = some pending → TLB.Coherent pending.step.state
+
 /-- The canonical sequence starts with a writable mapping and a translation
 filled from that exact PTE so the accepted protection step is a real permission
 reduction rather than a same-permission replacement. -/
@@ -149,6 +158,28 @@ theorem prepare_retains_published state kind request :
   split <;> try rfl
   split <;> rfl
 
+/-- Preparation cannot publish a cache that violates the bound and, when it
+accepts, records a successor whose cache satisfies the same bound. -/
+theorem prepare_preserves_wellFormed state kind request
+    (hstate : WellFormed state) :
+    WellFormed (prepare state kind request).state := by
+  rcases hstate with ⟨hpublished, hpending⟩
+  cases hcurrent : state.pending with
+  | some current =>
+      simpa [prepare, hcurrent] using (show WellFormed state from
+        ⟨hpublished, hpending⟩)
+  | none =>
+      simp only [prepare, hcurrent]
+      split
+      next haccepted =>
+        refine ⟨hpublished, ?_⟩
+        intro pending hpending'
+        simp only [Option.some.injEq] at hpending'
+        subst pending
+        exact StaleTranslation.step_preserves_coherent state.published request hpublished
+      next =>
+        exact ⟨hpublished, hpending⟩
+
 theorem prepare_rejected_inert state kind request
     (h : (prepare state kind request).accepted = false) :
     (prepare state kind request).state = state ∧
@@ -187,6 +218,27 @@ theorem acknowledge_accepted_exact state ack
       · simp [acknowledge, hpending, hexact]
       · simp [acknowledge, hpending, hexact]
     next => simp_all
+
+/-- Acknowledgement either stutters or publishes the exact pending successor,
+so it preserves the cache bound without trusting the supplied effect. -/
+theorem acknowledge_preserves_wellFormed state ack
+    (hstate : WellFormed state) :
+    WellFormed (acknowledge state ack).state := by
+  rcases hstate with ⟨hpublished, hpending⟩
+  cases hcurrent : state.pending with
+  | none =>
+      simpa [acknowledge, hcurrent] using (show WellFormed state from
+        ⟨hpublished, hpending⟩)
+  | some current =>
+      by_cases hexact :
+          ack.ticket = current.ticket ∧ ack.effect = current.step.effect
+      · have hnext := hpending current hcurrent
+        refine ⟨?_, ?_⟩
+        · simpa [acknowledge, hcurrent, hexact] using hnext
+        · intro pending hpending'
+          simp [acknowledge, hcurrent, hexact] at hpending'
+      · simpa [acknowledge, hcurrent, hexact] using
+          (show WellFormed state from ⟨hpublished, hpending⟩)
 
 /-- Every accepted preparation allocates the pending effect's ticket from the
 pre-state and advances the counter before any acknowledgement can arrive. -/
@@ -236,6 +288,32 @@ theorem reuse_publication_requires_retirement_ack state
   · simp_all
   next hpending =>
     split at h <;> try simp_all
+
+/-- The bounded reuse witness changes only the virtual lifecycle projection;
+the already-invalidated cache and its bound remain literal pre-state data. -/
+theorem publishReuse_preserves_wellFormed state
+    (hstate : WellFormed state) :
+    WellFormed (publishReuse state).state := by
+  rcases hstate with ⟨hpublished, hpending⟩
+  cases hcurrent : state.pending with
+  | some current =>
+      simpa [publishReuse, hcurrent] using (show WellFormed state from
+        ⟨hpublished, hpending⟩)
+  | none =>
+      simp only [publishReuse, hcurrent]
+      split
+      next hretired =>
+        split
+        next hallocated =>
+          refine ⟨?_, ?_⟩
+          · change state.published.entries.length ≤ TLB.capacity
+            exact hpublished
+          · intro pending hpending'
+            simp at hpending'
+        next =>
+          exact ⟨hpublished, hpending⟩
+      next =>
+        exact ⟨hpublished, hpending⟩
 
 /-! ## Canonical stateful sequence
 

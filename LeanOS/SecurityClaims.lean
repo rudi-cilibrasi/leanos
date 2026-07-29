@@ -2727,13 +2727,28 @@ theorem invalidation_publication_order :
       (InvalidationPublication.publishReuse state).accepted = true →
         state.pending = none ∧
         state.releaseAcknowledged = true ∧
-        state.destroyAcknowledged = true) := by
+        state.destroyAcknowledged = true) ∧
+    (∀ state kind request,
+      InvalidationPublication.WellFormed state →
+        InvalidationPublication.WellFormed
+          (InvalidationPublication.prepare state kind request).state) ∧
+    (∀ state ack,
+      InvalidationPublication.WellFormed state →
+        InvalidationPublication.WellFormed
+          (InvalidationPublication.acknowledge state ack).state) ∧
+    (∀ state,
+      InvalidationPublication.WellFormed state →
+        InvalidationPublication.WellFormed
+          (InvalidationPublication.publishReuse state).state) := by
   exact ⟨InvalidationPublication.prepare_retains_published,
     InvalidationPublication.acknowledge_accepted_exact,
     fun state ack pending hpending hticket =>
       InvalidationPublication.acknowledge_wrong_ticket_inert
         state ack pending hpending hticket,
-    InvalidationPublication.reuse_publication_requires_retirement_ack⟩
+    InvalidationPublication.reuse_publication_requires_retirement_ack,
+    InvalidationPublication.prepare_preserves_wellFormed,
+    InvalidationPublication.acknowledge_preserves_wellFormed,
+    InvalidationPublication.publishReuse_preserves_wellFormed⟩
 
 /-- SC-USER-FAULT-SHARED-CONTAINMENT: over one shared two-subject pre-state the
 real CPL3 divide-error, breakpoint, page-fault, and denied-port entries drive a
