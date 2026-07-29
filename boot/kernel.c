@@ -220,14 +220,19 @@ static uint64_t runtime_mapping_frame_after[PAGE_BYTES / sizeof(uint64_t)]
     __attribute__((used, aligned(PAGE_BYTES)));
 static volatile uint64_t runtime_invlpg_publication;
 static volatile uint64_t runtime_cr3_publication;
+static volatile uint64_t runtime_reuse_publication;
+static volatile uint64_t runtime_reuse_owner;
+static volatile uint64_t runtime_reuse_lifetime;
 #define RUNTIME_MAPPING_PAGE 7u
 #define RUNTIME_MAPPING_ADDRESS (RUNTIME_MAPPING_PAGE * PAGE_BYTES)
 #define RUNTIME_MAPPING_BEFORE UINT64_C(0x126bef0e)
 #define RUNTIME_MAPPING_AFTER UINT64_C(0x126a57e2)
+#define RUNTIME_REUSE_MODEL_REPLY UINT64_C(0x200000000)
 #define RUNTIME_MAPPING_STATE_BOOT 0u
 #define RUNTIME_MAPPING_STATE_BEFORE 1u
 #define RUNTIME_MAPPING_STATE_UNMAPPED 2u
 #define RUNTIME_MAPPING_STATE_AFTER 3u
+#define RUNTIME_MAPPING_STATE_REUSED 4u
 static volatile unsigned runtime_mapping_state = RUNTIME_MAPPING_STATE_BOOT;
 static unsigned preemption_step;
 uint64_t current_subject = 1;
@@ -615,14 +620,30 @@ static uint64_t runtime_mapping_leaf(uint64_t *frame) {
     return (uint64_t)frame | PTE_PRESENT | PTE_WRITABLE | PTE_USER | PTE_NX;
 }
 
-/* Every leaf remains equal to the generated boot plan except the single
-   B/page-7 window.  That leaf has one exact value for each kernel-owned phase;
-   an unknown phase is never accepted.  Accessed/dirty bits are ignored only by
-   the caller's ordinary x86 comparison, just as for immutable leaves. */
+/* Every leaf remains equal to the generated boot plan except the bounded
+   page-7 reuse window.  B/page 7 is the old mapping and A/page 7 becomes the
+   fresh-owner mapping only in the reused phase.  Each has one exact value for
+   every kernel-owned phase; an unknown phase is never accepted.
+   Accessed/dirty bits are ignored only by the caller's ordinary x86
+   comparison, just as for immutable leaves. */
 static int checked_runtime_leaf(unsigned space, uint64_t page,
                                 uint64_t *expected) {
-    if (space != 2 || page != RUNTIME_MAPPING_PAGE)
+    if (page != RUNTIME_MAPPING_PAGE || (space != 1 && space != 2))
         return 1;
+    if (space == 1) {
+        switch (runtime_mapping_state) {
+        case RUNTIME_MAPPING_STATE_BOOT:
+        case RUNTIME_MAPPING_STATE_BEFORE:
+        case RUNTIME_MAPPING_STATE_UNMAPPED:
+        case RUNTIME_MAPPING_STATE_AFTER:
+            return 1;
+        case RUNTIME_MAPPING_STATE_REUSED:
+            *expected = runtime_mapping_leaf(runtime_mapping_frame_before);
+            return 1;
+        default:
+            return 0;
+        }
+    }
     switch (runtime_mapping_state) {
     case RUNTIME_MAPPING_STATE_BOOT:
         return 1;
@@ -630,6 +651,9 @@ static int checked_runtime_leaf(unsigned space, uint64_t page,
         *expected = runtime_mapping_leaf(runtime_mapping_frame_before);
         return 1;
     case RUNTIME_MAPPING_STATE_UNMAPPED:
+        *expected = 0;
+        return 1;
+    case RUNTIME_MAPPING_STATE_REUSED:
         *expected = 0;
         return 1;
     case RUNTIME_MAPPING_STATE_AFTER:
@@ -826,7 +850,10 @@ static void check_boot_page_tables(void) {
 }
 
 static void require_runtime_mapping_relation(const char *reason) {
-    if (!decoded_root_matches(2, page_map_level_4_b,
+    if (!decoded_root_matches(1, page_map_level_4_a,
+                              page_directory_pointer_a, page_directory_a,
+                              page_table_a, 0) ||
+        !decoded_root_matches(2, page_map_level_4_b,
                               page_directory_pointer_b, page_directory_b,
                               page_table_b, 0))
         fail(reason);
@@ -874,6 +901,48 @@ static void runtime_unmap_page7_cr3(uint64_t canonical_reply) {
     runtime_mapping_state = RUNTIME_MAPPING_STATE_UNMAPPED;
     require_runtime_mapping_relation("runtime-cr3-relation");
     runtime_cr3_publication = canonical_reply;
+}
+
+/* Reuse the exact physical frame that backed B/page 7.  The generated
+   post-reuse fixture must say that the old page stays absent.  Only after the
+   accepted unmap has been published do we scrub the frame, establish its new
+   lifetime/owner, write the replacement canary, map the exact frame into
+   A/page 7, recheck both complete live roots, and publish reuse.  All stores
+   are volatile so this sequence remains inspectable in the final machine
+   image. */
+__attribute__((noinline, used))
+static void runtime_reuse_page7_frame(uint64_t canonical_reply) {
+    const uint64_t model_reply =
+        leanos_stale_translation_demo(0, 0, 1, RUNTIME_MAPPING_PAGE, 0, 1);
+    volatile uint64_t *frame = runtime_mapping_frame_before;
+
+    if (canonical_reply != LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED ||
+        runtime_invlpg_publication != canonical_reply ||
+        runtime_mapping_state != RUNTIME_MAPPING_STATE_UNMAPPED ||
+        page_table_b[RUNTIME_MAPPING_PAGE] != 0 ||
+        model_reply != RUNTIME_REUSE_MODEL_REPLY ||
+        runtime_reuse_publication != 0 ||
+        runtime_reuse_owner != 0 || runtime_reuse_lifetime != 0)
+        fail("runtime-reuse-authority");
+    for (unsigned i = 0; i < PAGE_BYTES / sizeof(uint64_t); ++i)
+        frame[i] = 0;
+    __asm__ volatile ("" ::: "memory");
+    runtime_reuse_lifetime = 2;
+    runtime_reuse_owner = 1;
+    frame[0] = RUNTIME_MAPPING_AFTER;
+    __asm__ volatile ("" ::: "memory");
+    ((volatile uint64_t *)page_table_a)[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_before);
+    __asm__ volatile ("" ::: "memory");
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_REUSED;
+    require_runtime_mapping_relation("runtime-reuse-relation");
+    if (page_table_b[RUNTIME_MAPPING_PAGE] != 0 ||
+        (page_table_a[RUNTIME_MAPPING_PAGE] &
+         ~(PTE_ACCESSED | PTE_DIRTY)) !=
+            runtime_mapping_leaf(runtime_mapping_frame_before) ||
+        frame[0] != RUNTIME_MAPPING_AFTER)
+        fail("runtime-reuse-binding");
+    runtime_reuse_publication = model_reply;
 }
 
 /* Exercise both machine spellings against real page tables.  The generated
@@ -2200,7 +2269,32 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if (runtime_invlpg_publication != canonical_reply)
             fail("stale-translation-unmap-publication");
         serial_puts("LEANOS/19 TLB-CPL3 event=unmap subject=2 address-space=2 page=7 pte=absent effect=page invalidation=invlpg cr3-reload=0 order=store,invlpg,publish result=PASS\n");
+        runtime_reuse_page7_frame(canonical_reply);
+        if (runtime_reuse_publication != RUNTIME_REUSE_MODEL_REPLY)
+            fail("stale-translation-reuse-publication");
+        serial_puts("LEANOS/19 TLB-CPL3 event=reuse frame=same old-owner=2 old-lifetime=1 new-owner=1 new-lifetime=2 old-address-space=2 old-page=7 old-pte=absent new-address-space=1 new-page=7 new-pte=present-user scrub=complete canary=308959202 model=post-reuse-old-page-absent order=unmap,invlpg,publish-unmap,scrub,allocate,write-canary,map-new-owner,publish-reuse result=PASS\n");
         return canonical_reply;
+    }
+    if (number == 20 && current_subject == 1 &&
+        page_fault_probe_class == 5) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        if (arg0 != RUNTIME_MAPPING_AFTER ||
+            arg1 != RUNTIME_MAPPING_ADDRESS || arg2 != RUNTIME_MAPPING_PAGE ||
+            (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a ||
+            runtime_mapping_state != RUNTIME_MAPPING_STATE_REUSED ||
+            runtime_reuse_publication != RUNTIME_REUSE_MODEL_REPLY ||
+            runtime_reuse_owner != 1 || runtime_reuse_lifetime != 2 ||
+            page_table_b[RUNTIME_MAPPING_PAGE] != 0 ||
+            (page_table_a[RUNTIME_MAPPING_PAGE] &
+             ~(PTE_ACCESSED | PTE_DIRTY)) !=
+                runtime_mapping_leaf(runtime_mapping_frame_before) ||
+            runtime_mapping_frame_before[0] != RUNTIME_MAPPING_AFTER)
+            fail("stale-translation-new-owner-binding");
+        require_runtime_mapping_relation("stale-translation-new-owner-relation");
+        serial_puts("LEANOS/19 TLB-CPL3 event=new-owner-read subject=1 address-space=1 page=7 address=28672 access=read frame=same lifetime=2 canary=308959202 old-address-space=2 old-pte=absent result=PASS\n");
+        serial_puts("LEANOS/19 FINAL status=PASS prefill=1 accepted-unmap=1 exact-invlpg=1 same-frame-reuse=1 scrub=complete new-owner-cpl3-read=1 replacement-canary=intact stale-access=page-fault old-observation=denied containment=1 incidental-cr3-reload=0\n");
+        finish(0x10);
     }
     if (number == 14 && current_subject == 2) {
         check_selected_root_b();
@@ -2641,13 +2735,19 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
             snapshot->active_cr3 != (uint64_t)page_map_level_4_b ||
             cr3 != (uint64_t)page_map_level_4_b ||
             page_table_b[RUNTIME_MAPPING_PAGE] != 0 ||
-            runtime_mapping_state != RUNTIME_MAPPING_STATE_UNMAPPED ||
+            runtime_mapping_state != RUNTIME_MAPPING_STATE_REUSED ||
             runtime_invlpg_publication !=
-                LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED)
+                LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED ||
+            runtime_reuse_publication != RUNTIME_REUSE_MODEL_REPLY ||
+            runtime_reuse_owner != 1 || runtime_reuse_lifetime != 2 ||
+            (page_table_a[RUNTIME_MAPPING_PAGE] &
+             ~(PTE_ACCESSED | PTE_DIRTY)) !=
+                runtime_mapping_leaf(runtime_mapping_frame_before) ||
+            runtime_mapping_frame_before[0] != RUNTIME_MAPPING_AFTER)
             fail("stale-translation-fault-binding");
-        serial_puts("LEANOS/19 TLB-CPL3 event=denial vector=14 error=4 origin=cpl3 hardware=1 direct-call=0 subject=2 address-space=2 cr2=28672 page=7 access=read protection=0 pte=absent route=contain idle=1 cr3-reload-since-unmap=0 result=PASS\n");
-        serial_puts("LEANOS/19 FINAL status=PASS prefill=1 accepted-unmap=1 exact-invlpg=1 stale-access=page-fault containment=1 incidental-cr3-reload=0\n");
-        finish(0x10);
+        serial_puts("LEANOS/19 TLB-CPL3 event=denial vector=14 error=4 origin=cpl3 hardware=1 direct-call=0 subject=2 address-space=2 cr2=28672 page=7 access=read protection=0 pte=absent replacement-owner=1 replacement-lifetime=2 replacement-canary=308959202 replacement-canary-intact=1 route=contain handoff=new-owner cr3-reload-since-unmap=0 result=PASS\n");
+        current_subject = 1;
+        return 3;
     }
 #endif
     const uint64_t expected_error = page_fault_probe_class == 2 ? 21u :

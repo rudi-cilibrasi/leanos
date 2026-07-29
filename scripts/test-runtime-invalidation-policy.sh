@@ -44,7 +44,7 @@ forged_reply() {
 
 wrong_relation_space() {
   sed -i \
-    's/if (space != 2 || page != RUNTIME_MAPPING_PAGE)/if (space != 1 || page != RUNTIME_MAPPING_PAGE)/' \
+    's/if (page != RUNTIME_MAPPING_PAGE || (space != 1 && space != 2))/if (space != 1 || page != RUNTIME_MAPPING_PAGE)/' \
     "$1"
 }
 
@@ -78,6 +78,33 @@ publication_before_invalidation() {
     }' "$1"
 }
 
+omit_reuse_relation() {
+  sed -i \
+    '/require_runtime_mapping_relation("runtime-reuse-relation");/d' \
+    "$1"
+}
+
+reuse_before_scrub() {
+  sed -i \
+    '/static void runtime_reuse_page7_frame(/,/^}/ {
+      s@runtime_reuse_publication = model_reply;@/* reuse publication moved before scrub. */@
+      /for (unsigned i = 0; i < PAGE_BYTES/a\
+    runtime_reuse_publication = model_reply;
+    }' "$1"
+}
+
+omit_new_owner_map() {
+  sed -i \
+    '/((volatile uint64_t \\*)page_table_a)\\[RUNTIME_MAPPING_PAGE\\] =/,+1d' \
+    "$1"
+}
+
+reuse_wrong_model_state() {
+  sed -i \
+    's/leanos_stale_translation_demo(0, 0, 1, RUNTIME_MAPPING_PAGE, 0, 1)/leanos_stale_translation_demo(0, 0, 1, RUNTIME_MAPPING_PAGE, 0, 0)/' \
+    "$1"
+}
+
 run_fixture wrong-page \
   'mutable-window target is not confined to page 7' wrong_page
 run_fixture wrong-root \
@@ -87,7 +114,7 @@ run_fixture omitted-invlpg \
 run_fixture forged-reply \
   'closed typed-reply checks drifted' forged_reply
 run_fixture wrong-relation-space \
-  'mutable-leaf exception is not confined to address space B/page 7' \
+  'mutable-leaf exception is not confined to address spaces A/B page 7' \
   wrong_relation_space
 run_fixture accept-unknown-state \
   'unknown mutable-leaf states are not rejected' accept_unknown_state
@@ -99,5 +126,16 @@ run_fixture invalidation-before-store \
 run_fixture publication-before-invalidation \
   'source INVLPG order is not PTE-store, invalidate, publish' \
   publication_before_invalidation
+run_fixture omit-reuse-relation \
+  'mutable-leaf relation is not checked at every phase' omit_reuse_relation
+run_fixture reuse-before-scrub \
+  'source reuse order is not scrub, allocate, canary, map-new-owner, publish' \
+  reuse_before_scrub
+run_fixture omit-new-owner-map \
+  'same-frame reuse does not map the scrubbed frame to the new owner' \
+  omit_new_owner_map
+run_fixture reuse-wrong-model-state \
+  'same-frame reuse is not bound to the generated post-reuse state' \
+  reuse_wrong_model_state
 
 echo "Runtime mapping invalidation negative fixtures passed"

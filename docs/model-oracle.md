@@ -254,9 +254,15 @@ The canonical composite accepted-unmap reply is also consumed by the boot
 image's runtime-mutable page-7 window. Source and final-ELF policy checks bind
 the reply to address space B and enforce PTE-store, `invlpg`/CR3, publication
 order; QEMU observes the distinct kernel-read before/replacement-frame values
-and restoration of the boot-plan leaf. This checkpoint does not replace the
-dedicated CPL3 prefill, architectural denial, and same-frame lifetime-reuse
-scenario.
+and restoration of the boot-plan leaf. The dedicated stale-translation image
+then consumes both the composite reply and the scalar block's generated
+post-reuse selector in one phase-checked machine sequence: real CPL3 prefill,
+active-root clear/`invlpg`/publication, full scrub and same-frame fresh-lifetime
+canary publication into A/page 7, a real CPL3 denial through the now-absent
+B/page 7, and a real CPL3 A read of the replacement canary.
+The scalar selector establishes the named model's accepted fresh-object
+allocation and old-page absence; C sequencing and QEMU do not prove that the
+binary refines that model.
 
 Run the complete local evidence path with:
 

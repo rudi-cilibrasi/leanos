@@ -1273,6 +1273,10 @@ isr14_restore_cr2:
     call authorize_page_fault_snapshot
     cmp $2, %rax
     je contained_fault_restore_peer
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    cmp $3, %rax
+    je stale_translation_restore_new_owner
+#endif
     sub $16, %rsp
     mov %rax, 8(%rsp)
     call complete_interrupt_entry
@@ -1299,6 +1303,29 @@ contained_fault_restore_peer:
     call complete_interrupt_entry
     mov $3, %esi
     jmp user_return_epilogue
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+/* The old owner has taken its real not-present fault with B's root still
+   active.  Only now install a fresh A context and select A's root, where page 7
+   names the scrubbed frame's new lifetime.  The CPL3 code must independently
+   read the replacement canary before the scenario can pass. */
+.global stale_translation_restore_new_owner
+stale_translation_restore_new_owner:
+    add $8, %rsp
+    xor %eax, %eax
+    mov %rsp, %rdi
+    mov $15, %ecx
+    rep stosq
+    movq $user_a_entry, 120(%rsp)
+    movq $0x23, 128(%rsp)
+    movq $0x202, 136(%rsp)
+    movq $user_a_stack_top, 144(%rsp)
+    movq $0x1b, 152(%rsp)
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+    call complete_interrupt_entry
+    mov $3, %esi
+    jmp user_return_epilogue
+#endif
 .global isr32
 .section .bss,"aw",@nobits
 .align 16
@@ -1505,6 +1532,21 @@ integer_fault_restore_peer:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    /* Fresh-owner probe: this is a real CPL3 load through A/page 7 after B's
+       stale access faulted.  The syscall reports the independently observed
+       replacement canary and exact virtual page to the checked kernel path. */
+    mov $0x7000, %r10
+    mov (%r10), %rbx
+    cmp $0x126a57e2, %rbx
+    jne 2f
+    mov $20, %rax
+    mov %rbx, %rbx
+    mov $0x7000, %rcx
+    mov $7, %rdx
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_NMI_PROBE
 1:  pause
     jmp 1b

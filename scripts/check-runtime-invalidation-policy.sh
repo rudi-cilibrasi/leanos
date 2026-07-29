@@ -20,15 +20,19 @@ relation_source="$(
 )"
 [[ -n "$relation_source" ]] ||
   fail "mutable-leaf relation is missing"
-for state in BOOT BEFORE UNMAPPED AFTER; do
+for state in BOOT BEFORE UNMAPPED AFTER REUSED; do
   grep -Fq "#define RUNTIME_MAPPING_STATE_${state} " "$source_file" ||
     fail "mutable-window state relation is incomplete: $state"
   grep -Fq "case RUNTIME_MAPPING_STATE_${state}:" <<<"$relation_source" ||
     fail "mutable-leaf relation does not handle state: $state"
 done
-grep -Fq 'if (space != 2 || page != RUNTIME_MAPPING_PAGE)' \
+grep -Fq 'if (page != RUNTIME_MAPPING_PAGE || (space != 1 && space != 2))' \
   <<<"$relation_source" ||
-  fail "mutable-leaf exception is not confined to address space B/page 7"
+  fail "mutable-leaf exception is not confined to address spaces A/B page 7"
+grep -Fq 'if (space == 1)' <<<"$relation_source" &&
+  grep -Fq '*expected = runtime_mapping_leaf(runtime_mapping_frame_before);' \
+    <<<"$relation_source" ||
+  fail "fresh-owner relation does not bind A/page 7 to the reused frame"
 grep -Fq 'default:' <<<"$relation_source" &&
   grep -Fq 'return 0;' <<<"$relation_source" ||
   fail "unknown mutable-leaf states are not rejected"
@@ -41,6 +45,8 @@ relation_checks=(
   runtime-cr3-after-relation
   runtime-window-restore-relation
   stale-translation-arm-relation
+  runtime-reuse-relation
+  stale-translation-new-owner-relation
 )
 [[ "$(grep -Fc 'require_runtime_mapping_relation("' "$source_file")" -eq \
     "${#relation_checks[@]}" ]] ||
@@ -59,7 +65,7 @@ grep -Fq 'RUNTIME_MAPPING_PAGE, 0, 0, 0);' "$source_file" ||
   fail "canonical page-7 argument or zero reserved arguments drifted"
 [[ "$(grep -Fc \
   'canonical_reply != LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED' \
-  "$source_file")" -eq 3 ]] ||
+  "$source_file")" -eq 4 ]] ||
   fail "closed typed-reply checks drifted"
 [[ "$(grep -Fc \
   '((volatile uint64_t *)page_table_b)[RUNTIME_MAPPING_PAGE] = 0;' \
@@ -79,7 +85,8 @@ source_function() {
 
 invlpg_source="$(source_function runtime_unmap_page7_invlpg)"
 cr3_source="$(source_function runtime_unmap_page7_cr3)"
-[[ -n "$invlpg_source" && -n "$cr3_source" ]] ||
+reuse_source="$(source_function runtime_reuse_page7_frame)"
+[[ -n "$invlpg_source" && -n "$cr3_source" && -n "$reuse_source" ]] ||
   fail "could not isolate machine helpers"
 [[ "$(grep -Fc 'invlpg (%0)' <<<"$invlpg_source")" -eq 1 ]] ||
   fail "active-root path does not contain exactly one INVLPG"
@@ -109,6 +116,36 @@ source_cr3_publish="$(line_of "$cr3_source" \
    "$source_cr3_instruction" -lt "$source_cr3_publish" ]] ||
   fail "source CR3 order is not PTE-store, root-load, publish"
 
+grep -Fq \
+  'leanos_stale_translation_demo(0, 0, 1, RUNTIME_MAPPING_PAGE, 0, 1);' \
+  <<<"$reuse_source" ||
+  fail "same-frame reuse is not bound to the generated post-reuse state"
+grep -Fq 'model_reply != RUNTIME_REUSE_MODEL_REPLY' <<<"$reuse_source" ||
+  fail "same-frame reuse does not check the generated model reply"
+grep -Fq 'runtime_invlpg_publication != canonical_reply' <<<"$reuse_source" ||
+  fail "same-frame reuse is not sequenced after accepted invalidation"
+grep -Fq 'page_table_b[RUNTIME_MAPPING_PAGE] != 0' <<<"$reuse_source" ||
+  fail "same-frame reuse does not require the old leaf absent"
+grep -Fq \
+  '((volatile uint64_t *)page_table_a)[RUNTIME_MAPPING_PAGE] =' \
+  <<<"$reuse_source" ||
+  fail "same-frame reuse does not map the scrubbed frame to the new owner"
+source_reuse_scrub="$(line_of "$reuse_source" 'frame[i] = 0;')"
+source_reuse_allocate="$(line_of "$reuse_source" 'runtime_reuse_lifetime = 2;')"
+source_reuse_canary="$(line_of "$reuse_source" 'frame[0] = RUNTIME_MAPPING_AFTER;')"
+source_reuse_map="$(line_of "$reuse_source" \
+  '((volatile uint64_t *)page_table_a)[RUNTIME_MAPPING_PAGE] =')"
+source_reuse_state="$(line_of "$reuse_source" \
+  'runtime_mapping_state = RUNTIME_MAPPING_STATE_REUSED;')"
+source_reuse_publish="$(line_of "$reuse_source" \
+  'runtime_reuse_publication = model_reply;')"
+[[ "$source_reuse_scrub" -lt "$source_reuse_allocate" &&
+   "$source_reuse_allocate" -lt "$source_reuse_canary" &&
+   "$source_reuse_canary" -lt "$source_reuse_map" &&
+   "$source_reuse_map" -lt "$source_reuse_state" &&
+   "$source_reuse_state" -lt "$source_reuse_publish" ]] ||
+  fail "source reuse order is not scrub, allocate, canary, map-new-owner, publish"
+
 symbols="$(nm "$elf")"
 for symbol in runtime_unmap_page7_invlpg runtime_unmap_page7_cr3 \
     runtime_invlpg_publication runtime_cr3_publication \
@@ -116,6 +153,13 @@ for symbol in runtime_unmap_page7_invlpg runtime_unmap_page7_cr3 \
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" ||
     fail "final-ELF symbol missing: $symbol"
 done
+if [[ "$(basename "$elf")" == *stale-translation* ]]; then
+  for symbol in runtime_reuse_page7_frame runtime_reuse_publication \
+      runtime_reuse_owner runtime_reuse_lifetime; do
+    grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" ||
+      fail "stale-translation final-ELF symbol missing: $symbol"
+  done
+fi
 
 disassemble() {
   objdump -d --no-show-raw-insn --disassemble="$1" "$elf"

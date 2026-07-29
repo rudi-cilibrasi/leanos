@@ -89,21 +89,47 @@ The inactive-root path repeats the same clear with A selected, loads B's CR3,
 checks the selected root and absent PTE, and only then publishes completion;
 a later B reload exposes the second frame. Both paths finally restore the
 boot-plan leaf. These accesses are kernel observations of the concrete
-machine-path ordering. A dedicated CPL3 prefill followed by a real
-architectural denial, with the retired physical frame scrubbed and republished
-to a fresh lifetime while the old virtual address remains absent, is still
-required for the complete issue.
+machine-path ordering.
 
-The live page-table checker does not ignore that mutable leaf. Its
-kernel-owned phase is one of `boot`, `before`, `unmapped`, or `after`, and each
-phase admits exactly one B/page-7 value: the generated boot leaf, the reviewed
-before-frame leaf, zero, or the reviewed after-frame leaf. Every ancestor and
-all other A/B leaves remain byte-for-byte equal to the generated plan after
-masking only hardware-managed accessed/dirty bits. The machine path checks the
-complete relation before each prefill, after each invalidation and replacement,
-and after restoration. Guest negatives reject a wrong frame, publication of
-the unmapped phase while a leaf remains present, and an unknown phase; the
-existing mutation matrix continues to reject changes outside the window.
+The dedicated stale-translation image extends that bounded path through
+same-frame reuse. CPL3 subject B first reads the old canary through B/page 7,
+which fills a real translation, and supplies the value and address to the
+canonical unmap syscall. With B's no-PCID root still selected, the kernel
+clears the leaf, executes the exact `invlpg (0x7000)`, checks the absent leaf,
+and publishes the generated composite reply. Only then does the one-shot reuse
+adapter scrub every word of that exact physical frame, bind the generated
+post-reuse fixture (fresh object 11 owns frame 4 while the retired page remains
+absent), establish replacement owner/lifetime metadata, write the replacement
+canary, map that exact frame present-user at A/page 7, recheck both complete
+live-table relations, and publish reuse. Subject B then rereads 0x7000 without
+an intervening CR3 load and takes a real CPL3 not-present page fault. The
+contained handler checks that B/page 7 is still absent and the replacement
+canary in the reused physical frame is intact. Only after that denial does the
+entry path load A's root and return a fresh subject-A context; CPL3 A reads the
+replacement canary through A/page 7 and reports the observed value to the
+checked syscall path while B/page 7 remains absent.
+
+This is finite QEMU evidence that the old virtual access did not observe the
+replacement canary in this execution. The generated fixture proves its named
+model allocation/absence facts, while the C phase checks, compiled stores,
+`invlpg`, page walk, exception delivery, and QEMU behavior remain trusted or
+tested rather than a refinement proof. The bounded C owner/lifetime metadata
+is scenario attestation; it is not a general allocator ABI or #112's quota
+policy.
+
+The live page-table checker does not ignore those mutable leaves. Its
+kernel-owned phase is one of `boot`, `before`, `unmapped`, `after`, or `reused`,
+and each phase admits exactly one B/page-7 value: the generated boot leaf, the
+reviewed before-frame leaf, zero, or the reviewed after-frame leaf. A/page 7
+must remain at its generated boot value until `reused`, when it must name the
+exact scrubbed before-frame; B/page 7 must simultaneously remain absent. Every
+ancestor and all other A/B leaves remain byte-for-byte equal to the generated
+plan after masking only hardware-managed accessed/dirty bits. The machine path
+checks the complete two-root relation before each prefill, after each
+invalidation and replacement, and at the fresh-owner CPL3 report. Guest
+negatives reject a wrong frame, publication of the unmapped phase while a leaf
+remains present, and an unknown phase; the existing mutation matrix continues
+to reject changes outside the window.
 This relation and its policy checker are trusted C/static evidence, not a Lean
 proof or a refinement theorem.
 
@@ -119,8 +145,13 @@ processor TLB semantics. Instruction completion, page-walk hardware, compiler
 correctness, and physical TLB coherence remain trusted.
 
 The dedicated runner-negative corpus separately rejects skipped CPL3 prefill,
-wrong page/root, omitted or reordered invalidation/publication, an incidental
-CR3 reload, software-walker-only or direct-called denial, stale-access success,
-partial/reordered records, guest failure, reset, triple fault, and hang. These
-are protocol checks over controlled fixtures; the accepted QEMU row remains the
-independent machine observation.
+wrong page/root, omitted or reordered invalidation/publication, omitted or
+pre-unmap reuse, reuse publication before the replacement-canary write, a
+corrupted replacement canary, an omitted or wrong-root fresh-owner CPL3 read,
+an incidental CR3 reload, software-walker-only
+or direct-called denial, stale-access success, partial/reordered records, guest
+failure, reset, triple fault, and hang. Source-policy negatives also reject a
+reuse phase detached from the complete live-table relation, publication before
+scrub, and selection of the filled rather than post-reuse generated state.
+These are protocol/static checks over controlled fixtures; the accepted QEMU
+row remains the independent machine observation.

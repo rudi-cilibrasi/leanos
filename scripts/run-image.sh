@@ -283,10 +283,12 @@ printf '%s\n' \
   'LEANOS/19 ENTER subject=2 address-space=2 cpl=3 mapping=page7-present-user canary=309063438' \
   'LEANOS/19 TLB-CPL3 event=prefill subject=2 address-space=2 page=7 address=28672 access=read canary=309063438 leaf=present-user result=PASS' \
   'LEANOS/19 TLB-CPL3 event=unmap subject=2 address-space=2 page=7 pte=absent effect=page invalidation=invlpg cr3-reload=0 order=store,invlpg,publish result=PASS' \
+  'LEANOS/19 TLB-CPL3 event=reuse frame=same old-owner=2 old-lifetime=1 new-owner=1 new-lifetime=2 old-address-space=2 old-page=7 old-pte=absent new-address-space=1 new-page=7 new-pte=present-user scrub=complete canary=308959202 model=post-reuse-old-page-absent order=unmap,invlpg,publish-unmap,scrub,allocate,write-canary,map-new-owner,publish-reuse result=PASS' \
   'LEANOS/14 PF-WALK page=7 expected-leaf=0 live-leaf=0 cause=supervisor denial=supervisor result=PASS' \
   "LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=1,14,4,28672,7,0,0,1,2,2,${stale_translation_cr3},15,${stale_translation_rip},35,582,${stale_translation_rsp},27,1,0 authorization=1 route=72057594037927937 result=PASS" \
-  'LEANOS/19 TLB-CPL3 event=denial vector=14 error=4 origin=cpl3 hardware=1 direct-call=0 subject=2 address-space=2 cr2=28672 page=7 access=read protection=0 pte=absent route=contain idle=1 cr3-reload-since-unmap=0 result=PASS' \
-  'LEANOS/19 FINAL status=PASS prefill=1 accepted-unmap=1 exact-invlpg=1 stale-access=page-fault containment=1 incidental-cr3-reload=0' >> "$expected"
+  'LEANOS/19 TLB-CPL3 event=denial vector=14 error=4 origin=cpl3 hardware=1 direct-call=0 subject=2 address-space=2 cr2=28672 page=7 access=read protection=0 pte=absent replacement-owner=1 replacement-lifetime=2 replacement-canary=308959202 replacement-canary-intact=1 route=contain handoff=new-owner cr3-reload-since-unmap=0 result=PASS' \
+  'LEANOS/19 TLB-CPL3 event=new-owner-read subject=1 address-space=1 page=7 address=28672 access=read frame=same lifetime=2 canary=308959202 old-address-space=2 old-pte=absent result=PASS' \
+  'LEANOS/19 FINAL status=PASS prefill=1 accepted-unmap=1 exact-invlpg=1 same-frame-reuse=1 scrub=complete new-owner-cpl3-read=1 replacement-canary=intact stale-access=page-fault old-observation=denied containment=1 incidental-cr3-reload=0' >> "$expected"
 else
 printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \

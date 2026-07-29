@@ -38,6 +38,12 @@ for spec in \
   'wrong-root serial-protocol' \
   'invalidation-before-store serial-protocol' \
   'publication-before-invalidation serial-protocol' \
+  'omitted-reuse serial-protocol' \
+  'reuse-before-unmap serial-protocol' \
+  'reuse-publication-before-canary serial-protocol' \
+  'replacement-canary-corrupt serial-protocol' \
+  'omitted-new-owner-read serial-protocol' \
+  'new-owner-wrong-address-space serial-protocol' \
   'skipped-prefill serial-protocol' \
   'incidental-cr3-reload serial-protocol' \
   'software-walker-only serial-protocol' \
