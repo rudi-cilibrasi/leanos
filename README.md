@@ -245,11 +245,15 @@ that a named present unassigned function cannot change physical memory,
 allocator ownership, page-table or kernel-owned frames, kernel state, or any
 subject-visible bytes. This is an integrity claim only: it does not constrain
 device reads or prove confidentiality, IOMMU isolation, or refinement from the
-Lean snapshot to the implementation. The guest also exhaustively checks that manifest after
-firmware, clears bus mastering on every present function, and reads each
-Command register back before CPL3. PCI enumeration and Command-register
-semantics, QEMU/device obedience, the handwritten C adapter, and final-binary
-correspondence remain trusted/tested boundaries rather than proof claims.
+Lean snapshot to the implementation. The repository's mandatory runners use
+one explicit `-nodefaults` construction with a pinned VGA BDF and boot-CD
+attachment. The guest exhaustively checks that manifest after firmware, clears
+bus mastering on every present function, and reads each Command register back
+before CPL3. Every later CPL3 return re-enumerates the manifest and requires
+the complete live Command words to match that accepted boot observation.
+PCI enumeration and Command-register semantics, QEMU/device
+obedience, the handwritten C adapter, and final-binary correspondence remain
+trusted/tested boundaries rather than proof claims.
 
 The bounded [direct-port-I/O authority model](docs/direct-port-io.md) separates
 untrusted port/value words from kernel-selected purpose, models the selected

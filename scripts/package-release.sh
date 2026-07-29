@@ -26,6 +26,8 @@ cp "build/boot/leanos-${version}-x86_64.iso" \
 cp build/boot/leanos.elf "$release/leanos-${version}-x86_64.elf"
 cp build/boot/leanos.map "$release/leanos-${version}-x86_64.map"
 cp build/boot/serial.log "$release/leanos-${version}-serial.log"
+cp build/boot/dma-quarantine-snapshot-blocking-ipc.tsv \
+  "$release/leanos-${version}-dma-quarantine-snapshot.tsv"
 cp "build/boot/leanos-${version}-x86_64-preemption.iso" \
   "$release/leanos-${version}-x86_64-preemption.iso"
 cp build/boot/leanos-preemption.elf \
@@ -130,6 +132,7 @@ LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
 (cd "$release" && sha256sum \
   "leanos-${version}-x86_64.iso" "leanos-${version}-x86_64.elf" \
   "leanos-${version}-x86_64.map" "leanos-${version}-serial.log" \
+  "leanos-${version}-dma-quarantine-snapshot.tsv" \
   "leanos-${version}-x86_64-preemption.iso" \
   "leanos-${version}-x86_64-preemption.elf" \
   "leanos-${version}-x86_64-preemption.map" \

@@ -2,6 +2,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$root"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT; touch "$tmp/image.iso"
+printf '%040d\n' 0 > "$tmp/SOURCE_REVISION"
 ./scripts/generate-oracle.sh "$tmp/oracle" >/dev/null
 ${CC:-gcc} -nostdlib -no-pie -Wl,-e,_start -x c -o "$tmp/fault-symbols.elf" - <<'EOF'
 char page_map_level_4_a[4096];
@@ -18,8 +19,10 @@ invoke() {
   LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
   LEANOS_QEMU="$root/tests/qemu-fixture.sh" LEANOS_QEMU_FIXTURE_MODE="$mode" \
   LEANOS_QEMU_TIMEOUT_SECONDS=1 LEANOS_SERIAL_LOG="$tmp/$mode.serial" \
+  LEANOS_DMA_SNAPSHOT="$tmp/$scenario-$mode.dma.tsv" \
   LEANOS_FAULT_SNAPSHOT_ARTIFACT="$tmp/$mode.snapshot" \
   LEANOS_FAULT_CONTAINMENT_ELF="$tmp/fault-symbols.elf" \
+  LEANOS_SOURCE_REVISION_FILE="$tmp/SOURCE_REVISION" \
   ./scripts/run-image.sh "$tmp/image.iso"
 }
 invoke success >/dev/null 2>&1
@@ -27,8 +30,10 @@ LEANOS_BOOT_SCENARIO=fault-readonly-write \
   LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
   LEANOS_QEMU="$root/tests/qemu-fixture.sh" LEANOS_QEMU_FIXTURE_MODE=success \
   LEANOS_QEMU_TIMEOUT_SECONDS=1 LEANOS_SERIAL_LOG="$tmp/write.serial" \
+  LEANOS_DMA_SNAPSHOT="$tmp/fault-readonly-write-success.dma.tsv" \
   LEANOS_FAULT_SNAPSHOT_ARTIFACT="$tmp/write.snapshot" \
   LEANOS_FAULT_CONTAINMENT_ELF="$tmp/fault-symbols.elf" \
+  LEANOS_SOURCE_REVISION_FILE="$tmp/SOURCE_REVISION" \
   ./scripts/run-image.sh "$tmp/image.iso" >/dev/null 2>&1
 invoke success fault-nx-execute >/dev/null 2>&1
 for mode in fault-nx-wrong-error fault-nx-mapping-permission-drift \

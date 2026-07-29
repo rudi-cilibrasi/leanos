@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "corpus.h"
 #include "generated-boundary-abi.h"
+#include "leanos/composite-dispatcher.h"
 #if defined(LEANOS_BOOT_PAGE_PLAN_HEADER)
 #include LEANOS_BOOT_PAGE_PLAN_HEADER
 #elif defined(LEANOS_DF_MAP_GUARD)
@@ -72,8 +73,6 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                        uint64_t);
-extern uint64_t leanos_composite_dispatch(uint64_t, uint64_t, uint64_t,
-                                          uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_authorize_page_fault_snapshot(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
@@ -836,6 +835,11 @@ static unsigned canonical(uint64_t value) {
     return high == 0 || high == 0x1ffffu;
 }
 
+static void verify_q35_pci_dma(void);
+#if LEANOS_RETURN_CORRUPTION_MODE == 25
+static __attribute__((noinline, noipa)) void inject_dma_bus_master_reenable(void);
+#endif
+
 #if LEANOS_RETURN_CORRUPTION_MODE != 0
 static volatile uint64_t return_corruption_mode = LEANOS_RETURN_CORRUPTION_MODE;
 
@@ -887,6 +891,9 @@ static const char *return_corruption_name(uint64_t mode) {
 #if LEANOS_RETURN_CORRUPTION_MODE == 24
     case 24: return "direct-port-granularity-relaxation";
 #endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 25
+    case 25: return "dma-bus-master-reenable";
+#endif
     default: return "none";
     }
 }
@@ -902,7 +909,7 @@ static void inject_return_corruption(uint64_t *saved) {
     if (mode == 13) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
-    serial_puts(mode >= 14 && mode <= 24
+    serial_puts(mode >= 14 && mode <= 25
         ? " stage=machine-control result=INJECTED\n"
         : " stage=outgoing-frame result=INJECTED\n");
     switch (mode) {
@@ -1002,6 +1009,11 @@ static void inject_return_corruption(uint64_t *saved) {
         gdt64[5] |= UINT64_C(1) << 55;
         break;
 #endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 25
+    case 25:
+        inject_dma_bus_master_reenable();
+        break;
+#endif
     default: fail("user-return-fixture-mode");
     }
 }
@@ -1058,6 +1070,7 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
        sole outbound gate.  A post-boot relaxation cannot reach iretq. */
     check_fast_entry_control();
     check_direct_port_control(0);
+    verify_q35_pci_dma();
     /* Accepted ordinary entries remain armed through handler dispatch and
        context selection.  Clear only in this final validated return gate;
        initial boot dispatch is intentionally unarmed. */
@@ -1343,7 +1356,7 @@ struct pci_manifest_entry {
     uint8_t device, function;
     uint16_t vendor, product;
     uint32_t class_code;
-    uint8_t required, multifunction;
+    uint8_t required, bridge, multifunction;
 };
 
 /* This is the C rendering of DMAQuarantine.q35Manifest for topology version
@@ -1351,13 +1364,46 @@ struct pci_manifest_entry {
    devices remain trusted hardware/QEMU inputs; acceptance is integration
    evidence and is not a refinement theorem for the Lean snapshot. */
 static const struct pci_manifest_entry q35_pci_manifest[] = {
-    { 0, 0, 0x8086, 0x29c0, 0x060000, 1, 0 },
-    { 1, 0, 0x1234, 0x1111, 0x030000, 1, 0 },
-    { 3, 0, 0x1af4, 0x1000, 0x020000, 0, 0 },
-    { 31, 0, 0x8086, 0x2918, 0x060100, 1, 1 },
-    { 31, 2, 0x8086, 0x2922, 0x010601, 1, 1 },
-    { 31, 3, 0x8086, 0x2930, 0x0c0500, 1, 1 },
+    { 0, 0, 0x8086, 0x29c0, 0x060000, 1, 0, 0 },
+    { 1, 0, 0x1234, 0x1111, 0x030000, 1, 0, 0 },
+    { 3, 0, 0x1af4, 0x1000, 0x020000, 0, 0, 0 },
+    { 31, 0, 0x8086, 0x2918, 0x060100, 1, 1, 1 },
+    { 31, 2, 0x8086, 0x2922, 0x010601, 1, 0, 1 },
+    { 31, 3, 0x8086, 0x2930, 0x0c0500, 1, 0, 1 },
 };
+
+struct pci_snapshot_entry {
+    uint16_t vendor, product;
+    uint32_t class_code;
+    uint16_t command_before, command_after;
+    uint8_t present, bridge, multifunction;
+};
+
+/* The one canonical live PCI observation. Boot fills it from hardware, the
+   generated q35 snapshot validator consumes its compact canonical projection,
+   and every later CPL3 return compares hardware with this same state. */
+struct pci_live_snapshot {
+    struct pci_snapshot_entry functions[
+        sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0])];
+    uint64_t generated_result;
+};
+
+static struct pci_live_snapshot q35_live_pci_snapshot;
+
+static uint64_t pci_snapshot_identity_word(
+        const struct pci_snapshot_entry *entry) {
+    return (uint64_t)entry->vendor |
+        (uint64_t)entry->product << 16 |
+        (uint64_t)entry->class_code << 32;
+}
+
+static uint64_t pci_snapshot_control_word(
+        const struct pci_snapshot_entry *entry) {
+    return (uint64_t)(entry->present ? 1u : 0u) |
+        (uint64_t)entry->command_after << 2 |
+        (uint64_t)entry->bridge << 14 |
+        (uint64_t)entry->multifunction << 15;
+}
 
 static __attribute__((noinline, noipa)) uint32_t pci_config_dword(
         uint8_t device, uint8_t function, uint8_t offset) {
@@ -1420,19 +1466,26 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
 
             uint16_t command = (uint16_t)pci_config_dword(
                 device, function, 0x04);
+            if ((command & ~PCI_COMMAND_MODEL_MASK) != 0)
+                fail("dma-command-model");
             if ((command & PCI_COMMAND_BUS_MASTER) != 0) {
                 ++initially_bus_mastering;
                 initial_bus_master_mask |= 1u << index;
             }
-            uint16_t expected_command =
-                (uint16_t)(command & ~PCI_COMMAND_BUS_MASTER);
+            /* q35Snapshot's deny-all handoff is the exact all-zero Command
+               projection, not merely any state with bus mastering clear. */
+            uint16_t expected_command = 0;
+            q35_live_pci_snapshot.functions[index].present = 1;
+            q35_live_pci_snapshot.functions[index].vendor = vendor;
+            q35_live_pci_snapshot.functions[index].product = product;
+            q35_live_pci_snapshot.functions[index].class_code = class_code;
+            q35_live_pci_snapshot.functions[index].command_before = command;
             pci_config_command(device, function, expected_command);
             ++writes;
             command = (uint16_t)pci_config_dword(device, function, 0x04);
+            q35_live_pci_snapshot.functions[index].command_after = command;
             ++readbacks;
-            if (command != expected_command ||
-                (command & PCI_COMMAND_BUS_MASTER) != 0 ||
-                (command & ~PCI_COMMAND_MODEL_MASK) != 0)
+            if (command != expected_command)
                 fail("dma-command-readback");
             seen |= 1u << index;
             ++present;
@@ -1442,6 +1495,10 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     unsigned optional_absent = 0;
     for (unsigned i = 0;
          i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
+        q35_live_pci_snapshot.functions[i].bridge =
+            q35_pci_manifest[i].bridge;
+        q35_live_pci_snapshot.functions[i].multifunction =
+            q35_pci_manifest[i].multifunction;
         if (seen & (1u << i)) continue;
         if (q35_pci_manifest[i].required) fail("dma-required-missing");
         ++optional_absent;
@@ -1450,12 +1507,111 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     if (present != 5 || optional_absent != 1 || writes != present ||
         readbacks != present)
         fail("dma-q35-nic-none");
+
+    /* Feed the canonical live identity/status/Command/assignment/bridge
+       projection itself through the generated q35Snapshot boundary. */
+    q35_live_pci_snapshot.generated_result =
+        leanos_validate_q35_dma_snapshot(
+            1, UINT64_C(0x000800020002),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[0]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[0]),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[1]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[1]),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[2]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[2]),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[3]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[3]),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[4]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[4]),
+            pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[5]),
+            pci_snapshot_control_word(&q35_live_pci_snapshot.functions[5]));
+    if (q35_live_pci_snapshot.generated_result != 0)
+        fail("dma-global-policy");
+
+    for (unsigned i = 0;
+         i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
+        const struct pci_manifest_entry *entry = &q35_pci_manifest[i];
+        serial_puts("LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:");
+        serial_u64(entry->device);
+        serial_putc('.');
+        serial_u64(entry->function);
+        serial_puts(" present=");
+        serial_u64(q35_live_pci_snapshot.functions[i].present);
+        serial_puts(" vendor=");
+        serial_u64(q35_live_pci_snapshot.functions[i].present ? entry->vendor : 0);
+        serial_puts(" device=");
+        serial_u64(q35_live_pci_snapshot.functions[i].present ? entry->product : 0);
+        serial_puts(" class=");
+        serial_u64(q35_live_pci_snapshot.functions[i].present ? entry->class_code : 0);
+        serial_puts(" command-before=");
+        serial_u64(q35_live_pci_snapshot.functions[i].command_before);
+        serial_puts(" command-after=");
+        serial_u64(q35_live_pci_snapshot.functions[i].command_after);
+        serial_puts(" assigned=0 bridge=");
+        serial_u64(entry->bridge);
+        serial_puts(" multifunction=");
+        serial_u64(entry->multifunction);
+        serial_puts(" policy=accepted\n");
+    }
     serial_puts("LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=");
     serial_u64(initially_bus_mastering);
     serial_puts(" initial-bus-master-mask=");
     serial_u64(initial_bus_master_mask);
-    serial_puts(" bus-master=disabled readback=exact stage=pre-cpl3 result=PASS\n");
+    serial_puts(" bus-master=disabled readback=exact generated-result=");
+    serial_u64(q35_live_pci_snapshot.generated_result);
+    serial_puts(" stage=pre-cpl3 result=PASS\n");
 }
+
+/* Re-observe the complete finite inventory at every outbound CPL3 gate.  The
+   full post-quarantine Command word, not just its bus-master bit, must remain
+   identical to the boot observation.  This path is read-only in production. */
+static __attribute__((noinline, noipa)) void verify_q35_pci_dma(void) {
+    unsigned seen = 0, present = 0;
+    for (unsigned device = 0; device < 32; ++device) {
+        for (unsigned function = 0; function < 8; ++function) {
+            uint32_t identity = pci_config_dword(device, function, 0x00);
+            uint16_t vendor = (uint16_t)identity;
+            if (vendor == UINT16_MAX) continue;
+
+            unsigned index = 0;
+            const struct pci_manifest_entry *entry =
+                q35_manifest_entry(device, function, &index);
+            if (!entry || (seen & (1u << index))) fail("dma-live-inventory");
+            uint16_t product = (uint16_t)(identity >> 16);
+            uint32_t class_code = pci_config_dword(device, function, 0x08) >> 8;
+            uint8_t header = (uint8_t)(pci_config_dword(
+                device, function, 0x0c) >> 16);
+            if (vendor != entry->vendor || product != entry->product ||
+                class_code != entry->class_code ||
+                ((header >> 7) & 1u) != entry->multifunction)
+                fail("dma-live-identity");
+            uint16_t command = (uint16_t)pci_config_dword(
+                device, function, 0x04);
+            if (command != q35_live_pci_snapshot.functions[index].command_after ||
+                (command & PCI_COMMAND_BUS_MASTER) != 0 ||
+                (command & ~PCI_COMMAND_MODEL_MASK) != 0)
+                fail("dma-live-command");
+            seen |= 1u << index;
+            ++present;
+        }
+    }
+    for (unsigned i = 0;
+         i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
+        if (!(seen & (1u << i)) && q35_pci_manifest[i].required)
+            fail("dma-live-required-missing");
+    }
+    if (present != 5) fail("dma-live-inventory");
+}
+
+#if LEANOS_RETURN_CORRUPTION_MODE == 25
+/* Controlled machine negative only: restore the SATA bus-master bit after the
+   accepted boot snapshot so the production outbound read-back must reject. */
+static __attribute__((noinline, noipa)) void inject_dma_bus_master_reenable(void) {
+    pci_config_command(31, 2, (uint16_t)(
+        q35_live_pci_snapshot.functions[4].command_after |
+        PCI_COMMAND_BUS_MASTER));
+}
+#endif
 
 static void serial_init(void) {
     out8(COM1 + 1, 0x00);

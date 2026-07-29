@@ -17,7 +17,7 @@ fault_symbol_value() {
   printf '%u' "$((16#$address))"
 }
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-  dma-missing|dma-forged|dma-prestate-forged|dma-topology-forged|dma-control-forged|dma-readback-forged)
+  dma-missing|dma-forged|dma-prestate-forged|dma-topology-forged|dma-control-forged|dma-readback-forged|dma-generated-result-forged|dma-function-missing|dma-function-duplicate|dma-function-identity-forged|dma-function-class-forged|dma-function-status-forged|dma-function-absent-command-forged|dma-function-command-forged|dma-function-prestate-forged|dma-function-bridge-forged|dma-function-multifunction-forged|dma-function-readback-forged)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
@@ -32,6 +32,30 @@ case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
     sed -i 's/topology=000800020002/topology=000800020003/' "$log"
   elif [[ "$mode" == dma-control-forged ]]; then
     sed -i 's/bus-master=disabled/bus-master=enabled/' "$log"
+  elif [[ "$mode" == dma-generated-result-forged ]]; then
+    sed -i 's/generated-result=0/generated-result=1/' "$log"
+  elif [[ "$mode" == dma-function-missing ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.3 /d' "$log"
+  elif [[ "$mode" == dma-function-duplicate ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.2 /p' "$log"
+  elif [[ "$mode" == dma-function-identity-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.3 /s/vendor=32902/vendor=4660/' "$log"
+  elif [[ "$mode" == dma-function-class-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.3 /s/class=787712/class=787713/' "$log"
+  elif [[ "$mode" == dma-function-status-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:3.0 /s/present=0/present=1/' "$log"
+  elif [[ "$mode" == dma-function-absent-command-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:3.0 /s/command-before=0/command-before=4/' "$log"
+  elif [[ "$mode" == dma-function-command-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.3 /s/command-before=1/command-before=2049/' "$log"
+  elif [[ "$mode" == dma-function-prestate-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.2 /s/command-before=7/command-before=3/' "$log"
+  elif [[ "$mode" == dma-function-bridge-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.0 /s/bridge=1/bridge=0/' "$log"
+  elif [[ "$mode" == dma-function-multifunction-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.3 /s/multifunction=1/multifunction=0/' "$log"
+  elif [[ "$mode" == dma-function-readback-forged ]]; then
+    sed -i '/DMA-FUNCTION .*bdf=0:31.2 /s/command-after=0/command-after=4/' "$log"
   else
     sed -i 's/readback=exact/readback=changed/' "$log"
   fi
@@ -179,6 +203,14 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   set -e
   add_nmi_guard_fixture
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
+  sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
+  sed -i '/^LEANOS\/15 DMA snapshot=/i\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:0.0 present=1 vendor=32902 device=10688 class=393216 command-before=0 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:1.0 present=1 vendor=4660 device=4369 class=196608 command-before=3 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:3.0 present=0 vendor=0 device=0 class=0 command-before=0 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:31.0 present=1 vendor=32902 device=10520 class=393472 command-before=3 command-after=0 assigned=0 bridge=1 multifunction=1 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:31.2 present=1 vendor=32902 device=10530 class=67073 command-before=7 command-after=0 assigned=0 bridge=0 multifunction=1 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:31.3 present=1 vendor=32902 device=10544 class=787712 command-before=1 command-after=0 assigned=0 bridge=0 multifunction=1 policy=accepted' "$log"
   sed -i '/^LEANOS\/6 CONTROL/i LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS' "$log"
   sed -i '/^LEANOS\/6 CONTROL/i LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' "$log"
   sed -i \
@@ -197,6 +229,14 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   set -e
   add_nmi_guard_fixture
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
+  sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
+  sed -i '/^LEANOS\/15 DMA snapshot=/i\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:0.0 present=1 vendor=32902 device=10688 class=393216 command-before=0 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:1.0 present=1 vendor=4660 device=4369 class=196608 command-before=3 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:3.0 present=0 vendor=0 device=0 class=0 command-before=0 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:31.0 present=1 vendor=32902 device=10520 class=393472 command-before=3 command-after=0 assigned=0 bridge=1 multifunction=1 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:31.2 present=1 vendor=32902 device=10530 class=67073 command-before=7 command-after=0 assigned=0 bridge=0 multifunction=1 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:31.3 present=1 vendor=32902 device=10544 class=787712 command-before=1 command-after=0 assigned=0 bridge=0 multifunction=1 policy=accepted' "$log"
   sed -i '/^LEANOS\/6 CONTROL/i LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS' "$log"
   sed -i '/^LEANOS\/6 CONTROL/i LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' "$log"
   sed -i \

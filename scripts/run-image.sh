@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$repo_root"
+source "$repo_root/scripts/q35-platform.sh"
 qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
 limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
@@ -74,6 +75,8 @@ else
 fi
 image="${1:-$default_image}"
 log="${LEANOS_SERIAL_LOG:-build/boot/serial.log}"
+dma_snapshot="${LEANOS_DMA_SNAPSHOT:-build/boot/dma-quarantine-snapshot-${scenario}.tsv}"
+source_revision_file="${LEANOS_SOURCE_REVISION_FILE:-build/boot/SOURCE_REVISION}"
 high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
 fault_snapshot_artifact="${LEANOS_FAULT_SNAPSHOT_ARTIFACT:-build/boot/${scenario}-snapshot.txt}"
 fault_elf="${LEANOS_FAULT_CONTAINMENT_ELF:-build/boot/leanos-${scenario}.elf}"
@@ -136,9 +139,10 @@ if (( fault_scenario )); then
   fi
 fi
 mkdir -p "$(dirname "$log")"; : > "$log"
-command=("$qemu" -machine q35,accel=tcg -cpu max -smp 1 -m "${memory_mib}M" -display none -monitor none -serial "file:$log" -no-reboot -no-shutdown -nic none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -cdrom "$image")
-version="$($qemu --version 2>&1 | head -n 1 || true)"
-printf 'QEMU version: %s\nQEMU command:' "${version:-unknown}" >&2; printf ' %q' "${command[@]}" >&2; printf '\nSerial log: %s\n' "$log" >&2
+command=()
+leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
+qemu_version="$($qemu --version 2>&1 | head -n 1 || true)"
+printf 'QEMU version: %s\nQEMU command:' "${qemu_version:-unknown}" >&2; printf ' %q' "${command[@]}" >&2; printf '\nSerial log: %s\n' "$log" >&2
 set +e; timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"; status=$?; set -e
 expected="$(mktemp)"; without_allocation="$(mktemp)"
 trap 'rm -f "$expected" "$without_allocation"' EXIT
@@ -162,7 +166,7 @@ elif [[ "$scenario" == divide-error || "$scenario" == breakpoint ]]; then
 else
   echo 'LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap' > "$expected"
 fi
-echo 'LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled readback=exact stage=pre-cpl3 result=PASS' >> "$expected"
+echo 'LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled readback=exact generated-result=0 stage=pre-cpl3 result=PASS' >> "$expected"
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
@@ -324,7 +328,8 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
     exit 1
   fi
 done
-sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
+sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' \
+  -e '/^LEANOS\/15 DMA-FUNCTION /d' "$log" > "$without_allocation"
 if (( fault_scenario )); then
   mkdir -p "$(dirname "$fault_snapshot_artifact")"
   grep '^LEANOS/14 PF-SNAPSHOT ' "$log" > "$fault_snapshot_artifact" || {
@@ -390,6 +395,14 @@ if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
   sed -i '/^LEANOS\/11 ENTRY-HIGH-WATER /d' "$without_allocation"
 fi
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
+if ! ./scripts/write-dma-snapshot.py \
+    --serial-log "$log" \
+    --source-revision "$source_revision_file" \
+    --qemu-version "${qemu_version:-unknown}" \
+    --output "$dma_snapshot"; then
+  echo "failure_class=dma-snapshot: canonical per-function snapshot rejected" >&2
+  exit 1
+fi
 if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
       "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||
       "$scenario" == extended-state-avx ]]; then

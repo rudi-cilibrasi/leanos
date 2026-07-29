@@ -39,6 +39,16 @@ function quarantine_q35_pci_dma
     ret
 .size quarantine_q35_pci_dma, .-quarantine_q35_pci_dma
 
+function verify_q35_pci_dma
+    call pci_config_dword
+    ret
+.size verify_q35_pci_dma, .-verify_q35_pci_dma
+
+function validate_user_return
+    call verify_q35_pci_dma
+    ret
+.size validate_user_return, .-validate_user_return
+
 function enter_user
     ret
 .size enter_user, .-enter_user

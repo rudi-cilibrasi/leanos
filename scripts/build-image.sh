@@ -164,7 +164,7 @@ lake env lean --c="$build/DirectPortIO.c" LeanOS/DirectPortIO.lean
 lake env lean --c="$build/StaleTranslation.c" LeanOS/StaleTranslation.lean
 lake env lean --c="$build/CompositeDispatcher.c" LeanOS/CompositeDispatcher.lean
 lean_prefix="$(lake env lean --print-prefix)"
-cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic
+cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
   -fstack-usage
   -fdebug-prefix-map="$repo_root"=. -ffile-prefix-map="$repo_root"=.
@@ -1272,6 +1272,10 @@ if ! grep -q ' T leanos_composite_dispatch$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_composite_dispatch" >&2
   exit 1
 fi
+if ! grep -q ' T leanos_validate_q35_dma_snapshot$' <<<"$symbols"; then
+  echo "error: generated image does not retain leanos_validate_q35_dma_snapshot" >&2
+  exit 1
+fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   echo "error: kernel ELF has no valid Multiboot2 header" >&2
   exit 1
@@ -1439,7 +1443,7 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
   ((direct_port_images += 1))
 done < "$matrix"
-[[ "$direct_port_images" -eq 54 ]] || {
+[[ "$direct_port_images" -eq 55 ]] || {
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
   exit 1
 }

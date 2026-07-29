@@ -113,6 +113,8 @@ jobs:
         run: |
           ./scripts/check-q35-pci-construction.py \
             --output build/evidence/q35-pci-construction.tsv
+          ./scripts/check-q35-edu-dma.py \
+            --output build/evidence/q35-edu-dma.tsv
 
       - name: Verify image-build failures propagate
         run: ./scripts/test-build-image.sh
@@ -125,6 +127,7 @@ jobs:
           ./scripts/test-nmi-image-policy.sh
           ./scripts/test-early-idt-policy.sh
           ./scripts/test-early-probe-policy.sh
+          ./scripts/run-dma-unknown-device.sh
           ./scripts/run-emulator-evidence.py run \
             2>&1 | tee build/ci/emulator-evidence.log
 
@@ -184,6 +187,8 @@ jobs:
             build/boot/leanos-bootstrap64-nmi.elf
             build/boot/leanos.map
             build/evidence/q35-pci-construction.tsv
+            build/evidence/q35-edu-dma.tsv
+            build/boot/dma-unknown-device.serial.log
             build/boot/leanos-preemption.map
             build/boot/leanos-fault-containment.map
             build/boot/leanos-fault-readonly-write.map
@@ -237,6 +242,7 @@ jobs:
             build/boot/boot-page-plan-bootstrap64-nmi.final.h
             build/boot/SHA256SUMS
             build/boot/serial.log
+            build/boot/dma-quarantine-snapshot-*.tsv
             build/boot/malformed-handoff.serial.log
             build/boot/preemption.serial.log
             build/boot/fault-containment.serial.log

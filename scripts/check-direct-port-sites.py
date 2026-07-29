@@ -29,7 +29,7 @@ OWNERS = {
     "DirectPortIO.pit",
     "DirectPortIO.byte-wrapper",
     "DirectPortIO.user-denial-probe",
-    "DMAQuarantine.boot-pci-config",
+    "DMAQuarantine.pci-config",
 }
 BYTE_OWNERS = {
     ("out8", 0x3F8): "DirectPortIO.serial",
@@ -184,15 +184,25 @@ def validate_pci_call_graph(callers: dict[str, set[str]],
                             calls: dict[tuple[str, str], list[int]],
                             functions: dict[str, list[Instruction]],
                             terminal_before_user: bool = False) -> None:
+    command_callers = {"quarantine_q35_pci_dma"}
+    if "inject_dma_bus_master_reenable" in functions:
+        command_callers.add("inject_dma_bus_master_reenable")
     expected = {
         "out16": {"pci_config_command"},
         "out32": {"pci_config_command", "pci_config_dword"},
         "in32": {"pci_config_dword"},
-        "pci_config_dword": {"quarantine_q35_pci_dma"},
-        "pci_config_command": {"quarantine_q35_pci_dma"},
+        "pci_config_dword": {
+            "quarantine_q35_pci_dma", "verify_q35_pci_dma",
+        },
+        "pci_config_command": command_callers,
         "quarantine_q35_pci_dma": {"kernel_main"},
+        "verify_q35_pci_dma": {"validate_user_return"},
         "enter_user": set() if terminal_before_user else {"kernel_main"},
     }
+    if "inject_dma_bus_master_reenable" in functions:
+        expected["inject_dma_bus_master_reenable"] = {
+            "validate_user_return",
+        }
     for callee, expected_callers in expected.items():
         observed = callers.get(callee, set())
         if observed != expected_callers:
@@ -490,13 +500,13 @@ def main() -> int:
     validate_pci_call_graph(callers, calls, functions, args.terminal_before_user)
 
     dma_symbols = {site.symbol for site, owner in manifest.items()
-                   if owner == "DMAQuarantine.boot-pci-config"}
+                   if owner == "DMAQuarantine.pci-config"}
     if dma_symbols != {"out16", "out32", "in32"}:
         print("error: boot-only PCI configuration site classification drifted", file=sys.stderr)
         return 1
     for site, owner in manifest.items():
         if site.symbol in {"out16", "out32", "in32"} and \
-                owner != "DMAQuarantine.boot-pci-config":
+                owner != "DMAQuarantine.pci-config":
             print(f"error: PCI configuration wrapper has wrong owner symbol={site.symbol}",
                   file=sys.stderr)
             return 1
