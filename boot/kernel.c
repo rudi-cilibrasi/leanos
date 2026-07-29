@@ -217,6 +217,15 @@ static uint64_t runtime_mapping_frame_after[PAGE_BYTES / sizeof(uint64_t)]
     __attribute__((used, aligned(PAGE_BYTES)));
 static volatile uint64_t runtime_invlpg_publication;
 static volatile uint64_t runtime_cr3_publication;
+#define RUNTIME_MAPPING_PAGE 7u
+#define RUNTIME_MAPPING_ADDRESS (RUNTIME_MAPPING_PAGE * PAGE_BYTES)
+#define RUNTIME_MAPPING_BEFORE UINT64_C(0x126bef0e)
+#define RUNTIME_MAPPING_AFTER UINT64_C(0x126a57e2)
+#define RUNTIME_MAPPING_STATE_BOOT 0u
+#define RUNTIME_MAPPING_STATE_BEFORE 1u
+#define RUNTIME_MAPPING_STATE_UNMAPPED 2u
+#define RUNTIME_MAPPING_STATE_AFTER 3u
+static volatile unsigned runtime_mapping_state = RUNTIME_MAPPING_STATE_BOOT;
 static unsigned preemption_step;
 uint64_t current_subject = 1;
 #ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
@@ -599,6 +608,35 @@ static uint64_t expected_boot_leaf(unsigned space, uint64_t page) {
     return space == 1 ? leanos_boot_plan_a[page] : leanos_boot_plan_b[page];
 }
 
+static uint64_t runtime_mapping_leaf(uint64_t *frame) {
+    return (uint64_t)frame | PTE_PRESENT | PTE_WRITABLE | PTE_NX;
+}
+
+/* Every leaf remains equal to the generated boot plan except the single
+   B/page-7 window.  That leaf has one exact value for each kernel-owned phase;
+   an unknown phase is never accepted.  Accessed/dirty bits are ignored only by
+   the caller's ordinary x86 comparison, just as for immutable leaves. */
+static int checked_runtime_leaf(unsigned space, uint64_t page,
+                                uint64_t *expected) {
+    if (space != 2 || page != RUNTIME_MAPPING_PAGE)
+        return 1;
+    switch (runtime_mapping_state) {
+    case RUNTIME_MAPPING_STATE_BOOT:
+        return 1;
+    case RUNTIME_MAPPING_STATE_BEFORE:
+        *expected = runtime_mapping_leaf(runtime_mapping_frame_before);
+        return 1;
+    case RUNTIME_MAPPING_STATE_UNMAPPED:
+        *expected = 0;
+        return 1;
+    case RUNTIME_MAPPING_STATE_AFTER:
+        *expected = runtime_mapping_leaf(runtime_mapping_frame_after);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static int decoded_root_matches(unsigned space, uint64_t *root, uint64_t *pdpt,
                                 uint64_t *pd, uint64_t *pt, int report_mismatch) {
     if ((root[0] & ~PTE_ACCESSED) != ((uint64_t)pdpt | 7u) ||
@@ -629,12 +667,16 @@ static int decoded_root_matches(unsigned space, uint64_t *root, uint64_t *pdpt,
     for (uint64_t page = 0; page < BOOT_LEAF_COUNT; ++page) {
         uint64_t actual = pt[page];
         uint64_t expected = expected_boot_leaf(space, page);
-        if ((actual & ~(PTE_ACCESSED | PTE_DIRTY)) != expected) {
+        int relation_defined = checked_runtime_leaf(space, page, &expected);
+        if (!relation_defined ||
+            (actual & ~(PTE_ACCESSED | PTE_DIRTY)) != expected) {
             if (report_mismatch) {
                 serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
                 serial_puts(" page="); serial_u64(page);
                 serial_puts(" expected="); serial_u64(expected);
                 serial_puts(" actual="); serial_u64(actual);
+                serial_puts(" mutable-state=");
+                serial_u64(runtime_mapping_state);
                 serial_putc('\n');
             }
             return 0;
@@ -657,6 +699,26 @@ static void expect_live_mutation_rejected(const char *fixture,
     serial_puts(" root=B level="); serial_puts(level);
     serial_puts(" page="); serial_u64(page);
     serial_puts(" expected="); serial_u64(saved);
+    serial_puts(" actual="); serial_u64(replacement);
+    serial_puts(" result=REJECTED\n");
+}
+
+static void expect_runtime_relation_rejected(const char *fixture,
+        unsigned state, uint64_t replacement, uint64_t expected) {
+    uint64_t saved_leaf = page_table_b[RUNTIME_MAPPING_PAGE];
+    unsigned saved_state = runtime_mapping_state;
+    page_table_b[RUNTIME_MAPPING_PAGE] = replacement;
+    runtime_mapping_state = state;
+    __asm__ volatile ("" ::: "memory");
+    int accepted = decoded_root_matches(2, page_map_level_4_b,
+        page_directory_pointer_b, page_directory_b, page_table_b, 0);
+    page_table_b[RUNTIME_MAPPING_PAGE] = saved_leaf;
+    runtime_mapping_state = saved_state;
+    __asm__ volatile ("" ::: "memory");
+    if (accepted) fail("pt-runtime-relation-accepted");
+    serial_puts("LEANOS/8 PAGING fixture="); serial_puts(fixture);
+    serial_puts(" root=B level=pt page="); serial_u64(RUNTIME_MAPPING_PAGE);
+    serial_puts(" expected="); serial_u64(expected);
     serial_puts(" actual="); serial_u64(replacement);
     serial_puts(" result=REJECTED\n");
 }
@@ -721,6 +783,16 @@ static void check_live_page_table_mutations(void) {
         "pt", entry_guard);
     expect_live_mutation_rejected("omitted-mapping", &page_table_b[user_text],
         0, "pt", user_text);
+    expect_runtime_relation_rejected("mutable-wrong-frame",
+        RUNTIME_MAPPING_STATE_BEFORE,
+        runtime_mapping_leaf(runtime_mapping_frame_after),
+        runtime_mapping_leaf(runtime_mapping_frame_before));
+    expect_runtime_relation_rejected("mutable-publish-before-invalidation",
+        RUNTIME_MAPPING_STATE_UNMAPPED,
+        runtime_mapping_leaf(runtime_mapping_frame_before), 0);
+    expect_runtime_relation_rejected("mutable-unknown-state", 99u,
+        page_table_b[RUNTIME_MAPPING_PAGE],
+        expected_boot_leaf(2, RUNTIME_MAPPING_PAGE));
 
     uint64_t selected;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(selected));
@@ -750,13 +822,11 @@ static void check_boot_page_tables(void) {
     check_live_page_table_mutations();
 }
 
-#define RUNTIME_MAPPING_PAGE 7u
-#define RUNTIME_MAPPING_ADDRESS (RUNTIME_MAPPING_PAGE * PAGE_BYTES)
-#define RUNTIME_MAPPING_BEFORE UINT64_C(0x126bef0e)
-#define RUNTIME_MAPPING_AFTER UINT64_C(0x126a57e2)
-
-static uint64_t runtime_mapping_leaf(uint64_t *frame) {
-    return (uint64_t)frame | PTE_PRESENT | PTE_WRITABLE | PTE_NX;
+static void require_runtime_mapping_relation(const char *reason) {
+    if (!decoded_root_matches(2, page_map_level_4_b,
+                              page_directory_pointer_b, page_directory_b,
+                              page_table_b, 0))
+        fail(reason);
 }
 
 /* This is the active-root implementation of the canonical page(2, 7)
@@ -775,6 +845,8 @@ static void runtime_unmap_page7_invlpg(uint64_t canonical_reply) {
                       : "r"((uint64_t)RUNTIME_MAPPING_ADDRESS) : "memory");
     if (page_table_b[RUNTIME_MAPPING_PAGE] != 0)
         fail("runtime-invlpg-pte");
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_UNMAPPED;
+    require_runtime_mapping_relation("runtime-invlpg-relation");
     runtime_invlpg_publication = canonical_reply;
 }
 
@@ -796,6 +868,8 @@ static void runtime_unmap_page7_cr3(uint64_t canonical_reply) {
     if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b ||
         page_table_b[RUNTIME_MAPPING_PAGE] != 0)
         fail("runtime-cr3-completion");
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_UNMAPPED;
+    require_runtime_mapping_relation("runtime-cr3-relation");
     runtime_cr3_publication = canonical_reply;
 }
 
@@ -819,6 +893,8 @@ static void check_runtime_mapping_invalidation(void) {
 
     page_table_b[RUNTIME_MAPPING_PAGE] =
         runtime_mapping_leaf(runtime_mapping_frame_before);
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_BEFORE;
+    require_runtime_mapping_relation("runtime-invlpg-before-relation");
     __asm__ volatile ("mov %0, %%cr3" :
                       : "r"((uint64_t)page_map_level_4_b) : "memory");
     if (*window != RUNTIME_MAPPING_BEFORE)
@@ -826,6 +902,8 @@ static void check_runtime_mapping_invalidation(void) {
     runtime_unmap_page7_invlpg(canonical_reply);
     page_table_b[RUNTIME_MAPPING_PAGE] =
         runtime_mapping_leaf(runtime_mapping_frame_after);
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_AFTER;
+    require_runtime_mapping_relation("runtime-invlpg-after-relation");
     __asm__ volatile ("" ::: "memory");
     if (*window != RUNTIME_MAPPING_AFTER ||
         runtime_invlpg_publication != canonical_reply)
@@ -834,6 +912,8 @@ static void check_runtime_mapping_invalidation(void) {
 
     page_table_b[RUNTIME_MAPPING_PAGE] =
         runtime_mapping_leaf(runtime_mapping_frame_before);
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_BEFORE;
+    require_runtime_mapping_relation("runtime-cr3-before-relation");
     __asm__ volatile ("mov %0, %%cr3" :
                       : "r"((uint64_t)page_map_level_4_b) : "memory");
     if (*window != RUNTIME_MAPPING_BEFORE)
@@ -843,6 +923,8 @@ static void check_runtime_mapping_invalidation(void) {
     runtime_unmap_page7_cr3(canonical_reply);
     page_table_b[RUNTIME_MAPPING_PAGE] =
         runtime_mapping_leaf(runtime_mapping_frame_after);
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_AFTER;
+    require_runtime_mapping_relation("runtime-cr3-after-relation");
     __asm__ volatile ("mov %0, %%cr3" :
                       : "r"((uint64_t)page_map_level_4_b) : "memory");
     if (*window != RUNTIME_MAPPING_AFTER ||
@@ -851,11 +933,14 @@ static void check_runtime_mapping_invalidation(void) {
     serial_puts("LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS\n");
 
     page_table_b[RUNTIME_MAPPING_PAGE] = boot_leaf;
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_BOOT;
+    require_runtime_mapping_relation("runtime-window-restore-relation");
     __asm__ volatile ("mov %0, %%cr3" :
                       : "r"((uint64_t)page_map_level_4_a) : "memory");
     if (page_table_b[RUNTIME_MAPPING_PAGE] != boot_leaf)
         fail("runtime-window-restore");
     serial_puts("LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS\n");
+    serial_puts("LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS\n");
 }
 
 static void check_selected_root_b(void) {

@@ -42,6 +42,18 @@ forged_reply() {
   sed -i '0,/canonical_reply != LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED/s//canonical_reply != LEANOS_COMPOSITE_REPLY_UNMAPPED_PAGE_REJECTED/' "$1"
 }
 
+wrong_relation_space() {
+  sed -i \
+    's/if (space != 2 || page != RUNTIME_MAPPING_PAGE)/if (space != 1 || page != RUNTIME_MAPPING_PAGE)/' \
+    "$1"
+}
+
+accept_unknown_state() {
+  sed -i \
+    '/static int checked_runtime_leaf(/,/^}/s/default:/case 99u:/' \
+    "$1"
+}
+
 run_fixture wrong-page \
   'mutable-window target is not confined to page 7' wrong_page
 run_fixture wrong-root \
@@ -50,5 +62,10 @@ run_fixture omitted-invlpg \
   'active-root path does not contain exactly one INVLPG' omitted_invlpg
 run_fixture forged-reply \
   'closed typed-reply checks drifted' forged_reply
+run_fixture wrong-relation-space \
+  'mutable-leaf exception is not confined to address space B/page 7' \
+  wrong_relation_space
+run_fixture accept-unknown-state \
+  'unknown mutable-leaf states are not rejected' accept_unknown_state
 
 echo "Runtime mapping invalidation negative fixtures passed"

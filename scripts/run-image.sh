@@ -172,7 +172,8 @@ printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' \
   'LEANOS/19 TLB path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS' \
   'LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS' \
-  'LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS' >> "$expected"
+  'LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS' \
+  'LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS' >> "$expected"
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 echo 'LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS' >> "$expected"
 echo 'LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' >> "$expected"
@@ -318,7 +319,9 @@ paging_specs=(
   'flip-nx B pt' 'wrong-frame B pt' 'ancestor-pointer B pml4'
   'ancestor-flags B pdpt' 'swapped-user-leaves B pt'
   'extra-mapping B pt' 'nmi-guard-mapping B pt' 'entry-guard-mapping B pt'
-  'omitted-mapping B pt' 'wrong-cr3 A cr3'
+  'omitted-mapping B pt' 'mutable-wrong-frame B pt'
+  'mutable-publish-before-invalidation B pt' 'mutable-unknown-state B pt'
+  'wrong-cr3 A cr3'
 )
 if [[ ${#paging_fixtures[@]} -ne ${#paging_specs[@]} ]]; then
   echo "failure_class=page-table-fixtures: complete live-mutation matrix not observed" >&2

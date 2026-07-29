@@ -94,11 +94,25 @@ architectural denial, with the retired physical frame scrubbed and republished
 to a fresh lifetime while the old virtual address remains absent, is still
 required for the complete issue.
 
+The live page-table checker does not ignore that mutable leaf. Its
+kernel-owned phase is one of `boot`, `before`, `unmapped`, or `after`, and each
+phase admits exactly one B/page-7 value: the generated boot leaf, the reviewed
+before-frame leaf, zero, or the reviewed after-frame leaf. Every ancestor and
+all other A/B leaves remain byte-for-byte equal to the generated plan after
+masking only hardware-managed accessed/dirty bits. The machine path checks the
+complete relation before each prefill, after each invalidation and replacement,
+and after restoration. Guest negatives reject a wrong frame, publication of
+the unmapped phase while a leaf remains present, and an unknown phase; the
+existing mutation matrix continues to reject changes outside the window.
+This relation and its policy checker are trusted C/static evidence, not a Lean
+proof or a refinement theorem.
+
 `check-runtime-invalidation-policy.sh` checks the fixed generated state,
 command, reply, address-space and page in source and checks
 PTE-store/invalidation/publication order in final disassembly. Its focused
-negative corpus rejects a wrong page, wrong root, omitted `invlpg`, and forged
-typed reply. The QEMU trace is machine evidence for
+negative corpus rejects a wrong page, wrong root, omitted `invlpg`, forged
+typed reply, widened mutable-root scope, and acceptance of an unknown mutable
+phase. The QEMU trace is machine evidence for
 before/unmap/replacement-frame visibility and confinement, not a proof of
 processor TLB semantics. Instruction completion, page-walk hardware, compiler
 correctness, and physical TLB coherence remain trusted.

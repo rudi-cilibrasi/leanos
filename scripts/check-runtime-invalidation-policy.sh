@@ -15,6 +15,25 @@ fail() {
 
 grep -Fqx '#define RUNTIME_MAPPING_PAGE 7u' "$source_file" ||
   fail "mutable-window target is not confined to page 7"
+relation_source="$(
+  sed -n '/static int checked_runtime_leaf(/,/^}/p' "$source_file"
+)"
+[[ -n "$relation_source" ]] ||
+  fail "mutable-leaf relation is missing"
+for state in BOOT BEFORE UNMAPPED AFTER; do
+  grep -Fq "#define RUNTIME_MAPPING_STATE_${state} " "$source_file" ||
+    fail "mutable-window state relation is incomplete: $state"
+  grep -Fq "case RUNTIME_MAPPING_STATE_${state}:" <<<"$relation_source" ||
+    fail "mutable-leaf relation does not handle state: $state"
+done
+grep -Fq 'if (space != 2 || page != RUNTIME_MAPPING_PAGE)' \
+  <<<"$relation_source" ||
+  fail "mutable-leaf exception is not confined to address space B/page 7"
+grep -Fq 'default:' <<<"$relation_source" &&
+  grep -Fq 'return 0;' <<<"$relation_source" ||
+  fail "unknown mutable-leaf states are not rejected"
+[[ "$(grep -Fc 'require_runtime_mapping_relation(' "$source_file")" -eq 8 ]] ||
+  fail "mutable-leaf relation is not checked at every phase"
 grep -Fq 'LEANOS_COMPOSITE_STATE_DIRECT_MAPPED,' "$source_file" ||
   fail "canonical pre-state authority is missing"
 grep -Fq 'LEANOS_COMPOSITE_COMMAND_ACCEPTED_SYSCALL_UNMAP,' "$source_file" ||

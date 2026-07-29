@@ -10,11 +10,18 @@ done
 add_nmi_guard_fixture() {
   sed -i '/^LEANOS\/8 PAGING fixture=extra-mapping /a LEANOS/8 PAGING fixture=nmi-guard-mapping root=B level=pt page=6 expected=0 actual=9223372036854800387 result=REJECTED' "$log"
 }
+add_runtime_relation_fixtures() {
+  sed -i '/^LEANOS\/8 PAGING fixture=omitted-mapping /a\
+LEANOS/8 PAGING fixture=mutable-wrong-frame root=B level=pt page=7 expected=9223372036854792195 actual=9223372036854796291 result=REJECTED\
+LEANOS/8 PAGING fixture=mutable-publish-before-invalidation root=B level=pt page=7 expected=0 actual=9223372036854792195 result=REJECTED\
+LEANOS/8 PAGING fixture=mutable-unknown-state root=B level=pt page=7 expected=9223372036854804483 actual=9223372036854804483 result=REJECTED' "$log"
+}
 add_runtime_invalidation_evidence() {
   sed -i '/^LEANOS\/8 PAGING fixture=wrong-cr3 /a\
 LEANOS/19 TLB path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS\
 LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS\
-LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS' "$log"
+LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS\
+LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS' "$log"
 }
 fault_symbol_value() {
   local symbol="$1" elf="${LEANOS_FAULT_CONTAINMENT_ELF:-build/boot/leanos-fault-containment.elf}"
@@ -208,6 +215,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   status=$?
   set -e
   add_nmi_guard_fixture
+  add_runtime_relation_fixtures
   add_runtime_invalidation_evidence
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
@@ -235,6 +243,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   status=$?
   set -e
   add_nmi_guard_fixture
+  add_runtime_relation_fixtures
   add_runtime_invalidation_evidence
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
