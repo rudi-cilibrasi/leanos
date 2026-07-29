@@ -170,6 +170,7 @@ jobs:
             build/boot/leanos-frame-budget.map
             build/boot/boot-page-plan-frame-budget.final.h
             build/boot/frame-budget.serial.log
+            build/boot/frame-budget-negatives/
             build/boot/leanos-fault-containment.elf
             build/boot/leanos-fault-readonly-write.elf
             build/boot/leanos-fault-nx-execute.elf
