@@ -2080,6 +2080,10 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             return 0xfeed;
         }
         if (number == 23 && current_subject == 2) {
+            if (arg0 != UINT64_C(0xb2b2f11251a7e55e) ||
+                arg1 != UINT64_C(0x030201) || arg2 != UINT64_C(0x51a7))
+                fail("frame-budget-b-context-canary");
+            serial_puts("LEANOS/20 B-CONTEXT subject=2 source=kernel-owned-fresh registers=15 canaries=fresh result=PASS\n");
             uint64_t got = leanos_composite_dispatch(frame_budget_state,
                 LEANOS_COMPOSITE_COMMAND_BUDGET_ALLOCATE_B, 20, 0, 0, 0);
             if (got != UINT64_C(0x434401))

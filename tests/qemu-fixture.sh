@@ -63,7 +63,7 @@ case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
   ;;
 esac
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-frame-budget-global-counter|frame-budget-cross-charge|frame-budget-owner-forgery|frame-budget-relabel-success|frame-budget-partial-publication|frame-budget-double-credit|frame-budget-double-publication|frame-budget-canary|frame-budget-stale-authorized|frame-budget-static-buffer|frame-budget-wrong-frame|frame-budget-non-ring3|frame-budget-missing|frame-budget-reordered|frame-budget-forged)
+frame-budget-global-counter|frame-budget-cross-charge|frame-budget-owner-forgery|frame-budget-relabel-success|frame-budget-partial-publication|frame-budget-double-credit|frame-budget-double-publication|frame-budget-register-leak|frame-budget-canary|frame-budget-stale-authorized|frame-budget-static-buffer|frame-budget-wrong-frame|frame-budget-non-ring3|frame-budget-missing|frame-budget-reordered|frame-budget-forged)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
@@ -83,6 +83,7 @@ frame-budget-global-counter|frame-budget-cross-charge|frame-budget-owner-forgery
         -e '/^LEANOS\/20 B-PUBLISH /s/physical-frame=513/physical-frame=512/' \
         "$log"
       ;;
+    frame-budget-register-leak) sed -i 's/canaries=fresh/canaries=leaked/' "$log" ;;
     frame-budget-canary) sed -i 's/first=0/first=165/' "$log" ;;
     frame-budget-stale-authorized) sed -i 's/authorized=0/authorized=1/' "$log" ;;
     frame-budget-static-buffer) sed -i 's/source=generated-mapping/source=static-buffer/' "$log" ;;
@@ -123,6 +124,7 @@ LEANOS/20 ENTER subject=1 address-space=1 cpl=3 budget=1 usage=0
 LEANOS/20 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=513 user-page=4095 source=generated-mapping prior-publications=0 accepted=1
 LEANOS/20 A-REJECT subject=1 reason=budgetExhausted budget=1 usage=1 object=none capability=none mapping=none state=unchanged digest=0x4201
 LEANOS/20 DISPATCH subject=2 address-space=2 source=generated-current result=PASS
+LEANOS/20 B-CONTEXT subject=2 source=kernel-owned-fresh registers=15 canaries=fresh result=PASS
 LEANOS/20 B-ALLOC subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1
 LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 checked=1
 LEANOS/20 SCRUB physical-frame=513 bytes=4096 complete=1 before-publication=1
