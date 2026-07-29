@@ -127,4 +127,128 @@ if "$validator" --release --manifest "$manifest" \
 fi
 grep -Fq "acceptance.ready is not true" "$fixtures/release.err"
 
+release_staging="$fixtures/release-staging"
+mkdir "$release_staging"
+release_outputs='[
+  {"path":"qemu-system-x86_64.wasm","asset_class":"wasm"},
+  {"path":"qemu-system-x86_64.js","asset_class":"javascript-glue"},
+  {"path":"qemu-system-x86_64.worker.js","asset_class":"worker"},
+  {"path":"firmware.bin","asset_class":"firmware"},
+  {"path":"terminal.js","asset_class":"terminal"},
+  {"path":"coi-serviceworker.js","asset_class":"service-worker"},
+  {"path":"leanos.data","asset_class":"preload"},
+  {"path":"index.html","asset_class":"browser-harness"},
+  {"path":"LICENSES.txt","asset_class":"license-bundle"},
+  {"path":"BUILD.log","asset_class":"build-log"},
+  {"path":"TOOLCHAIN.txt","asset_class":"tool-versions"},
+  {"path":"PATCHES.json","asset_class":"patch-inventory"},
+  {"path":"browser-evidence.json","asset_class":"browser-evidence"}
+]'
+jq -r '.[].path' <<<"$release_outputs" |
+  while IFS= read -r path; do
+    printf 'synthetic release fixture: %s\n' "$path" > "$release_staging/$path"
+  done
+release_manifest="$fixtures/release-manifest.json"
+jq --argjson outputs "$release_outputs" '
+  .acceptance.ready = true
+  | del(.acceptance.blocked_by, .acceptance.provisional_reason)
+  | .deferred_outputs = []
+  | .outputs = ($outputs | map(
+      . + {
+        role: ("synthetic " + .asset_class + " fixture"),
+        sha256: null,
+        size: null
+      }
+    ))
+' "$manifest" > "$release_manifest.unhashed"
+python3 - "$release_manifest.unhashed" "$release_manifest" "$release_staging" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+source, destination, staging = map(pathlib.Path, sys.argv[1:])
+manifest = json.loads(source.read_text())
+for output in manifest["outputs"]:
+    artifact = staging / output["path"]
+    output["sha256"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    output["size"] = artifact.stat().st_size
+destination.write_text(json.dumps(manifest, indent=2) + "\n")
+PY
+"$validator" --release --manifest "$release_manifest" --staging "$release_staging"
+
+expect_release_rejection() {
+  local name="$1"
+  local expected="$2"
+  local fixture_staging="$fixtures/$name"
+  shift 2
+  cp -a "$release_staging" "$fixture_staging"
+  "$@" "$fixture_staging"
+  if "$validator" --release --manifest "$release_manifest" \
+      --staging "$fixture_staging" \
+      >"$fixtures/$name.out" 2>"$fixtures/$name.err"; then
+    echo "error: release fixture $name unexpectedly passed" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$fixtures/$name.err" || {
+    echo "error: release fixture $name failed for the wrong reason" >&2
+    cat "$fixtures/$name.err" >&2
+    exit 1
+  }
+}
+
+remove_firmware() {
+  rm "$1/firmware.bin"
+}
+expect_release_rejection missing-firmware \
+  "staging inventory differs from manifest" remove_firmware
+
+remove_license_bundle() {
+  rm "$1/LICENSES.txt"
+}
+expect_release_rejection missing-license-material \
+  "staging inventory differs from manifest" remove_license_bundle
+
+substitute_wasm() {
+  printf 'substituted module\n' >> "$1/qemu-system-x86_64.wasm"
+}
+expect_release_rejection substituted-release-wasm \
+  "staged output differs from manifest: qemu-system-x86_64.wasm" substitute_wasm
+
+change_javascript() {
+  printf 'changed glue\n' >> "$1/qemu-system-x86_64.js"
+}
+expect_release_rejection changed-release-javascript \
+  "staged output differs from manifest: qemu-system-x86_64.js" change_javascript
+
+add_unmanifested_staging_file() {
+  printf 'unmanifested\n' > "$1/extra.js"
+}
+expect_release_rejection divergent-release-staging \
+  "staging inventory differs from manifest" add_unmanifested_staging_file
+
+jq 'del(.outputs[] | select(.asset_class == "firmware"))' \
+  "$release_manifest" > "$fixtures/release-missing-firmware-class.json"
+if "$validator" --release \
+    --manifest "$fixtures/release-missing-firmware-class.json" \
+    >"$fixtures/release-missing-firmware-class.out" \
+    2>"$fixtures/release-missing-firmware-class.err"; then
+  echo "error: release manifest without firmware unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq "release output asset classes are incomplete" \
+  "$fixtures/release-missing-firmware-class.err"
+
+jq 'del(.outputs[] | select(.asset_class == "license-bundle"))' \
+  "$release_manifest" > "$fixtures/release-missing-license-class.json"
+if "$validator" --release \
+    --manifest "$fixtures/release-missing-license-class.json" \
+    >"$fixtures/release-missing-license-class.out" \
+    2>"$fixtures/release-missing-license-class.err"; then
+  echo "error: release manifest without license bundle unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq "release output asset classes are incomplete" \
+  "$fixtures/release-missing-license-class.err"
+
 echo "qemu-wasm manifest, prototype integrity, and negative fixtures passed"

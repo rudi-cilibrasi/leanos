@@ -44,6 +44,21 @@ LICENSE_COMPONENTS = {
     "berkeley-softfloat-3",
     "berkeley-testfloat-3",
 }
+REQUIRED_RELEASE_ASSET_CLASSES = {
+    "wasm",
+    "javascript-glue",
+    "worker",
+    "firmware",
+    "terminal",
+    "service-worker",
+    "preload",
+    "browser-harness",
+    "license-bundle",
+    "build-log",
+    "tool-versions",
+    "patch-inventory",
+    "browser-evidence",
+}
 
 
 def fail(message: str) -> None:
@@ -233,11 +248,22 @@ def validate_release(data: dict, staging: pathlib.Path | None) -> None:
     if data.get("deferred_outputs"):
         fail("release manifest still has deferred outputs")
     outputs = unique(data.get("outputs", []), "path", "output")
+    asset_classes: set[str] = set()
     for path, output in outputs.items():
+        asset_class = output.get("asset_class")
+        if not isinstance(asset_class, str) or not asset_class:
+            fail(f"output {path} has no asset class")
+        asset_classes.add(asset_class)
         require_hash(output.get("sha256"), f"output {path} SHA-256")
         size = output.get("size")
         if not isinstance(size, int) or size < 0:
             fail(f"output {path} has no exact size")
+    missing_asset_classes = REQUIRED_RELEASE_ASSET_CLASSES - asset_classes
+    if missing_asset_classes:
+        fail(
+            "release output asset classes are incomplete: "
+            f"missing={sorted(missing_asset_classes)}"
+        )
     if staging is None:
         return
     observed = {path.name for path in staging.iterdir() if path.is_file()}

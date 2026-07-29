@@ -59,3 +59,12 @@ and final staging outputs are intentionally not claimed by this prototype
 build.  Their exact set and hashes depend on #193's accepted media path and
 must be added to the same manifest before the two-clean-build and browser boot
 gates can pass.
+
+Release validation is already fail-closed for that future staging directory.
+Every output must carry a hash, size, and `asset_class`; the manifest must cover
+the Wasm module, JavaScript/worker glue, firmware, terminal, service worker,
+preload, browser harness, license bundle, build log, tool versions, patch
+inventory, and browser evidence.  Controlled fixtures reject omitted firmware
+or license material, substituted Wasm or JavaScript, and any staging inventory
+that differs from the manifest.  This validates the contract only; it does not
+select #193's media-specific files or assert that the browser boot gate passed.
