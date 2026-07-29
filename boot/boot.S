@@ -1511,8 +1511,10 @@ user_a_entry:
     mov %ax, %es
     mov $20, %rax
     int $0x80
-    cmp $0x10000, %rax
+    test $0xfff, %rax
     jne user_copy_fail
+    movb $0xa5, (%rax)
+    movb $0xa5, 4095(%rax)
     mov $21, %rax
     int $0x80
     cmp $1, %rax
@@ -1867,6 +1869,12 @@ user_b_entry:
     jne 2f
     mov $24, %rax
     mov $0x10000, %rbx
+    int $0x80
+    test $0xfff, %rax
+    jne 2f
+    movzbl (%rax), %ebx
+    movzbl 4095(%rax), %ecx
+    mov $25, %rax
     int $0x80
     ud2
 #endif

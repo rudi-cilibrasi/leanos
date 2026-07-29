@@ -99,20 +99,23 @@ a stale generation. The canonical corpus includes every pre-state token, command
 reply, next-state token, and hostile replay/forgery encodings.
 
 `LEANOS_BOOT_SCENARIO=frame-budget ./scripts/run-image.sh` runs the separate
-version-19 QEMU transcript. Both subjects enter CPL3 under their checked roots.
-The C bridge retains only the generated canonical state token—not quota,
-usage, allocation, identity, or cleanup counters. After generated termination
-accepts, the bridge scrubs all 4096 bytes of the same linker-owned physical
-frame, checks the first and last byte and then the complete frame, and only
-then invokes the generated fresh-publication edge. B observes zero and the old
-generation is rejected.
+version-20 QEMU transcript. Both subjects enter CPL3 under their checked roots.
+The C bridge retains the generated canonical state token, the generated
+Multiboot decoder's selected physical-frame number, and the generated
+mapping-page result—not quota, usage, allocation, identity, mapping, or cleanup
+policy. After A's accepted allocation, the bridge maps that physical frame at
+the generated page and A writes `0xa5` to its first and last bytes directly in
+CPL3. Accepted termination removes A's leaf. The bridge then scrubs all 4096
+bytes through the physical identity, invokes the generated fresh-publication
+edge, and maps the same frame for B at the generated page. B directly reads
+both edge bytes in CPL3 and reports zero; the old generation is rejected.
 
 The fixed model partitions frames and does not model cross-subject commitment
-reassignment. Consequently the correspondence between B's modeled second
-committed frame and the machine bridge's reused A frame is an explicit
-unproved binding assumption. The bounded state codec and its Lean refinement
-proofs are proved; Lean code generation, the scalar ABI, Multiboot2 capacity
-input, C/assembly allocation and CR3 bridge, scrub loop, linker placement,
-serial protocol, compiler, QEMU, and physical-page interpretation are
+reassignment. Consequently the correspondence between model frame 100 and the
+Multiboot-selected machine frame is an explicit unproved binding assumption.
+The bounded state codec, mapping choice, and their Lean refinement proofs are
+proved; Lean code generation, the scalar ABI, Multiboot2 capacity input,
+C/assembly allocation and CR3 bridge, scrub loop, serial protocol, compiler,
+QEMU, and physical-page interpretation are
 trusted/tested boundaries. The machine transcript is integration evidence,
 not a binary-refinement theorem.

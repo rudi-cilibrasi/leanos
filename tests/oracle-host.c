@@ -61,6 +61,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_page_fault_diagnostic_regression_demo);
     REGISTER_BOUNDARY(leanos_direct_port_io_demo);
     REGISTER_BOUNDARY(leanos_stale_translation_demo);
+    REGISTER_BOUNDARY(leanos_frame_budget_mapping_page);
     REGISTER_BOUNDARY(leanos_composite_dispatch);
     REGISTER_BOUNDARY(leanos_validate_q35_dma_snapshot);
 
@@ -79,6 +80,18 @@ int main(void) {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    if (leanos_frame_budget_mapping_page(
+            LEANOS_COMPOSITE_STATE_BUDGET_INITIAL,
+            LEANOS_COMPOSITE_COMMAND_BUDGET_ALLOCATE_A) != 4095 ||
+        leanos_frame_budget_mapping_page(
+            LEANOS_COMPOSITE_STATE_BUDGET_A_TERMINATED,
+            LEANOS_COMPOSITE_COMMAND_BUDGET_PUBLISH_FRESH_B) != 4095 ||
+        leanos_frame_budget_mapping_page(
+            LEANOS_COMPOSITE_STATE_BUDGET_INITIAL,
+            LEANOS_COMPOSITE_COMMAND_BUDGET_PUBLISH_FRESH_B) != UINT64_MAX) {
+        fputs("generated frame-budget mapping policy drifted\n", stderr);
+        return 1;
+    }
     if (leanos_validate_q35_dma_snapshot(
             1, UINT64_C(0x000800020002),
             UINT64_C(0x0006000029c08086), UINT64_C(0x0001),

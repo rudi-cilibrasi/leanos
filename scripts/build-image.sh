@@ -1333,6 +1333,7 @@ LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
 ./scripts/check-image-policy.sh "$build/leanos-malformed-handoff.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
 ./scripts/check-image-policy.sh "$build/leanos-frame-budget.elf"
+./scripts/check-frame-budget-machine.sh "$build/leanos-frame-budget.elf"
 ./scripts/check-image-policy.sh "$build/leanos-fault-containment.elf"
 ./scripts/check-image-policy.sh "$build/leanos-fault-readonly-write.elf"
 ./scripts/check-image-policy.sh "$build/leanos-fault-nx-execute.elf"

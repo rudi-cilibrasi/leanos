@@ -129,6 +129,11 @@ uint64_t leanos_composite_dispatch(
     uint64_t arg2,
     uint64_t arg3);
 
+/* Generated policy query for the issue-112 machine publication leaf. */
+uint64_t leanos_frame_budget_mapping_page(
+    uint64_t state,
+    uint64_t command);
+
 /*
  * Allocation-free generated validation of the exact canonical q35 DMA
  * snapshot. Each manifest slot supplies identity and control words in the

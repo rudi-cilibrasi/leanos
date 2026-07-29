@@ -29,6 +29,8 @@ structure Runtime where
   scrub : FrameScrub.State
   currentSubject : FrameBudget.SubjectId
   activeAddressSpace : FrameBudget.SubjectId
+  userMapping : Option (FrameBudget.SubjectId × FrameScrub.ObjectId ×
+    CapabilityHandle.Handle × FrameScrub.FrameId × UInt64)
 
 inductive Command where
   | allocateA | retryA | selectB | allocateB | terminateA
@@ -81,7 +83,12 @@ def initial : Runtime :=
   { budget := initialBudget
     scrub := initialScrub
     currentSubject := 0
-    activeAddressSpace := 0 }
+    activeAddressSpace := 0
+    userMapping := none }
+
+/-- The sole machine-scenario virtual page.  It is generated policy rather
+than a C-selected address or a ring-3 request word. -/
+def machineUserPage : UInt64 := 4095
 
 def reject (state : Runtime) (reply : Reply) : Outcome := { state, reply }
 
@@ -99,7 +106,12 @@ def step (state : Runtime) : Command → Option Outcome
           | .error _ => none
           | .ok written =>
               some {
-                state := { state with budget := allocation.state, scrub := written }
+                state := {
+                  state with
+                    budget := allocation.state
+                    scrub := written
+                    userMapping := some (0, 10, { slot := 0, identity := 1 },
+                      100, machineUserPage) }
                 reply := .allocatedA }
   | .retryA =>
       if state.currentSubject != 0 || state.activeAddressSpace != 0 then none
@@ -133,7 +145,10 @@ def step (state : Runtime) : Command → Option Outcome
         if cleanup.result = .accepted && reclamation.result = .accepted then
           some {
             state := {
-              state with budget := cleanup.state, scrub := reclamation.state }
+              state with
+                budget := cleanup.state
+                scrub := reclamation.state
+                userMapping := none }
             reply := .terminatedA }
         else none
   | .publishFreshB =>
@@ -144,7 +159,11 @@ def step (state : Runtime) : Command → Option Outcome
         if allocation.result = .accepted && publication.result = .accepted then
           some {
             state := {
-              state with budget := allocation.state, scrub := publication.state }
+              state with
+                budget := allocation.state
+                scrub := publication.state
+                userMapping := some (1, 21, { slot := 1, identity := 3 },
+                  100, machineUserPage) }
             reply := .freshB }
         else none
   | .denyStaleA =>
@@ -319,6 +338,14 @@ def replyFor : StateId → Command → Option Reply
 def replyWord (nextState : StateId) (reply : Reply) : UInt64 :=
   abiVersion + ((encodeState nextState / 256) * 256) + encodeReply reply * 65536
 
+/-- Generated machine-publication query.  C supplies only the accepted
+pre-state token and command tag; all other pairs are denied. -/
+@[export leanos_frame_budget_mapping_page]
+def machineMappingPage (stateWord command : UInt64) : UInt64 :=
+  if stateWord = 0x4001 && command = 0x4001 then 4095
+  else if stateWord = 0x4501 && command = 0x4501 then 4095
+  else 0xffffffffffffffff
+
 /-- Allocation-free table reached through `CompositeDispatcher.dispatch`.
 `0xff05` is noncanonical input and `0xff06` is a continuity failure. -/
 @[inline] def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
@@ -415,6 +442,18 @@ theorem fresh_b_lifetime_and_stale_a_denial :
           { caller := 1 } 0x10000 .memory =
         .error (.denied .staleHandle) := by
   exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem machine_mapping_is_authoritative_and_reuses_frame :
+    (materialize .aAllocated).userMapping =
+        some (0, 10, { slot := 0, identity := 1 }, 100, machineUserPage) ∧
+      (materialize .aTerminated).userMapping = none ∧
+      (materialize .bFresh).userMapping =
+        some (1, 21, { slot := 1, identity := 3 }, 100, machineUserPage) ∧
+      machineMappingPage (encodeState .initial) (encodeCommand .allocateA) =
+        machineUserPage ∧
+      machineMappingPage (encodeState .aTerminated)
+          (encodeCommand .publishFreshB) = machineUserPage := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- The reclaimed physical frame is scrubbed in its entirety before object 21
 and its fresh capability generation become observable. -/

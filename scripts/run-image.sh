@@ -159,7 +159,7 @@ elif [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
 elif [[ "$scenario" == preemption ]]; then
   echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap' > "$expected"
 elif [[ "$scenario" == frame-budget ]]; then
-  echo 'LEANOS/19 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v1 budgets=a:1,b:2 controls=wp,smep,smap' > "$expected"
+  echo 'LEANOS/20 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v2 budgets=a:1,b:2 controls=wp,smep,smap' > "$expected"
 elif (( fault_scenario )); then
   echo "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=${fault_probe} contract=v1 controls=wp,smep,smap" > "$expected"
 elif [[ "$scenario" == direct-port-serial || "$scenario" == direct-port-debug ||
@@ -243,19 +243,26 @@ printf '%s\n' \
   "LEANOS/18 ${integer_fault_upper}-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS" \
   "LEANOS/18 FINAL status=PASS faulting=terminated survivor=2 vector=${integer_fault_vector} reason=${integer_fault_kind} kernel-origin=fail-stop" >> "$expected"
 elif [[ "$scenario" == frame-budget ]]; then
+frame_budget_physical="$(
+  sed -n 's|^LEANOS/7 ALLOC frame=\([0-9][0-9]*\) .*|\1|p' "$log"
+)"
+[[ "$frame_budget_physical" =~ ^[0-9]+$ ]] || {
+  echo "error: missing unique allocator-selected frame binding" >&2
+  exit 1
+}
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
-  'LEANOS/19 ENTER subject=1 address-space=1 cpl=3 budget=1 usage=0' \
-  'LEANOS/19 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 frame=frame-budget-reuse accepted=1' \
-  'LEANOS/19 A-REJECT subject=1 reason=budgetExhausted budget=1 usage=1 object=none capability=none mapping=none state=unchanged digest=0x4201' \
-  'LEANOS/19 DISPATCH subject=2 address-space=2 source=generated-current result=PASS' \
-  'LEANOS/19 B-ALLOC subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1' \
-  'LEANOS/19 CLEANUP subject=1 operation=terminate objects=1 capacity-restored=1 repeated-credit=0 checked=1' \
-  'LEANOS/19 SCRUB frame=frame-budget-reuse bytes=4096 first=0 last=0 complete=1 before-publication=1' \
-  'LEANOS/19 B-PUBLISH subject=2 object=21 handle=196609 generation=3 frame=frame-budget-reuse zero-before-map=1 fresh-lifetime=1' \
-  'LEANOS/19 STALE handle=65536 old-subject=1 fresh-object=21 authorized=0 reason=stale-generation' \
-  'LEANOS/19 CANARY subject=2 observed=0 expected=0 old=165 denied=1 result=PASS' \
-  'LEANOS/19 FINAL status=PASS a-exhausted=1 b-available=1 cleanup=1 scrub=1 fresh=1 stale-denied=1' >> "$expected"
+  'LEANOS/20 ENTER subject=1 address-space=1 cpl=3 budget=1 usage=0' \
+  "LEANOS/20 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=${frame_budget_physical} user-page=4095 source=generated-mapping accepted=1" \
+  'LEANOS/20 A-REJECT subject=1 reason=budgetExhausted budget=1 usage=1 object=none capability=none mapping=none state=unchanged digest=0x4201' \
+  'LEANOS/20 DISPATCH subject=2 address-space=2 source=generated-current result=PASS' \
+  'LEANOS/20 B-ALLOC subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1' \
+  'LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 checked=1' \
+  "LEANOS/20 SCRUB physical-frame=${frame_budget_physical} bytes=4096 complete=1 before-publication=1" \
+  "LEANOS/20 B-PUBLISH subject=2 object=21 handle=196609 generation=3 physical-frame=${frame_budget_physical} user-page=4095 source=generated-mapping fresh-lifetime=1" \
+  'LEANOS/20 STALE handle=65536 old-subject=1 fresh-object=21 authorized=0 reason=stale-generation' \
+  'LEANOS/20 CANARY subject=2 origin=cpl3 access=direct first=0 last=0 old=165 denied=1 result=PASS' \
+  'LEANOS/20 FINAL status=PASS a-exhausted=1 b-available=1 cleanup=1 scrub=1 fresh=1 stale-denied=1 ring3-reuse=1' >> "$expected"
 elif [[ "$scenario" == preemption ]]; then
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
