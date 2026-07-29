@@ -151,6 +151,8 @@ private def mixedEdgeId : CompositeDispatcher.MixedReplyId → String
   | .userFaultCleaned => "composite.mixed-user-fault-cleanup"
   | .fatalEntered => "composite.mixed-fatal-entry"
   | .postFatalRejected => "composite.mixed-post-fatal-reject"
+  | .pageUnmapped => "composite.mixed-page-unmapped"
+  | .unmappedPageRejected => "composite.mixed-unmapped-page-reject"
 
 /-- The hosted representation of one canonical accepted mixed edge.  State,
 command arguments, and expected reply all come from the same edge definition
@@ -529,8 +531,8 @@ def vectors : List Vector := [
   composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0] ++
   mixedVectors
 
-theorem corpus_shape : vectors.length = 330 := by decide
-/-- Oracle indices 314--329 are definitionally the complete canonical mixed
+theorem corpus_shape : vectors.length = 332 := by decide
+/-- Oracle indices 314--331 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
     vectors.drop 314 =

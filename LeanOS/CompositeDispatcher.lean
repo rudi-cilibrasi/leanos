@@ -1,4 +1,5 @@
 import LeanOS.FailStop
+import LeanOS.StaleTranslation
 
 /-!
 # Canonical bounded composite dispatcher
@@ -376,8 +377,14 @@ def mixedDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   else if tag = 0x2f01 then
     if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
     else if stateWord = 0x1701 then 0x2f1801 else 0xff06
+  else if tag = 0x3001 then
+    if arg0 != 7 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0f01 then 0x301901 else 0xff06
+  else if tag = 0x3101 then
+    if arg0 != 9 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0f01 then 0x310f01 else 0xff06
   else if tag % 256 != abiVersion then 0xff01
-  else if 0x3001 ≤ tag then 0xff02
+  else if 0x3201 ≤ tag then 0xff02
   else 0xff04
 
 /-- Allocation-free generated entry point.  It validates every scalar before
@@ -391,7 +398,7 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
       stateWord = 0x0e01 || stateWord = 0x0f01 || stateWord = 0x1001 ||
       stateWord = 0x1101 || stateWord = 0x1201 || stateWord = 0x1301 ||
       stateWord = 0x1401 || stateWord = 0x1501 || stateWord = 0x1601 ||
-      stateWord = 0x1701 || stateWord = 0x1801 then
+      stateWord = 0x1701 || stateWord = 0x1801 || stateWord = 0x1901 then
     mixedDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if stateWord != 0x0001 && stateWord != 0x0101 && stateWord != 0x0201 &&
       stateWord != 0x0301 && stateWord != 0x0401 && stateWord != 0x0501 &&
@@ -1059,6 +1066,7 @@ inductive MixedStateId where
   | userFaultCleaned
   | fatalEntered
   | postFatalRejected
+  | pageUnmapped
   deriving DecidableEq, Repr
 
 def encodeMixedState : MixedStateId → UInt64
@@ -1079,6 +1087,7 @@ def encodeMixedState : MixedStateId → UInt64
   | .userFaultCleaned => 0x1601
   | .fatalEntered => 0x1701
   | .postFatalRejected => 0x1801
+  | .pageUnmapped => 0x1901
 
 def decodeMixedState (word : UInt64) : Except DecodeError MixedStateId :=
   if word = 0x0801 then .ok .initial
@@ -1098,8 +1107,9 @@ def decodeMixedState (word : UInt64) : Except DecodeError MixedStateId :=
   else if word = 0x1601 then .ok .userFaultCleaned
   else if word = 0x1701 then .ok .fatalEntered
   else if word = 0x1801 then .ok .postFatalRejected
+  else if word = 0x1901 then .ok .pageUnmapped
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x1901 ≤ word then .error .reservedBits
+  else if 0x1a01 ≤ word then .error .reservedBits
   else .error .unknownState
 
 theorem decode_encode_mixed_state state :
@@ -1128,6 +1138,8 @@ inductive MixedCommandId where
   | cleanupUserFault
   | enterFatalKernelFault
   | attemptPostFatalSchedule
+  | acceptedSyscallUnmap
+  | rejectUnmappedPageUnmap
   deriving DecidableEq, Repr
 
 def encodeMixedCommand : MixedCommandId → CommandWords
@@ -1167,6 +1179,10 @@ def encodeMixedCommand : MixedCommandId → CommandWords
       { tag := 0x2e01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
   | .attemptPostFatalSchedule =>
       { tag := 0x2f01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .acceptedSyscallUnmap =>
+      { tag := 0x3001, arg0 := 7, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .rejectUnmappedPageUnmap =>
+      { tag := 0x3101, arg0 := 9, arg1 := 0, arg2 := 0, arg3 := 0 }
 
 def decodeMixedCommand (words : CommandWords) :
     Except DecodeError MixedCommandId :=
@@ -1189,8 +1205,12 @@ def decodeMixedCommand (words : CommandWords) :
   else if words = encodeMixedCommand .enterFatalKernelFault then .ok .enterFatalKernelFault
   else if words = encodeMixedCommand .attemptPostFatalSchedule then
     .ok .attemptPostFatalSchedule
+  else if words = encodeMixedCommand .acceptedSyscallUnmap then
+    .ok .acceptedSyscallUnmap
+  else if words = encodeMixedCommand .rejectUnmappedPageUnmap then
+    .ok .rejectUnmappedPageUnmap
   else if words.tag % 256 != abiVersion then .error .wrongVersion
-  else if 0x3001 ≤ words.tag then .error .reservedBits
+  else if 0x3201 ≤ words.tag then .error .reservedBits
   else .error .noncanonicalArguments
 
 theorem decode_encode_mixed_command command :
@@ -1230,6 +1250,10 @@ def mixedCommandOperation : MixedCommandId → AuthoritativeOperation
   | .cleanupUserFault => .ordinary (.interrupt compositeDispatcherUserFaultFrame)
   | .enterFatalKernelFault => .ordinary (.interrupt compositeDispatcherKernelFaultFrame)
   | .attemptPostFatalSchedule => .ordinary .scheduleNext
+  | .acceptedSyscallUnmap =>
+      .ordinary (.syscall { number := 1, arg0 := 7, arg1 := 0, arg2 := 0 })
+  | .rejectUnmappedPageUnmap =>
+      .ordinary (.syscall { number := 1, arg0 := 9, arg1 := 0, arg2 := 0 })
 
 def mixedNextState : MixedStateId → MixedCommandId → Option MixedStateId
   | .initial, .offerTransfer => some .transferOffered
@@ -1250,6 +1274,8 @@ def mixedNextState : MixedStateId → MixedCommandId → Option MixedStateId
   | .timerSwitched, .cleanupUserFault => some .userFaultCleaned
   | .userFaultCleaned, .enterFatalKernelFault => some .fatalEntered
   | .fatalEntered, .attemptPostFatalSchedule => some .postFatalRejected
+  | .directMapped, .acceptedSyscallUnmap => some .pageUnmapped
+  | .directMapped, .rejectUnmappedPageUnmap => some .directMapped
   | _, _ => none
 
 def mixedExpectedReply : MixedStateId → MixedCommandId → Option UInt64
@@ -1269,6 +1295,8 @@ def mixedExpectedReply : MixedStateId → MixedCommandId → Option UInt64
   | .timerSwitched, .cleanupUserFault => some 0x2d1601
   | .userFaultCleaned, .enterFatalKernelFault => some 0x2e1701
   | .fatalEntered, .attemptPostFatalSchedule => some 0x2f1801
+  | .directMapped, .acceptedSyscallUnmap => some 0x301901
+  | .directMapped, .rejectUnmappedPageUnmap => some 0x310f01
   | _, _ => none
 
 inductive MixedReplyId where
@@ -1288,6 +1316,8 @@ inductive MixedReplyId where
   | userFaultCleaned
   | fatalEntered
   | postFatalRejected
+  | pageUnmapped
+  | unmappedPageRejected
   deriving DecidableEq, Repr
 
 def encodeMixedReply : MixedReplyId → UInt64
@@ -1307,6 +1337,8 @@ def encodeMixedReply : MixedReplyId → UInt64
   | .userFaultCleaned => 0x2d1601
   | .fatalEntered => 0x2e1701
   | .postFatalRejected => 0x2f1801
+  | .pageUnmapped => 0x301901
+  | .unmappedPageRejected => 0x310f01
 
 def decodeMixedReply (word : UInt64) : Except DecodeError MixedReplyId :=
   if word = 0x200901 then .ok .transferOffered
@@ -1325,8 +1357,10 @@ def decodeMixedReply (word : UInt64) : Except DecodeError MixedReplyId :=
   else if word = 0x2d1601 then .ok .userFaultCleaned
   else if word = 0x2e1701 then .ok .fatalEntered
   else if word = 0x2f1801 then .ok .postFatalRejected
+  else if word = 0x301901 then .ok .pageUnmapped
+  else if word = 0x310f01 then .ok .unmappedPageRejected
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x300001 ≤ word then .error .reservedBits
+  else if 0x320001 ≤ word then .error .reservedBits
   else .error .unknownCommand
 
 theorem decode_encode_mixed_reply reply :
@@ -1357,6 +1391,8 @@ def mixedReplyId : MixedStateId → MixedCommandId → Option MixedReplyId
   | .timerSwitched, .cleanupUserFault => some .userFaultCleaned
   | .userFaultCleaned, .enterFatalKernelFault => some .fatalEntered
   | .fatalEntered, .attemptPostFatalSchedule => some .postFatalRejected
+  | .directMapped, .acceptedSyscallUnmap => some .pageUnmapped
+  | .directMapped, .rejectUnmappedPageUnmap => some .unmappedPageRejected
   | _, _ => none
 
 /-- The full typed meaning of each mixed reply selector.  This table is
@@ -1416,6 +1452,17 @@ def mixedReplyResult : MixedReplyId → AuthoritativeGateResult
               frame := compositeDispatcherKernelFaultFrame }
           incomingVector := 14
           incomingOrigin := .kernel }
+  | .pageUnmapped =>
+      .completed (.ordinary (.syscall .accepted))
+  | .unmappedPageRejected =>
+      .completed (.ordinary (.syscall (.rejected (.unmap .unmappedPage))))
+
+/-- Machine effects are meanings of canonical typed replies, not a second
+caller-maintained state channel.  The accepted unmap reply requires one exact
+page invalidation; every other reply in this bounded slice requests none. -/
+def mixedReplyEffect : MixedReplyId → StaleTranslation.Effect
+  | .pageUnmapped => .page 2 7
+  | _ => .none
 
 theorem mixedExpectedReply_uses_canonical_codec state command :
     mixedExpectedReply state command =
@@ -1428,6 +1475,22 @@ theorem mixed_dispatch_canonical state command :
       words.tag words.arg0 words.arg1 words.arg2 words.arg3 =
       (mixedExpectedReply state command).getD (errorWord .invalidSequence) := by
   cases state <;> cases command <;> native_decide
+
+/-- The accepted unmap effect cannot be spliced onto a stale state token or a
+different canonical command.  Its address-space/page target is consequently
+confined to the kernel-derived address space 2 and decoded page 7. -/
+theorem mixed_unmap_effect_confined state command
+    (hdispatch :
+      let words := encodeMixedCommand command
+      dispatch (encodeMixedState state)
+        words.tag words.arg0 words.arg1 words.arg2 words.arg3 =
+        encodeMixedReply .pageUnmapped) :
+    state = .directMapped ∧ command = .acceptedSyscallUnmap ∧
+      mixedReplyEffect .pageUnmapped = .page 2 7 := by
+  cases state <;> cases command
+  all_goals
+    simp [encodeMixedCommand, encodeMixedState, encodeMixedReply, dispatch,
+      mixedDispatchRaw, mixedReplyEffect] at hdispatch ⊢
 
 def mixedCanonicalCommands : List MixedCommandId :=
   [.offerTransfer, .acceptTransfer, .revokeTransferredCapability,
@@ -1454,6 +1517,8 @@ def mixedPrefix : MixedStateId → List MixedCommandId
   | .userFaultCleaned => mixedCanonicalCommands.take 14
   | .fatalEntered => mixedCanonicalCommands.take 15
   | .postFatalRejected => mixedCanonicalCommands
+  | .pageUnmapped =>
+      mixedCanonicalCommands.take 7 ++ [.acceptedSyscallUnmap]
 
 def mixedInitialState : Except DecodeError CompositeState :=
   match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
@@ -1464,6 +1529,17 @@ def mixedMaterialize (id : MixedStateId) : Except DecodeError CompositeState := 
   let initial ← mixedInitialState
   pure (runAuthoritativeOperations initial
     ((mixedPrefix id).map mixedCommandOperation))
+
+/-- Reconstruct the canonical invalidation step from the same complete
+authoritative pre-state used by the composite dispatcher.  Actor and active
+address space are kernel projections; only the page is the decoded syscall
+argument. -/
+def mixedUnmapStepAt (state : MixedStateId) (page : VirtualMapping.VirtualPage) :
+    Except DecodeError StaleTranslation.Step := do
+  let pre ← mixedMaterialize state
+  pure (StaleTranslation.step pre.resumable.translations
+    (.unmap pre.execution.core.context.currentSubject
+      pre.execution.core.context.activeAddressSpace page))
 
 structure CanonicalMixedState where
   id : MixedStateId
@@ -1615,6 +1691,12 @@ def mixedCanonicalEdges : List CanonicalMixedEdge :=
      next_exact := rfl, reply_exact := rfl },
    { state := .fatalEntered, command := .attemptPostFatalSchedule,
      next := .postFatalRejected, reply := .postFatalRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .directMapped, command := .acceptedSyscallUnmap,
+     next := .pageUnmapped, reply := .pageUnmapped,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .directMapped, command := .rejectUnmappedPageUnmap,
+     next := .directMapped, reply := .unmappedPageRejected,
      next_exact := rfl, reply_exact := rfl }]
 
 def CanonicalMixedEdge.Refines (edge : CanonicalMixedEdge) : Prop :=
@@ -1684,9 +1766,12 @@ theorem mixedLogicalStep_refines_authoritativeGate state command step
 
 theorem mixed_state_continuity state command next
     (hnext : mixedNextState state command = some next) :
-    encodeMixedState next = encodeMixedState state + 0x100 := by
+    encodeMixedState next = encodeMixedState state ∨
+      encodeMixedState next = encodeMixedState state + 0x100 ∨
+      (state = .directMapped ∧ command = .acceptedSyscallUnmap ∧
+        next = .pageUnmapped) := by
   cases state <;> cases command <;> simp [mixedNextState] at hnext
-  all_goals subst next <;> rfl
+  all_goals subst next <;> simp [encodeMixedState]
 
 /-- Finite-list refinement for the complete accepted mixed corpus.  Every
 intermediate state used by the hosted harness is the corresponding prefix of
@@ -1736,6 +1821,41 @@ theorem mixedCanonical_typed_results :
         (fun outcome => authoritativeResultCompleted outcome.result) = some false := by
   native_decide
 
+/-- Publication-order meaning for the accepted slice: the authoritative gate
+publishes exactly the state produced by the canonical TLB unmap step, and the
+typed reply exposes the required page effect only with that successor.  Thus
+the modeled PTE removal/cache invalidation precedes publication of the reply;
+the x86 instruction remains a trusted implementation boundary. -/
+theorem mixed_accepted_unmap_publication_order :
+    (mixedUnmapStepAt .directMapped 7).toOption.map
+        (fun step => (step.accepted, step.effect)) =
+      some (true, .page 2 7) ∧
+    (mixedUnmapStepAt .directMapped 7).toOption.map (·.state) =
+      (mixedOutcomeAt .directMapped .acceptedSyscallUnmap).toOption.map
+        (·.state.resumable.translations) ∧
+    (mixedOutcomeAt .directMapped .acceptedSyscallUnmap).toOption.map
+        (fun outcome => outcome.state.virtualMemory.mappings 2 7) =
+      some none := by
+  constructor
+  · native_decide
+  constructor
+  · rfl
+  · native_decide
+
+/-- A logical unmap rejection is a complete-state stutter and requests no
+machine mutation.  This is the canonical rejection-preservation witness paired
+with the accepted effect edge above. -/
+theorem mixed_rejected_unmap_inert :
+    (mixedUnmapStepAt .directMapped 9).toOption.map
+        (fun step => (step.accepted, step.effect)) =
+      some (false, .none) ∧
+    (mixedOutcomeAt .directMapped .rejectUnmappedPageUnmap).toOption.map
+        (·.state) =
+      (mixedMaterialize .directMapped).toOption := by
+  constructor
+  · native_decide
+  · rfl
+
 example : dispatch 0x0001 0x0101 1 0 0 0 = encodeReply
     { next := .subjectCreated, reply := 1 } := by native_decide
 example : dispatch 0x0101 0x0201 99 0 0 0 = encodeReply
@@ -1776,5 +1896,7 @@ example : validateQ35DMASnapshot
     0x0001060129228086 0x8001
     0x000c050029308086 0x8001 =
       DMAQuarantine.rejectReasonTag .busMasterEnabled := by native_decide
+example : dispatch 0x0f01 0x3001 7 0 0 0 = 0x301901 := by native_decide
+example : dispatch 0x0f01 0x3101 9 0 0 0 = 0x310f01 := by native_decide
 
 end LeanOS.CompositeDispatcher

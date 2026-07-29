@@ -69,10 +69,19 @@ bundle. The `LeanOS.Oracle` `StaleTranslation.scalar` block (accepted
 unmap/protect, wrong-owner rejections, release/destroy/switch effects,
 unmapped-page and post-reuse rejections, permission amplification, and a
 malformed encoding) is replayed by the hosted generated-C oracle and in every
-QEMU boot image; Lean and the generated C agree on each vector. This is
-model-backed differential evidence, not a proof that the processor flushed. The
-scalar effect encoding is deliberately upgradeable: when issues #104/#105 land a
-composite stateful dispatcher, it is replaced by sequence-level model-backed
-evidence and, if a runtime-mutable mapping window is added to the boot-page-table
-plan, a dedicated before/after/reuse QEMU boot scenario. `invlpg`/CR3 completion
-and page-walk hardware remain trusted; nothing here proves the processor flushed.
+QEMU boot image; Lean and the generated C agree on each vector.
+
+The canonical `CompositeDispatcher` now also has a bounded branch from its
+authoritatively replayed `directMapped` state. An accepted syscall unmap of page
+7 publishes reply `0x301901`, whose typed meaning is exactly
+`Effect.page 2 7`; a rejected unmap of absent page 9 stutters on the complete
+state and publishes `Effect.none`. `mixed_unmap_effect_confined` prevents the
+accepted effect from being spliced onto another canonical pre-state or command,
+and `mixed_accepted_unmap_publication_order` identifies the published
+translation state with the same `StaleTranslation.step` result. No C-owned
+mapping or cache state is introduced.
+
+This is sequence-level model-backed differential evidence, not a proof that the
+processor flushed. A runtime-mutable mapping window and a dedicated
+before/after/reuse QEMU boot scenario remain future work. `invlpg`/CR3 completion
+and page-walk hardware remain trusted.

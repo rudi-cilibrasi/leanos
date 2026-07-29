@@ -19,8 +19,8 @@
  * truncation is rejected by that caller before this scalar function is called.
  *
  * Every state and command word has ABI version 1 in bits 0..7. State bits
- * 8..15 select one of 25 canonical states and all upper bits are reserved.
- * Command tags use bits 8..15 to select one of 28 commands and all upper
+ * 8..15 select one of 26 canonical states and all upper bits are reserved.
+ * Command tags use bits 8..15 to select one of 30 commands and all upper
  * bits are reserved. Arguments not named by a command must be zero. A success
  * result uses bits 0..7 for the version, 8..15 for the next-state selector,
  * 16..23 for the typed-reply selector, and reserves bits 24..63. Error words
@@ -29,8 +29,8 @@
 #define LEANOS_COMPOSITE_ABI_VERSION UINT64_C(1)
 #define LEANOS_COMPOSITE_INPUT_WORDS 6U
 #define LEANOS_COMPOSITE_RESULT_WORDS 1U
-#define LEANOS_COMPOSITE_STATE_COUNT 25U
-#define LEANOS_COMPOSITE_COMMAND_COUNT 28U
+#define LEANOS_COMPOSITE_STATE_COUNT 26U
+#define LEANOS_COMPOSITE_COMMAND_COUNT 30U
 
 #define LEANOS_COMPOSITE_STATE_INITIAL UINT64_C(0x0001)
 #define LEANOS_COMPOSITE_STATE_SUBJECT_CREATED UINT64_C(0x0101)
@@ -58,6 +58,7 @@
 #define LEANOS_COMPOSITE_STATE_USER_FAULT_CLEANED UINT64_C(0x1601)
 #define LEANOS_COMPOSITE_STATE_MIXED_FATAL_ENTERED UINT64_C(0x1701)
 #define LEANOS_COMPOSITE_STATE_MIXED_POST_FATAL_REJECTED UINT64_C(0x1801)
+#define LEANOS_COMPOSITE_STATE_PAGE_UNMAPPED UINT64_C(0x1901)
 
 #define LEANOS_COMPOSITE_COMMAND_CREATE_SUBJECT_ONE UINT64_C(0x0101)
 #define LEANOS_COMPOSITE_COMMAND_REJECT_UNKNOWN_SYSCALL UINT64_C(0x0201)
@@ -88,6 +89,17 @@
 #define LEANOS_COMPOSITE_COMMAND_USER_FAULT_CLEANUP UINT64_C(0x2d01)
 #define LEANOS_COMPOSITE_COMMAND_ENTER_MIXED_FATAL UINT64_C(0x2e01)
 #define LEANOS_COMPOSITE_COMMAND_ATTEMPT_MIXED_POST_FATAL UINT64_C(0x2f01)
+#define LEANOS_COMPOSITE_COMMAND_ACCEPTED_SYSCALL_UNMAP UINT64_C(0x3001)
+#define LEANOS_COMPOSITE_COMMAND_REJECT_UNMAPPED_PAGE_UNMAP UINT64_C(0x3101)
+
+/*
+ * Typed reply/effect meanings for the bounded unmap branch.  PAGE_UNMAPPED
+ * authorizes exactly StaleTranslation.Effect.page(2, 7); the rejection reply
+ * is a complete-state stutter and authorizes Effect.none.  These are scalar
+ * meanings of Lean-replayed states, not mutable C shadow state.
+ */
+#define LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED UINT64_C(0x301901)
+#define LEANOS_COMPOSITE_REPLY_UNMAPPED_PAGE_REJECTED UINT64_C(0x310f01)
 
 #define LEANOS_COMPOSITE_ERROR_WRONG_VERSION UINT64_C(0xff01)
 #define LEANOS_COMPOSITE_ERROR_RESERVED_BITS UINT64_C(0xff02)

@@ -13,7 +13,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-330-vector order covers accepted calls,
+332-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -25,6 +25,11 @@ capability slot, owned memory and frame, mapping, and endpoint provenance after
 A's cleanup. The containment guest retains that exact adapter word across B's
 checked context copy, CR3 switch, and common validated return instead of
 maintaining a parallel C live/runnable/queue/context/resource projection. The
+composite corpus includes an accepted page-7 unmap whose typed reply requires
+the kernel-derived address-space-2/page-7 invalidation effect, plus an absent-page
+rejection that preserves the canonical state and requests no effect. Both are
+derived from the same authoritative replay used by the scalar dispatcher; the
+C harness stores no mapping or TLB shadow state. The
 32 entry-control records cover the canonical denial tuple, every modeled
 CPU/MSR/boot-evidence mutation, return authorization, user and kernel denial
 events, stale bindings, alternate-target/stack separation, and post-fatal
