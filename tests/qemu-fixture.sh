@@ -215,7 +215,6 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   status=$?
   set -e
   add_nmi_guard_fixture
-  add_runtime_relation_fixtures
   add_runtime_invalidation_evidence
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
@@ -243,7 +242,6 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   status=$?
   set -e
   add_nmi_guard_fixture
-  add_runtime_relation_fixtures
   add_runtime_invalidation_evidence
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"

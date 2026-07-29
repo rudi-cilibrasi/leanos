@@ -110,9 +110,17 @@ proof or a refinement theorem.
 `check-runtime-invalidation-policy.sh` checks the fixed generated state,
 command, reply, address-space and page in source and checks
 PTE-store/invalidation/publication order in final disassembly. Its focused
-negative corpus rejects a wrong page, wrong root, omitted `invlpg`, forged
-typed reply, widened mutable-root scope, and acceptance of an unknown mutable
-phase. The QEMU trace is machine evidence for
+negative corpus rejects a wrong page, wrong root, omitted `invlpg`, invalidation
+before the PTE store, publication before invalidation, forged typed reply,
+widened mutable-root scope, and acceptance of an unknown mutable phase. The
+QEMU trace is machine evidence for
 before/unmap/replacement-frame visibility and confinement, not a proof of
 processor TLB semantics. Instruction completion, page-walk hardware, compiler
 correctness, and physical TLB coherence remain trusted.
+
+The dedicated runner-negative corpus separately rejects skipped CPL3 prefill,
+wrong page/root, omitted or reordered invalidation/publication, an incidental
+CR3 reload, software-walker-only or direct-called denial, stale-access success,
+partial/reordered records, guest failure, reset, triple fault, and hang. These
+are protocol checks over controlled fixtures; the accepted QEMU row remains the
+independent machine observation.

@@ -60,6 +60,24 @@ omit_stale_relation() {
     "$1"
 }
 
+invalidation_before_store() {
+  sed -i \
+    '/static void runtime_unmap_page7_invlpg(/,/^}/ {
+      s@((volatile uint64_t \*)page_table_b)\[RUNTIME_MAPPING_PAGE\] = 0;@/* PTE store moved after invalidation. */@
+      /: "r"((uint64_t)RUNTIME_MAPPING_ADDRESS) : "memory");/a\
+    ((volatile uint64_t *)page_table_b)[RUNTIME_MAPPING_PAGE] = 0;
+    }' "$1"
+}
+
+publication_before_invalidation() {
+  sed -i \
+    '/static void runtime_unmap_page7_invlpg(/,/^}/ {
+      s@runtime_invlpg_publication = canonical_reply;@/* publication moved before invalidation. */@
+      /((volatile uint64_t \*)page_table_b)\[RUNTIME_MAPPING_PAGE\] = 0;/i\
+    runtime_invlpg_publication = canonical_reply;
+    }' "$1"
+}
+
 run_fixture wrong-page \
   'mutable-window target is not confined to page 7' wrong_page
 run_fixture wrong-root \
@@ -75,5 +93,11 @@ run_fixture accept-unknown-state \
   'unknown mutable-leaf states are not rejected' accept_unknown_state
 run_fixture omit-stale-relation \
   'mutable-leaf relation is not checked at every phase' omit_stale_relation
+run_fixture invalidation-before-store \
+  'source INVLPG order is not PTE-store, invalidate, publish' \
+  invalidation_before_store
+run_fixture publication-before-invalidation \
+  'source INVLPG order is not PTE-store, invalidate, publish' \
+  publication_before_invalidation
 
 echo "Runtime mapping invalidation negative fixtures passed"
