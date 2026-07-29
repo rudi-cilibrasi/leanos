@@ -287,6 +287,19 @@ def uniqueFrameHandles (frames : List Frame) : Bool :=
   frames.all fun frame =>
     (frames.filter (·.handle == frame.handle)).length == 1
 
+/-- Physical memory is keyed by `FrameId`, so two live lifetime records may
+not name the same physical frame even when their generations differ. -/
+def LiveFrameIdsExclusive (frames : List Frame) : Prop :=
+  ∀ first, first ∈ frames → first.live = true →
+    ∀ second, second ∈ frames → second.live = true →
+      first.handle.frame = second.handle.frame → first = second
+
+def uniqueLiveFrameIds (frames : List Frame) : Bool :=
+  frames.all fun first =>
+    frames.all fun second =>
+      !first.live || !second.live ||
+        first.handle.frame != second.handle.frame || decide (first = second)
+
 def uniqueCapabilities (capabilities : List Capability) : Bool :=
   capabilities.all fun capability =>
     (capabilities.filter fun candidate =>
@@ -325,7 +338,8 @@ def validateCore (core : Core) : Bool :=
     core.frames.all frameValid &&
     core.capabilities.all (capabilityValid core) &&
     core.mappings.all (mappingValid core) &&
-    mappingsDisjoint core.mappings
+    mappingsDisjoint core.mappings &&
+    uniqueLiveFrameIds core.frames
 
 theorem validateCore_total (core : Core) :
     validateCore core = true ∨ validateCore core = false := by
@@ -347,6 +361,18 @@ def State.Invariant (state : State) : Prop :=
 
 theorem State.invariant (state : State) : state.Invariant :=
   ⟨state.valid, state.capabilityWellFormed⟩
+
+theorem State.liveFrameIdsExclusive (state : State) :
+    LiveFrameIdsExclusive state.core.frames := by
+  have hvalid := state.valid
+  unfold validateCore at hvalid
+  simp only [Bool.and_eq_true] at hvalid
+  have hunique := hvalid.2
+  intro first hfirst hfirstLive second hsecond hsecondLive hframe
+  have hfirstAll := List.all_eq_true.mp hunique first hfirst
+  have hsecondAll := List.all_eq_true.mp hfirstAll second hsecond
+  exact of_decide_eq_true (by
+    simpa [hfirstLive, hsecondLive, hframe] using hsecondAll)
 
 def generationAvailable (next : Generation) : Bool :=
   0 < next && next < generationReserved
@@ -1038,9 +1064,8 @@ theorem no_translation_without_live_assignment
   have hfound := translation.assignmentFound
   simp [habsent] at hfound
 
-/-- A source assignment cannot translate to a frame owned by a different
-subject.  Combined with range-local reads/writes, this is the owner-isolation
-bridge used by the one-step and finite-trace confinement claims. -/
+/-- A source assignment cannot translate to a frame record owned by a
+different subject. -/
 theorem translation_owner_isolation
     (translation : Translation state request direction)
     (otherOwner : OwnerId)
@@ -1048,6 +1073,48 @@ theorem translation_owner_isolation
     translation.frame.owner ≠ otherOwner := by
   rw [translation.frameOwnerBound]
   exact Ne.symm hother
+
+/-- Since memory is keyed by physical `FrameId`, the live-frame uniqueness
+invariant upgrades record-level owner agreement to physical-memory owner
+isolation: every other live record naming the translated physical frame is
+the translated record itself. -/
+theorem translation_physical_frame_owner_isolation
+    (translation : Translation state request direction)
+    (candidate : Frame) (hcandidate : candidate ∈ state.core.frames)
+    (hlive : candidate.live = true)
+    (hsame : candidate.handle.frame = translation.frame.handle.frame) :
+    candidate.owner = translation.assignment.owner := by
+  have htranslation : translation.frame ∈ state.core.frames := by
+    exact List.mem_of_find?_eq_some (by
+      simpa [findFrame] using translation.frameFound)
+  have hequal := state.liveFrameIdsExclusive
+    translation.frame htranslation translation.frameLive
+    candidate hcandidate hlive hsame.symm
+  rw [← hequal]
+  exact translation.frameOwnerBound
+
+/-- A successful device write cannot alter a live physical frame belonging to
+another owner.  This bridge uses physical-frame-ID uniqueness before applying
+the range-local one-step integrity theorem. -/
+theorem write_integrity_other_owner_frame
+    (state : State) (request : TransferRequest) (bytes : List UInt8)
+    (after : State) (translation : Translation state request .write)
+    (hwrite : deviceWrite state request bytes = .written after translation)
+    (candidate : Frame) (hcandidate : candidate ∈ state.core.frames)
+    (hlive : candidate.live = true)
+    (hother : candidate.owner ≠ translation.assignment.owner) :
+    after.core.memory candidate.handle.frame =
+      state.core.memory candidate.handle.frame := by
+  have hphysical :
+      candidate.handle.frame ≠ translation.frame.handle.frame := by
+    intro hsame
+    exact hother
+      (translation_physical_frame_owner_isolation
+        translation candidate hcandidate hlive hsame)
+  have hintegrity := write_integrity state request bytes after translation hwrite
+  rcases hintegrity with
+    ⟨_, _, _, _, _, _, _, _, _, _, hotherFrame, _⟩
+  exact hotherFrame candidate.handle.frame hphysical
 
 theorem read_only_translation_never_writable
     (translation : Translation state request .write)
@@ -1433,36 +1500,132 @@ theorem detached_capability_authority_is_not_coherent
   intro hcoherent
   exact hmismatch hcoherent.2.1
 
-/-- IOMMU authority is admitted only while the global fatal latch is running.
-Busy and halted states reject definitionally without an IOMMU post-state. -/
-def gatedByKernel (kernel : FailStop.CompositeState) (state : State)
-    (operation : Operation) : Outcome state :=
-  match kernel.execution.mode with
-  | .running => gate state operation
-  | .handling _ => .rejected .kernelBusy
-  | .halted _ => .rejected .kernelHalted
+/-- The public control result carries the complete authoritative extension and
+its preserved invariant.  Rejection has no post-state constructor. -/
+inductive AuthoritativeOutcome (before : AuthoritativeExtension) where
+  | accepted (after : AuthoritativeExtension) (invariant : after.Invariant)
+      (reply : AcceptedReply)
+  | rejected (reason : RejectReason)
 
-theorem halted_iommu_absorbing (kernel : FailStop.CompositeState) (state : State)
-    (operation : Operation) (record : FailStop.HaltRecord)
-    (hhalted : kernel.execution.mode = .halted record) :
-    gatedByKernel kernel state operation = .rejected .kernelHalted := by
+def AuthoritativeOutcome.state {before : AuthoritativeExtension} :
+    AuthoritativeOutcome before → AuthoritativeExtension
+  | .accepted after _ _ => after
+  | .rejected _ => before
+
+theorem AuthoritativeOutcome.invariant {before : AuthoritativeExtension}
+    (hbefore : before.Invariant) :
+    (outcome : AuthoritativeOutcome before) → outcome.state.Invariant
+  | .accepted _ hinvariant _ => hinvariant
+  | .rejected _ => hbefore
+
+def AuthoritativeOutcome.isAccepted {before : AuthoritativeExtension} :
+    AuthoritativeOutcome before → Bool
+  | .accepted _ _ _ => true
+  | .rejected _ => false
+
+def AuthoritativeOutcome.reason {before : AuthoritativeExtension} :
+    AuthoritativeOutcome before → Option RejectReason
+  | .accepted _ _ _ => none
+  | .rejected reason => some reason
+
+/-- Public IOMMU control requires the invariant of the coherent authoritative
+kernel/IOMMU pair.  A locally valid but detached IOMMU projection cannot call
+this gate.  Accepted IOMMU changes commit only when coherence with the same
+kernel state is preserved atomically. -/
+noncomputable def gatedByKernel (state : AuthoritativeExtension)
+    (hstate : state.Invariant) (operation : Operation) :
+    AuthoritativeOutcome state := by
+  classical
+  exact
+    match state.kernel.execution.mode with
+    | .running =>
+        match gate state.iommu operation with
+        | .rejected reason => .rejected reason
+        | .accepted after reply =>
+            let candidate : AuthoritativeExtension :=
+              { kernel := state.kernel, iommu := after }
+            if hcoherent : candidate.Coherent then
+              .accepted candidate ⟨hstate.1, after.invariant, hcoherent⟩ reply
+            else
+              .rejected .invariantViolation
+    | .handling _ => .rejected .kernelBusy
+    | .halted _ => .rejected .kernelHalted
+
+theorem gatedByKernel_preserves_authoritative_extension
+    (state : AuthoritativeExtension) (hstate : state.Invariant)
+    (operation : Operation) :
+    (gatedByKernel state hstate operation).state.Invariant :=
+  (gatedByKernel state hstate operation).invariant hstate
+
+theorem gated_teardown_removes_all_mappings
+    (state : AuthoritativeExtension) (hstate : state.Invariant)
+    (handle : AssignmentHandle) (after : AuthoritativeExtension)
+    (hafter : after.Invariant)
+    (haccepted :
+      gatedByKernel state hstate (.teardown handle) =
+        .accepted after hafter .tornDown) :
+    after.iommu.core.mappings.all (·.assignment != handle) = true := by
+  classical
+  cases hmode : state.kernel.execution.mode with
+  | running =>
+      cases hgate : gate state.iommu (.teardown handle) with
+      | rejected reason =>
+          simp [gatedByKernel, hmode, hgate] at haccepted
+      | accepted iommuAfter reply =>
+          simp only [gatedByKernel, hmode, hgate] at haccepted
+          split at haccepted
+          · next hcoherent =>
+              cases haccepted
+              exact teardown_removes_all_mappings
+                state.iommu handle iommuAfter hgate
+          · contradiction
+  | handling entry =>
+      simp [gatedByKernel, hmode] at haccepted
+  | halted record =>
+      simp [gatedByKernel, hmode] at haccepted
+
+theorem gated_release_rejects_reachable_frame
+    (state : AuthoritativeExtension) (hstate : state.Invariant)
+    (handle : FrameHandle)
+    (hreachable : state.iommu.core.mappings.any (·.frame == handle) = true) :
+    ∃ reason,
+      gatedByKernel state hstate (.releaseFrame handle) = .rejected reason := by
+  obtain ⟨reason, hrelease⟩ :=
+    release_rejects_reachable_frame state.iommu handle hreachable
+  cases hmode : state.kernel.execution.mode with
+  | running =>
+      exact ⟨reason, by simp [gatedByKernel, hmode, hrelease]⟩
+  | handling entry =>
+      exact ⟨.kernelBusy, by simp [gatedByKernel, hmode]⟩
+  | halted record =>
+      exact ⟨.kernelHalted, by simp [gatedByKernel, hmode]⟩
+
+theorem halted_iommu_absorbing (state : AuthoritativeExtension)
+    (hstate : state.Invariant) (operation : Operation)
+    (record : FailStop.HaltRecord)
+    (hhalted : state.kernel.execution.mode = .halted record) :
+    gatedByKernel state hstate operation = .rejected .kernelHalted := by
+  classical
   simp [gatedByKernel, hhalted]
 
-def runGated (kernel : FailStop.CompositeState) : State → List Operation → State
-  | state, [] => state
-  | state, operation :: rest =>
-      runGated kernel (gatedByKernel kernel state operation).state rest
+noncomputable def runGated : (state : AuthoritativeExtension) → state.Invariant →
+    List Operation → AuthoritativeExtension
+  | state, _, [] => state
+  | state, hstate, operation :: rest =>
+      let outcome := gatedByKernel state hstate operation
+      runGated outcome.state (outcome.invariant hstate) rest
 
-theorem halted_iommu_suffix_absorbing (kernel : FailStop.CompositeState)
-    (state : State) (operations : List Operation) (record : FailStop.HaltRecord)
-    (hhalted : kernel.execution.mode = .halted record) :
-    runGated kernel state operations = state := by
+theorem halted_iommu_suffix_absorbing (state : AuthoritativeExtension)
+    (hstate : state.Invariant) (operations : List Operation)
+    (record : FailStop.HaltRecord)
+    (hhalted : state.kernel.execution.mode = .halted record) :
+    runGated state hstate operations = state := by
   induction operations generalizing state with
   | nil => rfl
   | cons operation rest ih =>
       simp only [runGated]
-      rw [halted_iommu_absorbing kernel state operation record hhalted]
-      exact ih state
+      rw [halted_iommu_absorbing state hstate operation record hhalted]
+      exact ih state hstate hhalted
 
 /-! ## Executable accepted and edge vectors -/
 

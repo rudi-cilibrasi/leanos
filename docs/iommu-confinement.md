@@ -27,7 +27,10 @@ The finite `validateCore` predicate checks registry bounds and uniqueness,
 source and domain bindings, strictly older live generations, live frame
 lifetimes, owner agreement, exclusion of kernel/page-table/allocator-metadata
 frames, canonical alignment, complete-range containment, permission
-nonemptiness, and pairwise IOVA disjointness. Each local frame-capability entry
+nonemptiness, and pairwise IOVA disjointness. Because physical memory is keyed
+by `FrameId`, it also requires every simultaneously live frame record to have
+a distinct physical frame ID; generations distinguish reused lifetimes only
+after the prior lifetime is no longer live. Each local frame-capability entry
 must resolve through the reused generation-bound `CapabilityHandle` in an
 existing well-formed `LeanOS.Capability.State`, agree on memory-object identity
 and provenance identity, resolve through the kernel-selected `frameAuthority`
@@ -70,9 +73,14 @@ removes dead-owner assignments, and retires their ordinary frames; if
 reconciliation cannot validate, the complete extension stutters. Thus
 capability copy/revoke, CPU mapping, lifecycle, scheduler, blocking, and
 deferred-cancellation operations cannot publish a kernel post-state paired
-with detached authority. `gatedByKernel` admits IOMMU control only while the
-global execution latch is running; a busy handler or fatal latch rejects
-without a post-state, and every finite post-fatal suffix is absorbed.
+with detached authority. `gatedByKernel` accepts the complete
+`AuthoritativeExtension` together with its invariant, not separately supplied
+kernel and IOMMU projections. Its accepted result carries the coherent
+complete extension and its preserved invariant; a locally valid detached
+projection cannot invoke the public grant path. The gate admits IOMMU control
+only while the global execution latch is running; a busy handler or fatal
+latch rejects without a post-state, and every finite post-fatal suffix is
+absorbed.
 
 The existing `DMAQuarantine` projection is unchanged. `QuarantineExtension`
 composes an IOMMU state with that deny-all baseline. With no assignments or
@@ -107,10 +115,14 @@ change those observations.
 Writes are state transitions. The one-step integrity theorem leaves all
 assignment, domain, mapping, frame-ownership, capability, issuer, and current
 owner projections equal and changes only the exact authorized backing range.
-The finite-trace theorem preserves every byte of any frame not touched by a
-successful authorized write. Translation's owner and special-frame proofs make
-unrelated-subject, unassigned, kernel-owned, page-table, and allocator-metadata
-frames instances of that result.
+The live-physical-frame uniqueness theorem upgrades translation's record-level
+owner equality to the `FrameId` key used by memory, and
+`write_integrity_other_owner_frame` therefore preserves every byte of a live
+frame owned by another subject. The finite-trace theorem preserves every byte
+of any physical frame not touched by a successful authorized write.
+Translation's owner, physical-ID uniqueness, and special-frame proofs make
+unrelated-subject, unassigned, kernel-owned, page-table, and
+allocator-metadata frames instances of that result.
 
 ## Assumptions, TCB, and exclusions
 
