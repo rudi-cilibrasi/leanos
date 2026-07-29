@@ -13,7 +13,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-348-vector order covers accepted calls,
+350-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -78,10 +78,10 @@ boundary, including the timer-selected subject and the faulting subject's
 retired identity. The scalar export remains allocation-free; generated C and
 its calling convention remain trusted hosted-test boundaries.
 
-The final sixteen records are the stateful invalidation-publication sequence.
-Thirteen canonical edges cover wrong-owner protection rejection, an accepted
-writable-to-read-only protection reduction, exact page-effect acknowledgement,
-accepted release and destruction,
+The final eighteen records are the stateful invalidation-publication corpus.
+Fifteen canonical edges cover an independent accepted unmap and exact
+page-effect acknowledgement, plus wrong-owner protection rejection, an accepted
+writable-to-read-only protection reduction, accepted release and destruction,
 stale-release rejection, root switch, and bounded post-retirement reuse. Both
 protection and release include a mismatched-effect stutter before the exact
 acknowledgement. The three final negatives reject a malformed effect encoding,

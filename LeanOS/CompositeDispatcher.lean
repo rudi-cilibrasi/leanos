@@ -431,8 +431,14 @@ def invalidationDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt6
   else if tag = 0x3e01 then
     if arg0 != 11 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
     else if stateWord = 0x2601 then 0x3e2701 else 0xff06
+  else if tag = 0x3f01 then
+    if arg0 != 0 || arg1 != 1 || arg2 != 7 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1a01 then 0x3f2801 else 0xff06
+  else if tag = 0x4001 then
+    if arg0 != 1 || arg1 != 1 || arg2 != 7 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2801 then 0x402901 else 0xff06
   else if tag % 256 != abiVersion then 0xff01
-  else if 0x3f01 ≤ tag then 0xff02
+  else if 0x4101 ≤ tag then 0xff02
   else 0xff04
 
 /-- Allocation-free generated entry point.  It validates every scalar before
@@ -441,7 +447,7 @@ the full authoritative gate; this executable definition intentionally contains
 no shadow kernel state. -/
 @[export leanos_composite_dispatch]
 def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
-  if 0x1a01 ≤ stateWord && stateWord ≤ 0x2701 then
+  if 0x1a01 ≤ stateWord && stateWord ≤ 0x2901 then
     if stateWord % 256 != abiVersion then 0xff01
     else invalidationDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if stateWord = 0x0801 || stateWord = 0x0901 || stateWord = 0x0a01 ||
@@ -1929,6 +1935,8 @@ inductive InvalidationStateId where
   | switchPending
   | switched
   | reused
+  | unmapPending
+  | unmappedState
   deriving DecidableEq, Repr
 
 def encodeInvalidationState : InvalidationStateId → UInt64
@@ -1946,6 +1954,8 @@ def encodeInvalidationState : InvalidationStateId → UInt64
   | .switchPending => 0x2501
   | .switched => 0x2601
   | .reused => 0x2701
+  | .unmapPending => 0x2801
+  | .unmappedState => 0x2901
 
 def decodeInvalidationState (word : UInt64) :
     Except DecodeError InvalidationStateId :=
@@ -1963,8 +1973,10 @@ def decodeInvalidationState (word : UInt64) :
   else if word = 0x2501 then .ok .switchPending
   else if word = 0x2601 then .ok .switched
   else if word = 0x2701 then .ok .reused
+  else if word = 0x2801 then .ok .unmapPending
+  else if word = 0x2901 then .ok .unmappedState
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x2801 ≤ word then .error .reservedBits
+  else if 0x2a01 ≤ word then .error .reservedBits
   else .error .unknownState
 
 theorem decode_encode_invalidation_state state :
@@ -1985,6 +1997,8 @@ inductive InvalidationCommandId where
   | prepareSwitch
   | acknowledgeSwitch
   | publishReuse
+  | prepareUnmap
+  | acknowledgeUnmap
   deriving DecidableEq, Repr
 
 def encodeInvalidationCommand : InvalidationCommandId → CommandWords
@@ -2014,6 +2028,10 @@ def encodeInvalidationCommand : InvalidationCommandId → CommandWords
       { tag := 0x3d01, arg0 := 3, arg1 := 0, arg2 := 0, arg3 := 3 }
   | .publishReuse =>
       { tag := 0x3e01, arg0 := 11, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .prepareUnmap =>
+      { tag := 0x3f01, arg0 := 0, arg1 := 1, arg2 := 7, arg3 := 0 }
+  | .acknowledgeUnmap =>
+      { tag := 0x4001, arg0 := 1, arg1 := 1, arg2 := 7, arg3 := 0 }
 
 def decodeInvalidationCommand (words : CommandWords) :
     Except DecodeError InvalidationCommandId :=
@@ -2033,8 +2051,10 @@ def decodeInvalidationCommand (words : CommandWords) :
   else if words = encodeInvalidationCommand .prepareSwitch then .ok .prepareSwitch
   else if words = encodeInvalidationCommand .acknowledgeSwitch then .ok .acknowledgeSwitch
   else if words = encodeInvalidationCommand .publishReuse then .ok .publishReuse
+  else if words = encodeInvalidationCommand .prepareUnmap then .ok .prepareUnmap
+  else if words = encodeInvalidationCommand .acknowledgeUnmap then .ok .acknowledgeUnmap
   else if words.tag % 256 != abiVersion then .error .wrongVersion
-  else if 0x3f01 ≤ words.tag then .error .reservedBits
+  else if 0x4101 ≤ words.tag then .error .reservedBits
   else .error .noncanonicalArguments
 
 theorem decode_encode_invalidation_command command :
@@ -2055,6 +2075,8 @@ inductive InvalidationReplyId where
   | switchPending
   | switched
   | reused
+  | unmapPending
+  | unmappedState
   deriving DecidableEq, Repr
 
 def encodeInvalidationReply : InvalidationReplyId → UInt64
@@ -2071,6 +2093,8 @@ def encodeInvalidationReply : InvalidationReplyId → UInt64
   | .switchPending => 0x3c2501
   | .switched => 0x3d2601
   | .reused => 0x3e2701
+  | .unmapPending => 0x3f2801
+  | .unmappedState => 0x402901
 
 def decodeInvalidationReply (word : UInt64) :
     Except DecodeError InvalidationReplyId :=
@@ -2087,8 +2111,10 @@ def decodeInvalidationReply (word : UInt64) :
   else if word = 0x3c2501 then .ok .switchPending
   else if word = 0x3d2601 then .ok .switched
   else if word = 0x3e2701 then .ok .reused
+  else if word = 0x3f2801 then .ok .unmapPending
+  else if word = 0x402901 then .ok .unmappedState
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x3f0001 ≤ word then .error .reservedBits
+  else if 0x410001 ≤ word then .error .reservedBits
   else .error .unknownCommand
 
 theorem decode_encode_invalidation_reply reply :
@@ -2110,6 +2136,8 @@ def invalidationNextState :
   | .destroyed, .prepareSwitch => some .switchPending
   | .switchPending, .acknowledgeSwitch => some .switched
   | .switched, .publishReuse => some .reused
+  | .initial, .prepareUnmap => some .unmapPending
+  | .unmapPending, .acknowledgeUnmap => some .unmappedState
   | _, _ => none
 
 def invalidationReplyId :
@@ -2127,12 +2155,15 @@ def invalidationReplyId :
   | .destroyed, .prepareSwitch => some .switchPending
   | .switchPending, .acknowledgeSwitch => some .switched
   | .switched, .publishReuse => some .reused
+  | .initial, .prepareUnmap => some .unmapPending
+  | .unmapPending, .acknowledgeUnmap => some .unmappedState
   | _, _ => none
 
 /-- Exact effect meaning of every protocol reply.  Rejections and bounded reuse
 request no machine mutation; prepare and successful acknowledgement replies
 name the same checked effect. -/
 def invalidationReplyEffect : InvalidationReplyId → StaleTranslation.Effect
+  | .unmapPending | .unmappedState => .page 1 7
   | .protectPending | .protectedState => .page 1 7
   | .releasePending | .released => .flush
   | .destroyPending | .destroyed => .space 1
@@ -2155,6 +2186,8 @@ def invalidationMaterialize :
   | .switchPending => InvalidationPublication.switchPending
   | .switched => InvalidationPublication.switched
   | .reused => InvalidationPublication.reused
+  | .unmapPending => InvalidationPublication.unmapPending
+  | .unmappedState => InvalidationPublication.unmappedState
 
 def invalidationOutcome :
     InvalidationStateId → InvalidationCommandId →
@@ -2199,6 +2232,13 @@ def invalidationOutcome :
         InvalidationPublication.switchPending { ticket := 3, effect := .flush })
   | .switched, .publishReuse =>
       some (InvalidationPublication.publishReuse InvalidationPublication.switched)
+  | .initial, .prepareUnmap =>
+      some (InvalidationPublication.prepare InvalidationPublication.initial
+        .unmap (.unmap 0 1 7))
+  | .unmapPending, .acknowledgeUnmap =>
+      some (InvalidationPublication.acknowledge
+        InvalidationPublication.unmapPending
+          { ticket := 0, effect := .page 1 7 })
   | _, _ => none
 
 theorem invalidation_dispatch_canonical state command :
@@ -2256,6 +2296,12 @@ def invalidationCanonicalEdges : List CanonicalInvalidationEdge :=
      next_exact := rfl, reply_exact := rfl },
    { state := .switched, command := .publishReuse,
      next := .reused, reply := .reused,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .initial, command := .prepareUnmap,
+     next := .unmapPending, reply := .unmapPending,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .unmapPending, command := .acknowledgeUnmap,
+     next := .unmappedState, reply := .unmappedState,
      next_exact := rfl, reply_exact := rfl }]
 
 def CanonicalInvalidationEdge.Refines (edge : CanonicalInvalidationEdge) : Prop :=

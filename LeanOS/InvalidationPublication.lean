@@ -23,6 +23,7 @@ open LeanOS
 open LeanOS.StaleTranslation
 
 inductive TransitionKind where
+  | unmap
   | protect
   | release
   | destroy
@@ -238,9 +239,16 @@ theorem reuse_publication_requires_retirement_ack state
 
 /-! ## Canonical stateful sequence
 
-This sequence covers a wrong-owner rejection, accepted protection, mismatched
+This corpus covers an independent accepted unmap prepare/acknowledge branch,
+plus a sequence with wrong-owner rejection, accepted protection, mismatched
 effect rejection, exact acknowledgement, release, stale-handle rejection,
 address-space destruction, root switch, and bounded reuse publication. -/
+
+def unmapPending : State :=
+  (prepare initial .unmap (.unmap 0 1 7)).state
+
+def unmappedState : State :=
+  (acknowledge unmapPending { ticket := 0, effect := .page 1 7 }).state
 
 def wrongOwnerRejected : State :=
   (prepare initial .protect (.protect 1 1 7 { read := true })).state
@@ -303,6 +311,28 @@ theorem canonical_effects :
     (acknowledge switchPending
         { ticket := 3, effect := .flush }).accepted = true ∧
     (publishReuse switched).accepted = true := by
+  native_decide
+
+/-- Preparing the canonical unmap cannot expose its logical successor before
+the required page invalidation is acknowledged. -/
+theorem canonical_unmap_pending_retains_published :
+    unmapPending.published = initial.published :=
+  prepare_retains_published initial .unmap (.unmap 0 1 7)
+
+/-- The exact acknowledgement removes both the authoritative mapping and
+cached translation for the accepted unmap. -/
+theorem canonical_unmap_publication_order :
+    (prepare initial .unmap (.unmap 0 1 7)).accepted = true ∧
+    (prepare initial .unmap (.unmap 0 1 7)).effect = .page 1 7 ∧
+    unmapPending.pending.isSome = true ∧
+    unmapPending.published.virtual.mappings 1 7 =
+      some { object := 10, permissions := { read := true, write := true } } ∧
+    (acknowledge unmapPending
+      { ticket := 0, effect := .page 1 7 }).accepted = true ∧
+    unmappedState.pending.isNone = true ∧
+    unmappedState.published.virtual.mappings 1 7 = none ∧
+    TLB.lookup unmappedState.published.entries
+      { addressSpace := 1, page := 7 } StaleTranslation.ctx = none := by
   native_decide
 
 /-- The release and root-switch stages both require `.flush`, but the release
