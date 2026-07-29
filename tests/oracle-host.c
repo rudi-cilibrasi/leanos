@@ -62,6 +62,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_direct_port_io_demo);
     REGISTER_BOUNDARY(leanos_stale_translation_demo);
     REGISTER_BOUNDARY(leanos_frame_budget_mapping_page);
+    REGISTER_BOUNDARY(leanos_frame_budget_invalidation_effect);
     REGISTER_BOUNDARY(leanos_composite_dispatch);
     REGISTER_BOUNDARY(leanos_validate_q35_dma_snapshot);
 
@@ -90,6 +91,23 @@ int main(void) {
             LEANOS_COMPOSITE_STATE_BUDGET_INITIAL,
             LEANOS_COMPOSITE_COMMAND_BUDGET_PUBLISH_FRESH_B) != UINT64_MAX) {
         fputs("generated frame-budget mapping policy drifted\n", stderr);
+        return 1;
+    }
+    if (leanos_frame_budget_invalidation_effect(
+            LEANOS_COMPOSITE_STATE_BUDGET_B_ALLOCATED,
+            LEANOS_COMPOSITE_COMMAND_BUDGET_TERMINATE_A) !=
+            LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN ||
+        leanos_frame_budget_invalidation_effect(
+            LEANOS_COMPOSITE_STATE_BUDGET_A_ALLOCATED,
+            LEANOS_COMPOSITE_COMMAND_BUDGET_RELEASE_A) !=
+            LEANOS_FRAME_BUDGET_RELEASE_FLUSH_TOKEN ||
+        leanos_frame_budget_invalidation_effect(
+            LEANOS_COMPOSITE_STATE_BUDGET_B_ALLOCATED,
+            LEANOS_COMPOSITE_COMMAND_BUDGET_RELEASE_A) != 0 ||
+        leanos_frame_budget_invalidation_effect(
+            LEANOS_COMPOSITE_STATE_BUDGET_A_ALLOCATED,
+            LEANOS_COMPOSITE_COMMAND_BUDGET_TERMINATE_A) != 0) {
+        fputs("generated frame-budget invalidation policy drifted\n", stderr);
         return 1;
     }
     if (leanos_validate_q35_dma_snapshot(

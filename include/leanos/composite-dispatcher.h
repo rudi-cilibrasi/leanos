@@ -159,6 +159,10 @@
 #define LEANOS_COMPOSITE_REPLY_PAGE_PROTECTED UINT64_C(0x452e01)
 #define LEANOS_COMPOSITE_REPLY_PROTECT_AMPLIFICATION_REJECTED UINT64_C(0x462e01)
 
+/* Exact full-state/command authorizations for the two frame-retiring edges. */
+#define LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN UINT64_C(0xfb00444401)
+#define LEANOS_FRAME_BUDGET_RELEASE_FLUSH_TOKEN UINT64_C(0xfb00484801)
+
 /*
  * The invalidation publication sequence retains the published pre-state while
  * an effect is pending. Prepare replies name the checked page/space/flush
@@ -216,6 +220,11 @@ uint64_t leanos_composite_dispatch(
 
 /* Generated policy query for the issue-112 machine publication leaf. */
 uint64_t leanos_frame_budget_mapping_page(
+    uint64_t state,
+    uint64_t command);
+
+/* Generated full-flush authorization; zero denies every noncanonical pair. */
+uint64_t leanos_frame_budget_invalidation_effect(
     uint64_t state,
     uint64_t command);
 

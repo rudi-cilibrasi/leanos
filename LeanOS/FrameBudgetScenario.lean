@@ -235,6 +235,36 @@ def encodeCommand : Command → UInt64
   | .repeatReleaseA => 0x4901
   | .completeReleased => 0x4a01
 
+/-- A generated retirement authorization binds the full canonical pre-state
+and command to the machine effect that must complete before the logical
+successor, released capacity, or reclaimed frame may be published.  The two
+tokens are deliberately distinct even though both transitions require the
+reviewed no-PCID full flush. -/
+def terminateFlushToken : UInt64 := 0xfb00444401
+def releaseFlushToken : UInt64 := 0xfb00484801
+
+inductive RetirementEffect where
+  | none
+  | flush
+  deriving DecidableEq, Repr
+
+def retirementEffect : StateId → Command → RetirementEffect
+  | .bAllocated, .terminateA => .flush
+  | .aAllocated, .releaseA => .flush
+  | _, _ => .none
+
+/-- Allocation-free generated effect query consumed by the frame-budget
+machine path.  Every stale, cross-trace, or malformed pair returns zero and
+therefore cannot authorize a page-table mutation or frame publication. -/
+@[export leanos_frame_budget_invalidation_effect]
+def machineInvalidationEffect (stateWord commandWord : UInt64) : UInt64 :=
+  if stateWord = 0x4401 && commandWord = 0x4401 then
+    terminateFlushToken
+  else if stateWord = 0x4101 && commandWord = 0x4801 then
+    releaseFlushToken
+  else
+    0
+
 def encodeReply : Reply → UInt64
   | .allocatedA => 0x40
   | .budgetExhaustedUnchanged => 0x41
@@ -454,6 +484,34 @@ theorem machine_mapping_is_authoritative_and_reuses_frame :
       machineMappingPage (encodeState .aTerminated)
           (encodeCommand .publishFreshB) = machineUserPage := by
   exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Termination and explicit release are the two authoritative frame-retiring
+edges.  Both require a full-cache effect, while their transition-bound tokens
+cannot be replayed for the other edge. -/
+theorem retirement_effects_are_exact_and_trace_bound :
+    retirementEffect .bAllocated .terminateA = .flush ∧
+      retirementEffect .aAllocated .releaseA = .flush ∧
+      machineInvalidationEffect (encodeState .bAllocated)
+          (encodeCommand .terminateA) = terminateFlushToken ∧
+      machineInvalidationEffect (encodeState .aAllocated)
+          (encodeCommand .releaseA) = releaseFlushToken ∧
+      machineInvalidationEffect (encodeState .bAllocated)
+          (encodeCommand .releaseA) = 0 ∧
+      machineInvalidationEffect (encodeState .aAllocated)
+          (encodeCommand .terminateA) = 0 := by
+  native_decide
+
+/-- Fresh object 21 and its generation-three handle are reachable only after
+the exact termination edge whose generated token requires a full flush. -/
+theorem fresh_publication_follows_authoritative_termination_flush :
+    step (materialize .bAllocated) .terminateA =
+        some { state := materialize .aTerminated, reply := .terminatedA } ∧
+      retirementEffect .bAllocated .terminateA = .flush ∧
+      machineInvalidationEffect (encodeState .bAllocated)
+          (encodeCommand .terminateA) = terminateFlushToken ∧
+      (materialize .bFresh).userMapping =
+        some (1, 21, { slot := 1, identity := 3 }, 100, machineUserPage) := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
 
 /-- The reclaimed physical frame is scrubbed in its entirety before object 21
 and its fresh capability generation become observable. -/

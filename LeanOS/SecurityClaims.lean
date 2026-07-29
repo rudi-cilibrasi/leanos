@@ -4,6 +4,7 @@ import LeanOS.KernelTransition
 import LeanOS.Capability
 import LeanOS.FrameAllocator
 import LeanOS.FrameBudget
+import LeanOS.FrameBudgetScenario
 import LeanOS.X86PageTable
 import LeanOS.Syscall
 import LeanOS.FailStop
@@ -2773,12 +2774,26 @@ theorem authoritative_retirement_and_root_switch_flush :
         FailStop.RuntimeWellFormed
             (FailStop.gate state (.resumePreempt frame registers)).state ∧
           (FailStop.gate state
-            (.resumePreempt frame registers)).state.resumable.translations.entries = []) := by
+            (.resumePreempt frame registers)).state.resumable.translations.entries = []) ∧
+    FrameBudgetScenario.retirementEffect .bAllocated .terminateA = .flush ∧
+    FrameBudgetScenario.retirementEffect .aAllocated .releaseA = .flush ∧
+    FrameBudgetScenario.machineInvalidationEffect
+        (FrameBudgetScenario.encodeState .bAllocated)
+        (FrameBudgetScenario.encodeCommand .terminateA) =
+      FrameBudgetScenario.terminateFlushToken ∧
+    FrameBudgetScenario.machineInvalidationEffect
+        (FrameBudgetScenario.encodeState .aAllocated)
+        (FrameBudgetScenario.encodeCommand .releaseA) =
+      FrameBudgetScenario.releaseFlushToken := by
   exact ⟨fun state subject hstate hmode haccepted =>
       let h := FailStop.gate_terminateSubject_accepted_flushes_translations
         state subject hstate hmode haccepted
       ⟨h.1, h.2.1⟩,
-    FailStop.gate_resumePreempt_accepted_flushes_translations⟩
+    FailStop.gate_resumePreempt_accepted_flushes_translations,
+    FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.1,
+    FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.2.1,
+    FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.2.2.1,
+    FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.2.2.2.1⟩
 
 /-- SC-USER-FAULT-SHARED-CONTAINMENT: over one shared two-subject pre-state the
 real CPL3 divide-error, breakpoint, page-fault, and denied-port entries drive a

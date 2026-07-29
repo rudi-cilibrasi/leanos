@@ -39,6 +39,11 @@ dead, and preserves both object/subject issued histories. Repeated termination
 is state-preserving. A reused frame still enters a fresh never-reused object
 lifetime; publication must continue through the existing scrub-before-use
 boundary. This model does not bypass virtual-mapping or TLB lifetime checks.
+The generated scenario gives the exact accepted termination and release edges
+distinct full-state tokens with typed `RetirementEffect.flush` meaning. Every other
+state/command pair returns zero. The machine path may publish released capacity
+or scrub/reuse the frame only after the corresponding no-PCID full-cache action
+completes.
 
 Capability delegation neither transfers nor duplicates charge. A delegated
 holder can exercise attenuated authority, but usage remains assigned to the
@@ -109,10 +114,12 @@ frame, records that it has no prior publication, and rejects any attempt to
 publish a live boot or scenario frame twice. After A's accepted allocation, the
 bridge scrubs and maps the scenario frame at the generated page and A writes
 `0xa5` to its first and last bytes directly in CPL3. Accepted termination
-removes A's leaf and retires that publication. The bridge then scrubs all 4096
-bytes through the physical identity, invokes the generated fresh-publication
-edge, and maps the same retired frame for B at the generated page. B directly
-reads both edge bytes in CPL3 and reports zero; the old generation is rejected.
+removes A's leaf, crosses a compiler barrier, reloads and reads back the active
+no-PCID B root, acknowledges the generated termination-flush token, and only
+then retires that publication. The bridge then scrubs all 4096 bytes through
+the physical identity, invokes the generated fresh-publication edge, and maps
+the same retired frame for B at the generated page. B directly reads both edge
+bytes in CPL3 and reports zero; the old generation is rejected.
 
 The fixed model partitions frames and does not model cross-subject commitment
 reassignment. Consequently the correspondence between model frame 100 and the

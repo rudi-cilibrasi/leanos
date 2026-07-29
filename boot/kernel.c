@@ -318,12 +318,13 @@ static unsigned copy_step;
    physical-frame result and the generated publication page. Quota, usage,
    allocation, identity, mapping, and cleanup policy remain in Lean. */
 static uint64_t frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_INITIAL;
+static volatile uint64_t frame_budget_retirement_completion;
 /* The boot object remains published on its own frame.  The scenario uses the
    next independently decoded eligible frame and tracks its one live
    publication across A's retirement and B's fresh lifetime. */
 static uint64_t frame_budget_boot_published_frame = UINT64_MAX;
 static uint64_t frame_budget_physical_frame = UINT64_MAX;
-static unsigned frame_budget_publication_live;
+static volatile unsigned frame_budget_publication_live;
 static uint64_t frame_budget_user_page = UINT64_MAX;
 #endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
@@ -2292,15 +2293,39 @@ static void frame_budget_publish_mapping(
     __asm__ volatile ("invlpg (%0)" : : "r"(page * PAGE_BYTES) : "memory");
 }
 
+/* Retire A's authoritative mapping only under the generated termination
+   token.  Because A is inactive while B performs cleanup, a reload of the
+   current no-PCID B root supplies the reviewed full non-global flush.  The
+   completion token and released-publication bit are written only afterward. */
+__attribute__((noinline, used))
 static void frame_budget_retire_mapping(
-        uint64_t *page_table, uint64_t page, uint64_t physical_frame) {
+        uint64_t *page_table, uint64_t page, uint64_t physical_frame,
+        uint64_t canonical_reply, uint64_t effect_token) {
+    uint64_t cr3;
+    uint64_t cr4;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
     if (!frame_budget_publication_live || page >= BOOT_LEAF_COUNT ||
+        page_table != page_table_a ||
+        canonical_reply != UINT64_C(0x444501) ||
+        effect_token != LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN ||
+        frame_budget_retirement_completion != 0 ||
+        (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b ||
+        (cr4 & (UINT64_C(1) << 17)) != 0 ||
         (page_table[page] & ~(PTE_ACCESSED | PTE_DIRTY)) !=
         frame_budget_leaf(page, physical_frame))
         fail("frame-budget-retire-wrong-mapping");
-    page_table[page] = 0;
-    frame_budget_publication_live = 0;
+    ((volatile uint64_t *)page_table)[page] = 0;
     __asm__ volatile ("" ::: "memory");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b ||
+        page_table[page] != 0)
+        fail("frame-budget-retire-flush");
+    frame_budget_retirement_completion = effect_token;
+    __asm__ volatile ("" ::: "memory");
+    frame_budget_publication_live = 0;
 }
 #endif
 
@@ -2379,17 +2404,27 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if (number == 24 && current_subject == 2) {
             if (arg0 != UINT64_C(0x10000))
                 fail("frame-budget-stale-handle-word");
+            uint64_t effect_token = leanos_frame_budget_invalidation_effect(
+                frame_budget_state,
+                LEANOS_COMPOSITE_COMMAND_BUDGET_TERMINATE_A);
             uint64_t got = leanos_composite_dispatch(frame_budget_state,
                 LEANOS_COMPOSITE_COMMAND_BUDGET_TERMINATE_A, 0, 0, 0, 0);
-            if (got != UINT64_C(0x444501))
+            if (got != UINT64_C(0x444501) ||
+                effect_token != LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN)
                 fail("frame-budget-cleanup");
-            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_A_TERMINATED;
             frame_budget_retire_mapping(page_table_a, frame_budget_user_page,
-                frame_budget_physical_frame);
-            serial_puts("LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 checked=1\n");
+                frame_budget_physical_frame, got, effect_token);
+            if (frame_budget_retirement_completion != effect_token ||
+                frame_budget_publication_live)
+                fail("frame-budget-retirement-publication");
+            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_A_TERMINATED;
+            serial_puts("LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 effect=flush invalidation=cr3 order=store,cr3,ack,publish checked=1\n");
 
             volatile uint8_t *reclaimed =
                 (volatile uint8_t *)(frame_budget_physical_frame * PAGE_BYTES);
+            if (frame_budget_retirement_completion !=
+                LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN)
+                fail("frame-budget-scrub-before-invalidation");
             for (unsigned i = 0; i < PAGE_BYTES; ++i)
                 reclaimed[i] = 0;
             for (unsigned i = 0; i < PAGE_BYTES; ++i)
@@ -2404,6 +2439,9 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                 LEANOS_COMPOSITE_COMMAND_BUDGET_PUBLISH_FRESH_B, 21, 1, 0, 0);
             if (got != UINT64_C(0x454601))
                 fail("frame-budget-fresh-publication");
+            if (frame_budget_retirement_completion !=
+                LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN)
+                fail("frame-budget-publish-before-invalidation");
             frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_B_FRESH;
             uint64_t fresh_page = leanos_frame_budget_mapping_page(prestate,
                 LEANOS_COMPOSITE_COMMAND_BUDGET_PUBLISH_FRESH_B);

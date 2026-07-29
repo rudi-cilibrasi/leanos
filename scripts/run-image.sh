@@ -291,7 +291,7 @@ printf '%s\n' \
   'LEANOS/20 DISPATCH subject=2 address-space=2 source=generated-current result=PASS' \
   'LEANOS/20 B-CONTEXT subject=2 source=kernel-owned-fresh registers=15 canaries=fresh result=PASS' \
   'LEANOS/20 B-ALLOC subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1' \
-  'LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 checked=1' \
+  'LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 effect=flush invalidation=cr3 order=store,cr3,ack,publish checked=1' \
   "LEANOS/20 SCRUB physical-frame=${frame_budget_physical} bytes=4096 complete=1 before-publication=1" \
   "LEANOS/20 B-PUBLISH subject=2 object=21 handle=196609 generation=3 physical-frame=${frame_budget_physical} user-page=4095 source=generated-mapping fresh-lifetime=1" \
   'LEANOS/20 STALE handle=65536 old-subject=1 fresh-object=21 authorized=0 reason=stale-generation' \

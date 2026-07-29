@@ -114,6 +114,13 @@ words. `FrameBudgetScenario.step_refinement` connects every accepted edge to
 the exact admitted-budget transition, while the hosted generated-C harness
 reports the first mismatching operation and reply.
 
+The same hosted boundary exercises
+`leanos_frame_budget_invalidation_effect`. Exact canonical
+`bAllocated/terminateA` and `aAllocated/releaseA` pairs return distinct
+transition-bound tokens whose typed meaning is `RetirementEffect.flush`; cross-pair,
+stale, and malformed inputs return zero. The QEMU frame-reuse path consumes
+the termination token before retiring A's PTE or publishing released capacity.
+
 Five additional Phase 2 records invoke that same dispatcher for a canonical
 generation-bound map handle, nonblocking IPC, capability copy, blocking
 cancellation, and deferred cancellation drain. The handle word `0x10000` is

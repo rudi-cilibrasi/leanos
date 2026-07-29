@@ -90,8 +90,9 @@ Wrong-owner and stale-release operations, mismatched effects, malformed
 encodings, and wrong-state acknowledgements are inert. Only an exact
 ticket/effect pair publishes the recorded successor, and bounded reuse is
 disabled until release and destruction are both acknowledged with no pending
-effect. The final allocation is the existing finite object-11 witness, not the
-authoritative quota/reclamation path deferred to issue #112.
+effect. The final allocation is the existing finite object-11 proof witness;
+the separately modeled frame-budget path below supplies the authoritative
+quota/reclamation/scrub/fresh-handle machine scenario.
 
 The authoritative composite cleanup and root-switch paths now close the
 corresponding global cache invariant. `ResumablePreemption.cleanupSubject`
@@ -101,10 +102,14 @@ mapped through roots other than the retiring subject's root.
 cleanup preserves `FailStop.RuntimeWellFormed` and leaves every cache lookup
 absent; `gate_resumePreempt_accepted_flushes_translations` proves the same
 global invariant and empty-cache result for an accepted save/select/restore
-root switch. Folding the pending-effect protocol itself into
-`FailStop.AuthoritativeRuntimeWellFormed`, and replacing the object-11 witness
-with issue #112's quota/reclamation/scrub/fresh-handle path, remain separate
-integration work.
+root switch. The merged frame-budget path additionally binds its authoritative
+termination and explicit release edges to distinct generated tokens whose
+typed meaning is `.flush`. In the QEMU termination/reuse path, A's PTE store,
+the no-PCID CR3 flush and readback, effect completion, and released-capacity
+publication are ordered before scrub or fresh-object mapping. The protocol's
+pending state is still not a field of `FailStop.AuthoritativeRuntimeWellFormed`;
+the transition-bound generated token and concrete completion latch close this
+bounded machine path without claiming general model-to-binary refinement.
 
 Every boot image then consumes that exact generated reply in a bounded
 runtime-mutable machine window at virtual page 7. Address space B is first
@@ -140,7 +145,7 @@ replacement canary in this execution. The generated fixture proves its named
 model allocation/absence facts, while the C phase checks, compiled stores,
 `invlpg`, page walk, exception delivery, and QEMU behavior remain trusted or
 tested rather than a refinement proof. The bounded C owner/lifetime metadata
-is scenario attestation; it is not a general allocator ABI or #112's quota
+is scenario attestation; it is not a general allocator ABI or dynamic quota
 policy.
 
 Because this image carries additional CPL3 probe code, it retains its own

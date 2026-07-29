@@ -1451,6 +1451,9 @@ done
   "$build/leanos-fault-nx-execute.elf" | tee "$build/entry-policy-fixtures.log"
 ./scripts/test-runtime-invalidation-policy.sh "$build/leanos.elf" \
   | tee "$build/runtime-invalidation-policy-fixtures.log"
+./scripts/test-frame-budget-invalidation-policy.sh \
+  "$build/leanos-frame-budget.elf" \
+  | tee "$build/frame-budget-invalidation-policy-fixtures.log"
 direct_port_report="$build/direct-port-sites-report.txt"
 : > "$direct_port_report"
 direct_port_images=0
