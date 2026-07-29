@@ -7,6 +7,7 @@ limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
 fault_scenario=0
+stale_translation_scenario=0
 extended_instruction=x87
 extended_vector=7
 if [[ "$scenario" == fast-entry-syscall ]]; then
@@ -36,6 +37,10 @@ elif [[ "$scenario" == extended-state ]]; then
   default_image="build/boot/leanos-${version}-x86_64-extended-state.iso"
 elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
+elif [[ "$scenario" == stale-translation-denial ]]; then
+  stale_translation_scenario=1
+  default_image="build/boot/leanos-${version}-x86_64-fault-stale-translation.iso"
+  stale_translation_elf="build/boot/leanos-fault-stale-translation.elf"
 elif [[ "$scenario" == fault-containment ]]; then
   fault_scenario=1
   fault_probe=supervisor-read
@@ -79,14 +84,14 @@ dma_snapshot="${LEANOS_DMA_SNAPSHOT:-build/boot/dma-quarantine-snapshot-${scenar
 source_revision_file="${LEANOS_SOURCE_REVISION_FILE:-build/boot/SOURCE_REVISION}"
 high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
 fault_snapshot_artifact="${LEANOS_FAULT_SNAPSHOT_ARTIFACT:-build/boot/${scenario}-snapshot.txt}"
-fault_elf="${LEANOS_FAULT_CONTAINMENT_ELF:-build/boot/leanos-${scenario}.elf}"
+fault_elf="${LEANOS_FAULT_CONTAINMENT_ELF:-${stale_translation_elf:-build/boot/leanos-${scenario}.elf}}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 and coreutils=9.4-3ubuntu6.2" >&2; exit 1; }; done
 [[ "$limit" =~ ^[1-9][0-9]*$ ]] || { echo "error: timeout must be a positive integer" >&2; exit 1; }
 [[ "$memory_mib" =~ ^(64|128)$ ]] || { echo "error: memory must be one of the checked configurations: 64 or 128 MiB" >&2; exit 1; }
 reported_top_mib=$((memory_mib - 1))
 [[ -f "$image" ]] || { echo "error: image '$image' not found; run ./scripts/build-image.sh first" >&2; exit 1; }
-if (( fault_scenario )); then
+if (( fault_scenario || stale_translation_scenario )); then
   [[ -f "$fault_elf" ]] || {
     echo "error: fault final ELF '$fault_elf' not found; run ./scripts/build-image.sh first" >&2
     exit 1
@@ -97,6 +102,8 @@ if (( fault_scenario )); then
     [[ "$address" =~ ^[[:xdigit:]]+$ ]] || return 1
     printf '%u' "$((16#$address))"
   }
+fi
+if (( fault_scenario )); then
   fault_cr3="$(symbol_value page_map_level_4_a)" &&
     fault_rsp="$(symbol_value user_a_stack_top)" || {
     echo "error: required fault final-ELF symbol missing" >&2
@@ -137,6 +144,15 @@ if (( fault_scenario )); then
     fault_cause=supervisor
     fault_canary=
   fi
+elif (( stale_translation_scenario )); then
+  stale_translation_cr3="$(symbol_value page_map_level_4_b)" &&
+    stale_translation_rip="$(
+      symbol_value user_b_stale_translation_fault_instruction
+    )" &&
+    stale_translation_rsp="$(symbol_value user_b_stack_top)" || {
+    echo "error: required stale-translation final-ELF symbol missing" >&2
+    exit 1
+  }
 fi
 mkdir -p "$(dirname "$log")"; : > "$log"
 command=()
@@ -156,6 +172,8 @@ elif [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
   echo 'LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts' > "$expected"
 elif [[ "$scenario" == preemption ]]; then
   echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap' > "$expected"
+elif [[ "$scenario" == stale-translation-denial ]]; then
+  echo 'LEANOS/19 BOOT target=x86_64-q35 subjects=2 schedule=stale-translation-denial probe=cpl3-unmap-read contract=v1 controls=wp,smep,smap,pcid-off' > "$expected"
 elif (( fault_scenario )); then
   echo "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=${fault_probe} contract=v1 controls=wp,smep,smap" > "$expected"
 elif [[ "$scenario" == direct-port-serial || "$scenario" == direct-port-debug ||
@@ -259,6 +277,16 @@ printf '%s\n' \
   'LEANOS/5 SWITCH subject=1 address-space=1 cr3=switched stack=resumed contexts=separate' \
   'LEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate' \
   'LEANOS/5 FINAL status=PASS ticks=2' >> "$expected"
+elif [[ "$scenario" == stale-translation-denial ]]; then
+printf '%s\n' \
+  'LEANOS/8 PAGING root=B selected=1 result=PASS' \
+  'LEANOS/19 ENTER subject=2 address-space=2 cpl=3 mapping=page7-present-user canary=309063438' \
+  'LEANOS/19 TLB-CPL3 event=prefill subject=2 address-space=2 page=7 address=28672 access=read canary=309063438 leaf=present-user result=PASS' \
+  'LEANOS/19 TLB-CPL3 event=unmap subject=2 address-space=2 page=7 pte=absent effect=page invalidation=invlpg cr3-reload=0 order=store,invlpg,publish result=PASS' \
+  'LEANOS/14 PF-WALK page=7 expected-leaf=0 live-leaf=0 cause=supervisor denial=supervisor result=PASS' \
+  "LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=1,14,4,28672,7,0,0,1,2,2,${stale_translation_cr3},15,${stale_translation_rip},35,582,${stale_translation_rsp},27,1,0 authorization=1 route=72057594037927937 result=PASS" \
+  'LEANOS/19 TLB-CPL3 event=denial vector=14 error=4 origin=cpl3 hardware=1 direct-call=0 subject=2 address-space=2 cr2=28672 page=7 access=read protection=0 pte=absent route=contain idle=1 cr3-reload-since-unmap=0 result=PASS' \
+  'LEANOS/19 FINAL status=PASS prefill=1 accepted-unmap=1 exact-invlpg=1 stale-access=page-fault containment=1 incidental-cr3-reload=0' >> "$expected"
 else
 printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
