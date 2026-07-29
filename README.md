@@ -61,6 +61,10 @@ partial log does not pass. The executable scenarios currently include:
 
 - the default two-subject, two-address-space blocking-IPC path, from B blocking
   on an empty endpoint through A's send/wake to exact delivery back to B;
+- an independent admitted-frame-budget path in which A reaches its one-frame
+  limit without starving B, checked termination restores one unit, and an
+  allocator-selected physical frame is scrubbed and reused through a
+  generated ring-3 mapping before B receives a fresh lifetime;
 - a bounded preemption path with two PIT interrupts, separate saved contexts,
   CR3 changes, a switch from A to B, and resumption of A's original frame;
 - an independent user-fault containment path that terminates A through the
@@ -79,7 +83,7 @@ partial log does not pass. The executable scenarios currently include:
   with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-330-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+354-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
