@@ -95,7 +95,7 @@ reuse_before_scrub() {
 
 omit_new_owner_map() {
   sed -i \
-    '/((volatile uint64_t \\*)page_table_a)\\[RUNTIME_MAPPING_PAGE\\] =/,+1d' \
+    '/((volatile uint64_t [*])page_table_a)\[RUNTIME_MAPPING_PAGE\] =/,+1d' \
     "$1"
 }
 
