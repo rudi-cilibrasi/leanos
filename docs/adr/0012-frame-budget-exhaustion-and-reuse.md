@@ -18,7 +18,10 @@ The guest supplies operation numbers and the old generation-checked handle
 only. Kernel-normalized current subject and active CR3 select the charged
 subject. Object/frame identities, budgets, expected results, next owner,
 cleanup decisions, and the user virtual page are canonical generated data.
-The physical page is the frame selected by the generated Multiboot decoder.
+The boot object remains live on the first frame selected by the generated
+Multiboot decoder. The physical page used by this scenario is the next eligible
+frame selected through that decoder, initially unpublished and explicitly
+guarded against double publication until A's mapping is retired.
 
 ## Evidence and failure policy
 
@@ -28,7 +31,8 @@ ordinary runner timeout and debug-exit contract. Controlled fixtures reject a
 global-counter substitution, cross-charge, user-selected owner, exhaustion
 relabel, partial publication, double credit, leaked canary, stale authorization,
 static-buffer substitution, wrong-frame publication, a non-ring-3 canary claim,
-missing/reordered records, and forged final status.
+double publication of the live boot frame, missing/reordered records, and
+forged final status.
 
 CI preserves the corpus, per-step hosted results, generated source/header,
 budget diagnostics, image, ELF/map, compiled page-table plan, exact serial log,

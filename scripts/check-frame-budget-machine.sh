@@ -18,6 +18,10 @@ if grep -F 'frame_budget_reuse_frame' "$symbols" >/dev/null; then
   echo "error: frame-budget ELF retained static-buffer substitution" >&2
   exit 1
 fi
+strings "$elf" | grep -F 'frame-budget-double-publication' >/dev/null || {
+  echo "error: frame-budget ELF lacks the physical-frame publication guard" >&2
+  exit 1
+}
 
 objdump -d -j .user_a_text -j .user_b_text "$elf" > "$dump"
 

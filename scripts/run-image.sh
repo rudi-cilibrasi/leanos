@@ -174,6 +174,24 @@ echo 'LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
+if [[ "$scenario" == frame-budget ]]; then
+  frame_budget_boot_physical="$(
+    sed -n 's|^LEANOS/7 ALLOC frame=\([0-9][0-9]*\) .*|\1|p' "$log"
+  )"
+  frame_budget_physical="$(
+    sed -n 's|^LEANOS/20 FRAME physical-frame=\([0-9][0-9]*\) .*|\1|p' "$log"
+  )"
+  [[ "$frame_budget_boot_physical" =~ ^[0-9]+$ &&
+     "$frame_budget_physical" =~ ^[0-9]+$ ]] || {
+    echo "failure_class=serial-protocol: missing unique boot/scenario physical-frame binding" >&2
+    exit 1
+  }
+  if [[ "$frame_budget_physical" == "$frame_budget_boot_physical" ]]; then
+    echo "failure_class=serial-protocol: frame-budget scenario double-published live boot frame" >&2
+    exit 1
+  fi
+  echo "LEANOS/20 FRAME physical-frame=${frame_budget_physical} boot-published-frame=${frame_budget_boot_physical} prior-publications=0 distinct=1 source=generated-decoder result=PASS" >> "$expected"
+fi
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 echo 'LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS' >> "$expected"
 echo 'LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' >> "$expected"
@@ -243,17 +261,10 @@ printf '%s\n' \
   "LEANOS/18 ${integer_fault_upper}-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS" \
   "LEANOS/18 FINAL status=PASS faulting=terminated survivor=2 vector=${integer_fault_vector} reason=${integer_fault_kind} kernel-origin=fail-stop" >> "$expected"
 elif [[ "$scenario" == frame-budget ]]; then
-frame_budget_physical="$(
-  sed -n 's|^LEANOS/7 ALLOC frame=\([0-9][0-9]*\) .*|\1|p' "$log"
-)"
-[[ "$frame_budget_physical" =~ ^[0-9]+$ ]] || {
-  echo "error: missing unique allocator-selected frame binding" >&2
-  exit 1
-}
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
   'LEANOS/20 ENTER subject=1 address-space=1 cpl=3 budget=1 usage=0' \
-  "LEANOS/20 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=${frame_budget_physical} user-page=4095 source=generated-mapping accepted=1" \
+  "LEANOS/20 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=${frame_budget_physical} user-page=4095 source=generated-mapping prior-publications=0 accepted=1" \
   'LEANOS/20 A-REJECT subject=1 reason=budgetExhausted budget=1 usage=1 object=none capability=none mapping=none state=unchanged digest=0x4201' \
   'LEANOS/20 DISPATCH subject=2 address-space=2 source=generated-current result=PASS' \
   'LEANOS/20 B-ALLOC subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1' \

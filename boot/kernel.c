@@ -295,9 +295,12 @@ static unsigned copy_step;
    physical-frame result and the generated publication page. Quota, usage,
    allocation, identity, mapping, and cleanup policy remain in Lean. */
 static uint64_t frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_INITIAL;
-/* Physical identity selected by the generated Multiboot decoder.  This is
-   binding evidence, not an allocator, quota, lifetime, or mapping policy. */
+/* The boot object remains published on its own frame.  The scenario uses the
+   next independently decoded eligible frame and tracks its one live
+   publication across A's retirement and B's fresh lifetime. */
+static uint64_t frame_budget_boot_published_frame = UINT64_MAX;
 static uint64_t frame_budget_physical_frame = UINT64_MAX;
+static unsigned frame_budget_publication_live;
 static uint64_t frame_budget_user_page = UINT64_MAX;
 #endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
@@ -1267,7 +1270,27 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
         authority.word[15], manifest, 1);
     if (published_boot_object != selected + 1) handoff_fail("publication");
 #ifdef LEANOS_FRAME_BUDGET_SCENARIO
-    frame_budget_physical_frame = selected;
+    frame_budget_boot_published_frame = selected;
+    struct boot_decode_state frame_budget_authority = {{0}};
+    for (uint64_t candidate = selected + 1;
+         candidate < 4096 && frame_budget_physical_frame == UINT64_MAX;
+         ++candidate) {
+        struct boot_decode_state decoded =
+            decode_boot_candidate(magic, info_address, total, candidate, info);
+        uint64_t candidate_manifest = leanos_boot_manifest_candidate(
+            candidate, BOOT_MANIFEST_ARGS(info_address, total));
+        uint64_t scenario_selected = leanos_boot_select_frame(
+            4096, candidate, decoded.word[1], decoded.word[14],
+            decoded.word[15], candidate_manifest);
+        if (scenario_selected < 4096) {
+            frame_budget_physical_frame = scenario_selected;
+            frame_budget_authority = decoded;
+        }
+    }
+    if (frame_budget_physical_frame >= 4096 ||
+        frame_budget_physical_frame == frame_budget_boot_published_frame ||
+        frame_budget_authority.word[16] != frame_budget_physical_frame)
+        handoff_fail("frame-budget-unpublished-frame");
 #endif
 
     serial_puts("LEANOS/7 HANDOFF magic=valid info-bytes="); serial_u64(total);
@@ -1282,6 +1305,13 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     serial_puts("LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS\n");
     serial_puts("LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS\n");
     serial_puts("LEANOS/7 BOOTALLOC status=PASS\n");
+#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+    serial_puts("LEANOS/20 FRAME physical-frame=");
+    serial_u64(frame_budget_physical_frame);
+    serial_puts(" boot-published-frame=");
+    serial_u64(frame_budget_boot_published_frame);
+    serial_puts(" prior-publications=0 distinct=1 source=generated-decoder result=PASS\n");
+#endif
 }
 
 enum copy_policy {
@@ -1968,19 +1998,24 @@ static void frame_budget_publish_mapping(
         frame_budget_physical_frame == UINT64_MAX ||
         physical_frame != frame_budget_physical_frame)
         fail("frame-budget-wrong-physical-frame");
+    if (physical_frame == frame_budget_boot_published_frame ||
+        frame_budget_publication_live)
+        fail("frame-budget-double-publication");
     if (page_table[page] & PTE_USER)
         fail("frame-budget-mapping-occupied");
     page_table[page] = frame_budget_leaf(page, physical_frame);
+    frame_budget_publication_live = 1;
     __asm__ volatile ("invlpg (%0)" : : "r"(page * PAGE_BYTES) : "memory");
 }
 
 static void frame_budget_retire_mapping(
         uint64_t *page_table, uint64_t page, uint64_t physical_frame) {
-    if (page >= BOOT_LEAF_COUNT ||
+    if (!frame_budget_publication_live || page >= BOOT_LEAF_COUNT ||
         (page_table[page] & ~(PTE_ACCESSED | PTE_DIRTY)) !=
         frame_budget_leaf(page, physical_frame))
         fail("frame-budget-retire-wrong-mapping");
     page_table[page] = 0;
+    frame_budget_publication_live = 0;
     __asm__ volatile ("" ::: "memory");
 }
 #endif
@@ -2008,12 +2043,19 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_A_ALLOCATED;
             frame_budget_user_page = leanos_frame_budget_mapping_page(prestate,
                 LEANOS_COMPOSITE_COMMAND_BUDGET_ALLOCATE_A);
+            volatile uint8_t *fresh =
+                (volatile uint8_t *)(frame_budget_physical_frame * PAGE_BYTES);
+            for (unsigned i = 0; i < PAGE_BYTES; ++i)
+                fresh[i] = 0;
+            for (unsigned i = 0; i < PAGE_BYTES; ++i)
+                if (fresh[i] != 0)
+                    fail("frame-budget-initial-scrub");
             frame_budget_publish_mapping(page_table_a, frame_budget_user_page,
                 frame_budget_physical_frame);
             serial_puts("LEANOS/20 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=");
             serial_u64(frame_budget_physical_frame);
             serial_puts(" user-page="); serial_u64(frame_budget_user_page);
-            serial_puts(" source=generated-mapping accepted=1\n");
+            serial_puts(" source=generated-mapping prior-publications=0 accepted=1\n");
             return frame_budget_user_page * PAGE_BYTES;
         }
         if (number == 21 && current_subject == 1) {

@@ -23,6 +23,7 @@ for mode in \
     frame-budget-global-counter frame-budget-cross-charge \
     frame-budget-owner-forgery frame-budget-relabel-success \
     frame-budget-partial-publication frame-budget-double-credit \
+    frame-budget-double-publication \
     frame-budget-canary frame-budget-stale-authorized \
     frame-budget-static-buffer frame-budget-wrong-frame \
     frame-budget-non-ring3 \
