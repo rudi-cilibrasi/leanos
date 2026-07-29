@@ -152,6 +152,21 @@ int main(void) {
             composite_arg0 = UINT64_C(0xffff);
         }
 #endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_GLOBAL_COUNTER
+        if (i == ORACLE_INDEX_FRAME_BUDGET_B_PEER_ALLOCATE) {
+            composite_state = UINT64_C(0x4101);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_CROSS_CHARGE
+        if (i == ORACLE_INDEX_FRAME_BUDGET_B_PEER_ALLOCATE) {
+            composite_arg2 = UINT64_C(1);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_USER_OWNER
+        if (i == ORACLE_INDEX_FRAME_BUDGET_A_ALLOCATE) {
+            composite_arg2 = UINT64_C(2);
+        }
+#endif
         uint64_t got = v->adapter == 0
             ? leanos_boot_transition(v->words[0], v->words[1])
             : v->adapter == 1
@@ -224,6 +239,21 @@ int main(void) {
 #ifdef LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION
         if (v->adapter == 18) {
             got ^= UINT64_C(1);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_RELABEL_SUCCESS
+        if (i == ORACLE_INDEX_FRAME_BUDGET_A_AT_LIMIT) {
+            got = UINT64_C(0x404101);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_PARTIAL_PUBLICATION
+        if (i == ORACLE_INDEX_FRAME_BUDGET_A_AT_LIMIT) {
+            got ^= UINT64_C(0x100);
+        }
+#endif
+#ifdef LEANOS_FIXTURE_FRAME_BUDGET_DOUBLE_CREDIT
+        if (i == ORACLE_INDEX_FRAME_BUDGET_TERMINATE_A) {
+            got ^= UINT64_C(0x100);
         }
 #endif
         if (got != v->expected) {

@@ -1,10 +1,11 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	55
+# mandatory-count	56
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 malformed-handoff	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-malformed-handoff.iso	leanos-malformed-handoff.elf	malformed-handoff.serial.log	malformed-handoff	-	decode-rejected
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
 preemption	boot	accepted-boot	30	leanos-@VERSION@-x86_64-preemption.iso	leanos-preemption.elf	preemption.serial.log	preemption	-	-
+frame-budget	boot	accepted-boot	30	leanos-@VERSION@-x86_64-frame-budget.iso	leanos-frame-budget.elf	frame-budget.serial.log	frame-budget	-	-
 fault-containment	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-containment.iso	leanos-fault-containment.elf	fault-containment.serial.log	fault-containment	-	-
 fault-readonly-write	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-readonly-write.iso	leanos-fault-readonly-write.elf	fault-readonly-write.serial.log	fault-readonly-write	-	-
 fault-nx-execute	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-nx-execute.iso	leanos-fault-nx-execute.elf	fault-nx-execute.serial.log	fault-nx-execute	-	-

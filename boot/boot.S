@@ -1505,6 +1505,22 @@ integer_fault_restore_peer:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
+#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov $20, %rax
+    int $0x80
+    cmp $0x10000, %rax
+    jne user_copy_fail
+    mov $21, %rax
+    int $0x80
+    cmp $1, %rax
+    jne user_copy_fail
+    mov $22, %rax
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_NMI_PROBE
 1:  pause
     jmp 1b
@@ -1841,6 +1857,19 @@ page_fault_probe_class:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov $23, %rax
+    int $0x80
+    cmp $0x20000, %rax
+    jne 2f
+    mov $24, %rax
+    mov $0x10000, %rbx
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
     cmp $B_INITIAL_RAX, %rax
     jne 2f

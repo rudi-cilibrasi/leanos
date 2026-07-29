@@ -13,7 +13,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-330-vector order covers accepted calls,
+354-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -72,6 +72,18 @@ post-fatal scheduler attempt. Lean checks the exact typed result at each named
 boundary, including the timer-selected subject and the faulting subject's
 retired identity. The scalar export remains allocation-free; generated C and
 its calling convention remain trusted hosted-test boundaries.
+
+The final 24 records are the frame-budget corpus. Eleven accepted edges encode
+the complete A-allocation, state-preserving exhaustion, kernel-selected B
+handoff, peer allocation, checked A termination, fresh B publication,
+stale-handle denial, and completion trace plus the checked release branch.
+Thirteen hostile records cover
+repeated retry and cleanup, occupied-slot ordering, aggregate/global and
+malformed state tokens, caller/charge-owner forgery, stale generation,
+state replay and cross-trace splicing, unknown/reserved operations, and maximum
+words. `FrameBudgetScenario.step_refinement` connects every accepted edge to
+the exact admitted-budget transition, while the hosted generated-C harness
+reports the first mismatching operation and reply.
 
 Five additional Phase 2 records invoke that same dispatcher for a canonical
 generation-bound map handle, nonblocking IPC, capability copy, blocking

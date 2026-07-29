@@ -36,6 +36,7 @@ lake build leanos-boot-plan
 ./scripts/test-run-fast-entry-image.sh
 
 ./scripts/test-run-preemption-image.sh
+./scripts/test-run-frame-budget.sh
 
 ./scripts/test-run-fault-containment.sh
 ./scripts/test-run-fault-integrity.sh
@@ -150,6 +151,19 @@ for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlock
     exit 1
   fi
 done
+
+if lake env lean tests/negative/FrameBudgetRejectedMutation.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: frame-budget rejected-mutation fixture unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/FrameBudgetRejectedMutation.lean' "$negative_log" ||
+    ! grep -Fq 'Tactic `native_decide` evaluated that the proposition' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: frame-budget proof-integrity fixture lacked its semantic diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
 
 for fixture in FaultReasonRelabel KernelBreakpointContainment \
     DivideErrorSoftwareGate BreakpointAlternateDescriptor; do

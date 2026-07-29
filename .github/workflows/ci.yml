@@ -55,6 +55,7 @@ jobs:
         with:
           name: leanos-oracle-${{ github.sha }}
           path: |
+            build/hosted-generated-sources/oracle/FrameBudgetScenario.c
             build/hosted-generated-sources/oracle/CompositeDispatcher.c
             include/leanos/composite-dispatcher.h
             build/oracle/corpus.tsv
@@ -140,6 +141,7 @@ jobs:
             build/boot/leanos-0.1.0-x86_64.iso
             build/boot/leanos-0.1.0-x86_64-malformed-handoff.iso
             build/boot/leanos-0.1.0-x86_64-preemption.iso
+            build/boot/leanos-0.1.0-x86_64-frame-budget.iso
             build/boot/leanos-0.1.0-x86_64-fault-containment.iso
             build/boot/leanos-0.1.0-x86_64-fault-readonly-write.iso
             build/boot/leanos-0.1.0-x86_64-fault-nx-execute.iso
@@ -164,6 +166,10 @@ jobs:
             build/boot/leanos-malformed-handoff.elf
             build/boot/leanos-malformed-handoff.map
             build/boot/leanos-preemption.elf
+            build/boot/leanos-frame-budget.elf
+            build/boot/leanos-frame-budget.map
+            build/boot/boot-page-plan-frame-budget.final.h
+            build/boot/frame-budget.serial.log
             build/boot/leanos-fault-containment.elf
             build/boot/leanos-fault-readonly-write.elf
             build/boot/leanos-fault-nx-execute.elf

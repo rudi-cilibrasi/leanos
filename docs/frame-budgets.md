@@ -82,3 +82,37 @@ Dynamic admission, reassignment, overcommit, swap, concurrency/SMP, fairness,
 timing availability, production OOM policy, and the following emulator scenario
 are excluded. The existing compiler/runtime/boot/hardware TCB boundary remains
 unchanged.
+
+## Generated and QEMU vertical slice
+
+`LeanOS.FrameBudgetScenario` adds a fixed eight-edge sequence to the existing
+`CompositeDispatcher.dispatch` ABI. It composes the authoritative
+`FrameBudget.State` with the existing `FrameScrub.State`; current subject and
+active address space are kernel-selected fields, and no command carries a
+subject, budget, frame, object identity, expected result, or next owner. The sequence proves A's retry
+is the typed `budgetExhausted` result with the complete state unchanged, B's
+first allocation remains accepted, termination restores exactly A's one
+charged frame, and physical frame 100 retains A's canary through reclamation
+before B's publication scrubs every byte and installs never-reused identity 3.
+Resolving A's old identity-1 word in B's current capability space is denied as
+a stale generation. The canonical corpus includes every pre-state token, command, typed
+reply, next-state token, and hostile replay/forgery encodings.
+
+`LEANOS_BOOT_SCENARIO=frame-budget ./scripts/run-image.sh` runs the separate
+version-19 QEMU transcript. Both subjects enter CPL3 under their checked roots.
+The C bridge retains only the generated canonical state token—not quota,
+usage, allocation, identity, or cleanup counters. After generated termination
+accepts, the bridge scrubs all 4096 bytes of the same linker-owned physical
+frame, checks the first and last byte and then the complete frame, and only
+then invokes the generated fresh-publication edge. B observes zero and the old
+generation is rejected.
+
+The fixed model partitions frames and does not model cross-subject commitment
+reassignment. Consequently the correspondence between B's modeled second
+committed frame and the machine bridge's reused A frame is an explicit
+unproved binding assumption. The bounded state codec and its Lean refinement
+proofs are proved; Lean code generation, the scalar ABI, Multiboot2 capacity
+input, C/assembly allocation and CR3 bridge, scrub loop, linker placement,
+serial protocol, compiler, QEMU, and physical-page interpretation are
+trusted/tested boundaries. The machine transcript is integration evidence,
+not a binary-refinement theorem.

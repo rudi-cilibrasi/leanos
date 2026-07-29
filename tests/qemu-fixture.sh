@@ -62,6 +62,61 @@ case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
   exit 33
   ;;
 esac
+case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
+frame-budget-global-counter|frame-budget-cross-charge|frame-budget-owner-forgery|frame-budget-relabel-success|frame-budget-partial-publication|frame-budget-double-credit|frame-budget-canary|frame-budget-stale-authorized|frame-budget-missing|frame-budget-reordered|frame-budget-forged)
+  mode="${LEANOS_QEMU_FIXTURE_MODE}"
+  set +e
+  LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
+  set -e
+  case "$mode" in
+    frame-budget-global-counter) sed -i 's/peer-a-usage=1/peer-a-usage=0/' "$log" ;;
+    frame-budget-cross-charge) sed -i 's/B-ALLOC subject=2/B-ALLOC subject=1/' "$log" ;;
+    frame-budget-owner-forgery) sed -i 's/source=generated-current/source=user-word/' "$log" ;;
+    frame-budget-relabel-success) sed -i 's/reason=budgetExhausted/reason=accepted/' "$log" ;;
+    frame-budget-partial-publication) sed -i 's/object=none/object=11/' "$log" ;;
+    frame-budget-double-credit) sed -i 's/repeated-credit=0/repeated-credit=1/' "$log" ;;
+    frame-budget-canary) sed -i 's/observed=0/observed=165/' "$log" ;;
+    frame-budget-stale-authorized) sed -i 's/authorized=0/authorized=1/' "$log" ;;
+    frame-budget-missing) sed -i '/^LEANOS\/19 SCRUB /d' "$log" ;;
+    frame-budget-reordered)
+      sed -i -e 's/^LEANOS\/19 SCRUB /LEANOS\/19 __SWAP__ /' \
+        -e 's/^LEANOS\/19 B-PUBLISH /LEANOS\/19 SCRUB /' \
+        -e 's/^LEANOS\/19 __SWAP__ /LEANOS\/19 B-PUBLISH /' "$log"
+      ;;
+    frame-budget-forged)
+      sed -i 's|^LEANOS/19 FINAL .*|LEANOS/19 FINAL status=PASS a-exhausted=0 b-available=1 cleanup=1 scrub=1 fresh=1 stale-denied=1|' "$log"
+      ;;
+  esac
+  exit 33
+  ;;
+esac
+if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
+      "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == frame-budget ]]; then
+  set +e
+  LEANOS_BOOT_SCENARIO=blocking-ipc LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
+  status=$?
+  set -e
+  sed -i \
+    -e 's|LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap|LEANOS/19 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v1 budgets=a:1,b:2 controls=wp,smep,smap|' \
+    -e '/^LEANOS\/9 /d' -e '/^LEANOS\/10 /d' \
+    -e '/^LEANOS\/6 COPY /d' -e '/^LEANOS\/11 USER-FAULT /d' \
+    -e '/^LEANOS\/11 ENTRY-HIGH-WATER /d' \
+    -e '/^LEANOS\/8 PAGING root=B selected=1 result=PASS$/d' "$log"
+  cat >> "$log" <<'EOF'
+LEANOS/19 ENTER subject=1 address-space=1 cpl=3 budget=1 usage=0
+LEANOS/19 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 frame=frame-budget-reuse accepted=1
+LEANOS/19 A-REJECT subject=1 reason=budgetExhausted budget=1 usage=1 object=none capability=none mapping=none state=unchanged digest=0x4201
+LEANOS/19 DISPATCH subject=2 address-space=2 source=generated-current result=PASS
+LEANOS/19 B-ALLOC subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1
+LEANOS/19 CLEANUP subject=1 operation=terminate objects=1 capacity-restored=1 repeated-credit=0 checked=1
+LEANOS/19 SCRUB frame=frame-budget-reuse bytes=4096 first=0 last=0 complete=1 before-publication=1
+LEANOS/19 B-PUBLISH subject=2 object=21 handle=196609 generation=3 frame=frame-budget-reuse zero-before-map=1 fresh-lifetime=1
+LEANOS/19 STALE handle=65536 old-subject=1 fresh-object=21 authorized=0 reason=stale-generation
+LEANOS/19 CANARY subject=2 observed=0 expected=0 old=165 denied=1 result=PASS
+LEANOS/19 FINAL status=PASS a-exhausted=1 b-available=1 cleanup=1 scrub=1 fresh=1 stale-denied=1
+EOF
+  exit "$status"
+fi
 if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
       ( "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == fault-containment ||
         "${LEANOS_BOOT_SCENARIO:-blocking-ipc}" == fault-readonly-write ||

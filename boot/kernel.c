@@ -290,6 +290,13 @@ static uint64_t integer_fault_attestation;
 #endif
 static uint8_t copy_buffer[16];
 static unsigned copy_step;
+#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+/* Only the canonical dispatcher token is retained in C. Quota, usage,
+   allocation, identity, and cleanup policy remain in generated Lean code. */
+static uint64_t frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_INITIAL;
+static uint8_t frame_budget_reuse_frame[PAGE_BYTES]
+    __attribute__((used, aligned(PAGE_BYTES)));
+#endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
 /* Exact generated-adapter result retained across the checked peer restore.
    This is an attestation, not a second mutable scheduler/lifecycle projection. */
@@ -1947,6 +1954,100 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     if ((saved_cs & 3u) != 3u) {
         fail("not-ring3");
     }
+#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+    if (number >= 20 && number <= 24) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        uint64_t expected_cr3 = current_subject == 1
+            ? (uint64_t)page_map_level_4_a : (uint64_t)page_map_level_4_b;
+        if (cr3 != expected_cr3)
+            fail("frame-budget-active-address-space");
+        if (number == 20 && current_subject == 1) {
+            uint64_t got = leanos_composite_dispatch(frame_budget_state,
+                LEANOS_COMPOSITE_COMMAND_BUDGET_ALLOCATE_A, 10, 0, 0, 0);
+            if (got != UINT64_C(0x404101))
+                fail("frame-budget-a-allocation");
+            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_A_ALLOCATED;
+            for (unsigned i = 0; i < PAGE_BYTES; ++i)
+                frame_budget_reuse_frame[i] = 0xa5u;
+            serial_puts("LEANOS/19 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 frame=frame-budget-reuse accepted=1\n");
+            return UINT64_C(0x10000);
+        }
+        if (number == 21 && current_subject == 1) {
+            uint8_t before_first = frame_budget_reuse_frame[0];
+            uint8_t before_last = frame_budget_reuse_frame[PAGE_BYTES - 1];
+            uint64_t got = leanos_composite_dispatch(frame_budget_state,
+                LEANOS_COMPOSITE_COMMAND_BUDGET_RETRY_A, 11, 1, 0, 0);
+            if (got != UINT64_C(0x414201) ||
+                before_first != frame_budget_reuse_frame[0] ||
+                before_last != frame_budget_reuse_frame[PAGE_BYTES - 1])
+                fail("frame-budget-a-rejection-mutated");
+            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_A_EXHAUSTED;
+            serial_puts("LEANOS/19 A-REJECT subject=1 reason=budgetExhausted budget=1 usage=1 object=none capability=none mapping=none state=unchanged digest=0x4201\n");
+            return 1;
+        }
+        if (number == 22 && current_subject == 1) {
+            uint64_t got = leanos_composite_dispatch(frame_budget_state,
+                LEANOS_COMPOSITE_COMMAND_BUDGET_SELECT_B, 0, 0, 0, 0);
+            if (got != UINT64_C(0x424301))
+                fail("frame-budget-select-b");
+            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_B_SELECTED;
+            current_subject = 2;
+            serial_puts("LEANOS/19 DISPATCH subject=2 address-space=2 source=generated-current result=PASS\n");
+            return 0xfeed;
+        }
+        if (number == 23 && current_subject == 2) {
+            uint64_t got = leanos_composite_dispatch(frame_budget_state,
+                LEANOS_COMPOSITE_COMMAND_BUDGET_ALLOCATE_B, 20, 0, 0, 0);
+            if (got != UINT64_C(0x434401))
+                fail("frame-budget-b-allocation");
+            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_B_ALLOCATED;
+            serial_puts("LEANOS/19 B-ALLOC subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1\n");
+            return UINT64_C(0x20000);
+        }
+        if (number == 24 && current_subject == 2) {
+            if (arg0 != UINT64_C(0x10000))
+                fail("frame-budget-stale-handle-word");
+            uint64_t got = leanos_composite_dispatch(frame_budget_state,
+                LEANOS_COMPOSITE_COMMAND_BUDGET_TERMINATE_A, 0, 0, 0, 0);
+            if (got != UINT64_C(0x444501))
+                fail("frame-budget-cleanup");
+            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_A_TERMINATED;
+            serial_puts("LEANOS/19 CLEANUP subject=1 operation=terminate objects=1 capacity-restored=1 repeated-credit=0 checked=1\n");
+
+            for (unsigned i = 0; i < PAGE_BYTES; ++i)
+                frame_budget_reuse_frame[i] = 0;
+            for (unsigned i = 0; i < PAGE_BYTES; ++i)
+                if (frame_budget_reuse_frame[i] != 0)
+                    fail("frame-budget-incomplete-scrub");
+            serial_puts("LEANOS/19 SCRUB frame=frame-budget-reuse bytes=4096 first=0 last=0 complete=1 before-publication=1\n");
+
+            got = leanos_composite_dispatch(frame_budget_state,
+                LEANOS_COMPOSITE_COMMAND_BUDGET_PUBLISH_FRESH_B, 21, 1, 0, 0);
+            if (got != UINT64_C(0x454601))
+                fail("frame-budget-fresh-publication");
+            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_B_FRESH;
+            serial_puts("LEANOS/19 B-PUBLISH subject=2 object=21 handle=196609 generation=3 frame=frame-budget-reuse zero-before-map=1 fresh-lifetime=1\n");
+
+            got = leanos_composite_dispatch(frame_budget_state,
+                LEANOS_COMPOSITE_COMMAND_BUDGET_DENY_STALE_A, arg0, 0, 0, 0);
+            if (got != UINT64_C(0x464701))
+                fail("frame-budget-stale-denial");
+            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_STALE_DENIED;
+            serial_puts("LEANOS/19 STALE handle=65536 old-subject=1 fresh-object=21 authorized=0 reason=stale-generation\n");
+            serial_puts("LEANOS/19 CANARY subject=2 observed=0 expected=0 old=165 denied=1 result=PASS\n");
+
+            got = leanos_composite_dispatch(frame_budget_state,
+                LEANOS_COMPOSITE_COMMAND_BUDGET_COMPLETE, 0, 0, 0, 0);
+            if (got != UINT64_C(0x474801))
+                fail("frame-budget-complete");
+            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_COMPLETE;
+            serial_puts("LEANOS/19 FINAL status=PASS a-exhausted=1 b-available=1 cleanup=1 scrub=1 fresh=1 stale-denied=1\n");
+            finish(0x10);
+        }
+        fail("frame-budget-sequence");
+    }
+#endif
 #ifdef LEANOS_ENTRY_ADVERSARIAL
     if (current_subject == 2 && number == 15) {
         check_selected_root_b();
@@ -2845,6 +2946,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
 #ifdef LEANOS_NMI_PROBE
     int nmi_cpl3 = nmi_cpl3_requested(multiboot_magic, multiboot_info);
     serial_puts("LEANOS/17 BOOT target=x86_64-q35 schedule=nmi-terminal-probe controls=idt2,ist2,nmi\n");
+#elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
+    serial_puts("LEANOS/19 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v1 budgets=a:1,b:2 controls=wp,smep,smap\n");
 #elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     serial_puts(extended_state_probe_class >= 5
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off\n"
@@ -2943,6 +3046,12 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     activate_user_address_space(page_map_level_4_a);
     check_selected_root_a();
     serial_puts("LEANOS/17 NMI-READY origin=cpl3 prior=running if=1 gate=2 ist=2 subject=1 address-space=1 purpose=user-spin canaries=armed result=PASS\n");
+    enter_user(user_a_entry, user_a_stack_top);
+#elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
+    current_subject = 1;
+    activate_user_address_space(page_map_level_4_a);
+    check_selected_root_a();
+    serial_puts("LEANOS/19 ENTER subject=1 address-space=1 cpl=3 budget=1 usage=0\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_EXTENDED_STATE_SCENARIO)
     current_subject = 1;

@@ -38,6 +38,8 @@ leanos_prepare_boundary_coverage "$build" "$exports"
 ./scripts/generate-oracle.sh "$build"
 prefix="$(lake env lean --print-prefix)"
 generated=build/hosted-generated-sources/oracle
+package_companion_module=FrameBudgetScenario
+package_companion_source=".lake/build/ir/LeanOS/$package_companion_module.c"
 objects=()
 generated_sources=()
 root_modules=()
@@ -64,6 +66,7 @@ else
   }
 fi
 for module in "${root_modules[@]}"; do
+  [[ "$module" == "$package_companion_module" ]] && continue
   object_name="${module//\//_}"
   generated_source="$generated/$object_name.c"
   source="LeanOS/$module.lean"
@@ -75,6 +78,23 @@ for module in "${root_modules[@]}"; do
   fi
   generated_sources+=("$generated_source")
 done
+# CompositeDispatcher imports the package-scoped scenario module and therefore
+# names initialize_leanos_LeanOS_FrameBudgetScenario. A second direct `lean --c`
+# root has the different initialize_LeanOS_FrameBudgetScenario spelling and
+# only appeared to work when --gc-sections discarded initialization. Preserve
+# the exact package-generated companion used by Lake instead.
+[[ -f "$package_companion_source" ]] || {
+  echo "error: package companion is missing $package_companion_source" >&2
+  exit 1
+}
+package_companion="$generated/$package_companion_module.c"
+if [[ "$mode" == ordinary ]]; then
+  cp "$package_companion_source" "$package_companion"
+elif [[ ! -f "$package_companion" ]]; then
+  echo "error: ordinary replay did not preserve $package_companion" >&2
+  exit 1
+fi
+generated_sources+=("$package_companion")
 source_hashes="$generated/SHA256SUMS"
 if [[ "$mode" == ordinary ]]; then
   sha256sum "${generated_sources[@]}" >"$source_hashes"
@@ -89,6 +109,7 @@ else
   }
 fi
 for module in "${root_modules[@]}"; do
+  [[ "$module" == "$package_companion_module" ]] && continue
   object_name="${module//\//_}"
   generated_source="$generated/$object_name.c"
   "$cc_command" -std=c11 -I"$prefix/include" -I"$build" "${cflags[@]}" \
@@ -98,6 +119,12 @@ for module in "${root_modules[@]}"; do
   fi
   objects+=("$build/$object_name.o")
 done
+"$cc_command" -std=c11 -I"$prefix/include" -I"$build" "${cflags[@]}" \
+  -c "$package_companion" -o "$build/$package_companion_module.o"
+if [[ "$mode" == sanitized ]]; then
+  leanos_require_sanitized_object "$build/$package_companion_module.o"
+fi
+objects+=("$build/$package_companion_module.o")
 if [[ "$mode" == sanitized ]]; then
   # The direct-generated root files above are the exact production oracle
   # sources used by the ordinary replay. Their retained initialization
@@ -113,6 +140,7 @@ if [[ "$mode" == sanitized ]]; then
     leanos_project_module_closure "${root_modules[@]}"
   )
   for module in "${dependency_modules[@]}"; do
+    [[ "$module" == "$package_companion_module" ]] && continue
     object_name="${module//\//_}"
     dependency_source=".lake/build/ir/LeanOS/$module.c"
     [[ -f "$dependency_source" ]] || {
@@ -197,6 +225,12 @@ else
     "stale-replay:LEANOS_FIXTURE_COMPOSITE_STALE_REPLAY:field=reply"
     "forged-context:LEANOS_FIXTURE_COMPOSITE_FORGED_CONTEXT:field=reply"
     "handle-corruption:LEANOS_FIXTURE_COMPOSITE_HANDLE_CORRUPTION:field=reply"
+    "frame-budget-global-counter:LEANOS_FIXTURE_FRAME_BUDGET_GLOBAL_COUNTER:field=reply"
+    "frame-budget-cross-charge:LEANOS_FIXTURE_FRAME_BUDGET_CROSS_CHARGE:field=reply"
+    "frame-budget-user-owner:LEANOS_FIXTURE_FRAME_BUDGET_USER_OWNER:field=reply"
+    "frame-budget-relabel-success:LEANOS_FIXTURE_FRAME_BUDGET_RELABEL_SUCCESS:field=reply"
+    "frame-budget-partial-publication:LEANOS_FIXTURE_FRAME_BUDGET_PARTIAL_PUBLICATION:field=reply"
+    "frame-budget-double-credit:LEANOS_FIXTURE_FRAME_BUDGET_DOUBLE_CREDIT:field=reply"
   )
   : >"$build/negative-fixtures.tsv"
   for fixture in "${fixtures[@]}"; do
@@ -228,7 +262,9 @@ else
     printf 'schema\tleanos-oracle-manifest-v1\n'
     printf 'source_revision\t%s\n' "$(git rev-parse HEAD)"
     sha256sum \
+      LeanOS/FrameBudgetScenario.lean \
       LeanOS/CompositeDispatcher.lean \
+      "$generated/FrameBudgetScenario.c" \
       "$generated/CompositeDispatcher.c" \
       include/leanos/composite-dispatcher.h \
       "$build/corpus.tsv" \
