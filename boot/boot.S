@@ -1826,7 +1826,9 @@ integer_fault_probe_class:
    field. */
 .global page_fault_probe_class
 page_fault_probe_class:
-#ifdef LEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    .quad 5
+#elif defined(LEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH)
     .quad 4
 #elif defined(LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT)
     .quad 3
@@ -1841,7 +1843,28 @@ page_fault_probe_class:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
-#ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    /* Stale-translation probe: read the canary at the mutable mapping,
+       then request the unmap syscall.  After the kernel invalidates
+       the TLB entry and returns, re-read the same virtual address.
+       The re-read must fault because the PTE is now absent and the
+       old translation was flushed by invlpg.  */
+    mov $0x7000, %r10
+    mov (%r10), %rbx
+    cmp $0x126bef0e, %rbx
+    jne 2f
+    mov $19, %rax
+    mov %rbx, %rbx
+    mov $0x7000, %rcx
+    mov $7, %rdx
+    int $0x80
+    cmp $0x301901, %rax
+    jne 2f
+.global user_b_stale_translation_fault_instruction
+user_b_stale_translation_fault_instruction:
+    mov (%r10), %rax
+    ud2
+#elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
     cmp $B_INITIAL_RAX, %rax
     jne 2f
     cmp $B_INITIAL_RBX, %rbx

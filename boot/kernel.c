@@ -119,6 +119,9 @@ extern const uint8_t user_a_extended_state_probe[];
 #endif
 extern char user_a_stack[];
 extern char user_a_fault_instruction[], user_a_fault_recovered[];
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+extern char user_b_stale_translation_fault_instruction[];
+#endif
 extern char user_a_write_fault_instruction[], user_a_write_fault_recovered[];
 extern char user_a_write_target[];
 extern char user_a_nx_fault_instruction[], user_a_nx_fault_recovered[];
@@ -609,7 +612,7 @@ static uint64_t expected_boot_leaf(unsigned space, uint64_t page) {
 }
 
 static uint64_t runtime_mapping_leaf(uint64_t *frame) {
-    return (uint64_t)frame | PTE_PRESENT | PTE_WRITABLE | PTE_NX;
+    return (uint64_t)frame | PTE_PRESENT | PTE_WRITABLE | PTE_USER | PTE_NX;
 }
 
 /* Every leaf remains equal to the generated boot plan except the single
@@ -942,6 +945,21 @@ static void check_runtime_mapping_invalidation(void) {
     serial_puts("LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS\n");
     serial_puts("LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS\n");
 }
+
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+static void arm_cpl3_stale_translation_probe(void) {
+    runtime_mapping_frame_before[0] = RUNTIME_MAPPING_BEFORE;
+    page_table_b[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_before);
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_BEFORE;
+    require_runtime_mapping_relation("stale-translation-arm-relation");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    if (page_table_b[RUNTIME_MAPPING_PAGE] !=
+            runtime_mapping_leaf(runtime_mapping_frame_before))
+        fail("stale-translation-arm-leaf");
+}
+#endif
 
 static void check_selected_root_b(void) {
     uint64_t cr3;
@@ -2162,6 +2180,28 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     }
 #endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+    if (number == 19 && current_subject == 2 &&
+        page_fault_probe_class == 5) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        if (arg0 != RUNTIME_MAPPING_BEFORE ||
+            arg1 != RUNTIME_MAPPING_ADDRESS || arg2 != RUNTIME_MAPPING_PAGE ||
+            (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b ||
+            runtime_mapping_state != RUNTIME_MAPPING_STATE_BEFORE ||
+            (page_table_b[RUNTIME_MAPPING_PAGE] & ~(PTE_ACCESSED | PTE_DIRTY)) !=
+                runtime_mapping_leaf(runtime_mapping_frame_before))
+            fail("stale-translation-prefill-binding");
+        serial_puts("LEANOS/19 TLB-CPL3 event=prefill subject=2 address-space=2 page=7 address=28672 access=read canary=309063438 leaf=present-user result=PASS\n");
+        const uint64_t canonical_reply = leanos_composite_dispatch(
+            LEANOS_COMPOSITE_STATE_DIRECT_MAPPED,
+            LEANOS_COMPOSITE_COMMAND_ACCEPTED_SYSCALL_UNMAP,
+            RUNTIME_MAPPING_PAGE, 0, 0, 0);
+        runtime_unmap_page7_invlpg(canonical_reply);
+        if (runtime_invlpg_publication != canonical_reply)
+            fail("stale-translation-unmap-publication");
+        serial_puts("LEANOS/19 TLB-CPL3 event=unmap subject=2 address-space=2 page=7 pte=absent effect=page invalidation=invlpg cr3-reload=0 order=store,invlpg,publish result=PASS\n");
+        return canonical_reply;
+    }
     if (number == 14 && current_subject == 2) {
         check_selected_root_b();
         if (arg0 != UINT64_C(0xb2b2cafe51a7e55e) || arg1 != 0x030201 ||
@@ -2585,6 +2625,31 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
     if (transition->kind != PAGE_FAULT_TRANSITION_CONTAIN)
         fail("page-fault-containment-bypass");
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    if (page_fault_probe_class == 5) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        if (transition->result != 1 ||
+            snapshot->error != 4 ||
+            snapshot->rip !=
+                (uint64_t)user_b_stale_translation_fault_instruction ||
+            snapshot->fault_address != RUNTIME_MAPPING_ADDRESS ||
+            snapshot->fault_page != RUNTIME_MAPPING_PAGE ||
+            snapshot->access != 0 || snapshot->protection != 0 ||
+            snapshot->user != 1 || snapshot->current_subject != 2 ||
+            snapshot->active_address_space != 2 ||
+            snapshot->active_cr3 != (uint64_t)page_map_level_4_b ||
+            cr3 != (uint64_t)page_map_level_4_b ||
+            page_table_b[RUNTIME_MAPPING_PAGE] != 0 ||
+            runtime_mapping_state != RUNTIME_MAPPING_STATE_UNMAPPED ||
+            runtime_invlpg_publication !=
+                LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED)
+            fail("stale-translation-fault-binding");
+        serial_puts("LEANOS/19 TLB-CPL3 event=denial vector=14 error=4 origin=cpl3 hardware=1 direct-call=0 subject=2 address-space=2 cr2=28672 page=7 access=read protection=0 pte=absent route=contain idle=1 cr3-reload-since-unmap=0 result=PASS\n");
+        serial_puts("LEANOS/19 FINAL status=PASS prefill=1 accepted-unmap=1 exact-invlpg=1 stale-access=page-fault containment=1 incidental-cr3-reload=0\n");
+        finish(0x10);
+    }
+#endif
     const uint64_t expected_error = page_fault_probe_class == 2 ? 21u :
         page_fault_probe_class == 1 ? 7u : 5u;
     const uint64_t expected_rip = page_fault_probe_class == 2
@@ -2754,13 +2819,17 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
                    active_address_space == 2 ? page_directory_b : 0;
     uint64_t *pt = active_address_space == 1 ? page_table_a :
                    active_address_space == 2 ? page_table_b : 0;
-    const uint64_t report_agrees = !user ||
-        (root != 0 && decoded_root_matches((unsigned)active_address_space,
-                                           root, pdpt, pd, pt, 0));
-    const uint64_t expected_leaf =
+    uint64_t expected_leaf =
         user && snapshot.fault_page < BOOT_LEAF_COUNT ?
             expected_boot_leaf((unsigned)active_address_space,
                                snapshot.fault_page) : 0;
+    const uint64_t runtime_leaf_relation =
+        !user || checked_runtime_leaf((unsigned)active_address_space,
+                                      snapshot.fault_page, &expected_leaf);
+    const uint64_t report_agrees = !user ||
+        (root != 0 && runtime_leaf_relation &&
+         decoded_root_matches((unsigned)active_address_space,
+                              root, pdpt, pd, pt, 0));
     const uint64_t live_leaf =
         user && pt != 0 && snapshot.fault_page < BOOT_LEAF_COUNT ?
             pt[snapshot.fault_page] & ~(PTE_ACCESSED | PTE_DIRTY) : 0;
@@ -2806,6 +2875,16 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
               snapshot.fault_page == 0 && snapshot.error == 5 &&
               snapshot.access == 0 && snapshot.protection == 1 &&
               snapshot.rip == (uint64_t)user_a_fault_instruction
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+            : page_fault_probe_class == 5
+            ? user &&
+              snapshot.fault_address == RUNTIME_MAPPING_ADDRESS &&
+              snapshot.fault_page == RUNTIME_MAPPING_PAGE &&
+              snapshot.error == 4 && snapshot.access == 0 &&
+              snapshot.protection == 0 &&
+              snapshot.rip ==
+                  (uint64_t)user_b_stale_translation_fault_instruction
+#endif
             : 0;
     const uint64_t exact_fault_page_invalidation =
         invalidate_snapshot_fault_page(&snapshot);
@@ -2839,7 +2918,8 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
         active_address_space, active_address_space, active_address_space,
         0, 0, checked_exact_fault_page_invalidation, current_subject,
         active_address_space,
-        saved_context_owner_b, saved_context_owner_b);
+        page_fault_probe_class == 5 ? 0 : saved_context_owner_b,
+        page_fault_probe_class == 5 ? 0 : saved_context_owner_b);
     const struct page_fault_transition transition = {
         .kind = (enum page_fault_transition_kind)(route >> 56),
         .result = route & UINT64_C(0x00ffffffffffffff),
@@ -3051,7 +3131,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off\n"
         : "LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
-    serial_puts(page_fault_probe_class == 4
+    serial_puts(page_fault_probe_class == 5
+        ? "LEANOS/19 BOOT target=x86_64-q35 subjects=2 schedule=stale-translation-denial probe=cpl3-unmap-read contract=v1 controls=wp,smep,smap,pcid-off\n"
+        : page_fault_probe_class == 4
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-integrity probe=walk-mismatch contract=v1 controls=wp,smep,smap\n"
         : page_fault_probe_class == 3
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-integrity probe=reserved-bit contract=v1 controls=wp,smep,smap\n"
@@ -3164,9 +3246,21 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         " expected-vector=6\n" : " expected-vector=7\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
-    current_subject = 1;
-    activate_user_address_space(page_map_level_4_a);
-    check_selected_root_a();
+    current_subject =
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+        page_fault_probe_class == 5 ? 2 :
+#endif
+        1;
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    if (page_fault_probe_class == 5) {
+        arm_cpl3_stale_translation_probe();
+        check_selected_root_b();
+    } else
+#endif
+    {
+        activate_user_address_space(page_map_level_4_a);
+        check_selected_root_a();
+    }
 #ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
     {
         const uint64_t page =
@@ -3185,10 +3279,15 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
                           : "r"(user_a_nx_fault_instruction) : "memory");
     }
 #endif
-    serial_puts(page_fault_probe_class >= 3
+    serial_puts(page_fault_probe_class == 5
+        ? "LEANOS/19 ENTER subject=2 address-space=2 cpl=3 mapping=page7-present-user canary=309063438\n"
+        : page_fault_probe_class >= 3
         ? "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned fatal-only=1\n"
         : "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
-    enter_user(user_a_entry, user_a_stack_top);
+    if (page_fault_probe_class == 5)
+        enter_user(user_b_entry, user_b_stack_top);
+    else
+        enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
