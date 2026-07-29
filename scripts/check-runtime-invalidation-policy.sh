@@ -32,8 +32,25 @@ grep -Fq 'if (space != 2 || page != RUNTIME_MAPPING_PAGE)' \
 grep -Fq 'default:' <<<"$relation_source" &&
   grep -Fq 'return 0;' <<<"$relation_source" ||
   fail "unknown mutable-leaf states are not rejected"
-[[ "$(grep -Fc 'require_runtime_mapping_relation(' "$source_file")" -eq 8 ]] ||
+relation_checks=(
+  runtime-invlpg-relation
+  runtime-cr3-relation
+  runtime-invlpg-before-relation
+  runtime-invlpg-after-relation
+  runtime-cr3-before-relation
+  runtime-cr3-after-relation
+  runtime-window-restore-relation
+  stale-translation-arm-relation
+)
+[[ "$(grep -Fc 'require_runtime_mapping_relation("' "$source_file")" -eq \
+    "${#relation_checks[@]}" ]] ||
   fail "mutable-leaf relation is not checked at every phase"
+for relation_check in "${relation_checks[@]}"; do
+  [[ "$(grep -Fc \
+      "require_runtime_mapping_relation(\"${relation_check}\");" \
+      "$source_file")" -eq 1 ]] ||
+    fail "mutable-leaf relation is not checked at every phase"
+done
 grep -Fq 'LEANOS_COMPOSITE_STATE_DIRECT_MAPPED,' "$source_file" ||
   fail "canonical pre-state authority is missing"
 grep -Fq 'LEANOS_COMPOSITE_COMMAND_ACCEPTED_SYSCALL_UNMAP,' "$source_file" ||

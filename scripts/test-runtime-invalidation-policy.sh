@@ -54,6 +54,12 @@ accept_unknown_state() {
     "$1"
 }
 
+omit_stale_relation() {
+  sed -i \
+    '/require_runtime_mapping_relation("stale-translation-arm-relation");/d' \
+    "$1"
+}
+
 run_fixture wrong-page \
   'mutable-window target is not confined to page 7' wrong_page
 run_fixture wrong-root \
@@ -67,5 +73,7 @@ run_fixture wrong-relation-space \
   wrong_relation_space
 run_fixture accept-unknown-state \
   'unknown mutable-leaf states are not rejected' accept_unknown_state
+run_fixture omit-stale-relation \
+  'mutable-leaf relation is not checked at every phase' omit_stale_relation
 
 echo "Runtime mapping invalidation negative fixtures passed"
