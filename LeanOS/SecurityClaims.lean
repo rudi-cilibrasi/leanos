@@ -2750,6 +2750,36 @@ theorem invalidation_publication_order :
     InvalidationPublication.acknowledge_preserves_wellFormed,
     InvalidationPublication.publishReuse_preserves_wellFormed⟩
 
+/-- SC-AUTHORITATIVE-RETIREMENT-FLUSH: the authoritative composite retirement
+and root-switch paths expose the global half of the invalidation contract:
+accepted subject cleanup
+preserves the complete runtime invariant and flushes every cached translation
+before released capacity is reusable, while every accepted resumable root
+switch preserves that invariant and returns the same empty-cache model. -/
+theorem authoritative_retirement_and_root_switch_flush :
+    (∀ state subject,
+      FailStop.RuntimeWellFormed state →
+      state.execution.mode = .running →
+      (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted →
+        FailStop.RuntimeWellFormed
+            (FailStop.gate state (.terminateSubject subject)).state ∧
+          (FailStop.gate state
+            (.terminateSubject subject)).state.resumable.translations.entries = []) ∧
+    (∀ state frame registers,
+      FailStop.RuntimeWellFormed state →
+      state.execution.mode = .running →
+      (ResumablePreemption.switch state.resumable state.execution.core
+        frame registers).error = none →
+        FailStop.RuntimeWellFormed
+            (FailStop.gate state (.resumePreempt frame registers)).state ∧
+          (FailStop.gate state
+            (.resumePreempt frame registers)).state.resumable.translations.entries = []) := by
+  exact ⟨fun state subject hstate hmode haccepted =>
+      let h := FailStop.gate_terminateSubject_accepted_flushes_translations
+        state subject hstate hmode haccepted
+      ⟨h.1, h.2.1⟩,
+    FailStop.gate_resumePreempt_accepted_flushes_translations⟩
+
 /-- SC-USER-FAULT-SHARED-CONTAINMENT: over one shared two-subject pre-state the
 real CPL3 divide-error, breakpoint, page-fault, and denied-port entries drive a
 single subject-termination/peer-survival transition: each dispatches the same

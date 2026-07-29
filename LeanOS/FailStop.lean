@@ -9638,6 +9638,32 @@ theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
       publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
       installTerminatedResumable] using hportControls
 
+/-- Accepted authoritative termination is also the global release/destruction
+cache boundary.  Cleanup can retire memory visible through several roots, so
+the globally well-formed successor carries the reviewed complete flush before
+that retired capacity can be reused. -/
+theorem gate_terminateSubject_accepted_flushes_translations
+    state subject
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted) :
+    RuntimeWellFormed (gate state (.terminateSubject subject)).state ∧
+      (gate state (.terminateSubject subject)).state.resumable.translations.entries = [] ∧
+      ∀ key context,
+        TLB.lookup
+          (gate state (.terminateSubject subject)).state.resumable.translations.entries
+          key context = none := by
+  refine ⟨gate_terminateSubject_accepted_preserves_runtimeWellFormed
+    state subject hstate hmode haccepted, ?_, ?_⟩
+  · simp [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      installTerminatedResumable]
+  · intro key context
+    rw [show (gate state (.terminateSubject subject)).state.resumable.translations.entries =
+        [] by
+      simp [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+        installTerminatedResumable]]
+    simp [TLB.lookup]
+
 /-- Every public subject-termination request preserves the global invariant:
 never-issued/already-dead subjects reject atomically, while acceptance performs
 the complete lifecycle, resource, context, mailbox, and transfer cleanup. -/
@@ -10896,6 +10922,24 @@ theorem resumePreempt_operationPreservesRuntimeWellFormed frame registers :
         state frame registers hstate hmode hhalted
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.resumePreempt frame registers) hstate hmode
+
+/-- An accepted authoritative root switch preserves the global invariant and
+publishes the no-PCID full-cache action modeled by `TLB.switch`. -/
+theorem gate_resumePreempt_accepted_flushes_translations
+    state frame registers
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (ResumablePreemption.switch state.resumable
+      state.execution.core frame registers).error = none) :
+    RuntimeWellFormed (gate state (.resumePreempt frame registers)).state ∧
+      (gate state (.resumePreempt frame registers)).state.resumable.translations.entries = [] := by
+  have hpreserved :=
+    resumePreempt_operationPreservesRuntimeWellFormed frame registers state hstate
+  refine ⟨hpreserved, ?_⟩
+  have hflush :=
+    ResumablePreemption.switch_accepted_flushes_translations
+      state.resumable state.execution.core frame registers haccepted
+  simpa [gate, hmode, applyOperation, haccepted, installResumable] using hflush
 
 /-! ### Inbound interrupt preservation -/
 

@@ -93,6 +93,19 @@ disabled until release and destruction are both acknowledged with no pending
 effect. The final allocation is the existing finite object-11 witness, not the
 authoritative quota/reclamation path deferred to issue #112.
 
+The authoritative composite cleanup and root-switch paths now close the
+corresponding global cache invariant. `ResumablePreemption.cleanupSubject`
+uses a complete modeled flush because termination can release memory objects
+mapped through roots other than the retiring subject's root.
+`gate_terminateSubject_accepted_flushes_translations` proves that accepted
+cleanup preserves `FailStop.RuntimeWellFormed` and leaves every cache lookup
+absent; `gate_resumePreempt_accepted_flushes_translations` proves the same
+global invariant and empty-cache result for an accepted save/select/restore
+root switch. Folding the pending-effect protocol itself into
+`FailStop.AuthoritativeRuntimeWellFormed`, and replacing the object-11 witness
+with issue #112's quota/reclamation/scrub/fresh-handle path, remain separate
+integration work.
+
 Every boot image then consumes that exact generated reply in a bounded
 runtime-mutable machine window at virtual page 7. Address space B is first
 backed by a reviewed “before” frame. The active-root path clears B's volatile
