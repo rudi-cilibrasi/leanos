@@ -6,6 +6,7 @@ cd "$root"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 touch "$tmp/image.iso"
+printf '%040d\n' 0 > "$tmp/SOURCE_REVISION"
 ./scripts/generate-oracle.sh "$tmp/oracle" >/dev/null
 
 invoke() {
@@ -16,7 +17,9 @@ invoke() {
     LEANOS_QEMU_FIXTURE_MODE="$mode" \
     LEANOS_QEMU_TIMEOUT_SECONDS=1 \
     LEANOS_SERIAL_LOG="$tmp/${mechanism}-${mode}.serial" \
+    LEANOS_DMA_SNAPSHOT="$tmp/${mechanism}-${mode}.dma.tsv" \
     LEANOS_FAST_ENTRY_SNAPSHOT="$tmp/${mechanism}-${mode}.snapshot" \
+    LEANOS_SOURCE_REVISION_FILE="$tmp/SOURCE_REVISION" \
     ./scripts/run-image.sh "$tmp/image.iso"
 }
 
