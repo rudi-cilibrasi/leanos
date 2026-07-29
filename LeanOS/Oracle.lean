@@ -193,6 +193,13 @@ def budgetVectors : List Vector := [
   composite "frame-budget.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
     0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
 
+/-- A malformed budget-state ABI version is rejected before range routing, so
+the differential corpus cannot silently bless a continuity misclassification. -/
+theorem malformed_budget_state_is_wrong_version :
+    (budgetVectors[15]).id = "frame-budget.malformed-budget-state" ∧
+    (budgetVectors[15]).expected = 0xff01 := by
+  native_decide
+
 private def nmiUserFrame : UInt64 :=
   0x23 + 0x1b * 256 + 0x10000 + 0x20000 + 0x40000
 
