@@ -153,6 +153,8 @@ private def mixedEdgeId : CompositeDispatcher.MixedReplyId → String
   | .postFatalRejected => "composite.mixed-post-fatal-reject"
   | .pageUnmapped => "composite.mixed-page-unmapped"
   | .unmappedPageRejected => "composite.mixed-unmapped-page-reject"
+  | .pageProtected => "composite.mixed-page-protected"
+  | .protectAmplificationRejected => "composite.mixed-protect-amplification-reject"
 
 /-- The hosted representation of one canonical accepted mixed edge.  State,
 command arguments, and expected reply all come from the same edge definition
@@ -571,11 +573,11 @@ def vectors : List Vector := [
   composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0] ++
   mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors
 
-theorem corpus_shape : vectors.length = 354 := by decide
-/-- Oracle indices 314--331 are definitionally the complete canonical mixed
+theorem corpus_shape : vectors.length = 356 := by decide
+/-- Oracle indices 314--333 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
-    (vectors.drop 314).take 18 =
+    (vectors.drop 314).take 20 =
       CompositeDispatcher.mixedCanonicalEdges.map mixedEdgeVector := by
   rfl
 
@@ -585,11 +587,11 @@ theorem hosted_mixed_vectors_refine :
     ∀ edge ∈ CompositeDispatcher.mixedCanonicalEdges, edge.Refines :=
   CompositeDispatcher.mixedCanonicalEdges_refine
 
-/-- Oracle indices 332--350 are the exact stateful invalidation publication
+/-- Oracle indices 334--352 are the exact stateful invalidation publication
 corpus, including independent accepted-unmap and switch-away/back branches;
-351--353 are malformed-effect, mismatched-state, and stale-ticket negatives. -/
+353--355 are malformed-effect, mismatched-state, and stale-ticket negatives. -/
 theorem hosted_invalidation_vectors_exact :
-    vectors.drop 332 =
+    vectors.drop 334 =
       CompositeDispatcher.invalidationCanonicalEdges.map invalidationEdgeVector ++
         invalidationNegativeVectors := by
   rfl
@@ -599,27 +601,27 @@ theorem hosted_invalidation_vectors_refine :
   CompositeDispatcher.invalidationCanonicalEdges_refine
 
 theorem composite_invalidation_trace_agrees :
-    (vectors[332]).expected = 0x321b01 ∧
-    (vectors[333]).expected = 0x331c01 ∧
-    (vectors[336]).expected = 0x361f01 ∧
-    (vectors[340]).expected = 0x3a2301 ∧
-    (vectors[342]).expected = 0x3c2501 ∧
-    (vectors[344]).expected = 0x3e2701 ∧
-    (vectors[345]).expected = 0x3f2801 ∧
-    (vectors[346]).expected = 0x402901 ∧
-    (vectors[347]).expected = 0x412a01 ∧
-    (vectors[348]).expected = 0x422b01 ∧
-    (vectors[349]).expected = 0x432c01 ∧
-    (vectors[350]).expected = 0x442d01 ∧
-    (vectors[351]).expected = 0xff05 ∧
-    (vectors[352]).expected = 0xff06 ∧
-    (vectors[353]).expected = 0xff05 := by
+    (vectors[334]).expected = 0x321b01 ∧
+    (vectors[335]).expected = 0x331c01 ∧
+    (vectors[338]).expected = 0x361f01 ∧
+    (vectors[342]).expected = 0x3a2301 ∧
+    (vectors[344]).expected = 0x3c2501 ∧
+    (vectors[346]).expected = 0x3e2701 ∧
+    (vectors[347]).expected = 0x3f2801 ∧
+    (vectors[348]).expected = 0x402901 ∧
+    (vectors[349]).expected = 0x412a01 ∧
+    (vectors[350]).expected = 0x422b01 ∧
+    (vectors[351]).expected = 0x432c01 ∧
+    (vectors[352]).expected = 0x442d01 ∧
+    (vectors[353]).expected = 0xff05 ∧
+    (vectors[354]).expected = 0xff06 ∧
+    (vectors[355]).expected = 0xff05 := by
   native_decide
 
 /-- The hosted scalar ABI rejects replaying release ticket 1 as the later
 switch acknowledgement even though both require the same `.flush` effect. -/
 theorem composite_invalidation_same_effect_replay_rejected :
-    (vectors[353]).expected = 0xff05 := by
+    (vectors[355]).expected = 0xff05 := by
   native_decide
 
 theorem composite_mixed_trace_agrees :
@@ -628,7 +630,9 @@ theorem composite_mixed_trace_agrees :
     (vectors[324]).expected = 0x2a1301 ∧
     (vectors[326]).expected = 0x2c1501 ∧
     (vectors[327]).expected = 0x2d1601 ∧
-    (vectors[329]).expected = 0x2f1801 := by
+    (vectors[329]).expected = 0x2f1801 ∧
+    (vectors[332]).expected = 0x452e01 ∧
+    (vectors[333]).expected = 0x462e01 := by
   native_decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl

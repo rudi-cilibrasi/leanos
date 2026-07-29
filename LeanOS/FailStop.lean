@@ -5079,6 +5079,7 @@ inductive Operation where
   | capabilityRevokeSubtree (authoritySlot victim victimSlot : Nat)
   | map (slot page : Nat) (permissions : VirtualMapping.Permissions)
   | unmap (page : Nat)
+  | protect (page : Nat) (permissions : VirtualMapping.Permissions)
   | createSubject (subject : Nat)
   | terminateSubject (subject : Nat)
   | scheduleAdd (subject : Nat)
@@ -5115,6 +5116,7 @@ inductive OperationReply where
   | capability (result : Capability.Result)
   | map (result : VirtualMapping.Result VirtualMapping.MapError)
   | unmap (result : VirtualMapping.Result VirtualMapping.UnmapError)
+  | protect (result : VirtualMapping.Result TLB.ProtectError)
   | createSubject (result : SubjectLifecycle.Result SubjectLifecycle.CreateError)
   | terminateSubject (result : SubjectLifecycle.Result SubjectLifecycle.TerminateError)
   | scheduleRemove (result : ResumablePreemption.RemoveResult)
@@ -5142,6 +5144,7 @@ def OperationReply.isNonfatalRejection : OperationReply → Bool
   | .capability (.rejected _) => true
   | .map (.rejected _) => true
   | .unmap (.rejected _) => true
+  | .protect (.rejected _) => true
   | .createSubject (.rejected _) => true
   | .terminateSubject (.rejected _) => true
   | .scheduleRemove (.rejected _) => true
@@ -5350,6 +5353,14 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
             { state.resumable.translations with virtual := outcome.state }
             state.execution.core.context.activeAddressSpace page
           installVirtualMemory state outcome.state translations
+  | .protect page permissions =>
+      let outcome := TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted =>
+          installVirtualMemory state outcome.state.virtual outcome.state
   | .createSubject subject =>
       let outcome := SubjectLifecycle.create state.lifecycle subject
       match outcome.result with
@@ -5539,6 +5550,10 @@ def operationReply (state : CompositeState) : Operation → OperationReply
   | .unmap page =>
       .unmap (VirtualMapping.unmap state.virtualMemory state.execution.core.context.currentSubject
         state.execution.core.context.activeAddressSpace page).result
+  | .protect page permissions =>
+      .protect (TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions).result
   | .createSubject subject => .createSubject (SubjectLifecycle.create state.lifecycle subject).result
   | .terminateSubject subject =>
       .terminateSubject (SubjectLifecycle.terminate state.lifecycle subject).result
@@ -5620,6 +5635,12 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
       (h : (VirtualMapping.unmap state.virtualMemory state.execution.core.context.currentSubject
         state.execution.core.context.activeAddressSpace page).result = .rejected reason) :
       SubsystemRejection state (.unmap page) (.unmap (.rejected reason))
+  | protect page permissions reason
+      (h : (TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions).result =
+          .rejected reason) :
+      SubsystemRejection state (.protect page permissions) (.protect (.rejected reason))
   | createSubject subject reason
       (h : (SubjectLifecycle.create state.lifecycle subject).result = .rejected reason) :
       SubsystemRejection state (.createSubject subject) (.createSubject (.rejected reason))
@@ -6080,6 +6101,15 @@ private theorem classified_rejection_is_subsystem state operation
       | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
       | rejected reason =>
           simpa [operationReply, hresult] using SubsystemRejection.unmap page reason hresult
+  | protect page permissions =>
+      cases hresult : (TLB.protect state.resumable.translations
+          state.execution.core.context.currentSubject
+          state.execution.core.context.activeAddressSpace page permissions).result with
+      | accepted =>
+          simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using
+            SubsystemRejection.protect page permissions reason hresult
   | createSubject subject =>
       cases hresult : (SubjectLifecycle.create state.lifecycle subject).result with
       | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
@@ -8259,7 +8289,12 @@ theorem authority_operations_result_sound state
         .completed (.unmap
           (VirtualMapping.unmap state.virtualMemory
             state.execution.core.context.currentSubject
-            state.execution.core.context.activeAddressSpace page).result) := by
+            state.execution.core.context.activeAddressSpace page).result) ∧
+    (gate state (.protect page permissions)).result =
+        .completed (.protect
+          (TLB.protect state.resumable.translations
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page permissions).result) := by
   simp [gate, hmode, operationReply, authoritativeIPCReply]
 
 /-- Accepted mapping publishes only the changed mapping projection.  Memory,
@@ -8355,6 +8390,85 @@ theorem gate_unmap_accepted_invalidates_tlb state page next
       (TLB.invalidate_page_absent state.resumable.translations.entries
         { addressSpace := state.execution.core.context.activeAddressSpace, page } context)
 
+/-- Accepted protection reduction is a full authoritative composite
+transition: the actor and root come from the execution latch, the exact
+permission-restricted virtual state is published to every consumer, and the
+affected cached translation is absent before the typed reply is exposed. -/
+theorem gate_protect_accepted_invalidates_tlb state page permissions next
+    (hmode : state.execution.mode = .running)
+    (haccepted : TLB.protect state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions =
+        { state := next, result := .accepted })
+    (hstate : RuntimeWellFormed state) :
+    (gate state (.protect page permissions)).result =
+        .completed (.protect .accepted) ∧
+      RuntimeWellFormed (gate state (.protect page permissions)).state ∧
+      (gate state (.protect page permissions)).state.Coherent ∧
+      TLB.Coherent
+        (gate state (.protect page permissions)).state.resumable.translations ∧
+      ∀ context, TLB.lookup
+        (gate state (.protect page permissions)).state.resumable.translations.entries
+        { addressSpace := state.execution.core.context.activeAddressSpace, page }
+        context = none := by
+  have hvirtualEq :
+      state.resumable.translations.virtual = state.virtualMemory :=
+    hstate.1.2.2.2.2.2.2.2.2.1
+  have hmemory : next.virtual.memory = state.virtualMemory.memory := by
+    have h := TLB.protect_virtual_memory state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions
+    rw [haccepted] at h
+    simpa [hvirtualEq] using h
+  have howner : next.virtual.owner = state.virtualMemory.owner := by
+    have h := TLB.protect_virtual_owner state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions
+    rw [haccepted] at h
+    simpa [hvirtualEq] using h
+  have hpreVirtual :
+      VirtualMapping.LifecycleWellFormed state.resumable.translations.virtual := by
+    simpa [hvirtualEq] using hstate.2.2.2.2.1
+  have hresult :
+      (TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions).result =
+          .accepted := by
+    simp [haccepted]
+  have hvirtual := TLB.protect_accepted_preserves_virtual_lifecycleWellFormed
+    state.resumable.translations state.execution.core.context.currentSubject
+    state.execution.core.context.activeAddressSpace page permissions hpreVirtual hresult
+  rw [haccepted] at hvirtual
+  have htlb : TLB.Coherent next := by
+    have hpreCoherent : TLB.Coherent state.resumable.translations :=
+      hstate.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+    have h := TLB.protect_accepted_coherent state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions hpreCoherent hresult
+    simpa [haccepted] using h
+  have hactive : next.active = state.resumable.translations.active := by
+    have h := TLB.protect_active state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions
+    simpa [haccepted] using h
+  have hpreserved := installVirtualMemory_preserves_runtimeWellFormed
+    state next.virtual next hstate hmemory howner hvirtual htlb hactive
+  constructor
+  · simp [gate, hmode, operationReply, haccepted]
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted] using hpreserved
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted] using hpreserved.1
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted,
+      installVirtualMemory] using htlb
+  · intro context
+    have habsent := TLB.protect_revokes_before_return state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions hresult context
+    simpa [gate, hmode, applyOperation, haccepted,
+      installVirtualMemory] using habsent
+
 /-- Raw mapping is compatible with the authoritative blocking store for every
 typed result.  Rejection is atomic; acceptance changes only mapping and TLB
 projections while retaining every waiter-observed scheduler field. -/
@@ -8433,6 +8547,74 @@ theorem gate_unmap_preserves_blockingRuntimeWellFormed state page
               have hpreserved := installVirtualMemory_preserves_blockingRuntimeWellFormed
                 state next translations hstate hmemory howner hvirtual htlb rfl
               simpa [gate, hmode, applyOperation, hunmap, translations] using hpreserved
+
+/-- Raw protection reduction preserves the complete blocking/deferred-facing
+runtime projection while invalidating the selected page in the authoritative
+TLB state. -/
+theorem gate_protect_preserves_blockingRuntimeWellFormed state page permissions
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed (gate state (.protect page permissions)).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      generalize hprotect : TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions = outcome
+      cases outcome with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [gate, hmode, applyOperation, hprotect] using hstate
+          | accepted =>
+              have hvirtualEq :
+                  state.resumable.translations.virtual = state.virtualMemory :=
+                hstate.1.1.2.2.2.2.2.2.2.2.1
+              have hmemory : next.virtual.memory = state.virtualMemory.memory := by
+                have h := TLB.protect_virtual_memory state.resumable.translations
+                  state.execution.core.context.currentSubject
+                  state.execution.core.context.activeAddressSpace page permissions
+                rw [hprotect] at h
+                simpa [hvirtualEq] using h
+              have howner : next.virtual.owner = state.virtualMemory.owner := by
+                have h := TLB.protect_virtual_owner state.resumable.translations
+                  state.execution.core.context.currentSubject
+                  state.execution.core.context.activeAddressSpace page permissions
+                rw [hprotect] at h
+                simpa [hvirtualEq] using h
+              have hresult :
+                  (TLB.protect state.resumable.translations
+                    state.execution.core.context.currentSubject
+                    state.execution.core.context.activeAddressSpace page permissions).result =
+                      .accepted := by
+                simp [hprotect]
+              have hpreVirtual :
+                  VirtualMapping.LifecycleWellFormed
+                    state.resumable.translations.virtual := by
+                simpa [hvirtualEq] using hstate.1.2.2.2.2.1
+              have hvirtual :=
+                TLB.protect_accepted_preserves_virtual_lifecycleWellFormed
+                  state.resumable.translations
+                  state.execution.core.context.currentSubject
+                  state.execution.core.context.activeAddressSpace page permissions
+                  hpreVirtual hresult
+              rw [hprotect] at hvirtual
+              have htlb : TLB.Coherent next := by
+                have hpreCoherent : TLB.Coherent state.resumable.translations :=
+                  hstate.1.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+                have h := TLB.protect_accepted_coherent state.resumable.translations
+                  state.execution.core.context.currentSubject
+                  state.execution.core.context.activeAddressSpace page permissions
+                  hpreCoherent hresult
+                simpa [hprotect] using h
+              have hactive : next.active = state.resumable.translations.active := by
+                have h := TLB.protect_active state.resumable.translations
+                  state.execution.core.context.currentSubject
+                  state.execution.core.context.activeAddressSpace page permissions
+                simpa [hprotect] using h
+              have hpreserved := installVirtualMemory_preserves_blockingRuntimeWellFormed
+                state next.virtual next hstate hmemory howner hvirtual htlb hactive
+              simpa [gate, hmode, applyOperation, hprotect] using hpreserved
 
 private theorem dispatchHardware_running_returnAuthority_unarmed state frame
     (hmode : state.mode = .running) :
@@ -8719,6 +8901,26 @@ theorem unmap_operationPreservesRuntimeWellFormed page :
               (by simp [gate, hmode, operationReply, hunmap])
               (.unmap page reason (by simp [hunmap]))).1
   · exact gate_rejected_mode_preserves_runtimeWellFormed state (.unmap page) hstate hmode
+
+theorem protect_operationPreservesRuntimeWellFormed page permissions :
+    OperationPreservesRuntimeWellFormed (.protect page permissions) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hprotect : TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions with
+    | mk next result =>
+        cases result with
+        | accepted =>
+            exact (gate_protect_accepted_invalidates_tlb state page permissions
+              next hmode hprotect hstate).2.1
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.protect page permissions) (.protect (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hprotect])
+              (.protect page permissions reason (by simp [hprotect]))).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.protect page permissions) hstate hmode
 
 /-- Accepted userspace mapping reuses the raw mapping publication proof after
 the generation-bound handle resolves.  The only additional mutation is live
@@ -10809,6 +11011,7 @@ inductive RuntimeTraceOperation : Operation → Prop where
       RuntimeTraceOperation (.capabilityRevokeSubtree authoritySlot victim victimSlot)
   | map slot page permissions : RuntimeTraceOperation (.map slot page permissions)
   | unmap page : RuntimeTraceOperation (.unmap page)
+  | protect page permissions : RuntimeTraceOperation (.protect page permissions)
   | createSubject subject : RuntimeTraceOperation (.createSubject subject)
   | terminateSubject subject : RuntimeTraceOperation (.terminateSubject subject)
   | scheduleAdd subject : RuntimeTraceOperation (.scheduleAdd subject)
@@ -10856,6 +11059,8 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
   | map slot page permissions =>
       exact map_operationPreservesRuntimeWellFormed slot page permissions
   | unmap page => exact unmap_operationPreservesRuntimeWellFormed page
+  | protect page permissions =>
+      exact protect_operationPreservesRuntimeWellFormed page permissions
   | createSubject subject => exact createSubject_operationPreservesRuntimeWellFormed subject
   | terminateSubject subject =>
       exact terminateSubject_operationPreservesRuntimeWellFormed subject
@@ -10893,6 +11098,7 @@ theorem runtimeTraceOperation_complete operation :
       exact .capabilityRevokeSubtree authoritySlot victim victimSlot
   | map slot page permissions => exact .map slot page permissions
   | unmap page => exact .unmap page
+  | protect page permissions => exact .protect page permissions
   | createSubject subject => exact .createSubject subject
   | terminateSubject subject => exact .terminateSubject subject
   | scheduleAdd subject => exact .scheduleAdd subject
@@ -13829,6 +14035,8 @@ inductive BlockingRuntimePreservingOperation : Operation → Prop where
   | map slot page permissions :
       BlockingRuntimePreservingOperation (.map slot page permissions)
   | unmap page : BlockingRuntimePreservingOperation (.unmap page)
+  | protect page permissions :
+      BlockingRuntimePreservingOperation (.protect page permissions)
   | syscall call : BlockingRuntimePreservingOperation (.syscall call)
   | transferOffer endpointWord sourceWord sourceKind payload rights :
       BlockingRuntimePreservingOperation
@@ -13861,6 +14069,9 @@ theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
       exact gate_map_preserves_blockingRuntimeWellFormed
         state slot page permissions hstate
   | unmap page => exact gate_unmap_preserves_blockingRuntimeWellFormed state page hstate
+  | protect page permissions =>
+      exact gate_protect_preserves_blockingRuntimeWellFormed
+        state page permissions hstate
   | syscall call => exact gate_syscall_preserves_blockingRuntimeWellFormed state call hstate
   | transferOffer endpointWord sourceWord sourceKind payload rights =>
       exact gate_transferOffer_preserves_blockingRuntimeWellFormed state endpointWord sourceWord
@@ -14651,6 +14862,10 @@ private theorem authoritativeGate_ordinary_preserves_deferredBlockingRuntimeWell
       exact dormantCancellationCompatible_preserves state _ hstate
         (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
           state _ (.unmap page) hblocking) hcompatible
+  | protect page permissions =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.protect page permissions) hblocking) hcompatible
   | syscall call =>
       exact dormantCancellationCompatible_preserves state _ hstate
         (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
@@ -14931,6 +15146,31 @@ theorem unmap_authoritativeOperationCompatible state page
           state state hstate rfl rfl rfl rfl
       · exact installVirtualMemory_dormantCancellationCompatible state _ _ hstate
 
+/-- Permission reduction uses the same exact mapping/TLB publisher and leaves
+every deferred-cancellation projection literal. -/
+theorem protect_authoritativeOperationCompatible state page permissions
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.protect page permissions)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state (.ordinary (.protect page permissions))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      simp only [authoritativeGate, hmode, applyAuthoritativeOperation,
+        applyOperation]
+      split
+      · exact dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+      · exact installVirtualMemory_dormantCancellationCompatible state _ _ hstate
+
 /-- Raw mapping has a closed preservation theorem at the folded authoritative
 boundary; callers need no post-state compatibility witness. -/
 theorem authoritativeGate_map_preserves_authoritativeRuntimeWellFormed
@@ -14952,6 +15192,17 @@ theorem authoritativeGate_unmap_preserves_authoritativeRuntimeWellFormed
   authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.unmap page)) hstate
     (unmap_authoritativeOperationCompatible state page hstate)
+
+/-- Raw permission reduction closes the folded global invariant and the exact
+page invalidation obligation at the sole authoritative gate. -/
+theorem authoritativeGate_protect_preserves_authoritativeRuntimeWellFormed
+    state page permissions (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.protect page permissions))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.protect page permissions)) hstate
+    (protect_authoritativeOperationCompatible state page permissions hstate)
 
 /-- Selecting a live return plan changes only execution authority, so it can
 be appended to any already-compatible dormant-cancellation mutation. -/
@@ -17261,6 +17512,9 @@ theorem authoritativeOperationCompatible_of_admissible state operation
           exact map_authoritativeOperationCompatible state slot page permissions hstate
       | unmap page =>
           exact unmap_authoritativeOperationCompatible state page hstate
+      | protect page permissions =>
+          exact protect_authoritativeOperationCompatible
+            state page permissions hstate
       | createSubject subject =>
           exact createSubject_authoritativeOperationCompatible state subject hstate
       | terminateSubject subject => trivial

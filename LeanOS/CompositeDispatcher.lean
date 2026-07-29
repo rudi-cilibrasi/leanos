@@ -384,8 +384,14 @@ def mixedDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   else if tag = 0x3101 then
     if arg0 != 9 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
     else if stateWord = 0x0f01 then 0x310f01 else 0xff06
+  else if tag = 0x4501 then
+    if arg0 != 8 || arg1 != 1 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0f01 then 0x452e01 else 0xff06
+  else if tag = 0x4601 then
+    if arg0 != 8 || arg1 != 1 || arg2 != 1 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2e01 then 0x462e01 else 0xff06
   else if tag % 256 != abiVersion then 0xff01
-  else if 0x3201 ≤ tag then 0xff02
+  else if 0x4701 ≤ tag then 0xff02
   else 0xff04
 
 /-- Allocation-free scalar table for the canonical invalidation publication
@@ -437,8 +443,20 @@ def invalidationDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt6
   else if tag = 0x4001 then
     if arg0 != 1 || arg1 != 1 || arg2 != 7 || arg3 != 0 then 0xff05
     else if stateWord = 0x2801 then 0x402901 else 0xff06
+  else if tag = 0x4101 then
+    if arg0 != 2 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1a01 then 0x412a01 else 0xff06
+  else if tag = 0x4201 then
+    if arg0 != 3 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2a01 then 0x422b01 else 0xff06
+  else if tag = 0x4301 then
+    if arg0 != 1 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2b01 then 0x432c01 else 0xff06
+  else if tag = 0x4401 then
+    if arg0 != 3 || arg1 != 0 || arg2 != 0 || arg3 != 1 then 0xff05
+    else if stateWord = 0x2c01 then 0x442d01 else 0xff06
   else if tag % 256 != abiVersion then 0xff01
-  else if 0x4101 ≤ tag then 0xff02
+  else if 0x4501 ≤ tag then 0xff02
   else 0xff04
 
 /-- Allocation-free generated entry point.  It validates every scalar before
@@ -447,7 +465,7 @@ the full authoritative gate; this executable definition intentionally contains
 no shadow kernel state. -/
 @[export leanos_composite_dispatch]
 def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
-  if 0x1a01 ≤ stateWord && stateWord ≤ 0x2901 then
+  if 0x1a01 ≤ stateWord && stateWord ≤ 0x2d01 then
     if stateWord % 256 != abiVersion then 0xff01
     else invalidationDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if stateWord = 0x0801 || stateWord = 0x0901 || stateWord = 0x0a01 ||
@@ -455,7 +473,8 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
       stateWord = 0x0e01 || stateWord = 0x0f01 || stateWord = 0x1001 ||
       stateWord = 0x1101 || stateWord = 0x1201 || stateWord = 0x1301 ||
       stateWord = 0x1401 || stateWord = 0x1501 || stateWord = 0x1601 ||
-      stateWord = 0x1701 || stateWord = 0x1801 || stateWord = 0x1901 then
+      stateWord = 0x1701 || stateWord = 0x1801 || stateWord = 0x1901 ||
+      stateWord = 0x2e01 then
     mixedDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if stateWord != 0x0001 && stateWord != 0x0101 && stateWord != 0x0201 &&
       stateWord != 0x0301 && stateWord != 0x0401 && stateWord != 0x0501 &&
@@ -1124,6 +1143,7 @@ inductive MixedStateId where
   | fatalEntered
   | postFatalRejected
   | pageUnmapped
+  | pageProtected
   deriving DecidableEq, Repr
 
 def encodeMixedState : MixedStateId → UInt64
@@ -1145,6 +1165,7 @@ def encodeMixedState : MixedStateId → UInt64
   | .fatalEntered => 0x1701
   | .postFatalRejected => 0x1801
   | .pageUnmapped => 0x1901
+  | .pageProtected => 0x2e01
 
 def decodeMixedState (word : UInt64) : Except DecodeError MixedStateId :=
   if word = 0x0801 then .ok .initial
@@ -1165,6 +1186,7 @@ def decodeMixedState (word : UInt64) : Except DecodeError MixedStateId :=
   else if word = 0x1701 then .ok .fatalEntered
   else if word = 0x1801 then .ok .postFatalRejected
   else if word = 0x1901 then .ok .pageUnmapped
+  else if word = 0x2e01 then .ok .pageProtected
   else if word % 256 != abiVersion then .error .wrongVersion
   else if 0x1a01 ≤ word then .error .reservedBits
   else .error .unknownState
@@ -1197,6 +1219,8 @@ inductive MixedCommandId where
   | attemptPostFatalSchedule
   | acceptedSyscallUnmap
   | rejectUnmappedPageUnmap
+  | acceptedProtect
+  | rejectProtectAmplification
   deriving DecidableEq, Repr
 
 def encodeMixedCommand : MixedCommandId → CommandWords
@@ -1240,6 +1264,10 @@ def encodeMixedCommand : MixedCommandId → CommandWords
       { tag := 0x3001, arg0 := 7, arg1 := 0, arg2 := 0, arg3 := 0 }
   | .rejectUnmappedPageUnmap =>
       { tag := 0x3101, arg0 := 9, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .acceptedProtect =>
+      { tag := 0x4501, arg0 := 8, arg1 := 1, arg2 := 0, arg3 := 0 }
+  | .rejectProtectAmplification =>
+      { tag := 0x4601, arg0 := 8, arg1 := 1, arg2 := 1, arg3 := 0 }
 
 def decodeMixedCommand (words : CommandWords) :
     Except DecodeError MixedCommandId :=
@@ -1266,8 +1294,12 @@ def decodeMixedCommand (words : CommandWords) :
     .ok .acceptedSyscallUnmap
   else if words = encodeMixedCommand .rejectUnmappedPageUnmap then
     .ok .rejectUnmappedPageUnmap
+  else if words = encodeMixedCommand .acceptedProtect then
+    .ok .acceptedProtect
+  else if words = encodeMixedCommand .rejectProtectAmplification then
+    .ok .rejectProtectAmplification
   else if words.tag % 256 != abiVersion then .error .wrongVersion
-  else if 0x3201 ≤ words.tag then .error .reservedBits
+  else if 0x4701 ≤ words.tag then .error .reservedBits
   else .error .noncanonicalArguments
 
 theorem decode_encode_mixed_command command :
@@ -1311,6 +1343,10 @@ def mixedCommandOperation : MixedCommandId → AuthoritativeOperation
       .ordinary (.syscall { number := 1, arg0 := 7, arg1 := 0, arg2 := 0 })
   | .rejectUnmappedPageUnmap =>
       .ordinary (.syscall { number := 1, arg0 := 9, arg1 := 0, arg2 := 0 })
+  | .acceptedProtect =>
+      .ordinary (.protect 8 { read := true })
+  | .rejectProtectAmplification =>
+      .ordinary (.protect 8 { read := true, write := true })
 
 def mixedNextState : MixedStateId → MixedCommandId → Option MixedStateId
   | .initial, .offerTransfer => some .transferOffered
@@ -1333,6 +1369,8 @@ def mixedNextState : MixedStateId → MixedCommandId → Option MixedStateId
   | .fatalEntered, .attemptPostFatalSchedule => some .postFatalRejected
   | .directMapped, .acceptedSyscallUnmap => some .pageUnmapped
   | .directMapped, .rejectUnmappedPageUnmap => some .directMapped
+  | .directMapped, .acceptedProtect => some .pageProtected
+  | .pageProtected, .rejectProtectAmplification => some .pageProtected
   | _, _ => none
 
 def mixedExpectedReply : MixedStateId → MixedCommandId → Option UInt64
@@ -1354,6 +1392,8 @@ def mixedExpectedReply : MixedStateId → MixedCommandId → Option UInt64
   | .fatalEntered, .attemptPostFatalSchedule => some 0x2f1801
   | .directMapped, .acceptedSyscallUnmap => some 0x301901
   | .directMapped, .rejectUnmappedPageUnmap => some 0x310f01
+  | .directMapped, .acceptedProtect => some 0x452e01
+  | .pageProtected, .rejectProtectAmplification => some 0x462e01
   | _, _ => none
 
 inductive MixedReplyId where
@@ -1375,6 +1415,8 @@ inductive MixedReplyId where
   | postFatalRejected
   | pageUnmapped
   | unmappedPageRejected
+  | pageProtected
+  | protectAmplificationRejected
   deriving DecidableEq, Repr
 
 def encodeMixedReply : MixedReplyId → UInt64
@@ -1396,6 +1438,8 @@ def encodeMixedReply : MixedReplyId → UInt64
   | .postFatalRejected => 0x2f1801
   | .pageUnmapped => 0x301901
   | .unmappedPageRejected => 0x310f01
+  | .pageProtected => 0x452e01
+  | .protectAmplificationRejected => 0x462e01
 
 def decodeMixedReply (word : UInt64) : Except DecodeError MixedReplyId :=
   if word = 0x200901 then .ok .transferOffered
@@ -1416,8 +1460,10 @@ def decodeMixedReply (word : UInt64) : Except DecodeError MixedReplyId :=
   else if word = 0x2f1801 then .ok .postFatalRejected
   else if word = 0x301901 then .ok .pageUnmapped
   else if word = 0x310f01 then .ok .unmappedPageRejected
+  else if word = 0x452e01 then .ok .pageProtected
+  else if word = 0x462e01 then .ok .protectAmplificationRejected
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x320001 ≤ word then .error .reservedBits
+  else if 0x470001 ≤ word then .error .reservedBits
   else .error .unknownCommand
 
 theorem decode_encode_mixed_reply reply :
@@ -1450,6 +1496,8 @@ def mixedReplyId : MixedStateId → MixedCommandId → Option MixedReplyId
   | .fatalEntered, .attemptPostFatalSchedule => some .postFatalRejected
   | .directMapped, .acceptedSyscallUnmap => some .pageUnmapped
   | .directMapped, .rejectUnmappedPageUnmap => some .unmappedPageRejected
+  | .directMapped, .acceptedProtect => some .pageProtected
+  | .pageProtected, .rejectProtectAmplification => some .protectAmplificationRejected
   | _, _ => none
 
 /-- The full typed meaning of each mixed reply selector.  This table is
@@ -1513,12 +1561,17 @@ def mixedReplyResult : MixedReplyId → AuthoritativeGateResult
       .completed (.ordinary (.syscall .accepted))
   | .unmappedPageRejected =>
       .completed (.ordinary (.syscall (.rejected (.unmap .unmappedPage))))
+  | .pageProtected =>
+      .completed (.ordinary (.protect .accepted))
+  | .protectAmplificationRejected =>
+      .completed (.ordinary (.protect (.rejected .notOwner)))
 
 /-- Machine effects are meanings of canonical typed replies, not a second
 caller-maintained state channel.  The accepted unmap reply requires one exact
 page invalidation; every other reply in this bounded slice requests none. -/
 def mixedReplyEffect : MixedReplyId → StaleTranslation.Effect
   | .pageUnmapped => .page 2 7
+  | .pageProtected => .page 2 8
   | _ => .none
 
 theorem mixedExpectedReply_uses_canonical_codec state command :
@@ -1544,6 +1597,21 @@ theorem mixed_unmap_effect_confined state command
         encodeMixedReply .pageUnmapped) :
     state = .directMapped ∧ command = .acceptedSyscallUnmap ∧
       mixedReplyEffect .pageUnmapped = .page 2 7 := by
+  cases state <;> cases command
+  all_goals
+    simp [encodeMixedCommand, encodeMixedState, encodeMixedReply, dispatch,
+      mixedDispatchRaw, mixedReplyEffect] at hdispatch ⊢
+
+/-- The accepted protection effect is available only on the canonical
+full-state edge and is confined to kernel-derived address space 2/page 8. -/
+theorem mixed_protect_effect_confined state command
+    (hdispatch :
+      let words := encodeMixedCommand command
+      dispatch (encodeMixedState state)
+        words.tag words.arg0 words.arg1 words.arg2 words.arg3 =
+        encodeMixedReply .pageProtected) :
+    state = .directMapped ∧ command = .acceptedProtect ∧
+      mixedReplyEffect .pageProtected = .page 2 8 := by
   cases state <;> cases command
   all_goals
     simp [encodeMixedCommand, encodeMixedState, encodeMixedReply, dispatch,
@@ -1576,6 +1644,8 @@ def mixedPrefix : MixedStateId → List MixedCommandId
   | .postFatalRejected => mixedCanonicalCommands
   | .pageUnmapped =>
       mixedCanonicalCommands.take 7 ++ [.acceptedSyscallUnmap]
+  | .pageProtected =>
+      mixedCanonicalCommands.take 7 ++ [.acceptedProtect]
 
 def mixedInitialState : Except DecodeError CompositeState :=
   match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
@@ -1597,6 +1667,17 @@ def mixedUnmapStepAt (state : MixedStateId) (page : VirtualMapping.VirtualPage) 
   pure (StaleTranslation.step pre.resumable.translations
     (.unmap pre.execution.core.context.currentSubject
       pre.execution.core.context.activeAddressSpace page))
+
+/-- Reconstruct a protection reduction from the same complete authoritative
+pre-state used by the generated composite edge.  Neither actor nor root is
+present in the untrusted command words. -/
+def mixedProtectStepAt (state : MixedStateId) (page : VirtualMapping.VirtualPage)
+    (permissions : VirtualMapping.Permissions) :
+    Except DecodeError StaleTranslation.Step := do
+  let pre ← mixedMaterialize state
+  pure (StaleTranslation.step pre.resumable.translations
+    (.protect pre.execution.core.context.currentSubject
+      pre.execution.core.context.activeAddressSpace page permissions))
 
 structure CanonicalMixedState where
   id : MixedStateId
@@ -1754,6 +1835,12 @@ def mixedCanonicalEdges : List CanonicalMixedEdge :=
      next_exact := rfl, reply_exact := rfl },
    { state := .directMapped, command := .rejectUnmappedPageUnmap,
      next := .directMapped, reply := .unmappedPageRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .directMapped, command := .acceptedProtect,
+     next := .pageProtected, reply := .pageProtected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .pageProtected, command := .rejectProtectAmplification,
+     next := .pageProtected, reply := .protectAmplificationRejected,
      next_exact := rfl, reply_exact := rfl }]
 
 def CanonicalMixedEdge.Refines (edge : CanonicalMixedEdge) : Prop :=
@@ -1774,7 +1861,7 @@ theorem canonicalMixedEdge_refines (edge : CanonicalMixedEdge) :
     edge.state edge.command edge.next edge.reply
     edge.next_exact edge.reply_exact
 
-/-- The hosted 16-edge corpus inherits its state/result meaning solely from
+/-- The hosted 20-edge corpus inherits its state/result meaning solely from
 the scalar-to-authoritative bridge above. -/
 theorem mixedCanonicalEdges_refine :
     ∀ edge ∈ mixedCanonicalEdges, edge.Refines := by
@@ -1826,7 +1913,9 @@ theorem mixed_state_continuity state command next
     encodeMixedState next = encodeMixedState state ∨
       encodeMixedState next = encodeMixedState state + 0x100 ∨
       (state = .directMapped ∧ command = .acceptedSyscallUnmap ∧
-        next = .pageUnmapped) := by
+        next = .pageUnmapped) ∨
+      (state = .directMapped ∧ command = .acceptedProtect ∧
+        next = .pageProtected) := by
   cases state <;> cases command <;> simp [mixedNextState] at hnext
   all_goals subst next <;> simp [encodeMixedState]
 
@@ -1909,6 +1998,55 @@ theorem mixed_rejected_unmap_inert :
     (mixedOutcomeAt .directMapped .rejectUnmappedPageUnmap).toOption.map
         (·.state) =
       (mixedMaterialize .directMapped).toOption := by
+  constructor
+  · native_decide
+  · rfl
+
+/-- The canonical full-state protection edge is an accepted writable-to-read
+only reduction.  Its exact `.page 2 8` effect suffices for target-entry
+absence, and the same `TLB.State` is installed in the authoritative composite
+successor. -/
+theorem mixed_accepted_protect_publication_order :
+    (mixedProtectStepAt .directMapped 8 { read := true }).toOption.map
+        (fun step => (step.accepted, step.effect)) =
+      some (true, .page 2 8) ∧
+    (mixedProtectStepAt .directMapped 8 { read := true }).toOption.map (·.state) =
+      (mixedOutcomeAt .directMapped .acceptedProtect).toOption.map
+        (·.state.resumable.translations) ∧
+    (mixedOutcomeAt .directMapped .acceptedProtect).toOption.map
+        (fun outcome => outcome.state.virtualMemory.mappings 2 8) =
+      some (some { object := 20, permissions := { read := true } }) ∧
+    (mixedOutcomeAt .directMapped .acceptedProtect).toOption.map
+        (fun outcome => TLB.lookup outcome.state.resumable.translations.entries
+          { addressSpace := 2, page := 8 } StaleTranslation.ctx) =
+      some none := by
+  constructor
+  · native_decide
+  constructor
+  · rfl
+  constructor <;> native_decide
+
+/-- From any globally well-formed materialized pre-state, the exact canonical
+protection edge preserves the complete folded authoritative invariant. -/
+theorem mixed_accepted_protect_preserves_global_invariant pre
+    (_hmaterialize : mixedMaterialize .directMapped = .ok pre)
+    (hstate : AuthoritativeRuntimeWellFormed pre) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate pre
+        (mixedCommandOperation .acceptedProtect)).state := by
+  simpa [mixedCommandOperation] using
+    authoritativeGate_protect_preserves_authoritativeRuntimeWellFormed
+      pre 8 { read := true } hstate
+
+/-- Attempted write amplification after the canonical reduction is a typed,
+effect-free full-composite stutter. -/
+theorem mixed_rejected_protect_amplification_inert :
+    (mixedProtectStepAt .pageProtected 8 { read := true, write := true }).toOption.map
+        (fun step => (step.accepted, step.effect)) =
+      some (false, .none) ∧
+    (mixedOutcomeAt .pageProtected .rejectProtectAmplification).toOption.map
+        (·.state) =
+      (mixedMaterialize .pageProtected).toOption := by
   constructor
   · native_decide
   · rfl

@@ -467,9 +467,9 @@ theorem composite_authoritative_admitted_trace_preserves_runtimeWellFormed
     FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
       state operations hstate
 
-/-- Mapping changes retain the complete authoritative-gate
-blocking precondition, so either raw mapping mutation can be followed directly
-by an arbitrary block, wake, or cancellation in the successor gate. -/
+/-- Mapping and protection changes retain the complete authoritative-gate
+blocking precondition, so any integrated raw mapping mutation can be followed
+directly by an arbitrary block, wake, or cancellation in the successor gate. -/
 theorem composite_authoritative_mapping_then_blocking_preserves_runtimeWellFormed
     state slot page permissions blocking
     (hstate : FailStop.BlockingRuntimeWellFormed state) :
@@ -482,13 +482,21 @@ theorem composite_authoritative_mapping_then_blocking_preserves_runtimeWellForme
         (FailStop.authoritativeGate
           (FailStop.authoritativeGate state
             (.ordinary (.unmap page))).state
+          (.blocking blocking)).state ∧
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state
+            (.ordinary (.protect page permissions))).state
           (.blocking blocking)).state := by
   constructor
   · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
       state (.map slot page permissions) blocking
       (.map slot page permissions) hstate
+  constructor
   · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
       state (.unmap page) blocking (.unmap page) hstate
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state (.protect page permissions) blocking (.protect page permissions) hstate
 
 /-- Every attacker-controlled syscall tuple preserves the complete blocking
 precondition, including accepted handle-based mapping, TLB-invalidating
@@ -1162,7 +1170,12 @@ theorem composite_gate_authority_confinement state
         .completed (.unmap
           (VirtualMapping.unmap state.virtualMemory
             state.execution.core.context.currentSubject
-            state.execution.core.context.activeAddressSpace page).result) := by
+            state.execution.core.context.activeAddressSpace page).result) ∧
+    (FailStop.gate state (.protect page permissions)).result =
+        .completed (.protect
+          (TLB.protect state.resumable.translations
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page permissions).result) := by
   exact FailStop.authority_operations_result_sound state syscallCall ipcCall endpointWord
     sourceWord sourceKind payload rights source destination destinationSlot authoritySlot victim
     victimSlot slot page permissions hmode
@@ -1179,15 +1192,18 @@ theorem composite_gate_control_preserves_runtimeWellFormed state purpose
       hstate,
     FailStop.gate_restart_preserves_runtimeWellFormed state hstate⟩
 
-/-- SC-COMPOSITE-MAPPING-WF: both kernel-confined raw mapping operations
-preserve the complete runtime invariant in every execution mode. -/
+/-- SC-COMPOSITE-MAPPING-WF: all integrated kernel-confined raw mapping
+operations preserve the complete runtime invariant in every execution mode. -/
 theorem composite_gate_mapping_preserves_runtimeWellFormed state slot page permissions
     (hstate : FailStop.RuntimeWellFormed state) :
     FailStop.RuntimeWellFormed
         (FailStop.gate state (.map slot page permissions)).state ∧
-      FailStop.RuntimeWellFormed (FailStop.gate state (.unmap page)).state := by
+      FailStop.RuntimeWellFormed (FailStop.gate state (.unmap page)).state ∧
+      FailStop.RuntimeWellFormed
+        (FailStop.gate state (.protect page permissions)).state := by
   exact ⟨FailStop.map_operationPreservesRuntimeWellFormed slot page permissions state hstate,
-    FailStop.unmap_operationPreservesRuntimeWellFormed page state hstate⟩
+    FailStop.unmap_operationPreservesRuntimeWellFormed page state hstate,
+    FailStop.protect_operationPreservesRuntimeWellFormed page permissions state hstate⟩
 
 /-- SC-COMPOSITE-SYSCALL-WF: every attacker-controlled fixed-width syscall
 tuple preserves the complete runtime invariant; privileged caller and address
@@ -2610,6 +2626,62 @@ theorem stale_translation_invalidation_confined
       StaleTranslation.accepted_unmap_target_absent state actor addressSpace page context h⟩,
     fun owner howner hne =>
       StaleTranslation.unmap_wrong_owner_inert state actor addressSpace page owner howner hne⟩
+
+/-- Protection reduction is sufficient at the sole composite boundary: an
+accepted logical protection step exposes exactly the page-local effect, the
+authoritative gate preserves its complete folded invariant, and the affected
+translation is already absent from the published successor. -/
+theorem stale_translation_composite_protect_effect_sufficient
+    state page permissions context
+    (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted :
+      (StaleTranslation.step state.resumable.translations
+        (.protect state.execution.core.context.currentSubject
+          state.execution.core.context.activeAddressSpace page permissions)).accepted =
+        true) :
+    (FailStop.authoritativeGate state
+        (.ordinary (.protect page permissions))).result =
+        .completed (.ordinary (.protect .accepted)) ∧
+      FailStop.AuthoritativeRuntimeWellFormed
+        (FailStop.authoritativeGate state
+          (.ordinary (.protect page permissions))).state ∧
+      (StaleTranslation.step state.resumable.translations
+        (.protect state.execution.core.context.currentSubject
+          state.execution.core.context.activeAddressSpace page permissions)).effect =
+        .page state.execution.core.context.activeAddressSpace page ∧
+      TLB.lookup
+        (FailStop.authoritativeGate state
+          (.ordinary (.protect page permissions))).state.resumable.translations.entries
+        { addressSpace := state.execution.core.context.activeAddressSpace, page }
+        context = none := by
+  generalize hprotect :
+      TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions = outcome
+  cases outcome with
+  | mk next result =>
+      cases result with
+      | rejected reason =>
+          simp [StaleTranslation.step, hprotect] at haccepted
+      | accepted =>
+          have hgate :=
+            FailStop.gate_protect_accepted_invalidates_tlb state page permissions
+              next hmode hprotect hstate.1
+          constructor
+          · simp [FailStop.authoritativeGate, hmode,
+              FailStop.authoritativeOperationReply, FailStop.operationReply, hprotect]
+          constructor
+          · exact
+              FailStop.authoritativeGate_protect_preserves_authoritativeRuntimeWellFormed
+                state page permissions hstate
+          constructor
+          · exact StaleTranslation.protect_accepted_effect
+              state.resumable.translations
+              state.execution.core.context.currentSubject
+              state.execution.core.context.activeAddressSpace page permissions haccepted
+          · rw [FailStop.authoritativeGate_ordinary_state]
+            exact hgate.2.2.2.2 context
 
 /-- The stale-translation invalidation contract is non-vacuous: the reviewed
 fixture caches a live CPL3 translation, an accepted unmap returns the exact page

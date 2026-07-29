@@ -112,6 +112,38 @@ def setMapping (state : State) (addressSpace : AddressSpaceId)
       if candidate = addressSpace ∧ candidatePage = page then mapping
       else state.mappings candidate candidatePage }
 
+/-- Replacing one live mapping's permissions with a nonempty subset preserves
+the complete virtual-lifecycle invariant.  This is the mapping-side lemma used
+by the composite TLB protection operation; object identity, ownership, frame
+binding, and every capability projection remain literal pre-state fields. -/
+theorem setMapping_restrict_permissions_preserves_lifecycleWellFormed
+    (state : State) (addressSpace : AddressSpaceId) (page : VirtualPage)
+    (mapping : Mapping) (permissions : Permissions)
+    (hstate : LifecycleWellFormed state)
+    (hmapping : state.mappings addressSpace page = some mapping)
+    (hnonempty : permissions.nonempty = true)
+    (hread : permissions.read = true → mapping.permissions.read = true)
+    (hwrite : permissions.write = true → mapping.permissions.write = true) :
+    LifecycleWellFormed
+      (setMapping state addressSpace page (some { mapping with permissions })) := by
+  rcases hstate with ⟨⟨howners, hmappings⟩, hcaps, howned, hlive⟩
+  refine ⟨⟨?_, ?_⟩, hcaps, ?_, ?_⟩
+  · simpa [setMapping] using howners
+  · intro candidate candidatePage actual hactual
+    by_cases htarget : candidate = addressSpace ∧ candidatePage = page
+    · rcases htarget with ⟨rfl, rfl⟩
+      have heq : actual = { mapping with permissions } := by
+        simpa [setMapping] using hactual.symm
+      subst actual
+      obtain ⟨subject, frame, howner, _holdNonempty, hbinding, hframe,
+        holdRead, holdWrite⟩ := hmappings _ _ mapping hmapping
+      exact ⟨subject, frame, howner, hnonempty, hbinding, hframe,
+        fun hp => holdRead (hread hp), fun hp => holdWrite (hwrite hp)⟩
+    · exact hmappings candidate candidatePage actual
+        (by simpa [setMapping, htarget] using hactual)
+  · simpa [setMapping] using howned
+  · simpa [setMapping] using hlive
+
 def clearMappings (state : State) : State :=
   { state with mappings := fun _ _ => none }
 

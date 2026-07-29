@@ -287,6 +287,55 @@ theorem protect_accepted_coherent state actor addressSpace page permissions
   split <;> try simp_all
   split <;> try simp_all
   exact Nat.le_trans (erase_key_length _ _) hc
+
+/-- Accepted permission reduction preserves the complete authoritative
+virtual-lifecycle invariant carried inside the TLB state. -/
+theorem protect_accepted_preserves_virtual_lifecycleWellFormed
+    state actor addressSpace page permissions
+    (hvirtual : VirtualMapping.LifecycleWellFormed state.virtual)
+    (h : (protect state actor addressSpace page permissions).result = .accepted) :
+    VirtualMapping.LifecycleWellFormed
+      (protect state actor addressSpace page permissions).state.virtual := by
+  simp only [protect] at h
+  split at h
+  · contradiction
+  next owner howner =>
+    split at h
+    · contradiction
+    next hactor =>
+      split at h
+      · contradiction
+      next mapping hmapping =>
+        split at h
+        · contradiction
+        next hnonempty =>
+          split at h
+          · contradiction
+          next hsubset =>
+            have hpreserved :=
+              VirtualMapping.setMapping_restrict_permissions_preserves_lifecycleWellFormed
+                state.virtual addressSpace page mapping permissions hvirtual hmapping
+                (by simp_all)
+                (by
+                  intro hread
+                  simp only [Bool.or_eq_true, Bool.and_eq_true,
+                    Bool.not_eq_true'] at hsubset
+                  by_cases hold : mapping.permissions.read = true
+                  · exact hold
+                  · have holdFalse : mapping.permissions.read = false := by
+                      cases hvalue : mapping.permissions.read <;> simp_all
+                    simp [hread, holdFalse] at hsubset)
+                (by
+                  intro hwrite
+                  simp only [Bool.or_eq_true, Bool.and_eq_true,
+                    Bool.not_eq_true'] at hsubset
+                  by_cases hold : mapping.permissions.write = true
+                  · exact hold
+                  · have holdFalse : mapping.permissions.write = false := by
+                      cases hvalue : mapping.permissions.write <;> simp_all
+                    simp [hwrite, holdFalse] at hsubset)
+            simpa [protect, howner, hactor, hmapping, hnonempty, hsubset,
+              invalidatePage] using hpreserved
 theorem destroy_accepted_coherent state subject slot
     (hc : Coherent state) (h : (destroy state subject slot).result = .accepted) :
     Coherent (destroy state subject slot).state := by
@@ -314,6 +363,35 @@ theorem protect_rejected_unchanged state actor addressSpace page permissions rea
   split <;> try simp_all
   split <;> try simp_all
   split <;> simp_all
+
+@[simp] theorem protect_active state actor addressSpace page permissions :
+    (protect state actor addressSpace page permissions).state.active = state.active := by
+  simp only [protect]
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> rfl
+
+@[simp] theorem protect_virtual_memory state actor addressSpace page permissions :
+    (protect state actor addressSpace page permissions).state.virtual.memory =
+      state.virtual.memory := by
+  simp only [protect]
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> rfl
+
+@[simp] theorem protect_virtual_owner state actor addressSpace page permissions :
+    (protect state actor addressSpace page permissions).state.virtual.owner =
+      state.virtual.owner := by
+  simp only [protect]
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> try rfl
+  split <;> rfl
 theorem destroy_rejected_unchanged state subject slot reason
     (h : (destroy state subject slot).result = .rejected reason) :
     (destroy state subject slot).state = state := by
