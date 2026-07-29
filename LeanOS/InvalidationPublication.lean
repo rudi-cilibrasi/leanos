@@ -239,16 +239,29 @@ theorem reuse_publication_requires_retirement_ack state
 
 /-! ## Canonical stateful sequence
 
-This corpus covers an independent accepted unmap prepare/acknowledge branch,
-plus a sequence with wrong-owner rejection, accepted protection, mismatched
-effect rejection, exact acknowledgement, release, stale-handle rejection,
-address-space destruction, root switch, and bounded reuse publication. -/
+This corpus covers independent accepted unmap and switch-away/back
+prepare/acknowledge branches, plus a sequence with wrong-owner rejection,
+accepted protection, mismatched effect rejection, exact acknowledgement,
+release, stale-handle rejection, address-space destruction, root switch, and
+bounded reuse publication. -/
 
 def unmapPending : State :=
   (prepare initial .unmap (.unmap 0 1 7)).state
 
 def unmappedState : State :=
   (acknowledge unmapPending { ticket := 0, effect := .page 1 7 }).state
+
+def switchAwayPending : State :=
+  (prepare initial .switch (.switch 2)).state
+
+def switchedAway : State :=
+  (acknowledge switchAwayPending { ticket := 0, effect := .flush }).state
+
+def switchBackPending : State :=
+  (prepare switchedAway .switch (.switch 1)).state
+
+def switchedBack : State :=
+  (acknowledge switchBackPending { ticket := 1, effect := .flush }).state
 
 def wrongOwnerRejected : State :=
   (prepare initial .protect (.protect 1 1 7 { read := true })).state
@@ -333,6 +346,29 @@ theorem canonical_unmap_publication_order :
     unmappedState.published.virtual.mappings 1 7 = none ∧
     TLB.lookup unmappedState.published.entries
       { addressSpace := 1, page := 7 } StaleTranslation.ctx = none := by
+  native_decide
+
+/-- The canonical round trip publishes neither root switch until its own fresh
+flush ticket is acknowledged; the second acknowledgement restores root 1 and
+cannot be authorized by the first switch's completion. -/
+theorem canonical_switch_away_back_publication_order :
+    (prepare initial .switch (.switch 2)).accepted = true ∧
+    (prepare initial .switch (.switch 2)).effect = .flush ∧
+    switchAwayPending.published.active = initial.published.active ∧
+    (acknowledge switchAwayPending
+      { ticket := 0, effect := .flush }).accepted = true ∧
+    switchedAway.published.active = some 2 ∧
+    (prepare switchedAway .switch (.switch 1)).effect = .flush ∧
+    switchBackPending.published.active = some 2 ∧
+    switchBackPending.pending.map (·.ticket) = some 1 ∧
+    (acknowledge switchBackPending
+      { ticket := 0, effect := .flush }).accepted = false ∧
+    (acknowledge switchBackPending
+      { ticket := 0, effect := .flush }).effect = .none ∧
+    (acknowledge switchBackPending
+      { ticket := 1, effect := .flush }).accepted = true ∧
+    switchedBack.published.active = some 1 ∧
+    switchedBack.pending.isNone = true := by
   native_decide
 
 /-- The release and root-switch stages both require `.flush`, but the release

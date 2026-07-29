@@ -183,6 +183,10 @@ private def invalidationEdgeId :
   | .reused => "composite.invalidation-reuse-published"
   | .unmapPending => "composite.invalidation-unmap-pending"
   | .unmappedState => "composite.invalidation-unmap-ack"
+  | .switchAwayPending => "composite.invalidation-switch-away-pending"
+  | .switchedAway => "composite.invalidation-switch-away-ack"
+  | .switchBackPending => "composite.invalidation-switch-back-pending"
+  | .switchedBack => "composite.invalidation-switch-back-ack"
 
 def invalidationEdgeVector
     (edge : CompositeDispatcher.CanonicalInvalidationEdge) : Vector :=
@@ -567,7 +571,7 @@ def vectors : List Vector := [
   composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0] ++
   mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors
 
-theorem corpus_shape : vectors.length = 350 := by decide
+theorem corpus_shape : vectors.length = 354 := by decide
 /-- Oracle indices 314--331 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
@@ -581,9 +585,9 @@ theorem hosted_mixed_vectors_refine :
     ∀ edge ∈ CompositeDispatcher.mixedCanonicalEdges, edge.Refines :=
   CompositeDispatcher.mixedCanonicalEdges_refine
 
-/-- Oracle indices 332--346 are the exact stateful invalidation publication
-corpus, including the independent accepted-unmap prepare/acknowledge branch;
-347--349 are malformed-effect, mismatched-state, and stale-ticket negatives. -/
+/-- Oracle indices 332--350 are the exact stateful invalidation publication
+corpus, including independent accepted-unmap and switch-away/back branches;
+351--353 are malformed-effect, mismatched-state, and stale-ticket negatives. -/
 theorem hosted_invalidation_vectors_exact :
     vectors.drop 332 =
       CompositeDispatcher.invalidationCanonicalEdges.map invalidationEdgeVector ++
@@ -603,15 +607,19 @@ theorem composite_invalidation_trace_agrees :
     (vectors[344]).expected = 0x3e2701 ∧
     (vectors[345]).expected = 0x3f2801 ∧
     (vectors[346]).expected = 0x402901 ∧
-    (vectors[347]).expected = 0xff05 ∧
-    (vectors[348]).expected = 0xff06 ∧
-    (vectors[349]).expected = 0xff05 := by
+    (vectors[347]).expected = 0x412a01 ∧
+    (vectors[348]).expected = 0x422b01 ∧
+    (vectors[349]).expected = 0x432c01 ∧
+    (vectors[350]).expected = 0x442d01 ∧
+    (vectors[351]).expected = 0xff05 ∧
+    (vectors[352]).expected = 0xff06 ∧
+    (vectors[353]).expected = 0xff05 := by
   native_decide
 
 /-- The hosted scalar ABI rejects replaying release ticket 1 as the later
 switch acknowledgement even though both require the same `.flush` effect. -/
 theorem composite_invalidation_same_effect_replay_rejected :
-    (vectors[349]).expected = 0xff05 := by
+    (vectors[353]).expected = 0xff05 := by
   native_decide
 
 theorem composite_mixed_trace_agrees :

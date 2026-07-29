@@ -13,7 +13,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-350-vector order covers accepted calls,
+354-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -78,11 +78,12 @@ boundary, including the timer-selected subject and the faulting subject's
 retired identity. The scalar export remains allocation-free; generated C and
 its calling convention remain trusted hosted-test boundaries.
 
-The final eighteen records are the stateful invalidation-publication corpus.
-Fifteen canonical edges cover an independent accepted unmap and exact
-page-effect acknowledgement, plus wrong-owner protection rejection, an accepted
-writable-to-read-only protection reduction, accepted release and destruction,
-stale-release rejection, root switch, and bounded post-retirement reuse. Both
+The final twenty-two records are the stateful invalidation-publication corpus.
+Nineteen canonical edges cover an independent accepted unmap and exact
+page-effect acknowledgement, an independently ticketed switch-away/back round
+trip, plus wrong-owner protection rejection, an accepted writable-to-read-only
+protection reduction, accepted release and destruction, stale-release
+rejection, root switch, and bounded post-retirement reuse. Both
 protection and release include a mismatched-effect stutter before the exact
 acknowledgement. The three final negatives reject a malformed effect encoding,
 a valid page acknowledgement paired with the wrong pending state, and an old
@@ -92,7 +93,10 @@ tokens retain the complete published pre-state: `prepare_retains_published` and
 `acknowledge_accepted_exact` requires the fresh ticket and exact effect before
 publishing the recorded successor, and
 `reuse_publication_requires_retirement_ack` requires acknowledged release and
-destruction with no pending effect. The object-11 reuse remains the existing
+destruction with no pending effect. The switch round trip additionally checks
+that the first flush ticket cannot acknowledge the return switch and that the
+published active root returns to address space 1 only after ticket 1. The
+object-11 reuse remains the existing
 finite fixture; it adds no authoritative quota or reclamation policy.
 
 Five additional Phase 2 records invoke that same dispatcher for a canonical
