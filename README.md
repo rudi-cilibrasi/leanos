@@ -319,7 +319,11 @@ CR3/TLB operations, boot integration, and the compiler remain trusted.
 
 The finite [single-core TLB model](docs/tlb-model.md) makes invalidation atomic
 with mapping/lifecycle mutation and revalidates cached translations against the
-current encoded walk and allocator ownership before use.
+current encoded walk and allocator ownership before use. The boot image also
+executes the canonical generated address-space-2/page-7 unmap effect against a
+bounded runtime-mutable window, with ordered PTE-store/`invlpg` and
+PTE-store/CR3-reload paths plus kernel-observed before/replacement-frame
+values.
 
 The first total syscall model separates trusted caller/active-address-space
 context from untrusted fixed-width scalar words and proves invariant

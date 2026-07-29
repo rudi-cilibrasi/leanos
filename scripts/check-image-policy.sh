@@ -8,6 +8,7 @@ symbols="$(nm "$elf")"
 ./scripts/check-entry-policy.sh "$elf"
 ./scripts/check-extended-state-policy.sh "$elf"
 ./scripts/check-early-idt-policy.py "$elf"
+./scripts/check-runtime-invalidation-policy.sh "$elf"
 
 flags() {
   readelf -SW "$elf" | awk -v section="$1" \

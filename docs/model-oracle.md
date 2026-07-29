@@ -250,6 +250,14 @@ lifetime are checked by `step`, so a non-owner or post-reuse request packs no
 effect. `stale_translation_adapter_agrees_with_model` proves the exported scalar
 matches the authoritative `step` on every vector.
 
+The canonical composite accepted-unmap reply is also consumed by the boot
+image's runtime-mutable page-7 window. Source and final-ELF policy checks bind
+the reply to address space B and enforce PTE-store, `invlpg`/CR3, publication
+order; QEMU observes the distinct kernel-read before/replacement-frame values
+and restoration of the boot-plan leaf. This checkpoint does not replace the
+dedicated CPL3 prefill, architectural denial, and same-frame lifetime-reuse
+scenario.
+
 Run the complete local evidence path with:
 
 ```sh

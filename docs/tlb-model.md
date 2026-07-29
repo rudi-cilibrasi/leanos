@@ -78,10 +78,27 @@ authoritatively replayed `directMapped` state. An accepted syscall unmap of page
 state and publishes `Effect.none`. `mixed_unmap_effect_confined` prevents the
 accepted effect from being spliced onto another canonical pre-state or command,
 and `mixed_accepted_unmap_publication_order` identifies the published
-translation state with the same `StaleTranslation.step` result. No C-owned
-mapping or cache state is introduced.
+translation state with the same `StaleTranslation.step` result.
 
-This is sequence-level model-backed differential evidence, not a proof that the
-processor flushed. A runtime-mutable mapping window and a dedicated
-before/after/reuse QEMU boot scenario remain future work. `invlpg`/CR3 completion
-and page-walk hardware remain trusted.
+Every boot image then consumes that exact generated reply in a bounded
+runtime-mutable machine window at virtual page 7. Address space B is first
+backed by a reviewed “before” frame. The active-root path clears B's volatile
+PTE, executes `invlpg (0x7000)`, and only then publishes completion; remapping
+the now-uncached window to a second frame yields the reviewed “after” value.
+The inactive-root path repeats the same clear with A selected, loads B's CR3,
+checks the selected root and absent PTE, and only then publishes completion;
+a later B reload exposes the second frame. Both paths finally restore the
+boot-plan leaf. These accesses are kernel observations of the concrete
+machine-path ordering. A dedicated CPL3 prefill followed by a real
+architectural denial, with the retired physical frame scrubbed and republished
+to a fresh lifetime while the old virtual address remains absent, is still
+required for the complete issue.
+
+`check-runtime-invalidation-policy.sh` checks the fixed generated state,
+command, reply, address-space and page in source and checks
+PTE-store/invalidation/publication order in final disassembly. Its focused
+negative corpus rejects a wrong page, wrong root, omitted `invlpg`, and forged
+typed reply. The QEMU trace is machine evidence for
+before/unmap/replacement-frame visibility and confinement, not a proof of
+processor TLB semantics. Instruction completion, page-walk hardware, compiler
+correctness, and physical TLB coherence remain trusted.

@@ -209,6 +209,14 @@ static struct idt_entry idt[256] __attribute__((aligned(16)));
 static struct tss64 tss;
 static uint8_t entry_stack[16384]
     __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
+/* Page 7 is deliberately outside the linked boot image.  These two
+   image-reserved frames back its bounded runtime-mutable mapping window. */
+static uint64_t runtime_mapping_frame_before[PAGE_BYTES / sizeof(uint64_t)]
+    __attribute__((used, aligned(PAGE_BYTES)));
+static uint64_t runtime_mapping_frame_after[PAGE_BYTES / sizeof(uint64_t)]
+    __attribute__((used, aligned(PAGE_BYTES)));
+static volatile uint64_t runtime_invlpg_publication;
+static volatile uint64_t runtime_cr3_publication;
 static unsigned preemption_step;
 uint64_t current_subject = 1;
 #ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
@@ -740,6 +748,114 @@ static void check_boot_page_tables(void) {
                               page_directory_b, page_table_b, 1)) fail("pt-decode-b");
     serial_puts("LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS\n");
     check_live_page_table_mutations();
+}
+
+#define RUNTIME_MAPPING_PAGE 7u
+#define RUNTIME_MAPPING_ADDRESS (RUNTIME_MAPPING_PAGE * PAGE_BYTES)
+#define RUNTIME_MAPPING_BEFORE UINT64_C(0x126bef0e)
+#define RUNTIME_MAPPING_AFTER UINT64_C(0x126a57e2)
+
+static uint64_t runtime_mapping_leaf(uint64_t *frame) {
+    return (uint64_t)frame | PTE_PRESENT | PTE_WRITABLE | PTE_NX;
+}
+
+/* This is the active-root implementation of the canonical page(2, 7)
+   machine effect.  The volatile PTE store, compiler memory boundary, INVLPG,
+   and publication store make the required order visible in the final ELF. */
+__attribute__((noinline, used))
+static void runtime_unmap_page7_invlpg(uint64_t canonical_reply) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if (canonical_reply != LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED ||
+        (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b)
+        fail("runtime-invlpg-authority");
+    ((volatile uint64_t *)page_table_b)[RUNTIME_MAPPING_PAGE] = 0;
+    __asm__ volatile ("" ::: "memory");
+    __asm__ volatile ("invlpg (%0)" :
+                      : "r"((uint64_t)RUNTIME_MAPPING_ADDRESS) : "memory");
+    if (page_table_b[RUNTIME_MAPPING_PAGE] != 0)
+        fail("runtime-invlpg-pte");
+    runtime_invlpg_publication = canonical_reply;
+}
+
+/* This is the inactive-root implementation of the same effect.  Selecting
+   the exact derived B root after the PTE store supplies the no-PCID CR3 flush;
+   completion is published only after a checked CR3 readback. */
+__attribute__((noinline, used))
+static void runtime_unmap_page7_cr3(uint64_t canonical_reply) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if (canonical_reply != LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED ||
+        (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a)
+        fail("runtime-cr3-authority");
+    ((volatile uint64_t *)page_table_b)[RUNTIME_MAPPING_PAGE] = 0;
+    __asm__ volatile ("" ::: "memory");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b ||
+        page_table_b[RUNTIME_MAPPING_PAGE] != 0)
+        fail("runtime-cr3-completion");
+    runtime_cr3_publication = canonical_reply;
+}
+
+/* Exercise both machine spellings against real page tables.  The generated
+   composite dispatcher is the sole authority for the effect; C only checks
+   its closed typed reply and applies the fixed address-space-2/page-7 target.
+   Restoring the boot leaf confines the mutable window to this bounded check. */
+static void check_runtime_mapping_invalidation(void) {
+    volatile uint64_t *window =
+        (volatile uint64_t *)(uint64_t)RUNTIME_MAPPING_ADDRESS;
+    const uint64_t canonical_reply = leanos_composite_dispatch(
+        LEANOS_COMPOSITE_STATE_DIRECT_MAPPED,
+        LEANOS_COMPOSITE_COMMAND_ACCEPTED_SYSCALL_UNMAP,
+        RUNTIME_MAPPING_PAGE, 0, 0, 0);
+    const uint64_t boot_leaf = expected_boot_leaf(2, RUNTIME_MAPPING_PAGE);
+
+    if (canonical_reply != LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED)
+        fail("runtime-unmap-dispatch");
+    runtime_mapping_frame_before[0] = RUNTIME_MAPPING_BEFORE;
+    runtime_mapping_frame_after[0] = RUNTIME_MAPPING_AFTER;
+
+    page_table_b[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_before);
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    if (*window != RUNTIME_MAPPING_BEFORE)
+        fail("runtime-invlpg-before");
+    runtime_unmap_page7_invlpg(canonical_reply);
+    page_table_b[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_after);
+    __asm__ volatile ("" ::: "memory");
+    if (*window != RUNTIME_MAPPING_AFTER ||
+        runtime_invlpg_publication != canonical_reply)
+        fail("runtime-invlpg-reuse");
+    serial_puts("LEANOS/19 TLB path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS\n");
+
+    page_table_b[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_before);
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    if (*window != RUNTIME_MAPPING_BEFORE)
+        fail("runtime-cr3-before");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_a) : "memory");
+    runtime_unmap_page7_cr3(canonical_reply);
+    page_table_b[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_after);
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    if (*window != RUNTIME_MAPPING_AFTER ||
+        runtime_cr3_publication != canonical_reply)
+        fail("runtime-cr3-reuse");
+    serial_puts("LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS\n");
+
+    page_table_b[RUNTIME_MAPPING_PAGE] = boot_leaf;
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_a) : "memory");
+    if (page_table_b[RUNTIME_MAPPING_PAGE] != boot_leaf)
+        fail("runtime-window-restore");
+    serial_puts("LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS\n");
 }
 
 static void check_selected_root_b(void) {
@@ -2880,6 +2996,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     quarantine_q35_pci_dma();
 
     check_boot_page_tables();
+    check_runtime_mapping_invalidation();
 
     boot_allocate(multiboot_magic, multiboot_info);
 
