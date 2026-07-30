@@ -1264,11 +1264,19 @@ if grep -q ' T leanos_boot_allocation_check$' <<<"$symbols"; then
   exit 1
 fi
 for symbol in leanos_boot_handoff_stream_init leanos_boot_handoff_stream_step \
-  leanos_boot_decode_init leanos_boot_decode_step leanos_boot_manifest_candidate \
-  leanos_boot_manifest_start leanos_boot_consume_exact_projection \
+  leanos_boot_decode_init leanos_boot_decode_step \
+  leanos_boot_consume_exact_projection leanos_boot_projection_entry \
+  leanos_boot_projection_manifest leanos_boot_projection_free \
+  leanos_boot_projection_finish leanos_boot_manifest_candidate \
   leanos_boot_publish_authority; do
   if ! grep -q " T ${symbol}$" <<<"$symbols"; then
     echo "error: generated image does not retain $symbol" >&2
+    exit 1
+  fi
+done
+for symbol in leanos_boot_manifest_start; do
+  if grep -q " T ${symbol}$" <<<"$symbols"; then
+    echo "error: generated image retained superseded production authority $symbol" >&2
     exit 1
   fi
 done
