@@ -679,6 +679,7 @@ def gate (state : State) : Operation → Outcome state
       | none => .rejected .staleFrame
       | some frame =>
           if frame.owner != state.core.currentOwner then .rejected .wrongOwner
+          else if !frame.live then .rejected .staleFrame
           else if frame.kernelOwned || frame.pageTable || frame.allocatorMetadata then
             .rejected .protectedFrame
           else if state.core.mappings.any (·.frame == handle) then
@@ -1556,10 +1557,13 @@ theorem release_rejects_reachable_frame (state : State) (handle : FrameHandle)
   | some frame =>
       by_cases howner : frame.owner != state.core.currentOwner
       · exact ⟨.wrongOwner, by simp [howner]⟩
-      · by_cases hprotected :
-            frame.kernelOwned || frame.pageTable || frame.allocatorMetadata
-        · exact ⟨.protectedFrame, by simp [howner, hprotected]⟩
-        · exact ⟨.frameStillReachable, by simp [howner, hprotected, hreachable]⟩
+      · by_cases hlive : frame.live
+        · by_cases hprotected :
+              frame.kernelOwned || frame.pageTable || frame.allocatorMetadata
+          · exact ⟨.protectedFrame, by simp [howner, hlive, hprotected]⟩
+          · exact ⟨.frameStillReachable,
+              by simp [howner, hlive, hprotected, hreachable]⟩
+        · exact ⟨.staleFrame, by simp [howner, hlive]⟩
 
 theorem retired_assignment_generation_rejects (state : State)
     (request : TransferRequest) (direction : Direction)
@@ -2038,6 +2042,11 @@ example :
 example :
     let released := (gate tornDownState (.releaseFrame ⟨0, 1⟩)).state
     released.core.frames.head!.live = false := by native_decide
+
+example :
+    let released := (gate tornDownState (.releaseFrame ⟨0, 1⟩)).state
+    (gate released (.releaseFrame ⟨0, 1⟩)).reason = some .staleFrame := by
+  native_decide
 
 def ownerOneState : State :=
   { emptyState with

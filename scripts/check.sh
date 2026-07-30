@@ -319,18 +319,69 @@ fi
 for fixture in IOMMUCallerSuppliedPhysicalFrame IOMMUCrossDomainTranslation \
     IOMMUOmittedSourceBinding IOMMUPermissionAmplification IOMMUStaleBDFReuse \
     IOMMUDeviceReadOutsideRule IOMMUReleaseReachableFrame \
+    IOMMURepeatRelease \
     IOMMUFabricatedReadView IOMMUDetachedAuthoritativeProjection \
     IOMMUSameOwnerWrongFrame IOMMUTwoLiveFrameGenerations; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: IOMMU confinement fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
   fi
+  case "$fixture" in
+    IOMMUCallerSuppliedPhysicalFrame)
+      expected_diagnostic='`frame` is not a field of structure `GrantRequest`'
+      ;;
+    IOMMUCrossDomainTranslation)
+      expected_diagnostic='translation.mapping.domain ≠ translation.assignment.domain'
+      ;;
+    IOMMUOmittedSourceBinding)
+      expected_diagnostic='Fields missing: `assignmentFound`, `mappingFound`, `frameFound`, `sourceBound`'
+      ;;
+    IOMMUFabricatedReadView)
+      expected_diagnostic='Fields missing: `bytes`, `observed`'
+      ;;
+    IOMMUDetachedAuthoritativeProjection)
+      expected_diagnostic='state.iommu.Invariant ∧ state.Coherent'
+      ;;
+    IOMMUDeviceReadOutsideRule)
+      expected_diagnostic='iova := 16'
+      ;;
+    IOMMUPermissionAmplification)
+      expected_diagnostic='permission := readWrite'
+      ;;
+    IOMMUReleaseReachableFrame)
+      expected_diagnostic='gate readOnlyState (Operation.releaseFrame'
+      ;;
+    IOMMURepeatRelease)
+      expected_diagnostic='gate releasedFrameState (Operation.releaseFrame'
+      ;;
+    IOMMUSameOwnerWrongFrame)
+      expected_diagnostic='validateCore sameOwnerWrongFrameCore = true'
+      ;;
+    IOMMUStaleBDFReuse)
+      expected_diagnostic='(deviceRead reassignedState readRequest).isObserved = true'
+      ;;
+    IOMMUTwoLiveFrameGenerations)
+      expected_diagnostic='validateCore twoLiveGenerationsCore = true'
+      ;;
+  esac
   if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq 'error:' "$negative_log"; then
-    echo "error: IOMMU confinement fixture ${fixture} lacked a Lean diagnostic" >&2
+      ! grep -Fq "$expected_diagnostic" "$negative_log"; then
+    echo "error: IOMMU confinement fixture ${fixture} lacked its expected semantic diagnostic" >&2
     cat "$negative_log" >&2
     exit 1
   fi
+  case "$fixture" in
+    IOMMUDeviceReadOutsideRule|IOMMUPermissionAmplification|\
+    IOMMUReleaseReachableFrame|IOMMURepeatRelease|IOMMUSameOwnerWrongFrame|\
+    IOMMUStaleBDFReuse|IOMMUTwoLiveFrameGenerations)
+      if ! grep -Fq 'Tactic `native_decide` evaluated that the proposition' "$negative_log" ||
+          ! grep -Fq 'is false' "$negative_log"; then
+        echo "error: IOMMU confinement fixture ${fixture} lacked the expected false proposition" >&2
+        cat "$negative_log" >&2
+        exit 1
+      fi
+      ;;
+  esac
 done
 
 if lake env lean tests/negative/WrappingIssuerReuse.lean >"$negative_log" 2>&1; then

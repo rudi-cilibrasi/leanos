@@ -141,9 +141,11 @@ guest cannot satisfy this fixture. These identity words are a finite QEMU
 mutation oracle, not evidence that the QTest fixture reconstructs the kernel's
 authoritative allocator state or refines the Lean projection. This controlled
 extra function is never admitted to the production topology or its manifest.
-Because this DMA oracle needs TCG's virtual clock to run, its CPU is not paused;
-the harness lets initial firmware PCI enumeration settle before it takes
-ownership of the EDU BAR and Command register.
+Because this DMA oracle needs TCG's virtual clock to run, its CPU is not paused.
+The harness installs an inert 64 KiB BIOS whose reset vector halts in a loop,
+isolating qtest from firmware enumeration while bounded qtest response waits
+guard each access before the harness takes ownership of the EDU BAR and Command
+register.
 
 `scripts/run-dma-unknown-device.sh` supplies the first guest-level controlled
 negative after that canary oracle. It reuses the normal production image and
