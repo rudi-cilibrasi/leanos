@@ -249,10 +249,14 @@ mv "$build/FaultDispatchAndCompositeAdapters.o" "$build/FaultDispatch.o"
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
   -c boot/kernel.c -o "$build/kernel-fault-containment.o"
 for probe in "${fault_image_probes[@]}"; do
+  fault_plan_header="boot-page-plan-fault-containment.h"
+  if [[ "$probe" == stale-translation ]]; then
+    fault_plan_header="boot-page-plan-fault-stale-translation.h"
+  fi
   "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
     -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
     "${fault_fatal_probe_flags[$probe]}" \
-    -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
+    -DLEANOS_BOOT_PAGE_PLAN_HEADER="\"${fault_plan_header}\"" \
     -c boot/kernel.c -o "$build/kernel-fault-${probe}.o"
 done
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -741,10 +745,14 @@ cmp "$build/boot-page-plan-integer-fault.h" \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
   -c boot/kernel.c -o "$build/kernel-fault-containment.o"
 for probe in "${fault_image_probes[@]}"; do
+  fault_plan_header="boot-page-plan-fault-containment.h"
+  if [[ "$probe" == stale-translation ]]; then
+    fault_plan_header="boot-page-plan-fault-stale-translation.h"
+  fi
   "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
     -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
     "${fault_fatal_probe_flags[$probe]}" \
-    -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
+    -DLEANOS_BOOT_PAGE_PLAN_HEADER="\"${fault_plan_header}\"" \
     -c boot/kernel.c -o "$build/kernel-fault-${probe}.o"
 done
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \

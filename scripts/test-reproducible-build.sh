@@ -39,7 +39,13 @@ cp "build/boot/leanos-${version}-x86_64.iso" build/boot/leanos.elf \
   build/boot/leanos-fault-walk-mismatch.map \
   build/boot/boot-page-plan-fault-walk-mismatch.final.h \
   build/boot/fault-walk-mismatch.disassembly.txt \
-  build/boot/fault-walk-mismatch-policy-report.txt "$first/"
+  build/boot/fault-walk-mismatch-policy-report.txt \
+  "build/boot/leanos-${version}-x86_64-fault-stale-translation.iso" \
+  build/boot/leanos-fault-stale-translation.elf \
+  build/boot/leanos-fault-stale-translation.map \
+  build/boot/boot-page-plan-fault-stale-translation.final.h \
+  build/boot/fault-stale-translation.disassembly.txt \
+  build/boot/fault-stale-translation-policy-report.txt "$first/"
 ./scripts/build-image.sh
 
 for artifact in "leanos-${version}-x86_64.iso" leanos.elf leanos.map \
@@ -63,7 +69,12 @@ for artifact in "leanos-${version}-x86_64.iso" leanos.elf leanos.map \
   "leanos-${version}-x86_64-fault-walk-mismatch.iso" \
   leanos-fault-walk-mismatch.elf leanos-fault-walk-mismatch.map \
   boot-page-plan-fault-walk-mismatch.final.h \
-  fault-walk-mismatch.disassembly.txt fault-walk-mismatch-policy-report.txt; do
+  fault-walk-mismatch.disassembly.txt fault-walk-mismatch-policy-report.txt \
+  "leanos-${version}-x86_64-fault-stale-translation.iso" \
+  leanos-fault-stale-translation.elf leanos-fault-stale-translation.map \
+  boot-page-plan-fault-stale-translation.final.h \
+  fault-stale-translation.disassembly.txt \
+  fault-stale-translation-policy-report.txt; do
   if ! cmp -s "$first/$artifact" "build/boot/$artifact"; then
     echo "error: repeated build changed $artifact" >&2
     sha256sum "$first/$artifact" "build/boot/$artifact" >&2
@@ -71,4 +82,4 @@ for artifact in "leanos-${version}-x86_64.iso" leanos.elf leanos.map \
   fi
 done
 
-echo "Repeated base/reason-sensitive fault images, ELFs, maps, plans, policies, and revision are byte-identical"
+echo "Repeated base/reason-sensitive fault images, including stale-translation artifacts, ELFs, maps, plans, policies, and revision are byte-identical"

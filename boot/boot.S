@@ -632,10 +632,11 @@ enter_user:
     add $8, %rsp
     pushq $0x1b
     push %rsi
-    pushfq
-    pop %rax
-    or $0x200, %rax
-    push %rax
+    /* The initial frame is a kernel-owned canonical object.  Do not inherit
+       arithmetic flags from whichever checked boot path happened to run
+       immediately before this call.  The page-fault evidence protocol binds
+       this exact RFLAGS word. */
+    pushq $0x216
     pushq $0x23
     push %rdi
     /* Supply an all-zero initial register bank so every CPL3 transition uses
@@ -1549,6 +1550,8 @@ user_a_entry:
     mov %rbx, %rbx
     mov $0x7000, %rcx
     mov $7, %rdx
+    int $0x80
+    ud2
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     mov $0x1b, %ax
     mov %ax, %ds

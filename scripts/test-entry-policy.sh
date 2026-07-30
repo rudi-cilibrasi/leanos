@@ -69,6 +69,9 @@ run_nx_page_fault_fixture() {
 }
 
 wrong_target() { sed -i 's/set_gate(14, isr14,/set_gate(14, isr32,/' "$tmp/kernel.c"; }
+ambient_initial_rflags() {
+  sed -i 's/pushq \$0x216/pushfq/' "$tmp/boot.S"
+}
 nmi_wrong_target() { sed -i 's/set_gate(2, isr2,/set_gate(2, isr8,/' "$tmp/kernel.c"; }
 nmi_wrong_ist() { sed -i 's/set_gate(2, isr2, 2,/set_gate(2, isr2, 1,/' "$tmp/kernel.c"; }
 nmi_dpl3() { sed -i 's/set_gate(2, isr2, 2, 0x8e)/set_gate(2, isr2, 2, 0xee)/' "$tmp/kernel.c"; }
@@ -228,6 +231,9 @@ bp_before_normalize() { sed -i '/NORMALIZE_ENTRY 3, 0/i\    call breakpoint_hand
 de_branch_cleanup() { sed -i '/^isr0:/,/^\.global isr3/ s/^[[:space:]]*clac$/    nop/' "$tmp/boot.S"; }
 
 run_fixture wrong-target 'vector=14 field=target-or-dpl' wrong_target
+run_fixture ambient-initial-rflags \
+  'initial-user-rflags source is not the canonical 0x216 word' \
+  ambient_initial_rflags
 run_fixture nmi-wrong-target 'vector=2 field=target-ist-or-dpl' nmi_wrong_target
 run_fixture nmi-wrong-ist 'vector=2 field=target-ist-or-dpl' nmi_wrong_ist
 run_fixture nmi-dpl3 'vector=2 field=target-ist-or-dpl' nmi_dpl3
