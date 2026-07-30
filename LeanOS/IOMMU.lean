@@ -1,6 +1,7 @@
 import LeanOS.DMAQuarantine
 import LeanOS.FailStop
 import LeanOS.CapabilityHandle
+import LeanOS.FrameScrub
 import LeanOS.LifetimeIssuer
 
 /-!
@@ -750,10 +751,12 @@ def directionAllowed : Permission → Direction → Bool
   | permission, .read => permission.read
   | permission, .write => permission.write
 
-/-- Source is supplied by the trusted device/IOMMU boundary.  Assignment
-generation is included so retirement followed by reuse of the same device BDF
-and source cannot revive an old request.  There is deliberately no domain,
-owner, or physical-frame field. -/
+/-- Source is supplied by the trusted device/IOMMU boundary.  PCIe transactions
+do not carry the model's assignment generation: the trusted remapping context
+must look up and authenticate the active software lifetime tag for that source
+and attach it to the modeled request.  The tag prevents retirement followed by
+reuse of the same device BDF and source from reviving an old request.  There is
+deliberately no domain, owner, or physical-frame field. -/
 structure TransferRequest where
   source : SourceId
   assignmentGeneration : Generation
@@ -761,8 +764,10 @@ structure TransferRequest where
   length : Nat
   deriving BEq, DecidableEq, Repr
 
-/-- Explicit platform assumption, intentionally weaker than confinement:
-hardware supplies the requester/source identity and transfer range faithfully.
+/-- Explicit platform assumption, intentionally weaker than confinement: the
+trusted boundary supplies the requester/source identity and transfer range
+faithfully and attaches the active software assignment-generation tag obtained
+from its authenticated remapping context.  PCIe does not supply that tag.
 Authorization is still decided by `translate`; this assumption does not state
 that a transfer is allowed, translated correctly, or confined. -/
 def DeviceSemantics (hardware modeled : TransferRequest) : Prop :=
@@ -1604,6 +1609,7 @@ theorem deny_all_unassigned_device_stutters
 structure AuthoritativeExtension where
   kernel : FailStop.CompositeState
   iommu : State
+  scrub : FrameScrub.State
 
 /-- Cross-projection authority coherence.  The selected owner is the exact
 kernel-selected subject, capability provenance is the authoritative kernel
@@ -1612,6 +1618,9 @@ def AuthoritativeExtension.Coherent (state : AuthoritativeExtension) : Prop :=
   state.iommu.core.currentOwner =
       state.kernel.execution.core.context.currentSubject ∧
     state.iommu.core.capabilityAuthority = state.kernel.capabilities ∧
+    state.scrub.memory = state.kernel.virtualMemory.memory ∧
+    state.iommu.core.memory = state.scrub.bytes ∧
+    FrameScrub.ScrubInvariant state.scrub ∧
     (∀ assignment ∈ state.iommu.core.assignments,
       state.kernel.capabilities.subjects assignment.owner = true) ∧
     (∀ capability ∈ state.iommu.core.capabilities,
@@ -1683,7 +1692,8 @@ noncomputable def applyKernelOperation (state : AuthoritativeExtension)
   classical
   let kernel := (FailStop.authoritativeGate state.kernel operation).state
   let candidate : AuthoritativeExtension :=
-    { kernel, iommu := reconcileKernelAuthority kernel state.iommu }
+    { kernel, iommu := reconcileKernelAuthority kernel state.iommu
+      scrub := state.scrub }
   if candidate.Coherent then exact candidate else exact state
 
 theorem kernel_operation_preserves_authoritative_extension
@@ -1768,7 +1778,7 @@ noncomputable def gatedByKernel (state : AuthoritativeExtension)
         | .rejected reason => .rejected reason
         | .accepted after reply =>
             let candidate : AuthoritativeExtension :=
-              { kernel := state.kernel, iommu := after }
+              { kernel := state.kernel, iommu := after, scrub := state.scrub }
             if hcoherent : candidate.Coherent then
               .accepted candidate ⟨hstate.1, after.invariant, hcoherent⟩ reply
             else
@@ -2098,5 +2108,344 @@ example : terminatedState.core.assignments = [] ∧
     terminatedState.core.mappings = [] ∧
     terminatedState.core.capabilities.all (·.owner != 0) = true := by
   native_decide
+
+/-! ## Coherent public-gate non-vacuity -/
+
+def scrubbedMemory : FrameId → Nat → UInt8 := fun _ _ => FrameScrub.initialByte
+
+/-- Match the repository's canonical mixed-dispatcher runtime: subject `2`
+holds memory object `20`, which the authoritative virtual-memory projection
+binds to physical frame `4`. -/
+def authoritativeSampleCore (plan : BootPageTablePlan.Plan) : Core :=
+  let kernel := FailStop.compositeDispatcherInitial plan
+  { currentOwner := 2
+    nextAssignmentGeneration := 1
+    nextDomainGeneration := 1
+    nextMappingGeneration := 1
+    assignments := []
+    mappings := []
+    frames := [⟨⟨4, 1⟩, 2, true, false, false, false, 64⟩]
+    capabilityAuthority := kernel.capabilities
+    frameAuthority := fun object =>
+      if object == 20 then some ⟨4, 1⟩ else none
+    capabilities := [⟨2, 5, 2, 20, ⟨4, 1⟩, 0, 64, readWrite⟩]
+    memory := scrubbedMemory }
+
+def authoritativeSampleIOMMU (plan : BootPageTablePlan.Plan) : State :=
+  { core := authoritativeSampleCore plan
+    valid := by
+      simp [authoritativeSampleCore, FailStop.compositeDispatcherInitial]
+      native_decide
+    capabilityWellFormed :=
+      (FailStop.compositeDispatcherInitial_authoritativeRuntimeWellFormed
+        plan).1.2.2.2.1 }
+
+def authoritativeSampleScrub (plan : BootPageTablePlan.Plan) : FrameScrub.State :=
+  { memory :=
+      (FailStop.compositeDispatcherInitial plan).virtualMemory.memory
+    bytes := scrubbedMemory
+    written := fun _ => false }
+
+theorem authoritativeSampleScrub_invariant (plan : BootPageTablePlan.Plan) :
+    FrameScrub.ScrubInvariant (authoritativeSampleScrub plan) := by
+  intro object frame hbinding _hunwritten
+  change (if object = 20 then some 4 else none) = some frame at hbinding
+  by_cases hobject : object = 20
+  · subst object
+    simp at hbinding
+    subst frame
+    constructor
+    · rfl
+    · intro offset _hoffset
+      rfl
+  · simp [hobject] at hbinding
+
+def authoritativeSample (plan : BootPageTablePlan.Plan) :
+    AuthoritativeExtension :=
+  { kernel := FailStop.compositeDispatcherInitial plan
+    iommu := authoritativeSampleIOMMU plan
+    scrub := authoritativeSampleScrub plan }
+
+theorem authoritativeSample_invariant (plan : BootPageTablePlan.Plan) :
+    (authoritativeSample plan).Invariant := by
+  refine
+    ⟨FailStop.compositeDispatcherInitial_authoritativeRuntimeWellFormed plan,
+      (authoritativeSampleIOMMU plan).invariant, ?_⟩
+  refine ⟨rfl, rfl, rfl, rfl,
+    authoritativeSampleScrub_invariant plan, ?_⟩
+  simp [authoritativeSample,
+    authoritativeSampleIOMMU, authoritativeSampleCore,
+    FailStop.compositeDispatcherInitial]
+  native_decide
+
+/-- Exercise device assignment through the public coherent boundary. -/
+noncomputable def authoritativeAssignedOutcome (plan : BootPageTablePlan.Plan) :=
+  gatedByKernel (authoritativeSample plan) (authoritativeSample_invariant plan)
+    (.assign ⟨0⟩)
+
+noncomputable def authoritativeAssigned (plan : BootPageTablePlan.Plan) :
+    AuthoritativeExtension :=
+  (authoritativeAssignedOutcome plan).state
+
+theorem authoritativeAssigned_invariant (plan : BootPageTablePlan.Plan) :
+    (authoritativeAssigned plan).Invariant :=
+  (authoritativeAssignedOutcome plan).invariant
+    (authoritativeSample_invariant plan)
+
+private theorem gatedByKernel_isAccepted_of_gate
+    (state : AuthoritativeExtension) (hstate : state.Invariant)
+    (operation : Operation)
+    (hmode : state.kernel.execution.mode = .running)
+    (hgate : (gate state.iommu operation).isAccepted = true)
+    (hcoherent :
+      ({ kernel := state.kernel
+         iommu := (gate state.iommu operation).state
+         scrub := state.scrub } :
+        AuthoritativeExtension).Coherent) :
+    (gatedByKernel state hstate operation).isAccepted = true := by
+  unfold gatedByKernel
+  rw [hmode]
+  generalize houtcome : gate state.iommu operation = outcome
+  cases outcome with
+  | rejected reason =>
+      simp [Outcome.isAccepted, houtcome] at hgate
+  | accepted after reply =>
+      have hc :
+          ({ kernel := state.kernel, iommu := after, scrub := state.scrub } :
+            AuthoritativeExtension).Coherent := by
+        rw [houtcome] at hcoherent
+        exact hcoherent
+      simp only
+      rw [dif_pos hc]
+      rfl
+
+private def authoritativeAssignedCore (plan : BootPageTablePlan.Plan) : Core :=
+  { authoritativeSampleCore plan with
+    nextAssignmentGeneration := 2
+    nextDomainGeneration := 2
+    assignments :=
+      [⟨⟨0, 1⟩, 0, 0, ⟨0, 1⟩, 2⟩] }
+
+private def authoritativeAssignedIOMMU (plan : BootPageTablePlan.Plan) : State :=
+  { core := authoritativeAssignedCore plan
+    valid := by
+      simp [authoritativeAssignedCore, authoritativeSampleCore,
+        FailStop.compositeDispatcherInitial]
+      native_decide
+    capabilityWellFormed :=
+      (authoritativeSampleIOMMU plan).capabilityWellFormed }
+
+private theorem authoritative_assign_gate (plan : BootPageTablePlan.Plan) :
+    gate (authoritativeSampleIOMMU plan) (.assign ⟨0⟩) =
+      .accepted (authoritativeAssignedIOMMU plan)
+        (.assigned ⟨0, 1⟩ ⟨0, 1⟩) := by
+  rfl
+
+private theorem authoritative_assign_state_core (plan : BootPageTablePlan.Plan) :
+    (gate (authoritativeSampleIOMMU plan) (.assign ⟨0⟩)).state.core =
+      authoritativeAssignedCore plan := by
+  rfl
+
+private theorem authoritative_assign_coherent (plan : BootPageTablePlan.Plan) :
+    ({ kernel := (authoritativeSample plan).kernel
+       iommu := (gate (authoritativeSample plan).iommu (.assign ⟨0⟩)).state
+       scrub := (authoritativeSample plan).scrub } :
+      AuthoritativeExtension).Coherent := by
+  simp only [AuthoritativeExtension.Coherent, authoritativeSample]
+  rw [authoritative_assign_state_core]
+  refine ⟨rfl, rfl, rfl, rfl,
+    authoritativeSampleScrub_invariant plan, ?_⟩
+  simp [authoritativeAssignedCore, authoritativeSampleCore,
+    FailStop.compositeDispatcherInitial]
+  native_decide
+
+theorem authoritative_assign_accepted (plan : BootPageTablePlan.Plan) :
+    (authoritativeAssignedOutcome plan).isAccepted = true := by
+  classical
+  apply gatedByKernel_isAccepted_of_gate
+  · rfl
+  · rfl
+  · exact authoritative_assign_coherent plan
+
+private def authoritativeAssignedWitness (plan : BootPageTablePlan.Plan) :
+    AuthoritativeExtension :=
+      { kernel := (authoritativeSample plan).kernel
+        iommu := authoritativeAssignedIOMMU plan
+        scrub := (authoritativeSample plan).scrub }
+
+private theorem authoritativeAssignedWitness_invariant
+    (plan : BootPageTablePlan.Plan) :
+    (authoritativeAssignedWitness plan).Invariant := by
+  refine
+    ⟨(authoritativeSample_invariant plan).1,
+      (authoritativeAssignedIOMMU plan).invariant, ?_⟩
+  simp only [authoritativeAssignedWitness, AuthoritativeExtension.Coherent]
+  refine ⟨rfl, rfl, rfl, rfl,
+    authoritativeSampleScrub_invariant plan, ?_⟩
+  simp [authoritativeSample,
+    authoritativeAssignedIOMMU, authoritativeAssignedCore,
+    authoritativeSampleCore, FailStop.compositeDispatcherInitial]
+  rfl
+
+/-- The grant names only the accepted assignment and the kernel capability
+handle.  Owner, memory object, and frame lifetime are all derived by the gate. -/
+def authoritativeGrant : GrantRequest :=
+  ⟨⟨0, 1⟩, ⟨2, 5⟩, 0, 0, pageSize, readWrite⟩
+
+private def authoritativeGrantedCore (plan : BootPageTablePlan.Plan) : Core :=
+  { authoritativeAssignedCore plan with
+    nextMappingGeneration := 2
+    mappings :=
+      [⟨⟨0, 1⟩, ⟨0, 1⟩, ⟨0, 1⟩, 2, 0, pageSize,
+        ⟨4, 1⟩, 0, readWrite⟩] }
+
+private def authoritativeGrantedIOMMU (plan : BootPageTablePlan.Plan) : State :=
+  { core := authoritativeGrantedCore plan
+    valid := by
+      simp [authoritativeGrantedCore, authoritativeAssignedCore,
+        authoritativeSampleCore, FailStop.compositeDispatcherInitial]
+      native_decide
+    capabilityWellFormed :=
+      (authoritativeSampleIOMMU plan).capabilityWellFormed }
+
+private theorem authoritative_grant_gate (plan : BootPageTablePlan.Plan) :
+    gate (authoritativeAssignedIOMMU plan) (.grant authoritativeGrant) =
+      .accepted (authoritativeGrantedIOMMU plan) (.mapped ⟨0, 1⟩) := by
+  have hassignment :
+      ((⟨0, 1⟩ : AssignmentHandle) == ⟨0, 1⟩) = true := by native_decide
+  have hframe :
+      ((⟨4, 1⟩ : FrameHandle) == ⟨4, 1⟩) = true := by native_decide
+  have hfree :
+      firstFreeSlotAux (fun _ => false) maxMappings 0 = some 0 := by
+    native_decide
+  have hgeneration :
+      ¬LifetimeIssuer.identityReserved ≤ 1 := by native_decide
+  have hvalid :
+      validateCore (authoritativeGrantedCore plan) = true :=
+    (authoritativeGrantedIOMMU plan).valid
+  simp [gate, authoritativeGrant, authoritativeAssignedIOMMU,
+    authoritativeAssignedCore, authoritativeSampleCore, commit,
+    authoritativeGrantedIOMMU, authoritativeGrantedCore,
+    FailStop.compositeDispatcherInitial, findAssignment, findCapability,
+    findFrame, firstFreeMappingSlot, mappingOverlaps, pageSize,
+    hassignment, hframe, hfree, Permission.nonempty,
+    Permission.attenuates, aligned, rangeContained, generationAvailable,
+    maxIOVA, generationReserved,
+    readWrite]
+  split
+  · next hbad =>
+      exact False.elim (hgeneration hbad)
+  · split
+    · rfl
+    · next hfalse =>
+        exact False.elim (hfalse hvalid)
+
+private theorem authoritative_grant_coherent (plan : BootPageTablePlan.Plan) :
+    ({ kernel := (authoritativeSample plan).kernel
+       iommu :=
+         (gate (authoritativeAssignedIOMMU plan)
+           (.grant authoritativeGrant)).state
+       scrub := (authoritativeSample plan).scrub } :
+      AuthoritativeExtension).Coherent := by
+  rw [authoritative_grant_gate]
+  simp only [Outcome.state, AuthoritativeExtension.Coherent,
+    authoritativeSample]
+  refine ⟨rfl, rfl, rfl, rfl,
+    authoritativeSampleScrub_invariant plan, ?_⟩
+  simp [authoritativeGrantedIOMMU, authoritativeGrantedCore,
+    authoritativeAssignedCore, authoritativeSampleCore,
+    FailStop.compositeDispatcherInitial, pageSize,
+    rangeContained, Permission.attenuates]
+  native_decide
+
+noncomputable def authoritativeGrantedOutcome (plan : BootPageTablePlan.Plan) :=
+  gatedByKernel (authoritativeAssignedWitness plan)
+    (authoritativeAssignedWitness_invariant plan) (.grant authoritativeGrant)
+
+theorem authoritative_grant_accepted (plan : BootPageTablePlan.Plan) :
+    (authoritativeGrantedOutcome plan).isAccepted = true := by
+  classical
+  unfold authoritativeGrantedOutcome
+  apply gatedByKernel_isAccepted_of_gate
+  · rfl
+  · change
+      (gate (authoritativeAssignedIOMMU plan)
+        (.grant authoritativeGrant)).isAccepted = true
+    rw [authoritative_grant_gate]
+    rfl
+  · change
+      ({ kernel := (authoritativeSample plan).kernel
+         iommu :=
+           (gate (authoritativeAssignedIOMMU plan)
+             (.grant authoritativeGrant)).state
+         scrub := (authoritativeSample plan).scrub } :
+        AuthoritativeExtension).Coherent
+    exact authoritative_grant_coherent plan
+
+/-! ## Scrubbed lifetime reuse non-vacuity -/
+
+private def reuseScrubCapabilities : LeanOS.Capability.State :=
+  { subjects := fun subject => subject < 2
+    objects := fun _ => false
+    kinds := fun _ => none
+    slots := fun _ _ => none }
+
+private def reuseScrubInitial : FrameScrub.State :=
+  { memory :=
+      { capabilities := reuseScrubCapabilities
+        allocator :=
+          { frames := [0]
+            status := fun frame => if frame = 0 then .free else .reserved }
+        binding := fun _ => none
+        issued := fun _ => false }
+    bytes := fun _ _ => 0xff
+    written := fun _ => false }
+
+private def reuseOwnedA : FrameScrub.State :=
+  (FrameScrub.allocate reuseScrubInitial 11 1 0).state
+
+private def reuseWrittenA : FrameScrub.State :=
+  (FrameScrub.writeByte reuseOwnedA 1 0 0 0xa5).toOption.getD reuseOwnedA
+
+private def reuseReleasedA : FrameScrub.State :=
+  (FrameScrub.release reuseWrittenA 1 0).state
+
+private def reuseOwnedB : FrameScrub.State :=
+  (FrameScrub.allocate reuseReleasedA 10 0 0).state
+
+/-- The IOMMU consumes the exact byte projection published by the scrubbed
+new lifetime; all existing assignment, capability, and mapping authority is
+retained from the validated read fixture. -/
+private def reuseReadState : State :=
+  { readOnlyState with
+    core := readOnlyState.core.withMemory reuseOwnedB.bytes
+    valid := by simpa using readOnlyState.valid }
+
+private def observedBytes {state request} :
+    ReadOutcome state request → List UInt8
+  | .observed _ bytes => bytes
+  | .rejected _ => []
+
+/-- Executable cross-lifetime regression: A's sentinel survives release,
+allocation scrubs the same frame before publishing it to B, and B's authorized
+device read observes only initial bytes, never the sentinel. -/
+theorem scrubbed_reassignment_device_read_no_sentinel :
+    (FrameScrub.allocate reuseScrubInitial 11 1 0).result = .accepted ∧
+      FrameScrub.writeByte reuseOwnedA 1 0 0 0xa5 = .ok reuseWrittenA ∧
+      (FrameScrub.release reuseWrittenA 1 0).result = .accepted ∧
+      reuseReleasedA.bytes 0 0 = 0xa5 ∧
+      (FrameScrub.allocate reuseReleasedA 10 0 0).result = .accepted ∧
+      FrameScrub.Fresh reuseOwnedB 10 ∧
+      reuseOwnedB.memory.binding 10 = some 0 ∧
+      reuseReadState.core.memory = reuseOwnedB.bytes ∧
+      (deviceRead reuseReadState readRequest).isObserved = true ∧
+      observedBytes (deviceRead reuseReadState readRequest) =
+        List.replicate pageSize FrameScrub.initialByte ∧
+      0xa5 ∉ observedBytes (deviceRead reuseReadState readRequest) := by
+  refine ⟨by native_decide, rfl, by native_decide, by native_decide,
+    by native_decide, ?_, by native_decide, rfl, by native_decide,
+    by native_decide, by native_decide⟩
+  exact FrameScrub.allocation_publishes_scrubbed reuseReleasedA 10 0 0
+    (by native_decide)
 
 end LeanOS.IOMMU

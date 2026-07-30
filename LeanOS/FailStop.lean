@@ -19089,6 +19089,56 @@ private def dispatcherCapabilities : Capability.State :=
       else if subject = 2 && slot = 2 then some dispatcherSubjectTwoMemory
       else none }
 
+private theorem dispatcherCapabilities_wellFormed :
+    Capability.WellFormed dispatcherCapabilities := by
+  simp only [Capability.WellFormed]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro subject slot capability hslot
+    simp only [dispatcherCapabilities, dispatcherSubjectOneSpace,
+      dispatcherSubjectOneEndpoint, dispatcherSubjectTwoEndpoint,
+      dispatcherSubjectTwoSpace, dispatcherSubjectTwoMemory] at hslot
+    repeat' split at hslot
+    all_goals cases hslot <;>
+      simp [dispatcherCapabilities, dispatcherSubjectOneSpace,
+        dispatcherSubjectOneEndpoint, dispatcherSubjectTwoEndpoint,
+        dispatcherSubjectTwoSpace, dispatcherSubjectTwoMemory,
+        Capability.rightsValid, Capability.nonemptyRights,
+        Capability.allRights]
+    all_goals grind
+  · intro identity parent object kind rights hderivation
+    simp only [dispatcherCapabilities] at hderivation
+    repeat' split at hderivation
+    all_goals rcases hderivation with ⟨rfl, rfl, rfl, rfl⟩ <;>
+      simp [dispatcherCapabilities]
+    all_goals grind
+  · intro subject slot capability otherSubject otherSlot otherCapability
+      hslot hother hidentity
+    simp only [dispatcherCapabilities, dispatcherSubjectOneSpace,
+      dispatcherSubjectOneEndpoint, dispatcherSubjectTwoEndpoint,
+      dispatcherSubjectTwoSpace, dispatcherSubjectTwoMemory] at hslot hother
+    repeat' split at hslot
+    all_goals repeat' split at hother
+    all_goals cases hslot <;> cases hother <;> simp_all
+  · intro subject slot hslot
+    change 4 ≤ slot at hslot
+    have hne0 : slot ≠ 0 := by omega
+    have hne1 : slot ≠ 1 := by omega
+    have hne2 : slot ≠ 2 := by omega
+    simp [dispatcherCapabilities, hne0, hne1, hne2]
+
+@[simp] private theorem dispatcherCapabilities_subjects (subject : Nat) :
+    dispatcherCapabilities.subjects subject = (subject = 1 || subject = 2) := rfl
+
+@[simp] private theorem dispatcherCapabilities_objects (object : Nat) :
+    dispatcherCapabilities.objects object =
+      (object = 1 || object = 2 || object = 10 || object = 20) := rfl
+
+@[simp] private theorem dispatcherCapabilities_kinds (object : Nat) :
+    dispatcherCapabilities.kinds object =
+      (if object = 1 || object = 2 then some .addressSpace
+       else if object = 10 then some .endpoint
+       else if object = 20 then some .memory else none) := rfl
+
 private def dispatcherLifecycle : SubjectLifecycle.State :=
   { capabilities := dispatcherCapabilities
     issuedSubjects := fun subject => subject = 1 || subject = 2
@@ -19098,7 +19148,7 @@ private def dispatcherLifecycle : SubjectLifecycle.State :=
     mapping := fun _ _ => none
     endpointOwner := fun object => if object = 10 then some 1 else none
     mailbox := fun _ => none
-    frameOwner := fun frame => if frame = 4 then some 20 else none
+    frameOwner := fun frame => if frame = 4 then some 2 else none
     freeFrame := fun frame => frame != 4
     runnable := fun subject => subject = 1 || subject = 2
     current := some 2 }
@@ -19167,6 +19217,123 @@ def compositeDispatcherInitial (plan : BootPageTablePlan.Plan) : CompositeState 
         completion := fun _ => none }
     blockingContexts := fun _ => none
     deferredCancels := BlockingIPCContext.emptyDeferred }
+
+private theorem dispatcherAddressOwner_some_iff (addressSpace subject : Nat) :
+    dispatcherLifecycle.addressOwner addressSpace = some subject ↔
+      (addressSpace = 1 ∧ subject = 1) ∨
+        (addressSpace = 2 ∧ subject = 2) := by
+  constructor
+  · intro howner
+    by_cases hfirst : addressSpace = 1
+    · subst addressSpace
+      simp [dispatcherLifecycle] at howner
+      exact Or.inl ⟨rfl, howner.symm⟩
+    · by_cases hsecond : addressSpace = 2
+      · subst addressSpace
+        simp [dispatcherLifecycle] at howner
+        exact Or.inr ⟨rfl, howner.symm⟩
+      · simp [dispatcherLifecycle, hfirst, hsecond] at howner
+  · rintro (⟨rfl, rfl⟩ | ⟨rfl, rfl⟩) <;>
+      simp [dispatcherLifecycle]
+
+private theorem dispatcherAddressSpace_live (addressSpace : Nat)
+    (_hobject : dispatcherCapabilities.objects addressSpace = true)
+    (hkind : dispatcherCapabilities.kinds addressSpace = some .addressSpace) :
+    addressSpace = 1 ∨ addressSpace = 2 := by
+  by_cases hlive : addressSpace = 1 ∨ addressSpace = 2
+  · exact hlive
+  · have hne1 : addressSpace ≠ 1 := fun heq => hlive (Or.inl heq)
+    have hne2 : addressSpace ≠ 2 := fun heq => hlive (Or.inr heq)
+    simp only [dispatcherCapabilities, hne1, hne2, if_false] at hkind
+    repeat' split at hkind <;> simp_all
+
+set_option maxHeartbeats 800000 in
+/-- The canonical mixed-dispatcher seed inhabits the complete authoritative
+runtime invariant independently of the compiled plan retained for later
+return selection. -/
+theorem compositeDispatcherInitial_authoritativeRuntimeWellFormed
+    (plan : BootPageTablePlan.Plan) :
+    AuthoritativeRuntimeWellFormed (compositeDispatcherInitial plan) := by
+  rcases dispatcherCapabilities_wellFormed with
+    ⟨hslots, hderivations, hidentities, hslotSpaces⟩
+  have hspace1 :
+      Capability.HasAuthority dispatcherCapabilities 1 1 .revoke :=
+    ⟨0, dispatcherSubjectOneSpace, rfl, rfl, rfl⟩
+  have hspace2 :
+      Capability.HasAuthority dispatcherCapabilities 2 2 .revoke :=
+    ⟨1, dispatcherSubjectTwoSpace, rfl, rfl, rfl⟩
+  have hownerSubject :
+      ∀ addressSpace subject,
+        dispatcherLifecycle.addressOwner addressSpace = some subject →
+          subject = 1 ∨ subject = 2 := by
+    intro addressSpace subject howner
+    rcases (dispatcherAddressOwner_some_iff addressSpace subject).1 howner with
+      ⟨_, rfl⟩ | ⟨_, rfl⟩
+    · exact Or.inl rfl
+    · exact Or.inr rfl
+  have hownerAuthority :
+      ∀ addressSpace subject,
+        dispatcherLifecycle.addressOwner addressSpace = some subject →
+          Capability.HasAuthority dispatcherCapabilities subject addressSpace .revoke := by
+    intro addressSpace subject howner
+    rcases (dispatcherAddressOwner_some_iff addressSpace subject).1 howner with
+      ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact hspace1
+    · exact hspace2
+  have haddressComplete :
+      ∀ addressSpace,
+        dispatcherCapabilities.objects addressSpace = true →
+          dispatcherCapabilities.kinds addressSpace = some .addressSpace →
+            ∃ subject, dispatcherLifecycle.addressOwner addressSpace = some subject := by
+    intro addressSpace hobject hkind
+    rcases dispatcherAddressSpace_live addressSpace hobject hkind with rfl | rfl
+    · exact ⟨1, rfl⟩
+    · exact ⟨2, rfl⟩
+  have hownerAuthorityIf :
+      ∀ addressSpace subject,
+        (if addressSpace = 1 then some 1
+          else if addressSpace = 2 then some 2 else none) = some subject →
+          Capability.HasAuthority dispatcherCapabilities subject addressSpace .revoke := by
+    intro addressSpace subject howner
+    apply hownerAuthority addressSpace subject
+    simpa [dispatcherLifecycle] using howner
+  simp [AuthoritativeRuntimeWellFormed, DeferredBlockingRuntimeWellFormed,
+    compositeDispatcherInitial, dispatcherScheduler, dispatcherLifecycle,
+    dispatcherVirtualMemory, dispatcherMemory, dispatcherEndpoints,
+    blockingEvidenceContext, blockingEvidenceRegisters,
+    RuntimeWellFormed, CompositeState.Coherent, WellFormed,
+    Interrupt.WellFormed, SubjectLifecycle.WellFormed,
+    VirtualMapping.LifecycleWellFormed, VirtualMapping.WellFormed,
+    IPCSyscall.WellFormed, EndpointIPC.WellFormed, Scheduler.WellFormed,
+    Preemption.WellFormed, ResumablePreemption.WellFormed,
+    ResumablePreemption.ReadyContextAgreement,
+    ResumablePreemption.TranslationAgreement,
+    ResumablePreemption.VirtualAgreement,
+    ResumablePreemption.ResourceKindAgreement, CapabilityTransfer.WellFormed,
+    TLB.Coherent, CompositeState.ReturnPlanLive,
+    CompositeState.blockingIPCContext, CompositeState.BlockingIPCCoherent,
+    CompositeState.DeferredCancellationWellFormed,
+    BlockingIPCContext.DeferredWellFormed, BlockingIPCContext.WellFormed,
+    BlockingIPCContext.ContextAgreement, BlockingIPC.WellFormed,
+    BlockingIPC.authorizedReceive, BlockingIPCContext.emptyDeferred,
+    BlockingIPCContext.validSaved, Scheduler.ownsAddressSpace,
+    ResumablePreemption.contextFor, ResumablePreemption.validContext,
+    Capability.hasRight, Capability.rightsValid, Capability.rightsSubset,
+    Capability.nonemptyRights, Capability.permits,
+    Interrupt.validSavedUserFrame, demoFrame,
+    DirectPortIO.AcceptedControls, DMAQuarantine.q35Accepted,
+    bootRuntime, bootLifecycle, bootCapabilities, bootVirtualMemory,
+    bootMemory, bootEndpoints]
+  repeat' apply And.intro
+  all_goals first
+    | assumption
+    | simp (config := { failIfUnchanged := false })
+        [hownerAuthorityIf, dispatcherSubjectOneSpace,
+        dispatcherSubjectOneEndpoint, dispatcherSubjectTwoEndpoint,
+        dispatcherSubjectTwoSpace, dispatcherSubjectTwoMemory,
+        dispatcherLifecycle, dispatcherMemory, dispatcherVirtualMemory,
+        dispatcherEndpoints, dispatcherScheduler]
+  all_goals grind
 
 def compositeDispatcherBlockingFrame : Interrupt.HardwareFrame :=
   demoFrame 32 .user
