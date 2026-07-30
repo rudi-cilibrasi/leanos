@@ -286,9 +286,11 @@ theorem dma_changed_live_control_nonvacuous :
 
 /-! ## Static assigned-device confinement claims
 
-These wrappers are deliberately model-only.  The source identity and transfer
-submitted at the platform boundary are covered by `IOMMU.DeviceSemantics`;
-none of these claims proves VT-d, PCIe, generated code, QEMU, or a binary.
+These wrappers are deliberately model-only.  `IOMMU.DeviceSemantics` trusts
+the platform boundary to supply the source identity and transfer range and
+trusted software to attach the active assignment generation before lookup;
+PCIe does not carry that software generation.  None of these claims proves
+VT-d, PCIe, generated code, QEMU, or a binary.
 -/
 
 /-- SC-IOMMU-READ-CONFIDENTIALITY: a finite sequence of authorized read views

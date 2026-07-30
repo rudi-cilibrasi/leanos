@@ -128,7 +128,9 @@ assuming no-touch directly, and preserves every byte of the classified frame.
 
 `DeviceSemantics` records the deliberately small platform assumption that the
 hardware boundary faithfully supplies the modeled requester/source identity
-and transfer range. It does not assume authorization, correct translation, or
+and transfer range, and that trusted software attaches the active assignment
+generation before lookup. PCIe does not carry that software generation. The
+assumption does not grant authority or assume correct translation or
 confinement; those are decided and proved in the Lean model.
 
 No axiom, constant, `unsafe`, `extern`, FFI declaration, or other trusted Lean
