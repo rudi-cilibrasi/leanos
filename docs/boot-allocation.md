@@ -11,8 +11,7 @@ from the rich `BootMemoryMap.maxEntries` limit, and rejects bad headers,
 tag advances, entry layouts, duplicate or missing maps, a 65th tag, zero
 lengths, reserved entry words, and fixed-width overflow before exposing
 typed entry events. Production consumes those events once into bounded static
-entry storage and a 64-word generated usable/blocked projection; it never
-replays the raw handoff for candidate frames.
+entry storage and a 64-word generated usable/blocked projection.
 
 Usable entries contribute only complete 4 KiB pages. Non-usable entries take
 precedence independent of input order. The generated manifest boundary checks
@@ -33,7 +32,12 @@ decoder for the exact candidate and requires complete status, full usable
 coverage, no non-usable overlap, equal entry count/top, and the generated
 manifest decision. A zero-entry terminal call or forged bitmap therefore
 cannot publish. The selected page is fully zeroed and checked before C invokes
-the generated publication gate with that independently derived tuple.
+the generated publication gate with that independently derived tuple. For the
+frame-budget scenario, production also replays query 8's ascending
+first-eligible frame through the same decoder and manifest boundary, retains
+that exact replay tuple, and invokes the publication gate only after the frame
+has been scrubbed. A later merely-usable scalar candidate cannot substitute
+for the terminal projection's second frame.
 
 `LeanOS.BootMemoryMapStreamPipeline` is the rich proof-side composition from
 the exact accepted byte sequence through `BootMemoryMapDecoder`,

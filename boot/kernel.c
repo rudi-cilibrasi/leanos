@@ -322,6 +322,11 @@ static uint64_t frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_INITIAL;
    publication across A's retirement and B's fresh lifetime. */
 static uint64_t frame_budget_boot_published_frame = UINT64_MAX;
 static uint64_t frame_budget_physical_frame = UINT64_MAX;
+static uint64_t frame_budget_rescanned_frame = UINT64_MAX;
+static uint64_t frame_budget_rescan_status;
+static uint64_t frame_budget_rescan_usable;
+static uint64_t frame_budget_rescan_blocked;
+static uint64_t frame_budget_rescan_manifest;
 static unsigned frame_budget_publication_live;
 static uint64_t frame_budget_user_page = UINT64_MAX;
 #endif
@@ -1426,6 +1431,23 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     if (frame_budget_physical_frame >= 4096 ||
         frame_budget_physical_frame <= frame_budget_boot_published_frame)
         handoff_fail("frame-budget-unpublished-frame");
+    struct boot_decode_state frame_budget_authority =
+        decode_boot_candidate_authority(
+            magic, info_address, total, frame_budget_physical_frame, info);
+    frame_budget_rescanned_frame = frame_budget_authority.word[16];
+    frame_budget_rescan_status = frame_budget_authority.word[1];
+    frame_budget_rescan_usable = frame_budget_authority.word[14];
+    frame_budget_rescan_blocked = frame_budget_authority.word[15];
+    frame_budget_rescan_manifest = leanos_boot_manifest_candidate(
+        frame_budget_physical_frame, BOOT_MANIFEST_ARGS(info_address, total));
+    if (frame_budget_authority.word[11] != decoded.word[11] ||
+        frame_budget_authority.word[17] != decoded.word[17] ||
+        frame_budget_rescanned_frame != frame_budget_physical_frame ||
+        frame_budget_rescan_status != 1 ||
+        frame_budget_rescan_usable != 1 ||
+        frame_budget_rescan_blocked != 0 ||
+        frame_budget_rescan_manifest != 1)
+        handoff_fail("frame-budget-projection-authority");
 #endif
 
     serial_puts("LEANOS/7 HANDOFF magic=valid info-bytes="); serial_u64(total);
@@ -2128,6 +2150,19 @@ static uint64_t frame_budget_leaf(uint64_t page, uint64_t physical_frame) {
         PTE_USER | PTE_NX;
 }
 
+static __attribute__((noinline)) void
+frame_budget_require_publication_authority(void) {
+    if (leanos_boot_publish_authority(
+            frame_budget_physical_frame,
+            frame_budget_rescanned_frame,
+            frame_budget_rescan_status,
+            frame_budget_rescan_usable,
+            frame_budget_rescan_blocked,
+            frame_budget_rescan_manifest, 1) !=
+        frame_budget_physical_frame + 1)
+        fail("frame-budget-publication-authority");
+}
+
 static void frame_budget_publish_mapping(
         uint64_t *page_table, uint64_t page, uint64_t physical_frame) {
     if (page >= BOOT_LEAF_COUNT ||
@@ -2186,6 +2221,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             for (unsigned i = 0; i < PAGE_BYTES; ++i)
                 if (fresh[i] != 0)
                     fail("frame-budget-initial-scrub");
+            frame_budget_require_publication_authority();
             frame_budget_publish_mapping(page_table_a, frame_budget_user_page,
                 frame_budget_physical_frame);
             serial_puts("LEANOS/20 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=");
