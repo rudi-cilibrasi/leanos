@@ -3275,7 +3275,6 @@ private theorem lifecycleKernel_invariant (plan : BootPageTablePlan.Plan) :
     · exact ⟨1, rfl⟩
     · exact ⟨2, rfl⟩
   simp [FailStop.AuthoritativeRuntimeWellFormed,
-    FailStop.DeferredBlockingRuntimeWellFormed,
     lifecycleKernel, lifecycleScheduler, lifecycleSubjectState,
     lifecycleVirtualMemory, lifecycleMemory, lifecycleEndpoints,
     lifecycleSubjectOneContext, lifecycleSavedFrame,
@@ -3303,9 +3302,9 @@ private theorem lifecycleKernel_invariant (plan : BootPageTablePlan.Plan) :
     BlockingIPCContext.validSaved, Scheduler.ownsAddressSpace,
     ResumablePreemption.contextFor,
     ResumablePreemption.validContext,
-    LeanOS.Capability.hasRight, LeanOS.Capability.rightsValid,
+    LeanOS.Capability.rightsValid,
     LeanOS.Capability.rightsSubset,
-    LeanOS.Capability.nonemptyRights, LeanOS.Capability.permits,
+    LeanOS.Capability.nonemptyRights,
     Interrupt.validSavedUserFrame,
     DirectPortIO.AcceptedControls, DMAQuarantine.q35Accepted,
     FailStop.bootRuntime]
@@ -3313,11 +3312,6 @@ private theorem lifecycleKernel_invariant (plan : BootPageTablePlan.Plan) :
   all_goals first
     | assumption
     | simp (config := { failIfUnchanged := false })
-        [hownerAuthorityIf, haddressComplete,
-          lifecycleSubjectOneSpace,
-          lifecycleSubjectTwoSpace, lifecycleSubjectTwoMemory,
-          lifecycleSubjectState, lifecycleVirtualMemory,
-          lifecycleMemory, lifecycleEndpoints, lifecycleScheduler]
   all_goals simp_all [lifecycleCapabilities]
   all_goals grind
 
