@@ -30,6 +30,16 @@ inductive TransitionKind where
   | switch
   deriving DecidableEq, Repr
 
+/-- The operation family is determined by the checked logical request.  It is
+not caller-selected metadata: retirement acknowledgement must be earned only
+by an actual release or destruction step. -/
+def requestKind : StaleTranslation.Request → TransitionKind
+  | .unmap .. => .unmap
+  | .protect .. => .protect
+  | .release .. => .release
+  | .destroy .. => .destroy
+  | .switch .. => .switch
+
 structure Pending where
   ticket : Nat
   kind : TransitionKind
@@ -105,14 +115,17 @@ def prepare (state : State) (kind : TransitionKind)
   match state.pending with
   | some _ => { state, accepted := false, effect := .none }
   | none =>
-      let next := StaleTranslation.step state.published request
-      if next.accepted then
-        { state :=
-            { state with
-              pending := some { ticket := state.nextTicket, kind, step := next }
-              nextTicket := state.nextTicket + 1 }
-          accepted := true
-          effect := next.effect }
+      if kind = requestKind request then
+        let next := StaleTranslation.step state.published request
+        if next.accepted then
+          { state :=
+              { state with
+                pending := some { ticket := state.nextTicket, kind, step := next }
+                nextTicket := state.nextTicket + 1 }
+            accepted := true
+            effect := next.effect }
+        else
+          { state, accepted := false, effect := .none }
       else
         { state, accepted := false, effect := .none }
 
@@ -167,9 +180,14 @@ def publishReuse (state : State) : Outcome :=
 
 theorem prepare_retains_published state kind request :
     (prepare state kind request).state.published = state.published := by
-  simp only [prepare]
-  split <;> try rfl
-  split <;> rfl
+  cases hpending : state.pending with
+  | some pending => simp [prepare, hpending]
+  | none =>
+      by_cases hkind : kind = requestKind request
+      · by_cases haccepted :
+            (StaleTranslation.step state.published request).accepted = true
+        <;> simp [prepare, hpending, hkind, haccepted]
+      · simp [prepare, hpending, hkind]
 
 /-- Preparation cannot publish a cache that violates the bound and, when it
 accepts, records a successor whose cache satisfies the same bound. -/
@@ -182,16 +200,20 @@ theorem prepare_preserves_wellFormed state kind request
       simpa [prepare, hcurrent] using (show WellFormed state from
         ⟨hpublished, hpending⟩)
   | none =>
-      simp only [prepare, hcurrent]
-      split
-      next haccepted =>
-        refine ⟨hpublished, ?_⟩
-        intro pending hpending'
-        simp only [Option.some.injEq] at hpending'
-        subst pending
-        exact StaleTranslation.step_preserves_coherent state.published request hpublished
-      next =>
-        exact ⟨hpublished, hpending⟩
+      by_cases hkind : kind = requestKind request
+      · by_cases haccepted :
+            (StaleTranslation.step state.published request).accepted = true
+        · refine ⟨?_, ?_⟩
+          · simpa [prepare, hcurrent, hkind, haccepted] using hpublished
+          · intro pending hpending'
+            simp [prepare, hcurrent, hkind, haccepted] at hpending'
+            subst pending
+            exact StaleTranslation.step_preserves_coherent
+              state.published request hpublished
+        · simpa [prepare, hcurrent, hkind, haccepted] using
+            (show WellFormed state from ⟨hpublished, hpending⟩)
+      · simpa [prepare, hcurrent, hkind] using
+          (show WellFormed state from ⟨hpublished, hpending⟩)
 
 theorem prepare_rejected_inert state kind request
     (h : (prepare state kind request).accepted = false) :
@@ -199,7 +221,20 @@ theorem prepare_rejected_inert state kind request
       (prepare state kind request).effect = .none := by
   simp only [prepare] at h ⊢
   split at h <;> try simp_all
+  split at h <;> try simp_all
   split at h <;> simp_all
+
+/-- A caller cannot relabel a mapping operation as a lifecycle retirement (or
+vice versa).  A mismatched family/request pair is a complete stutter and
+requests no machine mutation. -/
+theorem prepare_wrong_kind_inert state kind request
+    (hkind : kind ≠ requestKind request) :
+    (prepare state kind request).accepted = false ∧
+      (prepare state kind request).state = state ∧
+      (prepare state kind request).effect = .none := by
+  cases hpending : state.pending with
+  | some pending => simp [prepare, hpending]
+  | none => simp [prepare, hpending, hkind]
 
 theorem acknowledge_rejected_inert state ack
     (h : (acknowledge state ack).accepted = false) :
@@ -265,12 +300,12 @@ theorem prepare_accepted_fresh_ticket state kind request
   | some pending =>
       simp [prepare, hpending] at h
   | none =>
-      simp only [prepare, hpending] at h ⊢
-      split at h
-      next haccepted =>
-        simp only [haccepted, if_pos]
-        exact ⟨_, rfl, rfl, True.intro⟩
-      next => contradiction
+      by_cases hkind : kind = requestKind request
+      · by_cases haccepted :
+            (StaleTranslation.step state.published request).accepted = true
+        · simp [prepare, hpending, hkind, haccepted]
+        · simp [prepare, hpending, hkind, haccepted] at h
+      · simp [prepare, hpending, hkind] at h
 
 /-- An accepted preparation retains the exact logical step behind its fresh
 ticket.  In particular, neither the operation family nor its checked request
@@ -289,12 +324,12 @@ theorem prepare_accepted_pending_exact state kind request
   | some pending =>
       simp [prepare, hpending] at h
   | none =>
-      simp only [prepare, hpending] at h ⊢
-      split at h
-      next haccepted =>
-        simp only [haccepted, if_pos]
-        exact ⟨_, rfl, rfl, rfl, rfl, haccepted, rfl, True.intro⟩
-      next => contradiction
+      by_cases hkind : kind = requestKind request
+      · by_cases haccepted :
+            (StaleTranslation.step state.published request).accepted = true
+        · simp [prepare, hpending, hkind, haccepted]
+        · simp [prepare, hpending, hkind, haccepted] at h
+      · simp [prepare, hpending, hkind] at h
 
 /-- A completion from any earlier pending publication cannot be spliced into a
 later one, even when both machine effects have the same shape. -/
