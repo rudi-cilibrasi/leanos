@@ -2786,7 +2786,17 @@ theorem authoritative_retirement_and_root_switch_flush :
     FrameBudgetScenario.machineInvalidationEffect
         (FrameBudgetScenario.encodeState .aAllocated)
         (FrameBudgetScenario.encodeCommand .releaseA) =
-      FrameBudgetScenario.releaseFlushToken := by
+      FrameBudgetScenario.releaseFlushToken ∧
+    (FrameBudgetScenario.publishFreshAfterRetirement
+        FrameBudgetScenario.retirementPrepared).accepted = false ∧
+    (FrameBudgetScenario.acknowledgeRetirement
+        FrameBudgetScenario.retirementPrepared
+        FrameBudgetScenario.terminateFlushToken).accepted = true ∧
+    FrameBudgetScenario.freshRepublished.published.scrub.memory.binding 21 =
+      some 100 ∧
+    FrameBudgetScenario.freshRepublished.published.userMapping =
+      some (1, 21, { slot := 1, identity := 3 }, 100,
+        FrameBudgetScenario.machineUserPage) := by
   exact ⟨fun state subject hstate hmode haccepted =>
       let h := FailStop.gate_terminateSubject_accepted_flushes_translations
         state subject hstate hmode haccepted
@@ -2795,7 +2805,11 @@ theorem authoritative_retirement_and_root_switch_flush :
     FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.1,
     FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.2.1,
     FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.2.2.1,
-    FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.2.2.2.1⟩
+    FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.2.2.2.1,
+    FrameBudgetScenario.invalidation_acknowledged_fresh_republication.1,
+    FrameBudgetScenario.retirement_ack_publishes_reclaimed_frame.1,
+    FrameBudgetScenario.invalidation_acknowledged_fresh_republication.2.2.2.1,
+    FrameBudgetScenario.invalidation_acknowledged_fresh_republication.2.2.2.2.2.1⟩
 
 /-- SC-USER-FAULT-SHARED-CONTAINMENT: over one shared two-subject pre-state the
 real CPL3 divide-error, breakpoint, page-fault, and denied-port entries drive a

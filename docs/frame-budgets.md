@@ -103,6 +103,19 @@ Resolving A's old identity-1 word in B's current capability space is denied as
 a stale generation. The canonical corpus includes every pre-state token, command, typed
 reply, next-state token, and hostile replay/forgery encodings.
 
+The same module now wraps the authoritative termination/reclamation step in
+`RetirementPublication`. `prepareRetirement` computes the existing budget and
+scrub successor but retains the complete published pre-state, so model frame 0
+and scrub frame 100 remain owned by object 10 and A's old mapping remains
+visible while the flush is pending. Only `acknowledgeRetirement` with the exact
+termination token exposes the released capacity and reclaimed frame; the
+explicit-release token is rejected even though it also denotes a full flush.
+`publishFreshAfterRetirement` is disabled before that acknowledgement and then
+reuses the existing allocation transition, whose `FrameScrub.Fresh` proof
+establishes the complete scrub before object 21 and B's fresh mapping appear.
+This is a bounded model ordering theorem over the shared issue-112 state, not a
+proof of machine flush completion.
+
 `LEANOS_BOOT_SCENARIO=frame-budget ./scripts/run-image.sh` runs the separate
 version-20 QEMU transcript. Both subjects enter CPL3 under their checked roots.
 The C bridge retains the generated canonical state token, the generated

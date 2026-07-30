@@ -113,6 +113,16 @@ and pending cache states remain coherent. The transition-bound generated token
 and concrete completion latch connect that model invariant to this bounded
 machine path without claiming general model-to-binary refinement.
 
+`FrameBudgetScenario.RetirementPublication` also carries this ordering through
+the shared budget-and-scrub model rather than only through the C latch.
+Preparation retains the complete pre-retirement runtime while holding the
+computed termination successor privately. A wrong edge token stutters, and
+fresh allocation/mapping rejects while that successor is pending. The exact
+termination acknowledgement is the first transition that exposes released
+capacity and frame 100 as reclaimed; only the following existing
+`FrameScrub.allocate` transition scrubs the whole frame and republishes it as
+fresh object 21 for B.
+
 Every boot image then consumes that exact generated reply in a bounded
 runtime-mutable machine window at virtual page 7. Address space B is first
 backed by a reviewed “before” frame. The active-root path clears B's volatile
