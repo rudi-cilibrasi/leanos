@@ -13,9 +13,11 @@ from __future__ import annotations
 import argparse
 import pathlib
 import re
+import select
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -51,6 +53,11 @@ DMA_FROM_DEVICE = 1 << 1
 
 class QTest:
     def __init__(self, executable: str) -> None:
+        self.firmware = tempfile.NamedTemporaryFile(prefix="leanos-edu-", suffix=".bin")
+        firmware = bytearray(b"\xff" * 65536)
+        firmware[0xFFF0:0xFFF3] = b"\xf4\xeb\xfd"  # hlt; jmp back to hlt
+        self.firmware.write(firmware)
+        self.firmware.flush()
         self.process = subprocess.Popen(
             [
                 executable,
@@ -62,6 +69,7 @@ class QTest:
                 "-display", "none",
                 "-monitor", "none",
                 "-serial", "none",
+                "-bios", self.firmware.name,
                 "-no-reboot",
                 "-no-shutdown",
                 "-nic", "none",
@@ -74,10 +82,6 @@ class QTest:
             text=True,
             bufsize=1,
         )
-        # TCG starts the firmware CPU alongside qtest.  Let its initial PCI
-        # enumeration finish before this harness takes ownership of the EDU
-        # BAR and Command register, otherwise firmware and qtest race.
-        time.sleep(0.5)
 
     def close(self) -> None:
         forced = False
@@ -97,12 +101,16 @@ class QTest:
                 f"QEMU exited unexpectedly with {self.process.returncode}: "
                 f"{stderr.strip()}"
             )
+        self.firmware.close()
 
     def command(self, request: str) -> str:
         if self.process.stdin is None or self.process.stdout is None:
             raise RuntimeError("qtest pipes are unavailable")
         self.process.stdin.write(request + "\n")
         self.process.stdin.flush()
+        ready, _, _ = select.select([self.process.stdout], [], [], 5)
+        if not ready:
+            raise RuntimeError(f"qtest request {request!r} timed out")
         response = self.process.stdout.readline().strip()
         if not response.startswith("OK"):
             stderr = self.process.stderr.read() if self.process.poll() is not None else ""
