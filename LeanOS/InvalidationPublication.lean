@@ -85,6 +85,19 @@ def initial : State :=
     releaseAcknowledged := false
     destroyAcknowledged := false }
 
+theorem initial_wellFormed : WellFormed initial := by
+  refine ⟨?_, ?_⟩
+  · change TLB.Coherent writableFilled
+    unfold writableFilled
+    cases hfill : TLB.fill writableCold 7 StaleTranslation.ctx with
+    | error error =>
+        simp [TLB.Coherent, writableCold, StaleTranslation.cold]
+    | ok result =>
+        rcases result with ⟨frame, next⟩
+        exact TLB.fill_preserves_coherent _ _ _ _ _ hfill
+  intro pending hpending
+  simp [initial] at hpending
+
 /-- Compute one logical transition while retaining the complete caller-visible
 state.  Rejections and attempts to overlap pending effects are inert. -/
 def prepare (state : State) (kind : TransitionKind)
@@ -257,6 +270,30 @@ theorem prepare_accepted_fresh_ticket state kind request
       next haccepted =>
         simp only [haccepted, if_pos]
         exact ⟨_, rfl, rfl, True.intro⟩
+      next => contradiction
+
+/-- An accepted preparation retains the exact logical step behind its fresh
+ticket.  In particular, neither the operation family nor its checked request
+can be replaced between effect determination and publication. -/
+theorem prepare_accepted_pending_exact state kind request
+    (h : (prepare state kind request).accepted = true) :
+    ∃ pending,
+      (prepare state kind request).state.pending = some pending ∧
+      pending.ticket = state.nextTicket ∧
+      pending.kind = kind ∧
+      pending.step = StaleTranslation.step state.published request ∧
+      pending.step.accepted = true ∧
+      (prepare state kind request).effect = pending.step.effect ∧
+      (prepare state kind request).state.published = state.published := by
+  cases hpending : state.pending with
+  | some pending =>
+      simp [prepare, hpending] at h
+  | none =>
+      simp only [prepare, hpending] at h ⊢
+      split at h
+      next haccepted =>
+        simp only [haccepted, if_pos]
+        exact ⟨_, rfl, rfl, rfl, rfl, haccepted, rfl, True.intro⟩
       next => contradiction
 
 /-- A completion from any earlier pending publication cannot be spliced into a

@@ -171,8 +171,10 @@ theorem dma_quarantine_global_runtime_nonvacuous :
         native_decide
       simp [hresult] at hsuccess
   | ok plan =>
-      exact (FailStop.bootRuntime_deferredBlockingRuntimeWellFormed
+      apply (FailStop.bootRuntime_deferredBlockingRuntimeWellFormed
         BootPageTablePlan.sampleInput plan hresult).authoritative
+      simpa [FailStop.bootRuntime] using
+        InvalidationPublication.initial_wellFormed
 
 /-- SC-DMA-AUTHORITATIVE-PROJECTION: under an explicit caller-supplied
 `DeviceContract` assumption over the authoritative live PCI observation, a
