@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+source "$repo_root/scripts/q35-platform.sh"
 qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
 limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
@@ -49,9 +50,8 @@ for spec in "${specs[@]}"; do
     echo "error: missing return-corruption image '$image'" >&2; exit 1;
   }
   : > "$log"
-  command=("$qemu" -machine q35,accel=tcg -cpu max -smp 1 -m "${memory_mib}M"
-    -display none -monitor none -serial "file:$log" -no-reboot -no-shutdown
-    -nic none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -cdrom "$image")
+  command=()
+  leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
   qemu_version="$($qemu --version 2>&1 | head -n 1 || true)"
   printf 'QEMU version: %s\nQEMU command:' "${qemu_version:-unknown}" >&2
   printf ' %q' "${command[@]}" >&2
@@ -83,7 +83,8 @@ for spec in "${specs[@]}"; do
       "$fixture" == fast-entry-sysenter-esp-relaxation ||
       "$fixture" == direct-port-bitmap-relaxation ||
       "$fixture" == direct-port-limit-relaxation ||
-      "$fixture" == direct-port-granularity-relaxation ]]; then
+      "$fixture" == direct-port-granularity-relaxation ||
+      "$fixture" == dma-bus-master-reenable ]]; then
     grep -Fxq "LEANOS/9 RETURN fixture=${fixture} stage=machine-control result=INJECTED" \
       "$log" || {
       echo "error: fixture '$fixture' lacked its machine-control injection record" >&2

@@ -8,10 +8,10 @@ source "$repo_root/scripts/q35-platform.sh"
 qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
 limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
-image="${1:-build/boot/leanos-${version}-x86_64-bootstrap32-ud.iso}"
-log="${LEANOS_SERIAL_LOG:-build/boot/bootstrap32-ud.serial.log}"
+image="${1:-build/boot/leanos-${version}-x86_64.iso}"
+log="${LEANOS_SERIAL_LOG:-build/boot/dma-unknown-device.serial.log}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
-terminal='LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 width=legacy8 vector=6 reason=invalid-opcode error=none frame=eip,cs,eflags stack=boot target=stub32 latch=terminal return=none'
+terminal='LEANOS/3 FINAL status=FAIL reason=dma-inventory'
 
 for tool in "$qemu" timeout; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -36,6 +36,10 @@ mkdir -p "$(dirname "$log")"
 : > "$log"
 command=()
 leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
+# Controlled topology violation: the normal production manifest does not admit
+# this real DMA-capable function. The shared command is validated before this
+# single deliberate mutation so no other platform setting can drift.
+command+=(-device edu,bus=pcie.0,addr=0x2)
 qemu_version="$($qemu --version 2>&1 | head -n 1 || true)"
 printf 'QEMU version: %s\nQEMU command:' "${qemu_version:-unknown}" >&2
 printf ' %q' "${command[@]}" >&2
@@ -50,22 +54,19 @@ if [[ $status -eq 124 || $status -eq 137 ]]; then
   echo "failure_class=timeout: QEMU exceeded ${limit}s wall limit" >&2
   exit 1
 fi
-if [[ $status -eq 49 ]]; then
-  echo "failure_class=guest-evidence: guest rejected the bootstrap32 #UD frame shape" >&2
+if [[ $status -eq 39 ]]; then
+  echo "failure_class=guest-error: guest reported an unrelated evidence failure" >&2
   exit 1
 fi
-if [[ $status -ne 45 ]]; then
-  echo "failure_class=qemu-error: QEMU exit status $status (expected 45)" >&2
+if [[ $status -ne 35 ]]; then
+  echo "failure_class=qemu-error: QEMU exit status $status (expected 35)" >&2
   exit 1
 fi
-if [[ "$(grep -Fxc "$terminal" "$log")" -ne 1 ]]; then
-  echo "failure_class=terminal-record: exactly one bootstrap32 #UD terminal record not observed" >&2
-  exit 1
-fi
-if [[ "$(grep -c . "$log")" -ne 1 ]] || \
-   grep -Eq 'status=FAIL|phase=bootstrap64|EARLY64-READY|LEANOS/17 |LEANOS/[0-9]+ (BOOT|FINAL) ' "$log"; then
-  echo "failure_class=terminal-record: forged, duplicate, long-mode, or post-terminal output observed" >&2
+if [[ "$(grep -Fxc "$terminal" "$log")" -ne 1 ]] ||
+    [[ "$(grep -c '^LEANOS/3 FINAL ' "$log")" -ne 1 ]] ||
+    grep -Eq '^LEANOS/15 DMA .*result=PASS|^LEANOS/5 ENTRY|status=PASS' "$log"; then
+  echo "failure_class=controlled-negative: exact pre-CPL3 DMA inventory rejection not observed" >&2
   exit 1
 fi
 
-echo "LeanOS bootstrap32 #UD probe passed; the pre-paging ud2 latched the reviewed early terminal stub"
+echo "LeanOS unknown-device negative passed; guest rejected edu before CPL3; serial log: $log"

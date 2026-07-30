@@ -82,3 +82,44 @@ Dynamic admission, reassignment, overcommit, swap, concurrency/SMP, fairness,
 timing availability, production OOM policy, and the following emulator scenario
 are excluded. The existing compiler/runtime/boot/hardware TCB boundary remains
 unchanged.
+
+## Generated and QEMU vertical slice
+
+`LeanOS.FrameBudgetScenario` adds a fixed eight-edge sequence to the existing
+`CompositeDispatcher.dispatch` ABI. It composes the authoritative
+`FrameBudget.State` with the existing `FrameScrub.State`; current subject and
+active address space are kernel-selected fields, and no command carries a
+subject, budget, frame, object identity, expected result, or next owner. The sequence proves A's retry
+is the typed `budgetExhausted` result with the complete state unchanged, B's
+first allocation remains accepted, termination restores exactly A's one
+charged frame, and physical frame 100 retains A's canary through reclamation
+before B's publication scrubs every byte and installs never-reused identity 3.
+Resolving A's old identity-1 word in B's current capability space is denied as
+a stale generation. The canonical corpus includes every pre-state token, command, typed
+reply, next-state token, and hostile replay/forgery encodings.
+
+`LEANOS_BOOT_SCENARIO=frame-budget ./scripts/run-image.sh` runs the separate
+version-20 QEMU transcript. Both subjects enter CPL3 under their checked roots.
+The C bridge retains the generated canonical state token, the generated
+Multiboot decoder's next eligible unpublished physical-frame number, and the
+generated mapping-page result—not quota, usage, allocation, identity, mapping,
+or cleanup policy. The boot allocation remains published as object 1 on the
+decoder's first eligible frame. The scenario selects a distinct second eligible
+frame, records that it has no prior publication, and rejects any attempt to
+publish a live boot or scenario frame twice. After A's accepted allocation, the
+bridge scrubs and maps the scenario frame at the generated page and A writes
+`0xa5` to its first and last bytes directly in CPL3. Accepted termination
+removes A's leaf and retires that publication. The bridge then scrubs all 4096
+bytes through the physical identity, invokes the generated fresh-publication
+edge, and maps the same retired frame for B at the generated page. B directly
+reads both edge bytes in CPL3 and reports zero; the old generation is rejected.
+
+The fixed model partitions frames and does not model cross-subject commitment
+reassignment. Consequently the correspondence between model frame 100 and the
+Multiboot-selected machine frame is an explicit unproved binding assumption.
+The bounded state codec, mapping choice, and their Lean refinement proofs are
+proved; Lean code generation, the scalar ABI, Multiboot2 capacity input,
+C/assembly allocation and CR3 bridge, scrub loop, serial protocol, compiler,
+QEMU, and physical-page interpretation are
+trusted/tested boundaries. The machine transcript is integration evidence,
+not a binary-refinement theorem.

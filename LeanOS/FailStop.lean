@@ -19030,4 +19030,160 @@ example (state : CompositeState) :
     activeEntry, demoFrame, Interrupt.dispatchHardware, Interrupt.decodeVector, mapFatal,
     halt, installResumable, runOperations]
 
+/-! ## Composite-dispatcher mixed-trace seed
+
+The generated stateful ABI needs one public, finite state that can actually
+exercise the accepted Phase 2 operation families.  This seed is not a second
+transition system: every successor remains the result of `authoritativeGate`.
+The finite functions below only make the complete canonical pre-state
+reconstructible without accepting privileged identity from ABI words. -/
+
+private def dispatcherSubjectOneSpace : Capability.Capability :=
+  { object := 1, kind := .addressSpace, rights := { revoke := true },
+    identity := 1 }
+
+private def dispatcherSubjectOneEndpoint : Capability.Capability :=
+  { object := 10, kind := .endpoint, rights := { send := true },
+    identity := 2 }
+
+private def dispatcherSubjectTwoEndpoint : Capability.Capability :=
+  { object := 10, kind := .endpoint,
+    rights := { send := true, receive := true, grant := true, revoke := true },
+    identity := 3 }
+
+private def dispatcherSubjectTwoSpace : Capability.Capability :=
+  { object := 2, kind := .addressSpace, rights := { revoke := true },
+    identity := 4 }
+
+private def dispatcherSubjectTwoMemory : Capability.Capability :=
+  { object := 20, kind := .memory, rights := Capability.allRights,
+    identity := 5 }
+
+private def dispatcherCapabilities : Capability.State :=
+  { nextIdentity := 6
+    derivations := fun identity =>
+      if identity = 1 then
+        some (none, 1, .addressSpace, { revoke := true })
+      else if identity = 2 then
+        some (none, 10, .endpoint, { send := true })
+      else if identity = 3 then
+        some (none, 10, .endpoint,
+          { send := true, receive := true, grant := true, revoke := true })
+      else if identity = 4 then
+        some (none, 2, .addressSpace, { revoke := true })
+      else if identity = 5 then
+        some (none, 20, .memory, Capability.allRights)
+      else none
+    subjects := fun subject => subject = 1 || subject = 2
+    objects := fun object => object = 1 || object = 2 || object = 10 || object = 20
+    kinds := fun object =>
+      if object = 1 || object = 2 then some .addressSpace
+      else if object = 10 then some .endpoint
+      else if object = 20 then some .memory
+      else none
+    slots := fun subject slot =>
+      if subject = 1 && slot = 0 then some dispatcherSubjectOneSpace
+      else if subject = 1 && slot = 1 then some dispatcherSubjectOneEndpoint
+      else if subject = 2 && slot = 0 then some dispatcherSubjectTwoEndpoint
+      else if subject = 2 && slot = 1 then some dispatcherSubjectTwoSpace
+      else if subject = 2 && slot = 2 then some dispatcherSubjectTwoMemory
+      else none }
+
+private def dispatcherLifecycle : SubjectLifecycle.State :=
+  { capabilities := dispatcherCapabilities
+    issuedSubjects := fun subject => subject = 1 || subject = 2
+    ownedMemory := fun object => if object = 20 then some (2, 4) else none
+    addressOwner := fun space =>
+      if space = 1 then some 1 else if space = 2 then some 2 else none
+    mapping := fun _ _ => none
+    endpointOwner := fun object => if object = 10 then some 1 else none
+    mailbox := fun _ => none
+    frameOwner := fun frame => if frame = 4 then some 20 else none
+    freeFrame := fun frame => frame != 4
+    runnable := fun subject => subject = 1 || subject = 2
+    current := some 2 }
+
+private def dispatcherMemory : MemoryLifecycle.State :=
+  { capabilities := dispatcherCapabilities
+    allocator :=
+      { frames := [4]
+        status := fun frame => if frame = 4 then .owned 20 else .reserved }
+    binding := fun object => if object = 20 then some 4 else none
+    issued := fun object => object = 1 || object = 2 || object = 10 || object = 20 }
+
+private def dispatcherVirtualMemory : VirtualMapping.State :=
+  { memory := dispatcherMemory
+    owner := dispatcherLifecycle.addressOwner
+    mappings := fun _ _ => none
+    issuedAddressSpace := fun space => space = 1 || space = 2 }
+
+private def dispatcherEndpoints : EndpointIPC.State :=
+  { capabilities := dispatcherCapabilities
+    allocator := dispatcherMemory.allocator
+    binding := dispatcherMemory.binding
+    issued := dispatcherMemory.issued
+    issuedAddressSpace := dispatcherVirtualMemory.issuedAddressSpace
+    mailbox := fun _ => none
+    sendHistory := fun _ => [] }
+
+private def dispatcherScheduler : Scheduler.State :=
+  { lifecycle := dispatcherLifecycle, ready := [1], capacity := 2 }
+
+/-- The canonical, kernel-owned pre-state for the hosted mixed trace. -/
+def compositeDispatcherInitial (plan : BootPageTablePlan.Plan) : CompositeState :=
+  let base := bootRuntime plan
+  let scheduler := dispatcherScheduler
+  { base with
+    execution :=
+      { base.execution with
+        core :=
+          { lifecycle := dispatcherLifecycle
+            context :=
+              { base.execution.core.context with
+                currentSubject := 2
+                activeAddressSpace := 2 } }
+        mode := .running }
+    scheduler
+    preemption := { base.preemption with scheduler }
+    virtualMemory := dispatcherVirtualMemory
+    ipc := { virtualMemory := dispatcherVirtualMemory, endpoints := dispatcherEndpoints }
+    capabilities := dispatcherCapabilities
+    lifecycle := dispatcherLifecycle
+    resumable :=
+      { scheduler
+        contexts := [blockingEvidenceContext 1 0x10]
+        capacity := 2
+        translations :=
+          { virtual := dispatcherVirtualMemory
+            active := some 2
+            entries := [] } }
+    transfers := { toEndpointState := dispatcherEndpoints, pending := fun _ => none }
+    blockingIPC :=
+      { scheduler
+        mailbox := fun _ => none
+        waiters := fun _ => []
+        waiterEndpoint := fun _ => none
+        waiterCapacity := 1
+        completion := fun _ => none }
+    blockingContexts := fun _ => none
+    deferredCancels := BlockingIPCContext.emptyDeferred }
+
+def compositeDispatcherBlockingFrame : Interrupt.HardwareFrame :=
+  demoFrame 32 .user
+
+def compositeDispatcherBlockingRegisters : ResumablePreemption.Registers :=
+  blockingEvidenceRegisters 0x22
+
+def compositeDispatcherTimerFrame : Interrupt.HardwareFrame :=
+  demoFrame 32 .user
+
+def compositeDispatcherTimerRegisters : ResumablePreemption.Registers :=
+  blockingEvidenceRegisters 0x11
+
+def compositeDispatcherUserFaultFrame : Interrupt.HardwareFrame :=
+  demoFrame 14 .user
+
+def compositeDispatcherKernelFaultFrame : Interrupt.HardwareFrame :=
+  demoFrame 14 .kernel
+
 end LeanOS.FailStop

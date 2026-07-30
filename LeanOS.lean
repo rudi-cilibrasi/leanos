@@ -3,6 +3,7 @@ import LeanOS.Capability
 import LeanOS.CapabilityHandle
 import LeanOS.CapabilityTransfer
 import LeanOS.CapabilityReuse
+import LeanOS.CompositeDispatcher
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
@@ -29,6 +30,7 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.Example
 import LeanOS.FrameAllocator
 import LeanOS.FrameBudget
+import LeanOS.FrameBudgetScenario
 import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.FaultDispatch

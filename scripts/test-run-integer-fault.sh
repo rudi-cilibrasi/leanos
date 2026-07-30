@@ -8,6 +8,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$root"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT; touch "$tmp/image.iso"
+printf '%040d\n' 0 > "$tmp/SOURCE_REVISION"
 ./scripts/generate-oracle.sh "$tmp/oracle" >/dev/null
 invoke() {
   local scenario="$1" mode="$2"
@@ -16,6 +17,8 @@ invoke() {
   LEANOS_QEMU="$root/tests/qemu-integer-fault-fixture.sh" \
   LEANOS_QEMU_FIXTURE_MODE="$mode" \
   LEANOS_QEMU_TIMEOUT_SECONDS=1 LEANOS_SERIAL_LOG="$tmp/$scenario-$mode.serial" \
+  LEANOS_DMA_SNAPSHOT="$tmp/$scenario-$mode.dma.tsv" \
+  LEANOS_SOURCE_REVISION_FILE="$tmp/SOURCE_REVISION" \
   ./scripts/run-image.sh "$tmp/image.iso"
 }
 for scenario in divide-error breakpoint; do

@@ -1190,11 +1190,16 @@ isr80_cld:
     je 9f
     cmp $0xfeed, %rax
     jne 7f
-    movq $user_b_entry, 120(%rsp)
-    movq $user_b_stack_top, 144(%rsp)
+    /* The scheduler selected fresh subject B.  Replace A's complete saved
+       GPR/iret bank with the kernel-owned B context before changing CR3;
+       patching only RIP/RSP/RAX would disclose A's remaining registers. */
+    lea initial_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
     movq $page_map_level_4_b, %rax
     mov %rax, %cr3
-    xor %rax, %rax
+    mov initial_context_b+112(%rip), %rax
 7:
     mov %rax, 112(%rsp)
     mov $2, %esi
@@ -1505,6 +1510,24 @@ integer_fault_restore_peer:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
+#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov $20, %rax
+    int $0x80
+    test $0xfff, %rax
+    jne user_copy_fail
+    movb $0xa5, (%rax)
+    movb $0xa5, 4095(%rax)
+    mov $21, %rax
+    int $0x80
+    cmp $1, %rax
+    jne user_copy_fail
+    mov $22, %rax
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_NMI_PROBE
 1:  pause
     jmp 1b
@@ -1703,6 +1726,10 @@ fault_reserved_efer_write:
     pop %rdx
     pop %rcx
     pop %rax
+#else
+    /* Keep every fault-probe image on the same linker-resolved page plan
+       without making the reserved-bit MSR write reachable or present. */
+    .fill 20, 1, 0x90
 #endif
     ret
     ud2
@@ -1841,6 +1868,63 @@ page_fault_probe_class:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+    /* Every register must originate in the kernel-owned fresh B context.
+       Any surviving subject-A register takes the controlled syscall-3
+       register-canary failure path before B can perform an operation. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    cmp $B_INITIAL_RCX, %rcx
+    jne 2f
+    cmp $B_INITIAL_RDX, %rdx
+    jne 2f
+    cmp $B_INITIAL_RBP, %rbp
+    jne 2f
+    cmp $B_INITIAL_RSI, %rsi
+    jne 2f
+    cmp $B_INITIAL_RDI, %rdi
+    jne 2f
+    cmp $B_INITIAL_R8, %r8
+    jne 2f
+    cmp $B_INITIAL_R9, %r9
+    jne 2f
+    cmp $B_INITIAL_R10, %r10
+    jne 2f
+    cmp $B_INITIAL_R11, %r11
+    jne 2f
+    cmp $B_INITIAL_R14, %r14
+    jne 2f
+    cmp $B_INITIAL_R15, %r15
+    jne 2f
+    movabs $B_INITIAL_R12, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %rax
+    cmp %rax, %r13
+    jne 2f
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov $23, %rax
+    movabs $0xb2b2f11251a7e55e, %rbx
+    mov $0x030201, %rcx
+    mov $0x51a7, %rdx
+    int $0x80
+    cmp $0x20000, %rax
+    jne 2f
+    mov $24, %rax
+    mov $0x10000, %rbx
+    int $0x80
+    test $0xfff, %rax
+    jne 2f
+    movzbl (%rax), %ebx
+    movzbl 4095(%rax), %ecx
+    mov $25, %rax
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
     cmp $B_INITIAL_RAX, %rax
     jne 2f

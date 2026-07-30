@@ -24,6 +24,14 @@ set -e
 [[ $status -eq 33 ]] || exit "$status"
 sed -i '/^LEANOS\/8 PAGING fixture=extra-mapping /a LEANOS/8 PAGING fixture=nmi-guard-mapping root=B level=pt page=6 expected=0 actual=9223372036854800387 result=REJECTED' "$log"
 sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
+sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
+sed -i '/^LEANOS\/15 DMA snapshot=/i\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:0.0 present=1 vendor=32902 device=10688 class=393216 command-before=0 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:1.0 present=1 vendor=4660 device=4369 class=196608 command-before=3 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:3.0 present=0 vendor=0 device=0 class=0 command-before=0 command-after=0 assigned=0 bridge=0 multifunction=0 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:31.0 present=1 vendor=32902 device=10520 class=393472 command-before=3 command-after=0 assigned=0 bridge=1 multifunction=1 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:31.2 present=1 vendor=32902 device=10530 class=67073 command-before=7 command-after=0 assigned=0 bridge=0 multifunction=1 policy=accepted\
+LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:31.3 present=1 vendor=32902 device=10544 class=787712 command-before=1 command-after=0 assigned=0 bridge=0 multifunction=1 policy=accepted' "$log"
 
 sed -i \
   -e 's|LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=one-shot-pit controls=wp,smep,smap|LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts|' \

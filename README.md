@@ -61,6 +61,10 @@ partial log does not pass. The executable scenarios currently include:
 
 - the default two-subject, two-address-space blocking-IPC path, from B blocking
   on an empty endpoint through A's send/wake to exact delivery back to B;
+- an independent admitted-frame-budget path in which A reaches its one-frame
+  limit without starving B, checked termination restores one unit, and an
+  allocator-selected physical frame is scrubbed and reused through a
+  generated ring-3 mapping before B receives a fresh lifetime;
 - a bounded preemption path with two PIT interrupts, separate saved contexts,
   CR3 changes, a switch from A to B, and resumption of A's original frame;
 - an independent user-fault containment path that terminates A through the
@@ -79,7 +83,7 @@ partial log does not pass. The executable scenarios currently include:
   with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-241-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+354-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -245,11 +249,15 @@ that a named present unassigned function cannot change physical memory,
 allocator ownership, page-table or kernel-owned frames, kernel state, or any
 subject-visible bytes. This is an integrity claim only: it does not constrain
 device reads or prove confidentiality, IOMMU isolation, or refinement from the
-Lean snapshot to the implementation. The guest also exhaustively checks that manifest after
-firmware, clears bus mastering on every present function, and reads each
-Command register back before CPL3. PCI enumeration and Command-register
-semantics, QEMU/device obedience, the handwritten C adapter, and final-binary
-correspondence remain trusted/tested boundaries rather than proof claims.
+Lean snapshot to the implementation. The repository's mandatory runners use
+one explicit `-nodefaults` construction with a pinned VGA BDF and boot-CD
+attachment. The guest exhaustively checks that manifest after firmware, clears
+bus mastering on every present function, and reads each Command register back
+before CPL3. Every later CPL3 return re-enumerates the manifest and requires
+the complete live Command words to match that accepted boot observation.
+PCI enumeration and Command-register semantics, QEMU/device
+obedience, the handwritten C adapter, and final-binary correspondence remain
+trusted/tested boundaries rather than proof claims.
 
 The bounded [direct-port-I/O authority model](docs/direct-port-io.md) separates
 untrusted port/value words from kernel-selected purpose, models the selected
