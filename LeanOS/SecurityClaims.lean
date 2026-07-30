@@ -2742,7 +2742,24 @@ theorem invalidation_publication_order :
     (∀ state,
       InvalidationPublication.WellFormed state →
         InvalidationPublication.WellFormed
-          (InvalidationPublication.publishReuse state).state) := by
+          (InvalidationPublication.publishReuse state).state) ∧
+    (∀ state page ack,
+      FailStop.AuthoritativeRuntimeWellFormed state →
+      state.InvalidationProjectionCoherent →
+      state.execution.mode = .running →
+      (FailStop.authoritativePrepareCurrentUnmap state page).accepted = true →
+      (FailStop.authoritativeAcknowledgeCurrentUnmap
+        (FailStop.authoritativePrepareCurrentUnmap state page).state
+          ack).accepted = true →
+        let prepared := (FailStop.authoritativePrepareCurrentUnmap state page).state
+        let next :=
+          (FailStop.authoritativeAcknowledgeCurrentUnmap prepared ack).state
+        prepared.virtualMemory = state.virtualMemory ∧
+          prepared.resumable.translations = state.resumable.translations ∧
+          FailStop.AuthoritativeRuntimeWellFormed next ∧
+          next.InvalidationProjectionCoherent ∧
+          next.virtualMemory = next.resumable.translations.virtual ∧
+          next.ipc.virtualMemory = next.virtualMemory) := by
   exact ⟨InvalidationPublication.prepare_retains_published,
     InvalidationPublication.acknowledge_accepted_exact,
     fun state ack pending hpending hticket =>
@@ -2751,7 +2768,8 @@ theorem invalidation_publication_order :
     InvalidationPublication.reuse_publication_requires_retirement_ack,
     InvalidationPublication.prepare_preserves_wellFormed,
     InvalidationPublication.acknowledge_preserves_wellFormed,
-    InvalidationPublication.publishReuse_preserves_wellFormed⟩
+    InvalidationPublication.publishReuse_preserves_wellFormed,
+    FailStop.authoritativeCurrentUnmap_accepted_publication⟩
 
 /-- SC-AUTHORITATIVE-RETIREMENT-FLUSH: the authoritative composite retirement
 and root-switch paths expose the global half of the invalidation contract:

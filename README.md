@@ -328,7 +328,10 @@ executes the canonical generated address-space-2/page-7 unmap effect against a
 bounded runtime-mutable window, with ordered PTE-store/`invlpg` and
 PTE-store/CR3-reload paths, a checked four-phase mutable-leaf relation that
 keeps every other leaf exact, and kernel-observed before/replacement-frame
-values.
+values. At the authoritative model boundary, current-root unmap preparation
+derives subject and address space from the execution latch, retains both public
+mapping projections, and publishes the acknowledged successor into the shared
+virtual-memory/TLB state while preserving the folded runtime invariant.
 
 The first total syscall model separates trusted caller/active-address-space
 context from untrusted fixed-width scalar words and proves invariant
