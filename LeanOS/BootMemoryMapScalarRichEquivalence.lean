@@ -740,6 +740,51 @@ def richCandidateAccepted
   usableFrameSound entries frame &&
     !BootReservation.reservedBy intervals frame
 
+/-- The semantic per-frame counterpart of production's usable event fold. -/
+def foldUsableEvents (entries : List RawEntry) (frame : Nat) : Bool :=
+  entries.foldl (fun usable entry =>
+    usable || (entry.kind == .usable &&
+      covers entry (frame * pageBytes) (frame * pageBytes + pageBytes))) false
+
+/-- The semantic per-frame counterpart of production's blocking event fold. -/
+def foldBlockedEvents (entries : List RawEntry) (frame : Nat) : Bool :=
+  entries.foldl (fun blocked entry =>
+    blocked || (entry.kind != .usable &&
+      overlaps entry (frame * pageBytes) (frame * pageBytes + pageBytes))) false
+
+private theorem foldl_or_eq
+    {α : Type} (predicate : α → Bool) (entries : List α) (initial : Bool) :
+    entries.foldl (fun found entry => found || predicate entry) initial =
+      (initial || entries.any predicate) := by
+  induction entries generalizing initial with
+  | nil => simp
+  | cons entry rest ih =>
+      simp only [List.foldl_cons, List.any_cons]
+      rw [ih]
+      cases initial <;> cases predicate entry <;> simp
+
+/-- The event fold used to build the bitmap is exactly the rich entry
+classification, rather than an independent caller-provided predicate. -/
+theorem eventFoldProjection_eq_rich
+    (entries : List RawEntry) (frame : Nat) :
+    (foldUsableEvents entries frame &&
+        !foldBlockedEvents entries frame) =
+      usableFrameSound entries frame := by
+  simp only [foldUsableEvents, foldBlockedEvents, foldl_or_eq]
+  rfl
+
+/-- Manifest overlay on the event fold is exactly the complete rich candidate
+projection for every bounded bitmap position. -/
+theorem eventFoldFreeProjection_eq_richCandidateAccepted
+    (entries : List RawEntry) (intervals : List BootReservation.Interval)
+    (frame : Nat) :
+    (foldUsableEvents entries frame &&
+        !foldBlockedEvents entries frame &&
+        !BootReservation.reservedBy intervals frame) =
+      richCandidateAccepted entries intervals frame := by
+  rw [eventFoldProjection_eq_rich]
+  rfl
+
 /-- The actual canonical scalar replay used for an arbitrary scanned
 candidate, over the immutable input bytes and the candidate-specific initial
 target word. -/
@@ -844,11 +889,7 @@ equivalence rather than assumed independently. -/
 theorem authority_constructs_firstCandidateScan
     (authority : BootMemoryMapFullProjectionABI.Authority)
     (start : Nat)
-    (hstart : start ≤ authority.allocation.frame)
-    (hearlier :
-      ∀ candidate, start ≤ candidate → candidate < authority.allocation.frame →
-        richCandidateAccepted authority.decoded.entries
-          authority.reserved.intervals candidate = false) :
+    (hstart : start ≤ authority.allocation.frame) :
     FirstCandidateScan authority.input authority.reserved.intervals
       start authority.allocation.frame := by
   refine ⟨hstart, authority.selectedWithinBound, ?_, ?_⟩
@@ -867,7 +908,7 @@ theorem authority_constructs_firstCandidateScan
       authority.input authority.decoded authority.reserved.intervals candidate
       authority.decodedBy
       (Nat.lt_trans hclt authority.selectedWithinBound)]
-    exact hearlier candidate hcstart hclt
+    exact authority.earlierCandidatesRejected candidate hclt
 
 /-- Sound inverse binding for the production scan.  A claimed first scalar
 result over the same decoded entries and checked intervals must equal the rich
@@ -884,11 +925,7 @@ theorem firstCandidateScan_binds_rich_authority
     (hscan :
       FirstCandidateScan authority.input authority.reserved.intervals
         start selected)
-    (hstart : start ≤ authority.allocation.frame)
-    (hearlier :
-      ∀ candidate, start ≤ candidate → candidate < authority.allocation.frame →
-        richCandidateAccepted authority.decoded.entries
-          authority.reserved.intervals candidate = false) :
+    (hstart : start ≤ authority.allocation.frame) :
     selected = authority.allocation.frame ∧
       BootMemoryMapDecoder.decode authority.input = .ok authority.decoded ∧
       BootReservation.initializeAllocator authority.decoded.handoff
@@ -901,7 +938,7 @@ theorem firstCandidateScan_binds_rich_authority
           richCandidateAccepted authority.decoded.entries
             authority.reserved.intervals candidate = false)) := by
   have hauthority :=
-    authority_constructs_firstCandidateScan authority start hstart hearlier
+    authority_constructs_firstCandidateScan authority start hstart
   have hselected :=
     firstCandidateScan_unique authority.input authority.reserved.intervals
       start selected authority.allocation.frame hscan hauthority
@@ -912,6 +949,17 @@ theorem firstCandidateScan_binds_rich_authority
     authority.input authority.decoded authority.reserved.intervals candidate
     authority.decodedBy
     (Nat.lt_trans hcandidate authority.selectedWithinBound)]
+
+/-- Querying a second frame is an allocator transition, not a second set bit
+accepted from bitmap transport.  Any exposed continuation result is exactly
+the allocation performed from the first allocation's successor state. -/
+theorem authority_continuation_binds_second_allocation
+    (authority : BootMemoryMapFullProjectionABI.Authority)
+    (second : FrameAllocator.Allocation)
+    (hsecond : authority.continuation = .ok second) :
+    FrameAllocator.allocate authority.allocation.state authority.owner =
+      .ok second := by
+  rw [authority.continuedBy, hsecond]
 
 /-- Once a separate rescan names the same selected frame and the frame-scrub
 boundary supplies its success word, production publication is determined by

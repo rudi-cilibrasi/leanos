@@ -46,6 +46,13 @@ structure Authority where
   selectedUsable :
     usableFrameSound decoded.entries allocation.frame = true
   selectedWithinBound : allocation.frame < frameLimit
+  earlierCandidatesRejected :
+    ∀ candidate, candidate < allocation.frame →
+      (usableFrameSound decoded.entries candidate &&
+        !BootReservation.reservedBy reserved.intervals candidate) = false
+  continuation : Except FrameAllocator.AllocationError FrameAllocator.Allocation
+  continuedBy :
+    FrameAllocator.allocate allocation.state owner = continuation
 
 /-- The sole rich transition consumed by this ABI.  No parsed fields, stage
 flags, normalized regions, reservation intervals, or selected frame are caller
@@ -64,14 +71,34 @@ def run (input : Input) (manifest : List BootReservation.Reservation)
           | .ok allocation =>
               if hsound : usableFrameSound decoded.entries allocation.frame then
                 if hbound : allocation.frame < frameLimit then
-                  .ok
-                    { input, manifest, owner, decoded, reserved, allocation,
-                      decodedBy := hdecode, reservedBy := hreserve,
-                      decodedTraversal :=
-                        BootMemoryMapDecoder.successful_decode_constructs_traversal
-                          input decoded hdecode,
-                      allocatedBy := hallocate, selectedUsable := hsound,
-                      selectedWithinBound := hbound }
+                  if hfirst :
+                      (List.range allocation.frame).all fun candidate =>
+                        !(usableFrameSound decoded.entries candidate &&
+                          !BootReservation.reservedBy reserved.intervals candidate)
+                  then
+                    let continuation :=
+                      FrameAllocator.allocate allocation.state owner
+                    .ok
+                      { input, manifest, owner, decoded, reserved, allocation,
+                        decodedBy := hdecode, reservedBy := hreserve,
+                        decodedTraversal :=
+                          BootMemoryMapDecoder.successful_decode_constructs_traversal
+                            input decoded hdecode,
+                        allocatedBy := hallocate, selectedUsable := hsound,
+                        selectedWithinBound := hbound,
+                        earlierCandidatesRejected := by
+                          intro candidate hearlier
+                          have hrejected :=
+                            (List.all_eq_true.mp hfirst) candidate
+                              (List.mem_range.mpr hearlier)
+                          cases hu :
+                              usableFrameSound decoded.entries candidate <;>
+                            cases hr :
+                              BootReservation.reservedBy reserved.intervals candidate <;>
+                            simp_all,
+                        continuation,
+                        continuedBy := rfl }
+                  else .error .internalSelectionInvariant
                 else .error .internalSelectionInvariant
               else .error .internalSelectionInvariant
 
@@ -144,9 +171,11 @@ theorem accepted_inputs (input : Input)
         next hsound =>
           split at h <;> try contradiction
           next hbound =>
-            injection h with hauthority
-            subst authority
-            exact ⟨rfl, rfl, rfl⟩
+            split at h <;> try contradiction
+            next hfirst =>
+              injection h with hauthority
+              subst authority
+              exact ⟨rfl, rfl, rfl⟩
 
 theorem accepted_selection_sound (authority : Authority)
     (_h : run authority.input authority.manifest authority.owner = .ok authority) :
