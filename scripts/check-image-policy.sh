@@ -213,10 +213,20 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
   echo "error: resumable context A does not occupy the reviewed 160-byte image" >&2
   exit 1
 }
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 11 ]] || {
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 12 ]] || {
   echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
 }
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S
+frame_budget_switch="$(
+  sed -n '/cmp \$0xfeed, %rax/,/^7:/p' boot/boot.S
+)"
+grep -Fq 'lea initial_context_b(%rip), %rsi' <<< "$frame_budget_switch" &&
+  grep -Fq 'mov $20, %ecx' <<< "$frame_budget_switch" &&
+  grep -Fq 'rep movsq' <<< "$frame_budget_switch" &&
+  grep -Fq 'mov initial_context_b+112(%rip), %rax' <<< "$frame_budget_switch" || {
+  echo "error: frame-budget B dispatch lacks the reviewed complete context copy" >&2
+  exit 1
+}
 grep -Fq 'extended_state_restore_peer:' boot/boot.S
 grep -Fq 'call complete_interrupt_entry' boot/boot.S
 grep -Fq 'jmp user_return_epilogue' boot/boot.S

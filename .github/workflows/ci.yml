@@ -49,12 +49,35 @@ jobs:
       - name: Build and check proofs
         run: ./scripts/check.sh
 
+      - name: Verify frame-budget negative evidence
+        if: always()
+        run: |
+          manifest=build/boot/frame-budget-negatives/manifest.tsv
+          test -s "$manifest"
+          test "$(tail -n +2 "$manifest" | wc -l)" -eq 16
+          while IFS=$'\t' read -r mode status failure_class serial_log output_log; do
+            test "$status" -ne 0
+            test "$failure_class" = serial-protocol
+            test -s "build/boot/frame-budget-negatives/$serial_log"
+            test -s "build/boot/frame-budget-negatives/$output_log"
+          done < <(tail -n +2 "$manifest")
+
+      - name: Preserve frame-budget negative evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frame-budget-negatives-${{ github.sha }}
+          path: build/boot/frame-budget-negatives/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Preserve generated-oracle evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: leanos-oracle-${{ github.sha }}
           path: |
+            build/hosted-generated-sources/oracle/FrameBudgetScenario.c
             build/hosted-generated-sources/oracle/CompositeDispatcher.c
             include/leanos/composite-dispatcher.h
             build/oracle/corpus.tsv
@@ -85,7 +108,8 @@ jobs:
       - repository-hygiene
       - lean
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Current boot-critical runs take about 20 minutes including evidence upload.
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -140,6 +164,7 @@ jobs:
             build/boot/leanos-0.1.0-x86_64.iso
             build/boot/leanos-0.1.0-x86_64-malformed-handoff.iso
             build/boot/leanos-0.1.0-x86_64-preemption.iso
+            build/boot/leanos-0.1.0-x86_64-frame-budget.iso
             build/boot/leanos-0.1.0-x86_64-fault-containment.iso
             build/boot/leanos-0.1.0-x86_64-fault-readonly-write.iso
             build/boot/leanos-0.1.0-x86_64-fault-nx-execute.iso
@@ -164,6 +189,10 @@ jobs:
             build/boot/leanos-malformed-handoff.elf
             build/boot/leanos-malformed-handoff.map
             build/boot/leanos-preemption.elf
+            build/boot/leanos-frame-budget.elf
+            build/boot/leanos-frame-budget.map
+            build/boot/boot-page-plan-frame-budget.final.h
+            build/boot/frame-budget.serial.log
             build/boot/leanos-fault-containment.elf
             build/boot/leanos-fault-readonly-write.elf
             build/boot/leanos-fault-nx-execute.elf

@@ -36,6 +36,8 @@ elif [[ "$scenario" == extended-state ]]; then
   default_image="build/boot/leanos-${version}-x86_64-extended-state.iso"
 elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
+elif [[ "$scenario" == frame-budget ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-frame-budget.iso"
 elif [[ "$scenario" == fault-containment ]]; then
   fault_scenario=1
   fault_probe=supervisor-read
@@ -156,6 +158,8 @@ elif [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
   echo 'LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts' > "$expected"
 elif [[ "$scenario" == preemption ]]; then
   echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap' > "$expected"
+elif [[ "$scenario" == frame-budget ]]; then
+  echo 'LEANOS/20 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v2 budgets=a:1,b:2 controls=wp,smep,smap' > "$expected"
 elif (( fault_scenario )); then
   echo "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=${fault_probe} contract=v1 controls=wp,smep,smap" > "$expected"
 elif [[ "$scenario" == direct-port-serial || "$scenario" == direct-port-debug ||
@@ -170,6 +174,24 @@ echo 'LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' \
   'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
+if [[ "$scenario" == frame-budget ]]; then
+  frame_budget_boot_physical="$(
+    sed -n 's|^LEANOS/7 ALLOC frame=\([0-9][0-9]*\) .*|\1|p' "$log"
+  )"
+  frame_budget_physical="$(
+    sed -n 's|^LEANOS/20 FRAME physical-frame=\([0-9][0-9]*\) .*|\1|p' "$log"
+  )"
+  [[ "$frame_budget_boot_physical" =~ ^[0-9]+$ &&
+     "$frame_budget_physical" =~ ^[0-9]+$ ]] || {
+    echo "failure_class=serial-protocol: missing unique boot/scenario physical-frame binding" >&2
+    exit 1
+  }
+  if [[ "$frame_budget_physical" == "$frame_budget_boot_physical" ]]; then
+    echo "failure_class=serial-protocol: frame-budget scenario double-published live boot frame" >&2
+    exit 1
+  fi
+  echo "LEANOS/20 FRAME physical-frame=${frame_budget_physical} boot-published-frame=${frame_budget_boot_physical} prior-publications=0 distinct=1 source=generated-decoder result=PASS" >> "$expected"
+fi
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 echo 'LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS' >> "$expected"
 echo 'LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' >> "$expected"
@@ -238,6 +260,21 @@ printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
   "LEANOS/18 ${integer_fault_upper}-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS" \
   "LEANOS/18 FINAL status=PASS faulting=terminated survivor=2 vector=${integer_fault_vector} reason=${integer_fault_kind} kernel-origin=fail-stop" >> "$expected"
+elif [[ "$scenario" == frame-budget ]]; then
+printf '%s\n' \
+  'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
+  'LEANOS/20 ENTER subject=1 address-space=1 cpl=3 budget=1 usage=0' \
+  "LEANOS/20 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=${frame_budget_physical} user-page=4095 source=generated-mapping prior-publications=0 accepted=1" \
+  'LEANOS/20 A-REJECT subject=1 reason=budgetExhausted budget=1 usage=1 object=none capability=none mapping=none state=unchanged digest=0x4201' \
+  'LEANOS/20 DISPATCH subject=2 address-space=2 source=generated-current result=PASS' \
+  'LEANOS/20 B-CONTEXT subject=2 source=kernel-owned-fresh registers=15 canaries=fresh result=PASS' \
+  'LEANOS/20 B-ALLOC subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1' \
+  'LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 checked=1' \
+  "LEANOS/20 SCRUB physical-frame=${frame_budget_physical} bytes=4096 complete=1 before-publication=1" \
+  "LEANOS/20 B-PUBLISH subject=2 object=21 handle=196609 generation=3 physical-frame=${frame_budget_physical} user-page=4095 source=generated-mapping fresh-lifetime=1" \
+  'LEANOS/20 STALE handle=65536 old-subject=1 fresh-object=21 authorized=0 reason=stale-generation' \
+  'LEANOS/20 CANARY subject=2 origin=cpl3 access=direct first=0 last=0 old=165 denied=1 result=PASS' \
+  'LEANOS/20 FINAL status=PASS a-exhausted=1 b-available=1 cleanup=1 scrub=1 fresh=1 stale-denied=1 ring3-reuse=1' >> "$expected"
 elif [[ "$scenario" == preemption ]]; then
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
