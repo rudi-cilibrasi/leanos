@@ -104,15 +104,18 @@ the production copy/ownership and exact stream-continuity checkpoint.
 consumer of that copy. Its scalar state machine reads aligned raw words,
 validates the information header, tag sizes and advances, ignored-tag extents,
 the unique version-zero 24-byte memory map, every entry range/reserved field,
-the 64-tag bound, and the terminal end tag. Its nineteen-word state carries a
+the 64-tag bound, and the terminal end tag. Its first nineteen state words carry a
 tag count incremented only when a tag header is accepted; attempting a 65th
 tag rejects with the dedicated `tooManyTags` code before it can complete or
-grant authority. For one candidate frame, it retains full usable
-coverage and any non-usable overlap independent of entry order. C no longer
-walks memory-map tags, classifies entries, maintains a frame bitmap, or calls
-`leanos_boot_allocation_check`.
+grant authority. Four additional result words form a typed entry event on
+exactly an accepted entry-type transition. Production walks the immutable copy
+once, retains at most 256 generated entry triples in static storage, and feeds
+each event to `leanos_boot_projection_entry`. That generated export updates a
+fixed 64-word usable/blocked projection covering all 4096 boot-accessible
+frames. C performs no tag walk, byte decode, entry classification, overlap
+rounding, or authority-field synthesis.
 
-The generated manifest boundary takes all nine checked reservation identities
+The generated projection-manifest boundary takes all nine checked reservation identities
 in canonical order: low memory, loaded image, page tables, descriptor tables,
 kernel stacks, ordinary-entry guard, ordinary-entry stack, embedded users, and
 the Multiboot information copy. It validates nonempty contained ranges and the
@@ -120,12 +123,25 @@ adjacent ordinary-entry layout, including the rich model's rounded-frame
 disjointness from page tables, descriptor tables, other kernel stacks, and
 embedded users. It rounds overlap at page granularity, supplies the first
 candidate after the mandatory low-memory reservation, and rejects any selected
-candidate covered by a later live interval. This preserves usable holes before
-the loaded image or Multiboot information and matches the ascending first-free
-order of `FrameAllocator.allocate`. Generated selection preserves the first
-eligible decoded candidate. After C executes and verifies the physical zeroing
-loop, generated publication rechecks the selected-frame, decoded-status,
-coverage, overlap, manifest, and scrub tuple before exposing an object token.
+frame covered by a later live interval. Each returned reservation word is
+retained beside the usable/blocked words, and
+`leanos_boot_projection_free` applies reservation precedence. The single
+`leanos_boot_projection_finish` terminal result consumes all 64 canonical free
+words at once, finds the first set frame internally, and returns typed
+status/error, selected frame, owner, decoded count, reported top, and a
+candidate token. Its additional next-frame field applies the same ascending
+first-eligible rule after the boot-published frame, so #204's frame-budget
+scenario consumes the identical decoded/normalized/reserved projection rather
+than rescanning raw bytes. It accepts no caller-selected frame or
+caller-supplied coverage/reservation booleans, but its 64 projection words
+remain caller-owned transport and are not publication authority. Production
+replays the same generated decoder over the immutable copy with the candidate
+as target, requires complete status, equal decoded count/top, full usable
+coverage, no non-usable overlap, and the generated per-frame manifest
+decision, then passes those terminal words to
+`leanos_boot_publish_authority`. Thus a forged projection candidate, including
+one paired with `entryCount=0`, cannot publish. C executes and verifies
+physical zeroing before exposing the generated publication result.
 
 The scalar decoder accepts the same zero-entry memory-map tag shape as the
 rich decoder. Such a tag decodes completely, then fails closed at the shared
@@ -158,7 +174,10 @@ canonical constructor instead of a parallel fixture-only chunker.
 `chunkWord_readU64_agreement` additionally binds byte-to-`UInt64` packing to
 the rich decoder's little-endian eight-byte reader for arbitrary successful
 reads. `scalarStep_readU64_refines` lifts that agreement to every one of the
-nineteen words returned from an arbitrary scalar state transition.
+nineteen persistent parser words returned from an arbitrary scalar state
+transition. `accepted_entryType_exposes_canonical_event` separately binds the
+four parse-once event words to the exact accepted base, length, and canonical
+memory kind.
 `checkedScalarReplay_eq_scalarReplay` then lifts the checked byte reads across
 the complete replay, including the production loop's first-error stop.
 `canonicalChunks_readU64` proves that every chunk of any aligned canonical
@@ -206,8 +225,8 @@ The exact 65-tag fixture is shared at the byte level by the scalar replay and
 chunk reconstruction and that both paths reject the same bytes at their
 respective `tooManyTags` errors. The freestanding generated-C replay exercises
 the same 560-byte layout and requires scalar error code 5, while source policy
-requires production consumers to retain all nineteen ABI words and pass the
-tag-count word on every transition.
+requires production consumers to retain the parser words plus typed event and
+pass the tag-count word on every transition.
 
 This checkpoint does not claim that the continuity chain authenticates bytes
 or that generated C or the final binary refines Lean. The boxed exact-rich

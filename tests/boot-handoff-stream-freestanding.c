@@ -40,6 +40,21 @@ extern uint64_t leanos_boot_decode_step(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_projection_entry(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_projection_manifest(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_projection_free(uint64_t, uint64_t, uint64_t);
+#define U64_8 uint64_t, uint64_t, uint64_t, uint64_t, \
+              uint64_t, uint64_t, uint64_t, uint64_t
+#define U64_64 U64_8, U64_8, U64_8, U64_8, U64_8, U64_8, U64_8, U64_8
+extern uint64_t leanos_boot_projection_finish(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, U64_64);
+#undef U64_64
+#undef U64_8
 extern uint64_t leanos_boot_manifest_candidate(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
@@ -127,11 +142,20 @@ int check_stream(void) {
     REGISTER_BOUNDARY(leanos_boot_handoff_stream_step);
     REGISTER_BOUNDARY(leanos_boot_decode_init);
     REGISTER_BOUNDARY(leanos_boot_decode_step);
+    REGISTER_BOUNDARY(leanos_boot_projection_entry);
+    REGISTER_BOUNDARY(leanos_boot_projection_manifest);
+    REGISTER_BOUNDARY(leanos_boot_projection_free);
+    REGISTER_BOUNDARY(leanos_boot_projection_finish);
     REGISTER_BOUNDARY(leanos_boot_manifest_candidate);
     REGISTER_BOUNDARY(leanos_boot_manifest_start);
     REGISTER_BOUNDARY(leanos_boot_consume_exact_projection);
     REGISTER_BOUNDARY(leanos_boot_publish_authority);
 #endif
+#define ZERO_8 0, 0, 0, 0, 0, 0, 0, 0
+#define FINISH_WORDS UINT64_C(0x100), 0, 0, 0, 0, 0, 0, 0, \
+                     ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8
+#define FINISH_TWO_WORDS UINT64_C(0x500), 0, 0, 0, 0, 0, 0, 0, \
+                         ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8
     const uint64_t identity = 0x1000;
     const uint64_t chunks[12] = {
         0x0000000000000060, 0x000000090000002a, 0x00000000000000aa,
@@ -202,6 +226,55 @@ int check_stream(void) {
     CHECK_RESULT("decode.accepted.target-found", decoded.word[14], 1, 14);
     CHECK_RESULT("decode.accepted.target-blocked", decoded.word[15], 0, 14);
     CHECK_RESULT("decode.accepted.tag-count", decoded.word[18], 3, 14);
+    CHECK_RESULT("projection.entry.usable",
+        leanos_boot_projection_entry(0x1000, 0x4000, 1, 0, 0, 0, 3),
+        0x1e, 14);
+    CHECK_RESULT("projection.entry.blocked",
+        leanos_boot_projection_entry(0x2000, 0x1000, 2, 0, 0, 0, 4),
+        0x4, 14);
+    CHECK_RESULT("projection.free.precedence",
+        leanos_boot_projection_free(0x1e, 0x4, 0x2), 0x18, 14);
+    CHECK_RESULT("projection.manifest.status",
+        leanos_boot_projection_manifest(
+            0, 0, 0x100000, 0x100000, 0x200000,
+            0x110000, 0x1000, 0x120000, 0x1000, 0x130000, 0x1000,
+            0x140000, 0x1000, 0x141000, 0x4000, 0x180000, 0x2000,
+            0x300000, 96, 1), 1, 14);
+    CHECK_RESULT("projection.manifest.low-memory-mask",
+        leanos_boot_projection_manifest(
+            0, 0, 0x100000, 0x100000, 0x200000,
+            0x110000, 0x1000, 0x120000, 0x1000, 0x130000, 0x1000,
+            0x140000, 0x1000, 0x141000, 0x4000, 0x180000, 0x2000,
+            0x300000, 96, 3), UINT64_MAX, 14);
+    CHECK_RESULT("projection.finish.status",
+        leanos_boot_projection_finish(1, 0, 1, 0, 2, 0x5000, 7, 1,
+                                      FINISH_WORDS), 1, 14);
+    CHECK_RESULT("projection.finish.frame",
+        leanos_boot_projection_finish(1, 0, 1, 0, 2, 0x5000, 7, 3,
+                                      FINISH_WORDS), 8, 14);
+    CHECK_RESULT("projection.finish.owner",
+        leanos_boot_projection_finish(1, 0, 1, 0, 2, 0x5000, 7, 4,
+                                      FINISH_WORDS), 7, 14);
+    CHECK_RESULT("projection.finish.candidate-token",
+        leanos_boot_projection_finish(1, 0, 1, 0, 2, 0x5000, 7, 7,
+                                      FINISH_WORDS), 9, 14);
+    CHECK_RESULT("projection.finish.next-frame",
+        leanos_boot_projection_finish(1, 0, 1, 0, 2, 0x5000, 7, 8,
+                                      FINISH_TWO_WORDS), 10, 14);
+    CHECK_RESULT("projection.finish.decode-rejection",
+        leanos_boot_projection_finish(2, 9, 1, 0, 0, 0, 7, 2,
+                                      FINISH_WORDS), 1, 14);
+    CHECK_RESULT("projection.finish.manifest-rejection",
+        leanos_boot_projection_finish(1, 0, 2, 1, 2, 0x5000, 7, 2,
+                                      FINISH_WORDS), 2, 14);
+    CHECK_RESULT("projection.finish.rejection-no-frame",
+        leanos_boot_projection_finish(2, 9, 1, 0, 0, 0, 7, 3,
+                                      FINISH_WORDS), 0, 14);
+    CHECK_RESULT("projection.finish.empty-entry-rejection",
+        leanos_boot_projection_finish(1, 0, 1, 0, 0, 0x5000, 7, 2,
+                                      FINISH_WORDS), 3, 14);
+    CHECK_RESULT("projection.forged-frame-no-publication",
+        leanos_boot_publish_authority(8, 8, 1, 0, 0, 1, 1), 0, 14);
     decoded = decode(chunks, 2);
     CHECK_RESULT("decode.reserved-target.status", decoded.word[1], 1, 15);
     CHECK_RESULT("decode.reserved-target.target-found", decoded.word[14], 1, 15);
