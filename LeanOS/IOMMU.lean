@@ -1843,6 +1843,371 @@ theorem halted_iommu_absorbing (state : AuthoritativeExtension)
   classical
   simp [gatedByKernel, hhalted]
 
+/-! ## Atomic authoritative memory publication
+
+Device writes and frame-lifetime transitions touch projections that the
+control-only gate above deliberately retains.  This boundary derives every
+post-state from the checked lower transition, synchronizes the overlapping
+kernel, scrub, and IOMMU projections in one candidate, and publishes that
+candidate only with the complete extension invariant. -/
+
+inductive AuthoritativeMemoryOperation where
+  | deviceWrite (request : TransferRequest) (bytes : List UInt8)
+  | release (subject : FrameScrub.SubjectId) (slot : FrameScrub.SlotId)
+  | allocate (object : FrameScrub.ObjectId)
+      (subject : FrameScrub.SubjectId) (slot : FrameScrub.SlotId)
+
+inductive AuthoritativeMemoryReply where
+  | deviceWritten | released | allocated
+  deriving DecidableEq, Repr
+
+inductive AuthoritativeMemoryReject where
+  | device (reason : RejectReason)
+  | release (reason : MemoryLifecycle.ReleaseError)
+  | allocation (reason : FrameScrub.AllocationError)
+  | wrongOwner | missingAuthority | invariantViolation
+  | kernelBusy | kernelHalted
+  deriving DecidableEq, Repr
+
+inductive AuthoritativeMemoryOutcome (before : AuthoritativeExtension) where
+  | accepted (after : AuthoritativeExtension) (invariant : after.Invariant)
+      (reply : AuthoritativeMemoryReply)
+  | rejected (reason : AuthoritativeMemoryReject)
+
+def AuthoritativeMemoryOutcome.state {before : AuthoritativeExtension} :
+    AuthoritativeMemoryOutcome before → AuthoritativeExtension
+  | .accepted after _ _ => after
+  | .rejected _ => before
+
+theorem AuthoritativeMemoryOutcome.invariant
+    {before : AuthoritativeExtension} (hbefore : before.Invariant) :
+    (outcome : AuthoritativeMemoryOutcome before) → outcome.state.Invariant
+  | .accepted _ hinvariant _ => hinvariant
+  | .rejected _ => hbefore
+
+def AuthoritativeMemoryOutcome.isAccepted {before : AuthoritativeExtension} :
+    AuthoritativeMemoryOutcome before → Bool
+  | .accepted _ _ _ => true
+  | .rejected _ => false
+
+def AuthoritativeMemoryOutcome.reason {before : AuthoritativeExtension} :
+    AuthoritativeMemoryOutcome before → Option AuthoritativeMemoryReject
+  | .accepted _ _ _ => none
+  | .rejected reason => some reason
+
+private def setOwnedMemory
+    (owned : SubjectLifecycle.ObjectId →
+      Option (SubjectLifecycle.SubjectId × SubjectLifecycle.FrameId))
+    (object : SubjectLifecycle.ObjectId)
+    (value : Option (SubjectLifecycle.SubjectId × SubjectLifecycle.FrameId)) :=
+  fun candidate => if candidate = object then value else owned candidate
+
+private def setFrameOwner
+    (owners : SubjectLifecycle.FrameId → Option SubjectLifecycle.SubjectId)
+    (frame : SubjectLifecycle.FrameId)
+    (value : Option SubjectLifecycle.SubjectId) :=
+  fun candidate => if candidate = frame then value else owners candidate
+
+private def setFreeFrame (free : SubjectLifecycle.FrameId → Bool)
+    (frame : SubjectLifecycle.FrameId) (value : Bool) :=
+  fun candidate => if candidate = frame then value else free candidate
+
+private def retireMemoryFromLifecycle (lifecycle : SubjectLifecycle.State)
+    (memory : MemoryLifecycle.State) (object : MemoryLifecycle.ObjectId)
+    (frame : MemoryLifecycle.FrameId) : SubjectLifecycle.State :=
+  { lifecycle with
+    capabilities := memory.capabilities
+    ownedMemory := setOwnedMemory lifecycle.ownedMemory object none
+    mapping := fun addressSpace page =>
+      match lifecycle.mapping addressSpace page with
+      | some candidate => if candidate = object then none else some candidate
+      | none => none
+    frameOwner := setFrameOwner lifecycle.frameOwner frame none
+    freeFrame := setFreeFrame lifecycle.freeFrame frame true }
+
+private def allocateMemoryToLifecycle (lifecycle : SubjectLifecycle.State)
+    (memory : MemoryLifecycle.State) (object : MemoryLifecycle.ObjectId)
+    (subject : MemoryLifecycle.SubjectId) (frame : MemoryLifecycle.FrameId) :
+    SubjectLifecycle.State :=
+  { lifecycle with
+    capabilities := memory.capabilities
+    ownedMemory := setOwnedMemory lifecycle.ownedMemory object
+      (some (subject, frame))
+    frameOwner := setFrameOwner lifecycle.frameOwner frame (some subject)
+    freeFrame := setFreeFrame lifecycle.freeFrame frame false }
+
+private def retainLiveVirtualMappings (memory : MemoryLifecycle.State)
+    (mappings : VirtualMapping.AddressSpaceId → VirtualMapping.VirtualPage →
+      Option VirtualMapping.Mapping) :=
+  fun addressSpace page =>
+    match mappings addressSpace page with
+    | some mapping =>
+        if (memory.binding mapping.object).isSome then some mapping else none
+    | none => none
+
+private def retainLiveEndpointMailboxes (capabilities : LeanOS.Capability.State)
+    (mailbox : EndpointIPC.ObjectId → Option EndpointIPC.Envelope) :=
+  fun object =>
+    if capabilities.objects object then mailbox object else none
+
+/-- Publish one checked memory-lifecycle state through every overlapping
+kernel projection.  No byte projection lives in the kernel, so bytes remain
+solely in `FrameScrub` and the IOMMU candidate assembled by the outer gate. -/
+private def publishKernelMemory (kernel : FailStop.CompositeState)
+    (memory : MemoryLifecycle.State) (lifecycle : SubjectLifecycle.State) :
+    FailStop.CompositeState :=
+  let scheduler := { kernel.scheduler with lifecycle }
+  let virtualMemory :=
+    { kernel.virtualMemory with
+      memory
+      mappings :=
+        retainLiveVirtualMappings memory kernel.virtualMemory.mappings }
+  let endpoints :=
+    { kernel.ipc.endpoints with
+      capabilities := memory.capabilities
+      allocator := memory.allocator
+      binding := memory.binding
+      issued := memory.issued
+      mailbox := retainLiveEndpointMailboxes memory.capabilities
+        kernel.ipc.endpoints.mailbox }
+  { kernel with
+    execution := { kernel.execution with
+      core := { kernel.execution.core with lifecycle }
+      returnAuthorityArmed := false }
+    scheduler
+    preemption := { kernel.preemption with scheduler }
+    virtualMemory
+    ipc := { kernel.ipc with virtualMemory, endpoints }
+    capabilities := memory.capabilities
+    lifecycle
+    resumable := { kernel.resumable with
+      scheduler
+      translations := { kernel.resumable.translations with
+        virtual := virtualMemory } }
+    transfers := { kernel.transfers with toEndpointState := endpoints }
+    blockingIPC := { kernel.blockingIPC with scheduler } }
+
+private def nextFrameGeneration (frames : List Frame) (frame : FrameId) :
+    Generation :=
+  frames.foldl (fun next candidate =>
+    if candidate.handle.frame = frame then
+      max next (candidate.handle.generation + 1)
+    else next) 1
+
+private def setFrameAuthority
+    (authority : LeanOS.Capability.ObjectId → Option FrameHandle)
+    (object : LeanOS.Capability.ObjectId) (value : Option FrameHandle) :=
+  fun candidate => if candidate = object then value else authority candidate
+
+private def releaseMemoryCore (core : Core) (scrub : FrameScrub.State)
+    (object : FrameScrub.ObjectId) (handle : FrameHandle) : Core :=
+  { core with
+    mappings := core.mappings.filter (·.frame != handle)
+    frames := setFrameLive core.frames handle false
+    capabilityAuthority := scrub.memory.capabilities
+    frameAuthority := setFrameAuthority core.frameAuthority object none
+    capabilities := core.capabilities.filter (·.object != object)
+    memory := scrub.bytes }
+
+private def allocateMemoryCore (core : Core) (scrub : FrameScrub.State)
+    (object : FrameScrub.ObjectId) (subject : FrameScrub.SubjectId)
+    (slot : FrameScrub.SlotId) (frame : FrameScrub.FrameId)
+    (capability : LeanOS.Capability.Capability) : Core :=
+  let handle : FrameHandle :=
+    ⟨frame, nextFrameGeneration core.frames frame⟩
+  let permission : Permission :=
+    ⟨capability.rights.read, capability.rights.write⟩
+  { core with
+    frames := core.frames ++
+      [⟨handle, subject, true, false, false, false, FrameScrub.frameBytes⟩]
+    capabilityAuthority := scrub.memory.capabilities
+    frameAuthority := setFrameAuthority core.frameAuthority object (some handle)
+    capabilities := core.capabilities ++
+      [⟨slot, capability.identity, subject, object, handle, 0,
+        FrameScrub.frameBytes, permission⟩]
+    memory := scrub.bytes }
+
+private def findMappingCapability (core : Core) (mapping : Mapping) :
+    Option Capability :=
+  core.capabilities.find? fun capability =>
+    capability.owner == mapping.owner &&
+      capability.frame == mapping.frame &&
+      rangeContained mapping.frameOffset mapping.length
+        capability.offset capability.length
+
+private noncomputable def commitAuthoritativeMemory
+    (before : AuthoritativeExtension) (kernel : FailStop.CompositeState)
+    (core : Core) (scrub : FrameScrub.State)
+    (reply : AuthoritativeMemoryReply) :
+    AuthoritativeMemoryOutcome before := by
+  classical
+  if hcapability :
+      LeanOS.Capability.WellFormed core.capabilityAuthority then
+    if hvalid : validateCore core = true then
+      let iommu : State := ⟨core, hvalid, hcapability⟩
+      let candidate : AuthoritativeExtension := { kernel, iommu, scrub }
+      if hinvariant : candidate.Invariant then
+        exact .accepted candidate hinvariant reply
+      else exact .rejected .invariantViolation
+    else exact .rejected .invariantViolation
+  else exact .rejected .invariantViolation
+
+/-- Public memory/data boundary for the authoritative extension.  Successful
+device writes update IOMMU bytes and the scrub byte/written projections in
+the same accepted constructor.  Successful release/allocation candidates
+derive from `FrameScrub` and atomically republish the resulting lifecycle. -/
+noncomputable def gatedMemoryByKernel (state : AuthoritativeExtension)
+    (hstate : state.Invariant) (operation : AuthoritativeMemoryOperation) :
+    AuthoritativeMemoryOutcome state := by
+  classical
+  match state.kernel.execution.mode with
+  | .handling _ => exact .rejected .kernelBusy
+  | .halted _ => exact .rejected .kernelHalted
+  | .running =>
+      match operation with
+      | .deviceWrite request bytes =>
+          match deviceWrite state.iommu request bytes with
+          | .rejected reason => exact .rejected (.device reason)
+          | .written iommu translation =>
+              match findMappingCapability state.iommu.core
+                  translation.mapping with
+              | none => exact .rejected .missingAuthority
+              | some capability =>
+                  let scrub : FrameScrub.State :=
+                    { state.scrub with
+                      bytes := iommu.core.memory
+                      written := FrameScrub.setWritten state.scrub.written
+                        capability.object true }
+                  let candidate : AuthoritativeExtension :=
+                    { kernel := state.kernel, iommu, scrub }
+                  if hcoherent : candidate.Coherent then
+                    exact .accepted candidate
+                      ⟨hstate.1, iommu.invariant, hcoherent⟩ .deviceWritten
+                  else exact .rejected .invariantViolation
+      | .release subject slot =>
+          if howner :
+              subject = state.kernel.execution.core.context.currentSubject then
+            let outcome := FrameScrub.release state.scrub subject slot
+            match outcome.result with
+            | .rejected reason => exact .rejected (.release reason)
+            | .accepted =>
+                match LeanOS.Capability.lookup
+                    state.scrub.memory.capabilities subject slot with
+                | .invalidSubject | .staleSlot =>
+                    exact .rejected .missingAuthority
+                | .found capability =>
+                    match state.scrub.memory.binding capability.object with
+                    | none => exact .rejected .missingAuthority
+                    | some frame =>
+                        match state.iommu.core.frameAuthority
+                            capability.object with
+                        | none => exact .rejected .missingAuthority
+                        | some handle =>
+                            let lifecycle :=
+                              retireMemoryFromLifecycle state.kernel.lifecycle
+                                outcome.state.memory capability.object frame
+                            let kernel :=
+                              publishKernelMemory state.kernel
+                                outcome.state.memory lifecycle
+                            let core :=
+                              releaseMemoryCore state.iommu.core outcome.state
+                                capability.object handle
+                            exact commitAuthoritativeMemory state kernel core
+                              outcome.state .released
+          else exact .rejected .wrongOwner
+      | .allocate object subject slot =>
+          if howner :
+              subject = state.kernel.execution.core.context.currentSubject then
+            let outcome := FrameScrub.allocate state.scrub object subject slot
+            match outcome.result with
+            | .rejected reason => exact .rejected (.allocation reason)
+            | .accepted =>
+                match outcome.state.memory.binding object with
+                | none => exact .rejected .missingAuthority
+                | some frame =>
+                    match LeanOS.Capability.lookup
+                        outcome.state.memory.capabilities subject slot with
+                    | .invalidSubject | .staleSlot =>
+                        exact .rejected .missingAuthority
+                    | .found capability =>
+                        let lifecycle :=
+                          allocateMemoryToLifecycle state.kernel.lifecycle
+                            outcome.state.memory object subject frame
+                        let kernel :=
+                          publishKernelMemory state.kernel
+                            outcome.state.memory lifecycle
+                        let core :=
+                          allocateMemoryCore state.iommu.core outcome.state
+                            object subject slot frame capability
+                        exact commitAuthoritativeMemory state kernel core
+                          outcome.state .allocated
+          else exact .rejected .wrongOwner
+
+theorem gatedMemoryByKernel_preserves_authoritative_extension
+    (state : AuthoritativeExtension) (hstate : state.Invariant)
+    (operation : AuthoritativeMemoryOperation) :
+    (gatedMemoryByKernel state hstate operation).state.Invariant :=
+  (gatedMemoryByKernel state hstate operation).invariant hstate
+
+private theorem gatedMemory_deviceWrite_accepted_of
+    (state : AuthoritativeExtension) (hstate : state.Invariant)
+    (request : TransferRequest) (bytes : List UInt8)
+    (after : State) (translation : Translation state.iommu request .write)
+    (capability : Capability)
+    (hmode : state.kernel.execution.mode = .running)
+    (hwrite : deviceWrite state.iommu request bytes =
+      .written after translation)
+    (hcapability :
+      findMappingCapability state.iommu.core translation.mapping =
+        some capability)
+    (hcoherent :
+      ({ kernel := state.kernel
+         iommu := after
+         scrub :=
+           { state.scrub with
+             bytes := after.core.memory
+             written := FrameScrub.setWritten state.scrub.written
+               capability.object true } } :
+        AuthoritativeExtension).Coherent) :
+    (gatedMemoryByKernel state hstate
+      (.deviceWrite request bytes)).isAccepted = true := by
+  classical
+  simp [gatedMemoryByKernel, hmode, hwrite, hcapability, hcoherent]
+  rfl
+
+private theorem gatedMemory_deviceWrite_state_of
+    (state : AuthoritativeExtension) (hstate : state.Invariant)
+    (request : TransferRequest) (bytes : List UInt8)
+    (after : State) (translation : Translation state.iommu request .write)
+    (capability : Capability)
+    (hmode : state.kernel.execution.mode = .running)
+    (hwrite : deviceWrite state.iommu request bytes =
+      .written after translation)
+    (hcapability :
+      findMappingCapability state.iommu.core translation.mapping =
+        some capability)
+    (hcoherent :
+      ({ kernel := state.kernel
+         iommu := after
+         scrub :=
+           { state.scrub with
+             bytes := after.core.memory
+             written := FrameScrub.setWritten state.scrub.written
+               capability.object true } } :
+        AuthoritativeExtension).Coherent) :
+    (gatedMemoryByKernel state hstate
+      (.deviceWrite request bytes)).state =
+      { kernel := state.kernel
+        iommu := after
+        scrub :=
+          { state.scrub with
+            bytes := after.core.memory
+            written := FrameScrub.setWritten state.scrub.written
+              capability.object true } } := by
+  classical
+  simp [gatedMemoryByKernel, hmode, hwrite, hcapability, hcoherent]
+  rfl
+
 noncomputable def runGated : (state : AuthoritativeExtension) → state.Invariant →
     List Operation → AuthoritativeExtension
   | state, _, [] => state
@@ -2382,7 +2747,579 @@ theorem authoritative_grant_accepted (plan : BootPageTablePlan.Plan) :
         AuthoritativeExtension).Coherent
     exact authoritative_grant_coherent plan
 
+private def authoritativeGrantedWitness (plan : BootPageTablePlan.Plan) :
+    AuthoritativeExtension :=
+  { kernel := (authoritativeSample plan).kernel
+    iommu := authoritativeGrantedIOMMU plan
+    scrub := (authoritativeSample plan).scrub }
+
+private theorem authoritativeGrantedWitness_invariant
+    (plan : BootPageTablePlan.Plan) :
+    (authoritativeGrantedWitness plan).Invariant := by
+  refine
+    ⟨(authoritativeSample_invariant plan).1,
+      (authoritativeGrantedIOMMU plan).invariant, ?_⟩
+  have hcoherent := authoritative_grant_coherent plan
+  rw [authoritative_grant_gate] at hcoherent
+  simp only [Outcome.state] at hcoherent
+  simpa [authoritativeGrantedWitness] using hcoherent
+
 /-! ## Scrubbed lifetime reuse non-vacuity -/
+
+private def lifecycleWriteRequest : TransferRequest :=
+  ⟨0, 1, 0, 1⟩
+
+private noncomputable def lifecycleWriteOutcome
+    (plan : BootPageTablePlan.Plan) :=
+  gatedMemoryByKernel (authoritativeGrantedWitness plan)
+    (authoritativeGrantedWitness_invariant plan)
+    (.deviceWrite lifecycleWriteRequest [0xa5])
+
+private noncomputable def lifecycleWritten
+    (plan : BootPageTablePlan.Plan) : AuthoritativeExtension :=
+  (lifecycleWriteOutcome plan).state
+
+private def lifecycleWrittenBytes : FrameId → Nat → UInt8 :=
+  writeMemory scrubbedMemory 4 0 [0xa5]
+
+private def writeOutcomeState {before : State} {request : TransferRequest} :
+    WriteOutcome before request → State
+  | .rejected _ => before
+  | .written after _ => after
+
+private def lifecycleWrittenIOMMU (plan : BootPageTablePlan.Plan) : State :=
+  writeOutcomeState
+    (deviceWrite (authoritativeGrantedIOMMU plan)
+      lifecycleWriteRequest [0xa5])
+
+private def lifecycleWrittenScrub (plan : BootPageTablePlan.Plan) :
+    FrameScrub.State :=
+  { (authoritativeSampleScrub plan) with
+    bytes := (lifecycleWrittenIOMMU plan).core.memory
+    written := FrameScrub.setWritten
+      (authoritativeSampleScrub plan).written 20 true }
+
+private def lifecycleWrittenWitness (plan : BootPageTablePlan.Plan) :
+    AuthoritativeExtension :=
+  { kernel := (authoritativeSample plan).kernel
+    iommu := lifecycleWrittenIOMMU plan
+    scrub := lifecycleWrittenScrub plan }
+
+private theorem lifecycleWrittenScrub_invariant
+    (plan : BootPageTablePlan.Plan) :
+    FrameScrub.ScrubInvariant (lifecycleWrittenScrub plan) := by
+  intro object frame hbinding hunwritten
+  have hobject : object ≠ 20 := by
+    intro hequal
+    subst object
+    simp [lifecycleWrittenScrub, authoritativeSampleScrub,
+      FrameScrub.setWritten] at hunwritten
+  change (if object = 20 then some 4 else none) = some frame at hbinding
+  simp [hobject] at hbinding
+
+private theorem lifecycleWrittenWitness_coherent
+    (plan : BootPageTablePlan.Plan) :
+    (lifecycleWrittenWitness plan).Coherent := by
+  have hcoherent := authoritative_grant_coherent plan
+  rw [authoritative_grant_gate] at hcoherent
+  simp only [Outcome.state] at hcoherent
+  rcases hcoherent with
+    ⟨howner, hcapability, hmemory, _hbytes, _hscrub,
+      hassignments, hcapabilities, hmappings, hframes⟩
+  refine
+    ⟨howner, hcapability, hmemory, rfl,
+      lifecycleWrittenScrub_invariant plan, ?_, ?_, ?_, ?_⟩
+  · exact hassignments
+  · exact hcapabilities
+  · exact hmappings
+  · exact hframes
+
+private theorem lifecycleWrittenWitness_invariant
+    (plan : BootPageTablePlan.Plan) :
+    (lifecycleWrittenWitness plan).Invariant :=
+  ⟨(authoritativeSample_invariant plan).1,
+    (lifecycleWrittenIOMMU plan).invariant,
+    lifecycleWrittenWitness_coherent plan⟩
+
+private theorem lifecycle_write_state_exact
+    (plan : BootPageTablePlan.Plan) :
+    (lifecycleWriteOutcome plan).state = lifecycleWrittenWitness plan := by
+  classical
+  let before := authoritativeGrantedWitness plan
+  have hwritten :
+      (deviceWrite before.iommu lifecycleWriteRequest [0xa5]).isWritten =
+        true := by
+    change
+      (deviceWrite (authoritativeGrantedIOMMU plan)
+        lifecycleWriteRequest [0xa5]).isWritten = true
+    rfl
+  generalize hwrite :
+      deviceWrite before.iommu lifecycleWriteRequest [0xa5] = outcome
+  cases outcome with
+  | rejected reason =>
+      simp [WriteOutcome.isWritten, hwrite] at hwritten
+  | written after translation =>
+      have hmappingMember :
+          translation.mapping ∈ before.iommu.core.mappings :=
+        List.mem_of_find?_eq_some translation.mappingFound
+      have hmapping :
+          translation.mapping =
+            { handle := ⟨0, 1⟩
+              assignment := ⟨0, 1⟩
+              domain := ⟨0, 1⟩
+              owner := 2
+              iova := 0
+              length := pageSize
+              frame := ⟨4, 1⟩
+              frameOffset := 0
+              permission := readWrite } := by
+        simpa [before, authoritativeGrantedWitness,
+          authoritativeGrantedIOMMU, authoritativeGrantedCore] using
+          hmappingMember
+      have hcapability :
+          findMappingCapability before.iommu.core translation.mapping =
+            some
+              { slot := 2
+                identity := 5
+                owner := 2
+                object := 20
+                frame := ⟨4, 1⟩
+                offset := 0
+                length := 64
+                permission := readWrite } := by
+        rw [hmapping]
+        rfl
+      have hafter : lifecycleWrittenIOMMU plan = after := by
+        change
+          writeOutcomeState
+              (deviceWrite (authoritativeGrantedIOMMU plan)
+                lifecycleWriteRequest [0xa5]) =
+            after
+        calc
+          writeOutcomeState
+              (deviceWrite (authoritativeGrantedIOMMU plan)
+                lifecycleWriteRequest [0xa5]) =
+              writeOutcomeState (.written after translation) := by
+                simpa [before, authoritativeGrantedWitness] using
+                  congrArg writeOutcomeState hwrite
+          _ = after := rfl
+      have hcoherent :
+          ({ kernel := before.kernel
+             iommu := after
+             scrub :=
+               { before.scrub with
+                 bytes := after.core.memory
+                 written := FrameScrub.setWritten before.scrub.written
+                   20 true } } :
+            AuthoritativeExtension).Coherent := by
+        simpa [before, authoritativeGrantedWitness,
+          authoritativeSample, lifecycleWrittenWitness,
+          lifecycleWrittenScrub, hafter] using
+          lifecycleWrittenWitness_coherent plan
+      calc
+        (lifecycleWriteOutcome plan).state =
+            { kernel := before.kernel
+              iommu := after
+              scrub :=
+                { before.scrub with
+                  bytes := after.core.memory
+                  written := FrameScrub.setWritten before.scrub.written
+                    20 true } } := by
+              exact gatedMemory_deviceWrite_state_of before
+                (authoritativeGrantedWitness_invariant plan)
+                lifecycleWriteRequest [0xa5] after translation _ rfl hwrite
+                hcapability hcoherent
+        _ = lifecycleWrittenWitness plan := by
+          simp [before, authoritativeGrantedWitness,
+            authoritativeSample, lifecycleWrittenWitness,
+            lifecycleWrittenScrub, hafter]
+
+private theorem lifecycle_write_accepted (plan : BootPageTablePlan.Plan) :
+    (lifecycleWriteOutcome plan).isAccepted = true := by
+  classical
+  let before := authoritativeGrantedWitness plan
+  have hwritten :
+      (deviceWrite before.iommu lifecycleWriteRequest [0xa5]).isWritten =
+        true := by
+    change
+      (deviceWrite (authoritativeGrantedIOMMU plan)
+        lifecycleWriteRequest [0xa5]).isWritten = true
+    rfl
+  generalize hwrite :
+      deviceWrite before.iommu lifecycleWriteRequest [0xa5] = outcome
+  cases outcome with
+  | rejected reason =>
+      simp [WriteOutcome.isWritten, hwrite] at hwritten
+  | written after translation =>
+      have hmappingMember :
+          translation.mapping ∈ before.iommu.core.mappings :=
+        List.mem_of_find?_eq_some translation.mappingFound
+      have hmapping :
+          translation.mapping =
+            { handle := ⟨0, 1⟩
+              assignment := ⟨0, 1⟩
+              domain := ⟨0, 1⟩
+              owner := 2
+              iova := 0
+              length := pageSize
+              frame := ⟨4, 1⟩
+              frameOffset := 0
+              permission := readWrite } := by
+        simpa [before, authoritativeGrantedWitness,
+          authoritativeGrantedIOMMU, authoritativeGrantedCore] using
+          hmappingMember
+      have hcapability :
+          findMappingCapability before.iommu.core translation.mapping =
+            some
+              { slot := 2
+                identity := 5
+                owner := 2
+                object := 20
+                frame := ⟨4, 1⟩
+                offset := 0
+                length := 64
+                permission := readWrite } := by
+        rw [hmapping]
+        rfl
+      rcases write_integrity before.iommu lifecycleWriteRequest [0xa5]
+          after translation hwrite with
+        ⟨howner, hnextAssignment, hnextDomain, hnextMapping,
+          hassignments, hmappings, hframes, hcapabilityAuthority,
+          hframeAuthority, hcapabilities, _hotherFrame, _houtside⟩
+      rcases (authoritativeGrantedWitness_invariant plan).2.2 with
+        ⟨hownerBefore, hcapabilityBefore, hmemoryBefore, _hbytesBefore,
+          _hscrubBefore, hassignmentsBefore, hcapabilitiesBefore,
+          hmappingsBefore, hframesBefore⟩
+      have hscrub :
+          FrameScrub.ScrubInvariant
+            { (authoritativeGrantedWitness plan).scrub with
+              bytes := after.core.memory
+              written := FrameScrub.setWritten
+                (authoritativeGrantedWitness plan).scrub.written 20 true } := by
+        intro object frame hbinding hunwritten
+        have hobject : object ≠ 20 := by
+          intro hequal
+          subst object
+          simp [FrameScrub.setWritten] at hunwritten
+        change (if object = 20 then some 4 else none) = some frame at hbinding
+        simp [hobject] at hbinding
+      have hcoherent :
+          ({ kernel := before.kernel
+             iommu := after
+             scrub :=
+               { before.scrub with
+                 bytes := after.core.memory
+                 written := FrameScrub.setWritten before.scrub.written
+                   20 true } } :
+            AuthoritativeExtension).Coherent := by
+        refine
+          ⟨howner.trans hownerBefore,
+            hcapabilityAuthority.trans hcapabilityBefore,
+            hmemoryBefore, rfl, ?_, ?_, ?_, ?_, ?_⟩
+        · simpa [before] using hscrub
+        · rw [hassignments]
+          exact hassignmentsBefore
+        · rw [hcapabilities]
+          exact hcapabilitiesBefore
+        · rw [hmappings, hcapabilities]
+          simpa [before] using hmappingsBefore
+        · rw [hframes]
+          exact hframesBefore
+      exact gatedMemory_deviceWrite_accepted_of before
+        (authoritativeGrantedWitness_invariant plan)
+        lifecycleWriteRequest [0xa5] after translation _ rfl hwrite
+        hcapability hcoherent
+
+/-! The lifecycle trace below uses an unfoldable two-subject kernel seed.
+Unlike the canonical mixed-dispatcher witness above, none of its authority
+projections is private to `FailStop`, so every release/allocation post-state
+can be reduced and checked in this module. -/
+
+private def lifecycleSubjectOneSpace : LeanOS.Capability.Capability :=
+  { object := 1, kind := .addressSpace, rights := { revoke := true },
+    identity := 1 }
+
+private def lifecycleSubjectTwoSpace : LeanOS.Capability.Capability :=
+  { object := 2, kind := .addressSpace, rights := { revoke := true },
+    identity := 2 }
+
+private def lifecycleSubjectTwoMemory : LeanOS.Capability.Capability :=
+  { object := 20, kind := .memory, rights := LeanOS.Capability.allRights,
+    identity := 3 }
+
+private def lifecycleCapabilities : LeanOS.Capability.State :=
+  { nextIdentity := 4
+    derivations := fun identity =>
+      if identity = 1 then
+        some (none, 1, .addressSpace, { revoke := true })
+      else if identity = 2 then
+        some (none, 2, .addressSpace, { revoke := true })
+      else if identity = 3 then
+        some (none, 20, .memory, LeanOS.Capability.allRights)
+      else none
+    subjects := fun subject => subject = 1 || subject = 2
+    objects := fun object => object = 1 || object = 2 || object = 20
+    kinds := fun object =>
+      if object = 1 || object = 2 then some .addressSpace
+      else if object = 20 then some .memory else none
+    slots := fun subject slot =>
+      if subject = 1 && slot = 0 then some lifecycleSubjectOneSpace
+      else if subject = 2 && slot = 0 then some lifecycleSubjectTwoSpace
+      else if subject = 2 && slot = 1 then some lifecycleSubjectTwoMemory
+      else none }
+
+@[simp] private theorem lifecycleCapabilities_wellFormed :
+    LeanOS.Capability.WellFormed lifecycleCapabilities := by
+  simp only [LeanOS.Capability.WellFormed]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro subject slot capability hslot
+    simp only [lifecycleCapabilities, lifecycleSubjectOneSpace,
+      lifecycleSubjectTwoSpace, lifecycleSubjectTwoMemory] at hslot
+    repeat' split at hslot
+    all_goals cases hslot <;>
+      simp [lifecycleCapabilities, lifecycleSubjectOneSpace,
+        lifecycleSubjectTwoSpace, lifecycleSubjectTwoMemory,
+        LeanOS.Capability.rightsValid,
+        LeanOS.Capability.nonemptyRights,
+        LeanOS.Capability.allRights]
+    all_goals grind
+  · intro identity parent object kind rights hderivation
+    simp only [lifecycleCapabilities] at hderivation
+    repeat' split at hderivation
+    all_goals rcases hderivation with ⟨rfl, rfl, rfl, rfl⟩ <;>
+      simp [lifecycleCapabilities]
+    all_goals grind
+  · intro subject slot capability otherSubject otherSlot otherCapability
+      hslot hother hidentity
+    simp only [lifecycleCapabilities, lifecycleSubjectOneSpace,
+      lifecycleSubjectTwoSpace, lifecycleSubjectTwoMemory] at hslot hother
+    repeat' split at hslot
+    all_goals repeat' split at hother
+    all_goals cases hslot <;> cases hother <;> simp_all
+  · intro subject slot hslot
+    change 4 ≤ slot at hslot
+    have hne0 : slot ≠ 0 := by omega
+    have hne1 : slot ≠ 1 := by omega
+    simp [lifecycleCapabilities, hne0, hne1]
+
+private def lifecycleMemory : MemoryLifecycle.State :=
+  { capabilities := lifecycleCapabilities
+    allocator :=
+      { frames := [4]
+        status := fun frame => if frame = 4 then .owned 20 else .reserved }
+    binding := fun object => if object = 20 then some 4 else none
+    issued := fun object => object = 1 || object = 2 || object = 20 }
+
+private def lifecycleVirtualMemory : VirtualMapping.State :=
+  { memory := lifecycleMemory
+    owner := fun space =>
+      if space = 1 then some 1 else if space = 2 then some 2 else none
+    mappings := fun _ _ => none
+    issuedAddressSpace := fun space => space = 1 || space = 2 }
+
+private def lifecycleSubjectState : SubjectLifecycle.State :=
+  { capabilities := lifecycleCapabilities
+    issuedSubjects := fun subject => subject = 1 || subject = 2
+    ownedMemory := fun object => if object = 20 then some (2, 4) else none
+    addressOwner := lifecycleVirtualMemory.owner
+    mapping := fun _ _ => none
+    endpointOwner := fun _ => none
+    mailbox := fun _ => none
+    frameOwner := fun frame => if frame = 4 then some 2 else none
+    freeFrame := fun frame => frame != 4
+    runnable := fun subject => subject = 1 || subject = 2
+    current := some 2 }
+
+private def lifecycleScheduler : Scheduler.State :=
+  { lifecycle := lifecycleSubjectState, ready := [1], capacity := 1 }
+
+private def lifecycleEndpoints : EndpointIPC.State :=
+  { capabilities := lifecycleCapabilities
+    allocator := lifecycleMemory.allocator
+    binding := lifecycleMemory.binding
+    issued := lifecycleMemory.issued
+    issuedAddressSpace := lifecycleVirtualMemory.issuedAddressSpace
+    mailbox := fun _ => none
+    sendHistory := fun _ => [] }
+
+private def lifecycleSavedFrame : Interrupt.HardwareFrame :=
+  { vector := 32
+    errorCode := 0
+    savedPrivilege := .user
+    instructionPointer := 0x400000
+    stackPointer := 0x500000
+    codeSelector := 0x23
+    stackSelector := 0x1b
+    flags := 0x202
+    canonicalInstructionPointer := true
+    canonicalStackPointer := true
+    flagsAllowed := true }
+
+private def lifecycleSavedRegisters : ResumableContext.Registers :=
+  { accumulator := 0, base := 0, count := 0, data := 0
+    source := 0, destination := 0, basePointer := 0
+    r8 := 0, r9 := 0, r10 := 0, r11 := 0, r12 := 0, r13 := 0,
+    r14 := 0, r15 := 0 }
+
+private def lifecycleSubjectOneContext : ResumableContext.Context :=
+  { owner := 1
+    addressSpace := 1
+    frame := lifecycleSavedFrame
+    registers := lifecycleSavedRegisters
+    kind := .suspended }
+
+private def lifecycleKernel (plan : BootPageTablePlan.Plan) :
+    FailStop.CompositeState :=
+  let base := FailStop.bootRuntime plan
+  let scheduler := lifecycleScheduler
+  { base with
+    execution :=
+      { base.execution with
+        core :=
+          { lifecycle := lifecycleSubjectState
+            context :=
+              { base.execution.core.context with
+                currentSubject := 2
+                activeAddressSpace := 2 } }
+        mode := .running }
+    scheduler
+    preemption := { base.preemption with scheduler }
+    virtualMemory := lifecycleVirtualMemory
+    ipc := { virtualMemory := lifecycleVirtualMemory, endpoints := lifecycleEndpoints }
+    capabilities := lifecycleCapabilities
+    lifecycle := lifecycleSubjectState
+    resumable :=
+      { scheduler
+        contexts := [lifecycleSubjectOneContext]
+        capacity := 1
+        translations :=
+          { virtual := lifecycleVirtualMemory
+            active := some 2
+            entries := [] } }
+    transfers := { toEndpointState := lifecycleEndpoints, pending := fun _ => none }
+    blockingIPC :=
+      { scheduler
+        mailbox := fun _ => none
+        waiters := fun _ => []
+        waiterEndpoint := fun _ => none
+        waiterCapacity := 0
+        completion := fun _ => none }
+    blockingContexts := fun _ => none
+    deferredCancels := BlockingIPCContext.emptyDeferred }
+
+private theorem lifecycleAddressOwner_some_iff
+    (addressSpace subject : Nat) :
+    lifecycleSubjectState.addressOwner addressSpace = some subject ↔
+      (addressSpace = 1 ∧ subject = 1) ∨
+        (addressSpace = 2 ∧ subject = 2) := by
+  constructor
+  · intro howner
+    by_cases hfirst : addressSpace = 1
+    · subst addressSpace
+      simp [lifecycleSubjectState, lifecycleVirtualMemory] at howner
+      exact Or.inl ⟨rfl, howner.symm⟩
+    · by_cases hsecond : addressSpace = 2
+      · subst addressSpace
+        simp [lifecycleSubjectState, lifecycleVirtualMemory] at howner
+        exact Or.inr ⟨rfl, howner.symm⟩
+      · simp [lifecycleSubjectState, lifecycleVirtualMemory,
+          hfirst, hsecond] at howner
+  · rintro (⟨rfl, rfl⟩ | ⟨rfl, rfl⟩) <;>
+      simp [lifecycleSubjectState, lifecycleVirtualMemory]
+
+private theorem lifecycleAddressSpace_live (addressSpace : Nat)
+    (_hobject : lifecycleCapabilities.objects addressSpace = true)
+    (hkind : lifecycleCapabilities.kinds addressSpace =
+      some .addressSpace) :
+    addressSpace = 1 ∨ addressSpace = 2 := by
+  by_cases hlive : addressSpace = 1 ∨ addressSpace = 2
+  · exact hlive
+  · have hne1 : addressSpace ≠ 1 := fun heq => hlive (Or.inl heq)
+    have hne2 : addressSpace ≠ 2 := fun heq => hlive (Or.inr heq)
+    simp [lifecycleCapabilities, hne1, hne2] at hkind
+
+set_option maxHeartbeats 800000 in
+private theorem lifecycleKernel_invariant (plan : BootPageTablePlan.Plan) :
+    FailStop.AuthoritativeRuntimeWellFormed (lifecycleKernel plan) := by
+  rcases lifecycleCapabilities_wellFormed with
+    ⟨hslots, hderivations, hidentities, hslotSpaces⟩
+  have hspace1 :
+      LeanOS.Capability.HasAuthority lifecycleCapabilities 1 1 .revoke :=
+    ⟨0, lifecycleSubjectOneSpace, rfl, rfl, rfl⟩
+  have hspace2 :
+      LeanOS.Capability.HasAuthority lifecycleCapabilities 2 2 .revoke :=
+    ⟨0, lifecycleSubjectTwoSpace, rfl, rfl, rfl⟩
+  have hownerAuthorityIf :
+      ∀ addressSpace subject,
+        (if addressSpace = 1 then some 1
+          else if addressSpace = 2 then some 2 else none) = some subject →
+          LeanOS.Capability.HasAuthority lifecycleCapabilities
+            subject addressSpace .revoke := by
+    intro addressSpace subject howner
+    rcases (lifecycleAddressOwner_some_iff addressSpace subject).1
+        (by simpa [lifecycleSubjectState, lifecycleVirtualMemory] using
+          howner) with
+      ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact hspace1
+    · exact hspace2
+  have haddressComplete :
+      ∀ addressSpace,
+        lifecycleCapabilities.objects addressSpace = true →
+          lifecycleCapabilities.kinds addressSpace = some .addressSpace →
+            ∃ subject,
+              lifecycleSubjectState.addressOwner addressSpace =
+                some subject := by
+    intro addressSpace hobject hkind
+    rcases lifecycleAddressSpace_live addressSpace hobject hkind with
+      rfl | rfl
+    · exact ⟨1, rfl⟩
+    · exact ⟨2, rfl⟩
+  simp [FailStop.AuthoritativeRuntimeWellFormed,
+    FailStop.DeferredBlockingRuntimeWellFormed,
+    lifecycleKernel, lifecycleScheduler, lifecycleSubjectState,
+    lifecycleVirtualMemory, lifecycleMemory, lifecycleEndpoints,
+    lifecycleSubjectOneContext, lifecycleSavedFrame,
+    lifecycleSavedRegisters,
+    FailStop.RuntimeWellFormed, FailStop.CompositeState.Coherent,
+    FailStop.WellFormed, Interrupt.WellFormed,
+    SubjectLifecycle.WellFormed,
+    VirtualMapping.LifecycleWellFormed, VirtualMapping.WellFormed,
+    IPCSyscall.WellFormed, EndpointIPC.WellFormed,
+    Scheduler.WellFormed, Preemption.WellFormed,
+    ResumablePreemption.WellFormed,
+    ResumablePreemption.ReadyContextAgreement,
+    ResumablePreemption.TranslationAgreement,
+    ResumablePreemption.VirtualAgreement,
+    ResumablePreemption.ResourceKindAgreement,
+    CapabilityTransfer.WellFormed, TLB.Coherent,
+    FailStop.CompositeState.ReturnPlanLive,
+    FailStop.CompositeState.blockingIPCContext,
+    FailStop.CompositeState.BlockingIPCCoherent,
+    FailStop.CompositeState.DeferredCancellationWellFormed,
+    BlockingIPCContext.DeferredWellFormed,
+    BlockingIPCContext.WellFormed,
+    BlockingIPCContext.ContextAgreement, BlockingIPC.WellFormed,
+    BlockingIPC.authorizedReceive, BlockingIPCContext.emptyDeferred,
+    BlockingIPCContext.validSaved, Scheduler.ownsAddressSpace,
+    ResumablePreemption.contextFor,
+    ResumablePreemption.validContext,
+    LeanOS.Capability.hasRight, LeanOS.Capability.rightsValid,
+    LeanOS.Capability.rightsSubset,
+    LeanOS.Capability.nonemptyRights, LeanOS.Capability.permits,
+    Interrupt.validSavedUserFrame,
+    DirectPortIO.AcceptedControls, DMAQuarantine.q35Accepted,
+    FailStop.bootRuntime]
+  repeat' apply And.intro
+  all_goals first
+    | assumption
+    | simp (config := { failIfUnchanged := false })
+        [hownerAuthorityIf, haddressComplete,
+          lifecycleSubjectOneSpace,
+          lifecycleSubjectTwoSpace, lifecycleSubjectTwoMemory,
+          lifecycleSubjectState, lifecycleVirtualMemory,
+          lifecycleMemory, lifecycleEndpoints, lifecycleScheduler]
+  all_goals simp_all [lifecycleCapabilities]
+  all_goals grind
 
 private def reuseScrubCapabilities : LeanOS.Capability.State :=
   { subjects := fun subject => subject < 2
