@@ -107,9 +107,11 @@ termination and explicit release edges to distinct generated tokens whose
 typed meaning is `.flush`. In the QEMU termination/reuse path, A's PTE store,
 the no-PCID CR3 flush and readback, effect completion, and released-capacity
 publication are ordered before scrub or fresh-object mapping. The protocol's
-pending state is still not a field of `FailStop.AuthoritativeRuntimeWellFormed`;
-the transition-bound generated token and concrete completion latch close this
-bounded machine path without claiming general model-to-binary refinement.
+pending state is carried by `CompositeState.invalidationPublication`, and
+`FailStop.AuthoritativeRuntimeWellFormed.publication` requires that published
+and pending cache states remain coherent. The transition-bound generated token
+and concrete completion latch connect that model invariant to this bounded
+machine path without claiming general model-to-binary refinement.
 
 Every boot image then consumes that exact generated reply in a bounded
 runtime-mutable machine window at virtual page 7. Address space B is first
