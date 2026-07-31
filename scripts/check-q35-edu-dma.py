@@ -216,6 +216,15 @@ def exercise_case(executable: str, bus_master_enabled: bool) -> bytes:
         if completed_command & DMA_START:
             raise RuntimeError("edu protected transfer retained its run bit")
         observed = qtest.read_bytes(PROTECTED, len(PROTECTED_RECORD))
+        if bus_master_enabled:
+            # After the run bit clears, qtest can still transiently return the
+            # old protected record on a loaded runner. Require the complete
+            # expected payload, but allow a bounded readback window.
+            for _ in range(100):
+                if observed == PAYLOAD:
+                    break
+                time.sleep(0.001)
+                observed = qtest.read_bytes(PROTECTED, len(PROTECTED_RECORD))
     finally:
         qtest.close()
     return observed
