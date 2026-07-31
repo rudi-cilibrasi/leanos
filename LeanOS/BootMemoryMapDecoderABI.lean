@@ -34,8 +34,11 @@ def errorCode : BootMemoryMapDecoder.Error → UInt64
   | .unsupportedEntryVersion => 17
   | .tooManyEntries => 18
   | .nonzeroEntryReserved => 19
-  | .typedHandoffRejected _ => 20
-  | .internalBounds => 21
+  | .zeroLengthEntry => 20
+  | .entryAddressOverflow => 21
+  | .typedHandoffRejected _ => 22
+  | .internalBounds => 23
+  | .infoAddressBelowMinimum => 24
 
 def normalizeErrorCode : BootMemoryMap.Error → UInt64
   | .badMagic => 1

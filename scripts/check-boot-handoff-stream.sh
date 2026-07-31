@@ -39,10 +39,12 @@ production_allocate="$(
   sed -n '/^static void boot_allocate(/,/^}/p' boot/kernel.c
 )"
 production_decode="$(
-  sed -n '/^static struct boot_decode_state decode_boot_candidate(/,/^}/p' boot/kernel.c
+  sed -n '/^static struct boot_decode_state decode_boot_projection(/,/^}/p' boot/kernel.c
 )"
-for required in leanos_boot_manifest_start leanos_boot_manifest_candidate \
-  decode_boot_candidate leanos_boot_select_frame leanos_boot_publish_authority; do
+for required in decode_boot_projection leanos_boot_projection_manifest \
+  leanos_boot_projection_free projection_finish_query \
+  decode_boot_candidate_authority leanos_boot_manifest_candidate \
+  leanos_boot_publish_authority; do
   grep -Fq "$required" <<<"$production_allocate" || {
     echo "error: production allocation omits $required" >&2
     exit 1
@@ -53,11 +55,22 @@ if grep -Eq 'mb2_(tag|mmap)|boot_frames|reserve_byte_range|allocation_check' \
   echo "error: production allocation retained a C handoff policy authority" >&2
   exit 1
 fi
-grep -Fq 'struct boot_decode_state { uint64_t word[19]; };' boot/kernel.c || {
-  echo "error: production decoder does not retain all nineteen scalar ABI words" >&2
+production_authority="$(
+  sed -n '/^static struct boot_decode_state decode_boot_candidate_authority(/,/^}/p' boot/kernel.c
+)"
+for required in 'query < 23' 'state.word[16] != candidate' \
+  'selected_authority.word[14] != 1' \
+  'selected_authority.word[15] != 0'; do
+  grep -Fq "$required" <<<"$production_allocate$production_authority" || {
+    echo "error: production selected-frame authorization omits $required" >&2
+    exit 1
+  }
+done
+grep -Fq 'struct boot_decode_state { uint64_t word[23]; };' boot/kernel.c || {
+  echo "error: production decoder does not retain parser state plus typed entry event" >&2
   exit 1
 }
-for required in 'query < 19' 'state.word[0] != 4' \
+for required in 'query < 23' 'state.word[0] != 4' \
   'state.word[18], info_address'; do
   grep -Fq "$required" <<<"$production_decode" || {
     echo "error: production decoder omits scalar ABI v4 tag-count state: $required" >&2
@@ -163,7 +176,10 @@ fi
 symbols="$(nm "$build/stream.elf")"
 for symbol in leanos_boot_handoff_stream_init leanos_boot_handoff_stream_step \
   leanos_boot_decode_init leanos_boot_decode_step leanos_boot_manifest_candidate \
-  leanos_boot_manifest_start leanos_boot_select_frame leanos_boot_publish_authority; do
+  leanos_boot_manifest_start leanos_boot_consume_exact_projection \
+  leanos_boot_publish_authority leanos_boot_projection_entry \
+  leanos_boot_projection_manifest leanos_boot_projection_free \
+  leanos_boot_projection_finish; do
   if ! grep -q " T ${symbol}$" <<<"$symbols"; then
     echo "error: handoff stream image does not retain $symbol" >&2
     exit 1
@@ -174,7 +190,7 @@ done
 # boundary.  In particular, neither the boxed whole-buffer reader nor the old
 # scalar allocation-policy adapter may become an accidental second authority.
 for forbidden_policy in leanos_boot_handoff_query leanos_boot_handoff_fixture_query \
-  leanos_boot_allocation_check; do
+  leanos_boot_allocation_check leanos_boot_select_frame; do
   if grep -q " T ${forbidden_policy}$" <<<"$symbols"; then
     echo "error: handoff stream image retained forbidden policy symbol $forbidden_policy" >&2
     exit 1
@@ -185,16 +201,23 @@ done
 # hide behind a non-exported name in this final focused artifact.
 while read -r text_symbol; do
   case "$text_symbol" in
-    _start|check_stream|decode|decode_entry_count|decode_extent|step_query|\
+    _start|check_stream|decode|decode_entry_count|decode_extent|expect_decode_error|step_query|\
 leanos_boot_handoff_stream_init|\
 leanos_boot_handoff_stream_step|\
 leanos_boot_decode_init|leanos_boot_decode_step|leanos_boot_manifest_candidate|\
 leanos_boot_manifest_start|\
-leanos_boot_select_frame|leanos_boot_publish_authority|\
+leanos_boot_consume_exact_projection|leanos_boot_publish_authority|\
+leanos_boot_projection_entry|leanos_boot_projection_manifest|\
+leanos_boot_projection_free|leanos_boot_projection_finish|\
 lp_leanos___private_LeanOS_BootMemoryMapStreaming_0__LeanOS_BootMemoryMapStreaming_canonicalChunk|\
-lp_leanos___private_LeanOS_BootMemoryMapStreamAuthority_0__LeanOS_BootMemoryMapStreamAuthority_manifestValid|\
-lp_leanos___private_LeanOS_BootMemoryMapStreamAuthority_0__LeanOS_BootMemoryMapStreamAuthority_transitionError|\
-lp_leanos___private_LeanOS_BootMemoryMapStreamAuthority_0__LeanOS_BootMemoryMapStreamAuthority_transitionError___redArg)
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_manifestValid|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_firstInEight|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_firstInSixtyFour|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_firstAfterInSixtyFour|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_firstSetBit|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_maskAfter|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_reservationMaskWord|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_transitionError___redArg)
       ;;
     *)
       echo "error: unreviewed handoff stream text symbol $text_symbol" >&2

@@ -25,6 +25,8 @@ lake build leanos-boot-plan
 
 ./scripts/check-hosted-sanitizer-negatives.sh
 
+./scripts/check-boot-memory-full-projection.sh
+
 ./scripts/check-boot-handoff-stream.sh
 
 ./scripts/test-run-malformed-handoff.sh
@@ -101,6 +103,19 @@ rm -f "$trusted_scan_log"
 
 negative_log="$(mktemp)"
 trap 'rm -f "$negative_log"' EXIT
+
+if lake env lean tests/negative/BootMemoryFullProjectionMutation.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: mutated full boot-memory projection unexpectedly received authority" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/BootMemoryFullProjectionMutation.lean' "$negative_log" ||
+    ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+      "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: full boot-memory projection mutation lacked its expected rejection" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
 
 if lake env lean tests/negative/InvalidBound.lean >"$negative_log" 2>&1; then
   echo "error: negative proof fixture unexpectedly type-checked" >&2

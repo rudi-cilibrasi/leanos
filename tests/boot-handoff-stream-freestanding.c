@@ -40,6 +40,21 @@ extern uint64_t leanos_boot_decode_step(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_projection_entry(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_projection_manifest(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_projection_free(uint64_t, uint64_t, uint64_t);
+#define U64_8 uint64_t, uint64_t, uint64_t, uint64_t, \
+              uint64_t, uint64_t, uint64_t, uint64_t
+#define U64_64 U64_8, U64_8, U64_8, U64_8, U64_8, U64_8, U64_8, U64_8
+extern uint64_t leanos_boot_projection_finish(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, U64_64);
+#undef U64_64
+#undef U64_8
 extern uint64_t leanos_boot_manifest_candidate(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
@@ -48,7 +63,7 @@ extern uint64_t leanos_boot_manifest_start(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_select_frame(
+extern uint64_t leanos_boot_consume_exact_projection(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_publish_authority(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
@@ -85,6 +100,17 @@ static struct decode_state decode(const uint64_t chunks[12], uint64_t target) {
     return decode_extent(chunks, 12, target);
 }
 
+static int expect_decode_error(
+        const uint64_t *chunks, uint64_t count, uint64_t expected) {
+    const struct decode_state decoded = decode_extent(chunks, count, 1);
+    if (decoded.word[0] != 4 || decoded.word[1] != 2 ||
+        decoded.word[2] != expected)
+        return 0;
+    for (uint64_t query = 3; query < 19; ++query)
+        if (decoded.word[query] != 0) return 0;
+    return 1;
+}
+
 static struct decode_state decode_entry_count(uint64_t entry_count) {
     uint64_t chunks[4 + 3 * 257] = {0};
     const uint64_t count = 4 + 3 * entry_count;
@@ -116,11 +142,20 @@ int check_stream(void) {
     REGISTER_BOUNDARY(leanos_boot_handoff_stream_step);
     REGISTER_BOUNDARY(leanos_boot_decode_init);
     REGISTER_BOUNDARY(leanos_boot_decode_step);
+    REGISTER_BOUNDARY(leanos_boot_projection_entry);
+    REGISTER_BOUNDARY(leanos_boot_projection_manifest);
+    REGISTER_BOUNDARY(leanos_boot_projection_free);
+    REGISTER_BOUNDARY(leanos_boot_projection_finish);
     REGISTER_BOUNDARY(leanos_boot_manifest_candidate);
     REGISTER_BOUNDARY(leanos_boot_manifest_start);
-    REGISTER_BOUNDARY(leanos_boot_select_frame);
+    REGISTER_BOUNDARY(leanos_boot_consume_exact_projection);
     REGISTER_BOUNDARY(leanos_boot_publish_authority);
 #endif
+#define ZERO_8 0, 0, 0, 0, 0, 0, 0, 0
+#define FINISH_WORDS UINT64_C(0x100), 0, 0, 0, 0, 0, 0, 0, \
+                     ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8
+#define FINISH_TWO_WORDS UINT64_C(0x500), 0, 0, 0, 0, 0, 0, 0, \
+                         ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8, ZERO_8
     const uint64_t identity = 0x1000;
     const uint64_t chunks[12] = {
         0x0000000000000060, 0x000000090000002a, 0x00000000000000aa,
@@ -191,6 +226,55 @@ int check_stream(void) {
     CHECK_RESULT("decode.accepted.target-found", decoded.word[14], 1, 14);
     CHECK_RESULT("decode.accepted.target-blocked", decoded.word[15], 0, 14);
     CHECK_RESULT("decode.accepted.tag-count", decoded.word[18], 3, 14);
+    CHECK_RESULT("projection.entry.usable",
+        leanos_boot_projection_entry(0x1000, 0x4000, 1, 0, 0, 0, 3),
+        0x1e, 14);
+    CHECK_RESULT("projection.entry.blocked",
+        leanos_boot_projection_entry(0x2000, 0x1000, 2, 0, 0, 0, 4),
+        0x4, 14);
+    CHECK_RESULT("projection.free.precedence",
+        leanos_boot_projection_free(0x1e, 0x4, 0x2), 0x18, 14);
+    CHECK_RESULT("projection.manifest.status",
+        leanos_boot_projection_manifest(
+            0, 0, 0x100000, 0x100000, 0x200000,
+            0x110000, 0x1000, 0x120000, 0x1000, 0x130000, 0x1000,
+            0x140000, 0x1000, 0x141000, 0x4000, 0x180000, 0x2000,
+            0x300000, 96, 1), 1, 14);
+    CHECK_RESULT("projection.manifest.low-memory-mask",
+        leanos_boot_projection_manifest(
+            0, 0, 0x100000, 0x100000, 0x200000,
+            0x110000, 0x1000, 0x120000, 0x1000, 0x130000, 0x1000,
+            0x140000, 0x1000, 0x141000, 0x4000, 0x180000, 0x2000,
+            0x300000, 96, 3), UINT64_MAX, 14);
+    CHECK_RESULT("projection.finish.status",
+        leanos_boot_projection_finish(1, 0, 1, 0, 2, 0x5000, 7, 1,
+                                      FINISH_WORDS), 1, 14);
+    CHECK_RESULT("projection.finish.frame",
+        leanos_boot_projection_finish(1, 0, 1, 0, 2, 0x5000, 7, 3,
+                                      FINISH_WORDS), 8, 14);
+    CHECK_RESULT("projection.finish.owner",
+        leanos_boot_projection_finish(1, 0, 1, 0, 2, 0x5000, 7, 4,
+                                      FINISH_WORDS), 7, 14);
+    CHECK_RESULT("projection.finish.candidate-token",
+        leanos_boot_projection_finish(1, 0, 1, 0, 2, 0x5000, 7, 7,
+                                      FINISH_WORDS), 9, 14);
+    CHECK_RESULT("projection.finish.next-frame",
+        leanos_boot_projection_finish(1, 0, 1, 0, 2, 0x5000, 7, 8,
+                                      FINISH_TWO_WORDS), 10, 14);
+    CHECK_RESULT("projection.finish.decode-rejection",
+        leanos_boot_projection_finish(2, 9, 1, 0, 0, 0, 7, 2,
+                                      FINISH_WORDS), 1, 14);
+    CHECK_RESULT("projection.finish.manifest-rejection",
+        leanos_boot_projection_finish(1, 0, 2, 1, 2, 0x5000, 7, 2,
+                                      FINISH_WORDS), 2, 14);
+    CHECK_RESULT("projection.finish.rejection-no-frame",
+        leanos_boot_projection_finish(2, 9, 1, 0, 0, 0, 7, 3,
+                                      FINISH_WORDS), 0, 14);
+    CHECK_RESULT("projection.finish.empty-entry-rejection",
+        leanos_boot_projection_finish(1, 0, 1, 0, 0, 0x5000, 7, 2,
+                                      FINISH_WORDS), 3, 14);
+    CHECK_RESULT("projection.forged-frame-no-publication",
+        leanos_boot_publish_authority(8, 8, 1, 0, 0, 1, 1), 0, 14);
     decoded = decode(chunks, 2);
     CHECK_RESULT("decode.reserved-target.status", decoded.word[1], 1, 15);
     CHECK_RESULT("decode.reserved-target.target-found", decoded.word[14], 1, 15);
@@ -209,6 +293,51 @@ int check_stream(void) {
     decoded = decode(malformed, 1);
     CHECK_RESULT("decode.malformed.status", decoded.word[1], 2, 16);
     CHECK_RESULT("decode.malformed.error", decoded.word[2], 3, 16);
+    const uint64_t malformed_tag_size[2] = {
+        16, UINT64_C(0x000000040000002a),
+    };
+    const uint64_t duplicate_map[5] = {
+        40, UINT64_C(0x0000001000000006), 24,
+        UINT64_C(0x0000001000000006), UINT64_C(0x0000000800000000),
+    };
+    const uint64_t bad_map_layout[4] = {
+        32, UINT64_C(0x0000001000000006), 32,
+        UINT64_C(0x0000000800000000),
+    };
+    const uint64_t zero_length_entry[7] = {
+        56, UINT64_C(0x0000002800000006), 24, 0, 0, 1,
+        UINT64_C(0x0000000800000000),
+    };
+    const uint64_t reserved_entry_word[7] = {
+        56, UINT64_C(0x0000002800000006), 24, 0, 0x1000,
+        UINT64_C(0x0000000100000001), UINT64_C(0x0000000800000000),
+    };
+    const uint64_t overflowing_entry[7] = {
+        56, UINT64_C(0x0000002800000006), 24, UINT64_MAX, 2, 1,
+        UINT64_C(0x0000000800000000),
+    };
+    const uint64_t missing_map[2] = {
+        16, UINT64_C(0x0000000800000000),
+    };
+    const uint64_t missing_end[2] = {
+        16, UINT64_C(0x000000080000002a),
+    };
+    CHECK_RESULT("decode.malformed-tag-size.rejects",
+        expect_decode_error(malformed_tag_size, 2, 4), 1, 34);
+    CHECK_RESULT("decode.duplicate-map.rejects",
+        expect_decode_error(duplicate_map, 5, 6), 1, 35);
+    CHECK_RESULT("decode.bad-map-layout.rejects",
+        expect_decode_error(bad_map_layout, 4, 7), 1, 36);
+    CHECK_RESULT("decode.zero-length-entry.rejects",
+        expect_decode_error(zero_length_entry, 7, 9), 1, 37);
+    CHECK_RESULT("decode.reserved-entry-word.rejects",
+        expect_decode_error(reserved_entry_word, 7, 9), 1, 38);
+    CHECK_RESULT("decode.overflowing-entry.rejects",
+        expect_decode_error(overflowing_entry, 7, 9), 1, 39);
+    CHECK_RESULT("decode.missing-map.rejects",
+        expect_decode_error(missing_map, 2, 10), 1, 40);
+    CHECK_RESULT("decode.missing-end.rejects",
+        expect_decode_error(missing_end, 2, 11), 1, 41);
     uint64_t too_many_tags_fixture[70] = {0};
     too_many_tags_fixture[0] = 560;
     for (uint64_t index = 1; index <= 63; ++index)
@@ -251,8 +380,9 @@ int check_stream(void) {
         0x140000, 0x1000, 0x141000, 0x4000, 0x180000, 0x2000,
         0x300000, 96);
     CHECK_RESULT("manifest.accepted.candidate", manifest, 1, 17);
-    CHECK_RESULT("select.accepted.frame",
-        leanos_boot_select_frame(4096, 800, 1, 1, 0, manifest), 800, 17);
+    CHECK_RESULT("consume.accepted.frame",
+        leanos_boot_consume_exact_projection(4096, 800, 1, 1, 0, manifest),
+        800, 17);
     CHECK_RESULT("publish.accepted.next-frame",
         leanos_boot_publish_authority(800, 800, 1, 1, 0, manifest, 1),
         801, 17);
@@ -271,8 +401,9 @@ int check_stream(void) {
         0x300000, 96);
     CHECK_RESULT("manifest.gap.start", gap_start, 256, 24);
     CHECK_RESULT("manifest.gap.candidate", manifest, 1, 24);
-    CHECK_RESULT("select.gap.frame",
-        leanos_boot_select_frame(4096, gap_start, 1, 1, 0, manifest), 256, 24);
+    CHECK_RESULT("consume.gap.frame",
+        leanos_boot_consume_exact_projection(
+            4096, gap_start, 1, 1, 0, manifest), 256, 24);
     const uint64_t zero_entry_fixture[4] = {
         32, UINT64_C(0x0000001000000006), 24,
         UINT64_C(0x0000000800000000),
@@ -286,9 +417,10 @@ int check_stream(void) {
     CHECK_RESULT("decode.zero-entry.target-found", decoded.word[14], 0, 25);
     CHECK_RESULT("decode.zero-entry.target-blocked", decoded.word[15], 0, 25);
     CHECK_RESULT("decode.zero-entry.tag-count", decoded.word[18], 2, 25);
-    CHECK_RESULT("select.zero-entry.frame",
-        leanos_boot_select_frame(4096, 1, decoded.word[1], decoded.word[14],
-                                 decoded.word[15], 1), 4096, 25);
+    CHECK_RESULT("consume.zero-entry.frame",
+        leanos_boot_consume_exact_projection(
+            4096, 1, decoded.word[1], decoded.word[14],
+            decoded.word[15], 1), 4096, 25);
     CHECK_RESULT("publish.zero-entry.next-frame",
         leanos_boot_publish_authority(
             4096, 4096, decoded.word[1], decoded.word[14], decoded.word[15],
@@ -326,9 +458,9 @@ int check_stream(void) {
         0xf40000, 0x1000, 0xf41000, 0x4000, 0xf80000, 0x2000,
         0x300000, 96);
     CHECK_RESULT("manifest.image-at-limit.candidate", image_at_limit, 1, 30);
-    CHECK_RESULT("select.image-at-limit.frame",
-        leanos_boot_select_frame(4096, 256, 1, 1, 0, image_at_limit),
-        256, 30);
+    CHECK_RESULT("consume.image-at-limit.frame",
+        leanos_boot_consume_exact_projection(
+            4096, 256, 1, 1, 0, image_at_limit), 256, 30);
     const uint64_t info_at_limit = leanos_boot_manifest_candidate(
         256, 0, 0x100000, 0xf00000, 0x100000,
         0xf10000, 0x1000, 0xf20000, 0x1000, 0xf30000, 0x1000,
@@ -351,9 +483,9 @@ int check_stream(void) {
             0xf10000, 0x1000, 0xf20000, 0x1000, 0xf30000, 0x1000,
             0xf40000, 0x1000, 0xf41000, 0x4000, 0xf80000, 0x2000,
             0x300000, 96), 4096, 32);
-    CHECK_RESULT("select.image-past-limit.frame",
-        leanos_boot_select_frame(4096, 256, 1, 1, 0,
-                                 image_past_limit), 4096, 32);
+    CHECK_RESULT("consume.image-past-limit.frame",
+        leanos_boot_consume_exact_projection(
+            4096, 256, 1, 1, 0, image_past_limit), 4096, 32);
     const uint64_t info_past_limit = leanos_boot_manifest_candidate(
         256, 0, 0x100000, 0x200000, 0x100000,
         0x210000, 0x1000, 0x220000, 0x1000, 0x230000, 0x1000,

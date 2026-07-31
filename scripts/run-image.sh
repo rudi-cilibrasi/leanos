@@ -190,7 +190,7 @@ if [[ "$scenario" == frame-budget ]]; then
     echo "failure_class=serial-protocol: frame-budget scenario double-published live boot frame" >&2
     exit 1
   fi
-  echo "LEANOS/20 FRAME physical-frame=${frame_budget_physical} boot-published-frame=${frame_budget_boot_physical} prior-publications=0 distinct=1 source=generated-decoder result=PASS" >> "$expected"
+  echo "LEANOS/20 FRAME physical-frame=${frame_budget_physical} boot-published-frame=${frame_budget_boot_physical} prior-publications=0 distinct=1 source=scalar-stream-projection result=PASS" >> "$expected"
 fi
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 echo 'LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS' >> "$expected"
@@ -339,7 +339,7 @@ mapfile -t allocation_lines <<<"$allocation_trace"
 if [[ ${#allocation_lines[@]} -ne 6 ]] ||
    [[ ! "${allocation_lines[0]}" =~ ^LEANOS/7\ HANDOFF\ magic=valid\ info-bytes=[1-9][0-9]*\ mmap-entries=[1-9][0-9]*\ result=PASS$ ]] ||
    [[ "${allocation_lines[1]}" != "LEANOS/7 MAP boot-pages=4096 reported-top-mib=${reported_top_mib} precedence=reserved result=PASS" ]] ||
-   [[ ! "${allocation_lines[2]}" =~ ^LEANOS/7\ ALLOC\ frame=[0-9]+\ firmware-usable=1\ boot-accessible=1\ reserved=0\ result=PASS$ ]] ||
+   [[ ! "${allocation_lines[2]}" =~ ^LEANOS/7\ ALLOC\ frame=[0-9]+\ firmware-usable=1\ boot-accessible=1\ reserved=0\ projection=scalar-checked\ result=PASS$ ]] ||
    [[ "${allocation_lines[3]}" != 'LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS' ]] ||
    [[ "${allocation_lines[4]}" != 'LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS' ]] ||
    [[ "${allocation_lines[5]}" != 'LEANOS/7 BOOTALLOC status=PASS' ]]; then

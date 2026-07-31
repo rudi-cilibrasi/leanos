@@ -37,6 +37,25 @@ extern uint64_t leanos_boot_decode_step(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_projection_entry(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_projection_manifest(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_projection_free(uint64_t, uint64_t, uint64_t);
+#define LEANOS_U64_8 \
+    uint64_t, uint64_t, uint64_t, uint64_t, \
+    uint64_t, uint64_t, uint64_t, uint64_t
+#define LEANOS_U64_64 \
+    LEANOS_U64_8, LEANOS_U64_8, LEANOS_U64_8, LEANOS_U64_8, \
+    LEANOS_U64_8, LEANOS_U64_8, LEANOS_U64_8, LEANOS_U64_8
+extern uint64_t leanos_boot_projection_finish(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t,
+    LEANOS_U64_64);
+#undef LEANOS_U64_64
+#undef LEANOS_U64_8
 extern uint64_t leanos_boot_manifest_candidate(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
@@ -45,8 +64,8 @@ extern uint64_t leanos_boot_manifest_start(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_select_frame(uint64_t, uint64_t, uint64_t,
-                                         uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_consume_exact_projection(uint64_t, uint64_t, uint64_t,
+                                        uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_publish_authority(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t,
                                               uint64_t);
@@ -195,6 +214,11 @@ struct __attribute__((packed)) mb2_mmap_entry {
    this copy. */
 static uint8_t boot_handoff_copy[MAX_HANDOFF_BYTES]
     __attribute__((aligned(8)));
+struct boot_projection_entry { uint64_t base, length, kind; };
+static struct boot_projection_entry boot_projection_entries[256];
+static uint64_t boot_projection_usable[64];
+static uint64_t boot_projection_blocked[64];
+static uint64_t boot_projection_reserved[64];
 static volatile uint64_t published_boot_object;
 
 struct __attribute__((packed)) idt_entry {
@@ -298,6 +322,11 @@ static uint64_t frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_INITIAL;
    publication across A's retirement and B's fresh lifetime. */
 static uint64_t frame_budget_boot_published_frame = UINT64_MAX;
 static uint64_t frame_budget_physical_frame = UINT64_MAX;
+static uint64_t frame_budget_rescanned_frame = UINT64_MAX;
+static uint64_t frame_budget_rescan_status;
+static uint64_t frame_budget_rescan_usable;
+static uint64_t frame_budget_rescan_blocked;
+static uint64_t frame_budget_rescan_manifest;
 static unsigned frame_budget_publication_live;
 static uint64_t frame_budget_user_page = UINT64_MAX;
 #endif
@@ -1175,7 +1204,7 @@ static const uint8_t *copy_boot_handoff(uint32_t magic, uint32_t info_address,
     return boot_handoff_copy;
 }
 
-struct boot_decode_state { uint64_t word[19]; };
+struct boot_decode_state { uint64_t word[23]; };
 
 #define BOOT_MANIFEST_ARGS(info_address, total) \
     0, 0x100000u, \
@@ -1193,22 +1222,48 @@ struct boot_decode_state { uint64_t word[19]; };
     (uint64_t)__user_b_stack_end - (uint64_t)__user_a_text_start, \
     (uint64_t)(info_address), (uint64_t)(total)
 
-static struct boot_decode_state decode_boot_candidate(
+#define BOOT_BITMAP_ARGS(words) \
+    (words)[0], (words)[1], (words)[2], (words)[3], \
+    (words)[4], (words)[5], (words)[6], (words)[7], \
+    (words)[8], (words)[9], (words)[10], (words)[11], \
+    (words)[12], (words)[13], (words)[14], (words)[15], \
+    (words)[16], (words)[17], (words)[18], (words)[19], \
+    (words)[20], (words)[21], (words)[22], (words)[23], \
+    (words)[24], (words)[25], (words)[26], (words)[27], \
+    (words)[28], (words)[29], (words)[30], (words)[31], \
+    (words)[32], (words)[33], (words)[34], (words)[35], \
+    (words)[36], (words)[37], (words)[38], (words)[39], \
+    (words)[40], (words)[41], (words)[42], (words)[43], \
+    (words)[44], (words)[45], (words)[46], (words)[47], \
+    (words)[48], (words)[49], (words)[50], (words)[51], \
+    (words)[52], (words)[53], (words)[54], (words)[55], \
+    (words)[56], (words)[57], (words)[58], (words)[59], \
+    (words)[60], (words)[61], (words)[62], (words)[63]
+
+/* Parse the immutable copy exactly once.  The generated transition emits each
+   canonical decoded entry on its accepting type step; C only retains those
+   typed events and the generated 4096-frame bounded projection. */
+static struct boot_decode_state decode_boot_projection(
         uint32_t magic, uint32_t info_address, uint32_t total,
-        uint64_t candidate, const uint8_t *info) {
+        const uint8_t *info) {
     struct boot_decode_state state, next;
-    for (uint64_t query = 0; query < 19; ++query)
+    for (uint64_t block = 0; block < 64; ++block) {
+        boot_projection_usable[block] = 0;
+        boot_projection_blocked[block] = 0;
+        boot_projection_reserved[block] = 0;
+    }
+    for (uint64_t query = 0; query < 23; ++query)
         state.word[query] =
-            leanos_boot_decode_init(magic, info_address, total, candidate, query);
+            leanos_boot_decode_init(magic, info_address, total, 0, query);
     if (state.word[0] != 4 || state.word[1] != 0 || state.word[2] != 0 ||
         state.word[3] != info_address || state.word[4] != total ||
-        state.word[5] != 0 || state.word[16] != candidate ||
+        state.word[5] != 0 || state.word[16] != 0 ||
         state.word[18] != 0)
         handoff_fail("decode-init");
     for (uint64_t offset = 0; offset < total; offset += 8) {
         uint64_t chunk = *(const uint64_t *)(info + offset);
         uint64_t terminal = offset + 8 == total;
-        for (uint64_t query = 0; query < 19; ++query)
+        for (uint64_t query = 0; query < 23; ++query)
             next.word[query] = leanos_boot_decode_step(
                 state.word[0], state.word[1], state.word[2], state.word[3],
                 state.word[4], state.word[5], state.word[6], state.word[7],
@@ -1217,17 +1272,98 @@ static struct boot_decode_state decode_boot_candidate(
                 state.word[16], state.word[17], state.word[18], info_address,
                 offset, chunk, terminal, query);
         state = next;
-        if (state.word[2] != 0)
-            handoff_fail("decode-rejected");
+        if (state.word[2] != 0) break;
+        if (state.word[19] == 1) {
+            if (state.word[11] == 0 || state.word[11] > 256)
+                handoff_fail("projection-entry-count");
+            uint64_t slot = state.word[11] - 1;
+            boot_projection_entries[slot].base = state.word[20];
+            boot_projection_entries[slot].length = state.word[21];
+            boot_projection_entries[slot].kind = state.word[22];
+            for (uint64_t block = 0; block < 64; ++block) {
+                uint64_t status = leanos_boot_projection_entry(
+                    state.word[20], state.word[21], state.word[22], block,
+                    boot_projection_usable[block],
+                    boot_projection_blocked[block], 1);
+                uint64_t error = leanos_boot_projection_entry(
+                    state.word[20], state.word[21], state.word[22], block,
+                    boot_projection_usable[block],
+                    boot_projection_blocked[block], 2);
+                uint64_t usable = leanos_boot_projection_entry(
+                    state.word[20], state.word[21], state.word[22], block,
+                    boot_projection_usable[block],
+                    boot_projection_blocked[block], 3);
+                uint64_t blocked = leanos_boot_projection_entry(
+                    state.word[20], state.word[21], state.word[22], block,
+                    boot_projection_usable[block],
+                    boot_projection_blocked[block], 4);
+                if (status != 1 || error != 0)
+                    handoff_fail("projection-entry");
+                boot_projection_usable[block] = usable;
+                boot_projection_blocked[block] = blocked;
+            }
+        }
     }
-    if (state.word[1] != 1 || state.word[5] != total || state.word[7] != 7)
+    if (state.word[2] == 0 &&
+        (state.word[1] != 1 || state.word[5] != total || state.word[7] != 7))
         handoff_fail("decode-incomplete");
     return state;
 }
 
-/* The generated raw-word decoder is the sole tag walker, classifier,
-   reservation decision, and first-frame selector.  C only transports the
-   immutable copy and executes the returned scrub/publication operation. */
+/* Re-run the same generated decoder for the candidate selected from the
+   bounded projection.  This scalar terminal state is the authorization gate:
+   caller-owned projection storage may suggest a candidate, but cannot grant
+   usable-frame or non-overlap authority. */
+static struct boot_decode_state decode_boot_candidate_authority(
+        uint32_t magic, uint32_t info_address, uint32_t total,
+        uint64_t candidate, const uint8_t *info) {
+    struct boot_decode_state state, next;
+    for (uint64_t query = 0; query < 23; ++query)
+        state.word[query] =
+            leanos_boot_decode_init(
+                magic, info_address, total, candidate, query);
+    if (state.word[0] != 4 || state.word[1] != 0 || state.word[2] != 0 ||
+        state.word[3] != info_address || state.word[4] != total ||
+        state.word[5] != 0 || state.word[16] != candidate ||
+        state.word[18] != 0)
+        handoff_fail("authority-init");
+    for (uint64_t offset = 0; offset < total; offset += 8) {
+        uint64_t chunk = *(const uint64_t *)(info + offset);
+        uint64_t terminal = offset + 8 == total;
+        for (uint64_t query = 0; query < 23; ++query)
+            next.word[query] = leanos_boot_decode_step(
+                state.word[0], state.word[1], state.word[2], state.word[3],
+                state.word[4], state.word[5], state.word[6], state.word[7],
+                state.word[8], state.word[9], state.word[10], state.word[11],
+                state.word[12], state.word[13], state.word[14], state.word[15],
+                state.word[16], state.word[17], state.word[18], info_address,
+                offset, chunk, terminal, query);
+        state = next;
+        if (state.word[2] != 0) break;
+    }
+    if (state.word[1] != 1 || state.word[2] != 0 ||
+        state.word[5] != total || state.word[7] != 7 ||
+        state.word[16] != candidate)
+        handoff_fail("authority-rejected");
+    return state;
+}
+
+struct boot_terminal_result { uint64_t word[9]; };
+
+static uint64_t projection_finish_query(
+        const struct boot_decode_state *decoded, uint64_t owner,
+        uint64_t manifest_status, uint64_t manifest_error,
+        uint64_t query, const uint64_t *free_words) {
+    return leanos_boot_projection_finish(
+        decoded->word[1], decoded->word[2], manifest_status, manifest_error,
+        decoded->word[11], decoded->word[17], owner, query,
+        BOOT_BITMAP_ARGS(free_words));
+}
+
+/* The generated raw-word decoder is the sole tag walker and classifier.  Its
+   typed entry events build the complete bounded rich projection in one pass;
+   generated manifest overlay and terminal selection return one typed result.
+   C only transports fixed-width words and executes scrub/publication. */
 static void boot_allocate(uint32_t magic, uint32_t info_address) {
     if (magic != MULTIBOOT2_RUNTIME_MAGIC) handoff_fail("magic");
     if ((info_address & 7u) != 0 || info_address < PAGE_BYTES ||
@@ -1237,67 +1373,92 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     if (total < 16 || total > MAX_HANDOFF_BYTES || (total & 7u) != 0 ||
         total > BOOT_ACCESSIBLE_LIMIT - info_address) handoff_fail("bounds");
     const uint8_t *info = copy_boot_handoff(magic, info_address, total);
-    uint64_t first = leanos_boot_manifest_start(BOOT_MANIFEST_ARGS(info_address, total));
-    if (first >= 4096) handoff_fail("manifest");
-    uint64_t selected = 4096;
-    struct boot_decode_state authority = {{0}};
-    for (uint64_t candidate = first; candidate < 4096 && selected == 4096;
-         ++candidate) {
-        struct boot_decode_state decoded =
-            decode_boot_candidate(magic, info_address, total, candidate, info);
-        uint64_t manifest = leanos_boot_manifest_candidate(
-            candidate, BOOT_MANIFEST_ARGS(info_address, total));
-        selected = leanos_boot_select_frame(
-            selected, candidate, decoded.word[1], decoded.word[14],
-            decoded.word[15], manifest);
-        if (selected < 4096) authority = decoded;
+    struct boot_decode_state decoded =
+        decode_boot_projection(magic, info_address, total, info);
+    if (decoded.word[1] != 1 || decoded.word[2] != 0)
+        handoff_fail("decode-rejected");
+    uint64_t free_words[64];
+    uint64_t manifest_status = 1, manifest_error = 0;
+    for (uint64_t block = 0; block < 64; ++block) {
+        uint64_t status = leanos_boot_projection_manifest(
+            block, BOOT_MANIFEST_ARGS(info_address, total), 1);
+        uint64_t error = leanos_boot_projection_manifest(
+            block, BOOT_MANIFEST_ARGS(info_address, total), 2);
+        uint64_t reserved = leanos_boot_projection_manifest(
+            block, BOOT_MANIFEST_ARGS(info_address, total), 3);
+        if (status != 1 || error != 0) {
+            manifest_status = status;
+            manifest_error = error;
+        }
+        boot_projection_reserved[block] = reserved;
+        free_words[block] = leanos_boot_projection_free(
+            boot_projection_usable[block], boot_projection_blocked[block],
+            boot_projection_reserved[block]);
     }
-    if (selected >= 4096 || authority.word[16] != selected)
-        handoff_fail("no-frame");
+    struct boot_terminal_result authority;
+    for (uint64_t query = 0; query < 9; ++query)
+        authority.word[query] =
+            projection_finish_query(
+                &decoded, 1, manifest_status, manifest_error, query, free_words);
+    if (authority.word[0] != 1 || authority.word[1] != 1 ||
+        authority.word[2] != 0 || authority.word[3] >= 4096 ||
+        authority.word[4] != 1 || authority.word[5] != decoded.word[11])
+        handoff_fail("projection-terminal");
+    uint64_t selected = authority.word[3];
+    struct boot_decode_state selected_authority =
+        decode_boot_candidate_authority(
+            magic, info_address, total, selected, info);
+    uint64_t selected_manifest = leanos_boot_manifest_candidate(
+        selected, BOOT_MANIFEST_ARGS(info_address, total));
+    if (selected_authority.word[11] != decoded.word[11] ||
+        selected_authority.word[17] != decoded.word[17] ||
+        selected_authority.word[14] != 1 ||
+        selected_authority.word[15] != 0 || selected_manifest != 1)
+        handoff_fail("projection-authority");
 
     volatile uint8_t *frame = (volatile uint8_t *)(selected * PAGE_BYTES);
     for (uint64_t i = 0; i < PAGE_BYTES; ++i) frame[i] = 0;
     for (uint64_t i = 0; i < PAGE_BYTES; ++i)
         if (frame[i] != 0) handoff_fail("scrub");
-    uint64_t manifest = leanos_boot_manifest_candidate(
-        selected, BOOT_MANIFEST_ARGS(info_address, total));
     published_boot_object = leanos_boot_publish_authority(
-        selected, authority.word[16], authority.word[1], authority.word[14],
-        authority.word[15], manifest, 1);
+        selected, selected_authority.word[16], selected_authority.word[1],
+        selected_authority.word[14], selected_authority.word[15],
+        selected_manifest, 1);
     if (published_boot_object != selected + 1) handoff_fail("publication");
 #ifdef LEANOS_FRAME_BUDGET_SCENARIO
     frame_budget_boot_published_frame = selected;
-    struct boot_decode_state frame_budget_authority = {{0}};
-    for (uint64_t candidate = selected + 1;
-         candidate < 4096 && frame_budget_physical_frame == UINT64_MAX;
-         ++candidate) {
-        struct boot_decode_state decoded =
-            decode_boot_candidate(magic, info_address, total, candidate, info);
-        uint64_t candidate_manifest = leanos_boot_manifest_candidate(
-            candidate, BOOT_MANIFEST_ARGS(info_address, total));
-        uint64_t scenario_selected = leanos_boot_select_frame(
-            4096, candidate, decoded.word[1], decoded.word[14],
-            decoded.word[15], candidate_manifest);
-        if (scenario_selected < 4096) {
-            frame_budget_physical_frame = scenario_selected;
-            frame_budget_authority = decoded;
-        }
-    }
+    frame_budget_physical_frame = authority.word[8];
     if (frame_budget_physical_frame >= 4096 ||
-        frame_budget_physical_frame == frame_budget_boot_published_frame ||
-        frame_budget_authority.word[16] != frame_budget_physical_frame)
+        frame_budget_physical_frame <= frame_budget_boot_published_frame)
         handoff_fail("frame-budget-unpublished-frame");
+    struct boot_decode_state frame_budget_authority =
+        decode_boot_candidate_authority(
+            magic, info_address, total, frame_budget_physical_frame, info);
+    frame_budget_rescanned_frame = frame_budget_authority.word[16];
+    frame_budget_rescan_status = frame_budget_authority.word[1];
+    frame_budget_rescan_usable = frame_budget_authority.word[14];
+    frame_budget_rescan_blocked = frame_budget_authority.word[15];
+    frame_budget_rescan_manifest = leanos_boot_manifest_candidate(
+        frame_budget_physical_frame, BOOT_MANIFEST_ARGS(info_address, total));
+    if (frame_budget_authority.word[11] != decoded.word[11] ||
+        frame_budget_authority.word[17] != decoded.word[17] ||
+        frame_budget_rescanned_frame != frame_budget_physical_frame ||
+        frame_budget_rescan_status != 1 ||
+        frame_budget_rescan_usable != 1 ||
+        frame_budget_rescan_blocked != 0 ||
+        frame_budget_rescan_manifest != 1)
+        handoff_fail("frame-budget-projection-authority");
 #endif
 
     serial_puts("LEANOS/7 HANDOFF magic=valid info-bytes="); serial_u64(total);
-    serial_puts(" mmap-entries="); serial_u64(authority.word[11]);
+    serial_puts(" mmap-entries="); serial_u64(authority.word[5]);
     serial_puts(" result=PASS\n");
     serial_puts("LEANOS/7 MAP boot-pages=4096");
     serial_puts(" reported-top-mib=");
-    serial_u64(authority.word[17] / (1024u * 1024u));
+    serial_u64(authority.word[6] / (1024u * 1024u));
     serial_puts(" precedence=reserved result=PASS\n");
     serial_puts("LEANOS/7 ALLOC frame="); serial_u64(selected);
-    serial_puts(" firmware-usable=1 boot-accessible=1 reserved=0 result=PASS\n");
+    serial_puts(" firmware-usable=1 boot-accessible=1 reserved=0 projection=scalar-checked result=PASS\n");
     serial_puts("LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS\n");
     serial_puts("LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS\n");
     serial_puts("LEANOS/7 BOOTALLOC status=PASS\n");
@@ -1306,7 +1467,7 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     serial_u64(frame_budget_physical_frame);
     serial_puts(" boot-published-frame=");
     serial_u64(frame_budget_boot_published_frame);
-    serial_puts(" prior-publications=0 distinct=1 source=generated-decoder result=PASS\n");
+    serial_puts(" prior-publications=0 distinct=1 source=scalar-stream-projection result=PASS\n");
 #endif
 }
 
@@ -1699,7 +1860,8 @@ static void replay_oracle(void) {
                     ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
                         v->words[3], v->words[4])
                 : v->adapter == 5
-                        ? leanos_boot_select_frame(v->words[0], v->words[1], v->words[2],
+                        ? leanos_boot_consume_exact_projection(
+                            v->words[0], v->words[1], v->words[2],
                             v->words[3], v->words[4], v->words[5])
                         : v->adapter == 6
                             ? leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
@@ -1988,6 +2150,19 @@ static uint64_t frame_budget_leaf(uint64_t page, uint64_t physical_frame) {
         PTE_USER | PTE_NX;
 }
 
+static __attribute__((noinline)) void
+frame_budget_require_publication_authority(void) {
+    if (leanos_boot_publish_authority(
+            frame_budget_physical_frame,
+            frame_budget_rescanned_frame,
+            frame_budget_rescan_status,
+            frame_budget_rescan_usable,
+            frame_budget_rescan_blocked,
+            frame_budget_rescan_manifest, 1) !=
+        frame_budget_physical_frame + 1)
+        fail("frame-budget-publication-authority");
+}
+
 static void frame_budget_publish_mapping(
         uint64_t *page_table, uint64_t page, uint64_t physical_frame) {
     if (page >= BOOT_LEAF_COUNT ||
@@ -2046,6 +2221,7 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
             for (unsigned i = 0; i < PAGE_BYTES; ++i)
                 if (fresh[i] != 0)
                     fail("frame-budget-initial-scrub");
+            frame_budget_require_publication_authority();
             frame_budget_publish_mapping(page_table_a, frame_budget_user_page,
                 frame_budget_physical_frame);
             serial_puts("LEANOS/20 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=");
