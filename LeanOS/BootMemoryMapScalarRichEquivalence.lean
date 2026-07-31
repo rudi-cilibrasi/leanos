@@ -13,10 +13,11 @@ frames, that the allocation-free consumer accepts exactly that rich
 projection.  No fixture, concrete memory size, or entry ordering appears in
 the theorem.
 
-The raw streaming decoder is responsible for producing these fields; the
-production C boundary may transport them but may not reinterpret or replace
-them.  Final-ELF policy retains only `leanos_boot_consume_exact_projection` as
-the selection consumer.
+These are conditional comparison theorems: they start from decoded rich
+objects or an existing `BootMemoryMapFullProjectionABI.Authority`.  They do not
+prove that production scalar acceptance constructs that authority or that its
+event fold is complete.  The allocation-free production C boundary remains
+separate tested code.
 -/
 namespace LeanOS.BootMemoryMapScalarRichEquivalence
 
@@ -665,7 +666,7 @@ theorem consume_exact_projection_iff
     cases hr : BootReservation.reservedBy intervals frame <;>
     simp_all
 
-/-- The production consumer instantiated with the canonical rich-state fields
+/-- The scalar consumer instantiated with canonical rich-state fields
 accepts exactly the rich usable-and-unreserved predicate.  Unlike the transport
 lemma above, this public theorem has no caller-supplied field equations: the
 candidate identity and all three decision words are fixed directly by the
@@ -682,8 +683,9 @@ theorem consume_canonical_projection_iff
     (UInt64.ofNat frame) (usableWord entries frame) (blockedWord entries frame)
     (manifestWord intervals frame) hframe rfl rfl rfl rfl
 
-/-- An accepted exact rich authority supplies a consumable canonical production
-projection without any external readiness or reservation premise. -/
+/-- An accepted exact rich authority supplies a consumable canonical scalar
+projection without any external readiness or reservation premise.  This
+direction does not construct rich authority from scalar acceptance. -/
 theorem accepted_authority_projection_consumable
     (authority : BootMemoryMapFullProjectionABI.Authority) :
     consumeExactProjection 4096 (UInt64.ofNat authority.allocation.frame) complete

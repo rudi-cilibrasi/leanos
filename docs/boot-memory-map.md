@@ -248,7 +248,9 @@ from the accepted allocation witness itself and projects every accepted rich
 decode/reserve/allocate authority into the same decision without an external
 readiness premise. Final-ELF policy requires
 `leanos_boot_consume_exact_projection`, rejects the superseded selector, and
-QEMU requires `projection=exact-rich` from the production path.
+QEMU requires `projection=scalar-checked` from the production path. This does
+not establish scalar-acceptance-to-rich-authority existence or rejection
+agreement; the hosted rich boundary remains separate.
 `ScrubbedPublication` additionally retains proof that the atomic scrub model
 published that exact rich-selected frame. Its complete-authority theorem
 derives exact scalar selection, publication, freshness, and allocator

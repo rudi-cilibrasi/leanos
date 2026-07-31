@@ -55,8 +55,10 @@ production image. `BootMemoryMapScalarRichEquivalence` defines the canonical
 fixed-width candidate encoding and proves, for arbitrary decoded entries,
 checked intervals, and bounded frames, that
 `leanos_boot_consume_exact_projection` accepts exactly the rich usable and
-unreserved predicate. It also proves every accepted rich authority is
-consumable through that export. `LeanOS.BootAllocation` retains the
+unreserved predicate when its words are instantiated from an existing rich
+state. It also proves every accepted rich authority is consumable through that
+export. The converse production-safety direction—scalar acceptance implies
+existence of that rich authority—is not proved. `LeanOS.BootAllocation` retains the
 allocator-to-scrub and
 fresh-publication model theorems. The production final ELF rejects the legacy
 `leanos_boot_allocation_check` scalar adapter; the hosted oracle instead
@@ -94,7 +96,9 @@ only a candidate; the same generated raw decoder is replayed for that frame,
 and the generated publication gate checks the resulting coverage, overlap,
 manifest, and scrub tuple.
 QEMU requires the resulting
-`projection=exact-rich` record before scrub and publication. Generated C, C
-transport/storage of the fixed-width words, compiler output, and machine execution remain
-trusted/tested rather than proved refinement. No new Lean `unsafe`, `extern`,
+`projection=scalar-checked` record before scrub and publication. This is
+tested scalar-path evidence, not a claim that production consumed the hosted
+rich authority. Generated C, C transport/storage of the fixed-width words,
+compiler output, and machine execution remain trusted/tested rather than
+proved refinement. No new Lean `unsafe`, `extern`,
 axiom, constant, or proof escape is introduced.

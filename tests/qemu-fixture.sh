@@ -117,7 +117,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
     -e '/^LEANOS\/11 ENTRY-HIGH-WATER /d' \
     -e '/^LEANOS\/8 PAGING root=B selected=1 result=PASS$/d' "$log"
   sed -i \
-    '/^LEANOS\/7 BOOTALLOC status=PASS$/a LEANOS/20 FRAME physical-frame=513 boot-published-frame=512 prior-publications=0 distinct=1 source=exact-rich-projection result=PASS' \
+    '/^LEANOS\/7 BOOTALLOC status=PASS$/a LEANOS/20 FRAME physical-frame=513 boot-published-frame=512 prior-publications=0 distinct=1 source=scalar-stream-projection result=PASS' \
     "$log"
   cat >> "$log" <<'EOF'
 LEANOS/20 ENTER subject=1 address-space=1 cpl=3 budget=1 usage=0
@@ -274,6 +274,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
   status=$?
   set -e
+  sed -i 's/projection=exact-rich/projection=scalar-checked/' "$log"
   add_nmi_guard_fixture
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
@@ -300,6 +301,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   LEANOS_QEMU_FIXTURE_MODE=legacy-success "$0" "$@"
   status=$?
   set -e
+  sed -i 's/projection=exact-rich/projection=scalar-checked/' "$log"
   add_nmi_guard_fixture
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"

@@ -1284,8 +1284,8 @@ if grep -q ' T leanos_boot_select_frame$' <<<"$symbols"; then
   echo "error: generated image retained superseded scalar selector" >&2
   exit 1
 fi
-grep -Fq 'projection=exact-rich result=PASS' boot/kernel.c || {
-  echo "error: production transcript omits exact-rich projection consumption" >&2
+grep -Fq 'projection=scalar-checked result=PASS' boot/kernel.c || {
+  echo "error: production transcript omits scalar projection evidence" >&2
   exit 1
 }
 if ! grep -q ' T leanos_user_return_demo$' <<<"$symbols"; then

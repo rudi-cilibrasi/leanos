@@ -1458,7 +1458,7 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     serial_u64(authority.word[6] / (1024u * 1024u));
     serial_puts(" precedence=reserved result=PASS\n");
     serial_puts("LEANOS/7 ALLOC frame="); serial_u64(selected);
-    serial_puts(" firmware-usable=1 boot-accessible=1 reserved=0 projection=exact-rich result=PASS\n");
+    serial_puts(" firmware-usable=1 boot-accessible=1 reserved=0 projection=scalar-checked result=PASS\n");
     serial_puts("LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS\n");
     serial_puts("LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS\n");
     serial_puts("LEANOS/7 BOOTALLOC status=PASS\n");
@@ -1467,7 +1467,7 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     serial_u64(frame_budget_physical_frame);
     serial_puts(" boot-published-frame=");
     serial_u64(frame_budget_boot_published_frame);
-    serial_puts(" prior-publications=0 distinct=1 source=exact-rich-projection result=PASS\n");
+    serial_puts(" prior-publications=0 distinct=1 source=scalar-stream-projection result=PASS\n");
 #endif
 }
 
