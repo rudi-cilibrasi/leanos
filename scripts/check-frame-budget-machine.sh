@@ -24,6 +24,15 @@ grep -F ' leanos_frame_budget_invalidation_effect' "$symbols" >/dev/null || {
   echo "error: frame-budget ELF lacks generated invalidation-effect policy" >&2
   exit 1
 }
+grep -F ' leanos_boot_projection_finish' "$symbols" >/dev/null &&
+  grep -F ' leanos_boot_publish_authority' "$symbols" >/dev/null || {
+  echo "error: frame-budget ELF lacks rich first-eligible publication authority" >&2
+  exit 1
+}
+if grep -F ' leanos_boot_select_frame' "$symbols" >/dev/null; then
+  echo "error: frame-budget ELF retained scalar selector authority" >&2
+  exit 1
+fi
 if grep -F 'frame_budget_reuse_frame' "$symbols" >/dev/null; then
   echo "error: frame-budget ELF retained static-buffer substitution" >&2
   exit 1
@@ -34,6 +43,11 @@ strings "$elf" | grep -F 'frame-budget-double-publication' >/dev/null || {
 }
 strings "$elf" | grep -F 'frame-budget-b-context-canary' >/dev/null || {
   echo "error: frame-budget ELF lacks the fresh-B register guard" >&2
+  exit 1
+}
+strings "$elf" | grep -F 'frame-budget-projection-authority' >/dev/null &&
+  strings "$elf" | grep -F 'frame-budget-publication-authority' >/dev/null || {
+  echo "error: frame-budget ELF lacks second-frame authority checks" >&2
   exit 1
 }
 

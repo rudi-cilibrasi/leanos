@@ -22,6 +22,7 @@ LEANOS_QEMU_FIXTURE_MODE=legacy-success "$repo_root/tests/qemu-fixture.sh" "$@"
 status=$?
 set -e
 [[ $status -eq 33 ]] || exit "$status"
+sed -i 's/projection=exact-rich/projection=scalar-checked/' "$log"
 sed -i '/^LEANOS\/8 PAGING fixture=extra-mapping /a LEANOS/8 PAGING fixture=nmi-guard-mapping root=B level=pt page=6 expected=0 actual=9223372036854800387 result=REJECTED' "$log"
 sed -i '/^LEANOS\/8 PAGING fixture=wrong-cr3 /a\
 LEANOS/19 TLB path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS\

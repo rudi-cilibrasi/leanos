@@ -175,7 +175,8 @@ class QTest:
         self.writeq(DMA_DESTINATION, destination)
         self.writeq(DMA_COUNT, count)
         self.writeq(DMA_COMMAND, command)
-        for _ in range(500):
+        deadline = time.monotonic() + QTEST_RESPONSE_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
             observed = self.readq(DMA_COMMAND)
             if observed & DMA_START == 0:
                 return observed
@@ -212,6 +213,8 @@ def exercise_case(executable: str, bus_master_enabled: bool) -> bytes:
         if qtest.config_dword(0x04) & 0xFFFF != enabled:
             raise RuntimeError("edu enabled Command word did not read back exactly")
         qtest.write_bytes(SOURCE, PAYLOAD)
+        if qtest.read_aligned_qwords(SOURCE, len(PAYLOAD)) != PAYLOAD:
+            raise RuntimeError("edu DMA source did not read back exactly")
         if qtest.transfer(SOURCE, DEVICE_BUFFER, len(PAYLOAD), DMA_START) & DMA_START:
             raise RuntimeError("edu source transfer retained its run bit")
 
@@ -231,17 +234,6 @@ def exercise_case(executable: str, bus_master_enabled: bool) -> bytes:
         if completed_command & DMA_START:
             raise RuntimeError("edu protected transfer retained its run bit")
         observed = qtest.read_aligned_qwords(PROTECTED, len(PROTECTED_RECORD))
-        if bus_master_enabled:
-            # After the run bit clears, qtest can still transiently return the
-            # old protected record on a loaded runner. Require the complete
-            # expected payload, but allow a bounded readback window.
-            for _ in range(100):
-                if observed == PAYLOAD:
-                    break
-                time.sleep(0.001)
-                observed = qtest.read_aligned_qwords(
-                    PROTECTED, len(PROTECTED_RECORD)
-                )
     finally:
         qtest.close()
     return observed
@@ -258,7 +250,8 @@ def exercise(executable: str) -> str:
     enabled_observed = exercise_case(executable, True)
     if enabled_observed != PAYLOAD:
         raise RuntimeError(
-            "enabled edu control did not change the complete protected record"
+            "enabled edu control did not change the complete protected record: "
+            f"observed={enabled_observed.hex()} expected={PAYLOAD.hex()}"
         )
 
     return (

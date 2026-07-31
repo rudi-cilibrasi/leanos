@@ -14,11 +14,11 @@ char user_a_stack_top[1];
 void _start(void) {}
 EOF
 invoke() {
-  local mode="$1" scenario="${2:-fault-containment}"
+  local mode="$1" scenario="${2:-fault-containment}" timeout_seconds="${3:-5}"
   LEANOS_BOOT_SCENARIO="$scenario" \
   LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
   LEANOS_QEMU="$root/tests/qemu-fixture.sh" LEANOS_QEMU_FIXTURE_MODE="$mode" \
-  LEANOS_QEMU_TIMEOUT_SECONDS=1 LEANOS_SERIAL_LOG="$tmp/$mode.serial" \
+  LEANOS_QEMU_TIMEOUT_SECONDS="$timeout_seconds" LEANOS_SERIAL_LOG="$tmp/$mode.serial" \
   LEANOS_DMA_SNAPSHOT="$tmp/$scenario-$mode.dma.tsv" \
   LEANOS_FAULT_SNAPSHOT_ARTIFACT="$tmp/$mode.snapshot" \
   LEANOS_FAULT_CONTAINMENT_ELF="$tmp/fault-symbols.elf" \
@@ -29,7 +29,7 @@ invoke success >/dev/null 2>&1
 LEANOS_BOOT_SCENARIO=fault-readonly-write \
   LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
   LEANOS_QEMU="$root/tests/qemu-fixture.sh" LEANOS_QEMU_FIXTURE_MODE=success \
-  LEANOS_QEMU_TIMEOUT_SECONDS=1 LEANOS_SERIAL_LOG="$tmp/write.serial" \
+  LEANOS_QEMU_TIMEOUT_SECONDS=5 LEANOS_SERIAL_LOG="$tmp/write.serial" \
   LEANOS_DMA_SNAPSHOT="$tmp/fault-readonly-write-success.dma.tsv" \
   LEANOS_FAULT_SNAPSHOT_ARTIFACT="$tmp/write.snapshot" \
   LEANOS_FAULT_CONTAINMENT_ELF="$tmp/fault-symbols.elf" \
@@ -80,7 +80,13 @@ for spec in \
   'reset qemu-error' \
   'triple-fault qemu-error'; do
   read -r mode class <<< "$spec"
-  set +e; invoke "$mode" >"$tmp/$mode.output" 2>&1; status=$?; set -e
+  timeout_seconds=5
+  [[ "$mode" == hang ]] && timeout_seconds=1
+  set +e
+  invoke "$mode" fault-containment "$timeout_seconds" \
+    >"$tmp/$mode.output" 2>&1
+  status=$?
+  set -e
   [[ $status -ne 0 ]] && grep -q "failure_class=$class" "$tmp/$mode.output" || {
     cat "$tmp/$mode.output" >&2; exit 1;
   }

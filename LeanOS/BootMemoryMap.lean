@@ -92,7 +92,7 @@ def extractMemoryMap : List Tag → Except Error (List RawEntry)
 def validateHandoff (handoff : Handoff) : Except Error (List RawEntry) := do
   if handoff.magic != multiboot2Magic then throw .badMagic
   if handoff.infoAddress ≥ wordLimit || handoff.totalSize ≥ wordLimit ||
-      handoff.totalSize > wordLimit - handoff.infoAddress then throw .addressOverflow
+      handoff.totalSize > wordLimit - 1 - handoff.infoAddress then throw .addressOverflow
   if handoff.infoAddress % 8 != 0 then throw .unalignedInfo
   if handoff.totalSize < 16 || handoff.totalSize % 8 != 0 then throw .malformedInfoSize
   if handoff.tags.length > maxTags then throw .tooManyTags
