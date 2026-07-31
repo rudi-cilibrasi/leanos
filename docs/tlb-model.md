@@ -123,19 +123,16 @@ capacity and frame 100 as reclaimed; only the following existing
 `FrameScrub.allocate` transition scrubs the whole frame and republishes it as
 fresh object 21 for B.
 
-The accepted current-root unmap is also integrated with
-`FailStop.CompositeState` rather than remaining only a standalone protocol
-fixture. `authoritativePrepareCurrentUnmap` takes only the page from its caller;
-the acting subject and active address space come from the execution latch.
-Preparation keeps `virtualMemory` and `resumable.translations` literal.
-`authoritativeAcknowledgeCurrentUnmap` accepts only the exact pending
-ticket/effect, then installs one identical successor in the publication record,
-the authoritative TLB, and both virtual-memory consumers.
-`authoritativeCurrentUnmap_accepted_publication` proves the complete folded
-runtime invariant across that two-stage path, and rejected preparation or
-acknowledgement is a complete state stutter with no machine effect. Protection,
-retirement/reuse, and root-switch publication remain separate projection work;
-this slice does not claim they have been folded into the same boundary.
+The full `FailStop.CompositeState` integration remains future work.
+`authoritativeCurrentUnmap_accepted_publication` is a conditional refinement
+lemma: it assumes that the publication record already equals the resumable TLB
+projection. `bootRuntime` does not currently construct that premise, and the
+ordinary authoritative gate deliberately retains the publication record while
+mapping, cleanup, and root-switch operations may change the runtime projection.
+Therefore this PR does not claim a boot-rooted or globally preserved
+full-composite invalidation boundary. The proved public claim is the standalone
+stateful publication protocol; the generated dispatcher and QEMU paths below
+provide bounded tested evidence, not a refinement from the global runtime.
 
 Every boot image then consumes that exact generated reply in a bounded
 runtime-mutable machine window at virtual page 7. Address space B is first

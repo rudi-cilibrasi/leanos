@@ -14311,12 +14311,14 @@ theorem AuthoritativeRuntimeWellFormed.dmaQuarantined {state : CompositeState}
     state.DMAQuarantined :=
   hstate.1.dmaQuarantined
 
-/-! ## Authoritative invalidation publication boundary -/
+/-! ## Conditional invalidation publication projection -/
 
-/-- The publication protocol is based on the same translation and virtual
-memory state consumed by the authoritative runtime.  This relation is kept
-explicit because preparation deliberately retains the visible pre-state while
-the machine effect is pending. -/
+/-- Experimental projection relation for composing the standalone publication
+protocol with a `CompositeState`.  This is deliberately an explicit premise,
+not part of `AuthoritativeRuntimeWellFormed`: `bootRuntime` does not currently
+construct it, and the ordinary authoritative gate does not preserve it across
+all mapping, cleanup, and root-switch operations.  Consequently the helpers
+below are conditional refinement lemmas, not the public global runtime gate. -/
 def CompositeState.InvalidationProjectionCoherent
     (state : CompositeState) : Prop :=
   state.invalidationPublication.published = state.resumable.translations
@@ -14396,8 +14398,10 @@ def authoritativeAcknowledgeDestroy state ack :=
 def authoritativeAcknowledgeSwitch state ack :=
   authoritativeAcknowledgeInvalidation state .switch ack
 
-/-- The public unmap preparation derives both authority identities from the
-execution latch.  Its only caller-controlled argument is the virtual page. -/
+/-- Conditional current-root unmap preparation derives both authority
+identities from the execution latch.  Its only caller-controlled argument is
+the virtual page.  Callers claiming agreement with the composite runtime must
+separately establish `InvalidationProjectionCoherent`. -/
 def authoritativePrepareCurrentUnmap (state : CompositeState) (page : Nat) :=
   authoritativePrepareUnmap state
     state.execution.core.context.currentSubject
@@ -16061,12 +16065,10 @@ theorem unmap_authoritativeOperationCompatible state page
           state state hstate rfl rfl rfl rfl
       · exact installVirtualMemory_dormantCancellationCompatible state _ _ hstate
 
-/-- End-to-end accepted-unmap publication over the authoritative runtime.
-Preparation is rooted in the execution latch and leaves both public mapping
-projections unchanged.  The exact acknowledgement publishes the same
-`StaleTranslation.step` successor through `virtualMemory`,
-`resumable.translations`, and the publication record while preserving the
-complete folded runtime invariant. -/
+/-- Conditional accepted-unmap refinement for a state whose publication and
+runtime projections are already equal.  This theorem does not establish that
+`bootRuntime` inhabits the premise or that the ordinary authoritative gate
+preserves it across unrelated mapping/lifecycle operations. -/
 theorem authoritativeCurrentUnmap_accepted_publication
     state page ack
     (hstate : AuthoritativeRuntimeWellFormed state)
