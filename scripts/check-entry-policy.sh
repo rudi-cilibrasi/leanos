@@ -847,9 +847,11 @@ done
   echo "error: vector=14 field=cr2-single-sample final-elf" >&2; exit 1;
 }
 page_fault_adapter_disassembly="$(
+  # Probe-image link order is not stable: an unrelated handler can precede
+  # this adapter.  Ask objdump for the adapter symbol itself instead of using
+  # that handler as an assumed upper bound.
   objdump -d --no-show-raw-insn \
-    --start-address="$(address authorize_page_fault_snapshot)" \
-    --stop-address="$(address divide_error_handler)" "$elf"
+    --disassemble=authorize_page_fault_snapshot "$elf"
 )"
 elf_generated="$(grep -n -m1 'call.*<leanos_authorize_page_fault_snapshot>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
