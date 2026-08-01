@@ -939,9 +939,10 @@ done
 # validated epilogue via the shared restore.
 check_contained_path() {
   local vector="$1" start_symbol="$2" stop_symbol="$3" handler="$4"
-  local start stop dis cleanup normalize operation restore
-  start="$(address "$start_symbol")"; stop="$(address "$stop_symbol")"
-  dis="$(objdump -d --no-show-raw-insn --start-address="$start" --stop-address="$stop" "$elf")"
+  local dis cleanup normalize operation restore
+  # Link-order perturbations in probe images must not turn an unrelated next
+  # symbol into an invalid interval.  The reviewed stub is the named symbol.
+  dis="$(objdump -d --no-show-raw-insn --disassemble="$start_symbol" "$elf")"
   cleanup="$(grep -n -m1 -E '[[:space:]]clac$' <<<"$dis" | cut -d: -f1)"
   grep -n -m1 -E '[[:space:]]cld$' <<<"$dis" >/dev/null || {
     echo "error: vector=$vector path=cleanup field=df" >&2; exit 1;
