@@ -167,18 +167,23 @@ disassemble() {
 
 invlpg_elf="$(disassemble runtime_unmap_page7_invlpg)"
 cr3_elf="$(disassemble runtime_unmap_page7_cr3)"
+page_table_b_hex="$(nm -n "$elf" | awk '$3 == "page_table_b" { print $1 }')"
+[[ "$page_table_b_hex" =~ ^[[:xdigit:]]+$ ]] ||
+  fail "could not resolve address space B page table"
+printf -v page_table_b_page7_hex '%x' "$((16#$page_table_b_hex + 0x38))"
+page_table_b_page7_ref="#[[:space:]]+${page_table_b_page7_hex}[[:space:]]"
 [[ "$(grep -Ec '[[:space:]]invlpg[[:space:]]' <<<"$invlpg_elf")" -eq 1 ]] ||
   fail "final-ELF active-root path does not contain exactly one INVLPG"
 grep -Eq 'mov[[:space:]]+\$0x7000,%e?[a-z0-9]+' <<<"$invlpg_elf" ||
   fail "final-ELF INVLPG operand is not confined to virtual page 7"
-grep -Eq '<page_table_b\+0x38>' <<<"$invlpg_elf" ||
+grep -Eq "$page_table_b_page7_ref" <<<"$invlpg_elf" ||
   fail "final-ELF INVLPG path does not mutate B/page 7"
 grep -Eq '<runtime_invlpg_publication>' <<<"$invlpg_elf" ||
   fail "final-ELF INVLPG publication store missing"
 
 [[ "$(grep -Ec 'mov[[:space:]]+%r[a-z0-9]+,%cr3' <<<"$cr3_elf")" -eq 1 ]] ||
   fail "final-ELF inactive-root path does not contain exactly one CR3 load"
-grep -Eq '<page_table_b\+0x38>' <<<"$cr3_elf" ||
+grep -Eq "$page_table_b_page7_ref" <<<"$cr3_elf" ||
   fail "final-ELF CR3 path does not mutate B/page 7"
 root_b_hex="$(nm -n "$elf" | awk '$3 == "page_map_level_4_b" { print $1 }')"
 [[ "$root_b_hex" =~ ^[[:xdigit:]]+$ ]] ||
@@ -194,7 +199,7 @@ elf_line() {
   grep -n -m1 -E "$pattern" <<<"$text" | cut -d: -f1
 }
 
-elf_invlpg_store="$(elf_line "$invlpg_elf" '<page_table_b\+0x38>')"
+elf_invlpg_store="$(elf_line "$invlpg_elf" "$page_table_b_page7_ref")"
 elf_invlpg_instruction="$(elf_line "$invlpg_elf" \
   '[[:space:]]invlpg[[:space:]]')"
 elf_invlpg_publish="$(elf_line "$invlpg_elf" \
@@ -203,7 +208,7 @@ elf_invlpg_publish="$(elf_line "$invlpg_elf" \
    "$elf_invlpg_instruction" -lt "$elf_invlpg_publish" ]] ||
   fail "final-ELF INVLPG order is not PTE-store, invalidate, publish"
 
-elf_cr3_store="$(elf_line "$cr3_elf" '<page_table_b\+0x38>')"
+elf_cr3_store="$(elf_line "$cr3_elf" "$page_table_b_page7_ref")"
 elf_cr3_instruction="$(elf_line "$cr3_elf" \
   'mov[[:space:]]+%r[a-z0-9]+,%cr3')"
 elf_cr3_publish="$(elf_line "$cr3_elf" '<runtime_cr3_publication>')"
