@@ -911,7 +911,9 @@ for generated_symbol in leanos_authorize_page_fault_snapshot \
   generated_start="$(address "$generated_symbol")"
   generated_stop="$(nm -n "$elf" | awk -v start="${generated_start#0x}" '
     $1 == start { found = 1; next }
-    found && NF >= 3 { print "0x" $1; exit }
+    # Generated entry points may share an address with local aliases after
+    # optimization.  Bound the disassembly by the first later address.
+    found && NF >= 3 && $1 != start { print "0x" $1; exit }
   ')"
   [[ -n "$generated_stop" ]] || {
     echo "error: vector=14 field=allocation-free-generated final-elf symbol=$generated_symbol" >&2
