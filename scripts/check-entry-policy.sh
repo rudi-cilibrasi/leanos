@@ -864,7 +864,10 @@ elf_diagnostic_operation="$(grep -n -m1 'call.*<page_fault_diagnostic_handler>' 
 invalidation_start="$(address invalidate_snapshot_fault_page)"
 invalidation_stop="$(nm -n "$elf" | awk -v start="${invalidation_start#0x}" '
   $1 == start { found = 1; next }
-  found && NF >= 3 { print "0x" $1; exit }
+  # Optimized probe images may place local aliases at the function entry.
+  # Keep scanning until the first symbol at a strictly later address so
+  # objdump always receives a non-empty interval.
+  found && NF >= 3 && $1 != start { print "0x" $1; exit }
 ')"
 [[ -n "$invalidation_stop" ]] || {
   echo "error: vector=14 field=exact-fault-page-invalidation final-elf" >&2
