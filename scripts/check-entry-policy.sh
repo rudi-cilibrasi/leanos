@@ -863,22 +863,11 @@ elf_operation="$(grep -n -m1 'call.*<page_fault_handler>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
 elf_diagnostic_operation="$(grep -n -m1 'call.*<page_fault_diagnostic_handler>' \
   <<<"$page_fault_adapter_disassembly" | cut -d: -f1 || true)"
-invalidation_start="$(address invalidate_snapshot_fault_page)"
-invalidation_stop="$(nm -n "$elf" | awk -v start="${invalidation_start#0x}" '
-  $1 == start { found = 1; next }
-  # Optimized probe images may place local aliases at the function entry.
-  # Keep scanning until the first symbol at a strictly later address so
-  # objdump always receives a non-empty interval.
-  found && NF >= 3 && $1 != start { print "0x" $1; exit }
-')"
-[[ -n "$invalidation_stop" ]] || {
-  echo "error: vector=14 field=exact-fault-page-invalidation final-elf" >&2
-  exit 1
-}
 elf_invalidation_disassembly="$(
+  # The reviewed invalidation helper is a named function.  Disassembling that
+  # symbol directly avoids relying on a probe image's next-symbol link order.
   objdump -d --no-show-raw-insn \
-    --start-address="$invalidation_start" \
-    --stop-address="$invalidation_stop" "$elf"
+    --disassemble=invalidate_snapshot_fault_page "$elf"
 )"
 elf_invalidation_site="$(grep -m1 -E '[[:space:]]invlpg[[:space:]]' \
   <<<"$elf_invalidation_disassembly")"
@@ -910,20 +899,10 @@ mapfile -t elf_invalidation_instructions < <(
 }
 for generated_symbol in leanos_authorize_page_fault_snapshot \
     leanos_page_fault_dispatch_transition; do
-  generated_start="$(address "$generated_symbol")"
-  generated_stop="$(nm -n "$elf" | awk -v start="${generated_start#0x}" '
-    $1 == start { found = 1; next }
-    # Generated entry points may share an address with local aliases after
-    # optimization.  Bound the disassembly by the first later address.
-    found && NF >= 3 && $1 != start { print "0x" $1; exit }
-  ')"
-  [[ -n "$generated_stop" ]] || {
-    echo "error: vector=14 field=allocation-free-generated final-elf symbol=$generated_symbol" >&2
-    exit 1
-  }
   generated_disassembly="$(
-    objdump -d --no-show-raw-insn --start-address="$generated_start" \
-      --stop-address="$generated_stop" "$elf"
+    # Generated entry points are named functions too; symbol-scoped output
+    # preserves the allocation-call inventory without a neighboring bound.
+    objdump -d --no-show-raw-insn --disassemble="$generated_symbol" "$elf"
   )"
   if grep -Eq 'call.*<lean_(alloc|box|ctor|mk|inc|dec)' \
       <<<"$generated_disassembly"; then
