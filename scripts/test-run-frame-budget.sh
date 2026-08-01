@@ -5,6 +5,9 @@ cd "$root"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 evidence="${LEANOS_FRAME_BUDGET_NEGATIVE_EVIDENCE_DIR:-build/boot/frame-budget-negatives}"
+# The fixture recursively builds the canonical serial trace before mutating it.
+# Leave headroom for hosted-runner contention without weakening protocol checks.
+fixture_timeout="${LEANOS_FRAME_BUDGET_FIXTURE_TIMEOUT_SECONDS:-5}"
 mkdir -p "$evidence"
 find "$evidence" -mindepth 1 -maxdepth 1 -type f -delete
 manifest="$evidence/manifest.tsv"
@@ -17,7 +20,7 @@ invoke() {
     LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
     LEANOS_QEMU="$root/tests/qemu-fixture.sh" \
     LEANOS_QEMU_FIXTURE_MODE="$1" \
-    LEANOS_QEMU_TIMEOUT_SECONDS=1 \
+    LEANOS_QEMU_TIMEOUT_SECONDS="$fixture_timeout" \
     LEANOS_SERIAL_LOG="$tmp/$1.serial" \
     LEANOS_DMA_SNAPSHOT="$tmp/$1.dma.tsv" \
     LEANOS_SOURCE_REVISION_FILE="$tmp/SOURCE_REVISION" \

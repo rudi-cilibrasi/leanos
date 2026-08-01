@@ -10,8 +10,8 @@ extern uint64_t leanos_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_resumable_preemption_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                                   uint64_t);
-extern uint64_t leanos_boot_select_frame(uint64_t, uint64_t, uint64_t, uint64_t,
-                                         uint64_t, uint64_t);
+extern uint64_t leanos_boot_consume_exact_projection(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_capability_reuse_demo(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
@@ -44,7 +44,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_ipc_demo);
     REGISTER_BOUNDARY(leanos_preemption_demo);
     REGISTER_BOUNDARY(leanos_resumable_preemption_demo);
-    REGISTER_BOUNDARY(leanos_boot_select_frame);
+    REGISTER_BOUNDARY(leanos_boot_consume_exact_projection);
     REGISTER_BOUNDARY(leanos_user_return_demo);
     REGISTER_BOUNDARY(leanos_authorize_page_fault_snapshot);
     REGISTER_BOUNDARY(leanos_page_fault_demo);
@@ -192,7 +192,8 @@ int main(void) {
                     ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
                         v->words[3], v->words[4])
                     : v->adapter == 5
-                        ? leanos_boot_select_frame(v->words[0], v->words[1], v->words[2],
+                        ? leanos_boot_consume_exact_projection(
+                            v->words[0], v->words[1], v->words[2],
                             v->words[3], v->words[4], v->words[5])
                         : v->adapter == 6
                             ? leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
