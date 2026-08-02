@@ -39,6 +39,11 @@ dead, and preserves both object/subject issued histories. Repeated termination
 is state-preserving. A reused frame still enters a fresh never-reused object
 lifetime; publication must continue through the existing scrub-before-use
 boundary. This model does not bypass virtual-mapping or TLB lifetime checks.
+The generated scenario gives the exact accepted termination and release edges
+distinct full-state tokens with typed `RetirementEffect.flush` meaning. Every other
+state/command pair returns zero. The machine path may publish released capacity
+or scrub/reuse the frame only after the corresponding no-PCID full-cache action
+completes.
 
 Capability delegation neither transfers nor duplicates charge. A delegated
 holder can exercise attenuated authority, but usage remains assigned to the
@@ -98,6 +103,19 @@ Resolving A's old identity-1 word in B's current capability space is denied as
 a stale generation. The canonical corpus includes every pre-state token, command, typed
 reply, next-state token, and hostile replay/forgery encodings.
 
+The same module now wraps the authoritative termination/reclamation step in
+`RetirementPublication`. `prepareRetirement` computes the existing budget and
+scrub successor but retains the complete published pre-state, so model frame 0
+and scrub frame 100 remain owned by object 10 and A's old mapping remains
+visible while the flush is pending. Only `acknowledgeRetirement` with the exact
+termination token exposes the released capacity and reclaimed frame; the
+explicit-release token is rejected even though it also denotes a full flush.
+`publishFreshAfterRetirement` is disabled before that acknowledgement and then
+reuses the existing allocation transition, whose `FrameScrub.Fresh` proof
+establishes the complete scrub before object 21 and B's fresh mapping appear.
+This is a bounded model ordering theorem over the shared issue-112 state, not a
+proof of machine flush completion.
+
 `LEANOS_BOOT_SCENARIO=frame-budget ./scripts/run-image.sh` runs the separate
 version-20 QEMU transcript. Both subjects enter CPL3 under their checked roots.
 The C bridge retains the generated canonical state token, the generated
@@ -109,10 +127,12 @@ frame, records that it has no prior publication, and rejects any attempt to
 publish a live boot or scenario frame twice. After A's accepted allocation, the
 bridge scrubs and maps the scenario frame at the generated page and A writes
 `0xa5` to its first and last bytes directly in CPL3. Accepted termination
-removes A's leaf and retires that publication. The bridge then scrubs all 4096
-bytes through the physical identity, invokes the generated fresh-publication
-edge, and maps the same retired frame for B at the generated page. B directly
-reads both edge bytes in CPL3 and reports zero; the old generation is rejected.
+removes A's leaf, crosses a compiler barrier, reloads and reads back the active
+no-PCID B root, acknowledges the generated termination-flush token, and only
+then retires that publication. The bridge then scrubs all 4096 bytes through
+the physical identity, invokes the generated fresh-publication edge, and maps
+the same retired frame for B at the generated page. B directly reads both edge
+bytes in CPL3 and reports zero; the old generation is rejected.
 
 The fixed model partitions frames and does not model cross-subject commitment
 reassignment. Consequently the correspondence between model frame 100 and the

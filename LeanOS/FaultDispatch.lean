@@ -1728,13 +1728,17 @@ def faultDispatchDemo (vector entryClass current active ready contextOwner : UIn
   else if entryClass = 6 then 0
   else if entryClass != 3 then
     if vector = 14 then 0x8000000000000001 else 0x8000000000000002
-  else if current != 1 || active != 1 then 0
+  else if current = 0 || active != current then 0
   else if ready = 0 then 1 + reasonCode * 0x10000000000
   else if ready = 2 && contextOwner = 2 then
     0x00000000ff020202 + reasonCode * 0x10000000000
   else if ready = 3 && contextOwner = 2 then
     0x000000003f020202 + reasonCode * 0x10000000000
   else 0
+
+theorem fault_dispatch_demo_current_two_idle :
+    faultDispatchDemo 14 3 2 2 0 0 = 1 := by
+  native_decide
 
 @[export leanos_fault_dispatch_demo]
 def faultDispatchDemoExport (vector origin current active ready contextOwner : UInt64) : UInt64 :=

@@ -83,7 +83,7 @@ partial log does not pass. The executable scenarios currently include:
   with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-354-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+380-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -333,7 +333,15 @@ CR3/TLB operations, boot integration, and the compiler remain trusted.
 
 The finite [single-core TLB model](docs/tlb-model.md) makes invalidation atomic
 with mapping/lifecycle mutation and revalidates cached translations against the
-current encoded walk and allocator ownership before use.
+current encoded walk and allocator ownership before use. The boot image also
+executes the canonical generated address-space-2/page-7 unmap effect against a
+bounded runtime-mutable window, with ordered PTE-store/`invlpg` and
+PTE-store/CR3-reload paths, a checked four-phase mutable-leaf relation that
+keeps every other leaf exact, and kernel-observed before/replacement-frame
+values. At the authoritative model boundary, current-root unmap preparation
+derives subject and address space from the execution latch, retains both public
+mapping projections, and publishes the acknowledged successor into the shared
+virtual-memory/TLB state while preserving the folded runtime invariant.
 
 The first total syscall model separates trusted caller/active-address-space
 context from untrusted fixed-width scalar words and proves invariant

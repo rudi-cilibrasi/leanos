@@ -4,15 +4,24 @@ set -euo pipefail
 elf="${1:?usage: check-frame-budget-machine.sh ELF}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
+source_file="${LEANOS_KERNEL_SOURCE:-$root/boot/kernel.c}"
 
 symbols="$(mktemp)"
 dump="$(mktemp)"
 kernel_dump="$(mktemp)"
 trap 'rm -f "$symbols" "$dump" "$kernel_dump"' EXIT
+[[ -f "$source_file" ]] || {
+  echo "error: frame-budget kernel source is missing: $source_file" >&2
+  exit 1
+}
 nm "$elf" > "$symbols"
 
 grep -F ' leanos_frame_budget_mapping_page' "$symbols" >/dev/null || {
   echo "error: frame-budget ELF lacks generated mapping-page policy" >&2
+  exit 1
+}
+grep -F ' leanos_frame_budget_invalidation_effect' "$symbols" >/dev/null || {
+  echo "error: frame-budget ELF lacks generated invalidation-effect policy" >&2
   exit 1
 }
 grep -F ' leanos_boot_projection_finish' "$symbols" >/dev/null &&
@@ -42,8 +51,100 @@ strings "$elf" | grep -F 'frame-budget-projection-authority' >/dev/null &&
   exit 1
 }
 
+retire_source="$(
+  sed -n '/static void frame_budget_retire_mapping(/,/^}/p' "$source_file"
+)"
+[[ -n "$retire_source" ]] || {
+  echo "error: frame-budget retirement helper is missing" >&2
+  exit 1
+}
+grep -Fq 'effect_token != LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN' \
+  <<<"$retire_source" || {
+  echo "error: frame-budget retirement lacks the generated exact-effect check" >&2
+  exit 1
+}
+grep -Fq '(cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b' \
+  <<<"$retire_source" || {
+  echo "error: frame-budget retirement is not bound to the active B root" >&2
+  exit 1
+}
+grep -Fq '(cr4 & (UINT64_C(1) << 17)) != 0' <<<"$retire_source" || {
+  echo "error: frame-budget retirement does not reject PCID" >&2
+  exit 1
+}
+[[ "$(grep -Fc '((volatile uint64_t *)page_table)[page] = 0;' \
+    <<<"$retire_source")" -eq 1 ]] || {
+  echo "error: frame-budget retirement PTE store drifted" >&2
+  exit 1
+}
+[[ "$(grep -Fc '"r"((uint64_t)page_map_level_4_b)' \
+    <<<"$retire_source")" -eq 1 ]] || {
+  echo "error: frame-budget retirement lacks one exact CR3 reload" >&2
+  exit 1
+}
+line_of() {
+  grep -n -m1 -F "$2" <<<"$1" | cut -d: -f1
+}
+source_store="$(line_of "$retire_source" \
+  '((volatile uint64_t *)page_table)[page] = 0;')"
+source_flush="$(line_of "$retire_source" \
+  '"r"((uint64_t)page_map_level_4_b)')"
+source_ack="$(line_of "$retire_source" \
+  'frame_budget_retirement_completion = effect_token;')"
+source_publish="$(line_of "$retire_source" \
+  'frame_budget_publication_live = 0;')"
+[[ "$source_store" -lt "$source_flush" &&
+   "$source_flush" -lt "$source_ack" &&
+   "$source_ack" -lt "$source_publish" ]] || {
+  echo "error: frame-budget retirement order is not PTE-store, CR3-flush, acknowledge, publish" >&2
+  exit 1
+}
+grep -Fq 'frame_budget_retirement_completion !=' "$source_file" &&
+  grep -Fq 'fail("frame-budget-scrub-before-invalidation");' "$source_file" &&
+  grep -Fq 'fail("frame-budget-publish-before-invalidation");' "$source_file" || {
+  echo "error: frame-budget scrub/reuse is not guarded by invalidation completion" >&2
+  exit 1
+}
+
 objdump -d -j .user_a_text -j .user_b_text "$elf" > "$dump"
 objdump -d "$elf" > "$kernel_dump"
+
+retire_elf="$(
+  sed -n '/<frame_budget_retire_mapping>:/,/^$/p' "$kernel_dump"
+)"
+[[ -n "$retire_elf" ]] || {
+  echo "error: frame-budget final ELF lacks the retirement helper" >&2
+  exit 1
+}
+[[ "$(grep -Ec 'mov[[:space:]]+%r[a-z0-9]+,%cr3' \
+    <<<"$retire_elf")" -eq 1 ]] || {
+  echo "error: frame-budget final ELF lacks one retirement CR3 flush" >&2
+  exit 1
+}
+grep -F '<frame_budget_retirement_completion>' <<<"$retire_elf" >/dev/null || {
+  echo "error: frame-budget final ELF lacks invalidation acknowledgement" >&2
+  exit 1
+}
+grep -F '<frame_budget_publication_live>' <<<"$retire_elf" >/dev/null || {
+  echo "error: frame-budget final ELF lacks retirement publication" >&2
+  exit 1
+}
+elf_line() {
+  grep -n -m1 -E "$2" <<<"$1" | cut -d: -f1
+}
+elf_store="$(elf_line "$retire_elf" \
+  'movq?[[:space:]]+\$0x0,(0x[0-9a-f]+)?\((%r[a-z0-9]+)?,%r[a-z0-9]+,8\)')"
+elf_flush="$(elf_line "$retire_elf" 'mov[[:space:]]+%r[a-z0-9]+,%cr3')"
+elf_ack="$(elf_line "$retire_elf" \
+  'mov[[:space:]]+%r[a-z0-9]+,.*<frame_budget_retirement_completion>')"
+elf_publish="$(elf_line "$retire_elf" \
+  'movl?[[:space:]]+\$0x0,.*<frame_budget_publication_live>')"
+[[ "$elf_store" -lt "$elf_flush" &&
+   "$elf_flush" -lt "$elf_ack" &&
+   "$elf_ack" -lt "$elf_publish" ]] || {
+  echo "error: frame-budget final-ELF retirement order is not store, flush, acknowledge, publish" >&2
+  exit 1
+}
 
 isr80="$(sed -n '/<isr80>:/,/<isr14>:/p' "$kernel_dump")"
 feed_line="$(grep -n -m1 'cmp[[:space:]]\+\$0xfeed,%rax' <<< "$isr80" |

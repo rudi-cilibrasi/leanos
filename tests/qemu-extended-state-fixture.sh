@@ -24,6 +24,11 @@ set -e
 [[ $status -eq 33 ]] || exit "$status"
 sed -i 's/projection=exact-rich/projection=scalar-checked/' "$log"
 sed -i '/^LEANOS\/8 PAGING fixture=extra-mapping /a LEANOS/8 PAGING fixture=nmi-guard-mapping root=B level=pt page=6 expected=0 actual=9223372036854800387 result=REJECTED' "$log"
+sed -i '/^LEANOS\/8 PAGING fixture=wrong-cr3 /a\
+LEANOS/19 TLB path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS\
+LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS\
+LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS\
+LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS' "$log"
 sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
 sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
 sed -i '/^LEANOS\/15 DMA snapshot=/i\

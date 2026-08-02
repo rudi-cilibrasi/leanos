@@ -9,6 +9,7 @@ import LeanOS.Preemption
 import LeanOS.CapabilityTransfer
 import LeanOS.ResumablePreemption
 import LeanOS.DirectPortIO
+import LeanOS.InvalidationPublication
 
 /-!
 # Irreversible exception fail-stop model
@@ -704,6 +705,12 @@ structure CompositeState where
   /-- Latest authoritative PCI control observation.  Ordinary public
   operations cannot supply or change this snapshot. -/
   dmaObserved : DMAQuarantine.Snapshot := DMAQuarantine.q35Snapshot
+  /-- Logical mapping successors remain private here until the machine reports
+  completion of the exact invalidation ticket and effect.  Keeping this state
+  in the composite runtime prevents publication/reuse ordering from living in
+  a disconnected generated-dispatcher fixture. -/
+  invalidationPublication : InvalidationPublication.State :=
+    InvalidationPublication.initial
 
 /-- The blocking store and all composite scheduler views name one scheduler. -/
 def CompositeState.BlockingIPCCoherent (state : CompositeState) : Prop :=
@@ -5079,6 +5086,7 @@ inductive Operation where
   | capabilityRevokeSubtree (authoritySlot victim victimSlot : Nat)
   | map (slot page : Nat) (permissions : VirtualMapping.Permissions)
   | unmap (page : Nat)
+  | protect (page : Nat) (permissions : VirtualMapping.Permissions)
   | createSubject (subject : Nat)
   | terminateSubject (subject : Nat)
   | scheduleAdd (subject : Nat)
@@ -5115,6 +5123,7 @@ inductive OperationReply where
   | capability (result : Capability.Result)
   | map (result : VirtualMapping.Result VirtualMapping.MapError)
   | unmap (result : VirtualMapping.Result VirtualMapping.UnmapError)
+  | protect (result : VirtualMapping.Result TLB.ProtectError)
   | createSubject (result : SubjectLifecycle.Result SubjectLifecycle.CreateError)
   | terminateSubject (result : SubjectLifecycle.Result SubjectLifecycle.TerminateError)
   | scheduleRemove (result : ResumablePreemption.RemoveResult)
@@ -5142,6 +5151,7 @@ def OperationReply.isNonfatalRejection : OperationReply → Bool
   | .capability (.rejected _) => true
   | .map (.rejected _) => true
   | .unmap (.rejected _) => true
+  | .protect (.rejected _) => true
   | .createSubject (.rejected _) => true
   | .terminateSubject (.rejected _) => true
   | .scheduleRemove (.rejected _) => true
@@ -5350,6 +5360,14 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
             { state.resumable.translations with virtual := outcome.state }
             state.execution.core.context.activeAddressSpace page
           installVirtualMemory state outcome.state translations
+  | .protect page permissions =>
+      let outcome := TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions
+      match outcome.result with
+      | .rejected _ => state
+      | .accepted =>
+          installVirtualMemory state outcome.state.virtual outcome.state
   | .createSubject subject =>
       let outcome := SubjectLifecycle.create state.lifecycle subject
       match outcome.result with
@@ -5539,6 +5557,10 @@ def operationReply (state : CompositeState) : Operation → OperationReply
   | .unmap page =>
       .unmap (VirtualMapping.unmap state.virtualMemory state.execution.core.context.currentSubject
         state.execution.core.context.activeAddressSpace page).result
+  | .protect page permissions =>
+      .protect (TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions).result
   | .createSubject subject => .createSubject (SubjectLifecycle.create state.lifecycle subject).result
   | .terminateSubject subject =>
       .terminateSubject (SubjectLifecycle.terminate state.lifecycle subject).result
@@ -5620,6 +5642,12 @@ inductive SubsystemRejection (state : CompositeState) : Operation → OperationR
       (h : (VirtualMapping.unmap state.virtualMemory state.execution.core.context.currentSubject
         state.execution.core.context.activeAddressSpace page).result = .rejected reason) :
       SubsystemRejection state (.unmap page) (.unmap (.rejected reason))
+  | protect page permissions reason
+      (h : (TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions).result =
+          .rejected reason) :
+      SubsystemRejection state (.protect page permissions) (.protect (.rejected reason))
   | createSubject subject reason
       (h : (SubjectLifecycle.create state.lifecycle subject).result = .rejected reason) :
       SubsystemRejection state (.createSubject subject) (.createSubject (.rejected reason))
@@ -6080,6 +6108,15 @@ private theorem classified_rejection_is_subsystem state operation
       | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
       | rejected reason =>
           simpa [operationReply, hresult] using SubsystemRejection.unmap page reason hresult
+  | protect page permissions =>
+      cases hresult : (TLB.protect state.resumable.translations
+          state.execution.core.context.currentSubject
+          state.execution.core.context.activeAddressSpace page permissions).result with
+      | accepted =>
+          simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
+      | rejected reason =>
+          simpa [operationReply, hresult] using
+            SubsystemRejection.protect page permissions reason hresult
   | createSubject subject =>
       cases hresult : (SubjectLifecycle.create state.lifecycle subject).result with
       | accepted => simp [operationReply, hresult, OperationReply.isNonfatalRejection] at hrejected
@@ -8259,7 +8296,12 @@ theorem authority_operations_result_sound state
         .completed (.unmap
           (VirtualMapping.unmap state.virtualMemory
             state.execution.core.context.currentSubject
-            state.execution.core.context.activeAddressSpace page).result) := by
+            state.execution.core.context.activeAddressSpace page).result) ∧
+    (gate state (.protect page permissions)).result =
+        .completed (.protect
+          (TLB.protect state.resumable.translations
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page permissions).result) := by
   simp [gate, hmode, operationReply, authoritativeIPCReply]
 
 /-- Accepted mapping publishes only the changed mapping projection.  Memory,
@@ -8355,6 +8397,85 @@ theorem gate_unmap_accepted_invalidates_tlb state page next
       (TLB.invalidate_page_absent state.resumable.translations.entries
         { addressSpace := state.execution.core.context.activeAddressSpace, page } context)
 
+/-- Accepted protection reduction is a full authoritative composite
+transition: the actor and root come from the execution latch, the exact
+permission-restricted virtual state is published to every consumer, and the
+affected cached translation is absent before the typed reply is exposed. -/
+theorem gate_protect_accepted_invalidates_tlb state page permissions next
+    (hmode : state.execution.mode = .running)
+    (haccepted : TLB.protect state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions =
+        { state := next, result := .accepted })
+    (hstate : RuntimeWellFormed state) :
+    (gate state (.protect page permissions)).result =
+        .completed (.protect .accepted) ∧
+      RuntimeWellFormed (gate state (.protect page permissions)).state ∧
+      (gate state (.protect page permissions)).state.Coherent ∧
+      TLB.Coherent
+        (gate state (.protect page permissions)).state.resumable.translations ∧
+      ∀ context, TLB.lookup
+        (gate state (.protect page permissions)).state.resumable.translations.entries
+        { addressSpace := state.execution.core.context.activeAddressSpace, page }
+        context = none := by
+  have hvirtualEq :
+      state.resumable.translations.virtual = state.virtualMemory :=
+    hstate.1.2.2.2.2.2.2.2.2.1
+  have hmemory : next.virtual.memory = state.virtualMemory.memory := by
+    have h := TLB.protect_virtual_memory state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions
+    rw [haccepted] at h
+    simpa [hvirtualEq] using h
+  have howner : next.virtual.owner = state.virtualMemory.owner := by
+    have h := TLB.protect_virtual_owner state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions
+    rw [haccepted] at h
+    simpa [hvirtualEq] using h
+  have hpreVirtual :
+      VirtualMapping.LifecycleWellFormed state.resumable.translations.virtual := by
+    simpa [hvirtualEq] using hstate.2.2.2.2.1
+  have hresult :
+      (TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions).result =
+          .accepted := by
+    simp [haccepted]
+  have hvirtual := TLB.protect_accepted_preserves_virtual_lifecycleWellFormed
+    state.resumable.translations state.execution.core.context.currentSubject
+    state.execution.core.context.activeAddressSpace page permissions hpreVirtual hresult
+  rw [haccepted] at hvirtual
+  have htlb : TLB.Coherent next := by
+    have hpreCoherent : TLB.Coherent state.resumable.translations :=
+      hstate.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+    have h := TLB.protect_accepted_coherent state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions hpreCoherent hresult
+    simpa [haccepted] using h
+  have hactive : next.active = state.resumable.translations.active := by
+    have h := TLB.protect_active state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions
+    simpa [haccepted] using h
+  have hpreserved := installVirtualMemory_preserves_runtimeWellFormed
+    state next.virtual next hstate hmemory howner hvirtual htlb hactive
+  constructor
+  · simp [gate, hmode, operationReply, haccepted]
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted] using hpreserved
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted] using hpreserved.1
+  constructor
+  · simpa [gate, hmode, applyOperation, haccepted,
+      installVirtualMemory] using htlb
+  · intro context
+    have habsent := TLB.protect_revokes_before_return state.resumable.translations
+      state.execution.core.context.currentSubject
+      state.execution.core.context.activeAddressSpace page permissions hresult context
+    simpa [gate, hmode, applyOperation, haccepted,
+      installVirtualMemory] using habsent
+
 /-- Raw mapping is compatible with the authoritative blocking store for every
 typed result.  Rejection is atomic; acceptance changes only mapping and TLB
 projections while retaining every waiter-observed scheduler field. -/
@@ -8433,6 +8554,74 @@ theorem gate_unmap_preserves_blockingRuntimeWellFormed state page
               have hpreserved := installVirtualMemory_preserves_blockingRuntimeWellFormed
                 state next translations hstate hmemory howner hvirtual htlb rfl
               simpa [gate, hmode, applyOperation, hunmap, translations] using hpreserved
+
+/-- Raw protection reduction preserves the complete blocking/deferred-facing
+runtime projection while invalidating the selected page in the authoritative
+TLB state. -/
+theorem gate_protect_preserves_blockingRuntimeWellFormed state page permissions
+    (hstate : BlockingRuntimeWellFormed state) :
+    BlockingRuntimeWellFormed (gate state (.protect page permissions)).state := by
+  cases hmode : state.execution.mode with
+  | handling active => simpa [gate, hmode] using hstate
+  | halted record => simpa [gate, hmode] using hstate
+  | running =>
+      generalize hprotect : TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions = outcome
+      cases outcome with
+      | mk next result =>
+          cases result with
+          | rejected reason =>
+              simpa [gate, hmode, applyOperation, hprotect] using hstate
+          | accepted =>
+              have hvirtualEq :
+                  state.resumable.translations.virtual = state.virtualMemory :=
+                hstate.1.1.2.2.2.2.2.2.2.2.1
+              have hmemory : next.virtual.memory = state.virtualMemory.memory := by
+                have h := TLB.protect_virtual_memory state.resumable.translations
+                  state.execution.core.context.currentSubject
+                  state.execution.core.context.activeAddressSpace page permissions
+                rw [hprotect] at h
+                simpa [hvirtualEq] using h
+              have howner : next.virtual.owner = state.virtualMemory.owner := by
+                have h := TLB.protect_virtual_owner state.resumable.translations
+                  state.execution.core.context.currentSubject
+                  state.execution.core.context.activeAddressSpace page permissions
+                rw [hprotect] at h
+                simpa [hvirtualEq] using h
+              have hresult :
+                  (TLB.protect state.resumable.translations
+                    state.execution.core.context.currentSubject
+                    state.execution.core.context.activeAddressSpace page permissions).result =
+                      .accepted := by
+                simp [hprotect]
+              have hpreVirtual :
+                  VirtualMapping.LifecycleWellFormed
+                    state.resumable.translations.virtual := by
+                simpa [hvirtualEq] using hstate.1.2.2.2.2.1
+              have hvirtual :=
+                TLB.protect_accepted_preserves_virtual_lifecycleWellFormed
+                  state.resumable.translations
+                  state.execution.core.context.currentSubject
+                  state.execution.core.context.activeAddressSpace page permissions
+                  hpreVirtual hresult
+              rw [hprotect] at hvirtual
+              have htlb : TLB.Coherent next := by
+                have hpreCoherent : TLB.Coherent state.resumable.translations :=
+                  hstate.1.2.2.2.2.2.2.2.2.1.2.2.2.2.2.2.2.2.2
+                have h := TLB.protect_accepted_coherent state.resumable.translations
+                  state.execution.core.context.currentSubject
+                  state.execution.core.context.activeAddressSpace page permissions
+                  hpreCoherent hresult
+                simpa [hprotect] using h
+              have hactive : next.active = state.resumable.translations.active := by
+                have h := TLB.protect_active state.resumable.translations
+                  state.execution.core.context.currentSubject
+                  state.execution.core.context.activeAddressSpace page permissions
+                simpa [hprotect] using h
+              have hpreserved := installVirtualMemory_preserves_blockingRuntimeWellFormed
+                state next.virtual next hstate hmemory howner hvirtual htlb hactive
+              simpa [gate, hmode, applyOperation, hprotect] using hpreserved
 
 private theorem dispatchHardware_running_returnAuthority_unarmed state frame
     (hmode : state.mode = .running) :
@@ -8719,6 +8908,26 @@ theorem unmap_operationPreservesRuntimeWellFormed page :
               (by simp [gate, hmode, operationReply, hunmap])
               (.unmap page reason (by simp [hunmap]))).1
   · exact gate_rejected_mode_preserves_runtimeWellFormed state (.unmap page) hstate hmode
+
+theorem protect_operationPreservesRuntimeWellFormed page permissions :
+    OperationPreservesRuntimeWellFormed (.protect page permissions) := by
+  intro state hstate
+  by_cases hmode : state.execution.mode = .running
+  · cases hprotect : TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions with
+    | mk next result =>
+        cases result with
+        | accepted =>
+            exact (gate_protect_accepted_invalidates_tlb state page permissions
+              next hmode hprotect hstate).2.1
+        | rejected reason =>
+            exact (gate_subsystem_rejection_preserves_runtimeWellFormed state
+              (.protect page permissions) (.protect (.rejected reason)) hstate
+              (by simp [gate, hmode, operationReply, hprotect])
+              (.protect page permissions reason (by simp [hprotect]))).1
+  · exact gate_rejected_mode_preserves_runtimeWellFormed state
+      (.protect page permissions) hstate hmode
 
 /-- Accepted userspace mapping reuses the raw mapping publication proof after
 the generation-bound handle resolves.  The only additional mutation is live
@@ -9435,6 +9644,32 @@ theorem gate_terminateSubject_accepted_preserves_runtimeWellFormed
   · simpa [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
       publishTerminatedBlockingSubject, hblockingAccepted, publishBlockingIPCContext,
       installTerminatedResumable] using hportControls
+
+/-- Accepted authoritative termination is also the global release/destruction
+cache boundary.  Cleanup can retire memory visible through several roots, so
+the globally well-formed successor carries the reviewed complete flush before
+that retired capacity can be reused. -/
+theorem gate_terminateSubject_accepted_flushes_translations
+    state subject
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted) :
+    RuntimeWellFormed (gate state (.terminateSubject subject)).state ∧
+      (gate state (.terminateSubject subject)).state.resumable.translations.entries = [] ∧
+      ∀ key context,
+        TLB.lookup
+          (gate state (.terminateSubject subject)).state.resumable.translations.entries
+          key context = none := by
+  refine ⟨gate_terminateSubject_accepted_preserves_runtimeWellFormed
+    state subject hstate hmode haccepted, ?_, ?_⟩
+  · simp [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+      installTerminatedResumable]
+  · intro key context
+    rw [show (gate state (.terminateSubject subject)).state.resumable.translations.entries =
+        [] by
+      simp [gate, hmode, applyOperation, haccepted, installTerminatedSubject,
+        installTerminatedResumable]]
+    simp [TLB.lookup]
 
 /-- Every public subject-termination request preserves the global invariant:
 never-issued/already-dead subjects reject atomically, while acceptance performs
@@ -10695,6 +10930,24 @@ theorem resumePreempt_operationPreservesRuntimeWellFormed frame registers :
   · exact gate_rejected_mode_preserves_runtimeWellFormed state
       (.resumePreempt frame registers) hstate hmode
 
+/-- An accepted authoritative root switch preserves the global invariant and
+publishes the no-PCID full-cache action modeled by `TLB.switch`. -/
+theorem gate_resumePreempt_accepted_flushes_translations
+    state frame registers
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : (ResumablePreemption.switch state.resumable
+      state.execution.core frame registers).error = none) :
+    RuntimeWellFormed (gate state (.resumePreempt frame registers)).state ∧
+      (gate state (.resumePreempt frame registers)).state.resumable.translations.entries = [] := by
+  have hpreserved :=
+    resumePreempt_operationPreservesRuntimeWellFormed frame registers state hstate
+  refine ⟨hpreserved, ?_⟩
+  have hflush :=
+    ResumablePreemption.switch_accepted_flushes_translations
+      state.resumable state.execution.core frame registers haccepted
+  simpa [gate, hmode, applyOperation, haccepted, installResumable] using hflush
+
 /-! ### Inbound interrupt preservation -/
 
 private theorem publishInterruptCleanup_preserves_runtimeWellFormed
@@ -10809,6 +11062,7 @@ inductive RuntimeTraceOperation : Operation → Prop where
       RuntimeTraceOperation (.capabilityRevokeSubtree authoritySlot victim victimSlot)
   | map slot page permissions : RuntimeTraceOperation (.map slot page permissions)
   | unmap page : RuntimeTraceOperation (.unmap page)
+  | protect page permissions : RuntimeTraceOperation (.protect page permissions)
   | createSubject subject : RuntimeTraceOperation (.createSubject subject)
   | terminateSubject subject : RuntimeTraceOperation (.terminateSubject subject)
   | scheduleAdd subject : RuntimeTraceOperation (.scheduleAdd subject)
@@ -10856,6 +11110,8 @@ theorem runtimeTraceOperation_preserves_runtimeWellFormed operation
   | map slot page permissions =>
       exact map_operationPreservesRuntimeWellFormed slot page permissions
   | unmap page => exact unmap_operationPreservesRuntimeWellFormed page
+  | protect page permissions =>
+      exact protect_operationPreservesRuntimeWellFormed page permissions
   | createSubject subject => exact createSubject_operationPreservesRuntimeWellFormed subject
   | terminateSubject subject =>
       exact terminateSubject_operationPreservesRuntimeWellFormed subject
@@ -10893,6 +11149,7 @@ theorem runtimeTraceOperation_complete operation :
       exact .capabilityRevokeSubtree authoritySlot victim victimSlot
   | map slot page permissions => exact .map slot page permissions
   | unmap page => exact .unmap page
+  | protect page permissions => exact .protect page permissions
   | createSubject subject => exact .createSubject subject
   | terminateSubject subject => exact .terminateSubject subject
   | scheduleAdd subject => exact .scheduleAdd subject
@@ -13829,6 +14086,8 @@ inductive BlockingRuntimePreservingOperation : Operation → Prop where
   | map slot page permissions :
       BlockingRuntimePreservingOperation (.map slot page permissions)
   | unmap page : BlockingRuntimePreservingOperation (.unmap page)
+  | protect page permissions :
+      BlockingRuntimePreservingOperation (.protect page permissions)
   | syscall call : BlockingRuntimePreservingOperation (.syscall call)
   | transferOffer endpointWord sourceWord sourceKind payload rights :
       BlockingRuntimePreservingOperation
@@ -13861,6 +14120,9 @@ theorem gate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
       exact gate_map_preserves_blockingRuntimeWellFormed
         state slot page permissions hstate
   | unmap page => exact gate_unmap_preserves_blockingRuntimeWellFormed state page hstate
+  | protect page permissions =>
+      exact gate_protect_preserves_blockingRuntimeWellFormed
+        state page permissions hstate
   | syscall call => exact gate_syscall_preserves_blockingRuntimeWellFormed state call hstate
   | transferOffer endpointWord sourceWord sourceKind payload rights =>
       exact gate_transferOffer_preserves_blockingRuntimeWellFormed state endpointWord sourceWord
@@ -14019,19 +14281,28 @@ structure AuthoritativeGateOutcome where
 blocking/deferred-cancellation classification.  In particular, it carries the
 scheduler/mailbox/waiter well-formedness required by blocking transitions and
 the retained-context classification required by deferred drains. -/
-def AuthoritativeRuntimeWellFormed (state : CompositeState) : Prop :=
-  RuntimeWellFormed state ∧
-  state.DeferredCancellationWellFormed
+structure AuthoritativeRuntimeWellFormed (state : CompositeState) : Prop where
+  left : RuntimeWellFormed state
+  right : state.DeferredCancellationWellFormed
+  publication :
+    InvalidationPublication.WellFormed state.invalidationPublication
 
 theorem DeferredBlockingRuntimeWellFormed.authoritative {state : CompositeState}
-    (hstate : DeferredBlockingRuntimeWellFormed state) :
+    (hstate : DeferredBlockingRuntimeWellFormed state)
+    (hpublication :
+      InvalidationPublication.WellFormed state.invalidationPublication) :
     AuthoritativeRuntimeWellFormed state :=
-  hstate
+  ⟨hstate.1, hstate.2, hpublication⟩
 
 theorem AuthoritativeRuntimeWellFormed.blocking {state : CompositeState}
     (hstate : AuthoritativeRuntimeWellFormed state) :
     BlockingRuntimeWellFormed state :=
   ⟨hstate.1, hstate.2.1.1⟩
+
+theorem AuthoritativeRuntimeWellFormed.deferred {state : CompositeState}
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    DeferredBlockingRuntimeWellFormed state :=
+  ⟨hstate.1, hstate.2⟩
 
 /-- The successor invariant exposes the same proof-carrying PCI quarantine
 carried by the sole global runtime invariant. -/
@@ -14039,6 +14310,777 @@ theorem AuthoritativeRuntimeWellFormed.dmaQuarantined {state : CompositeState}
     (hstate : AuthoritativeRuntimeWellFormed state) :
     state.DMAQuarantined :=
   hstate.1.dmaQuarantined
+
+/-! ## Conditional invalidation publication projection -/
+
+/-- Experimental projection relation for composing the standalone publication
+protocol with a `CompositeState`.  This is deliberately an explicit premise,
+not part of `AuthoritativeRuntimeWellFormed`: `bootRuntime` does not currently
+construct it, and the ordinary authoritative gate does not preserve it across
+all mapping, cleanup, and root-switch operations.  Consequently the helpers
+below are conditional refinement lemmas, not the public global runtime gate. -/
+def CompositeState.InvalidationProjectionCoherent
+    (state : CompositeState) : Prop :=
+  state.invalidationPublication.published = state.resumable.translations
+
+structure InvalidationBoundaryOutcome where
+  state : CompositeState
+  accepted : Bool
+  effect : StaleTranslation.Effect
+
+private def installInvalidationPublication (state : CompositeState)
+    (publication : InvalidationPublication.State) : CompositeState :=
+  { state with invalidationPublication := publication }
+
+@[simp] private theorem installInvalidationPublication_self
+    (state : CompositeState) :
+    installInvalidationPublication state state.invalidationPublication = state := by
+  cases state
+  rfl
+
+private def authoritativePrepareInvalidation (state : CompositeState)
+    (kind : InvalidationPublication.TransitionKind)
+    (request : StaleTranslation.Request) : InvalidationBoundaryOutcome :=
+  let outcome :=
+    InvalidationPublication.prepare state.invalidationPublication kind request
+  { state := installInvalidationPublication state outcome.state
+    accepted := outcome.accepted
+    effect := outcome.effect }
+
+/-- Acknowledgement is confined to the operation family named by the trusted
+boundary.  Even an otherwise exact ticket/effect pair cannot cross from one
+family's completion path into another. -/
+private def authoritativeAcknowledgeInvalidation (state : CompositeState)
+    (kind : InvalidationPublication.TransitionKind)
+    (ack : InvalidationPublication.Acknowledgement) :
+    InvalidationBoundaryOutcome :=
+  match state.invalidationPublication.pending with
+  | some pending =>
+      if pending.kind = kind then
+        let outcome :=
+          InvalidationPublication.acknowledge state.invalidationPublication ack
+        { state := installInvalidationPublication state outcome.state
+          accepted := outcome.accepted
+          effect := outcome.effect }
+      else
+        { state, accepted := false, effect := .none }
+  | none => { state, accepted := false, effect := .none }
+
+def authoritativePrepareUnmap state subject addressSpace page :=
+  authoritativePrepareInvalidation state .unmap
+    (.unmap subject addressSpace page)
+
+def authoritativePrepareProtect state subject addressSpace page permissions :=
+  authoritativePrepareInvalidation state .protect
+    (.protect subject addressSpace page permissions)
+
+def authoritativePrepareRelease state subject slot :=
+  authoritativePrepareInvalidation state .release (.release subject slot)
+
+def authoritativePrepareDestroy state subject slot :=
+  authoritativePrepareInvalidation state .destroy (.destroy subject slot)
+
+def authoritativePrepareSwitch state addressSpace :=
+  authoritativePrepareInvalidation state .switch (.switch addressSpace)
+
+def authoritativeAcknowledgeUnmap state ack :=
+  authoritativeAcknowledgeInvalidation state .unmap ack
+
+def authoritativeAcknowledgeProtect state ack :=
+  authoritativeAcknowledgeInvalidation state .protect ack
+
+def authoritativeAcknowledgeRelease state ack :=
+  authoritativeAcknowledgeInvalidation state .release ack
+
+def authoritativeAcknowledgeDestroy state ack :=
+  authoritativeAcknowledgeInvalidation state .destroy ack
+
+def authoritativeAcknowledgeSwitch state ack :=
+  authoritativeAcknowledgeInvalidation state .switch ack
+
+/-- Conditional current-root unmap preparation derives both authority
+identities from the execution latch.  Its only caller-controlled argument is
+the virtual page.  Callers claiming agreement with the composite runtime must
+separately establish `InvalidationProjectionCoherent`. -/
+def authoritativePrepareCurrentUnmap (state : CompositeState) (page : Nat) :=
+  authoritativePrepareUnmap state
+    state.execution.core.context.currentSubject
+    state.execution.core.context.activeAddressSpace page
+
+/-- Install an acknowledged mapping/TLB successor into every authoritative
+consumer of those projections, then retain the matching publication protocol
+metadata (cleared pending ticket and advanced ticket history). -/
+private def installAcknowledgedInvalidation (state : CompositeState)
+    (publication : InvalidationPublication.State) : CompositeState :=
+  installInvalidationPublication
+    (installVirtualMemory state publication.published.virtual
+      publication.published)
+    publication
+
+/-- The active public-unmap completion path publishes the exact acknowledged
+logical successor into the authoritative translation and virtual-memory
+projections.  Rejected acknowledgements use the generic literal-stutter path. -/
+def authoritativeAcknowledgeCurrentUnmap (state : CompositeState)
+    (ack : InvalidationPublication.Acknowledgement) :
+    InvalidationBoundaryOutcome :=
+  let outcome := authoritativeAcknowledgeUnmap state ack
+  if outcome.accepted then
+    { state := installAcknowledgedInvalidation state
+        outcome.state.invalidationPublication
+      accepted := true
+      effect := outcome.effect }
+  else
+    outcome
+
+def authoritativePublishReuse (state : CompositeState) :
+    InvalidationBoundaryOutcome :=
+  let outcome :=
+    InvalidationPublication.publishReuse state.invalidationPublication
+  { state := installInvalidationPublication state outcome.state
+    accepted := outcome.accepted
+    effect := outcome.effect }
+
+private theorem authoritativePrepareInvalidation_preserves
+    state kind request (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativePrepareInvalidation state kind request).state := by
+  refine ⟨?_, ?_, ?_⟩
+  · change RuntimeWellFormed state
+    exact hstate.1
+  · change state.DeferredCancellationWellFormed
+    exact hstate.2
+  · simpa [authoritativePrepareInvalidation, installInvalidationPublication]
+      using InvalidationPublication.prepare_preserves_wellFormed
+        state.invalidationPublication kind request hstate.publication
+
+private theorem authoritativeAcknowledgeInvalidation_preserves
+    state kind ack (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeAcknowledgeInvalidation state kind ack).state := by
+  cases hpending : state.invalidationPublication.pending with
+  | none => simpa [authoritativeAcknowledgeInvalidation, hpending] using hstate
+  | some pending =>
+      by_cases hkind : pending.kind = kind
+      · simp only [authoritativeAcknowledgeInvalidation, hpending, hkind, if_pos]
+        refine ⟨?_, ?_, ?_⟩
+        · change RuntimeWellFormed state
+          exact hstate.1
+        · change state.DeferredCancellationWellFormed
+          exact hstate.2
+        · simpa [installInvalidationPublication] using
+              InvalidationPublication.acknowledge_preserves_wellFormed
+                state.invalidationPublication ack hstate.publication
+      · simpa [authoritativeAcknowledgeInvalidation, hpending, hkind] using hstate
+
+private theorem authoritativePublishReuse_preserves
+    state (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed (authoritativePublishReuse state).state := by
+  refine ⟨?_, ?_, ?_⟩
+  · change RuntimeWellFormed state
+    exact hstate.1
+  · change state.DeferredCancellationWellFormed
+    exact hstate.2
+  · simpa [authoritativePublishReuse, installInvalidationPublication] using
+      InvalidationPublication.publishReuse_preserves_wellFormed
+        state.invalidationPublication hstate.publication
+
+theorem authoritativePrepareUnmap_preserves_authoritativeRuntimeWellFormed
+    state subject addressSpace page
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativePrepareUnmap state subject addressSpace page).state :=
+  authoritativePrepareInvalidation_preserves _ _ _ hstate
+
+theorem authoritativePrepareCurrentUnmap_preserves_authoritativeRuntimeWellFormed
+    state page (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativePrepareCurrentUnmap state page).state :=
+  authoritativePrepareUnmap_preserves_authoritativeRuntimeWellFormed
+    state _ _ page hstate
+
+/-- Preparation retains the exact authoritative translation projection; no
+mapping or cached entry becomes visible before acknowledgement. -/
+theorem authoritativePrepareCurrentUnmap_preserves_projection
+    state page (hprojection : state.InvalidationProjectionCoherent) :
+    CompositeState.InvalidationProjectionCoherent
+      (authoritativePrepareCurrentUnmap state page).state := by
+  unfold CompositeState.InvalidationProjectionCoherent
+  simpa [authoritativePrepareCurrentUnmap, authoritativePrepareUnmap,
+    authoritativePrepareInvalidation, installInvalidationPublication] using
+    (InvalidationPublication.prepare_retains_published
+      state.invalidationPublication .unmap
+      (.unmap state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page)).trans hprojection
+
+theorem authoritativePrepareProtect_preserves_authoritativeRuntimeWellFormed
+    state subject addressSpace page permissions
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativePrepareProtect state subject addressSpace page permissions).state :=
+  authoritativePrepareInvalidation_preserves _ _ _ hstate
+
+theorem authoritativePrepareRelease_preserves_authoritativeRuntimeWellFormed
+    state subject slot (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativePrepareRelease state subject slot).state :=
+  authoritativePrepareInvalidation_preserves _ _ _ hstate
+
+theorem authoritativePrepareDestroy_preserves_authoritativeRuntimeWellFormed
+    state subject slot
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativePrepareDestroy state subject slot).state :=
+  authoritativePrepareInvalidation_preserves _ _ _ hstate
+
+theorem authoritativePrepareSwitch_preserves_authoritativeRuntimeWellFormed
+    state addressSpace (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativePrepareSwitch state addressSpace).state :=
+  authoritativePrepareInvalidation_preserves _ _ _ hstate
+
+theorem authoritativeAcknowledgeUnmap_preserves_authoritativeRuntimeWellFormed
+    state ack (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeAcknowledgeUnmap state ack).state :=
+  authoritativeAcknowledgeInvalidation_preserves _ _ _ hstate
+
+theorem authoritativeAcknowledgeProtect_preserves_authoritativeRuntimeWellFormed
+    state ack (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeAcknowledgeProtect state ack).state :=
+  authoritativeAcknowledgeInvalidation_preserves _ _ _ hstate
+
+theorem authoritativeAcknowledgeRelease_preserves_authoritativeRuntimeWellFormed
+    state ack (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeAcknowledgeRelease state ack).state :=
+  authoritativeAcknowledgeInvalidation_preserves _ _ _ hstate
+
+theorem authoritativeAcknowledgeDestroy_preserves_authoritativeRuntimeWellFormed
+    state ack (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeAcknowledgeDestroy state ack).state :=
+  authoritativeAcknowledgeInvalidation_preserves _ _ _ hstate
+
+theorem authoritativeAcknowledgeSwitch_preserves_authoritativeRuntimeWellFormed
+    state ack (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeAcknowledgeSwitch state ack).state :=
+  authoritativeAcknowledgeInvalidation_preserves _ _ _ hstate
+
+theorem authoritativePublishReuse_preserves_authoritativeRuntimeWellFormed
+    state (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed (authoritativePublishReuse state).state :=
+  authoritativePublishReuse_preserves state hstate
+
+/-- Every rejected authoritative preparation is a complete composite-state
+stutter and requests no machine effect. -/
+private theorem authoritativePrepareInvalidation_rejected_inert
+    state kind request
+    (hrejected :
+      (authoritativePrepareInvalidation state kind request).accepted = false) :
+    (authoritativePrepareInvalidation state kind request).state = state ∧
+      (authoritativePrepareInvalidation state kind request).effect = .none := by
+  have hinert :=
+    InvalidationPublication.prepare_rejected_inert
+      state.invalidationPublication kind request hrejected
+  constructor
+  · change installInvalidationPublication state
+      (InvalidationPublication.prepare state.invalidationPublication kind request).state =
+        state
+    rw [hinert.1]
+    exact installInvalidationPublication_self state
+  · exact hinert.2
+
+/-- Every rejected authoritative acknowledgement, including a missing or
+mismatched operation-family completion, preserves the full composite state. -/
+private theorem authoritativeAcknowledgeInvalidation_rejected_inert
+    state kind ack
+    (hrejected :
+      (authoritativeAcknowledgeInvalidation state kind ack).accepted = false) :
+    (authoritativeAcknowledgeInvalidation state kind ack).state = state ∧
+      (authoritativeAcknowledgeInvalidation state kind ack).effect = .none := by
+  cases hpending : state.invalidationPublication.pending with
+  | none =>
+      simp [authoritativeAcknowledgeInvalidation, hpending]
+  | some pending =>
+      by_cases hkind : pending.kind = kind
+      · have hrejected' :
+            (InvalidationPublication.acknowledge
+              state.invalidationPublication ack).accepted = false := by
+          simpa [authoritativeAcknowledgeInvalidation, hpending, hkind] using
+            hrejected
+        have hinert :=
+          InvalidationPublication.acknowledge_rejected_inert
+            state.invalidationPublication ack hrejected'
+        constructor
+        · simp only [authoritativeAcknowledgeInvalidation, hpending, hkind, if_pos]
+          rw [hinert.1]
+          exact installInvalidationPublication_self state
+        · simpa [authoritativeAcknowledgeInvalidation, hpending, hkind] using
+            hinert.2
+      · simp [authoritativeAcknowledgeInvalidation, hpending, hkind]
+
+private theorem authoritativeAcknowledgeInvalidation_accepted_exact
+    state kind ack
+    (haccepted :
+      (authoritativeAcknowledgeInvalidation state kind ack).accepted = true) :
+    ∃ pending,
+      state.invalidationPublication.pending = some pending ∧
+      pending.kind = kind ∧
+      ack.ticket = pending.ticket ∧
+      ack.effect = pending.step.effect ∧
+      (authoritativeAcknowledgeInvalidation state kind ack).state.invalidationPublication.published = pending.step.state ∧
+      (authoritativeAcknowledgeInvalidation state kind ack).state.invalidationPublication.pending = none := by
+  cases hpending : state.invalidationPublication.pending with
+  | none =>
+      simp [authoritativeAcknowledgeInvalidation, hpending] at haccepted
+  | some pending =>
+      by_cases hkind : pending.kind = kind
+      · have haccepted' :
+            (InvalidationPublication.acknowledge
+              state.invalidationPublication ack).accepted = true := by
+          simpa [authoritativeAcknowledgeInvalidation, hpending, hkind] using
+            haccepted
+        obtain ⟨exactPending, hexactPending, hticket, heffect,
+            hpublished, hcleared⟩ :=
+          InvalidationPublication.acknowledge_accepted_exact
+            state.invalidationPublication ack haccepted'
+        have hpendingEq : exactPending = pending := by
+          rw [hpending] at hexactPending
+          exact (Option.some.inj hexactPending).symm
+        subst exactPending
+        exact ⟨pending, rfl, hkind, hticket, heffect,
+          by simpa [authoritativeAcknowledgeInvalidation, hpending, hkind,
+            installInvalidationPublication] using hpublished,
+          by simpa [authoritativeAcknowledgeInvalidation, hpending, hkind,
+            installInvalidationPublication] using hcleared⟩
+      · simp [authoritativeAcknowledgeInvalidation, hpending, hkind] at haccepted
+
+private theorem authoritativePrepareInvalidation_accepted_pending_exact
+    state kind request
+    (haccepted :
+      (authoritativePrepareInvalidation state kind request).accepted = true) :
+    ∃ pending,
+      (authoritativePrepareInvalidation state kind request).state.invalidationPublication.pending = some pending ∧
+      pending.ticket = state.invalidationPublication.nextTicket ∧
+      pending.kind = kind ∧
+      pending.step =
+        StaleTranslation.step state.invalidationPublication.published request ∧
+      pending.step.accepted = true ∧
+      (authoritativePrepareInvalidation state kind request).effect =
+        pending.step.effect ∧
+      (authoritativePrepareInvalidation state kind request).state.invalidationPublication.published =
+        state.invalidationPublication.published := by
+  simpa [authoritativePrepareInvalidation, installInvalidationPublication]
+    using InvalidationPublication.prepare_accepted_pending_exact
+      state.invalidationPublication kind request haccepted
+
+/-- Accepted unmap preparation is determined and confined to the checked
+address-space page, while retaining the published mapping/cache state until
+that exact pending step is acknowledged. -/
+theorem authoritativePrepareUnmap_accepted_effect_ordered
+    state subject addressSpace page
+    (haccepted :
+      (authoritativePrepareUnmap state subject addressSpace page).accepted = true) :
+    (authoritativePrepareUnmap state subject addressSpace page).effect =
+        .page addressSpace page ∧
+      (authoritativePrepareUnmap state subject addressSpace page).state.invalidationPublication.published =
+        state.invalidationPublication.published ∧
+      ∃ pending,
+        (authoritativePrepareUnmap state subject addressSpace page).state.invalidationPublication.pending = some pending ∧
+        pending.ticket = state.invalidationPublication.nextTicket ∧
+        pending.kind = .unmap ∧
+        pending.step =
+          StaleTranslation.step state.invalidationPublication.published
+            (.unmap subject addressSpace page) := by
+  obtain ⟨pending, hpending, hticket, hkind, hstep, hstepAccepted,
+      heffect, hpublished⟩ :=
+    authoritativePrepareInvalidation_accepted_pending_exact
+      state .unmap (.unmap subject addressSpace page) haccepted
+  rw [hstep] at hstepAccepted
+  have hdetermined :=
+    StaleTranslation.unmap_accepted_effect
+      state.invalidationPublication.published subject addressSpace page
+        hstepAccepted
+  exact ⟨heffect.trans (hstep ▸ hdetermined), hpublished,
+    pending, hpending, hticket, hkind, hstep⟩
+
+/-- The current-unmap machine effect is confined to the active authoritative
+root and caller-selected page; neither subject nor root is an input. -/
+theorem authoritativePrepareCurrentUnmap_accepted_effect_ordered
+    state page
+    (haccepted :
+      (authoritativePrepareCurrentUnmap state page).accepted = true) :
+    (authoritativePrepareCurrentUnmap state page).effect =
+        .page state.execution.core.context.activeAddressSpace page ∧
+      ((authoritativePrepareCurrentUnmap state page).state.invalidationPublication.published) =
+        state.invalidationPublication.published := by
+  have h := authoritativePrepareUnmap_accepted_effect_ordered state
+    state.execution.core.context.currentSubject
+    state.execution.core.context.activeAddressSpace page haccepted
+  exact ⟨h.1, h.2.1⟩
+
+theorem authoritativePrepareProtect_accepted_effect_ordered
+    state subject addressSpace page permissions
+    (haccepted :
+      (authoritativePrepareProtect state subject addressSpace page permissions).accepted = true) :
+    (authoritativePrepareProtect state subject addressSpace page permissions).effect =
+        .page addressSpace page ∧
+      (authoritativePrepareProtect state subject addressSpace page permissions).state.invalidationPublication.published =
+        state.invalidationPublication.published ∧
+      ∃ pending,
+        (authoritativePrepareProtect state subject addressSpace page permissions).state.invalidationPublication.pending = some pending ∧
+        pending.ticket = state.invalidationPublication.nextTicket ∧
+        pending.kind = .protect ∧
+        pending.step =
+          StaleTranslation.step state.invalidationPublication.published
+            (.protect subject addressSpace page permissions) := by
+  obtain ⟨pending, hpending, hticket, hkind, hstep, hstepAccepted,
+      heffect, hpublished⟩ :=
+    authoritativePrepareInvalidation_accepted_pending_exact
+      state .protect (.protect subject addressSpace page permissions) haccepted
+  rw [hstep] at hstepAccepted
+  have hdetermined :=
+    StaleTranslation.protect_accepted_effect
+      state.invalidationPublication.published subject addressSpace page permissions
+        hstepAccepted
+  exact ⟨heffect.trans (hstep ▸ hdetermined), hpublished,
+    pending, hpending, hticket, hkind, hstep⟩
+
+theorem authoritativePrepareRelease_accepted_effect_ordered
+    state subject slot
+    (haccepted :
+      (authoritativePrepareRelease state subject slot).accepted = true) :
+    (authoritativePrepareRelease state subject slot).effect = .flush ∧
+      (authoritativePrepareRelease state subject slot).state.invalidationPublication.published =
+        state.invalidationPublication.published ∧
+      ∃ pending,
+        (authoritativePrepareRelease state subject slot).state.invalidationPublication.pending = some pending ∧
+        pending.ticket = state.invalidationPublication.nextTicket ∧
+        pending.kind = .release ∧
+        pending.step =
+          StaleTranslation.step state.invalidationPublication.published
+            (.release subject slot) := by
+  obtain ⟨pending, hpending, hticket, hkind, hstep, hstepAccepted,
+      heffect, hpublished⟩ :=
+    authoritativePrepareInvalidation_accepted_pending_exact
+      state .release (.release subject slot) haccepted
+  rw [hstep] at hstepAccepted
+  have hdetermined :=
+    StaleTranslation.release_accepted_effect
+      state.invalidationPublication.published subject slot hstepAccepted
+  exact ⟨heffect.trans (hstep ▸ hdetermined), hpublished,
+    pending, hpending, hticket, hkind, hstep⟩
+
+theorem authoritativePrepareDestroy_accepted_effect_ordered
+    state subject slot
+    (haccepted :
+      (authoritativePrepareDestroy state subject slot).accepted = true) :
+    ∃ cap,
+      Capability.lookup
+          state.invalidationPublication.published.virtual.memory.capabilities
+          subject slot = .found cap ∧
+      (authoritativePrepareDestroy state subject slot).effect =
+        .space cap.object ∧
+      (authoritativePrepareDestroy state subject slot).state.invalidationPublication.published =
+        state.invalidationPublication.published ∧
+      ∃ pending,
+        (authoritativePrepareDestroy state subject slot).state.invalidationPublication.pending = some pending ∧
+        pending.ticket = state.invalidationPublication.nextTicket ∧
+        pending.kind = .destroy ∧
+        pending.step =
+          StaleTranslation.step state.invalidationPublication.published
+            (.destroy subject slot) := by
+  obtain ⟨pending, hpending, hticket, hkind, hstep, hstepAccepted,
+      heffect, hpublished⟩ :=
+    authoritativePrepareInvalidation_accepted_pending_exact
+      state .destroy (.destroy subject slot) haccepted
+  rw [hstep] at hstepAccepted
+  obtain ⟨cap, hlookup, hdetermined⟩ :=
+    StaleTranslation.destroy_accepted_effect
+      state.invalidationPublication.published subject slot hstepAccepted
+  exact ⟨cap, hlookup, heffect.trans (hstep ▸ hdetermined), hpublished,
+    pending, hpending, hticket, hkind, hstep⟩
+
+theorem authoritativePrepareSwitch_accepted_effect_ordered
+    state addressSpace
+    (haccepted :
+      (authoritativePrepareSwitch state addressSpace).accepted = true) :
+    (authoritativePrepareSwitch state addressSpace).effect = .flush ∧
+      (authoritativePrepareSwitch state addressSpace).state.invalidationPublication.published =
+        state.invalidationPublication.published ∧
+      ∃ pending,
+        (authoritativePrepareSwitch state addressSpace).state.invalidationPublication.pending = some pending ∧
+        pending.ticket = state.invalidationPublication.nextTicket ∧
+        pending.kind = .switch ∧
+        pending.step =
+          StaleTranslation.step state.invalidationPublication.published
+            (.switch addressSpace) := by
+  obtain ⟨pending, hpending, hticket, hkind, hstep, hstepAccepted,
+      heffect, hpublished⟩ :=
+    authoritativePrepareInvalidation_accepted_pending_exact
+      state .switch (.switch addressSpace) haccepted
+  have hdetermined :=
+    (StaleTranslation.switch_effect
+      state.invalidationPublication.published addressSpace).2
+  exact ⟨heffect.trans (hstep ▸ hdetermined), hpublished,
+    pending, hpending, hticket, hkind, hstep⟩
+
+/-- Each operation-family completion publishes only the exact pending
+successor, after matching both its fresh ticket and determined effect. -/
+theorem authoritativeAcknowledgeUnmap_accepted_exact state ack
+    (haccepted : (authoritativeAcknowledgeUnmap state ack).accepted = true) :
+    ∃ pending,
+      state.invalidationPublication.pending = some pending ∧
+      pending.kind = .unmap ∧
+      ack.ticket = pending.ticket ∧
+      ack.effect = pending.step.effect ∧
+      (authoritativeAcknowledgeUnmap state ack).state.invalidationPublication.published = pending.step.state ∧
+      (authoritativeAcknowledgeUnmap state ack).state.invalidationPublication.pending = none :=
+  authoritativeAcknowledgeInvalidation_accepted_exact _ _ _ haccepted
+
+theorem authoritativeAcknowledgeProtect_accepted_exact state ack
+    (haccepted : (authoritativeAcknowledgeProtect state ack).accepted = true) :
+    ∃ pending,
+      state.invalidationPublication.pending = some pending ∧
+      pending.kind = .protect ∧
+      ack.ticket = pending.ticket ∧
+      ack.effect = pending.step.effect ∧
+      (authoritativeAcknowledgeProtect state ack).state.invalidationPublication.published = pending.step.state ∧
+      (authoritativeAcknowledgeProtect state ack).state.invalidationPublication.pending = none :=
+  authoritativeAcknowledgeInvalidation_accepted_exact _ _ _ haccepted
+
+theorem authoritativeAcknowledgeRelease_accepted_exact state ack
+    (haccepted : (authoritativeAcknowledgeRelease state ack).accepted = true) :
+    ∃ pending,
+      state.invalidationPublication.pending = some pending ∧
+      pending.kind = .release ∧
+      ack.ticket = pending.ticket ∧
+      ack.effect = pending.step.effect ∧
+      (authoritativeAcknowledgeRelease state ack).state.invalidationPublication.published = pending.step.state ∧
+      (authoritativeAcknowledgeRelease state ack).state.invalidationPublication.pending = none :=
+  authoritativeAcknowledgeInvalidation_accepted_exact _ _ _ haccepted
+
+theorem authoritativeAcknowledgeDestroy_accepted_exact state ack
+    (haccepted : (authoritativeAcknowledgeDestroy state ack).accepted = true) :
+    ∃ pending,
+      state.invalidationPublication.pending = some pending ∧
+      pending.kind = .destroy ∧
+      ack.ticket = pending.ticket ∧
+      ack.effect = pending.step.effect ∧
+      (authoritativeAcknowledgeDestroy state ack).state.invalidationPublication.published = pending.step.state ∧
+      (authoritativeAcknowledgeDestroy state ack).state.invalidationPublication.pending = none :=
+  authoritativeAcknowledgeInvalidation_accepted_exact _ _ _ haccepted
+
+theorem authoritativeAcknowledgeSwitch_accepted_exact state ack
+    (haccepted : (authoritativeAcknowledgeSwitch state ack).accepted = true) :
+    ∃ pending,
+      state.invalidationPublication.pending = some pending ∧
+      pending.kind = .switch ∧
+      ack.ticket = pending.ticket ∧
+      ack.effect = pending.step.effect ∧
+      (authoritativeAcknowledgeSwitch state ack).state.invalidationPublication.published = pending.step.state ∧
+      (authoritativeAcknowledgeSwitch state ack).state.invalidationPublication.pending = none :=
+  authoritativeAcknowledgeInvalidation_accepted_exact _ _ _ haccepted
+
+/-- An unmap request for a non-owned address space cannot issue even a page
+invalidation: the entire authoritative composite state is unchanged. -/
+theorem authoritativePrepareUnmap_wrong_owner_inert
+    state subject addressSpace page owner
+    (howner :
+      state.invalidationPublication.published.virtual.owner addressSpace =
+        some owner)
+    (hne : owner ≠ subject) :
+    (authoritativePrepareUnmap state subject addressSpace page).accepted = false ∧
+      (authoritativePrepareUnmap state subject addressSpace page).state = state ∧
+      (authoritativePrepareUnmap state subject addressSpace page).effect = .none := by
+  cases hpending : state.invalidationPublication.pending with
+  | some pending =>
+      simp [authoritativePrepareUnmap, authoritativePrepareInvalidation,
+        InvalidationPublication.prepare, hpending]
+  | none =>
+      have hinert :=
+        StaleTranslation.unmap_wrong_owner_inert
+          state.invalidationPublication.published subject addressSpace page owner
+            howner hne
+      simp [authoritativePrepareUnmap, authoritativePrepareInvalidation,
+        InvalidationPublication.prepare, hpending, hinert.1]
+
+theorem authoritativePrepareProtect_wrong_owner_inert
+    state subject addressSpace page permissions owner
+    (howner :
+      state.invalidationPublication.published.virtual.owner addressSpace =
+        some owner)
+    (hne : owner ≠ subject) :
+    (authoritativePrepareProtect state subject addressSpace page permissions).accepted = false ∧
+      (authoritativePrepareProtect state subject addressSpace page permissions).state = state ∧
+      (authoritativePrepareProtect state subject addressSpace page permissions).effect = .none := by
+  cases hpending : state.invalidationPublication.pending with
+  | some pending =>
+      simp [authoritativePrepareProtect, authoritativePrepareInvalidation,
+        InvalidationPublication.prepare, hpending]
+  | none =>
+      have hinert :=
+        StaleTranslation.protect_wrong_owner_inert
+          state.invalidationPublication.published subject addressSpace page
+            permissions owner howner hne
+      simp [authoritativePrepareProtect, authoritativePrepareInvalidation,
+        InvalidationPublication.prepare, hpending, hinert.1]
+
+theorem authoritativePrepareUnmap_rejected_inert state subject addressSpace page
+    (hrejected :
+      (authoritativePrepareUnmap state subject addressSpace page).accepted = false) :
+    (authoritativePrepareUnmap state subject addressSpace page).state = state ∧
+      (authoritativePrepareUnmap state subject addressSpace page).effect = .none :=
+  authoritativePrepareInvalidation_rejected_inert _ _ _ hrejected
+
+theorem authoritativePrepareCurrentUnmap_rejected_inert state page
+    (hrejected :
+      (authoritativePrepareCurrentUnmap state page).accepted = false) :
+    (authoritativePrepareCurrentUnmap state page).state = state ∧
+      (authoritativePrepareCurrentUnmap state page).effect = .none :=
+  authoritativePrepareUnmap_rejected_inert _ _ _ _ hrejected
+
+theorem authoritativePrepareProtect_rejected_inert
+    state subject addressSpace page permissions
+    (hrejected :
+      (authoritativePrepareProtect state subject addressSpace page permissions).accepted = false) :
+    (authoritativePrepareProtect state subject addressSpace page permissions).state =
+        state ∧
+      (authoritativePrepareProtect state subject addressSpace page permissions).effect =
+        .none :=
+  authoritativePrepareInvalidation_rejected_inert _ _ _ hrejected
+
+theorem authoritativePrepareRelease_rejected_inert state subject slot
+    (hrejected :
+      (authoritativePrepareRelease state subject slot).accepted = false) :
+    (authoritativePrepareRelease state subject slot).state = state ∧
+      (authoritativePrepareRelease state subject slot).effect = .none :=
+  authoritativePrepareInvalidation_rejected_inert _ _ _ hrejected
+
+theorem authoritativePrepareDestroy_rejected_inert state subject slot
+    (hrejected :
+      (authoritativePrepareDestroy state subject slot).accepted = false) :
+    (authoritativePrepareDestroy state subject slot).state = state ∧
+      (authoritativePrepareDestroy state subject slot).effect = .none :=
+  authoritativePrepareInvalidation_rejected_inert _ _ _ hrejected
+
+theorem authoritativePrepareSwitch_rejected_inert state addressSpace
+    (hrejected :
+      (authoritativePrepareSwitch state addressSpace).accepted = false) :
+    (authoritativePrepareSwitch state addressSpace).state = state ∧
+      (authoritativePrepareSwitch state addressSpace).effect = .none :=
+  authoritativePrepareInvalidation_rejected_inert _ _ _ hrejected
+
+theorem authoritativeAcknowledgeUnmap_rejected_inert state ack
+    (hrejected : (authoritativeAcknowledgeUnmap state ack).accepted = false) :
+    (authoritativeAcknowledgeUnmap state ack).state = state ∧
+      (authoritativeAcknowledgeUnmap state ack).effect = .none :=
+  authoritativeAcknowledgeInvalidation_rejected_inert _ _ _ hrejected
+
+theorem authoritativeAcknowledgeCurrentUnmap_rejected_inert state ack
+    (hrejected :
+      (authoritativeAcknowledgeCurrentUnmap state ack).accepted = false) :
+    (authoritativeAcknowledgeCurrentUnmap state ack).state = state ∧
+      (authoritativeAcknowledgeCurrentUnmap state ack).effect = .none := by
+  cases haccepted :
+      (authoritativeAcknowledgeUnmap state ack).accepted with
+  | false =>
+      have hinert :=
+        authoritativeAcknowledgeUnmap_rejected_inert state ack haccepted
+      simpa [authoritativeAcknowledgeCurrentUnmap, haccepted] using hinert
+  | true =>
+      simp [authoritativeAcknowledgeCurrentUnmap, haccepted] at hrejected
+
+/-- An accepted current-unmap acknowledgement installs one identical state in
+the publication protocol, authoritative TLB, and both virtual-memory
+consumers. -/
+theorem authoritativeAcknowledgeCurrentUnmap_accepted_projects
+    state ack
+    (haccepted :
+      (authoritativeAcknowledgeCurrentUnmap state ack).accepted = true) :
+    let next := (authoritativeAcknowledgeCurrentUnmap state ack).state
+    next.InvalidationProjectionCoherent ∧
+      next.virtualMemory = next.resumable.translations.virtual ∧
+      next.ipc.virtualMemory = next.virtualMemory := by
+  cases haccepted' :
+      (authoritativeAcknowledgeUnmap state ack).accepted with
+  | false =>
+      simp [authoritativeAcknowledgeCurrentUnmap, haccepted'] at haccepted
+  | true =>
+      simp [authoritativeAcknowledgeCurrentUnmap, haccepted',
+        CompositeState.InvalidationProjectionCoherent,
+        installAcknowledgedInvalidation, installInvalidationPublication,
+        installVirtualMemory]
+
+theorem authoritativeAcknowledgeProtect_rejected_inert state ack
+    (hrejected : (authoritativeAcknowledgeProtect state ack).accepted = false) :
+    (authoritativeAcknowledgeProtect state ack).state = state ∧
+      (authoritativeAcknowledgeProtect state ack).effect = .none :=
+  authoritativeAcknowledgeInvalidation_rejected_inert _ _ _ hrejected
+
+theorem authoritativeAcknowledgeRelease_rejected_inert state ack
+    (hrejected : (authoritativeAcknowledgeRelease state ack).accepted = false) :
+    (authoritativeAcknowledgeRelease state ack).state = state ∧
+      (authoritativeAcknowledgeRelease state ack).effect = .none :=
+  authoritativeAcknowledgeInvalidation_rejected_inert _ _ _ hrejected
+
+theorem authoritativeAcknowledgeDestroy_rejected_inert state ack
+    (hrejected : (authoritativeAcknowledgeDestroy state ack).accepted = false) :
+    (authoritativeAcknowledgeDestroy state ack).state = state ∧
+      (authoritativeAcknowledgeDestroy state ack).effect = .none :=
+  authoritativeAcknowledgeInvalidation_rejected_inert _ _ _ hrejected
+
+theorem authoritativeAcknowledgeSwitch_rejected_inert state ack
+    (hrejected : (authoritativeAcknowledgeSwitch state ack).accepted = false) :
+    (authoritativeAcknowledgeSwitch state ack).state = state ∧
+      (authoritativeAcknowledgeSwitch state ack).effect = .none :=
+  authoritativeAcknowledgeInvalidation_rejected_inert _ _ _ hrejected
+
+/-- No accepted prepare, including release and destruction, changes the
+caller-visible logical mapping/cache state before machine acknowledgement. -/
+theorem authoritativePrepare_retains_published state kind request :
+    (authoritativePrepareInvalidation state kind request).state.invalidationPublication.published =
+      state.invalidationPublication.published :=
+  InvalidationPublication.prepare_retains_published
+    state.invalidationPublication kind request
+
+/-- A pending accepted transition makes reuse publication impossible.  Thus a
+released frame cannot become allocatable or mappable through the authoritative
+reuse boundary before the exact invalidation acknowledgement. -/
+theorem authoritativePrepare_prohibits_reuse_before_ack state kind request
+    (haccepted :
+      (authoritativePrepareInvalidation state kind request).accepted = true) :
+    (authoritativePublishReuse
+      (authoritativePrepareInvalidation state kind request).state).accepted =
+        false := by
+  have hpending :=
+    InvalidationPublication.prepare_accepted_fresh_ticket
+      state.invalidationPublication kind request haccepted
+  rcases hpending with ⟨pending, hpending, _, _⟩
+  change (InvalidationPublication.publishReuse
+    (InvalidationPublication.prepare state.invalidationPublication kind request).state).accepted =
+      false
+  simp [InvalidationPublication.publishReuse, hpending]
+
+/-- An acknowledgement routed through the wrong operation-family boundary is
+a complete stutter even if its ticket and effect happen to match. -/
+theorem authoritativeAcknowledge_wrong_kind_inert state expected ack pending
+    (hpending : state.invalidationPublication.pending = some pending)
+    (hkind : pending.kind ≠ expected) :
+    (authoritativeAcknowledgeInvalidation state expected ack).accepted = false ∧
+      (authoritativeAcknowledgeInvalidation state expected ack).state = state ∧
+      (authoritativeAcknowledgeInvalidation state expected ack).effect = .none := by
+  simp [authoritativeAcknowledgeInvalidation, hpending, hkind]
+
+theorem authoritativeReuse_requires_retirement_ack state
+    (haccepted : (authoritativePublishReuse state).accepted = true) :
+    state.invalidationPublication.pending = none ∧
+      state.invalidationPublication.releaseAcknowledged = true ∧
+      state.invalidationPublication.destroyAcknowledged = true := by
+  exact InvalidationPublication.reuse_publication_requires_retirement_ack
+    state.invalidationPublication haccepted
 
 def applyAuthoritativeOperation (state : CompositeState) :
     AuthoritativeOperation → CompositeState
@@ -14091,6 +15133,86 @@ def authoritativeGate (state : CompositeState) (operation : AuthoritativeOperati
       | .handling _ | .halted _ => state := by
   cases hmode : state.execution.mode <;>
     simp [authoritativeGate, applyAuthoritativeOperation, hmode]
+
+private theorem gate_retains_invalidationPublication state operation :
+    (gate state operation).state.invalidationPublication =
+      state.invalidationPublication := by
+  cases operation <;> cases hmode : state.execution.mode <;>
+    simp [gate, hmode, applyOperation, selectLiveReturnAuthority,
+      installVirtualMemory, dispatchIPC]
+  all_goals repeat' first | split
+  all_goals rfl
+
+private theorem restoreBlockingPeer_invalidationPublication
+    state blocking next
+    (hnext : restoreBlockingPeer state blocking = .ok next) :
+    next.invalidationPublication = state.invalidationPublication := by
+  unfold restoreBlockingPeer at hnext
+  repeat' first | split at hnext
+  all_goals try contradiction
+  all_goals injection hnext with hnext
+  all_goals subst next
+  all_goals rfl
+
+private theorem publishReleasedBlockingContext_invalidationPublication
+    state blocking saved next
+    (hnext : publishReleasedBlockingContext state blocking saved = .ok next) :
+    next.invalidationPublication = state.invalidationPublication := by
+  unfold publishReleasedBlockingContext at hnext
+  repeat' first | split at hnext
+  all_goals try contradiction
+  all_goals injection hnext with hnext
+  all_goals subst next
+  all_goals rfl
+
+private theorem blockingGate_retains_invalidationPublication state operation :
+    (blockingGate state operation).state.invalidationPublication =
+      state.invalidationPublication := by
+  cases hmode : state.execution.mode with
+  | handling entry => simp [blockingGate, hmode]
+  | halted record => simp [blockingGate, hmode]
+  | running =>
+      cases operation <;>
+        simp only [blockingGate, hmode, applyBlockingOperation,
+          dispatchBlockingReceive, dispatchBlockingSend, dispatchBlockingCancel]
+      all_goals
+        repeat' first | split
+        all_goals first
+          | rfl
+          | exact restoreBlockingPeer_invalidationPublication _ _ _ ‹_›
+          | exact publishReleasedBlockingContext_invalidationPublication
+              _ _ _ _ ‹_›
+
+private theorem drainDeferredCancellation_retains_invalidationPublication
+    state subject :
+    (drainDeferredCancellation state subject).state.invalidationPublication =
+      state.invalidationPublication := by
+  unfold drainDeferredCancellation
+  generalize BlockingIPCContext.drainDeferred state.blockingIPCContext
+    state.deferredCancels state.resumable.contexts state.resumable.capacity subject =
+      outcome
+  cases hresult : outcome.result <;>
+    simp [hresult, publishDeferredDrain, publishBlockingIPCContext]
+
+private theorem authoritativeGate_preserves_invalidationPublication state operation
+    (hpublication :
+      InvalidationPublication.WellFormed state.invalidationPublication) :
+    InvalidationPublication.WellFormed
+      (authoritativeGate state operation).state.invalidationPublication := by
+  cases operation with
+  | ordinary operation =>
+      rw [authoritativeGate_ordinary_state,
+        gate_retains_invalidationPublication]
+      exact hpublication
+  | blocking operation =>
+      rw [authoritativeGate_blocking_state,
+        blockingGate_retains_invalidationPublication]
+      exact hpublication
+  | drainDeferred subject =>
+      cases hmode : state.execution.mode <;>
+        simp [authoritativeGate, hmode, applyAuthoritativeOperation,
+          drainDeferredCancellation_retains_invalidationPublication,
+          hpublication]
 
 /-- No authoritative ordinary, blocking, or deferred-drain operation can
 replace the boot-accepted PCI authority or the current live observation.
@@ -14651,6 +15773,10 @@ private theorem authoritativeGate_ordinary_preserves_deferredBlockingRuntimeWell
       exact dormantCancellationCompatible_preserves state _ hstate
         (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
           state _ (.unmap page) hblocking) hcompatible
+  | protect page permissions =>
+      exact dormantCancellationCompatible_preserves state _ hstate
+        (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
+          state _ (.protect page permissions) hblocking) hcompatible
   | syscall call =>
       exact dormantCancellationCompatible_preserves state _ hstate
         (authoritativeGate_blockingRuntimePreserving_preserves_blockingRuntimeWellFormed
@@ -14699,8 +15825,12 @@ theorem authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
     (hcompatible : AuthoritativeOperationCompatible state (.ordinary operation)) :
     AuthoritativeRuntimeWellFormed
       (authoritativeGate state (.ordinary operation)).state := by
-  exact authoritativeGate_ordinary_preserves_deferredBlockingRuntimeWellFormed
-    state operation hstate hcompatible
+  have hold :=
+    authoritativeGate_ordinary_preserves_deferredBlockingRuntimeWellFormed
+      state operation hstate.deferred hcompatible
+  refine ⟨hold.1, hold.2, ?_⟩
+  exact authoritativeGate_preserves_invalidationPublication state
+    (.ordinary operation) hstate.publication
 
 /-- Structural readiness consumed by the lower transition proofs.  The
 authoritative invariant now implies every branch of this predicate; it is no
@@ -14718,7 +15848,7 @@ theorem AuthoritativeRuntimeWellFormed.operationReady
   cases operation with
   | ordinary operation => trivial
   | blocking operation => exact hstate.blocking
-  | drainDeferred subject => exact hstate
+  | drainDeferred subject => exact hstate.deferred
 
 /-- Every structurally ready successor-gate operation preserves the older
 global runtime projection.  Preservation of deferred authority is the
@@ -14752,9 +15882,12 @@ theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible
       exact authoritativeGate_ordinary_preserves_authoritativeRuntimeWellFormed
         state operation hstate hcompatible
   | blocking operation =>
-      exact dormantCancellationCompatible_preserves state _ hstate
-        (authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
-          state operation hstate.blocking) hcompatible
+      have hold := dormantCancellationCompatible_preserves state _ hstate.deferred
+          (authoritativeGate_blocking_preserves_blockingRuntimeWellFormed
+            state operation hstate.blocking) hcompatible
+      refine ⟨hold.1, hold.2, ?_⟩
+      exact authoritativeGate_preserves_invalidationPublication state
+        (.blocking operation) hstate.publication
   | drainDeferred subject =>
       cases hmode : state.execution.mode with
       | running =>
@@ -14762,11 +15895,12 @@ theorem authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible
             (authoritativeGate state (.drainDeferred subject)).state =
               (drainDeferredCancellation state subject).state by
             simp [authoritativeGate, hmode, applyAuthoritativeOperation]]
-          change DeferredBlockingRuntimeWellFormed
-            (drainDeferredCancellation state subject).state
-          exact
+          have hold :=
             drainDeferredCancellation_preserves_deferredBlockingRuntimeWellFormed
-              state subject hstate
+              state subject hstate.deferred
+          refine ⟨hold.1, hold.2, ?_⟩
+          rw [drainDeferredCancellation_retains_invalidationPublication]
+          exact hstate.publication
       | handling active => simpa [authoritativeGate, hmode] using hstate
       | halted record => simpa [authoritativeGate, hmode] using hstate
 
@@ -14931,6 +16065,189 @@ theorem unmap_authoritativeOperationCompatible state page
           state state hstate rfl rfl rfl rfl
       · exact installVirtualMemory_dormantCancellationCompatible state _ _ hstate
 
+/-- Conditional accepted-unmap refinement for a state whose publication and
+runtime projections are already equal.  This theorem does not establish that
+`bootRuntime` inhabits the premise or that the ordinary authoritative gate
+preserves it across unrelated mapping/lifecycle operations. -/
+theorem authoritativeCurrentUnmap_accepted_publication
+    state page ack
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hprojection : state.InvalidationProjectionCoherent)
+    (hmode : state.execution.mode = .running)
+    (hprepared :
+      (authoritativePrepareCurrentUnmap state page).accepted = true)
+    (hacknowledged :
+      (authoritativeAcknowledgeCurrentUnmap
+        (authoritativePrepareCurrentUnmap state page).state ack).accepted = true) :
+    let prepared := (authoritativePrepareCurrentUnmap state page).state
+    let next := (authoritativeAcknowledgeCurrentUnmap prepared ack).state
+    prepared.virtualMemory = state.virtualMemory ∧
+      prepared.resumable.translations = state.resumable.translations ∧
+      AuthoritativeRuntimeWellFormed next ∧
+      next.InvalidationProjectionCoherent ∧
+      next.virtualMemory = next.resumable.translations.virtual ∧
+      next.ipc.virtualMemory = next.virtualMemory := by
+  let prepared := (authoritativePrepareCurrentUnmap state page).state
+  change (authoritativeAcknowledgeCurrentUnmap prepared ack).accepted = true at hacknowledged
+  have hpreparedInvariant :
+      AuthoritativeRuntimeWellFormed prepared :=
+    authoritativePrepareCurrentUnmap_preserves_authoritativeRuntimeWellFormed
+      state page hstate
+  obtain ⟨pending, hpending, _hticket, _hkind, hstep, hstepAccepted,
+      _heffect, _hpublished⟩ :=
+    authoritativePrepareInvalidation_accepted_pending_exact state .unmap
+      (.unmap state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page) hprepared
+  have hgenericAck :
+      (authoritativeAcknowledgeUnmap prepared ack).accepted = true := by
+    cases hgeneric :
+        (authoritativeAcknowledgeUnmap prepared ack).accepted with
+    | false =>
+        have hspecialized :
+            (authoritativeAcknowledgeCurrentUnmap prepared ack).accepted =
+              false := by
+          simp [authoritativeAcknowledgeCurrentUnmap, hgeneric]
+        rw [hspecialized] at hacknowledged
+        contradiction
+    | true => rfl
+  obtain ⟨exactPending, hexactPending, _hexactKind, _hackTicket, _hackEffect,
+      hpublishedNext, _hcleared⟩ :=
+    authoritativeAcknowledgeUnmap_accepted_exact prepared ack hgenericAck
+  have hpendingEq : exactPending = pending := by
+    change prepared.invalidationPublication.pending = some pending at hpending
+    rw [hpending] at hexactPending
+    exact (Option.some.inj hexactPending).symm
+  subst exactPending
+  have hstaleAccepted :
+      (StaleTranslation.step state.resumable.translations
+        (.unmap state.execution.core.context.currentSubject
+          state.execution.core.context.activeAddressSpace page)).accepted = true := by
+    rw [← hprojection, ← hstep]
+    exact hstepAccepted
+  have htlbAccepted :
+      (TLB.unmap state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page).result =
+          .accepted := by
+    simp only [StaleTranslation.step] at hstaleAccepted
+    split at hstaleAccepted <;> simp_all
+  have hvirtualProjection :
+      state.resumable.translations.virtual = state.virtualMemory :=
+    hstate.1.1.2.2.2.2.2.2.2.2.1
+  have hvmAccepted :
+      (VirtualMapping.unmap state.virtualMemory
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page).result =
+          .accepted := by
+    simp only [TLB.unmap] at htlbAccepted
+    rw [hvirtualProjection] at htlbAccepted
+    split at htlbAccepted <;> simp_all
+  have hgate :=
+    authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible
+      state (.ordinary (.unmap page)) hstate
+      (unmap_authoritativeOperationCompatible state page hstate)
+  have hpublication :=
+    InvalidationPublication.acknowledge_preserves_wellFormed
+      prepared.invalidationPublication ack hpreparedInvariant.publication
+  let acknowledgedPublication :=
+    (authoritativeAcknowledgeUnmap prepared ack).state.invalidationPublication
+  have htranslationNext :
+      acknowledgedPublication.published =
+        (TLB.unmap state.resumable.translations
+          state.execution.core.context.currentSubject
+          state.execution.core.context.activeAddressSpace page).state := by
+    calc
+      acknowledgedPublication.published = pending.step.state := hpublishedNext
+      _ = (StaleTranslation.step state.invalidationPublication.published
+          (.unmap state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page)).state :=
+        congrArg StaleTranslation.Step.state hstep
+      _ = (StaleTranslation.step state.resumable.translations
+          (.unmap state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page)).state := by
+        rw [hprojection]
+      _ = (TLB.unmap state.resumable.translations
+          state.execution.core.context.currentSubject
+          state.execution.core.context.activeAddressSpace page).state := by
+        simp [StaleTranslation.step, htlbAccepted]
+  have hprojects :=
+    authoritativeAcknowledgeCurrentUnmap_accepted_projects prepared ack
+      hacknowledged
+  refine ⟨?_, ?_, ?_, hprojects.1, hprojects.2.1, hprojects.2.2⟩
+  · rfl
+  · rfl
+  · refine ⟨?_, ?_, ?_⟩
+    · show RuntimeWellFormed
+        (authoritativeAcknowledgeCurrentUnmap prepared ack).state
+      simp only [authoritativeAcknowledgeCurrentUnmap, hgenericAck, if_pos]
+      change RuntimeWellFormed
+        (installVirtualMemory prepared acknowledgedPublication.published.virtual
+          acknowledgedPublication.published)
+      rw [htranslationNext]
+      change RuntimeWellFormed
+        (installVirtualMemory state
+          (TLB.unmap state.resumable.translations
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page).state.virtual
+          (TLB.unmap state.resumable.translations
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page).state)
+      simpa [authoritativeGate, hmode,
+        applyAuthoritativeOperation, applyOperation, TLB.unmap,
+        TLB.invalidatePage,
+        hvirtualProjection, hvmAccepted] using hgate.1
+    · show CompositeState.DeferredCancellationWellFormed
+        (authoritativeAcknowledgeCurrentUnmap prepared ack).state
+      simp only [authoritativeAcknowledgeCurrentUnmap, hgenericAck, if_pos]
+      change (installVirtualMemory prepared
+        acknowledgedPublication.published.virtual
+          acknowledgedPublication.published).DeferredCancellationWellFormed
+      rw [htranslationNext]
+      change CompositeState.DeferredCancellationWellFormed
+        (installVirtualMemory state
+          (TLB.unmap state.resumable.translations
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page).state.virtual
+          (TLB.unmap state.resumable.translations
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page).state)
+      simpa [authoritativeGate, hmode,
+        applyAuthoritativeOperation, applyOperation, TLB.unmap,
+        TLB.invalidatePage,
+        hvirtualProjection, hvmAccepted] using hgate.2
+    · show InvalidationPublication.WellFormed
+        ((authoritativeAcknowledgeCurrentUnmap prepared ack).state.invalidationPublication)
+      simp only [authoritativeAcknowledgeCurrentUnmap, hgenericAck, if_pos]
+      change InvalidationPublication.WellFormed acknowledgedPublication
+      simpa [acknowledgedPublication, authoritativeAcknowledgeUnmap,
+        authoritativeAcknowledgeInvalidation, installInvalidationPublication,
+        hexactPending, _hexactKind] using hpublication
+
+/-- Permission reduction uses the same exact mapping/TLB publisher and leaves
+every deferred-cancellation projection literal. -/
+theorem protect_authoritativeOperationCompatible state page permissions
+    (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeOperationCompatible state
+      (.ordinary (.protect page permissions)) := by
+  change DormantCancellationCompatible state
+    (authoritativeGate state (.ordinary (.protect page permissions))).state
+  cases hmode : state.execution.mode with
+  | handling active =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | halted record =>
+      simpa [authoritativeGate, hmode] using
+        dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+  | running =>
+      simp only [authoritativeGate, hmode, applyAuthoritativeOperation,
+        applyOperation]
+      split
+      · exact dormantCancellationCompatible_of_exact_projections
+          state state hstate rfl rfl rfl rfl
+      · exact installVirtualMemory_dormantCancellationCompatible state _ _ hstate
+
 /-- Raw mapping has a closed preservation theorem at the folded authoritative
 boundary; callers need no post-state compatibility witness. -/
 theorem authoritativeGate_map_preserves_authoritativeRuntimeWellFormed
@@ -14952,6 +16269,17 @@ theorem authoritativeGate_unmap_preserves_authoritativeRuntimeWellFormed
   authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
     (.ordinary (.unmap page)) hstate
     (unmap_authoritativeOperationCompatible state page hstate)
+
+/-- Raw permission reduction closes the folded global invariant and the exact
+page invalidation obligation at the sole authoritative gate. -/
+theorem authoritativeGate_protect_preserves_authoritativeRuntimeWellFormed
+    state page permissions (hstate : AuthoritativeRuntimeWellFormed state) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate state
+        (.ordinary (.protect page permissions))).state :=
+  authoritativeGate_preserves_authoritativeRuntimeWellFormed_of_compatible state
+    (.ordinary (.protect page permissions)) hstate
+    (protect_authoritativeOperationCompatible state page permissions hstate)
 
 /-- Selecting a live return plan changes only execution authority, so it can
 be appended to any already-compatible dormant-cancellation mutation. -/
@@ -17261,6 +18589,9 @@ theorem authoritativeOperationCompatible_of_admissible state operation
           exact map_authoritativeOperationCompatible state slot page permissions hstate
       | unmap page =>
           exact unmap_authoritativeOperationCompatible state page hstate
+      | protect page permissions =>
+          exact protect_authoritativeOperationCompatible
+            state page permissions hstate
       | createSubject subject =>
           exact createSubject_authoritativeOperationCompatible state subject hstate
       | terminateSubject subject => trivial
@@ -18570,10 +19901,10 @@ theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
       Capability.HasAuthority authoritativeBlockingCancelCapabilities
         2 2 .revoke := by
     exact ⟨1, authoritativeBlockingCancelSubject2Space, rfl, rfl, rfl⟩
-  have hinitial :
-      AuthoritativeRuntimeWellFormed
+  have hlegacy :
+      DeferredBlockingRuntimeWellFormed
         (authoritativeBlockingCancelEvidence plan) := by
-    simp [AuthoritativeRuntimeWellFormed, DeferredBlockingRuntimeWellFormed,
+    simp [DeferredBlockingRuntimeWellFormed,
       authoritativeBlockingCancelEvidence, blockingContextEvidenceComposite,
       blockingEvidenceComposite, blockingEvidenceStore,
       blockingEvidenceLifecycle, blockingEvidenceCapabilities,
@@ -18612,6 +19943,10 @@ theorem authoritativeGate_blockingCancel_cancelled_reachable_witness input plan
           authoritativeBlockingCancelSubject1Space,
           authoritativeBlockingCancelSubject2Space]
     all_goals grind
+  have hinitial :
+      AuthoritativeRuntimeWellFormed
+        (authoritativeBlockingCancelEvidence plan) :=
+    ⟨hlegacy.1, hlegacy.2, InvalidationPublication.initial_wellFormed⟩
   have hdeferred :
       (authoritativeGate (authoritativeBlockingCancelEvidence plan)
         (.blocking (.receive 0x0000000000010000

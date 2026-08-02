@@ -632,10 +632,11 @@ enter_user:
     add $8, %rsp
     pushq $0x1b
     push %rsi
-    pushfq
-    pop %rax
-    or $0x200, %rax
-    push %rax
+    /* The initial frame is a kernel-owned canonical object.  Do not inherit
+       arithmetic flags from whichever checked boot path happened to run
+       immediately before this call.  The page-fault evidence protocol binds
+       this exact RFLAGS word. */
+    pushq $0x216
     pushq $0x23
     push %rdi
     /* Supply an all-zero initial register bank so every CPL3 transition uses
@@ -1278,6 +1279,10 @@ isr14_restore_cr2:
     call authorize_page_fault_snapshot
     cmp $2, %rax
     je contained_fault_restore_peer
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    cmp $3, %rax
+    je stale_translation_restore_new_owner
+#endif
     sub $16, %rsp
     mov %rax, 8(%rsp)
     call complete_interrupt_entry
@@ -1304,6 +1309,29 @@ contained_fault_restore_peer:
     call complete_interrupt_entry
     mov $3, %esi
     jmp user_return_epilogue
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+/* The old owner has taken its real not-present fault with B's root still
+   active.  Only now install a fresh A context and select A's root, where page 7
+   names the scrubbed frame's new lifetime.  The CPL3 code must independently
+   read the replacement canary before the scenario can pass. */
+.global stale_translation_restore_new_owner
+stale_translation_restore_new_owner:
+    add $8, %rsp
+    xor %eax, %eax
+    mov %rsp, %rdi
+    mov $15, %ecx
+    rep stosq
+    movq $user_a_entry, 120(%rsp)
+    movq $0x23, 128(%rsp)
+    movq $0x202, 136(%rsp)
+    movq $user_a_stack_top, 144(%rsp)
+    movq $0x1b, 152(%rsp)
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+    call complete_interrupt_entry
+    mov $3, %esi
+    jmp user_return_epilogue
+#endif
 .global isr32
 .section .bss,"aw",@nobits
 .align 16
@@ -1510,7 +1538,21 @@ integer_fault_restore_peer:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
-#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    /* Fresh-owner probe: this is a real CPL3 load through A/page 7 after B's
+       stale access faulted.  The syscall reports the independently observed
+       replacement canary and exact virtual page to the checked kernel path. */
+    mov $0x7000, %r10
+    mov (%r10), %rbx
+    cmp $0x126a57e2, %rbx
+    jne 2f
+    mov $20, %rax
+    mov %rbx, %rbx
+    mov $0x7000, %rcx
+    mov $7, %rdx
+    int $0x80
+    ud2
+#elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     mov $0x1b, %ax
     mov %ax, %ds
     mov %ax, %es
@@ -1853,7 +1895,9 @@ integer_fault_probe_class:
    field. */
 .global page_fault_probe_class
 page_fault_probe_class:
-#ifdef LEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    .quad 5
+#elif defined(LEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH)
     .quad 4
 #elif defined(LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT)
     .quad 3
@@ -1868,7 +1912,28 @@ page_fault_probe_class:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
-#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    /* Stale-translation probe: read the canary at the mutable mapping,
+       then request the unmap syscall.  After the kernel invalidates
+       the TLB entry and returns, re-read the same virtual address.
+       The re-read must fault because the PTE is now absent and the
+       old translation was flushed by invlpg.  */
+    mov $0x7000, %r10
+    mov (%r10), %rbx
+    cmp $0x126bef0e, %rbx
+    jne 2f
+    mov $19, %rax
+    mov %rbx, %rbx
+    mov $0x7000, %rcx
+    mov $7, %rdx
+    int $0x80
+    cmp $0x301901, %rax
+    jne 2f
+.global user_b_stale_translation_fault_instruction
+user_b_stale_translation_fault_instruction:
+    mov (%r10), %rax
+    ud2
+#elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     /* Every register must originate in the kernel-owned fresh B context.
        Any surviving subject-A register takes the controlled syscall-3
        register-canary failure path before B can perform an operation. */

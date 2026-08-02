@@ -235,6 +235,36 @@ def encodeCommand : Command → UInt64
   | .repeatReleaseA => 0x4901
   | .completeReleased => 0x4a01
 
+/-- A generated retirement authorization binds the full canonical pre-state
+and command to the machine effect that must complete before the logical
+successor, released capacity, or reclaimed frame may be published.  The two
+tokens are deliberately distinct even though both transitions require the
+reviewed no-PCID full flush. -/
+def terminateFlushToken : UInt64 := 0xfb00444401
+def releaseFlushToken : UInt64 := 0xfb00484801
+
+inductive RetirementEffect where
+  | none
+  | flush
+  deriving DecidableEq, Repr
+
+def retirementEffect : StateId → Command → RetirementEffect
+  | .bAllocated, .terminateA => .flush
+  | .aAllocated, .releaseA => .flush
+  | _, _ => .none
+
+/-- Allocation-free generated effect query consumed by the frame-budget
+machine path.  Every stale, cross-trace, or malformed pair returns zero and
+therefore cannot authorize a page-table mutation or frame publication. -/
+@[export leanos_frame_budget_invalidation_effect]
+def machineInvalidationEffect (stateWord commandWord : UInt64) : UInt64 :=
+  if stateWord = 0x4401 && commandWord = 0x4401 then
+    terminateFlushToken
+  else if stateWord = 0x4101 && commandWord = 0x4801 then
+    releaseFlushToken
+  else
+    0
+
 def encodeReply : Reply → UInt64
   | .allocatedA => 0x40
   | .budgetExhaustedUnchanged => 0x41
@@ -307,6 +337,178 @@ def materialize : StateId → Runtime
   | .aReleased => aReleasedRuntime
   | .releaseDenied => releaseDeniedRuntime
   | .releaseComplete => releaseCompleteRuntime
+
+/-! ## Invalidation-acknowledged retirement publication
+
+The original bounded scenario transition computes cleanup and scrubbing state
+atomically.  The machine, however, must not make that successor visible until
+the required no-PCID flush has completed.  This wrapper is the shared logical
+publication path for the existing frame-budget and frame-scrub state: prepare
+retains the complete published runtime, acknowledgement publishes only the
+successor bound to the exact generated token, and fresh allocation is disabled
+while retirement is pending.
+-/
+
+structure PendingRetirement where
+  token : UInt64
+  successor : Runtime
+  successorId : StateId
+  reply : Reply
+
+structure RetirementPublication where
+  published : Runtime
+  phase : StateId
+  pending : Option PendingRetirement
+  retirementAcknowledged : Bool
+
+structure RetirementPublicationOutcome where
+  state : RetirementPublication
+  accepted : Bool
+  effect : RetirementEffect
+
+def retirementPublicationInitial : RetirementPublication :=
+  { published := materialize .bAllocated
+    phase := .bAllocated
+    pending := none
+    retirementAcknowledged := false }
+
+/-- Compute the existing authoritative termination/reclamation successor, but
+keep it private behind the exact transition-bound flush token. -/
+def prepareRetirement (state : RetirementPublication) :
+    RetirementPublicationOutcome :=
+  match state.phase, state.pending with
+  | .bAllocated, none =>
+      match step state.published .terminateA with
+      | some outcome =>
+          { state := { state with
+              pending := some {
+                token := terminateFlushToken
+                successor := outcome.state
+                successorId := .aTerminated
+                reply := outcome.reply } }
+            accepted := true
+            effect := .flush }
+      | none => { state, accepted := false, effect := .none }
+  | _, _ => { state, accepted := false, effect := .none }
+
+/-- Only the exact token issued for this retained successor can publish the
+released budget capacity and reclaimed scrub frame. -/
+def acknowledgeRetirement (state : RetirementPublication) (token : UInt64) :
+    RetirementPublicationOutcome :=
+  match state.pending with
+  | none => { state, accepted := false, effect := .none }
+  | some pending =>
+      if token = pending.token then
+        { state := {
+            published := pending.successor
+            phase := pending.successorId
+            pending := none
+            retirementAcknowledged := true }
+          accepted := true
+          effect := .flush }
+      else
+        { state, accepted := false, effect := .none }
+
+/-- Fresh B publication reuses the existing allocation/scrub transition and is
+reachable only after retirement acknowledgement has exposed `.aTerminated`. -/
+def publishFreshAfterRetirement (state : RetirementPublication) :
+    RetirementPublicationOutcome :=
+  match state.phase, state.pending with
+  | .aTerminated, none =>
+      if state.retirementAcknowledged then
+        match step state.published .publishFreshB with
+        | some outcome =>
+            { state := { state with
+                published := outcome.state
+                phase := .bFresh }
+              accepted := true
+              effect := .none }
+        | none => { state, accepted := false, effect := .none }
+      else
+        { state, accepted := false, effect := .none }
+  | _, _ => { state, accepted := false, effect := .none }
+
+def retirementPrepared : RetirementPublication :=
+  (prepareRetirement retirementPublicationInitial).state
+
+def retirementWrongAck : RetirementPublication :=
+  (acknowledgeRetirement retirementPrepared releaseFlushToken).state
+
+def retirementAcknowledged : RetirementPublication :=
+  (acknowledgeRetirement retirementPrepared terminateFlushToken).state
+
+def freshRepublished : RetirementPublication :=
+  (publishFreshAfterRetirement retirementAcknowledged).state
+
+/-- Preparation does not expose released capacity, the retired frame, or an
+absent old mapping; all three remain the exact published pre-state. -/
+theorem retirement_prepare_keeps_frame_unallocatable :
+    (prepareRetirement retirementPublicationInitial).accepted = true ∧
+      (prepareRetirement retirementPublicationInitial).effect = .flush ∧
+      retirementPrepared.pending.isSome = true ∧
+      retirementPrepared.published.budget.memory.allocator.status 0 =
+        .owned 10 ∧
+      retirementPrepared.published.scrub.memory.allocator.status 100 =
+        .owned 10 ∧
+      retirementPrepared.published.userMapping =
+        some (0, 10, { slot := 0, identity := 1 }, 100, machineUserPage) ∧
+      (publishFreshAfterRetirement retirementPrepared).accepted = false ∧
+      (publishFreshAfterRetirement retirementPrepared).state = retirementPrepared := by
+  refine ⟨by native_decide, by native_decide, by native_decide,
+    by native_decide, by native_decide, by native_decide, by native_decide, ?_⟩
+  rfl
+
+/-- A token from the explicit-release edge cannot acknowledge termination,
+even though both machine effects are full flushes. -/
+theorem retirement_wrong_ack_stutters :
+    (acknowledgeRetirement retirementPrepared releaseFlushToken).accepted = false ∧
+      retirementWrongAck = retirementPrepared ∧
+      (acknowledgeRetirement retirementPrepared releaseFlushToken).effect = .none := by
+  refine ⟨by native_decide, ?_, by native_decide⟩
+  rfl
+
+/-- The exact acknowledgement is the first point at which the reclaimed frame
+and released capacity become visible.  Its old byte remains until the shared
+fresh allocation performs the complete scrub. -/
+theorem retirement_ack_publishes_reclaimed_frame :
+    (acknowledgeRetirement retirementPrepared terminateFlushToken).accepted = true ∧
+      retirementAcknowledged.pending.isNone = true ∧
+      retirementAcknowledged.retirementAcknowledged = true ∧
+      retirementAcknowledged.published.budget.memory.allocator.status 0 = .free ∧
+      retirementAcknowledged.published.scrub.memory.allocator.status 100 = .free ∧
+      retirementAcknowledged.published.scrub.bytes 100 0 = 0xa5 ∧
+      retirementAcknowledged.published.userMapping = none := by
+  native_decide
+
+/-- The complete shared path is retirement preparation, exact invalidation
+acknowledgement, then fresh allocation/scrub/republication.  No fresh mapping
+exists in either published state before acknowledgement. -/
+theorem invalidation_acknowledged_fresh_republication :
+    (publishFreshAfterRetirement retirementPrepared).accepted = false ∧
+      (publishFreshAfterRetirement retirementAcknowledged).accepted = true ∧
+      freshRepublished.pending.isNone = true ∧
+      freshRepublished.published.scrub.memory.binding 21 = some 100 ∧
+      freshRepublished.published.scrub.memory.allocator.status 100 = .owned 21 ∧
+      freshRepublished.published.userMapping =
+        some (1, 21, { slot := 1, identity := 3 }, 100, machineUserPage) ∧
+      (∀ offset, offset < FrameScrub.frameBytes →
+        freshRepublished.published.scrub.bytes 100 offset =
+          FrameScrub.initialByte) := by
+  refine ⟨by native_decide, by native_decide, by native_decide,
+    by native_decide, by native_decide, by native_decide, ?_⟩
+  have haccepted :
+      (FrameScrub.allocate (materialize .aTerminated).scrub 21 1 1).result =
+        .accepted := by native_decide
+  have hfresh : FrameScrub.Fresh freshRepublished.published.scrub 21 := by
+    change FrameScrub.Fresh
+      (FrameScrub.allocate (materialize .aTerminated).scrub 21 1 1).state 21
+    exact FrameScrub.allocation_publishes_scrubbed _ _ _ _ haccepted
+  rcases hfresh.2 with ⟨frame, hbinding, hbytes⟩
+  have hframe : frame = 100 := by
+    rw [show freshRepublished.published.scrub.memory.binding 21 = some 100 by
+      native_decide] at hbinding
+    exact Option.some.inj hbinding.symm
+  simpa [hframe] using hbytes
 
 def commandArgs : Command → UInt64 × UInt64 × UInt64 × UInt64
   | .allocateA => (10, 0, 0, 0)
@@ -454,6 +656,34 @@ theorem machine_mapping_is_authoritative_and_reuses_frame :
       machineMappingPage (encodeState .aTerminated)
           (encodeCommand .publishFreshB) = machineUserPage := by
   exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Termination and explicit release are the two authoritative frame-retiring
+edges.  Both require a full-cache effect, while their transition-bound tokens
+cannot be replayed for the other edge. -/
+theorem retirement_effects_are_exact_and_trace_bound :
+    retirementEffect .bAllocated .terminateA = .flush ∧
+      retirementEffect .aAllocated .releaseA = .flush ∧
+      machineInvalidationEffect (encodeState .bAllocated)
+          (encodeCommand .terminateA) = terminateFlushToken ∧
+      machineInvalidationEffect (encodeState .aAllocated)
+          (encodeCommand .releaseA) = releaseFlushToken ∧
+      machineInvalidationEffect (encodeState .bAllocated)
+          (encodeCommand .releaseA) = 0 ∧
+      machineInvalidationEffect (encodeState .aAllocated)
+          (encodeCommand .terminateA) = 0 := by
+  native_decide
+
+/-- Fresh object 21 and its generation-three handle are reachable only after
+the exact termination edge whose generated token requires a full flush. -/
+theorem fresh_publication_follows_authoritative_termination_flush :
+    step (materialize .bAllocated) .terminateA =
+        some { state := materialize .aTerminated, reply := .terminatedA } ∧
+      retirementEffect .bAllocated .terminateA = .flush ∧
+      machineInvalidationEffect (encodeState .bAllocated)
+          (encodeCommand .terminateA) = terminateFlushToken ∧
+      (materialize .bFresh).userMapping =
+        some (1, 21, { slot := 1, identity := 3 }, 100, machineUserPage) := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
 
 /-- The reclaimed physical frame is scrubbed in its entirety before object 21
 and its fresh capability generation become observable. -/

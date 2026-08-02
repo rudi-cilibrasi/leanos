@@ -8,6 +8,7 @@ symbols="$(nm "$elf")"
 ./scripts/check-entry-policy.sh "$elf"
 ./scripts/check-extended-state-policy.sh "$elf"
 ./scripts/check-early-idt-policy.py "$elf"
+./scripts/check-runtime-invalidation-policy.sh "$elf"
 
 flags() {
   readelf -SW "$elf" | awk -v section="$1" \
@@ -262,8 +263,10 @@ initial_return_disassembly="$(objdump -d --no-show-raw-insn "$elf" |
 [[ "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+add[ql]?[[:space:]]+\$0x8,%rsp$' \
     <<<"$initial_return_disassembly")" -eq 1 &&
    "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+push' \
-    <<<"$initial_return_disassembly")" -eq 21 &&
+    <<<"$initial_return_disassembly")" -eq 20 &&
    "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+pop' \
+    <<<"$initial_return_disassembly")" -eq 0 &&
+   "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+push[ql]?[[:space:]]+\$0x216$' \
     <<<"$initial_return_disassembly")" -eq 1 ]] || {
   echo "error: initial user-return path does not preserve SysV validator-call alignment" >&2
   exit 1

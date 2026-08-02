@@ -1,4 +1,6 @@
 import LeanOS.FailStop
+import LeanOS.InvalidationPublication
+import LeanOS.StaleTranslation
 import LeanOS.FrameBudgetScenario
 
 /-!
@@ -377,8 +379,85 @@ def mixedDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   else if tag = 0x2f01 then
     if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
     else if stateWord = 0x1701 then 0x2f1801 else 0xff06
+  else if tag = 0x3001 then
+    if arg0 != 7 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0f01 then 0x301901 else 0xff06
+  else if tag = 0x3101 then
+    if arg0 != 9 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0f01 then 0x310f01 else 0xff06
+  else if tag = 0x4501 then
+    if arg0 != 8 || arg1 != 1 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0f01 then 0x452e01 else 0xff06
+  else if tag = 0x4601 then
+    if arg0 != 8 || arg1 != 1 || arg2 != 1 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2e01 then 0x462e01 else 0xff06
   else if tag % 256 != abiVersion then 0xff01
-  else if 0x3001 ≤ tag then 0xff02
+  else if 0x4701 ≤ tag then 0xff02
+  else 0xff04
+
+/-- Allocation-free scalar table for the canonical invalidation publication
+protocol.  Pending state tokens retain the complete published pre-state; only
+an exact acknowledgement advances to the logical successor. -/
+def invalidationDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
+  if tag = 0x3201 then
+    if arg0 != 1 || arg1 != 1 || arg2 != 7 || arg3 != 1 then 0xff05
+    else if stateWord = 0x1a01 then 0x321b01 else 0xff06
+  else if tag = 0x3301 then
+    if arg0 != 0 || arg1 != 1 || arg2 != 7 || arg3 != 1 then 0xff05
+    else if stateWord = 0x1b01 then 0x331c01 else 0xff06
+  else if tag = 0x3401 then
+    if arg0 != 2 || arg1 != 1 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1c01 then 0x341d01 else 0xff06
+  else if tag = 0x3501 then
+    if arg0 != 1 || arg1 != 1 || arg2 != 7 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1d01 then 0x351e01 else 0xff06
+  else if tag = 0x3601 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1e01 then 0x361f01 else 0xff06
+  else if tag = 0x3701 then
+    if arg0 != 1 || arg1 != 1 || arg2 != 7 || arg3 != 1 then 0xff05
+    else if stateWord = 0x1f01 then 0x372001 else 0xff06
+  else if tag = 0x3801 then
+    if arg0 != 3 || arg1 != 0 || arg2 != 0 || arg3 != 1 then 0xff05
+    else if stateWord = 0x2001 then 0x382101 else 0xff06
+  else if tag = 0x3901 then
+    if arg0 != 0 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2101 then 0x392201 else 0xff06
+  else if tag = 0x3a01 then
+    if arg0 != 0 || arg1 != 1 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2201 then 0x3a2301 else 0xff06
+  else if tag = 0x3b01 then
+    if arg0 != 2 || arg1 != 1 || arg2 != 0 || arg3 != 2 then 0xff05
+    else if stateWord = 0x2301 then 0x3b2401 else 0xff06
+  else if tag = 0x3c01 then
+    if arg0 != 2 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2401 then 0x3c2501 else 0xff06
+  else if tag = 0x3d01 then
+    if arg0 != 3 || arg1 != 0 || arg2 != 0 || arg3 != 3 then 0xff05
+    else if stateWord = 0x2501 then 0x3d2601 else 0xff06
+  else if tag = 0x3e01 then
+    if arg0 != 11 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2601 then 0x3e2701 else 0xff06
+  else if tag = 0x3f01 then
+    if arg0 != 0 || arg1 != 1 || arg2 != 7 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1a01 then 0x3f2801 else 0xff06
+  else if tag = 0x4001 then
+    if arg0 != 1 || arg1 != 1 || arg2 != 7 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2801 then 0x402901 else 0xff06
+  else if tag = 0x4101 then
+    if arg0 != 2 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x1a01 then 0x412a01 else 0xff06
+  else if tag = 0x4201 then
+    if arg0 != 3 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2a01 then 0x422b01 else 0xff06
+  else if tag = 0x4301 then
+    if arg0 != 1 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2b01 then 0x432c01 else 0xff06
+  else if tag = 0x4401 then
+    if arg0 != 3 || arg1 != 0 || arg2 != 0 || arg3 != 1 then 0xff05
+    else if stateWord = 0x2c01 then 0x442d01 else 0xff06
+  else if tag % 256 != abiVersion then 0xff01
+  else if 0x4501 ≤ tag then 0xff02
   else 0xff04
 
 /-- Allocation-free generated entry point.  It validates every scalar before
@@ -387,16 +466,19 @@ the full authoritative gate; this executable definition intentionally contains
 no shadow kernel state. -/
 @[export leanos_composite_dispatch]
 def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
-  if stateWord % 256 != abiVersion then
-    0xff01
+  if 0x1a01 ≤ stateWord && stateWord ≤ 0x2d01 then
+    if stateWord % 256 != abiVersion then 0xff01
+    else invalidationDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if 0x4001 ≤ stateWord && stateWord ≤ 0x4b01 then
-    FrameBudgetScenario.dispatch stateWord tag arg0 arg1 arg2 arg3
+    if stateWord % 256 != abiVersion then 0xff01
+    else FrameBudgetScenario.dispatch stateWord tag arg0 arg1 arg2 arg3
   else if stateWord = 0x0801 || stateWord = 0x0901 || stateWord = 0x0a01 ||
       stateWord = 0x0b01 || stateWord = 0x0c01 || stateWord = 0x0d01 ||
       stateWord = 0x0e01 || stateWord = 0x0f01 || stateWord = 0x1001 ||
       stateWord = 0x1101 || stateWord = 0x1201 || stateWord = 0x1301 ||
       stateWord = 0x1401 || stateWord = 0x1501 || stateWord = 0x1601 ||
-      stateWord = 0x1701 || stateWord = 0x1801 then
+      stateWord = 0x1701 || stateWord = 0x1801 || stateWord = 0x1901 ||
+      stateWord = 0x2e01 then
     mixedDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if stateWord != 0x0001 && stateWord != 0x0101 && stateWord != 0x0201 &&
       stateWord != 0x0301 && stateWord != 0x0401 && stateWord != 0x0501 &&
@@ -1064,6 +1146,8 @@ inductive MixedStateId where
   | userFaultCleaned
   | fatalEntered
   | postFatalRejected
+  | pageUnmapped
+  | pageProtected
   deriving DecidableEq, Repr
 
 def encodeMixedState : MixedStateId → UInt64
@@ -1084,6 +1168,8 @@ def encodeMixedState : MixedStateId → UInt64
   | .userFaultCleaned => 0x1601
   | .fatalEntered => 0x1701
   | .postFatalRejected => 0x1801
+  | .pageUnmapped => 0x1901
+  | .pageProtected => 0x2e01
 
 def decodeMixedState (word : UInt64) : Except DecodeError MixedStateId :=
   if word = 0x0801 then .ok .initial
@@ -1103,8 +1189,10 @@ def decodeMixedState (word : UInt64) : Except DecodeError MixedStateId :=
   else if word = 0x1601 then .ok .userFaultCleaned
   else if word = 0x1701 then .ok .fatalEntered
   else if word = 0x1801 then .ok .postFatalRejected
+  else if word = 0x1901 then .ok .pageUnmapped
+  else if word = 0x2e01 then .ok .pageProtected
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x1901 ≤ word then .error .reservedBits
+  else if 0x1a01 ≤ word then .error .reservedBits
   else .error .unknownState
 
 theorem decode_encode_mixed_state state :
@@ -1133,6 +1221,10 @@ inductive MixedCommandId where
   | cleanupUserFault
   | enterFatalKernelFault
   | attemptPostFatalSchedule
+  | acceptedSyscallUnmap
+  | rejectUnmappedPageUnmap
+  | acceptedProtect
+  | rejectProtectAmplification
   deriving DecidableEq, Repr
 
 def encodeMixedCommand : MixedCommandId → CommandWords
@@ -1172,6 +1264,14 @@ def encodeMixedCommand : MixedCommandId → CommandWords
       { tag := 0x2e01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
   | .attemptPostFatalSchedule =>
       { tag := 0x2f01, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .acceptedSyscallUnmap =>
+      { tag := 0x3001, arg0 := 7, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .rejectUnmappedPageUnmap =>
+      { tag := 0x3101, arg0 := 9, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .acceptedProtect =>
+      { tag := 0x4501, arg0 := 8, arg1 := 1, arg2 := 0, arg3 := 0 }
+  | .rejectProtectAmplification =>
+      { tag := 0x4601, arg0 := 8, arg1 := 1, arg2 := 1, arg3 := 0 }
 
 def decodeMixedCommand (words : CommandWords) :
     Except DecodeError MixedCommandId :=
@@ -1194,8 +1294,16 @@ def decodeMixedCommand (words : CommandWords) :
   else if words = encodeMixedCommand .enterFatalKernelFault then .ok .enterFatalKernelFault
   else if words = encodeMixedCommand .attemptPostFatalSchedule then
     .ok .attemptPostFatalSchedule
+  else if words = encodeMixedCommand .acceptedSyscallUnmap then
+    .ok .acceptedSyscallUnmap
+  else if words = encodeMixedCommand .rejectUnmappedPageUnmap then
+    .ok .rejectUnmappedPageUnmap
+  else if words = encodeMixedCommand .acceptedProtect then
+    .ok .acceptedProtect
+  else if words = encodeMixedCommand .rejectProtectAmplification then
+    .ok .rejectProtectAmplification
   else if words.tag % 256 != abiVersion then .error .wrongVersion
-  else if 0x3001 ≤ words.tag then .error .reservedBits
+  else if 0x4701 ≤ words.tag then .error .reservedBits
   else .error .noncanonicalArguments
 
 theorem decode_encode_mixed_command command :
@@ -1235,6 +1343,14 @@ def mixedCommandOperation : MixedCommandId → AuthoritativeOperation
   | .cleanupUserFault => .ordinary (.interrupt compositeDispatcherUserFaultFrame)
   | .enterFatalKernelFault => .ordinary (.interrupt compositeDispatcherKernelFaultFrame)
   | .attemptPostFatalSchedule => .ordinary .scheduleNext
+  | .acceptedSyscallUnmap =>
+      .ordinary (.syscall { number := 1, arg0 := 7, arg1 := 0, arg2 := 0 })
+  | .rejectUnmappedPageUnmap =>
+      .ordinary (.syscall { number := 1, arg0 := 9, arg1 := 0, arg2 := 0 })
+  | .acceptedProtect =>
+      .ordinary (.protect 8 { read := true })
+  | .rejectProtectAmplification =>
+      .ordinary (.protect 8 { read := true, write := true })
 
 def mixedNextState : MixedStateId → MixedCommandId → Option MixedStateId
   | .initial, .offerTransfer => some .transferOffered
@@ -1255,6 +1371,10 @@ def mixedNextState : MixedStateId → MixedCommandId → Option MixedStateId
   | .timerSwitched, .cleanupUserFault => some .userFaultCleaned
   | .userFaultCleaned, .enterFatalKernelFault => some .fatalEntered
   | .fatalEntered, .attemptPostFatalSchedule => some .postFatalRejected
+  | .directMapped, .acceptedSyscallUnmap => some .pageUnmapped
+  | .directMapped, .rejectUnmappedPageUnmap => some .directMapped
+  | .directMapped, .acceptedProtect => some .pageProtected
+  | .pageProtected, .rejectProtectAmplification => some .pageProtected
   | _, _ => none
 
 def mixedExpectedReply : MixedStateId → MixedCommandId → Option UInt64
@@ -1274,6 +1394,10 @@ def mixedExpectedReply : MixedStateId → MixedCommandId → Option UInt64
   | .timerSwitched, .cleanupUserFault => some 0x2d1601
   | .userFaultCleaned, .enterFatalKernelFault => some 0x2e1701
   | .fatalEntered, .attemptPostFatalSchedule => some 0x2f1801
+  | .directMapped, .acceptedSyscallUnmap => some 0x301901
+  | .directMapped, .rejectUnmappedPageUnmap => some 0x310f01
+  | .directMapped, .acceptedProtect => some 0x452e01
+  | .pageProtected, .rejectProtectAmplification => some 0x462e01
   | _, _ => none
 
 inductive MixedReplyId where
@@ -1293,6 +1417,10 @@ inductive MixedReplyId where
   | userFaultCleaned
   | fatalEntered
   | postFatalRejected
+  | pageUnmapped
+  | unmappedPageRejected
+  | pageProtected
+  | protectAmplificationRejected
   deriving DecidableEq, Repr
 
 def encodeMixedReply : MixedReplyId → UInt64
@@ -1312,6 +1440,10 @@ def encodeMixedReply : MixedReplyId → UInt64
   | .userFaultCleaned => 0x2d1601
   | .fatalEntered => 0x2e1701
   | .postFatalRejected => 0x2f1801
+  | .pageUnmapped => 0x301901
+  | .unmappedPageRejected => 0x310f01
+  | .pageProtected => 0x452e01
+  | .protectAmplificationRejected => 0x462e01
 
 def decodeMixedReply (word : UInt64) : Except DecodeError MixedReplyId :=
   if word = 0x200901 then .ok .transferOffered
@@ -1330,8 +1462,12 @@ def decodeMixedReply (word : UInt64) : Except DecodeError MixedReplyId :=
   else if word = 0x2d1601 then .ok .userFaultCleaned
   else if word = 0x2e1701 then .ok .fatalEntered
   else if word = 0x2f1801 then .ok .postFatalRejected
+  else if word = 0x301901 then .ok .pageUnmapped
+  else if word = 0x310f01 then .ok .unmappedPageRejected
+  else if word = 0x452e01 then .ok .pageProtected
+  else if word = 0x462e01 then .ok .protectAmplificationRejected
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x300001 ≤ word then .error .reservedBits
+  else if 0x470001 ≤ word then .error .reservedBits
   else .error .unknownCommand
 
 theorem decode_encode_mixed_reply reply :
@@ -1362,6 +1498,10 @@ def mixedReplyId : MixedStateId → MixedCommandId → Option MixedReplyId
   | .timerSwitched, .cleanupUserFault => some .userFaultCleaned
   | .userFaultCleaned, .enterFatalKernelFault => some .fatalEntered
   | .fatalEntered, .attemptPostFatalSchedule => some .postFatalRejected
+  | .directMapped, .acceptedSyscallUnmap => some .pageUnmapped
+  | .directMapped, .rejectUnmappedPageUnmap => some .unmappedPageRejected
+  | .directMapped, .acceptedProtect => some .pageProtected
+  | .pageProtected, .rejectProtectAmplification => some .protectAmplificationRejected
   | _, _ => none
 
 /-- The full typed meaning of each mixed reply selector.  This table is
@@ -1421,6 +1561,22 @@ def mixedReplyResult : MixedReplyId → AuthoritativeGateResult
               frame := compositeDispatcherKernelFaultFrame }
           incomingVector := 14
           incomingOrigin := .kernel }
+  | .pageUnmapped =>
+      .completed (.ordinary (.syscall .accepted))
+  | .unmappedPageRejected =>
+      .completed (.ordinary (.syscall (.rejected (.unmap .unmappedPage))))
+  | .pageProtected =>
+      .completed (.ordinary (.protect .accepted))
+  | .protectAmplificationRejected =>
+      .completed (.ordinary (.protect (.rejected .notOwner)))
+
+/-- Machine effects are meanings of canonical typed replies, not a second
+caller-maintained state channel.  The accepted unmap reply requires one exact
+page invalidation; every other reply in this bounded slice requests none. -/
+def mixedReplyEffect : MixedReplyId → StaleTranslation.Effect
+  | .pageUnmapped => .page 2 7
+  | .pageProtected => .page 2 8
+  | _ => .none
 
 theorem mixedExpectedReply_uses_canonical_codec state command :
     mixedExpectedReply state command =
@@ -1433,6 +1589,37 @@ theorem mixed_dispatch_canonical state command :
       words.tag words.arg0 words.arg1 words.arg2 words.arg3 =
       (mixedExpectedReply state command).getD (errorWord .invalidSequence) := by
   cases state <;> cases command <;> native_decide
+
+/-- The accepted unmap effect cannot be spliced onto a stale state token or a
+different canonical command.  Its address-space/page target is consequently
+confined to the kernel-derived address space 2 and decoded page 7. -/
+theorem mixed_unmap_effect_confined state command
+    (hdispatch :
+      let words := encodeMixedCommand command
+      dispatch (encodeMixedState state)
+        words.tag words.arg0 words.arg1 words.arg2 words.arg3 =
+        encodeMixedReply .pageUnmapped) :
+    state = .directMapped ∧ command = .acceptedSyscallUnmap ∧
+      mixedReplyEffect .pageUnmapped = .page 2 7 := by
+  cases state <;> cases command
+  all_goals
+    simp [encodeMixedCommand, encodeMixedState, encodeMixedReply, dispatch,
+      mixedDispatchRaw, mixedReplyEffect] at hdispatch ⊢
+
+/-- The accepted protection effect is available only on the canonical
+full-state edge and is confined to kernel-derived address space 2/page 8. -/
+theorem mixed_protect_effect_confined state command
+    (hdispatch :
+      let words := encodeMixedCommand command
+      dispatch (encodeMixedState state)
+        words.tag words.arg0 words.arg1 words.arg2 words.arg3 =
+        encodeMixedReply .pageProtected) :
+    state = .directMapped ∧ command = .acceptedProtect ∧
+      mixedReplyEffect .pageProtected = .page 2 8 := by
+  cases state <;> cases command
+  all_goals
+    simp [encodeMixedCommand, encodeMixedState, encodeMixedReply, dispatch,
+      mixedDispatchRaw, mixedReplyEffect] at hdispatch ⊢
 
 def mixedCanonicalCommands : List MixedCommandId :=
   [.offerTransfer, .acceptTransfer, .revokeTransferredCapability,
@@ -1459,6 +1646,10 @@ def mixedPrefix : MixedStateId → List MixedCommandId
   | .userFaultCleaned => mixedCanonicalCommands.take 14
   | .fatalEntered => mixedCanonicalCommands.take 15
   | .postFatalRejected => mixedCanonicalCommands
+  | .pageUnmapped =>
+      mixedCanonicalCommands.take 7 ++ [.acceptedSyscallUnmap]
+  | .pageProtected =>
+      mixedCanonicalCommands.take 7 ++ [.acceptedProtect]
 
 def mixedInitialState : Except DecodeError CompositeState :=
   match BootPageTablePlan.compile BootPageTablePlan.sampleInput with
@@ -1469,6 +1660,28 @@ def mixedMaterialize (id : MixedStateId) : Except DecodeError CompositeState := 
   let initial ← mixedInitialState
   pure (runAuthoritativeOperations initial
     ((mixedPrefix id).map mixedCommandOperation))
+
+/-- Reconstruct the canonical invalidation step from the same complete
+authoritative pre-state used by the composite dispatcher.  Actor and active
+address space are kernel projections; only the page is the decoded syscall
+argument. -/
+def mixedUnmapStepAt (state : MixedStateId) (page : VirtualMapping.VirtualPage) :
+    Except DecodeError StaleTranslation.Step := do
+  let pre ← mixedMaterialize state
+  pure (StaleTranslation.step pre.resumable.translations
+    (.unmap pre.execution.core.context.currentSubject
+      pre.execution.core.context.activeAddressSpace page))
+
+/-- Reconstruct a protection reduction from the same complete authoritative
+pre-state used by the generated composite edge.  Neither actor nor root is
+present in the untrusted command words. -/
+def mixedProtectStepAt (state : MixedStateId) (page : VirtualMapping.VirtualPage)
+    (permissions : VirtualMapping.Permissions) :
+    Except DecodeError StaleTranslation.Step := do
+  let pre ← mixedMaterialize state
+  pure (StaleTranslation.step pre.resumable.translations
+    (.protect pre.execution.core.context.currentSubject
+      pre.execution.core.context.activeAddressSpace page permissions))
 
 structure CanonicalMixedState where
   id : MixedStateId
@@ -1620,6 +1833,18 @@ def mixedCanonicalEdges : List CanonicalMixedEdge :=
      next_exact := rfl, reply_exact := rfl },
    { state := .fatalEntered, command := .attemptPostFatalSchedule,
      next := .postFatalRejected, reply := .postFatalRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .directMapped, command := .acceptedSyscallUnmap,
+     next := .pageUnmapped, reply := .pageUnmapped,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .directMapped, command := .rejectUnmappedPageUnmap,
+     next := .directMapped, reply := .unmappedPageRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .directMapped, command := .acceptedProtect,
+     next := .pageProtected, reply := .pageProtected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .pageProtected, command := .rejectProtectAmplification,
+     next := .pageProtected, reply := .protectAmplificationRejected,
      next_exact := rfl, reply_exact := rfl }]
 
 def CanonicalMixedEdge.Refines (edge : CanonicalMixedEdge) : Prop :=
@@ -1640,7 +1865,7 @@ theorem canonicalMixedEdge_refines (edge : CanonicalMixedEdge) :
     edge.state edge.command edge.next edge.reply
     edge.next_exact edge.reply_exact
 
-/-- The hosted 16-edge corpus inherits its state/result meaning solely from
+/-- The hosted 20-edge corpus inherits its state/result meaning solely from
 the scalar-to-authoritative bridge above. -/
 theorem mixedCanonicalEdges_refine :
     ∀ edge ∈ mixedCanonicalEdges, edge.Refines := by
@@ -1689,9 +1914,14 @@ theorem mixedLogicalStep_refines_authoritativeGate state command step
 
 theorem mixed_state_continuity state command next
     (hnext : mixedNextState state command = some next) :
-    encodeMixedState next = encodeMixedState state + 0x100 := by
+    encodeMixedState next = encodeMixedState state ∨
+      encodeMixedState next = encodeMixedState state + 0x100 ∨
+      (state = .directMapped ∧ command = .acceptedSyscallUnmap ∧
+        next = .pageUnmapped) ∨
+      (state = .directMapped ∧ command = .acceptedProtect ∧
+        next = .pageProtected) := by
   cases state <;> cases command <;> simp [mixedNextState] at hnext
-  all_goals subst next <;> rfl
+  all_goals subst next <;> simp [encodeMixedState]
 
 /-- Finite-list refinement for the complete accepted mixed corpus.  Every
 intermediate state used by the hosted harness is the corresponding prefix of
@@ -1741,6 +1971,612 @@ theorem mixedCanonical_typed_results :
         (fun outcome => authoritativeResultCompleted outcome.result) = some false := by
   native_decide
 
+/-- Publication-order meaning for the accepted slice: the authoritative gate
+publishes exactly the state produced by the canonical TLB unmap step, and the
+typed reply exposes the required page effect only with that successor.  Thus
+the modeled PTE removal/cache invalidation precedes publication of the reply;
+the x86 instruction remains a trusted implementation boundary. -/
+theorem mixed_accepted_unmap_publication_order :
+    (mixedUnmapStepAt .directMapped 7).toOption.map
+        (fun step => (step.accepted, step.effect)) =
+      some (true, .page 2 7) ∧
+    (mixedUnmapStepAt .directMapped 7).toOption.map (·.state) =
+      (mixedOutcomeAt .directMapped .acceptedSyscallUnmap).toOption.map
+        (·.state.resumable.translations) ∧
+    (mixedOutcomeAt .directMapped .acceptedSyscallUnmap).toOption.map
+        (fun outcome => outcome.state.virtualMemory.mappings 2 7) =
+      some none := by
+  constructor
+  · native_decide
+  constructor
+  · rfl
+  · native_decide
+
+/-- A logical unmap rejection is a complete-state stutter and requests no
+machine mutation.  This is the canonical rejection-preservation witness paired
+with the accepted effect edge above. -/
+theorem mixed_rejected_unmap_inert :
+    (mixedUnmapStepAt .directMapped 9).toOption.map
+        (fun step => (step.accepted, step.effect)) =
+      some (false, .none) ∧
+    (mixedOutcomeAt .directMapped .rejectUnmappedPageUnmap).toOption.map
+        (·.state) =
+      (mixedMaterialize .directMapped).toOption := by
+  constructor
+  · native_decide
+  · rfl
+
+/-- The canonical full-state protection edge is an accepted writable-to-read
+only reduction.  Its exact `.page 2 8` effect suffices for target-entry
+absence, and the same `TLB.State` is installed in the authoritative composite
+successor. -/
+theorem mixed_accepted_protect_publication_order :
+    (mixedProtectStepAt .directMapped 8 { read := true }).toOption.map
+        (fun step => (step.accepted, step.effect)) =
+      some (true, .page 2 8) ∧
+    (mixedProtectStepAt .directMapped 8 { read := true }).toOption.map (·.state) =
+      (mixedOutcomeAt .directMapped .acceptedProtect).toOption.map
+        (·.state.resumable.translations) ∧
+    (mixedOutcomeAt .directMapped .acceptedProtect).toOption.map
+        (fun outcome => outcome.state.virtualMemory.mappings 2 8) =
+      some (some { object := 20, permissions := { read := true } }) ∧
+    (mixedOutcomeAt .directMapped .acceptedProtect).toOption.map
+        (fun outcome => TLB.lookup outcome.state.resumable.translations.entries
+          { addressSpace := 2, page := 8 } StaleTranslation.ctx) =
+      some none := by
+  constructor
+  · native_decide
+  constructor
+  · rfl
+  constructor <;> native_decide
+
+/-- From any globally well-formed materialized pre-state, the exact canonical
+protection edge preserves the complete folded authoritative invariant. -/
+theorem mixed_accepted_protect_preserves_global_invariant pre
+    (_hmaterialize : mixedMaterialize .directMapped = .ok pre)
+    (hstate : AuthoritativeRuntimeWellFormed pre) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativeGate pre
+        (mixedCommandOperation .acceptedProtect)).state := by
+  simpa [mixedCommandOperation] using
+    authoritativeGate_protect_preserves_authoritativeRuntimeWellFormed
+      pre 8 { read := true } hstate
+
+/-- Attempted write amplification after the canonical reduction is a typed,
+effect-free full-composite stutter. -/
+theorem mixed_rejected_protect_amplification_inert :
+    (mixedProtectStepAt .pageProtected 8 { read := true, write := true }).toOption.map
+        (fun step => (step.accepted, step.effect)) =
+      some (false, .none) ∧
+    (mixedOutcomeAt .pageProtected .rejectProtectAmplification).toOption.map
+        (·.state) =
+      (mixedMaterialize .pageProtected).toOption := by
+  constructor
+  · native_decide
+  · rfl
+
+/-! ## Stateful invalidation publication branch
+
+This branch extends the generated composite scalar ABI with the exact
+prepare/acknowledge protocol in `InvalidationPublication`.  Its canonical state
+tokens name the whole protocol state, including the unchanged published
+translation state while an effect is pending. -/
+
+inductive InvalidationStateId where
+  | initial
+  | wrongOwnerRejected
+  | protectPending
+  | protectMismatchRejected
+  | protectedState
+  | releasePending
+  | releaseMismatchRejected
+  | released
+  | staleReleaseRejected
+  | destroyPending
+  | destroyed
+  | switchPending
+  | switched
+  | reused
+  | unmapPending
+  | unmappedState
+  | switchAwayPending
+  | switchedAway
+  | switchBackPending
+  | switchedBack
+  deriving DecidableEq, Repr
+
+def encodeInvalidationState : InvalidationStateId → UInt64
+  | .initial => 0x1a01
+  | .wrongOwnerRejected => 0x1b01
+  | .protectPending => 0x1c01
+  | .protectMismatchRejected => 0x1d01
+  | .protectedState => 0x1e01
+  | .releasePending => 0x1f01
+  | .releaseMismatchRejected => 0x2001
+  | .released => 0x2101
+  | .staleReleaseRejected => 0x2201
+  | .destroyPending => 0x2301
+  | .destroyed => 0x2401
+  | .switchPending => 0x2501
+  | .switched => 0x2601
+  | .reused => 0x2701
+  | .unmapPending => 0x2801
+  | .unmappedState => 0x2901
+  | .switchAwayPending => 0x2a01
+  | .switchedAway => 0x2b01
+  | .switchBackPending => 0x2c01
+  | .switchedBack => 0x2d01
+
+def decodeInvalidationState (word : UInt64) :
+    Except DecodeError InvalidationStateId :=
+  if word = 0x1a01 then .ok .initial
+  else if word = 0x1b01 then .ok .wrongOwnerRejected
+  else if word = 0x1c01 then .ok .protectPending
+  else if word = 0x1d01 then .ok .protectMismatchRejected
+  else if word = 0x1e01 then .ok .protectedState
+  else if word = 0x1f01 then .ok .releasePending
+  else if word = 0x2001 then .ok .releaseMismatchRejected
+  else if word = 0x2101 then .ok .released
+  else if word = 0x2201 then .ok .staleReleaseRejected
+  else if word = 0x2301 then .ok .destroyPending
+  else if word = 0x2401 then .ok .destroyed
+  else if word = 0x2501 then .ok .switchPending
+  else if word = 0x2601 then .ok .switched
+  else if word = 0x2701 then .ok .reused
+  else if word = 0x2801 then .ok .unmapPending
+  else if word = 0x2901 then .ok .unmappedState
+  else if word = 0x2a01 then .ok .switchAwayPending
+  else if word = 0x2b01 then .ok .switchedAway
+  else if word = 0x2c01 then .ok .switchBackPending
+  else if word = 0x2d01 then .ok .switchedBack
+  else if word % 256 != abiVersion then .error .wrongVersion
+  else if 0x2e01 ≤ word then .error .reservedBits
+  else .error .unknownState
+
+theorem decode_encode_invalidation_state state :
+    decodeInvalidationState (encodeInvalidationState state) = .ok state := by
+  cases state <;> rfl
+
+inductive InvalidationCommandId where
+  | rejectWrongOwnerProtect
+  | prepareProtect
+  | rejectProtectEffectMismatch
+  | acknowledgeProtect
+  | prepareRelease
+  | rejectReleaseEffectMismatch
+  | acknowledgeRelease
+  | rejectStaleRelease
+  | prepareDestroy
+  | acknowledgeDestroy
+  | prepareSwitch
+  | acknowledgeSwitch
+  | publishReuse
+  | prepareUnmap
+  | acknowledgeUnmap
+  | prepareSwitchAway
+  | acknowledgeSwitchAway
+  | prepareSwitchBack
+  | acknowledgeSwitchBack
+  deriving DecidableEq, Repr
+
+def encodeInvalidationCommand : InvalidationCommandId → CommandWords
+  | .rejectWrongOwnerProtect =>
+      { tag := 0x3201, arg0 := 1, arg1 := 1, arg2 := 7, arg3 := 1 }
+  | .prepareProtect =>
+      { tag := 0x3301, arg0 := 0, arg1 := 1, arg2 := 7, arg3 := 1 }
+  | .rejectProtectEffectMismatch =>
+      { tag := 0x3401, arg0 := 2, arg1 := 1, arg2 := 0, arg3 := 0 }
+  | .acknowledgeProtect =>
+      { tag := 0x3501, arg0 := 1, arg1 := 1, arg2 := 7, arg3 := 0 }
+  | .prepareRelease =>
+      { tag := 0x3601, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .rejectReleaseEffectMismatch =>
+      { tag := 0x3701, arg0 := 1, arg1 := 1, arg2 := 7, arg3 := 1 }
+  | .acknowledgeRelease =>
+      { tag := 0x3801, arg0 := 3, arg1 := 0, arg2 := 0, arg3 := 1 }
+  | .rejectStaleRelease =>
+      { tag := 0x3901, arg0 := 0, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .prepareDestroy =>
+      { tag := 0x3a01, arg0 := 0, arg1 := 1, arg2 := 0, arg3 := 0 }
+  | .acknowledgeDestroy =>
+      { tag := 0x3b01, arg0 := 2, arg1 := 1, arg2 := 0, arg3 := 2 }
+  | .prepareSwitch =>
+      { tag := 0x3c01, arg0 := 2, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .acknowledgeSwitch =>
+      { tag := 0x3d01, arg0 := 3, arg1 := 0, arg2 := 0, arg3 := 3 }
+  | .publishReuse =>
+      { tag := 0x3e01, arg0 := 11, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .prepareUnmap =>
+      { tag := 0x3f01, arg0 := 0, arg1 := 1, arg2 := 7, arg3 := 0 }
+  | .acknowledgeUnmap =>
+      { tag := 0x4001, arg0 := 1, arg1 := 1, arg2 := 7, arg3 := 0 }
+  | .prepareSwitchAway =>
+      { tag := 0x4101, arg0 := 2, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .acknowledgeSwitchAway =>
+      { tag := 0x4201, arg0 := 3, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .prepareSwitchBack =>
+      { tag := 0x4301, arg0 := 1, arg1 := 0, arg2 := 0, arg3 := 0 }
+  | .acknowledgeSwitchBack =>
+      { tag := 0x4401, arg0 := 3, arg1 := 0, arg2 := 0, arg3 := 1 }
+
+def decodeInvalidationCommand (words : CommandWords) :
+    Except DecodeError InvalidationCommandId :=
+  if words = encodeInvalidationCommand .rejectWrongOwnerProtect then
+    .ok .rejectWrongOwnerProtect
+  else if words = encodeInvalidationCommand .prepareProtect then .ok .prepareProtect
+  else if words = encodeInvalidationCommand .rejectProtectEffectMismatch then
+    .ok .rejectProtectEffectMismatch
+  else if words = encodeInvalidationCommand .acknowledgeProtect then .ok .acknowledgeProtect
+  else if words = encodeInvalidationCommand .prepareRelease then .ok .prepareRelease
+  else if words = encodeInvalidationCommand .rejectReleaseEffectMismatch then
+    .ok .rejectReleaseEffectMismatch
+  else if words = encodeInvalidationCommand .acknowledgeRelease then .ok .acknowledgeRelease
+  else if words = encodeInvalidationCommand .rejectStaleRelease then .ok .rejectStaleRelease
+  else if words = encodeInvalidationCommand .prepareDestroy then .ok .prepareDestroy
+  else if words = encodeInvalidationCommand .acknowledgeDestroy then .ok .acknowledgeDestroy
+  else if words = encodeInvalidationCommand .prepareSwitch then .ok .prepareSwitch
+  else if words = encodeInvalidationCommand .acknowledgeSwitch then .ok .acknowledgeSwitch
+  else if words = encodeInvalidationCommand .publishReuse then .ok .publishReuse
+  else if words = encodeInvalidationCommand .prepareUnmap then .ok .prepareUnmap
+  else if words = encodeInvalidationCommand .acknowledgeUnmap then .ok .acknowledgeUnmap
+  else if words = encodeInvalidationCommand .prepareSwitchAway then
+    .ok .prepareSwitchAway
+  else if words = encodeInvalidationCommand .acknowledgeSwitchAway then
+    .ok .acknowledgeSwitchAway
+  else if words = encodeInvalidationCommand .prepareSwitchBack then
+    .ok .prepareSwitchBack
+  else if words = encodeInvalidationCommand .acknowledgeSwitchBack then
+    .ok .acknowledgeSwitchBack
+  else if words.tag % 256 != abiVersion then .error .wrongVersion
+  else if 0x4501 ≤ words.tag then .error .reservedBits
+  else .error .noncanonicalArguments
+
+theorem decode_encode_invalidation_command command :
+    decodeInvalidationCommand (encodeInvalidationCommand command) = .ok command := by
+  cases command <;> rfl
+
+inductive InvalidationReplyId where
+  | wrongOwnerRejected
+  | protectPending
+  | protectMismatchRejected
+  | protectedState
+  | releasePending
+  | releaseMismatchRejected
+  | released
+  | staleReleaseRejected
+  | destroyPending
+  | destroyed
+  | switchPending
+  | switched
+  | reused
+  | unmapPending
+  | unmappedState
+  | switchAwayPending
+  | switchedAway
+  | switchBackPending
+  | switchedBack
+  deriving DecidableEq, Repr
+
+def encodeInvalidationReply : InvalidationReplyId → UInt64
+  | .wrongOwnerRejected => 0x321b01
+  | .protectPending => 0x331c01
+  | .protectMismatchRejected => 0x341d01
+  | .protectedState => 0x351e01
+  | .releasePending => 0x361f01
+  | .releaseMismatchRejected => 0x372001
+  | .released => 0x382101
+  | .staleReleaseRejected => 0x392201
+  | .destroyPending => 0x3a2301
+  | .destroyed => 0x3b2401
+  | .switchPending => 0x3c2501
+  | .switched => 0x3d2601
+  | .reused => 0x3e2701
+  | .unmapPending => 0x3f2801
+  | .unmappedState => 0x402901
+  | .switchAwayPending => 0x412a01
+  | .switchedAway => 0x422b01
+  | .switchBackPending => 0x432c01
+  | .switchedBack => 0x442d01
+
+def decodeInvalidationReply (word : UInt64) :
+    Except DecodeError InvalidationReplyId :=
+  if word = 0x321b01 then .ok .wrongOwnerRejected
+  else if word = 0x331c01 then .ok .protectPending
+  else if word = 0x341d01 then .ok .protectMismatchRejected
+  else if word = 0x351e01 then .ok .protectedState
+  else if word = 0x361f01 then .ok .releasePending
+  else if word = 0x372001 then .ok .releaseMismatchRejected
+  else if word = 0x382101 then .ok .released
+  else if word = 0x392201 then .ok .staleReleaseRejected
+  else if word = 0x3a2301 then .ok .destroyPending
+  else if word = 0x3b2401 then .ok .destroyed
+  else if word = 0x3c2501 then .ok .switchPending
+  else if word = 0x3d2601 then .ok .switched
+  else if word = 0x3e2701 then .ok .reused
+  else if word = 0x3f2801 then .ok .unmapPending
+  else if word = 0x402901 then .ok .unmappedState
+  else if word = 0x412a01 then .ok .switchAwayPending
+  else if word = 0x422b01 then .ok .switchedAway
+  else if word = 0x432c01 then .ok .switchBackPending
+  else if word = 0x442d01 then .ok .switchedBack
+  else if word % 256 != abiVersion then .error .wrongVersion
+  else if 0x450001 ≤ word then .error .reservedBits
+  else .error .unknownCommand
+
+theorem decode_encode_invalidation_reply reply :
+    decodeInvalidationReply (encodeInvalidationReply reply) = .ok reply := by
+  cases reply <;> rfl
+
+def invalidationNextState :
+    InvalidationStateId → InvalidationCommandId → Option InvalidationStateId
+  | .initial, .rejectWrongOwnerProtect => some .wrongOwnerRejected
+  | .wrongOwnerRejected, .prepareProtect => some .protectPending
+  | .protectPending, .rejectProtectEffectMismatch => some .protectMismatchRejected
+  | .protectMismatchRejected, .acknowledgeProtect => some .protectedState
+  | .protectedState, .prepareRelease => some .releasePending
+  | .releasePending, .rejectReleaseEffectMismatch => some .releaseMismatchRejected
+  | .releaseMismatchRejected, .acknowledgeRelease => some .released
+  | .released, .rejectStaleRelease => some .staleReleaseRejected
+  | .staleReleaseRejected, .prepareDestroy => some .destroyPending
+  | .destroyPending, .acknowledgeDestroy => some .destroyed
+  | .destroyed, .prepareSwitch => some .switchPending
+  | .switchPending, .acknowledgeSwitch => some .switched
+  | .switched, .publishReuse => some .reused
+  | .initial, .prepareUnmap => some .unmapPending
+  | .unmapPending, .acknowledgeUnmap => some .unmappedState
+  | .initial, .prepareSwitchAway => some .switchAwayPending
+  | .switchAwayPending, .acknowledgeSwitchAway => some .switchedAway
+  | .switchedAway, .prepareSwitchBack => some .switchBackPending
+  | .switchBackPending, .acknowledgeSwitchBack => some .switchedBack
+  | _, _ => none
+
+def invalidationReplyId :
+    InvalidationStateId → InvalidationCommandId → Option InvalidationReplyId
+  | .initial, .rejectWrongOwnerProtect => some .wrongOwnerRejected
+  | .wrongOwnerRejected, .prepareProtect => some .protectPending
+  | .protectPending, .rejectProtectEffectMismatch => some .protectMismatchRejected
+  | .protectMismatchRejected, .acknowledgeProtect => some .protectedState
+  | .protectedState, .prepareRelease => some .releasePending
+  | .releasePending, .rejectReleaseEffectMismatch => some .releaseMismatchRejected
+  | .releaseMismatchRejected, .acknowledgeRelease => some .released
+  | .released, .rejectStaleRelease => some .staleReleaseRejected
+  | .staleReleaseRejected, .prepareDestroy => some .destroyPending
+  | .destroyPending, .acknowledgeDestroy => some .destroyed
+  | .destroyed, .prepareSwitch => some .switchPending
+  | .switchPending, .acknowledgeSwitch => some .switched
+  | .switched, .publishReuse => some .reused
+  | .initial, .prepareUnmap => some .unmapPending
+  | .unmapPending, .acknowledgeUnmap => some .unmappedState
+  | .initial, .prepareSwitchAway => some .switchAwayPending
+  | .switchAwayPending, .acknowledgeSwitchAway => some .switchedAway
+  | .switchedAway, .prepareSwitchBack => some .switchBackPending
+  | .switchBackPending, .acknowledgeSwitchBack => some .switchedBack
+  | _, _ => none
+
+/-- Exact effect meaning of every protocol reply.  Rejections and bounded reuse
+request no machine mutation; prepare and successful acknowledgement replies
+name the same checked effect. -/
+def invalidationReplyEffect : InvalidationReplyId → StaleTranslation.Effect
+  | .unmapPending | .unmappedState => .page 1 7
+  | .protectPending | .protectedState => .page 1 7
+  | .releasePending | .released => .flush
+  | .destroyPending | .destroyed => .space 1
+  | .switchPending | .switched => .flush
+  | .switchAwayPending | .switchedAway |
+      .switchBackPending | .switchedBack => .flush
+  | _ => .none
+
+def invalidationMaterialize :
+    InvalidationStateId → InvalidationPublication.State
+  | .initial => InvalidationPublication.initial
+  | .wrongOwnerRejected => InvalidationPublication.wrongOwnerRejected
+  | .protectPending => InvalidationPublication.protectPending
+  | .protectMismatchRejected => InvalidationPublication.protectMismatchRejected
+  | .protectedState => InvalidationPublication.protectedState
+  | .releasePending => InvalidationPublication.releasePending
+  | .releaseMismatchRejected => InvalidationPublication.releaseMismatchRejected
+  | .released => InvalidationPublication.released
+  | .staleReleaseRejected => InvalidationPublication.staleReleaseRejected
+  | .destroyPending => InvalidationPublication.destroyPending
+  | .destroyed => InvalidationPublication.destroyed
+  | .switchPending => InvalidationPublication.switchPending
+  | .switched => InvalidationPublication.switched
+  | .reused => InvalidationPublication.reused
+  | .unmapPending => InvalidationPublication.unmapPending
+  | .unmappedState => InvalidationPublication.unmappedState
+  | .switchAwayPending => InvalidationPublication.switchAwayPending
+  | .switchedAway => InvalidationPublication.switchedAway
+  | .switchBackPending => InvalidationPublication.switchBackPending
+  | .switchedBack => InvalidationPublication.switchedBack
+
+def invalidationOutcome :
+    InvalidationStateId → InvalidationCommandId →
+      Option InvalidationPublication.Outcome
+  | .initial, .rejectWrongOwnerProtect =>
+      some (InvalidationPublication.prepare InvalidationPublication.initial
+        .protect (.protect 1 1 7 { read := true }))
+  | .wrongOwnerRejected, .prepareProtect =>
+      some (InvalidationPublication.prepare InvalidationPublication.wrongOwnerRejected
+        .protect (.protect 0 1 7 { read := true }))
+  | .protectPending, .rejectProtectEffectMismatch =>
+      some (InvalidationPublication.acknowledge
+        InvalidationPublication.protectPending { ticket := 0, effect := .space 1 })
+  | .protectMismatchRejected, .acknowledgeProtect =>
+      some (InvalidationPublication.acknowledge
+        InvalidationPublication.protectMismatchRejected
+          { ticket := 0, effect := .page 1 7 })
+  | .protectedState, .prepareRelease =>
+      some (InvalidationPublication.prepare InvalidationPublication.protectedState
+        .release (.release 0 0))
+  | .releasePending, .rejectReleaseEffectMismatch =>
+      some (InvalidationPublication.acknowledge
+        InvalidationPublication.releasePending { ticket := 1, effect := .page 1 7 })
+  | .releaseMismatchRejected, .acknowledgeRelease =>
+      some (InvalidationPublication.acknowledge
+        InvalidationPublication.releaseMismatchRejected
+          { ticket := 1, effect := .flush })
+  | .released, .rejectStaleRelease =>
+      some (InvalidationPublication.prepare InvalidationPublication.released
+        .release (.release 0 0))
+  | .staleReleaseRejected, .prepareDestroy =>
+      some (InvalidationPublication.prepare InvalidationPublication.staleReleaseRejected
+        .destroy (.destroy 0 1))
+  | .destroyPending, .acknowledgeDestroy =>
+      some (InvalidationPublication.acknowledge
+        InvalidationPublication.destroyPending { ticket := 2, effect := .space 1 })
+  | .destroyed, .prepareSwitch =>
+      some (InvalidationPublication.prepare InvalidationPublication.destroyed
+        .switch (.switch 2))
+  | .switchPending, .acknowledgeSwitch =>
+      some (InvalidationPublication.acknowledge
+        InvalidationPublication.switchPending { ticket := 3, effect := .flush })
+  | .switched, .publishReuse =>
+      some (InvalidationPublication.publishReuse InvalidationPublication.switched)
+  | .initial, .prepareUnmap =>
+      some (InvalidationPublication.prepare InvalidationPublication.initial
+        .unmap (.unmap 0 1 7))
+  | .unmapPending, .acknowledgeUnmap =>
+      some (InvalidationPublication.acknowledge
+        InvalidationPublication.unmapPending
+          { ticket := 0, effect := .page 1 7 })
+  | .initial, .prepareSwitchAway =>
+      some (InvalidationPublication.prepare InvalidationPublication.initial
+        .switch (.switch 2))
+  | .switchAwayPending, .acknowledgeSwitchAway =>
+      some (InvalidationPublication.acknowledge
+        InvalidationPublication.switchAwayPending
+          { ticket := 0, effect := .flush })
+  | .switchedAway, .prepareSwitchBack =>
+      some (InvalidationPublication.prepare InvalidationPublication.switchedAway
+        .switch (.switch 1))
+  | .switchBackPending, .acknowledgeSwitchBack =>
+      some (InvalidationPublication.acknowledge
+        InvalidationPublication.switchBackPending
+          { ticket := 1, effect := .flush })
+  | _, _ => none
+
+theorem invalidation_dispatch_canonical state command :
+    let words := encodeInvalidationCommand command
+    dispatch (encodeInvalidationState state)
+      words.tag words.arg0 words.arg1 words.arg2 words.arg3 =
+      ((invalidationReplyId state command).map encodeInvalidationReply).getD
+        (errorWord .invalidSequence) := by
+  cases state <;> cases command <;> native_decide
+
+structure CanonicalInvalidationEdge where
+  state : InvalidationStateId
+  command : InvalidationCommandId
+  next : InvalidationStateId
+  reply : InvalidationReplyId
+  next_exact : invalidationNextState state command = some next
+  reply_exact : invalidationReplyId state command = some reply
+
+def invalidationCanonicalEdges : List CanonicalInvalidationEdge :=
+  [{ state := .initial, command := .rejectWrongOwnerProtect,
+     next := .wrongOwnerRejected, reply := .wrongOwnerRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .wrongOwnerRejected, command := .prepareProtect,
+     next := .protectPending, reply := .protectPending,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .protectPending, command := .rejectProtectEffectMismatch,
+     next := .protectMismatchRejected, reply := .protectMismatchRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .protectMismatchRejected, command := .acknowledgeProtect,
+     next := .protectedState, reply := .protectedState,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .protectedState, command := .prepareRelease,
+     next := .releasePending, reply := .releasePending,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .releasePending, command := .rejectReleaseEffectMismatch,
+     next := .releaseMismatchRejected, reply := .releaseMismatchRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .releaseMismatchRejected, command := .acknowledgeRelease,
+     next := .released, reply := .released,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .released, command := .rejectStaleRelease,
+     next := .staleReleaseRejected, reply := .staleReleaseRejected,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .staleReleaseRejected, command := .prepareDestroy,
+     next := .destroyPending, reply := .destroyPending,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .destroyPending, command := .acknowledgeDestroy,
+     next := .destroyed, reply := .destroyed,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .destroyed, command := .prepareSwitch,
+     next := .switchPending, reply := .switchPending,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .switchPending, command := .acknowledgeSwitch,
+     next := .switched, reply := .switched,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .switched, command := .publishReuse,
+     next := .reused, reply := .reused,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .initial, command := .prepareUnmap,
+     next := .unmapPending, reply := .unmapPending,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .unmapPending, command := .acknowledgeUnmap,
+     next := .unmappedState, reply := .unmappedState,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .initial, command := .prepareSwitchAway,
+     next := .switchAwayPending, reply := .switchAwayPending,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .switchAwayPending, command := .acknowledgeSwitchAway,
+     next := .switchedAway, reply := .switchedAway,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .switchedAway, command := .prepareSwitchBack,
+     next := .switchBackPending, reply := .switchBackPending,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .switchBackPending, command := .acknowledgeSwitchBack,
+     next := .switchedBack, reply := .switchedBack,
+     next_exact := rfl, reply_exact := rfl }]
+
+def CanonicalInvalidationEdge.Refines (edge : CanonicalInvalidationEdge) : Prop :=
+  ∃ outcome,
+    invalidationOutcome edge.state edge.command = some outcome ∧
+    outcome.state = invalidationMaterialize edge.next ∧
+    outcome.effect = invalidationReplyEffect edge.reply ∧
+    let words := encodeInvalidationCommand edge.command
+    decodeInvalidationReply
+        (dispatch (encodeInvalidationState edge.state)
+          words.tag words.arg0 words.arg1 words.arg2 words.arg3) =
+      .ok edge.reply
+
+theorem invalidation_edge_refines state command next reply
+    (hnext : invalidationNextState state command = some next)
+    (hreply : invalidationReplyId state command = some reply) :
+    (CanonicalInvalidationEdge.mk state command next reply hnext hreply).Refines := by
+  change ∃ outcome,
+    invalidationOutcome state command = some outcome ∧
+    outcome.state = invalidationMaterialize next ∧
+    outcome.effect = invalidationReplyEffect reply ∧
+    (let words := encodeInvalidationCommand command
+     decodeInvalidationReply
+        (dispatch (encodeInvalidationState state)
+          words.tag words.arg0 words.arg1 words.arg2 words.arg3) = .ok reply)
+  cases state <;> cases command <;> simp [invalidationNextState] at hnext
+  all_goals subst next
+  all_goals simp [invalidationReplyId] at hreply
+  all_goals subst reply
+  all_goals refine ⟨_, rfl, rfl, rfl, ?_⟩
+  all_goals
+    dsimp
+    rw [invalidation_dispatch_canonical]
+    rfl
+
+theorem invalidationCanonicalEdges_refine :
+    ∀ edge ∈ invalidationCanonicalEdges, edge.Refines := by
+  intro edge _hmembership
+  exact invalidation_edge_refines edge.state edge.command edge.next edge.reply
+    edge.next_exact edge.reply_exact
+
+/-- Malformed effects and valid effects paired with the wrong pending state are
+rejected by the scalar boundary before they can acknowledge or publish. -/
+theorem invalidation_malformed_and_mismatched_rejected :
+    dispatch 0x1d01 0x3501 1 1 7 1 = errorWord .noncanonicalArguments ∧
+    dispatch 0x1f01 0x3501 1 1 7 0 = errorWord .invalidSequence ∧
+    dispatch 0x2501 0x3d01 3 0 0 1 = errorWord .noncanonicalArguments := by
+  native_decide
+
 example : dispatch 0x0001 0x0101 1 0 0 0 = encodeReply
     { next := .subjectCreated, reply := 1 } := by native_decide
 example : dispatch 0x0101 0x0201 99 0 0 0 = encodeReply
@@ -1781,5 +2617,7 @@ example : validateQ35DMASnapshot
     0x0001060129228086 0x8001
     0x000c050029308086 0x8001 =
       DMAQuarantine.rejectReasonTag .busMasterEnabled := by native_decide
+example : dispatch 0x0f01 0x3001 7 0 0 0 = 0x301901 := by native_decide
+example : dispatch 0x0f01 0x3101 9 0 0 0 = 0x310f01 := by native_decide
 
 end LeanOS.CompositeDispatcher

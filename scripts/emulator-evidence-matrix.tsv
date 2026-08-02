@@ -1,5 +1,5 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	56
+# mandatory-count	57
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 malformed-handoff	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-malformed-handoff.iso	leanos-malformed-handoff.elf	malformed-handoff.serial.log	malformed-handoff	-	decode-rejected
@@ -57,3 +57,4 @@ direct-port-in	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-in.iso	
 direct-port-pic	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-pic.iso	leanos-direct-port-pic.elf	direct-port-pic.serial.log	direct-port-pic	-	-
 divide-error	boot	accepted-boot	30	leanos-@VERSION@-x86_64-divide-error.iso	leanos-divide-error.elf	divide-error.serial.log	divide-error	-	-
 breakpoint	boot	accepted-boot	30	leanos-@VERSION@-x86_64-breakpoint.iso	leanos-breakpoint.elf	breakpoint.serial.log	breakpoint	-	-
+stale-translation	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-stale-translation.iso	leanos-fault-stale-translation.elf	fault-stale-translation.serial.log	stale-translation-denial	-	-

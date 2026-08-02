@@ -47,6 +47,8 @@ lake build leanos-boot-plan
 
 ./scripts/test-run-integer-fault.sh
 
+./scripts/test-run-stale-translation.sh
+
 ./scripts/test-run-double-fault.sh
 
 ./scripts/test-run-entry-stack-overflow.sh
@@ -155,7 +157,7 @@ fi
 for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlockingIPC \
     CallerSuppliedCompositeContext TautologicalAuthoritativeContract \
     UniversalAuthoritativePreservation GenericCompositeSuccess \
-    DroppedFaultClassKernelOrigin; do
+    DroppedFaultClassKernelOrigin AuthoritativeUnmapRejectedMutation; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: security-claim fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
@@ -176,6 +178,19 @@ if ! grep -Fq 'tests/negative/FrameBudgetRejectedMutation.lean' "$negative_log" 
     ! grep -Fq 'Tactic `native_decide` evaluated that the proposition' "$negative_log" ||
     ! grep -Fq 'is false' "$negative_log"; then
   echo "error: frame-budget proof-integrity fixture lacked its semantic diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/FrameReuseBeforeInvalidationAck.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: pre-ack frame-reuse fixture unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -Fq 'tests/negative/FrameReuseBeforeInvalidationAck.lean' "$negative_log" ||
+    ! grep -Fq 'Tactic `native_decide` evaluated that the proposition' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: pre-ack frame-reuse fixture lacked its semantic diagnostic" >&2
   cat "$negative_log" >&2
   exit 1
 fi

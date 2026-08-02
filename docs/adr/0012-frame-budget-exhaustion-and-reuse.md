@@ -22,17 +22,24 @@ The boot object remains live on the first frame selected by the generated
 Multiboot decoder. The physical page used by this scenario is the next eligible
 frame selected through that decoder, initially unpublished and explicitly
 guarded against double publication until A's mapping is retired.
+The generated `bAllocated/terminateA` edge also returns a transition-specific
+full-flush authorization. With B's no-PCID root selected, the guest clears A's
+PTE, crosses a compiler publication barrier, reloads and reads back B's CR3,
+records completion, and only then publishes released capacity or begins the
+scrub/fresh-lifetime path. The explicit release edge has a distinct generated
+full-flush token, so an old or cross-trace result cannot authorize retirement.
 
 ## Evidence and failure policy
 
-The shared 354-record corpus is evaluated by Lean, hosted generated C, and
+The shared 380-record corpus is evaluated by Lean, hosted generated C, and
 every boot image. The version-20 serial transcript is exact and bounded by the
 ordinary runner timeout and debug-exit contract. Controlled fixtures reject a
 global-counter substitution, cross-charge, user-selected owner, exhaustion
 relabel, partial publication, double credit, leaked canary, stale authorization,
 static-buffer substitution, wrong-frame publication, a non-ring-3 canary claim,
-double publication of the live boot frame, missing/reordered records, and
-forged final status.
+double publication of the live boot frame, omitted/wrong-root/reordered
+retirement invalidation, publication or scrub before invalidation completion,
+missing/reordered records, and forged final status.
 
 CI preserves the corpus, per-step hosted results, generated source/header,
 budget diagnostics, image, ELF/map, compiled page-table plan, exact serial log,
@@ -47,7 +54,8 @@ cross-subject physical-frame reassignment. Binding its fresh B allocation to
 the machine bridge's released A frame is therefore an explicit tested, unproved
 assumption.
 
-Trusted components include the bounded token codec and mapping-page query,
+Trusted components include the bounded token codec, mapping-page and
+invalidation-effect queries,
 Lean code generator, generated-C ABI, compiler/linker, Multiboot2 capacity
 report, C/assembly entry, CR3 and allocation bridge, scrub loop, UART protocol,
 GRUB, SeaBIOS, QEMU/TCG, and assumed x86-64/page semantics. This scenario is

@@ -170,6 +170,7 @@ jobs:
             build/boot/leanos-0.1.0-x86_64-fault-nx-execute.iso
             build/boot/leanos-0.1.0-x86_64-fault-reserved-bit.iso
             build/boot/leanos-0.1.0-x86_64-fault-walk-mismatch.iso
+            build/boot/leanos-0.1.0-x86_64-fault-stale-translation.iso
             build/boot/leanos-0.1.0-x86_64-extended-state.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-mmx.iso
             build/boot/leanos-0.1.0-x86_64-extended-state-sse.iso
@@ -198,6 +199,7 @@ jobs:
             build/boot/leanos-fault-nx-execute.elf
             build/boot/leanos-fault-reserved-bit.elf
             build/boot/leanos-fault-walk-mismatch.elf
+            build/boot/leanos-fault-stale-translation.elf
             build/boot/leanos-extended-state.elf
             build/boot/leanos-extended-state-mmx.elf
             build/boot/leanos-extended-state-sse.elf
@@ -224,6 +226,7 @@ jobs:
             build/boot/leanos-fault-nx-execute.map
             build/boot/leanos-fault-reserved-bit.map
             build/boot/leanos-fault-walk-mismatch.map
+            build/boot/leanos-fault-stale-translation.map
             build/boot/leanos-extended-state.map
             build/boot/leanos-extended-state-mmx.map
             build/boot/leanos-extended-state-sse.map
@@ -254,6 +257,8 @@ jobs:
             build/boot/boot-page-plan-fault-reserved-bit.final.h
             build/boot/boot-page-plan-fault-walk-mismatch.h
             build/boot/boot-page-plan-fault-walk-mismatch.final.h
+            build/boot/boot-page-plan-fault-stale-translation.h
+            build/boot/boot-page-plan-fault-stale-translation.final.h
             build/boot/boot-page-plan-extended-state.h
             build/boot/boot-page-plan-extended-state.final.h
             build/boot/boot-page-plan-extended-state-mmx.final.h
@@ -279,6 +284,7 @@ jobs:
             build/boot/fault-nx-execute.serial.log
             build/boot/fault-reserved-bit.serial.log
             build/boot/fault-walk-mismatch.serial.log
+            build/boot/fault-stale-translation.serial.log
             build/boot/extended-state.serial.log
             build/boot/extended-state-mmx.serial.log
             build/boot/extended-state-sse.serial.log
@@ -320,6 +326,7 @@ jobs:
             build/boot/fault-nx-execute.disassembly.txt
             build/boot/fault-reserved-bit.disassembly.txt
             build/boot/fault-walk-mismatch.disassembly.txt
+            build/boot/fault-stale-translation.disassembly.txt
             build/boot/extended-state.disassembly.txt
             build/boot/extended-state-mmx.disassembly.txt
             build/boot/extended-state-sse.disassembly.txt
@@ -349,6 +356,7 @@ jobs:
             build/boot/fault-reserved-bit-terminal.txt
             build/boot/fault-walk-mismatch-policy-report.txt
             build/boot/fault-walk-mismatch-terminal.txt
+            build/boot/fault-stale-translation-policy-report.txt
             build/boot/return-corruption-*.serial.log
             build/boot/return-*-policy.log
             build/boot/leanos-0.1.0-x86_64-return-*.iso

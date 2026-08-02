@@ -49,6 +49,7 @@ DMA_COUNT = 0x90
 DMA_COMMAND = 0x98
 DMA_START = 1 << 0
 DMA_FROM_DEVICE = 1 << 1
+QTEST_RESPONSE_TIMEOUT_SECONDS = 5
 
 
 class QTest:
@@ -108,9 +109,17 @@ class QTest:
             raise RuntimeError("qtest pipes are unavailable")
         self.process.stdin.write(request + "\n")
         self.process.stdin.flush()
-        ready, _, _ = select.select([self.process.stdout], [], [], 5)
-        if not ready:
-            raise RuntimeError(f"qtest request {request!r} timed out")
+        readable, _, _ = select.select(
+            [self.process.stdout],
+            [],
+            [],
+            QTEST_RESPONSE_TIMEOUT_SECONDS,
+        )
+        if not readable:
+            raise RuntimeError(
+                f"qtest request {request!r} exceeded "
+                f"{QTEST_RESPONSE_TIMEOUT_SECONDS}s response limit"
+            )
         response = self.process.stdout.readline().strip()
         if not response.startswith("OK"):
             stderr = self.process.stderr.read() if self.process.poll() is not None else ""
@@ -143,13 +152,15 @@ class QTest:
         for offset, byte in enumerate(value):
             self.command(f"writeb 0x{address + offset:x} 0x{byte:02x}")
 
-    def read_bytes(self, address: int, count: int) -> bytes:
+    def read_aligned_qwords(self, address: int, count: int) -> bytes:
+        if address % 8 != 0 or count % 8 != 0:
+            raise RuntimeError("qword memory read must be 8-byte aligned")
         result = bytearray()
-        for offset in range(count):
-            response = self.command(f"readb 0x{address + offset:x}").split()
+        for offset in range(0, count, 8):
+            response = self.command(f"readq 0x{address + offset:x}").split()
             if len(response) != 2:
                 raise RuntimeError(f"unexpected memory read response: {response!r}")
-            result.append(int(response[1], 0))
+            result.extend(int(response[1], 0).to_bytes(8, "little"))
         return bytes(result)
 
     def writeq(self, offset: int, value: int) -> None:
@@ -172,7 +183,8 @@ class QTest:
         self.writeq(DMA_DESTINATION, destination)
         self.writeq(DMA_COUNT, count)
         self.writeq(DMA_COMMAND, command)
-        for _ in range(500):
+        deadline = time.monotonic() + QTEST_RESPONSE_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
             observed = self.readq(DMA_COMMAND)
             if observed & DMA_START == 0:
                 return observed
@@ -209,6 +221,8 @@ def exercise_case(executable: str, bus_master_enabled: bool) -> bytes:
         if qtest.config_dword(0x04) & 0xFFFF != enabled:
             raise RuntimeError("edu enabled Command word did not read back exactly")
         qtest.write_bytes(SOURCE, PAYLOAD)
+        if qtest.read_aligned_qwords(SOURCE, len(PAYLOAD)) != PAYLOAD:
+            raise RuntimeError("edu DMA source did not read back exactly")
         if qtest.transfer(SOURCE, DEVICE_BUFFER, len(PAYLOAD), DMA_START) & DMA_START:
             raise RuntimeError("edu source transfer retained its run bit")
 
@@ -227,7 +241,7 @@ def exercise_case(executable: str, bus_master_enabled: bool) -> bytes:
         )
         if completed_command & DMA_START:
             raise RuntimeError("edu protected transfer retained its run bit")
-        observed = qtest.read_bytes(PROTECTED, len(PROTECTED_RECORD))
+        observed = qtest.read_aligned_qwords(PROTECTED, len(PROTECTED_RECORD))
     finally:
         qtest.close()
     return observed
@@ -244,7 +258,8 @@ def exercise(executable: str) -> str:
     enabled_observed = exercise_case(executable, True)
     if enabled_observed != PAYLOAD:
         raise RuntimeError(
-            "enabled edu control did not change the complete protected record"
+            "enabled edu control did not change the complete protected record: "
+            f"observed={enabled_observed.hex()} expected={PAYLOAD.hex()}"
         )
 
     return (

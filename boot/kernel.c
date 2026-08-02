@@ -138,6 +138,9 @@ extern const uint8_t user_a_extended_state_probe[];
 #endif
 extern char user_a_stack[];
 extern char user_a_fault_instruction[], user_a_fault_recovered[];
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+extern char user_b_stale_translation_fault_instruction[];
+#endif
 extern char user_a_write_fault_instruction[], user_a_write_fault_recovered[];
 extern char user_a_write_target[];
 extern char user_a_nx_fault_instruction[], user_a_nx_fault_recovered[];
@@ -233,6 +236,28 @@ static struct idt_entry idt[256] __attribute__((aligned(16)));
 static struct tss64 tss;
 static uint8_t entry_stack[16384]
     __attribute__((used, section(".entry.stack"), aligned(PAGE_BYTES)));
+/* Page 7 is deliberately outside the linked boot image.  These two
+   image-reserved frames back its bounded runtime-mutable mapping window. */
+static uint64_t runtime_mapping_frame_before[PAGE_BYTES / sizeof(uint64_t)]
+    __attribute__((used, aligned(PAGE_BYTES)));
+static uint64_t runtime_mapping_frame_after[PAGE_BYTES / sizeof(uint64_t)]
+    __attribute__((used, aligned(PAGE_BYTES)));
+static volatile uint64_t runtime_invlpg_publication;
+static volatile uint64_t runtime_cr3_publication;
+static volatile uint64_t runtime_reuse_publication;
+static volatile uint64_t runtime_reuse_owner;
+static volatile uint64_t runtime_reuse_lifetime;
+#define RUNTIME_MAPPING_PAGE 7u
+#define RUNTIME_MAPPING_ADDRESS (RUNTIME_MAPPING_PAGE * PAGE_BYTES)
+#define RUNTIME_MAPPING_BEFORE UINT64_C(0x126bef0e)
+#define RUNTIME_MAPPING_AFTER UINT64_C(0x126a57e2)
+#define RUNTIME_REUSE_MODEL_REPLY UINT64_C(0x200000000)
+#define RUNTIME_MAPPING_STATE_BOOT 0u
+#define RUNTIME_MAPPING_STATE_BEFORE 1u
+#define RUNTIME_MAPPING_STATE_UNMAPPED 2u
+#define RUNTIME_MAPPING_STATE_AFTER 3u
+#define RUNTIME_MAPPING_STATE_REUSED 4u
+static volatile unsigned runtime_mapping_state = RUNTIME_MAPPING_STATE_BOOT;
 static unsigned preemption_step;
 uint64_t current_subject = 1;
 volatile uint64_t reserved_fault_nxe_disabled;
@@ -317,17 +342,18 @@ static unsigned copy_step;
    physical-frame result and the generated publication page. Quota, usage,
    allocation, identity, mapping, and cleanup policy remain in Lean. */
 static uint64_t frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_INITIAL;
+static volatile uint64_t frame_budget_retirement_completion;
 /* The boot object remains published on its own frame.  The scenario uses the
    next independently decoded eligible frame and tracks its one live
    publication across A's retirement and B's fresh lifetime. */
 static uint64_t frame_budget_boot_published_frame = UINT64_MAX;
 static uint64_t frame_budget_physical_frame = UINT64_MAX;
+static volatile unsigned frame_budget_publication_live;
 static uint64_t frame_budget_rescanned_frame = UINT64_MAX;
 static uint64_t frame_budget_rescan_status;
 static uint64_t frame_budget_rescan_usable;
 static uint64_t frame_budget_rescan_blocked;
 static uint64_t frame_budget_rescan_manifest;
-static unsigned frame_budget_publication_live;
 static uint64_t frame_budget_user_page = UINT64_MAX;
 #endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
@@ -629,6 +655,54 @@ static uint64_t expected_boot_leaf(unsigned space, uint64_t page) {
     return space == 1 ? leanos_boot_plan_a[page] : leanos_boot_plan_b[page];
 }
 
+static uint64_t runtime_mapping_leaf(uint64_t *frame) {
+    return (uint64_t)frame | PTE_PRESENT | PTE_WRITABLE | PTE_USER | PTE_NX;
+}
+
+/* Every leaf remains equal to the generated boot plan except the bounded
+   page-7 reuse window.  B/page 7 is the old mapping and A/page 7 becomes the
+   fresh-owner mapping only in the reused phase.  Each has one exact value for
+   every kernel-owned phase; an unknown phase is never accepted.
+   Accessed/dirty bits are ignored only by the caller's ordinary x86
+   comparison, just as for immutable leaves. */
+static int checked_runtime_leaf(unsigned space, uint64_t page,
+                                uint64_t *expected) {
+    if (page != RUNTIME_MAPPING_PAGE || (space != 1 && space != 2))
+        return 1;
+    if (space == 1) {
+        switch (runtime_mapping_state) {
+        case RUNTIME_MAPPING_STATE_BOOT:
+        case RUNTIME_MAPPING_STATE_BEFORE:
+        case RUNTIME_MAPPING_STATE_UNMAPPED:
+        case RUNTIME_MAPPING_STATE_AFTER:
+            return 1;
+        case RUNTIME_MAPPING_STATE_REUSED:
+            *expected = runtime_mapping_leaf(runtime_mapping_frame_before);
+            return 1;
+        default:
+            return 0;
+        }
+    }
+    switch (runtime_mapping_state) {
+    case RUNTIME_MAPPING_STATE_BOOT:
+        return 1;
+    case RUNTIME_MAPPING_STATE_BEFORE:
+        *expected = runtime_mapping_leaf(runtime_mapping_frame_before);
+        return 1;
+    case RUNTIME_MAPPING_STATE_UNMAPPED:
+        *expected = 0;
+        return 1;
+    case RUNTIME_MAPPING_STATE_REUSED:
+        *expected = 0;
+        return 1;
+    case RUNTIME_MAPPING_STATE_AFTER:
+        *expected = runtime_mapping_leaf(runtime_mapping_frame_after);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static int decoded_root_matches(unsigned space, uint64_t *root, uint64_t *pdpt,
                                 uint64_t *pd, uint64_t *pt, int report_mismatch) {
     if ((root[0] & ~PTE_ACCESSED) != ((uint64_t)pdpt | 7u) ||
@@ -659,12 +733,16 @@ static int decoded_root_matches(unsigned space, uint64_t *root, uint64_t *pdpt,
     for (uint64_t page = 0; page < BOOT_LEAF_COUNT; ++page) {
         uint64_t actual = pt[page];
         uint64_t expected = expected_boot_leaf(space, page);
-        if ((actual & ~(PTE_ACCESSED | PTE_DIRTY)) != expected) {
+        int relation_defined = checked_runtime_leaf(space, page, &expected);
+        if (!relation_defined ||
+            (actual & ~(PTE_ACCESSED | PTE_DIRTY)) != expected) {
             if (report_mismatch) {
                 serial_puts("LEANOS/8 PAGING mismatch root="); serial_u64(space);
                 serial_puts(" page="); serial_u64(page);
                 serial_puts(" expected="); serial_u64(expected);
                 serial_puts(" actual="); serial_u64(actual);
+                serial_puts(" mutable-state=");
+                serial_u64(runtime_mapping_state);
                 serial_putc('\n');
             }
             return 0;
@@ -687,6 +765,26 @@ static void expect_live_mutation_rejected(const char *fixture,
     serial_puts(" root=B level="); serial_puts(level);
     serial_puts(" page="); serial_u64(page);
     serial_puts(" expected="); serial_u64(saved);
+    serial_puts(" actual="); serial_u64(replacement);
+    serial_puts(" result=REJECTED\n");
+}
+
+static void expect_runtime_relation_rejected(const char *fixture,
+        unsigned state, uint64_t replacement, uint64_t expected) {
+    uint64_t saved_leaf = page_table_b[RUNTIME_MAPPING_PAGE];
+    unsigned saved_state = runtime_mapping_state;
+    page_table_b[RUNTIME_MAPPING_PAGE] = replacement;
+    runtime_mapping_state = state;
+    __asm__ volatile ("" ::: "memory");
+    int accepted = decoded_root_matches(2, page_map_level_4_b,
+        page_directory_pointer_b, page_directory_b, page_table_b, 0);
+    page_table_b[RUNTIME_MAPPING_PAGE] = saved_leaf;
+    runtime_mapping_state = saved_state;
+    __asm__ volatile ("" ::: "memory");
+    if (accepted) fail("pt-runtime-relation-accepted");
+    serial_puts("LEANOS/8 PAGING fixture="); serial_puts(fixture);
+    serial_puts(" root=B level=pt page="); serial_u64(RUNTIME_MAPPING_PAGE);
+    serial_puts(" expected="); serial_u64(expected);
     serial_puts(" actual="); serial_u64(replacement);
     serial_puts(" result=REJECTED\n");
 }
@@ -751,6 +849,16 @@ static void check_live_page_table_mutations(void) {
         "pt", entry_guard);
     expect_live_mutation_rejected("omitted-mapping", &page_table_b[user_text],
         0, "pt", user_text);
+    expect_runtime_relation_rejected("mutable-wrong-frame",
+        RUNTIME_MAPPING_STATE_BEFORE,
+        runtime_mapping_leaf(runtime_mapping_frame_after),
+        runtime_mapping_leaf(runtime_mapping_frame_before));
+    expect_runtime_relation_rejected("mutable-publish-before-invalidation",
+        RUNTIME_MAPPING_STATE_UNMAPPED,
+        runtime_mapping_leaf(runtime_mapping_frame_before), 0);
+    expect_runtime_relation_rejected("mutable-unknown-state", 99u,
+        page_table_b[RUNTIME_MAPPING_PAGE],
+        expected_boot_leaf(2, RUNTIME_MAPPING_PAGE));
 
     uint64_t selected;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(selected));
@@ -779,6 +887,187 @@ static void check_boot_page_tables(void) {
     serial_puts("LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS\n");
     check_live_page_table_mutations();
 }
+
+static void require_runtime_mapping_relation(const char *reason) {
+    if (!decoded_root_matches(1, page_map_level_4_a,
+                              page_directory_pointer_a, page_directory_a,
+                              page_table_a, 0) ||
+        !decoded_root_matches(2, page_map_level_4_b,
+                              page_directory_pointer_b, page_directory_b,
+                              page_table_b, 0))
+        fail(reason);
+}
+
+/* This is the active-root implementation of the canonical page(2, 7)
+   machine effect.  The volatile PTE store, compiler memory boundary, INVLPG,
+   and publication store make the required order visible in the final ELF. */
+__attribute__((noinline, used))
+static void runtime_unmap_page7_invlpg(uint64_t canonical_reply) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if (canonical_reply != LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED ||
+        (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b)
+        fail("runtime-invlpg-authority");
+    ((volatile uint64_t *)page_table_b)[RUNTIME_MAPPING_PAGE] = 0;
+    __asm__ volatile ("" ::: "memory");
+    __asm__ volatile ("invlpg (%0)" :
+                      : "r"((uint64_t)RUNTIME_MAPPING_ADDRESS) : "memory");
+    if (page_table_b[RUNTIME_MAPPING_PAGE] != 0)
+        fail("runtime-invlpg-pte");
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_UNMAPPED;
+    require_runtime_mapping_relation("runtime-invlpg-relation");
+    runtime_invlpg_publication = canonical_reply;
+}
+
+/* This is the inactive-root implementation of the same effect.  Selecting
+   the exact derived B root after the PTE store supplies the no-PCID CR3 flush;
+   completion is published only after a checked CR3 readback. */
+__attribute__((noinline, used))
+static void runtime_unmap_page7_cr3(uint64_t canonical_reply) {
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if (canonical_reply != LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED ||
+        (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a)
+        fail("runtime-cr3-authority");
+    ((volatile uint64_t *)page_table_b)[RUNTIME_MAPPING_PAGE] = 0;
+    __asm__ volatile ("" ::: "memory");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b ||
+        page_table_b[RUNTIME_MAPPING_PAGE] != 0)
+        fail("runtime-cr3-completion");
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_UNMAPPED;
+    require_runtime_mapping_relation("runtime-cr3-relation");
+    runtime_cr3_publication = canonical_reply;
+}
+
+/* Reuse the exact physical frame that backed B/page 7.  The generated
+   post-reuse fixture must say that the old page stays absent.  Only after the
+   accepted unmap has been published do we scrub the frame, establish its new
+   lifetime/owner, write the replacement canary, map the exact frame into
+   A/page 7, recheck both complete live roots, and publish reuse.  All stores
+   are volatile so this sequence remains inspectable in the final machine
+   image. */
+__attribute__((noinline, used))
+static void runtime_reuse_page7_frame(uint64_t canonical_reply) {
+    const uint64_t model_reply =
+        leanos_stale_translation_demo(0, 0, 1, RUNTIME_MAPPING_PAGE, 0, 1);
+    volatile uint64_t *frame = runtime_mapping_frame_before;
+
+    if (canonical_reply != LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED ||
+        runtime_invlpg_publication != canonical_reply ||
+        runtime_mapping_state != RUNTIME_MAPPING_STATE_UNMAPPED ||
+        page_table_b[RUNTIME_MAPPING_PAGE] != 0 ||
+        model_reply != RUNTIME_REUSE_MODEL_REPLY ||
+        runtime_reuse_publication != 0 ||
+        runtime_reuse_owner != 0 || runtime_reuse_lifetime != 0)
+        fail("runtime-reuse-authority");
+    for (unsigned i = 0; i < PAGE_BYTES / sizeof(uint64_t); ++i)
+        frame[i] = 0;
+    __asm__ volatile ("" ::: "memory");
+    runtime_reuse_lifetime = 2;
+    runtime_reuse_owner = 1;
+    frame[0] = RUNTIME_MAPPING_AFTER;
+    __asm__ volatile ("" ::: "memory");
+    ((volatile uint64_t *)page_table_a)[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_before);
+    __asm__ volatile ("" ::: "memory");
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_REUSED;
+    require_runtime_mapping_relation("runtime-reuse-relation");
+    if (page_table_b[RUNTIME_MAPPING_PAGE] != 0 ||
+        (page_table_a[RUNTIME_MAPPING_PAGE] &
+         ~(PTE_ACCESSED | PTE_DIRTY)) !=
+            runtime_mapping_leaf(runtime_mapping_frame_before) ||
+        frame[0] != RUNTIME_MAPPING_AFTER)
+        fail("runtime-reuse-binding");
+    runtime_reuse_publication = model_reply;
+}
+
+/* Exercise both machine spellings against real page tables.  The generated
+   composite dispatcher is the sole authority for the effect; C only checks
+   its closed typed reply and applies the fixed address-space-2/page-7 target.
+   Restoring the boot leaf confines the mutable window to this bounded check. */
+static void check_runtime_mapping_invalidation(void) {
+    volatile uint64_t *window =
+        (volatile uint64_t *)(uint64_t)RUNTIME_MAPPING_ADDRESS;
+    const uint64_t canonical_reply = leanos_composite_dispatch(
+        LEANOS_COMPOSITE_STATE_DIRECT_MAPPED,
+        LEANOS_COMPOSITE_COMMAND_ACCEPTED_SYSCALL_UNMAP,
+        RUNTIME_MAPPING_PAGE, 0, 0, 0);
+    const uint64_t boot_leaf = expected_boot_leaf(2, RUNTIME_MAPPING_PAGE);
+
+    if (canonical_reply != LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED)
+        fail("runtime-unmap-dispatch");
+    runtime_mapping_frame_before[0] = RUNTIME_MAPPING_BEFORE;
+    runtime_mapping_frame_after[0] = RUNTIME_MAPPING_AFTER;
+
+    page_table_b[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_before);
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_BEFORE;
+    require_runtime_mapping_relation("runtime-invlpg-before-relation");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    if (*window != RUNTIME_MAPPING_BEFORE)
+        fail("runtime-invlpg-before");
+    runtime_unmap_page7_invlpg(canonical_reply);
+    page_table_b[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_after);
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_AFTER;
+    require_runtime_mapping_relation("runtime-invlpg-after-relation");
+    __asm__ volatile ("" ::: "memory");
+    if (*window != RUNTIME_MAPPING_AFTER ||
+        runtime_invlpg_publication != canonical_reply)
+        fail("runtime-invlpg-reuse");
+    serial_puts("LEANOS/19 TLB path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS\n");
+
+    page_table_b[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_before);
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_BEFORE;
+    require_runtime_mapping_relation("runtime-cr3-before-relation");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    if (*window != RUNTIME_MAPPING_BEFORE)
+        fail("runtime-cr3-before");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_a) : "memory");
+    runtime_unmap_page7_cr3(canonical_reply);
+    page_table_b[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_after);
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_AFTER;
+    require_runtime_mapping_relation("runtime-cr3-after-relation");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    if (*window != RUNTIME_MAPPING_AFTER ||
+        runtime_cr3_publication != canonical_reply)
+        fail("runtime-cr3-reuse");
+    serial_puts("LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS\n");
+
+    page_table_b[RUNTIME_MAPPING_PAGE] = boot_leaf;
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_BOOT;
+    require_runtime_mapping_relation("runtime-window-restore-relation");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_a) : "memory");
+    if (page_table_b[RUNTIME_MAPPING_PAGE] != boot_leaf)
+        fail("runtime-window-restore");
+    serial_puts("LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS\n");
+    serial_puts("LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS\n");
+}
+
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+static void arm_cpl3_stale_translation_probe(void) {
+    runtime_mapping_frame_before[0] = RUNTIME_MAPPING_BEFORE;
+    page_table_b[RUNTIME_MAPPING_PAGE] =
+        runtime_mapping_leaf(runtime_mapping_frame_before);
+    runtime_mapping_state = RUNTIME_MAPPING_STATE_BEFORE;
+    require_runtime_mapping_relation("stale-translation-arm-relation");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    if (page_table_b[RUNTIME_MAPPING_PAGE] !=
+            runtime_mapping_leaf(runtime_mapping_frame_before))
+        fail("stale-translation-arm-leaf");
+}
+#endif
 
 static void check_selected_root_b(void) {
     uint64_t cr3;
@@ -2179,15 +2468,39 @@ static void frame_budget_publish_mapping(
     __asm__ volatile ("invlpg (%0)" : : "r"(page * PAGE_BYTES) : "memory");
 }
 
+/* Retire A's authoritative mapping only under the generated termination
+   token.  Because A is inactive while B performs cleanup, a reload of the
+   current no-PCID B root supplies the reviewed full non-global flush.  The
+   completion token and released-publication bit are written only afterward. */
+__attribute__((noinline, used))
 static void frame_budget_retire_mapping(
-        uint64_t *page_table, uint64_t page, uint64_t physical_frame) {
+        uint64_t *page_table, uint64_t page, uint64_t physical_frame,
+        uint64_t canonical_reply, uint64_t effect_token) {
+    uint64_t cr3;
+    uint64_t cr4;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
     if (!frame_budget_publication_live || page >= BOOT_LEAF_COUNT ||
+        page_table != page_table_a ||
+        canonical_reply != UINT64_C(0x444501) ||
+        effect_token != LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN ||
+        frame_budget_retirement_completion != 0 ||
+        (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b ||
+        (cr4 & (UINT64_C(1) << 17)) != 0 ||
         (page_table[page] & ~(PTE_ACCESSED | PTE_DIRTY)) !=
         frame_budget_leaf(page, physical_frame))
         fail("frame-budget-retire-wrong-mapping");
-    page_table[page] = 0;
-    frame_budget_publication_live = 0;
+    ((volatile uint64_t *)page_table)[page] = 0;
     __asm__ volatile ("" ::: "memory");
+    __asm__ volatile ("mov %0, %%cr3" :
+                      : "r"((uint64_t)page_map_level_4_b) : "memory");
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    if ((cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b ||
+        page_table[page] != 0)
+        fail("frame-budget-retire-flush");
+    frame_budget_retirement_completion = effect_token;
+    __asm__ volatile ("" ::: "memory");
+    frame_budget_publication_live = 0;
 }
 #endif
 
@@ -2267,17 +2580,27 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
         if (number == 24 && current_subject == 2) {
             if (arg0 != UINT64_C(0x10000))
                 fail("frame-budget-stale-handle-word");
+            uint64_t effect_token = leanos_frame_budget_invalidation_effect(
+                frame_budget_state,
+                LEANOS_COMPOSITE_COMMAND_BUDGET_TERMINATE_A);
             uint64_t got = leanos_composite_dispatch(frame_budget_state,
                 LEANOS_COMPOSITE_COMMAND_BUDGET_TERMINATE_A, 0, 0, 0, 0);
-            if (got != UINT64_C(0x444501))
+            if (got != UINT64_C(0x444501) ||
+                effect_token != LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN)
                 fail("frame-budget-cleanup");
-            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_A_TERMINATED;
             frame_budget_retire_mapping(page_table_a, frame_budget_user_page,
-                frame_budget_physical_frame);
-            serial_puts("LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 checked=1\n");
+                frame_budget_physical_frame, got, effect_token);
+            if (frame_budget_retirement_completion != effect_token ||
+                frame_budget_publication_live)
+                fail("frame-budget-retirement-publication");
+            frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_A_TERMINATED;
+            serial_puts("LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 effect=flush invalidation=cr3 order=store,cr3,ack,publish checked=1\n");
 
             volatile uint8_t *reclaimed =
                 (volatile uint8_t *)(frame_budget_physical_frame * PAGE_BYTES);
+            if (frame_budget_retirement_completion !=
+                LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN)
+                fail("frame-budget-scrub-before-invalidation");
             for (unsigned i = 0; i < PAGE_BYTES; ++i)
                 reclaimed[i] = 0;
             for (unsigned i = 0; i < PAGE_BYTES; ++i)
@@ -2292,6 +2615,9 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
                 LEANOS_COMPOSITE_COMMAND_BUDGET_PUBLISH_FRESH_B, 21, 1, 0, 0);
             if (got != UINT64_C(0x454601))
                 fail("frame-budget-fresh-publication");
+            if (frame_budget_retirement_completion !=
+                LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN)
+                fail("frame-budget-publish-before-invalidation");
             frame_budget_state = LEANOS_COMPOSITE_STATE_BUDGET_B_FRESH;
             uint64_t fresh_page = leanos_frame_budget_mapping_page(prestate,
                 LEANOS_COMPOSITE_COMMAND_BUDGET_PUBLISH_FRESH_B);
@@ -2342,6 +2668,53 @@ uint64_t syscall_handler(uint64_t number, uint64_t arg0, uint64_t arg1,
     }
 #endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+    if (number == 19 && current_subject == 2 &&
+        page_fault_probe_class == 5) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        if (arg0 != RUNTIME_MAPPING_BEFORE ||
+            arg1 != RUNTIME_MAPPING_ADDRESS || arg2 != RUNTIME_MAPPING_PAGE ||
+            (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_b ||
+            runtime_mapping_state != RUNTIME_MAPPING_STATE_BEFORE ||
+            (page_table_b[RUNTIME_MAPPING_PAGE] & ~(PTE_ACCESSED | PTE_DIRTY)) !=
+                runtime_mapping_leaf(runtime_mapping_frame_before))
+            fail("stale-translation-prefill-binding");
+        serial_puts("LEANOS/19 TLB-CPL3 event=prefill subject=2 address-space=2 page=7 address=28672 access=read canary=309063438 leaf=present-user result=PASS\n");
+        const uint64_t canonical_reply = leanos_composite_dispatch(
+            LEANOS_COMPOSITE_STATE_DIRECT_MAPPED,
+            LEANOS_COMPOSITE_COMMAND_ACCEPTED_SYSCALL_UNMAP,
+            RUNTIME_MAPPING_PAGE, 0, 0, 0);
+        runtime_unmap_page7_invlpg(canonical_reply);
+        if (runtime_invlpg_publication != canonical_reply)
+            fail("stale-translation-unmap-publication");
+        serial_puts("LEANOS/19 TLB-CPL3 event=unmap subject=2 address-space=2 page=7 pte=absent effect=page invalidation=invlpg cr3-reload=0 order=store,invlpg,publish result=PASS\n");
+        runtime_reuse_page7_frame(canonical_reply);
+        if (runtime_reuse_publication != RUNTIME_REUSE_MODEL_REPLY)
+            fail("stale-translation-reuse-publication");
+        serial_puts("LEANOS/19 TLB-CPL3 event=reuse frame=same old-owner=2 old-lifetime=1 new-owner=1 new-lifetime=2 old-address-space=2 old-page=7 old-pte=absent new-address-space=1 new-page=7 new-pte=present-user scrub=complete canary=308959202 model=post-reuse-old-page-absent order=unmap,invlpg,publish-unmap,scrub,allocate,write-canary,map-new-owner,publish-reuse result=PASS\n");
+        return canonical_reply;
+    }
+    if (number == 20 && current_subject == 1 &&
+        page_fault_probe_class == 5) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        if (arg0 != RUNTIME_MAPPING_AFTER ||
+            arg1 != RUNTIME_MAPPING_ADDRESS || arg2 != RUNTIME_MAPPING_PAGE ||
+            (cr3 & PTE_ADDRESS) != (uint64_t)page_map_level_4_a ||
+            runtime_mapping_state != RUNTIME_MAPPING_STATE_REUSED ||
+            runtime_reuse_publication != RUNTIME_REUSE_MODEL_REPLY ||
+            runtime_reuse_owner != 1 || runtime_reuse_lifetime != 2 ||
+            page_table_b[RUNTIME_MAPPING_PAGE] != 0 ||
+            (page_table_a[RUNTIME_MAPPING_PAGE] &
+             ~(PTE_ACCESSED | PTE_DIRTY)) !=
+                runtime_mapping_leaf(runtime_mapping_frame_before) ||
+            runtime_mapping_frame_before[0] != RUNTIME_MAPPING_AFTER)
+            fail("stale-translation-new-owner-binding");
+        require_runtime_mapping_relation("stale-translation-new-owner-relation");
+        serial_puts("LEANOS/19 TLB-CPL3 event=new-owner-read subject=1 address-space=1 page=7 address=28672 access=read frame=same lifetime=2 canary=308959202 old-address-space=2 old-pte=absent result=PASS\n");
+        serial_puts("LEANOS/19 FINAL status=PASS prefill=1 accepted-unmap=1 exact-invlpg=1 same-frame-reuse=1 scrub=complete new-owner-cpl3-read=1 replacement-canary=intact stale-access=page-fault old-observation=denied containment=1 incidental-cr3-reload=0\n");
+        finish(0x10);
+    }
     if (number == 14 && current_subject == 2) {
         check_selected_root_b();
         if (arg0 != UINT64_C(0xb2b2cafe51a7e55e) || arg1 != 0x030201 ||
@@ -2765,6 +3138,37 @@ uint64_t page_fault_handler(const struct page_fault_transition *transition) {
     if (transition->kind != PAGE_FAULT_TRANSITION_CONTAIN)
         fail("page-fault-containment-bypass");
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    if (page_fault_probe_class == 5) {
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        if (transition->result != 1 ||
+            snapshot->error != 4 ||
+            snapshot->rip !=
+                (uint64_t)user_b_stale_translation_fault_instruction ||
+            snapshot->fault_address != RUNTIME_MAPPING_ADDRESS ||
+            snapshot->fault_page != RUNTIME_MAPPING_PAGE ||
+            snapshot->access != 0 || snapshot->protection != 0 ||
+            snapshot->user != 1 || snapshot->current_subject != 2 ||
+            snapshot->active_address_space != 2 ||
+            snapshot->active_cr3 != (uint64_t)page_map_level_4_b ||
+            cr3 != (uint64_t)page_map_level_4_b ||
+            page_table_b[RUNTIME_MAPPING_PAGE] != 0 ||
+            runtime_mapping_state != RUNTIME_MAPPING_STATE_REUSED ||
+            runtime_invlpg_publication !=
+                LEANOS_COMPOSITE_REPLY_PAGE_UNMAPPED ||
+            runtime_reuse_publication != RUNTIME_REUSE_MODEL_REPLY ||
+            runtime_reuse_owner != 1 || runtime_reuse_lifetime != 2 ||
+            (page_table_a[RUNTIME_MAPPING_PAGE] &
+             ~(PTE_ACCESSED | PTE_DIRTY)) !=
+                runtime_mapping_leaf(runtime_mapping_frame_before) ||
+            runtime_mapping_frame_before[0] != RUNTIME_MAPPING_AFTER)
+            fail("stale-translation-fault-binding");
+        serial_puts("LEANOS/19 TLB-CPL3 event=denial vector=14 error=4 origin=cpl3 hardware=1 direct-call=0 subject=2 address-space=2 cr2=28672 page=7 access=read protection=0 pte=absent replacement-owner=1 replacement-lifetime=2 replacement-canary=308959202 replacement-canary-intact=1 route=contain handoff=new-owner cr3-reload-since-unmap=0 result=PASS\n");
+        current_subject = 1;
+        return 3;
+    }
+#endif
     const uint64_t expected_error = page_fault_probe_class == 2 ? 21u :
         page_fault_probe_class == 1 ? 7u : 5u;
     const uint64_t expected_rip = page_fault_probe_class == 2
@@ -2934,13 +3338,17 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
                    active_address_space == 2 ? page_directory_b : 0;
     uint64_t *pt = active_address_space == 1 ? page_table_a :
                    active_address_space == 2 ? page_table_b : 0;
-    const uint64_t report_agrees = !user ||
-        (root != 0 && decoded_root_matches((unsigned)active_address_space,
-                                           root, pdpt, pd, pt, 0));
-    const uint64_t expected_leaf =
+    uint64_t expected_leaf =
         user && snapshot.fault_page < BOOT_LEAF_COUNT ?
             expected_boot_leaf((unsigned)active_address_space,
                                snapshot.fault_page) : 0;
+    const uint64_t runtime_leaf_relation =
+        !user || checked_runtime_leaf((unsigned)active_address_space,
+                                      snapshot.fault_page, &expected_leaf);
+    const uint64_t report_agrees = !user ||
+        (root != 0 && runtime_leaf_relation &&
+         decoded_root_matches((unsigned)active_address_space,
+                              root, pdpt, pd, pt, 0));
     const uint64_t live_leaf =
         user && pt != 0 && snapshot.fault_page < BOOT_LEAF_COUNT ?
             pt[snapshot.fault_page] & ~(PTE_ACCESSED | PTE_DIRTY) : 0;
@@ -2986,6 +3394,16 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
               snapshot.fault_page == 0 && snapshot.error == 5 &&
               snapshot.access == 0 && snapshot.protection == 1 &&
               snapshot.rip == (uint64_t)user_a_fault_instruction
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+            : page_fault_probe_class == 5
+            ? user &&
+              snapshot.fault_address == RUNTIME_MAPPING_ADDRESS &&
+              snapshot.fault_page == RUNTIME_MAPPING_PAGE &&
+              snapshot.error == 4 && snapshot.access == 0 &&
+              snapshot.protection == 0 &&
+              snapshot.rip ==
+                  (uint64_t)user_b_stale_translation_fault_instruction
+#endif
             : 0;
     const uint64_t exact_fault_page_invalidation =
         invalidate_snapshot_fault_page(&snapshot);
@@ -3019,7 +3437,8 @@ uint64_t authorize_page_fault_snapshot(const uint64_t *frame) {
         active_address_space, active_address_space, active_address_space,
         0, 0, checked_exact_fault_page_invalidation, current_subject,
         active_address_space,
-        saved_context_owner_b, saved_context_owner_b);
+        page_fault_probe_class == 5 ? 0 : saved_context_owner_b,
+        page_fault_probe_class == 5 ? 0 : saved_context_owner_b);
     const struct page_fault_transition transition = {
         .kind = (enum page_fault_transition_kind)(route >> 56),
         .result = route & UINT64_C(0x00ffffffffffffff),
@@ -3233,7 +3652,9 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fast-entry-denial controls=wp,smep,smap,em,mp,ts,sce-off\n"
         : "LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts\n");
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
-    serial_puts(page_fault_probe_class == 4
+    serial_puts(page_fault_probe_class == 5
+        ? "LEANOS/19 BOOT target=x86_64-q35 subjects=2 schedule=stale-translation-denial probe=cpl3-unmap-read contract=v1 controls=wp,smep,smap,pcid-off\n"
+        : page_fault_probe_class == 4
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-integrity probe=walk-mismatch contract=v1 controls=wp,smep,smap\n"
         : page_fault_probe_class == 3
         ? "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-integrity probe=reserved-bit contract=v1 controls=wp,smep,smap\n"
@@ -3263,6 +3684,7 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
     quarantine_q35_pci_dma();
 
     check_boot_page_tables();
+    check_runtime_mapping_invalidation();
 
     boot_allocate(multiboot_magic, multiboot_info);
 
@@ -3351,10 +3773,23 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         " expected-vector=6\n" : " expected-vector=7\n");
     enter_user(user_a_entry, user_a_stack_top);
 #elif defined(LEANOS_FAULT_CONTAINMENT_SCENARIO)
-    current_subject = 1;
-    activate_user_address_space(page_map_level_4_a);
-    check_selected_root_a();
-    if (page_fault_probe_class == 3) {
+    current_subject =
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+        page_fault_probe_class == 5 ? 2 :
+#endif
+        1;
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    if (page_fault_probe_class == 5) {
+        arm_cpl3_stale_translation_probe();
+        check_selected_root_b();
+    } else
+#endif
+    {
+        activate_user_address_space(page_map_level_4_a);
+        check_selected_root_a();
+    }
+#ifdef LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT
+    {
         const uint64_t page =
             (uint64_t)user_a_nx_fault_instruction / PAGE_BYTES;
         /* TCG does not consistently raise RSVD for address bits above its
@@ -3370,10 +3805,17 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
         __asm__ volatile ("invlpg (%0)" :
                           : "r"(user_a_nx_fault_instruction) : "memory");
     }
-    serial_puts(page_fault_probe_class >= 3
+#endif
+    serial_puts(page_fault_probe_class == 5
+        ? "LEANOS/19 ENTER subject=2 address-space=2 cpl=3 mapping=page7-present-user canary=309063438\n"
+        : page_fault_probe_class >= 3
         ? "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned fatal-only=1\n"
         : "LEANOS/14 ENTER subject=1 address-space=1 cpl=3 resources=owned\n");
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    enter_user(user_b_entry, user_b_stack_top);
+#else
     enter_user(user_a_entry, user_a_stack_top);
+#endif
 #elif defined(LEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO)
     current_subject = 1;
     activate_user_address_space(page_map_level_4_a);
