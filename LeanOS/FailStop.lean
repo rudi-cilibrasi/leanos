@@ -20632,6 +20632,12 @@ theorem compositeDispatcherInitial_authoritativeRuntimeWellFormed
     intro addressSpace subject howner
     apply hownerAuthority addressSpace subject
     simpa [dispatcherLifecycle] using howner
+  suffices hlegacy :
+      DeferredBlockingRuntimeWellFormed
+        (compositeDispatcherInitial plan) by
+    refine ⟨hlegacy.1, hlegacy.2, ?_⟩
+    change InvalidationPublication.WellFormed InvalidationPublication.initial
+    exact InvalidationPublication.initial_wellFormed
   simp [AuthoritativeRuntimeWellFormed, DeferredBlockingRuntimeWellFormed,
     compositeDispatcherInitial, dispatcherScheduler, dispatcherLifecycle,
     dispatcherVirtualMemory, dispatcherMemory, dispatcherEndpoints,
@@ -20657,6 +20663,7 @@ theorem compositeDispatcherInitial_authoritativeRuntimeWellFormed
     Capability.nonemptyRights, Capability.permits,
     Interrupt.validSavedUserFrame, demoFrame,
     DirectPortIO.AcceptedControls, DMAQuarantine.q35Accepted,
+    InvalidationPublication.initial_wellFormed,
     bootRuntime, bootLifecycle, bootCapabilities, bootVirtualMemory,
     bootMemory, bootEndpoints]
   repeat' apply And.intro
