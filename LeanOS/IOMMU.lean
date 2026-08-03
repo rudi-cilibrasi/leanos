@@ -3328,7 +3328,7 @@ private theorem lifecycleAddressSpace_live (addressSpace : Nat)
     have hne2 : addressSpace ≠ 2 := fun heq => hlive (Or.inr heq)
     simp [lifecycleCapabilities, hne1, hne2] at hkind
 
-set_option maxHeartbeats 800000 in
+set_option maxHeartbeats 2000000 in
 private theorem lifecycleKernel_invariant (plan : BootPageTablePlan.Plan) :
     FailStop.AuthoritativeRuntimeWellFormed (lifecycleKernel plan) := by
   rcases lifecycleCapabilities_wellFormed with
@@ -3364,46 +3364,143 @@ private theorem lifecycleKernel_invariant (plan : BootPageTablePlan.Plan) :
       rfl | rfl
     · exact ⟨1, rfl⟩
     · exact ⟨2, rfl⟩
-  simp [FailStop.AuthoritativeRuntimeWellFormed,
-    lifecycleKernel, lifecycleScheduler, lifecycleSubjectState,
-    lifecycleVirtualMemory, lifecycleMemory, lifecycleEndpoints,
-    lifecycleSubjectOneContext, lifecycleSavedFrame,
-    lifecycleSavedRegisters,
-    FailStop.RuntimeWellFormed, FailStop.CompositeState.Coherent,
-    FailStop.WellFormed, Interrupt.WellFormed,
-    SubjectLifecycle.WellFormed,
-    VirtualMapping.LifecycleWellFormed, VirtualMapping.WellFormed,
-    IPCSyscall.WellFormed, EndpointIPC.WellFormed,
-    Scheduler.WellFormed, Preemption.WellFormed,
-    ResumablePreemption.WellFormed,
-    ResumablePreemption.ReadyContextAgreement,
-    ResumablePreemption.TranslationAgreement,
-    ResumablePreemption.VirtualAgreement,
-    ResumablePreemption.ResourceKindAgreement,
-    CapabilityTransfer.WellFormed, TLB.Coherent,
-    FailStop.CompositeState.ReturnPlanLive,
-    FailStop.CompositeState.blockingIPCContext,
-    FailStop.CompositeState.BlockingIPCCoherent,
-    FailStop.CompositeState.DeferredCancellationWellFormed,
-    BlockingIPCContext.DeferredWellFormed,
-    BlockingIPCContext.WellFormed,
-    BlockingIPCContext.ContextAgreement, BlockingIPC.WellFormed,
-    BlockingIPC.authorizedReceive, BlockingIPCContext.emptyDeferred,
-    BlockingIPCContext.validSaved, Scheduler.ownsAddressSpace,
-    ResumablePreemption.contextFor,
-    ResumablePreemption.validContext,
-    LeanOS.Capability.rightsValid,
-    LeanOS.Capability.rightsSubset,
-    LeanOS.Capability.nonemptyRights,
-    Interrupt.validSavedUserFrame,
-    DirectPortIO.AcceptedControls, DMAQuarantine.q35Accepted,
-    FailStop.bootRuntime]
+  have hsubjectOneContextValid :
+      ResumablePreemption.validContext
+        (lifecycleKernel plan).resumable lifecycleSubjectOneContext := by
+    simp [ResumablePreemption.validContext, lifecycleKernel,
+      lifecycleSubjectOneContext, lifecycleSavedFrame,
+      lifecycleScheduler, lifecycleSubjectState, lifecycleVirtualMemory,
+      lifecycleCapabilities,
+      Scheduler.ownsAddressSpace,
+      Interrupt.validSavedUserFrame]
+  have htlbCoherent :
+      TLB.Coherent (lifecycleKernel plan).resumable.translations := by
+    simp [TLB.Coherent, lifecycleKernel]
+  have hportControls :
+      DirectPortIO.AcceptedControls DirectPortIO.selectedControls := rfl
+  have hdmaQuarantined :
+      (FailStop.bootRuntime plan).dmaObserved =
+        (FailStop.bootRuntime plan).dmaAccepted.snapshot := rfl
+  have hownerFacts :
+      ∀ addressSpace subject,
+        (if addressSpace = 1 then some 1
+          else if addressSpace = 2 then some 2 else none) = some subject →
+          ((addressSpace = 1 ∨ addressSpace = 2) ∨ addressSpace = 20) ∧
+          (addressSpace ≠ 1 → addressSpace = 2) ∧
+          (addressSpace = 1 ∨ addressSpace = 2) ∧
+          ((addressSpace = 1 ∨ addressSpace = 2) ∨ addressSpace = 20) := by
+    intro addressSpace subject howner
+    by_cases hfirst : addressSpace = 1
+    · subst addressSpace
+      simp
+    · by_cases hsecond : addressSpace = 2
+      · subst addressSpace
+        simp
+      · simp [hfirst, hsecond] at howner
+  have hsubjectLive :
+      ∀ subject, lifecycleCapabilities.subjects subject = true →
+        subject = 1 ∨ subject = 2 := by
+    intro subject hlive
+    simp [lifecycleCapabilities] at hlive
+    exact hlive
+  have hobjectLive :
+      ∀ object, lifecycleCapabilities.objects object = true →
+        (object = 1 ∨ object = 2) ∨ object = 20 := by
+    intro object hlive
+    simp [lifecycleCapabilities] at hlive
+    exact hlive
+  have hnoEndpointKind :
+      ∀ object, lifecycleCapabilities.objects object = true →
+        lifecycleCapabilities.kinds object = some .endpoint → False := by
+    intro object hlive hkind
+    rcases hobjectLive object hlive with (rfl | rfl) | rfl <;>
+      simp [lifecycleCapabilities] at hkind
+  have hconcreteCapabilities :
+      lifecycleCapabilities.subjects 1 = true ∧
+      lifecycleCapabilities.subjects 2 = true ∧
+      lifecycleCapabilities.objects 1 = true ∧
+      lifecycleCapabilities.objects 2 = true ∧
+      lifecycleCapabilities.objects 20 = true ∧
+      lifecycleCapabilities.kinds 1 = some .addressSpace ∧
+      lifecycleCapabilities.kinds 2 = some .addressSpace ∧
+      lifecycleCapabilities.kinds 20 = some .memory := by
+    simp [lifecycleCapabilities]
+  have hlifecycleWellFormed :
+      SubjectLifecycle.WellFormed lifecycleSubjectState := by
+    simp [SubjectLifecycle.WellFormed, lifecycleSubjectState,
+      lifecycleCapabilities, lifecycleVirtualMemory]
+    grind
+  have hdeferredWellFormed :
+      (lifecycleKernel plan).DeferredCancellationWellFormed := by
+    simp [FailStop.CompositeState.DeferredCancellationWellFormed,
+      BlockingIPCContext.DeferredWellFormed,
+      FailStop.CompositeState.blockingIPCContext,
+      BlockingIPCContext.WellFormed,
+      BlockingIPCContext.ContextAgreement, BlockingIPC.WellFormed,
+      BlockingIPC.authorizedReceive, BlockingIPCContext.emptyDeferred,
+      lifecycleKernel, lifecycleScheduler, lifecycleSubjectState,
+      lifecycleCapabilities, lifecycleVirtualMemory,
+      Scheduler.WellFormed, Scheduler.ownsAddressSpace]
+    constructor
+    · exact hlifecycleWellFormed
+    · simpa [lifecycleCapabilities] using lifecycleCapabilities_wellFormed
+  suffices hlegacy :
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (lifecycleKernel plan) by
+    refine ⟨hlegacy.1, hlegacy.2, ?_⟩
+    change InvalidationPublication.WellFormed InvalidationPublication.initial
+    exact InvalidationPublication.initial_wellFormed
+  refine ⟨?_, hdeferredWellFormed⟩
+  simp only [FailStop.RuntimeWellFormed]
   repeat' apply And.intro
   all_goals first
     | assumption
+    | exact hsubjectOneContextValid
+    | exact htlbCoherent
+    | exact hportControls
+    | exact hdmaQuarantined
+    | exact hlifecycleWellFormed
+    | simp [ResumablePreemption.validContext,
+        lifecycleSubjectOneContext, lifecycleSavedFrame,
+        Interrupt.validSavedUserFrame]
     | simp (config := { failIfUnchanged := false })
-  all_goals simp_all (config := { failIfUnchanged := false })
-    [lifecycleCapabilities]
+        [lifecycleKernel, lifecycleScheduler, lifecycleSubjectState,
+          lifecycleVirtualMemory, lifecycleMemory, lifecycleEndpoints,
+          lifecycleSubjectOneContext, lifecycleSavedFrame,
+          lifecycleSavedRegisters, FailStop.CompositeState.Coherent,
+          FailStop.WellFormed, Interrupt.WellFormed,
+          VirtualMapping.LifecycleWellFormed, VirtualMapping.WellFormed,
+          IPCSyscall.WellFormed, EndpointIPC.WellFormed,
+          Scheduler.WellFormed, Preemption.WellFormed,
+          ResumablePreemption.WellFormed,
+          ResumablePreemption.ReadyContextAgreement,
+          ResumablePreemption.TranslationAgreement,
+          ResumablePreemption.VirtualAgreement,
+          ResumablePreemption.ResourceKindAgreement,
+          CapabilityTransfer.WellFormed,
+          FailStop.CompositeState.ReturnPlanLive,
+          FailStop.CompositeState.blockingIPCContext,
+          FailStop.CompositeState.BlockingIPCCoherent,
+          FailStop.CompositeState.DeferredCancellationWellFormed,
+          BlockingIPCContext.DeferredWellFormed,
+          BlockingIPCContext.WellFormed,
+          BlockingIPCContext.ContextAgreement, BlockingIPC.WellFormed,
+          BlockingIPC.authorizedReceive, BlockingIPCContext.emptyDeferred,
+          BlockingIPCContext.validSaved, Scheduler.ownsAddressSpace,
+          ResumablePreemption.contextFor,
+          ResumablePreemption.validContext,
+          LeanOS.Capability.rightsValid,
+          LeanOS.Capability.rightsSubset,
+          LeanOS.Capability.nonemptyRights,
+          Interrupt.validSavedUserFrame,
+          DMAQuarantine.q35Accepted, FailStop.bootRuntime]
+  all_goals simp (config := { failIfUnchanged := false })
+    [lifecycleKernel, lifecycleSubjectState,
+      lifecycleScheduler, lifecycleVirtualMemory, lifecycleMemory,
+      lifecycleEndpoints, lifecycleSubjectOneContext,
+      lifecycleSavedFrame, lifecycleSavedRegisters,
+      ResumablePreemption.contextFor,
+      Scheduler.ownsAddressSpace]
   all_goals grind
 
 private def lifecycleScrub : FrameScrub.State :=
@@ -3751,7 +3848,7 @@ private theorem lifecycleReleaseScrub_invariant :
   simp [MemoryLifecycle.setBinding, lifecycleMemory] at hbinding
   exact (hbinding.1 hbinding.2.1).elim
 
-set_option maxHeartbeats 2000000 in
+set_option maxHeartbeats 6000000 in
 private theorem lifecycleReleaseKernel_invariant
     (plan : BootPageTablePlan.Plan) :
     FailStop.AuthoritativeRuntimeWellFormed (lifecycleReleaseKernel plan) := by
@@ -3811,52 +3908,378 @@ private theorem lifecycleReleaseKernel_invariant
         hkind' with rfl | rfl
     · exact ⟨1, rfl⟩
     · exact ⟨2, rfl⟩
-  simp [FailStop.AuthoritativeRuntimeWellFormed,
-    lifecycleReleaseKernel, publishKernelMemory, lifecycleKernel,
-    lifecycleReleaseLifecycle, retireMemoryFromLifecycle,
-    lifecycleMemory, lifecycleCapabilities, lifecycleScheduler,
-    lifecycleSubjectState, lifecycleVirtualMemory, lifecycleEndpoints,
-    lifecycleSubjectOneContext, lifecycleSavedFrame,
-    lifecycleSavedRegisters,
-    MemoryLifecycle.setBinding, setOwnedMemory, setFrameOwner,
-    setFreeFrame, FrameAllocator.setStatus, retainLiveVirtualMappings,
-    retainLiveEndpointMailboxes,
-    FailStop.RuntimeWellFormed, FailStop.CompositeState.Coherent,
-    FailStop.WellFormed, Interrupt.WellFormed,
-    SubjectLifecycle.WellFormed,
-    VirtualMapping.LifecycleWellFormed, VirtualMapping.WellFormed,
-    IPCSyscall.WellFormed, EndpointIPC.WellFormed,
-    Scheduler.WellFormed, Preemption.WellFormed,
-    ResumablePreemption.WellFormed,
-    ResumablePreemption.ReadyContextAgreement,
-    ResumablePreemption.TranslationAgreement,
-    ResumablePreemption.VirtualAgreement,
-    ResumablePreemption.ResourceKindAgreement,
-    CapabilityTransfer.WellFormed, TLB.Coherent,
-    FailStop.CompositeState.ReturnPlanLive,
-    FailStop.CompositeState.blockingIPCContext,
-    FailStop.CompositeState.BlockingIPCCoherent,
-    FailStop.CompositeState.DeferredCancellationWellFormed,
-    BlockingIPCContext.DeferredWellFormed,
-    BlockingIPCContext.WellFormed,
-    BlockingIPCContext.ContextAgreement, BlockingIPC.WellFormed,
-    BlockingIPC.authorizedReceive, BlockingIPCContext.emptyDeferred,
-    BlockingIPCContext.validSaved, Scheduler.ownsAddressSpace,
-    ResumablePreemption.contextFor,
-    ResumablePreemption.validContext,
-    LeanOS.Capability.rightsValid,
-    LeanOS.Capability.rightsSubset,
-    LeanOS.Capability.nonemptyRights,
-    Interrupt.validSavedUserFrame,
-    DirectPortIO.AcceptedControls, DMAQuarantine.q35Accepted,
-    FailStop.bootRuntime]
-  repeat' apply And.intro
-  all_goals first
-    | assumption
-    | simp (config := { failIfUnchanged := false })
-  all_goals simp_all [lifecycleCapabilities, lifecycleReleasedCapabilities,
-    MemoryLifecycle.retireCapabilities, MemoryLifecycle.setObject]
-  all_goals grind
+  have hreleaseMailboxesEmpty :
+      ∀ object,
+        retainLiveEndpointMailboxes
+            lifecycleReleaseScrub.memory.capabilities (fun _ => none)
+            object = none := by
+    intro object
+    simp [retainLiveEndpointMailboxes]
+  have hreleaseOwnedMemoryEmpty :
+      ∀ object, lifecycleReleaseLifecycle.ownedMemory object = none := by
+    intro object
+    simp [lifecycleReleaseLifecycle, retireMemoryFromLifecycle,
+      setOwnedMemory, lifecycleSubjectState]
+  have hreleaseOwnedMemoryProjection :
+      ∀ object,
+        setOwnedMemory
+            (fun candidate => if candidate = 20 then some (2, 4) else none)
+            20 none object = none := by
+    intro object
+    by_cases hobject : object = 20
+    · subst object
+      simp [setOwnedMemory]
+    · simp [setOwnedMemory, hobject]
+  have hreleaseMappingsEmpty :
+      ∀ addressSpace page,
+        retainLiveVirtualMappings lifecycleReleaseScrub.memory
+            (fun _ _ => none) addressSpace page = none := by
+    intro addressSpace page
+    simp [retainLiveVirtualMappings]
+  have hreleaseWaitersEmpty :
+      ∀ endpoint,
+        (lifecycleReleaseKernel plan).blockingIPCContext.ipc.waiters
+            endpoint = [] := by
+    intro endpoint
+    rfl
+  have hreleaseWaiterEndpointEmpty :
+      ∀ subject,
+        (lifecycleReleaseKernel plan).blockingIPCContext.ipc.waiterEndpoint
+            subject = none := by
+    intro subject
+    rfl
+  have hreleaseBlockedEmpty :
+      ∀ subject,
+        (lifecycleReleaseKernel plan).blockingIPCContext.blocked subject =
+          none := by
+    intro subject
+    rfl
+  have hreleaseEndpointOwnerEmpty :
+      ∀ object, lifecycleReleaseLifecycle.endpointOwner object = none := by
+    intro object
+    rfl
+  have hreleaseAddressOwnerExact :
+      ∀ addressSpace subject,
+        lifecycleReleaseLifecycle.addressOwner addressSpace = some subject →
+          (addressSpace = 1 ∧ subject = 1) ∨
+            (addressSpace = 2 ∧ subject = 2) := by
+    intro addressSpace subject howner
+    change
+      (if addressSpace = 1 then some 1
+        else if addressSpace = 2 then some 2 else none) = some subject
+      at howner
+    by_cases hspaceOne : addressSpace = 1
+    · subst addressSpace
+      simp at howner
+      exact Or.inl ⟨rfl, howner.symm⟩
+    · by_cases hspaceTwo : addressSpace = 2
+      · subst addressSpace
+        simp at howner
+        exact Or.inr ⟨rfl, howner.symm⟩
+      · simp [hspaceOne, hspaceTwo] at howner
+  have hreleaseAddressOwnerExists :
+      ∀ addressSpace,
+        addressSpace ≠ 20 →
+          (addressSpace = 1 ∨ addressSpace = 2) →
+            ∃ subject,
+              lifecycleReleaseLifecycle.addressOwner addressSpace =
+                some subject := by
+    intro addressSpace _ hlive
+    rcases hlive with rfl | rfl
+    · exact ⟨1, rfl⟩
+    · exact ⟨2, rfl⟩
+  have hreleaseAddressOwnerSubjectLive :
+      ∀ addressSpace subject,
+        lifecycleReleaseLifecycle.addressOwner addressSpace = some subject →
+          lifecycleReleaseScrub.memory.capabilities.subjects subject = true := by
+    intro addressSpace subject howner
+    rcases hreleaseAddressOwnerExact addressSpace subject howner with
+      ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · rfl
+    · rfl
+  have hreleaseRunnableLive :
+      ∀ subject,
+        lifecycleReleaseLifecycle.runnable subject = true →
+          lifecycleReleaseScrub.memory.capabilities.subjects subject = true := by
+    intro subject hrunnable
+    rw [lifecycleReleaseScrub_capabilities,
+      lifecycleReleasedCapabilities_subjects]
+    simpa [lifecycleReleaseLifecycle, retireMemoryFromLifecycle,
+      lifecycleSubjectState, lifecycleCapabilities] using hrunnable
+  have hreleaseCurrentLive :
+      ∀ subject,
+        lifecycleReleaseLifecycle.current = some subject →
+          lifecycleReleaseScrub.memory.capabilities.subjects subject = true := by
+    intro subject hcurrent
+    change some 2 = some subject at hcurrent
+    injection hcurrent with hsubject
+    subst subject
+    rw [lifecycleReleaseScrub_capabilities,
+      lifecycleReleasedCapabilities_subjects]
+    rfl
+  have hreleaseSubjectOneContextValid :
+      ResumablePreemption.validContext
+        (lifecycleReleaseKernel plan).resumable lifecycleSubjectOneContext := by
+    simp [ResumablePreemption.validContext, lifecycleReleaseKernel,
+      publishKernelMemory, lifecycleKernel, lifecycleReleaseLifecycle,
+      retireMemoryFromLifecycle, lifecycleSubjectOneContext,
+      lifecycleSavedFrame, lifecycleScheduler, lifecycleSubjectState,
+      lifecycleVirtualMemory, lifecycleMemory, lifecycleCapabilities,
+      lifecycleReleasedCapabilities, MemoryLifecycle.retireCapabilities,
+      MemoryLifecycle.setObject, Scheduler.ownsAddressSpace,
+      Interrupt.validSavedUserFrame]
+  have hreleaseSubjectTwoContextMissing :
+      ResumablePreemption.contextFor
+          (lifecycleReleaseKernel plan).resumable.contexts 2 = none := by
+    rfl
+  have hreleaseTlbCoherent :
+      TLB.Coherent (lifecycleReleaseKernel plan).resumable.translations := by
+    simp [TLB.Coherent, lifecycleReleaseKernel, publishKernelMemory,
+      lifecycleKernel]
+  have hreleasePortControls :
+      DirectPortIO.AcceptedControls DirectPortIO.selectedControls := rfl
+  have hreleaseDmaQuarantined :
+      (lifecycleReleaseKernel plan).dmaObserved =
+        (lifecycleReleaseKernel plan).dmaAccepted.snapshot := rfl
+  have hreleaseLifecycleWellFormed :
+      SubjectLifecycle.WellFormed lifecycleReleaseLifecycle := by
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+    · intro subject hlive
+      simpa [lifecycleReleaseLifecycle, retireMemoryFromLifecycle,
+        lifecycleSubjectState, lifecycleCapabilities] using hlive
+    · intro object subject frame howned
+      rw [hreleaseOwnedMemoryEmpty object] at howned
+      contradiction
+    · exact hreleaseAddressOwnerSubjectLive
+    · intro object subject howner
+      rw [hreleaseEndpointOwnerEmpty object] at howner
+      contradiction
+    · exact hreleaseRunnableLive
+    · exact hreleaseCurrentLive
+  have hreleaseCapabilitiesWellFormed :
+      LeanOS.Capability.WellFormed
+        lifecycleReleaseScrub.memory.capabilities :=
+    ⟨hslots, hderivations, hidentities, hslotSpaces⟩
+  have hreleaseVirtualWellFormed :
+      VirtualMapping.LifecycleWellFormed
+        (lifecycleReleaseKernel plan).virtualMemory := by
+    refine ⟨⟨?_, ?_⟩, hreleaseCapabilitiesWellFormed, ?_, ?_⟩
+    · intro addressSpace subject howner
+      change lifecycleReleaseLifecycle.addressOwner addressSpace =
+        some subject at howner
+      exact hreleaseAddressOwnerSubjectLive addressSpace subject howner
+    · intro addressSpace page mapping hmapping
+      change retainLiveVirtualMappings lifecycleReleaseScrub.memory
+        (fun _ _ => none) addressSpace page = some mapping at hmapping
+      rw [hreleaseMappingsEmpty addressSpace page] at hmapping
+      contradiction
+    · intro addressSpace subject howner
+      change lifecycleReleaseLifecycle.addressOwner addressSpace =
+        some subject at howner
+      rcases hreleaseAddressOwnerExact addressSpace subject howner with
+        ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+      · exact ⟨rfl, rfl, rfl, rfl, hspace1⟩
+      · exact ⟨rfl, rfl, rfl, rfl, hspace2⟩
+    · intro addressSpace hobject hkind
+      exact haddressComplete addressSpace hobject hkind
+  have hreleaseIPCWellFormed :
+      IPCSyscall.WellFormed (lifecycleReleaseKernel plan).ipc := by
+    refine ⟨hreleaseVirtualWellFormed, ?_⟩
+    refine ⟨hreleaseCapabilitiesWellFormed, ?_, ?_, ?_, ?_⟩
+    · intro object hobject hkind
+      simp [lifecycleReleaseKernel, publishKernelMemory, lifecycleKernel,
+        lifecycleReleaseLifecycle, retireMemoryFromLifecycle,
+        lifecycleCapabilities, lifecycleReleasedCapabilities,
+        MemoryLifecycle.retireCapabilities, MemoryLifecycle.setObject] at hobject hkind
+      rcases hobject.2 with hspace | hmemory
+      · simp [hspace] at hkind
+      · exact (hobject.1 hmemory).elim
+    · intro object envelope hmailbox
+      change retainLiveEndpointMailboxes
+        lifecycleReleaseScrub.memory.capabilities (fun _ => none) object =
+          some envelope at hmailbox
+      rw [hreleaseMailboxesEmpty object] at hmailbox
+      contradiction
+    · intro object _hdead
+      exact hreleaseMailboxesEmpty object
+    · intro object envelope hhistory
+      simp [lifecycleReleaseKernel, publishKernelMemory, lifecycleKernel,
+        lifecycleEndpoints] at hhistory
+  have hreleaseSchedulerWellFormed :
+      Scheduler.WellFormed (lifecycleReleaseKernel plan).scheduler := by
+    refine ⟨hreleaseLifecycleWellFormed, ?_, ?_, ?_, ?_⟩
+    · simp [lifecycleReleaseKernel, publishKernelMemory, lifecycleKernel,
+        lifecycleScheduler]
+    · simp [lifecycleReleaseKernel, publishKernelMemory, lifecycleKernel,
+        lifecycleScheduler]
+    · intro subject hready
+      change subject ∈ [1] at hready
+      simp at hready
+      subst subject
+      exact ⟨rfl, rfl, by
+        simp [Scheduler.ownsAddressSpace, lifecycleReleaseKernel,
+          publishKernelMemory, lifecycleKernel, lifecycleReleaseLifecycle,
+          retireMemoryFromLifecycle, lifecycleSubjectState,
+          lifecycleVirtualMemory]⟩
+    · intro subject hcurrent
+      change some 2 = some subject at hcurrent
+      injection hcurrent with hsubject
+      subst subject
+      exact ⟨rfl, rfl, by
+        simp [Scheduler.ownsAddressSpace, lifecycleReleaseKernel,
+          publishKernelMemory, lifecycleKernel, lifecycleReleaseLifecycle,
+          retireMemoryFromLifecycle, lifecycleSubjectState,
+          lifecycleVirtualMemory], by
+            change 2 ∉ [1]
+            decide⟩
+  have hreleasePreemptionWellFormed :
+      Preemption.WellFormed (lifecycleReleaseKernel plan).preemption := by
+    exact ⟨hreleaseSchedulerWellFormed, rfl⟩
+  have hreleaseResumableWellFormed :
+      ResumablePreemption.WellFormed
+        (lifecycleReleaseKernel plan).resumable := by
+    refine ⟨hreleaseSchedulerWellFormed, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+      hreleaseTlbCoherent⟩
+    · change [lifecycleSubjectOneContext].length ≤ 2
+      decide
+    · change [lifecycleSubjectOneContext].Pairwise
+        (fun first second => first.owner ≠ second.owner)
+      simp
+    · intro context hcontext
+      change context ∈ [lifecycleSubjectOneContext] at hcontext
+      simp at hcontext
+      subst context
+      exact hreleaseSubjectOneContextValid
+    · intro subject hcurrent
+      change some 2 = some subject at hcurrent
+      injection hcurrent with hsubject
+      subst subject
+      exact hreleaseSubjectTwoContextMissing
+    · constructor
+      · intro subject hready
+        change subject ∈ [1] at hready
+        simp at hready
+        subst subject
+        exact ⟨lifecycleSubjectOneContext, by
+          change lifecycleSubjectOneContext ∈ [lifecycleSubjectOneContext]
+          simp, rfl⟩
+      · intro context hcontext _hsuspended
+        change context ∈ [lifecycleSubjectOneContext] at hcontext
+        simp at hcontext
+        subst context
+        change 1 ∈ [1]
+        decide
+    · exact ⟨rfl, rfl⟩
+    · exact ⟨rfl, hreleaseVirtualWellFormed⟩
+    · constructor
+      · intro object owner frame howned
+        change lifecycleReleaseLifecycle.ownedMemory object =
+          some (owner, frame) at howned
+        rw [hreleaseOwnedMemoryEmpty object] at howned
+        contradiction
+      · intro object owner hendpoint
+        change lifecycleReleaseLifecycle.endpointOwner object =
+          some owner at hendpoint
+        rw [hreleaseEndpointOwnerEmpty object] at hendpoint
+        contradiction
+  have hreleaseTransfersWellFormed :
+      CapabilityTransfer.WellFormed
+        (lifecycleReleaseKernel plan).transfers := by
+    refine ⟨hreleaseIPCWellFormed.2, ?_⟩
+    intro endpoint transfer hpending
+    change (fun _ => none) endpoint = some transfer at hpending
+    contradiction
+  have hreleaseHaltedWellFormed :
+      (lifecycleReleaseKernel plan).resumable.halted = true ↔
+        ∃ record,
+          (lifecycleReleaseKernel plan).execution.mode =
+            FailStop.Mode.halted record := by
+    constructor
+    · intro hhalted
+      change false = true at hhalted
+      contradiction
+    · rintro ⟨record, hmode⟩
+      change FailStop.Mode.running = FailStop.Mode.halted record at hmode
+      contradiction
+  have hreleaseReturnWellFormed :
+      (lifecycleReleaseKernel plan).execution.returnAuthorityArmed = true →
+        (lifecycleReleaseKernel plan).ReturnPlanLive = true := by
+    intro harmed
+    change false = true at harmed
+    contradiction
+  have hreleaseBlockingCoherent :
+      (lifecycleReleaseKernel plan).BlockingIPCCoherent := by
+    exact ⟨rfl, rfl⟩
+  have hreleaseCoherent :
+      FailStop.CompositeState.Coherent (lifecycleReleaseKernel plan) := by
+    simp only [FailStop.CompositeState.Coherent]
+    repeat' apply And.intro
+    all_goals first
+      | rfl
+      | (intro subject hcurrent
+         change some 2 = some subject at hcurrent
+         injection hcurrent with hsubject
+         subst subject
+         exact ⟨rfl, rfl⟩)
+      | (intro object _hdead
+         exact hreleaseMailboxesEmpty object)
+      | (intro object envelope hmailbox
+         change retainLiveEndpointMailboxes
+           lifecycleReleaseScrub.memory.capabilities (fun _ => none)
+           object = some envelope at hmailbox
+         rw [hreleaseMailboxesEmpty object] at hmailbox
+         contradiction)
+  have hreleaseExecutionWellFormed :
+      FailStop.WellFormed (lifecycleReleaseKernel plan).execution := by
+    simp [FailStop.WellFormed, Interrupt.WellFormed,
+      lifecycleReleaseKernel, publishKernelMemory, lifecycleKernel,
+      lifecycleReleaseLifecycle, retireMemoryFromLifecycle,
+      lifecycleSubjectState, lifecycleCapabilities,
+      lifecycleVirtualMemory, lifecycleReleasedCapabilities,
+      MemoryLifecycle.retireCapabilities, MemoryLifecycle.setObject]
+    constructor
+    · change SubjectLifecycle.WellFormed lifecycleReleaseLifecycle
+      exact hreleaseLifecycleWellFormed
+    · rfl
+  have hreleaseDeferredWellFormed :
+      (lifecycleReleaseKernel plan).DeferredCancellationWellFormed := by
+    simp [FailStop.CompositeState.DeferredCancellationWellFormed,
+      BlockingIPCContext.DeferredWellFormed,
+      FailStop.CompositeState.blockingIPCContext,
+      BlockingIPCContext.WellFormed,
+      BlockingIPCContext.ContextAgreement, BlockingIPC.WellFormed,
+      BlockingIPC.authorizedReceive, BlockingIPCContext.emptyDeferred,
+      lifecycleReleaseKernel, publishKernelMemory, lifecycleKernel,
+      lifecycleScheduler, lifecycleSubjectState, lifecycleCapabilities,
+      lifecycleReleaseLifecycle, retireMemoryFromLifecycle,
+      lifecycleReleasedCapabilities, MemoryLifecycle.retireCapabilities,
+      MemoryLifecycle.setObject, Scheduler.WellFormed,
+      Scheduler.ownsAddressSpace]
+    constructor
+    · refine ⟨?_, rfl, rfl⟩
+      change SubjectLifecycle.WellFormed lifecycleReleaseLifecycle
+      exact hreleaseLifecycleWellFormed
+    · simpa only [lifecycleReleaseScrub_capabilities,
+        lifecycleReleasedCapabilities, lifecycleCapabilities,
+        MemoryLifecycle.retireCapabilities, MemoryLifecycle.setObject,
+        Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] using
+        hreleaseCapabilitiesWellFormed
+  suffices hlegacy :
+      FailStop.DeferredBlockingRuntimeWellFormed
+        (lifecycleReleaseKernel plan) by
+    refine ⟨hlegacy.1, hlegacy.2, ?_⟩
+    change InvalidationPublication.WellFormed InvalidationPublication.initial
+    exact InvalidationPublication.initial_wellFormed
+  refine ⟨?_, hreleaseDeferredWellFormed⟩
+  simp only [FailStop.RuntimeWellFormed]
+  exact ⟨hreleaseCoherent, hreleaseExecutionWellFormed,
+    hreleaseLifecycleWellFormed, hreleaseCapabilitiesWellFormed,
+    hreleaseVirtualWellFormed, hreleaseIPCWellFormed,
+    hreleaseSchedulerWellFormed, hreleasePreemptionWellFormed,
+    hreleaseResumableWellFormed, hreleaseTransfersWellFormed,
+    hreleaseHaltedWellFormed, hreleaseReturnWellFormed,
+    hreleaseBlockingCoherent, hreleasePortControls,
+    hreleaseDmaQuarantined⟩
 
 private theorem lifecycleReleased_coherent (plan : BootPageTablePlan.Plan) :
     (lifecycleReleased plan).Coherent := by
@@ -4461,15 +4884,14 @@ private theorem lifecycleAllocatedKernel_invariant
       (lifecycleScheduleKernel plan).lifecycle.capabilities.subjects =
         lifecycleAllocatedCapabilities.subjects := by
     rfl
-  simp only [FailStop.AuthoritativeRuntimeWellFormed,
-    FailStop.RuntimeWellFormed] at hschedule ⊢
-  rcases hschedule with
-    ⟨⟨hcoherentSchedule, hexecutionSchedule, hlifecycleSchedule,
+  have hdeferredSchedule := hschedule.right
+  have hpublicationSchedule := hschedule.publication
+  rcases hschedule.left with
+    ⟨hcoherentSchedule, hexecutionSchedule, hlifecycleSchedule,
       hcapabilitiesSchedule, hvirtualSchedule, hipcSchedule,
       hschedulerSchedule, hpreemptionSchedule, hresumableSchedule,
       htransfersSchedule, hhaltedSchedule, hreturnSchedule,
-      hblockingSchedule, hportSchedule, hdmaSchedule⟩,
-      hdeferredSchedule⟩
+      hblockingSchedule, hportSchedule, hdmaSchedule⟩
   simp only [FailStop.CompositeState.Coherent] at hcoherentSchedule
   simp only [SubjectLifecycle.WellFormed] at hlifecycleSchedule
   have hownedFrameNeFour :
@@ -4895,6 +5317,12 @@ private theorem lifecycleAllocatedKernel_invariant
       exact hblockedResumableSchedule subject saved hblocked
     · intro subject saved hretained
       exact hretainedResumableSchedule subject saved hretained
+  have hpublicationAllocated :
+      InvalidationPublication.WellFormed
+        (lifecycleAllocatedKernel plan).invalidationPublication := by
+    simpa [lifecycleAllocatedKernel, publishKernelMemory] using
+      hpublicationSchedule
+  apply FailStop.DeferredBlockingRuntimeWellFormed.authoritative
   repeat' first
     | exact hendpointAllocated
     | exact hschedulerAllocated
@@ -4905,6 +5333,7 @@ private theorem lifecycleAllocatedKernel_invariant
     | exact hreturnAllocated
     | exact hblockingAllocated
     | exact hdeferredAllocated
+    | exact hpublicationAllocated
     | assumption
     | apply And.intro
   all_goals first
