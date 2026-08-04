@@ -158,7 +158,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: leanos-boot-${{ github.sha }}
-          retention-days: 14
           path: |
             build/boot/leanos-0.1.0-x86_64.iso
             build/boot/leanos-0.1.0-x86_64-malformed-handoff.iso
