@@ -104,8 +104,7 @@ jobs:
 
   emulator:
     name: Deterministic QEMU smoke test
-    needs:
-      - repository-hygiene
+    needs: repository-hygiene
     runs-on: ubuntu-24.04
     # Current boot-critical runs take about 20 minutes including evidence upload.
     timeout-minutes: 30
