@@ -113,15 +113,13 @@ docker run --rm \
   --volume "$output:/out" \
   --env EXTRA_CFLAGS="$extra_cflags" \
   --env EXTRA_LDFLAGS="$extra_ldflags" \
+  --env CONFIGURE_COMMAND="$configure_command" \
+  --env BUILD_COMMAND="$build_command" \
   --env BUILD_CONTAINER_IMAGE_ID="$image_id" \
   "$image" \
   bash -euo pipefail -c '
-    emconfigure /src/configure --static --target-list=x86_64-softmmu \
-      --cpu=wasm32 --cross-prefix= --without-default-features \
-      --enable-system --with-coroutine=fiber --enable-virtfs \
-      --extra-cflags="$EXTRA_CFLAGS" --extra-cxxflags="$EXTRA_CFLAGS" \
-      --extra-ldflags="$EXTRA_LDFLAGS"
-    emmake make -j1 qemu-system-x86_64
+    eval "$CONFIGURE_COMMAND"
+    eval "$BUILD_COMMAND"
     test -f qemu-system-x86_64
     test -f qemu-system-x86_64.wasm
     test -f qemu-system-x86_64.worker.js

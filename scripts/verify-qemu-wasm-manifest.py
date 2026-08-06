@@ -181,9 +181,24 @@ def validate_inputs(data: dict) -> None:
     }
     if not required_args.issubset(set(configure_args)):
         fail("configure argument inventory is incomplete")
+    if any(
+        not isinstance(argument, str)
+        or re.fullmatch(r"--[a-z0-9-]+(?:=[A-Za-z0-9_./+-]*)?", argument) is None
+        for argument in configure_args
+    ):
+        fail("configure argument inventory contains an unsafe argument")
+    expected_configure_command = (
+        "emconfigure /src/configure "
+        + " ".join(configure_args)
+        + ' --extra-cflags="$EXTRA_CFLAGS"'
+        + ' --extra-cxxflags="$EXTRA_CFLAGS"'
+        + ' --extra-ldflags="$EXTRA_LDFLAGS"'
+    )
+    if configuration.get("configure_command") != expected_configure_command:
+        fail("configure command differs from its argument inventory")
     if configuration.get("build_command") != "emmake make -j1 qemu-system-x86_64":
         fail("build command is not the deterministic single-job command")
-    for key in ("extra_cflags", "extra_ldflags", "configure_command"):
+    for key in ("extra_cflags", "extra_ldflags"):
         if not configuration.get(key):
             fail(f"configuration {key} is missing")
 

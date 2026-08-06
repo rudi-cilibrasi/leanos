@@ -31,6 +31,11 @@ set: it runs two isolated clean builds, validates each complete output
 inventory against `SHA256SUMS`, and rejects any byte difference between the
 two directories.
 
+The container executes the configure and build commands from the validated
+manifest itself.  Validation derives the configure command from its structured,
+shell-safe argument inventory and rejects any mismatch, so `BUILD_COMMANDS.txt`
+cannot describe a different command from the one used for the build.
+
 `provisional-source-build-evidence-v1.json` records the observed hashes and
 sizes from two byte-identical clean builds of this provisional manifest.  It
 is source-build evidence only: `acceptance_ready` remains false, and the file

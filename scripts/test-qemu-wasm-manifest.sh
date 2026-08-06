@@ -61,6 +61,16 @@ jq '.dependencies[0].sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   "$manifest" > "$fixtures/substituted-dependency.json"
 expect_rejection substituted-dependency "Dockerfile does not enforce zlib"
 
+jq '.configuration.configure_command += " --enable-slirp"' \
+  "$manifest" > "$fixtures/divergent-configure-command.json"
+expect_rejection divergent-configure-command \
+  "configure command differs from its argument inventory"
+
+jq '.configuration.configure_arguments += ["--enable-slirp;touch /tmp/escaped"]' \
+  "$manifest" > "$fixtures/unsafe-configure-argument.json"
+expect_rejection unsafe-configure-argument \
+  "configure argument inventory contains an unsafe argument"
+
 jq '.patches = [{"path":"local.patch","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","upstream_status":"not-submitted"}]' \
   "$manifest" > "$fixtures/undeclared-patch.json"
 expect_rejection undeclared-patch "patch file is missing"
