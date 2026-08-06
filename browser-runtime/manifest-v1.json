@@ -1,0 +1,195 @@
+{
+  "schema": "leanos-qemu-wasm-runtime/v1",
+  "issue": 194,
+  "acceptance": {
+    "ready": false,
+    "blocked_by": {
+      "issue": 193,
+      "required_result": "Exact qemu-wasm source revision and q35 media configuration that boots the unchanged canonical ISO with the complete LeanOS protocol and debug-exit status 33."
+    },
+    "provisional_reason": "ADR 0011 pins the inspected source, but issue #193 has not selected a media-compatible final source/configuration."
+  },
+  "host": {
+    "os": "Linux",
+    "architecture": "x86_64",
+    "container_platform": "linux/amd64"
+  },
+  "sources": [
+    {
+      "name": "qemu-wasm",
+      "repository": "https://github.com/ktock/qemu-wasm.git",
+      "revision": "0ef7b4e2814b231705d8371dd7997f5b72e70baf",
+      "tree": "7ea04e48358dc0181a0710ebc258bf13db413e55",
+      "version": "8.2.0",
+      "license": "GPL-2.0-only",
+      "role": "x86-64 system emulator, JavaScript glue, worker, and bundled firmware inputs"
+    },
+    {
+      "name": "LeanOS",
+      "repository": "https://github.com/rudi-cilibrasi/leanos.git",
+      "revision": "cb40b640450dcb45afc4e90229078b1f4aeead1e",
+      "protocol_source": "scripts/run-image.sh",
+      "expected_debug_exit_status": 33,
+      "role": "provisional acceptance source/protocol revision"
+    },
+    {
+      "name": "dtc",
+      "repository": "https://gitlab.com/qemu-project/dtc.git",
+      "revision": "b6910bec11614980a21e46fbccc35934b671bd81",
+      "tree": "5de1e174f53a6ea499a49ac7b5eb7fe816dd9902",
+      "license": "GPL-2.0-or-later AND BSD-2-Clause",
+      "role": "QEMU Meson libfdt subproject selected by the pinned dtc.wrap"
+    },
+    {
+      "name": "keycodemapdb",
+      "repository": "https://gitlab.com/qemu-project/keycodemapdb.git",
+      "revision": "f5772a62ec52591ff6870b7e8ef32482371f22c6",
+      "tree": "eaa3f9fb1e2c7687b334f57cb605140cb5450f16",
+      "license": "GPL-2.0-only AND BSD-3-Clause",
+      "role": "QEMU-generated keyboard mapping input selected by the pinned keycodemapdb.wrap"
+    },
+    {
+      "name": "berkeley-softfloat-3",
+      "repository": "https://gitlab.com/qemu-project/berkeley-softfloat-3.git",
+      "revision": "b64af41c3276f97f0e181920400ee056b9c88037",
+      "tree": "5f46f374bcf9aef50442ba5fd25f3b5bcdf963c4",
+      "license": "BSD-3-Clause",
+      "role": "QEMU Meson floating-point test build input selected by the pinned wrap"
+    },
+    {
+      "name": "berkeley-testfloat-3",
+      "repository": "https://gitlab.com/qemu-project/berkeley-testfloat-3.git",
+      "revision": "e7af9751d9f9fd3b47911f51a5cfd08af256a9ab",
+      "tree": "9e166ce5ee90e0cb45f975a89c877bc4114de601",
+      "license": "BSD-3-Clause",
+      "role": "QEMU Meson floating-point test build input selected by the pinned wrap"
+    }
+  ],
+  "toolchain": {
+    "container": {
+      "image": "docker.io/emscripten/emsdk",
+      "version": "3.1.50",
+      "digest": "sha256:b6ea0e55fdc95be36427df6df7892d5e5e27f0440cfcf442a55f784aba09a4fa",
+      "platform": "linux/amd64",
+      "dockerfile_frontend": "docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e"
+    },
+    "emscripten": {
+      "version": "3.1.50",
+      "revision": "047b82506d6b471873300a5e4d1e690420b582d0"
+    },
+    "apt_top_level": [
+      "autoconf=2.71-2",
+      "automake=1:1.16.5-1.3",
+      "libglib2.0-dev=2.72.4-0ubuntu2.9",
+      "libltdl-dev=2.4.6-15build2",
+      "libtool=2.4.6-15build2",
+      "ninja-build=1.10.1-1",
+      "pkgconf=1.8.0-1"
+    ]
+  },
+  "dependencies": [
+    {
+      "name": "zlib",
+      "version": "1.3.1",
+      "url": "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.xz",
+      "sha256": "38ef96b8dfe510d42707d9c781877914792541133e1870841463bfa73f883e32",
+      "license": "Zlib"
+    },
+    {
+      "name": "libffi",
+      "version": "adbcf2b247696dde2667ab552cb93e0c79455c84",
+      "url": "https://github.com/libffi/libffi/archive/adbcf2b247696dde2667ab552cb93e0c79455c84.tar.gz",
+      "sha256": "1f5e7a1231b6cb9f747189c48b15bbf17afdda6e2f9684b386fd19e9bbe78649",
+      "license": "MIT"
+    },
+    {
+      "name": "glib",
+      "version": "2.75.0",
+      "url": "https://download.gnome.org/sources/glib/2.75/glib-2.75.0.tar.xz",
+      "sha256": "6dde8e55cc4a2c83d96797120b08bcffb5f645b2e212164ae22d63c40e0e6360",
+      "license": "LGPL-2.1-or-later"
+    },
+    {
+      "name": "pcre2-meson-fallback",
+      "version": "10.40-3",
+      "url": "https://github.com/PhilipHazel/pcre2/releases/download/pcre2-10.40/pcre2-10.40.tar.bz2",
+      "sha256": "14e4b83c4783933dc17e964318e6324f7cae1bc75d8f3c79bc6969f00c159d68",
+      "patch_url": "https://wrapdb.mesonbuild.com/v2/pcre2_10.40-3/get_patch",
+      "patch_sha256": "95391923529b4c1647a2cf88cd3b59cceb4f92393775e011f530e7865de0c7fb",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "name": "pixman",
+      "version": "0.42.2",
+      "url": "https://gitlab.freedesktop.org/pixman/pixman/-/archive/pixman-0.42.2/pixman-pixman-0.42.2.tar.gz",
+      "sha256": "4191a5084bae000a61e3513b06027b6f8f559d17d61769ed9de27dfb0cec8699",
+      "license": "MIT"
+    },
+    {
+      "name": "meson",
+      "version": "1.5.0",
+      "url": "https://files.pythonhosted.org/packages/d6/97/852cc27c460d5fae07c6d7e4a2744f5684760358de3456b5ee9f130b8f57/meson-1.5.0.tar.gz",
+      "sha256": "45d7b8653c1e5139df35b33be2dd5b2d040c5b2c6129f9a7c890d507e33312b8",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "xterm-pty",
+      "version": "0.10.1",
+      "url": "https://registry.npmjs.org/xterm-pty/-/xterm-pty-0.10.1.tgz",
+      "sha256": "ca1c31fd4c9ab1506c0e6619ee358d4260775b7045f10a5631b36f0ba9a8434a",
+      "license": "MIT",
+      "used_file": "package/emscripten-pty.js"
+    }
+  ],
+  "configuration": {
+    "target_list": "x86_64-softmmu",
+    "configure_arguments": [
+      "--static",
+      "--target-list=x86_64-softmmu",
+      "--cpu=wasm32",
+      "--cross-prefix=",
+      "--without-default-features",
+      "--enable-system",
+      "--with-coroutine=fiber",
+      "--enable-virtfs"
+    ],
+    "extra_cflags": "-O3 -g -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc --js-library=/build/xterm-pty/emscripten-pty.js -sEXPORT_ES6=1 -sASYNCIFY_IMPORTS=ffi_call_js",
+    "extra_ldflags": "-sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS",
+    "configure_command": "emconfigure /src/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= --without-default-features --enable-system --with-coroutine=fiber --enable-virtfs --extra-cflags=\"$EXTRA_CFLAGS\" --extra-cxxflags=\"$EXTRA_CFLAGS\" --extra-ldflags=\"$EXTRA_LDFLAGS\"",
+    "build_command": "emmake make -j1 qemu-system-x86_64"
+  },
+  "patches": [],
+  "licenses": [
+    {"component": "qemu-wasm", "identifier": "GPL-2.0-only", "notice_source": "COPYING"},
+    {"component": "qemu-wasm libraries", "identifier": "LGPL-2.1-only", "notice_source": "COPYING.LIB"},
+    {"component": "zlib", "identifier": "Zlib", "notice_source": "zlib.h"},
+    {"component": "libffi", "identifier": "MIT", "notice_source": "LICENSE"},
+    {"component": "glib", "identifier": "LGPL-2.1-or-later", "notice_source": "COPYING"},
+    {"component": "pcre2", "identifier": "BSD-3-Clause", "notice_source": "LICENCE"},
+    {"component": "pixman", "identifier": "MIT", "notice_source": "COPYING"},
+    {"component": "meson", "identifier": "Apache-2.0", "notice_source": "COPYING"},
+    {"component": "xterm-pty", "identifier": "MIT", "notice_source": "package.json"},
+    {"component": "dtc", "identifier": "GPL-2.0-or-later AND BSD-2-Clause", "notice_source": "GPL"},
+    {"component": "keycodemapdb", "identifier": "GPL-2.0-only AND BSD-3-Clause", "notice_source": "LICENSE.GPL2 and LICENSE.BSD"},
+    {"component": "berkeley-softfloat-3", "identifier": "BSD-3-Clause", "notice_source": "COPYING.txt"},
+    {"component": "berkeley-testfloat-3", "identifier": "BSD-3-Clause", "notice_source": "COPYING.txt"}
+  ],
+  "outputs": [
+    {"path": "qemu-system-x86_64.js", "role": "JavaScript launcher and glue", "sha256": null, "size": null},
+    {"path": "qemu-system-x86_64.wasm", "role": "source-built emulator module", "sha256": null, "size": null},
+    {"path": "qemu-system-x86_64.worker.js", "role": "pthread worker glue", "sha256": null, "size": null},
+    {"path": "TOOLCHAIN.txt", "role": "tool and installed-package inventory", "sha256": null, "size": null},
+    {"path": "BUILD_COMMANDS.txt", "role": "literal build command inventory", "sha256": null, "size": null},
+    {"path": "PATCHES.json", "role": "applied patch inventory", "sha256": null, "size": null},
+    {"path": "SHA256SUMS", "role": "complete prototype output hashes", "sha256": null, "size": null}
+  ],
+  "deferred_outputs": [
+    "firmware selected by issue #193",
+    "preload data and loader",
+    "terminal assets",
+    "cross-origin-isolation service worker",
+    "browser harness",
+    "complete license notice bundle",
+    "tested staging directory and browser evidence"
+  ]
+}
