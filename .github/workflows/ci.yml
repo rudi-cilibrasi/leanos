@@ -104,9 +104,7 @@ jobs:
 
   emulator:
     name: Deterministic QEMU smoke test
-    needs:
-      - repository-hygiene
-      - lean
+    needs: repository-hygiene
     runs-on: ubuntu-24.04
     # Current boot-critical runs take about 20 minutes including evidence upload.
     timeout-minutes: 30
@@ -163,6 +161,8 @@ jobs:
           path: |
             build/boot/leanos-0.1.0-x86_64.iso
             build/boot/leanos-0.1.0-x86_64-malformed-handoff.iso
+            build/boot/leanos-0.1.0-x86_64-projection-authority-mutation.iso
+            build/boot/leanos-0.1.0-x86_64-raw-selection-authority-mutation.iso
             build/boot/leanos-0.1.0-x86_64-preemption.iso
             build/boot/leanos-0.1.0-x86_64-frame-budget.iso
             build/boot/leanos-0.1.0-x86_64-fault-containment.iso
@@ -189,6 +189,10 @@ jobs:
             build/boot/leanos.elf
             build/boot/leanos-malformed-handoff.elf
             build/boot/leanos-malformed-handoff.map
+            build/boot/leanos-projection-authority-mutation.elf
+            build/boot/leanos-projection-authority-mutation.map
+            build/boot/leanos-raw-selection-authority-mutation.elf
+            build/boot/leanos-raw-selection-authority-mutation.map
             build/boot/leanos-preemption.elf
             build/boot/leanos-frame-budget.elf
             build/boot/leanos-frame-budget.map
@@ -245,6 +249,10 @@ jobs:
             build/boot/boot-page-plan.final.h
             build/boot/boot-page-plan-malformed-handoff.h
             build/boot/boot-page-plan-malformed-handoff.final.h
+            build/boot/boot-page-plan-projection-authority-mutation.h
+            build/boot/boot-page-plan-projection-authority-mutation.final.h
+            build/boot/boot-page-plan-raw-selection-authority-mutation.h
+            build/boot/boot-page-plan-raw-selection-authority-mutation.final.h
             build/boot/boot-page-plan-preemption.h
             build/boot/boot-page-plan-preemption.final.h
             build/boot/boot-page-plan-fault-containment.h
@@ -278,6 +286,8 @@ jobs:
             build/boot/serial.log
             build/boot/dma-quarantine-snapshot-*.tsv
             build/boot/malformed-handoff.serial.log
+            build/boot/projection-authority-mutation.serial.log
+            build/boot/raw-selection-authority-mutation.serial.log
             build/boot/preemption.serial.log
             build/boot/fault-containment.serial.log
             build/boot/fault-readonly-write.serial.log

@@ -484,6 +484,7 @@ def scenario_invocation(
     elif row["runner"] == "bootstrap64-nmi":
         command = ["./scripts/run-bootstrap64-nmi.sh", str(paths["image"])]
     elif row["runner"] == "malformed-handoff":
+        environment["LEANOS_HANDOFF_REJECTION_REASON"] = row["reason"]
         command = ["./scripts/run-malformed-handoff.sh", str(paths["image"])]
     else:
         environment["LEANOS_EXPECT_GUARD_MAPPED"] = "1"

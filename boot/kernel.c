@@ -67,8 +67,11 @@ extern uint64_t leanos_boot_manifest_start(
 extern uint64_t leanos_boot_consume_exact_projection(uint64_t, uint64_t, uint64_t,
                                         uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_publish_authority(uint64_t, uint64_t, uint64_t,
+                                               uint64_t, uint64_t, uint64_t,
+                                               uint64_t);
+extern uint64_t leanos_boot_authority_result(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t,
-                                              uint64_t);
+                                              uint64_t, uint64_t);
 extern uint64_t leanos_user_return_demo(uint64_t, uint64_t, uint64_t,
                                         uint64_t, uint64_t);
 extern uint64_t leanos_blocking_ipc_demo(uint64_t, uint64_t, uint64_t,
@@ -1693,30 +1696,94 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
         authority.word[2] != 0 || authority.word[3] >= 4096 ||
         authority.word[4] != 1 || authority.word[5] != decoded.word[11])
         handoff_fail("projection-terminal");
-    uint64_t selected = authority.word[3];
-    struct boot_decode_state selected_authority =
-        decode_boot_candidate_authority(
-            magic, info_address, total, selected, info);
-    uint64_t selected_manifest = leanos_boot_manifest_candidate(
-        selected, BOOT_MANIFEST_ARGS(info_address, total));
-    if (selected_authority.word[11] != decoded.word[11] ||
+    /* Select from target-specific replays of the immutable raw handoff.  The
+       projection bitmap remains a complete cross-check, but it no longer gets
+       to nominate the frame consumed by production. */
+    uint64_t selected = 4096;
+    uint64_t selected_manifest = 0;
+    struct boot_decode_state selected_authority = {0};
+#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+    uint64_t next_selected = 4096;
+#endif
+    for (uint64_t candidate = 0; candidate < 4096; ++candidate) {
+        struct boot_decode_state candidate_authority =
+            decode_boot_candidate_authority(
+                magic, info_address, total, candidate, info);
+        uint64_t candidate_manifest = leanos_boot_manifest_candidate(
+            candidate, BOOT_MANIFEST_ARGS(info_address, total));
+        uint64_t exact_candidate = leanos_boot_consume_exact_projection(
+            4096, candidate, candidate_authority.word[1],
+            candidate_authority.word[14], candidate_authority.word[15],
+            candidate_manifest);
+        if (exact_candidate >= 4096) continue;
+        if (selected >= 4096) {
+            selected = exact_candidate;
+            selected_authority = candidate_authority;
+            selected_manifest = candidate_manifest;
+#ifndef LEANOS_FRAME_BUDGET_SCENARIO
+            break;
+#endif
+#ifdef LEANOS_FRAME_BUDGET_SCENARIO
+        } else {
+            next_selected = exact_candidate;
+            break;
+#endif
+        }
+    }
+    /* Production mutation fixture: corrupt only the complete-projection
+       nomination after the immutable-byte replay has selected its frame.
+       The comparison below must reject before either scrub or publication. */
+#ifdef LEANOS_PROJECTION_SELECTION_MUTATION_FIXTURE
+    const uint64_t exact_replay_selected = selected;
+    authority.word[3] = selected == 4095 ? selected - 1 : selected + 1;
+    /* Preserve the rest of the boot image as reachable evidence while making
+       the fixture value opaque to compile-time control-flow elimination. */
+    __asm__ volatile ("" : "+m"(authority.word[3]));
+    if (selected != exact_replay_selected)
+        handoff_fail("projection-mutation-raw-selection");
+#endif
+    /* Production mutation fixtures exercise the raw replay authority itself,
+       rather than only the independent complete-projection cross-check. */
+#ifdef LEANOS_RAW_SELECTION_MUTATION_FIXTURE
+    selected = selected == 4095 ? selected - 1 : selected + 1;
+#endif
+#ifdef LEANOS_RAW_CLASSIFICATION_MUTATION_FIXTURE
+    selected_authority.word[14] = 0;
+#endif
+    if (selected >= 4096 || authority.word[3] != selected ||
+        selected_authority.word[16] != selected ||
+        selected_authority.word[11] != decoded.word[11] ||
         selected_authority.word[17] != decoded.word[17] ||
         selected_authority.word[14] != 1 ||
-        selected_authority.word[15] != 0 || selected_manifest != 1)
+        selected_authority.word[15] != 0 || selected_manifest != 1) {
+#ifdef LEANOS_RAW_SELECTION_MUTATION_FIXTURE
+        handoff_fail("raw-selection-authority");
+#else
         handoff_fail("projection-authority");
+#endif
+    }
 
     volatile uint8_t *frame = (volatile uint8_t *)(selected * PAGE_BYTES);
     for (uint64_t i = 0; i < PAGE_BYTES; ++i) frame[i] = 0;
     for (uint64_t i = 0; i < PAGE_BYTES; ++i)
         if (frame[i] != 0) handoff_fail("scrub");
-    published_boot_object = leanos_boot_publish_authority(
-        selected, selected_authority.word[16], selected_authority.word[1],
-        selected_authority.word[14], selected_authority.word[15],
-        selected_manifest, 1);
-    if (published_boot_object != selected + 1) handoff_fail("publication");
+    struct boot_terminal_result publication = {0};
+    for (uint64_t query = 0; query < 5; ++query)
+        publication.word[query] = leanos_boot_authority_result(
+            selected, selected_authority.word[16], selected_authority.word[1],
+            selected_authority.word[14], selected_authority.word[15],
+            selected_manifest, 1, query);
+#ifdef LEANOS_PUBLICATION_RESULT_MUTATION_FIXTURE
+    publication.word[3] = selected == 4095 ? selected - 1 : selected + 1;
+#endif
+    if (publication.word[0] != 1 || publication.word[1] != 1 ||
+        publication.word[2] != 0 || publication.word[3] != selected ||
+        publication.word[4] != selected + 1)
+        handoff_fail("publication");
+    published_boot_object = publication.word[4];
 #ifdef LEANOS_FRAME_BUDGET_SCENARIO
     frame_budget_boot_published_frame = selected;
-    frame_budget_physical_frame = authority.word[8];
+    frame_budget_physical_frame = next_selected;
     if (frame_budget_physical_frame >= 4096 ||
         frame_budget_physical_frame <= frame_budget_boot_published_frame)
         handoff_fail("frame-budget-unpublished-frame");

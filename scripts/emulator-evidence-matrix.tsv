@@ -1,8 +1,10 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	57
+# mandatory-count	59
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 malformed-handoff	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-malformed-handoff.iso	leanos-malformed-handoff.elf	malformed-handoff.serial.log	malformed-handoff	-	decode-rejected
+projection-authority-mutation	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-projection-authority-mutation.iso	leanos-projection-authority-mutation.elf	projection-authority-mutation.serial.log	projection-authority-mutation	-	projection-authority
+raw-selection-authority-mutation	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-raw-selection-authority-mutation.iso	leanos-raw-selection-authority-mutation.elf	raw-selection-authority-mutation.serial.log	raw-selection-authority-mutation	-	raw-selection-authority
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
 preemption	boot	accepted-boot	30	leanos-@VERSION@-x86_64-preemption.iso	leanos-preemption.elf	preemption.serial.log	preemption	-	-
 frame-budget	boot	accepted-boot	30	leanos-@VERSION@-x86_64-frame-budget.iso	leanos-frame-budget.elf	frame-budget.serial.log	frame-budget	-	-

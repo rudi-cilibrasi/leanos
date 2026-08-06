@@ -44,12 +44,76 @@ production_decode="$(
 for required in decode_boot_projection leanos_boot_projection_manifest \
   leanos_boot_projection_free projection_finish_query \
   decode_boot_candidate_authority leanos_boot_manifest_candidate \
-  leanos_boot_publish_authority; do
+  leanos_boot_consume_exact_projection leanos_boot_authority_result; do
   grep -Fq "$required" <<<"$production_allocate" || {
     echo "error: production allocation omits $required" >&2
     exit 1
   }
 done
+for required in \
+  'for (uint64_t candidate = 0; candidate < 4096; ++candidate)' \
+  'uint64_t exact_candidate = leanos_boot_consume_exact_projection(' \
+  'selected = exact_candidate' \
+  'next_selected = exact_candidate' \
+  'frame_budget_physical_frame = next_selected' \
+  'authority.word[3] != selected'; do
+  grep -Fq "$required" <<<"$production_allocate" || {
+    echo "error: production selection is not bound to the canonical raw-byte candidate scan: $required" >&2
+    exit 1
+  }
+done
+if grep -Fq 'selected = authority.word[3]' <<<"$production_allocate"; then
+  echo "error: production selected a caller-transported projection word" >&2
+  exit 1
+fi
+if grep -Fq 'frame_budget_physical_frame = authority.word[8]' \
+    <<<"$production_allocate"; then
+  echo "error: frame-budget allocation consumed a caller-transported projection word" >&2
+  exit 1
+fi
+for required in \
+  'LEANOS_PROJECTION_SELECTION_MUTATION_FIXTURE' \
+  'const uint64_t exact_replay_selected = selected' \
+  'authority.word[3] = selected == 4095 ? selected - 1 : selected + 1' \
+  'selected != exact_replay_selected' \
+  'handoff_fail("projection-mutation-raw-selection")'; do
+  grep -Fq "$required" <<<"$production_allocate" || {
+    echo "error: production projection-selection mutation fixture omits $required" >&2
+    exit 1
+  }
+done
+mutation_line="$(grep -n 'authority.word\[3\] = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
+rejection_line="$(grep -n 'authority.word\[3\] != selected' <<<"$production_allocate" | cut -d: -f1)"
+scrub_line="$(grep -n 'frame\[i\] = 0' <<<"$production_allocate" | cut -d: -f1)"
+publication_line="$(grep -n 'leanos_boot_authority_result(' <<<"$production_allocate" | tail -1 | cut -d: -f1)"
+for required in \
+  'LEANOS_RAW_SELECTION_MUTATION_FIXTURE' \
+  'LEANOS_RAW_CLASSIFICATION_MUTATION_FIXTURE' \
+  'selected_authority.word[16] != selected' \
+  'LEANOS_PUBLICATION_RESULT_MUTATION_FIXTURE' \
+  'publication.word[3] = selected == 4095 ? selected - 1 : selected + 1'; do
+  grep -Fq "$required" <<<"$production_allocate" || {
+    echo "error: production raw-authority mutation coverage omits $required" >&2
+    exit 1
+  }
+done
+raw_selection_mutation_line="$(grep -n '^    selected = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
+raw_selection_rejection_line="$(grep -n 'selected_authority.word\[16\] != selected' <<<"$production_allocate" | cut -d: -f1)"
+raw_classification_mutation_line="$(grep -n 'selected_authority.word\[14\] = 0' <<<"$production_allocate" | cut -d: -f1)"
+publication_mutation_line="$(grep -n 'publication.word\[3\] = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
+publication_rejection_line="$(grep -n 'publication.word\[3\] != selected' <<<"$production_allocate" | cut -d: -f1)"
+if (( raw_selection_mutation_line >= raw_selection_rejection_line ||
+      raw_classification_mutation_line >= raw_selection_rejection_line ||
+      raw_selection_rejection_line >= scrub_line ||
+      publication_mutation_line >= publication_rejection_line )); then
+  echo "error: production raw-authority mutation can reach authority use before rejection" >&2
+  exit 1
+fi
+if (( mutation_line >= rejection_line || rejection_line >= scrub_line ||
+      rejection_line >= publication_line )); then
+  echo "error: projection-selection mutation can reach scrub/publication before rejection" >&2
+  exit 1
+fi
 if grep -Eq 'mb2_(tag|mmap)|boot_frames|reserve_byte_range|allocation_check' \
     <<<"$production_allocate"; then
   echo "error: production allocation retained a C handoff policy authority" >&2
@@ -59,6 +123,7 @@ production_authority="$(
   sed -n '/^static struct boot_decode_state decode_boot_candidate_authority(/,/^}/p' boot/kernel.c
 )"
 for required in 'query < 23' 'state.word[16] != candidate' \
+  'candidate_authority.word[14]' 'candidate_authority.word[15]' \
   'selected_authority.word[14] != 1' \
   'selected_authority.word[15] != 0'; do
   grep -Fq "$required" <<<"$production_allocate$production_authority" || {
@@ -177,7 +242,8 @@ symbols="$(nm "$build/stream.elf")"
 for symbol in leanos_boot_handoff_stream_init leanos_boot_handoff_stream_step \
   leanos_boot_decode_init leanos_boot_decode_step leanos_boot_manifest_candidate \
   leanos_boot_manifest_start leanos_boot_consume_exact_projection \
-  leanos_boot_publish_authority leanos_boot_projection_entry \
+  leanos_boot_publish_authority leanos_boot_authority_result \
+  leanos_boot_projection_entry \
   leanos_boot_projection_manifest leanos_boot_projection_free \
   leanos_boot_projection_finish; do
   if ! grep -q " T ${symbol}$" <<<"$symbols"; then
@@ -207,6 +273,7 @@ leanos_boot_handoff_stream_step|\
 leanos_boot_decode_init|leanos_boot_decode_step|leanos_boot_manifest_candidate|\
 leanos_boot_manifest_start|\
 leanos_boot_consume_exact_projection|leanos_boot_publish_authority|\
+leanos_boot_authority_result|\
 leanos_boot_projection_entry|leanos_boot_projection_manifest|\
 leanos_boot_projection_free|leanos_boot_projection_finish|\
 lp_leanos___private_LeanOS_BootMemoryMapStreaming_0__LeanOS_BootMemoryMapStreaming_canonicalChunk|\

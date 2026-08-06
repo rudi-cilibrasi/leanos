@@ -56,6 +56,8 @@ nmi_cpl3_iso_root="$build/iso-nmi-cpl3"
 bootstrap32_ud_iso_root="$build/iso-bootstrap32-ud"
 bootstrap64_nmi_iso_root="$build/iso-bootstrap64-nmi"
 malformed_handoff_iso_root="$build/iso-malformed-handoff"
+projection_authority_iso_root="$build/iso-projection-authority-mutation"
+raw_selection_authority_iso_root="$build/iso-raw-selection-authority-mutation"
 # Direct-port-containment family (#130): one shared kernel object, one reviewed
 # raw CPL3 port instruction per probe selected by a boot.S -D variant.
 direct_port_probes=(serial debug in pic)
@@ -111,7 +113,9 @@ mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$entry_adversarial_iso_root/boot/grub" "$nmi_iso_root/boot/grub" \
   "$nmi_cpl3_iso_root/boot/grub" "$bootstrap32_ud_iso_root/boot/grub" \
   "$bootstrap64_nmi_iso_root/boot/grub" \
-  "$malformed_handoff_iso_root/boot/grub"
+  "$malformed_handoff_iso_root/boot/grub" \
+  "$projection_authority_iso_root/boot/grub" \
+  "$raw_selection_authority_iso_root/boot/grub"
 for probe in "${fault_image_probes[@]}"; do
   mkdir -p "$build/iso-fault-${probe}/boot/grub"
 done
@@ -125,6 +129,10 @@ done
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh --stub \
   "$build/boot-page-plan-malformed-handoff.h"
+./scripts/generate-boot-page-plan.sh --stub \
+  "$build/boot-page-plan-projection-authority-mutation.h"
+./scripts/generate-boot-page-plan.sh --stub \
+  "$build/boot-page-plan-raw-selection-authority-mutation.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-frame-budget.h"
 ./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-fault-containment.h"
@@ -236,6 +244,14 @@ mv "$build/FaultDispatchAndCompositeAdapters.o" "$build/FaultDispatch.o"
   -DLEANOS_MALFORMED_HANDOFF_FIXTURE=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-malformed-handoff.h"' \
   -c boot/kernel.c -o "$build/kernel-malformed-handoff.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_PROJECTION_SELECTION_MUTATION_FIXTURE=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-projection-authority-mutation.h"' \
+  -c boot/kernel.c -o "$build/kernel-projection-authority-mutation.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_RAW_SELECTION_MUTATION_FIXTURE=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-raw-selection-authority-mutation.h"' \
+  -c boot/kernel.c -o "$build/kernel-raw-selection-authority-mutation.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_PREEMPTION_SCENARIO=1 -DLEANOS_ENTRY_HIGH_WATER=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
@@ -420,6 +436,22 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-malformed-handoff-prelink.map" \
   -o "$build/leanos-malformed-handoff-prelink.elf" "$build/boot.o" \
   "$build/kernel-malformed-handoff.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-projection-authority-mutation-prelink.map" \
+  -o "$build/leanos-projection-authority-mutation-prelink.elf" "$build/boot.o" \
+  "$build/kernel-projection-authority-mutation.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-raw-selection-authority-mutation-prelink.map" \
+  -o "$build/leanos-raw-selection-authority-mutation-prelink.elf" "$build/boot.o" \
+  "$build/kernel-raw-selection-authority-mutation.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
   "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
@@ -610,6 +642,12 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   "$build/boot-page-plan.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-malformed-handoff-prelink.elf" \
   "$build/boot-page-plan-malformed-handoff.h"
+./scripts/generate-boot-page-plan.sh \
+  "$build/leanos-projection-authority-mutation-prelink.elf" \
+  "$build/boot-page-plan-projection-authority-mutation.h"
+./scripts/generate-boot-page-plan.sh \
+  "$build/leanos-raw-selection-authority-mutation-prelink.elf" \
+  "$build/boot-page-plan-raw-selection-authority-mutation.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-preemption-prelink.elf" \
   "$build/boot-page-plan-preemption.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-frame-budget-prelink.elf" \
@@ -733,6 +771,14 @@ cmp "$build/boot-page-plan-integer-fault.h" \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-malformed-handoff.h"' \
   -c boot/kernel.c -o "$build/kernel-malformed-handoff.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_PROJECTION_SELECTION_MUTATION_FIXTURE=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-projection-authority-mutation.h"' \
+  -c boot/kernel.c -o "$build/kernel-projection-authority-mutation.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+  -DLEANOS_RAW_SELECTION_MUTATION_FIXTURE=1 \
+  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-raw-selection-authority-mutation.h"' \
+  -c boot/kernel.c -o "$build/kernel-raw-selection-authority-mutation.o"
+"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_PREEMPTION_SCENARIO=1 -DLEANOS_ENTRY_HIGH_WATER=1 \
   -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
   -c boot/kernel.c -o "$build/kernel-preemption.o"
@@ -819,6 +865,22 @@ ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-malformed-handoff.map" \
   -o "$build/leanos-malformed-handoff.elf" "$build/boot.o" \
   "$build/kernel-malformed-handoff.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-projection-authority-mutation.map" \
+  -o "$build/leanos-projection-authority-mutation.elf" "$build/boot.o" \
+  "$build/kernel-projection-authority-mutation.o" "$build/KernelTransition.o" \
+  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
+  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+  -T boot/linker.ld -Map "$build/leanos-raw-selection-authority-mutation.map" \
+  -o "$build/leanos-raw-selection-authority-mutation.elf" "$build/boot.o" \
+  "$build/kernel-raw-selection-authority-mutation.o" "$build/KernelTransition.o" \
   "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
   "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
   "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
@@ -1063,6 +1125,22 @@ cmp "$build/boot-page-plan-malformed-handoff.h" \
   echo "error: malformed-handoff page-table plan drifted after final link" >&2
   exit 1
 }
+./scripts/generate-boot-page-plan.sh \
+  "$build/leanos-projection-authority-mutation.elf" \
+  "$build/boot-page-plan-projection-authority-mutation.final.h"
+cmp "$build/boot-page-plan-projection-authority-mutation.h" \
+  "$build/boot-page-plan-projection-authority-mutation.final.h" || {
+  echo "error: projection-authority mutation page-table plan drifted after final link" >&2
+  exit 1
+}
+./scripts/generate-boot-page-plan.sh \
+  "$build/leanos-raw-selection-authority-mutation.elf" \
+  "$build/boot-page-plan-raw-selection-authority-mutation.final.h"
+cmp "$build/boot-page-plan-raw-selection-authority-mutation.h" \
+  "$build/boot-page-plan-raw-selection-authority-mutation.final.h" || {
+  echo "error: raw-selection authority mutation page-table plan drifted after final link" >&2
+  exit 1
+}
 ./scripts/generate-boot-page-plan.sh "$build/leanos-nmi.elf" \
   "$build/boot-page-plan-nmi.final.h"
 cmp "$build/boot-page-plan-nmi.h" "$build/boot-page-plan-nmi.final.h" || {
@@ -1284,7 +1362,7 @@ for symbol in leanos_boot_handoff_stream_init leanos_boot_handoff_stream_step \
   leanos_boot_consume_exact_projection leanos_boot_projection_entry \
   leanos_boot_projection_manifest leanos_boot_projection_free \
   leanos_boot_projection_finish leanos_boot_manifest_candidate \
-  leanos_boot_publish_authority; do
+  leanos_boot_authority_result; do
   if ! grep -q " T ${symbol}$" <<<"$symbols"; then
     echo "error: generated image does not retain $symbol" >&2
     exit 1
@@ -1364,6 +1442,8 @@ LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
   | tee "$build/entry-stack-extended-state-peer-pke-final-elf.txt"
 ./scripts/check-image-policy.sh "$build/leanos.elf"
 ./scripts/check-image-policy.sh "$build/leanos-malformed-handoff.elf"
+./scripts/check-image-policy.sh "$build/leanos-projection-authority-mutation.elf"
+./scripts/check-image-policy.sh "$build/leanos-raw-selection-authority-mutation.elf"
 ./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
 ./scripts/check-image-policy.sh "$build/leanos-frame-budget.elf"
 ./scripts/check-frame-budget-machine.sh "$build/leanos-frame-budget.elf"
@@ -1572,6 +1652,12 @@ cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-malformed-handoff.elf" \
   "$malformed_handoff_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$malformed_handoff_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-projection-authority-mutation.elf" \
+  "$projection_authority_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$projection_authority_iso_root/boot/grub/grub.cfg"
+cp "$build/leanos-raw-selection-authority-mutation.elf" \
+  "$raw_selection_authority_iso_root/boot/leanos.elf"
+cp boot/grub.cfg "$raw_selection_authority_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-preemption.elf" "$preemption_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$preemption_iso_root/boot/grub/grub.cfg"
 cp "$build/leanos-frame-budget.elf" "$frame_budget_iso_root/boot/leanos.elf"
@@ -1668,6 +1754,10 @@ cp "$build/SOURCE_REVISION" "$nmi_cpl3_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$bootstrap32_ud_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$bootstrap64_nmi_iso_root/boot/SOURCE_REVISION"
 cp "$build/SOURCE_REVISION" "$malformed_handoff_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" \
+  "$projection_authority_iso_root/boot/SOURCE_REVISION"
+cp "$build/SOURCE_REVISION" \
+  "$raw_selection_authority_iso_root/boot/SOURCE_REVISION"
 for probe in "${direct_port_probes[@]}"; do
   cp "$build/SOURCE_REVISION" \
     "$build/iso-direct-port-${probe}/boot/SOURCE_REVISION"
@@ -1692,6 +1782,14 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-malformed-handoff.iso" \
   "$malformed_handoff_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-projection-authority-mutation.iso" \
+  "$projection_authority_iso_root" -- -volume_date uuid 2000010100000000 \
+  -volume_date all_file_dates 2000010100000000 >/dev/null
+grub-mkrescue -d /usr/lib/grub/i386-pc \
+  -o "$build/leanos-${version}-x86_64-raw-selection-authority-mutation.iso" \
+  "$raw_selection_authority_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
 grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-preemption.iso" "$preemption_iso_root" -- \
@@ -1805,6 +1903,12 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-malformed-handoff.iso" \
   "$build/leanos-malformed-handoff.elf" \
   "$build/leanos-malformed-handoff.map" \
+  "$build/leanos-${version}-x86_64-projection-authority-mutation.iso" \
+  "$build/leanos-projection-authority-mutation.elf" \
+  "$build/leanos-projection-authority-mutation.map" \
+  "$build/leanos-${version}-x86_64-raw-selection-authority-mutation.iso" \
+  "$build/leanos-raw-selection-authority-mutation.elf" \
+  "$build/leanos-raw-selection-authority-mutation.map" \
   "$build/leanos-${version}-x86_64-preemption.iso" \
   "$build/leanos-${version}-x86_64-frame-budget.iso" \
   "$build/leanos-${version}-x86_64-fault-containment.iso" \

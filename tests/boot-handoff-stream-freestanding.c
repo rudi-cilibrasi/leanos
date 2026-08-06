@@ -67,6 +67,9 @@ extern uint64_t leanos_boot_consume_exact_projection(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_publish_authority(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_authority_result(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t);
 
 struct stream_state {
     uint64_t word[7];
@@ -150,6 +153,7 @@ int check_stream(void) {
     REGISTER_BOUNDARY(leanos_boot_manifest_start);
     REGISTER_BOUNDARY(leanos_boot_consume_exact_projection);
     REGISTER_BOUNDARY(leanos_boot_publish_authority);
+    REGISTER_BOUNDARY(leanos_boot_authority_result);
 #endif
 #define ZERO_8 0, 0, 0, 0, 0, 0, 0, 0
 #define FINISH_WORDS UINT64_C(0x100), 0, 0, 0, 0, 0, 0, 0, \
@@ -383,11 +387,44 @@ int check_stream(void) {
     CHECK_RESULT("consume.accepted.frame",
         leanos_boot_consume_exact_projection(4096, 800, 1, 1, 0, manifest),
         800, 17);
+    CHECK_RESULT("consume.retains-first-frame",
+        leanos_boot_consume_exact_projection(800, 801, 1, 1, 0, manifest),
+        800, 17);
     CHECK_RESULT("publish.accepted.next-frame",
         leanos_boot_publish_authority(800, 800, 1, 1, 0, manifest, 1),
         801, 17);
+    CHECK_RESULT("authority-result.accepted.status",
+        leanos_boot_authority_result(800, 800, 1, 1, 0, manifest, 1, 1),
+        1, 17);
+    CHECK_RESULT("authority-result.accepted.frame",
+        leanos_boot_authority_result(800, 800, 1, 1, 0, manifest, 1, 3),
+        800, 17);
+    CHECK_RESULT("authority-result.accepted.publication",
+        leanos_boot_authority_result(800, 800, 1, 1, 0, manifest, 1, 4),
+        801, 17);
     CHECK_RESULT("publish.rescan-mismatch.next-frame",
         leanos_boot_publish_authority(800, 801, 1, 1, 0, manifest, 1),
+        0, 17);
+    CHECK_RESULT("authority-result.rejection-no-frame",
+        leanos_boot_authority_result(800, 801, 1, 1, 0, manifest, 1, 3),
+        0, 17);
+    CHECK_RESULT("authority-result.rejection-no-publication",
+        leanos_boot_authority_result(800, 801, 1, 1, 0, manifest, 1, 4),
+        0, 17);
+    CHECK_RESULT("authority-result.mutated-status-no-frame",
+        leanos_boot_authority_result(800, 800, 2, 1, 0, manifest, 1, 3),
+        0, 17);
+    CHECK_RESULT("authority-result.mutated-usable-no-publication",
+        leanos_boot_authority_result(800, 800, 1, 0, 0, manifest, 1, 4),
+        0, 17);
+    CHECK_RESULT("authority-result.mutated-blocked-no-publication",
+        leanos_boot_authority_result(800, 800, 1, 1, 1, manifest, 1, 4),
+        0, 17);
+    CHECK_RESULT("authority-result.mutated-manifest-no-publication",
+        leanos_boot_authority_result(800, 800, 1, 1, 0, 0, 1, 4),
+        0, 17);
+    CHECK_RESULT("authority-result.mutated-scrub-no-publication",
+        leanos_boot_authority_result(800, 800, 1, 1, 0, manifest, 0, 4),
         0, 17);
     uint64_t gap_start = leanos_boot_manifest_start(
         0, 0x100000, 0x200000, 0x100000,

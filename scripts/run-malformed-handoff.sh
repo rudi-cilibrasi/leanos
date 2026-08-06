@@ -11,7 +11,12 @@ version="${LEANOS_VERSION:-0.1.0}"
 image="${1:-build/boot/leanos-${version}-x86_64-malformed-handoff.iso}"
 log="${LEANOS_SERIAL_LOG:-build/boot/malformed-handoff.serial.log}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
-terminal='LEANOS/7 BOOTALLOC status=FAIL reason=decode-rejected'
+reason="${LEANOS_HANDOFF_REJECTION_REASON:-decode-rejected}"
+[[ "$reason" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || {
+  echo "error: handoff rejection reason must be a lowercase token" >&2
+  exit 1
+}
+terminal="LEANOS/7 BOOTALLOC status=FAIL reason=$reason"
 
 for tool in "$qemu" timeout; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -66,4 +71,4 @@ if grep -Eq '^LEANOS/7 (HANDOFF|MAP|ALLOC|SCRUB|PUBLISH)|^LEANOS/[0-9]+ FINAL .*
   exit 1
 fi
 
-echo "LeanOS malformed-handoff rejection passed; generated decoder denied authority"
+echo "LeanOS handoff rejection passed; reason=$reason exposed no authority"

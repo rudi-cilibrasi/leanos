@@ -15,6 +15,10 @@ invoke() {
 }
 
 invoke success >/dev/null 2>&1
+LEANOS_HANDOFF_REJECTION_REASON=projection-authority invoke success \
+  >/dev/null 2>&1
+LEANOS_HANDOFF_REJECTION_REASON=raw-selection-authority invoke success \
+  >/dev/null 2>&1
 for spec in \
   'missing malformed-handoff' \
   'wrong-reason malformed-handoff' \

@@ -338,6 +338,66 @@ def scalarInitialAt (streamIdentity : UInt64) (extent target : Nat) : ScalarStat
         (UInt64.ofNat multiboot2Magic) streamIdentity (UInt64.ofNat extent)
         (UInt64.ofNat target) (UInt64.ofNat query.val) }
 
+/-- Immutable stream authority reconstructed from the production scalar
+initializer.  Phase-local traversal proofs carry this single witness instead
+of accepting independently supplied alignment and extent premises. -/
+structure AdmittedScalarStream
+    (identity : UInt64) (extent target : Nat) : Prop where
+  identityAligned : identity % 8 = 0
+  identityLow : 4096 ≤ identity
+  extentLow : 16 ≤ extent
+  extentHigh : extent ≤ maxTagBytes
+  extentAligned : extent % 8 = 0
+  noOverflow :
+    UInt64.ofNat extent ≤ 0xffffffffffffffff - identity
+  targetWord : UInt64.ofNat target < 4096
+
+/-- An active production scalar initializer reconstructs its immutable stream
+admission facts.  The only extra premise is the representation bridge that the
+proof-side `Nat` extent fits in the `UInt64` word supplied to production; none
+of the alignment or bounded-admission facts may be supplied independently. -/
+theorem scalarInitialAt_active_implies_admitted
+    (identity : UInt64) (extent target : Nat)
+    (hextentWord : extent < UInt64.size)
+    (hactive :
+      (scalarInitialAt identity extent target).word[1]! =
+        BootMemoryMapStreamAuthority.active) :
+    AdmittedScalarStream identity extent target := by
+  have hactiveWord :
+      BootMemoryMapStreamAuthority.initWord
+          (UInt64.ofNat multiboot2Magic) identity (UInt64.ofNat extent)
+          (UInt64.ofNat target) 1 =
+        BootMemoryMapStreamAuthority.active := by
+    simpa [scalarInitialAt] using hactive
+  have hnoError :=
+    BootMemoryMapStreamAuthority.initWord_active_implies_noError
+      (UInt64.ofNat multiboot2Magic) identity (UInt64.ofNat extent)
+      (UInt64.ofNat target) hactiveWord
+  obtain ⟨_hmagic, hidentityAligned, hidentityLow, hextentLowWord,
+      hextentHighWord, hextentAlignedWord, hnoOverflow, htarget⟩ :=
+    BootMemoryMapStreamAuthority.initWord_noError_implies_admitted
+      (UInt64.ofNat multiboot2Magic) identity (UInt64.ofNat extent)
+      (UInt64.ofNat target) hnoError
+  have hextentLow : 16 ≤ extent := by
+    rw [UInt64.le_iff_toNat_le,
+      UInt64.toNat_ofNat_of_lt' hextentWord] at hextentLowWord
+    simpa using hextentLowWord
+  have hextentHigh : extent ≤ maxTagBytes := by
+    rw [UInt64.le_iff_toNat_le,
+      UInt64.toNat_ofNat_of_lt' hextentWord] at hextentHighWord
+    simpa [maxTagBytes] using hextentHighWord
+  have hextentAligned : extent % 8 = 0 := by
+    have := congrArg UInt64.toNat hextentAlignedWord
+    simpa [UInt64.toNat_mod, UInt64.toNat_ofNat_of_lt' hextentWord] using this
+  exact
+    { identityAligned := hidentityAligned
+      identityLow := hidentityLow
+      extentLow := hextentLow
+      extentHigh := hextentHigh
+      extentAligned := hextentAligned
+      noOverflow := hnoOverflow
+      targetWord := htarget }
+
 /-- Every successful rich decode and bounded rich-selected target constructs
 the exact admitted scalar parser state.  This is the first structural slice of
 the terminal scalar/rich refinement: no terminal status or coverage word is
@@ -642,8 +702,6 @@ theorem canonicalInfoStep_of_richTraversal
         simpa [wordLimit] using hheader.2.1
       have hextentLt : input.bytes.length < UInt64.size := by
         simpa [wordLimit] using hheader.2.2.1
-      have htargetLt : target < UInt64.size :=
-        Nat.lt_trans htarget (by decide)
       have hinfoLt := readU64_lt_wordLimit input.bytes 0 infoWord hinfo
       have hchunkWord :
           chunkWord (input.bytes.take 8) = UInt64.ofNat infoWord := by
@@ -660,59 +718,30 @@ theorem canonicalInfoStep_of_richTraversal
           UInt64.ofNat infoWord >>> 32 = 0 := by
         rw [high32Word_ofNat infoWord hinfoLt, hhigh]
         rfl
-      have haddressAligned :
-          UInt64.ofNat input.infoAddress % 8 = 0 := by
-        apply UInt64.toNat.inj
-        simp [UInt64.toNat_ofNat_of_lt' haddressLt,
-          hheader.2.2.2.2.1]
-      have hextentLow : 16 ≤ UInt64.ofNat input.bytes.length := by
-        rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' hextentLt]
-        exact hheader.2.2.2.2.2.1
-      have hextentHigh : UInt64.ofNat input.bytes.length ≤ 65536 := by
-        rw [UInt64.le_iff_toNat_le, UInt64.toNat_ofNat_of_lt' hextentLt]
-        exact hheader.2.2.2.2.2.2.2.1
-      have hextentAligned :
-          UInt64.ofNat input.bytes.length % 8 = 0 := by
-        apply UInt64.toNat.inj
-        simp [UInt64.toNat_ofNat_of_lt' hextentLt, haligned]
-      have htargetWord : UInt64.ofNat target < 4096 := by
-        rw [UInt64.lt_iff_toNat_lt,
-          UInt64.toNat_ofNat_of_lt' htargetLt]
-        simpa [frameLimit, physicalLimit, pageBytes] using htarget
       have hextentNe8 : UInt64.ofNat input.bytes.length ≠ 8 := by
         intro heq
         have := congrArg UInt64.toNat heq
         simp [UInt64.toNat_ofNat_of_lt' hextentLt] at this
         omega
-      have haddressLow : 4096 ≤ UInt64.ofNat input.infoAddress := by
-        rw [UInt64.le_iff_toNat_le,
-          UInt64.toNat_ofNat_of_lt' haddressLt]
-        exact hheader.2.2.2.2.2.2.2.2
-      have hnoOverflow :
-          UInt64.ofNat input.bytes.length ≤
-            0xffffffffffffffff - UInt64.ofNat input.infoAddress := by
-        have haddressMax :
-            UInt64.ofNat input.infoAddress ≤ 0xffffffffffffffff := by
-          rw [UInt64.le_iff_toNat_le,
-            UInt64.toNat_ofNat_of_lt' haddressLt]
-          simp only [UInt64.toNat_ofNat, Nat.reducePow, Nat.reduceMod]
-          simpa [UInt64.size] using Nat.le_pred_of_lt haddressLt
-        rw [UInt64.le_iff_toNat_le,
-          UInt64.toNat_ofNat_of_lt' hextentLt,
-          UInt64.toNat_sub_of_le _ _ haddressMax,
-          UInt64.toNat_ofNat_of_lt' haddressLt]
-        simp only [UInt64.toNat_ofNat, Nat.reducePow, Nat.reduceMod]
-        exact hheader.2.2.2.1
       have h8NeExtent : 8 ≠ UInt64.ofNat input.bytes.length :=
         Ne.symm hextentNe8
+      have hinitial :=
+        scalarInitialAt_of_decode input decoded target hdecode htarget
+      have hactive :
+          BootMemoryMapStreamAuthority.initWord
+              (UInt64.ofNat multiboot2Magic)
+              (UInt64.ofNat input.infoAddress)
+              (UInt64.ofNat input.bytes.length)
+              (UInt64.ofNat target) 1 =
+            BootMemoryMapStreamAuthority.active := by
+        simpa [scalarInitialAt] using hinitial.1
       have hstep :=
-        BootMemoryMapStreamAuthority.infoStepWords_of_admitted
+        BootMemoryMapStreamAuthority.infoStepWords_of_active
+          (UInt64.ofNat multiboot2Magic)
           (UInt64.ofNat input.infoAddress)
           (UInt64.ofNat input.bytes.length)
           (UInt64.ofNat target) (UInt64.ofNat infoWord)
-          haddressAligned haddressLow hextentLow hextentHigh
-          hextentAligned hnoOverflow htargetWord hlowWord hhighWord
-          h8NeExtent
+          hactive hlowWord hhighWord h8NeExtent
       simpa [scalarStep, scalarInitialAt, multiboot2Magic, hchunkWord]
         using hstep
 
@@ -3953,11 +3982,8 @@ theorem canonicalIgnoredTag_successor
     (total offset fuel tagWord target : Nat) (sawMemoryMap : Bool)
     (tagsRev tags : List Tag) (state : ScalarState)
     (htotal : total = bytes.length)
-    (htotalLow : 16 ≤ total)
-    (htotalHigh : total ≤ maxTagBytes)
-    (htotalAligned : total % 8 = 0)
+    (hadmitted : AdmittedScalarStream identity total target)
     (hoffsetAligned : offset % 8 = 0)
-    (hidentityAligned : identity % 8 = 0)
     (hread : readU64 bytes offset = .ok tagWord)
     (hsize : 8 ≤ high32Nat tagWord)
     (hcontent : offset + high32Nat tagWord ≤ total)
@@ -3982,6 +4008,10 @@ theorem canonicalIgnoredTag_successor
             terminal →
           SuccessfulScalarRichTraversal target entries state
             ((canonicalChunks identity bytes).drop (offset / 8)) terminal := by
+  have htotalLow := hadmitted.extentLow
+  have htotalHigh := hadmitted.extentHigh
+  have htotalAligned := hadmitted.extentAligned
+  have hidentityAligned := hadmitted.identityAligned
   rcases hstate with ⟨hversion, hstatus, herror, hidentity, hextent,
     hoffset, hphase, hzeroContent, hzeroPadded, hsawMap, hentryCount,
     hentryCountZero, husable, hblocked, htargetWord, htarget, htagBudget⟩
@@ -4373,11 +4403,8 @@ theorem successfulScalarRichTraversal_afterMemoryMap
     (tagsRev tags : List Tag)
     (state : ScalarState)
     (htotal : total = bytes.length)
-    (htotalLow : 16 ≤ total)
-    (htotalHigh : total ≤ maxTagBytes)
-    (htotalAligned : total % 8 = 0)
+    (hadmitted : AdmittedScalarStream identity total target)
     (hoffsetAligned : offset % 8 = 0)
-    (hidentityAligned : identity % 8 = 0)
     (htraversal :
       SuccessfulTagDecodeTraversal bytes total offset fuel sawMemoryMap tagsRev tags)
     (hstate :
@@ -4386,6 +4413,10 @@ theorem successfulScalarRichTraversal_afterMemoryMap
     ∃ terminal,
       SuccessfulScalarRichTraversal target [] state
         ((canonicalChunks identity bytes).drop (offset / 8)) terminal := by
+  have htotalLow := hadmitted.extentLow
+  have htotalHigh := hadmitted.extentHigh
+  have htotalAligned := hadmitted.extentAligned
+  have hidentityAligned := hadmitted.identityAligned
   induction htraversal generalizing state with
   | endTag offset fuel tagWord tagsRev hread htype hsize hend =>
       rcases hstate with ⟨hversion, hstatus, herror, hidentity, hextent,
@@ -4444,8 +4475,8 @@ theorem successfulScalarRichTraversal_afterMemoryMap
         simp [Nat.add_mod, hoffsetAligned, aligned8]
       obtain ⟨after, hafter, hwrap⟩ :=
         canonicalIgnoredTag_successor identity bytes total offset fuel tagWord
-          target true tagsRev tags state htotal htotalLow htotalHigh
-          htotalAligned hoffsetAligned hidentityAligned hread hsize hcontent
+          target true tagsRev tags state htotal hadmitted
+          hoffsetAligned hread hsize hcontent
           hadvance htypeEnd htypeMap hrest hstate
       obtain ⟨terminal, htail⟩ :=
         ih after hnextAligned hafter rfl
@@ -4462,11 +4493,8 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
     (tagsRev tags : List Tag) (entries : List RawEntry)
     (state : ScalarState)
     (htotal : total = bytes.length)
-    (htotalLow : 16 ≤ total)
-    (htotalHigh : total ≤ maxTagBytes)
-    (htotalAligned : total % 8 = 0)
+    (hadmitted : AdmittedScalarStream identity total target)
     (hoffsetAligned : offset % 8 = 0)
-    (hidentityAligned : identity % 8 = 0)
     (hread : readU64 bytes offset = .ok tagWord)
     (hsize : memoryMapTagHeaderSize ≤ high32Nat tagWord)
     (hcontent : offset + high32Nat tagWord ≤ total)
@@ -4495,6 +4523,10 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
     ∃ terminal,
       SuccessfulScalarRichTraversal target entries state
         ((canonicalChunks identity bytes).drop (offset / 8)) terminal := by
+  have htotalLow := hadmitted.extentLow
+  have htotalHigh := hadmitted.extentHigh
+  have htotalAligned := hadmitted.extentAligned
+  have hidentityAligned := hadmitted.identityAligned
   rcases hstate with ⟨hversion, hstatus, herror, hidentity, hextent,
     hoffset, hphase, hzeroContent, hzeroPadded, hsawMap, hentryCount,
     hentryCountZero, husable, hblocked, htargetWord, htarget, htagBudget⟩
@@ -4993,9 +5025,9 @@ theorem successfulScalarRichTraversal_memoryMapTag_complete
         (offset + aligned8 (high32Nat tagWord)) fuel target true
         (.memoryMap (high32Nat tagWord) (low32Nat layoutWord)
           (high32Nat layoutWord) entries :: tagsRev)
-        tags after htotal htotalLow htotalHigh htotalAligned
+        tags after htotal hadmitted
         (by simp [Nat.add_mod, hoffsetAligned, aligned8])
-        hidentityAligned hrest htagState rfl
+        hrest htagState rfl
   obtain ⟨terminal, hentriesTraversal⟩ :=
     successfulScalarRichTraversal_canonicalMemoryMapEntries_exists
       identity bytes total
@@ -5116,11 +5148,11 @@ theorem successfulScalarRichTraversal_beforeMemoryMap
     (tagsRev tags : List Tag) (state : ScalarState)
     (beforeSizes : List Nat)
     (htotal : total = bytes.length)
-    (htotalLow : 16 ≤ total)
-    (htotalHigh : total ≤ maxTagBytes)
-    (htotalAligned : total % 8 = 0)
+    (htotalWord : total < UInt64.size)
     (hoffsetAligned : offset % 8 = 0)
-    (hidentityAligned : identity % 8 = 0)
+    (hinitialActive :
+      (scalarInitialAt identity total target).word[1]! =
+        BootMemoryMapStreamAuthority.active)
     (hprefix : tagsRev.reverse = beforeSizes.map Tag.ignored)
     (htraversal :
       SuccessfulTagDecodeTraversal bytes total offset fuel sawMemoryMap
@@ -5132,9 +5164,12 @@ theorem successfulScalarRichTraversal_beforeMemoryMap
       SuccessfulScalarRichTraversal target entries state
           ((canonicalChunks identity bytes).drop (offset / 8)) terminal ∧
         extractMemoryMap tags = .ok entries := by
+  have hadmitted :=
+    scalarInitialAt_active_implies_admitted
+      identity total target htotalWord hinitialActive
   induction htraversal generalizing state beforeSizes with
   | endTag =>
-      contradiction
+      simp at hsaw
   | ignoredTag offset fuel tagWord sawMemoryMap tagsRev tags hread hsize
       hcontent hadvance htypeEnd htypeMap hrest ih =>
       subst sawMemoryMap
@@ -5143,8 +5178,8 @@ theorem successfulScalarRichTraversal_beforeMemoryMap
         simp [Nat.add_mod, hoffsetAligned, aligned8]
       obtain ⟨after, hafter, hwrap⟩ :=
         canonicalIgnoredTag_successor identity bytes total offset fuel tagWord
-          target false tagsRev tags state htotal htotalLow htotalHigh
-          htotalAligned hoffsetAligned hidentityAligned hread hsize hcontent
+          target false tagsRev tags state htotal hadmitted
+          hoffsetAligned hread hsize hcontent
           hadvance htypeEnd htypeMap hrest hstate
       obtain ⟨entries, terminal, htail, hextract⟩ :=
         ih after (beforeSizes ++ [high32Nat tagWord]) hnextAligned
@@ -5156,8 +5191,8 @@ theorem successfulScalarRichTraversal_beforeMemoryMap
       obtain ⟨terminal, hwhole⟩ :=
         successfulScalarRichTraversal_memoryMapTag_complete identity bytes
           total offset fuel tagWord layoutWord target tagsRev tags entries
-          state htotal htotalLow htotalHigh htotalAligned hoffsetAligned
-          hidentityAligned hread hsize hcontent hadvance htype hlayout
+          state htotal hadmitted hoffsetAligned
+          hread hsize hcontent hadvance htype hlayout
           hentrySize hentryVersion halignedEntries hentryBound hentries hrest
           hstate
       obtain ⟨afterSizes, hshape⟩ :=
@@ -5270,22 +5305,6 @@ theorem successfulScalarRichTraversal_decode_tail
     hhandoff, hvalid, hentries, hbounds⟩ := hrich.traversed
   have hheader := accepted_input_scalar_header input decoded hdecode
   have htotalEq : low32Nat infoWord = input.bytes.length := htotal
-  have htotalLow : 16 ≤ low32Nat infoWord := by
-    rw [htotalEq]
-    exact hheader.2.2.2.2.2.1
-  have htotalHigh : low32Nat infoWord ≤ maxTagBytes := by
-    rw [htotalEq]
-    exact hheader.2.2.2.2.2.2.2.1
-  have htotalAligned : low32Nat infoWord % 8 = 0 := by
-    rw [htotalEq]
-    exact hheader.2.2.2.2.2.2.1
-  have hidentityAligned :
-      UInt64.ofNat input.infoAddress % 8 = 0 := by
-    have haddressLt : input.infoAddress < UInt64.size := by
-      simpa [wordLimit] using hheader.2.1
-    apply UInt64.toNat.inj
-    simp [UInt64.toNat_ofNat_of_lt' haddressLt,
-      hheader.2.2.2.2.1]
   let initial :=
     scalarInitialAt (UInt64.ofNat input.infoAddress)
       input.bytes.length target
@@ -5304,8 +5323,14 @@ theorem successfulScalarRichTraversal_decode_tail
   obtain ⟨sourceEntries, terminal, htagWhole, hextract⟩ :=
     successfulScalarRichTraversal_beforeMemoryMap
       (UInt64.ofNat input.infoAddress) input.bytes (low32Nat infoWord) 8
-      maxTags target false [] tags afterInfo [] htotalEq htotalLow
-      htotalHigh htotalAligned (by decide) hidentityAligned rfl
+      maxTags target false [] tags afterInfo [] htotalEq
+      (by simpa [htotalEq, wordLimit] using hheader.2.2.1)
+      (by decide)
+      (by
+        have hinitial :=
+          scalarInitialAt_of_decode input decoded target hdecode htarget
+        simpa [htotalEq, initial] using hinitial.1)
+      rfl
       htagTraversal htagState rfl
   have hvalidExtract :
       extractMemoryMap tags = .ok decoded.entries := by
@@ -5348,6 +5373,164 @@ theorem successfulScalarRichTraversal_of_decode
     input decoded target terminal hdecode
       (successful_decode_constructs_traversal input decoded hdecode)
       htarget htail
+
+/-- Terminal scalar authority reconstructed from one successful immutable-byte
+decode.  The witness retains the initializer-derived stream admission, the
+exact decoded entry list used by the traversal, and the complete terminal
+classification words.  In particular, callers cannot replace the decoded
+entries or seed either classification accumulator independently. -/
+def DecodedScalarTerminalAuthority
+    (input : Input) (decoded : Decoded) (target : Nat)
+    (terminal : ScalarState) : Prop :=
+    AdmittedScalarStream (UInt64.ofNat input.infoAddress)
+        input.bytes.length target ∧
+      SuccessfulScalarRichTraversal target decoded.entries
+        (scalarInitialAt (UInt64.ofNat input.infoAddress)
+          input.bytes.length target)
+        (canonicalChunks (UInt64.ofNat input.infoAddress) input.bytes)
+        terminal ∧
+      scalarReplay
+          (canonicalChunks (UInt64.ofNat input.infoAddress) input.bytes)
+          (scalarInitialAt (UInt64.ofNat input.infoAddress)
+            input.bytes.length target) = terminal ∧
+      terminal.word[1]! = BootMemoryMapStreamAuthority.complete ∧
+      terminal.word[2]! = BootMemoryMapStreamAuthority.noError ∧
+      terminal.word[14]! =
+        decoded.entries.foldl (updateUsableClassification target)
+          (scalarInitialAt (UInt64.ofNat input.infoAddress)
+            input.bytes.length target).word[14]! ∧
+      terminal.word[15]! =
+        decoded.entries.foldl (updateBlockedClassification target)
+          (scalarInitialAt (UInt64.ofNat input.infoAddress)
+            input.bytes.length target).word[15]!
+
+set_option maxHeartbeats 800000 in
+/-- A successful rich decode produces one terminal scalar authority package
+from the same bytes and decoded entries. -/
+theorem decodedScalarTerminalAuthority_of_decode
+    (input : Input) (decoded : Decoded) (target : Nat)
+    (hdecode : decode input = .ok decoded)
+    (htarget : target < frameLimit) :
+    ∃ terminal, DecodedScalarTerminalAuthority input decoded target terminal := by
+  have hinitial := scalarInitialAt_of_decode input decoded target hdecode htarget
+  have hheader := accepted_input_scalar_header input decoded hdecode
+  have hextentWord : input.bytes.length < UInt64.size := by
+    simpa [wordLimit, UInt64.size] using hheader.2.2.1
+  have hadmitted :
+      AdmittedScalarStream (UInt64.ofNat input.infoAddress)
+        input.bytes.length target := by
+    apply scalarInitialAt_active_implies_admitted
+      (UInt64.ofNat input.infoAddress) input.bytes.length target hextentWord
+    exact hinitial.1
+  obtain ⟨terminal, htraversal⟩ :=
+    successfulScalarRichTraversal_of_decode input decoded target hdecode htarget
+  have hterminal :=
+    successfulScalarRichTraversal_terminal_words
+      target decoded.entries
+      (scalarInitialAt (UInt64.ofNat input.infoAddress)
+        input.bytes.length target)
+      terminal
+      (canonicalChunks (UInt64.ofNat input.infoAddress) input.bytes)
+      htraversal
+  refine ⟨terminal, ?_⟩
+  exact ⟨hadmitted, htraversal, hterminal.1, hterminal.2.1,
+    hterminal.2.2.1, hterminal.2.2.2.1, hterminal.2.2.2.2⟩
+
+/-- One accepted authority binds the terminal scalar replay to the exact rich
+decode, typed handoff validation, canonical reservation initializer, and
+allocator selection chain.  The classification folds and selected frame are
+therefore carried by one witness rather than supplied as independent scalar
+claims. -/
+def ScalarAllocatorAuthority
+    (authority : Authority) (terminal : ScalarState) : Prop :=
+  DecodedScalarTerminalAuthority authority.input authority.decoded
+      authority.allocation.frame terminal ∧
+    decode authority.input = .ok authority.decoded ∧
+    validateHandoff authority.decoded.handoff = .ok authority.decoded.entries ∧
+    BootReservation.initializeAllocator authority.decoded.handoff
+        authority.manifest = .ok authority.reserved ∧
+    FrameAllocator.allocate authority.reserved.allocator authority.owner =
+      .ok authority.allocation ∧
+    usableFrameSound authority.decoded.entries authority.allocation.frame = true ∧
+    authority.allocation.frame < frameLimit ∧
+    BootReservation.reservedBy authority.reserved.intervals
+        authority.allocation.frame = false
+
+set_option maxHeartbeats 1200000 in
+/-- Every accepted full authority produces the scalar/allocator authority
+chain for its exact selected frame. -/
+theorem scalarAllocatorAuthority_of_authority (authority : Authority) :
+    ∃ terminal, ScalarAllocatorAuthority authority terminal := by
+  obtain ⟨terminal, hterminal⟩ :=
+    decodedScalarTerminalAuthority_of_decode authority.input authority.decoded
+      authority.allocation.frame authority.decodedBy authority.selectedWithinBound
+  refine ⟨terminal, hterminal, authority.decodedBy, ?_, authority.reservedBy,
+    authority.allocatedBy, authority.selectedUsable,
+    authority.selectedWithinBound, ?_⟩
+  · exact accepted_handoff_valid authority.input authority.decoded authority.decodedBy
+  · exact BootReservation.allocation_excludes_reservations
+      authority.reserved authority.owner authority.allocation authority.allocatedBy
+
+set_option maxHeartbeats 800000 in
+/-- The frame selected by the canonical allocator is exactly the terminal
+scalar candidate: it has decoded usable coverage and no decoded non-usable
+overlap. -/
+theorem scalarAllocatorAuthority_terminal_selection
+    (authority : Authority) (terminal : ScalarState)
+    (h : ScalarAllocatorAuthority authority terminal) :
+    terminal.word[14]! = 1 ∧ terminal.word[15]! = 0 := by
+  have hinitial :=
+    scalarInitialAt_of_decode authority.input authority.decoded
+      authority.allocation.frame authority.decodedBy authority.selectedWithinBound
+  have husable := h.1.2.2.2.2.2.1
+  have hblocked := h.1.2.2.2.2.2.2
+  rw [hinitial.2.2.2.2.2.2.1,
+    foldl_updateUsableClassification_zero] at husable
+  rw [hinitial.2.2.2.2.2.2.2.1,
+    foldl_updateBlockedClassification_zero] at hblocked
+  have hsound := authority.selectedUsable
+  simp only [usableFrameSound, Bool.and_eq_true] at hsound
+  rw [if_pos hsound.1] at husable
+  have hnoBlocked :
+      authority.decoded.entries.any (fun entry =>
+        entry.kind != MemoryKind.usable &&
+          overlaps entry (authority.allocation.frame * pageBytes)
+            (authority.allocation.frame * pageBytes + pageBytes)) = false := by
+    simpa using hsound.2
+  rw [if_neg (by simp [hnoBlocked])] at hblocked
+  exact ⟨husable, hblocked⟩
+
+/-- The exact rich decode/normalize/reserve/allocate chain determines the
+allocation-free production result words for its selected frame.  The result
+surface carries both the frame and the sole nonzero publication token; neither
+is accepted as a caller-owned claim. -/
+theorem scalarAllocatorAuthority_production_result
+    (authority : Authority) (terminal : ScalarState)
+    (h : ScalarAllocatorAuthority authority terminal) :
+    let selected := UInt64.ofNat authority.allocation.frame
+    BootMemoryMapStreamAuthority.authorityResultWord
+          selected selected BootMemoryMapStreamAuthority.complete 1 0 1 1 0 = 1 ∧
+      BootMemoryMapStreamAuthority.authorityResultWord
+          selected selected BootMemoryMapStreamAuthority.complete 1 0 1 1 1 = 1 ∧
+      BootMemoryMapStreamAuthority.authorityResultWord
+          selected selected BootMemoryMapStreamAuthority.complete 1 0 1 1 2 = 0 ∧
+      BootMemoryMapStreamAuthority.authorityResultWord
+          selected selected BootMemoryMapStreamAuthority.complete 1 0 1 1 3 = selected ∧
+      BootMemoryMapStreamAuthority.authorityResultWord
+          selected selected BootMemoryMapStreamAuthority.complete 1 0 1 1 4 = selected + 1 := by
+  have hselectedNat : authority.allocation.frame < 4096 := by
+    have hbound := h.2.2.2.2.2.2.1
+    have hframeLimit : frameLimit = 4096 := by native_decide
+    rw [hframeLimit] at hbound
+    exact hbound
+  have hselectedWord : UInt64.ofNat authority.allocation.frame < 4096 := by
+    rw [UInt64.lt_iff_toNat_lt]
+    have hsize : authority.allocation.frame < UInt64.size := by
+      exact Nat.lt_trans hselectedNat (by decide)
+    simpa [UInt64.toNat_ofNat, Nat.mod_eq_of_lt hsize] using hselectedNat
+  dsimp only
+  exact BootMemoryMapStreamAuthority.authorityResultWord_accepted
+    (UInt64.ofNat authority.allocation.frame) hselectedWord
 
 /-- The retained rich tag traversal selects the exact first tag-header chunk
 immediately after the information header.  Its source word, stream identity,

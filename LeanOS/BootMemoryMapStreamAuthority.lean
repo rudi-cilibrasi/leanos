@@ -117,6 +117,71 @@ theorem initWord_of_admitted
   simp [initWord, initialError, haligned, hextentAligned, hnlow,
     hnextentLow, hnextentHigh, hnOverflow, hntarget]
 
+/-- An active production initializer cannot hide an initialization error in a
+separate status word.  This is the first inverse checkpoint needed when
+reconstructing rich authority from scalar acceptance. -/
+theorem initWord_active_implies_noError
+    (magic address extent target : UInt64)
+    (hactive : initWord magic address extent target 1 = active) :
+    initWord magic address extent target 2 = noError := by
+  by_cases hreason : initialError magic address extent target = noError
+  · simp [initWord, hreason]
+  · simp [initWord, hreason, active, rejected] at hactive
+
+/-- A zero initialization-error word reconstructs every immutable admission
+condition checked before the production parser can become active. -/
+theorem initWord_noError_implies_admitted
+    (magic address extent target : UInt64)
+    (hnoError : initWord magic address extent target 2 = noError) :
+    magic = 0x36d76289 ∧
+      address % 8 = 0 ∧
+      4096 ≤ address ∧
+      16 ≤ extent ∧
+      extent ≤ 65536 ∧
+      extent % 8 = 0 ∧
+      extent ≤ 0xffffffffffffffff - address ∧
+      target < 4096 := by
+  have hreason : initialError magic address extent target = noError := by
+    simpa [initWord] using hnoError
+  have hmagic : magic = 0x36d76289 := by
+    by_cases h : magic = 0x36d76289
+    · exact h
+    · simp [initialError, h, badStream, noError] at hreason
+  have haligned : address % 8 = 0 := by
+    by_cases h : address % 8 = 0
+    · exact h
+    · simp [initialError, hmagic, h, badStream, noError] at hreason
+  have hnlow : ¬address < 4096 := by
+    intro h
+    simp [initialError, hmagic, haligned, h, badStream, noError] at hreason
+  have hextentLow : ¬extent < 16 := by
+    intro h
+    simp [initialError, hmagic, haligned, hnlow, h, badStream, noError] at hreason
+  have hextentHigh : ¬65536 < extent := by
+    intro h
+    simp [initialError, hmagic, haligned, hnlow, hextentLow, h,
+      badStream, noError] at hreason
+  have hextentAligned : extent % 8 = 0 := by
+    by_cases h : extent % 8 = 0
+    · exact h
+    · simp [initialError, hmagic, haligned, hnlow, hextentLow,
+        hextentHigh, h, badStream, noError] at hreason
+  have hnoOverflow : ¬0xffffffffffffffff - address < extent := by
+    intro h
+    simp [initialError, hmagic, haligned, hnlow, hextentLow,
+      hextentHigh, hextentAligned, h, badStream, noError] at hreason
+  have htarget : ¬4096 ≤ target := by
+    intro h
+    simp [initialError, hmagic, haligned, hnlow, hextentLow,
+      hextentHigh, hextentAligned, hnoOverflow, h, badStream, noError] at hreason
+  simpa using And.intro hmagic <|
+    And.intro haligned <|
+    And.intro hnlow <|
+    And.intro hextentLow <|
+    And.intro hextentHigh <|
+    And.intro hextentAligned <|
+    And.intro hnoOverflow htarget
+
 private def overlap (base stop first past : UInt64) : Bool :=
   base < past && first < stop
 
@@ -363,6 +428,53 @@ theorem infoStepWords_of_admitted
     hextentNotLow, hextentNotHigh, hextentAligned, hextentNonzero,
     htargetNotHigh, hnotFinal, phaseInfo, phaseTag, phaseDone,
     phaseIgnored, phaseEntryBase, phaseEntryLength, phaseEntryType]
+
+/-- Active scalar initialization carries enough information to reconstruct the
+immutable admission facts and take the exact canonical information-header
+step.  Callers cannot supply those proof-side facts independently. -/
+theorem infoStepWords_of_active
+    (magic address extent target chunk : UInt64)
+    (hactive : initWord magic address extent target 1 = active)
+    (hchunkLow : low32 chunk = extent)
+    (hchunkHigh : high32 chunk = 0)
+    (hnotFinal : 8 ≠ extent) :
+    let initial := fun query =>
+      initWord magic address extent target query
+    let next := fun query =>
+      stepWord
+        (initial 0) (initial 1) (initial 2) (initial 3)
+        (initial 4) (initial 5) (initial 6) (initial 7)
+        (initial 8) (initial 9) (initial 10) (initial 11)
+        (initial 12) (initial 13) (initial 14) (initial 15)
+        (initial 16) (initial 17) (initial 18)
+        address 0 chunk 0 query
+    next 0 = abiVersion ∧
+      next 1 = active ∧
+      next 2 = noError ∧
+      next 3 = address ∧
+      next 4 = extent ∧
+      next 5 = 8 ∧
+      next 7 = phaseTag ∧
+      next 8 = 0 ∧
+      next 9 = 0 ∧
+      next 10 = 0 ∧
+      next 11 = 0 ∧
+      next 12 = 0 ∧
+      next 13 = 0 ∧
+      next 14 = 0 ∧
+      next 15 = 0 ∧
+      next 16 = target ∧
+      next 17 = 0 ∧
+      next 18 = 0 := by
+  have hnoError :=
+    initWord_active_implies_noError magic address extent target hactive
+  obtain ⟨hmagic, haligned, hlow, hextentLow, hextentHigh,
+      hextentAligned, hnoOverflow, htarget⟩ :=
+    initWord_noError_implies_admitted magic address extent target hnoError
+  subst magic
+  exact infoStepWords_of_admitted address extent target chunk haligned hlow
+    hextentLow hextentHigh hextentAligned hnoOverflow htarget hchunkLow
+    hchunkHigh hnotFinal
 
 /-- An admitted ignored-tag header advances the scalar cursor to its exact
 content/padding counters while preserving every map, entry, and classification
@@ -1578,6 +1690,33 @@ def publishAuthority (selected rescanned status usable blocked manifest scrubbed
     UInt64 :=
   if selected < 4096 && rescanned == selected && status == complete &&
       usable == 1 && blocked == 0 && manifest == 1 && scrubbed == 1 then selected + 1 else 0
+
+/-- Fixed-width terminal result for the production allocation boundary.  The
+selected frame and its publication token are exposed only through one accepted
+result; rejection zeros both authority-bearing words.  This keeps C from
+assembling a successful result out of separately queried status and token
+helpers. -/
+@[export leanos_boot_authority_result]
+def authorityResultWord
+    (selected rescanned status usable blocked manifest scrubbed query : UInt64) :
+    UInt64 :=
+  let accepted := selected < 4096 && rescanned == selected && status == complete &&
+    usable == 1 && blocked == 0 && manifest == 1 && scrubbed == 1
+  if query == 0 then 1
+  else if query == 1 then if accepted then 1 else 2
+  else if query == 2 then if accepted then 0 else 1
+  else if query == 3 then if accepted then selected else 0
+  else if query == 4 then if accepted then selected + 1 else 0
+  else 0
+
+theorem authorityResultWord_accepted
+    (selected : UInt64) (hselected : selected < 4096) :
+    authorityResultWord selected selected complete 1 0 1 1 0 = 1 ∧
+      authorityResultWord selected selected complete 1 0 1 1 1 = 1 ∧
+      authorityResultWord selected selected complete 1 0 1 1 2 = 0 ∧
+      authorityResultWord selected selected complete 1 0 1 1 3 = selected ∧
+      authorityResultWord selected selected complete 1 0 1 1 4 = selected + 1 := by
+  simp [authorityResultWord, hselected, complete]
 
 theorem selection_deterministic current candidate status usable blocked manifest first second
     (hfirst : selectFrame current candidate status usable blocked manifest = first)
