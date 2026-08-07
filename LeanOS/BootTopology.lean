@@ -456,4 +456,24 @@ theorem runtime_cannot_publish_ap_start (state : AdmissionState)
       cases operation <;> simp only [runtimeStep, hfailure]
       all_goals split <;> simp_all [haltAdmission] <;> split <;> simp_all [haltAdmission]
 
+theorem run_runtime_preserves_single_core_admission (state : AdmissionState)
+    (operations : List RuntimeOperation)
+    (hadmitted : state.singleCoreAdmitted = true) :
+    (runRuntime state operations).singleCoreAdmitted = true := by
+  induction operations generalizing state with
+  | nil => exact hadmitted
+  | cons operation rest ih =>
+      apply ih
+      exact runtime_preserves_single_core_admission state operation hadmitted
+
+theorem run_runtime_cannot_publish_ap_start (state : AdmissionState)
+    (operations : List RuntimeOperation)
+    (hnotStarted : state.apStartIssued = false) :
+    (runRuntime state operations).apStartIssued = false := by
+  induction operations generalizing state with
+  | nil => exact hnotStarted
+  | cons operation rest ih =>
+      apply ih
+      exact runtime_cannot_publish_ap_start state operation hnotStarted
+
 end LeanOS.BootTopology

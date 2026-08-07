@@ -34,20 +34,35 @@ namespace LeanOS.SecurityClaims
 /-- SC-SINGLE-CORE-BOOT-ADMISSION: accepted topology admission exposes exactly
 one enabled processor with BSP/executing-CPU agreement; the admitted runtime
 vocabulary preserves that premise and cannot publish an AP-start event. -/
-theorem single_core_boot_admission_confined snapshot processor state operation
-    (haccepted : BootTopology.admit snapshot = .accepted processor)
-    (hadmitted : state.singleCoreAdmitted = true)
-    (hnotStarted : state.apStartIssued = false) :
+theorem single_core_boot_admission_confined records bspId executingId snapshot processor operations
+    (hdecoded : BootTopology.normalizeMadtRecords records bspId executingId = .ok snapshot)
+    (haccepted : BootTopology.admit snapshot = .accepted processor) :
+    let admitted := BootTopology.consumeAdmission BootTopology.admissionInitial
+      (BootTopology.decodeAndAdmitMadt records bspId executingId)
+    let final := BootTopology.runRuntime admitted operations
     snapshot.processors.filter (fun candidate => candidate.enabled) = [processor] ∧
       processor.apicId = snapshot.bspId ∧
       snapshot.executingId = snapshot.bspId ∧
-      (BootTopology.runtimeStep state operation).singleCoreAdmitted = true ∧
-      (BootTopology.runtimeStep state operation).apStartIssued = false := by
+      final.singleCoreAdmitted = true ∧
+      final.apStartIssued = false := by
   obtain ⟨hsingleton, hbsp, hexecuting⟩ :=
     BootTopology.accepted_implies_single_enabled_bsp snapshot processor haccepted
+  have hresult : BootTopology.decodeAndAdmitMadt records bspId executingId =
+      .ok (.accepted processor) := by
+    unfold BootTopology.decodeAndAdmitMadt
+    rw [hdecoded]
+    exact congrArg Except.ok haccepted
+  have hadmitted :
+      (BootTopology.consumeAdmission BootTopology.admissionInitial
+        (BootTopology.decodeAndAdmitMadt records bspId executingId)).singleCoreAdmitted = true := by
+    simp [hresult, BootTopology.consumeAdmission, BootTopology.admissionInitial]
+  have hnotStarted :
+      (BootTopology.consumeAdmission BootTopology.admissionInitial
+        (BootTopology.decodeAndAdmitMadt records bspId executingId)).apStartIssued = false := by
+    simp [hresult, BootTopology.consumeAdmission, BootTopology.admissionInitial]
   exact ⟨hsingleton, hbsp, hexecuting,
-    BootTopology.runtime_preserves_single_core_admission state operation hadmitted,
-    BootTopology.runtime_cannot_publish_ap_start state operation hnotStarted⟩
+    BootTopology.run_runtime_preserves_single_core_admission _ operations hadmitted,
+    BootTopology.run_runtime_cannot_publish_ap_start _ operations hnotStarted⟩
 
 /-- SC-DIRECT-PORT-USER-DENIAL: user-origin port/value words cannot select a
 kernel purpose or produce device mutation, and accepted controls produce the
