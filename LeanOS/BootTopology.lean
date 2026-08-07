@@ -651,6 +651,98 @@ theorem duplicate_madt_translation_rejected :
       ]) .duplicateMadt = true := by
   native_decide
 
+/-! ## Authoritative root-to-admission pipeline -/
+
+/-- Failures from the single typed ACPI topology pipeline retain the boundary
+that rejected the input.  In particular, root selection and physical-address
+agreement cannot be skipped by supplying an otherwise valid MADT directly. -/
+inductive AuthoritativeAcpiTopologyError where
+  | rsdp (reason : AcpiRootError)
+  | selectedRootAddressMismatch (expected actual : UInt64)
+  | madtSelection (reason : MadtSelectionError)
+  | completeMadt (reason : CompleteMadtError)
+  deriving DecidableEq, Repr
+
+private def selectedRootTable (root : AcpiRoot) :
+    AcpiRootTableKind × UInt64 :=
+  match root.xsdtAddress with
+  | some address => (.xsdt, address)
+  | none => (.rsdt, root.legacy.rsdtAddress.toUInt64)
+
+/-- Start at decoded old/new RSDP evidence, require the copied root table to
+match the exact selected RSDT/XSDT physical address, translate every advertised
+entry exactly once, select one MADT, and feed that exact complete table to
+admission.  The executing APIC ID is a single trusted machine observation and
+therefore supplies both the recorded BSP and executing identity; callers can no
+longer forge those identities independently inside this pipeline. -/
+def decodeAndAdmitAuthoritativeAcpiTopology
+    (rootTags : List RawAcpiRootTag) (rootCopy : CopiedAcpiSdt)
+    (tableCopies : List CopiedAcpiSdt) (executingApicId : UInt32) :
+    Except AuthoritativeAcpiTopologyError Result := do
+  let root ← match selectAcpiRoot rootTags with
+    | .ok selected => pure selected
+    | .error reason => throw (.rsdp reason)
+  let selected := selectedRootTable root
+  if rootCopy.physicalAddress != selected.2 then
+    throw (.selectedRootAddressMismatch selected.2 rootCopy.physicalAddress)
+  let madtBytes ← match selectUniqueCompleteMadt selected.1 rootCopy.bytes tableCopies with
+    | .ok bytes => pure bytes
+    | .error reason => throw (.madtSelection reason)
+  match decodeAndAdmitCompleteMadt madtBytes executingApicId executingApicId with
+  | .ok result => pure result
+  | .error reason => throw (.completeMadt reason)
+
+def repositoryAcpiRootTags : List RawAcpiRootTag := [
+  .old repositoryLegacyRoot,
+  .new repositoryLegacyRoot 0x00000000000f5c00
+]
+
+def repositoryXsdtCopy : CopiedAcpiSdt :=
+  { physicalAddress := 0x00000000000f5c00, bytes := repositoryXsdtTableBytes }
+
+private def authoritativeTopologyAcceptedProcessorMatches
+    (result : Except AuthoritativeAcpiTopologyError Result)
+    (apicId : UInt32) : Bool :=
+  match result with
+  | .ok (.accepted processor) =>
+      processor.apicId == apicId && processor.enabled && !processor.onlineCapable
+  | _ => false
+
+private def authoritativeRsdpFailedWith
+    (result : Except AuthoritativeAcpiTopologyError Result)
+    (expected : AcpiRootError) : Bool :=
+  match result with
+  | .error (.rsdp actual) => actual == expected
+  | _ => false
+
+private def authoritativeRootAddressMismatchMatches
+    (result : Except AuthoritativeAcpiTopologyError Result)
+    (expected actual : UInt64) : Bool :=
+  match result with
+  | .error (.selectedRootAddressMismatch observedExpected observedActual) =>
+      observedExpected == expected && observedActual == actual
+  | _ => false
+
+theorem repository_authoritative_acpi_topology_admitted :
+    authoritativeTopologyAcceptedProcessorMatches
+      (decodeAndAdmitAuthoritativeAcpiTopology repositoryAcpiRootTags
+        repositoryXsdtCopy repositoryCopiedAcpiTables 0) 0 = true := by
+  native_decide
+
+theorem missing_rsdp_cannot_bypass_authoritative_pipeline :
+    authoritativeRsdpFailedWith
+      (decodeAndAdmitAuthoritativeAcpiTopology [] repositoryXsdtCopy
+        repositoryCopiedAcpiTables 0) .missingRoot = true := by
+  native_decide
+
+theorem wrong_selected_root_copy_cannot_reach_admission :
+    authoritativeRootAddressMismatchMatches
+      (decodeAndAdmitAuthoritativeAcpiTopology repositoryAcpiRootTags
+        { repositoryXsdtCopy with physicalAddress := 0x00000000000f5c08 }
+        repositoryCopiedAcpiTables 0)
+      0x00000000000f5c00 0x00000000000f5c08 = true := by
+  native_decide
+
 def completeMadtAcceptedProcessorMatches
     (result : Except CompleteMadtError Result) (apicId : UInt32) : Bool :=
   match result with
