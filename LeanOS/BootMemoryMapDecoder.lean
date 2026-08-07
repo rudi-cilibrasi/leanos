@@ -97,13 +97,6 @@ private def checksum (bytes : List UInt8) (offset length : Nat) : Nat :=
   ((bytes.drop offset).take length).foldl
     (fun total byte => (total + byte.toNat) % 256) 0
 
-/-- A compact identity for the complete already-validated ACPI 1.0 prefix.
-It is not a cryptographic digest; equality is used only after signature and
-checksum validation to reject conflicting old/new roots. -/
-private def legacyFingerprint (bytes : List UInt8) (offset : Nat) : UInt64 :=
-  UInt64.ofNat (((bytes.drop offset).take 20).foldl
-    (fun value byte => (value * 257 + byte.toNat) % (2 ^ 64)) 0)
-
 private def decodeRootTag (bytes : List UInt8) (offset tagType tagSize : Nat) :
     Except Error RawAcpiRootTag := do
   let payloadOffset := offset + 8
@@ -119,7 +112,7 @@ private def decodeRootTag (bytes : List UInt8) (offset tagType tagSize : Nat) :
     | .ok value => pure value
     | .error _ => throw .truncatedTag
   let legacy : AcpiLegacyRoot :=
-    { fingerprint := legacyFingerprint bytes payloadOffset
+    { oemId := (bytes.drop (payloadOffset + 9)).take 6
       rsdtAddress := UInt32.ofNat rsdtAddress }
   if tagType == 14 then
     if tagSize != 28 || payloadSize != 20 then throw .invalidRsdpLength
@@ -1395,6 +1388,8 @@ theorem rejected_pipeline_has_no_normalized (input : Input) (reason : PipelineEr
 
 namespace Fixtures
 
+open LeanOS.BootTopology
+
 def byte (value : Nat) : UInt8 := UInt8.ofNat value
 
 def encodeLE (width value : Nat) : List UInt8 :=
@@ -1449,6 +1444,14 @@ def newRsdp (declaredLength := 36) : List UInt8 :=
     u64 0x00000000000f5c00 ++ [byte 0, byte 0, byte 0, byte 0]
   replaceByte unchecked 32 (checksumByte unchecked)
 
+def conflictingNewRsdp : List UInt8 :=
+  let changedOem := replaceByte newRsdp 9 (byte 0x42)
+  let legacyCleared := replaceByte changedOem 8 0
+  let legacyRepaired := replaceByte legacyCleared 8
+    (checksumByte (legacyCleared.take 20))
+  let extendedCleared := replaceByte legacyRepaired 32 0
+  replaceByte extendedCleared 32 (checksumByte extendedCleared)
+
 def acpiInput (rootTags : List UInt8) : Input :=
   { sampleInput with
     bytes := information (rootTags ++ memoryMapTag sampleEntries ++ endTag) }
@@ -1463,6 +1466,23 @@ example : (AcpiRootDecoder.decode (acpiInput (tag 14 oldRsdp))).toOption.map
 
 example : (AcpiRootDecoder.decode (acpiInput (tag 15 newRsdp))).toOption.map
     (·.length) = some 1 := by native_decide
+
+example : (AcpiRootDecoder.decode
+    (acpiInput (tag 14 oldRsdp ++ tag 15 newRsdp))).toOption.map
+      (fun roots => match selectAcpiRoot roots with
+        | .ok root => root == {
+            source := .newRsdp
+            legacy := repositoryLegacyRoot
+            xsdtAddress := some 0x00000000000f5c00
+          }
+        | .error _ => false) = some true := by native_decide
+
+example : (AcpiRootDecoder.decode
+    (acpiInput (tag 14 oldRsdp ++ tag 15 conflictingNewRsdp))).toOption.map
+      (fun roots => match selectAcpiRoot roots with
+        | .error reason => reason == .conflictingRoots
+        | .ok _ => false) =
+    some true := by native_decide
 
 example : acpiErrorOf (AcpiRootDecoder.decode
     (acpiInput (tag 14 (replaceByte oldRsdp 0 (byte 0))))) =

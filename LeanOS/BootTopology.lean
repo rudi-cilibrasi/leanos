@@ -41,13 +41,12 @@ structure Snapshot where
 
 /-! ## Copied-handoff ACPI root selection -/
 
-/-- The checked ACPI 1.0-compatible portion shared by Multiboot2's old and
-new RSDP tags.  The machine decoder will construct this only after validating
-the signature, legacy checksum, OEM bytes, and RSDT address from the immutable
-handoff copy.  Keeping the complete checked prefix fingerprint prevents a
-matching address alone from making conflicting firmware roots look coherent. -/
+/-- The version-independent ACPI 1.0 identity shared by Multiboot2's old and
+new RSDP tags.  The revision and checksum bytes necessarily differ between the
+two encodings, so root coherence compares the exact OEM ID and RSDT address
+after the decoder has validated each tag's signature and checksum. -/
 structure AcpiLegacyRoot where
-  fingerprint : UInt64
+  oemId : List UInt8
   rsdtAddress : UInt32
   deriving BEq, DecidableEq, Repr
 
@@ -57,25 +56,25 @@ checks at the byte-decoder boundary before a `new` value may be constructed. -/
 inductive RawAcpiRootTag where
   | old (legacy : AcpiLegacyRoot)
   | new (legacy : AcpiLegacyRoot) (xsdtAddress : UInt64)
-  deriving DecidableEq, Repr
+  deriving BEq, DecidableEq, Repr
 
 inductive AcpiRootSource where
   | oldRsdp
   | newRsdp
-  deriving DecidableEq, Repr
+  deriving BEq, DecidableEq, Repr
 
 structure AcpiRoot where
   source : AcpiRootSource
   legacy : AcpiLegacyRoot
   xsdtAddress : Option UInt64
-  deriving DecidableEq, Repr
+  deriving BEq, DecidableEq, Repr
 
 inductive AcpiRootError where
   | missingRoot
   | duplicateOldRoot
   | duplicateNewRoot
   | conflictingRoots
-  deriving DecidableEq, Repr
+  deriving BEq, DecidableEq, Repr
 
 private def collectAcpiRoots : List RawAcpiRootTag →
     Option AcpiLegacyRoot → Option (AcpiLegacyRoot × UInt64) →
@@ -111,7 +110,8 @@ def selectAcpiRoot (tags : List RawAcpiRootTag) :
         .error .conflictingRoots
 
 def repositoryLegacyRoot : AcpiLegacyRoot :=
-  { fingerprint := 0x51454d5520414350, rsdtAddress := 0x000f5b70 }
+  { oemId := [0x51, 0x45, 0x4d, 0x55, 0x20, 0x20]
+    rsdtAddress := 0x000f5b70 }
 
 theorem coherent_old_new_roots_select_new :
     selectAcpiRoot [
@@ -137,7 +137,8 @@ theorem coherent_root_selection_is_order_independent :
 theorem conflicting_old_new_roots_rejected :
     selectAcpiRoot [
       .old repositoryLegacyRoot,
-      .new { repositoryLegacyRoot with fingerprint := 0 } 0x00000000000f5c00
+      .new { repositoryLegacyRoot with oemId := [0x42] }
+        0x00000000000f5c00
     ] = .error .conflictingRoots := by
   rfl
 
