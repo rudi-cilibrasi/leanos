@@ -704,4 +704,72 @@ theorem run_runtime_cannot_publish_ap_start (state : AdmissionState)
       apply ih
       exact runtime_cannot_publish_ap_start state operation hnotStarted
 
+/-! ## Hosted generated-code replay ABI -/
+
+def topologyAbiVersion : UInt64 := 1
+
+def decodeErrorCode : DecodeError → UInt64
+  | .truncatedHeader => 1
+  | .truncatedRecord => 2
+  | .invalidRecordLength => 3
+  | .unsupportedRecordKind => 4
+  | .processorOverflow => 5
+
+def admissionErrorCode : Error → UInt64
+  | .unsupportedSource => 1
+  | .unsupportedVersion => 2
+  | .tooManyProcessors => 3
+  | .duplicateApicId => 4
+  | .onlineCapableProcessor => 5
+  | .noEnabledProcessor => 6
+  | .multipleEnabledProcessors => 7
+  | .bspMismatch => 8
+
+/-- Stable result words for hosted generated-C differential replay:
+
+* 0: ABI version
+* 1: status (`1` accepted, `2` decoder rejection, `3` policy rejection)
+* 2: accepted APIC ID or stable typed error code
+* 3..4: accepted enabled and online-capable flags
+
+Out-of-range words are zero. -/
+def topologyQuery (bytes : ByteArray) (bspId executingId word : UInt64) : UInt64 :=
+  if word == 0 then topologyAbiVersion
+  else
+    match decodeAndAdmitMadtBytes bytes.data.toList
+      (UInt32.ofNat bspId.toNat) (UInt32.ofNat executingId.toNat) with
+    | .error reason =>
+        if word == 1 then 2 else if word == 2 then decodeErrorCode reason else 0
+    | .ok (.rejected reason) =>
+        if word == 1 then 3 else if word == 2 then admissionErrorCode reason else 0
+    | .ok (.accepted processor) =>
+        if word == 1 then 1
+        else if word == 2 then processor.apicId.toUInt64
+        else if word == 3 then if processor.enabled then 1 else 0
+        else if word == 4 then if processor.onlineCapable then 1 else 0
+        else 0
+
+@[export leanos_boot_topology_query]
+def exportedTopologyQuery
+    (bytes : ByteArray) (bspId executingId word : UInt64) : UInt64 :=
+  topologyQuery bytes bspId executingId word
+
+def topologyFixture (fixture : UInt64) : List UInt8 × UInt64 × UInt64 :=
+  if fixture == 0 then (mixedQ35MadtBytes, 0, 0)
+  else if fixture == 1 then
+    ([0, 8, 0, 0, 1, 0, 0, 0, 0, 8, 1, 1, 1, 0, 0, 0], 0, 0)
+  else if fixture == 2 then
+    ([0, 8, 0, 0, 1, 0, 0, 0, 0, 8, 1, 1, 2, 0, 0, 0], 0, 0)
+  else if fixture == 3 then
+    ([0, 8, 0, 0, 1, 0, 0, 0, 0, 8, 1, 0, 0, 0, 0, 0], 0, 0)
+  else if fixture == 4 then ([0, 8, 0, 255, 1, 0, 0, 0], 255, 255)
+  else if fixture == 5 then ([0, 8, 0, 0, 1], 0, 0)
+  else if fixture == 6 then ([9, 2], 0, 0)
+  else ([0, 8, 0, 1, 1, 0, 0, 0], 0, 0)
+
+@[export leanos_boot_topology_fixture_query]
+def topologyFixtureQuery (fixture word : UInt64) : UInt64 :=
+  let selected := topologyFixture fixture
+  topologyQuery ⟨selected.1.toArray⟩ selected.2.1 selected.2.2 word
+
 end LeanOS.BootTopology

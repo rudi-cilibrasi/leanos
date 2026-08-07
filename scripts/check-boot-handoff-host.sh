@@ -11,20 +11,20 @@ row="$(awk -F '\t' -v id="$id" '$1 == id { print; found=1 } END { exit !found }'
 }
 IFS=$'\t' read -r _ _ harness generation target modules exports assertion <<<"$row"
 source scripts/hosted-boundary-coverage.sh
-[[ "$id" == boot-handoff && "$generation" == lake-ir ]] || {
-  echo "error: $id is not the lake-ir boot-handoff boundary" >&2
+[[ "$generation" == lake-ir ]] || {
+  echo "error: $id is not a lake-ir hosted boundary" >&2
   exit 1
 }
 
 if [[ "$mode" == sanitized ]]; then
   source scripts/hosted-sanitizer-config.sh
   leanos_assert_pinned_toolchain
-  build=build/boot-handoff-host-sanitized
+  build="build/${id}-host-sanitized"
   cc_command="$leanos_host_cc"
   cflags=("${leanos_host_sanitizer_flags[@]}" -finstrument-functions)
   run=(leanos_run_sanitized)
 elif [[ "$mode" == ordinary ]]; then
-  build=build/boot-handoff-host
+  build="build/${id}-host"
   cc_command="${LEANOS_HOST_CC:-cc}"
   cflags=(-O2 -ffunction-sections -fdata-sections -finstrument-functions)
   run=()
@@ -81,11 +81,11 @@ leanos_check_boundary_coverage "$build"
 expected="${assertion#contains=}"
 expected="${expected//_/ }"
 [[ "$assertion" == contains=* ]] && grep -Fq "$expected" "$build/results.txt" || {
-  echo "error: hosted boot-handoff replay lacked '$expected'" >&2
+  echo "error: hosted $id replay lacked '$expected'" >&2
   exit 1
 }
 if [[ "$mode" == sanitized ]]; then
-  ordinary=build/boot-handoff-host/results.txt
+  ordinary="build/${id}-host/results.txt"
   [[ -f "$ordinary" ]] || {
     echo "error: ordinary boot-handoff results are required before sanitized replay" >&2
     exit 1
@@ -103,4 +103,4 @@ if [[ "$mode" == sanitized ]]; then
     exit 1
   fi
 fi
-echo "Hosted generated-C boot-handoff $mode replay passed"
+echo "Hosted generated-C $id $mode replay passed"
