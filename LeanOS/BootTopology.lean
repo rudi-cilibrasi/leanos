@@ -674,11 +674,66 @@ def consumeBootAdmission (state : BootAdmissionState)
   match state.latched with
   | some _ => state
   | none =>
-      let business := consumeAdmission state.business result
+      let business :=
+        if state.phase != .bootstrap64 || state.business.phase != .bootstrap64 then
+          haltAdmission state.business .wrongPhase
+        else
+          consumeAdmission state.business result
       let next := { state with business }
       match business.failure with
       | some _ => (BootInterruptPhase.rejectTopology next).state
       | none => next
+
+/-- The only topology-aware runtime publication transition.  It refuses to
+publish the runtime IDT until decoder-produced admission has been consumed in
+the coherent bootstrap64 phase.  On success it advances the outer boot phase
+and its embedded business phase atomically. -/
+def publishAdmittedRuntime (state : BootAdmissionState)
+    (prerequisites : BootInterruptPhase.RuntimePrerequisites) :
+    BootInterruptPhase.StepResult AdmissionState :=
+  match state.latched with
+  | some record => { state, outcome := .alreadyTerminal record }
+  | none =>
+      if state.phase != .bootstrap64 || state.business.phase != .bootstrap64 ||
+          state.business.singleCoreAdmitted != true then
+        BootInterruptPhase.rejectTopology state
+      else
+        let published := BootInterruptPhase.publish state (.publishRuntime prerequisites)
+        match published.outcome with
+        | .published .runtime =>
+            { state := { published.state with business := { published.state.business with
+                phase := .runtime
+                runtimeInitialized := true } }
+              outcome := published.outcome }
+        | _ => published
+
+theorem runtime_publication_requires_admission state prerequisites
+    (hpublished : (publishAdmittedRuntime state prerequisites).outcome =
+      .published .runtime) :
+    state.phase = .bootstrap64 ∧
+      state.business.phase = .bootstrap64 ∧
+      state.business.singleCoreAdmitted = true := by
+  cases hlatched : state.latched with
+  | some record =>
+      simp [publishAdmittedRuntime, hlatched] at hpublished
+  | none =>
+      by_cases hphase : state.phase = .bootstrap64
+      · by_cases hbusiness : state.business.phase = .bootstrap64
+        · by_cases hadmitted : state.business.singleCoreAdmitted = true
+          · exact ⟨hphase, hbusiness, hadmitted⟩
+          · simp [publishAdmittedRuntime, hlatched, hphase, hbusiness, hadmitted,
+              BootInterruptPhase.rejectTopology] at hpublished
+        · simp [publishAdmittedRuntime, hlatched, hphase, hbusiness,
+            BootInterruptPhase.rejectTopology] at hpublished
+      · simp [publishAdmittedRuntime, hlatched, hphase,
+          BootInterruptPhase.rejectTopology] at hpublished
+
+theorem publication_without_admission_is_terminal :
+    let result := publishAdmittedRuntime bootAdmissionInitial ⟨true, true, true⟩
+    result.state.phase = .terminal ∧
+      result.state.latched.isSome = true ∧
+      result.state.returnAuthorityArmed = false := by
+  decide
 
 theorem decoded_rejection_latches_real_boot_state (reason : DecodeError) :
     let state := consumeBootAdmission bootAdmissionInitial (.error reason)
