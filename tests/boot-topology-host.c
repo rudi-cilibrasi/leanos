@@ -40,11 +40,16 @@ static lean_object *run_host(int argc, char **argv) {
       {1, 3, 8, 0, 0},   /* missing recorded BSP */
       {1, 3, 8, 0, 0},   /* attacker-mutated recorded BSP identity */
       {1, 3, 8, 0, 0},   /* attacker-mutated executing identity */
+      {1, 2, 8, 0, 0},   /* invalid complete-table signature */
+      {1, 2, 9, 0, 0},   /* complete-table declared-length mismatch */
+      {1, 2, 11, 0, 0},  /* complete-table checksum mismatch */
+      {1, 2, 6, 0, 0},   /* truncated fixed MADT header */
   };
   static const char *const fields[] = {"abi", "status", "detail", "enabled",
                                         "online-capable"};
   char name[96];
-  for (uint64_t fixture = 0; fixture < 10; ++fixture) {
+  const uint64_t fixture_count = sizeof(expected) / sizeof(expected[0]);
+  for (uint64_t fixture = 0; fixture < fixture_count; ++fixture) {
     for (uint64_t word = 0; word < 5; ++word) {
       snprintf(name, sizeof(name), "fixture-%llu.%s",
                (unsigned long long)fixture, fields[word]);
@@ -55,8 +60,8 @@ static lean_object *run_host(int argc, char **argv) {
   expect("fixture-0.out-of-range", leanos_boot_topology_fixture_query(0, 5), 0);
 
   lean_object *empty = lean_mk_empty_byte_array(lean_box(0));
+  /* The exported Lean function consumes its ByteArray argument. */
   expect("raw-empty.status", leanos_boot_topology_query(empty, 0, 0, 1), 3);
-  lean_dec(empty);
   puts("Hosted generated-C topology replay passed");
   return lean_io_result_mk_ok(lean_box(0));
 }
