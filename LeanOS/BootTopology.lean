@@ -158,6 +158,8 @@ inductive AcpiSdtError where
   | invalidSignature
   | invalidLength
   | invalidChecksum
+  | invalidRootPayloadAlignment
+  | rootEntryOverflow
   deriving BEq, DecidableEq, Repr
 
 structure ValidAcpiSdt where
@@ -165,6 +167,21 @@ structure ValidAcpiSdt where
   length : Nat
   bytes : List UInt8
   deriving BEq, DecidableEq, Repr
+
+inductive AcpiRootTableKind where
+  | rsdt
+  | xsdt
+  deriving BEq, DecidableEq, Repr
+
+def maxAcpiRootEntries : Nat := 256
+
+private def rootTableSignature : AcpiRootTableKind → List UInt8
+  | .rsdt => [0x52, 0x53, 0x44, 0x54]
+  | .xsdt => [0x58, 0x53, 0x44, 0x54]
+
+private def rootEntryWidth : AcpiRootTableKind → Nat
+  | .rsdt => 4
+  | .xsdt => 8
 
 private def readSdtU32 (bytes : List UInt8) (offset : Nat) :
     Except AcpiSdtError Nat :=
@@ -191,6 +208,31 @@ def validateAcpiSdt (expectedSignature bytes : List UInt8) :
   if acpiChecksum bytes != 0 then throw .invalidChecksum
   pure { signature := bytes.take 4, length := declaredLength, bytes }
 
+private def decodeRootAddress (bytes : List UInt8) : UInt64 :=
+  UInt64.ofNat <| bytes.zipIdx.foldl
+    (fun total pair => total + pair.1.toNat * 256 ^ pair.2) 0
+
+private def decodeRootEntriesAux : Nat → Nat → List UInt8 → List UInt64
+  | 0, _, _ => []
+  | fuel + 1, width, bytes =>
+      if bytes.isEmpty then []
+      else decodeRootAddress (bytes.take width) ::
+        decodeRootEntriesAux fuel width (bytes.drop width)
+
+/-- Decode the complete aligned RSDT/XSDT physical-address vector after the
+whole copied root table has passed signature, declared-length, and checksum
+validation. Translating these addresses and selecting the unique APIC table
+remain explicit trusted machine-boundary work. -/
+def decodeAcpiRootEntries (kind : AcpiRootTableKind) (bytes : List UInt8) :
+    Except AcpiSdtError (List UInt64) := do
+  let table ← validateAcpiSdt (rootTableSignature kind) bytes
+  let payload := table.bytes.drop acpiSdtHeaderLength
+  let width := rootEntryWidth kind
+  if payload.length % width != 0 then throw .invalidRootPayloadAlignment
+  let count := payload.length / width
+  if count > maxAcpiRootEntries then throw .rootEntryOverflow
+  pure (decodeRootEntriesAux count width payload)
+
 def acpiSdtErrorOf {α : Type} :
     Except AcpiSdtError α → Option AcpiSdtError
   | .error reason => some reason
@@ -205,6 +247,40 @@ private def encodeSdtU32 (value : Nat) : List UInt8 :=
 private def replaceSdtByte (bytes : List UInt8) (index : Nat) (value : UInt8) :
     List UInt8 :=
   bytes.take index ++ [value] ++ bytes.drop (index + 1)
+
+private def encodeRootAddress (width : Nat) (value : Nat) : List UInt8 :=
+  (List.range width).map (fun index => sdtByte (value / 256 ^ index))
+
+def repositoryXsdtTableBytes : List UInt8 :=
+  let payload := encodeRootAddress 8 0x000f6000 ++
+    encodeRootAddress 8 0x000f7000
+  let length := acpiSdtHeaderLength + payload.length
+  let unchecked :=
+    [sdtByte 0x58, sdtByte 0x53, sdtByte 0x44, sdtByte 0x54] ++
+      encodeSdtU32 length ++ [sdtByte 1, sdtByte 0] ++
+      List.replicate (acpiSdtHeaderLength - 10) (sdtByte 0) ++ payload
+  replaceSdtByte unchecked 9 (sdtByte ((256 - acpiChecksum unchecked) % 256))
+
+private def decodedRootEntriesMatch
+    (result : Except AcpiSdtError (List UInt64)) (expected : List UInt64) : Bool :=
+  match result with
+  | .ok actual => actual == expected
+  | .error _ => false
+
+theorem repository_xsdt_entries_decoded :
+    decodedRootEntriesMatch
+      (decodeAcpiRootEntries .xsdt repositoryXsdtTableBytes)
+      [0x000f6000, 0x000f7000] = true := by
+  native_decide
+
+theorem xsdt_payload_misalignment_rejected :
+    acpiSdtErrorOf (decodeAcpiRootEntries .xsdt
+      (let unchecked := repositoryXsdtTableBytes ++ [0]
+       let resized := replaceSdtByte unchecked 4 (sdtByte unchecked.length)
+       let zeroed := replaceSdtByte resized 9 0
+       replaceSdtByte zeroed 9 (sdtByte ((256 - acpiChecksum zeroed) % 256)))) =
+      some .invalidRootPayloadAlignment := by
+  native_decide
 
 def repositoryMadtTableBytes : List UInt8 :=
   let length := 52
