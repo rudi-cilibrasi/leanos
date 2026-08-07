@@ -48,6 +48,7 @@ inductive RawMadtRecord where
   deriving DecidableEq, Repr
 
 inductive DecodeError where
+  | truncatedHeader
   | truncatedRecord
   | invalidRecordLength
   | unsupportedRecordKind
@@ -55,6 +56,48 @@ inductive DecodeError where
   deriving DecidableEq, Repr
 
 def localApicRecordLength : Nat := 8
+
+private def byteAt : List UInt8 → Nat → Option Nat
+  | [], _ => none
+  | byte :: _, 0 => some byte.toNat
+  | _ :: rest, offset + 1 => byteAt rest offset
+
+private def requireByte (bytes : List UInt8) (offset : Nat)
+    (error : DecodeError) : Except DecodeError Nat :=
+  match byteAt bytes offset with
+  | some byte => .ok byte
+  | none => .error error
+
+/-- Decode the bounded MADT processor-entry byte region.  Table discovery,
+address translation, the fixed MADT header, and checksum validation remain at
+the trusted machine boundary; entry framing and admission-relevant flags do
+not. -/
+def decodeMadtBytesAux : Nat → List UInt8 → Except DecodeError (List RawMadtRecord)
+  | _, [] => .ok []
+  | 0, _ => .error .processorOverflow
+  | fuel + 1, bytes => do
+      let kind ← requireByte bytes 0 .truncatedHeader
+      let length ← requireByte bytes 1 .truncatedHeader
+      if length < 2 then
+        throw .invalidRecordLength
+      if bytes.length < length then
+        throw .truncatedRecord
+      if kind != 0 then
+        throw .unsupportedRecordKind
+      if length != localApicRecordLength then
+        throw .invalidRecordLength
+      let apicId ← requireByte bytes 3 .truncatedRecord
+      let flag0 ← requireByte bytes 4 .truncatedRecord
+      let flag1 ← requireByte bytes 5 .truncatedRecord
+      let flag2 ← requireByte bytes 6 .truncatedRecord
+      let flag3 ← requireByte bytes 7 .truncatedRecord
+      let flags := flag0 + flag1 * 256 + flag2 * 65536 + flag3 * 16777216
+      let rest ← decodeMadtBytesAux fuel (bytes.drop length)
+      pure (.localApic length (UInt32.ofNat apicId)
+        (flags % 2 == 1) ((flags / 2) % 2 == 1) :: rest)
+
+def decodeMadtBytes (bytes : List UInt8) : Except DecodeError (List RawMadtRecord) :=
+  decodeMadtBytesAux bytes.length bytes
 
 def decodeProcessor : RawMadtRecord → Except DecodeError Processor
   | .localApic length apicId enabled onlineCapable =>
@@ -135,6 +178,42 @@ def decodeAndAdmitMadt (records : List RawMadtRecord)
     (bspId executingId : UInt32) : Except DecodeError Result := do
   let snapshot ← normalizeMadtRecords records bspId executingId
   pure (admit snapshot)
+
+def decodeAndAdmitMadtBytes (bytes : List UInt8)
+    (bspId executingId : UInt32) : Except DecodeError Result := do
+  let records ← decodeMadtBytes bytes
+  decodeAndAdmitMadt records bspId executingId
+
+def repositoryMadtBytes : List UInt8 :=
+  [0, 8, 0, 0, 1, 0, 0, 0]
+
+theorem empty_madt_entry_region_decodes :
+    decodeMadtBytes [] = .ok [] := by
+  rfl
+
+theorem truncated_madt_entry_header_rejected :
+    decodeMadtBytes [0] = .error .truncatedHeader := by
+  rfl
+
+theorem truncated_madt_entry_body_rejected :
+    decodeMadtBytes [0, 8, 0, 0, 1] = .error .truncatedRecord := by
+  rfl
+
+theorem zero_length_madt_entry_rejected :
+    decodeMadtBytes [0, 0] = .error .invalidRecordLength := by
+  rfl
+
+theorem unsupported_raw_madt_entry_rejected :
+    decodeMadtBytes [9, 2] = .error .unsupportedRecordKind := by
+  rfl
+
+theorem duplicate_madt_byte_apic_ids_rejected :
+    decodeAndAdmitMadtBytes
+      [0, 8, 0, 0, 1, 0, 0, 0,
+       0, 8, 0, 0, 0, 0, 0, 0] 0 0 =
+      .ok (.rejected .duplicateApicId) := by
+  set_option maxRecDepth 4096 in
+    rfl
 
 theorem repository_madt_records_admitted :
     decodeAndAdmitMadt repositoryMadtRecords 0 0 =
