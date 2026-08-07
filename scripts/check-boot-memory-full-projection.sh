@@ -28,7 +28,18 @@ fi
 lake build LeanOS.BootMemoryMapFullProjectionABI
 prefix="$(lake env lean --print-prefix)"
 modules=(
+  BootInterruptPhase
+  BootTopology
+  InterruptEntry
+  Interrupt
+  X86PageTable
+  SubjectLifecycle
+  VirtualMapping
+  EndpointIPC
+  MemoryLifecycle
+  CapabilityHandle
   FrameAllocator
+  Capability
   BootMemoryMap
   BootMemoryMapDecoder
   BootReservation
@@ -37,21 +48,19 @@ modules=(
 cflags=(-O2 -ffunction-sections -fdata-sections -I"$prefix/include")
 
 for pass in pass1 pass2; do
+  objects=()
   for module in "${modules[@]}"; do
     lake env leanc "${cflags[@]}" \
       -c ".lake/build/ir/LeanOS/${module}.c" \
       -o "$build/$pass/${module}.o"
+    objects+=("$build/$pass/${module}.o")
   done
   cc -std=c11 -O2 -Wall -Wextra -Werror -I"$prefix/include" \
     -ffunction-sections -fdata-sections \
     -c tests/boot-memory-full-projection-host.c -o "$build/$pass/host.o"
   lake env leanc -Wl,--gc-sections -Wl,--build-id=none \
     "$build/$pass/host.o" \
-    "$build/$pass/FrameAllocator.o" \
-    "$build/$pass/BootMemoryMap.o" \
-    "$build/$pass/BootMemoryMapDecoder.o" \
-    "$build/$pass/BootReservation.o" \
-    "$build/$pass/BootMemoryMapFullProjectionABI.o" \
+    "${objects[@]}" \
     -o "$build/$pass/full-projection.elf"
 done
 
