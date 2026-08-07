@@ -34,12 +34,15 @@ namespace LeanOS.SecurityClaims
 /-- SC-SINGLE-CORE-BOOT-ADMISSION: accepted topology admission exposes exactly
 one enabled processor with BSP/executing-CPU agreement; the admitted runtime
 vocabulary preserves that premise and cannot publish an AP-start event. -/
-theorem single_core_boot_admission_confined bytes bspId executingId snapshot processor operations
-    (hdecoded : BootTopology.decodeCompleteMadtSnapshot bytes bspId executingId =
-      .ok snapshot)
+theorem single_core_boot_admission_confined rootTags rootCopy tableCopies executingId
+    snapshot processor operations
+    (hdecoded : BootTopology.decodeAuthoritativeAcpiTopologySnapshot rootTags rootCopy
+      tableCopies executingId = .ok snapshot)
     (haccepted : BootTopology.admit snapshot = .accepted processor) :
-    let bootAdmitted := BootTopology.consumeCompleteBootAdmission BootTopology.bootAdmissionInitial
-      (BootTopology.decodeAndAdmitCompleteMadt bytes bspId executingId)
+    let bootAdmitted := BootTopology.consumeAuthoritativeBootAdmission
+      BootTopology.bootAdmissionInitial
+      (BootTopology.decodeAndAdmitAuthoritativeAcpiTopology rootTags rootCopy
+        tableCopies executingId)
     let final := BootTopology.runRuntime bootAdmitted.business operations
     snapshot.processors.filter (fun candidate => candidate.enabled) = [processor] ∧
       processor.apicId = snapshot.bspId ∧
@@ -49,25 +52,33 @@ theorem single_core_boot_admission_confined bytes bspId executingId snapshot pro
       final.apStartIssued = false := by
   obtain ⟨hsingleton, hbsp, hexecuting⟩ :=
     BootTopology.accepted_implies_single_enabled_bsp snapshot processor haccepted
-  have hcomplete : BootTopology.decodeAndAdmitCompleteMadt bytes bspId executingId =
+  have hauthoritative :
+      BootTopology.decodeAndAdmitAuthoritativeAcpiTopology rootTags rootCopy
+        tableCopies executingId =
       .ok (.accepted processor) := by
-    unfold BootTopology.decodeAndAdmitCompleteMadt
+    unfold BootTopology.decodeAndAdmitAuthoritativeAcpiTopology
     rw [hdecoded]
     exact congrArg Except.ok haccepted
   have hboot :
-      (BootTopology.consumeCompleteBootAdmission BootTopology.bootAdmissionInitial
-        (BootTopology.decodeAndAdmitCompleteMadt bytes bspId executingId)).latched = none := by
-    simp [hcomplete, BootTopology.consumeCompleteBootAdmission, BootTopology.bootAdmissionInitial,
+      (BootTopology.consumeAuthoritativeBootAdmission BootTopology.bootAdmissionInitial
+        (BootTopology.decodeAndAdmitAuthoritativeAcpiTopology rootTags rootCopy
+          tableCopies executingId)).latched = none := by
+    simp [hauthoritative, BootTopology.consumeAuthoritativeBootAdmission,
+      BootTopology.bootAdmissionInitial,
       BootTopology.consumeAdmission, BootTopology.admissionInitial]
   have hadmitted :
-      (BootTopology.consumeCompleteBootAdmission BootTopology.bootAdmissionInitial
-        (BootTopology.decodeAndAdmitCompleteMadt bytes bspId executingId)).business.singleCoreAdmitted = true := by
-    simp [hcomplete, BootTopology.consumeCompleteBootAdmission, BootTopology.bootAdmissionInitial,
+      (BootTopology.consumeAuthoritativeBootAdmission BootTopology.bootAdmissionInitial
+        (BootTopology.decodeAndAdmitAuthoritativeAcpiTopology rootTags rootCopy
+          tableCopies executingId)).business.singleCoreAdmitted = true := by
+    simp [hauthoritative, BootTopology.consumeAuthoritativeBootAdmission,
+      BootTopology.bootAdmissionInitial,
       BootTopology.consumeAdmission, BootTopology.admissionInitial]
   have hnotStarted :
-      (BootTopology.consumeCompleteBootAdmission BootTopology.bootAdmissionInitial
-        (BootTopology.decodeAndAdmitCompleteMadt bytes bspId executingId)).business.apStartIssued = false := by
-    simp [hcomplete, BootTopology.consumeCompleteBootAdmission, BootTopology.bootAdmissionInitial,
+      (BootTopology.consumeAuthoritativeBootAdmission BootTopology.bootAdmissionInitial
+        (BootTopology.decodeAndAdmitAuthoritativeAcpiTopology rootTags rootCopy
+          tableCopies executingId)).business.apStartIssued = false := by
+    simp [hauthoritative, BootTopology.consumeAuthoritativeBootAdmission,
+      BootTopology.bootAdmissionInitial,
       BootTopology.consumeAdmission, BootTopology.admissionInitial]
   exact ⟨hsingleton, hbsp, hexecuting, hboot,
     BootTopology.run_runtime_preserves_single_core_admission _ operations hadmitted,

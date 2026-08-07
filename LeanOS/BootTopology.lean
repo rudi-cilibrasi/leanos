@@ -669,16 +669,13 @@ private def selectedRootTable (root : AcpiRoot) :
   | some address => (.xsdt, address)
   | none => (.rsdt, root.legacy.rsdtAddress.toUInt64)
 
-/-- Start at decoded old/new RSDP evidence, require the copied root table to
-match the exact selected RSDT/XSDT physical address, translate every advertised
-entry exactly once, select one MADT, and feed that exact complete table to
-admission.  The executing APIC ID is a single trusted machine observation and
-therefore supplies both the recorded BSP and executing identity; callers can no
-longer forge those identities independently inside this pipeline. -/
-def decodeAndAdmitAuthoritativeAcpiTopology
+/-- Decode the exact snapshot selected by the authoritative ACPI path.  Exposing
+this typed intermediate lets security claims state their singleton conclusion
+over the same root-selected MADT that reached admission. -/
+def decodeAuthoritativeAcpiTopologySnapshot
     (rootTags : List RawAcpiRootTag) (rootCopy : CopiedAcpiSdt)
     (tableCopies : List CopiedAcpiSdt) (executingApicId : UInt32) :
-    Except AuthoritativeAcpiTopologyError Result := do
+    Except AuthoritativeAcpiTopologyError Snapshot := do
   let root ← match selectAcpiRoot rootTags with
     | .ok selected => pure selected
     | .error reason => throw (.rsdp reason)
@@ -688,9 +685,22 @@ def decodeAndAdmitAuthoritativeAcpiTopology
   let madtBytes ← match selectUniqueCompleteMadt selected.1 rootCopy.bytes tableCopies with
     | .ok bytes => pure bytes
     | .error reason => throw (.madtSelection reason)
-  match decodeAndAdmitCompleteMadt madtBytes executingApicId executingApicId with
-  | .ok result => pure result
+  match decodeCompleteMadtSnapshot madtBytes executingApicId executingApicId with
+  | .ok snapshot => pure snapshot
   | .error reason => throw (.completeMadt reason)
+
+/-- Start at decoded old/new RSDP evidence, require the copied root table to
+match the exact selected RSDT/XSDT physical address, translate every advertised
+entry exactly once, select one MADT, and admit the exact decoded snapshot.  The
+executing APIC ID is a single trusted machine observation and therefore
+supplies both the recorded BSP and executing identity. -/
+def decodeAndAdmitAuthoritativeAcpiTopology
+    (rootTags : List RawAcpiRootTag) (rootCopy : CopiedAcpiSdt)
+    (tableCopies : List CopiedAcpiSdt) (executingApicId : UInt32) :
+    Except AuthoritativeAcpiTopologyError Result := do
+  let snapshot ← decodeAuthoritativeAcpiTopologySnapshot rootTags rootCopy
+    tableCopies executingApicId
+  pure (admit snapshot)
 
 def repositoryAcpiRootTags : List RawAcpiRootTag := [
   .old repositoryLegacyRoot,
@@ -1091,6 +1101,7 @@ pre-CPL3 latch rather than inventing a second notion of terminal execution. -/
 inductive AdmissionFailure where
   | decode (reason : DecodeError)
   | completeMadt (reason : CompleteMadtError)
+  | authoritativeAcpi (reason : AuthoritativeAcpiTopologyError)
   | policy (reason : Error)
   | wrongPhase
   deriving DecidableEq, Repr
@@ -1168,6 +1179,25 @@ def consumeCompleteBootAdmission (state : BootAdmissionState)
         else
           match result with
           | .error reason => haltAdmission state.business (.completeMadt reason)
+          | .ok admitted => consumeAdmission state.business (.ok admitted)
+      let next := { state with business }
+      match business.failure with
+      | some _ => (BootInterruptPhase.rejectTopology next).state
+      | none => next
+
+/-- Consume only the root-selected authoritative ACPI result, preserving which
+boundary rejected it before entering the real terminal boot phase. -/
+def consumeAuthoritativeBootAdmission (state : BootAdmissionState)
+    (result : Except AuthoritativeAcpiTopologyError Result) : BootAdmissionState :=
+  match state.latched with
+  | some _ => state
+  | none =>
+      let business :=
+        if state.phase != .bootstrap64 || state.business.phase != .bootstrap64 then
+          haltAdmission state.business .wrongPhase
+        else
+          match result with
+          | .error reason => haltAdmission state.business (.authoritativeAcpi reason)
           | .ok admitted => consumeAdmission state.business (.ok admitted)
       let next := { state with business }
       match business.failure with
