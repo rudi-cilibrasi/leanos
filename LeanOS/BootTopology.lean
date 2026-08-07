@@ -1,3 +1,5 @@
+import LeanOS.BootInterruptPhase
+
 /-!
 # Single-core boot-topology admission
 
@@ -318,5 +320,140 @@ def mismatchedExecutingProcessor : Snapshot :=
 theorem mismatched_executing_processor_rejected :
     admit mismatchedExecutingProcessor = .rejected .bspMismatch := by
   decide
+
+/-! ## Pre-runtime fail-stop composition -/
+
+/-- Topology admission is consumed while the bootstrap64 table owns entry.
+The existing boot-interrupt `terminal` phase is reused as the irreversible
+pre-CPL3 latch rather than inventing a second notion of terminal execution. -/
+inductive AdmissionFailure where
+  | decode (reason : DecodeError)
+  | policy (reason : Error)
+  | wrongPhase
+  deriving DecidableEq, Repr
+
+structure AdmissionState where
+  phase : BootInterruptPhase.Phase
+  failure : Option AdmissionFailure := none
+  singleCoreAdmitted : Bool := false
+  runtimeInitialized : Bool := false
+  returnAuthorityArmed : Bool := false
+  /-- Model observation only. Real INIT/SIPI delivery remains an x86/QEMU
+  assumption at the trusted boundary. -/
+  apStartIssued : Bool := false
+  deriving DecidableEq, Repr
+
+def admissionInitial : AdmissionState :=
+  { phase := .bootstrap64 }
+
+private def haltAdmission (state : AdmissionState)
+    (failure : AdmissionFailure) : AdmissionState :=
+  { state with
+    phase := .terminal
+    failure := some failure
+    runtimeInitialized := false
+    returnAuthorityArmed := false }
+
+/-- Consume only the decoder-produced result. Every decoder or policy rejection
+enters the existing terminal boot phase before runtime initialization or return
+authority can be published. -/
+def consumeAdmission (state : AdmissionState)
+    (result : Except DecodeError Result) : AdmissionState :=
+  match state.failure with
+  | some _ => state
+  | none =>
+      if state.phase != .bootstrap64 then
+        haltAdmission state .wrongPhase
+      else
+        match result with
+        | .error reason => haltAdmission state (.decode reason)
+        | .ok (.rejected reason) => haltAdmission state (.policy reason)
+        | .ok (.accepted _) => { state with singleCoreAdmitted := true }
+
+inductive RuntimeOperation where
+  | initialize
+  | armUserReturn
+  | dispatch
+  deriving DecidableEq, Repr
+
+/-- The admitted runtime vocabulary has no AP-start operation. Initialization
+and user-return publication remain fail closed until the immutable admission
+premise is present. -/
+def runtimeStep (state : AdmissionState)
+    (operation : RuntimeOperation) : AdmissionState :=
+  match state.failure with
+  | some _ => state
+  | none =>
+      if state.singleCoreAdmitted != true then
+        haltAdmission state (.policy .noEnabledProcessor)
+      else
+        match operation with
+        | .initialize =>
+            { state with phase := .runtime, runtimeInitialized := true }
+        | .armUserReturn =>
+            if state.phase == .runtime && state.runtimeInitialized then
+              { state with returnAuthorityArmed := true }
+            else
+              haltAdmission state .wrongPhase
+        | .dispatch => state
+
+def runRuntime : AdmissionState → List RuntimeOperation → AdmissionState
+  | state, [] => state
+  | state, operation :: rest => runRuntime (runtimeStep state operation) rest
+
+theorem decoded_rejection_is_pre_cpl3_terminal (reason : DecodeError) :
+    let state := consumeAdmission admissionInitial (.error reason)
+    state.phase = .terminal ∧
+      state.failure = some (.decode reason) ∧
+      state.runtimeInitialized = false ∧
+      state.returnAuthorityArmed = false := by
+  simp [consumeAdmission, admissionInitial, haltAdmission]
+
+theorem policy_rejection_is_pre_cpl3_terminal (reason : Error) :
+    let state := consumeAdmission admissionInitial (.ok (.rejected reason))
+    state.phase = .terminal ∧
+      state.failure = some (.policy reason) ∧
+      state.runtimeInitialized = false ∧
+      state.returnAuthorityArmed = false := by
+  simp [consumeAdmission, admissionInitial, haltAdmission]
+
+theorem admission_failure_absorbing (state : AdmissionState)
+    (reason : AdmissionFailure) (operations : List RuntimeOperation)
+    (hfailure : state.failure = some reason) :
+    runRuntime state operations = state := by
+  induction operations generalizing state with
+  | nil => rfl
+  | cons operation rest ih =>
+      simp only [runRuntime]
+      have hstep : runtimeStep state operation = state := by
+        simp [runtimeStep, hfailure]
+      rw [hstep]
+      exact ih state hfailure
+
+theorem repository_admission_publishes_single_core_premise :
+    (consumeAdmission admissionInitial
+      (decodeAndAdmitMadt repositoryMadtRecords 0 0)).singleCoreAdmitted = true := by
+  rfl
+
+set_option linter.unusedSimpArgs false in
+theorem runtime_preserves_single_core_admission (state : AdmissionState)
+    (operation : RuntimeOperation)
+    (hadmitted : state.singleCoreAdmitted = true) :
+    (runtimeStep state operation).singleCoreAdmitted = true := by
+  cases hfailure : state.failure with
+  | some reason => simp [runtimeStep, hfailure, hadmitted]
+  | none =>
+      cases operation <;> simp only [runtimeStep, hfailure]
+      all_goals split <;> simp_all [haltAdmission] <;> split <;> simp_all [haltAdmission]
+
+set_option linter.unusedSimpArgs false in
+theorem runtime_cannot_publish_ap_start (state : AdmissionState)
+    (operation : RuntimeOperation) (hnotStarted : state.apStartIssued = false) :
+    (runtimeStep state operation).apStartIssued = false := by
+  cases hfailure : state.failure with
+  | some reason => simp [runtimeStep, hfailure, hnotStarted]
+  | none =>
+      cases operation <;> simp only [runtimeStep, hfailure]
+      all_goals split <;> simp_all [haltAdmission] <;> split <;> simp_all [haltAdmission]
 
 end LeanOS.BootTopology
