@@ -765,7 +765,9 @@ def topologyFixture (fixture : UInt64) : List UInt8 × UInt64 × UInt64 :=
   else if fixture == 4 then ([0, 8, 0, 255, 1, 0, 0, 0], 255, 255)
   else if fixture == 5 then ([0, 8, 0, 0, 1], 0, 0)
   else if fixture == 6 then ([9, 2], 0, 0)
-  else ([0, 8, 0, 1, 1, 0, 0, 0], 0, 0)
+  else if fixture == 7 then ([0, 8, 0, 1, 1, 0, 0, 0], 0, 0)
+  else if fixture == 8 then (repositoryMadtBytes, 1, 0)
+  else (repositoryMadtBytes, 0, 1)
 
 @[export leanos_boot_topology_fixture_query]
 def topologyFixtureQuery (fixture word : UInt64) : UInt64 :=

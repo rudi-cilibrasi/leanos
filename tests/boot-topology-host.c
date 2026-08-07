@@ -38,11 +38,13 @@ static lean_object *run_host(int argc, char **argv) {
       {1, 2, 2, 0, 0},   /* truncated record */
       {1, 2, 4, 0, 0},   /* unsupported topology-bearing record */
       {1, 3, 8, 0, 0},   /* missing recorded BSP */
+      {1, 3, 8, 0, 0},   /* attacker-mutated recorded BSP identity */
+      {1, 3, 8, 0, 0},   /* attacker-mutated executing identity */
   };
   static const char *const fields[] = {"abi", "status", "detail", "enabled",
                                         "online-capable"};
   char name[96];
-  for (uint64_t fixture = 0; fixture < 8; ++fixture) {
+  for (uint64_t fixture = 0; fixture < 10; ++fixture) {
     for (uint64_t word = 0; word < 5; ++word) {
       snprintf(name, sizeof(name), "fixture-%llu.%s",
                (unsigned long long)fixture, fields[word]);
