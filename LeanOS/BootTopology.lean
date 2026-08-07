@@ -513,8 +513,107 @@ def decodeAndAdmitMadtBytes (bytes : List UInt8)
   let records ← decodeMadtBytes bytes
   decodeAndAdmitMadt records bspId executingId
 
+/-- A complete MADT has the common 36-byte SDT header followed by the
+8-byte MADT-local APIC address/flags header. -/
+def acpiMadtHeaderLength : Nat := 44
+
+/-- Preserve whether a complete-table admission failure came from the ACPI
+envelope, the fixed MADT header, or the bounded entry decoder. -/
+inductive CompleteMadtError where
+  | sdt (reason : AcpiSdtError)
+  | truncatedMadtHeader
+  | entry (reason : DecodeError)
+  deriving DecidableEq, Repr
+
+/-- Decode one validated complete MADT into the exact snapshot consumed by
+admission.  The fixed MADT header is never exposed as an entry stream. -/
+def decodeCompleteMadtSnapshot (bytes : List UInt8)
+    (bspId executingId : UInt32) : Except CompleteMadtError Snapshot :=
+  match validateAcpiSdt [0x41, 0x50, 0x49, 0x43] bytes with
+  | .error reason => .error (.sdt reason)
+  | .ok table =>
+      if table.length < acpiMadtHeaderLength then
+        .error .truncatedMadtHeader
+      else
+        match decodeMadtBytes (table.bytes.drop acpiMadtHeaderLength) with
+        | .error reason => .error (.entry reason)
+        | .ok records =>
+            match normalizeMadtRecords records bspId executingId with
+            | .error reason => .error (.entry reason)
+            | .ok snapshot => .ok snapshot
+
+/-- Validate and admit one complete copied MADT.  Only an exact APIC SDT with
+a bounded declared length and valid checksum reaches admission. -/
+def decodeAndAdmitCompleteMadt (bytes : List UInt8)
+    (bspId executingId : UInt32) : Except CompleteMadtError Result := do
+  let snapshot ← decodeCompleteMadtSnapshot bytes bspId executingId
+  pure (admit snapshot)
+
 def repositoryMadtBytes : List UInt8 :=
   [0, 8, 0, 0, 1, 0, 0, 0]
+
+private def madtTableWithEntries (entries : List UInt8) : List UInt8 :=
+  let length := acpiMadtHeaderLength + entries.length
+  let unchecked :=
+    [sdtByte 0x41, sdtByte 0x50, sdtByte 0x49, sdtByte 0x43] ++
+      encodeSdtU32 length ++ [sdtByte 1, sdtByte 0] ++
+      List.replicate (acpiMadtHeaderLength - 10) (sdtByte 0) ++ entries
+  replaceSdtByte unchecked 9 (sdtByte ((256 - acpiChecksum unchecked) % 256))
+
+def repositoryCompleteMadtBytes : List UInt8 :=
+  madtTableWithEntries repositoryMadtBytes
+
+def completeMadtAcceptedProcessorMatches
+    (result : Except CompleteMadtError Result) (apicId : UInt32) : Bool :=
+  match result with
+  | .ok (.accepted processor) =>
+      processor.apicId == apicId && processor.enabled && !processor.onlineCapable
+  | _ => false
+
+def completeMadtFailedWith (result : Except CompleteMadtError Result)
+    (reason : CompleteMadtError) : Bool :=
+  match result with
+  | .error actual => actual == reason
+  | _ => false
+
+theorem repository_complete_madt_admitted :
+    completeMadtAcceptedProcessorMatches
+      (decodeAndAdmitCompleteMadt repositoryCompleteMadtBytes 0 0) 0 = true := by
+  native_decide
+
+theorem complete_madt_wrong_signature_rejected :
+    completeMadtFailedWith
+      (decodeAndAdmitCompleteMadt
+        (replaceSdtByte repositoryCompleteMadtBytes 0 (sdtByte 0x58)) 0 0)
+      (.sdt .invalidSignature) = true := by
+  native_decide
+
+theorem complete_madt_declared_length_mismatch_rejected :
+    completeMadtFailedWith
+      (decodeAndAdmitCompleteMadt
+        (replaceSdtByte repositoryCompleteMadtBytes 4 (sdtByte 44)) 0 0)
+      (.sdt .invalidLength) = true := by
+  native_decide
+
+theorem complete_madt_bad_checksum_rejected :
+    completeMadtFailedWith
+      (decodeAndAdmitCompleteMadt
+        (replaceSdtByte repositoryCompleteMadtBytes 10 (sdtByte 1)) 0 0)
+      (.sdt .invalidChecksum) = true := by
+  native_decide
+
+theorem complete_madt_truncated_fixed_header_rejected :
+    completeMadtFailedWith
+      (decodeAndAdmitCompleteMadt (madtTableBytesOfLength 40) 0 0)
+      .truncatedMadtHeader = true := by
+  native_decide
+
+theorem complete_madt_entry_error_preserves_provenance :
+    completeMadtFailedWith
+      (decodeAndAdmitCompleteMadt
+        (madtTableWithEntries [0, 8, 0, 0, 1]) 0 0)
+      (.entry .truncatedRecord) = true := by
+  native_decide
 
 theorem empty_madt_entry_region_decodes :
     decodeMadtBytes [] = .ok [] := by
@@ -811,6 +910,7 @@ The existing boot-interrupt `terminal` phase is reused as the irreversible
 pre-CPL3 latch rather than inventing a second notion of terminal execution. -/
 inductive AdmissionFailure where
   | decode (reason : DecodeError)
+  | completeMadt (reason : CompleteMadtError)
   | policy (reason : Error)
   | wrongPhase
   deriving DecidableEq, Repr
@@ -870,6 +970,25 @@ def consumeBootAdmission (state : BootAdmissionState)
           haltAdmission state.business .wrongPhase
         else
           consumeAdmission state.business result
+      let next := { state with business }
+      match business.failure with
+      | some _ => (BootInterruptPhase.rejectTopology next).state
+      | none => next
+
+/-- Consume the complete-table pipeline without collapsing ACPI-envelope,
+fixed-header, and MADT-entry failures into one decoder error. -/
+def consumeCompleteBootAdmission (state : BootAdmissionState)
+    (result : Except CompleteMadtError Result) : BootAdmissionState :=
+  match state.latched with
+  | some _ => state
+  | none =>
+      let business :=
+        if state.phase != .bootstrap64 || state.business.phase != .bootstrap64 then
+          haltAdmission state.business .wrongPhase
+        else
+          match result with
+          | .error reason => haltAdmission state.business (.completeMadt reason)
+          | .ok admitted => consumeAdmission state.business (.ok admitted)
       let next := { state with business }
       match business.failure with
       | some _ => (BootInterruptPhase.rejectTopology next).state
@@ -1080,6 +1199,17 @@ def admissionErrorCode : Error → UInt64
   | .multipleEnabledProcessors => 7
   | .bspMismatch => 8
 
+def completeMadtErrorCode : CompleteMadtError → UInt64
+  | .entry reason => decodeErrorCode reason
+  | .truncatedMadtHeader => 6
+  | .sdt .truncatedHeader => 7
+  | .sdt .invalidSignature => 8
+  | .sdt .invalidLength => 9
+  | .sdt .tableTooLarge => 10
+  | .sdt .invalidChecksum => 11
+  | .sdt .invalidRootPayloadAlignment => 12
+  | .sdt .rootEntryOverflow => 13
+
 /-- Stable result words for hosted generated-C differential replay:
 
 * 0: ABI version
@@ -1095,6 +1225,23 @@ def topologyQuery (bytes : ByteArray) (bspId executingId word : UInt64) : UInt64
       (UInt32.ofNat bspId.toNat) (UInt32.ofNat executingId.toNat) with
     | .error reason =>
         if word == 1 then 2 else if word == 2 then decodeErrorCode reason else 0
+    | .ok (.rejected reason) =>
+        if word == 1 then 3 else if word == 2 then admissionErrorCode reason else 0
+    | .ok (.accepted processor) =>
+        if word == 1 then 1
+        else if word == 2 then processor.apicId.toUInt64
+        else if word == 3 then if processor.enabled then 1 else 0
+        else if word == 4 then if processor.onlineCapable then 1 else 0
+        else 0
+
+def completeTopologyQuery (bytes : ByteArray)
+    (bspId executingId word : UInt64) : UInt64 :=
+  if word == 0 then topologyAbiVersion
+  else
+    match decodeAndAdmitCompleteMadt bytes.data.toList
+      (UInt32.ofNat bspId.toNat) (UInt32.ofNat executingId.toNat) with
+    | .error reason =>
+        if word == 1 then 2 else if word == 2 then completeMadtErrorCode reason else 0
     | .ok (.rejected reason) =>
         if word == 1 then 3 else if word == 2 then admissionErrorCode reason else 0
     | .ok (.accepted processor) =>
@@ -1127,6 +1274,17 @@ def topologyFixture (fixture : UInt64) : List UInt8 × UInt64 × UInt64 :=
 @[export leanos_boot_topology_fixture_query]
 def topologyFixtureQuery (fixture word : UInt64) : UInt64 :=
   let selected := topologyFixture fixture
-  topologyQuery ⟨selected.1.toArray⟩ selected.2.1 selected.2.2 word
+  let complete :=
+    if fixture == 10 then
+      replaceSdtByte repositoryCompleteMadtBytes 0 (sdtByte 0x58)
+    else if fixture == 11 then
+      replaceSdtByte repositoryCompleteMadtBytes 4 (sdtByte 44)
+    else if fixture == 12 then
+      replaceSdtByte repositoryCompleteMadtBytes 10 (sdtByte 1)
+    else if fixture == 13 then
+      madtTableBytesOfLength 40
+    else
+      madtTableWithEntries selected.1
+  completeTopologyQuery ⟨complete.toArray⟩ selected.2.1 selected.2.2 word
 
 end LeanOS.BootTopology
