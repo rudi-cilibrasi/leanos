@@ -563,6 +563,94 @@ private def madtTableWithEntries (entries : List UInt8) : List UInt8 :=
 def repositoryCompleteMadtBytes : List UInt8 :=
   madtTableWithEntries repositoryMadtBytes
 
+/-! ## Root-table translation and unique MADT selection -/
+
+/-- One immutable table copy paired with the physical address carried by the
+validated RSDT/XSDT.  Producing these copies remains machine-boundary work;
+selection and ambiguity rejection below are model-owned. -/
+structure CopiedAcpiSdt where
+  physicalAddress : UInt64
+  bytes : List UInt8
+  deriving BEq, DecidableEq, Repr
+
+inductive MadtSelectionError where
+  | root (reason : AcpiSdtError)
+  | untranslatedRootEntry (address : UInt64)
+  | duplicateTranslation (address : UInt64)
+  | missingMadt
+  | duplicateMadt
+  deriving BEq, DecidableEq, Repr
+
+private def translateRootEntry (copies : List CopiedAcpiSdt)
+    (address : UInt64) : Except MadtSelectionError CopiedAcpiSdt :=
+  match copies.filter (fun copy => copy.physicalAddress == address) with
+  | [] => .error (.untranslatedRootEntry address)
+  | [copy] => .ok copy
+  | _ => .error (.duplicateTranslation address)
+
+private def translateRootEntries (copies : List CopiedAcpiSdt) :
+    List UInt64 → Except MadtSelectionError (List CopiedAcpiSdt)
+  | [] => .ok []
+  | address :: rest => do
+      let copy ← translateRootEntry copies address
+      let translated ← translateRootEntries copies rest
+      pure (copy :: translated)
+
+/-- Decode the bounded root vector, require one translation for every address,
+and select exactly one APIC/MADT copy.  Missing translations and duplicate
+address associations fail before the complete-table admission pipeline. -/
+def selectUniqueCompleteMadt (kind : AcpiRootTableKind) (rootBytes : List UInt8)
+    (copies : List CopiedAcpiSdt) : Except MadtSelectionError (List UInt8) := do
+  let addresses ← match decodeAcpiRootEntries kind rootBytes with
+    | .ok entries => pure entries
+    | .error reason => throw (.root reason)
+  let translated ← translateRootEntries copies addresses
+  match translated.filter (fun copy =>
+      copy.bytes.take 4 == [0x41, 0x50, 0x49, 0x43]) with
+  | [] => .error .missingMadt
+  | [madt] => .ok madt.bytes
+  | _ => .error .duplicateMadt
+
+def repositoryCopiedAcpiTables : List CopiedAcpiSdt := [
+  { physicalAddress := 0x000f6000, bytes := repositoryCompleteMadtBytes },
+  { physicalAddress := 0x000f7000, bytes := repositoryXsdtTableBytes }
+]
+
+private def selectedMadtMatches
+    (result : Except MadtSelectionError (List UInt8))
+    (expected : List UInt8) : Bool :=
+  match result with
+  | .ok bytes => bytes == expected
+  | .error _ => false
+
+private def madtSelectionFailedWith
+    (result : Except MadtSelectionError (List UInt8))
+    (expected : MadtSelectionError) : Bool :=
+  match result with
+  | .ok _ => false
+  | .error reason => reason == expected
+
+theorem repository_unique_madt_selected :
+    selectedMadtMatches
+      (selectUniqueCompleteMadt .xsdt repositoryXsdtTableBytes
+        repositoryCopiedAcpiTables) repositoryCompleteMadtBytes = true := by
+  native_decide
+
+theorem untranslated_root_entry_rejected :
+    madtSelectionFailedWith
+      (selectUniqueCompleteMadt .xsdt repositoryXsdtTableBytes [
+        { physicalAddress := 0x000f6000, bytes := repositoryCompleteMadtBytes }
+      ]) (.untranslatedRootEntry 0x000f7000) = true := by
+  native_decide
+
+theorem duplicate_madt_translation_rejected :
+    madtSelectionFailedWith
+      (selectUniqueCompleteMadt .xsdt repositoryXsdtTableBytes [
+        { physicalAddress := 0x000f6000, bytes := repositoryCompleteMadtBytes },
+        { physicalAddress := 0x000f7000, bytes := repositoryCompleteMadtBytes }
+      ]) .duplicateMadt = true := by
+  native_decide
+
 def completeMadtAcceptedProcessorMatches
     (result : Except CompleteMadtError Result) (apicId : UInt32) : Bool :=
   match result with
