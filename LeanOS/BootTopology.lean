@@ -152,11 +152,16 @@ theorem duplicate_new_roots_rejected :
 /-! ## Bounded ACPI system-description table validation -/
 
 def acpiSdtHeaderLength : Nat := 36
+/-- Platform copy bound for one complete ACPI system-description table.  This
+matches the existing 64-KiB immutable boot-handoff budget, so validation never
+scans an attacker-declared multi-gigabyte table. -/
+def maxAcpiSdtBytes : Nat := 65536
 
 inductive AcpiSdtError where
   | truncatedHeader
   | invalidSignature
   | invalidLength
+  | tableTooLarge
   | invalidChecksum
   | invalidRootPayloadAlignment
   | rootEntryOverflow
@@ -166,7 +171,7 @@ structure ValidAcpiSdt where
   signature : List UInt8
   length : Nat
   bytes : List UInt8
-  deriving BEq, DecidableEq, Repr
+  lengthBounded : length ≤ maxAcpiSdtBytes
 
 inductive AcpiRootTableKind where
   | rsdt
@@ -205,8 +210,16 @@ def validateAcpiSdt (expectedSignature bytes : List UInt8) :
   let declaredLength ← readSdtU32 bytes 4
   if declaredLength < acpiSdtHeaderLength || declaredLength != bytes.length then
     throw .invalidLength
-  if acpiChecksum bytes != 0 then throw .invalidChecksum
-  pure { signature := bytes.take 4, length := declaredLength, bytes }
+  if hlarge : declaredLength > maxAcpiSdtBytes then
+    throw .tableTooLarge
+  else
+    if acpiChecksum bytes != 0 then throw .invalidChecksum
+    pure {
+      signature := bytes.take 4
+      length := declaredLength
+      bytes
+      lengthBounded := Nat.le_of_not_gt hlarge
+    }
 
 private def decodeRootAddress (bytes : List UInt8) : UInt64 :=
   UInt64.ofNat <| bytes.zipIdx.foldl
@@ -282,13 +295,15 @@ theorem xsdt_payload_misalignment_rejected :
       some .invalidRootPayloadAlignment := by
   native_decide
 
-def repositoryMadtTableBytes : List UInt8 :=
-  let length := 52
+private def madtTableBytesOfLength (length : Nat) : List UInt8 :=
   let unchecked :=
     [sdtByte 0x41, sdtByte 0x50, sdtByte 0x49, sdtByte 0x43] ++
       encodeSdtU32 length ++ [sdtByte 1, sdtByte 0] ++
       List.replicate (length - 10) (sdtByte 0)
   replaceSdtByte unchecked 9 (sdtByte ((256 - acpiChecksum unchecked) % 256))
+
+def repositoryMadtTableBytes : List UInt8 :=
+  madtTableBytesOfLength 52
 
 theorem repository_madt_table_header_valid :
     (validateAcpiSdt [0x41, 0x50, 0x49, 0x43] repositoryMadtTableBytes).isOk =
@@ -311,6 +326,17 @@ theorem corrupt_sdt_checksum_rejected :
     acpiSdtErrorOf (validateAcpiSdt [0x41, 0x50, 0x49, 0x43]
       (replaceSdtByte repositoryMadtTableBytes 10 1)) =
       some .invalidChecksum := by
+  native_decide
+
+theorem maximum_sdt_length_accepted :
+    (validateAcpiSdt [0x41, 0x50, 0x49, 0x43]
+      (madtTableBytesOfLength maxAcpiSdtBytes)).isOk = true := by
+  native_decide
+
+theorem sdt_length_above_platform_bound_rejected :
+    acpiSdtErrorOf (validateAcpiSdt [0x41, 0x50, 0x49, 0x43]
+      (madtTableBytesOfLength (maxAcpiSdtBytes + 1))) =
+      some .tableTooLarge := by
   native_decide
 
 /-- Bounded input already copied from the selected MADT handoff.  The raw
