@@ -23,6 +23,10 @@ inductive Source where
 structure Processor where
   apicId : UInt32
   enabled : Bool
+  /-- ACPI MADT bit 1: firmware permits this disabled processor to be brought
+  online.  The single-core admission policy rejects such latent processors
+  rather than erasing them during normalization. -/
+  onlineCapable : Bool
   deriving DecidableEq, Repr
 
 structure Snapshot where
@@ -38,6 +42,7 @@ inductive Error where
   | unsupportedVersion
   | tooManyProcessors
   | duplicateApicId
+  | onlineCapableProcessor
   | noEnabledProcessor
   | multipleEnabledProcessors
   | bspMismatch
@@ -62,6 +67,9 @@ def admit (snapshot : Snapshot) : Result :=
     .rejected .tooManyProcessors
   else if !uniqueApicIds snapshot.processors then
     .rejected .duplicateApicId
+  else if snapshot.processors.any (fun processor =>
+      !processor.enabled && processor.onlineCapable) then
+    .rejected .onlineCapableProcessor
   else
     match snapshot.processors.filter (fun processor => processor.enabled) with
     | [] => .rejected .noEnabledProcessor
@@ -91,6 +99,7 @@ theorem accepted_implies_single_enabled_bsp (snapshot : Snapshot) (processor : P
   split at haccepted <;> try contradiction
   split at haccepted <;> try contradiction
   split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
   generalize henabled : snapshot.processors.filter (fun candidate => candidate.enabled) =
       enabled at haccepted ⊢
   cases enabled with
@@ -111,10 +120,11 @@ def repositorySingleCore : Snapshot :=
     version := snapshotVersion
     bspId := 0
     executingId := 0
-    processors := [{ apicId := 0, enabled := true }] }
+    processors := [{ apicId := 0, enabled := true, onlineCapable := false }] }
 
 theorem repository_single_core_nonvacuous :
-    admit repositorySingleCore = .accepted { apicId := 0, enabled := true } := by
+    admit repositorySingleCore =
+      .accepted { apicId := 0, enabled := true, onlineCapable := false } := by
   decide
 
 def twoEnabledProcessors : Snapshot :=
@@ -123,8 +133,8 @@ def twoEnabledProcessors : Snapshot :=
     bspId := 0
     executingId := 0
     processors := [
-      { apicId := 0, enabled := true },
-      { apicId := 1, enabled := true }
+      { apicId := 0, enabled := true, onlineCapable := false },
+      { apicId := 1, enabled := true, onlineCapable := false }
     ] }
 
 theorem two_enabled_processors_rejected :
@@ -137,8 +147,8 @@ def duplicateBsp : Snapshot :=
     bspId := 0
     executingId := 0
     processors := [
-      { apicId := 0, enabled := true },
-      { apicId := 0, enabled := false }
+      { apicId := 0, enabled := true, onlineCapable := false },
+      { apicId := 0, enabled := false, onlineCapable := false }
     ] }
 
 theorem duplicate_bsp_rejected :
@@ -164,10 +174,24 @@ def zeroEnabledProcessors : Snapshot :=
     version := snapshotVersion
     bspId := 0
     executingId := 0
-    processors := [{ apicId := 0, enabled := false }] }
+    processors := [{ apicId := 0, enabled := false, onlineCapable := false }] }
 
 theorem zero_enabled_processors_rejected :
     admit zeroEnabledProcessors = .rejected .noEnabledProcessor := by
+  decide
+
+def disabledOnlineCapableProcessor : Snapshot :=
+  { source := .acpiMadt
+    version := snapshotVersion
+    bspId := 0
+    executingId := 0
+    processors := [
+      { apicId := 0, enabled := true, onlineCapable := false },
+      { apicId := 1, enabled := false, onlineCapable := true }
+    ] }
+
+theorem disabled_online_capable_processor_rejected :
+    admit disabledOnlineCapableProcessor = .rejected .onlineCapableProcessor := by
   decide
 
 def mismatchedExecutingProcessor : Snapshot :=
