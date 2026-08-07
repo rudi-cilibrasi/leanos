@@ -149,6 +149,94 @@ theorem duplicate_new_roots_rejected :
     ] = .error .duplicateNewRoot := by
   rfl
 
+/-! ## Bounded ACPI system-description table validation -/
+
+def acpiSdtHeaderLength : Nat := 36
+
+inductive AcpiSdtError where
+  | truncatedHeader
+  | invalidSignature
+  | invalidLength
+  | invalidChecksum
+  deriving BEq, DecidableEq, Repr
+
+structure ValidAcpiSdt where
+  signature : List UInt8
+  length : Nat
+  bytes : List UInt8
+  deriving BEq, DecidableEq, Repr
+
+private def readSdtU32 (bytes : List UInt8) (offset : Nat) :
+    Except AcpiSdtError Nat :=
+  match bytes[offset]?, bytes[offset + 1]?, bytes[offset + 2]?, bytes[offset + 3]? with
+  | some b0, some b1, some b2, some b3 =>
+      .ok (b0.toNat + b1.toNat * 256 + b2.toNat * 65536 +
+        b3.toNat * 16777216)
+  | _, _, _, _ => .error .truncatedHeader
+
+private def acpiChecksum (bytes : List UInt8) : Nat :=
+  bytes.foldl (fun total byte => (total + byte.toNat) % 256) 0
+
+/-- Validate one complete, bounded ACPI SDT copy before any root-entry or MADT
+payload interpretation. Physical-address translation and choosing which root
+entry names the authoritative MADT remain trusted machine-boundary work. -/
+def validateAcpiSdt (expectedSignature bytes : List UInt8) :
+    Except AcpiSdtError ValidAcpiSdt := do
+  if bytes.length < acpiSdtHeaderLength then throw .truncatedHeader
+  if expectedSignature.length != 4 || bytes.take 4 != expectedSignature then
+    throw .invalidSignature
+  let declaredLength ← readSdtU32 bytes 4
+  if declaredLength < acpiSdtHeaderLength || declaredLength != bytes.length then
+    throw .invalidLength
+  if acpiChecksum bytes != 0 then throw .invalidChecksum
+  pure { signature := bytes.take 4, length := declaredLength, bytes }
+
+def acpiSdtErrorOf {α : Type} :
+    Except AcpiSdtError α → Option AcpiSdtError
+  | .error reason => some reason
+  | .ok _ => none
+
+private def sdtByte (value : Nat) : UInt8 := UInt8.ofNat value
+
+private def encodeSdtU32 (value : Nat) : List UInt8 :=
+  [sdtByte value, sdtByte (value / 256), sdtByte (value / 65536),
+    sdtByte (value / 16777216)]
+
+private def replaceSdtByte (bytes : List UInt8) (index : Nat) (value : UInt8) :
+    List UInt8 :=
+  bytes.take index ++ [value] ++ bytes.drop (index + 1)
+
+def repositoryMadtTableBytes : List UInt8 :=
+  let length := 52
+  let unchecked :=
+    [sdtByte 0x41, sdtByte 0x50, sdtByte 0x49, sdtByte 0x43] ++
+      encodeSdtU32 length ++ [sdtByte 1, sdtByte 0] ++
+      List.replicate (length - 10) (sdtByte 0)
+  replaceSdtByte unchecked 9 (sdtByte ((256 - acpiChecksum unchecked) % 256))
+
+theorem repository_madt_table_header_valid :
+    (validateAcpiSdt [0x41, 0x50, 0x49, 0x43] repositoryMadtTableBytes).isOk =
+      true := by
+  native_decide
+
+theorem truncated_sdt_header_rejected :
+    acpiSdtErrorOf
+      (validateAcpiSdt [0x41, 0x50, 0x49, 0x43] (List.replicate 35 0)) =
+      some .truncatedHeader := by
+  native_decide
+
+theorem wrong_sdt_signature_rejected :
+    acpiSdtErrorOf
+      (validateAcpiSdt [0x58, 0x53, 0x44, 0x54] repositoryMadtTableBytes) =
+      some .invalidSignature := by
+  native_decide
+
+theorem corrupt_sdt_checksum_rejected :
+    acpiSdtErrorOf (validateAcpiSdt [0x41, 0x50, 0x49, 0x43]
+      (replaceSdtByte repositoryMadtTableBytes 10 1)) =
+      some .invalidChecksum := by
+  native_decide
+
 /-- Bounded input already copied from the selected MADT handoff.  The raw
 record length and kind remain explicit so normalization cannot silently erase
 truncation or admission-relevant unsupported entries. -/
