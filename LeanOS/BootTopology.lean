@@ -370,6 +370,51 @@ def consumeAdmission (state : AdmissionState)
         | .ok (.rejected reason) => haltAdmission state (.policy reason)
         | .ok (.accepted _) => { state with singleCoreAdmitted := true }
 
+/-- The topology business state embedded in the actual boot publication state. -/
+abbrev BootAdmissionState := BootInterruptPhase.State AdmissionState
+
+def bootAdmissionInitial : BootAdmissionState :=
+  { phase := .bootstrap64, business := admissionInitial }
+
+/-- Consume topology evidence and latch the real boot state on every rejection. -/
+def consumeBootAdmission (state : BootAdmissionState)
+    (result : Except DecodeError Result) : BootAdmissionState :=
+  match state.latched with
+  | some _ => state
+  | none =>
+      let business := consumeAdmission state.business result
+      let next := { state with business }
+      match business.failure with
+      | some _ => (BootInterruptPhase.rejectTopology next).state
+      | none => next
+
+theorem decoded_rejection_latches_real_boot_state (reason : DecodeError) :
+    let state := consumeBootAdmission bootAdmissionInitial (.error reason)
+    ∃ record,
+      state.phase = .terminal ∧
+        state.latched = some record ∧
+        state.returnAuthorityArmed = false ∧
+        state.business.failure = some (.decode reason) := by
+  simp [consumeBootAdmission, bootAdmissionInitial, consumeAdmission,
+    admissionInitial, haltAdmission, BootInterruptPhase.rejectTopology]
+
+theorem policy_rejection_latches_real_boot_state (reason : Error) :
+    let state := consumeBootAdmission bootAdmissionInitial (.ok (.rejected reason))
+    ∃ record,
+      state.phase = .terminal ∧
+        state.latched = some record ∧
+        state.returnAuthorityArmed = false ∧
+        state.business.failure = some (.policy reason) := by
+  simp [consumeBootAdmission, bootAdmissionInitial, consumeAdmission,
+    admissionInitial, haltAdmission, BootInterruptPhase.rejectTopology]
+
+theorem boot_rejection_blocks_publication_suffix (state : BootAdmissionState)
+    (record : BootInterruptPhase.EarlyHaltRecord)
+    (operations : List BootInterruptPhase.Operation)
+    (hlatched : state.latched = some record) :
+    BootInterruptPhase.run state operations = state :=
+  BootInterruptPhase.terminal_suffix_absorbing state record operations hlatched
+
 inductive RuntimeOperation where
   | initialize
   | armUserReturn

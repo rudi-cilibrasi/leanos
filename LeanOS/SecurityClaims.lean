@@ -37,12 +37,13 @@ vocabulary preserves that premise and cannot publish an AP-start event. -/
 theorem single_core_boot_admission_confined records bspId executingId snapshot processor operations
     (hdecoded : BootTopology.normalizeMadtRecords records bspId executingId = .ok snapshot)
     (haccepted : BootTopology.admit snapshot = .accepted processor) :
-    let admitted := BootTopology.consumeAdmission BootTopology.admissionInitial
+    let bootAdmitted := BootTopology.consumeBootAdmission BootTopology.bootAdmissionInitial
       (BootTopology.decodeAndAdmitMadt records bspId executingId)
-    let final := BootTopology.runRuntime admitted operations
+    let final := BootTopology.runRuntime bootAdmitted.business operations
     snapshot.processors.filter (fun candidate => candidate.enabled) = [processor] ∧
       processor.apicId = snapshot.bspId ∧
       snapshot.executingId = snapshot.bspId ∧
+      bootAdmitted.latched = none ∧
       final.singleCoreAdmitted = true ∧
       final.apStartIssued = false := by
   obtain ⟨hsingleton, hbsp, hexecuting⟩ :=
@@ -52,15 +53,22 @@ theorem single_core_boot_admission_confined records bspId executingId snapshot p
     unfold BootTopology.decodeAndAdmitMadt
     rw [hdecoded]
     exact congrArg Except.ok haccepted
+  have hboot :
+      (BootTopology.consumeBootAdmission BootTopology.bootAdmissionInitial
+        (BootTopology.decodeAndAdmitMadt records bspId executingId)).latched = none := by
+    simp [hresult, BootTopology.consumeBootAdmission, BootTopology.bootAdmissionInitial,
+      BootTopology.consumeAdmission, BootTopology.admissionInitial]
   have hadmitted :
-      (BootTopology.consumeAdmission BootTopology.admissionInitial
-        (BootTopology.decodeAndAdmitMadt records bspId executingId)).singleCoreAdmitted = true := by
-    simp [hresult, BootTopology.consumeAdmission, BootTopology.admissionInitial]
+      (BootTopology.consumeBootAdmission BootTopology.bootAdmissionInitial
+        (BootTopology.decodeAndAdmitMadt records bspId executingId)).business.singleCoreAdmitted = true := by
+    simp [hresult, BootTopology.consumeBootAdmission, BootTopology.bootAdmissionInitial,
+      BootTopology.consumeAdmission, BootTopology.admissionInitial]
   have hnotStarted :
-      (BootTopology.consumeAdmission BootTopology.admissionInitial
-        (BootTopology.decodeAndAdmitMadt records bspId executingId)).apStartIssued = false := by
-    simp [hresult, BootTopology.consumeAdmission, BootTopology.admissionInitial]
-  exact ⟨hsingleton, hbsp, hexecuting,
+      (BootTopology.consumeBootAdmission BootTopology.bootAdmissionInitial
+        (BootTopology.decodeAndAdmitMadt records bspId executingId)).business.apStartIssued = false := by
+    simp [hresult, BootTopology.consumeBootAdmission, BootTopology.bootAdmissionInitial,
+      BootTopology.consumeAdmission, BootTopology.admissionInitial]
+  exact ⟨hsingleton, hbsp, hexecuting, hboot,
     BootTopology.run_runtime_preserves_single_core_admission _ operations hadmitted,
     BootTopology.run_runtime_cannot_publish_ap_start _ operations hnotStarted⟩
 
