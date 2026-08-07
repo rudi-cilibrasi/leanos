@@ -251,6 +251,17 @@ def acceptedProcessorMatches (result : Except DecodeError Result)
       processor.apicId == apicId && processor.enabled && !processor.onlineCapable
   | _ => false
 
+def rejectedWith (result : Except DecodeError Result) (reason : Error) : Bool :=
+  match result with
+  | .ok (.rejected actual) => actual == reason
+  | _ => false
+
+def decodeFailedWith (result : Except DecodeError Result)
+    (reason : DecodeError) : Bool :=
+  match result with
+  | .error actual => actual == reason
+  | _ => false
+
 theorem mixed_q35_madt_bytes_admitted :
     acceptedProcessorMatches (decodeAndAdmitMadtBytes mixedQ35MadtBytes 0 0) 0 = true := by
   native_decide
@@ -269,8 +280,44 @@ theorem duplicate_madt_byte_apic_ids_rejected :
       [0, 8, 0, 0, 1, 0, 0, 0,
        0, 8, 0, 0, 0, 0, 0, 0] 0 0 =
       .ok (.rejected .duplicateApicId) := by
-  set_option maxRecDepth 4096 in
+  set_option maxRecDepth 100000 in
     rfl
+
+theorem disabled_madt_byte_processor_does_not_expand_enabled_set :
+    acceptedProcessorMatches (decodeAndAdmitMadtBytes
+      [0, 8, 0, 0, 1, 0, 0, 0,
+       0, 8, 1, 1, 0, 0, 0, 0] 0 0) 0 = true := by
+  native_decide
+
+theorem online_capable_madt_byte_processor_rejected :
+    rejectedWith (decodeAndAdmitMadtBytes
+      [0, 8, 0, 0, 1, 0, 0, 0,
+       0, 8, 1, 1, 2, 0, 0, 0] 0 0) .onlineCapableProcessor = true := by
+  native_decide
+
+theorem two_enabled_madt_byte_processors_rejected :
+    rejectedWith (decodeAndAdmitMadtBytes
+      [0, 8, 0, 0, 1, 0, 0, 0,
+       0, 8, 1, 1, 1, 0, 0, 0] 0 0) .multipleEnabledProcessors = true := by
+  native_decide
+
+theorem maximum_madt_byte_apic_id_admitted :
+    acceptedProcessorMatches (decodeAndAdmitMadtBytes
+      [0, 8, 0, 255, 1, 0, 0, 0] 255 255) 255 = true := by
+  native_decide
+
+theorem truncated_madt_byte_record_rejected_before_admission :
+    decodeAndAdmitMadtBytes [0, 8, 0, 0, 1] 0 0 =
+      .error .truncatedRecord := by
+  rfl
+
+def overflowMadtBytes : List UInt8 :=
+  (List.replicate (maxProcessors + 1) repositoryMadtBytes).flatten
+
+theorem processor_overflow_madt_bytes_rejected_before_admission :
+    decodeFailedWith (decodeAndAdmitMadtBytes overflowMadtBytes 0 0)
+      .processorOverflow = true := by
+  native_decide
 
 theorem repository_madt_records_admitted :
     decodeAndAdmitMadt repositoryMadtRecords 0 0 =

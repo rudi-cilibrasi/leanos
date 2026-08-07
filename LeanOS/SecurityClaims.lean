@@ -34,11 +34,12 @@ namespace LeanOS.SecurityClaims
 /-- SC-SINGLE-CORE-BOOT-ADMISSION: accepted topology admission exposes exactly
 one enabled processor with BSP/executing-CPU agreement; the admitted runtime
 vocabulary preserves that premise and cannot publish an AP-start event. -/
-theorem single_core_boot_admission_confined records bspId executingId snapshot processor operations
+theorem single_core_boot_admission_confined bytes records bspId executingId snapshot processor operations
+    (hbytes : BootTopology.decodeMadtBytes bytes = .ok records)
     (hdecoded : BootTopology.normalizeMadtRecords records bspId executingId = .ok snapshot)
     (haccepted : BootTopology.admit snapshot = .accepted processor) :
     let bootAdmitted := BootTopology.consumeBootAdmission BootTopology.bootAdmissionInitial
-      (BootTopology.decodeAndAdmitMadt records bspId executingId)
+      (BootTopology.decodeAndAdmitMadtBytes bytes bspId executingId)
     let final := BootTopology.runRuntime bootAdmitted.business operations
     snapshot.processors.filter (fun candidate => candidate.enabled) = [processor] ∧
       processor.apicId = snapshot.bspId ∧
@@ -48,24 +49,28 @@ theorem single_core_boot_admission_confined records bspId executingId snapshot p
       final.apStartIssued = false := by
   obtain ⟨hsingleton, hbsp, hexecuting⟩ :=
     BootTopology.accepted_implies_single_enabled_bsp snapshot processor haccepted
-  have hresult : BootTopology.decodeAndAdmitMadt records bspId executingId =
+  have hresult : BootTopology.decodeAndAdmitMadtBytes bytes bspId executingId =
       .ok (.accepted processor) := by
+    unfold BootTopology.decodeAndAdmitMadtBytes
+    rw [hbytes]
+    change BootTopology.decodeAndAdmitMadt records bspId executingId =
+      .ok (.accepted processor)
     unfold BootTopology.decodeAndAdmitMadt
     rw [hdecoded]
     exact congrArg Except.ok haccepted
   have hboot :
       (BootTopology.consumeBootAdmission BootTopology.bootAdmissionInitial
-        (BootTopology.decodeAndAdmitMadt records bspId executingId)).latched = none := by
+        (BootTopology.decodeAndAdmitMadtBytes bytes bspId executingId)).latched = none := by
     simp [hresult, BootTopology.consumeBootAdmission, BootTopology.bootAdmissionInitial,
       BootTopology.consumeAdmission, BootTopology.admissionInitial]
   have hadmitted :
       (BootTopology.consumeBootAdmission BootTopology.bootAdmissionInitial
-        (BootTopology.decodeAndAdmitMadt records bspId executingId)).business.singleCoreAdmitted = true := by
+        (BootTopology.decodeAndAdmitMadtBytes bytes bspId executingId)).business.singleCoreAdmitted = true := by
     simp [hresult, BootTopology.consumeBootAdmission, BootTopology.bootAdmissionInitial,
       BootTopology.consumeAdmission, BootTopology.admissionInitial]
   have hnotStarted :
       (BootTopology.consumeBootAdmission BootTopology.bootAdmissionInitial
-        (BootTopology.decodeAndAdmitMadt records bspId executingId)).business.apStartIssued = false := by
+        (BootTopology.decodeAndAdmitMadtBytes bytes bspId executingId)).business.apStartIssued = false := by
     simp [hresult, BootTopology.consumeBootAdmission, BootTopology.bootAdmissionInitial,
       BootTopology.consumeAdmission, BootTopology.admissionInitial]
   exact ⟨hsingleton, hbsp, hexecuting, hboot,
