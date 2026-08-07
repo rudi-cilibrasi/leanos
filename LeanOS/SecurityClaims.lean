@@ -1,4 +1,5 @@
 import LeanOS.BootInterruptPhase
+import LeanOS.BootTopology
 import LeanOS.BoundedLifecycle
 import LeanOS.KernelTransition
 import LeanOS.Capability
@@ -29,6 +30,24 @@ implementation theorem's assumptions or conclusion therefore require an
 explicit change here and in `docs/security-claims.md`.
 -/
 namespace LeanOS.SecurityClaims
+
+/-- SC-SINGLE-CORE-BOOT-ADMISSION: accepted topology admission exposes exactly
+one enabled processor with BSP/executing-CPU agreement; the admitted runtime
+vocabulary preserves that premise and cannot publish an AP-start event. -/
+theorem single_core_boot_admission_confined snapshot processor state operation
+    (haccepted : BootTopology.admit snapshot = .accepted processor)
+    (hadmitted : state.singleCoreAdmitted = true)
+    (hnotStarted : state.apStartIssued = false) :
+    snapshot.processors.filter (fun candidate => candidate.enabled) = [processor] ∧
+      processor.apicId = snapshot.bspId ∧
+      snapshot.executingId = snapshot.bspId ∧
+      (BootTopology.runtimeStep state operation).singleCoreAdmitted = true ∧
+      (BootTopology.runtimeStep state operation).apStartIssued = false := by
+  obtain ⟨hsingleton, hbsp, hexecuting⟩ :=
+    BootTopology.accepted_implies_single_enabled_bsp snapshot processor haccepted
+  exact ⟨hsingleton, hbsp, hexecuting,
+    BootTopology.runtime_preserves_single_core_admission state operation hadmitted,
+    BootTopology.runtime_cannot_publish_ap_start state operation hnotStarted⟩
 
 /-- SC-DIRECT-PORT-USER-DENIAL: user-origin port/value words cannot select a
 kernel purpose or produce device mutation, and accepted controls produce the
