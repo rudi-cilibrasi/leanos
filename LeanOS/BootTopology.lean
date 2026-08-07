@@ -39,6 +39,115 @@ structure Snapshot where
   processors : List Processor
   deriving DecidableEq, Repr
 
+/-! ## Copied-handoff ACPI root selection -/
+
+/-- The checked ACPI 1.0-compatible portion shared by Multiboot2's old and
+new RSDP tags.  The machine decoder will construct this only after validating
+the signature, legacy checksum, OEM bytes, and RSDT address from the immutable
+handoff copy.  Keeping the complete checked prefix fingerprint prevents a
+matching address alone from making conflicting firmware roots look coherent. -/
+structure AcpiLegacyRoot where
+  fingerprint : UInt64
+  rsdtAddress : UInt32
+  deriving BEq, DecidableEq, Repr
+
+/-- Bounded ACPI root evidence projected from Multiboot2 tag 14 or tag 15.
+The extended checksum, length, revision, and XSDT address remain mandatory
+checks at the byte-decoder boundary before a `new` value may be constructed. -/
+inductive RawAcpiRootTag where
+  | old (legacy : AcpiLegacyRoot)
+  | new (legacy : AcpiLegacyRoot) (xsdtAddress : UInt64)
+  deriving DecidableEq, Repr
+
+inductive AcpiRootSource where
+  | oldRsdp
+  | newRsdp
+  deriving DecidableEq, Repr
+
+structure AcpiRoot where
+  source : AcpiRootSource
+  legacy : AcpiLegacyRoot
+  xsdtAddress : Option UInt64
+  deriving DecidableEq, Repr
+
+inductive AcpiRootError where
+  | missingRoot
+  | duplicateOldRoot
+  | duplicateNewRoot
+  | conflictingRoots
+  deriving DecidableEq, Repr
+
+private def collectAcpiRoots : List RawAcpiRootTag →
+    Option AcpiLegacyRoot → Option (AcpiLegacyRoot × UInt64) →
+    Except AcpiRootError (Option AcpiLegacyRoot ×
+      Option (AcpiLegacyRoot × UInt64))
+  | [], oldRoot, newRoot => .ok (oldRoot, newRoot)
+  | .old legacy :: rest, oldRoot, newRoot =>
+      match oldRoot with
+      | some _ => .error .duplicateOldRoot
+      | none => collectAcpiRoots rest (some legacy) newRoot
+  | .new legacy xsdtAddress :: rest, oldRoot, newRoot =>
+      match newRoot with
+      | some _ => .error .duplicateNewRoot
+      | none => collectAcpiRoots rest oldRoot (some (legacy, xsdtAddress))
+
+/-- Select one authoritative ACPI root from the bounded copied handoff.
+When firmware publishes both Multiboot2 ACPI tag forms, their complete checked
+legacy portions must agree exactly; the newer root then carries the selected
+XSDT address.  Duplicate or conflicting roots fail closed before MADT parsing. -/
+def selectAcpiRoot (tags : List RawAcpiRootTag) :
+    Except AcpiRootError AcpiRoot := do
+  let (oldRoot, newRoot) ← collectAcpiRoots tags none none
+  match oldRoot, newRoot with
+  | none, none => .error .missingRoot
+  | some legacy, none =>
+      .ok { source := .oldRsdp, legacy, xsdtAddress := none }
+  | none, some (legacy, xsdtAddress) =>
+      .ok { source := .newRsdp, legacy, xsdtAddress := some xsdtAddress }
+  | some oldLegacy, some (newLegacy, xsdtAddress) =>
+      if oldLegacy == newLegacy then
+        .ok { source := .newRsdp, legacy := newLegacy, xsdtAddress := some xsdtAddress }
+      else
+        .error .conflictingRoots
+
+def repositoryLegacyRoot : AcpiLegacyRoot :=
+  { fingerprint := 0x51454d5520414350, rsdtAddress := 0x000f5b70 }
+
+theorem coherent_old_new_roots_select_new :
+    selectAcpiRoot [
+      .old repositoryLegacyRoot,
+      .new repositoryLegacyRoot 0x00000000000f5c00
+    ] = .ok {
+      source := .newRsdp
+      legacy := repositoryLegacyRoot
+      xsdtAddress := some 0x00000000000f5c00
+    } := by
+  rfl
+
+theorem coherent_root_selection_is_order_independent :
+    selectAcpiRoot [
+      .old repositoryLegacyRoot,
+      .new repositoryLegacyRoot 0x00000000000f5c00
+    ] = selectAcpiRoot [
+      .new repositoryLegacyRoot 0x00000000000f5c00,
+      .old repositoryLegacyRoot
+    ] := by
+  rfl
+
+theorem conflicting_old_new_roots_rejected :
+    selectAcpiRoot [
+      .old repositoryLegacyRoot,
+      .new { repositoryLegacyRoot with fingerprint := 0 } 0x00000000000f5c00
+    ] = .error .conflictingRoots := by
+  rfl
+
+theorem duplicate_new_roots_rejected :
+    selectAcpiRoot [
+      .new repositoryLegacyRoot 0x00000000000f5c00,
+      .new repositoryLegacyRoot 0x00000000000f5c00
+    ] = .error .duplicateNewRoot := by
+  rfl
+
 /-- Bounded input already copied from the selected MADT handoff.  The raw
 record length and kind remain explicit so normalization cannot silently erase
 truncation or admission-relevant unsupported entries. -/
