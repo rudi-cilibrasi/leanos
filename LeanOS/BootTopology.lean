@@ -1420,6 +1420,19 @@ def completeMadtErrorCode : CompleteMadtError → UInt64
   | .sdt .invalidRootPayloadAlignment => 12
   | .sdt .rootEntryOverflow => 13
 
+def authoritativeAcpiTopologyErrorCode : AuthoritativeAcpiTopologyError → UInt64
+  | .rsdp .missingRoot => 20
+  | .rsdp .duplicateOldRoot => 21
+  | .rsdp .duplicateNewRoot => 22
+  | .rsdp .conflictingRoots => 23
+  | .selectedRootAddressMismatch _ _ => 24
+  | .madtSelection (.root _) => 25
+  | .madtSelection (.untranslatedRootEntry _) => 26
+  | .madtSelection (.duplicateTranslation _) => 27
+  | .madtSelection .missingMadt => 28
+  | .madtSelection .duplicateMadt => 29
+  | .completeMadt reason => 32 + completeMadtErrorCode reason
+
 /-- Stable result words for hosted generated-C differential replay:
 
 * 0: ABI version
@@ -1452,6 +1465,26 @@ def completeTopologyQuery (bytes : ByteArray)
       (UInt32.ofNat bspId.toNat) (UInt32.ofNat executingId.toNat) with
     | .error reason =>
         if word == 1 then 2 else if word == 2 then completeMadtErrorCode reason else 0
+    | .ok (.rejected reason) =>
+        if word == 1 then 3 else if word == 2 then admissionErrorCode reason else 0
+    | .ok (.accepted processor) =>
+        if word == 1 then 1
+        else if word == 2 then processor.apicId.toUInt64
+        else if word == 3 then if processor.enabled then 1 else 0
+        else if word == 4 then if processor.onlineCapable then 1 else 0
+        else 0
+
+def authoritativeTopologyQuery
+    (rootTags : List RawAcpiRootTag) (rootCopy : CopiedAcpiSdt)
+    (tableCopies : List CopiedAcpiSdt) (executingApicId word : UInt64) : UInt64 :=
+  if word == 0 then topologyAbiVersion
+  else
+    match decodeAndAdmitAuthoritativeAcpiTopology rootTags rootCopy tableCopies
+      (UInt32.ofNat executingApicId.toNat) with
+    | .error reason =>
+        if word == 1 then 2
+        else if word == 2 then authoritativeAcpiTopologyErrorCode reason
+        else 0
     | .ok (.rejected reason) =>
         if word == 1 then 3 else if word == 2 then admissionErrorCode reason else 0
     | .ok (.accepted processor) =>
@@ -1495,6 +1528,51 @@ def topologyFixtureQuery (fixture word : UInt64) : UInt64 :=
       madtTableBytesOfLength 40
     else
       madtTableWithEntries selected.1
-  completeTopologyQuery ⟨complete.toArray⟩ selected.2.1 selected.2.2 word
+  if fixture < 14 then
+    completeTopologyQuery ⟨complete.toArray⟩ selected.2.1 selected.2.2 word
+  else
+    let conflictingTags : List RawAcpiRootTag := [
+      .old repositoryLegacyRoot,
+      .new { repositoryLegacyRoot with oemId := [0x42] } 0x00000000000f5c00
+    ]
+    let wrongRootCopy :=
+      { repositoryXsdtCopy with physicalAddress := 0x00000000000f5c08 }
+    let missingTranslation : List CopiedAcpiSdt := [
+      { physicalAddress := 0x000f6000, bytes := repositoryCompleteMadtBytes }
+    ]
+    let duplicateTranslation : List CopiedAcpiSdt := [
+      { physicalAddress := 0x000f6000, bytes := repositoryCompleteMadtBytes },
+      { physicalAddress := 0x000f6000, bytes := repositoryCompleteMadtBytes },
+      { physicalAddress := 0x000f7000, bytes := repositoryXsdtTableBytes }
+    ]
+    let missingMadt : List CopiedAcpiSdt := [
+      { physicalAddress := 0x000f6000, bytes := repositoryXsdtTableBytes },
+      { physicalAddress := 0x000f7000, bytes := repositoryXsdtTableBytes }
+    ]
+    let duplicateMadt : List CopiedAcpiSdt := [
+      { physicalAddress := 0x000f6000, bytes := repositoryCompleteMadtBytes },
+      { physicalAddress := 0x000f7000, bytes := repositoryCompleteMadtBytes }
+    ]
+    if fixture == 14 then
+      authoritativeTopologyQuery repositoryAcpiRootTags repositoryXsdtCopy
+        repositoryCopiedAcpiTables 0 word
+    else if fixture == 15 then
+      authoritativeTopologyQuery conflictingTags repositoryXsdtCopy
+        repositoryCopiedAcpiTables 0 word
+    else if fixture == 16 then
+      authoritativeTopologyQuery repositoryAcpiRootTags wrongRootCopy
+        repositoryCopiedAcpiTables 0 word
+    else if fixture == 17 then
+      authoritativeTopologyQuery repositoryAcpiRootTags repositoryXsdtCopy
+        missingTranslation 0 word
+    else if fixture == 18 then
+      authoritativeTopologyQuery repositoryAcpiRootTags repositoryXsdtCopy
+        duplicateTranslation 0 word
+    else if fixture == 19 then
+      authoritativeTopologyQuery repositoryAcpiRootTags repositoryXsdtCopy
+        missingMadt 0 word
+    else
+      authoritativeTopologyQuery repositoryAcpiRootTags repositoryXsdtCopy
+        duplicateMadt 0 word
 
 end LeanOS.BootTopology

@@ -44,6 +44,13 @@ static lean_object *run_host(int argc, char **argv) {
       {1, 2, 9, 0, 0},   /* complete-table declared-length mismatch */
       {1, 2, 11, 0, 0},  /* complete-table checksum mismatch */
       {1, 2, 6, 0, 0},   /* truncated fixed MADT header */
+      {1, 1, 0, 1, 0},   /* authoritative root-to-admission success */
+      {1, 2, 23, 0, 0},  /* conflicting old/new roots */
+      {1, 2, 24, 0, 0},  /* selected root address mismatch */
+      {1, 2, 26, 0, 0},  /* missing advertised-table translation */
+      {1, 2, 27, 0, 0},  /* duplicate advertised-table translation */
+      {1, 2, 28, 0, 0},  /* no translated MADT */
+      {1, 2, 29, 0, 0},  /* multiple translated MADTs */
   };
   static const char *const fields[] = {"abi", "status", "detail", "enabled",
                                         "online-capable"};
