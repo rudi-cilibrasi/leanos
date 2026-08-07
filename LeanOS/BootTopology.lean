@@ -37,6 +37,49 @@ structure Snapshot where
   processors : List Processor
   deriving DecidableEq, Repr
 
+/-- Bounded input already copied from the selected MADT handoff.  The raw
+record length and kind remain explicit so normalization cannot silently erase
+truncation or admission-relevant unsupported entries. -/
+inductive RawMadtRecord where
+  | localApic (length : Nat) (apicId : UInt32) (enabled onlineCapable : Bool)
+  | unsupported (kind : UInt8) (length : Nat)
+  deriving DecidableEq, Repr
+
+inductive DecodeError where
+  | truncatedRecord
+  | unsupportedRecordKind
+  | processorOverflow
+  deriving DecidableEq, Repr
+
+def localApicRecordLength : Nat := 8
+
+def decodeProcessor : RawMadtRecord → Except DecodeError Processor
+  | .localApic length apicId enabled onlineCapable =>
+      if length < localApicRecordLength then
+        .error .truncatedRecord
+      else
+        .ok { apicId, enabled, onlineCapable }
+  | .unsupported _ _ => .error .unsupportedRecordKind
+
+/-- The normalizer is the only constructor in this module that attaches the
+ACPI-MADT source/version provenance to decoded processor records.  BSP and
+executing IDs remain trusted machine inputs until the integration slice lands. -/
+def normalizeMadtRecords (records : List RawMadtRecord)
+    (bspId executingId : UInt32) : Except DecodeError Snapshot := do
+  if records.length > maxProcessors then
+    throw .processorOverflow
+  let processors ← records.mapM decodeProcessor
+  pure {
+    source := .acpiMadt
+    version := snapshotVersion
+    bspId
+    executingId
+    processors
+  }
+
+def repositoryMadtRecords : List RawMadtRecord :=
+  [.localApic localApicRecordLength 0 true false]
+
 inductive Error where
   | unsupportedSource
   | unsupportedVersion
@@ -81,6 +124,28 @@ def admit (snapshot : Snapshot) : Result :=
           .rejected .bspMismatch
     | _ => .rejected .multipleEnabledProcessors
 
+/-- Admission through the decoder-produced snapshot.  Callers cannot relabel
+arbitrary processor records with ACPI provenance along this path. -/
+def decodeAndAdmitMadt (records : List RawMadtRecord)
+    (bspId executingId : UInt32) : Except DecodeError Result := do
+  let snapshot ← normalizeMadtRecords records bspId executingId
+  pure (admit snapshot)
+
+theorem repository_madt_records_admitted :
+    decodeAndAdmitMadt repositoryMadtRecords 0 0 =
+      .ok (.accepted { apicId := 0, enabled := true, onlineCapable := false }) := by
+  rfl
+
+theorem truncated_madt_record_rejected_before_admission :
+    decodeAndAdmitMadt [.localApic 7 0 true false] 0 0 =
+      .error .truncatedRecord := by
+  rfl
+
+theorem unsupported_madt_record_rejected_before_admission :
+    decodeAndAdmitMadt [.unsupported 9 16] 0 0 =
+      .error .unsupportedRecordKind := by
+  rfl
+
 theorem admit_deterministic (snapshot : Snapshot) (first second : Result)
     (hfirst : admit snapshot = first) (hsecond : admit snapshot = second) :
     first = second := by
@@ -121,6 +186,10 @@ def repositorySingleCore : Snapshot :=
     bspId := 0
     executingId := 0
     processors := [{ apicId := 0, enabled := true, onlineCapable := false }] }
+
+theorem repository_madt_records_normalize :
+    normalizeMadtRecords repositoryMadtRecords 0 0 = .ok repositorySingleCore := by
+  rfl
 
 theorem repository_single_core_nonvacuous :
     admit repositorySingleCore =
