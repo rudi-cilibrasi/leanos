@@ -47,6 +47,7 @@ inductive RawMadtRecord where
 
 inductive DecodeError where
   | truncatedRecord
+  | invalidRecordLength
   | unsupportedRecordKind
   | processorOverflow
   deriving DecidableEq, Repr
@@ -57,6 +58,8 @@ def decodeProcessor : RawMadtRecord → Except DecodeError Processor
   | .localApic length apicId enabled onlineCapable =>
       if length < localApicRecordLength then
         .error .truncatedRecord
+      else if length != localApicRecordLength then
+        .error .invalidRecordLength
       else
         .ok { apicId, enabled, onlineCapable }
   | .unsupported _ _ => .error .unsupportedRecordKind
@@ -141,9 +144,55 @@ theorem truncated_madt_record_rejected_before_admission :
       .error .truncatedRecord := by
   rfl
 
+theorem oversized_madt_record_rejected_before_admission :
+    decodeAndAdmitMadt [.localApic 9 0 true false] 0 0 =
+      .error .invalidRecordLength := by
+  rfl
+
 theorem unsupported_madt_record_rejected_before_admission :
     decodeAndAdmitMadt [.unsupported 9 16] 0 0 =
       .error .unsupportedRecordKind := by
+  rfl
+
+def overflowMadtRecords : List RawMadtRecord :=
+  List.replicate (maxProcessors + 1)
+    (.localApic localApicRecordLength 0 true false)
+
+theorem processor_overflow_rejected_before_admission :
+    decodeAndAdmitMadt overflowMadtRecords 0 0 = .error .processorOverflow := by
+  set_option maxRecDepth 4096 in
+    rfl
+
+theorem duplicate_decoded_apic_ids_rejected :
+    decodeAndAdmitMadt [
+      .localApic localApicRecordLength 0 true false,
+      .localApic localApicRecordLength 0 false false
+    ] 0 0 = .ok (.rejected .duplicateApicId) := by
+  rfl
+
+theorem reordered_enabled_processors_rejected :
+    decodeAndAdmitMadt [
+      .localApic localApicRecordLength 1 true false,
+      .localApic localApicRecordLength 0 true false
+    ] 0 0 = .ok (.rejected .multipleEnabledProcessors) := by
+  rfl
+
+theorem disabled_online_capable_decoded_processor_rejected :
+    decodeAndAdmitMadt [
+      .localApic localApicRecordLength 0 true false,
+      .localApic localApicRecordLength 1 false true
+    ] 0 0 = .ok (.rejected .onlineCapableProcessor) := by
+  rfl
+
+theorem maximum_apic_id_admitted :
+    decodeAndAdmitMadt [
+      .localApic localApicRecordLength 4294967295 true false
+    ] 4294967295 4294967295 =
+      .ok (.accepted {
+        apicId := 4294967295
+        enabled := true
+        onlineCapable := false
+      }) := by
   rfl
 
 theorem admit_deterministic (snapshot : Snapshot) (first second : Result)
