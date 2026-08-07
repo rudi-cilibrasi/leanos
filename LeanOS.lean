@@ -19,6 +19,7 @@ import LeanOS.BootMemoryMapFullProjectionABI
 import LeanOS.BootMemoryMapScalarRichEquivalence
 import LeanOS.BootAllocation
 import LeanOS.BootInterruptPhase
+import LeanOS.BootTopology
 import LeanOS.BootPageTablePlan
 import LeanOS.BlockingIPC
 import LeanOS.BlockingIPCContext

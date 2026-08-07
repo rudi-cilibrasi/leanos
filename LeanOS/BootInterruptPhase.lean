@@ -85,6 +85,7 @@ inductive EarlyReason where
   | unownedInheritedWindow
   | wrongPublication (requested : TableId)
   | missingRuntimePrerequisite
+  | topologyAdmissionRejected
   deriving DecidableEq, Repr
 
 /-- The bounded diagnostic recorded by an early terminal latch. -/
@@ -151,6 +152,18 @@ private def latch (state : State α) (record : EarlyHaltRecord) : StepResult α 
 
 private def publicationRecord (phase : Phase) (reason : EarlyReason) : EarlyHaltRecord :=
   ⟨phase, 0, false, false, reason⟩
+
+/-- Route a topology-admission failure through the real boot-phase latch. -/
+def rejectTopology (state : State α) : StepResult α :=
+  match state.latched with
+  | some record => { state, outcome := .alreadyTerminal record }
+  | none =>
+      let record := publicationRecord state.phase .topologyAdmissionRejected
+      { state := { state with
+          phase := .terminal
+          latched := some record
+          returnAuthorityArmed := false }
+        outcome := .terminalLatched record }
 
 /-- Publish one table.  Only the exact next chain step is accepted; the runtime
 manifest additionally requires its TSS/IST/manifest prerequisites.  Every wrong
@@ -496,6 +509,7 @@ def EarlyReason.code : EarlyReason → UInt64
   | .wrongPublication .bootstrap64 => 4
   | .wrongPublication .runtime => 5
   | .missingRuntimePrerequisite => 6
+  | .topologyAdmissionRejected => 7
 
 private def phaseOfCode : UInt64 → Option Phase
   | 0 => some .inherited

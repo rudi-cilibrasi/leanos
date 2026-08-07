@@ -1,4 +1,5 @@
 import LeanOS.BootMemoryMap
+import LeanOS.BootTopology
 
 /-!
 # Bounded Multiboot2 byte decoder
@@ -69,6 +70,96 @@ def readU64 (bytes : List UInt8) (offset : Nat) : Except Error Nat :=
 
 def low32Nat (word : Nat) : Nat := word % (2 ^ 32)
 def high32Nat (word : Nat) : Nat := word / (2 ^ 32)
+
+namespace AcpiRootDecoder
+
+open LeanOS.BootTopology
+
+inductive Error where
+  | handoffRejected (reason : BootMemoryMapDecoder.Error)
+  | truncatedTag
+  | malformedTagSize
+  | tagOutOfBounds
+  | missingEndTag
+  | misplacedEndTag
+  | tooManyTags
+  | invalidSignature
+  | unsupportedRevision
+  | invalidRsdpLength
+  | invalidLegacyChecksum
+  | invalidExtendedChecksum
+  deriving BEq, DecidableEq, Repr
+
+private def rsdpSignature : List UInt8 :=
+  [0x52, 0x53, 0x44, 0x20, 0x50, 0x54, 0x52, 0x20]
+
+private def checksum (bytes : List UInt8) (offset length : Nat) : Nat :=
+  ((bytes.drop offset).take length).foldl
+    (fun total byte => (total + byte.toNat) % 256) 0
+
+private def decodeRootTag (bytes : List UInt8) (offset tagType tagSize : Nat) :
+    Except Error RawAcpiRootTag := do
+  let payloadOffset := offset + 8
+  let payloadSize := tagSize - 8
+  if (bytes.drop payloadOffset).take 8 != rsdpSignature then
+    throw .invalidSignature
+  if payloadSize < 20 then throw .invalidRsdpLength
+  if checksum bytes payloadOffset 20 != 0 then throw .invalidLegacyChecksum
+  let revision ← match bytes[payloadOffset + 15]? with
+    | some byte => pure byte.toNat
+    | none => throw .truncatedTag
+  let rsdtAddress ← match readU32 bytes (payloadOffset + 16) with
+    | .ok value => pure value
+    | .error _ => throw .truncatedTag
+  let legacy : AcpiLegacyRoot :=
+    { oemId := (bytes.drop (payloadOffset + 9)).take 6
+      rsdtAddress := UInt32.ofNat rsdtAddress }
+  if tagType == 14 then
+    if tagSize != 28 || payloadSize != 20 then throw .invalidRsdpLength
+    if revision != 0 then throw .unsupportedRevision
+    pure (.old legacy)
+  else
+    if tagSize < 44 || payloadSize < 36 then throw .invalidRsdpLength
+    if revision < 2 then throw .unsupportedRevision
+    let declaredLength ← match readU32 bytes (payloadOffset + 20) with
+      | .ok value => pure value
+      | .error _ => throw .truncatedTag
+    if declaredLength != 36 || payloadSize != declaredLength then
+      throw .invalidRsdpLength
+    if checksum bytes payloadOffset declaredLength != 0 then
+      throw .invalidExtendedChecksum
+    let xsdtAddress ← match readU64 bytes (payloadOffset + 24) with
+      | .ok value => pure value
+      | .error _ => throw .truncatedTag
+    pure (.new legacy (UInt64.ofNat xsdtAddress))
+
+private def scan (bytes : List UInt8) (total offset fuel : Nat)
+    (rootsRev : List RawAcpiRootTag) : Except Error (List RawAcpiRootTag) := do
+  if offset == total then throw .missingEndTag
+  match fuel with
+  | 0 => throw .tooManyTags
+  | fuel + 1 =>
+      if offset + 8 > total then throw .truncatedTag
+      let tagWord ← match readU64 bytes offset with
+        | .ok value => pure value
+        | .error _ => throw .truncatedTag
+      let tagType := low32Nat tagWord
+      let tagSize := high32Nat tagWord
+      if tagSize < 8 then throw .malformedTagSize
+      if offset + tagSize > total then throw .tagOutOfBounds
+      let advance := aligned8 tagSize
+      if offset + advance > total then throw .tagOutOfBounds
+      if tagType == 0 then
+        if tagSize != 8 then throw .malformedTagSize
+        if offset + advance != total then throw .misplacedEndTag
+        pure rootsRev.reverse
+      else if tagType == 14 || tagType == 15 then
+        let root ← decodeRootTag bytes offset tagType tagSize
+        scan bytes total (offset + advance) fuel (root :: rootsRev)
+      else
+        scan bytes total (offset + advance) fuel rootsRev
+
+end AcpiRootDecoder
 
 private theorem readLEAux_drop (bytes : List UInt8)
     (offset remaining factor acc : Nat) :
@@ -967,6 +1058,25 @@ def decode (input : Input) : Except Error Decoded := do
               infoAddressValid.atLeastPage⟩
           else throw .internalBounds
 
+namespace AcpiRootDecoder
+
+open LeanOS.BootTopology
+
+/-- Reuse the admitted immutable Multiboot2 copy, then perform one bounded
+tag walk that projects only signature-, revision-, length-, and checksum-
+validated ACPI tag 14/15 roots. -/
+def decode (input : BootMemoryMapDecoder.Input) :
+    Except Error (List RawAcpiRootTag) := do
+  match BootMemoryMapDecoder.decode input with
+  | .error reason => throw (.handoffRejected reason)
+  | .ok _ =>
+      let total ← match readU32 input.bytes 0 with
+        | .ok value => pure value
+        | .error _ => throw .truncatedTag
+      scan input.bytes total 8 maxTags []
+
+end AcpiRootDecoder
+
 theorem decode_functional (input : Input) (first second : Except Error Decoded)
     (hfirst : decode input = first) (hsecond : decode input = second) : first = second := by
   rw [hfirst] at hsecond
@@ -1278,6 +1388,8 @@ theorem rejected_pipeline_has_no_normalized (input : Input) (reason : PipelineEr
 
 namespace Fixtures
 
+open LeanOS.BootTopology
+
 def byte (value : Nat) : UInt8 := UInt8.ofNat value
 
 def encodeLE (width value : Nat) : List UInt8 :=
@@ -1312,6 +1424,77 @@ def sampleBytes : List UInt8 :=
 
 def sampleInput : Input :=
   { magic := multiboot2Magic, infoAddress := 0x1000, bytes := sampleBytes }
+
+private def checksumByte (bytes : List UInt8) : UInt8 :=
+  byte ((256 - bytes.foldl (fun total value => (total + value.toNat) % 256) 0) % 256)
+
+private def replaceByte (bytes : List UInt8) (index : Nat) (value : UInt8) :
+    List UInt8 :=
+  bytes.take index ++ [value] ++ bytes.drop (index + 1)
+
+def oldRsdp (revision := 0) : List UInt8 :=
+  let unchecked :=
+    [byte 0x52, byte 0x53, byte 0x44, byte 0x20, byte 0x50, byte 0x54,
+      byte 0x52, byte 0x20, byte 0, byte 0x51, byte 0x45, byte 0x4d,
+      byte 0x55, byte 0x20, byte 0x20, byte revision] ++ u32 0x000f5b70
+  replaceByte unchecked 8 (checksumByte unchecked)
+
+def newRsdp (declaredLength := 36) : List UInt8 :=
+  let unchecked := oldRsdp 2 ++ u32 declaredLength ++
+    u64 0x00000000000f5c00 ++ [byte 0, byte 0, byte 0, byte 0]
+  replaceByte unchecked 32 (checksumByte unchecked)
+
+def conflictingNewRsdp : List UInt8 :=
+  let changedOem := replaceByte newRsdp 9 (byte 0x42)
+  let legacyCleared := replaceByte changedOem 8 0
+  let legacyRepaired := replaceByte legacyCleared 8
+    (checksumByte (legacyCleared.take 20))
+  let extendedCleared := replaceByte legacyRepaired 32 0
+  replaceByte extendedCleared 32 (checksumByte extendedCleared)
+
+def acpiInput (rootTags : List UInt8) : Input :=
+  { sampleInput with
+    bytes := information (rootTags ++ memoryMapTag sampleEntries ++ endTag) }
+
+def acpiErrorOf {α : Type} :
+    Except AcpiRootDecoder.Error α → Option AcpiRootDecoder.Error
+  | .error reason => some reason
+  | .ok _ => none
+
+example : (AcpiRootDecoder.decode (acpiInput (tag 14 oldRsdp))).toOption.map
+    (·.length) = some 1 := by native_decide
+
+example : (AcpiRootDecoder.decode (acpiInput (tag 15 newRsdp))).toOption.map
+    (·.length) = some 1 := by native_decide
+
+example : (AcpiRootDecoder.decode
+    (acpiInput (tag 14 oldRsdp ++ tag 15 newRsdp))).toOption.map
+      (fun roots => match selectAcpiRoot roots with
+        | .ok root => root == {
+            source := .newRsdp
+            legacy := repositoryLegacyRoot
+            xsdtAddress := some 0x00000000000f5c00
+          }
+        | .error _ => false) = some true := by native_decide
+
+example : (AcpiRootDecoder.decode
+    (acpiInput (tag 14 oldRsdp ++ tag 15 conflictingNewRsdp))).toOption.map
+      (fun roots => match selectAcpiRoot roots with
+        | .error reason => reason == .conflictingRoots
+        | .ok _ => false) =
+    some true := by native_decide
+
+example : acpiErrorOf (AcpiRootDecoder.decode
+    (acpiInput (tag 14 (replaceByte oldRsdp 0 (byte 0))))) =
+    some .invalidSignature := by native_decide
+
+example : acpiErrorOf (AcpiRootDecoder.decode
+    (acpiInput (tag 14 (replaceByte oldRsdp 9 (byte 0))))) =
+    some .invalidLegacyChecksum := by native_decide
+
+example : acpiErrorOf (AcpiRootDecoder.decode
+    (acpiInput (tag 15 (newRsdp 40)))) =
+    some .invalidRsdpLength := by native_decide
 
 def sampleHandoff : Handoff :=
   { magic := multiboot2Magic, infoAddress := 0x1000, totalSize := sampleBytes.length,
