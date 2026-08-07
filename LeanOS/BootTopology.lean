@@ -15,12 +15,18 @@ namespace LeanOS.BootTopology
 def snapshotVersion : UInt64 := 1
 def maxProcessors : Nat := 256
 
+inductive Source where
+  | acpiMadt
+  | cpuidTopology
+  deriving DecidableEq, Repr
+
 structure Processor where
   apicId : UInt32
   enabled : Bool
   deriving DecidableEq, Repr
 
 structure Snapshot where
+  source : Source
   version : UInt64
   bspId : UInt32
   executingId : UInt32
@@ -28,6 +34,7 @@ structure Snapshot where
   deriving DecidableEq, Repr
 
 inductive Error where
+  | unsupportedSource
   | unsupportedVersion
   | tooManyProcessors
   | duplicateApicId
@@ -47,7 +54,9 @@ def uniqueApicIds : List Processor → Bool
       !rest.any (fun other => other.apicId == processor.apicId) && uniqueApicIds rest
 
 def admit (snapshot : Snapshot) : Result :=
-  if snapshot.version != snapshotVersion then
+  if snapshot.source != .acpiMadt then
+    .rejected .unsupportedSource
+  else if snapshot.version != snapshotVersion then
     .rejected .unsupportedVersion
   else if snapshot.processors.length > maxProcessors then
     .rejected .tooManyProcessors
@@ -78,14 +87,28 @@ theorem accepted_implies_single_enabled_bsp (snapshot : Snapshot) (processor : P
       processor.apicId = snapshot.bspId ∧
       snapshot.executingId = snapshot.bspId := by
   unfold admit at haccepted
-  split at haccepted <;> simp_all [Bool.and_eq_true]
-  split at haccepted <;> simp_all
-  split at haccepted <;> simp_all
-  split at haccepted <;> simp_all
-  split at haccepted <;> simp_all
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  split at haccepted <;> try contradiction
+  generalize henabled : snapshot.processors.filter (fun candidate => candidate.enabled) =
+      enabled at haccepted ⊢
+  cases enabled with
+  | nil => simp at haccepted
+  | cons head tail =>
+      cases tail with
+      | nil =>
+          by_cases hids : head.apicId = snapshot.bspId ∧
+              snapshot.executingId = snapshot.bspId
+          · simp [hids] at haccepted
+            subst processor
+            exact ⟨rfl, hids⟩
+          · simp [hids] at haccepted
+      | cons next rest => simp at haccepted
 
 def repositorySingleCore : Snapshot :=
-  { version := snapshotVersion
+  { source := .acpiMadt
+    version := snapshotVersion
     bspId := 0
     executingId := 0
     processors := [{ apicId := 0, enabled := true }] }
@@ -95,7 +118,8 @@ theorem repository_single_core_nonvacuous :
   decide
 
 def twoEnabledProcessors : Snapshot :=
-  { version := snapshotVersion
+  { source := .acpiMadt
+    version := snapshotVersion
     bspId := 0
     executingId := 0
     processors := [
@@ -108,7 +132,8 @@ theorem two_enabled_processors_rejected :
   decide
 
 def duplicateBsp : Snapshot :=
-  { version := snapshotVersion
+  { source := .acpiMadt
+    version := snapshotVersion
     bspId := 0
     executingId := 0
     processors := [
@@ -120,6 +145,13 @@ theorem duplicate_bsp_rejected :
     admit duplicateBsp = .rejected .duplicateApicId := by
   decide
 
+def unsupportedSnapshotSource : Snapshot :=
+  { repositorySingleCore with source := .cpuidTopology }
+
+theorem unsupported_snapshot_source_rejected :
+    admit unsupportedSnapshotSource = .rejected .unsupportedSource := by
+  decide
+
 def unsupportedSnapshotVersion : Snapshot :=
   { repositorySingleCore with version := 0 }
 
@@ -128,7 +160,8 @@ theorem unsupported_snapshot_version_rejected :
   decide
 
 def zeroEnabledProcessors : Snapshot :=
-  { version := snapshotVersion
+  { source := .acpiMadt
+    version := snapshotVersion
     bspId := 0
     executingId := 0
     processors := [{ apicId := 0, enabled := false }] }
