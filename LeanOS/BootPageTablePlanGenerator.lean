@@ -1,4 +1,5 @@
 import LeanOS.BootPageTablePlan
+import LeanOS.VTdBootPlan
 
 /-!
 # Linked boot page-table plan generator
@@ -53,8 +54,12 @@ structure Layout where
   userBTextEnd : Nat
   userBStackStart : Nat
   userBStackEnd : Nat
+  vtdWindowStart : Nat
+  vtdWindowEnd : Nat
+  vtdTableStart : Nat
+  vtdTableEnd : Nat
 
-def expectedArgumentCount : Nat := 35
+def expectedArgumentCount : Nat := 39
 
 def parseNat (value : String) : Except String Nat :=
   match value.toNat? with
@@ -81,7 +86,9 @@ def parseLayout (args : List String) : Except String Layout := do
     userATextStart := valueAt 27, userATextEnd := valueAt 28,
     userAStackStart := valueAt 29, userAStackEnd := valueAt 30,
     userBTextStart := valueAt 31, userBTextEnd := valueAt 32,
-    userBStackStart := valueAt 33, userBStackEnd := valueAt 34 }
+    userBStackStart := valueAt 33, userBStackEnd := valueAt 34,
+    vtdWindowStart := valueAt 35, vtdWindowEnd := valueAt 36,
+    vtdTableStart := valueAt 37, vtdTableEnd := valueAt 38 }
 
 def firstPage (address : Nat) : Nat := address / pageBytes
 def endPage (address : Nat) : Nat := (address + pageBytes - 1) / pageBytes
@@ -107,6 +114,10 @@ def pageClass (layout : Layout) (space : Space) (page : Nat) : Option PageClass 
       pageIn page layout.userBTextStart layout.userBStackEnd then none
   else if pageIn page layout.kernelTextStart layout.kernelTextEnd then
     some ⟨.kernelText, .supervisor⟩
+  else if pageIn page layout.vtdWindowStart layout.vtdWindowEnd then
+    some ⟨.mmioWindow, .supervisor⟩
+  else if pageIn page layout.vtdTableStart layout.vtdTableEnd then
+    some ⟨.remappingTables, .supervisor⟩
   else if pageIn page layout.rootA layout.tableEnd then
     some ⟨.pageTables, .supervisor⟩
   else if pageIn page layout.dfStackStart layout.dfStackEnd ||
@@ -116,11 +127,19 @@ def pageClass (layout : Layout) (space : Space) (page : Nat) : Option PageClass 
     some ⟨.kernelStack, .supervisor⟩
   else some ⟨.kernelData, .supervisor⟩
 
+/-- Every reviewed class is identity-mapped except the `.mmioWindow` page,
+whose frame comes from the pinned VT-d unit base rather than the linker. -/
+def physicalStartAt (layout : Layout) (classification : PageClass)
+    (page : Nat) : Nat :=
+  if classification.policy == .mmioWindow then
+    VTdBootPlan.mmioBase + (page * pageBytes - layout.vtdWindowStart)
+  else page * pageBytes
+
 def regionAt (layout : Layout) (space : Space) (page : Nat) : Option Region :=
   (pageClass layout space page).map fun classification =>
     { space, virtualStart := page * pageBytes, byteLength := pageBytes,
-      physicalStart := page * pageBytes, policy := classification.policy,
-      owner := classification.owner }
+      physicalStart := physicalStartAt layout classification page,
+      policy := classification.policy, owner := classification.owner }
 
 def regionsFor (layout : Layout) (space : Space) : List Region :=
   (List.range supportedPathPages).filterMap (regionAt layout space)
@@ -168,7 +187,9 @@ def encodeLeaf (leaf : Leaf) : Nat :=
 def expectedEntry (layout : Layout) (space : Space) (page : Nat) : Nat :=
   match pageClass layout space page with
   | none => 0
-  | some classification => encodeLeaf (policyLeaf classification.policy page)
+  | some classification =>
+    encodeLeaf (policyLeaf classification.policy
+      (physicalStartAt layout classification page / pageBytes))
 
 def emitArray (name : String) (entries : List Nat) : String :=
   let body := String.intercalate ",\n" (entries.map fun entry => s!"  {entry}ULL")

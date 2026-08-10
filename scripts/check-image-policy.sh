@@ -50,6 +50,14 @@ for symbol in isr2 isr2_clac isr2_cld __nmi_ist_guard_start \
     exit 1
   }
 done
+for symbol in __vtd_mmio_window_start __vtd_mmio_window_end \
+  vtd_root_table vtd_context_table vtd_remapping_table_end \
+  vtd_mmio_read32 vtd_mmio_read64; do
+  grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+    echo "error: VT-d policy symbol missing: $symbol" >&2
+    exit 1
+  }
+done
 for section in .df_ist_guard .df_ist_stack .nmi_ist_guard .nmi_ist_stack; do
   [[ "$(flags "$section")" == *A* && "$(flags "$section")" == *W* && \
      "$(flags "$section")" != *X* ]] || {
@@ -102,6 +110,9 @@ grep -Fq 'movl $0, page_table_a(%eax)' boot/boot.S
 grep -Fq 'movl $0, page_table_b(%eax)' boot/boot.S
 [[ "$(grep -Fc 'mov $__entry_stack_guard_start, %eax' boot/boot.S)" -eq 1 ]]
 [[ "$(grep -Fc 'mov $__nmi_ist_guard_start, %eax' boot/boot.S)" -eq 1 ]]
+[[ "$(grep -Fc 'mov $__vtd_mmio_window_start, %eax' boot/boot.S)" -eq 1 ]]
+[[ "$(grep -Fc 'movl $0xFED90003, page_table_a(%eax)' boot/boot.S)" -eq 1 ]]
+[[ "$(grep -Fc 'movl $0xFED90003, page_table_b(%eax)' boot/boot.S)" -eq 1 ]]
 stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr8>:/,/<isr6>:/p')"
 [[ -n "$stub_disassembly" ]] || {
   echo "error: could not isolate vector-8 disassembly" >&2

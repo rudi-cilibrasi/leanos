@@ -23,6 +23,14 @@ LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publis
 LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS\
 LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS' "$log"
 }
+add_vtd_boot_evidence() {
+  sed -i '/^LEANOS\/8 PAGING fixture=omitted-mapping /a\
+LEANOS/8 PAGING fixture=mmio-wrong-frame root=B level=pt page=342 expected=9223372041130409987 actual=9223372036856176643 result=REJECTED\
+LEANOS/8 PAGING fixture=mmio-flip-user root=B level=pt page=342 expected=9223372041130409987 actual=9223372041130409991 result=REJECTED' "$log"
+  sed -i '/^LEANOS\/19 TLB mutable-leaf=checked /a\
+LEANOS/21 VTD unit=0 mmio=4275634176 version=16 cap=59110346977575430 ecap=3842 gsts=0 fsts=0 rtaddr=0 stage=pre-activation result=PASS\
+LEANOS/21 VTD-PLAN root-frame=400 context-frame=401 root-words=512 context-words=512 present-root-entries=1 present-context-entries=0 translation=disabled deny-all=1 result=PASS' "$log"
+}
 fault_symbol_value() {
   local symbol="$1" elf="${LEANOS_FAULT_CONTAINMENT_ELF:-build/boot/leanos-fault-containment.elf}"
   local address
@@ -30,7 +38,7 @@ fault_symbol_value() {
   printf '%u' "$((16#$address))"
 }
 case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
-  dma-missing|dma-forged|dma-prestate-forged|dma-topology-forged|dma-control-forged|dma-readback-forged|dma-generated-result-forged|dma-function-missing|dma-function-duplicate|dma-function-identity-forged|dma-function-class-forged|dma-function-status-forged|dma-function-absent-command-forged|dma-function-command-forged|dma-function-prestate-forged|dma-function-bridge-forged|dma-function-multifunction-forged|dma-function-readback-forged)
+  dma-missing|dma-forged|dma-prestate-forged|dma-topology-forged|dma-control-forged|dma-readback-forged|dma-generated-result-forged|dma-function-missing|dma-function-duplicate|dma-function-identity-forged|dma-function-class-forged|dma-function-status-forged|dma-function-absent-command-forged|dma-function-command-forged|dma-function-prestate-forged|dma-function-bridge-forged|dma-function-multifunction-forged|dma-function-readback-forged|vtd-missing|vtd-register-forged|vtd-frames-forged)
   mode="${LEANOS_QEMU_FIXTURE_MODE}"
   set +e
   LEANOS_QEMU_FIXTURE_MODE=success "$0" "$@"
@@ -69,6 +77,12 @@ case "${LEANOS_QEMU_FIXTURE_MODE:-success}" in
     sed -i '/DMA-FUNCTION .*bdf=0:31.3 /s/multifunction=1/multifunction=0/' "$log"
   elif [[ "$mode" == dma-function-readback-forged ]]; then
     sed -i '/DMA-FUNCTION .*bdf=0:31.2 /s/command-after=0/command-after=4/' "$log"
+  elif [[ "$mode" == vtd-missing ]]; then
+    sed -i '/^LEANOS\/21 /d' "$log"
+  elif [[ "$mode" == vtd-register-forged ]]; then
+    sed -i 's/ecap=3842/ecap=3843/' "$log"
+  elif [[ "$mode" == vtd-frames-forged ]]; then
+    sed -i 's/context-frame=401/context-frame=402/' "$log"
   else
     sed -i 's/readback=exact/readback=changed/' "$log"
   fi
@@ -290,6 +304,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success &&
   sed -i 's/projection=exact-rich/projection=scalar-checked/' "$log"
   add_nmi_guard_fixture
   add_runtime_invalidation_evidence
+  add_vtd_boot_evidence
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
   sed -i '/^LEANOS\/15 DMA snapshot=/i\
@@ -318,6 +333,7 @@ if [[ "${LEANOS_QEMU_FIXTURE_MODE:-success}" == success ]]; then
   sed -i 's/projection=exact-rich/projection=scalar-checked/' "$log"
   add_nmi_guard_fixture
   add_runtime_invalidation_evidence
+  add_vtd_boot_evidence
   sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
   sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
   sed -i '/^LEANOS\/15 DMA snapshot=/i\

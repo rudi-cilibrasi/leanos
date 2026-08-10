@@ -29,6 +29,12 @@ LEANOS/19 TLB path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,
 LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS\
 LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS\
 LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS' "$log"
+sed -i '/^LEANOS\/8 PAGING fixture=omitted-mapping /a\
+LEANOS/8 PAGING fixture=mmio-wrong-frame root=B level=pt page=342 expected=9223372041130409987 actual=9223372036856176643 result=REJECTED\
+LEANOS/8 PAGING fixture=mmio-flip-user root=B level=pt page=342 expected=9223372041130409987 actual=9223372041130409991 result=REJECTED' "$log"
+sed -i '/^LEANOS\/19 TLB mutable-leaf=checked /a\
+LEANOS/21 VTD unit=0 mmio=4275634176 version=16 cap=59110346977575430 ecap=3842 gsts=0 fsts=0 rtaddr=0 stage=pre-activation result=PASS\
+LEANOS/21 VTD-PLAN root-frame=400 context-frame=401 root-words=512 context-words=512 present-root-entries=1 present-context-entries=0 translation=disabled deny-all=1 result=PASS' "$log"
 sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
 sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
 sed -i '/^LEANOS\/15 DMA snapshot=/i\

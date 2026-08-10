@@ -268,6 +268,17 @@ boot_bootstrap32_ud_probe:
     movl $0, page_table_a+4(%eax)
     movl $0, page_table_b(%eax)
     movl $0, page_table_b+4(%eax)
+
+    /* The VT-d MMIO window page maps the pinned remapping unit at 0xFED90000
+       instead of identity RAM: present, writable, supervisor, no-execute in
+       both address spaces.  This is the only reviewed non-identity leaf. */
+    mov $__vtd_mmio_window_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    movl $0xFED90003, page_table_a(%eax)
+    movl $0x80000000, page_table_a+4(%eax)
+    movl $0xFED90003, page_table_b(%eax)
+    movl $0x80000000, page_table_b+4(%eax)
     /* Derive the denial policy instead of inheriting firmware/GRUB state.
        PAE remains enabled for long mode; OSFXSR, OSXMMEXCPT, OSXSAVE, and PKE
        are cleared so no legacy SIMD, XSAVE, or unsaved PKRU state is exposed. */
@@ -440,6 +451,19 @@ page_directory_b:
 page_table_b:
     .skip 4096 * PAGE_TABLE_COUNT
 page_table_b_end:
+/* VT-d remapping tables: kernel-owned, deliberately outside the CPU
+   page-table block so the generated VT-d plan can prove the frames are
+   distinct, while the image reservation still excludes them from
+   allocation. */
+.align 4096
+.global vtd_root_table
+vtd_root_table:
+    .skip 4096
+.global vtd_context_table
+vtd_context_table:
+    .skip 4096
+.global vtd_remapping_table_end
+vtd_remapping_table_end:
 .align 16
 .global boot_stack
 boot_stack:

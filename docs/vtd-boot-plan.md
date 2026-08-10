@@ -28,7 +28,32 @@ serial evidence are unchanged apart from the topology version, and translation
 stays disabled at reset (global status reads zero) until a later slice enables
 it in the documented order. Its architectural register values are
 pinned as constants: the version register (`0x10`), the capability register,
-and the extended-capability register. Passthrough support (ECAP bit 6),
+and the extended-capability register.
+
+## Mapped window and quiescent-unit validation
+
+The generated CPU page plan now carries the unit's MMIO window as the one
+reviewed non-identity leaf: a dedicated linker-owned virtual page
+(`__vtd_mmio_window_start`) maps physical `0xFED90000` as present, writable,
+supervisor-only, and no-execute in both address spaces, and the sacrificed
+backing RAM frame stays inside the image reservation. The remapping-table
+frames (`vtd_root_table`, `vtd_context_table`) are identity-mapped
+`remappingTables` leaves proved reserved and disjoint from the CPU page-table
+block. The live walker validates the window leaf exactly like every other
+leaf, and two live-mutation fixtures (`mmio-wrong-frame`, `mmio-flip-user`)
+prove an aliased or user-visible window is rejected.
+
+Before CPL3 the guest reads the unit through two reviewed `noinline`/`noipa`
+volatile accessors and requires the exact pinned version, capability, and
+extended-capability words, zero global status (translation disabled), zero
+fault status, and a zero root-table pointer, then checks the generated tables
+are the deny-all shape (one present root entry naming the context-table frame,
+no present context entries) and that the generated frames equal the linked
+symbols. The evidence is the two `LEANOS/21` serial lines, validated
+structurally by every boot runner. The page is mapped write-back under the
+pinned TCG emulator, which models no cache; the supported leaf encoding has no
+cache-disable bit, and qualifying real hardware (where the window must be
+uncacheable) remains out of scope. Passthrough support (ECAP bit 6),
 caching mode (CAP bit 7), and device-IOTLB support are visibly absent from the
 pinned words, so an option drift that turned any of them on is observable in
 decoded hardware state rather than only on a command line.

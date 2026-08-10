@@ -386,7 +386,8 @@ paging_specs=(
   'flip-nx B pt' 'wrong-frame B pt' 'ancestor-pointer B pml4'
   'ancestor-flags B pdpt' 'swapped-user-leaves B pt'
   'extra-mapping B pt' 'nmi-guard-mapping B pt' 'entry-guard-mapping B pt'
-  'omitted-mapping B pt' 'mutable-wrong-frame B pt'
+  'omitted-mapping B pt' 'mmio-wrong-frame B pt' 'mmio-flip-user B pt'
+  'mutable-wrong-frame B pt'
   'mutable-publish-before-invalidation B pt' 'mutable-unknown-state B pt'
   'wrong-cr3 A cr3'
 )
@@ -401,8 +402,18 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
     exit 1
   fi
 done
+vtd_trace="$(awk '/^LEANOS\/21 /' "$log")"
+mapfile -t vtd_lines <<<"$vtd_trace"
+if [[ ${#vtd_lines[@]} -ne 2 ]] ||
+   [[ "${vtd_lines[0]}" != 'LEANOS/21 VTD unit=0 mmio=4275634176 version=16 cap=59110346977575430 ecap=3842 gsts=0 fsts=0 rtaddr=0 stage=pre-activation result=PASS' ]] ||
+   [[ ! "${vtd_lines[1]}" =~ ^LEANOS/21\ VTD-PLAN\ root-frame=([1-9][0-9]*)\ context-frame=([1-9][0-9]*)\ root-words=512\ context-words=512\ present-root-entries=1\ present-context-entries=0\ translation=disabled\ deny-all=1\ result=PASS$ ]] ||
+   [[ "${BASH_REMATCH[2]}" -ne $((BASH_REMATCH[1] + 1)) ]]; then
+  echo "failure_class=vtd-evidence: exact quiescent VT-d unit evidence not observed" >&2
+  exit 1
+fi
 sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' \
-  -e '/^LEANOS\/15 DMA-FUNCTION /d' "$log" > "$without_allocation"
+  -e '/^LEANOS\/15 DMA-FUNCTION /d' -e '/^LEANOS\/21 /d' \
+  "$log" > "$without_allocation"
 if (( fault_scenario )); then
   mkdir -p "$(dirname "$fault_snapshot_artifact")"
   grep '^LEANOS/14 PF-SNAPSHOT ' "$log" > "$fault_snapshot_artifact" || {

@@ -188,6 +188,8 @@ extern uint64_t page_map_level_4_a[], page_directory_pointer_a[];
 extern uint64_t page_directory_a[], page_table_a[];
 extern uint64_t page_map_level_4_b[], page_directory_pointer_b[];
 extern uint64_t page_directory_b[], page_table_b[];
+extern char __vtd_mmio_window_start[], __vtd_mmio_window_end[];
+extern uint64_t vtd_root_table[], vtd_context_table[];
 
 #define MULTIBOOT2_RUNTIME_MAGIC 0x36d76289u
 #define BOOT_ACCESSIBLE_LIMIT (16u * 1024u * 1024u)
@@ -852,6 +854,12 @@ static void check_live_page_table_mutations(void) {
         "pt", entry_guard);
     expect_live_mutation_rejected("omitted-mapping", &page_table_b[user_text],
         0, "pt", user_text);
+    uint64_t vtd_window = boot_page(__vtd_mmio_window_start);
+    expect_live_mutation_rejected("mmio-wrong-frame", &page_table_b[vtd_window],
+        vtd_window * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
+        "pt", vtd_window);
+    expect_live_mutation_rejected("mmio-flip-user", &page_table_b[vtd_window],
+        page_table_b[vtd_window] ^ PTE_USER, "pt", vtd_window);
     expect_runtime_relation_rejected("mutable-wrong-frame",
         RUNTIME_MAPPING_STATE_BEFORE,
         runtime_mapping_leaf(runtime_mapping_frame_after),
@@ -2157,6 +2165,59 @@ static __attribute__((noinline, noipa)) void verify_q35_pci_dma(void) {
             fail("dma-live-required-missing");
     }
     if (present != 5) fail("dma-live-inventory");
+}
+
+/* Reviewed VT-d MMIO readers: the only code deriving pointers from the
+   remapping unit's window. The register layout and QEMU's VT-d implementation
+   remain trusted integration boundaries, not refinement claims. */
+static __attribute__((noinline, noipa)) uint32_t vtd_mmio_read32(uint64_t offset) {
+    return *(volatile uint32_t *)(__vtd_mmio_window_start + offset);
+}
+
+static __attribute__((noinline, noipa)) uint64_t vtd_mmio_read64(uint64_t offset) {
+    return *(volatile uint64_t *)(__vtd_mmio_window_start + offset);
+}
+
+/* Validate the quiescent pinned remapping unit and the generated deny-all
+   plan before CPL3.  Translation stays disabled in this slice; a later slice
+   constructs the live tables and enables it in the documented order. */
+static void check_vtd_unit(void) {
+    uint64_t version = vtd_mmio_read32(0x00);
+    uint64_t capability = vtd_mmio_read64(0x08);
+    uint64_t extended_capability = vtd_mmio_read64(0x10);
+    uint64_t global_status = vtd_mmio_read32(0x1c);
+    uint64_t root_address = vtd_mmio_read64(0x20);
+    uint64_t fault_status = vtd_mmio_read32(0x34);
+    if (version != LEANOS_VTD_EXPECTED_VERSION) fail("vtd-version");
+    if (capability != LEANOS_VTD_EXPECTED_CAP) fail("vtd-capability");
+    if (extended_capability != LEANOS_VTD_EXPECTED_ECAP)
+        fail("vtd-extended-capability");
+    if (global_status != 0) fail("vtd-global-status");
+    if (root_address != 0) fail("vtd-root-address");
+    if (fault_status != 0) fail("vtd-fault-status");
+    if ((uint64_t)vtd_root_table != LEANOS_VTD_ROOT_TABLE_FRAME * PAGE_BYTES ||
+        (uint64_t)vtd_context_table !=
+            LEANOS_VTD_CONTEXT_TABLE_FRAME * PAGE_BYTES)
+        fail("vtd-plan-frames");
+    if (leanos_vtd_root_table[0] !=
+        LEANOS_VTD_CONTEXT_TABLE_FRAME * PAGE_BYTES + 1) fail("vtd-plan-root");
+    for (uint64_t word = 1; word < 512; ++word)
+        if (leanos_vtd_root_table[word] != 0) fail("vtd-plan-root");
+    for (uint64_t word = 0; word < 512; ++word)
+        if (leanos_vtd_context_table[word] != 0) fail("vtd-plan-context");
+    serial_puts("LEANOS/21 VTD unit=0 mmio=");
+    serial_u64(LEANOS_VTD_MMIO_BASE);
+    serial_puts(" version="); serial_u64(version);
+    serial_puts(" cap="); serial_u64(capability);
+    serial_puts(" ecap="); serial_u64(extended_capability);
+    serial_puts(" gsts=0 fsts=0 rtaddr=0 stage=pre-activation result=PASS\n");
+    serial_puts("LEANOS/21 VTD-PLAN root-frame=");
+    serial_u64(LEANOS_VTD_ROOT_TABLE_FRAME);
+    serial_puts(" context-frame=");
+    serial_u64(LEANOS_VTD_CONTEXT_TABLE_FRAME);
+    serial_puts(" root-words=512 context-words=512 present-root-entries=1"
+        " present-context-entries=0 translation=disabled deny-all=1"
+        " result=PASS\n");
 }
 
 #if LEANOS_RETURN_CORRUPTION_MODE == 25
@@ -3752,6 +3813,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
 
     check_boot_page_tables();
     check_runtime_mapping_invalidation();
+
+    check_vtd_unit();
 
     boot_allocate(multiboot_magic, multiboot_info);
 

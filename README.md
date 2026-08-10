@@ -278,9 +278,14 @@ canonical two-word entry codec (round-trip, image, and injectivity), that every
 accepted plan is the deny-all projection of an accepted `IOMMU.State` mapping no
 frame, that the remapping-table frames are reserved and disjoint from the CPU
 page tables, and a fixed fail-closed activation order. A host-only generator
-emits the checked tables. The tables are still deny-all; VT-d MMIO programming,
-the boot-side constructor, the assigned-device path, and any hardware
-refinement claim remain out of scope.
+emits the checked tables. The boot image now maps the unit's MMIO window as
+the one reviewed non-identity page-plan leaf (supervisor-only, no-execute,
+with live-mutation fixtures), and before CPL3 validates the quiescent unit —
+exact pinned registers, translation disabled, no faults, null root pointer —
+and the generated deny-all table shape against the linked symbols. The tables
+are still deny-all and never installed in the unit; the activation sequence,
+the assigned-device path, and any hardware refinement claim remain out of
+scope.
 
 The bounded [direct-port-I/O authority model](docs/direct-port-io.md) separates
 untrusted port/value words from kernel-selected purpose, models the selected
