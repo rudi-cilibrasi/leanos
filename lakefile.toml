@@ -19,3 +19,8 @@ moreLeanArgs = ["-DwarningAsError=true"]
 name = "leanos-boot-plan"
 root = "LeanOS.BootPageTablePlanGenerator"
 moreLeanArgs = ["-DwarningAsError=true"]
+
+[[lean_exe]]
+name = "leanos-vtd-plan"
+root = "LeanOS.VTdBootPlanGenerator"
+moreLeanArgs = ["-DwarningAsError=true"]

@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 
 
-TOPOLOGY = "000800020002"
+TOPOLOGY = "0001000800020002"
 BUS_MASTER = 1 << 2
 COMMAND_MASK = 0x7FF
 FUNCTION_RE = re.compile(

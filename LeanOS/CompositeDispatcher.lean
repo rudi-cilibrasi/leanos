@@ -2601,7 +2601,7 @@ example : dispatch 0x0101 0x0a01 0 0 1 0 = 0x0a0101 := by native_decide
 example : dispatch 0x0101 0x0b01 0 0 0 0 = 0x0b0101 := by native_decide
 example : dispatch 0x0101 0x0c01 0 0 0 0 = 0x0c0101 := by native_decide
 example : validateQ35DMASnapshot
-    1 0x000800020002
+    1 0x0001000800020002
     0x0006000029c08086 0x0001
     0x0003000011111234 0x0001
     0 0
@@ -2609,7 +2609,7 @@ example : validateQ35DMASnapshot
     0x0001060129228086 0x8001
     0x000c050029308086 0x8001 = 0 := by native_decide
 example : validateQ35DMASnapshot
-    1 0x000800020002
+    1 0x0001000800020002
     0x0006000029c08086 0x0001
     0x0003000011111234 0x0011
     0 0

@@ -9,7 +9,7 @@ the explicit `DeviceContract` assumption at the hardware boundary.
 namespace LeanOS.DMAQuarantine
 
 def snapshotVersion : UInt64 := 1
-def q35TopologyVersion : UInt64 := 0x0008_0002_0002
+def q35TopologyVersion : UInt64 := 0x0001_0008_0002_0002
 def maxFunctions : Nat := 16
 def functionWords : Nat := 13
 def snapshotWords : Nat := 2 + maxFunctions * functionWords
