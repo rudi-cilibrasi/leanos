@@ -271,7 +271,9 @@ or final-binary/hardware confinement claim is included.
 
 The finite [deterministic VT-d boot plan](docs/vtd-boot-plan.md) projects that
 static device-domain model into the bounded root/context remapping tables a
-future boot slice will install for the pinned `intel-iommu` unit. Lean proves a
+future boot slice will install for the pinned `intel-iommu` unit, which the
+shared q35 builder now constructs on every mandatory emulator run with every
+remapping-relevant option pinned and drift-rejected. Lean proves a
 canonical two-word entry codec (round-trip, image, and injectivity), that every
 accepted plan is the deny-all projection of an accepted `IOMMU.State` mapping no
 frame, that the remapping-table frames are reserved and disjoint from the CPU

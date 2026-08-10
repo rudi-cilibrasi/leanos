@@ -74,6 +74,9 @@ class QTest:
                 "-no-reboot",
                 "-no-shutdown",
                 "-nic", "none",
+                "-device", "intel-iommu,intremap=off,pt=off,caching-mode=off,"
+                           "device-iotlb=off,aw-bits=39,dma-translation=on,"
+                           "snoop-control=off",
                 "-device", "edu,bus=pcie.0,addr=0x2",
                 "-qtest", "stdio",
             ],

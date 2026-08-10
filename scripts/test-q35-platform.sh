@@ -41,6 +41,41 @@ if leanos_validate_q35_command negative 2>/dev/null; then
   exit 1
 fi
 
+iommu_pinned=intel-iommu,intremap=off,pt=off,caching-mode=off,device-iotlb=off,aw-bits=39,dma-translation=on,snoop-control=off
+
+negative=("${command[@]}")
+for index in "${!negative[@]}"; do
+  if [[ "${negative[$index]}" == "$iommu_pinned" ]]; then
+    negative[$index]="${iommu_pinned/pt=off/pt=on}"
+    break
+  fi
+done
+if leanos_validate_q35_command negative 2>/dev/null; then
+  echo "error: q35 platform accepted drifted intel-iommu options" >&2
+  exit 1
+fi
+
+negative=()
+for argument in "${command[@]}"; do
+  [[ "$argument" == "$iommu_pinned" ]] && { unset 'negative[-1]'; continue; }
+  negative+=("$argument")
+done
+if leanos_validate_q35_command negative 2>/dev/null; then
+  echo "error: q35 platform accepted an omitted intel-iommu unit" >&2
+  exit 1
+fi
+
+negative=()
+for argument in "${command[@]}"; do
+  [[ "$argument" == "$iommu_pinned" ]] && { unset 'negative[-1]'; continue; }
+  negative+=("$argument")
+done
+negative+=(-device "$iommu_pinned")
+if leanos_validate_q35_command negative 2>/dev/null; then
+  echo "error: q35 platform accepted the intel-iommu unit after a translated device" >&2
+  exit 1
+fi
+
 negative=("${command[@]}")
 for index in "${!negative[@]}"; do
   if [[ "${negative[$index]}" == VGA,bus=pcie.0,addr=0x1 ]]; then

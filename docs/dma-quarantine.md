@@ -1,8 +1,12 @@
 # PCI DMA quarantine model
 
 `LeanOS.DMAQuarantine` is the Phase 2 deny-all PCI DMA policy. It validates one
-finite snapshot against the repository's selected QEMU 8.2.2 q35 topology
-version (`0x0008_0002_0002`). The manifest names the host bridge, VGA function,
+finite snapshot against the repository's selected q35 topology version
+(`0x0001_0008_0002_0002`): the low three 16-bit fields encode the pinned QEMU
+version 8.2.2, and the upper 16 bits count reviewed construction revisions.
+Revision 1 added the pinned `intel-iommu` unit to the shared builder; the unit
+is not a PCI function, so the manifest below is unchanged by it (see
+[vtd-boot-plan.md](vtd-boot-plan.md)). The manifest names the host bridge, VGA function,
 ICH9 ISA bridge, SATA controller, SMBus controller, and the optional network
 slot suppressed by `-nic none`. Bus/device/function identity is explicit, so
 bridges, multifunction functions, duplicates, and identity drift cannot be

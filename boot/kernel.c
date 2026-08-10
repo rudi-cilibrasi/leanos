@@ -1916,7 +1916,7 @@ struct pci_manifest_entry {
 };
 
 /* This is the C rendering of DMAQuarantine.q35Manifest for topology version
-   0x0008_0002_0002. Configuration mechanism #1 and the behavior of these
+   0x0001_0008_0002_0002. Configuration mechanism #1 and the behavior of these
    devices remain trusted hardware/QEMU inputs; acceptance is integration
    evidence and is not a refinement theorem for the Lean snapshot. */
 static const struct pci_manifest_entry q35_pci_manifest[] = {
@@ -2068,7 +2068,7 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
        projection itself through the generated q35Snapshot boundary. */
     q35_live_pci_snapshot.generated_result =
         leanos_validate_q35_dma_snapshot(
-            1, UINT64_C(0x000800020002),
+            1, UINT64_C(0x0001000800020002),
             pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[0]),
             pci_snapshot_control_word(&q35_live_pci_snapshot.functions[0]),
             pci_snapshot_identity_word(&q35_live_pci_snapshot.functions[1]),
@@ -2087,7 +2087,7 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     for (unsigned i = 0;
          i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
         const struct pci_manifest_entry *entry = &q35_pci_manifest[i];
-        serial_puts("LEANOS/15 DMA-FUNCTION manifest=1 topology=000800020002 bdf=0:");
+        serial_puts("LEANOS/15 DMA-FUNCTION manifest=1 topology=0001000800020002 bdf=0:");
         serial_u64(entry->device);
         serial_putc('.');
         serial_u64(entry->function);
@@ -2109,7 +2109,7 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
         serial_u64(entry->multifunction);
         serial_puts(" policy=accepted\n");
     }
-    serial_puts("LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=");
+    serial_puts("LEANOS/15 DMA snapshot=1 topology=0001000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=");
     serial_u64(initially_bus_mastering);
     serial_puts(" initial-bus-master-mask=");
     serial_u64(initial_bus_master_mask);

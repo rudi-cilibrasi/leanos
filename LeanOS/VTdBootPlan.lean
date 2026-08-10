@@ -570,9 +570,9 @@ example : canonicalJournalWord = 0x87654321 := by native_decide
 
 /-- Typed rejection tags for the generated scalar boundary.  Zero denotes
 acceptance; each nonzero tag names the first failed check.  `topology` is
-checked against the current pinned platform revision; once the boot builder
-gains the `intel-iommu` unit this revision is bumped in lockstep with the DMA
-snapshot topology. -/
+checked against the current pinned platform revision, which is shared with the
+DMA snapshot topology; construction revision 1 pinned the `intel-iommu` unit
+in the shared q35 builder. -/
 def validateActivation (version topology unitVersion capability extendedCapability
     globalStatus faultStatus rootTableAddress expectedRootTableAddress
     journal : UInt64) : UInt64 :=

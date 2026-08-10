@@ -17,7 +17,16 @@ remain later issues.
 
 The reviewed QEMU 8.2.2 `intel-iommu` configuration is
 `intremap=off,pt=off,caching-mode=off,device-iotlb=off,aw-bits=39,
-dma-translation=on,snoop-control=off`. Its architectural register values are
+dma-translation=on,snoop-control=off`. The shared q35 builder
+(`scripts/q35-platform.sh`) now constructs exactly this unit as the first
+device of every mandatory emulator run — QEMU requires the remapping unit to
+exist before any translated PCI function — and its validator rejects an
+omitted, duplicated, drifted, or reordered unit. This construction revision is
+topology version `0x0001_0008_0002_0002`. The unit is inert for the existing
+guest: it is not a PCI function, so the bus 0 inventory, DMA quarantine, and
+serial evidence are unchanged apart from the topology version, and translation
+stays disabled at reset (global status reads zero) until a later slice enables
+it in the documented order. Its architectural register values are
 pinned as constants: the version register (`0x10`), the capability register,
 and the extended-capability register. Passthrough support (ECAP bit 6),
 caching mode (CAP bit 7), and device-IOTLB support are visibly absent from the

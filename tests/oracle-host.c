@@ -111,7 +111,7 @@ int main(void) {
         return 1;
     }
     if (leanos_validate_q35_dma_snapshot(
-            1, UINT64_C(0x000800020002),
+            1, UINT64_C(0x0001000800020002),
             UINT64_C(0x0006000029c08086), UINT64_C(0x0001),
             UINT64_C(0x0003000011111234), UINT64_C(0x0001),
             0, 0,
@@ -122,7 +122,7 @@ int main(void) {
         return 1;
     }
     if (leanos_validate_q35_dma_snapshot(
-            1, UINT64_C(0x000800020002),
+            1, UINT64_C(0x0001000800020002),
             UINT64_C(0x0006000029c08086), UINT64_C(0x0001),
             UINT64_C(0x0003000011111234), UINT64_C(0x0011),
             0, 0,
