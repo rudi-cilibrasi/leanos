@@ -1,0 +1,55 @@
+{
+  "description": "Pinned inputs for the LeanOS qemu-wasm browser compatibility harness (issue #193). Closes ADR 0011 media gate 1: the unchanged canonical ISO boots in an unforked, pinned qemu-wasm runtime through the existing q35 device contract. The prebuilt WebAssembly artifact is trusted, not reproduced; issue #194 covers a reproducible source build.",
+  "qemu_wasm_demo": {
+    "repository": "https://github.com/ktock/qemu-wasm-demo.git",
+    "revision": "0208c86ea45253c26c0ea6907f6db2dec89eb7b2",
+    "images_submodule": "b7c549b5e6f4c376f76483a03e983214421434ad",
+    "qemu_version": "8.2.0",
+    "emscripten_sdk": "3.1.50",
+    "source_repository": "https://github.com/ktock/qemu-wasm.git",
+    "source_revision": "0ef7b4e2814b231705d8371dd7997f5b72e70baf"
+  },
+  "runtime_files": {
+    "coi-serviceworker.js": {
+      "path": "docs/coi-serviceworker.js",
+      "sha256": "0ddfdc89547da3e9aaba7f39494f8c5358340d457d32c268fb9d7c793a3ca808",
+      "license": "MIT (github.com/gzuidhof/coi-serviceworker)"
+    },
+    "out.js": {
+      "path": "docs/images/alpine-x86_64/out.js",
+      "sha256": "dab94140dc2ea847181ba47ae4cbd759728e551d8fd9ba9de409711ed25eddcc",
+      "license": "GPL-2.0 (Emscripten-generated QEMU loader)"
+    },
+    "qemu-system-x86_64.wasm": {
+      "path": "docs/images/alpine-x86_64/qemu-system-x86_64.wasm",
+      "sha256": "f53107a35029d676aa551cd00d042f4f65af39a89bf72464494321fafdf54191",
+      "license": "GPL-2.0 (QEMU) with separately licensed bundled firmware"
+    },
+    "qemu-system-x86_64.worker.js": {
+      "path": "docs/images/alpine-x86_64/qemu-system-x86_64.worker.js",
+      "sha256": "8efab02a9cb5ee63ced22e9853bce74cbb895d15a5fb3d5139fef855c50f62ea",
+      "license": "GPL-2.0 (Emscripten pthread worker)"
+    },
+    "load-rom.js": {
+      "path": "docs/images/alpine-x86_64/load-rom.js",
+      "sha256": "617e4dc685cb2cedada4844f097eb18a56cf0f8bbd4c4e2e9231b4f07d0d8a88",
+      "license": "GPL-2.0 (Emscripten firmware preload registrar)"
+    },
+    "load-rom.data": {
+      "path": "docs/images/alpine-x86_64/load-rom.data",
+      "sha256": "15de099e1363ceb13a31b9d11836337bab974f9460836449330b20c0534d06c9",
+      "license": "SeaBIOS (LGPL-3.0) and bundled option ROMs; see QEMU firmware licenses"
+    }
+  },
+  "terminal_files": {
+    "xterm-pty.js": {
+      "url": "https://unpkg.com/xterm-pty@0.12.0/index.js",
+      "sha256": "2e7cbffea02dad1f72637c564534d104a13f9eec306deb9cc34fffe1faa58947",
+      "license": "MIT (github.com/mame/xterm-pty)"
+    }
+  },
+  "browser": {
+    "channel": "chrome@stable",
+    "note": "Chrome for Testing installed via @puppeteer/browsers; the exact build is recorded in the run evidence, not pinned here, because ADR 0011 media gate 1 is a compatibility gate rather than a reproducibility gate (issue #194)."
+  }
+}

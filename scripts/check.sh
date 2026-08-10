@@ -34,6 +34,8 @@ lake build leanos-vtd-plan
 
 ./scripts/test-run-image.sh
 
+./scripts/test-browser-boot.sh
+
 ./scripts/test-run-extended-state-image.sh
 
 ./scripts/test-run-fast-entry-image.sh

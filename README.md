@@ -195,6 +195,13 @@ headlessly with `./scripts/run-image.sh`; the stable protocol, pinned reference
 tools, debug artifacts, and added trusted boundary are documented in
 [the boot-image guide](docs/boot-image.md).
 
+The same unchanged image also boots in a browser: the
+[in-browser boot compatibility harness](docs/browser-boot.md) runs the canonical
+ISO in a pinned, unforked qemu-wasm WebAssembly runtime and requires the
+identical versioned serial protocol and debug-exit status through the native
+`scripts/run-image.sh` acceptance path. It is compatibility evidence at a
+trusted boundary, not a proof of the browser or emulator.
+
 The first Phase 2 executable boundary boots one deliberately tiny ring-3
 subject through an `int 0x80` gate, binds its calls to kernel-selected context,
 and contains one expected user page fault. Its assumptions and evidence are
