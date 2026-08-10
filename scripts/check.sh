@@ -6,6 +6,7 @@ cd "$repo_root"
 
 lake build
 lake build leanos-boot-plan
+lake build leanos-vtd-plan
 
 ./scripts/check-security-claims.sh
 
@@ -138,6 +139,43 @@ fi
 
 if ! grep -q "invalid .* notation.*constructor.*private" "$negative_log"; then
   echo "error: boot page-table plan mutation lacked the private-constructor diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/VTdBootPlanForgedContext.lean \
+    >"$negative_log" 2>&1; then
+  echo "error: VT-d boot plan context forgery unexpectedly type-checked" >&2
+  exit 1
+fi
+if ! grep -q "invalid .* notation.*constructor.*private" "$negative_log"; then
+  echo "error: VT-d boot plan context forgery lacked the private-constructor diagnostic" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/VTdAssignedStateAccepted.lean >"$negative_log" 2>&1; then
+  echo "error: VT-d assigned-state plan unexpectedly compiled" >&2
+  exit 1
+fi
+if ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+    "$negative_log" ||
+    ! grep -Fq 'IOMMU.assignedState' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: VT-d assigned-state fixture lacked the expected semantic rejection" >&2
+  cat "$negative_log" >&2
+  exit 1
+fi
+
+if lake env lean tests/negative/VTdForgedContextValidated.lean >"$negative_log" 2>&1; then
+  echo "error: VT-d forged live context unexpectedly validated" >&2
+  exit 1
+fi
+if ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+    "$negative_log" ||
+    ! grep -Fq 'validateDecodedUnit' "$negative_log" ||
+    ! grep -Fq 'is false' "$negative_log"; then
+  echo "error: VT-d forged-context fixture lacked the expected semantic rejection" >&2
   cat "$negative_log" >&2
   exit 1
 fi

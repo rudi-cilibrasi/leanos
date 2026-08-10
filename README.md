@@ -269,6 +269,17 @@ owner-isolation facts. The deny-all q35 snapshot remains unchanged. No VT-d
 programming, IOTLB mechanics, assigned-device QEMU path, generated boundary,
 or final-binary/hardware confinement claim is included.
 
+The finite [deterministic VT-d boot plan](docs/vtd-boot-plan.md) projects that
+static device-domain model into the bounded root/context remapping tables a
+future boot slice will install for the pinned `intel-iommu` unit. Lean proves a
+canonical two-word entry codec (round-trip, image, and injectivity), that every
+accepted plan is the deny-all projection of an accepted `IOMMU.State` mapping no
+frame, that the remapping-table frames are reserved and disjoint from the CPU
+page tables, and a fixed fail-closed activation order. A host-only generator
+emits the checked tables. The tables are still deny-all; VT-d MMIO programming,
+the boot-side constructor, the assigned-device path, and any hardware
+refinement claim remain out of scope.
+
 The bounded [direct-port-I/O authority model](docs/direct-port-io.md) separates
 untrusted port/value words from kernel-selected purpose, models the selected
 IOPL-zero and deny-all TSS I/O-map controls, and proves that user-origin

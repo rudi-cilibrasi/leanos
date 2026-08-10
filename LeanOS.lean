@@ -54,4 +54,5 @@ import LeanOS.Scheduler
 import LeanOS.VirtualMapping
 import LeanOS.X86PageTable
 import LeanOS.TLB
+import LeanOS.VTdBootPlan
 import LeanOS.SecurityClaims

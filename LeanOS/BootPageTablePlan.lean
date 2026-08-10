@@ -74,7 +74,7 @@ inductive Error where
   | nonCanonical | frameOutOfRange | wrongOwner | incompatibleOverlap
   | duplicateLeaf | duplicateTableFrame | unreservedTableFrame | invalidTableFrame
   | missingRequiredRegion | unsafePhysicalAlias | missingValidatedReservation
-  | tableManifestMismatch
+  | tableManifestMismatch | mmioAliasesRam | unreservedRemappingFrame
   deriving BEq, DecidableEq, Repr
 
 def aligned (address : Nat) : Bool := address % pageBytes == 0
@@ -85,7 +85,8 @@ def supportedPathPages : Nat := 512 * bootPtCount
 def ownerMatches (region : Region) : Bool :=
   match region.policy, region.owner, region.space with
   | .kernelText, .supervisor, _ | .kernelData, .supervisor, _
-  | .kernelStack, .supervisor, _ | .pageTables, .supervisor, _ => true
+  | .kernelStack, .supervisor, _ | .pageTables, .supervisor, _
+  | .mmioWindow, .supervisor, _ | .remappingTables, .supervisor, _ => true
   | .userText, .subjectA, .subjectA | .userStack, .subjectA, .subjectA => true
   | .userText, .subjectB, .subjectB | .userStack, .subjectB, .subjectB => true
   | _, _, _ => false
@@ -228,6 +229,26 @@ def tableManifestMatches (input : Input) (leaves : List CompiledLeaf) : Bool :=
     declared.all (fun entry => entry.page == entry.leaf.frame && frames.contains entry.leaf.frame) &&
       frames.all fun frame => declared.any fun entry => entry.leaf.frame == frame
 
+/-- Device windows and RAM never alias: every `.mmioWindow` leaf targets a
+frame at or beyond the identity-mapped boot window, and every other class stays
+inside it.  Identity classes already satisfy the bound by construction; this
+makes the confinement explicit for the one reviewed non-identity class. -/
+def mmioFramesOutsideRam (leaves : List CompiledLeaf) : Bool :=
+  leaves.all fun entry =>
+    if entry.policy == .mmioWindow then decide (entry.leaf.frame ≥ supportedPathPages)
+    else decide (entry.leaf.frame < supportedPathPages)
+
+/-- DMA-remapping (VT-d root/context) table frames are identity-mapped and
+covered by the validated boot reservation overlay, so the same authority that
+excludes CPU page tables from allocation also excludes the remapping tables. -/
+def remappingFramesReserved (input : Input) (leaves : List CompiledLeaf) : Bool :=
+  match input.reservationResult with
+  | none => leaves.all fun entry => entry.policy != .remappingTables
+  | some reserved => leaves.all fun entry =>
+      entry.policy != .remappingTables ||
+        (entry.page == entry.leaf.frame &&
+          BootReservation.reservedBy reserved.intervals entry.leaf.frame)
+
 /-- Every emitted leaf is in the supported 4 KiB lower-half subset. -/
 def structurallySafe (leaves : List CompiledLeaf) : Bool :=
   leaves.all fun entry => canonicalPage entry.page &&
@@ -242,7 +263,8 @@ def refinesPolicy (leaves : List CompiledLeaf) : Bool :=
 def supervisorConfinement (leaves : List CompiledLeaf) : Bool :=
   leaves.all fun entry =>
     match entry.policy with
-    | .kernelText | .kernelData | .kernelStack | .pageTables => !entry.leaf.user
+    | .kernelText | .kernelData | .kernelStack | .pageTables
+    | .mmioWindow | .remappingTables => !entry.leaf.user
     | .userText | .userStack => true
 
 /-- The permission profiles called out by the boot policy are checked
@@ -251,7 +273,7 @@ def policyAttributesSafe (leaves : List CompiledLeaf) : Bool :=
   leaves.all fun entry =>
     match entry.policy with
     | .kernelText => !entry.leaf.user && !entry.leaf.writable && !entry.leaf.noExecute
-    | .kernelData | .kernelStack | .pageTables =>
+    | .kernelData | .kernelStack | .pageTables | .mmioWindow | .remappingTables =>
         !entry.leaf.user && entry.leaf.writable && entry.leaf.noExecute
     | .userText => entry.leaf.user && !entry.leaf.writable && !entry.leaf.noExecute
     | .userStack => entry.leaf.user && entry.leaf.writable && entry.leaf.noExecute
@@ -284,6 +306,9 @@ structure Plan where
   /-- Proof-carrying commitment to the exact ancestor layout accepted by
   `compile`. Updating `compiledAncestors` alone cannot produce another `Plan`. -/
   private compiledLayoutBound : layoutFrames roots compiledAncestors = liveTableFrames
+  private mmioConfined : mmioFramesOutsideRam leaves = true
+  private remappingReservedFlag : Bool
+  private remappingReservationChecked : remappingReservedFlag = true
 
 /-- Public, read-only projections used by return-policy consumers.  A `Plan`
 can only be constructed by `compile`, so these values retain its checks. -/
@@ -319,8 +344,10 @@ def compile (input : Input) : Except Error Plan := do
       if hduplicates : noDuplicateLeaves leaves then
         if hwx : wxSafe leaves then
           if !physicalAliasesSafe leaves then throw .unsafePhysicalAlias else
-          if hliveTables : userAvoidsLiveTableFrames input leaves then
-            if hownership : ownershipSafe leaves then
+          if hmmio : mmioFramesOutsideRam leaves then
+           if hremapping : remappingFramesReserved input leaves then
+            if hliveTables : userAvoidsLiveTableFrames input leaves then
+             if hownership : ownershipSafe leaves then
               if hseparated : userViewsSeparated leaves then
                 if hstructural : structurallySafe leaves then
                   if hrefines : refinesPolicy leaves then
@@ -342,14 +369,17 @@ def compile (input : Input) : Except Error Plan := do
                           tableFramesReserved input, htables,
                           tableFramesRepresentable input, hframes,
                           tableFramesDistinct input, hframesUnique,
-                          input.ancestors, input.reservationResult, rfl⟩
+                          input.ancestors, input.reservationResult, rfl,
+                          hmmio, remappingFramesReserved input leaves, hremapping⟩
                       else throw .incompatibleOverlap
                     else throw .wrongOwner
                   else throw .incompatibleOverlap
                 else throw .nonCanonical
               else throw .incompatibleOverlap
+             else throw .incompatibleOverlap
             else throw .incompatibleOverlap
-          else throw .unsafePhysicalAlias
+           else throw .unreservedRemappingFrame
+          else throw .mmioAliasesRam
         else throw .incompatibleOverlap
       else throw .duplicateLeaf
 
@@ -403,6 +433,12 @@ theorem accepted_table_frames_distinct input plan (_h : compile input = .ok plan
 theorem accepted_compiled_layout_bound input plan (_h : compile input = .ok plan) :
     layoutFrames plan.roots plan.compiledAncestors = plan.liveTableFrames :=
   plan.compiledLayoutBound
+
+theorem accepted_mmio_confined input plan (_h : compile input = .ok plan) :
+    mmioFramesOutsideRam plan.leaves = true := plan.mmioConfined
+
+theorem accepted_remapping_frames_reserved input plan (_h : compile input = .ok plan) :
+    plan.remappingReservedFlag = true := plan.remappingReservationChecked
 
 /-! ## Bounded live-table comparison boundary -/
 
@@ -707,6 +743,60 @@ example : rejectedAs
         [{ { sampleRegions[0]! with physicalStart := 2 ^ 64 - pageBytes } with
            byteLength := 2 * pageBytes }] }
     .addressOverflow = true := by native_decide
+
+/-- The reviewed device-window and remapping-table classes: a shared supervisor
+window onto an out-of-RAM device frame plus identity-mapped reserved VT-d table
+frames inside the validated image reservation. -/
+def deviceWindowRegions : List Region :=
+  [{ space := .subjectA, virtualStart := 40 * pageBytes, byteLength := pageBytes,
+     physicalStart := 0xFED90000, policy := .mmioWindow, owner := .supervisor },
+   { space := .subjectB, virtualStart := 40 * pageBytes, byteLength := pageBytes,
+     physicalStart := 0xFED90000, policy := .mmioWindow, owner := .supervisor },
+   { space := .subjectA, virtualStart := 8 * pageBytes, byteLength := 2 * pageBytes,
+     physicalStart := 8 * pageBytes, policy := .remappingTables, owner := .supervisor },
+   { space := .subjectB, virtualStart := 8 * pageBytes, byteLength := 2 * pageBytes,
+     physicalStart := 8 * pageBytes, policy := .remappingTables, owner := .supervisor }]
+
+def deviceWindowInput : Input :=
+  { sampleInput with regions := sampleRegions ++ deviceWindowRegions }
+
+example : (match compile deviceWindowInput with | .ok _ => true | .error _ => false) = true := by
+  native_decide
+/-- A device window pointed back into boot RAM is rejected. -/
+example : rejectedAs
+    { deviceWindowInput with regions := sampleRegions ++ deviceWindowRegions.map fun region =>
+        if region.policy == .mmioWindow then { region with physicalStart := 50 * pageBytes }
+        else region }
+    .mmioAliasesRam = true := by native_decide
+/-- A RAM policy class pointed at a device frame is rejected. -/
+example : rejectedAs
+    { sampleInput with regions := sampleRegions ++
+        [{ space := .subjectA, virtualStart := 41 * pageBytes, byteLength := pageBytes,
+           physicalStart := 0xFEE00000, policy := .kernelData, owner := .supervisor }] }
+    .mmioAliasesRam = true := by native_decide
+/-- Remapping-table frames outside every validated reservation are rejected. -/
+example : rejectedAs
+    { sampleInput with regions := sampleRegions ++
+        [{ space := .subjectA, virtualStart := 35 * pageBytes, byteLength := pageBytes,
+           physicalStart := 35 * pageBytes, policy := .remappingTables, owner := .supervisor }] }
+    .unreservedRemappingFrame = true := by native_decide
+/-- Remapping-table frames must be identity-mapped at their boot addresses. -/
+example : rejectedAs
+    { sampleInput with regions := sampleRegions ++
+        [{ space := .subjectA, virtualStart := 8 * pageBytes, byteLength := pageBytes,
+           physicalStart := 9 * pageBytes, policy := .remappingTables, owner := .supervisor }] }
+    .unreservedRemappingFrame = true := by native_decide
+/-- Neither reviewed device class can be user-owned. -/
+example : rejectedAs
+    { sampleInput with regions := sampleRegions ++
+        [{ space := .subjectA, virtualStart := 40 * pageBytes, byteLength := pageBytes,
+           physicalStart := 0xFED90000, policy := .mmioWindow, owner := .subjectA }] }
+    .wrongOwner = true := by native_decide
+example : rejectedAs
+    { sampleInput with regions := sampleRegions ++
+        [{ space := .subjectA, virtualStart := 8 * pageBytes, byteLength := pageBytes,
+           physicalStart := 8 * pageBytes, policy := .remappingTables, owner := .subjectA }] }
+    .wrongOwner = true := by native_decide
 
 def decodedAncestor (frame : Nat) : DecodedAncestor :=
   expectedDecodedAncestor frame
