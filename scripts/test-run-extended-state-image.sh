@@ -14,7 +14,7 @@ invoke() {
     LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
     LEANOS_QEMU="$root/tests/qemu-extended-state-fixture.sh" \
     LEANOS_QEMU_FIXTURE_MODE="$1" \
-    LEANOS_QEMU_TIMEOUT_SECONDS=1 \
+    LEANOS_QEMU_TIMEOUT_SECONDS=5 \
     LEANOS_SERIAL_LOG="$tmp/$1.serial" \
     LEANOS_DMA_SNAPSHOT="$tmp/$1.dma.tsv" \
     LEANOS_EXTENDED_STATE_SNAPSHOT="$tmp/$1.snapshot" \

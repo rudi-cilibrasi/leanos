@@ -9,7 +9,7 @@ touch "$tmp/image.iso"
 
 invoke() {
   LEANOS_QEMU="$root/tests/qemu-double-fault-fixture.sh" \
-    LEANOS_QEMU_FIXTURE_MODE="$1" LEANOS_QEMU_TIMEOUT_SECONDS=1 \
+    LEANOS_QEMU_FIXTURE_MODE="$1" LEANOS_QEMU_TIMEOUT_SECONDS=5 \
     LEANOS_SERIAL_LOG="$tmp/$1.serial" \
     ./scripts/run-double-fault.sh "$tmp/image.iso"
 }

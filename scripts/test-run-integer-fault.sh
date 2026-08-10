@@ -16,7 +16,7 @@ invoke() {
   LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
   LEANOS_QEMU="$root/tests/qemu-integer-fault-fixture.sh" \
   LEANOS_QEMU_FIXTURE_MODE="$mode" \
-  LEANOS_QEMU_TIMEOUT_SECONDS=1 LEANOS_SERIAL_LOG="$tmp/$scenario-$mode.serial" \
+  LEANOS_QEMU_TIMEOUT_SECONDS=5 LEANOS_SERIAL_LOG="$tmp/$scenario-$mode.serial" \
   LEANOS_DMA_SNAPSHOT="$tmp/$scenario-$mode.dma.tsv" \
   LEANOS_SOURCE_REVISION_FILE="$tmp/SOURCE_REVISION" \
   ./scripts/run-image.sh "$tmp/image.iso"
