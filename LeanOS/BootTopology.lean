@@ -1494,6 +1494,725 @@ def authoritativeTopologyQuery
         else if word == 4 then if processor.onlineCapable then 1 else 0
         else 0
 
+private def pairMachineTableCopies : List UInt64 → List ByteArray →
+    Option (List CopiedAcpiSdt)
+  | [], [] => some []
+  | address :: addresses, bytes :: tables => do
+      let rest ← pairMachineTableCopies addresses tables
+      pure ({ physicalAddress := address, bytes := bytes.data.toList } :: rest)
+  | _, _ => none
+
+/-- Allocation-free scalar seed for the production copied-table stream.
+
+The one-MiB aggregate cap matches the kernel arena. Each complete SDT consumes
+its eight-byte-aligned length, and overflow is rejected before the caller may
+advance its immutable copy cursor. Result words are version/status/error/next
+cursor; errors 43 and 44 denote aggregate exhaustion and invalid SDT length. -/
+def machineAcpiCopyBudgetQuery
+    (currentOffset tableLength word : UInt64) : UInt64 :=
+  if word == 0 then 1
+  else if tableLength < 36 || tableLength > UInt64.ofNat maxAcpiSdtBytes then
+    if word == 1 then 2 else if word == 2 then 44 else 0
+  else
+    let paddedLength := ((tableLength + 7) / 8) * 8
+    let capacity : UInt64 := 1024 * 1024
+    if paddedLength < tableLength || currentOffset % 8 != 0 ||
+        currentOffset > capacity ||
+        paddedLength > capacity - currentOffset then
+      if word == 1 then 2 else if word == 2 then 43 else 0
+    else if word == 1 then 1
+    else if word == 3 then currentOffset + paddedLength
+    else 0
+
+@[export leanos_boot_machine_acpi_copy_budget_query]
+def exportedMachineAcpiCopyBudgetQuery
+    (currentOffset tableLength word : UInt64) : UInt64 :=
+  machineAcpiCopyBudgetQuery currentOffset tableLength word
+
+theorem machine_acpi_copy_budget_exact_capacity_accepted :
+    machineAcpiCopyBudgetQuery (1024 * 1024 - 65536) 65536 3 =
+      1024 * 1024 := by
+  native_decide
+
+theorem machine_acpi_copy_budget_exhaustion_rejected :
+    machineAcpiCopyBudgetQuery (1024 * 1024 - 65528) 65536 2 = 43 := by
+  native_decide
+
+theorem machine_acpi_copy_budget_forged_cursor_rejected :
+    machineAcpiCopyBudgetQuery (1024 * 1024 + 1) 36 2 = 43 := by
+  native_decide
+
+theorem machine_acpi_copy_budget_misaligned_cursor_rejected :
+    machineAcpiCopyBudgetQuery 1 36 2 = 43 := by
+  native_decide
+
+theorem machine_acpi_copy_budget_invalid_length_rejected :
+    machineAcpiCopyBudgetQuery 0 65537 2 = 44 := by
+  native_decide
+
+/-- One allocation-free transition for the production ACPI copy stream.
+
+The caller must feed the returned next-byte and next-copy cursors into the
+next transition.  The generated transition binds every exposed chunk to its
+physical table address and declared length, rejects reordered/partial steps,
+and advances the aggregate copy arena only on the exact terminal chunk.
+Errors 45, 46, and 47 denote an invalid table address, byte cursor, and
+terminal marker respectively. -/
+def machineAcpiCopyStreamStepQuery
+    (currentCopyOffset currentTableAddress currentByteOffset tableAddress
+      tableLength byteOffset chunk terminal word : UInt64) : UInt64 :=
+  let budgetStatus := machineAcpiCopyBudgetQuery currentCopyOffset tableLength 1
+  let budgetError := machineAcpiCopyBudgetQuery currentCopyOffset tableLength 2
+  let badAddress := currentTableAddress == 0 ||
+    currentTableAddress > 0xffffffff || currentTableAddress % 8 != 0 ||
+    tableAddress != currentTableAddress
+  let badOffset := currentByteOffset % 8 != 0 ||
+    currentByteOffset >= tableLength || byteOffset != currentByteOffset
+  let shouldTerminate := byteOffset + 8 >= tableLength
+  let badTerminal := terminal > 1 || ((terminal == 1) != shouldTerminate)
+  let error :=
+    if budgetStatus != 1 then budgetError
+    else if badAddress then 45
+    else if badOffset then 46
+    else if badTerminal then 47
+    else 0
+  if word == 0 then 1
+  else if word == 1 then if error == 0 then 1 else 2
+  else if word == 2 then error
+  else if error != 0 then 0
+  else if word == 3 then tableAddress
+  else if word == 4 then
+    if shouldTerminate then tableLength else byteOffset + 8
+  else if word == 5 then
+    if shouldTerminate then
+      machineAcpiCopyBudgetQuery currentCopyOffset tableLength 3
+    else currentCopyOffset
+  else if word == 6 then chunk
+  else 0
+
+@[export leanos_boot_machine_acpi_copy_stream_step_query]
+def exportedMachineAcpiCopyStreamStepQuery
+    (currentCopyOffset currentTableAddress currentByteOffset tableAddress
+      tableLength byteOffset chunk terminal word : UInt64) : UInt64 :=
+  machineAcpiCopyStreamStepQuery currentCopyOffset currentTableAddress
+    currentByteOffset tableAddress tableLength byteOffset chunk terminal word
+
+theorem machine_acpi_copy_stream_partial_step_retains_copy_cursor :
+    machineAcpiCopyStreamStepQuery 0 0x000f6000 0 0x000f6000 44 0
+      0x1122334455667788 0 5 = 0 := by
+  native_decide
+
+theorem machine_acpi_copy_stream_terminal_step_advances_copy_cursor :
+    machineAcpiCopyStreamStepQuery 0 0x000f6000 40 0x000f6000 44 40
+      0xaabbccdd 1 5 = 48 := by
+  native_decide
+
+theorem machine_acpi_copy_stream_forged_terminal_rejected :
+    machineAcpiCopyStreamStepQuery 0 0x000f6000 0 0x000f6000 44 0 0 1 2 = 47 := by
+  native_decide
+
+theorem machine_acpi_copy_stream_truncated_final_chunk_rejected :
+    machineAcpiCopyStreamStepQuery 0 0x000f6000 32 0x000f6000 44 32 0 1 2 =
+      47 := by
+  native_decide
+
+theorem machine_acpi_copy_stream_missing_final_marker_rejected :
+    machineAcpiCopyStreamStepQuery 0 0x000f6000 40 0x000f6000 44 40 0 0 2 =
+      47 := by
+  native_decide
+
+theorem machine_acpi_copy_stream_reordered_address_rejected :
+    machineAcpiCopyStreamStepQuery 0 0x000f6000 0 0x000f7000 44 0 0 0 2 =
+      45 := by
+  native_decide
+
+theorem machine_acpi_copy_stream_reordered_byte_rejected :
+    machineAcpiCopyStreamStepQuery 0 0x000f6000 8 0x000f6000 44 16 0 0 2 =
+      46 := by
+  native_decide
+
+/-- Advance the advertised-table sequence only after one complete copied SDT.
+
+The caller must carry `currentOrdinal` from the returned word 3 into the next
+step.  This makes a skipped or replayed table ordinal observable and binds the
+final-table marker to the exact advertised count.  Errors 48 and 49 denote an
+ordinal/count mismatch and a missing/forged final-table marker respectively. -/
+def machineAcpiCopySequenceStepQuery
+    (currentOrdinal advertisedCount tableOrdinal tableComplete finalTable
+      word : UInt64) : UInt64 :=
+  let badOrdinal := advertisedCount == 0 ||
+    advertisedCount > UInt64.ofNat maxAcpiRootEntries ||
+    currentOrdinal >= advertisedCount || tableOrdinal != currentOrdinal ||
+    tableComplete != 1
+  let shouldFinish := currentOrdinal + 1 == advertisedCount
+  let badFinal := finalTable > 1 || ((finalTable == 1) != shouldFinish)
+  let error := if badOrdinal then 48 else if badFinal then 49 else 0
+  if word == 0 then 1
+  else if word == 1 then if error == 0 then 1 else 2
+  else if word == 2 then error
+  else if error != 0 then 0
+  else if word == 3 then currentOrdinal + 1
+  else 0
+
+@[export leanos_boot_machine_acpi_copy_sequence_step_query]
+def exportedMachineAcpiCopySequenceStepQuery
+    (currentOrdinal advertisedCount tableOrdinal tableComplete finalTable
+      word : UInt64) : UInt64 :=
+  machineAcpiCopySequenceStepQuery currentOrdinal advertisedCount tableOrdinal
+    tableComplete finalTable word
+
+theorem machine_acpi_copy_sequence_exact_terminal_accepted :
+    machineAcpiCopySequenceStepQuery 1 2 1 1 1 3 = 2 := by
+  native_decide
+
+theorem machine_acpi_copy_sequence_duplicate_ordinal_rejected :
+    machineAcpiCopySequenceStepQuery 1 2 0 1 1 2 = 48 := by
+  native_decide
+
+theorem machine_acpi_copy_sequence_missing_ordinal_rejected :
+    machineAcpiCopySequenceStepQuery 1 3 2 1 0 2 = 48 := by
+  native_decide
+
+theorem machine_acpi_copy_sequence_forged_final_rejected :
+    machineAcpiCopySequenceStepQuery 0 2 0 1 1 2 = 49 := by
+  native_decide
+
+theorem machine_acpi_copy_sequence_missing_final_rejected :
+    machineAcpiCopySequenceStepQuery 1 2 1 1 0 2 = 49 := by
+  native_decide
+
+/-! ### Allocation-free complete-MADT envelope stream -/
+
+/-- Consume one exact byte from the selected immutable MADT copy.
+
+The caller carries words 3--5 (next byte, declared length, and checksum) into
+the next transition.  The generated transition, rather than C, recognizes the
+`APIC` signature, reconstructs the complete 32-bit declared length, requires
+the exact 44-byte-or-larger bounded extent, binds the terminal marker to the
+last byte, and accepts the envelope only when the whole-table checksum is
+zero.  Result status is 1 while active, 2 on rejection, and 3 on the exact
+terminal byte.  Errors 55 through 59 denote malformed state/order, signature,
+declared length, checksum, and terminal-marker failures respectively. -/
+def machineMadtEnvelopeByteStepQuery
+    (currentOffset declaredLength checksum tableLength byteOffset byteValue
+      terminal word : UInt64) : UInt64 :=
+  let malformedState := currentOffset != byteOffset || byteValue > 0xff ||
+    checksum > 0xff || declaredLength > 0xffffffff ||
+    tableLength < UInt64.ofNat acpiMadtHeaderLength ||
+    tableLength > UInt64.ofNat maxAcpiSdtBytes || byteOffset >= tableLength
+  let signatureError :=
+    (byteOffset == 0 && byteValue != 0x41) ||
+    (byteOffset == 1 && byteValue != 0x50) ||
+    (byteOffset == 2 && byteValue != 0x49) ||
+    (byteOffset == 3 && byteValue != 0x43)
+  let lengthShift := (byteOffset - 4) * 8
+  let nextDeclaredLength :=
+    if byteOffset >= 4 && byteOffset <= 7 then
+      declaredLength ||| (byteValue <<< lengthShift)
+    else declaredLength
+  let lengthError := byteOffset == 7 && nextDeclaredLength != tableLength
+  let shouldTerminate := byteOffset + 1 == tableLength
+  let terminalError := terminal > 1 || ((terminal == 1) != shouldTerminate)
+  let nextChecksum := (checksum + byteValue) % 256
+  let checksumError := shouldTerminate && nextChecksum != 0
+  let error :=
+    if malformedState then 55
+    else if signatureError then 56
+    else if lengthError then 57
+    else if terminalError then 59
+    else if checksumError then 58
+    else 0
+  if word == 0 then 1
+  else if word == 1 then
+    if error != 0 then 2 else if shouldTerminate then 3 else 1
+  else if word == 2 then error
+  else if error != 0 then 0
+  else if word == 3 then byteOffset + 1
+  else if word == 4 then nextDeclaredLength
+  else if word == 5 then nextChecksum
+  else if word == 6 then byteValue
+  else 0
+
+@[export leanos_boot_machine_madt_envelope_byte_step_query]
+def exportedMachineMadtEnvelopeByteStepQuery
+    (currentOffset declaredLength checksum tableLength byteOffset byteValue
+      terminal word : UInt64) : UInt64 :=
+  machineMadtEnvelopeByteStepQuery currentOffset declaredLength checksum
+    tableLength byteOffset byteValue terminal word
+
+theorem machine_madt_envelope_first_signature_byte_accepted :
+    machineMadtEnvelopeByteStepQuery 0 0 0 52 0 0x41 0 3 = 1 := by
+  native_decide
+
+theorem machine_madt_envelope_wrong_signature_rejected :
+    machineMadtEnvelopeByteStepQuery 0 0 0 52 0 0x58 0 2 = 56 := by
+  native_decide
+
+theorem machine_madt_envelope_declared_length_mismatch_rejected :
+    machineMadtEnvelopeByteStepQuery 7 52 0 52 7 1 0 2 = 57 := by
+  native_decide
+
+theorem machine_madt_envelope_early_terminal_rejected :
+    machineMadtEnvelopeByteStepQuery 8 52 0 52 8 1 1 2 = 59 := by
+  native_decide
+
+theorem machine_madt_envelope_exact_terminal_checksum_accepted :
+    machineMadtEnvelopeByteStepQuery 51 52 255 52 51 1 1 1 = 3 := by
+  native_decide
+
+/-! ### Allocation-free local-APIC record stream -/
+
+/-- Consume one byte of an exact eight-byte MADT local-APIC record.
+
+This is the first entry-framing transition after the complete envelope gate.
+The caller carries words 3--6 (record offset, declared record length, APIC ID,
+and flags). The generated transition binds kind zero and length eight, decodes
+the APIC ID and little-endian flags, requires the exact terminal byte, and
+admits only an enabled, non-online-capable processor. Result status is 1 while
+active, 2 on rejection, and 3 on exact record completion. Errors 60 through 64
+denote malformed state/order, record kind, record length, terminal-marker, and
+processor-flag failures respectively. -/
+def machineMadtLocalApicByteStepQuery
+    (currentOffset recordOffset recordLength apicId flags byteOffset byteValue
+      terminal word : UInt64) : UInt64 :=
+  let malformedState := currentOffset != byteOffset || recordOffset > 7 ||
+    recordLength > 8 || apicId > 0xff || flags > 0xffffffff ||
+    byteValue > 0xff
+  let kindError := recordOffset == 0 && byteValue != 0
+  let nextRecordLength := if recordOffset == 1 then byteValue else recordLength
+  let lengthError := recordOffset == 1 && nextRecordLength != 8
+  let nextApicId := if recordOffset == 3 then byteValue else apicId
+  let flagsShift := (recordOffset - 4) * 8
+  let nextFlags :=
+    if recordOffset >= 4 then flags ||| (byteValue <<< flagsShift) else flags
+  let shouldTerminate := recordOffset == 7
+  let terminalError := terminal > 1 || ((terminal == 1) != shouldTerminate)
+  let flagsError := shouldTerminate &&
+    ((nextFlags &&& 1) != 1 || (nextFlags &&& 2) != 0)
+  let error :=
+    if malformedState then 60
+    else if kindError then 61
+    else if lengthError then 62
+    else if terminalError then 63
+    else if flagsError then 64
+    else 0
+  if word == 0 then 1
+  else if word == 1 then
+    if error != 0 then 2 else if shouldTerminate then 3 else 1
+  else if word == 2 then error
+  else if error != 0 then 0
+  else if word == 3 then recordOffset + 1
+  else if word == 4 then nextRecordLength
+  else if word == 5 then nextApicId
+  else if word == 6 then nextFlags
+  else if word == 7 then byteValue
+  else 0
+
+@[export leanos_boot_machine_madt_local_apic_byte_step_query]
+def exportedMachineMadtLocalApicByteStepQuery
+    (currentOffset recordOffset recordLength apicId flags byteOffset byteValue
+      terminal word : UInt64) : UInt64 :=
+  machineMadtLocalApicByteStepQuery currentOffset recordOffset recordLength
+    apicId flags byteOffset byteValue terminal word
+
+theorem machine_madt_local_apic_kind_accepted :
+    machineMadtLocalApicByteStepQuery 44 0 0 0 0 44 0 0 1 = 1 := by
+  native_decide
+
+theorem machine_madt_x2apic_kind_rejected :
+    machineMadtLocalApicByteStepQuery 44 0 0 0 0 44 9 0 2 = 61 := by
+  native_decide
+
+theorem machine_madt_local_apic_length_rejected :
+    machineMadtLocalApicByteStepQuery 45 1 0 0 0 45 7 0 2 = 62 := by
+  native_decide
+
+theorem machine_madt_local_apic_online_capable_rejected :
+    machineMadtLocalApicByteStepQuery 51 7 8 0 3 51 0 1 2 = 64 := by
+  native_decide
+
+theorem machine_madt_local_apic_exact_record_accepted :
+    machineMadtLocalApicByteStepQuery 51 7 8 0 1 51 0 1 1 = 3 := by
+  native_decide
+
+/-! ### Allocation-free topology-irrelevant MADT record stream -/
+
+/-- Consume one byte from a fixed-width q35 MADT record that cannot add a CPU.
+
+The accepted kinds are I/O APIC (1, length 12), interrupt-source override
+(2, length 10), and local-APIC NMI (4, length 6). The generated transition
+binds both kind and exact width and therefore cannot skip x2APIC or an unknown
+variable-width record. Errors 65--68 denote malformed state/order,
+unsupported kind, wrong fixed length, and terminal-marker mismatch. -/
+def machineMadtIrrelevantRecordByteStepQuery
+    (currentOffset recordOffset recordKind recordLength byteOffset byteValue
+      terminal word : UInt64) : UInt64 :=
+  let malformedState := currentOffset != byteOffset || recordOffset > 11 ||
+    recordKind > 0xff || recordLength > 12 || byteValue > 0xff ||
+    (recordOffset > 1 && (recordLength == 0 || recordOffset >= recordLength))
+  let nextRecordKind := if recordOffset == 0 then byteValue else recordKind
+  let kindError := recordOffset == 0 &&
+    nextRecordKind != 1 && nextRecordKind != 2 && nextRecordKind != 4
+  let expectedLength :=
+    if nextRecordKind == 1 then 12
+    else if nextRecordKind == 2 then 10
+    else if nextRecordKind == 4 then 6
+    else 0
+  let nextRecordLength := if recordOffset == 1 then byteValue else recordLength
+  let lengthError := recordOffset == 1 && nextRecordLength != expectedLength
+  let shouldTerminate := nextRecordLength != 0 &&
+    recordOffset + 1 == nextRecordLength
+  let terminalError := terminal > 1 || ((terminal == 1) != shouldTerminate)
+  let error :=
+    if malformedState then 65
+    else if kindError then 66
+    else if lengthError then 67
+    else if terminalError then 68
+    else 0
+  if word == 0 then 1
+  else if word == 1 then
+    if error != 0 then 2 else if shouldTerminate then 3 else 1
+  else if word == 2 then error
+  else if error != 0 then 0
+  else if word == 3 then recordOffset + 1
+  else if word == 4 then nextRecordKind
+  else if word == 5 then nextRecordLength
+  else if word == 6 then byteValue
+  else 0
+
+@[export leanos_boot_machine_madt_irrelevant_record_byte_step_query]
+def exportedMachineMadtIrrelevantRecordByteStepQuery
+    (currentOffset recordOffset recordKind recordLength byteOffset byteValue
+      terminal word : UInt64) : UInt64 :=
+  machineMadtIrrelevantRecordByteStepQuery currentOffset recordOffset
+    recordKind recordLength byteOffset byteValue terminal word
+
+theorem machine_madt_io_apic_kind_accepted :
+    machineMadtIrrelevantRecordByteStepQuery 52 0 0 0 52 1 0 4 = 1 := by
+  native_decide
+
+theorem machine_madt_io_apic_wrong_length_rejected :
+    machineMadtIrrelevantRecordByteStepQuery 53 1 1 0 53 10 0 2 = 67 := by
+  native_decide
+
+theorem machine_madt_x2apic_not_skippable :
+    machineMadtIrrelevantRecordByteStepQuery 52 0 0 0 52 9 0 2 = 66 := by
+  native_decide
+
+theorem machine_madt_local_apic_nmi_exact_terminal_accepted :
+    machineMadtIrrelevantRecordByteStepQuery 57 5 4 6 57 0 1 1 = 3 := by
+  native_decide
+
+/-! ### Allocation-free complete MADT entry stream -/
+
+/-- Consume the complete entry region of one envelope-validated MADT.
+
+The caller carries only the words emitted by the preceding transition.  Four
+64-bit limbs retain the complete 256-bit local-APIC-ID set without allocation.
+The generated transition binds record kind and width, permits disabled legacy
+local-APIC records without counting them, rejects online-capable processors,
+rejects duplicate APIC IDs (including disabled duplicates), and authorizes the
+terminal byte only when exactly one enabled APIC ID equals the executing APIC
+ID.  Fixed-width q35 interrupt-routing records are consumed but cannot affect
+the processor set.  x2APIC and every unknown/variable-width kind fail closed.
+
+Result status is 1 while active, 2 on rejection, and 3 on exact complete-table
+admission. Errors 69--76 denote malformed state/order, unsupported kind, wrong
+record width, truncated entry region, online-capable processor, duplicate APIC
+ID, non-singleton enabled set, and executing-APIC mismatch.  Result words are
+ABI/status/error followed by the complete next state. -/
+def machineMadtEntryStreamByteStepQuery
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue word : UInt64) : UInt64 :=
+  let malformedState := currentOffset != byteOffset || byteOffset < 44 ||
+    byteOffset >= tableLength || tableLength < 44 ||
+    tableLength > UInt64.ofNat maxAcpiSdtBytes || recordOffset > 11 ||
+    recordKind > 0xff || recordLength > 12 || apicId > 0xff ||
+    flags > 0xffffffff || enabledCount > 256 || admittedApicId > 256 ||
+    executingApicId > 0xff || byteValue > 0xff
+  let nextKind := if recordOffset == 0 then byteValue else recordKind
+  let kindError := recordOffset == 0 && nextKind != 0 && nextKind != 1 &&
+    nextKind != 2 && nextKind != 4
+  let expectedLength :=
+    if nextKind == 0 then 8
+    else if nextKind == 1 then 12
+    else if nextKind == 2 then 10
+    else if nextKind == 4 then 6
+    else 0
+  let nextLength := if recordOffset == 1 then byteValue else recordLength
+  let lengthError := recordOffset == 1 && nextLength != expectedLength
+  let nextApicId :=
+    if nextKind == 0 && recordOffset == 3 then byteValue else apicId
+  let flagsShift := (recordOffset - 4) * 8
+  let nextFlags :=
+    if nextKind == 0 && recordOffset >= 4 then
+      flags ||| (byteValue <<< flagsShift)
+    else flags
+  let recordComplete := nextLength != 0 && recordOffset + 1 == nextLength
+  let tableComplete := byteOffset + 1 == tableLength
+  let truncationError := tableComplete && !recordComplete
+  let onlineCapableError := recordComplete && nextKind == 0 &&
+    (nextFlags &&& 2) != 0
+  let seenIndex := nextApicId / 64
+  let seenBit := (1 : UInt64) <<< (nextApicId % 64)
+  let duplicate := recordComplete && nextKind == 0 &&
+    ((seenIndex == 0 && (seen0 &&& seenBit) != 0) ||
+     (seenIndex == 1 && (seen1 &&& seenBit) != 0) ||
+     (seenIndex == 2 && (seen2 &&& seenBit) != 0) ||
+     (seenIndex == 3 && (seen3 &&& seenBit) != 0))
+  let enabled := recordComplete && nextKind == 0 && (nextFlags &&& 1) != 0
+  let nextEnabledCount := if enabled then enabledCount + 1 else enabledCount
+  let nextAdmittedApicId :=
+    if enabled && enabledCount == 0 then nextApicId else admittedApicId
+  let nextSeen0 :=
+    if recordComplete && nextKind == 0 && seenIndex == 0 then seen0 ||| seenBit
+    else seen0
+  let nextSeen1 :=
+    if recordComplete && nextKind == 0 && seenIndex == 1 then seen1 ||| seenBit
+    else seen1
+  let nextSeen2 :=
+    if recordComplete && nextKind == 0 && seenIndex == 2 then seen2 ||| seenBit
+    else seen2
+  let nextSeen3 :=
+    if recordComplete && nextKind == 0 && seenIndex == 3 then seen3 ||| seenBit
+    else seen3
+  let singletonError := tableComplete && recordComplete &&
+    nextEnabledCount != 1
+  let executingError := tableComplete && recordComplete &&
+    nextEnabledCount == 1 && nextAdmittedApicId != executingApicId
+  let error :=
+    if malformedState then 69
+    else if kindError then 70
+    else if lengthError then 71
+    else if truncationError then 72
+    else if onlineCapableError then 73
+    else if duplicate then 74
+    else if singletonError then 75
+    else if executingError then 76
+    else 0
+  if word == 0 then 1
+  else if word == 1 then
+    if error != 0 then 2 else if tableComplete then 3 else 1
+  else if word == 2 then error
+  else if error != 0 then 0
+  else if word == 3 then byteOffset + 1
+  else if word == 4 then if recordComplete then 0 else recordOffset + 1
+  else if word == 5 then if recordComplete then 0 else nextKind
+  else if word == 6 then if recordComplete then 0 else nextLength
+  else if word == 7 then if recordComplete then 0 else nextApicId
+  else if word == 8 then if recordComplete then 0 else nextFlags
+  else if word == 9 then nextEnabledCount
+  else if word == 10 then nextAdmittedApicId
+  else if word == 11 then nextSeen0
+  else if word == 12 then nextSeen1
+  else if word == 13 then nextSeen2
+  else if word == 14 then nextSeen3
+  else if word == 15 then byteValue
+  else 0
+
+@[export leanos_boot_machine_madt_entry_stream_byte_step_query]
+def exportedMachineMadtEntryStreamByteStepQuery
+    (currentOffset recordOffset recordKind recordLength apicId flags
+      enabledCount admittedApicId seen0 seen1 seen2 seen3 tableLength
+      executingApicId byteOffset byteValue word : UInt64) : UInt64 :=
+  machineMadtEntryStreamByteStepQuery currentOffset recordOffset recordKind
+    recordLength apicId flags enabledCount admittedApicId seen0 seen1 seen2 seen3
+    tableLength executingApicId byteOffset byteValue word
+
+theorem machine_madt_entry_stream_first_local_apic_byte_accepted :
+    machineMadtEntryStreamByteStepQuery
+      44 0 0 0 0 0 0 256 0 0 0 0 52 0 44 0 1 = 1 := by
+  native_decide
+
+theorem machine_madt_entry_stream_x2apic_rejected :
+    machineMadtEntryStreamByteStepQuery
+      44 0 0 0 0 0 0 256 0 0 0 0 52 0 44 9 2 = 70 := by
+  native_decide
+
+theorem machine_madt_entry_stream_duplicate_apic_rejected :
+    machineMadtEntryStreamByteStepQuery
+      59 7 0 8 0 1 1 0 1 0 0 0 60 0 59 0 2 = 74 := by
+  native_decide
+
+theorem machine_madt_entry_stream_single_enabled_terminal_admitted :
+    machineMadtEntryStreamByteStepQuery
+      51 7 0 8 0 1 0 256 0 0 0 0 52 0 51 0 1 = 3 := by
+  native_decide
+
+theorem machine_madt_entry_stream_wrong_executing_apic_rejected :
+    machineMadtEntryStreamByteStepQuery
+      51 7 0 8 1 1 0 256 0 0 0 0 52 0 51 0 2 = 76 := by
+  native_decide
+
+/-! ### Allocation-free machine topology terminal gate -/
+
+/-- Final fixed-width gate for the production topology stream.
+
+The scalar arguments are the terminal words carried from the generated root,
+copy-sequence, unique-MADT, and complete-admission transitions.  This function
+does not replace those byte-consuming transitions: it prevents C from
+publishing runtime after a partial copy, a root-address substitution, a
+missing/duplicate MADT, a rejected admission, or an executing-APIC mismatch.
+
+Result words are ABI/status/error/admitted APIC ID.  Errors 50 through 54 name
+root binding, incomplete copy sequence, non-unique MADT, rejected admission,
+and executing-APIC mismatch respectively. -/
+def machineTopologyAdmissionResultQuery
+    (selectedKind selectedAddress copiedRootAddress advertisedCount
+      completedCopies madtCount admissionStatus admissionDetail
+      admittedApicId executingApicId word : UInt64) : UInt64 :=
+  let error :=
+    if (selectedKind != 1 && selectedKind != 2) || selectedAddress == 0 ||
+        copiedRootAddress != selectedAddress then 50
+    else if advertisedCount == 0 ||
+        advertisedCount > UInt64.ofNat maxAcpiRootEntries ||
+        completedCopies != advertisedCount then 51
+    else if madtCount != 1 then 52
+    else if admissionStatus != 1 || admissionDetail != 0 then 53
+    else if admittedApicId > 255 || admittedApicId != executingApicId then 54
+    else 0
+  if word == 0 then 1
+  else if word == 1 then if error == 0 then 1 else 2
+  else if word == 2 then error
+  else if word == 3 && error == 0 then admittedApicId
+  else 0
+
+@[export leanos_boot_machine_topology_admission_result_query]
+def exportedMachineTopologyAdmissionResultQuery
+    (selectedKind selectedAddress copiedRootAddress advertisedCount
+      completedCopies madtCount admissionStatus admissionDetail
+      admittedApicId executingApicId word : UInt64) : UInt64 :=
+  machineTopologyAdmissionResultQuery selectedKind selectedAddress
+    copiedRootAddress advertisedCount completedCopies madtCount admissionStatus
+    admissionDetail admittedApicId executingApicId word
+
+theorem machine_topology_admission_result_exact_state_accepted :
+    machineTopologyAdmissionResultQuery 2 0xf5c00 0xf5c00 2 2 1 1 0 0 0 1 = 1 := by
+  native_decide
+
+theorem machine_topology_admission_result_incomplete_copy_rejected :
+    machineTopologyAdmissionResultQuery 2 0xf5c00 0xf5c00 2 1 1 1 0 0 0 2 = 51 := by
+  native_decide
+
+theorem machine_topology_admission_result_duplicate_madt_rejected :
+    machineTopologyAdmissionResultQuery 2 0xf5c00 0xf5c00 2 2 2 1 0 0 0 2 = 52 := by
+  native_decide
+
+theorem machine_topology_admission_result_forged_executing_apic_rejected :
+    machineTopologyAdmissionResultQuery 2 0xf5c00 0xf5c00 2 2 1 1 0 0 1 2 = 54 := by
+  native_decide
+
+/-- Stable generated boundary for production's immutable ACPI copies.
+
+The machine adapter supplies the selected root kind/address emitted by the
+generated Multiboot2 decoder, one byte copy for that root, one address/byte
+pair for every advertised table, and the executing APIC ID observed directly
+with CPUID. The 256-copy cap matches `maxAcpiRootEntries`; count drift and an
+unknown selected-root kind fail closed before table selection.
+
+Result words use the ordinary topology ABI. Boundary failures use codes 40
+(root kind), 41 (copy-count mismatch), and 42 (copy-count overflow); typed
+root/MADT failures retain `authoritativeAcpiTopologyErrorCode`. -/
+def machineAuthoritativeTopologyQuery
+    (selectedKind selectedAddress : UInt64) (rootBytes : ByteArray)
+    (tableAddresses : Array UInt64) (tableBytes : Array ByteArray)
+    (executingApicId word : UInt64) : UInt64 :=
+  if word == 0 then topologyAbiVersion
+  else if tableAddresses.size > maxAcpiRootEntries ||
+      tableBytes.size > maxAcpiRootEntries then
+    if word == 1 then 2 else if word == 2 then 42 else 0
+  else
+    match pairMachineTableCopies tableAddresses.toList tableBytes.toList with
+    | none => if word == 1 then 2 else if word == 2 then 41 else 0
+    | some copies =>
+        let kind :=
+          if selectedKind == 1 then some AcpiRootTableKind.rsdt
+          else if selectedKind == 2 then some AcpiRootTableKind.xsdt
+          else none
+        match kind with
+        | none => if word == 1 then 2 else if word == 2 then 40 else 0
+        | some rootKind =>
+            let rootCopy : CopiedAcpiSdt := {
+              physicalAddress := selectedAddress
+              bytes := rootBytes.data.toList
+            }
+            match selectUniqueCompleteMadt rootKind rootCopy.bytes copies with
+            | .error reason =>
+                if word == 1 then 2
+                else if word == 2 then
+                  authoritativeAcpiTopologyErrorCode (.madtSelection reason)
+                else 0
+            | .ok madt =>
+                match decodeAndAdmitCompleteMadt madt
+                    (UInt32.ofNat executingApicId.toNat)
+                    (UInt32.ofNat executingApicId.toNat) with
+                | .error reason =>
+                    if word == 1 then 2
+                    else if word == 2 then
+                      authoritativeAcpiTopologyErrorCode (.completeMadt reason)
+                    else 0
+                | .ok (.rejected reason) =>
+                    if word == 1 then 3
+                    else if word == 2 then admissionErrorCode reason
+                    else 0
+                | .ok (.accepted processor) =>
+                    if word == 1 then 1
+                    else if word == 2 then processor.apicId.toUInt64
+                    else if word == 3 then if processor.enabled then 1 else 0
+                    else if word == 4 then
+                      if processor.onlineCapable then 1 else 0
+                    else 0
+
+@[export leanos_boot_machine_topology_query]
+def exportedMachineAuthoritativeTopologyQuery
+    (selectedKind selectedAddress : UInt64) (rootBytes : ByteArray)
+    (tableAddresses : Array UInt64) (tableBytes : Array ByteArray)
+    (executingApicId word : UInt64) : UInt64 :=
+  machineAuthoritativeTopologyQuery selectedKind selectedAddress rootBytes
+    tableAddresses tableBytes executingApicId word
+
+theorem repository_machine_topology_query_admitted :
+    machineAuthoritativeTopologyQuery 2 0x00000000000f5c00
+      ⟨repositoryXsdtTableBytes.toArray⟩
+      #[0x000f6000, 0x000f7000]
+      #[⟨repositoryCompleteMadtBytes.toArray⟩,
+        ⟨repositoryXsdtTableBytes.toArray⟩] 0 1 = 1 := by
+  native_decide
+
+theorem machine_topology_copy_count_mismatch_rejected :
+    machineAuthoritativeTopologyQuery 2 0x00000000000f5c00
+      ⟨repositoryXsdtTableBytes.toArray⟩ #[0x000f6000] #[] 0 2 = 41 := by
+  native_decide
+
+theorem machine_topology_copy_count_overflow_rejected :
+    machineAuthoritativeTopologyQuery 2 0x00000000000f5c00
+      ⟨repositoryXsdtTableBytes.toArray⟩
+      (Array.replicate (maxAcpiRootEntries + 1) 0) #[] 0 2 = 42 := by
+  native_decide
+
+theorem machine_topology_byte_copy_count_overflow_rejected :
+    machineAuthoritativeTopologyQuery 2 0x00000000000f5c00
+      ⟨repositoryXsdtTableBytes.toArray⟩ #[]
+      (Array.replicate (maxAcpiRootEntries + 1) ByteArray.empty) 0 2 = 42 := by
+  native_decide
+
+theorem machine_topology_unknown_root_kind_rejected :
+    machineAuthoritativeTopologyQuery 3 0x00000000000f5c00
+      ⟨repositoryXsdtTableBytes.toArray⟩
+      #[0x000f6000, 0x000f7000]
+      #[⟨repositoryCompleteMadtBytes.toArray⟩,
+        ⟨repositoryXsdtTableBytes.toArray⟩] 0 2 = 40 := by
+  native_decide
+
+theorem repository_machine_topology_forged_executing_apic_rejected :
+    machineAuthoritativeTopologyQuery 2 0x00000000000f5c00
+      ⟨repositoryXsdtTableBytes.toArray⟩
+      #[0x000f6000, 0x000f7000]
+      #[⟨repositoryCompleteMadtBytes.toArray⟩,
+        ⟨repositoryXsdtTableBytes.toArray⟩] 1 1 = 3 := by
+  native_decide
+
 @[export leanos_boot_topology_query]
 def exportedTopologyQuery
     (bytes : ByteArray) (bspId executingId word : UInt64) : UInt64 :=
