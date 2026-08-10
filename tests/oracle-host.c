@@ -65,6 +65,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_frame_budget_invalidation_effect);
     REGISTER_BOUNDARY(leanos_composite_dispatch);
     REGISTER_BOUNDARY(leanos_validate_q35_dma_snapshot);
+    REGISTER_BOUNDARY(leanos_validate_vtd_activation);
 
     /* Exercise the production ABI wrappers themselves so --gc-sections cannot
        discard them from the ordinary or sanitizer replay. Invalid all-zero
@@ -130,6 +131,24 @@ int main(void) {
             UINT64_C(0x0001060129228086), UINT64_C(0x8001),
             UINT64_C(0x000c050029308086), UINT64_C(0x8001)) != 8) {
         fputs("bus-master-enabled q35 DMA snapshot was not rejected\n", stderr);
+        return 1;
+    }
+    if (leanos_validate_vtd_activation(
+            1, UINT64_C(0x0001000800020002),
+            UINT64_C(0x10), UINT64_C(0x00d2008c22260206), UINT64_C(0x0f02),
+            UINT64_C(0xc0000000), 0,
+            UINT64_C(0x174000), UINT64_C(0x174000),
+            UINT64_C(0x87654321)) != 0) {
+        fputs("canonical VT-d activation was rejected\n", stderr);
+        return 1;
+    }
+    if (leanos_validate_vtd_activation(
+            1, UINT64_C(0x0001000800020002),
+            UINT64_C(0x10), UINT64_C(0x00d2008c22260206), UINT64_C(0x0f02),
+            UINT64_C(0xc0000000), 0,
+            UINT64_C(0x174000), UINT64_C(0x174000),
+            UINT64_C(0x87653421)) != 9) {
+        fputs("reordered VT-d activation journal was not rejected\n", stderr);
         return 1;
     }
 

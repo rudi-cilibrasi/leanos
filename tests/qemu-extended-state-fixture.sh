@@ -34,7 +34,9 @@ LEANOS/8 PAGING fixture=mmio-wrong-frame root=B level=pt page=342 expected=92233
 LEANOS/8 PAGING fixture=mmio-flip-user root=B level=pt page=342 expected=9223372041130409987 actual=9223372041130409991 result=REJECTED' "$log"
 sed -i '/^LEANOS\/19 TLB mutable-leaf=checked /a\
 LEANOS/21 VTD unit=0 mmio=4275634176 version=16 cap=59110346977575430 ecap=3842 gsts=0 fsts=0 rtaddr=0 stage=pre-activation result=PASS\
-LEANOS/21 VTD-PLAN root-frame=400 context-frame=401 root-words=512 context-words=512 present-root-entries=1 present-context-entries=0 translation=disabled deny-all=1 result=PASS' "$log"
+LEANOS/21 VTD-PLAN root-frame=400 context-frame=401 root-words=512 context-words=512 present-root-entries=1 present-context-entries=0 translation=disabled deny-all=1 result=PASS\
+LEANOS/21 VTD-TABLES root-frame=400 context-frame=401 scrub=verified construct=verified root-words=512 context-words=512 result=PASS\
+LEANOS/21 VTD-ACTIVATE order=validate,scrub,construct,publish,invalidate-context,invalidate-iotlb,enable,verify journal=2271560481 gsts=3221225472 fsts=0 rtaddr=1638400 generated-result=0 stage=pre-cpl3 result=PASS' "$log"
 sed -i 's/readbacks=5 /readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 /' "$log"
 sed -i 's/readback=exact stage=/readback=exact generated-result=0 stage=/' "$log"
 sed -i '/^LEANOS\/15 DMA snapshot=/i\

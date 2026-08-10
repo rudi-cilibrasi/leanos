@@ -278,14 +278,19 @@ canonical two-word entry codec (round-trip, image, and injectivity), that every
 accepted plan is the deny-all projection of an accepted `IOMMU.State` mapping no
 frame, that the remapping-table frames are reserved and disjoint from the CPU
 page tables, and a fixed fail-closed activation order. A host-only generator
-emits the checked tables. The boot image now maps the unit's MMIO window as
-the one reviewed non-identity page-plan leaf (supervisor-only, no-execute,
-with live-mutation fixtures), and before CPL3 validates the quiescent unit —
-exact pinned registers, translation disabled, no faults, null root pointer —
-and the generated deny-all table shape against the linked symbols. The tables
-are still deny-all and never installed in the unit; the activation sequence,
-the assigned-device path, and any hardware refinement claim remain out of
-scope.
+emits the checked tables. The boot image maps the unit's MMIO window as the
+one reviewed non-identity page-plan leaf (supervisor-only, no-execute, with
+live-mutation fixtures), validates the quiescent unit against the pinned
+registers, then installs the generated deny-all tables from scrubbed reserved
+frames and enables translation in a fixed fail-closed order — publish root,
+invalidate context cache and IOTLB, enable, verify enabled status and empty
+fault state — with each step journaled and the final state accepted by the
+generated `leanos_validate_vtd_activation` boundary before CPL3. Every
+outbound CPL3 gate re-observes the enabled state and live tables, and source
+and final-ELF policy checks confine every MMIO write site and pin the
+activation order. Bus masters stay disabled, so the enabled deny-all tables
+translate no DMA; the assigned-device path and any hardware refinement claim
+remain out of scope.
 
 The bounded [direct-port-I/O authority model](docs/direct-port-io.md) separates
 untrusted port/value words from kernel-selected purpose, models the selected

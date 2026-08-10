@@ -1,11 +1,14 @@
 # Deterministic VT-d boot plan
 
-`LeanOS.VTdBootPlan` is a finite, bounded model of the DMA-remapping tables that
-a future boot slice will install for the pinned q35 `intel-iommu` unit before
-translation is enabled. It is a Lean model plus a host-only generator. It does
-not yet program Intel VT-d, map the unit's MMIO window, write remapping tables,
-invalidate an IOTLB, enable an assigned device, or establish correspondence to
-generated C, boot assembly, QEMU, firmware, PCIe, or physical hardware.
+`LeanOS.VTdBootPlan` is a finite, bounded model of the DMA-remapping tables
+that the boot image installs for the pinned q35 `intel-iommu` unit before
+translation is enabled. It is a Lean model, a host-only generator, and a
+generated scalar activation boundary linked into every image. The boot image
+maps the unit's MMIO window, constructs the generated deny-all tables from
+scrubbed reserved frames, and enables translation in a fixed fail-closed
+order before CPL3; it does not enable an assigned device, and it establishes
+no refinement correspondence to generated C, boot assembly, QEMU, firmware,
+PCIe, or physical hardware.
 
 This is the second issue in the IOMMU/device-assignment set. It consumes the
 static device-domain model `LeanOS.IOMMU` (see
@@ -43,17 +46,48 @@ block. The live walker validates the window leaf exactly like every other
 leaf, and two live-mutation fixtures (`mmio-wrong-frame`, `mmio-flip-user`)
 prove an aliased or user-visible window is rejected.
 
-Before CPL3 the guest reads the unit through two reviewed `noinline`/`noipa`
+Before CPL3 the guest reads the unit through four reviewed `noinline`/`noipa`
 volatile accessors and requires the exact pinned version, capability, and
 extended-capability words, zero global status (translation disabled), zero
 fault status, and a zero root-table pointer, then checks the generated tables
 are the deny-all shape (one present root entry naming the context-table frame,
 no present context entries) and that the generated frames equal the linked
-symbols. The evidence is the two `LEANOS/21` serial lines, validated
-structurally by every boot runner. The page is mapped write-back under the
-pinned TCG emulator, which models no cache; the supported leaf encoding has no
-cache-disable bit, and qualifying real hardware (where the window must be
-uncacheable) remains out of scope. Passthrough support (ECAP bit 6),
+symbols. The page is mapped write-back under the pinned TCG emulator, which
+models no cache; the supported leaf encoding has no cache-disable bit, and
+qualifying real hardware (where the window must be uncacheable) remains out
+of scope.
+
+## Fail-closed activation
+
+After the quiescent validation the boot image executes the fixed activation
+order: scrub both table frames (write-then-verify), construct the live tables
+from the generated arrays with a read-back comparison, publish the root
+pointer and set it in the global command register, globally invalidate the
+context cache and then the IOTLB (bounded polls; exhaustion is a typed
+failure), enable translation, and verify the exact enabled global status with
+an empty fault status. Each completed step appends its nibble to the
+activation journal, and the final decoded state plus journal must satisfy the
+generated `leanos_validate_vtd_activation` boundary — the same scalar
+`validateActivation` proved deterministic and exercised tag-by-tag in Lean —
+before the boot continues. The evidence is four `LEANOS/21` serial lines
+(quiescent unit, deny-all plan, table construction, activation), validated
+structurally with frame-adjacency and root-pointer cross-checks by every boot
+runner and retained per scenario as
+`build/boot/vtd-activation-snapshot-<scenario>.tsv`.
+
+Every outbound CPL3 gate re-observes the enabled status, empty fault state,
+published root pointer, and the complete live tables against the generated
+plan, so a post-validation mutation cannot reach user code silently: the
+`vtd-translation-disable` machine negative (return-corruption mode 26)
+disables translation at the gate and must terminate with the typed
+`vtd-live-status` rejection. `scripts/check-vtd-mmio-policy.sh` confines
+window-pointer derivation to the four accessors, pins the source and
+final-ELF write order (root pointer, set-root command, context-cache
+invalidation, IOTLB invalidation, translation enable, then the generated
+validation call), and rejects any unreviewed MMIO write caller in the final
+ELF; `scripts/test-vtd-mmio-policy.sh` proves mutated sources are rejected.
+All PCI bus masters remain command-disabled, so the enabled deny-all tables
+translate no DMA and the fault status stays empty. Passthrough support (ECAP bit 6),
 caching mode (CAP bit 7), and device-IOTLB support are visibly absent from the
 pinned words, so an option drift that turned any of them on is observable in
 decoded hardware state rather than only on a command line.

@@ -178,6 +178,7 @@ lake env lean --c="$build/StaleTranslation.c" LeanOS/StaleTranslation.lean
 lake env lean --c="$build/FrameBudgetScenario.c" \
   LeanOS/FrameBudgetScenario.lean
 lake env lean --c="$build/CompositeDispatcher.c" LeanOS/CompositeDispatcher.lean
+lake env lean --c="$build/VTdBootPlan.c" LeanOS/VTdBootPlan.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -232,9 +233,11 @@ mv "$build/BootAllocationAndHandoffStream.o" "$build/BootAllocation.o"
 # independently generated model adapters in every image variant.
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" \
   -c "$build/CompositeDispatcher.c" -o "$build/CompositeDispatcher.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
+  -c "$build/VTdBootPlan.c" -o "$build/VTdBootPlan.o"
 ld -r "$build/FaultDispatch.o" "$build/DirectPortIO.o" \
   "$build/StaleTranslation.o" "$build/FrameBudgetScenario.o" \
-  "$build/CompositeDispatcher.o" \
+  "$build/CompositeDispatcher.o" "$build/VTdBootPlan.o" \
   -o "$build/FaultDispatchAndCompositeAdapters.o"
 mv "$build/FaultDispatchAndCompositeAdapters.o" "$build/FaultDispatch.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -1422,6 +1425,10 @@ if ! grep -q ' T leanos_validate_q35_dma_snapshot$' <<<"$symbols"; then
   echo "error: generated image does not retain leanos_validate_q35_dma_snapshot" >&2
   exit 1
 fi
+if ! grep -q ' T leanos_validate_vtd_activation$' <<<"$symbols"; then
+  echo "error: generated image does not retain leanos_validate_vtd_activation" >&2
+  exit 1
+fi
 if ! grub-file --is-x86-multiboot2 "$build/leanos.elf"; then
   echo "error: kernel ELF has no valid Multiboot2 header" >&2
   exit 1
@@ -1556,6 +1563,8 @@ done
   "$build/leanos-fault-nx-execute.elf" | tee "$build/entry-policy-fixtures.log"
 ./scripts/test-runtime-invalidation-policy.sh "$build/leanos.elf" \
   | tee "$build/runtime-invalidation-policy-fixtures.log"
+./scripts/test-vtd-mmio-policy.sh "$build/leanos.elf" \
+  | tee "$build/vtd-mmio-policy-fixtures.log"
 ./scripts/test-frame-budget-invalidation-policy.sh \
   "$build/leanos-frame-budget.elf" \
   | tee "$build/frame-budget-invalidation-policy-fixtures.log"

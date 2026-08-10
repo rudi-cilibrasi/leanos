@@ -84,7 +84,8 @@ for spec in "${specs[@]}"; do
       "$fixture" == direct-port-bitmap-relaxation ||
       "$fixture" == direct-port-limit-relaxation ||
       "$fixture" == direct-port-granularity-relaxation ||
-      "$fixture" == dma-bus-master-reenable ]]; then
+      "$fixture" == dma-bus-master-reenable ||
+      "$fixture" == vtd-translation-disable ]]; then
     grep -Fxq "LEANOS/9 RETURN fixture=${fixture} stage=machine-control result=INJECTED" \
       "$log" || {
       echo "error: fixture '$fixture' lacked its machine-control injection record" >&2

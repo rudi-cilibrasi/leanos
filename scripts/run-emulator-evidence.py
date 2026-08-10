@@ -441,6 +441,9 @@ def expanded(row: dict[str, str], version: str, build_dir: Path) -> dict[str, Pa
         paths["dma_snapshot"] = (
             build_dir / f"dma-quarantine-snapshot-{row['scenario']}.tsv"
         )
+        paths["vtd_snapshot"] = (
+            build_dir / f"vtd-activation-snapshot-{row['scenario']}.tsv"
+        )
     return paths
 
 
@@ -455,6 +458,7 @@ def scenario_invocation(
     if row["runner"] == "boot":
         environment["LEANOS_BOOT_SCENARIO"] = row["scenario"]
         environment["LEANOS_DMA_SNAPSHOT"] = str(paths["dma_snapshot"])
+        environment["LEANOS_VTD_SNAPSHOT"] = str(paths["vtd_snapshot"])
         environment["LEANOS_SOURCE_REVISION_FILE"] = str(build_dir / "SOURCE_REVISION")
         command = ["./scripts/run-image.sh", str(paths["image"])]
     elif row["runner"] == "fault-integrity":
@@ -564,6 +568,8 @@ def run(args: argparse.Namespace) -> None:
         )
         if "dma_snapshot" in paths:
             paths["dma_snapshot"].unlink(missing_ok=True)
+        if "vtd_snapshot" in paths:
+            paths["vtd_snapshot"].unlink(missing_ok=True)
         combined_environment = environment.copy()
         combined_environment.update(scenario_environment)
         command_log = output.parent / f"{row['id']}.command.log"
@@ -632,6 +638,13 @@ def run(args: argparse.Namespace) -> None:
             raise EvidenceError(
                 f"scenario {row['id']} did not retain its DMA snapshot"
             )
+        if "vtd_snapshot" in paths and (
+            not paths["vtd_snapshot"].is_file()
+            or paths["vtd_snapshot"].stat().st_size == 0
+        ):
+            raise EvidenceError(
+                f"scenario {row['id']} did not retain its VT-d activation snapshot"
+            )
         if row["runner"] == "nmi" and (
             not paths["qmp_transcript"].is_file()
             or paths["qmp_transcript"].stat().st_size == 0
@@ -652,6 +665,12 @@ def run(args: argparse.Namespace) -> None:
                 "kind": "dma_snapshot",
                 "path": display_path(paths["dma_snapshot"]),
                 "sha256": sha256(paths["dma_snapshot"]),
+            })
+        if "vtd_snapshot" in paths:
+            result["artifacts"].append({
+                "kind": "vtd_snapshot",
+                "path": display_path(paths["vtd_snapshot"]),
+                "sha256": sha256(paths["vtd_snapshot"]),
             })
         if row["runner"] == "nmi":
             result["qmp_transcript"] = {
@@ -742,6 +761,10 @@ def verify_report(
         if "dma_snapshot" in paths:
             expected_artifacts.add(
                 ("dma_snapshot", display_path(paths["dma_snapshot"]))
+            )
+        if "vtd_snapshot" in paths:
+            expected_artifacts.add(
+                ("vtd_snapshot", display_path(paths["vtd_snapshot"]))
             )
         artifacts = result.get("artifacts")
         if not isinstance(artifacts, list) or {
