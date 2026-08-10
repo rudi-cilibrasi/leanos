@@ -37,7 +37,7 @@ jobs:
             grub-pc-bin=2.12-1ubuntu7.3 \
             mtools=4.0.43-1build1 \
             xorriso=1:1.5.6-1.1ubuntu3 \
-            qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 \
+            qemu-system-x86=1:8.2.2+ds-0ubuntu1.18 \
             coreutils=9.4-3ubuntu6.2
 
       - name: Validate tag and set version
