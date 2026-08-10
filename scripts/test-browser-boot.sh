@@ -73,4 +73,24 @@ expect_reject guest-failure-status "$guest_fail" 35
 expect_reject boot-timeout "" 124
 expect_reject runtime-abort "" 70
 
+# The public demo must run the same reviewed q35 machine as the native
+# emulator: the pinned intel-iommu unit, one vCPU, no network, and the
+# debug-exit device the acceptance gate reads. Guard against silent drift to a
+# weaker browser-only machine.
+demo_module="scripts/browser-boot/demo/leanos-module.js"
+demo_pins=(
+  "intel-iommu,intremap=off,pt=off,caching-mode=off,device-iotlb=off,aw-bits=39,dma-translation=on,snoop-control=off"
+  "isa-debug-exit,iobase=0xf4,iosize=0x04"
+  "'-smp', '1'"
+  "'-nic', 'none'"
+  "'-machine', 'q35,accel=tcg'"
+)
+for pin in "${demo_pins[@]}"; do
+  grep -Fq "$pin" "$demo_module" || {
+    echo "error: demo machine drifted from the reviewed q35 construction: missing '$pin'" >&2
+    exit 1
+  }
+done
+echo "ok - public demo pins the reviewed q35 + intel-iommu construction"
+
 echo "Browser boot harness offline fixtures passed"

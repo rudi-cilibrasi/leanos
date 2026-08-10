@@ -59,16 +59,23 @@ for name in coi-serviceworker.js out.js qemu-system-x86_64.wasm \
   verify "$name" "$work_dir/$rel" "$hash"
 done
 
-# The terminal pty stub is fetched from its pinned unpkg release and verified.
-xterm_url="$(json terminal_files xterm-pty.js url)"
-xterm_hash="$(json terminal_files xterm-pty.js sha256)"
-curl --fail --silent --location --proto '=https' "$xterm_url" \
-  --output "$runtime_dir/xterm-pty.js"
-observed_xterm="$(sha256sum "$runtime_dir/xterm-pty.js" | cut -d' ' -f1)"
-[[ "$observed_xterm" == "$xterm_hash" ]] || {
-  echo "error: xterm-pty.js sha256 ${observed_xterm} != pinned ${xterm_hash}" >&2
-  exit 1
-}
+# The terminal assets are fetched from their pinned unpkg releases and verified.
+mapfile -t terminal_names < <(python3 - "$manifest" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1]))
+print("\n".join(data["terminal_files"].keys()))
+PY
+)
+for name in "${terminal_names[@]}"; do
+  url="$(json terminal_files "$name" url)"
+  hash="$(json terminal_files "$name" sha256)"
+  curl --fail --silent --location --proto '=https' "$url" --output "$runtime_dir/$name"
+  observed="$(sha256sum "$runtime_dir/$name" | cut -d' ' -f1)"
+  [[ "$observed" == "$hash" ]] || {
+    echo "error: ${name} sha256 ${observed} != pinned ${hash}" >&2
+    exit 1
+  }
+done
 
 ( cd scripts/browser-boot && npm ci --ignore-scripts >/dev/null )
 

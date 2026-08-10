@@ -69,6 +69,26 @@ is an on-demand command rather than a default CI gate. Reproducible runtime
 provenance (issue #194) and GitHub Pages deployment (issue #192) build on this
 gate and are out of scope here.
 
+## Public demo (GitHub Pages)
+
+The same pinned runtime backs an interactive public demo (issue #192).
+`scripts/stage-browser-demo.sh` re-verifies every runtime asset against the
+manifest and assembles a **self-contained** site in `build/browser/site/` —
+the demo page (`scripts/browser-boot/demo/`), the pinned runtime and terminal
+assets, the license inventory, and the unchanged ISO — with no remote runtime
+dependencies. The demo page routes serial to a MEMFS file and tails it into an
+xterm terminal, so a viewer watches the boot protocol live and sees
+`guest exited (status 33)` on success.
+
+`.github/workflows/pages.yml` builds the ISO, prepares and hash-verifies the
+runtime, boots the staged site in a browser as the acceptance gate
+(`scripts/run-browser-boot.sh`), and deploys the staged directory unchanged. It
+runs only on the default branch and manual dispatch, separate from
+pull-request validation, with pinned actions and least-privilege permissions.
+Enabling Pages with source "GitHub Actions" is a one-time repository setting.
+Third-party redistribution licenses are inventoried in
+[browser-demo-licenses.md](browser-demo-licenses.md).
+
 ## Offline fixtures (gated by `check.sh`)
 
 `scripts/test-browser-boot.sh` needs no browser or network. It unit-tests the

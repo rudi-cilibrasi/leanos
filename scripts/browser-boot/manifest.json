@@ -46,6 +46,16 @@
       "url": "https://unpkg.com/xterm-pty@0.12.0/index.js",
       "sha256": "2e7cbffea02dad1f72637c564534d104a13f9eec306deb9cc34fffe1faa58947",
       "license": "MIT (github.com/mame/xterm-pty)"
+    },
+    "xterm.js": {
+      "url": "https://unpkg.com/xterm@5.3.0/lib/xterm.js",
+      "sha256": "f0aea0f75f48559013ae6643c2479dd737d26da42d5524e6d2b70915ae6523c7",
+      "license": "MIT (github.com/xtermjs/xterm.js)"
+    },
+    "xterm.css": {
+      "url": "https://unpkg.com/xterm@5.3.0/css/xterm.css",
+      "sha256": "832f3f2c603b43ad4351ff04970150cc7a873014276db126a6065c6dd81e4872",
+      "license": "MIT (github.com/xtermjs/xterm.js)"
     }
   },
   "browser": {

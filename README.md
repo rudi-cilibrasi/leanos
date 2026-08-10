@@ -202,6 +202,17 @@ identical versioned serial protocol and debug-exit status through the native
 `scripts/run-image.sh` acceptance path. It is compatibility evidence at a
 trusted boundary, not a proof of the browser or emulator.
 
+**[▶ Boot LeanOS in your browser](https://rudi-cilibrasi.github.io/leanos/)** —
+the unchanged canonical ISO running live in a pinned WebAssembly QEMU. First
+load downloads a ~40&nbsp;MB runtime and needs a desktop browser with
+cross-origin isolation (`SharedArrayBuffer`); the page shows the boot protocol
+until `LEANOS/10 FINAL status=PASS` and a guest debug-exit of 33. The deployed
+site is staged from source-verified pinned assets by
+[`scripts/stage-browser-demo.sh`](scripts/stage-browser-demo.sh) and its
+[third-party licenses](docs/browser-demo-licenses.md) are inventoried; it is
+emulator-tested integration evidence, not a proof of LeanOS, the browser, or the
+emulator.
+
 The first Phase 2 executable boundary boots one deliberately tiny ring-3
 subject through an `int 0x80` gate, binds its calls to kernel-selected context,
 and contains one expected user page fault. Its assumptions and evidence are
