@@ -6,6 +6,13 @@ LeanOS is an experiment in building a small operating-system kernel whose
 implementation, executable specification, and machine-checked proofs evolve
 together in Lean 4.
 
+**[▶ Boot LeanOS in your browser](https://rudi-cilibrasi.github.io/leanos/)** —
+watch the unchanged canonical ISO boot live in a pinned WebAssembly QEMU, from
+firmware through the versioned protocol to `LEANOS/10 FINAL status=PASS` and
+guest debug-exit 33. Needs a desktop browser with cross-origin isolation;
+first load downloads a ~40 MB runtime.
+[How the demo is built and what it does and does not prove](docs/browser-boot.md).
+
 The project is an **experimental research prototype**, not a verified operating
 system. It now builds bootable x86-64 images, exercises several deterministic
 machine scenarios under QEMU, and checks a growing set of Lean models and
