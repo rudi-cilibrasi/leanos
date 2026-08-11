@@ -2,12 +2,12 @@
   "schema": "leanos-qemu-wasm-runtime/v1",
   "issue": 194,
   "acceptance": {
-    "ready": false,
-    "blocked_by": {
+    "ready": true,
+    "resolved_by": {
+      "pr": 221,
       "issue": 193,
-      "required_result": "Exact qemu-wasm source revision and q35 media configuration that boots the unchanged canonical ISO with the complete LeanOS protocol and debug-exit status 33."
-    },
-    "provisional_reason": "ADR 0011 pins the inspected source, but issue #193 has not selected a media-compatible final source/configuration."
+      "commit": "04576e162a96a11012ef414600b026c7a117d18f"
+    }
   },
   "host": {
     "os": "Linux",
@@ -27,10 +27,11 @@
     {
       "name": "LeanOS",
       "repository": "https://github.com/rudi-cilibrasi/leanos.git",
-      "revision": "cb40b640450dcb45afc4e90229078b1f4aeead1e",
+      "revision": "f75bacab70c806f6b7b17b8489706239a10e103d",
       "protocol_source": "scripts/run-image.sh",
       "expected_debug_exit_status": 33,
-      "role": "provisional acceptance source/protocol revision"
+      "role": "provisional acceptance source/protocol revision",
+      "note": "Current main after PR #221 (issue #193) and PR #222 (issue #192) merged. Browser boot verified end-to-end."
     },
     {
       "name": "dtc",
@@ -160,28 +161,115 @@
   },
   "patches": [],
   "licenses": [
-    {"component": "qemu-wasm", "identifier": "GPL-2.0-only", "notice_source": "COPYING"},
-    {"component": "qemu-wasm libraries", "identifier": "LGPL-2.1-only", "notice_source": "COPYING.LIB"},
-    {"component": "zlib", "identifier": "Zlib", "notice_source": "zlib.h"},
-    {"component": "libffi", "identifier": "MIT", "notice_source": "LICENSE"},
-    {"component": "glib", "identifier": "LGPL-2.1-or-later", "notice_source": "COPYING"},
-    {"component": "pcre2", "identifier": "BSD-3-Clause", "notice_source": "LICENCE"},
-    {"component": "pixman", "identifier": "MIT", "notice_source": "COPYING"},
-    {"component": "meson", "identifier": "Apache-2.0", "notice_source": "COPYING"},
-    {"component": "xterm-pty", "identifier": "MIT", "notice_source": "package.json"},
-    {"component": "dtc", "identifier": "GPL-2.0-or-later AND BSD-2-Clause", "notice_source": "GPL"},
-    {"component": "keycodemapdb", "identifier": "GPL-2.0-only AND BSD-3-Clause", "notice_source": "LICENSE.GPL2 and LICENSE.BSD"},
-    {"component": "berkeley-softfloat-3", "identifier": "BSD-3-Clause", "notice_source": "COPYING.txt"},
-    {"component": "berkeley-testfloat-3", "identifier": "BSD-3-Clause", "notice_source": "COPYING.txt"}
+    {
+      "component": "qemu-wasm",
+      "identifier": "GPL-2.0-only",
+      "notice_source": "COPYING"
+    },
+    {
+      "component": "qemu-wasm libraries",
+      "identifier": "LGPL-2.1-only",
+      "notice_source": "COPYING.LIB"
+    },
+    {
+      "component": "zlib",
+      "identifier": "Zlib",
+      "notice_source": "zlib.h"
+    },
+    {
+      "component": "libffi",
+      "identifier": "MIT",
+      "notice_source": "LICENSE"
+    },
+    {
+      "component": "glib",
+      "identifier": "LGPL-2.1-or-later",
+      "notice_source": "COPYING"
+    },
+    {
+      "component": "pcre2",
+      "identifier": "BSD-3-Clause",
+      "notice_source": "LICENCE"
+    },
+    {
+      "component": "pixman",
+      "identifier": "MIT",
+      "notice_source": "COPYING"
+    },
+    {
+      "component": "meson",
+      "identifier": "Apache-2.0",
+      "notice_source": "COPYING"
+    },
+    {
+      "component": "xterm-pty",
+      "identifier": "MIT",
+      "notice_source": "package.json"
+    },
+    {
+      "component": "dtc",
+      "identifier": "GPL-2.0-or-later AND BSD-2-Clause",
+      "notice_source": "GPL"
+    },
+    {
+      "component": "keycodemapdb",
+      "identifier": "GPL-2.0-only AND BSD-3-Clause",
+      "notice_source": "LICENSE.GPL2 and LICENSE.BSD"
+    },
+    {
+      "component": "berkeley-softfloat-3",
+      "identifier": "BSD-3-Clause",
+      "notice_source": "COPYING.txt"
+    },
+    {
+      "component": "berkeley-testfloat-3",
+      "identifier": "BSD-3-Clause",
+      "notice_source": "COPYING.txt"
+    }
   ],
   "outputs": [
-    {"path": "qemu-system-x86_64.js", "role": "JavaScript launcher and glue", "sha256": null, "size": null},
-    {"path": "qemu-system-x86_64.wasm", "role": "source-built emulator module", "sha256": null, "size": null},
-    {"path": "qemu-system-x86_64.worker.js", "role": "pthread worker glue", "sha256": null, "size": null},
-    {"path": "TOOLCHAIN.txt", "role": "tool and installed-package inventory", "sha256": null, "size": null},
-    {"path": "BUILD_COMMANDS.txt", "role": "literal build command inventory", "sha256": null, "size": null},
-    {"path": "PATCHES.json", "role": "applied patch inventory", "sha256": null, "size": null},
-    {"path": "SHA256SUMS", "role": "complete prototype output hashes", "sha256": null, "size": null}
+    {
+      "path": "qemu-system-x86_64.js",
+      "role": "JavaScript launcher and glue",
+      "sha256": null,
+      "size": null
+    },
+    {
+      "path": "qemu-system-x86_64.wasm",
+      "role": "source-built emulator module",
+      "sha256": null,
+      "size": null
+    },
+    {
+      "path": "qemu-system-x86_64.worker.js",
+      "role": "pthread worker glue",
+      "sha256": null,
+      "size": null
+    },
+    {
+      "path": "TOOLCHAIN.txt",
+      "role": "tool and installed-package inventory",
+      "sha256": null,
+      "size": null
+    },
+    {
+      "path": "BUILD_COMMANDS.txt",
+      "role": "literal build command inventory",
+      "sha256": null,
+      "size": null
+    },
+    {
+      "path": "PATCHES.json",
+      "role": "applied patch inventory",
+      "sha256": null,
+      "size": null
+    },
+    {
+      "path": "SHA256SUMS",
+      "role": "complete prototype output hashes",
+      "sha256": null,
+      "size": null
+    }
   ],
   "deferred_outputs": [
     "firmware selected by issue #193",
