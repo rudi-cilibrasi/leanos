@@ -2,7 +2,7 @@
   "schema": "leanos-qemu-wasm-source-build-evidence/v1",
   "issue": 194,
   "acceptance_ready": false,
-  "manifest_sha256": "409db0cccc84358dbdfefa9b77a935f1591f01d21fda87c7961dc35043103234",
+  "manifest_sha256": "271639e795780ec78a171888eff9929d68ed990ee22f28155211ebbca6e45b1b",
   "container_image_id": "sha256:c9ce53b140c7e9c2e5bbbfacb5c27680fc5b49d94c896b56cbefd29898eb8b32",
   "host": {
     "os": "Linux",

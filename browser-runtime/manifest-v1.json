@@ -2,7 +2,12 @@
   "schema": "leanos-qemu-wasm-runtime/v1",
   "issue": 194,
   "acceptance": {
-    "ready": true,
+    "ready": false,
+    "blocked_by": {
+      "issue": 193,
+      "required_result": "Exact qemu-wasm source revision and q35 media configuration that boots the unchanged canonical ISO with the complete LeanOS protocol and debug-exit status 33."
+    },
+    "provisional_reason": "ADR 0011 pins the inspected source. Issue #193 is now resolved via PR #221; the prototype lock remains until reproducible browser boot evidence is captured from the pinned source tree.",
     "resolved_by": {
       "pr": 221,
       "issue": 193,
