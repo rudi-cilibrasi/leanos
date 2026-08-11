@@ -205,6 +205,8 @@ extern uint64_t page_map_level_4_a[], page_directory_pointer_a[];
 extern uint64_t page_directory_a[], page_table_a[];
 extern uint64_t page_map_level_4_b[], page_directory_pointer_b[];
 extern uint64_t page_directory_b[], page_table_b[];
+extern char __vtd_mmio_window_start[], __vtd_mmio_window_end[];
+extern uint64_t vtd_root_table[], vtd_context_table[];
 
 #define MULTIBOOT2_RUNTIME_MAGIC 0x36d76289u
 #define BOOT_ACCESSIBLE_LIMIT (16u * 1024u * 1024u)
@@ -869,6 +871,12 @@ static void check_live_page_table_mutations(void) {
         "pt", entry_guard);
     expect_live_mutation_rejected("omitted-mapping", &page_table_b[user_text],
         0, "pt", user_text);
+    uint64_t vtd_window = boot_page(__vtd_mmio_window_start);
+    expect_live_mutation_rejected("mmio-wrong-frame", &page_table_b[vtd_window],
+        vtd_window * PAGE_BYTES | PTE_PRESENT | PTE_WRITABLE | PTE_NX,
+        "pt", vtd_window);
+    expect_live_mutation_rejected("mmio-flip-user", &page_table_b[vtd_window],
+        page_table_b[vtd_window] ^ PTE_USER, "pt", vtd_window);
     expect_runtime_relation_rejected("mutable-wrong-frame",
         RUNTIME_MAPPING_STATE_BEFORE,
         runtime_mapping_leaf(runtime_mapping_frame_after),
@@ -1183,8 +1191,12 @@ static unsigned canonical(uint64_t value) {
 }
 
 static void verify_q35_pci_dma(void);
+static void verify_vtd_state(void);
 #if LEANOS_RETURN_CORRUPTION_MODE == 25
 static __attribute__((noinline, noipa)) void inject_dma_bus_master_reenable(void);
+#endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 26
+static __attribute__((noinline, noipa)) void inject_vtd_translation_disable(void);
 #endif
 
 #if LEANOS_RETURN_CORRUPTION_MODE != 0
@@ -1241,6 +1253,9 @@ static const char *return_corruption_name(uint64_t mode) {
 #if LEANOS_RETURN_CORRUPTION_MODE == 25
     case 25: return "dma-bus-master-reenable";
 #endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 26
+    case 26: return "vtd-translation-disable";
+#endif
     default: return "none";
     }
 }
@@ -1256,7 +1271,7 @@ static void inject_return_corruption(uint64_t *saved) {
     if (mode == 13) return;
     serial_puts("LEANOS/9 RETURN fixture=");
     serial_puts(return_corruption_name(mode));
-    serial_puts(mode >= 14 && mode <= 25
+    serial_puts(mode >= 14 && mode <= 26
         ? " stage=machine-control result=INJECTED\n"
         : " stage=outgoing-frame result=INJECTED\n");
     switch (mode) {
@@ -1361,6 +1376,11 @@ static void inject_return_corruption(uint64_t *saved) {
         inject_dma_bus_master_reenable();
         break;
 #endif
+#if LEANOS_RETURN_CORRUPTION_MODE == 26
+    case 26:
+        inject_vtd_translation_disable();
+        break;
+#endif
     default: fail("user-return-fixture-mode");
     }
 }
@@ -1418,6 +1438,7 @@ void validate_user_return(const uint64_t *saved, uint64_t purpose) {
     check_fast_entry_control();
     check_direct_port_control(0);
     verify_q35_pci_dma();
+    verify_vtd_state();
     /* Accepted ordinary entries remain armed through handler dispatch and
        context selection.  Clear only in this final validated return gate;
        initial boot dispatch is intentionally unarmed. */
@@ -2593,6 +2614,204 @@ static __attribute__((noinline, noipa)) void verify_q35_pci_dma(void) {
     }
     if (present != 5) fail("dma-live-inventory");
 }
+
+/* Reviewed VT-d MMIO accessors: the only code deriving pointers from the
+   remapping unit's window. The register layout and QEMU's VT-d implementation
+   remain trusted integration boundaries, not refinement claims. */
+static __attribute__((noinline, noipa)) uint32_t vtd_mmio_read32(uint64_t offset) {
+    return *(volatile uint32_t *)(__vtd_mmio_window_start + offset);
+}
+
+static __attribute__((noinline, noipa)) uint64_t vtd_mmio_read64(uint64_t offset) {
+    return *(volatile uint64_t *)(__vtd_mmio_window_start + offset);
+}
+
+static __attribute__((noinline, noipa)) void vtd_mmio_write32(uint64_t offset,
+        uint32_t value) {
+    *(volatile uint32_t *)(__vtd_mmio_window_start + offset) = value;
+}
+
+static __attribute__((noinline, noipa)) void vtd_mmio_write64(uint64_t offset,
+        uint64_t value) {
+    *(volatile uint64_t *)(__vtd_mmio_window_start + offset) = value;
+}
+
+#define VTD_REG_VERSION 0x00
+#define VTD_REG_CAPABILITY 0x08
+#define VTD_REG_EXTENDED_CAPABILITY 0x10
+#define VTD_REG_GLOBAL_COMMAND 0x18
+#define VTD_REG_GLOBAL_STATUS 0x1c
+#define VTD_REG_ROOT_TABLE_ADDRESS 0x20
+#define VTD_REG_CONTEXT_COMMAND 0x28
+#define VTD_REG_FAULT_STATUS 0x34
+#define VTD_GCMD_SET_ROOT_TABLE (UINT32_C(1) << 30)
+#define VTD_GCMD_TRANSLATION_ENABLE (UINT32_C(1) << 31)
+#define VTD_GSTS_ROOT_TABLE_SET (UINT32_C(1) << 30)
+#define VTD_GSTS_TRANSLATION_ENABLED (UINT32_C(1) << 31)
+#define VTD_CCMD_INVALIDATE (UINT64_C(1) << 63)
+#define VTD_CCMD_GLOBAL (UINT64_C(1) << 61)
+#define VTD_IOTLB_INVALIDATE (UINT64_C(1) << 63)
+#define VTD_IOTLB_GLOBAL (UINT64_C(1) << 60)
+#define VTD_POLL_BOUND 4096u
+
+/* The activation journal accumulates one nibble per completed step, first
+   step lowest, matching the generated canonical encoding 0x87654321. */
+static uint64_t vtd_journal;
+static unsigned vtd_journal_steps;
+
+static void vtd_journal_record(uint64_t tag) {
+    vtd_journal |= tag << (4 * vtd_journal_steps);
+    ++vtd_journal_steps;
+}
+
+static void vtd_wait_global_status(uint32_t mask) {
+    for (unsigned attempt = 0; attempt < VTD_POLL_BOUND; ++attempt)
+        if (vtd_mmio_read32(VTD_REG_GLOBAL_STATUS) & mask) return;
+    fail("vtd-activation-timeout");
+}
+
+static void vtd_wait_invalidation(uint64_t offset, uint64_t busy) {
+    for (unsigned attempt = 0; attempt < VTD_POLL_BOUND; ++attempt)
+        if (!(vtd_mmio_read64(offset) & busy)) return;
+    fail("vtd-activation-timeout");
+}
+
+/* Validate the quiescent pinned remapping unit, install the generated
+   deny-all tables from scrubbed reserved frames, and enable translation in
+   the fixed fail-closed order: validate, scrub, construct, publish,
+   invalidate context cache, invalidate IOTLB, enable, verify.  The journal
+   nibble sequence and final decoded state must satisfy the generated Lean
+   boundary before CPL3. */
+static __attribute__((noinline)) void vtd_boot_remap(void) {
+    uint64_t version = vtd_mmio_read32(VTD_REG_VERSION);
+    uint64_t capability = vtd_mmio_read64(VTD_REG_CAPABILITY);
+    uint64_t extended_capability = vtd_mmio_read64(VTD_REG_EXTENDED_CAPABILITY);
+    uint64_t global_status = vtd_mmio_read32(VTD_REG_GLOBAL_STATUS);
+    uint64_t root_address = vtd_mmio_read64(VTD_REG_ROOT_TABLE_ADDRESS);
+    uint64_t fault_status = vtd_mmio_read32(VTD_REG_FAULT_STATUS);
+    if (version != LEANOS_VTD_EXPECTED_VERSION) fail("vtd-version");
+    if (capability != LEANOS_VTD_EXPECTED_CAP) fail("vtd-capability");
+    if (extended_capability != LEANOS_VTD_EXPECTED_ECAP)
+        fail("vtd-extended-capability");
+    if (global_status != 0) fail("vtd-global-status");
+    if (root_address != 0) fail("vtd-root-address");
+    if (fault_status != 0) fail("vtd-fault-status");
+    if ((uint64_t)vtd_root_table != LEANOS_VTD_ROOT_TABLE_FRAME * PAGE_BYTES ||
+        (uint64_t)vtd_context_table !=
+            LEANOS_VTD_CONTEXT_TABLE_FRAME * PAGE_BYTES)
+        fail("vtd-plan-frames");
+    if (leanos_vtd_root_table[0] !=
+        LEANOS_VTD_CONTEXT_TABLE_FRAME * PAGE_BYTES + 1) fail("vtd-plan-root");
+    for (uint64_t word = 1; word < 512; ++word)
+        if (leanos_vtd_root_table[word] != 0) fail("vtd-plan-root");
+    for (uint64_t word = 0; word < 512; ++word)
+        if (leanos_vtd_context_table[word] != 0) fail("vtd-plan-context");
+    vtd_journal_record(1);
+    serial_puts("LEANOS/21 VTD unit=0 mmio=");
+    serial_u64(LEANOS_VTD_MMIO_BASE);
+    serial_puts(" version="); serial_u64(version);
+    serial_puts(" cap="); serial_u64(capability);
+    serial_puts(" ecap="); serial_u64(extended_capability);
+    serial_puts(" gsts=0 fsts=0 rtaddr=0 stage=pre-activation result=PASS\n");
+    serial_puts("LEANOS/21 VTD-PLAN root-frame=");
+    serial_u64(LEANOS_VTD_ROOT_TABLE_FRAME);
+    serial_puts(" context-frame=");
+    serial_u64(LEANOS_VTD_CONTEXT_TABLE_FRAME);
+    serial_puts(" root-words=512 context-words=512 present-root-entries=1"
+        " present-context-entries=0 translation=disabled deny-all=1"
+        " result=PASS\n");
+
+    volatile uint64_t *root = (volatile uint64_t *)vtd_root_table;
+    volatile uint64_t *context = (volatile uint64_t *)vtd_context_table;
+    for (uint64_t word = 0; word < 512; ++word) {
+        root[word] = 0;
+        context[word] = 0;
+    }
+    for (uint64_t word = 0; word < 512; ++word)
+        if (root[word] != 0 || context[word] != 0) fail("vtd-scrub");
+    vtd_journal_record(2);
+
+    for (uint64_t word = 0; word < 512; ++word) {
+        root[word] = leanos_vtd_root_table[word];
+        context[word] = leanos_vtd_context_table[word];
+    }
+    for (uint64_t word = 0; word < 512; ++word)
+        if (root[word] != leanos_vtd_root_table[word] ||
+            context[word] != leanos_vtd_context_table[word])
+            fail("vtd-construct");
+    vtd_journal_record(3);
+    serial_puts("LEANOS/21 VTD-TABLES root-frame=");
+    serial_u64(LEANOS_VTD_ROOT_TABLE_FRAME);
+    serial_puts(" context-frame=");
+    serial_u64(LEANOS_VTD_CONTEXT_TABLE_FRAME);
+    serial_puts(" scrub=verified construct=verified root-words=512"
+        " context-words=512 result=PASS\n");
+
+    vtd_mmio_write64(VTD_REG_ROOT_TABLE_ADDRESS, LEANOS_VTD_ROOT_TABLE_ADDRESS);
+    vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND, VTD_GCMD_SET_ROOT_TABLE);
+    vtd_wait_global_status(VTD_GSTS_ROOT_TABLE_SET);
+    if (vtd_mmio_read64(VTD_REG_ROOT_TABLE_ADDRESS) !=
+        LEANOS_VTD_ROOT_TABLE_ADDRESS) fail("vtd-root-publish");
+    vtd_journal_record(4);
+
+    vtd_mmio_write64(VTD_REG_CONTEXT_COMMAND,
+        VTD_CCMD_INVALIDATE | VTD_CCMD_GLOBAL);
+    vtd_wait_invalidation(VTD_REG_CONTEXT_COMMAND, VTD_CCMD_INVALIDATE);
+    vtd_journal_record(5);
+
+    /* The IOTLB registers live at ECAP.IRO * 16; the command register is the
+       second 64-bit word of that group. */
+    uint64_t iotlb = ((extended_capability >> 8) & 0x3ff) * 16 + 8;
+    vtd_mmio_write64(iotlb, VTD_IOTLB_INVALIDATE | VTD_IOTLB_GLOBAL);
+    vtd_wait_invalidation(iotlb, VTD_IOTLB_INVALIDATE);
+    vtd_journal_record(6);
+
+    vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND, VTD_GCMD_TRANSLATION_ENABLE);
+    vtd_wait_global_status(VTD_GSTS_TRANSLATION_ENABLED);
+    vtd_journal_record(7);
+
+    uint64_t enabled_status = vtd_mmio_read32(VTD_REG_GLOBAL_STATUS);
+    uint64_t enabled_faults = vtd_mmio_read32(VTD_REG_FAULT_STATUS);
+    uint64_t enabled_root = vtd_mmio_read64(VTD_REG_ROOT_TABLE_ADDRESS);
+    if (enabled_status != LEANOS_VTD_ENABLED_GSTS) fail("vtd-enabled-status");
+    if (enabled_faults != 0) fail("vtd-fault-after-enable");
+    vtd_journal_record(8);
+
+    if (leanos_validate_vtd_activation(LEANOS_VTD_PLAN_VERSION,
+            LEANOS_VTD_TOPOLOGY, version, capability, extended_capability,
+            enabled_status, enabled_faults, enabled_root,
+            LEANOS_VTD_ROOT_TABLE_ADDRESS, vtd_journal) != 0)
+        fail("vtd-generated-activation");
+    serial_puts("LEANOS/21 VTD-ACTIVATE order=validate,scrub,construct,publish,"
+        "invalidate-context,invalidate-iotlb,enable,verify journal=");
+    serial_u64(vtd_journal);
+    serial_puts(" gsts="); serial_u64(enabled_status);
+    serial_puts(" fsts=0 rtaddr="); serial_u64(enabled_root);
+    serial_puts(" generated-result=0 stage=pre-cpl3 result=PASS\n");
+}
+
+/* Re-observe the enabled remapping state at every outbound CPL3 gate: the
+   exact enabled status, empty fault state, published root pointer, and the
+   complete live tables against the generated plan. */
+static __attribute__((noinline, noipa)) void verify_vtd_state(void) {
+    if (vtd_mmio_read32(VTD_REG_GLOBAL_STATUS) != LEANOS_VTD_ENABLED_GSTS ||
+        vtd_mmio_read32(VTD_REG_FAULT_STATUS) != 0 ||
+        vtd_mmio_read64(VTD_REG_ROOT_TABLE_ADDRESS) !=
+            LEANOS_VTD_ROOT_TABLE_ADDRESS)
+        fail("vtd-live-status");
+    for (uint64_t word = 0; word < 512; ++word)
+        if (vtd_root_table[word] != leanos_vtd_root_table[word] ||
+            vtd_context_table[word] != leanos_vtd_context_table[word])
+            fail("vtd-live-tables");
+}
+
+#if LEANOS_RETURN_CORRUPTION_MODE == 26
+/* Controlled machine negative only: disable translation after the accepted
+   activation so the production outbound status read-back must reject. */
+static __attribute__((noinline, noipa)) void inject_vtd_translation_disable(void) {
+    vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND, 0);
+}
+#endif
 
 #if LEANOS_RETURN_CORRUPTION_MODE == 25
 /* Controlled machine negative only: restore the SATA bus-master bit after the
@@ -4187,6 +4406,8 @@ void kernel_main(uint32_t multiboot_magic, uint32_t multiboot_info) {
 
     check_boot_page_tables();
     check_runtime_mapping_invalidation();
+
+    vtd_boot_remap();
 
     boot_allocate(multiboot_magic, multiboot_info);
 

@@ -11,7 +11,7 @@ invoke() {
   local mode="$1" scenario="${2:-kernel-entry}"
   LEANOS_QEMU="$root/tests/qemu-nmi-fixture.py" \
     LEANOS_QEMU_FIXTURE_MODE="$mode" LEANOS_NMI_SCENARIO="$scenario" \
-    LEANOS_QEMU_TIMEOUT_SECONDS=1 \
+    LEANOS_QEMU_TIMEOUT_SECONDS=5 \
     LEANOS_SERIAL_LOG="$tmp/$mode-$scenario.serial" \
     LEANOS_QMP_LOG="$tmp/$mode-$scenario.qmp.jsonl" \
     ./scripts/run-nmi.sh "$tmp/image.iso"

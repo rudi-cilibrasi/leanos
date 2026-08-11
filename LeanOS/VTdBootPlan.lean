@@ -568,11 +568,21 @@ example : canonicalJournalWord = 0x87654321 := by native_decide
 
 /-! ## Generated activation boundary -/
 
+/-- The canonical journal as the scalar the generated boundary compares
+against; `canonicalJournalUInt64_toNat` binds it to the encoded journal so the
+freestanding comparison never depends on a module-initialized `Nat` global. -/
+def canonicalJournalUInt64 : UInt64 := 0x87654321
+
+theorem canonicalJournalUInt64_toNat :
+    canonicalJournalUInt64.toNat = canonicalJournalWord := by native_decide
+
 /-- Typed rejection tags for the generated scalar boundary.  Zero denotes
 acceptance; each nonzero tag names the first failed check.  `topology` is
 checked against the current pinned platform revision, which is shared with the
 DMA snapshot topology; construction revision 1 pinned the `intel-iommu` unit
-in the shared q35 builder. -/
+in the shared q35 builder.  Every comparison is scalar `UInt64` work so the
+generated C stays safe in the freestanding image, where no Lean module
+initializer runs. -/
 def validateActivation (version topology unitVersion capability extendedCapability
     globalStatus faultStatus rootTableAddress expectedRootTableAddress
     journal : UInt64) : UInt64 :=
@@ -584,10 +594,21 @@ def validateActivation (version topology unitVersion capability extendedCapabili
   else if globalStatus ≠ enabledGlobalStatus then 6
   else if faultStatus ≠ 0 then 7
   else if expectedRootTableAddress = 0 ∨
-      expectedRootTableAddress.toNat % pageBytes ≠ 0 ∨
+      expectedRootTableAddress % 4096 ≠ 0 ∨
       rootTableAddress ≠ expectedRootTableAddress then 8
-  else if journal.toNat ≠ canonicalJournalWord then 9
+  else if journal ≠ canonicalJournalUInt64 then 9
   else 0
+
+theorem validateActivation_alignment_matches_pageBytes
+    (address : UInt64) :
+    (address % 4096 = 0) ↔ (address.toNat % pageBytes = 0) := by
+  constructor
+  · intro h
+    have := congrArg UInt64.toNat h
+    simpa [UInt64.toNat_mod, pageBytes] using this
+  · intro h
+    apply UInt64.toNat_inj.mp
+    simpa [UInt64.toNat_mod, pageBytes] using h
 
 @[export leanos_validate_vtd_activation]
 def validateActivationExport (version topology unitVersion capability extendedCapability

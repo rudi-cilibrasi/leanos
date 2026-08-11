@@ -6,6 +6,13 @@ LeanOS is an experiment in building a small operating-system kernel whose
 implementation, executable specification, and machine-checked proofs evolve
 together in Lean 4.
 
+**[▶ Boot LeanOS in your browser](https://rudi-cilibrasi.github.io/leanos/)** —
+watch the unchanged canonical ISO boot live in a pinned WebAssembly QEMU, from
+firmware through the versioned protocol to `LEANOS/10 FINAL status=PASS` and
+guest debug-exit 33. Needs a desktop browser with cross-origin isolation;
+first load downloads a ~40 MB runtime.
+[How the demo is built and what it does and does not prove](docs/browser-boot.md).
+
 The project is an **experimental research prototype**, not a verified operating
 system. It now builds bootable x86-64 images, exercises several deterministic
 machine scenarios under QEMU, and checks a growing set of Lean models and
@@ -195,6 +202,24 @@ headlessly with `./scripts/run-image.sh`; the stable protocol, pinned reference
 tools, debug artifacts, and added trusted boundary are documented in
 [the boot-image guide](docs/boot-image.md).
 
+The same unchanged image also boots in a browser: the
+[in-browser boot compatibility harness](docs/browser-boot.md) runs the canonical
+ISO in a pinned, unforked qemu-wasm WebAssembly runtime and requires the
+identical versioned serial protocol and debug-exit status through the native
+`scripts/run-image.sh` acceptance path. It is compatibility evidence at a
+trusted boundary, not a proof of the browser or emulator.
+
+**[▶ Boot LeanOS in your browser](https://rudi-cilibrasi.github.io/leanos/)** —
+the unchanged canonical ISO running live in a pinned WebAssembly QEMU. First
+load downloads a ~40&nbsp;MB runtime and needs a desktop browser with
+cross-origin isolation (`SharedArrayBuffer`); the page shows the boot protocol
+until `LEANOS/10 FINAL status=PASS` and a guest debug-exit of 33. The deployed
+site is staged from source-verified pinned assets by
+[`scripts/stage-browser-demo.sh`](scripts/stage-browser-demo.sh) and its
+[third-party licenses](docs/browser-demo-licenses.md) are inventoried; it is
+emulator-tested integration evidence, not a proof of LeanOS, the browser, or the
+emulator.
+
 The first Phase 2 executable boundary boots one deliberately tiny ring-3
 subject through an `int 0x80` gate, binds its calls to kernel-selected context,
 and contains one expected user page fault. Its assumptions and evidence are
@@ -278,9 +303,19 @@ canonical two-word entry codec (round-trip, image, and injectivity), that every
 accepted plan is the deny-all projection of an accepted `IOMMU.State` mapping no
 frame, that the remapping-table frames are reserved and disjoint from the CPU
 page tables, and a fixed fail-closed activation order. A host-only generator
-emits the checked tables. The tables are still deny-all; VT-d MMIO programming,
-the boot-side constructor, the assigned-device path, and any hardware
-refinement claim remain out of scope.
+emits the checked tables. The boot image maps the unit's MMIO window as the
+one reviewed non-identity page-plan leaf (supervisor-only, no-execute, with
+live-mutation fixtures), validates the quiescent unit against the pinned
+registers, then installs the generated deny-all tables from scrubbed reserved
+frames and enables translation in a fixed fail-closed order — publish root,
+invalidate context cache and IOTLB, enable, verify enabled status and empty
+fault state — with each step journaled and the final state accepted by the
+generated `leanos_validate_vtd_activation` boundary before CPL3. Every
+outbound CPL3 gate re-observes the enabled state and live tables, and source
+and final-ELF policy checks confine every MMIO write site and pin the
+activation order. Bus masters stay disabled, so the enabled deny-all tables
+translate no DMA; the assigned-device path and any hardware refinement claim
+remain out of scope.
 
 The bounded [direct-port-I/O authority model](docs/direct-port-io.md) separates
 untrusted port/value words from kernel-selected purpose, models the selected

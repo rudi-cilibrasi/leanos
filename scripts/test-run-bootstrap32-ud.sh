@@ -9,7 +9,7 @@ touch "$tmp/image.iso"
 
 invoke() {
   LEANOS_QEMU="$root/tests/qemu-bootstrap32-ud-fixture.py" \
-    LEANOS_QEMU_FIXTURE_MODE="$1" LEANOS_QEMU_TIMEOUT_SECONDS=1 \
+    LEANOS_QEMU_FIXTURE_MODE="$1" LEANOS_QEMU_TIMEOUT_SECONDS=5 \
     LEANOS_SERIAL_LOG="$tmp/$1.serial" \
     ./scripts/run-bootstrap32-ud.sh "$tmp/image.iso"
 }

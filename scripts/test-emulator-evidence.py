@@ -73,6 +73,10 @@ def successful_runner(_command, *, env, **_kwargs):
         Path(env["LEANOS_DMA_SNAPSHOT"]).write_text(
             "typed DMA snapshot evidence\n", encoding="utf-8"
         )
+    if "LEANOS_VTD_SNAPSHOT" in env:
+        Path(env["LEANOS_VTD_SNAPSHOT"]).write_text(
+            "typed VT-d activation snapshot evidence\n", encoding="utf-8"
+        )
     if "LEANOS_QMP_LOG" in env:
         Path(env["LEANOS_QMP_LOG"]).write_text(
             '{"direction":"host-to-qemu","message":{"execute":"inject-nmi"}}\n',

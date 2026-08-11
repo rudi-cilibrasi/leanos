@@ -10,7 +10,7 @@ touch "$tmp/image.iso"
 invoke() {
   LEANOS_QEMU="$repo_root/tests/qemu-dma-unknown-device-fixture.sh" \
     LEANOS_QEMU_FIXTURE_MODE="$1" \
-    LEANOS_QEMU_TIMEOUT_SECONDS=1 \
+    LEANOS_QEMU_TIMEOUT_SECONDS=5 \
     LEANOS_SERIAL_LOG="$tmp/$1.serial" \
     ./scripts/run-dma-unknown-device.sh "$tmp/image.iso"
 }

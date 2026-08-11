@@ -3,6 +3,7 @@
     "MD013": false
   },
   "ignores": [
-    ".lake/**"
+    ".lake/**",
+    "**/node_modules/**"
   ]
 }

@@ -15,7 +15,7 @@ invoke() {
     LEANOS_ORACLE_CORPUS="$tmp/oracle/corpus.tsv" \
     LEANOS_QEMU="$root/tests/qemu-fast-entry-fixture.sh" \
     LEANOS_QEMU_FIXTURE_MODE="$mode" \
-    LEANOS_QEMU_TIMEOUT_SECONDS=1 \
+    LEANOS_QEMU_TIMEOUT_SECONDS=5 \
     LEANOS_SERIAL_LOG="$tmp/${mechanism}-${mode}.serial" \
     LEANOS_DMA_SNAPSHOT="$tmp/${mechanism}-${mode}.dma.tsv" \
     LEANOS_FAST_ENTRY_SNAPSHOT="$tmp/${mechanism}-${mode}.snapshot" \

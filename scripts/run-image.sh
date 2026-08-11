@@ -83,6 +83,7 @@ fi
 image="${1:-$default_image}"
 log="${LEANOS_SERIAL_LOG:-build/boot/serial.log}"
 dma_snapshot="${LEANOS_DMA_SNAPSHOT:-build/boot/dma-quarantine-snapshot-${scenario}.tsv}"
+vtd_snapshot="${LEANOS_VTD_SNAPSHOT:-build/boot/vtd-activation-snapshot-${scenario}.tsv}"
 source_revision_file="${LEANOS_SOURCE_REVISION_FILE:-build/boot/SOURCE_REVISION}"
 high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
 fault_snapshot_artifact="${LEANOS_FAULT_SNAPSHOT_ARTIFACT:-build/boot/${scenario}-snapshot.txt}"
@@ -386,7 +387,8 @@ paging_specs=(
   'flip-nx B pt' 'wrong-frame B pt' 'ancestor-pointer B pml4'
   'ancestor-flags B pdpt' 'swapped-user-leaves B pt'
   'extra-mapping B pt' 'nmi-guard-mapping B pt' 'entry-guard-mapping B pt'
-  'omitted-mapping B pt' 'mutable-wrong-frame B pt'
+  'omitted-mapping B pt' 'mmio-wrong-frame B pt' 'mmio-flip-user B pt'
+  'mutable-wrong-frame B pt'
   'mutable-publish-before-invalidation B pt' 'mutable-unknown-state B pt'
   'wrong-cr3 A cr3'
 )
@@ -401,8 +403,31 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
     exit 1
   fi
 done
+vtd_trace="$(awk '/^LEANOS\/21 /' "$log")"
+mapfile -t vtd_lines <<<"$vtd_trace"
+vtd_root_frame=0
+vtd_context_frame=0
+if [[ ${#vtd_lines[@]} -ne 4 ]] ||
+   [[ "${vtd_lines[0]}" != 'LEANOS/21 VTD unit=0 mmio=4275634176 version=16 cap=59110346977575430 ecap=3842 gsts=0 fsts=0 rtaddr=0 stage=pre-activation result=PASS' ]]; then
+  echo "failure_class=vtd-evidence: exact quiescent VT-d unit evidence not observed" >&2
+  exit 1
+fi
+if [[ "${vtd_lines[1]}" =~ ^LEANOS/21\ VTD-PLAN\ root-frame=([1-9][0-9]*)\ context-frame=([1-9][0-9]*)\ root-words=512\ context-words=512\ present-root-entries=1\ present-context-entries=0\ translation=disabled\ deny-all=1\ result=PASS$ ]]; then
+  vtd_root_frame="${BASH_REMATCH[1]}"
+  vtd_context_frame="${BASH_REMATCH[2]}"
+else
+  echo "failure_class=vtd-evidence: exact deny-all VT-d plan evidence not observed" >&2
+  exit 1
+fi
+if [[ "$vtd_context_frame" -ne $((vtd_root_frame + 1)) ]] ||
+   [[ "${vtd_lines[2]}" != "LEANOS/21 VTD-TABLES root-frame=${vtd_root_frame} context-frame=${vtd_context_frame} scrub=verified construct=verified root-words=512 context-words=512 result=PASS" ]] ||
+   [[ "${vtd_lines[3]}" != "LEANOS/21 VTD-ACTIVATE order=validate,scrub,construct,publish,invalidate-context,invalidate-iotlb,enable,verify journal=2271560481 gsts=3221225472 fsts=0 rtaddr=$((vtd_root_frame * 4096)) generated-result=0 stage=pre-cpl3 result=PASS" ]]; then
+  echo "failure_class=vtd-evidence: exact fail-closed VT-d activation evidence not observed" >&2
+  exit 1
+fi
 sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' \
-  -e '/^LEANOS\/15 DMA-FUNCTION /d' "$log" > "$without_allocation"
+  -e '/^LEANOS\/15 DMA-FUNCTION /d' -e '/^LEANOS\/21 /d' \
+  "$log" > "$without_allocation"
 if (( fault_scenario )); then
   mkdir -p "$(dirname "$fault_snapshot_artifact")"
   grep '^LEANOS/14 PF-SNAPSHOT ' "$log" > "$fault_snapshot_artifact" || {
@@ -474,6 +499,14 @@ if ! ./scripts/write-dma-snapshot.py \
     --qemu-version "${qemu_version:-unknown}" \
     --output "$dma_snapshot"; then
   echo "failure_class=dma-snapshot: canonical per-function snapshot rejected" >&2
+  exit 1
+fi
+if ! ./scripts/write-vtd-snapshot.py \
+    --serial-log "$log" \
+    --source-revision "$source_revision_file" \
+    --qemu-version "${qemu_version:-unknown}" \
+    --output "$vtd_snapshot"; then
+  echo "failure_class=vtd-snapshot: canonical activation snapshot rejected" >&2
   exit 1
 fi
 if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||

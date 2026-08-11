@@ -1,0 +1,95 @@
+name: Deploy browser demo
+
+# Builds the canonical ISO, stages the self-contained qemu-wasm demo from the
+# hash-verified pinned runtime, boots the staged site in a browser as the
+# acceptance gate, and deploys it to GitHub Pages. Deployment runs only on the
+# default branch and manual dispatch, kept separate from pull-request
+# validation (ADR 0011, issue #192). Enabling Pages with source "GitHub Actions"
+# is a one-time repository setting.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Stage and verify the demo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Install pinned Lean toolchain
+        uses: ./.github/actions/setup-lean
+
+      - name: Install image tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc=4:13.2.0-7ubuntu1 \
+            binutils=2.42-4ubuntu2.10 \
+            grub-common=2.12-1ubuntu7.3 \
+            grub-pc-bin=2.12-1ubuntu7.3 \
+            mtools=4.0.43-1build1 \
+            xorriso=1:1.5.6-1.1ubuntu3 \
+            qemu-system-x86=1:8.2.2+ds-0ubuntu1.18 \
+            coreutils=9.4-3ubuntu6.2
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Build canonical image
+        run: ./scripts/build-image.sh
+
+      - name: Prepare pinned browser runtime
+        run: ./scripts/prepare-browser-runtime.sh
+
+      - name: Install pinned browser
+        id: browser
+        run: |
+          npx --yes @puppeteer/browsers install chrome@stable --path build/browser/chrome
+          echo "path=$(find build/browser/chrome -type f -name chrome | head -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Browser boot acceptance
+        env:
+          LEANOS_BROWSER: ${{ steps.browser.outputs.path }}
+        run: ./scripts/run-browser-boot.sh
+
+      - name: Stage self-contained site
+        run: ./scripts/stage-browser-demo.sh
+
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: build/browser/site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
