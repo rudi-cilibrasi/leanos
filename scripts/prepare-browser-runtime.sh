@@ -9,6 +9,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+support_only=false
+case "${1:-}" in
+  "") ;;
+  --support-only) support_only=true ;;
+  *) echo "usage: $0 [--support-only]" >&2; exit 64 ;;
+esac
+
 manifest="scripts/browser-boot/manifest.json"
 runtime_dir="build/browser/runtime"
 work_dir="build/browser/checkout"
@@ -33,7 +40,22 @@ mkdir -p "$runtime_dir" "$(dirname "$work_dir")"
 
 git clone --quiet --filter=blob:none "$demo_repo" "$work_dir"
 git -C "$work_dir" switch --quiet --detach "$demo_rev"
-git -C "$work_dir" submodule update --quiet --init --filter=blob:none docs/images
+if $support_only; then
+  # Keep the issue #194 source-build path from fetching or checking out the
+  # prebuilt emulator. A blob-filtered sparse checkout materializes only the
+  # separately pinned firmware-loader support files that path still needs.
+  images_repo="$(git -C "$work_dir" config -f .gitmodules \
+    --get submodule.docs/images.url)"
+  rm -rf "$work_dir/docs/images"
+  git clone --quiet --filter=blob:none --no-checkout \
+    "$images_repo" "$work_dir/docs/images"
+  git -C "$work_dir/docs/images" sparse-checkout init --no-cone
+  git -C "$work_dir/docs/images" sparse-checkout set --no-cone \
+    alpine-x86_64/load-rom.js alpine-x86_64/load-rom.data
+  git -C "$work_dir/docs/images" switch --quiet --detach "$images_rev"
+else
+  git -C "$work_dir" submodule update --quiet --init --filter=blob:none docs/images
+fi
 observed_images="$(git -C "$work_dir/docs/images" rev-parse HEAD)"
 [[ "$observed_images" == "$images_rev" ]] || {
   echo "error: images submodule ${observed_images} != pinned ${images_rev}" >&2
@@ -52,8 +74,11 @@ verify() {
   cp "$src" "$runtime_dir/$name"
 }
 
-for name in coi-serviceworker.js out.js qemu-system-x86_64.wasm \
-    qemu-system-x86_64.worker.js load-rom.js load-rom.data; do
+runtime_names=(coi-serviceworker.js load-rom.js load-rom.data)
+if ! $support_only; then
+  runtime_names+=(out.js qemu-system-x86_64.wasm qemu-system-x86_64.worker.js)
+fi
+for name in "${runtime_names[@]}"; do
   rel="$(json runtime_files "$name" path)"
   hash="$(json runtime_files "$name" sha256)"
   verify "$name" "$work_dir/$rel" "$hash"
@@ -80,5 +105,5 @@ done
 ( cd scripts/browser-boot && npm ci --ignore-scripts >/dev/null )
 
 rm -rf "$work_dir"
-echo "Staged verified runtime in ${runtime_dir}:"
+echo "Staged verified $($support_only && echo support || echo runtime) assets in ${runtime_dir}:"
 ( cd "$runtime_dir" && sha256sum ./* )

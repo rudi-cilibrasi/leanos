@@ -10,6 +10,18 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$root"
 
 node scripts/browser-boot/test-evaluate.mjs
 
+# The source-built staging path must not route through the legacy mode that
+# checks out the trusted prebuilt emulator before replacing it.
+grep -Fq 'prepare-browser-runtime.sh" --support-only' \
+  scripts/prepare-source-built-browser-runtime.sh
+grep -Fq 'sparse-checkout set --no-cone' scripts/prepare-browser-runtime.sh
+if sed -n '/if \$support_only;/,/^else$/p' scripts/prepare-browser-runtime.sh | \
+    grep -Eq 'out\.js|qemu-system-x86_64\.(wasm|worker\.js)'; then
+  echo "error: support-only staging references a prebuilt emulator output" >&2
+  exit 1
+fi
+echo "ok - source-built staging excludes prebuilt emulator outputs"
+
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 printf '%040d\n' 0 > "$tmp/SOURCE_REVISION"
 ./scripts/generate-oracle.sh "$tmp/oracle" >/dev/null

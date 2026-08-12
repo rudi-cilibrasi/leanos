@@ -26,8 +26,9 @@ evidence="$repo_root/browser-runtime/provisional-source-build-evidence-v1.json"
   --evidence --staging "$source_dir"
 
 # Reuse only the separately pinned support assets from the accepted #193
-# harness. The prebuilt emulator copied by this command is replaced below.
-"$repo_root/scripts/prepare-browser-runtime.sh"
+# harness. The support-only path never fetches or checks out its prebuilt
+# emulator; the three emulator outputs come exclusively from source_dir.
+"$repo_root/scripts/prepare-browser-runtime.sh" --support-only
 install -m 0644 "$source_dir/qemu-system-x86_64.js" "$runtime_dir/out.js"
 install -m 0644 "$source_dir/qemu-system-x86_64.wasm" \
   "$runtime_dir/qemu-system-x86_64.wasm"
