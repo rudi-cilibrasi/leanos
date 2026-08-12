@@ -16,7 +16,9 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
-runtime_dir="build/browser/runtime"
+runtime_dir="${LEANOS_BROWSER_RUNTIME:-build/browser/runtime}"
+source_manifest="$repo_root/browser-runtime/manifest-v1.json"
+source_evidence="$repo_root/browser-runtime/provisional-source-build-evidence-v1.json"
 shim="$repo_root/scripts/browser-boot/qemu-wasm-shim.mjs"
 evidence="${LEANOS_BROWSER_EVIDENCE:-build/browser/browser-boot-${scenario}.json}"
 
@@ -42,14 +44,30 @@ browser_version="$("$browser" --version 2>/dev/null | head -n 1 || echo unknown)
 source_revision="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 runtime_provenance="$runtime_dir/.leanos-runtime-provenance.json"
 if [[ -f "$runtime_provenance" ]]; then
-  runtime_kind="$(python3 - "$runtime_provenance" "$runtime_dir" <<'PY'
+  runtime_kind="$(python3 - "$runtime_provenance" "$runtime_dir" \
+    "$source_manifest" "$source_evidence" <<'PY'
 import hashlib, json, pathlib, sys
 data = json.load(open(sys.argv[1]))
 runtime = pathlib.Path(sys.argv[2])
+manifest_path = pathlib.Path(sys.argv[3])
+evidence_path = pathlib.Path(sys.argv[4])
 if data.get("schema") != "leanos-browser-runtime-provenance/v1":
     raise SystemExit("error: invalid browser runtime provenance schema")
 if data.get("kind") != "source-built":
     raise SystemExit("error: invalid browser runtime provenance kind")
+manifest_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+evidence_digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+if data.get("manifest_sha256") != manifest_digest:
+    raise SystemExit("error: source-built runtime provenance manifest digest mismatch")
+if data.get("evidence_sha256") != evidence_digest:
+    raise SystemExit("error: source-built runtime provenance evidence digest mismatch")
+evidence = json.loads(evidence_path.read_text())
+evidence_outputs = {item["path"]: item for item in evidence.get("outputs", [])}
+name_map = {
+    "out.js": "qemu-system-x86_64.js",
+    "qemu-system-x86_64.wasm": "qemu-system-x86_64.wasm",
+    "qemu-system-x86_64.worker.js": "qemu-system-x86_64.worker.js",
+}
 expected_names = {
     "out.js", "qemu-system-x86_64.wasm", "qemu-system-x86_64.worker.js"
 }
@@ -62,6 +80,9 @@ for name, expected in data["outputs"].items():
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if digest != expected.get("sha256") or path.stat().st_size != expected.get("size"):
         raise SystemExit(f"error: source-built runtime differs from provenance: {name}")
+    retained = evidence_outputs.get(name_map[name])
+    if retained is None or digest != retained.get("sha256") or path.stat().st_size != retained.get("size"):
+        raise SystemExit(f"error: source-built runtime differs from retained evidence: {name}")
 print(data["kind"])
 PY
 )"

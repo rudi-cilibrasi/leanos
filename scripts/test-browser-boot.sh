@@ -26,6 +26,46 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 printf '%040d\n' 0 > "$tmp/SOURCE_REVISION"
 ./scripts/generate-oracle.sh "$tmp/oracle" >/dev/null
 
+# A marker that merely blesses substituted bytes must not authenticate itself.
+for name in out.js qemu-system-x86_64.wasm qemu-system-x86_64.worker.js; do
+  printf 'forged-%s\n' "$name" > "$tmp/$name"
+done
+python3 - "$tmp" <<'PY'
+import hashlib, json, pathlib, sys
+runtime = pathlib.Path(sys.argv[1])
+outputs = {}
+for name in ("out.js", "qemu-system-x86_64.wasm", "qemu-system-x86_64.worker.js"):
+    path = runtime / name
+    outputs[name] = {
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "size": path.stat().st_size,
+    }
+(runtime / ".leanos-runtime-provenance.json").write_text(json.dumps({
+    "schema": "leanos-browser-runtime-provenance/v1",
+    "kind": "source-built",
+    "manifest_sha256": "0" * 64,
+    "evidence_sha256": "0" * 64,
+    "outputs": outputs,
+}) + "\n")
+PY
+fake_browser="$tmp/fake-browser"
+printf '#!/usr/bin/env bash\necho fake-browser\n' > "$fake_browser"
+chmod +x "$fake_browser"
+touch "$tmp/image.iso"
+if LEANOS_BROWSER_RUNTIME="$tmp" LEANOS_BROWSER="$fake_browser" \
+    LEANOS_IMAGE="$tmp/image.iso" ./scripts/run-browser-boot.sh \
+    >"$tmp/forged.out" 2>&1; then
+  echo "error: forged source-built provenance marker was accepted" >&2
+  exit 1
+fi
+grep -Fq 'source-built runtime provenance manifest digest mismatch' \
+  "$tmp/forged.out" || {
+    echo "error: forged marker lacked the expected fail-closed diagnostic" >&2
+    cat "$tmp/forged.out" >&2
+    exit 1
+  }
+echo "ok - rejects self-authenticating source-built provenance marker"
+
 # A mock emulator honouring the shim's contract: answer --version, write the
 # fixture serial to the -serial file: target, and exit with the fixture status.
 mock="$tmp/mock-qemu.sh"
