@@ -101,9 +101,15 @@ def validate_inputs(data: dict) -> None:
     acceptance = data.get("acceptance", {})
     if acceptance.get("ready") is not False:
         fail("prototype input lock must remain acceptance.ready=false")
-    blocker = acceptance.get("blocked_by", {})
-    if blocker.get("issue") != 193 or not blocker.get("required_result"):
-        fail("prototype must preserve the explicit issue #193 blocker")
+    pending_gate = acceptance.get("pending_gate", {})
+    if (
+        pending_gate.get("name") != "source-built-browser-acceptance"
+        or not pending_gate.get("required_result")
+    ):
+        fail("prototype must preserve the source-built browser acceptance gate")
+    resolved_by = acceptance.get("resolved_by", {})
+    if resolved_by.get("issue") != 193 or resolved_by.get("pr") != 221:
+        fail("prototype must preserve the resolved #193/#221 media decision")
 
     host = data.get("host", {})
     container = data.get("toolchain", {}).get("container", {})
@@ -175,6 +181,16 @@ def validate_inputs(data: dict) -> None:
         fail("apt top-level dependency inventory is empty")
     if any(not isinstance(item, str) or "=" not in item for item in apt):
         fail("every apt top-level package must have an exact version")
+    apt_snapshot = data.get("toolchain", {}).get("apt_snapshot", {})
+    expected_snapshot = {
+        "url": "https://snapshot.ubuntu.com/ubuntu",
+        "timestamp": "20260206T000000Z",
+        "distribution": "jammy",
+        "pockets": ["jammy", "jammy-updates", "jammy-security"],
+        "components": ["main", "universe"],
+    }
+    if apt_snapshot != expected_snapshot:
+        fail("APT snapshot identity differs from the reviewed immutable input")
 
     configuration = data.get("configuration", {})
     if configuration.get("target_list") != "x86_64-softmmu":
@@ -243,7 +259,7 @@ def validate_inputs(data: dict) -> None:
         if output.get("sha256") is not None or output.get("size") is not None:
             fail("prototype output hashes must stay unresolved until two clean builds pass")
     if not data.get("deferred_outputs"):
-        fail("prototype must list outputs deferred on issue #193")
+        fail("prototype must list outputs deferred on browser acceptance")
 
     dockerfile = DOCKERFILE.read_text()
     expected_base = (
@@ -259,6 +275,16 @@ def validate_inputs(data: dict) -> None:
     for package in apt:
         if package not in dockerfile:
             fail(f"Dockerfile does not exact-pin apt package {package}")
+    if (
+        f"ARG UBUNTU_SNAPSHOT_URL={apt_snapshot['url']}" not in dockerfile
+        or f"ARG UBUNTU_SNAPSHOT={apt_snapshot['timestamp']}" not in dockerfile
+    ):
+        fail("Dockerfile APT snapshot does not match the manifest")
+    for pocket in apt_snapshot["pockets"]:
+        if f" {pocket} main universe" not in dockerfile:
+            fail(f"Dockerfile does not configure APT snapshot pocket {pocket}")
+    if "Acquire::Check-Valid-Until=false" not in dockerfile:
+        fail("Dockerfile does not permit the immutable APT snapshot timestamp")
 
     forbidden = ("qemu-wasm-demo/docs/images", "qemu-system-x86_64.wasm\" \"$")
     implementation = dockerfile + "\n" + BUILD_SCRIPT.read_text()

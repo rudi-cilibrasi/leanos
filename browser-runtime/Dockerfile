@@ -20,6 +20,8 @@ ARG MESON_URL=https://files.pythonhosted.org/packages/d6/97/852cc27c460d5fae07c6
 ARG MESON_SHA256=45d7b8653c1e5139df35b33be2dd5b2d040c5b2c6129f9a7c890d507e33312b8
 ARG XTERM_PTY_URL=https://registry.npmjs.org/xterm-pty/-/xterm-pty-0.10.1.tgz
 ARG XTERM_PTY_SHA256=ca1c31fd4c9ab1506c0e6619ee358d4260775b7045f10a5631b36f0ba9a8434a
+ARG UBUNTU_SNAPSHOT_URL=https://snapshot.ubuntu.com/ubuntu
+ARG UBUNTU_SNAPSHOT=20260206T000000Z
 
 ENV TARGET=/build/target
 ENV CHOST=wasm32-unknown-linux
@@ -30,7 +32,13 @@ ENV CPATH=/build/target/include
 ENV PKG_CONFIG_PATH=/build/target/lib/pkgconfig
 ENV EM_PKG_CONFIG_PATH=/build/target/lib/pkgconfig
 
-RUN apt-get update \
+RUN rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources \
+ && printf '%s\n' \
+      "deb ${UBUNTU_SNAPSHOT_URL}/${UBUNTU_SNAPSHOT}/ jammy main universe" \
+      "deb ${UBUNTU_SNAPSHOT_URL}/${UBUNTU_SNAPSHOT}/ jammy-updates main universe" \
+      "deb ${UBUNTU_SNAPSHOT_URL}/${UBUNTU_SNAPSHOT}/ jammy-security main universe" \
+      > /etc/apt/sources.list \
+ && apt-get -o Acquire::Check-Valid-Until=false update \
  && apt-get install -y --no-install-recommends \
       autoconf=2.71-2 \
       automake=1:1.16.5-1.3 \

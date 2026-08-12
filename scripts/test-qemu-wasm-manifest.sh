@@ -61,6 +61,11 @@ jq '.dependencies[0].sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   "$manifest" > "$fixtures/substituted-dependency.json"
 expect_rejection substituted-dependency "Dockerfile does not enforce zlib"
 
+jq '.toolchain.apt_snapshot.timestamp = "20250602T000000Z"' \
+  "$manifest" > "$fixtures/changed-apt-snapshot.json"
+expect_rejection changed-apt-snapshot \
+  "APT snapshot identity differs from the reviewed immutable input"
+
 jq '.configuration.configure_command += " --enable-slirp"' \
   "$manifest" > "$fixtures/divergent-configure-command.json"
 expect_rejection divergent-configure-command \
@@ -172,7 +177,7 @@ jq -r '.[].path' <<<"$release_outputs" |
 release_manifest="$fixtures/release-manifest.json"
 jq --argjson outputs "$release_outputs" '
   .acceptance.ready = true
-  | del(.acceptance.blocked_by, .acceptance.provisional_reason)
+  | del(.acceptance.pending_gate, .acceptance.provisional_reason)
   | .deferred_outputs = []
   | .outputs = ($outputs | map(
       . + {
