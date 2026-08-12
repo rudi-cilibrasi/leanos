@@ -32,6 +32,21 @@ set: it runs two isolated clean builds, validates each complete output
 inventory against `SHA256SUMS`, and rejects any byte difference between the
 two directories.
 
+After retaining either clean output directory, stage it into the accepted
+browser harness without trusting the old prebuilt emulator:
+
+```sh
+./scripts/prepare-source-built-browser-runtime.sh \
+  build/qemu-wasm-reproducibility/clean-build-1
+./scripts/run-browser-boot.sh
+```
+
+The staging command first validates the complete prototype inventory and the
+checked-in two-build evidence, then replaces only the emulator JavaScript,
+WebAssembly, and worker outputs in the pinned #193 support-asset set. It writes
+a hashed provenance marker that the browser runner includes in its evidence,
+so a source-built acceptance run cannot be mislabeled as the trusted prebuilt.
+
 The container executes the configure and build commands from the validated
 manifest itself. Validation derives the configure command from its structured,
 shell-safe argument inventory and rejects any mismatch, so `BUILD_COMMANDS.txt`

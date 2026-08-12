@@ -40,6 +40,36 @@ iso_sha="$(sha256sum "$image" | cut -d' ' -f1)"
 wasm_sha="$(sha256sum "$runtime_dir/qemu-system-x86_64.wasm" | cut -d' ' -f1)"
 browser_version="$("$browser" --version 2>/dev/null | head -n 1 || echo unknown)"
 source_revision="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+runtime_provenance="$runtime_dir/.leanos-runtime-provenance.json"
+if [[ -f "$runtime_provenance" ]]; then
+  runtime_kind="$(python3 - "$runtime_provenance" "$runtime_dir" <<'PY'
+import hashlib, json, pathlib, sys
+data = json.load(open(sys.argv[1]))
+runtime = pathlib.Path(sys.argv[2])
+if data.get("schema") != "leanos-browser-runtime-provenance/v1":
+    raise SystemExit("error: invalid browser runtime provenance schema")
+if data.get("kind") != "source-built":
+    raise SystemExit("error: invalid browser runtime provenance kind")
+expected_names = {
+    "out.js", "qemu-system-x86_64.wasm", "qemu-system-x86_64.worker.js"
+}
+if set(data.get("outputs", {})) != expected_names:
+    raise SystemExit("error: incomplete source-built runtime provenance")
+for name, expected in data["outputs"].items():
+    path = runtime / name
+    if not path.is_file():
+        raise SystemExit(f"error: missing source-built runtime output: {name}")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != expected.get("sha256") or path.stat().st_size != expected.get("size"):
+        raise SystemExit(f"error: source-built runtime differs from provenance: {name}")
+print(data["kind"])
+PY
+)"
+  runtime_provenance_sha="$(sha256sum "$runtime_provenance" | cut -d' ' -f1)"
+else
+  runtime_kind="trusted-prebuilt"
+  runtime_provenance_sha=""
+fi
 
 echo "Booting ${image} (sha ${iso_sha:0:16}...) in ${browser_version}"
 start="$(date +%s)"
@@ -55,9 +85,10 @@ elapsed=$(( "$(date +%s)" - start ))
 
 mkdir -p "$(dirname "$evidence")"
 python3 - "$evidence" "$status" "$elapsed" "$iso_sha" "$wasm_sha" \
-  "$browser_version" "$source_revision" "$scenario" <<'PY'
+  "$browser_version" "$source_revision" "$scenario" "$runtime_kind" \
+  "$runtime_provenance_sha" <<'PY'
 import json, sys
-path, status, elapsed, iso_sha, wasm_sha, browser, revision, scenario = sys.argv[1:9]
+path, status, elapsed, iso_sha, wasm_sha, browser, revision, scenario, runtime_kind, provenance_sha = sys.argv[1:11]
 json.dump({
     "scenario": scenario,
     "result": "pass" if status == "0" else "fail",
@@ -67,7 +98,8 @@ json.dump({
     "qemu_wasm_wasm_sha256": wasm_sha,
     "browser_version": browser,
     "source_revision": revision,
-    "runtime": "qemu-wasm 8.2.0 prebuilt (ktock/qemu-wasm-demo 0208c86, images b7c549b)",
+    "runtime": runtime_kind,
+    "runtime_provenance_sha256": provenance_sha or None,
     "acceptance": "scripts/run-image.sh canonical protocol + debug-exit 33",
 }, open(path, "w"), indent=2)
 open(path, "a").write("\n")
