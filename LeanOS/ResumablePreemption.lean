@@ -407,6 +407,24 @@ def switch (state : State) (interruptState : Interrupt.State)
                   error := none }
   | _ => reject state .nonTimer
 
+/-- Every successful save/select/restore leg performs the reviewed no-PCID
+root switch and therefore returns an empty modeled translation cache. -/
+theorem switch_accepted_flushes_translations state interruptState frame registers
+    (haccepted : (switch state interruptState frame registers).error = none) :
+    (switch state interruptState frame registers).state.translations.entries = [] := by
+  simp only [switch] at haccepted ⊢
+  split <;> try simp_all [reject, halt]
+  split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> try simp_all [reject]
+  all_goals split <;> simp_all [reject, TLB.switch]
+
 theorem rejected_unchanged state interruptState frame registers reason
     (hreason : reason ≠ .fatalEntry)
     (h : (switch state interruptState frame registers).error = some reason) :
@@ -965,9 +983,10 @@ theorem cleanupCapabilities_preserves_authority state subject holder object righ
 
 /-- Subject termination is one composite cleanup step: lifecycle ownership,
 scheduler membership, the resumable slot, and cached translations disappear
-together.  The scheduler model currently identifies each subject's owned
-address space with the same identifier; this is the explicit no-reuse boundary
-used by `Scheduler.ownsAddressSpace`. -/
+together.  Cleanup can release memory objects mapped by more than the retiring
+subject's own address space, so the cache action is deliberately the reviewed
+no-PCID full flush rather than a single-space invalidation.  This is the
+release/destruction boundary later consumed by fresh-frame publication. -/
 def cleanupSubject (state : State) (subject : SubjectId) : State :=
   let oldLifecycle := state.scheduler.lifecycle
   let terminated := SubjectLifecycle.terminateState oldLifecycle subject
@@ -989,12 +1008,19 @@ def cleanupSubject (state : State) (subject : SubjectId) : State :=
       ready := state.scheduler.ready.filter (· != subject) }
     contexts := eraseContext state.contexts subject
     translations := {
-      TLB.invalidateSpace state.translations subject with
+      state.translations with
       virtual := { virtual with
         memory := { virtual.memory with capabilities := lifecycle.capabilities }
         owner := lifecycle.addressOwner
         mappings := mappings }
-      active := lifecycle.current } }
+      active := lifecycle.current
+      entries := [] } }
+
+/-- Authoritative cleanup always models the complete machine-cache action
+required before any released frame can enter a fresh lifetime. -/
+@[simp] theorem cleanupSubject_flushes_translations state subject :
+    (cleanupSubject state subject).translations.entries = [] := by
+  simp [cleanupSubject]
 
 theorem cleanup_removes_context state subject :
     contextFor (cleanupSubject state subject).contexts subject = none := by
@@ -1569,7 +1595,7 @@ theorem cleanupSubject_preserves_coreWellFormed state subject
     have holdNoOwner := List.find?_eq_none.mp holdAbsent context
       (List.mem_filter.mp hmem).1
     simpa using holdNoOwner
-  · exact Nat.le_trans (TLB.erase_space_length state.translations.entries subject) htlb
+  · simp [cleanupSubject, TLB.Coherent]
 
 /-- Subject cleanup preserves the full resumable-state invariant from pre-state
 facts alone, including when it leaves a lone current subject. -/

@@ -8,6 +8,8 @@ symbols="$(nm "$elf")"
 ./scripts/check-entry-policy.sh "$elf"
 ./scripts/check-extended-state-policy.sh "$elf"
 ./scripts/check-early-idt-policy.py "$elf"
+./scripts/check-runtime-invalidation-policy.sh "$elf"
+./scripts/check-vtd-mmio-policy.sh "$elf"
 
 flags() {
   readelf -SW "$elf" | awk -v section="$1" \
@@ -46,6 +48,14 @@ for symbol in isr2 isr2_clac isr2_cld __nmi_ist_guard_start \
   __nmi_ist_stack_end nmi_ist_stack nmi_ist_stack_top; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: NMI terminal policy symbol missing: $symbol" >&2
+    exit 1
+  }
+done
+for symbol in __vtd_mmio_window_start __vtd_mmio_window_end \
+  vtd_root_table vtd_context_table vtd_remapping_table_end \
+  vtd_mmio_read32 vtd_mmio_read64; do
+  grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
+    echo "error: VT-d policy symbol missing: $symbol" >&2
     exit 1
   }
 done
@@ -101,6 +111,9 @@ grep -Fq 'movl $0, page_table_a(%eax)' boot/boot.S
 grep -Fq 'movl $0, page_table_b(%eax)' boot/boot.S
 [[ "$(grep -Fc 'mov $__entry_stack_guard_start, %eax' boot/boot.S)" -eq 1 ]]
 [[ "$(grep -Fc 'mov $__nmi_ist_guard_start, %eax' boot/boot.S)" -eq 1 ]]
+[[ "$(grep -Fc 'mov $__vtd_mmio_window_start, %eax' boot/boot.S)" -eq 1 ]]
+[[ "$(grep -Fc 'movl $0xFED90003, page_table_a(%eax)' boot/boot.S)" -eq 1 ]]
+[[ "$(grep -Fc 'movl $0xFED90003, page_table_b(%eax)' boot/boot.S)" -eq 1 ]]
 stub_disassembly="$(objdump -d "$elf" | sed -n '/<isr8>:/,/<isr6>:/p')"
 [[ -n "$stub_disassembly" ]] || {
   echo "error: could not isolate vector-8 disassembly" >&2
@@ -213,10 +226,20 @@ saved_b="$(nm -n "$elf" | awk '$3 == "saved_context_b" { print "0x" $1 }')"
   echo "error: resumable context A does not occupy the reviewed 160-byte image" >&2
   exit 1
 }
-[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 11 ]] || {
+[[ "$(grep -Fc 'rep movsq' boot/boot.S)" -eq 12 ]] || {
   echo "error: unexpected bounded context-copy inventory" >&2; exit 1;
 }
 grep -Fq 'lea initial_context_b(%rip), %rsi' boot/boot.S
+frame_budget_switch="$(
+  sed -n '/cmp \$0xfeed, %rax/,/^7:/p' boot/boot.S
+)"
+grep -Fq 'lea initial_context_b(%rip), %rsi' <<< "$frame_budget_switch" &&
+  grep -Fq 'mov $20, %ecx' <<< "$frame_budget_switch" &&
+  grep -Fq 'rep movsq' <<< "$frame_budget_switch" &&
+  grep -Fq 'mov initial_context_b+112(%rip), %rax' <<< "$frame_budget_switch" || {
+  echo "error: frame-budget B dispatch lacks the reviewed complete context copy" >&2
+  exit 1
+}
 grep -Fq 'extended_state_restore_peer:' boot/boot.S
 grep -Fq 'call complete_interrupt_entry' boot/boot.S
 grep -Fq 'jmp user_return_epilogue' boot/boot.S
@@ -252,8 +275,10 @@ initial_return_disassembly="$(objdump -d --no-show-raw-insn "$elf" |
 [[ "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+add[ql]?[[:space:]]+\$0x8,%rsp$' \
     <<<"$initial_return_disassembly")" -eq 1 &&
    "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+push' \
-    <<<"$initial_return_disassembly")" -eq 21 &&
+    <<<"$initial_return_disassembly")" -eq 20 &&
    "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+pop' \
+    <<<"$initial_return_disassembly")" -eq 0 &&
+   "$(grep -Ec '^[[:space:]]*[0-9a-f]+:[[:space:]]+push[ql]?[[:space:]]+\$0x216$' \
     <<<"$initial_return_disassembly")" -eq 1 ]] || {
   echo "error: initial user-return path does not preserve SysV validator-call alignment" >&2
   exit 1

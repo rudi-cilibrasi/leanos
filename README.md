@@ -6,6 +6,13 @@ LeanOS is an experiment in building a small operating-system kernel whose
 implementation, executable specification, and machine-checked proofs evolve
 together in Lean 4.
 
+**[▶ Boot LeanOS in your browser](https://rudi-cilibrasi.github.io/leanos/)** —
+watch the unchanged canonical ISO boot live in a pinned WebAssembly QEMU, from
+firmware through the versioned protocol to `LEANOS/10 FINAL status=PASS` and
+guest debug-exit 33. Needs a desktop browser with cross-origin isolation;
+first load downloads a ~40 MB runtime.
+[How the demo is built and what it does and does not prove](docs/browser-boot.md).
+
 The project is an **experimental research prototype**, not a verified operating
 system. It now builds bootable x86-64 images, exercises several deterministic
 machine scenarios under QEMU, and checks a growing set of Lean models and
@@ -61,6 +68,10 @@ partial log does not pass. The executable scenarios currently include:
 
 - the default two-subject, two-address-space blocking-IPC path, from B blocking
   on an empty endpoint through A's send/wake to exact delivery back to B;
+- an independent admitted-frame-budget path in which A reaches its one-frame
+  limit without starving B, checked termination restores one unit, and an
+  allocator-selected physical frame is scrubbed and reused through a
+  generated ring-3 mapping before B receives a fresh lifetime;
 - a bounded preemption path with two PIT interrupts, separate saved contexts,
   CR3 changes, a switch from A to B, and resumption of A's original frame;
 - an independent user-fault containment path that terminates A through the
@@ -79,7 +90,7 @@ partial log does not pass. The executable scenarios currently include:
   with their expected typed rejection before reaching CPL3.
 
 Before the main machine path, the normal images also replay the same bounded
-241-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
+380-vector [model-oracle corpus](docs/model-oracle.md) evaluated by Lean and by
 hosted generated C. These finite QEMU runs provide reproducible integration
 evidence for the named scenarios. They are not exhaustive tests, hardware
 qualification, or proofs that the binary refines the Lean models.
@@ -122,9 +133,10 @@ the restricted Lean runtime shim, Lean code generation and generated C, the C
 compiler and binutils, linker scripts, GRUB, SeaBIOS, QEMU/TCG, host-side
 evidence scripts, and the assumed x86-64 and device semantics. The boot scenarios
 test only the fixed single-core paths and adversarial cases documented by their
-ADRs. General concurrency, DMA outside the finite integrity-only q35 quarantine
-model, device-read confidentiality, timing and covert channels, arbitrary
-hardware, arbitrary faults, and full implementation refinement remain outside
+ADRs. General concurrency, DMA outside the finite q35 quarantine and static
+IOMMU models, device-read confidentiality outside explicitly authorized model
+views, timing and covert channels, arbitrary hardware, arbitrary faults, and
+full implementation refinement remain outside
 the current claims. [ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md) defines
 the evidence vocabulary and baseline boundary; later ADRs record each addition.
 
@@ -190,6 +202,24 @@ headlessly with `./scripts/run-image.sh`; the stable protocol, pinned reference
 tools, debug artifacts, and added trusted boundary are documented in
 [the boot-image guide](docs/boot-image.md).
 
+The same unchanged image also boots in a browser: the
+[in-browser boot compatibility harness](docs/browser-boot.md) runs the canonical
+ISO in a pinned, unforked qemu-wasm WebAssembly runtime and requires the
+identical versioned serial protocol and debug-exit status through the native
+`scripts/run-image.sh` acceptance path. It is compatibility evidence at a
+trusted boundary, not a proof of the browser or emulator.
+
+**[▶ Boot LeanOS in your browser](https://rudi-cilibrasi.github.io/leanos/)** —
+the unchanged canonical ISO running live in a pinned WebAssembly QEMU. First
+load downloads a ~40&nbsp;MB runtime and needs a desktop browser with
+cross-origin isolation (`SharedArrayBuffer`); the page shows the boot protocol
+until `LEANOS/10 FINAL status=PASS` and a guest debug-exit of 33. The deployed
+site is staged from source-verified pinned assets by
+[`scripts/stage-browser-demo.sh`](scripts/stage-browser-demo.sh) and its
+[third-party licenses](docs/browser-demo-licenses.md) are inventoried; it is
+emulator-tested integration evidence, not a proof of LeanOS, the browser, or the
+emulator.
+
 The first Phase 2 executable boundary boots one deliberately tiny ring-3
 subject through an `int 0x80` gate, binds its calls to kernel-selected context,
 and contains one expected user page fault. Its assumptions and evidence are
@@ -245,11 +275,47 @@ that a named present unassigned function cannot change physical memory,
 allocator ownership, page-table or kernel-owned frames, kernel state, or any
 subject-visible bytes. This is an integrity claim only: it does not constrain
 device reads or prove confidentiality, IOMMU isolation, or refinement from the
-Lean snapshot to the implementation. The guest also exhaustively checks that manifest after
-firmware, clears bus mastering on every present function, and reads each
-Command register back before CPL3. PCI enumeration and Command-register
-semantics, QEMU/device obedience, the handwritten C adapter, and final-binary
-correspondence remain trusted/tested boundaries rather than proof claims.
+Lean snapshot to the implementation. The repository's mandatory runners use
+one explicit `-nodefaults` construction with a pinned VGA BDF and boot-CD
+attachment. The guest exhaustively checks that manifest after firmware, clears
+bus mastering on every present function, and reads each Command register back
+before CPL3. Every later CPL3 return re-enumerates the manifest and requires
+the complete live Command words to match that accepted boot observation.
+PCI enumeration and Command-register semantics, QEMU/device
+obedience, the handwritten C adapter, and final-binary correspondence remain
+trusted/tested boundaries rather than proof claims.
+
+The separate finite [static IOMMU confinement model](docs/iommu-confinement.md)
+adds generation-bound device assignments and domains, capability-derived IOVA
+mappings, live backing-frame lifetimes, and read/write direction checks.
+Lean proves model-level read confidentiality and write integrity for one step
+and finite traces, plus non-forgery, attenuation, cleanup, lifetime, and
+owner-isolation facts. The deny-all q35 snapshot remains unchanged. No VT-d
+programming, IOTLB mechanics, assigned-device QEMU path, generated boundary,
+or final-binary/hardware confinement claim is included.
+
+The finite [deterministic VT-d boot plan](docs/vtd-boot-plan.md) projects that
+static device-domain model into the bounded root/context remapping tables a
+future boot slice will install for the pinned `intel-iommu` unit, which the
+shared q35 builder now constructs on every mandatory emulator run with every
+remapping-relevant option pinned and drift-rejected. Lean proves a
+canonical two-word entry codec (round-trip, image, and injectivity), that every
+accepted plan is the deny-all projection of an accepted `IOMMU.State` mapping no
+frame, that the remapping-table frames are reserved and disjoint from the CPU
+page tables, and a fixed fail-closed activation order. A host-only generator
+emits the checked tables. The boot image maps the unit's MMIO window as the
+one reviewed non-identity page-plan leaf (supervisor-only, no-execute, with
+live-mutation fixtures), validates the quiescent unit against the pinned
+registers, then installs the generated deny-all tables from scrubbed reserved
+frames and enables translation in a fixed fail-closed order — publish root,
+invalidate context cache and IOTLB, enable, verify enabled status and empty
+fault state — with each step journaled and the final state accepted by the
+generated `leanos_validate_vtd_activation` boundary before CPL3. Every
+outbound CPL3 gate re-observes the enabled state and live tables, and source
+and final-ELF policy checks confine every MMIO write site and pin the
+activation order. Bus masters stay disabled, so the enabled deny-all tables
+translate no DMA; the assigned-device path and any hardware refinement claim
+remain out of scope.
 
 The bounded [direct-port-I/O authority model](docs/direct-port-io.md) separates
 untrusted port/value words from kernel-selected purpose, models the selected
@@ -315,7 +381,15 @@ CR3/TLB operations, boot integration, and the compiler remain trusted.
 
 The finite [single-core TLB model](docs/tlb-model.md) makes invalidation atomic
 with mapping/lifecycle mutation and revalidates cached translations against the
-current encoded walk and allocator ownership before use.
+current encoded walk and allocator ownership before use. The boot image also
+executes the canonical generated address-space-2/page-7 unmap effect against a
+bounded runtime-mutable window, with ordered PTE-store/`invlpg` and
+PTE-store/CR3-reload paths, a checked four-phase mutable-leaf relation that
+keeps every other leaf exact, and kernel-observed before/replacement-frame
+values. At the authoritative model boundary, current-root unmap preparation
+derives subject and address space from the execution latch, retains both public
+mapping projections, and publishes the acknowledged successor into the shared
+virtual-memory/TLB state while preserving the folded runtime invariant.
 
 The first total syscall model separates trusted caller/active-address-space
 context from untrusted fixed-width scalar words and proves invariant

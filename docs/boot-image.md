@@ -90,7 +90,7 @@ The reference environment is Ubuntu 24.04 (x86-64) with Lean 4.32.0 from
 (`binutils=2.42-4ubuntu2.10`), GRUB
 (`grub-common=2.12-1ubuntu7.3`, `grub-pc-bin=2.12-1ubuntu7.3`), mtools
 (`mtools=4.0.43-1build1`), xorriso (`xorriso=1:1.5.6-1.1ubuntu3`), QEMU 8.2.2
-(`qemu-system-x86=1:8.2.2+ds-0ubuntu1.17`), coreutils
+(`qemu-system-x86=1:8.2.2+ds-0ubuntu1.18`), coreutils
 (`coreutils=9.4-3ubuntu6.2`), and QEMU's distributed SeaBIOS 1.16.3 firmware.
 The scripts name the Ubuntu package pins in actionable missing-tool diagnostics.
 These pins identify the build inputs. `build-image.sh` uses BIOS-only GRUB
@@ -192,6 +192,8 @@ The following new code and assumptions are trusted, not proved:
   handoff, and NMI non-delivery inside those two residual windows;
 - `boot/kernel.c`, including the bounded Multiboot2 byte parser, physical-frame
   scrub, UART polling, port I/O, QEMU debug-exit behavior, serial formatting,
+  the frame-budget canonical-token bridge, distinct boot/scenario frame
+  selection, and retire-before-republication ordering,
   and the manual `lean_uint64_dec_eq` implementation;
 - the fast-entry CPU/MSR bridge: CPUID vendor/feature decoding, privileged
   `rdmsr`/`wrmsr`, EFER reserved-bit handling, the assumed AMD long-mode

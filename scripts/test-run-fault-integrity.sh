@@ -15,7 +15,7 @@ gcc -nostdlib -static "$tmp/symbols.c" -o "$tmp/symbols.elf"
 invoke() {
   local probe="$1" mode="$2"
   LEANOS_QEMU="$root/tests/qemu-fault-integrity-fixture.sh" \
-    LEANOS_QEMU_FIXTURE_MODE="$mode" LEANOS_QEMU_TIMEOUT_SECONDS=1 \
+    LEANOS_QEMU_FIXTURE_MODE="$mode" LEANOS_QEMU_TIMEOUT_SECONDS=5 \
     LEANOS_FAULT_INTEGRITY_PROBE="$probe" \
     LEANOS_FAULT_INTEGRITY_ELF="$tmp/symbols.elf" \
     LEANOS_SERIAL_LOG="$tmp/${probe}-${mode}.serial" \

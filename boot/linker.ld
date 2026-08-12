@@ -41,6 +41,13 @@ SECTIONS
     KEEP(*(.entry.stack))
     __entry_stack_end = .;
   }
+  /* One linker-owned virtual page remapped onto the pinned VT-d unit's
+     registers; the backing RAM frame stays image-reserved and unmapped. */
+  .vtd_mmio_window (NOLOAD) : ALIGN(4K) {
+    __vtd_mmio_window_start = .;
+    . += 4K;
+    __vtd_mmio_window_end = .;
+  }
   .bss : ALIGN(4K) { *(COMMON) *(.bss .bss.*) }
   . = ALIGN(4K);
   __user_a_text_start = .;

@@ -297,15 +297,20 @@ private def demo (entry : Option Leaf) : PageTable :=
     leaf := fun page => if page = 7 then entry else none }
 
 /-- Reviewed mixed-map regions. Frames and pages remain explicit inputs rather
-than deriving authority from linker symbols or boot globals. -/
+than deriving authority from linker symbols or boot globals.  `mmioWindow` is
+the supervisor window onto device registers (VT-d remapping unit); it is the
+only reviewed non-identity class.  `remappingTables` are the kernel-owned
+DMA-remapping (VT-d root/context) table frames. -/
 inductive PolicyRegion where
   | kernelText | kernelData | kernelStack | pageTables | userText | userStack
+  | mmioWindow | remappingTables
   deriving BEq, DecidableEq, Repr
 
 def policyLeaf (region : PolicyRegion) (frame : PhysicalFrame) : Leaf :=
   match region with
   | .kernelText => demoLeaf frame false false false
-  | .kernelData | .kernelStack | .pageTables => demoLeaf frame true false true
+  | .kernelData | .kernelStack | .pageTables
+  | .mmioWindow | .remappingTables => demoLeaf frame true false true
   | .userText => demoLeaf frame false true false
   | .userStack => demoLeaf frame true true true
 
@@ -363,6 +368,11 @@ theorem kernel_writable_region_attributes
     (policyLeaf region frame).user = false ∧ (policyLeaf region frame).writable = true ∧
       (policyLeaf region frame).noExecute = true := by
   rcases h with rfl | rfl | rfl <;> simp [policyLeaf, demoLeaf]
+theorem supervisor_device_region_attributes
+    (region : PolicyRegion) (h : region = .mmioWindow ∨ region = .remappingTables) :
+    (policyLeaf region frame).user = false ∧ (policyLeaf region frame).writable = true ∧
+      (policyLeaf region frame).noExecute = true := by
+  rcases h with rfl | rfl <;> simp [policyLeaf, demoLeaf]
 theorem user_text_attributes frame :
     (policyLeaf .userText frame).user = true ∧
       (policyLeaf .userText frame).writable = false ∧
@@ -395,6 +405,14 @@ theorem cpl3_kernel_stack_denied kind :
 
 theorem cpl3_page_tables_denied kind :
     classify (policyDemo .pageTables) 7 (context .user kind) = .error .supervisor := by
+  cases kind <;> rfl
+
+theorem cpl3_mmio_window_denied kind :
+    classify (policyDemo .mmioWindow) 7 (context .user kind) = .error .supervisor := by
+  cases kind <;> rfl
+
+theorem cpl3_remapping_tables_denied kind :
+    classify (policyDemo .remappingTables) 7 (context .user kind) = .error .supervisor := by
   cases kind <;> rfl
 
 theorem wp_protects_kernel_text :

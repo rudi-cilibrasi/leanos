@@ -287,6 +287,195 @@ theorem replay_continuity state chunks final
           · simp only [List.map_cons, List.sum_cons]
             omega
 
+/-- Proof-side canonical decomposition into exactly `count` eight-byte chunks.
+The scalar production decoder consumes this fixed chunk width.  The explicit
+count makes the construction structurally recursive; the public theorem below
+binds it to an arbitrary aligned byte buffer. -/
+def canonicalChunksAux (identity : UInt64) :
+    (offset count : Nat) → List UInt8 → List ModelChunk
+  | _, 0, _ => []
+  | offset, count + 1, bytes =>
+      let part := bytes.take 8
+      { identity
+        offset
+        bytes := part
+        terminal := count == 0 } ::
+        canonicalChunksAux identity (offset + 8) count (bytes.drop 8)
+
+/-- The unique proof-side chunking used to compare a complete immutable byte
+buffer with the allocation-free scalar stream decoder. -/
+def canonicalChunks (identity : UInt64) (bytes : List UInt8) : List ModelChunk :=
+  canonicalChunksAux identity 0 (bytes.length / 8) bytes
+
+/-- The canonical decomposition has exactly one chunk for every complete
+eight-byte source word. -/
+theorem canonicalChunks_length (identity : UInt64) (bytes : List UInt8) :
+    (canonicalChunks identity bytes).length = bytes.length / 8 := by
+  have aux :
+      ∀ count offset (tail : List UInt8),
+        (canonicalChunksAux identity offset count tail).length = count := by
+    intro count
+    induction count with
+    | zero =>
+        intro offset tail
+        rfl
+    | succ count ih =>
+        intro offset tail
+        simp only [canonicalChunksAux, List.length_cons]
+        exact congrArg Nat.succ (ih (offset + 8) (tail.drop 8))
+  exact aux (bytes.length / 8) 0 bytes
+
+/-- Every position in the canonical decomposition is the exact eight-byte
+slice at the corresponding source offset.  The offset and terminal flag are
+derived from the list index, so later decoder/scalar refinements cannot pair a
+rich source read with a different scalar chunk. -/
+theorem canonicalChunksAux_get?_source
+    (identity : UInt64) (offset count : Nat) (bytes : List UInt8)
+    (hbytes : bytes.length = count * 8) (index : Nat) (hindex : index < count) :
+    (canonicalChunksAux identity offset count bytes)[index]? =
+      some
+        { identity
+          offset := offset + index * 8
+          bytes := (bytes.drop (index * 8)).take 8
+          terminal := index + 1 == count } := by
+  induction count generalizing offset bytes index with
+  | zero =>
+      omega
+  | succ count ih =>
+      cases index with
+      | zero =>
+          simp only [canonicalChunksAux, List.getElem?_cons_zero, Nat.zero_mul,
+            List.drop_zero, Nat.zero_add]
+          cases count <;> rfl
+      | succ index =>
+          simp only [canonicalChunksAux, List.getElem?_cons_succ]
+          have hdrop : (bytes.drop 8).length = count * 8 := by
+            simp only [List.length_drop]
+            omega
+          rw [ih (offset := offset + 8) (bytes := bytes.drop 8)
+            hdrop index (by omega)]
+          congr 2
+          · omega
+          · rw [List.drop_drop]
+            congr 2
+            omega
+          · rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
+            omega
+
+/-- Public specialization of `canonicalChunksAux_get?_source`: every aligned
+source offset names exactly one canonical chunk with the source bytes, stream
+identity, scalar offset, and final-chunk bit fixed by the immutable input. -/
+theorem canonicalChunks_get?_source
+    (identity : UInt64) (bytes : List UInt8)
+    (haligned : bytes.length % 8 = 0)
+    (index : Nat) (hindex : index < bytes.length / 8) :
+    (canonicalChunks identity bytes)[index]? =
+      some
+        { identity
+          offset := index * 8
+          bytes := (bytes.drop (index * 8)).take 8
+          terminal := index + 1 == bytes.length / 8 } := by
+  unfold canonicalChunks
+  simpa only [Nat.zero_add] using
+    canonicalChunksAux_get?_source identity 0 (bytes.length / 8) bytes
+      (by omega) index hindex
+
+/-- Canonical chunks reconstruct every aligned byte buffer exactly, not merely
+the finite regression corpus. -/
+theorem canonicalChunks_reconstruct (identity : UInt64) (bytes : List UInt8)
+    (haligned : bytes.length % 8 = 0) :
+    (canonicalChunks identity bytes).flatMap (·.bytes) = bytes := by
+  have aux :
+      ∀ count offset (tail : List UInt8),
+        tail.length = count * 8 →
+        (canonicalChunksAux identity offset count tail).flatMap (·.bytes) = tail := by
+    intro count
+    induction count with
+    | zero =>
+        intro offset tail hlength
+        simp_all [canonicalChunksAux]
+    | succ count ih =>
+        intro offset tail hlength
+        simp only [canonicalChunksAux, List.flatMap_cons]
+        rw [ih]
+        · exact List.take_append_drop 8 tail
+        · simp only [List.length_drop]
+          omega
+  unfold canonicalChunks
+  apply aux
+  omega
+
+/-- Replaying the canonical chunks for any nonempty aligned buffer preserves
+one identity and extent, consumes every byte exactly once, and reaches the
+complete state. -/
+theorem canonicalChunks_replay (identity : UInt64) (bytes : List UInt8)
+    (hnonempty : 0 < bytes.length) (haligned : bytes.length % 8 = 0) :
+    replay
+        { identity, extent := bytes.length, offset := 0, complete := false }
+        (canonicalChunks identity bytes) =
+      some
+        { identity, extent := bytes.length, offset := bytes.length,
+          complete := true } := by
+  have aux :
+      ∀ count offset extent (tail : List UInt8),
+        0 < count →
+        tail.length = count * 8 →
+        offset + tail.length = extent →
+        replay
+            { identity, extent, offset, complete := false }
+            (canonicalChunksAux identity offset count tail) =
+          some { identity, extent, offset := extent, complete := true } := by
+    intro count
+    induction count with
+    | zero =>
+        intro offset extent tail hpositive
+        omega
+    | succ count ih =>
+        intro offset extent tail _ hlength hextent
+        simp only [canonicalChunksAux, replay]
+        have hpart : (tail.take 8).length = 8 := by
+          simp [List.length_take]
+          omega
+        have htail : tail ≠ [] := by
+          intro hempty
+          simp_all
+        cases count with
+        | zero =>
+            have hextent' : offset + 8 = extent := by omega
+            have hstep :
+                modelStep
+                    { identity, extent, offset, complete := false }
+                    { identity, offset, bytes := tail.take 8, terminal := true } =
+                  some
+                    { identity, extent, offset := offset + 8, complete := true } := by
+              simp [modelStep, hpart, hextent', htail]
+            simp only [beq_self_eq_true]
+            rw [hstep]
+            simp [canonicalChunksAux, replay, hextent']
+        | succ count =>
+            have hbefore : offset + 8 < extent := by omega
+            have hstep :
+                modelStep
+                    { identity, extent, offset, complete := false }
+                    { identity, offset, bytes := tail.take 8, terminal := false } =
+                  some
+                    { identity, extent, offset := offset + 8, complete := false } := by
+              simp [modelStep, hpart, htail]
+              omega
+            have hterminal : (count + 1 == 0) = false := by simp
+            rw [hterminal]
+            rw [hstep]
+            have hdrop : (tail.drop 8).length = (count + 1) * 8 := by
+              simp only [List.length_drop]
+              omega
+            apply ih (offset + 8) extent (tail.drop 8) (by omega) hdrop
+            omega
+  unfold canonicalChunks
+  apply aux (bytes.length / 8) 0 bytes.length bytes
+  · omega
+  · omega
+  · omega
+
 namespace Fixtures
 
 def magic : UInt64 := 0x36d76289

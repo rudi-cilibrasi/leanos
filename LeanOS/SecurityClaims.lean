@@ -4,6 +4,7 @@ import LeanOS.KernelTransition
 import LeanOS.Capability
 import LeanOS.FrameAllocator
 import LeanOS.FrameBudget
+import LeanOS.FrameBudgetScenario
 import LeanOS.X86PageTable
 import LeanOS.Syscall
 import LeanOS.FailStop
@@ -14,10 +15,12 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.ExtendedState
 import LeanOS.ScheduledObservation
 import LeanOS.DMAQuarantine
+import LeanOS.IOMMU
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
 import LeanOS.UserFaultContainmentVocabulary
 import LeanOS.StaleTranslation
+import LeanOS.InvalidationPublication
 
 /-! # Stable security-claim contract
 
@@ -169,8 +172,10 @@ theorem dma_quarantine_global_runtime_nonvacuous :
         native_decide
       simp [hresult] at hsuccess
   | ok plan =>
-      exact (FailStop.bootRuntime_deferredBlockingRuntimeWellFormed
+      apply (FailStop.bootRuntime_deferredBlockingRuntimeWellFormed
         BootPageTablePlan.sampleInput plan hresult).authoritative
+      simpa [FailStop.bootRuntime] using
+        InvalidationPublication.initial_wellFormed
 
 /-- SC-DMA-AUTHORITATIVE-PROJECTION: under an explicit caller-supplied
 `DeviceContract` assumption over the authoritative live PCI observation, a
@@ -282,6 +287,98 @@ theorem dma_changed_live_control_nonvacuous :
           exact dma_changed_live_control_is_fatal_and_absorbing
             (FailStop.bootRuntime plan) DMAQuarantine.q35CommandBitFlipSnapshot
             accepted operations rfl hvalid hchanged
+
+/-! ## Static assigned-device confinement claims
+
+These wrappers are deliberately model-only.  `IOMMU.DeviceSemantics` trusts
+the platform boundary to supply the source identity and transfer range and
+trusted software to attach the active assignment generation before lookup;
+PCIe does not carry that software generation.  None of these claims proves
+VT-d, PCIe, generated code, QEMU, or a binary.
+-/
+
+/-- SC-IOMMU-READ-CONFIDENTIALITY: a finite sequence of authorized read views
+is insensitive to every byte outside the union of those exact readable
+backing-frame ranges. -/
+theorem iommu_finite_read_confidentiality
+    (state : IOMMU.AuthoritativeExtension) (_hstate : state.Invariant)
+    alternateMemory
+    (views : List (IOMMU.AuthorizedReadView state.iommu))
+    (hequivalent :
+      IOMMU.ReadViewsEquivalent state.iommu.core.memory alternateMemory views) :
+    IOMMU.actualReadObservations views =
+      IOMMU.observeReadViews alternateMemory views :=
+  IOMMU.actual_read_trace_confidentiality
+    state.iommu alternateMemory views hequivalent
+
+/-- SC-IOMMU-WRITE-INTEGRITY: a finite device trace leaves every byte of a
+protected, physically unassigned, or other-owner live frame identical. -/
+theorem iommu_finite_write_integrity
+    (state : IOMMU.AuthoritativeExtension) (_hstate : state.Invariant)
+    (events : List IOMMU.DeviceEvent)
+    (frame : IOMMU.FrameId)
+    (hisolated : IOMMU.FrameIsolatedFromTrace state.iommu events frame) :
+    (IOMMU.runDeviceTrace state.iommu events).1.core.memory frame =
+      state.iommu.core.memory frame :=
+  IOMMU.isolated_trace_integrity state.iommu events frame hisolated
+
+/-- SC-IOMMU-NONFORGERY: every successful translation binds source,
+assignment generation, domain, owner, and live backing frame to the exact
+kernel-derived authority already in state. -/
+theorem iommu_translation_nonforgery
+    (state : IOMMU.AuthoritativeExtension) (_hstate : state.Invariant)
+    (translation : IOMMU.Translation state.iommu request direction) :
+    IOMMU.findAssignmentBySource state.iommu.core request.source
+        request.assignmentGeneration = some translation.assignment ∧
+      state.iommu.core.mappings.find? (fun candidate =>
+        candidate.assignment == translation.assignment.handle &&
+          IOMMU.rangeContained request.iova request.length
+            candidate.iova candidate.length) = some translation.mapping ∧
+      IOMMU.findFrame state.iommu.core translation.mapping.frame =
+          some translation.frame ∧
+      translation.assignment.source = request.source ∧
+      translation.assignment.handle.generation = request.assignmentGeneration ∧
+      translation.mapping.assignment = translation.assignment.handle ∧
+      translation.mapping.domain = translation.assignment.domain ∧
+      translation.mapping.owner = translation.assignment.owner ∧
+      translation.frame.handle = translation.mapping.frame ∧
+      translation.frame.owner = translation.assignment.owner :=
+  IOMMU.translation_nonforgery translation
+
+/-- SC-IOMMU-CLEANUP: accepted assignment teardown removes every mapping for
+the exact generation-checked assignment. -/
+theorem iommu_teardown_cleanup
+    (state : IOMMU.AuthoritativeExtension) (hstate : state.Invariant)
+    (handle : IOMMU.AssignmentHandle)
+    (after : IOMMU.AuthoritativeExtension) (hafter : after.Invariant)
+    (haccepted :
+      IOMMU.gatedByKernel state hstate (.teardown handle) =
+        .accepted after hafter .tornDown) :
+    after.iommu.core.mappings.all (·.assignment != handle) = true :=
+  IOMMU.gated_teardown_removes_all_mappings
+    state hstate handle after hafter haccepted
+
+/-- SC-IOMMU-LIFETIME: release of a frame generation reachable through an
+active DMA mapping is a typed, complete-state rejection. -/
+theorem iommu_reachable_frame_release_denied
+    (state : IOMMU.AuthoritativeExtension) (hstate : state.Invariant)
+    (handle : IOMMU.FrameHandle)
+    (hreachable : state.iommu.core.mappings.any (·.frame == handle) = true) :
+    ∃ reason,
+      IOMMU.gatedByKernel state hstate (.releaseFrame handle) =
+        .rejected reason :=
+  IOMMU.gated_release_rejects_reachable_frame
+    state hstate handle hreachable
+
+/-- SC-IOMMU-FAILSTOP: once the authoritative global execution latch is
+halted, every finite IOMMU control suffix preserves the complete IOMMU state. -/
+theorem iommu_fatal_suffix_absorbing
+    (state : IOMMU.AuthoritativeExtension) (hstate : state.Invariant)
+    (operations : List IOMMU.Operation) (record : FailStop.HaltRecord)
+    (hhalted : state.kernel.execution.mode = .halted record) :
+    IOMMU.runGated state hstate operations = state :=
+  IOMMU.halted_iommu_suffix_absorbing
+    state hstate operations record hhalted
 
 /-- SC-LIFETIME-IDENTITY-NO-REUSE: under the bounded-issuer runtime invariant,
 every finite sequence of composite lifecycle operations preserves
@@ -466,9 +563,9 @@ theorem composite_authoritative_admitted_trace_preserves_runtimeWellFormed
     FailStop.runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
       state operations hstate
 
-/-- Mapping changes retain the complete authoritative-gate
-blocking precondition, so either raw mapping mutation can be followed directly
-by an arbitrary block, wake, or cancellation in the successor gate. -/
+/-- Mapping and protection changes retain the complete authoritative-gate
+blocking precondition, so any integrated raw mapping mutation can be followed
+directly by an arbitrary block, wake, or cancellation in the successor gate. -/
 theorem composite_authoritative_mapping_then_blocking_preserves_runtimeWellFormed
     state slot page permissions blocking
     (hstate : FailStop.BlockingRuntimeWellFormed state) :
@@ -481,13 +578,21 @@ theorem composite_authoritative_mapping_then_blocking_preserves_runtimeWellForme
         (FailStop.authoritativeGate
           (FailStop.authoritativeGate state
             (.ordinary (.unmap page))).state
+          (.blocking blocking)).state ∧
+      FailStop.BlockingRuntimeWellFormed
+        (FailStop.authoritativeGate
+          (FailStop.authoritativeGate state
+            (.ordinary (.protect page permissions))).state
           (.blocking blocking)).state := by
   constructor
   · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
       state (.map slot page permissions) blocking
       (.map slot page permissions) hstate
+  constructor
   · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
       state (.unmap page) blocking (.unmap page) hstate
+  · exact FailStop.authoritativeGate_ordinary_then_blocking_preserves_blockingRuntimeWellFormed
+      state (.protect page permissions) blocking (.protect page permissions) hstate
 
 /-- Every attacker-controlled syscall tuple preserves the complete blocking
 precondition, including accepted handle-based mapping, TLB-invalidating
@@ -1161,7 +1266,12 @@ theorem composite_gate_authority_confinement state
         .completed (.unmap
           (VirtualMapping.unmap state.virtualMemory
             state.execution.core.context.currentSubject
-            state.execution.core.context.activeAddressSpace page).result) := by
+            state.execution.core.context.activeAddressSpace page).result) ∧
+    (FailStop.gate state (.protect page permissions)).result =
+        .completed (.protect
+          (TLB.protect state.resumable.translations
+            state.execution.core.context.currentSubject
+            state.execution.core.context.activeAddressSpace page permissions).result) := by
   exact FailStop.authority_operations_result_sound state syscallCall ipcCall endpointWord
     sourceWord sourceKind payload rights source destination destinationSlot authoritySlot victim
     victimSlot slot page permissions hmode
@@ -1178,15 +1288,18 @@ theorem composite_gate_control_preserves_runtimeWellFormed state purpose
       hstate,
     FailStop.gate_restart_preserves_runtimeWellFormed state hstate⟩
 
-/-- SC-COMPOSITE-MAPPING-WF: both kernel-confined raw mapping operations
-preserve the complete runtime invariant in every execution mode. -/
+/-- SC-COMPOSITE-MAPPING-WF: all integrated kernel-confined raw mapping
+operations preserve the complete runtime invariant in every execution mode. -/
 theorem composite_gate_mapping_preserves_runtimeWellFormed state slot page permissions
     (hstate : FailStop.RuntimeWellFormed state) :
     FailStop.RuntimeWellFormed
         (FailStop.gate state (.map slot page permissions)).state ∧
-      FailStop.RuntimeWellFormed (FailStop.gate state (.unmap page)).state := by
+      FailStop.RuntimeWellFormed (FailStop.gate state (.unmap page)).state ∧
+      FailStop.RuntimeWellFormed
+        (FailStop.gate state (.protect page permissions)).state := by
   exact ⟨FailStop.map_operationPreservesRuntimeWellFormed slot page permissions state hstate,
-    FailStop.unmap_operationPreservesRuntimeWellFormed page state hstate⟩
+    FailStop.unmap_operationPreservesRuntimeWellFormed page state hstate,
+    FailStop.protect_operationPreservesRuntimeWellFormed page permissions state hstate⟩
 
 /-- SC-COMPOSITE-SYSCALL-WF: every attacker-controlled fixed-width syscall
 tuple preserves the complete runtime invariant; privileged caller and address
@@ -2610,6 +2723,62 @@ theorem stale_translation_invalidation_confined
     fun owner howner hne =>
       StaleTranslation.unmap_wrong_owner_inert state actor addressSpace page owner howner hne⟩
 
+/-- Protection reduction is sufficient at the sole composite boundary: an
+accepted logical protection step exposes exactly the page-local effect, the
+authoritative gate preserves its complete folded invariant, and the affected
+translation is already absent from the published successor. -/
+theorem stale_translation_composite_protect_effect_sufficient
+    state page permissions context
+    (hstate : FailStop.AuthoritativeRuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted :
+      (StaleTranslation.step state.resumable.translations
+        (.protect state.execution.core.context.currentSubject
+          state.execution.core.context.activeAddressSpace page permissions)).accepted =
+        true) :
+    (FailStop.authoritativeGate state
+        (.ordinary (.protect page permissions))).result =
+        .completed (.ordinary (.protect .accepted)) ∧
+      FailStop.AuthoritativeRuntimeWellFormed
+        (FailStop.authoritativeGate state
+          (.ordinary (.protect page permissions))).state ∧
+      (StaleTranslation.step state.resumable.translations
+        (.protect state.execution.core.context.currentSubject
+          state.execution.core.context.activeAddressSpace page permissions)).effect =
+        .page state.execution.core.context.activeAddressSpace page ∧
+      TLB.lookup
+        (FailStop.authoritativeGate state
+          (.ordinary (.protect page permissions))).state.resumable.translations.entries
+        { addressSpace := state.execution.core.context.activeAddressSpace, page }
+        context = none := by
+  generalize hprotect :
+      TLB.protect state.resumable.translations
+        state.execution.core.context.currentSubject
+        state.execution.core.context.activeAddressSpace page permissions = outcome
+  cases outcome with
+  | mk next result =>
+      cases result with
+      | rejected reason =>
+          simp [StaleTranslation.step, hprotect] at haccepted
+      | accepted =>
+          have hgate :=
+            FailStop.gate_protect_accepted_invalidates_tlb state page permissions
+              next hmode hprotect hstate.1
+          constructor
+          · simp [FailStop.authoritativeGate, hmode,
+              FailStop.authoritativeOperationReply, FailStop.operationReply, hprotect]
+          constructor
+          · exact
+              FailStop.authoritativeGate_protect_preserves_authoritativeRuntimeWellFormed
+                state page permissions hstate
+          constructor
+          · exact StaleTranslation.protect_accepted_effect
+              state.resumable.translations
+              state.execution.core.context.currentSubject
+              state.execution.core.context.activeAddressSpace page permissions haccepted
+          · rw [FailStop.authoritativeGate_ordinary_state]
+            exact hgate.2.2.2.2 context
+
 /-- The stale-translation invalidation contract is non-vacuous: the reviewed
 fixture caches a live CPL3 translation, an accepted unmap returns the exact page
 effect leaving the page absent, and the frame can only be reused after a full
@@ -2626,6 +2795,116 @@ theorem stale_translation_invalidation_nonvacuous :
       (StaleTranslation.step StaleTranslation.filled (.release 0 0)).state.entries = [] ∧
       (TLB.access StaleTranslation.reused 7 StaleTranslation.ctx).isOk = false := by
   native_decide
+
+/-- SC-INVALIDATION-PUBLICATION-ORDER: the standalone logical publication
+protocol retains the complete published state; only the exact fresh
+ticket/effect completion can publish its recorded successor; an older ticket
+is inert; and bounded reuse requires acknowledged release and destruction with
+no pending effect.  Full-composite projection integration is intentionally not
+part of this claim. -/
+theorem invalidation_publication_order :
+    (∀ state kind request,
+      (InvalidationPublication.prepare state kind request).state.published =
+        state.published) ∧
+    (∀ state ack,
+      (InvalidationPublication.acknowledge state ack).accepted = true →
+        ∃ pending,
+          state.pending = some pending ∧
+          ack.ticket = pending.ticket ∧
+          ack.effect = pending.step.effect ∧
+          (InvalidationPublication.acknowledge state ack).state.published =
+            pending.step.state ∧
+          (InvalidationPublication.acknowledge state ack).state.pending = none) ∧
+    (∀ state ack pending,
+      state.pending = some pending →
+      ack.ticket ≠ pending.ticket →
+        (InvalidationPublication.acknowledge state ack).accepted = false ∧
+        (InvalidationPublication.acknowledge state ack).state = state ∧
+        (InvalidationPublication.acknowledge state ack).effect = .none) ∧
+    (∀ state,
+      (InvalidationPublication.publishReuse state).accepted = true →
+        state.pending = none ∧
+        state.releaseAcknowledged = true ∧
+        state.destroyAcknowledged = true) ∧
+    (∀ state kind request,
+      InvalidationPublication.WellFormed state →
+        InvalidationPublication.WellFormed
+          (InvalidationPublication.prepare state kind request).state) ∧
+    (∀ state ack,
+      InvalidationPublication.WellFormed state →
+        InvalidationPublication.WellFormed
+          (InvalidationPublication.acknowledge state ack).state) ∧
+    (∀ state,
+      InvalidationPublication.WellFormed state →
+        InvalidationPublication.WellFormed
+          (InvalidationPublication.publishReuse state).state) := by
+  exact ⟨InvalidationPublication.prepare_retains_published,
+    InvalidationPublication.acknowledge_accepted_exact,
+    fun state ack pending hpending hticket =>
+      InvalidationPublication.acknowledge_wrong_ticket_inert
+        state ack pending hpending hticket,
+    InvalidationPublication.reuse_publication_requires_retirement_ack,
+    InvalidationPublication.prepare_preserves_wellFormed,
+    InvalidationPublication.acknowledge_preserves_wellFormed,
+    InvalidationPublication.publishReuse_preserves_wellFormed⟩
+
+/-- SC-AUTHORITATIVE-RETIREMENT-FLUSH: the authoritative composite retirement
+and root-switch paths expose the global half of the invalidation contract:
+accepted subject cleanup
+preserves the complete runtime invariant and flushes every cached translation
+before released capacity is reusable, while every accepted resumable root
+switch preserves that invariant and returns the same empty-cache model. -/
+theorem authoritative_retirement_and_root_switch_flush :
+    (∀ state subject,
+      FailStop.RuntimeWellFormed state →
+      state.execution.mode = .running →
+      (SubjectLifecycle.terminate state.lifecycle subject).result = .accepted →
+        FailStop.RuntimeWellFormed
+            (FailStop.gate state (.terminateSubject subject)).state ∧
+          (FailStop.gate state
+            (.terminateSubject subject)).state.resumable.translations.entries = []) ∧
+    (∀ state frame registers,
+      FailStop.RuntimeWellFormed state →
+      state.execution.mode = .running →
+      (ResumablePreemption.switch state.resumable state.execution.core
+        frame registers).error = none →
+        FailStop.RuntimeWellFormed
+            (FailStop.gate state (.resumePreempt frame registers)).state ∧
+          (FailStop.gate state
+            (.resumePreempt frame registers)).state.resumable.translations.entries = []) ∧
+    FrameBudgetScenario.retirementEffect .bAllocated .terminateA = .flush ∧
+    FrameBudgetScenario.retirementEffect .aAllocated .releaseA = .flush ∧
+    FrameBudgetScenario.machineInvalidationEffect
+        (FrameBudgetScenario.encodeState .bAllocated)
+        (FrameBudgetScenario.encodeCommand .terminateA) =
+      FrameBudgetScenario.terminateFlushToken ∧
+    FrameBudgetScenario.machineInvalidationEffect
+        (FrameBudgetScenario.encodeState .aAllocated)
+        (FrameBudgetScenario.encodeCommand .releaseA) =
+      FrameBudgetScenario.releaseFlushToken ∧
+    (FrameBudgetScenario.publishFreshAfterRetirement
+        FrameBudgetScenario.retirementPrepared).accepted = false ∧
+    (FrameBudgetScenario.acknowledgeRetirement
+        FrameBudgetScenario.retirementPrepared
+        FrameBudgetScenario.terminateFlushToken).accepted = true ∧
+    FrameBudgetScenario.freshRepublished.published.scrub.memory.binding 21 =
+      some 100 ∧
+    FrameBudgetScenario.freshRepublished.published.userMapping =
+      some (1, 21, { slot := 1, identity := 3 }, 100,
+        FrameBudgetScenario.machineUserPage) := by
+  exact ⟨fun state subject hstate hmode haccepted =>
+      let h := FailStop.gate_terminateSubject_accepted_flushes_translations
+        state subject hstate hmode haccepted
+      ⟨h.1, h.2.1⟩,
+    FailStop.gate_resumePreempt_accepted_flushes_translations,
+    FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.1,
+    FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.2.1,
+    FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.2.2.1,
+    FrameBudgetScenario.retirement_effects_are_exact_and_trace_bound.2.2.2.1,
+    FrameBudgetScenario.invalidation_acknowledged_fresh_republication.1,
+    FrameBudgetScenario.retirement_ack_publishes_reclaimed_frame.1,
+    FrameBudgetScenario.invalidation_acknowledged_fresh_republication.2.2.2.1,
+    FrameBudgetScenario.invalidation_acknowledged_fresh_republication.2.2.2.2.2.1⟩
 
 /-- SC-USER-FAULT-SHARED-CONTAINMENT: over one shared two-subject pre-state the
 real CPL3 divide-error, breakpoint, page-fault, and denied-port entries drive a

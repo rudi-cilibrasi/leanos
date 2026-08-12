@@ -137,7 +137,10 @@ and the same architectural/dispatch tuple. A separate ordered `PF-SNAPSHOT`
 record retains all 19 decimal codec words directly from the immutable
 production object after generated authorization and dispatch. The runner
 independently resolves CR3, saved RIP, and user RSP against the final ELF,
-requires every fixed word and the exact generated authorization/route, and
+while the shared initial CPL3 frame constructs fixed RFLAGS `0x216` rather
+than inheriting ambient arithmetic flags from preceding boot checks. Source
+and final-ELF policy gates enforce that construction. The runner requires
+every fixed word and the exact generated authorization/route, and
 publishes that one record as `fault-containment-snapshot.txt`. Missing,
 duplicated, malformed, corrupted, or reordered snapshot/replay records are
 controlled failures.

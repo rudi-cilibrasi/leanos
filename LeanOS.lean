@@ -3,6 +3,7 @@ import LeanOS.Capability
 import LeanOS.CapabilityHandle
 import LeanOS.CapabilityTransfer
 import LeanOS.CapabilityReuse
+import LeanOS.CompositeDispatcher
 import LeanOS.DMAQuarantine
 import LeanOS.DirectPortIO
 import LeanOS.DirectPortContainment
@@ -14,6 +15,8 @@ import LeanOS.BootMemoryMapStreaming
 import LeanOS.BootMemoryMapStreamAuthority
 import LeanOS.BootReservation
 import LeanOS.BootMemoryMapStreamPipeline
+import LeanOS.BootMemoryMapFullProjectionABI
+import LeanOS.BootMemoryMapScalarRichEquivalence
 import LeanOS.BootAllocation
 import LeanOS.BootInterruptPhase
 import LeanOS.BootPageTablePlan
@@ -22,6 +25,7 @@ import LeanOS.BlockingIPCContext
 import LeanOS.EndpointIPC
 import LeanOS.ExtendedState
 import LeanOS.IPCSyscall
+import LeanOS.IOMMU
 import LeanOS.Interrupt
 import LeanOS.InterruptEntry
 import LeanOS.PrivilegeEntryStack
@@ -29,6 +33,7 @@ import LeanOS.PrivilegeEntryControl
 import LeanOS.Example
 import LeanOS.FrameAllocator
 import LeanOS.FrameBudget
+import LeanOS.FrameBudgetScenario
 import LeanOS.FrameScrub
 import LeanOS.FailStop
 import LeanOS.FaultDispatch
@@ -49,4 +54,5 @@ import LeanOS.Scheduler
 import LeanOS.VirtualMapping
 import LeanOS.X86PageTable
 import LeanOS.TLB
+import LeanOS.VTdBootPlan
 import LeanOS.SecurityClaims

@@ -1,10 +1,13 @@
 # leanos-emulator-evidence-v1
-# mandatory-count	54
+# mandatory-count	60
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-
 malformed-handoff	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-malformed-handoff.iso	leanos-malformed-handoff.elf	malformed-handoff.serial.log	malformed-handoff	-	decode-rejected
+projection-authority-mutation	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-projection-authority-mutation.iso	leanos-projection-authority-mutation.elf	projection-authority-mutation.serial.log	projection-authority-mutation	-	projection-authority
+raw-selection-authority-mutation	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-raw-selection-authority-mutation.iso	leanos-raw-selection-authority-mutation.elf	raw-selection-authority-mutation.serial.log	raw-selection-authority-mutation	-	raw-selection-authority
 entry-adversarial	boot	accepted-boot	30	leanos-@VERSION@-x86_64-entry-adversarial.iso	leanos-entry-adversarial.elf	entry-adversarial.serial.log	entry-adversarial	-	-
 preemption	boot	accepted-boot	30	leanos-@VERSION@-x86_64-preemption.iso	leanos-preemption.elf	preemption.serial.log	preemption	-	-
+frame-budget	boot	accepted-boot	30	leanos-@VERSION@-x86_64-frame-budget.iso	leanos-frame-budget.elf	frame-budget.serial.log	frame-budget	-	-
 fault-containment	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-containment.iso	leanos-fault-containment.elf	fault-containment.serial.log	fault-containment	-	-
 fault-readonly-write	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-readonly-write.iso	leanos-fault-readonly-write.elf	fault-readonly-write.serial.log	fault-readonly-write	-	-
 fault-nx-execute	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-nx-execute.iso	leanos-fault-nx-execute.elf	fault-nx-execute.serial.log	fault-nx-execute	-	-
@@ -42,6 +45,8 @@ return-fast-entry-sysenter-esp-relaxation	return	controlled-rejection	30	leanos-
 return-direct-port-bitmap-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-direct-port-bitmap-relaxation.iso	leanos-return-direct-port-bitmap-relaxation.elf	return-corruption-direct-port-bitmap-relaxation.serial.log	direct-port-bitmap-relaxation	22	direct-port-control-readback
 return-direct-port-limit-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-direct-port-limit-relaxation.iso	leanos-return-direct-port-limit-relaxation.elf	return-corruption-direct-port-limit-relaxation.serial.log	direct-port-limit-relaxation	23	direct-port-control-readback
 return-direct-port-granularity-relaxation	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-direct-port-granularity-relaxation.iso	leanos-return-direct-port-granularity-relaxation.elf	return-corruption-direct-port-granularity-relaxation.serial.log	direct-port-granularity-relaxation	24	direct-port-control-readback
+return-dma-bus-master-reenable	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-dma-bus-master-reenable.iso	leanos-return-dma-bus-master-reenable.elf	return-corruption-dma-bus-master-reenable.serial.log	dma-bus-master-reenable	25	dma-live-command
+return-vtd-translation-disable	return	controlled-rejection	30	leanos-@VERSION@-x86_64-return-vtd-translation-disable.iso	leanos-return-vtd-translation-disable.elf	return-corruption-vtd-translation-disable.serial.log	vtd-translation-disable	26	vtd-live-status
 double-fault	double-fault	fail-stop	30	leanos-@VERSION@-x86_64-double-fault.iso	leanos-double-fault.elf	double-fault.serial.log	double-fault	-	-
 entry-stack-overflow	entry-stack-overflow	fail-stop	30	leanos-@VERSION@-x86_64-entry-stack-overflow.iso	leanos-entry-stack-overflow.elf	entry-stack-overflow.serial.log	entry-stack-overflow	-	-
 nmi-terminal	nmi	fail-stop	30	leanos-@VERSION@-x86_64-nmi.iso	leanos-nmi.elf	nmi.serial.log	kernel-entry	-	-
@@ -55,3 +60,4 @@ direct-port-in	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-in.iso	
 direct-port-pic	boot	accepted-boot	30	leanos-@VERSION@-x86_64-direct-port-pic.iso	leanos-direct-port-pic.elf	direct-port-pic.serial.log	direct-port-pic	-	-
 divide-error	boot	accepted-boot	30	leanos-@VERSION@-x86_64-divide-error.iso	leanos-divide-error.elf	divide-error.serial.log	divide-error	-	-
 breakpoint	boot	accepted-boot	30	leanos-@VERSION@-x86_64-breakpoint.iso	leanos-breakpoint.elf	breakpoint.serial.log	breakpoint	-	-
+stale-translation	boot	accepted-boot	30	leanos-@VERSION@-x86_64-fault-stale-translation.iso	leanos-fault-stale-translation.elf	fault-stale-translation.serial.log	stale-translation-denial	-	-

@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LeanOS browser boot</title>
+<!--
+  Static entry point for the LeanOS qemu-wasm compatibility harness.  It loads
+  the cross-origin-isolation service worker required by the threaded runtime,
+  the shim-generated QEMU argument module, the unchanged upstream firmware
+  preload, and the Emscripten loader.  The guest serial is written to a MEMFS
+  file (`/serial.log`) rather than a pseudo-TTY, which both avoids the TTY-poll
+  starvation that stalled the ADR 0011 probe and yields a transcript that is
+  byte-identical to a native `-serial file:` run.  The pty stub is still needed
+  because QEMU's char layer initializes it, but no terminal data is polled.
+-->
+<script src="./coi-serviceworker.js"></script>
+<script src="./module.js"></script>
+<script src="./load-rom.js"></script>
+<pre id="status">starting</pre>
+<script type="module">
+  import './xterm-pty.js';
+  import initEmscriptenModule from './out.js';
+
+  const status = document.getElementById('status');
+  window.leanosCrossOriginIsolated = crossOriginIsolated;
+  if (!crossOriginIsolated) {
+    status.textContent = 'no-cross-origin-isolation';
+    throw new Error('cross-origin isolation unavailable');
+  }
+
+  const { slave } = openpty();
+  Module.pty = slave;
+  // Emscripten reports the process exit code through `quit`; `onExit` alone is
+  // not reliably invoked in this build.  A zero code is the loader's own
+  // teardown, not the guest debug-exit, so it is ignored here.
+  Module.quit = (code) => {
+    if (code !== 0) document.title = `exit=${code}`;
+  };
+  Module.onAbort = () => {
+    document.title = 'abort';
+  };
+
+  try {
+    window.qemuModule = await initEmscriptenModule(Module);
+    status.textContent = 'running';
+  } catch (error) {
+    status.textContent = `init-failed: ${error}`;
+    document.title = 'abort';
+  }
+</script>

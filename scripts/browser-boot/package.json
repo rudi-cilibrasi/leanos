@@ -1,0 +1,10 @@
+{
+  "name": "leanos-qemu-wasm-browser-boot",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned browser driver for the LeanOS qemu-wasm compatibility harness (issue #193)",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer-core": "24.16.0"
+  }
+}

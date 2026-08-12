@@ -9,12 +9,16 @@ touch "$tmp/image.iso"
 
 invoke() {
   LEANOS_QEMU="$root/tests/qemu-malformed-handoff-fixture.sh" \
-    LEANOS_QEMU_FIXTURE_MODE="$1" LEANOS_QEMU_TIMEOUT_SECONDS=1 \
+    LEANOS_QEMU_FIXTURE_MODE="$1" LEANOS_QEMU_TIMEOUT_SECONDS=5 \
     LEANOS_SERIAL_LOG="$tmp/$1.serial" \
     ./scripts/run-malformed-handoff.sh "$tmp/image.iso"
 }
 
 invoke success >/dev/null 2>&1
+LEANOS_HANDOFF_REJECTION_REASON=projection-authority invoke success \
+  >/dev/null 2>&1
+LEANOS_HANDOFF_REJECTION_REASON=raw-selection-authority invoke success \
+  >/dev/null 2>&1
 for spec in \
   'missing malformed-handoff' \
   'wrong-reason malformed-handoff' \

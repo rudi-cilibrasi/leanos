@@ -437,6 +437,13 @@ def expanded(row: dict[str, str], version: str, build_dir: Path) -> dict[str, Pa
     }
     if row["runner"] == "nmi":
         paths["qmp_transcript"] = Path(str(paths["serial_log"]) + ".qmp.jsonl")
+    if row["runner"] == "boot":
+        paths["dma_snapshot"] = (
+            build_dir / f"dma-quarantine-snapshot-{row['scenario']}.tsv"
+        )
+        paths["vtd_snapshot"] = (
+            build_dir / f"vtd-activation-snapshot-{row['scenario']}.tsv"
+        )
     return paths
 
 
@@ -450,6 +457,9 @@ def scenario_invocation(
     }
     if row["runner"] == "boot":
         environment["LEANOS_BOOT_SCENARIO"] = row["scenario"]
+        environment["LEANOS_DMA_SNAPSHOT"] = str(paths["dma_snapshot"])
+        environment["LEANOS_VTD_SNAPSHOT"] = str(paths["vtd_snapshot"])
+        environment["LEANOS_SOURCE_REVISION_FILE"] = str(build_dir / "SOURCE_REVISION")
         command = ["./scripts/run-image.sh", str(paths["image"])]
     elif row["runner"] == "fault-integrity":
         environment["LEANOS_FAULT_INTEGRITY_PROBE"] = row["scenario"]
@@ -478,6 +488,7 @@ def scenario_invocation(
     elif row["runner"] == "bootstrap64-nmi":
         command = ["./scripts/run-bootstrap64-nmi.sh", str(paths["image"])]
     elif row["runner"] == "malformed-handoff":
+        environment["LEANOS_HANDOFF_REJECTION_REASON"] = row["reason"]
         command = ["./scripts/run-malformed-handoff.sh", str(paths["image"])]
     else:
         environment["LEANOS_EXPECT_GUARD_MAPPED"] = "1"
@@ -555,6 +566,10 @@ def run(args: argparse.Namespace) -> None:
         command, scenario_environment = scenario_invocation(
             row, paths, build_dir, version
         )
+        if "dma_snapshot" in paths:
+            paths["dma_snapshot"].unlink(missing_ok=True)
+        if "vtd_snapshot" in paths:
+            paths["vtd_snapshot"].unlink(missing_ok=True)
         combined_environment = environment.copy()
         combined_environment.update(scenario_environment)
         command_log = output.parent / f"{row['id']}.command.log"
@@ -616,6 +631,20 @@ def run(args: argparse.Namespace) -> None:
             )
         if not paths["serial_log"].is_file() or paths["serial_log"].stat().st_size == 0:
             raise EvidenceError(f"scenario {row['id']} did not produce its expected serial log")
+        if "dma_snapshot" in paths and (
+            not paths["dma_snapshot"].is_file()
+            or paths["dma_snapshot"].stat().st_size == 0
+        ):
+            raise EvidenceError(
+                f"scenario {row['id']} did not retain its DMA snapshot"
+            )
+        if "vtd_snapshot" in paths and (
+            not paths["vtd_snapshot"].is_file()
+            or paths["vtd_snapshot"].stat().st_size == 0
+        ):
+            raise EvidenceError(
+                f"scenario {row['id']} did not retain its VT-d activation snapshot"
+            )
         if row["runner"] == "nmi" and (
             not paths["qmp_transcript"].is_file()
             or paths["qmp_transcript"].stat().st_size == 0
@@ -631,6 +660,18 @@ def run(args: argparse.Namespace) -> None:
             "path": display_path(paths["serial_log"]),
             "sha256": sha256(paths["serial_log"]),
         }
+        if "dma_snapshot" in paths:
+            result["artifacts"].append({
+                "kind": "dma_snapshot",
+                "path": display_path(paths["dma_snapshot"]),
+                "sha256": sha256(paths["dma_snapshot"]),
+            })
+        if "vtd_snapshot" in paths:
+            result["artifacts"].append({
+                "kind": "vtd_snapshot",
+                "path": display_path(paths["vtd_snapshot"]),
+                "sha256": sha256(paths["vtd_snapshot"]),
+            })
         if row["runner"] == "nmi":
             result["qmp_transcript"] = {
                 "path": display_path(paths["qmp_transcript"]),
@@ -717,6 +758,14 @@ def verify_report(
             ("image", display_path(paths["image"])),
             ("elf", display_path(paths["elf"])),
         }
+        if "dma_snapshot" in paths:
+            expected_artifacts.add(
+                ("dma_snapshot", display_path(paths["dma_snapshot"]))
+            )
+        if "vtd_snapshot" in paths:
+            expected_artifacts.add(
+                ("vtd_snapshot", display_path(paths["vtd_snapshot"]))
+            )
         artifacts = result.get("artifacts")
         if not isinstance(artifacts, list) or {
             (artifact.get("kind"), artifact.get("path"))

@@ -268,6 +268,17 @@ boot_bootstrap32_ud_probe:
     movl $0, page_table_a+4(%eax)
     movl $0, page_table_b(%eax)
     movl $0, page_table_b+4(%eax)
+
+    /* The VT-d MMIO window page maps the pinned remapping unit at 0xFED90000
+       instead of identity RAM: present, writable, supervisor, no-execute in
+       both address spaces.  This is the only reviewed non-identity leaf. */
+    mov $__vtd_mmio_window_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    movl $0xFED90003, page_table_a(%eax)
+    movl $0x80000000, page_table_a+4(%eax)
+    movl $0xFED90003, page_table_b(%eax)
+    movl $0x80000000, page_table_b+4(%eax)
     /* Derive the denial policy instead of inheriting firmware/GRUB state.
        PAE remains enabled for long mode; OSFXSR, OSXMMEXCPT, OSXSAVE, and PKE
        are cleared so no legacy SIMD, XSAVE, or unsaved PKRU state is exposed. */
@@ -440,6 +451,19 @@ page_directory_b:
 page_table_b:
     .skip 4096 * PAGE_TABLE_COUNT
 page_table_b_end:
+/* VT-d remapping tables: kernel-owned, deliberately outside the CPU
+   page-table block so the generated VT-d plan can prove the frames are
+   distinct, while the image reservation still excludes them from
+   allocation. */
+.align 4096
+.global vtd_root_table
+vtd_root_table:
+    .skip 4096
+.global vtd_context_table
+vtd_context_table:
+    .skip 4096
+.global vtd_remapping_table_end
+vtd_remapping_table_end:
 .align 16
 .global boot_stack
 boot_stack:
@@ -632,10 +656,11 @@ enter_user:
     add $8, %rsp
     pushq $0x1b
     push %rsi
-    pushfq
-    pop %rax
-    or $0x200, %rax
-    push %rax
+    /* The initial frame is a kernel-owned canonical object.  Do not inherit
+       arithmetic flags from whichever checked boot path happened to run
+       immediately before this call.  The page-fault evidence protocol binds
+       this exact RFLAGS word. */
+    pushq $0x216
     pushq $0x23
     push %rdi
     /* Supply an all-zero initial register bank so every CPL3 transition uses
@@ -1190,11 +1215,16 @@ isr80_cld:
     je 9f
     cmp $0xfeed, %rax
     jne 7f
-    movq $user_b_entry, 120(%rsp)
-    movq $user_b_stack_top, 144(%rsp)
+    /* The scheduler selected fresh subject B.  Replace A's complete saved
+       GPR/iret bank with the kernel-owned B context before changing CR3;
+       patching only RIP/RSP/RAX would disclose A's remaining registers. */
+    lea initial_context_b(%rip), %rsi
+    mov %rsp, %rdi
+    mov $20, %ecx
+    rep movsq
     movq $page_map_level_4_b, %rax
     mov %rax, %cr3
-    xor %rax, %rax
+    mov initial_context_b+112(%rip), %rax
 7:
     mov %rax, 112(%rsp)
     mov $2, %esi
@@ -1273,6 +1303,10 @@ isr14_restore_cr2:
     call authorize_page_fault_snapshot
     cmp $2, %rax
     je contained_fault_restore_peer
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    cmp $3, %rax
+    je stale_translation_restore_new_owner
+#endif
     sub $16, %rsp
     mov %rax, 8(%rsp)
     call complete_interrupt_entry
@@ -1299,6 +1333,29 @@ contained_fault_restore_peer:
     call complete_interrupt_entry
     mov $3, %esi
     jmp user_return_epilogue
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+/* The old owner has taken its real not-present fault with B's root still
+   active.  Only now install a fresh A context and select A's root, where page 7
+   names the scrubbed frame's new lifetime.  The CPL3 code must independently
+   read the replacement canary before the scenario can pass. */
+.global stale_translation_restore_new_owner
+stale_translation_restore_new_owner:
+    add $8, %rsp
+    xor %eax, %eax
+    mov %rsp, %rdi
+    mov $15, %ecx
+    rep stosq
+    movq $user_a_entry, 120(%rsp)
+    movq $0x23, 128(%rsp)
+    movq $0x202, 136(%rsp)
+    movq $user_a_stack_top, 144(%rsp)
+    movq $0x1b, 152(%rsp)
+    movq $page_map_level_4_a, %rax
+    mov %rax, %cr3
+    call complete_interrupt_entry
+    mov $3, %esi
+    jmp user_return_epilogue
+#endif
 .global isr32
 .section .bss,"aw",@nobits
 .align 16
@@ -1505,6 +1562,38 @@ integer_fault_restore_peer:
 .section .user.a.text,"ax",@progbits
 .global user_a_entry
 user_a_entry:
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    /* Fresh-owner probe: this is a real CPL3 load through A/page 7 after B's
+       stale access faulted.  The syscall reports the independently observed
+       replacement canary and exact virtual page to the checked kernel path. */
+    mov $0x7000, %r10
+    mov (%r10), %rbx
+    cmp $0x126a57e2, %rbx
+    jne 2f
+    mov $20, %rax
+    mov %rbx, %rbx
+    mov $0x7000, %rcx
+    mov $7, %rdx
+    int $0x80
+    ud2
+#elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov $20, %rax
+    int $0x80
+    test $0xfff, %rax
+    jne user_copy_fail
+    movb $0xa5, (%rax)
+    movb $0xa5, 4095(%rax)
+    mov $21, %rax
+    int $0x80
+    cmp $1, %rax
+    jne user_copy_fail
+    mov $22, %rax
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_NMI_PROBE
 1:  pause
     jmp 1b
@@ -1703,6 +1792,10 @@ fault_reserved_efer_write:
     pop %rdx
     pop %rcx
     pop %rax
+#else
+    /* Keep every fault-probe image on the same linker-resolved page plan
+       without making the reserved-bit MSR write reachable or present. */
+    .fill 20, 1, 0x90
 #endif
     ret
     ud2
@@ -1826,7 +1919,9 @@ integer_fault_probe_class:
    field. */
 .global page_fault_probe_class
 page_fault_probe_class:
-#ifdef LEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    .quad 5
+#elif defined(LEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH)
     .quad 4
 #elif defined(LEANOS_PAGE_FAULT_PROBE_RESERVED_BIT)
     .quad 3
@@ -1841,6 +1936,84 @@ page_fault_probe_class:
 .section .user.b.text,"ax",@progbits
 .global user_b_entry
 user_b_entry:
+#ifdef LEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION
+    /* Stale-translation probe: read the canary at the mutable mapping,
+       then request the unmap syscall.  After the kernel invalidates
+       the TLB entry and returns, re-read the same virtual address.
+       The re-read must fault because the PTE is now absent and the
+       old translation was flushed by invlpg.  */
+    mov $0x7000, %r10
+    mov (%r10), %rbx
+    cmp $0x126bef0e, %rbx
+    jne 2f
+    mov $19, %rax
+    mov %rbx, %rbx
+    mov $0x7000, %rcx
+    mov $7, %rdx
+    int $0x80
+    cmp $0x301901, %rax
+    jne 2f
+.global user_b_stale_translation_fault_instruction
+user_b_stale_translation_fault_instruction:
+    mov (%r10), %rax
+    ud2
+#elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
+    /* Every register must originate in the kernel-owned fresh B context.
+       Any surviving subject-A register takes the controlled syscall-3
+       register-canary failure path before B can perform an operation. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    cmp $B_INITIAL_RCX, %rcx
+    jne 2f
+    cmp $B_INITIAL_RDX, %rdx
+    jne 2f
+    cmp $B_INITIAL_RBP, %rbp
+    jne 2f
+    cmp $B_INITIAL_RSI, %rsi
+    jne 2f
+    cmp $B_INITIAL_RDI, %rdi
+    jne 2f
+    cmp $B_INITIAL_R8, %r8
+    jne 2f
+    cmp $B_INITIAL_R9, %r9
+    jne 2f
+    cmp $B_INITIAL_R10, %r10
+    jne 2f
+    cmp $B_INITIAL_R11, %r11
+    jne 2f
+    cmp $B_INITIAL_R14, %r14
+    jne 2f
+    cmp $B_INITIAL_R15, %r15
+    jne 2f
+    movabs $B_INITIAL_R12, %rax
+    cmp %rax, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %rax
+    cmp %rax, %r13
+    jne 2f
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov $23, %rax
+    movabs $0xb2b2f11251a7e55e, %rbx
+    mov $0x030201, %rcx
+    mov $0x51a7, %rdx
+    int $0x80
+    cmp $0x20000, %rax
+    jne 2f
+    mov $24, %rax
+    mov $0x10000, %rbx
+    int $0x80
+    test $0xfff, %rax
+    jne 2f
+    movzbl (%rax), %ebx
+    movzbl 4095(%rax), %ecx
+    mov $25, %rax
+    int $0x80
+    ud2
+#endif
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
     cmp $B_INITIAL_RAX, %rax
     jne 2f

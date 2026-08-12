@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$repo_root"
+source "$repo_root/scripts/q35-platform.sh"
 qemu="${LEANOS_QEMU:-qemu-system-x86_64}"
 limit="${LEANOS_QEMU_TIMEOUT_SECONDS:-30}"
 version="${LEANOS_VERSION:-0.1.0}"
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
 fault_scenario=0
+stale_translation_scenario=0
 extended_instruction=x87
 extended_vector=7
 if [[ "$scenario" == fast-entry-syscall ]]; then
@@ -35,6 +37,12 @@ elif [[ "$scenario" == extended-state ]]; then
   default_image="build/boot/leanos-${version}-x86_64-extended-state.iso"
 elif [[ "$scenario" == preemption ]]; then
   default_image="build/boot/leanos-${version}-x86_64-preemption.iso"
+elif [[ "$scenario" == stale-translation-denial ]]; then
+  stale_translation_scenario=1
+  default_image="build/boot/leanos-${version}-x86_64-fault-stale-translation.iso"
+  stale_translation_elf="build/boot/leanos-fault-stale-translation.elf"
+elif [[ "$scenario" == frame-budget ]]; then
+  default_image="build/boot/leanos-${version}-x86_64-frame-budget.iso"
 elif [[ "$scenario" == fault-containment ]]; then
   fault_scenario=1
   fault_probe=supervisor-read
@@ -74,16 +82,19 @@ else
 fi
 image="${1:-$default_image}"
 log="${LEANOS_SERIAL_LOG:-build/boot/serial.log}"
+dma_snapshot="${LEANOS_DMA_SNAPSHOT:-build/boot/dma-quarantine-snapshot-${scenario}.tsv}"
+vtd_snapshot="${LEANOS_VTD_SNAPSHOT:-build/boot/vtd-activation-snapshot-${scenario}.tsv}"
+source_revision_file="${LEANOS_SOURCE_REVISION_FILE:-build/boot/SOURCE_REVISION}"
 high_water_artifact="${LEANOS_ENTRY_HIGH_WATER_ARTIFACT:-build/boot/entry-stack-high-water-${scenario}.txt}"
 fault_snapshot_artifact="${LEANOS_FAULT_SNAPSHOT_ARTIFACT:-build/boot/${scenario}-snapshot.txt}"
-fault_elf="${LEANOS_FAULT_CONTAINMENT_ELF:-build/boot/leanos-${scenario}.elf}"
+fault_elf="${LEANOS_FAULT_CONTAINMENT_ELF:-${stale_translation_elf:-build/boot/leanos-${scenario}.elf}}"
 memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
-for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.17 and coreutils=9.4-3ubuntu6.2" >&2; exit 1; }; done
+for tool in "$qemu" timeout; do command -v "$tool" >/dev/null 2>&1 || { echo "error: missing required tool '$tool'; install qemu-system-x86=1:8.2.2+ds-0ubuntu1.18 and coreutils=9.4-3ubuntu6.2" >&2; exit 1; }; done
 [[ "$limit" =~ ^[1-9][0-9]*$ ]] || { echo "error: timeout must be a positive integer" >&2; exit 1; }
 [[ "$memory_mib" =~ ^(64|128)$ ]] || { echo "error: memory must be one of the checked configurations: 64 or 128 MiB" >&2; exit 1; }
 reported_top_mib=$((memory_mib - 1))
 [[ -f "$image" ]] || { echo "error: image '$image' not found; run ./scripts/build-image.sh first" >&2; exit 1; }
-if (( fault_scenario )); then
+if (( fault_scenario || stale_translation_scenario )); then
   [[ -f "$fault_elf" ]] || {
     echo "error: fault final ELF '$fault_elf' not found; run ./scripts/build-image.sh first" >&2
     exit 1
@@ -94,6 +105,8 @@ if (( fault_scenario )); then
     [[ "$address" =~ ^[[:xdigit:]]+$ ]] || return 1
     printf '%u' "$((16#$address))"
   }
+fi
+if (( fault_scenario )); then
   fault_cr3="$(symbol_value page_map_level_4_a)" &&
     fault_rsp="$(symbol_value user_a_stack_top)" || {
     echo "error: required fault final-ELF symbol missing" >&2
@@ -134,11 +147,21 @@ if (( fault_scenario )); then
     fault_cause=supervisor
     fault_canary=
   fi
+elif (( stale_translation_scenario )); then
+  stale_translation_cr3="$(symbol_value page_map_level_4_b)" &&
+    stale_translation_rip="$(
+      symbol_value user_b_stale_translation_fault_instruction
+    )" &&
+    stale_translation_rsp="$(symbol_value user_b_stack_top)" || {
+    echo "error: required stale-translation final-ELF symbol missing" >&2
+    exit 1
+  }
 fi
 mkdir -p "$(dirname "$log")"; : > "$log"
-command=("$qemu" -machine q35,accel=tcg -cpu max -smp 1 -m "${memory_mib}M" -display none -monitor none -serial "file:$log" -no-reboot -no-shutdown -nic none -device isa-debug-exit,iobase=0xf4,iosize=0x04 -cdrom "$image")
-version="$($qemu --version 2>&1 | head -n 1 || true)"
-printf 'QEMU version: %s\nQEMU command:' "${version:-unknown}" >&2; printf ' %q' "${command[@]}" >&2; printf '\nSerial log: %s\n' "$log" >&2
+command=()
+leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
+qemu_version="$($qemu --version 2>&1 | head -n 1 || true)"
+printf 'QEMU version: %s\nQEMU command:' "${qemu_version:-unknown}" >&2; printf ' %q' "${command[@]}" >&2; printf '\nSerial log: %s\n' "$log" >&2
 set +e; timeout --signal=TERM --kill-after=2s "${limit}s" "${command[@]}"; status=$?; set -e
 expected="$(mktemp)"; without_allocation="$(mktemp)"
 trap 'rm -f "$expected" "$without_allocation"' EXIT
@@ -152,6 +175,10 @@ elif [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
   echo 'LEANOS/13 BOOT target=x86_64-q35 subjects=2 schedule=extended-state-denial controls=wp,smep,smap,em,mp,ts' > "$expected"
 elif [[ "$scenario" == preemption ]]; then
   echo 'LEANOS/6 BOOT target=x86_64-q35 subjects=2 schedule=bounded-two-shot-pit controls=wp,smep,smap' > "$expected"
+elif [[ "$scenario" == stale-translation-denial ]]; then
+  echo 'LEANOS/19 BOOT target=x86_64-q35 subjects=2 schedule=stale-translation-denial probe=cpl3-unmap-read contract=v1 controls=wp,smep,smap,pcid-off' > "$expected"
+elif [[ "$scenario" == frame-budget ]]; then
+  echo 'LEANOS/20 BOOT target=x86_64-q35 subjects=2 schedule=frame-budget-v2 budgets=a:1,b:2 controls=wp,smep,smap' > "$expected"
 elif (( fault_scenario )); then
   echo "LEANOS/14 BOOT target=x86_64-q35 subjects=2 schedule=fault-containment probe=${fault_probe} contract=v1 controls=wp,smep,smap" > "$expected"
 elif [[ "$scenario" == direct-port-serial || "$scenario" == direct-port-debug ||
@@ -162,10 +189,32 @@ elif [[ "$scenario" == divide-error || "$scenario" == breakpoint ]]; then
 else
   echo 'LEANOS/10 BOOT target=x86_64-q35 subjects=2 schedule=blocking-ipc controls=wp,smep,smap' > "$expected"
 fi
-echo 'LEANOS/15 DMA snapshot=1 topology=000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled readback=exact stage=pre-cpl3 result=PASS' >> "$expected"
+echo 'LEANOS/15 DMA snapshot=1 topology=0001000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled readback=exact generated-result=0 stage=pre-cpl3 result=PASS' >> "$expected"
 printf '%s\n' \
   'LEANOS/8 PAGING root=A selected=1 leaves=4096 policy=manifest result=PASS' \
-  'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' >> "$expected"
+  'LEANOS/8 PAGING root=B selected=0 leaves=4096 policy=manifest result=PASS' \
+  'LEANOS/19 TLB path=invlpg address-space=2 page=7 pte=cleared order=store,invlpg,publish before=309063438 after=308959202 result=PASS' \
+  'LEANOS/19 TLB path=cr3 address-space=2 page=7 pte=cleared order=store,cr3,publish before=309063438 after=308959202 result=PASS' \
+  'LEANOS/19 TLB authority=generated-composite effect=page address-space=2 page=7 window=restored result=PASS' \
+  'LEANOS/19 TLB mutable-leaf=checked address-space=2 page=7 states=boot,before,unmapped,after immutable-leaves=exact result=PASS' >> "$expected"
+if [[ "$scenario" == frame-budget ]]; then
+  frame_budget_boot_physical="$(
+    sed -n 's|^LEANOS/7 ALLOC frame=\([0-9][0-9]*\) .*|\1|p' "$log"
+  )"
+  frame_budget_physical="$(
+    sed -n 's|^LEANOS/20 FRAME physical-frame=\([0-9][0-9]*\) .*|\1|p' "$log"
+  )"
+  [[ "$frame_budget_boot_physical" =~ ^[0-9]+$ &&
+     "$frame_budget_physical" =~ ^[0-9]+$ ]] || {
+    echo "failure_class=serial-protocol: missing unique boot/scenario physical-frame binding" >&2
+    exit 1
+  }
+  if [[ "$frame_budget_physical" == "$frame_budget_boot_physical" ]]; then
+    echo "failure_class=serial-protocol: frame-budget scenario double-published live boot frame" >&2
+    exit 1
+  fi
+  echo "LEANOS/20 FRAME physical-frame=${frame_budget_physical} boot-published-frame=${frame_budget_boot_physical} prior-publications=0 distinct=1 source=scalar-stream-projection result=PASS" >> "$expected"
+fi
 awk -F '\t' '$1 ~ /^[0-9]+$/ { print "LEANOS/3 ORACLE id=" $2 " result=PASS" }' "$corpus" >> "$expected"
 echo 'LEANOS/17 ENTRY-MANIFEST ordinary=8 extended=6,7 contained=0,3 auxiliary=1 terminal=2 extra=0 rsp0=entry-stack ist1=df-stack ist2=nmi-stack result=PASS' >> "$expected"
 echo 'LEANOS/16 DIRECT-PORT-CONTROL tr=40 limit=103 iomap=104 bitmap=absent iopl=0 stage=pre-cpl3 result=PASS' >> "$expected"
@@ -234,6 +283,21 @@ printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
   "LEANOS/18 ${integer_fault_upper}-PEER subject=2 address-space=2 stack=owned return=validated canaries=preserved resources=unchanged result=PASS" \
   "LEANOS/18 FINAL status=PASS faulting=terminated survivor=2 vector=${integer_fault_vector} reason=${integer_fault_kind} kernel-origin=fail-stop" >> "$expected"
+elif [[ "$scenario" == frame-budget ]]; then
+printf '%s\n' \
+  'LEANOS/8 PAGING root=A selected=1 resumed=1 result=PASS' \
+  'LEANOS/20 ENTER subject=1 address-space=1 cpl=3 budget=1 usage=0' \
+  "LEANOS/20 A-ALLOC subject=1 address-space=1 budget=1 usage=1 object=10 handle=65536 physical-frame=${frame_budget_physical} user-page=4095 source=generated-mapping prior-publications=0 accepted=1" \
+  'LEANOS/20 A-REJECT subject=1 reason=budgetExhausted budget=1 usage=1 object=none capability=none mapping=none state=unchanged digest=0x4201' \
+  'LEANOS/20 DISPATCH subject=2 address-space=2 source=generated-current result=PASS' \
+  'LEANOS/20 B-CONTEXT subject=2 source=kernel-owned-fresh registers=15 canaries=fresh result=PASS' \
+  'LEANOS/20 B-ALLOC subject=2 address-space=2 budget=2 usage=1 object=20 handle=131072 peer-a-usage=1 accepted=1' \
+  'LEANOS/20 CLEANUP subject=1 operation=terminate objects=1 mappings=1 capacity-restored=1 repeated-credit=0 effect=flush invalidation=cr3 order=store,cr3,ack,publish checked=1' \
+  "LEANOS/20 SCRUB physical-frame=${frame_budget_physical} bytes=4096 complete=1 before-publication=1" \
+  "LEANOS/20 B-PUBLISH subject=2 object=21 handle=196609 generation=3 physical-frame=${frame_budget_physical} user-page=4095 source=generated-mapping fresh-lifetime=1" \
+  'LEANOS/20 STALE handle=65536 old-subject=1 fresh-object=21 authorized=0 reason=stale-generation' \
+  'LEANOS/20 CANARY subject=2 origin=cpl3 access=direct first=0 last=0 old=165 denied=1 result=PASS' \
+  'LEANOS/20 FINAL status=PASS a-exhausted=1 b-available=1 cleanup=1 scrub=1 fresh=1 stale-denied=1 ring3-reuse=1' >> "$expected"
 elif [[ "$scenario" == preemption ]]; then
 printf '%s\n' \
   'LEANOS/6 COPY direction=in length=4 cross-page=1 validated=1 user-df=1 kernel-df=cleared ac=cleared result=PASS' \
@@ -251,6 +315,18 @@ printf '%s\n' \
   'LEANOS/5 SWITCH subject=1 address-space=1 cr3=switched stack=resumed contexts=separate' \
   'LEANOS/5 RESUME subject=1 caller=1 address-space=1 frame=original canaries=preserved contexts=separate' \
   'LEANOS/5 FINAL status=PASS ticks=2' >> "$expected"
+elif [[ "$scenario" == stale-translation-denial ]]; then
+printf '%s\n' \
+  'LEANOS/8 PAGING root=B selected=1 result=PASS' \
+  'LEANOS/19 ENTER subject=2 address-space=2 cpl=3 mapping=page7-present-user canary=309063438' \
+  'LEANOS/19 TLB-CPL3 event=prefill subject=2 address-space=2 page=7 address=28672 access=read canary=309063438 leaf=present-user result=PASS' \
+  'LEANOS/19 TLB-CPL3 event=unmap subject=2 address-space=2 page=7 pte=absent effect=page invalidation=invlpg cr3-reload=0 order=store,invlpg,publish result=PASS' \
+  'LEANOS/19 TLB-CPL3 event=reuse frame=same old-owner=2 old-lifetime=1 new-owner=1 new-lifetime=2 old-address-space=2 old-page=7 old-pte=absent new-address-space=1 new-page=7 new-pte=present-user scrub=complete canary=308959202 model=post-reuse-old-page-absent order=unmap,invlpg,publish-unmap,scrub,allocate,write-canary,map-new-owner,publish-reuse result=PASS' \
+  'LEANOS/14 PF-WALK page=7 expected-leaf=0 live-leaf=0 cause=supervisor denial=supervisor result=PASS' \
+  "LEANOS/14 PF-SNAPSHOT codec=1 width=19 words=1,14,4,28672,7,0,0,1,2,2,${stale_translation_cr3},15,${stale_translation_rip},35,582,${stale_translation_rsp},27,1,0 authorization=1 route=72057594037927937 result=PASS" \
+  'LEANOS/19 TLB-CPL3 event=denial vector=14 error=4 origin=cpl3 hardware=1 direct-call=0 subject=2 address-space=2 cr2=28672 page=7 access=read protection=0 pte=absent replacement-owner=1 replacement-lifetime=2 replacement-canary=308959202 replacement-canary-intact=1 route=contain handoff=new-owner cr3-reload-since-unmap=0 result=PASS' \
+  'LEANOS/19 TLB-CPL3 event=new-owner-read subject=1 address-space=1 page=7 address=28672 access=read frame=same lifetime=2 canary=308959202 old-address-space=2 old-pte=absent result=PASS' \
+  'LEANOS/19 FINAL status=PASS prefill=1 accepted-unmap=1 exact-invlpg=1 same-frame-reuse=1 scrub=complete new-owner-cpl3-read=1 replacement-canary=intact stale-access=page-fault old-observation=denied containment=1 incidental-cr3-reload=0' >> "$expected"
 else
 printf '%s\n' \
   'LEANOS/8 PAGING root=B selected=1 result=PASS' \
@@ -298,7 +374,7 @@ mapfile -t allocation_lines <<<"$allocation_trace"
 if [[ ${#allocation_lines[@]} -ne 6 ]] ||
    [[ ! "${allocation_lines[0]}" =~ ^LEANOS/7\ HANDOFF\ magic=valid\ info-bytes=[1-9][0-9]*\ mmap-entries=[1-9][0-9]*\ result=PASS$ ]] ||
    [[ "${allocation_lines[1]}" != "LEANOS/7 MAP boot-pages=4096 reported-top-mib=${reported_top_mib} precedence=reserved result=PASS" ]] ||
-   [[ ! "${allocation_lines[2]}" =~ ^LEANOS/7\ ALLOC\ frame=[0-9]+\ firmware-usable=1\ boot-accessible=1\ reserved=0\ result=PASS$ ]] ||
+   [[ ! "${allocation_lines[2]}" =~ ^LEANOS/7\ ALLOC\ frame=[0-9]+\ firmware-usable=1\ boot-accessible=1\ reserved=0\ projection=scalar-checked\ result=PASS$ ]] ||
    [[ "${allocation_lines[3]}" != 'LEANOS/7 SCRUB bytes=4096 zero=1 result=PASS' ]] ||
    [[ "${allocation_lines[4]}" != 'LEANOS/7 PUBLISH object=1 owner=1 stale-object=denied result=PASS' ]] ||
    [[ "${allocation_lines[5]}" != 'LEANOS/7 BOOTALLOC status=PASS' ]]; then
@@ -311,7 +387,10 @@ paging_specs=(
   'flip-nx B pt' 'wrong-frame B pt' 'ancestor-pointer B pml4'
   'ancestor-flags B pdpt' 'swapped-user-leaves B pt'
   'extra-mapping B pt' 'nmi-guard-mapping B pt' 'entry-guard-mapping B pt'
-  'omitted-mapping B pt' 'wrong-cr3 A cr3'
+  'omitted-mapping B pt' 'mmio-wrong-frame B pt' 'mmio-flip-user B pt'
+  'mutable-wrong-frame B pt'
+  'mutable-publish-before-invalidation B pt' 'mutable-unknown-state B pt'
+  'wrong-cr3 A cr3'
 )
 if [[ ${#paging_fixtures[@]} -ne ${#paging_specs[@]} ]]; then
   echo "failure_class=page-table-fixtures: complete live-mutation matrix not observed" >&2
@@ -324,7 +403,31 @@ for ((i = 0; i < ${#paging_specs[@]}; ++i)); do
     exit 1
   fi
 done
-sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' "$log" > "$without_allocation"
+vtd_trace="$(awk '/^LEANOS\/21 /' "$log")"
+mapfile -t vtd_lines <<<"$vtd_trace"
+vtd_root_frame=0
+vtd_context_frame=0
+if [[ ${#vtd_lines[@]} -ne 4 ]] ||
+   [[ "${vtd_lines[0]}" != 'LEANOS/21 VTD unit=0 mmio=4275634176 version=16 cap=59110346977575430 ecap=3842 gsts=0 fsts=0 rtaddr=0 stage=pre-activation result=PASS' ]]; then
+  echo "failure_class=vtd-evidence: exact quiescent VT-d unit evidence not observed" >&2
+  exit 1
+fi
+if [[ "${vtd_lines[1]}" =~ ^LEANOS/21\ VTD-PLAN\ root-frame=([1-9][0-9]*)\ context-frame=([1-9][0-9]*)\ root-words=512\ context-words=512\ present-root-entries=1\ present-context-entries=0\ translation=disabled\ deny-all=1\ result=PASS$ ]]; then
+  vtd_root_frame="${BASH_REMATCH[1]}"
+  vtd_context_frame="${BASH_REMATCH[2]}"
+else
+  echo "failure_class=vtd-evidence: exact deny-all VT-d plan evidence not observed" >&2
+  exit 1
+fi
+if [[ "$vtd_context_frame" -ne $((vtd_root_frame + 1)) ]] ||
+   [[ "${vtd_lines[2]}" != "LEANOS/21 VTD-TABLES root-frame=${vtd_root_frame} context-frame=${vtd_context_frame} scrub=verified construct=verified root-words=512 context-words=512 result=PASS" ]] ||
+   [[ "${vtd_lines[3]}" != "LEANOS/21 VTD-ACTIVATE order=validate,scrub,construct,publish,invalidate-context,invalidate-iotlb,enable,verify journal=2271560481 gsts=3221225472 fsts=0 rtaddr=$((vtd_root_frame * 4096)) generated-result=0 stage=pre-cpl3 result=PASS" ]]; then
+  echo "failure_class=vtd-evidence: exact fail-closed VT-d activation evidence not observed" >&2
+  exit 1
+fi
+sed -e '/^LEANOS\/7 /d' -e '/^LEANOS\/8 PAGING fixture=/d' \
+  -e '/^LEANOS\/15 DMA-FUNCTION /d' -e '/^LEANOS\/21 /d' \
+  "$log" > "$without_allocation"
 if (( fault_scenario )); then
   mkdir -p "$(dirname "$fault_snapshot_artifact")"
   grep '^LEANOS/14 PF-SNAPSHOT ' "$log" > "$fault_snapshot_artifact" || {
@@ -390,6 +493,22 @@ if [[ "$scenario" == blocking-ipc || "$scenario" == preemption ]]; then
   sed -i '/^LEANOS\/11 ENTRY-HIGH-WATER /d' "$without_allocation"
 fi
 if ! cmp -s "$expected" "$without_allocation"; then echo "failure_class=serial-protocol: complete expected protocol not observed" >&2; diff -u "$expected" "$without_allocation" >&2 || true; exit 1; fi
+if ! ./scripts/write-dma-snapshot.py \
+    --serial-log "$log" \
+    --source-revision "$source_revision_file" \
+    --qemu-version "${qemu_version:-unknown}" \
+    --output "$dma_snapshot"; then
+  echo "failure_class=dma-snapshot: canonical per-function snapshot rejected" >&2
+  exit 1
+fi
+if ! ./scripts/write-vtd-snapshot.py \
+    --serial-log "$log" \
+    --source-revision "$source_revision_file" \
+    --qemu-version "${qemu_version:-unknown}" \
+    --output "$vtd_snapshot"; then
+  echo "failure_class=vtd-snapshot: canonical activation snapshot rejected" >&2
+  exit 1
+fi
 if [[ "$scenario" == extended-state || "$scenario" == extended-state-mmx ||
       "$scenario" == extended-state-sse || "$scenario" == extended-state-sse2 ||
       "$scenario" == extended-state-avx ]]; then

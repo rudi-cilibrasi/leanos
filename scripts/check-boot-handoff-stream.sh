@@ -39,25 +39,103 @@ production_allocate="$(
   sed -n '/^static void boot_allocate(/,/^}/p' boot/kernel.c
 )"
 production_decode="$(
-  sed -n '/^static struct boot_decode_state decode_boot_candidate(/,/^}/p' boot/kernel.c
+  sed -n '/^static struct boot_decode_state decode_boot_projection(/,/^}/p' boot/kernel.c
 )"
-for required in leanos_boot_manifest_start leanos_boot_manifest_candidate \
-  decode_boot_candidate leanos_boot_select_frame leanos_boot_publish_authority; do
+for required in decode_boot_projection leanos_boot_projection_manifest \
+  leanos_boot_projection_free projection_finish_query \
+  decode_boot_candidate_authority leanos_boot_manifest_candidate \
+  leanos_boot_consume_exact_projection leanos_boot_authority_result; do
   grep -Fq "$required" <<<"$production_allocate" || {
     echo "error: production allocation omits $required" >&2
     exit 1
   }
 done
+for required in \
+  'for (uint64_t candidate = 0; candidate < 4096; ++candidate)' \
+  'uint64_t exact_candidate = leanos_boot_consume_exact_projection(' \
+  'selected = exact_candidate' \
+  'next_selected = exact_candidate' \
+  'frame_budget_physical_frame = next_selected' \
+  'authority.word[3] != selected'; do
+  grep -Fq "$required" <<<"$production_allocate" || {
+    echo "error: production selection is not bound to the canonical raw-byte candidate scan: $required" >&2
+    exit 1
+  }
+done
+if grep -Fq 'selected = authority.word[3]' <<<"$production_allocate"; then
+  echo "error: production selected a caller-transported projection word" >&2
+  exit 1
+fi
+if grep -Fq 'frame_budget_physical_frame = authority.word[8]' \
+    <<<"$production_allocate"; then
+  echo "error: frame-budget allocation consumed a caller-transported projection word" >&2
+  exit 1
+fi
+for required in \
+  'LEANOS_PROJECTION_SELECTION_MUTATION_FIXTURE' \
+  'const uint64_t exact_replay_selected = selected' \
+  'authority.word[3] = selected == 4095 ? selected - 1 : selected + 1' \
+  'selected != exact_replay_selected' \
+  'handoff_fail("projection-mutation-raw-selection")'; do
+  grep -Fq "$required" <<<"$production_allocate" || {
+    echo "error: production projection-selection mutation fixture omits $required" >&2
+    exit 1
+  }
+done
+mutation_line="$(grep -n 'authority.word\[3\] = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
+rejection_line="$(grep -n 'authority.word\[3\] != selected' <<<"$production_allocate" | cut -d: -f1)"
+scrub_line="$(grep -n 'frame\[i\] = 0' <<<"$production_allocate" | cut -d: -f1)"
+publication_line="$(grep -n 'leanos_boot_authority_result(' <<<"$production_allocate" | tail -1 | cut -d: -f1)"
+for required in \
+  'LEANOS_RAW_SELECTION_MUTATION_FIXTURE' \
+  'LEANOS_RAW_CLASSIFICATION_MUTATION_FIXTURE' \
+  'selected_authority.word[16] != selected' \
+  'LEANOS_PUBLICATION_RESULT_MUTATION_FIXTURE' \
+  'publication.word[3] = selected == 4095 ? selected - 1 : selected + 1'; do
+  grep -Fq "$required" <<<"$production_allocate" || {
+    echo "error: production raw-authority mutation coverage omits $required" >&2
+    exit 1
+  }
+done
+raw_selection_mutation_line="$(grep -n '^    selected = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
+raw_selection_rejection_line="$(grep -n 'selected_authority.word\[16\] != selected' <<<"$production_allocate" | cut -d: -f1)"
+raw_classification_mutation_line="$(grep -n 'selected_authority.word\[14\] = 0' <<<"$production_allocate" | cut -d: -f1)"
+publication_mutation_line="$(grep -n 'publication.word\[3\] = selected == 4095' <<<"$production_allocate" | cut -d: -f1)"
+publication_rejection_line="$(grep -n 'publication.word\[3\] != selected' <<<"$production_allocate" | cut -d: -f1)"
+if (( raw_selection_mutation_line >= raw_selection_rejection_line ||
+      raw_classification_mutation_line >= raw_selection_rejection_line ||
+      raw_selection_rejection_line >= scrub_line ||
+      publication_mutation_line >= publication_rejection_line )); then
+  echo "error: production raw-authority mutation can reach authority use before rejection" >&2
+  exit 1
+fi
+if (( mutation_line >= rejection_line || rejection_line >= scrub_line ||
+      rejection_line >= publication_line )); then
+  echo "error: projection-selection mutation can reach scrub/publication before rejection" >&2
+  exit 1
+fi
 if grep -Eq 'mb2_(tag|mmap)|boot_frames|reserve_byte_range|allocation_check' \
     <<<"$production_allocate"; then
   echo "error: production allocation retained a C handoff policy authority" >&2
   exit 1
 fi
-grep -Fq 'struct boot_decode_state { uint64_t word[19]; };' boot/kernel.c || {
-  echo "error: production decoder does not retain all nineteen scalar ABI words" >&2
+production_authority="$(
+  sed -n '/^static struct boot_decode_state decode_boot_candidate_authority(/,/^}/p' boot/kernel.c
+)"
+for required in 'query < 23' 'state.word[16] != candidate' \
+  'candidate_authority.word[14]' 'candidate_authority.word[15]' \
+  'selected_authority.word[14] != 1' \
+  'selected_authority.word[15] != 0'; do
+  grep -Fq "$required" <<<"$production_allocate$production_authority" || {
+    echo "error: production selected-frame authorization omits $required" >&2
+    exit 1
+  }
+done
+grep -Fq 'struct boot_decode_state { uint64_t word[23]; };' boot/kernel.c || {
+  echo "error: production decoder does not retain parser state plus typed entry event" >&2
   exit 1
 }
-for required in 'query < 19' 'state.word[0] != 4' \
+for required in 'query < 23' 'state.word[0] != 4' \
   'state.word[18], info_address'; do
   grep -Fq "$required" <<<"$production_decode" || {
     echo "error: production decoder omits scalar ABI v4 tag-count state: $required" >&2
@@ -163,7 +241,11 @@ fi
 symbols="$(nm "$build/stream.elf")"
 for symbol in leanos_boot_handoff_stream_init leanos_boot_handoff_stream_step \
   leanos_boot_decode_init leanos_boot_decode_step leanos_boot_manifest_candidate \
-  leanos_boot_manifest_start leanos_boot_select_frame leanos_boot_publish_authority; do
+  leanos_boot_manifest_start leanos_boot_consume_exact_projection \
+  leanos_boot_publish_authority leanos_boot_authority_result \
+  leanos_boot_projection_entry \
+  leanos_boot_projection_manifest leanos_boot_projection_free \
+  leanos_boot_projection_finish; do
   if ! grep -q " T ${symbol}$" <<<"$symbols"; then
     echo "error: handoff stream image does not retain $symbol" >&2
     exit 1
@@ -174,7 +256,7 @@ done
 # boundary.  In particular, neither the boxed whole-buffer reader nor the old
 # scalar allocation-policy adapter may become an accidental second authority.
 for forbidden_policy in leanos_boot_handoff_query leanos_boot_handoff_fixture_query \
-  leanos_boot_allocation_check; do
+  leanos_boot_allocation_check leanos_boot_select_frame; do
   if grep -q " T ${forbidden_policy}$" <<<"$symbols"; then
     echo "error: handoff stream image retained forbidden policy symbol $forbidden_policy" >&2
     exit 1
@@ -185,16 +267,24 @@ done
 # hide behind a non-exported name in this final focused artifact.
 while read -r text_symbol; do
   case "$text_symbol" in
-    _start|check_stream|decode|decode_entry_count|decode_extent|step_query|\
+    _start|check_stream|decode|decode_entry_count|decode_extent|expect_decode_error|step_query|\
 leanos_boot_handoff_stream_init|\
 leanos_boot_handoff_stream_step|\
 leanos_boot_decode_init|leanos_boot_decode_step|leanos_boot_manifest_candidate|\
 leanos_boot_manifest_start|\
-leanos_boot_select_frame|leanos_boot_publish_authority|\
+leanos_boot_consume_exact_projection|leanos_boot_publish_authority|\
+leanos_boot_authority_result|\
+leanos_boot_projection_entry|leanos_boot_projection_manifest|\
+leanos_boot_projection_free|leanos_boot_projection_finish|\
 lp_leanos___private_LeanOS_BootMemoryMapStreaming_0__LeanOS_BootMemoryMapStreaming_canonicalChunk|\
-lp_leanos___private_LeanOS_BootMemoryMapStreamAuthority_0__LeanOS_BootMemoryMapStreamAuthority_manifestValid|\
-lp_leanos___private_LeanOS_BootMemoryMapStreamAuthority_0__LeanOS_BootMemoryMapStreamAuthority_transitionError|\
-lp_leanos___private_LeanOS_BootMemoryMapStreamAuthority_0__LeanOS_BootMemoryMapStreamAuthority_transitionError___redArg)
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_manifestValid|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_firstInEight|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_firstInSixtyFour|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_firstAfterInSixtyFour|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_firstSetBit|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_maskAfter|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_reservationMaskWord|\
+lp_leanos_LeanOS_BootMemoryMapStreamAuthority_transitionError___redArg)
       ;;
     *)
       echo "error: unreviewed handoff stream text symbol $text_symbol" >&2

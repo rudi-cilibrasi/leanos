@@ -11,8 +11,9 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `DirectPortIO.directPortIODemo`, `InterruptEntry.nmiDemo`,
 `InterruptEntry.bootPhaseDemo`, and
 `StaleTranslation.staleTranslationDemo`, and
-`InterruptEntry.pageFaultDemo`. Its stable
-292-vector order covers accepted calls,
+`InterruptEntry.pageFaultDemo`, plus the stateful
+`CompositeDispatcher.dispatch`. Its stable
+380-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -24,6 +25,11 @@ capability slot, owned memory and frame, mapping, and endpoint provenance after
 A's cleanup. The containment guest retains that exact adapter word across B's
 checked context copy, CR3 switch, and common validated return instead of
 maintaining a parallel C live/runnable/queue/context/resource projection. The
+composite corpus includes an accepted page-7 unmap whose typed reply requires
+the kernel-derived address-space-2/page-7 invalidation effect, plus an absent-page
+rejection that preserves the canonical state and requests no effect. Both are
+derived from the same authoritative replay used by the scalar dispatcher; the
+C harness stores no mapping or TLB shadow state. The
 32 entry-control records cover the canonical denial tuple, every modeled
 CPU/MSR/boot-evidence mutation, return authorization, user and kernel denial
 events, stale bindings, alternate-target/stack separation, and post-fatal
@@ -35,6 +41,124 @@ progress after the latch, malformed phase codes, and an opaque business token
 that must round-trip unchanged. The Lean checks evaluate every expected result
 from the adapter definition and connect the accepted and rejected examples to
 the source models.
+
+The final fifty-six composite-dispatch records are the version-one traces
+for the shared stateful boundary. Six input words carry a canonical state token,
+command tag, and four scalar arguments. The seven positive sequence edges create
+one subject, observe typed unknown-syscall and malformed-map rejections, run
+the scheduler observation, terminate the subject, enter a fatal kernel
+page-fault state, and verify that a subsequent scheduler request is rejected
+by the absorbing fatal latch. Each state token materializes the complete
+`FailStop.CompositeState` by replaying the exact
+`FailStop.authoritativeGate`; it is not a reduced transition or a C shadow
+state. Ten negative records reject stale replay, cross-trace splicing,
+nonzero reserved arguments, forged context arguments, wrong versions, reserved
+state or command bits, maximum words, and unknown commands before policy
+evaluation. Lean proves canonical complete-state, command, and reply round
+trips and injectivity over this bounded domain, one-step equality with the
+authoritative gate for every successful scalar result, and the exact predecessor
+relation for the seven-edge sequence. The general finite-list theorem
+additionally proves that every accepted command list materializes to the exact
+result of
+`FailStop.runAuthoritativeOperations` over the same normalized operations.
+Its append-continuity corollary requires every prefix and suffix to share one
+canonical intermediate state token, so stale replay or cross-trace splicing
+cannot be accepted between adjacent steps.
+
+The next twenty records form one positive mixed trace rooted in a
+kernel-owned, complete two-subject state. In order, it offers and accepts a
+sealed endpoint descendant, revokes its send-only generation, rejects the
+stale handle, copies a fresh generation into the reused slot, accepts both
+syscall-mediated and direct mapping, rejects an unknown syscall without
+mutation, completes nonblocking send/receive, blocks and wakes the receiver,
+switches back to it on a timer entry, contains its user page fault with
+complete subject cleanup, enters a fatal kernel fault, and rejects a
+post-fatal scheduler attempt. Independent edges from the same complete
+direct-mapped pre-state accept a writable-to-read-only protection reduction
+with exact page effect and reject a later write-amplification attempt without
+mutation. Lean checks the exact typed result at each named boundary, including
+the timer-selected subject and the faulting subject's retired identity. The
+scalar export remains allocation-free; generated C and its calling convention
+remain trusted hosted-test boundaries.
+
+The final twenty-two records are the stateful invalidation-publication corpus.
+Nineteen canonical edges cover an independent accepted unmap and exact
+page-effect acknowledgement, an independently ticketed switch-away/back round
+trip, plus wrong-owner protection rejection, an accepted writable-to-read-only
+protection reduction, accepted release and destruction, stale-release
+rejection, root switch, and bounded post-retirement reuse. Both
+protection and release include a mismatched-effect stutter before the exact
+acknowledgement. The three final negatives reject a malformed effect encoding,
+a valid page acknowledgement paired with the wrong pending state, and an old
+release-flush ticket replayed against the later switch flush. Pending state
+tokens retain the complete published pre-state: `prepare_retains_published` and
+`release_not_published_before_ack` prevent early retirement publication,
+`acknowledge_accepted_exact` requires the fresh ticket and exact effect before
+publishing the recorded successor, and
+`reuse_publication_requires_retirement_ack` requires acknowledged release and
+destruction with no pending effect. The switch round trip additionally checks
+that the first flush ticket cannot acknowledge the return switch and that the
+published active root returns to address space 1 only after ticket 1. The
+object-11 reuse remains the existing
+finite fixture; it adds no authoritative quota or reclamation policy.
+
+The final 24 records are the frame-budget corpus. Eleven accepted edges encode
+the complete A-allocation, state-preserving exhaustion, kernel-selected B
+handoff, peer allocation, checked A termination, fresh B publication,
+stale-handle denial, and completion trace plus the checked release branch.
+Thirteen hostile records cover
+repeated retry and cleanup, occupied-slot ordering, aggregate/global and
+malformed state tokens, caller/charge-owner forgery, stale generation,
+state replay and cross-trace splicing, unknown/reserved operations, and maximum
+words. `FrameBudgetScenario.step_refinement` connects every accepted edge to
+the exact admitted-budget transition, while the hosted generated-C harness
+reports the first mismatching operation and reply.
+
+The same hosted boundary exercises
+`leanos_frame_budget_invalidation_effect`. Exact canonical
+`bAllocated/terminateA` and `aAllocated/releaseA` pairs return distinct
+transition-bound tokens whose typed meaning is `RetirementEffect.flush`; cross-pair,
+stale, and malformed inputs return zero. The QEMU frame-reuse path consumes
+the termination token before retiring A's PTE or publishing released capacity.
+
+Five additional Phase 2 records invoke that same dispatcher for a canonical
+generation-bound map handle, nonblocking IPC, capability copy, blocking
+cancellation, and deferred cancellation drain. The handle word `0x10000` is
+proved to round-trip through `CapabilityHandle` as slot 0, generation 1;
+trusted caller and address-space identity still come only from the reconstructed
+composite state. `CanonicalCompositeState` is the decoded ABI object and
+contains the full state plus its exact materialization equality.
+`CanonicalTypedStep` retains the literal `AuthoritativeGateResult` and
+post-state returned by the sole `authoritativeGate` invocation rather than
+manufacturing a generic success result. These five probes remain independently
+proved one-step rejections. The positive mixed sequence covers the accepted
+mapping, IPC, transfer/reuse, timer, and cleanup paths without weakening those
+negative fixtures.
+
+Every boot image retains that same generated `leanos_composite_dispatch` symbol
+and routes adapter 18 through it during the ordered oracle replay. Unknown
+adapter identifiers fail closed rather than falling through to another witness.
+
+The hosted replay also compiles eight deliberately invalid harness variants.
+They truncate the composite record arity, corrupt the generated dispatcher's
+result word, route the record through the old stateless syscall witness, or
+corrupt the ABI version, reserved bits, predecessor state, forged context
+argument, or canonical capability handle.
+Each variant must stop at the first malformed record or mismatch. Unknown
+adapter identifiers fail closed instead of falling through to the composite
+export. Every mismatch names the first operation and divergent reply field.
+Buffer aliasing, alignment, and partial-write fixtures do not apply to this
+six-scalar-input, one-scalar-result ABI, which owns no caller buffer or
+generated state cell.
+
+The proof job preserves a reviewable `leanos-oracle-<commit>` artifact for this
+boundary. It contains the generated `CompositeDispatcher.c`, the public
+version-one scalar ABI header, the versioned corpus, exact per-step hosted
+results and negative-fixture diagnostics, compiler flags and tool versions,
+and a SHA-256 manifest tied to the source revision. The manifest records
+reproducible differential evidence, not verified compilation: Lean code
+generation, the C compiler, the scalar calling convention, and the hosted
+harness remain explicit trusted boundaries.
 
 The interrupt-entry corpus also includes the user-only vector-13 hardware-error
 shape and its broad general-protection purpose. The live handler refines that
@@ -168,6 +292,20 @@ encoding. Attacker words cannot select the invalidation target: ownership and
 lifetime are checked by `step`, so a non-owner or post-reuse request packs no
 effect. `stale_translation_adapter_agrees_with_model` proves the exported scalar
 matches the authoritative `step` on every vector.
+
+The canonical composite accepted-unmap reply is also consumed by the boot
+image's runtime-mutable page-7 window. Source and final-ELF policy checks bind
+the reply to address space B and enforce PTE-store, `invlpg`/CR3, publication
+order; QEMU observes the distinct kernel-read before/replacement-frame values
+and restoration of the boot-plan leaf. The dedicated stale-translation image
+then consumes both the composite reply and the scalar block's generated
+post-reuse selector in one phase-checked machine sequence: real CPL3 prefill,
+active-root clear/`invlpg`/publication, full scrub and same-frame fresh-lifetime
+canary publication into A/page 7, a real CPL3 denial through the now-absent
+B/page 7, and a real CPL3 A read of the replacement canary.
+The scalar selector establishes the named model's accepted fresh-object
+allocation and old-page absence; C sequencing and QEMU do not prove that the
+binary refines that model.
 
 Run the complete local evidence path with:
 

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LeanOS in your browser</title>
+<link rel="stylesheet" href="./xterm.css">
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #0b0e14; color: #d6dae2; line-height: 1.5;
+  }
+  main { max-width: 62rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+  a { color: #6cb6ff; }
+  .sub { color: #9aa4b2; margin-top: 0; }
+  #status {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem; padding: 0.4rem 0.6rem; border-radius: 6px;
+    background: #141a24; border: 1px solid #232b39; display: inline-block;
+    margin: 0.5rem 0 0.75rem;
+  }
+  #status[data-state="pass"] { border-color: #2ea043; color: #7ee787; }
+  #status[data-state="fail"] { border-color: #f85149; color: #ff9aa2; }
+  #terminal {
+    border: 1px solid #232b39; border-radius: 8px; padding: 0.5rem;
+    background: #000; overflow: hidden;
+  }
+  .note { color: #9aa4b2; font-size: 0.9rem; }
+  .note code {
+    font-family: ui-monospace, monospace; background: #141a24;
+    padding: 0.05rem 0.35rem; border-radius: 4px;
+  }
+  noscript { color: #ff9aa2; }
+</style>
+</head>
+<body>
+<main>
+  <h1>LeanOS in your browser</h1>
+  <p class="sub">
+    The unchanged canonical LeanOS ISO, booted in a pinned WebAssembly build of
+    QEMU. This is emulator-tested integration evidence, not a proof of LeanOS,
+    the browser, or the emulator.
+  </p>
+  <div id="status">loading the WebAssembly runtime…</div>
+  <div id="terminal"></div>
+  <p class="note">
+    LeanOS is a Phase&nbsp;1 microkernel: it runs a fixed two-subject scenario,
+    emits its versioned boot protocol, and halts with a guest debug-exit. When
+    you see <code>LEANOS/10 FINAL status=PASS</code> and
+    <code>guest exited (status&nbsp;33)</code>, the boot succeeded — the same
+    result the native emulator validates. First load downloads a ~40&nbsp;MB
+    runtime and requires a desktop browser with cross-origin isolation
+    (<code>SharedArrayBuffer</code>). Source and details:
+    <a href="https://github.com/rudi-cilibrasi/leanos">github.com/rudi-cilibrasi/leanos</a>.
+  </p>
+  <noscript>This demo requires JavaScript and WebAssembly.</noscript>
+</main>
+
+<script src="./coi-serviceworker.js"></script>
+<script src="./leanos-module.js"></script>
+<script src="./load-rom.js"></script>
+<script type="module">
+  import './xterm.js';
+  import './xterm-pty.js';
+  import initEmscriptenModule from './out.js';
+
+  const statusEl = document.getElementById('status');
+  const setStatus = (text, state) => {
+    statusEl.textContent = text;
+    if (state) statusEl.dataset.state = state; else delete statusEl.dataset.state;
+  };
+
+  if (!crossOriginIsolated) {
+    setStatus('cross-origin isolation unavailable — this browser or host cannot run the threaded runtime.', 'fail');
+    throw new Error('cross-origin isolation unavailable');
+  }
+
+  const terminal = new Terminal({
+    cols: 120, rows: 40, convertEol: true, fontSize: 13,
+    theme: { background: '#000000' }, disableStdin: true,
+  });
+  terminal.open(document.getElementById('terminal'));
+  // A pty slave stub is required for QEMU's character layer initialization even
+  // though serial is routed to a file; no terminal input is wired to it.
+  const { slave } = openpty();
+  Module.pty = slave;
+
+  Module.quit = (code) => {
+    if (code === 0) return; // loader teardown, not the guest debug-exit
+    const pass = code === 33;
+    setStatus(`guest exited (status ${code})${pass ? ' — boot succeeded' : ''}`, pass ? 'pass' : 'fail');
+  };
+  Module.onAbort = (reason) => setStatus(`runtime aborted: ${reason}`, 'fail');
+
+  setStatus('booting LeanOS…');
+  const instance = await initEmscriptenModule(Module).catch((error) => {
+    setStatus(`failed to start: ${error}`, 'fail');
+    return null;
+  });
+  if (!instance) throw new Error('runtime init failed');
+  window.leanosModule = instance;
+
+  // Tail the in-memory serial log into the terminal.  Reading a MEMFS file is
+  // synchronous and cheap; this is display only and never feeds the guest.
+  let shown = 0;
+  const pump = () => {
+    let bytes;
+    try {
+      bytes = instance.FS.readFile('/serial.log');
+    } catch {
+      return; // not created until the guest opens the serial device
+    }
+    if (bytes.length > shown) {
+      terminal.write(bytes.subarray(shown));
+      shown = bytes.length;
+    }
+  };
+  setInterval(pump, 200);
+</script>
+</body>
+</html>

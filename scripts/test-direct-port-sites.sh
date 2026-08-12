@@ -20,7 +20,7 @@ grep -Fq 'error: unauthorized final-ELF port-I/O site' "$tmp/missing.log" || {
   exit 1
 }
 
-sed '0,/DMAQuarantine.boot-pci-config/s//DirectPortIO.serial/' \
+sed '0,/DMAQuarantine.pci-config/s//DirectPortIO.serial/' \
   "$manifest" >"$tmp/wrong-owner.tsv"
 if ./scripts/check-direct-port-sites.py "$elf" "$tmp/wrong-owner.tsv" \
     >"$tmp/owner.log" 2>&1; then

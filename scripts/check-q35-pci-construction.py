@@ -53,6 +53,7 @@ class QTest:
         command = [
             executable,
             "-machine", "q35,accel=tcg",
+            "-nodefaults",
             "-cpu", "max",
             "-smp", "1",
             "-m", "128M",
@@ -62,6 +63,10 @@ class QTest:
             "-no-reboot",
             "-no-shutdown",
             "-nic", "none",
+            "-device", "intel-iommu,intremap=off,pt=off,caching-mode=off,"
+                       "device-iotlb=off,aw-bits=39,dma-translation=on,"
+                       "snoop-control=off",
+            "-device", "VGA,bus=pcie.0,addr=0x1",
             "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
             "-S",
             "-qtest", "stdio",
