@@ -82,6 +82,16 @@ def require_hash(value: object, label: str, pattern: re.Pattern[str] = HEX64) ->
         fail(f"{label} is not a lowercase immutable hash")
 
 
+def flat_regular_file_inventory(staging: pathlib.Path) -> set[str]:
+    entries = list(staging.iterdir())
+    invalid = sorted(
+        entry.name for entry in entries if entry.is_symlink() or not entry.is_file()
+    )
+    if invalid:
+        fail(f"staging contains non-regular entries: {invalid}")
+    return {entry.name for entry in entries}
+
+
 def validate_inputs(data: dict) -> None:
     if data.get("schema") != "leanos-qemu-wasm-runtime/v1":
         fail("unexpected manifest schema")
@@ -281,7 +291,7 @@ def validate_release(data: dict, staging: pathlib.Path | None) -> None:
         )
     if staging is None:
         return
-    observed = {path.name for path in staging.iterdir() if path.is_file()}
+    observed = flat_regular_file_inventory(staging)
     if observed != set(outputs):
         fail(
             "staging inventory differs from manifest: "
@@ -307,7 +317,7 @@ def validate_prototype(
         fail("prototype validation requires --staging")
     outputs = unique(data.get("outputs", []), "path", "output")
     expected = set(outputs)
-    observed = {path.name for path in staging.iterdir() if path.is_file()}
+    observed = flat_regular_file_inventory(staging)
     if observed != expected:
         fail(
             "prototype inventory differs from manifest: "

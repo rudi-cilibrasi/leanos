@@ -87,6 +87,17 @@ prototype="$fixtures/prototype"
 write_prototype "$prototype"
 "$validator" --prototype --staging "$prototype"
 
+cp -a "$prototype" "$fixtures/prototype-directory-entry"
+mkdir "$fixtures/prototype-directory-entry/unmanifested"
+if "$validator" --prototype --staging "$fixtures/prototype-directory-entry" \
+    >"$fixtures/prototype-directory-entry.out" \
+    2>"$fixtures/prototype-directory-entry.err"; then
+  echo "error: prototype directory entry unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq "staging contains non-regular entries" \
+  "$fixtures/prototype-directory-entry.err"
+
 cp -a "$prototype" "$fixtures/substituted-wasm"
 printf 'substitution\n' >> "$fixtures/substituted-wasm/qemu-system-x86_64.wasm"
 if "$validator" --prototype --staging "$fixtures/substituted-wasm" \
@@ -236,6 +247,12 @@ add_unmanifested_staging_file() {
 }
 expect_release_rejection divergent-release-staging \
   "staging inventory differs from manifest" add_unmanifested_staging_file
+
+add_symlinked_staging_entry() {
+  ln -s qemu-system-x86_64.wasm "$1/runtime-alias.wasm"
+}
+expect_release_rejection symlinked-release-staging \
+  "staging contains non-regular entries" add_symlinked_staging_entry
 
 jq 'del(.outputs[] | select(.asset_class == "firmware"))' \
   "$release_manifest" > "$fixtures/release-missing-firmware-class.json"
