@@ -2164,7 +2164,6 @@ def machineAuthoritativeTopologyQuery
                       if processor.onlineCapable then 1 else 0
                     else 0
 
-@[export leanos_boot_machine_topology_query]
 def exportedMachineAuthoritativeTopologyQuery
     (selectedKind selectedAddress : UInt64) (rootBytes : ByteArray)
     (tableAddresses : Array UInt64) (tableBytes : Array ByteArray)
