@@ -1526,6 +1526,16 @@ static const uint8_t *copy_boot_handoff(uint32_t magic, uint32_t info_address,
 
 struct boot_decode_state { uint64_t word[23]; };
 
+/* Keep fixed-width decoder-state transport explicit in the freestanding
+   kernel. Clang may otherwise lower these aggregate copies to a hosted
+   memcpy call, which is not part of the boot image's runtime contract. */
+static void copy_boot_decode_state(struct boot_decode_state *destination,
+                                   const struct boot_decode_state *source) {
+    volatile uint64_t *words = destination->word;
+    for (unsigned query = 0; query < 23; ++query)
+        words[query] = source->word[query];
+}
+
 #define BOOT_MANIFEST_ARGS(info_address, total) \
     0, 0x100000u, \
     (uint64_t)__boot_image_start, \
@@ -1591,7 +1601,7 @@ static struct boot_decode_state decode_boot_projection(
                 state.word[12], state.word[13], state.word[14], state.word[15],
                 state.word[16], state.word[17], state.word[18], info_address,
                 offset, chunk, terminal, query);
-        state = next;
+        copy_boot_decode_state(&state, &next);
         if (state.word[2] != 0) break;
         if (state.word[19] == 1) {
             if (state.word[11] == 0 || state.word[11] > 256)
@@ -1658,7 +1668,7 @@ static struct boot_decode_state decode_boot_candidate_authority(
                 state.word[12], state.word[13], state.word[14], state.word[15],
                 state.word[16], state.word[17], state.word[18], info_address,
                 offset, chunk, terminal, query);
-        state = next;
+        copy_boot_decode_state(&state, &next);
         if (state.word[2] != 0) break;
     }
     if (state.word[1] != 1 || state.word[2] != 0 ||
@@ -1746,7 +1756,7 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
         if (exact_candidate >= 4096) continue;
         if (selected >= 4096) {
             selected = exact_candidate;
-            selected_authority = candidate_authority;
+            copy_boot_decode_state(&selected_authority, &candidate_authority);
             selected_manifest = candidate_manifest;
 #ifndef LEANOS_FRAME_BUDGET_SCENARIO
             break;

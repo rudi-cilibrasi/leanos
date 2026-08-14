@@ -16,7 +16,7 @@ fail() {
 grep -Fqx '#define RUNTIME_MAPPING_PAGE 7u' "$source_file" ||
   fail "mutable-window target is not confined to page 7"
 relation_source="$(
-  sed -n '/static int checked_runtime_leaf(/,/^}/p' "$source_file"
+  sed -n '/^static .*checked_runtime_leaf(/,/^}/p' "$source_file"
 )"
 [[ -n "$relation_source" ]] ||
   fail "mutable-leaf relation is missing"
