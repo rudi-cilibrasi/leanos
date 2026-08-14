@@ -677,8 +677,8 @@ static uint64_t runtime_mapping_leaf(uint64_t *frame) {
    every kernel-owned phase; an unknown phase is never accepted.
    Accessed/dirty bits are ignored only by the caller's ordinary x86
    comparison, just as for immutable leaves. */
-static int checked_runtime_leaf(unsigned space, uint64_t page,
-                                uint64_t *expected) {
+static __attribute__((noinline)) int checked_runtime_leaf(
+    unsigned space, uint64_t page, uint64_t *expected) {
     if (page != RUNTIME_MAPPING_PAGE || (space != 1 && space != 2))
         return 1;
     if (space == 1) {
@@ -3319,9 +3319,9 @@ static uint64_t context_descriptor(uint64_t owner, uint64_t stack_pointer) {
     return owner | (stack_marker(stack_pointer) << 8);
 }
 
-static void check_original_frame(const uint64_t *frame, uint64_t original_rip,
-                                 uint64_t original_flags, uint64_t original_rsp,
-                                 uint64_t owner) {
+static __attribute__((noinline)) void check_original_frame(
+    const uint64_t *frame, uint64_t original_rip, uint64_t original_flags,
+    uint64_t original_rsp, uint64_t owner) {
     if (frame[15] != original_rip || frame[17] != original_flags ||
         frame[18] != original_rsp ||
         stack_marker(original_rsp) != owner)
@@ -3334,7 +3334,8 @@ static int initial_b_frame_valid(const volatile uint64_t *frame) {
         frame[19] == 0x1b;
 }
 
-static void check_initial_b_frame(const volatile uint64_t *frame) {
+static __attribute__((noinline)) void check_initial_b_frame(
+    const volatile uint64_t *frame) {
     if (!initial_b_frame_valid(frame)) fail("initial-context-frame");
 }
 
