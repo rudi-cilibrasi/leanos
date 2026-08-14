@@ -2,6 +2,13 @@
 #include "corpus.h"
 #include "generated-boundary-abi.h"
 #include "leanos/composite-dispatcher.h"
+
+/* GCC's noipa also blocks interprocedural transformations beyond noinline.
+   Clang has no noipa spelling; optnone is the reviewed stronger boundary for
+   this independent compiler lane while the shared GNU linker remains in use. */
+#if defined(__clang__)
+#define noipa optnone
+#endif
 #if defined(LEANOS_BOOT_PAGE_PLAN_HEADER)
 #include LEANOS_BOOT_PAGE_PLAN_HEADER
 #elif defined(LEANOS_DF_MAP_GUARD)
@@ -366,7 +373,7 @@ static uint64_t frame_budget_user_page = UINT64_MAX;
    This is an attestation, not a second mutable scheduler/lifecycle projection. */
 static uint64_t fault_dispatch_attestation;
 #endif
-static void finish(uint8_t value);
+static __attribute__((noreturn)) void finish(uint8_t value);
 static __attribute__((noreturn)) void fail(const char *reason);
 static void serial_puts(const char *text);
 static void serial_putc(char value);
