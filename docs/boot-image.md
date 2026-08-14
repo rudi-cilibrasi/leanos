@@ -99,7 +99,12 @@ required source-width floating-point evaluation contract. Clang 18 warns that
 this evaluation method is unsupported on the resulting no-SSE target, so only
 that `-Wpragmas` diagnostic remains non-fatal; the warning stays visible and all
 source warnings remain errors. No floating-point operation is permitted by the
-general-register-only target.
+general-register-only target. The lane also uses `-fno-jump-tables`: the final
+ELF entry-stack gate deliberately rejects indirect control-flow edges because
+their possible targets cannot be bounded by its reviewed static call graph, and
+Clang otherwise lowers the finite generated entry classifier through a jump
+table. This preserves the fail-closed stack analysis rather than allowlisting
+an optimizer-specific indirect edge.
 These pins identify the build inputs. `build-image.sh` uses BIOS-only GRUB
 output, a fixed ISO UUID and file dates, no linker build ID, and normalized
 debug paths. `./scripts/test-reproducible-build.sh` performs two clean builds

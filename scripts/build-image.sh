@@ -194,7 +194,11 @@ if "$cc" --version | sed -n '1p' | grep -qi clang; then
   # Keep that diagnostic visible but do not promote this one known limitation
   # to an error; -Werror remains active for every source warning, while
   # -mgeneral-regs-only rejects any actual floating-point register use.
-  cflags+=(-ffp-eval-method=source -Wno-error=pragmas)
+  # The entry-stack final-ELF gate rejects indirect control-flow edges because
+  # their targets cannot be bounded by the reviewed static call graph. Clang
+  # otherwise lowers the generated finite entry classifier through a jump
+  # table, so retain direct conditional branches in this independent lane.
+  cflags+=(-ffp-eval-method=source -Wno-error=pragmas -fno-jump-tables)
 fi
 {
   printf 'image-compiler-command\t%s\n' "$cc"
