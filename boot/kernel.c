@@ -1478,6 +1478,55 @@ static uint8_t boot_acpi_root_copy[MAX_COPIED_ACPI_SDT_BYTES]
 static uint8_t boot_acpi_table_copy[MAX_COPIED_ACPI_TABLE_BYTES]
     __attribute__((aligned(8)));
 static struct copied_acpi_sdt boot_acpi_table_copies[MAX_ACPI_ROOT_ENTRIES];
+static uint8_t boot_acpi_mapping_window[PAGE_BYTES]
+    __attribute__((aligned(PAGE_BYTES)));
+
+/* The ordinary boot identity map intentionally ends at 16 MiB, while q35 may
+   place its ACPI SDTs above that boundary.  Copy through one supervisor-only,
+   NX aperture in the active boot address space and restore its exact original
+   leaf before returning.  Physical-address translation, PTE mutation, TLB
+   invalidation, and the byte copy remain an explicit trusted boot boundary;
+   generated code still validates every copied byte and all table structure. */
+static void copy_acpi_physical_bytes(
+        uint64_t physical_address, uint8_t *destination, uint32_t length) {
+    const uint64_t physical_limit = UINT64_C(1) << 32;
+    const uintptr_t window = (uintptr_t)boot_acpi_mapping_window;
+    if (length == 0 || physical_address >= physical_limit ||
+        (uint64_t)length > physical_limit - physical_address ||
+        (window & (PAGE_BYTES - 1u)) != 0 ||
+        window >= BOOT_ACCESSIBLE_LIMIT)
+        handoff_fail("topology-sdt-address");
+    const uint32_t window_page = (uint32_t)(window / PAGE_BYTES);
+    if (window_page >= BOOT_LEAF_COUNT)
+        handoff_fail("topology-sdt-window");
+    uint64_t active_root;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(active_root));
+    if ((active_root & ~(uint64_t)(PAGE_BYTES - 1u)) !=
+        (uint64_t)page_map_level_4_a)
+        handoff_fail("topology-sdt-address-space");
+    const uint64_t saved_leaf = page_table_a[window_page];
+    if ((saved_leaf & PTE_PRESENT) == 0 || (saved_leaf & PTE_USER) != 0)
+        handoff_fail("topology-sdt-window");
+
+    uint32_t copied = 0;
+    while (copied < length) {
+        const uint64_t current = physical_address + copied;
+        const uint64_t frame = current & ~(uint64_t)(PAGE_BYTES - 1u);
+        const uint32_t offset = (uint32_t)(current & (PAGE_BYTES - 1u));
+        uint32_t chunk = PAGE_BYTES - offset;
+        if (chunk > length - copied) chunk = length - copied;
+        ((volatile uint64_t *)page_table_a)[window_page] =
+            frame | PTE_PRESENT | PTE_WRITABLE | PTE_NX;
+        __asm__ volatile ("invlpg (%0)" : : "r"(window) : "memory");
+        const volatile uint8_t *source =
+            (const volatile uint8_t *)(window + offset);
+        for (uint32_t byte = 0; byte < chunk; ++byte)
+            destination[copied + byte] = source[byte];
+        copied += chunk;
+    }
+    ((volatile uint64_t *)page_table_a)[window_page] = saved_leaf;
+    __asm__ volatile ("invlpg (%0)" : : "r"(window) : "memory");
+}
 
 /* Copy one complete ACPI SDT into kernel-owned storage before generated
    validation sees it.  Address translation and this byte copy remain trusted;
@@ -1488,19 +1537,18 @@ static struct copied_acpi_sdt boot_acpi_table_copies[MAX_ACPI_ROOT_ENTRIES];
 static __attribute__((unused)) struct copied_acpi_sdt copy_acpi_sdt(
         uint64_t physical_address, uint8_t *destination,
         uint32_t destination_capacity, uint32_t current_copy_offset) {
-    if (physical_address > UINT64_C(0xffffffff) ||
-        physical_address > BOOT_ACCESSIBLE_LIMIT - 36u)
-        handoff_fail("topology-sdt-address");
-    const volatile uint8_t *source =
-        (const volatile uint8_t *)(uintptr_t)physical_address;
-    uint32_t length = (uint32_t)source[4] |
-        (uint32_t)source[5] << 8 |
-        (uint32_t)source[6] << 16 |
-        (uint32_t)source[7] << 24;
+    if (physical_address > UINT64_C(0xffffffff))
+        handoff_fail("topology-sdt-address-width");
+    uint8_t header[36];
+    copy_acpi_physical_bytes(physical_address, header, sizeof(header));
+    uint32_t length = (uint32_t)header[4] |
+        (uint32_t)header[5] << 8 |
+        (uint32_t)header[6] << 16 |
+        (uint32_t)header[7] << 24;
     if (length < 36u || length > MAX_COPIED_ACPI_SDT_BYTES ||
-        length > destination_capacity ||
-        length > BOOT_ACCESSIBLE_LIMIT - (uint32_t)physical_address)
+        length > destination_capacity)
         handoff_fail("topology-sdt-length");
+    copy_acpi_physical_bytes(physical_address, destination, length);
     uint64_t byte_offset = 0;
     uint64_t next_copy_offset = current_copy_offset;
     while (byte_offset < length) {
@@ -1509,7 +1557,7 @@ static __attribute__((unused)) struct copied_acpi_sdt copy_acpi_sdt(
         uint64_t physical_chunk = 0;
         for (uint32_t byte = 0; byte < chunk_bytes; ++byte)
             physical_chunk |=
-                (uint64_t)source[byte_offset + byte] << (byte * 8u);
+                (uint64_t)destination[byte_offset + byte] << (byte * 8u);
         const uint64_t terminal = byte_offset + chunk_bytes == length;
 #define COPY_STREAM_QUERY(query) leanos_boot_machine_acpi_copy_stream_step_query( \
             next_copy_offset, physical_address, byte_offset, physical_address, \
@@ -1520,12 +1568,21 @@ static __attribute__((unused)) struct copied_acpi_sdt copy_acpi_sdt(
         const uint64_t emitted_copy_offset = COPY_STREAM_QUERY(5);
         const uint64_t exposed = COPY_STREAM_QUERY(6);
 #undef COPY_STREAM_QUERY
-        if (status != 1 || error != 0 ||
-            next_byte != byte_offset + chunk_bytes ||
-            exposed != physical_chunk ||
-            (!terminal && emitted_copy_offset != next_copy_offset) ||
-            (terminal && emitted_copy_offset <= next_copy_offset))
-            handoff_fail("topology-table-copy-stream");
+        if (error == 43) handoff_fail("topology-table-copy-budget");
+        if (error == 44) handoff_fail("topology-table-copy-length");
+        if (error == 45) handoff_fail("topology-table-copy-address");
+        if (error == 46) handoff_fail("topology-table-copy-offset");
+        if (error == 47) handoff_fail("topology-table-copy-terminal");
+        if (error != 0) handoff_fail("topology-table-copy-error");
+        if (status != 1) handoff_fail("topology-table-copy-status");
+        if (next_byte != byte_offset + chunk_bytes)
+            handoff_fail("topology-table-copy-next-byte");
+        if (exposed != physical_chunk)
+            handoff_fail("topology-table-copy-exposed");
+        if (!terminal && emitted_copy_offset != next_copy_offset)
+            handoff_fail("topology-table-copy-partial-cursor");
+        if (terminal && emitted_copy_offset <= next_copy_offset)
+            handoff_fail("topology-table-copy-final-cursor");
         for (uint32_t byte = 0; byte < chunk_bytes; ++byte)
             destination[byte_offset + byte] =
                 (uint8_t)(exposed >> (byte * 8u));
@@ -1737,9 +1794,7 @@ static uint64_t decode_acpi_root_entry(
     const uint8_t *encoded = entries->bytes + index * entries->width;
     for (uint32_t byte = 0; byte < entries->width; ++byte)
         physical_address |= (uint64_t)encoded[byte] << (byte * 8u);
-    if (physical_address == 0 || physical_address > UINT64_C(0xffffffff) ||
-        (physical_address & 7u) != 0 ||
-        physical_address > BOOT_ACCESSIBLE_LIMIT - 36u)
+    if (physical_address == 0 || physical_address > UINT64_C(0xffffffff))
         handoff_fail("topology-root-entry-address");
     return physical_address;
 }

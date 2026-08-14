@@ -146,6 +146,11 @@ static lean_object *run_host(int argc, char **argv) {
          leanos_boot_machine_acpi_copy_stream_step_query(
              0, 0xf6000, 0, 0xf7000, 44, 0, 0, 0, 2),
          45);
+  expect("machine-copy-stream.unaligned-physical-address.error",
+         leanos_boot_machine_acpi_copy_stream_step_query(
+             0, 0xf6004, 0, 0xf6004, 44, 0,
+             UINT64_C(0x1122334455667788), 0, 2),
+         0);
   expect("machine-copy-stream.reordered-byte.error",
          leanos_boot_machine_acpi_copy_stream_step_query(
              0, 0xf6000, 8, 0xf6000, 44, 16, 0, 0, 2),

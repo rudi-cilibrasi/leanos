@@ -1564,8 +1564,7 @@ def machineAcpiCopyStreamStepQuery
   let budgetStatus := machineAcpiCopyBudgetQuery currentCopyOffset tableLength 1
   let budgetError := machineAcpiCopyBudgetQuery currentCopyOffset tableLength 2
   let badAddress := currentTableAddress == 0 ||
-    currentTableAddress > 0xffffffff || currentTableAddress % 8 != 0 ||
-    tableAddress != currentTableAddress
+    currentTableAddress > 0xffffffff || tableAddress != currentTableAddress
   let badOffset := currentByteOffset % 8 != 0 ||
     currentByteOffset >= tableLength || byteOffset != currentByteOffset
   let shouldTerminate := byteOffset + 8 >= tableLength
@@ -1624,6 +1623,11 @@ theorem machine_acpi_copy_stream_missing_final_marker_rejected :
 theorem machine_acpi_copy_stream_reordered_address_rejected :
     machineAcpiCopyStreamStepQuery 0 0x000f6000 0 0x000f7000 44 0 0 0 2 =
       45 := by
+  native_decide
+
+theorem machine_acpi_copy_stream_unaligned_physical_address_accepted :
+    machineAcpiCopyStreamStepQuery 0 0x000f6004 0 0x000f6004 44 0
+      0x1122334455667788 0 2 = 0 := by
   native_decide
 
 theorem machine_acpi_copy_stream_reordered_byte_rejected :
