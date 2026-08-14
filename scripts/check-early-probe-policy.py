@@ -24,8 +24,6 @@ import tempfile
 from pathlib import Path
 
 INSTRUCTION_RE = re.compile(r"^\s*([0-9a-f]+):\s+([a-z][a-z0-9.]*)\s*(.*?)\s*$")
-SYMBOL_HEADER_RE = re.compile(r"^([0-9a-f]+) <([^>]+)>:$")
-
 UD_TERMINAL_RECORD = (
     "LEANOS/18 EARLY-TERMINAL phase=bootstrap32 table=bootstrap32 "
     "width=legacy8 vector=6 reason=invalid-opcode error=none "
@@ -352,33 +350,6 @@ def match_catchall64(instructions: list[tuple[int, str, str]],
     matcher.finish()
 
 
-def collect_function(disassembly: str, symbols: dict[str, int],
-                     start_symbol: str,
-                     interior: set[str]) -> list[tuple[int, str, str]]:
-    """Collect instructions from one label until the next foreign symbol."""
-    collecting = False
-    instructions: list[tuple[int, str, str]] = []
-    for line in disassembly.splitlines():
-        header = SYMBOL_HEADER_RE.match(line)
-        if header:
-            name = header.group(2)
-            if name == start_symbol:
-                collecting = True
-                continue
-            if collecting and name not in interior:
-                break
-            continue
-        if not collecting:
-            continue
-        match = INSTRUCTION_RE.match(line)
-        if match:
-            instructions.append((int(match.group(1), 16), match.group(2),
-                                 normalize(match.group(3))))
-    if not instructions:
-        fail(f"could not decode region at {start_symbol}")
-    return instructions
-
-
 def match_tail(instructions: list[tuple[int, str, str]],
                symbols: dict[str, int], probe: bool) -> None:
     """Exact-match long_mode_entry with RIP-relative displacements resolved."""
@@ -537,8 +508,13 @@ def main() -> int:
         symbols["boot_early_catchall_64_end"])
     match_catchall64(stub64_catchall, symbols)
 
-    tail = collect_function(disassembly, symbols, "long_mode_entry",
-                            interior={"boot_bootstrap64_nmi_ready"})
+    for name in ("long_mode_entry", "long_mode_entry_end"):
+        if name not in symbols:
+            fail(f"long-mode entry boundary symbol missing: {name}")
+    tail = parse_instructions(disassembly, symbols["long_mode_entry"],
+                              symbols["long_mode_entry_end"])
+    if not tail:
+        fail("could not decode long-mode entry region")
     match_tail(tail, symbols, probe=args.probe == "bootstrap64-nmi")
 
     check_record(args.elf, sections, symbols, "early32_nmi_record",

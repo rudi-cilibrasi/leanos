@@ -391,6 +391,10 @@ boot_bootstrap64_nmi_ready:
     cli
     hlt
     jmp 3b
+/* Bound the exact entry-policy region before later text fragments can add
+   linker alignment bytes that are not executable entry instructions. */
+.global long_mode_entry_end
+long_mode_entry_end:
 .size multiboot_entry, . - multiboot_entry
 
 .section .data.gdt,"aw",@progbits
