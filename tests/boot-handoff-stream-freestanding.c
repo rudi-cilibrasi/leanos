@@ -9,6 +9,27 @@
 #else
 #define RECORD_RESULT(name, value) ((void)(value))
 #define RECORD_INDEXED(operation, index, field, value) ((void)(value))
+
+/*
+ * Clang may lower aggregate copies and zero initialization to freestanding
+ * memcpy/memset calls even with -ffreestanding.  Keep these implementations
+ * local to the no-libc image; volatile accesses prevent the optimizer from
+ * recognizing the loops and recursively replacing them with the same libcalls.
+ */
+void *memcpy(void *destination, const void *source, __SIZE_TYPE__ count) {
+    volatile unsigned char *to = destination;
+    const volatile unsigned char *from = source;
+    for (__SIZE_TYPE__ index = 0; index < count; ++index)
+        to[index] = from[index];
+    return destination;
+}
+
+void *memset(void *destination, int value, __SIZE_TYPE__ count) {
+    volatile unsigned char *to = destination;
+    for (__SIZE_TYPE__ index = 0; index < count; ++index)
+        to[index] = (unsigned char)value;
+    return destination;
+}
 #endif
 #ifdef LEANOS_HOSTED_SANITIZER
 extern void leanos_register_boundary_target(const char *, void *);

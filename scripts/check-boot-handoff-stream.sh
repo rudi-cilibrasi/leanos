@@ -345,7 +345,7 @@ done
 # hide behind a non-exported name in this final focused artifact.
 while read -r text_symbol; do
   case "$text_symbol" in
-    _start|check_stream|decode|decode_entry_count|decode_extent|decode_v5_extent|expect_decode_error|step_query|\
+    _start|check_stream|decode|decode_entry_count|decode_extent|decode_v5_extent|expect_decode_error|memcpy|memset|step_query|\
 leanos_boot_handoff_stream_init|\
 leanos_boot_handoff_stream_step|\
 leanos_boot_decode_init|leanos_boot_decode_step|\
