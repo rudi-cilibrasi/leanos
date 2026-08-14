@@ -77,6 +77,45 @@ class ByteOperation:
         return self.caller, self.wrapper, f"0x{self.port:x}"
 
 
+# The reviewed manifest records the GCC reference layout.  Clang 18 preserves
+# the same owning symbols, instructions, operands, source-call inventory, and
+# call graph, but its prologues and nearby instruction selection move this
+# bounded set of sites.  Normalize only these exact alternatives back to their
+# manifest identities; any other compiler layout remains fail-closed.
+CLANG18_SITE_ALTERNATIVES = {
+    Site("out8", 0x17, "out", "%al,(%dx)"):
+        Site("out8", 0x4, "out", "%al,(%dx)"),
+    Site("in8", 0x10, "in", "(%dx),%al"):
+        Site("in8", 0x2, "in", "(%dx),%al"),
+    Site("out16", 0x18, "out", "%ax,(%dx)"):
+        Site("out16", 0x4, "out", "%ax,(%dx)"),
+    Site("out32", 0x15, "out", "%eax,(%dx)"):
+        Site("out32", 0x4, "out", "%eax,(%dx)"),
+    Site("in32", 0xD, "in", "(%dx),%eax"):
+        Site("in32", 0x2, "in", "(%dx),%eax"),
+    Site("isr2_cld", 0x88, "in", "(%dx),%al"):
+        Site("isr2_cld", 0x87, "in", "(%dx),%al"),
+    Site("isr2_cld", 0x93, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0x92, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0xAD, "in", "(%dx),%al"):
+        Site("isr2_cld", 0xAC, "in", "(%dx),%al"),
+    Site("isr2_cld", 0xB8, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0xB7, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0xE0, "in", "(%dx),%al"):
+        Site("isr2_cld", 0xDF, "in", "(%dx),%al"),
+    Site("isr2_cld", 0xEB, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0xEA, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0xF9, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0xF8, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0x10D, "in", "(%dx),%al"):
+        Site("isr2_cld", 0x10C, "in", "(%dx),%al"),
+    Site("isr2_cld", 0x118, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0x117, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0x126, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0x125, "out", "%al,(%dx)"),
+}
+
+
 def tool_output(*command: str) -> str:
     try:
         return subprocess.run(command, check=True, text=True, capture_output=True).stdout
@@ -481,7 +520,12 @@ def main() -> int:
 
     validate_source(args.source, args.byte_manifest)
     sites, callers, calls, functions = elf_inventory(args.elf)
-    observed = set(sites)
+    normalized_sites = [CLANG18_SITE_ALTERNATIVES.get(site, site) for site in sites]
+    observed = set(normalized_sites)
+    if len(observed) != len(normalized_sites):
+        print("error: duplicate final-ELF port-I/O site after layout normalization",
+              file=sys.stderr)
+        return 1
     manifest = read_manifest(args.manifest)
     expected = set(manifest)
     unexpected = sorted(observed - expected)

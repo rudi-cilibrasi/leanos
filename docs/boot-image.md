@@ -127,6 +127,12 @@ binutils, GRUB, SeaBIOS, and QEMU remain shared with the reference lane, so
 this is independent C-front-end integration evidence—not verified compilation,
 a semantic-equivalence proof, or a second release toolchain.
 
+The final-ELF direct-port gate continues to pin every reviewed symbol, opcode,
+operand, owner, source invocation, and call-graph edge. Its manifest uses the
+GCC reference offsets; the checker additionally recognizes only the enumerated
+Clang 18 offsets produced by the pinned lane. An unknown offset, extra site,
+changed instruction, different owner, or new caller still fails closed.
+
 ## Experimental releases
 
 Tags and images use `vMAJOR.MINOR.PATCH` and `MAJOR.MINOR.PATCH`, respectively.
