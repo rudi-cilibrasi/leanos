@@ -3,6 +3,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
+cc="${LEANOS_CC:-gcc}"
 build=build/boot-memory-full-projection
 rm -rf "$build"
 mkdir -p "$build/pass1" "$build/pass2"
@@ -42,7 +43,7 @@ for pass in pass1 pass2; do
       -c ".lake/build/ir/LeanOS/${module}.c" \
       -o "$build/$pass/${module}.o"
   done
-  cc -std=c11 -O2 -Wall -Wextra -Werror -I"$prefix/include" \
+  "$cc" -std=c11 -O2 -Wall -Wextra -Werror -I"$prefix/include" \
     -ffunction-sections -fdata-sections \
     -c tests/boot-memory-full-projection-host.c -o "$build/$pass/host.o"
   lake env leanc -Wl,--gc-sections -Wl,--build-id=none \

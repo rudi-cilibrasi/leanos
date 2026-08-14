@@ -32,6 +32,8 @@ lake build leanos-vtd-plan
 
 ./scripts/check-boot-handoff-stream.sh
 
+./scripts/test-selected-compiler-propagation.sh
+
 ./scripts/test-run-malformed-handoff.sh
 
 ./scripts/test-run-image.sh
