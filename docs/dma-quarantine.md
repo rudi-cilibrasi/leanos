@@ -145,6 +145,14 @@ guest cannot satisfy this fixture. These identity words are a finite QEMU
 mutation oracle, not evidence that the QTest fixture reconstructs the kernel's
 authoritative allocator state or refines the Lean projection. This controlled
 extra function is never admitted to the production topology or its manifest.
+Issue #202's assigned-device vertical slice instead has an explicit separate
+builder, `leanos_q35_assigned_edu_command`, and topology version
+`0x0001_0008_0002_0003`. The builder first validates the unchanged production
+construction, then admits exactly one `edu` function at `00:02.0` as the final
+device. The production validator continues to reject that function, while the
+assigned-device validator rejects an omitted, duplicated, reordered, or
+misaddressed EDU. This construction contract alone neither assigns a domain nor
+enables bus mastering; those remain later acceptance steps in the same issue.
 Because this DMA oracle needs TCG's virtual clock to run, its CPU is not paused.
 The harness installs an inert 64 KiB BIOS whose reset vector halts in a loop,
 isolating qtest from firmware enumeration while bounded qtest response waits

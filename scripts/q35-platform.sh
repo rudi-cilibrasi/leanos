@@ -11,6 +11,10 @@
 # or VT-d semantics.
 
 readonly LEANOS_Q35_TOPOLOGY_VERSION=0001000800020002
+# The assigned-device scenario is a separate construction contract. Keeping a
+# distinct version prevents its deliberately admitted DMA-capable function from
+# being confused with the production deny-all inventory.
+readonly LEANOS_Q35_ASSIGNED_EDU_TOPOLOGY_VERSION=0001000800020003
 
 leanos_validate_q35_command() {
   local command_name="$1"
@@ -96,4 +100,30 @@ leanos_q35_command() {
     -device ide-cd,drive=leanos-cd,bus=ide.0
   )
   leanos_validate_q35_command "$command_name"
+}
+
+leanos_validate_q35_assigned_edu_command() {
+  local command_name="$1"
+  local -n assigned_command="$command_name"
+  local count="${#assigned_command[@]}"
+  local -a production_command=()
+
+  [[ $count -ge 2 &&
+     "${assigned_command[$((count - 2))]}" == -device &&
+     "${assigned_command[$((count - 1))]}" == edu,bus=pcie.0,addr=0x2 ]] || {
+    echo "error: assigned-EDU platform requires the pinned function as the final device" >&2
+    return 1
+  }
+
+  production_command=("${assigned_command[@]:0:$((count - 2))}")
+  leanos_validate_q35_command production_command
+}
+
+leanos_q35_assigned_edu_command() {
+  local command_name="$1"
+
+  leanos_q35_command "$@"
+  local -n assigned_command="$command_name"
+  assigned_command+=(-device edu,bus=pcie.0,addr=0x2)
+  leanos_validate_q35_assigned_edu_command "$command_name"
 }

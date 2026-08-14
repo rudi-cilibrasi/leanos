@@ -10,6 +10,32 @@ leanos_q35_command command qemu-system-x86_64 128 build/evidence/serial.log \
   build/boot/leanos.iso
 leanos_validate_q35_command command
 
+assigned_edu=()
+leanos_q35_assigned_edu_command assigned_edu qemu-system-x86_64 128 \
+  build/evidence/assigned-edu.serial.log build/boot/leanos.iso
+leanos_validate_q35_assigned_edu_command assigned_edu
+[[ "$LEANOS_Q35_ASSIGNED_EDU_TOPOLOGY_VERSION" != "$LEANOS_Q35_TOPOLOGY_VERSION" ]] || {
+  echo "error: assigned-EDU construction reused the production topology version" >&2
+  exit 1
+}
+if leanos_validate_q35_command assigned_edu 2>/dev/null; then
+  echo "error: production q35 platform accepted the assigned EDU function" >&2
+  exit 1
+fi
+
+negative=("${assigned_edu[@]}")
+negative[-1]=edu,bus=pcie.0,addr=0x3
+if leanos_validate_q35_assigned_edu_command negative 2>/dev/null; then
+  echo "error: assigned-EDU platform accepted a drifted BDF" >&2
+  exit 1
+fi
+
+negative=("${assigned_edu[@]}" -device edu,bus=pcie.0,addr=0x2)
+if leanos_validate_q35_assigned_edu_command negative 2>/dev/null; then
+  echo "error: assigned-EDU platform accepted a duplicate function" >&2
+  exit 1
+fi
+
 negative=("${command[@]}")
 for index in "${!negative[@]}"; do
   if [[ "${negative[$index]}" == -nodefaults ]]; then
