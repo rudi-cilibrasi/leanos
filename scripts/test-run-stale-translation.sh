@@ -5,11 +5,12 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 tmp="$(mktemp -d)"
+cc="${LEANOS_CC:-${CC:-gcc}}"
 trap 'rm -rf "$tmp"' EXIT
 touch "$tmp/image.iso"
 printf '%040d\n' 0 >"$tmp/SOURCE_REVISION"
 ./scripts/generate-oracle.sh "$tmp/oracle" >/dev/null
-${CC:-gcc} -nostdlib -no-pie -Wl,-e,_start -x c \
+"$cc" -nostdlib -no-pie -Wl,-e,_start -x c \
   -o "$tmp/stale-symbols.elf" - <<'EOF'
 char page_map_level_4_b[4096];
 char user_b_stale_translation_fault_instruction[8];

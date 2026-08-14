@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 build="${LEANOS_BOOT_DIR:-build/boot}"
+cc="${LEANOS_CC:-gcc}"
 [[ -f "$build/kernel.o" ]] || {
   echo "error: build the boot image before running early-probe policy fixtures" >&2
   exit 1
@@ -14,7 +15,7 @@ trap 'rm -rf "$tmp"' EXIT
 link_fixture() {
   local name="$1"
   shift
-  gcc -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
+  "$cc" -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
     -ffile-prefix-map="$root"=. -g3 "$@" -c "$tmp/$name.S" -o "$tmp/$name.o"
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
     -T boot/linker.ld -o "$tmp/$name.elf" "$tmp/$name.o" \

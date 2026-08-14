@@ -2,9 +2,10 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$root"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT; touch "$tmp/image.iso"
+cc="${LEANOS_CC:-${CC:-gcc}}"
 printf '%040d\n' 0 > "$tmp/SOURCE_REVISION"
 ./scripts/generate-oracle.sh "$tmp/oracle" >/dev/null
-${CC:-gcc} -nostdlib -no-pie -Wl,-e,_start -x c -o "$tmp/fault-symbols.elf" - <<'EOF'
+"$cc" -nostdlib -no-pie -Wl,-e,_start -x c -o "$tmp/fault-symbols.elf" - <<'EOF'
 char page_map_level_4_a[4096];
 char user_a_fault_instruction[8];
 char user_a_write_fault_instruction[8];

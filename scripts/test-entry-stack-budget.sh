@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cc="${LEANOS_CC:-gcc}"
 cd "$repo_root"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -126,7 +127,7 @@ isr14_restore_cr2:
 nop
 ret
 EOF
-gcc -c "$tmp/fixture.S" -o "$tmp/fixture.o"
+"$cc" -c "$tmp/fixture.S" -o "$tmp/fixture.o"
 ld --build-id=none -o "$tmp/fixture.elf" -e fixture_root "$tmp/fixture.o"
 LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/ok.tsv" \
   LEANOS_ENTRY_STACK_USABLE_BYTES=208 \

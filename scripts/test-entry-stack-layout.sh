@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cc="${LEANOS_CC:-gcc}"
 cd "$repo_root"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -34,8 +35,8 @@ SECTIONS {
 }
 EOF
 
-gcc -c "$tmp/stack.S" -o "$tmp/stack.o"
-gcc -c "$tmp/mapped-guard.S" -o "$tmp/mapped-guard.o"
+"$cc" -c "$tmp/stack.S" -o "$tmp/stack.o"
+"$cc" -c "$tmp/mapped-guard.S" -o "$tmp/mapped-guard.o"
 ld --build-id=none -T "$tmp/layout.ld" -o "$tmp/valid.elf" "$tmp/stack.o"
 ./scripts/check-entry-stack-layout.sh "$tmp/valid.elf" >/dev/null
 

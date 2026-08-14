@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output="${1:-$repo_root/build/ci/tool-versions.txt}"
+cc="${LEANOS_CC:-gcc}"
 mkdir -p "$(dirname "$output")"
 
 {
@@ -14,7 +15,8 @@ mkdir -p "$(dirname "$output")"
   cat "$repo_root/lean-toolchain"
   lake --version
   lean --version
-  gcc --version | head -n 1
+  printf 'image-compiler-command: %s\n' "$cc"
+  "$cc" --version | head -n 1
   ld --version | head -n 1
   grub-mkrescue --version | head -n 1
   xorriso -version 2>&1 | head -n 1

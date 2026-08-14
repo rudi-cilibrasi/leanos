@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 build="${LEANOS_BOOT_DIR:-build/boot}"
+cc="${LEANOS_CC:-gcc}"
 elf="${1:-$build/leanos-nmi.elf}"
 [[ -f "$elf" && -f "$build/kernel-nmi.o" ]] || {
   echo "error: build the NMI image before running its policy fixtures" >&2
@@ -81,7 +82,7 @@ link_fixture() {
   local linker="${3:-boot/linker.ld}"
   cp boot/boot.S "$tmp/$name.S"
   sed -i "/^isr2:\$/a\\    $instruction" "$tmp/$name.S"
-  gcc -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
+  "$cc" -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
     -ffile-prefix-map="$root"=. -g3 -c "$tmp/$name.S" -o "$tmp/$name.o"
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
     -T "$linker" -o "$tmp/$name.elf" "$tmp/$name.o" \
@@ -110,7 +111,7 @@ sed -i 's/\.section \.nmi_ist\.guard,"aw",@nobits/.section .nmi_ist.guard,"aw",@
   "$tmp/nmi-mapped-guard.S"
 sed 's/\.nmi_ist_guard (NOLOAD)/.nmi_ist_guard/' boot/linker.ld \
   >"$tmp/nmi-mapped-guard.ld"
-gcc -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
+"$cc" -m64 -ffreestanding -fdebug-prefix-map="$root"=. \
   -ffile-prefix-map="$root"=. -g3 -c "$tmp/nmi-mapped-guard.S" \
   -o "$tmp/nmi-mapped-guard.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \

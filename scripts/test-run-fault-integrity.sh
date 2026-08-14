@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cc="${LEANOS_CC:-gcc}"
 cd "$root"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -10,7 +11,7 @@ cat > "$tmp/symbols.c" <<'EOF'
 char user_a_nx_fault_instruction[16];
 void _start(void) {}
 EOF
-gcc -nostdlib -static "$tmp/symbols.c" -o "$tmp/symbols.elf"
+"$cc" -nostdlib -static "$tmp/symbols.c" -o "$tmp/symbols.elf"
 
 invoke() {
   local probe="$1" mode="$2"
