@@ -1197,10 +1197,37 @@ cmp "$build/boot-page-plan-preemption.h" \
   echo "error: preemption boot page-table plan drifted after final link" >&2
   exit 1
 }
-./scripts/generate-boot-page-plan.sh "$build/leanos-frame-budget.elf" \
-  "$build/boot-page-plan-frame-budget.final.h"
-cmp "$build/boot-page-plan-frame-budget.h" \
-  "$build/boot-page-plan-frame-budget.final.h" || {
+frame_budget_plan_converged=false
+for pass in 1 2 3 4; do
+  ./scripts/generate-boot-page-plan.sh "$build/leanos-frame-budget.elf" \
+    "$build/boot-page-plan-frame-budget.final.h"
+  if cmp -s "$build/boot-page-plan-frame-budget.h" \
+      "$build/boot-page-plan-frame-budget.final.h"; then
+    frame_budget_plan_converged=true
+    break
+  fi
+  [[ "$pass" -lt 4 ]] || break
+
+  # Clang can change a page-boundary comparison after the linker-derived plan
+  # replaces the fixed-size stub. Rebuild to a bounded fixed point instead of
+  # accepting a plan that describes the preceding ELF.
+  cp "$build/boot-page-plan-frame-budget.final.h" \
+    "$build/boot-page-plan-frame-budget.h"
+  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+    -DLEANOS_FRAME_BUDGET_SCENARIO=1 \
+    -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-frame-budget.h"' \
+    -c boot/kernel.c -o "$build/kernel-frame-budget.o"
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-frame-budget.map" \
+    -o "$build/leanos-frame-budget.elf" "$build/boot-frame-budget.o" \
+    "$build/kernel-frame-budget.o" "$build/KernelTransition.o" \
+    "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+    "$build/BootAllocation.o" "$build/Interrupt.o" \
+    "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+    "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+    "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+done
+[[ "$frame_budget_plan_converged" == true ]] || {
   echo "error: frame-budget boot page-table plan drifted after final link" >&2
   exit 1
 }
