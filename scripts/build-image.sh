@@ -186,6 +186,14 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -fdebug-prefix-map="$repo_root"=. -ffile-prefix-map="$repo_root"=.
   -fdebug-prefix-map="$lean_prefix"=/lean-toolchain
   -ffile-prefix-map="$lean_prefix"=/lean-toolchain -g3 -O2)
+{
+  printf 'image-compiler-command\t%s\n' "$cc"
+  printf 'image-compiler-version\t'
+  "$cc" --version | sed -n '1p'
+  printf 'image-compiler-flags'
+  printf '\t%q' "${cflags[@]}"
+  printf '\nassembler-linker\tGNU binutils (shared with reference lane)\n'
+} > "$build/compiler-and-flags.tsv"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/KernelTransition.c" \
   -o "$build/KernelTransition.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Syscall.c" \
