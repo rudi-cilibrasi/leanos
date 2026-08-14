@@ -35,11 +35,11 @@ done
 mkdir -p "$(dirname "$log")"
 : > "$log"
 command=()
-leanos_q35_command command "$qemu" "$memory_mib" "$log" "$image"
+leanos_q35_assigned_edu_command command "$qemu" "$memory_mib" "$log" "$image"
 # Controlled topology violation: the normal production manifest does not admit
-# this real DMA-capable function. The shared command is validated before this
-# single deliberate mutation so no other platform setting can drift.
-command+=(-device edu,bus=pcie.0,addr=0x2)
+# this real DMA-capable function. The versioned assigned-device construction is
+# validated independently, while the unchanged production guest must still
+# reject EDU before CPL3 until authoritative assignment is implemented.
 qemu_version="$($qemu --version 2>&1 | head -n 1 || true)"
 printf 'QEMU version: %s\nQEMU command:' "${qemu_version:-unknown}" >&2
 printf ' %q' "${command[@]}" >&2

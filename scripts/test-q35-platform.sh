@@ -127,7 +127,6 @@ for runner in \
   scripts/run-bootstrap32-ud.sh \
   scripts/run-bootstrap64-nmi.sh \
   scripts/run-double-fault.sh \
-  scripts/run-dma-unknown-device.sh \
   scripts/run-entry-stack-overflow.sh \
   scripts/run-extended-state-peer-pke.sh \
   scripts/run-fault-integrity.sh \
@@ -142,5 +141,12 @@ do
       exit 1
     }
 done
+
+grep -Eq 'source .*q35-platform\.sh' scripts/run-dma-unknown-device.sh &&
+  grep -Eq 'leanos_q35_assigned_edu_command command ' \
+    scripts/run-dma-unknown-device.sh || {
+  echo "error: assigned-EDU boot negative bypasses its versioned platform builder" >&2
+  exit 1
+}
 
 echo "Explicit q35 platform positive and controlled-negative checks passed"

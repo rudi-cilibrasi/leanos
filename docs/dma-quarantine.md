@@ -161,8 +161,10 @@ register.
 
 `scripts/run-dma-unknown-device.sh` supplies the first guest-level controlled
 negative after that canary oracle. It reuses the normal production image and
-the shared q35 construction, then adds exactly one pinned `edu` function at
-`00:02.0`. The post-firmware guest enumeration must emit the typed
+boots the separate versioned assigned-EDU construction with exactly one pinned
+`edu` function at `00:02.0`. This is the first boot consumer of that builder;
+the unchanged production guest deliberately remains the oracle and must emit
+the typed
 `dma-inventory` fatal result and the debug-exit value for that failure before
 any DMA-quarantine PASS or CPL3 entry. The runner rejects a missing, duplicate,
 or different fatal result, any apparent CPL3 entry or success record, reset,
