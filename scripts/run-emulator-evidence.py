@@ -900,6 +900,21 @@ def check_workflows() -> None:
         "build/evidence/*",
     )
     ci_content = workflow_contents[".github/workflows/ci.yml"]
+    for clang_evidence in (
+        "--scenario blocking-ipc",
+        "test -s build/boot/serial.log",
+        "build/boot/serial.log",
+        "build/evidence/clang-canonical.json",
+    ):
+        if clang_evidence not in ci_content:
+            raise EvidenceError(
+                "CI does not enforce complete Clang canonical evidence: "
+                + clang_evidence
+            )
+    if "build/boot/clang-canonical.serial.log" in ci_content:
+        raise EvidenceError(
+            "CI names a Clang serial path outside the selected matrix scenario"
+        )
     missing = [artifact for artifact in containment_artifacts if artifact not in ci_content]
     if missing:
         raise EvidenceError(

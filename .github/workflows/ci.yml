@@ -147,6 +147,7 @@ jobs:
             --tool-versions build/ci/clang-tool-versions.txt \
             --output build/evidence/clang-canonical.json \
             2>&1 | tee build/ci/clang-canonical-boot.log
+          test -s build/boot/serial.log
 
       - name: Preserve Clang compiler and canonical boot evidence
         if: always()
@@ -165,7 +166,7 @@ jobs:
             build/boot/entry-stack-final-elf-edges.tsv
             build/boot/entry-stack-disassembly.txt
             build/boot/*.su
-            build/boot/clang-canonical.serial.log
+            build/boot/serial.log
             build/boot/dma-quarantine-snapshot-blocking-ipc.tsv
             build/boot/vtd-activation-snapshot-blocking-ipc.tsv
             build/evidence/clang-canonical.json

@@ -188,10 +188,12 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -ffile-prefix-map="$lean_prefix"=/lean-toolchain -g3 -O2)
 if "$cc" --version | sed -n '1p' | grep -qi clang; then
   # With general-registers-only Clang otherwise reports an extended
-  # FLT_EVAL_METHOD, which Lean correctly rejects. The kernel has no floating
-  # point operations, but generated Lean C still includes lean.h and requires
-  # source-width evaluation semantics in every translation unit.
-  cflags+=(-ffp-eval-method=source)
+  # FLT_EVAL_METHOD, which Lean correctly rejects. Clang 18 also diagnoses
+  # source-width evaluation on the no-SSE target once per parsed function.
+  # Keep that diagnostic visible but do not promote this one known limitation
+  # to an error; -Werror remains active for every source warning, while
+  # -mgeneral-regs-only rejects any actual floating-point register use.
+  cflags+=(-ffp-eval-method=source -Wno-error=pragmas)
 fi
 {
   printf 'image-compiler-command\t%s\n' "$cc"

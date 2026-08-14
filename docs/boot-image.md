@@ -93,6 +93,13 @@ The reference environment is Ubuntu 24.04 (x86-64) with Lean 4.32.0 from
 (`qemu-system-x86=1:8.2.2+ds-0ubuntu1.18`), coreutils
 (`coreutils=9.4-3ubuntu6.2`), and QEMU's distributed SeaBIOS 1.16.3 firmware.
 The scripts name the Ubuntu package pins in actionable missing-tool diagnostics.
+
+The independent Clang lane retains `-mgeneral-regs-only` and requests Lean's
+required source-width floating-point evaluation contract. Clang 18 warns that
+this evaluation method is unsupported on the resulting no-SSE target, so only
+that `-Wpragmas` diagnostic remains non-fatal; the warning stays visible and all
+source warnings remain errors. No floating-point operation is permitted by the
+general-register-only target.
 These pins identify the build inputs. `build-image.sh` uses BIOS-only GRUB
 output, a fixed ISO UUID and file dates, no linker build ID, and normalized
 debug paths. `./scripts/test-reproducible-build.sh` performs two clean builds
