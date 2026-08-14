@@ -153,6 +153,12 @@ device. The production validator continues to reject that function, while the
 assigned-device validator rejects an omitted, duplicated, reordered, or
 misaddressed EDU. This construction contract alone neither assigns a domain nor
 enables bus mastering; those remain later acceptance steps in the same issue.
+The image also reserves three contiguous page-aligned second-level table frames
+immediately after the root and context tables. They remain unpublished and
+unused by the production deny-all plan. Final-ELF policy pins their order and
+extent inside the allocator-excluded remapping interval so a later generated
+assigned-device plan can name exact linker-owned frames rather than borrowing
+live allocator memory.
 Because this DMA oracle needs TCG's virtual clock to run, its CPU is not paused.
 The harness installs an inert 64 KiB BIOS whose reset vector halts in a loop,
 isolating qtest from firmware enumeration while bounded qtest response waits

@@ -52,7 +52,8 @@ for symbol in isr2 isr2_clac isr2_cld __nmi_ist_guard_start \
   }
 done
 for symbol in __vtd_mmio_window_start __vtd_mmio_window_end \
-  vtd_root_table vtd_context_table vtd_remapping_table_end \
+  vtd_root_table vtd_context_table vtd_second_level_root \
+  vtd_second_level_directory vtd_second_level_table vtd_remapping_table_end \
   vtd_mmio_read32 vtd_mmio_read64; do
   grep -Eq "[[:space:]]${symbol}$" <<<"$symbols" || {
     echo "error: VT-d policy symbol missing: $symbol" >&2
@@ -68,6 +69,24 @@ for section in .df_ist_guard .df_ist_stack .nmi_ist_guard .nmi_ist_stack; do
 done
 
 symbol_address() { nm -n "$elf" | awk -v name="$1" '$3 == name { print "0x" $1 }'; }
+vtd_root_address="$(symbol_address vtd_root_table)"
+vtd_context_address="$(symbol_address vtd_context_table)"
+vtd_second_root_address="$(symbol_address vtd_second_level_root)"
+vtd_second_directory_address="$(symbol_address vtd_second_level_directory)"
+vtd_second_table_address="$(symbol_address vtd_second_level_table)"
+vtd_end_address="$(symbol_address vtd_remapping_table_end)"
+[[ -n "$vtd_root_address" && -n "$vtd_context_address" &&
+   -n "$vtd_second_root_address" && -n "$vtd_second_directory_address" &&
+   -n "$vtd_second_table_address" && -n "$vtd_end_address" &&
+   $((vtd_root_address % 4096)) -eq 0 &&
+   $((vtd_context_address - vtd_root_address)) -eq 4096 &&
+   $((vtd_second_root_address - vtd_context_address)) -eq 4096 &&
+   $((vtd_second_directory_address - vtd_second_root_address)) -eq 4096 &&
+   $((vtd_second_table_address - vtd_second_directory_address)) -eq 4096 &&
+   $((vtd_end_address - vtd_second_table_address)) -eq 4096 ]] || {
+  echo "error: VT-d root/context/second-level frames are not one contiguous aligned reservation" >&2
+  exit 1
+}
 image_start="$(symbol_address __boot_image_start)"
 image_end="$(symbol_address __boot_image_end)"
 [[ -n "$image_start" && -n "$image_end" && $((image_start)) -lt $((image_end)) ]] || {

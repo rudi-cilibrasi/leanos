@@ -214,6 +214,8 @@ extern uint64_t page_map_level_4_b[], page_directory_pointer_b[];
 extern uint64_t page_directory_b[], page_table_b[];
 extern char __vtd_mmio_window_start[], __vtd_mmio_window_end[];
 extern uint64_t vtd_root_table[], vtd_context_table[];
+extern uint64_t vtd_second_level_root[], vtd_second_level_directory[];
+extern uint64_t vtd_second_level_table[];
 
 #define MULTIBOOT2_RUNTIME_MAGIC 0x36d76289u
 #define BOOT_ACCESSIBLE_LIMIT (16u * 1024u * 1024u)

@@ -466,6 +466,19 @@ vtd_root_table:
 .global vtd_context_table
 vtd_context_table:
     .skip 4096
+/* Reserved storage for the assigned-EDU scenario's 39-bit three-level
+   translation.  The production deny-all plan leaves these pages unpublished;
+   their linker-owned reservation prevents later assignment work from taking
+   allocator-owned memory. */
+.global vtd_second_level_root
+vtd_second_level_root:
+    .skip 4096
+.global vtd_second_level_directory
+vtd_second_level_directory:
+    .skip 4096
+.global vtd_second_level_table
+vtd_second_level_table:
+    .skip 4096
 .global vtd_remapping_table_end
 vtd_remapping_table_end:
 .align 16
