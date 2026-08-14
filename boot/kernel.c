@@ -37,13 +37,30 @@ extern uint64_t leanos_boot_handoff_stream_init(uint64_t, uint64_t, uint64_t,
 extern uint64_t leanos_boot_handoff_stream_step(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-extern uint64_t leanos_boot_decode_init(uint64_t, uint64_t, uint64_t,
-                                        uint64_t, uint64_t);
-extern uint64_t leanos_boot_decode_step(
+extern uint64_t leanos_boot_machine_acpi_copy_stream_step_query(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t);
+extern uint64_t leanos_boot_machine_acpi_copy_sequence_step_query(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_machine_madt_envelope_byte_step_query(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t);
+extern uint64_t leanos_boot_machine_madt_entry_stream_byte_step_query(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_machine_topology_admission_result_query(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_decode_init_v5(uint64_t, uint64_t, uint64_t,
+                                           uint64_t, uint64_t);
+extern uint64_t leanos_boot_decode_step_v5(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_projection_entry(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_projection_manifest(
@@ -1440,6 +1457,421 @@ static __attribute__((noreturn)) void handoff_fail(const char *reason) {
     serial_putc('\n'); finish(0x11);
 }
 
+struct copied_boot_handoff {
+    const uint8_t *bytes;
+    uint32_t length;
+    uint32_t executing_apic_id;
+};
+
+#define MAX_COPIED_ACPI_SDT_BYTES UINT32_C(65536)
+#define MAX_ACPI_ROOT_ENTRIES UINT32_C(256)
+#define MAX_COPIED_ACPI_TABLE_BYTES (UINT32_C(1024) * UINT32_C(1024))
+
+struct copied_acpi_sdt {
+    uint64_t physical_address;
+    const uint8_t *bytes;
+    uint32_t length;
+    uint32_t next_copy_offset;
+};
+
+struct acpi_root_entries {
+    const uint8_t *bytes;
+    uint32_t count;
+    uint32_t width;
+};
+
+static uint8_t boot_acpi_root_copy[MAX_COPIED_ACPI_SDT_BYTES]
+    __attribute__((aligned(8)));
+static uint8_t boot_acpi_table_copy[MAX_COPIED_ACPI_TABLE_BYTES]
+    __attribute__((aligned(8)));
+static struct copied_acpi_sdt boot_acpi_table_copies[MAX_ACPI_ROOT_ENTRIES];
+static uint8_t boot_acpi_mapping_window[PAGE_BYTES]
+    __attribute__((aligned(PAGE_BYTES)));
+
+/* The ordinary boot identity map intentionally ends at 16 MiB, while q35 may
+   place its ACPI SDTs above that boundary.  Copy through one supervisor-only,
+   NX aperture in the active boot address space and restore its exact original
+   leaf before returning.  Physical-address translation, PTE mutation, TLB
+   invalidation, and the byte copy remain an explicit trusted boot boundary;
+   generated code still validates every copied byte and all table structure. */
+static void copy_acpi_physical_bytes(
+        uint64_t physical_address, uint8_t *destination, uint32_t length) {
+    const uint64_t physical_limit = UINT64_C(1) << 32;
+    const uintptr_t window = (uintptr_t)boot_acpi_mapping_window;
+    if (length == 0 || physical_address >= physical_limit ||
+        (uint64_t)length > physical_limit - physical_address ||
+        (window & (PAGE_BYTES - 1u)) != 0 ||
+        window >= BOOT_ACCESSIBLE_LIMIT)
+        handoff_fail("topology-sdt-address");
+    const uint32_t window_page = (uint32_t)(window / PAGE_BYTES);
+    if (window_page >= BOOT_LEAF_COUNT)
+        handoff_fail("topology-sdt-window");
+    uint64_t active_root;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(active_root));
+    if ((active_root & ~(uint64_t)(PAGE_BYTES - 1u)) !=
+        (uint64_t)page_map_level_4_a)
+        handoff_fail("topology-sdt-address-space");
+    const uint64_t saved_leaf = page_table_a[window_page];
+    if ((saved_leaf & PTE_PRESENT) == 0 || (saved_leaf & PTE_USER) != 0)
+        handoff_fail("topology-sdt-window");
+
+    uint32_t copied = 0;
+    while (copied < length) {
+        const uint64_t current = physical_address + copied;
+        const uint64_t frame = current & ~(uint64_t)(PAGE_BYTES - 1u);
+        const uint32_t offset = (uint32_t)(current & (PAGE_BYTES - 1u));
+        uint32_t chunk = PAGE_BYTES - offset;
+        if (chunk > length - copied) chunk = length - copied;
+        ((volatile uint64_t *)page_table_a)[window_page] =
+            frame | PTE_PRESENT | PTE_WRITABLE | PTE_NX;
+        __asm__ volatile ("invlpg (%0)" : : "r"(window) : "memory");
+        const volatile uint8_t *source =
+            (const volatile uint8_t *)(window + offset);
+        for (uint32_t byte = 0; byte < chunk; ++byte)
+            destination[copied + byte] = source[byte];
+        copied += chunk;
+    }
+    ((volatile uint64_t *)page_table_a)[window_page] = saved_leaf;
+    __asm__ volatile ("invlpg (%0)" : : "r"(window) : "memory");
+}
+
+/* Copy one complete ACPI SDT into kernel-owned storage before generated
+   validation sees it.  Address translation and this byte copy remain trusted;
+   signature, declared-length, checksum, root-entry, and MADT admission checks
+   remain the generated boundary's responsibility.  The caller supplies a
+   dedicated immutable-after-copy arena so the selected root and candidate
+   table cannot alias each other. */
+static __attribute__((unused)) struct copied_acpi_sdt copy_acpi_sdt(
+        uint64_t physical_address, uint8_t *destination,
+        uint32_t destination_capacity, uint32_t current_copy_offset) {
+    if (physical_address > UINT64_C(0xffffffff))
+        handoff_fail("topology-sdt-address-width");
+    uint8_t header[36];
+    copy_acpi_physical_bytes(physical_address, header, sizeof(header));
+    uint32_t length = (uint32_t)header[4] |
+        (uint32_t)header[5] << 8 |
+        (uint32_t)header[6] << 16 |
+        (uint32_t)header[7] << 24;
+    if (length < 36u || length > MAX_COPIED_ACPI_SDT_BYTES ||
+        length > destination_capacity)
+        handoff_fail("topology-sdt-length");
+    copy_acpi_physical_bytes(physical_address, destination, length);
+    uint64_t byte_offset = 0;
+    uint64_t next_copy_offset = current_copy_offset;
+    while (byte_offset < length) {
+        const uint32_t remaining = length - (uint32_t)byte_offset;
+        const uint32_t chunk_bytes = remaining < 8u ? remaining : 8u;
+        uint64_t physical_chunk = 0;
+        for (uint32_t byte = 0; byte < chunk_bytes; ++byte)
+            physical_chunk |=
+                (uint64_t)destination[byte_offset + byte] << (byte * 8u);
+        const uint64_t terminal = byte_offset + chunk_bytes == length;
+#define COPY_STREAM_QUERY(query) leanos_boot_machine_acpi_copy_stream_step_query( \
+            next_copy_offset, physical_address, byte_offset, physical_address, \
+            length, byte_offset, physical_chunk, terminal, (query))
+        const uint64_t status = COPY_STREAM_QUERY(1);
+        const uint64_t error = COPY_STREAM_QUERY(2);
+        const uint64_t next_byte = COPY_STREAM_QUERY(4);
+        const uint64_t emitted_copy_offset = COPY_STREAM_QUERY(5);
+        const uint64_t exposed = COPY_STREAM_QUERY(6);
+#undef COPY_STREAM_QUERY
+        if (error == 43) handoff_fail("topology-table-copy-budget");
+        if (error == 44) handoff_fail("topology-table-copy-length");
+        if (error == 45) handoff_fail("topology-table-copy-address");
+        if (error == 46) handoff_fail("topology-table-copy-offset");
+        if (error == 47) handoff_fail("topology-table-copy-terminal");
+        if (error != 0) handoff_fail("topology-table-copy-error");
+        if (status != 1) handoff_fail("topology-table-copy-status");
+        if (next_byte != byte_offset + chunk_bytes)
+            handoff_fail("topology-table-copy-next-byte");
+        if (exposed != physical_chunk)
+            handoff_fail("topology-table-copy-exposed");
+        if (!terminal && emitted_copy_offset != next_copy_offset)
+            handoff_fail("topology-table-copy-partial-cursor");
+        if (terminal && emitted_copy_offset <= next_copy_offset)
+            handoff_fail("topology-table-copy-final-cursor");
+        for (uint32_t byte = 0; byte < chunk_bytes; ++byte)
+            destination[byte_offset + byte] =
+                (uint8_t)(exposed >> (byte * 8u));
+        byte_offset = next_byte;
+        if (terminal) next_copy_offset = emitted_copy_offset;
+    }
+    return (struct copied_acpi_sdt) {
+        .physical_address = physical_address,
+        .bytes = destination,
+        .length = length,
+        .next_copy_offset = (uint32_t)next_copy_offset
+    };
+}
+
+static int acpi_signature_matches(
+        const struct copied_acpi_sdt *table, const char signature[4]) {
+    return table->length >= 36u &&
+        table->bytes[0] == (uint8_t)signature[0] &&
+        table->bytes[1] == (uint8_t)signature[1] &&
+        table->bytes[2] == (uint8_t)signature[2] &&
+        table->bytes[3] == (uint8_t)signature[3];
+}
+
+/* Admit only the immutable copy: copied header, declared extent, expected
+   signature (when supplied), and whole-table ACPI checksum must agree before
+   root-entry decoding or MADT selection. */
+static void validate_copied_acpi_sdt(
+        const struct copied_acpi_sdt *table, const char *signature) {
+    if (table->bytes == 0 || table->length < 36u ||
+        ((uint32_t)table->bytes[4] |
+         (uint32_t)table->bytes[5] << 8 |
+         (uint32_t)table->bytes[6] << 16 |
+         (uint32_t)table->bytes[7] << 24) != table->length ||
+        (signature != 0 && !acpi_signature_matches(table, signature)))
+        handoff_fail("topology-sdt-envelope");
+    uint8_t checksum = 0;
+    for (uint32_t byte = 0; byte < table->length; ++byte)
+        checksum = (uint8_t)(checksum + table->bytes[byte]);
+    if (checksum != 0) handoff_fail("topology-sdt-checksum");
+}
+
+static const struct copied_acpi_sdt *select_unique_copied_madt(
+        uint32_t copied_count) {
+    const struct copied_acpi_sdt *selected = 0;
+    for (uint32_t index = 0; index < copied_count; ++index) {
+        const struct copied_acpi_sdt *candidate =
+            &boot_acpi_table_copies[index];
+        validate_copied_acpi_sdt(candidate, 0);
+        if (acpi_signature_matches(candidate, "APIC")) {
+            if (selected != 0) handoff_fail("topology-madt-duplicate");
+            selected = candidate;
+        }
+    }
+    if (selected == 0) handoff_fail("topology-madt-missing");
+    return selected;
+}
+
+/* Replay the selected immutable MADT copy through the generated byte-level
+   envelope transition.  C supplies bytes and carries exact returned state;
+   it does not recognize the signature, declared extent, terminal position,
+   or checksum that authorize the later generated entry/admission stream. */
+static void validate_generated_madt_envelope(
+        const struct copied_acpi_sdt *madt) {
+    uint64_t next_byte = 0, declared_length = 0, checksum = 0;
+    for (uint64_t byte = 0; byte < madt->length; ++byte) {
+        const uint64_t terminal = byte + 1 == madt->length;
+#define MADT_ENVELOPE_QUERY(word) \
+        leanos_boot_machine_madt_envelope_byte_step_query( \
+            next_byte, declared_length, checksum, madt->length, byte, \
+            madt->bytes[byte], terminal, (word))
+        const uint64_t abi = MADT_ENVELOPE_QUERY(0);
+        const uint64_t status = MADT_ENVELOPE_QUERY(1);
+        const uint64_t error = MADT_ENVELOPE_QUERY(2);
+        const uint64_t emitted_next_byte = MADT_ENVELOPE_QUERY(3);
+        const uint64_t emitted_declared_length = MADT_ENVELOPE_QUERY(4);
+        const uint64_t emitted_checksum = MADT_ENVELOPE_QUERY(5);
+        const uint64_t exposed_byte = MADT_ENVELOPE_QUERY(6);
+#undef MADT_ENVELOPE_QUERY
+        if (abi != 1 || status != (terminal ? 3u : 1u) || error != 0 ||
+            emitted_next_byte != byte + 1u ||
+            exposed_byte != madt->bytes[byte])
+            handoff_fail("topology-madt-generated-envelope");
+        next_byte = emitted_next_byte;
+        declared_length = emitted_declared_length;
+        checksum = emitted_checksum;
+    }
+    if (next_byte != madt->length || declared_length != madt->length ||
+        checksum != 0)
+        handoff_fail("topology-madt-generated-envelope");
+}
+
+/* Consume every byte after the fixed MADT header through one generated,
+   allocation-free state machine.  C carries the exact returned record state,
+   enabled count, admitted APIC ID, and full 256-bit duplicate set; it does not
+   classify record kinds, collapse duplicates, or assert singleton admission. */
+static uint32_t validate_generated_madt_entries(
+        const struct copied_acpi_sdt *madt, uint32_t executing_apic_id) {
+    if (madt->length <= 44u || executing_apic_id > 255u)
+        handoff_fail("topology-madt-generated-entries");
+    uint64_t offset = 44, record_offset = 0, record_kind = 0;
+    uint64_t record_length = 0, apic_id = 0, flags = 0;
+    uint64_t enabled_count = 0, admitted_apic_id = 256;
+    uint64_t seen0 = 0, seen1 = 0, seen2 = 0, seen3 = 0;
+    while (offset < madt->length) {
+#define MADT_ENTRY_QUERY(word) \
+        leanos_boot_machine_madt_entry_stream_byte_step_query( \
+            offset, record_offset, record_kind, record_length, apic_id, flags, \
+            enabled_count, admitted_apic_id, seen0, seen1, seen2, seen3, \
+            madt->length, executing_apic_id, offset, madt->bytes[offset], \
+            (word))
+        const uint64_t terminal = offset + 1u == madt->length;
+        const uint64_t abi = MADT_ENTRY_QUERY(0);
+        const uint64_t status = MADT_ENTRY_QUERY(1);
+        const uint64_t error = MADT_ENTRY_QUERY(2);
+        const uint64_t next_offset = MADT_ENTRY_QUERY(3);
+        const uint64_t next_record_offset = MADT_ENTRY_QUERY(4);
+        const uint64_t next_record_kind = MADT_ENTRY_QUERY(5);
+        const uint64_t next_record_length = MADT_ENTRY_QUERY(6);
+        const uint64_t next_apic_id = MADT_ENTRY_QUERY(7);
+        const uint64_t next_flags = MADT_ENTRY_QUERY(8);
+        const uint64_t next_enabled_count = MADT_ENTRY_QUERY(9);
+        const uint64_t next_admitted_apic_id = MADT_ENTRY_QUERY(10);
+        const uint64_t next_seen0 = MADT_ENTRY_QUERY(11);
+        const uint64_t next_seen1 = MADT_ENTRY_QUERY(12);
+        const uint64_t next_seen2 = MADT_ENTRY_QUERY(13);
+        const uint64_t next_seen3 = MADT_ENTRY_QUERY(14);
+        const uint64_t exposed_byte = MADT_ENTRY_QUERY(15);
+#undef MADT_ENTRY_QUERY
+        if (abi != 1 || status != (terminal ? 3u : 1u) || error != 0 ||
+            next_offset != offset + 1u || exposed_byte != madt->bytes[offset])
+            handoff_fail("topology-madt-generated-entries");
+        offset = next_offset;
+        record_offset = next_record_offset;
+        record_kind = next_record_kind;
+        record_length = next_record_length;
+        apic_id = next_apic_id;
+        flags = next_flags;
+        enabled_count = next_enabled_count;
+        admitted_apic_id = next_admitted_apic_id;
+        seen0 = next_seen0;
+        seen1 = next_seen1;
+        seen2 = next_seen2;
+        seen3 = next_seen3;
+    }
+    if (offset != madt->length || record_offset != 0 || record_kind != 0 ||
+        record_length != 0 || apic_id != 0 || flags != 0 ||
+        enabled_count != 1 || admitted_apic_id > 255u ||
+        admitted_apic_id != executing_apic_id ||
+        (seen0 | seen1 | seen2 | seen3) == 0)
+        handoff_fail("topology-madt-generated-entries");
+    return (uint32_t)admitted_apic_id;
+}
+
+/* Final scalar bridge from the byte-consuming generated MADT admission state
+   to production publication.  The caller must supply status/detail/APIC words
+   emitted by that generated state; C-derived envelope/checksum checks cannot
+   substitute for them.  Keeping this helper separate makes the remaining
+   boot_allocate wiring fail closed instead of re-encoding the policy in C. */
+static __attribute__((unused)) uint32_t require_machine_topology_admission(
+        uint64_t selected_kind, uint64_t selected_address,
+        uint64_t copied_root_address, uint64_t advertised_count,
+        uint64_t completed_copies, uint64_t madt_count,
+        uint64_t admission_status, uint64_t admission_detail,
+        uint64_t admitted_apic_id, uint64_t executing_apic_id) {
+#define TOPOLOGY_RESULT_QUERY(word) \
+    leanos_boot_machine_topology_admission_result_query( \
+        selected_kind, selected_address, copied_root_address, \
+        advertised_count, completed_copies, madt_count, admission_status, \
+        admission_detail, admitted_apic_id, executing_apic_id, (word))
+    const uint64_t abi = TOPOLOGY_RESULT_QUERY(0);
+    const uint64_t status = TOPOLOGY_RESULT_QUERY(1);
+    const uint64_t error = TOPOLOGY_RESULT_QUERY(2);
+    const uint64_t admitted = TOPOLOGY_RESULT_QUERY(3);
+#undef TOPOLOGY_RESULT_QUERY
+    if (abi != 1 || status != 1 || error != 0 || admitted > UINT32_MAX ||
+        admitted != admitted_apic_id || admitted != executing_apic_id)
+        handoff_fail("topology-admission-result");
+    return (uint32_t)admitted;
+}
+
+/* Bind the copied root payload shape to the generated RSDT/XSDT selection
+   before any advertised physical address is translated.  The 256-entry cap
+   is the machine rendering of BootTopology.maxAcpiRootEntries. */
+static struct acpi_root_entries decode_acpi_root_entries(
+        const struct copied_acpi_sdt *root, uint64_t selected_kind) {
+    uint32_t width;
+    if (selected_kind == 1u) width = 4u;
+    else if (selected_kind == 2u) width = 8u;
+    else handoff_fail("topology-root-kind");
+    if (root->length < 36u) handoff_fail("topology-root-header");
+    const uint32_t payload = root->length - 36u;
+    if (payload % width != 0u) handoff_fail("topology-root-width");
+    const uint32_t count = payload / width;
+    if (count > MAX_ACPI_ROOT_ENTRIES)
+        handoff_fail("topology-root-entries");
+    return (struct acpi_root_entries) {
+        .bytes = root->bytes + 36u,
+        .count = count,
+        .width = width
+    };
+}
+
+static uint64_t decode_acpi_root_entry(
+        const struct acpi_root_entries *entries, uint32_t index) {
+    if (index >= entries->count ||
+        (entries->width != 4u && entries->width != 8u))
+        handoff_fail("topology-root-entry-index");
+    uint64_t physical_address = 0;
+    const uint8_t *encoded = entries->bytes + index * entries->width;
+    for (uint32_t byte = 0; byte < entries->width; ++byte)
+        physical_address |= (uint64_t)encoded[byte] << (byte * 8u);
+    if (physical_address == 0 || physical_address > UINT64_C(0xffffffff))
+        handoff_fail("topology-root-entry-address");
+    return physical_address;
+}
+
+/* Translate every advertised root entry into a disjoint kernel-owned byte
+   range before firmware memory can be scrubbed or reused.  The one-MiB
+   aggregate cap is a deliberately tighter machine boundary than the model's
+   per-table 64-KiB cap: a root whose complete translation does not fit is
+   rejected rather than partially admitted. */
+static uint32_t copy_acpi_root_tables(
+        const struct acpi_root_entries *entries,
+        const uint64_t addresses[MAX_ACPI_ROOT_ENTRIES]) {
+    if (entries->count == 0)
+        handoff_fail("topology-table-copy-sequence");
+    uint32_t arena_offset = 0;
+    uint64_t copied_ordinal = 0;
+    for (uint32_t entry = 0; entry < entries->count; ++entry) {
+        if (arena_offset >= MAX_COPIED_ACPI_TABLE_BYTES)
+            handoff_fail("topology-table-copy-budget");
+        const struct copied_acpi_sdt copied = copy_acpi_sdt(
+            addresses[entry], boot_acpi_table_copy + arena_offset,
+            MAX_COPIED_ACPI_TABLE_BYTES - arena_offset, arena_offset);
+        if (copied.physical_address != addresses[entry] ||
+            copied.bytes != boot_acpi_table_copy + arena_offset)
+            handoff_fail("topology-table-copy-binding");
+        boot_acpi_table_copies[entry] = copied;
+        const uint32_t padded_length = (copied.length + 7u) & ~7u;
+        if (padded_length < copied.length ||
+            padded_length > MAX_COPIED_ACPI_TABLE_BYTES - arena_offset)
+            handoff_fail("topology-table-copy-budget");
+        if (copied.next_copy_offset != arena_offset + padded_length)
+            handoff_fail("topology-table-copy-stream");
+        arena_offset += padded_length;
+        const uint64_t final_table = entry + 1u == entries->count;
+        const uint64_t status =
+            leanos_boot_machine_acpi_copy_sequence_step_query(
+                copied_ordinal, entries->count, entry, 1, final_table, 1);
+        const uint64_t error =
+            leanos_boot_machine_acpi_copy_sequence_step_query(
+                copied_ordinal, entries->count, entry, 1, final_table, 2);
+        const uint64_t next_ordinal =
+            leanos_boot_machine_acpi_copy_sequence_step_query(
+                copied_ordinal, entries->count, entry, 1, final_table, 3);
+        if (status != 1 || error != 0 || next_ordinal != entry + 1u)
+            handoff_fail("topology-table-copy-sequence");
+        copied_ordinal = next_ordinal;
+    }
+    if (copied_ordinal != entries->count)
+        handoff_fail("topology-table-copy-sequence");
+    return entries->count;
+}
+
+/* CPUID.1:EBX[31:24] is the initial APIC ID of the processor executing this
+   instruction.  This is a trusted hardware observation, not topology
+   admission: the copied ACPI root/table pipeline must still prove that this
+   ID names the sole enabled processor before runtime publication. */
+static uint32_t observe_executing_apic_id(void) {
+    uint32_t max_leaf, leaf_b, leaf_c, leaf_d;
+    __asm__ volatile ("cpuid"
+        : "=a"(max_leaf), "=b"(leaf_b), "=c"(leaf_c), "=d"(leaf_d)
+        : "a"(0u), "c"(0u));
+    if (max_leaf < 1u) handoff_fail("topology-cpuid-leaf");
+    __asm__ volatile ("cpuid"
+        : "=a"(max_leaf), "=b"(leaf_b), "=c"(leaf_c), "=d"(leaf_d)
+        : "a"(1u), "c"(0u));
+    if (((leaf_d >> 9) & 1u) == 0u)
+        handoff_fail("topology-cpuid-apic");
+    return leaf_b >> 24;
+}
+
 struct boot_handoff_stream_state {
     uint64_t version, status, error, identity, extent, offset, chain;
 };
@@ -1463,8 +1895,9 @@ static uint64_t handoff_stream_step_query(
    transition binds every accepted eight-byte chunk to one aligned identity
    and extent, enforces exact offsets and terminal state, and exposes the word
    copied below only on success. */
-static const uint8_t *copy_boot_handoff(uint32_t magic, uint32_t info_address,
-                                        uint32_t total) {
+static struct copied_boot_handoff copy_boot_handoff(
+        uint32_t magic, uint32_t info_address, uint32_t total,
+        uint32_t executing_apic_id) {
     const uint8_t *physical = (const uint8_t *)(uint64_t)info_address;
     struct boot_handoff_stream_state state = {
         handoff_stream_init_query(magic, info_address, total, 0),
@@ -1521,10 +1954,14 @@ static const uint8_t *copy_boot_handoff(uint32_t magic, uint32_t info_address,
     }
     if (state.status != 1 || state.offset != total)
         handoff_fail("stream-incomplete");
-    return boot_handoff_copy;
+    return (struct copied_boot_handoff) {
+        .bytes = boot_handoff_copy,
+        .length = total,
+        .executing_apic_id = executing_apic_id
+    };
 }
 
-struct boot_decode_state { uint64_t word[23]; };
+struct boot_decode_state { uint64_t word[41]; };
 
 /* Keep fixed-width decoder-state transport explicit in the freestanding
    kernel. Clang may otherwise lower these aggregate copies to a hosted
@@ -1532,7 +1969,7 @@ struct boot_decode_state { uint64_t word[23]; };
 static void copy_boot_decode_state(struct boot_decode_state *destination,
                                    const struct boot_decode_state *source) {
     volatile uint64_t *words = destination->word;
-    for (unsigned query = 0; query < 23; ++query)
+    for (unsigned query = 0; query < 41; ++query)
         words[query] = source->word[query];
 }
 
@@ -1582,25 +2019,29 @@ static struct boot_decode_state decode_boot_projection(
         boot_projection_blocked[block] = 0;
         boot_projection_reserved[block] = 0;
     }
-    for (uint64_t query = 0; query < 23; ++query)
+    for (uint64_t query = 0; query < 41; ++query)
         state.word[query] =
-            leanos_boot_decode_init(magic, info_address, total, 0, query);
-    if (state.word[0] != 4 || state.word[1] != 0 || state.word[2] != 0 ||
+            leanos_boot_decode_init_v5(magic, info_address, total, 0, query);
+    if (state.word[0] != 5 || state.word[1] != 0 || state.word[2] != 0 ||
         state.word[3] != info_address || state.word[4] != total ||
         state.word[5] != 0 || state.word[16] != 0 ||
-        state.word[18] != 0)
+        state.word[18] != 0 || state.word[30] != 0)
         handoff_fail("decode-init");
     for (uint64_t offset = 0; offset < total; offset += 8) {
         uint64_t chunk = *(const uint64_t *)(info + offset);
         uint64_t terminal = offset + 8 == total;
-        for (uint64_t query = 0; query < 23; ++query)
-            next.word[query] = leanos_boot_decode_step(
+        for (uint64_t query = 0; query < 41; ++query)
+            next.word[query] = leanos_boot_decode_step_v5(
                 state.word[0], state.word[1], state.word[2], state.word[3],
                 state.word[4], state.word[5], state.word[6], state.word[7],
                 state.word[8], state.word[9], state.word[10], state.word[11],
                 state.word[12], state.word[13], state.word[14], state.word[15],
-                state.word[16], state.word[17], state.word[18], info_address,
-                offset, chunk, terminal, query);
+                state.word[16], state.word[17], state.word[18], state.word[23],
+                state.word[24], state.word[25], state.word[26], state.word[27],
+                state.word[28], state.word[29], state.word[30], state.word[31],
+                state.word[32], state.word[33], state.word[34], state.word[35],
+                state.word[36], state.word[37], state.word[38],
+                info_address, offset, chunk, terminal, query);
         copy_boot_decode_state(&state, &next);
         if (state.word[2] != 0) break;
         if (state.word[19] == 1) {
@@ -1648,26 +2089,30 @@ static struct boot_decode_state decode_boot_candidate_authority(
         uint32_t magic, uint32_t info_address, uint32_t total,
         uint64_t candidate, const uint8_t *info) {
     struct boot_decode_state state, next;
-    for (uint64_t query = 0; query < 23; ++query)
+    for (uint64_t query = 0; query < 41; ++query)
         state.word[query] =
-            leanos_boot_decode_init(
+            leanos_boot_decode_init_v5(
                 magic, info_address, total, candidate, query);
-    if (state.word[0] != 4 || state.word[1] != 0 || state.word[2] != 0 ||
+    if (state.word[0] != 5 || state.word[1] != 0 || state.word[2] != 0 ||
         state.word[3] != info_address || state.word[4] != total ||
         state.word[5] != 0 || state.word[16] != candidate ||
-        state.word[18] != 0)
+        state.word[18] != 0 || state.word[30] != 0)
         handoff_fail("authority-init");
     for (uint64_t offset = 0; offset < total; offset += 8) {
         uint64_t chunk = *(const uint64_t *)(info + offset);
         uint64_t terminal = offset + 8 == total;
-        for (uint64_t query = 0; query < 23; ++query)
-            next.word[query] = leanos_boot_decode_step(
+        for (uint64_t query = 0; query < 41; ++query)
+            next.word[query] = leanos_boot_decode_step_v5(
                 state.word[0], state.word[1], state.word[2], state.word[3],
                 state.word[4], state.word[5], state.word[6], state.word[7],
                 state.word[8], state.word[9], state.word[10], state.word[11],
                 state.word[12], state.word[13], state.word[14], state.word[15],
-                state.word[16], state.word[17], state.word[18], info_address,
-                offset, chunk, terminal, query);
+                state.word[16], state.word[17], state.word[18], state.word[23],
+                state.word[24], state.word[25], state.word[26], state.word[27],
+                state.word[28], state.word[29], state.word[30], state.word[31],
+                state.word[32], state.word[33], state.word[34], state.word[35],
+                state.word[36], state.word[37], state.word[38],
+                info_address, offset, chunk, terminal, query);
         copy_boot_decode_state(&state, &next);
         if (state.word[2] != 0) break;
     }
@@ -1702,11 +2147,56 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
     uint32_t total = *(const uint32_t *)physical;
     if (total < 16 || total > MAX_HANDOFF_BYTES || (total & 7u) != 0 ||
         total > BOOT_ACCESSIBLE_LIMIT - info_address) handoff_fail("bounds");
-    const uint8_t *info = copy_boot_handoff(magic, info_address, total);
+    const struct copied_boot_handoff handoff = copy_boot_handoff(
+        magic, info_address, total, observe_executing_apic_id());
+    const uint8_t *info = handoff.bytes;
+    if (handoff.length != total)
+        handoff_fail("topology-handoff-length");
     struct boot_decode_state decoded =
         decode_boot_projection(magic, info_address, total, info);
     if (decoded.word[1] != 1 || decoded.word[2] != 0)
         handoff_fail("decode-rejected");
+    if ((decoded.word[39] != 1 && decoded.word[39] != 2) ||
+        decoded.word[40] == 0)
+        handoff_fail("topology-root-selection");
+    const struct copied_acpi_sdt selected_root =
+        copy_acpi_sdt(decoded.word[40], boot_acpi_root_copy,
+            MAX_COPIED_ACPI_SDT_BYTES, 0);
+    if (selected_root.physical_address != decoded.word[40] ||
+        selected_root.bytes != boot_acpi_root_copy || selected_root.length < 36u)
+        handoff_fail("topology-root-copy");
+    validate_copied_acpi_sdt(
+        &selected_root, decoded.word[39] == 1 ? "RSDT" : "XSDT");
+    const struct acpi_root_entries root_entries =
+        decode_acpi_root_entries(&selected_root, decoded.word[39]);
+    if (root_entries.bytes != selected_root.bytes + 36u ||
+        (root_entries.width != 4u && root_entries.width != 8u))
+        handoff_fail("topology-root-vector");
+    uint64_t root_table_addresses[MAX_ACPI_ROOT_ENTRIES];
+    for (uint32_t entry = 0; entry < root_entries.count; ++entry) {
+        root_table_addresses[entry] =
+            decode_acpi_root_entry(&root_entries, entry);
+        for (uint32_t prior = 0; prior < entry; ++prior)
+            if (root_table_addresses[prior] == root_table_addresses[entry])
+                handoff_fail("topology-root-entry-duplicate");
+    }
+    const uint32_t copied_table_count =
+        copy_acpi_root_tables(&root_entries, root_table_addresses);
+    if (copied_table_count != root_entries.count)
+        handoff_fail("topology-table-copy-incomplete");
+    const struct copied_acpi_sdt *selected_madt =
+        select_unique_copied_madt(copied_table_count);
+    if (!acpi_signature_matches(selected_madt, "APIC"))
+        handoff_fail("topology-madt-selection");
+    validate_generated_madt_envelope(selected_madt);
+    const uint32_t admitted_apic_id = validate_generated_madt_entries(
+        selected_madt, handoff.executing_apic_id);
+    const uint32_t published_apic_id = require_machine_topology_admission(
+        decoded.word[39], decoded.word[40], selected_root.physical_address,
+        root_entries.count, copied_table_count, 1, 1, 0,
+        admitted_apic_id, handoff.executing_apic_id);
+    if (published_apic_id != handoff.executing_apic_id)
+        handoff_fail("topology-admission-publication");
     uint64_t free_words[64];
     uint64_t manifest_status = 1, manifest_error = 0;
     for (uint64_t block = 0; block < 64; ++block) {

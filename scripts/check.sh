@@ -213,6 +213,21 @@ for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlock
   fi
 done
 
+for fixture in BootTopologyCountOnly BootTopologyDuplicateCollapse \
+    BootTopologyCallerBsp BootTopologyPostAdmissionMutation; do
+  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
+    echo "error: boot-topology proof-integrity fixture ${fixture} unexpectedly type-checked" >&2
+    exit 1
+  fi
+  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
+      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
+        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
+    echo "error: boot-topology proof-integrity fixture ${fixture} lacked its semantic diagnostic" >&2
+    cat "$negative_log" >&2
+    exit 1
+  fi
+done
+
 if lake env lean tests/negative/FrameBudgetRejectedMutation.lean \
     >"$negative_log" 2>&1; then
   echo "error: frame-budget rejected-mutation fixture unexpectedly type-checked" >&2

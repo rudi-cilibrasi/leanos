@@ -166,6 +166,7 @@ lake env lean --c="$build/BootMemoryMapStreaming.c" \
   LeanOS/BootMemoryMapStreaming.lean
 lake env lean --c="$build/BootMemoryMapStreamAuthority.c" \
   LeanOS/BootMemoryMapStreamAuthority.lean
+lake env lean --c="$build/BootTopology.c" LeanOS/BootTopology.lean
 lake env lean --c="$build/Interrupt.c" LeanOS/Interrupt.lean
 lake env lean --c="$build/InterruptEntry.c" LeanOS/InterruptEntry.lean
 lake env lean --c="$build/BlockingIPC.c" LeanOS/BlockingIPC.lean
@@ -219,11 +220,15 @@ fi
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" \
   -c "$build/BootMemoryMapStreamAuthority.c" \
   -o "$build/BootMemoryMapStreamAuthority.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
+  -c "$build/BootTopology.c" -o "$build/BootTopology.o"
 # All existing image variants link BootAllocation.o.  Combine the generated
-# stream transport into that reviewed object so no variant can accidentally
-# retain the old allocation adapter without the bounded handoff-copy boundary.
+# stream transport and allocation-free topology scalar boundary into that
+# reviewed object so no variant can omit either machine-enforcement edge.
+# Section GC retains only the called BootTopology closure; the hosted
+# ByteArray/list topology query and its Lean runtime dependencies stay absent.
 ld -r "$build/BootAllocation.o" "$build/BootMemoryMapStreaming.o" \
-  "$build/BootMemoryMapStreamAuthority.o" \
+  "$build/BootMemoryMapStreamAuthority.o" "$build/BootTopology.o" \
   -o "$build/BootAllocationAndHandoffStream.o"
 mv "$build/BootAllocationAndHandoffStream.o" "$build/BootAllocation.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Interrupt.c" \
@@ -1378,11 +1383,16 @@ if grep -q ' T leanos_boot_allocation_check$' <<<"$symbols"; then
   exit 1
 fi
 for symbol in leanos_boot_handoff_stream_init leanos_boot_handoff_stream_step \
-  leanos_boot_decode_init leanos_boot_decode_step \
+  leanos_boot_decode_init_v5 leanos_boot_decode_step_v5 \
   leanos_boot_consume_exact_projection leanos_boot_projection_entry \
   leanos_boot_projection_manifest leanos_boot_projection_free \
   leanos_boot_projection_finish leanos_boot_manifest_candidate \
-  leanos_boot_authority_result; do
+  leanos_boot_authority_result \
+  leanos_boot_machine_acpi_copy_stream_step_query \
+  leanos_boot_machine_acpi_copy_sequence_step_query \
+  leanos_boot_machine_madt_envelope_byte_step_query \
+  leanos_boot_machine_madt_entry_stream_byte_step_query \
+  leanos_boot_machine_topology_admission_result_query; do
   if ! grep -q " T ${symbol}$" <<<"$symbols"; then
     echo "error: generated image does not retain $symbol" >&2
     exit 1

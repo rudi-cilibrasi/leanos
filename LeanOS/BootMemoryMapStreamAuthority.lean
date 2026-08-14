@@ -32,6 +32,203 @@ def badEntry : UInt64 := 9
 def missingMap : UInt64 := 10
 def missingEnd : UInt64 := 11
 
+/-! ## Allocation-free ACPI root selection state
+
+The streaming tag walker will supply only checksum- and revision-validated
+tag-14/tag-15 fields to this reducer. Keeping the exact six-byte OEM identity
+packed in the low 48 bits, rather than hashing it, lets the scalar machine path
+apply the same old/new coherence rule as `BootTopology.selectAcpiRoot` without
+allocating a list or structure. This reducer is deliberately not exported on
+its own: it becomes authoritative only when the raw stream transition carries
+its state and the final admission consumes its selected physical address. -/
+
+def acpiRootStateVersion : UInt64 := 1
+def acpiRootErrorNone : UInt64 := 0
+def acpiRootDuplicateOld : UInt64 := 1
+def acpiRootDuplicateNew : UInt64 := 2
+def acpiRootConflict : UInt64 := 3
+def acpiRootBadState : UInt64 := 4
+def acpiRootBadTag : UInt64 := 5
+def acpiRootKindNone : UInt64 := 0
+def acpiRootKindRsdt : UInt64 := 1
+def acpiRootKindXsdt : UInt64 := 2
+
+/-- One exact scalar root-selection step.
+
+Queries are version, status, error, old/new seen bits, exact old/new legacy
+identity fields, the new XSDT address, and the currently selected root
+kind/address. Rejection retains only version, rejected status, and its typed
+error so no stale selected address can escape a conflict. -/
+def acpiRootStepWord
+    (status error oldSeen newSeen oldOem oldRsdt newOem newRsdt newXsdt
+      tagType tagOem tagRsdt tagXsdt query : UInt64) : UInt64 :=
+  let malformedState := status != active || error != acpiRootErrorNone ||
+    oldSeen > 1 || newSeen > 1 || oldOem >= 0x1000000000000 ||
+    newOem >= 0x1000000000000 || oldRsdt > 0xffffffff ||
+    newRsdt > 0xffffffff
+  let reason :=
+    if malformedState then acpiRootBadState
+    else if (tagType != 14 && tagType != 15) ||
+        tagOem >= 0x1000000000000 || tagRsdt > 0xffffffff ||
+        (tagType == 14 && tagXsdt != 0) then acpiRootBadTag
+    else if tagType == 14 && oldSeen == 1 then acpiRootDuplicateOld
+    else if tagType == 15 && newSeen == 1 then acpiRootDuplicateNew
+    else if tagType == 14 && newSeen == 1 &&
+        (tagOem != newOem || tagRsdt != newRsdt) then acpiRootConflict
+    else if tagType == 15 && oldSeen == 1 &&
+        (tagOem != oldOem || tagRsdt != oldRsdt) then acpiRootConflict
+    else acpiRootErrorNone
+  let noldSeen := if tagType == 14 then 1 else oldSeen
+  let nnewSeen := if tagType == 15 then 1 else newSeen
+  let noldOem := if tagType == 14 then tagOem else oldOem
+  let noldRsdt := if tagType == 14 then tagRsdt else oldRsdt
+  let nnewOem := if tagType == 15 then tagOem else newOem
+  let nnewRsdt := if tagType == 15 then tagRsdt else newRsdt
+  let nnewXsdt := if tagType == 15 then tagXsdt else newXsdt
+  if query == 0 then acpiRootStateVersion
+  else if query == 1 then if reason == acpiRootErrorNone then active else rejected
+  else if query == 2 then reason
+  else if reason != acpiRootErrorNone then 0
+  else if query == 3 then noldSeen
+  else if query == 4 then nnewSeen
+  else if query == 5 then noldOem
+  else if query == 6 then noldRsdt
+  else if query == 7 then nnewOem
+  else if query == 8 then nnewRsdt
+  else if query == 9 then nnewXsdt
+  else if query == 10 then
+    if nnewSeen == 1 then acpiRootKindXsdt else acpiRootKindRsdt
+  else if query == 11 then if nnewSeen == 1 then nnewXsdt else noldRsdt
+  else 0
+
+private def repositoryOem : UInt64 := 0x2020554d4551
+private def repositoryRsdt : UInt64 := 0x000f5b70
+private def repositoryXsdt : UInt64 := 0x000f5c00
+
+example : acpiRootStepWord active 0 0 0 0 0 0 0 0
+    14 repositoryOem repositoryRsdt 0 10 = acpiRootKindRsdt := by
+  native_decide
+
+example : acpiRootStepWord active 0 1 0 repositoryOem repositoryRsdt 0 0 0
+    15 repositoryOem repositoryRsdt repositoryXsdt 10 = acpiRootKindXsdt := by
+  native_decide
+
+example : acpiRootStepWord active 0 1 0 repositoryOem repositoryRsdt 0 0 0
+    15 repositoryOem repositoryRsdt repositoryXsdt 11 = repositoryXsdt := by
+  native_decide
+
+example : acpiRootStepWord active 0 1 0 repositoryOem repositoryRsdt 0 0 0
+    15 0x424144 repositoryRsdt repositoryXsdt 2 = acpiRootConflict := by
+  native_decide
+
+example : acpiRootStepWord active 0 1 0 repositoryOem repositoryRsdt 0 0 0
+    14 repositoryOem repositoryRsdt 0 2 = acpiRootDuplicateOld := by
+  native_decide
+
+example : acpiRootStepWord active 0 0 1 0 0 repositoryOem repositoryRsdt repositoryXsdt
+    14 repositoryOem repositoryRsdt 0 10 = acpiRootKindXsdt := by
+  native_decide
+
+/-! ## Allocation-free RSDP payload validation
+
+This is the next scalar layer below `acpiRootStepWord`: it consumes the exact
+eight-byte payload words already bound by the immutable handoff stream.  It
+retains both checksum domains for a new RSDP (the first 20 bytes must sum to
+zero before the extended suffix is accepted), extracts the complete legacy
+identity without hashing, and ignores only the Multiboot alignment padding
+outside the declared 20/36-byte payload.  The production decoder will carry
+these words while it is in tag-14/tag-15 phases; until that wiring lands this
+reducer remains deliberately unexported. -/
+
+def acpiTagErrorNone : UInt64 := 0
+def acpiTagBadState : UInt64 := 1
+def acpiTagBadHeader : UInt64 := 2
+def acpiTagBadSignature : UInt64 := 3
+def acpiTagBadRevision : UInt64 := 4
+def acpiTagBadLength : UInt64 := 5
+def acpiTagBadChecksum : UInt64 := 6
+def acpiTagBadReserved : UInt64 := 7
+
+def badAcpiTag : UInt64 := 12
+def badAcpiRoot : UInt64 := 13
+
+private def byteAt (word shift : UInt64) : UInt64 :=
+  (word >>> shift) &&& 0xff
+
+private def sumWord8 (sum word : UInt64) : UInt64 :=
+  (sum + byteAt word 0 + byteAt word 8 + byteAt word 16 + byteAt word 24 +
+    byteAt word 32 + byteAt word 40 + byteAt word 48 + byteAt word 56) % 256
+
+private def sumWord4 (sum word : UInt64) : UInt64 :=
+  (sum + byteAt word 0 + byteAt word 8 + byteAt word 16 + byteAt word 24) % 256
+
+/-- Validate one ordered payload word from an exact old/new Multiboot2 ACPI
+tag. Queries are version, status, error, next payload index, rolling checksum,
+exact OEM identity, RSDT address, and XSDT address. -/
+def acpiTagStepWord
+    (tagType tagSize index checksum oem rsdt xsdt chunk query : UInt64) : UInt64 :=
+  let finalIndex := if tagType == 14 then 2 else 4
+  let malformedState := (tagType != 14 && tagType != 15) ||
+    (tagType == 14 && tagSize != 28) || (tagType == 15 && tagSize != 44) ||
+    index > finalIndex || checksum >= 256 || oem >= 0x1000000000000 ||
+    rsdt > 0xffffffff
+  let nchecksum :=
+    if index == finalIndex then sumWord4 checksum chunk
+    else sumWord8 checksum chunk
+  let legacyChecksum := sumWord4 checksum chunk
+  let reason :=
+    if malformedState then acpiTagBadState
+    else if index == 0 && chunk != 0x2052545020445352 then acpiTagBadSignature
+    else if index == 1 && tagType == 14 && byteAt chunk 56 != 0 then
+      acpiTagBadRevision
+    else if index == 1 && tagType == 15 && byteAt chunk 56 < 2 then
+      acpiTagBadRevision
+    else if index == 2 && tagType == 15 && chunk >>> 32 != 36 then
+      acpiTagBadLength
+    else if index == 2 && legacyChecksum != 0 then acpiTagBadChecksum
+    else if index == 4 && ((chunk >>> 8) &&& 0xffffff) != 0 then
+      acpiTagBadReserved
+    else if index == finalIndex && nchecksum != 0 then acpiTagBadChecksum
+    else acpiTagErrorNone
+  let noem := if index == 1 then (chunk >>> 8) &&& 0xffffffffffff else oem
+  let nrsdt := if index == 2 then chunk &&& 0xffffffff else rsdt
+  let nxsdt := if tagType == 15 && index == 3 then chunk else xsdt
+  if query == 0 then acpiRootStateVersion
+  else if query == 1 then
+    if reason != acpiTagErrorNone then rejected
+    else if index == finalIndex then complete else active
+  else if query == 2 then reason
+  else if reason != acpiTagErrorNone then 0
+  else if query == 3 then index + 1
+  else if query == 4 then nchecksum
+  else if query == 5 then noem
+  else if query == 6 then nrsdt
+  else if query == 7 then nxsdt
+  else 0
+
+example : acpiTagStepWord 14 28 0 0 0 0 0 0x2052545020445352 4 = 31 := by
+  native_decide
+
+example : acpiTagStepWord 14 28 1 31 0 0 0 0x002020554d45518f 5 =
+    repositoryOem := by
+  native_decide
+
+example : acpiTagStepWord 14 28 2 38 repositoryOem 0 0 0x00000000000f5b70 1 =
+    complete := by
+  native_decide
+
+example : acpiTagStepWord 15 44 2 38 repositoryOem 0 0 0x00000024000f5b70 4 =
+    36 := by
+  native_decide
+
+example : acpiTagStepWord 15 44 4 143 repositoryOem repositoryRsdt repositoryXsdt
+    0x71 1 = complete := by
+  native_decide
+
+example : acpiTagStepWord 15 44 0 0 0 0 0 0x2052545020445300 2 =
+    acpiTagBadSignature := by
+  native_decide
+
 def phaseInfo : UInt64 := 0
 def phaseTag : UInt64 := 1
 def phaseIgnored : UInt64 := 2
@@ -354,6 +551,128 @@ def stepWord (version status error identity extent offset chain phase content pa
     else if entryKind == 5 then 5
     else 2
   else 0
+
+/-! ## Integrated ACPI scalar transition
+
+This version-five transition is the production decoder's next ABI.  It keeps
+the existing 23 memory-map words unchanged, then carries the active RSDP
+payload reducer and exact root-selection reducer in words 23--40.  In
+particular, C cannot manufacture a parsed RSDP: only tag-14/tag-15 payload
+words observed while the authoritative walker is in `phaseIgnored` advance
+this state.  The C call-site and generated-boundary assertions are deliberately
+the next atomic step, so the current version-four machine path remains green
+while this transition is executable and reviewable in Lean. -/
+
+def acpiAbiVersion : UInt64 := 5
+
+@[export leanos_boot_decode_init_v5]
+def initWordV5 (magic address extent target query : UInt64) : UInt64 :=
+  if query < 23 then
+    if query == 0 then acpiAbiVersion else initWord magic address extent target query
+  else if query == 30 then active
+  else 0
+
+@[export leanos_boot_decode_step_v5]
+def stepWordV5
+    (version status error identity extent offset chain phase content padded
+      sawMap entries base length usable blocked target highest tagCount
+      tagType tagSize tagIndex tagChecksum tagOem tagRsdt tagXsdt
+      rootStatus rootError oldSeen newSeen oldOem oldRsdt newOem newRsdt newXsdt
+      streamIdentity streamOffset chunk terminal query : UInt64) : UInt64 :=
+  let baseVersion := if version == acpiAbiVersion then abiVersion else version
+  let baseWord := stepWord baseVersion status error identity extent offset chain
+    phase content padded sawMap entries base length usable blocked target highest
+    tagCount streamIdentity streamOffset chunk terminal query
+  let headerIsAcpi := phase == phaseTag &&
+    (low32 chunk == 14 || low32 chunk == 15)
+  let payloadIsAcpi := phase == phaseIgnored &&
+    (tagType == 14 || tagType == 15)
+  let ntagType := if headerIsAcpi then low32 chunk else tagType
+  let ntagSize := if headerIsAcpi then high32 chunk else tagSize
+  let tagWord := fun q => acpiTagStepWord tagType tagSize tagIndex tagChecksum
+    tagOem tagRsdt tagXsdt chunk q
+  let ntagStatus :=
+    if headerIsAcpi then active
+    else if payloadIsAcpi then tagWord 1
+    else active
+  let ntagError :=
+    if payloadIsAcpi then tagWord 2 else acpiTagErrorNone
+  let ntagIndex :=
+    if headerIsAcpi then 0
+    else if payloadIsAcpi then tagWord 3
+    else tagIndex
+  let ntagChecksum :=
+    if headerIsAcpi then 0
+    else if payloadIsAcpi then tagWord 4
+    else tagChecksum
+  let ntagOem :=
+    if headerIsAcpi then 0
+    else if payloadIsAcpi then tagWord 5
+    else tagOem
+  let ntagRsdt :=
+    if headerIsAcpi then 0
+    else if payloadIsAcpi then tagWord 6
+    else tagRsdt
+  let ntagXsdt :=
+    if headerIsAcpi then 0
+    else if payloadIsAcpi then tagWord 7
+    else tagXsdt
+  let rootWord := fun q => acpiRootStepWord rootStatus rootError oldSeen newSeen
+    oldOem oldRsdt newOem newRsdt newXsdt tagType ntagOem ntagRsdt ntagXsdt q
+  let commitsRoot := payloadIsAcpi && ntagStatus == complete
+  let nrootStatus := if commitsRoot then rootWord 1 else rootStatus
+  let nrootError := if commitsRoot then rootWord 2 else rootError
+  let noldSeen := if commitsRoot then rootWord 3 else oldSeen
+  let nnewSeen := if commitsRoot then rootWord 4 else newSeen
+  let noldOem := if commitsRoot then rootWord 5 else oldOem
+  let noldRsdt := if commitsRoot then rootWord 6 else oldRsdt
+  let nnewOem := if commitsRoot then rootWord 7 else newOem
+  let nnewRsdt := if commitsRoot then rootWord 8 else newRsdt
+  let nnewXsdt := if commitsRoot then rootWord 9 else newXsdt
+  let selectedKind := if commitsRoot then rootWord 10 else
+    if newSeen == 1 then acpiRootKindXsdt
+    else if oldSeen == 1 then acpiRootKindRsdt else acpiRootKindNone
+  let selectedAddress := if commitsRoot then rootWord 11 else
+    if newSeen == 1 then newXsdt else oldRsdt
+  let baseError := stepWord baseVersion status error identity extent offset chain
+    phase content padded sawMap entries base length usable blocked target highest
+    tagCount streamIdentity streamOffset chunk terminal 2
+  let finalError :=
+    if baseError != noError then baseError
+    else if ntagError != acpiTagErrorNone then badAcpiTag
+    else if nrootError != acpiRootErrorNone then badAcpiRoot
+    else noError
+  if query == 0 then acpiAbiVersion
+  else if query == 1 then
+    if finalError != noError then rejected else baseWord
+  else if query == 2 then finalError
+  else if finalError != noError then 0
+  else if query < 23 then baseWord
+  else if query == 23 then ntagType
+  else if query == 24 then ntagSize
+  else if query == 25 then ntagIndex
+  else if query == 26 then ntagChecksum
+  else if query == 27 then ntagOem
+  else if query == 28 then ntagRsdt
+  else if query == 29 then ntagXsdt
+  else if query == 30 then nrootStatus
+  else if query == 31 then nrootError
+  else if query == 32 then noldSeen
+  else if query == 33 then nnewSeen
+  else if query == 34 then noldOem
+  else if query == 35 then noldRsdt
+  else if query == 36 then nnewOem
+  else if query == 37 then nnewRsdt
+  else if query == 38 then nnewXsdt
+  else if query == 39 then selectedKind
+  else if query == 40 then selectedAddress
+  else 0
+
+example : initWordV5 0x36d76289 0x1000 16 0 0 = acpiAbiVersion := by
+  native_decide
+
+example : initWordV5 0x36d76289 0x1000 16 0 30 = active := by
+  native_decide
 
 /-- The admitted scalar initializer and the rich information-header word take
 one exact canonical step into the tag phase.  This is the first phase-local

@@ -59,6 +59,15 @@ extern uint64_t leanos_boot_manifest_candidate(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_decode_init_v5(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_boot_decode_step_v5(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_boot_manifest_start(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
@@ -76,6 +85,34 @@ struct stream_state {
 };
 
 struct decode_state { uint64_t word[19]; };
+struct decode_state_v5 { uint64_t word[41]; };
+
+static struct decode_state_v5 decode_v5_extent(
+        const uint64_t *chunks, uint64_t count) {
+    struct decode_state_v5 state, next;
+    const uint64_t extent = count * 8;
+    for (uint64_t query = 0; query < 41; ++query)
+        state.word[query] = leanos_boot_decode_init_v5(
+            0x36d76289, 0x1000, extent, 1, query);
+    for (uint64_t index = 0; index < count; ++index) {
+        for (uint64_t query = 0; query < 41; ++query)
+            next.word[query] = leanos_boot_decode_step_v5(
+                state.word[0], state.word[1], state.word[2], state.word[3],
+                state.word[4], state.word[5], state.word[6], state.word[7],
+                state.word[8], state.word[9], state.word[10], state.word[11],
+                state.word[12], state.word[13], state.word[14], state.word[15],
+                state.word[16], state.word[17], state.word[18], state.word[23],
+                state.word[24], state.word[25], state.word[26], state.word[27],
+                state.word[28], state.word[29], state.word[30], state.word[31],
+                state.word[32], state.word[33], state.word[34], state.word[35],
+                state.word[36], state.word[37], state.word[38],
+                0x1000, index * 8, chunks[index],
+                index + 1 == count, query);
+        state = next;
+        if (state.word[2] != 0) break;
+    }
+    return state;
+}
 
 static struct decode_state decode_extent(
         const uint64_t *chunks, uint64_t count, uint64_t target) {
@@ -145,6 +182,8 @@ int check_stream(void) {
     REGISTER_BOUNDARY(leanos_boot_handoff_stream_step);
     REGISTER_BOUNDARY(leanos_boot_decode_init);
     REGISTER_BOUNDARY(leanos_boot_decode_step);
+    REGISTER_BOUNDARY(leanos_boot_decode_init_v5);
+    REGISTER_BOUNDARY(leanos_boot_decode_step_v5);
     REGISTER_BOUNDARY(leanos_boot_projection_entry);
     REGISTER_BOUNDARY(leanos_boot_projection_manifest);
     REGISTER_BOUNDARY(leanos_boot_projection_free);
@@ -166,6 +205,22 @@ int check_stream(void) {
         0x0000004000000006, 0x0000000000000018, 0x0000000000001000,
         0x0000000000004000, 0x0000000000000001, 0x0000000000002000,
         0x0000000000001000, 0x0000000000000002, 0x0000000800000000,
+    };
+    const uint64_t map_and_end[9] = {
+        UINT64_C(0x0000004000000006), UINT64_C(0x0000000000000018),
+        UINT64_C(0x0000000000001000), UINT64_C(0x0000000000004000),
+        UINT64_C(0x0000000000000001), UINT64_C(0x0000000000002000),
+        UINT64_C(0x0000000000001000), UINT64_C(0x0000000000000002),
+        UINT64_C(0x0000000800000000),
+    };
+    const uint64_t old_rsdp[4] = {
+        UINT64_C(0x0000001c0000000e), UINT64_C(0x2052545020445352),
+        UINT64_C(0x002020554d45518f), UINT64_C(0x00000000000f5b70),
+    };
+    const uint64_t new_rsdp[6] = {
+        UINT64_C(0x0000002c0000000f), UINT64_C(0x2052545020445352),
+        UINT64_C(0x022020554d45518d), UINT64_C(0x00000024000f5b70),
+        UINT64_C(0x00000000000f5c00), UINT64_C(0x0000000000000071),
     };
     struct stream_state state;
     struct stream_state next;
@@ -230,6 +285,169 @@ int check_stream(void) {
     CHECK_RESULT("decode.accepted.target-found", decoded.word[14], 1, 14);
     CHECK_RESULT("decode.accepted.target-blocked", decoded.word[15], 0, 14);
     CHECK_RESULT("decode.accepted.tag-count", decoded.word[18], 3, 14);
+    uint64_t old_only[14] = {0};
+    old_only[0] = sizeof(old_only);
+    for (uint64_t index = 0; index < 4; ++index)
+        old_only[1 + index] = old_rsdp[index];
+    for (uint64_t index = 0; index < 9; ++index)
+        old_only[5 + index] = map_and_end[index];
+    struct decode_state_v5 decoded_v5 = decode_v5_extent(old_only, 14);
+    CHECK_RESULT("decode-v5.old-only.version", decoded_v5.word[0], 5, 42);
+    CHECK_RESULT("decode-v5.old-only.error", decoded_v5.word[2], 0, 42);
+    CHECK_RESULT("decode-v5.old-only.status", decoded_v5.word[1], 1, 42);
+    CHECK_RESULT("decode-v5.old-only.kind", decoded_v5.word[39], 1, 42);
+    CHECK_RESULT("decode-v5.old-only.address", decoded_v5.word[40],
+                 UINT64_C(0x000f5b70), 42);
+
+    uint64_t new_only[16] = {0};
+    new_only[0] = sizeof(new_only);
+    for (uint64_t index = 0; index < 6; ++index)
+        new_only[1 + index] = new_rsdp[index];
+    for (uint64_t index = 0; index < 9; ++index)
+        new_only[7 + index] = map_and_end[index];
+    decoded_v5 = decode_v5_extent(new_only, 16);
+    CHECK_RESULT("decode-v5.new-only.status", decoded_v5.word[1], 1, 43);
+    CHECK_RESULT("decode-v5.new-only.error", decoded_v5.word[2], 0, 43);
+    CHECK_RESULT("decode-v5.new-only.kind", decoded_v5.word[39], 2, 43);
+    CHECK_RESULT("decode-v5.new-only.address", decoded_v5.word[40],
+                 UINT64_C(0x000f5c00), 43);
+
+    uint64_t reverse_coherent[20] = {0};
+    reverse_coherent[0] = sizeof(reverse_coherent);
+    for (uint64_t index = 0; index < 6; ++index)
+        reverse_coherent[1 + index] = new_rsdp[index];
+    for (uint64_t index = 0; index < 4; ++index)
+        reverse_coherent[7 + index] = old_rsdp[index];
+    for (uint64_t index = 0; index < 9; ++index)
+        reverse_coherent[11 + index] = map_and_end[index];
+    decoded_v5 = decode_v5_extent(reverse_coherent, 20);
+    CHECK_RESULT("decode-v5.reverse-coherent.status", decoded_v5.word[1], 1, 44);
+    CHECK_RESULT("decode-v5.reverse-coherent.error", decoded_v5.word[2], 0, 44);
+    CHECK_RESULT("decode-v5.reverse-coherent.kind", decoded_v5.word[39], 2, 44);
+    CHECK_RESULT("decode-v5.reverse-coherent.address", decoded_v5.word[40],
+                 UINT64_C(0x000f5c00), 44);
+
+    uint64_t forward_coherent[20] = {0};
+    forward_coherent[0] = sizeof(forward_coherent);
+    for (uint64_t index = 0; index < 4; ++index)
+        forward_coherent[1 + index] = old_rsdp[index];
+    for (uint64_t index = 0; index < 6; ++index)
+        forward_coherent[5 + index] = new_rsdp[index];
+    for (uint64_t index = 0; index < 9; ++index)
+        forward_coherent[11 + index] = map_and_end[index];
+    decoded_v5 = decode_v5_extent(forward_coherent, 20);
+    CHECK_RESULT("decode-v5.forward-coherent.status", decoded_v5.word[1], 1, 45);
+    CHECK_RESULT("decode-v5.forward-coherent.error", decoded_v5.word[2], 0, 45);
+    CHECK_RESULT("decode-v5.forward-coherent.kind", decoded_v5.word[39], 2, 45);
+    CHECK_RESULT("decode-v5.forward-coherent.address", decoded_v5.word[40],
+                 UINT64_C(0x000f5c00), 45);
+
+    uint64_t duplicate_old[18] = {0};
+    duplicate_old[0] = sizeof(duplicate_old);
+    for (uint64_t index = 0; index < 4; ++index) {
+        duplicate_old[1 + index] = old_rsdp[index];
+        duplicate_old[5 + index] = old_rsdp[index];
+    }
+    for (uint64_t index = 0; index < 9; ++index)
+        duplicate_old[9 + index] = map_and_end[index];
+    decoded_v5 = decode_v5_extent(duplicate_old, 18);
+    CHECK_RESULT("decode-v5.duplicate-old.status", decoded_v5.word[1], 2, 46);
+    CHECK_RESULT("decode-v5.duplicate-old.error", decoded_v5.word[2], 13, 46);
+    CHECK_RESULT("decode-v5.duplicate-old.kind", decoded_v5.word[39], 0, 46);
+    CHECK_RESULT("decode-v5.duplicate-old.address", decoded_v5.word[40], 0, 46);
+
+    uint64_t conflicting_roots[20] = {0};
+    uint64_t conflicting_new_rsdp[6];
+    for (uint64_t index = 0; index < 6; ++index)
+        conflicting_new_rsdp[index] = new_rsdp[index];
+    /* Move RSDT by eight bytes and compensate the legacy checksum. */
+    conflicting_new_rsdp[2] = UINT64_C(0x022020554d455185);
+    conflicting_new_rsdp[3] = UINT64_C(0x00000024000f5b78);
+    conflicting_roots[0] = sizeof(conflicting_roots);
+    for (uint64_t index = 0; index < 4; ++index)
+        conflicting_roots[1 + index] = old_rsdp[index];
+    for (uint64_t index = 0; index < 6; ++index)
+        conflicting_roots[5 + index] = conflicting_new_rsdp[index];
+    for (uint64_t index = 0; index < 9; ++index)
+        conflicting_roots[11 + index] = map_and_end[index];
+    decoded_v5 = decode_v5_extent(conflicting_roots, 20);
+    CHECK_RESULT("decode-v5.conflicting-roots.status", decoded_v5.word[1], 2, 47);
+    CHECK_RESULT("decode-v5.conflicting-roots.error", decoded_v5.word[2], 13, 47);
+    CHECK_RESULT("decode-v5.conflicting-roots.kind", decoded_v5.word[39], 0, 47);
+    CHECK_RESULT("decode-v5.conflicting-roots.address", decoded_v5.word[40], 0, 47);
+
+    uint64_t bad_old_signature[14];
+    for (uint64_t index = 0; index < 14; ++index)
+        bad_old_signature[index] = old_only[index];
+    bad_old_signature[2] ^= 1;
+    decoded_v5 = decode_v5_extent(bad_old_signature, 14);
+    CHECK_RESULT("decode-v5.bad-old-signature.status", decoded_v5.word[1], 2, 48);
+    CHECK_RESULT("decode-v5.bad-old-signature.error", decoded_v5.word[2], 12, 48);
+    CHECK_RESULT("decode-v5.bad-old-signature.kind", decoded_v5.word[39], 0, 48);
+    CHECK_RESULT("decode-v5.bad-old-signature.address", decoded_v5.word[40], 0, 48);
+
+    uint64_t bad_new_revision[16];
+    for (uint64_t index = 0; index < 16; ++index)
+        bad_new_revision[index] = new_only[index];
+    bad_new_revision[3] =
+        (bad_new_revision[3] & UINT64_C(0x00ffffffffffffff)) |
+        UINT64_C(0x0100000000000000);
+    decoded_v5 = decode_v5_extent(bad_new_revision, 16);
+    CHECK_RESULT("decode-v5.bad-new-revision.status", decoded_v5.word[1], 2, 49);
+    CHECK_RESULT("decode-v5.bad-new-revision.error", decoded_v5.word[2], 12, 49);
+    CHECK_RESULT("decode-v5.bad-new-revision.kind", decoded_v5.word[39], 0, 49);
+    CHECK_RESULT("decode-v5.bad-new-revision.address", decoded_v5.word[40], 0, 49);
+
+    uint64_t bad_old_tag_size[14];
+    for (uint64_t index = 0; index < 14; ++index)
+        bad_old_tag_size[index] = old_only[index];
+    bad_old_tag_size[1] = UINT64_C(0x0000001b0000000e);
+    decoded_v5 = decode_v5_extent(bad_old_tag_size, 14);
+    CHECK_RESULT("decode-v5.bad-old-tag-size.status", decoded_v5.word[1], 2, 50);
+    CHECK_RESULT("decode-v5.bad-old-tag-size.error", decoded_v5.word[2], 12, 50);
+    CHECK_RESULT("decode-v5.bad-old-tag-size.kind", decoded_v5.word[39], 0, 50);
+    CHECK_RESULT("decode-v5.bad-old-tag-size.address", decoded_v5.word[40], 0, 50);
+
+    uint64_t bad_old_checksum[14];
+    for (uint64_t index = 0; index < 14; ++index)
+        bad_old_checksum[index] = old_only[index];
+    bad_old_checksum[3] ^= 1;
+    decoded_v5 = decode_v5_extent(bad_old_checksum, 14);
+    CHECK_RESULT("decode-v5.bad-old-checksum.status", decoded_v5.word[1], 2, 51);
+    CHECK_RESULT("decode-v5.bad-old-checksum.error", decoded_v5.word[2], 12, 51);
+    CHECK_RESULT("decode-v5.bad-old-checksum.kind", decoded_v5.word[39], 0, 51);
+    CHECK_RESULT("decode-v5.bad-old-checksum.address", decoded_v5.word[40], 0, 51);
+
+    uint64_t bad_new_extended_checksum[16];
+    for (uint64_t index = 0; index < 16; ++index)
+        bad_new_extended_checksum[index] = new_only[index];
+    bad_new_extended_checksum[6] ^= 1;
+    decoded_v5 = decode_v5_extent(bad_new_extended_checksum, 16);
+    CHECK_RESULT("decode-v5.bad-new-extended-checksum.status", decoded_v5.word[1], 2, 52);
+    CHECK_RESULT("decode-v5.bad-new-extended-checksum.error", decoded_v5.word[2], 12, 52);
+    CHECK_RESULT("decode-v5.bad-new-extended-checksum.kind", decoded_v5.word[39], 0, 52);
+    CHECK_RESULT("decode-v5.bad-new-extended-checksum.address", decoded_v5.word[40], 0, 52);
+
+    uint64_t bad_new_reserved[16];
+    for (uint64_t index = 0; index < 16; ++index)
+        bad_new_reserved[index] = new_only[index];
+    bad_new_reserved[6] |= UINT64_C(0x0000000000000100);
+    decoded_v5 = decode_v5_extent(bad_new_reserved, 16);
+    CHECK_RESULT("decode-v5.bad-new-reserved.status", decoded_v5.word[1], 2, 53);
+    CHECK_RESULT("decode-v5.bad-new-reserved.error", decoded_v5.word[2], 12, 53);
+    CHECK_RESULT("decode-v5.bad-new-reserved.kind", decoded_v5.word[39], 0, 53);
+    CHECK_RESULT("decode-v5.bad-new-reserved.address", decoded_v5.word[40], 0, 53);
+
+    uint64_t nonzero_new_padding[16];
+    for (uint64_t index = 0; index < 16; ++index)
+        nonzero_new_padding[index] = new_only[index];
+    nonzero_new_padding[6] |= UINT64_C(0xa5a5a5a500000000);
+    decoded_v5 = decode_v5_extent(nonzero_new_padding, 16);
+    CHECK_RESULT("decode-v5.nonzero-new-padding.status", decoded_v5.word[1], 1, 54);
+    CHECK_RESULT("decode-v5.nonzero-new-padding.error", decoded_v5.word[2], 0, 54);
+    CHECK_RESULT("decode-v5.nonzero-new-padding.kind", decoded_v5.word[39], 2, 54);
+    CHECK_RESULT("decode-v5.nonzero-new-padding.address", decoded_v5.word[40],
+                 UINT64_C(0x000f5c00), 54);
     CHECK_RESULT("projection.entry.usable",
         leanos_boot_projection_entry(0x1000, 0x4000, 1, 0, 0, 0, 3),
         0x1e, 14);
