@@ -1498,10 +1498,12 @@ LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos.elf" \
   | tee "$build/entry-stack-final-elf.txt"
 LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
+  LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL=scripts/entry-stack-extended-optimizer-optional.tsv \
   LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-extended-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos-extended-state.elf" \
   | tee "$build/entry-stack-extended-final-elf.txt"
 LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
+  LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL=scripts/entry-stack-extended-optimizer-optional.tsv \
   LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-extended-state-peer-pke-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos-extended-state-peer-pke.elf" \
   | tee "$build/entry-stack-extended-state-peer-pke-final-elf.txt"

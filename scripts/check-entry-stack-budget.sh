@@ -6,6 +6,7 @@ cd "$repo_root"
 
 report_dir="${LEANOS_STACK_USAGE_DIR:-build/boot}"
 manifest="${LEANOS_ENTRY_STACK_MANIFEST:-scripts/entry-stack-callgraph.tsv}"
+optimizer_optional="${LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL:-scripts/entry-stack-optimizer-optional.tsv}"
 usable_bytes="${LEANOS_ENTRY_STACK_USABLE_BYTES:-16384}"
 assembly_source="${LEANOS_ENTRY_ASSEMBLY_SOURCE:-boot/boot.S}"
 elf="${1:-}"
@@ -32,6 +33,20 @@ mapfile -t reports < <(find "$report_dir" -maxdepth 1 -type f -name '*.su' -prin
 declare -A usage=()
 declare -A usage_kind=()
 declare -A static_total=()
+# The final-ELF closure remains fail-closed for every unexpected contributor.
+# This reviewed list only permits a named contributor to disappear when GCC
+# or Clang folds its stack cost into a caller; if it remains reachable, its
+# ordinary stack report and final-ELF accounting are still mandatory.
+declare -A optional_contributor=()
+if [[ -f "$optimizer_optional" ]]; then
+  while IFS=$'\t' read -r optional_path optional_function extra; do
+    [[ -n "$optional_path" && "${optional_path:0:1}" != '#' ]] || continue
+    [[ -n "$optional_function" && -z "${extra:-}" ]] || {
+      echo "error: malformed optimizer-optional entry-stack row" >&2; exit 1;
+    }
+    optional_contributor["$optional_path|$optional_function"]=1
+  done <"$optimizer_optional"
+fi
 while IFS=$'\t' read -r location bytes qualifier extra; do
   [[ -n "$location" ]] || continue
   function_name="${location##*:}"
@@ -76,6 +91,7 @@ while IFS=$'\t' read -r path origin hardware_error safety elf_root functions ext
     }
     seen[$function_name]=1
     [[ -n "${usage[$function_name]+set}" ]] || {
+      [[ -n "${optional_contributor["$path|$function_name"]+set}" ]] && continue
       echo "error: path=$path missing-stack-usage=$function_name" >&2; exit 1;
     }
     if [[ "${usage_kind[$function_name]}" != static ]]; then
@@ -291,9 +307,11 @@ while IFS=$'\t' read -r path _origin _hardware_error _safety elf_root functions 
   }
   for function_name in "$elf_root" "${chain[@]}"; do
     grep -Fxq "$function_name" "$tmp/symbols" || {
+      [[ -n "${optional_contributor["$path|$function_name"]+set}" ]] && continue
       echo "error: path=$path final-elf-missing-function=$function_name" >&2; exit 1;
     }
     grep -Fxq "$function_name" "$tmp/reachable" || {
+      [[ -n "${optional_contributor["$path|$function_name"]+set}" ]] && continue
       echo "error: path=$path final-elf-unreachable-function=$function_name root=$elf_root" >&2
       exit 1
     }

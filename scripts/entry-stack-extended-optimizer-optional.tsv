@@ -1,0 +1,7 @@
+# path	function (reviewed contributor that a supported optimizer may inline or eliminate)
+extended-unavailable	check_fast_entry_control
+extended-unavailable	l_LeanOS_PrivilegeEntryControl_controlScalar
+extended-unavailable	q35_manifest_entry
+extended-denied	check_fast_entry_control
+extended-denied	l_LeanOS_PrivilegeEntryControl_controlScalar
+extended-denied	q35_manifest_entry

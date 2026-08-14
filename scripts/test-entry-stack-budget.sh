@@ -162,6 +162,17 @@ run_rejected_elf() {
 }
 printf 'detached\tkernel\t0\t0\tfixture_root\troot;leaf;detached\n' >"$tmp/detached.tsv"
 run_rejected_elf detached 'final-elf-unreachable-function=detached'
+printf 'detached\tkernel\t0\t0\tfixture_root\troot;leaf;detached;compiler_folded\n' \
+  >"$tmp/detached-optional.tsv"
+printf 'detached\tdetached\ndetached\tcompiler_folded\n' \
+  >"$tmp/optimizer-optional.tsv"
+LEANOS_STACK_USAGE_DIR="$tmp" LEANOS_ENTRY_STACK_MANIFEST="$tmp/detached-optional.tsv" \
+  LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL="$tmp/optimizer-optional.tsv" \
+  LEANOS_ENTRY_STACK_USABLE_BYTES=300 \
+  ./scripts/check-entry-stack-budget.sh "$tmp/fixture.elf" \
+  >"$tmp/detached-optional-elf.log"
+grep -Fq 'path=detached final-elf-root=fixture_root' \
+  "$tmp/detached-optional-elf.log"
 printf 'unreviewed\tkernel\t0\t0\tfixture_root\troot\n' >"$tmp/unreviewed.tsv"
 run_rejected_elf unreviewed 'final-elf-unreviewed-stack-usage=leaf'
 printf 'elf-indirect\tkernel\t0\t0\tindirect_root\troot\n' >"$tmp/elf-indirect.tsv"
