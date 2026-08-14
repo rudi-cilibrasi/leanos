@@ -63,6 +63,7 @@ def prepare_tree(tmp: Path) -> tuple[Path, Path, Path, argparse.Namespace]:
         output=output,
         tool_versions=tools,
         version="0.1.0",
+        scenario=None,
     )
     return build, output, tools, args
 
@@ -325,6 +326,28 @@ def run_fixtures() -> None:
             mock.patch.object(evidence.subprocess, "run", side_effect=successful_runner),
         ):
             evidence.run(args)
+
+        selected_build, selected_output, _selected_tools, selected_args = prepare_tree(
+            tmp / "selected-scenario"
+        )
+        selected_args.scenario = "blocking-ipc"
+        with (
+            mock.patch.object(evidence, "git_revision", return_value=revision),
+            mock.patch.object(evidence, "qemu_version", return_value="QEMU fixture"),
+            mock.patch.object(evidence.subprocess, "run", side_effect=successful_runner),
+        ):
+            evidence.run(selected_args)
+        selected_report = json.loads(selected_output.read_text(encoding="utf-8"))
+        assert [result["id"] for result in selected_report["results"]] == [
+            "blocking-ipc"
+        ]
+        assert (selected_build / "clang-canonical.serial.log").exists() is False
+
+        selected_args.scenario = "not-in-the-matrix"
+        expect_failure(
+            lambda: evidence.run(selected_args),
+            "scenario is absent from matrix: not-in-the-matrix",
+        )
 
         with (
             mock.patch.object(evidence, "git_revision", return_value="b" * 40),

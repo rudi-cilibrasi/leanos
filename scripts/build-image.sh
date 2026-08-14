@@ -186,6 +186,13 @@ cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -fdebug-prefix-map="$repo_root"=. -ffile-prefix-map="$repo_root"=.
   -fdebug-prefix-map="$lean_prefix"=/lean-toolchain
   -ffile-prefix-map="$lean_prefix"=/lean-toolchain -g3 -O2)
+if "$cc" --version | sed -n '1p' | grep -qi clang; then
+  # With general-registers-only Clang otherwise reports an extended
+  # FLT_EVAL_METHOD, which Lean correctly rejects. The kernel has no floating
+  # point operations, but generated Lean C still includes lean.h and requires
+  # source-width evaluation semantics in every translation unit.
+  cflags+=(-ffp-eval-method=source)
+fi
 {
   printf 'image-compiler-command\t%s\n' "$cc"
   printf 'image-compiler-version\t'

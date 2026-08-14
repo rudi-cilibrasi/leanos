@@ -142,8 +142,11 @@ jobs:
           set -o pipefail
           mkdir -p build/ci
           ./scripts/build-image.sh 2>&1 | tee build/ci/clang-image-build.log
-          LEANOS_SERIAL_LOG=build/boot/clang-canonical.serial.log \
-            ./scripts/run-image.sh 2>&1 | tee build/ci/clang-canonical-boot.log
+          python3 scripts/run-emulator-evidence.py run \
+            --scenario blocking-ipc \
+            --tool-versions build/ci/clang-tool-versions.txt \
+            --output build/evidence/clang-canonical.json \
+            2>&1 | tee build/ci/clang-canonical-boot.log
 
       - name: Preserve Clang compiler and canonical boot evidence
         if: always()
@@ -165,6 +168,8 @@ jobs:
             build/boot/clang-canonical.serial.log
             build/boot/dma-quarantine-snapshot-blocking-ipc.tsv
             build/boot/vtd-activation-snapshot-blocking-ipc.tsv
+            build/evidence/clang-canonical.json
+            build/evidence/blocking-ipc.command.log
             build/ci/clang-tool-versions.txt
             build/ci/clang-image-build.log
             build/ci/clang-canonical-boot.log

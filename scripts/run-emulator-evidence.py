@@ -539,6 +539,10 @@ def run(args: argparse.Namespace) -> None:
     output = args.output.resolve()
     tools = args.tool_versions.resolve()
     matrix_id, rows = parse_matrix(matrix)
+    if args.scenario is not None:
+        rows = [row for row in rows if row["id"] == args.scenario]
+        if not rows:
+            raise EvidenceError(f"scenario is absent from matrix: {args.scenario}")
     version = args.version
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise EvidenceError("version must be MAJOR.MINOR.PATCH")
@@ -682,8 +686,11 @@ def run(args: argparse.Namespace) -> None:
 
     report["status"] = "PASS"
     write_report(output, report)
-    verify_report(output, matrix, build_dir, tools, version, environment)
-    print(f"emulator evidence matrix passed ({len(rows)} mandatory scenarios): {display_path(output)}")
+    verify_report(
+        output, matrix, build_dir, tools, version, environment,
+        scenario=args.scenario,
+    )
+    print(f"emulator evidence matrix passed ({len(rows)} scenarios): {display_path(output)}")
 
 
 def verify_hash(record: dict[str, object], label: str) -> None:
@@ -700,9 +707,13 @@ def verify_hash(record: dict[str, object], label: str) -> None:
 
 def verify_report(
     report_path: Path, matrix: Path, build_dir: Path, tools: Path,
-    version: str, environment: dict[str, str],
+    version: str, environment: dict[str, str], scenario: str | None = None,
 ) -> None:
     matrix_id, rows = parse_matrix(matrix)
+    if scenario is not None:
+        rows = [row for row in rows if row["id"] == scenario]
+        if not rows:
+            raise EvidenceError(f"scenario is absent from matrix: {scenario}")
     try:
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -943,6 +954,10 @@ def main() -> int:
         subparser.add_argument("--tool-versions", type=Path, default=DEFAULT_TOOLS)
         subparser.add_argument("--version", default=os.environ.get("LEANOS_VERSION", "0.1.0"))
     run_parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    run_parser.add_argument(
+        "--scenario",
+        help="run one named scenario from the validated matrix",
+    )
     verify_parser.add_argument("report", nargs="?", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
     try:
