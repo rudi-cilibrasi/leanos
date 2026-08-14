@@ -1963,6 +1963,12 @@ static struct copied_boot_handoff copy_boot_handoff(
 
 struct boot_decode_state { uint64_t word[41]; };
 
+static void zero_boot_decode_state(struct boot_decode_state *state) {
+    volatile uint64_t *words = state->word;
+    for (unsigned query = 0; query < 41; ++query)
+        words[query] = 0;
+}
+
 /* Keep fixed-width decoder-state transport explicit in the freestanding
    kernel. Clang may otherwise lower these aggregate copies to a hosted
    memcpy call, which is not part of the boot image's runtime contract. */
@@ -2229,7 +2235,8 @@ static void boot_allocate(uint32_t magic, uint32_t info_address) {
        to nominate the frame consumed by production. */
     uint64_t selected = 4096;
     uint64_t selected_manifest = 0;
-    struct boot_decode_state selected_authority = {0};
+    struct boot_decode_state selected_authority;
+    zero_boot_decode_state(&selected_authority);
 #ifdef LEANOS_FRAME_BUDGET_SCENARIO
     uint64_t next_selected = 4096;
 #endif

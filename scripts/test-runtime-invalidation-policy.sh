@@ -50,8 +50,13 @@ wrong_relation_space() {
 
 accept_unknown_state() {
   sed -i \
-    '/static int checked_runtime_leaf(/,/^}/s/default:/case 99u:/' \
+    '/^static .*checked_runtime_leaf(/,/^}/s/default:/case 99u:/' \
     "$1"
+  sed -n '/^static .*checked_runtime_leaf(/,/^}/p' "$1" |
+    grep -Fq 'case 99u:' || {
+      echo "error: accept-unknown-state mutation was not applied" >&2
+      exit 1
+    }
 }
 
 omit_stale_relation() {
