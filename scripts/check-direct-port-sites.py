@@ -113,6 +113,26 @@ CLANG18_SITE_ALTERNATIVES = {
         Site("isr2_cld", 0x117, "out", "%al,(%dx)"),
     Site("isr2_cld", 0x126, "out", "%al,(%dx)"):
         Site("isr2_cld", 0x125, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0xCD, "in", "(%dx),%al"):
+        Site("isr2_cld", 0xCC, "in", "(%dx),%al"),
+    Site("isr2_cld", 0xD8, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0xD7, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0xF2, "in", "(%dx),%al"):
+        Site("isr2_cld", 0xF1, "in", "(%dx),%al"),
+    Site("isr2_cld", 0xFD, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0xFC, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0x125, "in", "(%dx),%al"):
+        Site("isr2_cld", 0x124, "in", "(%dx),%al"),
+    Site("isr2_cld", 0x130, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0x12F, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0x13E, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0x13D, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0x152, "in", "(%dx),%al"):
+        Site("isr2_cld", 0x151, "in", "(%dx),%al"),
+    Site("isr2_cld", 0x15D, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0x15C, "out", "%al,(%dx)"),
+    Site("isr2_cld", 0x16B, "out", "%al,(%dx)"):
+        Site("isr2_cld", 0x16A, "out", "%al,(%dx)"),
 }
 
 
