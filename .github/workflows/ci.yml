@@ -137,6 +137,15 @@ jobs:
       - name: Record independent-lane tool versions
         run: ./scripts/record-tool-versions.sh build/ci/clang-tool-versions.txt
 
+      - name: Replay hosted generated boundaries with Clang
+        env:
+          LEANOS_HOST_CC: clang-18
+        run: |
+          lake build
+          lake build leanos-boot-plan
+          lake build leanos-vtd-plan
+          ./scripts/check-hosted-generated-boundaries.sh ordinary
+
       - name: Reproduce and boot the canonical image with Clang
         run: |
           set -o pipefail
@@ -175,6 +184,11 @@ jobs:
             build/ci/clang-tool-versions.txt
             build/ci/clang-image-build.log
             build/ci/clang-canonical-boot.log
+            build/oracle/
+            build/boot-handoff-host/
+            build/boot-topology-host/
+            build/boot-handoff-stream/
+            scripts/hosted-generated-boundaries.tsv
           if-no-files-found: error
           retention-days: 14
 

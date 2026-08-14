@@ -270,6 +270,15 @@ hosted sanitizer process; that replay does not instrument the freestanding
 artifact. Privileged instructions, physical-memory reads, MMIO/PIO, interrupt
 stubs, QEMU devices, and firmware remain outside the hosted process.
 
+The independent Clang image lane also consumes this same hosted-boundary
+manifest in ordinary mode. Its selected compiler builds the direct oracle,
+each listed generated root object, every C harness, and the freestanding stream
+fixture before the canonical image is built and booted. Each replay retains
+the manifest, corpus, typed results, compiler record, and boundary-coverage
+evidence. This is compiler-diverse semantic evidence over the sanitizer
+corpus; it is not a Clang sanitizer run, a cross-compiler byte-identity claim,
+or a reduction of the generated-C/ABI trusted boundary.
+
 The return adapter uses one bounded synthetic subject/address-space fixture.
 Its five scalar words encode a kernel-owned purpose/context mode, RIP, RSP,
 packed CS/SS selectors, and RFLAGS. The negative matrix covers noncanonical and

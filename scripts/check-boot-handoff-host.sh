@@ -54,13 +54,10 @@ for module in "${compiled_modules[@]}"; do
     echo "error: generated module inventory is missing $source" >&2
     exit 1
   }
+  "$cc_command" -std=c11 "${cflags[@]}" -I"$prefix/include" \
+    -c "$source" -o "$build/$object_name.o"
   if [[ "$mode" == sanitized ]]; then
-    "$cc_command" -std=c11 "${cflags[@]}" -I"$prefix/include" \
-      -c "$source" -o "$build/$object_name.o"
     leanos_require_sanitized_object "$build/$object_name.o"
-  else
-    lake env leanc "${cflags[@]}" -I"$prefix/include" \
-      -c "$source" -o "$build/$object_name.o"
   fi
   objects+=("$build/$object_name.o")
 done
