@@ -87,6 +87,8 @@ CLANG18_SITE_ALTERNATIVES = {
         Site("out8", 0x4, "out", "%al,(%dx)"),
     Site("in8", 0x10, "in", "(%dx),%al"):
         Site("in8", 0x2, "in", "(%dx),%al"),
+    Site("in8", 0xE, "in", "(%dx),%al"):
+        Site("in8", 0x2, "in", "(%dx),%al"),
     Site("out16", 0x18, "out", "%ax,(%dx)"):
         Site("out16", 0x4, "out", "%ax,(%dx)"),
     Site("out32", 0x15, "out", "%eax,(%dx)"):
