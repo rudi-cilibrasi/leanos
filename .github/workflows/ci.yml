@@ -108,7 +108,7 @@ jobs:
     name: Clang canonical image evidence
     needs: repository-hygiene
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       LEANOS_CC: clang-18
     steps:
@@ -137,11 +137,12 @@ jobs:
       - name: Record independent-lane tool versions
         run: ./scripts/record-tool-versions.sh build/ci/clang-tool-versions.txt
 
-      - name: Build and boot the canonical image with Clang
+      - name: Reproduce and boot the canonical image with Clang
         run: |
           set -o pipefail
           mkdir -p build/ci
-          ./scripts/build-image.sh 2>&1 | tee build/ci/clang-image-build.log
+          ./scripts/test-reproducible-build.sh \
+            2>&1 | tee build/ci/clang-image-build.log
           python3 scripts/run-emulator-evidence.py run \
             --scenario blocking-ipc \
             --tool-versions build/ci/clang-tool-versions.txt \

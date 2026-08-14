@@ -115,9 +115,12 @@ that arbitrary host distributions or tool versions produce identical bytes.
 
 Pull-request CI also builds and boots the canonical image with the pinned
 Ubuntu 24.04 `clang-18=1:18.1.3-1ubuntu1` package. That lane sets
-`LEANOS_CC=clang-18`, verifies nested compiler selection, runs the same image
-construction and final-ELF policy gates, and requires the canonical guest's
-complete generated-oracle protocol plus independent debug-exit status. It
+`LEANOS_CC=clang-18`, verifies nested compiler selection, performs two clean
+image builds with the existing byte-reproducibility gate, runs the same
+final-ELF policy gates, and requires the canonical guest's complete
+generated-oracle protocol plus independent debug-exit status. GCC and Clang
+outputs are not compared: each compiler's same-revision rebuild is compared
+only with itself. The lane
 preserves the compiler command, reviewed security flags, ELF, map,
 disassembly/stack evidence, serial transcript, and QEMU command log. GNU
 binutils, GRUB, SeaBIOS, and QEMU remain shared with the reference lane, so
