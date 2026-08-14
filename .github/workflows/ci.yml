@@ -108,7 +108,9 @@ jobs:
     name: Clang canonical image evidence
     needs: repository-hygiene
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # Clang 18 has now reached the complete image matrix but needs more than
+    # 45 minutes to perform both reproducibility builds on hosted runners.
+    timeout-minutes: 60
     env:
       LEANOS_CC: clang-18
     steps:
