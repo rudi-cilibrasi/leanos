@@ -55,7 +55,7 @@ if [[ $status -ne 33 ]]; then
 fi
 edu='LEANOS/15 DMA-FUNCTION manifest=1 topology=0001000800020003 bdf=0:2.0 present=1 vendor=4660 device=4584 class=65280 command-before=259 command-after=0 assigned=1 bridge=0 multifunction=0 policy=accepted'
 snapshot='LEANOS/15 DMA snapshot=1 topology=0001000800020003 bus=0 scanned=256 present=6 optional-absent=1 writes=6 readbacks=6 initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled readback=exact generated-result=0 stage=pre-cpl3 result=PASS'
-assignment='LEANOS/21 VTD-ASSIGN bdf=0:2.0 requester=16 domain=0 tables=generated-readback command=6 memory=enabled bus-master=enabled stage=post-translation result=PASS'
+assignment='LEANOS/21 VTD-ASSIGN bdf=0:2.0 requester=16 domain=0 tables=generated-readback bar=4271898624 mmio-id=16777453 command=6 memory=enabled bus-master=enabled stage=post-translation result=PASS'
 if [[ "$(grep -Fxc "$edu" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$snapshot" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$assignment" "$log")" -ne 1 ]] ||

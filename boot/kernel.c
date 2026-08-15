@@ -214,6 +214,7 @@ extern uint64_t page_directory_a[], page_table_a[];
 extern uint64_t page_map_level_4_b[], page_directory_pointer_b[];
 extern uint64_t page_directory_b[], page_table_b[];
 extern char __vtd_mmio_window_start[], __vtd_mmio_window_end[];
+extern char __edu_mmio_window_start[], __edu_mmio_window_end[];
 extern uint64_t vtd_root_table[], vtd_context_table[];
 extern uint64_t vtd_second_level_root[], vtd_second_level_directory[];
 extern uint64_t vtd_second_level_table[];
@@ -237,6 +238,15 @@ extern uint64_t vtd_assigned_write_buffer[], vtd_assigned_guard_after[];
 #define PTE_GLOBAL (1ull << 8)
 #define PTE_NX (1ull << 63)
 #define PTE_ADDRESS 0x000ffffffffff000ull
+
+/* boot.S consumes this link-visible constant before entering long mode so the
+   dedicated image, and only that image, installs the generated EDU BAR leaf. */
+#if defined(LEANOS_ASSIGNED_EDU_SCENARIO) && \
+    !defined(LEANOS_ASSIGNED_EDU_OMIT_MMIO_MAPPING_FIXTURE)
+const uint32_t leanos_assigned_edu_enabled = 1;
+#else
+const uint32_t leanos_assigned_edu_enabled = 0;
+#endif
 
 struct __attribute__((packed)) mb2_tag { uint32_t type, size; };
 struct __attribute__((packed)) mb2_mmap_tag {
@@ -2757,6 +2767,27 @@ static __attribute__((noinline, noipa)) void vtd_mmio_write64(uint64_t offset,
     *(volatile uint64_t *)(__vtd_mmio_window_start + offset) = value;
 }
 
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+/* Reviewed assigned-image EDU accessor.  The virtual window is generated as
+   supervisor-only and is bound to the exact BAR read back from PCI config. */
+static __attribute__((noinline, noipa)) uint32_t edu_mmio_read32(uint64_t offset) {
+    return *(volatile uint32_t *)(__edu_mmio_window_start + offset);
+}
+
+#ifdef LEANOS_ASSIGNED_EDU_WRONG_BAR_FIXTURE
+#define EDU_BAR_BASE UINT32_C(0xFEB00000)
+#else
+#define EDU_BAR_BASE UINT32_C(0xFEA00000)
+#endif
+#define EDU_BAR_MASK UINT32_C(0xFFFFFFF0)
+#define EDU_REG_ID 0x00
+#ifdef LEANOS_ASSIGNED_EDU_WRONG_MMIO_IDENTITY_FIXTURE
+#define EDU_EXPECTED_ID UINT32_C(0x010000EC)
+#else
+#define EDU_EXPECTED_ID UINT32_C(0x010000ED)
+#endif
+#endif
+
 #define VTD_REG_VERSION 0x00
 #define VTD_REG_CAPABILITY 0x08
 #define VTD_REG_EXTENDED_CAPABILITY 0x10
@@ -3006,18 +3037,25 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
        decode its MMIO BAR and initiate DMA. */
     const uint16_t assigned_command =
         PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER;
+    uint32_t assigned_bar = pci_config_dword(2, 0, 0x10);
+    if ((assigned_bar & EDU_BAR_MASK) != EDU_BAR_BASE ||
+        (assigned_bar & ~EDU_BAR_MASK) != 0)
+        fail("vtd-assigned-bar");
     pci_config_command(2, 0, assigned_command);
     uint16_t assigned_command_readback =
         (uint16_t)pci_config_dword(2, 0, 0x04);
     if (assigned_command_readback != assigned_command ||
         !q35_live_pci_snapshot.functions[6].assigned)
         fail("vtd-assigned-command");
+    if (edu_mmio_read32(EDU_REG_ID) != EDU_EXPECTED_ID)
+        fail("vtd-assigned-mmio-identity");
     q35_live_pci_snapshot.functions[6].command_after =
         assigned_command_readback;
     serial_puts("LEANOS/21 VTD-ASSIGN bdf=0:2.0 requester=16 domain=");
     serial_u64(LEANOS_VTD_ASSIGNED_DOMAIN);
-    serial_puts(" tables=generated-readback command=6 memory=enabled"
-        " bus-master=enabled stage=post-translation result=PASS\n");
+    serial_puts(" tables=generated-readback bar=4271898624 mmio-id=16777453"
+        " command=6 memory=enabled bus-master=enabled"
+        " stage=post-translation result=PASS\n");
 #endif
     serial_puts("LEANOS/21 VTD-ACTIVATE order=validate,scrub,construct,publish,"
         "invalidate-context,invalidate-iotlb,enable,verify journal=");

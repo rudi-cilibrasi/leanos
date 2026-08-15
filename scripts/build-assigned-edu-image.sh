@@ -26,10 +26,12 @@ mkdir -p "$assigned_iso_root/boot/grub"
 ./scripts/generate-boot-page-plan.sh --stub "$assigned_plan"
 
 link_assigned_edu() {
+  local output_base="$1"
+  local kernel_object="$2"
   ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-    -T boot/linker.ld -Map "$build/leanos-assigned-edu.map" \
-    -o "$build/leanos-assigned-edu.elf" "$build/boot.o" \
-    "$build/kernel-assigned-edu.o" "$build/KernelTransition.o" \
+    -T boot/linker.ld -Map "$build/${output_base}.map" \
+    -o "$build/${output_base}.elf" "$build/boot.o" \
+    "$kernel_object" "$build/KernelTransition.o" \
     "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
     "$build/BootAllocation.o" "$build/Interrupt.o" \
     "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
@@ -43,8 +45,9 @@ for pass in 1 2 3 4; do
     -DLEANOS_ENTRY_HIGH_WATER=1 -DLEANOS_ASSIGNED_EDU_SCENARIO=1 \
     -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-assigned-edu.h"' \
     -c boot/kernel.c -o "$build/kernel-assigned-edu.o"
-  link_assigned_edu
-  ./scripts/generate-boot-page-plan.sh "$build/leanos-assigned-edu.elf" \
+  link_assigned_edu leanos-assigned-edu "$build/kernel-assigned-edu.o"
+  ./scripts/generate-boot-page-plan.sh --assigned-edu \
+    "$build/leanos-assigned-edu.elf" \
     "$assigned_final_plan"
   if cmp -s "$assigned_plan" "$assigned_final_plan"; then
     assigned_plan_converged=true
@@ -58,6 +61,35 @@ done
   return 1
 }
 ./scripts/check-image-policy.sh "$build/leanos-assigned-edu.elf"
+
+# These images must fail closed at three distinct admission boundaries: the
+# generated CPU mapping, exact BAR read-back, and device identity read-back.
+assigned_edu_negative_specs=(
+  "missing-mmio-mapping:LEANOS_ASSIGNED_EDU_OMIT_MMIO_MAPPING_FIXTURE"
+  "wrong-bar:LEANOS_ASSIGNED_EDU_WRONG_BAR_FIXTURE"
+  "wrong-mmio-identity:LEANOS_ASSIGNED_EDU_WRONG_MMIO_IDENTITY_FIXTURE"
+)
+for spec in "${assigned_edu_negative_specs[@]}"; do
+  IFS=: read -r fixture fixture_macro <<<"$spec"
+  fixture_base="leanos-assigned-edu-${fixture}"
+  fixture_iso_root="$build/iso-assigned-edu-${fixture}"
+  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+    -DLEANOS_ENTRY_HIGH_WATER=1 -DLEANOS_ASSIGNED_EDU_SCENARIO=1 \
+    -D"${fixture_macro}"=1 \
+    -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-assigned-edu.h"' \
+    -c boot/kernel.c -o "$build/kernel-assigned-edu-${fixture}.o"
+  link_assigned_edu "$fixture_base" \
+    "$build/kernel-assigned-edu-${fixture}.o"
+  ./scripts/check-image-policy.sh "$build/${fixture_base}.elf"
+  mkdir -p "$fixture_iso_root/boot/grub"
+  cp "$build/${fixture_base}.elf" "$fixture_iso_root/boot/leanos.elf"
+  cp boot/grub.cfg "$fixture_iso_root/boot/grub/grub.cfg"
+  printf '%s\n' "$source_revision" > "$fixture_iso_root/boot/SOURCE_REVISION"
+  grub-mkrescue -d /usr/lib/grub/i386-pc \
+    -o "$build/leanos-${version}-x86_64-assigned-edu-${fixture}.iso" \
+    "$fixture_iso_root" -- -volume_date uuid 2000010100000000 \
+    -volume_date all_file_dates 2000010100000000 >/dev/null
+done
 
 cp "$build/leanos-assigned-edu.elf" "$assigned_iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$assigned_iso_root/boot/grub/grub.cfg"

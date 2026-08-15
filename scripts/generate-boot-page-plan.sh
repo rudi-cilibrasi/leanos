@@ -88,8 +88,13 @@ if [[ "${1:-}" == --stub ]]; then
   exit 0
 fi
 
-elf="${1:?usage: $0 ELF OUTPUT}"
-output="${2:?usage: $0 ELF OUTPUT}"
+assigned_edu=0
+if [[ "${1:-}" == --assigned-edu ]]; then
+  assigned_edu=1
+  shift
+fi
+elf="${1:?usage: $0 [--assigned-edu] ELF OUTPUT}"
+output="${2:?usage: $0 [--assigned-edu] ELF OUTPUT}"
 [[ -f "$elf" ]] || { echo "error: missing prelinked ELF '$elf'" >&2; exit 1; }
 
 symbol_decimal() {
@@ -116,10 +121,12 @@ symbols=(
   __user_b_text_start __user_b_text_end
   __user_b_stack_start __user_b_stack_end
   __vtd_mmio_window_start __vtd_mmio_window_end
-  vtd_root_table vtd_remapping_table_end
+  __edu_mmio_window_start __edu_mmio_window_end
 )
 args=()
 for name in "${symbols[@]}"; do args+=("$(symbol_decimal "$name")"); done
+args+=("$assigned_edu")
+args+=("$(symbol_decimal vtd_root_table)" "$(symbol_decimal vtd_remapping_table_end)")
 
 vtd_symbols=(
   vtd_root_table vtd_context_table vtd_second_level_root

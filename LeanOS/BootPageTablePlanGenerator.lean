@@ -56,10 +56,13 @@ structure Layout where
   userBStackEnd : Nat
   vtdWindowStart : Nat
   vtdWindowEnd : Nat
+  eduWindowStart : Nat
+  eduWindowEnd : Nat
+  assignedEdu : Bool
   vtdTableStart : Nat
   vtdTableEnd : Nat
 
-def expectedArgumentCount : Nat := 39
+def expectedArgumentCount : Nat := 42
 
 def parseNat (value : String) : Except String Nat :=
   match value.toNat? with
@@ -88,7 +91,9 @@ def parseLayout (args : List String) : Except String Layout := do
     userBTextStart := valueAt 31, userBTextEnd := valueAt 32,
     userBStackStart := valueAt 33, userBStackEnd := valueAt 34,
     vtdWindowStart := valueAt 35, vtdWindowEnd := valueAt 36,
-    vtdTableStart := valueAt 37, vtdTableEnd := valueAt 38 }
+    eduWindowStart := valueAt 37, eduWindowEnd := valueAt 38,
+    assignedEdu := valueAt 39 == 1,
+    vtdTableStart := valueAt 40, vtdTableEnd := valueAt 41 }
 
 def firstPage (address : Nat) : Nat := address / pageBytes
 def endPage (address : Nat) : Nat := (address + pageBytes - 1) / pageBytes
@@ -116,6 +121,8 @@ def pageClass (layout : Layout) (space : Space) (page : Nat) : Option PageClass 
     some ⟨.kernelText, .supervisor⟩
   else if pageIn page layout.vtdWindowStart layout.vtdWindowEnd then
     some ⟨.mmioWindow, .supervisor⟩
+  else if layout.assignedEdu && pageIn page layout.eduWindowStart layout.eduWindowEnd then
+    some ⟨.mmioWindow, .supervisor⟩
   else if pageIn page layout.vtdTableStart layout.vtdTableEnd then
     some ⟨.remappingTables, .supervisor⟩
   else if pageIn page layout.rootA layout.tableEnd then
@@ -132,7 +139,9 @@ whose frame comes from the pinned VT-d unit base rather than the linker. -/
 def physicalStartAt (layout : Layout) (classification : PageClass)
     (page : Nat) : Nat :=
   if classification.policy == .mmioWindow then
-    VTdBootPlan.mmioBase + (page * pageBytes - layout.vtdWindowStart)
+    if pageIn page layout.vtdWindowStart layout.vtdWindowEnd then
+      VTdBootPlan.mmioBase + (page * pageBytes - layout.vtdWindowStart)
+    else 0xFEA00000 + (page * pageBytes - layout.eduWindowStart)
   else page * pageBytes
 
 def regionAt (layout : Layout) (space : Space) (page : Nat) : Option Region :=

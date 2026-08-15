@@ -52,6 +52,7 @@ for symbol in isr2 isr2_clac isr2_cld __nmi_ist_guard_start \
   }
 done
 for symbol in __vtd_mmio_window_start __vtd_mmio_window_end \
+  __edu_mmio_window_start __edu_mmio_window_end \
   vtd_root_table vtd_context_table vtd_second_level_root \
   vtd_second_level_directory vtd_second_level_table vtd_remapping_table_end \
   vtd_assigned_guard_before vtd_assigned_read_buffer \

@@ -152,7 +152,10 @@ construction, then admits exactly one `edu` function at `00:02.0` as the final
 device. The production validator continues to reject that function, while the
 assigned-device validator rejects an omitted, duplicated, reordered, or
 misaddressed EDU. This construction contract alone neither assigns a domain nor
-enables bus mastering; those remain later acceptance steps in the same issue.
+enables bus mastering. The dedicated assigned image performs those steps only
+after the generated authority, live table contents, VT-d activation, pinned BAR,
+and EDU identity have all been validated; the ordinary production image retains
+the deny-all construction and never admits EDU.
 The image also reserves three contiguous page-aligned second-level table frames
 immediately after the root and context tables. They remain unpublished and
 unused by the production deny-all plan. The host-side Lean plan generator and
@@ -171,11 +174,15 @@ hardware page and binds model device zero to the platform-owned EDU requester
 index for `00:02.0`. Four linker-owned pages provide an unmapped guard, a
 read-only DMA source, a write-only DMA destination, and a second unmapped
 guard. The generator emits a context entry plus the three-level table words
-that reach only those two middle pages, and the guest validates the complete
-inactive table shape before installing the unchanged production deny-all
-tables. This is generated configuration evidence, not an active assignment:
-the assigned table words are not copied into the live tables, and EDU bus
-mastering remains disabled.
+that reach only those two middle pages. The dedicated assigned image validates
+that complete shape, copies the generated context and second-level words into
+the live linker-owned tables, publishes and validates VT-d translation, and
+only then verifies EDU's pinned BAR and identity before setting PCI Command to
+Memory + Bus Master. It records the exact table, BAR, identity, and command
+read-back in the assigned transcript. This is tested generated-configuration
+and boot evidence, not a proof of EDU, PCIe, VT-d, QEMU, or the final binary.
+The ordinary production image instead installs the unchanged deny-all context,
+does not map EDU MMIO, and keeps every admitted function non-bus-mastering.
 Because this DMA oracle needs TCG's virtual clock to run, its CPU is not paused.
 The harness installs an inert 64 KiB BIOS whose reset vector halts in a loop,
 isolating qtest from firmware enumeration while bounded qtest response waits

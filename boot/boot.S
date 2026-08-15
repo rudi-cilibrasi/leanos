@@ -279,6 +279,20 @@ boot_bootstrap32_ud_probe:
     movl $0x80000000, page_table_a+4(%eax)
     movl $0xFED90003, page_table_b(%eax)
     movl $0x80000000, page_table_b+4(%eax)
+
+    /* The dedicated assigned image alone maps q35 EDU's pinned 4 KiB BAR.
+       The link-visible C constant prevents the shared bootstrap object from
+       widening the ordinary image's MMIO surface. */
+    cmpl $0, leanos_assigned_edu_enabled
+    je 9f
+    mov $__edu_mmio_window_start, %eax
+    shr $9, %eax
+    and $0x7ff8, %eax
+    movl $0xFEA00003, page_table_a(%eax)
+    movl $0x80000000, page_table_a+4(%eax)
+    movl $0xFEA00003, page_table_b(%eax)
+    movl $0x80000000, page_table_b+4(%eax)
+9:
     /* Derive the denial policy instead of inheriting firmware/GRUB state.
        PAE remains enabled for long mode; OSFXSR, OSXMMEXCPT, OSXSAVE, and PKE
        are cleared so no legacy SIMD, XSAVE, or unsaved PKRU state is exposed. */
