@@ -2,6 +2,8 @@
 extended-unavailable	check_fast_entry_control
 extended-unavailable	l_LeanOS_PrivilegeEntryControl_controlScalar
 extended-unavailable	q35_manifest_entry
+extended-unavailable	serial_u64
 extended-denied	check_fast_entry_control
 extended-denied	l_LeanOS_PrivilegeEntryControl_controlScalar
 extended-denied	q35_manifest_entry
+extended-denied	serial_u64
