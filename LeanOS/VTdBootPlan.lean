@@ -617,6 +617,63 @@ def validateActivationExport (version topology unitVersion capability extendedCa
   validateActivation version topology unitVersion capability extendedCapability
     globalStatus faultStatus rootTableAddress expectedRootTableAddress journal
 
+/-! ## Assigned-EDU authority/control boundary
+
+The assigned image must not reconstruct device authority from C literals.  This
+allocation-free scalar boundary accepts only the complete reviewed projection:
+the assigned construction revision, assignment/domain identity, platform
+requester, linker-owned table/buffer layout, and both directionally restricted
+mappings.  The exported code intentionally compares only `UInt64` values so it
+does not require a Lean module initializer in the freestanding image. -/
+
+def assignedProjectionVersion : UInt64 := 1
+def assignedEDUTopologyVersion : UInt64 := 0x0001000800020003
+
+def validateAssignedEDUProjection
+    (version topology device source assignmentGeneration domain domainGeneration
+      owner requester secondLevelRootFrame secondLevelDirectoryFrame
+      secondLevelTableFrame readBufferFrame writeBufferFrame readIova readLength
+      readFrame readFrameGeneration readFrameOffset readPermission writeIova
+      writeLength writeFrame writeFrameGeneration writeFrameOffset writePermission :
+      UInt64) : UInt64 :=
+  if version != assignedProjectionVersion then 1
+  else if topology != assignedEDUTopologyVersion then 2
+  else if device != 0 || source != 0 || assignmentGeneration != 1 ||
+      domain != 0 || domainGeneration != 1 || owner != 0 || requester != 16 then 3
+  else if secondLevelRootFrame = 0 ||
+      secondLevelDirectoryFrame != secondLevelRootFrame + 1 ||
+      secondLevelTableFrame != secondLevelDirectoryFrame + 1 ||
+      readBufferFrame != secondLevelTableFrame + 2 ||
+      writeBufferFrame != readBufferFrame + 1 then 4
+  else if readIova != 0 || readLength != 16 || readFrame != 0 ||
+      readFrameGeneration != 1 || readFrameOffset != 0 || readPermission != 1 then 5
+  else if writeIova != 16 || writeLength != 16 || writeFrame != readFrame ||
+      writeFrameGeneration != readFrameGeneration || writeFrameOffset != 16 ||
+      writePermission != 2 then 6
+  else 0
+
+@[export leanos_validate_assigned_edu_projection]
+def validateAssignedEDUProjectionExport
+    (version topology device source assignmentGeneration domain domainGeneration
+      owner requester secondLevelRootFrame secondLevelDirectoryFrame
+      secondLevelTableFrame readBufferFrame writeBufferFrame readIova readLength
+      readFrame readFrameGeneration readFrameOffset readPermission writeIova
+      writeLength writeFrame writeFrameGeneration writeFrameOffset writePermission :
+      UInt64) : UInt64 :=
+  validateAssignedEDUProjection version topology device source assignmentGeneration
+    domain domainGeneration owner requester secondLevelRootFrame
+    secondLevelDirectoryFrame secondLevelTableFrame readBufferFrame writeBufferFrame
+    readIova readLength readFrame readFrameGeneration readFrameOffset readPermission
+    writeIova writeLength writeFrame writeFrameGeneration writeFrameOffset writePermission
+
+example : validateAssignedEDUProjection
+    1 0x0001000800020003 0 0 1 0 1 0 16
+    3 4 5 7 8 0 16 0 1 0 1 16 16 0 1 16 2 = 0 := by native_decide
+
+example : validateAssignedEDUProjection
+    1 0x0001000800020003 0 0 1 0 1 0 16
+    3 4 5 7 8 0 16 0 1 0 3 16 16 0 1 16 2 = 5 := by native_decide
+
 theorem validateActivation_deterministic (version topology unitVersion capability
     extendedCapability globalStatus faultStatus rootTableAddress expectedRootTableAddress
     journal : UInt64) first second

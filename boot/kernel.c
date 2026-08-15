@@ -2807,6 +2807,27 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
         (uint64_t)vtd_assigned_guard_after -
                 (uint64_t)vtd_assigned_write_buffer != PAGE_BYTES)
         fail("vtd-assigned-buffer-layout");
+    if (leanos_validate_assigned_edu_projection(
+            1, LEANOS_VTD_ASSIGNED_TOPOLOGY,
+            LEANOS_VTD_ASSIGNED_DEVICE, LEANOS_VTD_ASSIGNED_SOURCE,
+            LEANOS_VTD_ASSIGNED_GENERATION, LEANOS_VTD_ASSIGNED_DOMAIN,
+            LEANOS_VTD_ASSIGNED_DOMAIN_GENERATION, LEANOS_VTD_ASSIGNED_OWNER,
+            LEANOS_VTD_ASSIGNED_REQUESTER, LEANOS_VTD_SECOND_LEVEL_ROOT_FRAME,
+            LEANOS_VTD_SECOND_LEVEL_DIRECTORY_FRAME,
+            LEANOS_VTD_SECOND_LEVEL_TABLE_FRAME,
+            LEANOS_VTD_ASSIGNED_READ_BUFFER_FRAME,
+            LEANOS_VTD_ASSIGNED_WRITE_BUFFER_FRAME,
+            LEANOS_VTD_MODEL_READ_IOVA, LEANOS_VTD_MODEL_READ_LENGTH,
+            LEANOS_VTD_MODEL_READ_FRAME,
+            LEANOS_VTD_MODEL_READ_FRAME_GENERATION,
+            LEANOS_VTD_MODEL_READ_FRAME_OFFSET,
+            LEANOS_VTD_MODEL_READ_PERMISSION,
+            LEANOS_VTD_MODEL_WRITE_IOVA, LEANOS_VTD_MODEL_WRITE_LENGTH,
+            LEANOS_VTD_MODEL_WRITE_FRAME,
+            LEANOS_VTD_MODEL_WRITE_FRAME_GENERATION,
+            LEANOS_VTD_MODEL_WRITE_FRAME_OFFSET,
+            LEANOS_VTD_MODEL_WRITE_PERMISSION) != 0)
+        fail("vtd-assigned-authority");
     for (uint64_t word = 0; word < 512; ++word) {
         uint64_t context_low = LEANOS_VTD_ASSIGNED_REQUESTER * 2;
         uint64_t expected_context = word == context_low

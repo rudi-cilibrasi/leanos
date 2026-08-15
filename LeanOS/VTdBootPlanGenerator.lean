@@ -204,7 +204,33 @@ def assignedHardwareProjectionValid (layout : Layout) : Bool :=
     (assignedContextTableWords layout).length == 512 &&
     (assignedSecondLevelRootWords layout).length == 512 &&
     (assignedSecondLevelDirectoryWords layout).length == 512 &&
-    (assignedSecondLevelTableWords layout).length == 512
+    (assignedSecondLevelTableWords layout).length == 512 &&
+    validateAssignedEDUProjection assignedProjectionVersion assignedEDUTopologyVersion
+      (UInt64.ofNat assignedScenarioState.core.assignments.head!.device)
+      (UInt64.ofNat assignedScenarioState.core.assignments.head!.source)
+      (UInt64.ofNat assignedScenarioState.core.assignments.head!.handle.generation)
+      (UInt64.ofNat assignedScenarioState.core.assignments.head!.domain.slot)
+      (UInt64.ofNat assignedScenarioState.core.assignments.head!.domain.generation)
+      (UInt64.ofNat assignedScenarioState.core.assignments.head!.owner)
+      (UInt64.ofNat assignedEduRequester)
+      (UInt64.ofNat (frameOf layout.secondLevelRootStart))
+      (UInt64.ofNat (frameOf layout.secondLevelDirectoryStart))
+      (UInt64.ofNat (frameOf layout.secondLevelTableStart))
+      (UInt64.ofNat (frameOf layout.assignedReadBufferStart))
+      (UInt64.ofNat (frameOf layout.assignedWriteBufferStart))
+      (UInt64.ofNat assignedScenarioState.core.mappings.head!.iova)
+      (UInt64.ofNat assignedScenarioState.core.mappings.head!.length)
+      (UInt64.ofNat assignedScenarioState.core.mappings.head!.frame.frame)
+      (UInt64.ofNat assignedScenarioState.core.mappings.head!.frame.generation)
+      (UInt64.ofNat assignedScenarioState.core.mappings.head!.frameOffset)
+      (UInt64.ofNat (permissionBits assignedScenarioState.core.mappings.head!.permission))
+      (UInt64.ofNat assignedScenarioState.core.mappings.tail.head!.iova)
+      (UInt64.ofNat assignedScenarioState.core.mappings.tail.head!.length)
+      (UInt64.ofNat assignedScenarioState.core.mappings.tail.head!.frame.frame)
+      (UInt64.ofNat assignedScenarioState.core.mappings.tail.head!.frame.generation)
+      (UInt64.ofNat assignedScenarioState.core.mappings.tail.head!.frameOffset)
+      (UInt64.ofNat
+        (permissionBits assignedScenarioState.core.mappings.tail.head!.permission)) == 0
 
 def emitArray (name : String) (entries : List Nat) : String :=
   let body := String.intercalate ",\n" (entries.map fun entry => s!"  {entry}ULL")
@@ -233,6 +259,7 @@ def emit (layout : Layout) : Except String String := do
        emitConstant "LEANOS_VTD_EXPECTED_ECAP" expectedExtendedCapabilityRegister.toNat,
        emitConstant "LEANOS_VTD_ENABLED_GSTS" enabledGlobalStatus.toNat,
        emitConstant "LEANOS_VTD_TOPOLOGY" DMAQuarantine.q35TopologyVersion.toNat,
+       emitConstant "LEANOS_VTD_ASSIGNED_TOPOLOGY" assignedEDUTopologyVersion.toNat,
        emitConstant "LEANOS_VTD_ROOT_TABLE_FRAME" plan.rootFrame,
        emitConstant "LEANOS_VTD_CONTEXT_TABLE_FRAME" plan.contextFrame,
        emitConstant "LEANOS_VTD_SECOND_LEVEL_ROOT_FRAME"
