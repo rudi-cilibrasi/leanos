@@ -12,6 +12,8 @@ timer-switch	q35_manifest_entry
 user-page-fault	decoded_root_matches
 user-page-fault	l_LeanOS_FaultDispatch_faultDispatchDemo
 user-page-fault	l_LeanOS_InterruptEntry_canonicalPageFaultWordsValid
+user-page-fault	serial_u64
 kernel-diagnostic	decoded_root_matches
 kernel-diagnostic	l_LeanOS_FaultDispatch_faultDispatchDemo
 kernel-diagnostic	l_LeanOS_InterruptEntry_canonicalPageFaultWordsValid
+kernel-diagnostic	serial_u64
