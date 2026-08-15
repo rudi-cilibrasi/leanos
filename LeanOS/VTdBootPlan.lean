@@ -629,6 +629,13 @@ does not require a Lean module initializer in the freestanding image. -/
 def assignedProjectionVersion : UInt64 := 1
 def assignedEDUTopologyVersion : UInt64 := 0x0001000800020003
 
+/-- The one reviewed assignment and its directionally restricted mappings.
+This state is shared by table generation and the exported transfer-admission
+boundary so neither path reconstructs authority from caller-supplied words. -/
+def assignedEDUState : IOMMU.State :=
+  let readGranted := IOMMU.gate IOMMU.assignedState (.grant IOMMU.readOnlyGrant)
+  (IOMMU.gate readGranted.state (.grant IOMMU.writeOnlyGrant)).state
+
 def validateAssignedEDUProjection
     (version topology device source assignmentGeneration domain domainGeneration
       owner requester secondLevelRootFrame secondLevelDirectoryFrame
@@ -665,6 +672,45 @@ def validateAssignedEDUProjectionExport
     secondLevelDirectoryFrame secondLevelTableFrame readBufferFrame writeBufferFrame
     readIova readLength readFrame readFrameGeneration readFrameOffset readPermission
     writeIova writeLength writeFrame writeFrameGeneration writeFrameOffset writePermission
+
+/-- Stable scalar result for the assigned image's reviewed transfer requests.
+Direction 1 is a device read from guest memory; direction 2 is a device write.
+The request contains no domain, owner, mapping, or physical-frame authority. -/
+def validateAssignedEDUTransfer
+    (version source assignmentGeneration iova length direction : UInt64) : UInt64 :=
+  if version != assignedProjectionVersion then 1
+  else
+    let request : IOMMU.TransferRequest :=
+      ⟨source.toNat, assignmentGeneration.toNat, iova.toNat, length.toNat⟩
+    if direction == 1 then
+      match IOMMU.translate assignedEDUState request .read with
+      | .ok _ => 0
+      | .error .staleAssignment => 3
+      | .error .invalidRange => 4
+      | .error .permissionDenied => 5
+      | .error .staleFrame => 6
+      | .error _ => 7
+    else if direction == 2 then
+      match IOMMU.translate assignedEDUState request .write with
+      | .ok _ => 0
+      | .error .staleAssignment => 3
+      | .error .invalidRange => 4
+      | .error .permissionDenied => 5
+      | .error .staleFrame => 6
+      | .error _ => 7
+    else 2
+
+@[export leanos_validate_assigned_edu_transfer]
+def validateAssignedEDUTransferExport
+    (version source assignmentGeneration iova length direction : UInt64) : UInt64 :=
+  validateAssignedEDUTransfer version source assignmentGeneration iova length direction
+
+example : validateAssignedEDUTransfer 1 0 1 0 16 1 = 0 := by native_decide
+example : validateAssignedEDUTransfer 1 0 1 16 16 2 = 0 := by native_decide
+example : validateAssignedEDUTransfer 1 0 1 0 16 2 = 5 := by native_decide
+example : validateAssignedEDUTransfer 1 0 1 16 16 1 = 5 := by native_decide
+example : validateAssignedEDUTransfer 1 0 1 8 16 1 = 4 := by native_decide
+example : validateAssignedEDUTransfer 1 1 1 0 16 1 = 3 := by native_decide
 
 example : validateAssignedEDUProjection
     1 0x0001000800020003 0 0 1 0 1 0 16

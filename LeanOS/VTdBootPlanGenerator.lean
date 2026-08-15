@@ -125,8 +125,7 @@ device or a CPL3 caller. Keep this projection separate from `input`, which
 continues to compile the production deny-all tables. -/
 
 def assignedScenarioState : IOMMU.State :=
-  let readGranted := IOMMU.gate IOMMU.assignedState (.grant IOMMU.readOnlyGrant)
-  (IOMMU.gate readGranted.state (.grant IOMMU.writeOnlyGrant)).state
+  LeanOS.VTdBootPlan.assignedEDUState
 
 def assignedScenarioAuthorityValid : Bool :=
   match assignedScenarioState.core.assignments,

@@ -170,6 +170,22 @@ int main(void) {
         fputs("widened assigned-EDU read permission was not rejected\n", stderr);
         return 1;
     }
+    if (leanos_validate_assigned_edu_transfer(1, 0, 1, 0, 16, 1) != 0 ||
+        leanos_validate_assigned_edu_transfer(1, 0, 1, 16, 16, 2) != 0) {
+        fputs("canonical assigned-EDU transfers were rejected\n", stderr);
+        return 1;
+    }
+    if (leanos_validate_assigned_edu_transfer(1, 0, 1, 0, 16, 2) != 5 ||
+        leanos_validate_assigned_edu_transfer(1, 0, 1, 16, 16, 1) != 5) {
+        fputs("wrong-direction assigned-EDU transfer was not denied\n", stderr);
+        return 1;
+    }
+    if (leanos_validate_assigned_edu_transfer(1, 0, 1, 8, 16, 1) != 4 ||
+        leanos_validate_assigned_edu_transfer(1, 1, 1, 0, 16, 1) != 3) {
+        fputs("out-of-window or wrong-source assigned-EDU transfer was not denied\n",
+            stderr);
+        return 1;
+    }
 
     for (unsigned i = 0; i < ORACLE_VECTOR_COUNT; ++i) {
         const struct oracle_vector *v = &oracle_vectors[i];
