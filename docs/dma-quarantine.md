@@ -166,6 +166,16 @@ owner zero, a read-only model window at IOVA zero, and a disjoint write-only
 model window immediately after it. These values remain inactive metadata in
 the production deny-all image; no second-level entry or PCI Command bit is
 published from them yet.
+The assigned-image projection scales each 16-byte model page to one 4 KiB
+hardware page and binds model device zero to the platform-owned EDU requester
+index for `00:02.0`. Four linker-owned pages provide an unmapped guard, a
+read-only DMA source, a write-only DMA destination, and a second unmapped
+guard. The generator emits a context entry plus the three-level table words
+that reach only those two middle pages, and the guest validates the complete
+inactive table shape before installing the unchanged production deny-all
+tables. This is generated configuration evidence, not an active assignment:
+the assigned table words are not copied into the live tables, and EDU bus
+mastering remains disabled.
 Because this DMA oracle needs TCG's virtual clock to run, its CPU is not paused.
 The harness installs an inert 64 KiB BIOS whose reset vector halts in a loop,
 isolating qtest from firmware enumeration while bounded qtest response waits

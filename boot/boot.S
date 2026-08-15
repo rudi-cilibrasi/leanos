@@ -481,6 +481,20 @@ vtd_second_level_table:
     .skip 4096
 .global vtd_remapping_table_end
 vtd_remapping_table_end:
+/* Assigned-image DMA window. Guard pages remain absent from the generated
+   second-level tables; only the two middle pages are directionally mapped. */
+.global vtd_assigned_guard_before
+vtd_assigned_guard_before:
+    .skip 4096
+.global vtd_assigned_read_buffer
+vtd_assigned_read_buffer:
+    .skip 4096
+.global vtd_assigned_write_buffer
+vtd_assigned_write_buffer:
+    .skip 4096
+.global vtd_assigned_guard_after
+vtd_assigned_guard_after:
+    .skip 4096
 .align 16
 .global boot_stack
 boot_stack:

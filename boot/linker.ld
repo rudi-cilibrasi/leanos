@@ -51,19 +51,19 @@ SECTIONS
   .bss : ALIGN(4K) { *(COMMON) *(.bss .bss.*) }
   . = ALIGN(4K);
   __user_a_text_start = .;
-  .user_a_text : { *(.user.a.text) }
+  .user_a_text : { KEEP(*(.user.a.text)) }
   __user_a_text_end = .;
   . = ALIGN(4K);
   __user_a_stack_start = .;
-  .user_a_bss : { *(.user.a.bss) }
+  .user_a_bss : { KEEP(*(.user.a.bss)) }
   __user_a_stack_end = .;
   . = ALIGN(4K);
   __user_b_text_start = .;
-  .user_b_text : { *(.user.b.text) }
+  .user_b_text : { KEEP(*(.user.b.text)) }
   __user_b_text_end = .;
   . = ALIGN(4K);
   __user_b_stack_start = .;
-  .user_b_bss : { *(.user.b.bss) }
+  .user_b_bss : { KEEP(*(.user.b.bss)) }
   __user_b_stack_end = .;
   . = ALIGN(4K);
   __boot_image_end = .;

@@ -39,6 +39,9 @@ if [[ "${1:-}" == --stub ]]; then
     echo '#define LEANOS_VTD_ASSIGNED_DOMAIN 0ULL'
     echo '#define LEANOS_VTD_ASSIGNED_DOMAIN_GENERATION 1ULL'
     echo '#define LEANOS_VTD_ASSIGNED_OWNER 0ULL'
+    echo '#define LEANOS_VTD_ASSIGNED_REQUESTER 16ULL'
+    echo '#define LEANOS_VTD_ASSIGNED_READ_BUFFER_FRAME 6ULL'
+    echo '#define LEANOS_VTD_ASSIGNED_WRITE_BUFFER_FRAME 7ULL'
     echo '#define LEANOS_VTD_MODEL_READ_IOVA 0ULL'
     echo '#define LEANOS_VTD_MODEL_READ_LENGTH 16ULL'
     echo '#define LEANOS_VTD_MODEL_READ_FRAME 0ULL'
@@ -59,6 +62,26 @@ if [[ "${1:-}" == --stub ]]; then
     echo '};'
     echo 'static const unsigned long long leanos_vtd_context_table[512] = {'
     for ((word = 0; word < 512; ++word)); do echo '  0ULL,'; done
+    echo '};'
+    echo 'static const unsigned long long leanos_vtd_assigned_context_table[512] = {'
+    for ((word = 0; word < 512; ++word)); do
+      if ((word == 32)); then echo '  12289ULL,'
+      elif ((word == 33)); then echo '  1ULL,'
+      else echo '  0ULL,'; fi
+    done
+    echo '};'
+    echo 'static const unsigned long long leanos_vtd_assigned_second_level_root[512] = {'
+    echo '  16387ULL,'
+    for ((word = 1; word < 512; ++word)); do echo '  0ULL,'; done
+    echo '};'
+    echo 'static const unsigned long long leanos_vtd_assigned_second_level_directory[512] = {'
+    echo '  20483ULL,'
+    for ((word = 1; word < 512; ++word)); do echo '  0ULL,'; done
+    echo '};'
+    echo 'static const unsigned long long leanos_vtd_assigned_second_level_table[512] = {'
+    echo '  24577ULL,'
+    echo '  28674ULL,'
+    for ((word = 2; word < 512; ++word)); do echo '  0ULL,'; done
     echo '};'
   } > "$output"
   exit 0
@@ -101,6 +124,8 @@ vtd_symbols=(
   vtd_root_table vtd_context_table vtd_second_level_root
   vtd_second_level_directory vtd_second_level_table vtd_remapping_table_end
   page_map_level_4_a page_table_b_end
+  vtd_assigned_guard_before vtd_assigned_read_buffer
+  vtd_assigned_write_buffer vtd_assigned_guard_after
 )
 vtd_args=()
 for name in "${vtd_symbols[@]}"; do vtd_args+=("$(symbol_decimal "$name")"); done

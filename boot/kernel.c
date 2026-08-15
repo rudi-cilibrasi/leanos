@@ -216,6 +216,8 @@ extern char __vtd_mmio_window_start[], __vtd_mmio_window_end[];
 extern uint64_t vtd_root_table[], vtd_context_table[];
 extern uint64_t vtd_second_level_root[], vtd_second_level_directory[];
 extern uint64_t vtd_second_level_table[];
+extern uint64_t vtd_assigned_guard_before[], vtd_assigned_read_buffer[];
+extern uint64_t vtd_assigned_write_buffer[], vtd_assigned_guard_after[];
 
 #define MULTIBOOT2_RUNTIME_MAGIC 0x36d76289u
 #define BOOT_ACCESSIBLE_LIMIT (16u * 1024u * 1024u)
@@ -395,7 +397,7 @@ static uint64_t fault_dispatch_attestation;
 static __attribute__((noreturn)) void finish(uint8_t value);
 static __attribute__((noreturn)) void fail(const char *reason);
 static void serial_puts(const char *text);
-static void serial_putc(char value);
+static __attribute__((noinline)) void serial_putc(char value);
 static void serial_u64(uint64_t value);
 #ifdef LEANOS_FAULT_CONTAINMENT_SCENARIO
 static void report_page_fault_snapshot(
@@ -505,7 +507,7 @@ static void check_fast_entry_control(void) {
    only the C initializer.  x86 keeps hidden descriptor state after LTR, which
    is part of the documented machine-semantics assumption; STR plus SGDT bind
    the selected descriptor and the stored TSS image that can be reloaded. */
-static void check_direct_port_control(unsigned report) {
+static __attribute__((noinline, noipa)) void check_direct_port_control(unsigned report) {
     struct descriptor gdtr;
     uint16_t task_selector;
     uint64_t flags;
@@ -2793,6 +2795,38 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
         if (leanos_vtd_root_table[word] != 0) fail("vtd-plan-root");
     for (uint64_t word = 0; word < 512; ++word)
         if (leanos_vtd_context_table[word] != 0) fail("vtd-plan-context");
+    if (LEANOS_VTD_ASSIGNED_REQUESTER != 16 ||
+        (uint64_t)vtd_assigned_read_buffer !=
+            LEANOS_VTD_ASSIGNED_READ_BUFFER_FRAME * PAGE_BYTES ||
+        (uint64_t)vtd_assigned_write_buffer !=
+            LEANOS_VTD_ASSIGNED_WRITE_BUFFER_FRAME * PAGE_BYTES ||
+        (uint64_t)vtd_assigned_read_buffer -
+                (uint64_t)vtd_assigned_guard_before != PAGE_BYTES ||
+        (uint64_t)vtd_assigned_write_buffer -
+                (uint64_t)vtd_assigned_read_buffer != PAGE_BYTES ||
+        (uint64_t)vtd_assigned_guard_after -
+                (uint64_t)vtd_assigned_write_buffer != PAGE_BYTES)
+        fail("vtd-assigned-buffer-layout");
+    for (uint64_t word = 0; word < 512; ++word) {
+        uint64_t context_low = LEANOS_VTD_ASSIGNED_REQUESTER * 2;
+        uint64_t expected_context = word == context_low
+            ? LEANOS_VTD_SECOND_LEVEL_ROOT_FRAME * PAGE_BYTES + 1
+            : word == context_low + 1
+                ? LEANOS_VTD_ASSIGNED_DOMAIN * 256 + 1 : 0;
+        uint64_t expected_root = word == 0
+            ? LEANOS_VTD_SECOND_LEVEL_DIRECTORY_FRAME * PAGE_BYTES + 3 : 0;
+        uint64_t expected_directory = word == 0
+            ? LEANOS_VTD_SECOND_LEVEL_TABLE_FRAME * PAGE_BYTES + 3 : 0;
+        uint64_t expected_leaf = word == 0
+            ? LEANOS_VTD_ASSIGNED_READ_BUFFER_FRAME * PAGE_BYTES + 1
+            : word == 1
+                ? LEANOS_VTD_ASSIGNED_WRITE_BUFFER_FRAME * PAGE_BYTES + 2 : 0;
+        if (leanos_vtd_assigned_context_table[word] != expected_context ||
+            leanos_vtd_assigned_second_level_root[word] != expected_root ||
+            leanos_vtd_assigned_second_level_directory[word] != expected_directory ||
+            leanos_vtd_assigned_second_level_table[word] != expected_leaf)
+            fail("vtd-assigned-plan-shape");
+    }
     vtd_journal_record(1);
     serial_puts("LEANOS/21 VTD unit=0 mmio=");
     serial_u64(LEANOS_VTD_MMIO_BASE);
@@ -2920,7 +2954,7 @@ static void serial_init(void) {
     out8(COM1 + 4, 0x0b);
 }
 
-static void serial_putc(char value) {
+static __attribute__((noinline)) void serial_putc(char value) {
     while ((in8(COM1 + 5) & 0x20u) == 0) {
     }
     out8(COM1, (uint8_t)value);
