@@ -160,7 +160,12 @@ final-ELF policy both pin their order and extent inside the allocator-excluded
 remapping interval, and generated constants bind all three linked frames into
 the guest's pre-activation layout check. A later assigned-device plan can
 therefore name exact linker-owned frames rather than borrowing live allocator
-memory.
+memory. The same generator now emits the exact bounded model projection for
+that later plan: EDU device/source zero, assignment/domain generation one,
+owner zero, a read-only model window at IOVA zero, and a disjoint write-only
+model window immediately after it. These values remain inactive metadata in
+the production deny-all image; no second-level entry or PCI Command bit is
+published from them yet.
 Because this DMA oracle needs TCG's virtual clock to run, its CPU is not paused.
 The harness installs an inert 64 KiB BIOS whose reset vector halts in a loop,
 isolating qtest from firmware enumeration while bounded qtest response waits

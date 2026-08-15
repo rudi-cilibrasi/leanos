@@ -102,6 +102,42 @@ def assignedTableLayoutValid (layout : Layout) : Bool :=
     layout.secondLevelTableStart == layout.secondLevelDirectoryStart + pageBytes &&
     layout.remappingTableEnd == layout.secondLevelTableStart + pageBytes
 
+/-! The assigned image will consume one authoritative model projection rather
+than accepting requester, domain, owner, IOVA, or permission words from the
+device or a CPL3 caller. Keep this projection separate from `input`, which
+continues to compile the production deny-all tables. -/
+
+def assignedScenarioState : IOMMU.State :=
+  let readGranted := IOMMU.gate IOMMU.assignedState (.grant IOMMU.readOnlyGrant)
+  (IOMMU.gate readGranted.state (.grant IOMMU.writeOnlyGrant)).state
+
+def assignedScenarioAuthorityValid : Bool :=
+  match assignedScenarioState.core.assignments,
+      assignedScenarioState.core.mappings with
+  | [assignment], [readMapping, writeMapping] =>
+      assignment.device == 0 && assignment.source == 0 &&
+        assignment.handle == IOMMU.assignment0 &&
+        assignment.domain == IOMMU.domain0 && assignment.owner == 0 &&
+        readMapping.assignment == assignment.handle &&
+        readMapping.domain == assignment.domain &&
+        readMapping.owner == assignment.owner && readMapping.iova == 0 &&
+        readMapping.length == IOMMU.pageSize && readMapping.frameOffset == 0 &&
+        readMapping.permission == IOMMU.readOnly &&
+        writeMapping.assignment == assignment.handle &&
+        writeMapping.domain == assignment.domain &&
+        writeMapping.owner == assignment.owner &&
+        writeMapping.iova == IOMMU.pageSize &&
+        writeMapping.length == IOMMU.pageSize &&
+        writeMapping.frame == readMapping.frame &&
+        writeMapping.frameOffset == IOMMU.pageSize &&
+        writeMapping.permission == IOMMU.writeOnly
+  | _, _ => false
+
+example : assignedScenarioAuthorityValid = true := by native_decide
+
+def permissionBits (permission : IOMMU.Permission) : Nat :=
+  (if permission.read then 1 else 0) + (if permission.write then 2 else 0)
+
 def emitArray (name : String) (entries : List Nat) : String :=
   let body := String.intercalate ",\n" (entries.map fun entry => s!"  {entry}ULL")
   "static const unsigned long long " ++ name ++ "[" ++ toString entries.length ++ "] = {\n" ++
@@ -113,6 +149,8 @@ def emitConstant (name : String) (value : Nat) : String :=
 def emit (layout : Layout) : Except String String := do
   if !assignedTableLayoutValid layout then
     throw "linked VT-d assigned-table reservation is not contiguous and page-aligned"
+  if !assignedScenarioAuthorityValid then
+    throw "assigned EDU model authority is not the reviewed read/write projection"
   match compile (input layout) with
   | .error error => throw s!"canonical linked VT-d plan rejected: {repr error}"
   | .ok plan =>
@@ -133,6 +171,42 @@ def emit (layout : Layout) : Except String String := do
          (frameOf layout.secondLevelDirectoryStart),
        emitConstant "LEANOS_VTD_SECOND_LEVEL_TABLE_FRAME"
          (frameOf layout.secondLevelTableStart),
+       emitConstant "LEANOS_VTD_ASSIGNED_DEVICE"
+         assignedScenarioState.core.assignments.head!.device,
+       emitConstant "LEANOS_VTD_ASSIGNED_SOURCE"
+         assignedScenarioState.core.assignments.head!.source,
+       emitConstant "LEANOS_VTD_ASSIGNED_GENERATION"
+         assignedScenarioState.core.assignments.head!.handle.generation,
+       emitConstant "LEANOS_VTD_ASSIGNED_DOMAIN"
+         assignedScenarioState.core.assignments.head!.domain.slot,
+       emitConstant "LEANOS_VTD_ASSIGNED_DOMAIN_GENERATION"
+         assignedScenarioState.core.assignments.head!.domain.generation,
+       emitConstant "LEANOS_VTD_ASSIGNED_OWNER"
+         assignedScenarioState.core.assignments.head!.owner,
+       emitConstant "LEANOS_VTD_MODEL_READ_IOVA"
+         assignedScenarioState.core.mappings.head!.iova,
+       emitConstant "LEANOS_VTD_MODEL_READ_LENGTH"
+         assignedScenarioState.core.mappings.head!.length,
+       emitConstant "LEANOS_VTD_MODEL_READ_FRAME"
+         assignedScenarioState.core.mappings.head!.frame.frame,
+       emitConstant "LEANOS_VTD_MODEL_READ_FRAME_GENERATION"
+         assignedScenarioState.core.mappings.head!.frame.generation,
+       emitConstant "LEANOS_VTD_MODEL_READ_FRAME_OFFSET"
+         assignedScenarioState.core.mappings.head!.frameOffset,
+       emitConstant "LEANOS_VTD_MODEL_READ_PERMISSION"
+         (permissionBits assignedScenarioState.core.mappings.head!.permission),
+       emitConstant "LEANOS_VTD_MODEL_WRITE_IOVA"
+         assignedScenarioState.core.mappings.tail.head!.iova,
+       emitConstant "LEANOS_VTD_MODEL_WRITE_LENGTH"
+         assignedScenarioState.core.mappings.tail.head!.length,
+       emitConstant "LEANOS_VTD_MODEL_WRITE_FRAME"
+         assignedScenarioState.core.mappings.tail.head!.frame.frame,
+       emitConstant "LEANOS_VTD_MODEL_WRITE_FRAME_GENERATION"
+         assignedScenarioState.core.mappings.tail.head!.frame.generation,
+       emitConstant "LEANOS_VTD_MODEL_WRITE_FRAME_OFFSET"
+         assignedScenarioState.core.mappings.tail.head!.frameOffset,
+       emitConstant "LEANOS_VTD_MODEL_WRITE_PERMISSION"
+         (permissionBits assignedScenarioState.core.mappings.tail.head!.permission),
        emitConstant "LEANOS_VTD_ROOT_TABLE_ADDRESS" (plan.rootFrame * pageBytes),
        emitConstant "LEANOS_VTD_CANONICAL_JOURNAL" canonicalJournalWord,
        emitArray "leanos_vtd_root_table" (rootTableWords plan),
