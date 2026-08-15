@@ -67,6 +67,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_validate_q35_dma_snapshot);
     REGISTER_BOUNDARY(leanos_validate_vtd_activation);
     REGISTER_BOUNDARY(leanos_validate_assigned_edu_projection);
+    REGISTER_BOUNDARY(leanos_validate_assigned_edu_transfer);
 
     /* Exercise the production ABI wrappers themselves so --gc-sections cannot
        discard them from the ordinary or sanitizer replay. Invalid all-zero

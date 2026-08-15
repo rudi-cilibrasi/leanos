@@ -700,10 +700,29 @@ def validateAssignedEDUTransfer
       | .error _ => 7
     else 2
 
+/-- Allocation-free implementation of the assigned-EDU transfer boundary.
+The branch structure is the scalar projection of `IOMMU.translate` over
+`assignedEDUState`: source 0 at generation 1 owns a read-only `[0, 16)`
+mapping and a write-only `[16, 32)` mapping.  Keeping the exported wrapper on
+fixed-width words prevents the freestanding image from acquiring Lean runtime
+or imported model dependencies; the model-facing definition above remains the
+independent specification used by the executable checks below. -/
+def validateAssignedEDUTransferScalar
+    (version source assignmentGeneration iova length direction : UInt64) : UInt64 :=
+  if version != assignedProjectionVersion then 1
+  else if direction != 1 && direction != 2 then 2
+  else if source ≥ 8 || length = 0 || iova > 4096 || length > 4096 - iova then 4
+  else if source != 0 || assignmentGeneration != 1 then 3
+  else if iova ≤ 16 && length ≤ 16 - iova then
+    if direction == 1 then 0 else 5
+  else if 16 ≤ iova && iova ≤ 32 && length ≤ 32 - iova then
+    if direction == 2 then 0 else 5
+  else 4
+
 @[export leanos_validate_assigned_edu_transfer]
 def validateAssignedEDUTransferExport
     (version source assignmentGeneration iova length direction : UInt64) : UInt64 :=
-  validateAssignedEDUTransfer version source assignmentGeneration iova length direction
+  validateAssignedEDUTransferScalar version source assignmentGeneration iova length direction
 
 example : validateAssignedEDUTransfer 1 0 1 0 16 1 = 0 := by native_decide
 example : validateAssignedEDUTransfer 1 0 1 16 16 2 = 0 := by native_decide
@@ -711,6 +730,19 @@ example : validateAssignedEDUTransfer 1 0 1 0 16 2 = 5 := by native_decide
 example : validateAssignedEDUTransfer 1 0 1 16 16 1 = 5 := by native_decide
 example : validateAssignedEDUTransfer 1 0 1 8 16 1 = 4 := by native_decide
 example : validateAssignedEDUTransfer 1 1 1 0 16 1 = 3 := by native_decide
+
+example : validateAssignedEDUTransferScalar 1 0 1 0 16 1 =
+    validateAssignedEDUTransfer 1 0 1 0 16 1 := by native_decide
+example : validateAssignedEDUTransferScalar 1 0 1 16 16 2 =
+    validateAssignedEDUTransfer 1 0 1 16 16 2 := by native_decide
+example : validateAssignedEDUTransferScalar 1 0 1 0 16 2 =
+    validateAssignedEDUTransfer 1 0 1 0 16 2 := by native_decide
+example : validateAssignedEDUTransferScalar 1 0 1 16 16 1 =
+    validateAssignedEDUTransfer 1 0 1 16 16 1 := by native_decide
+example : validateAssignedEDUTransferScalar 1 0 1 8 16 1 =
+    validateAssignedEDUTransfer 1 0 1 8 16 1 := by native_decide
+example : validateAssignedEDUTransferScalar 1 1 1 0 16 1 =
+    validateAssignedEDUTransfer 1 1 1 0 16 1 := by native_decide
 
 example : validateAssignedEDUProjection
     1 0x0001000800020003 0 0 1 0 1 0 16
