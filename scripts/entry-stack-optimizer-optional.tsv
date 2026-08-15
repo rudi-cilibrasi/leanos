@@ -4,6 +4,7 @@ syscall	check_selected_root_a
 syscall	check_selected_root_b
 syscall	l_LeanOS_CapabilityReuse_scenarioTransition___redArg
 syscall	q35_manifest_entry
+syscall	serial_u64
 timer-switch	check_fast_entry_control
 timer-switch	check_selected_root_a
 timer-switch	check_selected_root_b
