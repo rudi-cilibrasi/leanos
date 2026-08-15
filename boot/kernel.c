@@ -2779,7 +2779,13 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
     if (fault_status != 0) fail("vtd-fault-status");
     if ((uint64_t)vtd_root_table != LEANOS_VTD_ROOT_TABLE_FRAME * PAGE_BYTES ||
         (uint64_t)vtd_context_table !=
-            LEANOS_VTD_CONTEXT_TABLE_FRAME * PAGE_BYTES)
+            LEANOS_VTD_CONTEXT_TABLE_FRAME * PAGE_BYTES ||
+        (uint64_t)vtd_second_level_root !=
+            LEANOS_VTD_SECOND_LEVEL_ROOT_FRAME * PAGE_BYTES ||
+        (uint64_t)vtd_second_level_directory !=
+            LEANOS_VTD_SECOND_LEVEL_DIRECTORY_FRAME * PAGE_BYTES ||
+        (uint64_t)vtd_second_level_table !=
+            LEANOS_VTD_SECOND_LEVEL_TABLE_FRAME * PAGE_BYTES)
         fail("vtd-plan-frames");
     if (leanos_vtd_root_table[0] !=
         LEANOS_VTD_CONTEXT_TABLE_FRAME * PAGE_BYTES + 1) fail("vtd-plan-root");

@@ -21,12 +21,15 @@ open LeanOS.VTdBootPlan
 structure Layout where
   rootTableStart : Nat
   contextTableStart : Nat
+  secondLevelRootStart : Nat
+  secondLevelDirectoryStart : Nat
+  secondLevelTableStart : Nat
   remappingTableEnd : Nat
   cpuRootA : Nat
   cpuTableEnd : Nat
   deriving Repr
 
-def expectedArgumentCount : Nat := 5
+def expectedArgumentCount : Nat := 8
 
 def parseNat (value : String) : Except String Nat :=
   match value.toNat? with
@@ -40,7 +43,9 @@ def parseLayout (args : List String) : Except String Layout := do
   let valueAt (index : Nat) := values[index]?.getD 0
   pure {
     rootTableStart := valueAt 0, contextTableStart := valueAt 1,
-    remappingTableEnd := valueAt 2, cpuRootA := valueAt 3, cpuTableEnd := valueAt 4 }
+    secondLevelRootStart := valueAt 2, secondLevelDirectoryStart := valueAt 3,
+    secondLevelTableStart := valueAt 4, remappingTableEnd := valueAt 5,
+    cpuRootA := valueAt 6, cpuTableEnd := valueAt 7 }
 
 def frameOf (address : Nat) : Nat := address / pageBytes
 
@@ -87,6 +92,16 @@ def input (layout : Layout) : Input :=
     cpuTableFrames := cpuTableFrames layout
     reservationResult := reservationResult layout }
 
+/-- The assigned-EDU table storage is not part of the deny-all plan yet, but
+its exact linker-owned frame layout is already a checked generator input. -/
+def assignedTableLayoutValid (layout : Layout) : Bool :=
+  layout.rootTableStart % pageBytes == 0 &&
+    layout.contextTableStart == layout.rootTableStart + pageBytes &&
+    layout.secondLevelRootStart == layout.contextTableStart + pageBytes &&
+    layout.secondLevelDirectoryStart == layout.secondLevelRootStart + pageBytes &&
+    layout.secondLevelTableStart == layout.secondLevelDirectoryStart + pageBytes &&
+    layout.remappingTableEnd == layout.secondLevelTableStart + pageBytes
+
 def emitArray (name : String) (entries : List Nat) : String :=
   let body := String.intercalate ",\n" (entries.map fun entry => s!"  {entry}ULL")
   "static const unsigned long long " ++ name ++ "[" ++ toString entries.length ++ "] = {\n" ++
@@ -96,6 +111,8 @@ def emitConstant (name : String) (value : Nat) : String :=
   "#define " ++ name ++ " " ++ toString value ++ "ULL"
 
 def emit (layout : Layout) : Except String String := do
+  if !assignedTableLayoutValid layout then
+    throw "linked VT-d assigned-table reservation is not contiguous and page-aligned"
   match compile (input layout) with
   | .error error => throw s!"canonical linked VT-d plan rejected: {repr error}"
   | .ok plan =>
@@ -110,6 +127,12 @@ def emit (layout : Layout) : Except String String := do
        emitConstant "LEANOS_VTD_TOPOLOGY" DMAQuarantine.q35TopologyVersion.toNat,
        emitConstant "LEANOS_VTD_ROOT_TABLE_FRAME" plan.rootFrame,
        emitConstant "LEANOS_VTD_CONTEXT_TABLE_FRAME" plan.contextFrame,
+       emitConstant "LEANOS_VTD_SECOND_LEVEL_ROOT_FRAME"
+         (frameOf layout.secondLevelRootStart),
+       emitConstant "LEANOS_VTD_SECOND_LEVEL_DIRECTORY_FRAME"
+         (frameOf layout.secondLevelDirectoryStart),
+       emitConstant "LEANOS_VTD_SECOND_LEVEL_TABLE_FRAME"
+         (frameOf layout.secondLevelTableStart),
        emitConstant "LEANOS_VTD_ROOT_TABLE_ADDRESS" (plan.rootFrame * pageBytes),
        emitConstant "LEANOS_VTD_CANONICAL_JOURNAL" canonicalJournalWord,
        emitArray "leanos_vtd_root_table" (rootTableWords plan),

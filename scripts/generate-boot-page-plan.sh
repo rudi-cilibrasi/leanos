@@ -30,6 +30,9 @@ if [[ "${1:-}" == --stub ]]; then
     echo '#define LEANOS_VTD_TOPOLOGY 281509336580098ULL'
     echo '#define LEANOS_VTD_ROOT_TABLE_FRAME 1ULL'
     echo '#define LEANOS_VTD_CONTEXT_TABLE_FRAME 2ULL'
+    echo '#define LEANOS_VTD_SECOND_LEVEL_ROOT_FRAME 3ULL'
+    echo '#define LEANOS_VTD_SECOND_LEVEL_DIRECTORY_FRAME 4ULL'
+    echo '#define LEANOS_VTD_SECOND_LEVEL_TABLE_FRAME 5ULL'
     echo '#define LEANOS_VTD_ROOT_TABLE_ADDRESS 4096ULL'
     echo '#define LEANOS_VTD_CANONICAL_JOURNAL 2271560481ULL'
     echo 'static const unsigned long long leanos_vtd_root_table[512] = {'
@@ -77,7 +80,8 @@ args=()
 for name in "${symbols[@]}"; do args+=("$(symbol_decimal "$name")"); done
 
 vtd_symbols=(
-  vtd_root_table vtd_context_table vtd_remapping_table_end
+  vtd_root_table vtd_context_table vtd_second_level_root
+  vtd_second_level_directory vtd_second_level_table vtd_remapping_table_end
   page_map_level_4_a page_table_b_end
 )
 vtd_args=()
