@@ -2774,6 +2774,15 @@ static __attribute__((noinline, noipa)) uint32_t edu_mmio_read32(uint64_t offset
     return *(volatile uint32_t *)(__edu_mmio_window_start + offset);
 }
 
+static __attribute__((noinline, noipa)) uint64_t edu_mmio_read64(uint64_t offset) {
+    return *(volatile uint64_t *)(__edu_mmio_window_start + offset);
+}
+
+static __attribute__((noinline, noipa)) void edu_mmio_write64(uint64_t offset,
+        uint64_t value) {
+    *(volatile uint64_t *)(__edu_mmio_window_start + offset) = value;
+}
+
 #ifdef LEANOS_ASSIGNED_EDU_WRONG_BAR_FIXTURE
 #define EDU_BAR_BASE UINT32_C(0xFEB00000)
 #else
@@ -2781,11 +2790,89 @@ static __attribute__((noinline, noipa)) uint32_t edu_mmio_read32(uint64_t offset
 #endif
 #define EDU_BAR_MASK UINT32_C(0xFFFFFFF0)
 #define EDU_REG_ID 0x00
+#define EDU_REG_DMA_SOURCE 0x80
+#define EDU_REG_DMA_DESTINATION 0x88
+#define EDU_REG_DMA_COUNT 0x90
+#define EDU_REG_DMA_COMMAND 0x98
+#define EDU_DMA_START UINT64_C(1)
+#define EDU_DMA_FROM_DEVICE UINT64_C(2)
+#define EDU_DEVICE_BUFFER UINT64_C(0x40000)
+#define EDU_TRANSFER_BYTES UINT64_C(16)
+#define EDU_DMA_POLL_BOUND 1000000u
 #ifdef LEANOS_ASSIGNED_EDU_WRONG_MMIO_IDENTITY_FIXTURE
 #define EDU_EXPECTED_ID UINT32_C(0x010000EC)
 #else
 #define EDU_EXPECTED_ID UINT32_C(0x010000ED)
 #endif
+#endif
+
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+static void edu_wait_transfer(void) {
+    for (unsigned attempt = 0; attempt < EDU_DMA_POLL_BOUND; ++attempt)
+        if (!(edu_mmio_read64(EDU_REG_DMA_COMMAND) & EDU_DMA_START)) return;
+    fail("vtd-assigned-transfer-timeout");
+}
+
+/* Execute the first fixed useful transfer pair only after the generated
+   authority boundary accepts both requests.  The finite model uses 16-byte
+   IOVAs; the generated hardware projection scales those two pages to 4 KiB
+   while keeping the request identity, generation, length, and direction
+   kernel-owned. */
+static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
+    const uint64_t payload0 = UINT64_C(0x363121534f6e6165);
+    const uint64_t payload1 = UINT64_C(0x4d4d554f492d5544);
+    const uint64_t guard0 = UINT64_C(0xc35ac35ac35ac35a);
+    const uint64_t guard1 = UINT64_C(0xa53ca53ca53ca53c);
+
+    if (leanos_validate_assigned_edu_transfer(
+            1, LEANOS_VTD_ASSIGNED_SOURCE, LEANOS_VTD_ASSIGNED_GENERATION,
+            LEANOS_VTD_MODEL_READ_IOVA, LEANOS_VTD_MODEL_READ_LENGTH, 1) != 0)
+        fail("vtd-assigned-read-authority");
+    if (leanos_validate_assigned_edu_transfer(
+            1, LEANOS_VTD_ASSIGNED_SOURCE, LEANOS_VTD_ASSIGNED_GENERATION,
+            LEANOS_VTD_MODEL_WRITE_IOVA, LEANOS_VTD_MODEL_WRITE_LENGTH, 2) != 0)
+        fail("vtd-assigned-write-authority");
+
+    volatile uint64_t *read_buffer =
+        (volatile uint64_t *)vtd_assigned_read_buffer;
+    volatile uint64_t *write_buffer =
+        (volatile uint64_t *)vtd_assigned_write_buffer;
+    volatile uint64_t *guard_before =
+        (volatile uint64_t *)vtd_assigned_guard_before;
+    volatile uint64_t *guard_after =
+        (volatile uint64_t *)vtd_assigned_guard_after;
+    guard_before[0] = guard0;
+    guard_after[0] = guard1;
+    read_buffer[0] = payload0;
+    read_buffer[1] = payload1;
+    write_buffer[0] = 0;
+    write_buffer[1] = 0;
+
+    edu_mmio_write64(EDU_REG_DMA_SOURCE, 0);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, EDU_DEVICE_BUFFER);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COMMAND, EDU_DMA_START);
+    edu_wait_transfer();
+    if (read_buffer[0] != payload0 || read_buffer[1] != payload1)
+        fail("vtd-assigned-read-source");
+
+    edu_mmio_write64(EDU_REG_DMA_SOURCE, EDU_DEVICE_BUFFER);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, PAGE_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(
+        EDU_REG_DMA_COMMAND, EDU_DMA_START | EDU_DMA_FROM_DEVICE);
+    edu_wait_transfer();
+    if (write_buffer[0] != payload0 || write_buffer[1] != payload1)
+        fail("vtd-assigned-write-result");
+    if (guard_before[0] != guard0 || guard_after[0] != guard1)
+        fail("vtd-assigned-transfer-canary");
+    if (vtd_mmio_read32(0x34) != 0)
+        fail("vtd-assigned-transfer-fault");
+
+    serial_puts("LEANOS/21 VTD-TRANSFER requester=16 domain=0 generation=1"
+        " read-iova=0 write-iova=4096 bytes=16 payload=exact"
+        " guards=unchanged fsts=0 result=PASS\n");
+}
 #endif
 
 #define VTD_REG_VERSION 0x00
@@ -3051,6 +3138,7 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
         fail("vtd-assigned-mmio-identity");
     q35_live_pci_snapshot.functions[6].command_after =
         assigned_command_readback;
+    run_assigned_edu_transfers();
     serial_puts("LEANOS/21 VTD-ASSIGN bdf=0:2.0 requester=16 domain=");
     serial_u64(LEANOS_VTD_ASSIGNED_DOMAIN);
     serial_puts(" tables=generated-readback bar=4271898624 mmio-id=16777453"

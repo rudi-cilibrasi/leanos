@@ -245,6 +245,8 @@ jobs:
           ./scripts/run-dma-unknown-device.sh
           ./scripts/run-emulator-evidence.py run \
             2>&1 | tee build/ci/emulator-evidence.log
+          ./scripts/run-assigned-edu-negatives.sh \
+            2>&1 | tee build/ci/assigned-edu-negatives.log
 
       - name: Preserve reproducibility artifacts
         if: always()
@@ -317,6 +319,7 @@ jobs:
             build/evidence/q35-pci-construction.tsv
             build/evidence/q35-edu-dma.tsv
             build/boot/dma-unknown-device.serial.log
+            build/boot/assigned-edu-*.serial.log
             build/boot/leanos-preemption.map
             build/boot/leanos-fault-containment.map
             build/boot/leanos-fault-readonly-write.map
@@ -473,6 +476,7 @@ jobs:
             build/boot/SOURCE_REVISION
             build/oracle/host-results.txt
             build/evidence/*
+            build/ci/assigned-edu-negatives.log
             build/ci/*.log
             build/ci/tool-versions.txt
           if-no-files-found: warn

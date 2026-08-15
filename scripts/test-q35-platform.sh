@@ -156,4 +156,17 @@ grep -Eq 'source .*q35-platform\.sh' scripts/run-assigned-edu.sh &&
   exit 1
 }
 
+grep -Eq 'source .*q35-platform\.sh' scripts/run-assigned-edu-negatives.sh &&
+  grep -Eq 'leanos_q35_assigned_edu_command command ' \
+    scripts/run-assigned-edu-negatives.sh || {
+  echo "error: assigned-EDU negatives bypass their versioned platform builder" >&2
+  exit 1
+}
+
+grep -Fq './scripts/run-assigned-edu-negatives.sh' .github/workflows/ci.yml &&
+  grep -Fq 'build/boot/assigned-edu-*.serial.log' .github/workflows/ci.yml || {
+  echo "error: mandatory CI does not run and retain assigned-EDU negatives" >&2
+  exit 1
+}
+
 echo "Explicit q35 platform positive and controlled-negative checks passed"
