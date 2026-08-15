@@ -1968,7 +1968,12 @@ for spec in "${return_corruptions[@]}"; do
     -volume_date uuid 2000010100000000 \
     -volume_date all_file_dates 2000010100000000 >/dev/null
 done
+source ./scripts/build-assigned-edu-image.sh
 sha256sum "$build/leanos-${version}-x86_64.iso" \
+  "$build/leanos-${version}-x86_64-assigned-edu.iso" \
+  "$build/leanos-assigned-edu.elf" \
+  "$build/leanos-assigned-edu.map" \
+  "$build/boot-page-plan-assigned-edu.final.h" \
   "$build/leanos-${version}-x86_64-malformed-handoff.iso" \
   "$build/leanos-malformed-handoff.elf" \
   "$build/leanos-malformed-handoff.map" \

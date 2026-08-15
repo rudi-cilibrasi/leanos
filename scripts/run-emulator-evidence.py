@@ -161,6 +161,7 @@ REQUIRED_FAULT_RELEASE_ARTIFACTS += tuple(
 RESULT_CLASSES = {"accepted-boot", "controlled-rejection", "fail-stop"}
 RUNNERS = {
     "boot",
+    "assigned-edu",
     "fault-integrity",
     "return",
     "peer-pke",
@@ -174,6 +175,7 @@ RUNNERS = {
 }
 RUNNER_RESULT_CLASSES = {
     "boot": "accepted-boot",
+    "assigned-edu": "accepted-boot",
     "fault-integrity": "fail-stop",
     "return": "controlled-rejection",
     "peer-pke": "controlled-rejection",
@@ -461,6 +463,8 @@ def scenario_invocation(
         environment["LEANOS_VTD_SNAPSHOT"] = str(paths["vtd_snapshot"])
         environment["LEANOS_SOURCE_REVISION_FILE"] = str(build_dir / "SOURCE_REVISION")
         command = ["./scripts/run-image.sh", str(paths["image"])]
+    elif row["runner"] == "assigned-edu":
+        command = ["./scripts/run-assigned-edu.sh", str(paths["image"])]
     elif row["runner"] == "fault-integrity":
         environment["LEANOS_FAULT_INTEGRITY_PROBE"] = row["scenario"]
         environment["LEANOS_FAULT_INTEGRITY_ELF"] = str(paths["elf"])

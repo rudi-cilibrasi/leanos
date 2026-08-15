@@ -23,6 +23,7 @@
 #define DEBUG_EXIT 0xf4u
 #define PCI_CONFIG_ADDRESS 0xcf8u
 #define PCI_CONFIG_DATA 0xcfcu
+#define PCI_COMMAND_MEMORY (1u << 1)
 #define PCI_COMMAND_BUS_MASTER (1u << 2)
 #define PCI_COMMAND_MODEL_MASK 0x07ffu
 
@@ -2451,27 +2452,41 @@ struct pci_manifest_entry {
     uint8_t device, function;
     uint16_t vendor, product;
     uint32_t class_code;
-    uint8_t required, bridge, multifunction;
+    uint8_t required, assigned, bridge, multifunction;
 };
+
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+#define Q35_TOPOLOGY_TEXT "0001000800020003"
+#define Q35_EXPECTED_PRESENT 6u
+#else
+#define Q35_TOPOLOGY_TEXT "0001000800020002"
+#define Q35_EXPECTED_PRESENT 5u
+#endif
 
 /* This is the C rendering of DMAQuarantine.q35Manifest for topology version
    0x0001_0008_0002_0002. Configuration mechanism #1 and the behavior of these
    devices remain trusted hardware/QEMU inputs; acceptance is integration
    evidence and is not a refinement theorem for the Lean snapshot. */
 static const struct pci_manifest_entry q35_pci_manifest[] = {
-    { 0, 0, 0x8086, 0x29c0, 0x060000, 1, 0, 0 },
-    { 1, 0, 0x1234, 0x1111, 0x030000, 1, 0, 0 },
-    { 3, 0, 0x1af4, 0x1000, 0x020000, 0, 0, 0 },
-    { 31, 0, 0x8086, 0x2918, 0x060100, 1, 1, 1 },
-    { 31, 2, 0x8086, 0x2922, 0x010601, 1, 0, 1 },
-    { 31, 3, 0x8086, 0x2930, 0x0c0500, 1, 0, 1 },
+    { 0, 0, 0x8086, 0x29c0, 0x060000, 1, 0, 0, 0 },
+    { 1, 0, 0x1234, 0x1111, 0x030000, 1, 0, 0, 0 },
+    { 3, 0, 0x1af4, 0x1000, 0x020000, 0, 0, 0, 0 },
+    { 31, 0, 0x8086, 0x2918, 0x060100, 1, 0, 1, 1 },
+    { 31, 2, 0x8086, 0x2922, 0x010601, 1, 0, 0, 1 },
+    { 31, 3, 0x8086, 0x2930, 0x0c0500, 1, 0, 0, 1 },
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+    /* The assigned image admits exactly the pinned QEMU EDU function.  It is
+       still quarantined to Command=0 here; publishing its generated tables
+       and enabling its reviewed memory/bus-master bits are later stages. */
+    { 2, 0, 0x1234, 0x11e8, 0x00ff00, 1, 1, 0, 0 },
+#endif
 };
 
 struct pci_snapshot_entry {
     uint16_t vendor, product;
     uint32_t class_code;
     uint16_t command_before, command_after;
-    uint8_t present, bridge, multifunction;
+    uint8_t present, assigned, bridge, multifunction;
 };
 
 /* The one canonical live PCI observation. Boot fills it from hardware, the
@@ -2495,6 +2510,7 @@ static uint64_t pci_snapshot_identity_word(
 static uint64_t pci_snapshot_control_word(
         const struct pci_snapshot_entry *entry) {
     return (uint64_t)(entry->present ? 1u : 0u) |
+        (uint64_t)entry->assigned << 1 |
         (uint64_t)entry->command_after << 2 |
         (uint64_t)entry->bridge << 14 |
         (uint64_t)entry->multifunction << 15;
@@ -2575,6 +2591,7 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
             q35_live_pci_snapshot.functions[index].product = product;
             q35_live_pci_snapshot.functions[index].class_code = class_code;
             q35_live_pci_snapshot.functions[index].command_before = command;
+            q35_live_pci_snapshot.functions[index].assigned = entry->assigned;
             pci_config_command(device, function, expected_command);
             ++writes;
             command = (uint16_t)pci_config_dword(device, function, 0x04);
@@ -2599,12 +2616,15 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
         ++optional_absent;
     }
     if (present == 0) fail("dma-empty-inventory");
-    if (present != 5 || optional_absent != 1 || writes != present ||
-        readbacks != present)
+    if (present != Q35_EXPECTED_PRESENT || optional_absent != 1 ||
+        writes != present || readbacks != present)
         fail("dma-q35-nic-none");
 
     /* Feed the canonical live identity/status/Command/assignment/bridge
-       projection itself through the generated q35Snapshot boundary. */
+       projection itself through the generated q35Snapshot boundary.  The
+       assigned image keeps the first six production entries byte-identical.
+       Its seventh EDU entry is independently bound by the exact generated
+       assigned-authority projection before assigned tables can be installed. */
     q35_live_pci_snapshot.generated_result =
         leanos_validate_q35_dma_snapshot(
             1, UINT64_C(0x0001000800020002),
@@ -2626,7 +2646,8 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
     for (unsigned i = 0;
          i < sizeof(q35_pci_manifest) / sizeof(q35_pci_manifest[0]); ++i) {
         const struct pci_manifest_entry *entry = &q35_pci_manifest[i];
-        serial_puts("LEANOS/15 DMA-FUNCTION manifest=1 topology=0001000800020002 bdf=0:");
+        serial_puts("LEANOS/15 DMA-FUNCTION manifest=1 topology="
+            Q35_TOPOLOGY_TEXT " bdf=0:");
         serial_u64(entry->device);
         serial_putc('.');
         serial_u64(entry->function);
@@ -2642,13 +2663,22 @@ static __attribute__((noinline, noipa)) void quarantine_q35_pci_dma(void) {
         serial_u64(q35_live_pci_snapshot.functions[i].command_before);
         serial_puts(" command-after=");
         serial_u64(q35_live_pci_snapshot.functions[i].command_after);
-        serial_puts(" assigned=0 bridge=");
+        serial_puts(" assigned=");
+        serial_u64(entry->assigned);
+        serial_puts(" bridge=");
         serial_u64(entry->bridge);
         serial_puts(" multifunction=");
         serial_u64(entry->multifunction);
         serial_puts(" policy=accepted\n");
     }
-    serial_puts("LEANOS/15 DMA snapshot=1 topology=0001000800020002 bus=0 scanned=256 present=5 optional-absent=1 writes=5 readbacks=5 initial-bus-masters=");
+    serial_puts("LEANOS/15 DMA snapshot=1 topology=" Q35_TOPOLOGY_TEXT
+        " bus=0 scanned=256 present=");
+    serial_u64(present);
+    serial_puts(" optional-absent=1 writes=");
+    serial_u64(writes);
+    serial_puts(" readbacks=");
+    serial_u64(readbacks);
+    serial_puts(" initial-bus-masters=");
     serial_u64(initially_bus_mastering);
     serial_puts(" initial-bus-master-mask=");
     serial_u64(initial_bus_master_mask);
@@ -2683,9 +2713,17 @@ static __attribute__((noinline, noipa)) void verify_q35_pci_dma(void) {
             uint16_t command = (uint16_t)pci_config_dword(
                 device, function, 0x04);
             if (command != q35_live_pci_snapshot.functions[index].command_after ||
-                (command & PCI_COMMAND_BUS_MASTER) != 0 ||
                 (command & ~PCI_COMMAND_MODEL_MASK) != 0)
                 fail("dma-live-command");
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+            if ((entry->assigned && command !=
+                    (PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER)) ||
+                (!entry->assigned && command != 0))
+                fail("dma-live-assignment-command");
+#else
+            if ((command & PCI_COMMAND_BUS_MASTER) != 0)
+                fail("dma-live-bus-master");
+#endif
             seen |= 1u << index;
             ++present;
         }
@@ -2695,7 +2733,7 @@ static __attribute__((noinline, noipa)) void verify_q35_pci_dma(void) {
         if (!(seen & (1u << i)) && q35_pci_manifest[i].required)
             fail("dma-live-required-missing");
     }
-    if (present != 5) fail("dma-live-inventory");
+    if (present != Q35_EXPECTED_PRESENT) fail("dma-live-inventory");
 }
 
 /* Reviewed VT-d MMIO accessors: the only code deriving pointers from the
@@ -2865,22 +2903,60 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
 
     volatile uint64_t *root = (volatile uint64_t *)vtd_root_table;
     volatile uint64_t *context = (volatile uint64_t *)vtd_context_table;
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+    volatile uint64_t *second_root =
+        (volatile uint64_t *)vtd_second_level_root;
+    volatile uint64_t *second_directory =
+        (volatile uint64_t *)vtd_second_level_directory;
+    volatile uint64_t *second_table =
+        (volatile uint64_t *)vtd_second_level_table;
+#endif
     for (uint64_t word = 0; word < 512; ++word) {
         root[word] = 0;
         context[word] = 0;
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+        second_root[word] = 0;
+        second_directory[word] = 0;
+        second_table[word] = 0;
+#endif
     }
-    for (uint64_t word = 0; word < 512; ++word)
+    for (uint64_t word = 0; word < 512; ++word) {
         if (root[word] != 0 || context[word] != 0) fail("vtd-scrub");
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+        if (second_root[word] != 0 || second_directory[word] != 0 ||
+            second_table[word] != 0)
+            fail("vtd-assigned-scrub");
+#endif
+    }
     vtd_journal_record(2);
 
     for (uint64_t word = 0; word < 512; ++word) {
         root[word] = leanos_vtd_root_table[word];
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+        context[word] = leanos_vtd_assigned_context_table[word];
+        second_root[word] = leanos_vtd_assigned_second_level_root[word];
+        second_directory[word] =
+            leanos_vtd_assigned_second_level_directory[word];
+        second_table[word] = leanos_vtd_assigned_second_level_table[word];
+#else
         context[word] = leanos_vtd_context_table[word];
+#endif
     }
-    for (uint64_t word = 0; word < 512; ++word)
+    for (uint64_t word = 0; word < 512; ++word) {
         if (root[word] != leanos_vtd_root_table[word] ||
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+            context[word] != leanos_vtd_assigned_context_table[word] ||
+            second_root[word] !=
+                leanos_vtd_assigned_second_level_root[word] ||
+            second_directory[word] !=
+                leanos_vtd_assigned_second_level_directory[word] ||
+            second_table[word] != leanos_vtd_assigned_second_level_table[word])
+            fail("vtd-assigned-construct");
+#else
             context[word] != leanos_vtd_context_table[word])
             fail("vtd-construct");
+#endif
+    }
     vtd_journal_record(3);
     serial_puts("LEANOS/21 VTD-TABLES root-frame=");
     serial_u64(LEANOS_VTD_ROOT_TABLE_FRAME);
@@ -2924,6 +3000,25 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
             enabled_status, enabled_faults, enabled_root,
             LEANOS_VTD_ROOT_TABLE_ADDRESS, vtd_journal) != 0)
         fail("vtd-generated-activation");
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+    /* The generated authority and complete live table projection have passed,
+       and translation is enabled.  Only now may the one assigned function
+       decode its MMIO BAR and initiate DMA. */
+    const uint16_t assigned_command =
+        PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER;
+    pci_config_command(2, 0, assigned_command);
+    uint16_t assigned_command_readback =
+        (uint16_t)pci_config_dword(2, 0, 0x04);
+    if (assigned_command_readback != assigned_command ||
+        !q35_live_pci_snapshot.functions[6].assigned)
+        fail("vtd-assigned-command");
+    q35_live_pci_snapshot.functions[6].command_after =
+        assigned_command_readback;
+    serial_puts("LEANOS/21 VTD-ASSIGN bdf=0:2.0 requester=16 domain=");
+    serial_u64(LEANOS_VTD_ASSIGNED_DOMAIN);
+    serial_puts(" tables=generated-readback command=6 memory=enabled"
+        " bus-master=enabled stage=post-translation result=PASS\n");
+#endif
     serial_puts("LEANOS/21 VTD-ACTIVATE order=validate,scrub,construct,publish,"
         "invalidate-context,invalidate-iotlb,enable,verify journal=");
     serial_u64(vtd_journal);
@@ -2941,10 +3036,23 @@ static __attribute__((noinline, noipa)) void verify_vtd_state(void) {
         vtd_mmio_read64(VTD_REG_ROOT_TABLE_ADDRESS) !=
             LEANOS_VTD_ROOT_TABLE_ADDRESS)
         fail("vtd-live-status");
-    for (uint64_t word = 0; word < 512; ++word)
+    for (uint64_t word = 0; word < 512; ++word) {
         if (vtd_root_table[word] != leanos_vtd_root_table[word] ||
+#ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+            vtd_context_table[word] !=
+                leanos_vtd_assigned_context_table[word] ||
+            vtd_second_level_root[word] !=
+                leanos_vtd_assigned_second_level_root[word] ||
+            vtd_second_level_directory[word] !=
+                leanos_vtd_assigned_second_level_directory[word] ||
+            vtd_second_level_table[word] !=
+                leanos_vtd_assigned_second_level_table[word])
+            fail("vtd-live-assigned-tables");
+#else
             vtd_context_table[word] != leanos_vtd_context_table[word])
             fail("vtd-live-tables");
+#endif
+    }
 }
 
 #if LEANOS_RETURN_CORRUPTION_MODE == 26

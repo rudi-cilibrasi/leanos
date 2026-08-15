@@ -149,4 +149,11 @@ grep -Eq 'source .*q35-platform\.sh' scripts/run-dma-unknown-device.sh &&
   exit 1
 }
 
+grep -Eq 'source .*q35-platform\.sh' scripts/run-assigned-edu.sh &&
+  grep -Eq 'leanos_q35_assigned_edu_command command ' \
+    scripts/run-assigned-edu.sh || {
+  echo "error: assigned-EDU positive bypasses its versioned platform builder" >&2
+  exit 1
+}
+
 echo "Explicit q35 platform positive and controlled-negative checks passed"
