@@ -66,6 +66,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_composite_dispatch);
     REGISTER_BOUNDARY(leanos_validate_q35_dma_snapshot);
     REGISTER_BOUNDARY(leanos_validate_vtd_activation);
+    REGISTER_BOUNDARY(leanos_validate_assigned_edu_projection);
 
     /* Exercise the production ABI wrappers themselves so --gc-sections cannot
        discard them from the ordinary or sanitizer replay. Invalid all-zero
@@ -149,6 +150,24 @@ int main(void) {
             UINT64_C(0x174000), UINT64_C(0x174000),
             UINT64_C(0x87653421)) != 9) {
         fputs("reordered VT-d activation journal was not rejected\n", stderr);
+        return 1;
+    }
+    if (leanos_validate_assigned_edu_projection(
+            1, UINT64_C(0x0001000800020003),
+            0, 0, 1, 0, 1, 0, 16,
+            3, 4, 5, 7, 8,
+            0, 16, 0, 1, 0, 1,
+            16, 16, 0, 1, 16, 2) != 0) {
+        fputs("canonical assigned-EDU projection was rejected\n", stderr);
+        return 1;
+    }
+    if (leanos_validate_assigned_edu_projection(
+            1, UINT64_C(0x0001000800020003),
+            0, 0, 1, 0, 1, 0, 16,
+            3, 4, 5, 7, 8,
+            0, 16, 0, 1, 0, 3,
+            16, 16, 0, 1, 16, 2) != 5) {
+        fputs("widened assigned-EDU read permission was not rejected\n", stderr);
         return 1;
     }
 
