@@ -1258,6 +1258,30 @@ for probe in "${fault_image_probes[@]}"; do
   expected_fault_plan="$build/boot-page-plan-fault-containment.h"
   if [[ "$probe" == stale-translation ]]; then
     expected_fault_plan="$build/boot-page-plan-fault-stale-translation.h"
+    for pass in 1 2 3; do
+      cmp -s "$expected_fault_plan" \
+        "$build/boot-page-plan-fault-${probe}.final.h" && break
+      cp "$build/boot-page-plan-fault-${probe}.final.h" \
+        "$expected_fault_plan"
+      "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+        -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
+        "${fault_fatal_probe_flags[$probe]}" \
+        -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-stale-translation.h"' \
+        -c boot/kernel.c -o "$build/kernel-fault-${probe}.o"
+      ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+        -T boot/linker.ld -Map "$build/leanos-fault-${probe}.map" \
+        -o "$build/leanos-fault-${probe}.elf" \
+        "$build/boot-fault-${probe}.o" "$build/kernel-fault-${probe}.o" \
+        "$build/KernelTransition.o" "$build/Syscall.o" \
+        "$build/IPCSyscall.o" "$build/Preemption.o" \
+        "$build/BootAllocation.o" "$build/Interrupt.o" \
+        "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+        "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+        "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+      ./scripts/generate-boot-page-plan.sh \
+        "$build/leanos-fault-${probe}.elf" \
+        "$build/boot-page-plan-fault-${probe}.final.h"
+    done
   fi
   cmp "$expected_fault_plan" \
     "$build/boot-page-plan-fault-${probe}.final.h" || {
@@ -1628,6 +1652,7 @@ done
 ./scripts/test-frame-budget-invalidation-policy.sh \
   "$build/leanos-frame-budget.elf" \
   | tee "$build/frame-budget-invalidation-policy-fixtures.log"
+source ./scripts/build-assigned-edu-image.sh
 direct_port_report="$build/direct-port-sites-report.txt"
 : > "$direct_port_report"
 direct_port_images=0
@@ -1663,6 +1688,9 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
       ;;
     leanos-direct-port-pic.elf)
       manifest="scripts/direct-port-sites-direct-port-pic.tsv"
+      ;;
+    leanos-assigned-edu.elf)
+      direct_port_args+=(--assigned-edu)
       ;;
   esac
   ./scripts/check-direct-port-sites.py "$build/$elf_name" "$manifest" \
@@ -1968,7 +1996,6 @@ for spec in "${return_corruptions[@]}"; do
     -volume_date uuid 2000010100000000 \
     -volume_date all_file_dates 2000010100000000 >/dev/null
 done
-source ./scripts/build-assigned-edu-image.sh
 sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-assigned-edu.iso" \
   "$build/leanos-assigned-edu.elf" \

@@ -244,17 +244,20 @@ def reachable_addresses(start: int, successors: dict[int, set[int]],
 def validate_pci_call_graph(callers: dict[str, set[str]],
                             calls: dict[tuple[str, str], list[int]],
                             functions: dict[str, list[Instruction]],
-                            terminal_before_user: bool = False) -> None:
+                            terminal_before_user: bool = False,
+                            assigned_edu: bool = False) -> None:
     command_callers = {"quarantine_q35_pci_dma"}
+    dword_callers = {"quarantine_q35_pci_dma", "verify_q35_pci_dma"}
+    if assigned_edu:
+        command_callers.add("vtd_boot_remap")
+        dword_callers.add("vtd_boot_remap")
     if "inject_dma_bus_master_reenable" in functions:
         command_callers.add("inject_dma_bus_master_reenable")
     expected = {
         "out16": {"pci_config_command"},
         "out32": {"pci_config_command", "pci_config_dword"},
         "in32": {"pci_config_dword"},
-        "pci_config_dword": {
-            "quarantine_q35_pci_dma", "verify_q35_pci_dma",
-        },
+        "pci_config_dword": dword_callers,
         "pci_config_command": command_callers,
         "quarantine_q35_pci_dma": {"kernel_main"},
         "verify_q35_pci_dma": {"validate_user_return"},
@@ -534,6 +537,8 @@ def main() -> int:
                         default=Path("scripts/direct-port-byte-operations.tsv"))
     parser.add_argument("--terminal-before-user", action="store_true",
                         help="require quarantine to dominate one terminal kernel halt")
+    parser.add_argument("--assigned-edu", action="store_true",
+                        help="admit the reviewed post-translation EDU command path")
     args = parser.parse_args()
     if not args.elf.is_file() or not args.manifest.is_file() or \
             not args.source.is_file() or not args.byte_manifest.is_file():
@@ -563,7 +568,8 @@ def main() -> int:
               " ".join(site.fields()), file=sys.stderr)
         return 1
 
-    validate_pci_call_graph(callers, calls, functions, args.terminal_before_user)
+    validate_pci_call_graph(callers, calls, functions,
+                            args.terminal_before_user, args.assigned_edu)
 
     dma_symbols = {site.symbol for site, owner in manifest.items()
                    if owner == "DMAQuarantine.pci-config"}
