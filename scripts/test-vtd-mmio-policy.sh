@@ -22,9 +22,9 @@ expect_rejected() {
 
 cp boot/kernel.c "$tmp/kernel.c"
 perl -0pi -e \
-  's/    vtd_mmio_write64\(iotlb, VTD_IOTLB_INVALIDATE \| VTD_IOTLB_GLOBAL\);/__SWAP__/;
-   s/    vtd_mmio_write32\(VTD_REG_GLOBAL_COMMAND, VTD_GCMD_TRANSLATION_ENABLE\);/    vtd_mmio_write64(iotlb, VTD_IOTLB_INVALIDATE | VTD_IOTLB_GLOBAL);/;
-   s/__SWAP__/    vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND, VTD_GCMD_TRANSLATION_ENABLE);/' \
+  's/    vtd_journal_record\(5\);\n\n    vtd_invalidate_global_iotlb\(\);/    vtd_journal_record(5);\n\nSWAP_MARKER/;
+   s/    vtd_mmio_write32\(VTD_REG_GLOBAL_COMMAND, VTD_GCMD_TRANSLATION_ENABLE\);/    vtd_invalidate_global_iotlb();/;
+   s/SWAP_MARKER/    vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND, VTD_GCMD_TRANSLATION_ENABLE);/' \
   "$tmp/kernel.c"
 expect_rejected reordered-enable "source activation order drifted"
 

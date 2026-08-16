@@ -35,7 +35,7 @@ done
 # of the exact fault record after its generated authority binding succeeds.
 [[ "$(grep -Fc 'vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND' "$source_file")" -eq 3 ]] ||
   fail "global-command write sites drifted"
-[[ "$(grep -Fc 'vtd_mmio_write64(' "$source_file")" -eq 5 ]] ||
+[[ "$(grep -Fc 'vtd_mmio_write64(' "$source_file")" -eq 6 ]] ||
   fail "64-bit MMIO write sites drifted"
 mode26_block="$(sed -n \
   '/^#if LEANOS_RETURN_CORRUPTION_MODE == 26$/,/^#endif$/p' "$source_file" |
@@ -46,7 +46,8 @@ assigned_transfer_block="$(sed -n '/static __attribute__((noinline)) void run_as
 grep -Fq 'leanos_validate_assigned_edu_fault(' <<<"$assigned_transfer_block" &&
   grep -Fq 'vtd_invalidate_global_iotlb();' <<<"$assigned_transfer_block" &&
   grep -Fq 'vtd_mmio_write64(0x228, UINT64_C(1) << 63);' <<<"$assigned_transfer_block" &&
-  grep -Fq 'fail("vtd-assigned-fault-clear");' <<<"$assigned_transfer_block" ||
+  grep -Fq 'fail("vtd-assigned-fault-clear");' <<<"$assigned_transfer_block" &&
+  grep -Fq 'fail("vtd-assigned-write-fault-clear");' <<<"$assigned_transfer_block" ||
   fail "assigned-EDU fault probe/clear is not bound to the reviewed scenario"
 iotlb_source="$(sed -n '/static __attribute__((noinline)) void vtd_invalidate_global_iotlb(void) {/,/^}/p' "$source_file")"
 grep -Fq 'vtd_mmio_read64(VTD_REG_EXTENDED_CAPABILITY);' <<<"$iotlb_source" &&
@@ -140,7 +141,7 @@ if grep -Eq '[[:space:]]run_assigned_edu_transfers$' <<<"$symbols"; then
     grep -Eo 'call.*<vtd_mmio_write(32|64)>' <<<"$assigned_transfer_elf" |
       grep -Eo 'vtd_mmio_write(32|64)' | paste -sd, -
   )"
-  [[ "$assigned_write_sequence" == 'vtd_mmio_write64' ]] ||
+  [[ "$assigned_write_sequence" == 'vtd_mmio_write64,vtd_mmio_write64' ]] ||
     fail "assigned-EDU final-ELF fault-clear sequence drifted: $assigned_write_sequence"
 fi
 

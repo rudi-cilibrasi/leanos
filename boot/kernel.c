@@ -2964,6 +2964,57 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
         " direction=read iova=4096 reason=6 sid=16 sentinel=unchanged"
         " victim=unchanged state=current result=PASS\n");
 
+    /* Attempt the converse wrong-direction transfer: the preserved device
+       sentinel may not be written into the read-only IOVA. Bind the second
+       hardware record before accepting the unchanged complete CPU record. */
+    read_buffer[0] = secret0;
+    read_buffer[1] = secret1;
+    vtd_invalidate_global_iotlb();
+    edu_mmio_write64(
+        EDU_REG_DMA_SOURCE, EDU_DEVICE_BUFFER + EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, 0);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(
+        EDU_REG_DMA_COMMAND, EDU_DMA_START | EDU_DMA_FROM_DEVICE);
+    edu_wait_transfer();
+    fault_status = vtd_mmio_read32(0x34);
+    fault_low = vtd_mmio_read64(0x220);
+    fault_high = vtd_mmio_read64(0x228);
+    fault_binding = leanos_validate_assigned_edu_fault(
+            1, LEANOS_VTD_ASSIGNED_SOURCE, LEANOS_VTD_ASSIGNED_DOMAIN,
+            LEANOS_VTD_ASSIGNED_GENERATION, 0, 2,
+            fault_status, fault_low, fault_high);
+    if (fault_binding != 0) {
+        serial_puts("LEANOS/21 VTD-WRITE-FAULT binding=");
+        serial_u64(fault_binding);
+        serial_puts(" fsts="); serial_u64(fault_status);
+        serial_puts(" low="); serial_u64(fault_low);
+        serial_puts(" high="); serial_u64(fault_high);
+        serial_puts(" result=REJECTED\n");
+        fail("vtd-assigned-write-fault-binding");
+    }
+    if (read_buffer[0] != secret0 || read_buffer[1] != secret1 ||
+        write_buffer[0] != sentinel0 || write_buffer[1] != sentinel1 ||
+        guard_before[0] != guard0 || guard_after[0] != guard1)
+        fail("vtd-assigned-write-fault-victim");
+    vtd_mmio_write64(0x228, UINT64_C(1) << 63);
+    if (vtd_mmio_read32(0x34) != 0)
+        fail("vtd-assigned-write-fault-clear");
+    write_buffer[0] = 0;
+    write_buffer[1] = 0;
+    edu_mmio_write64(
+        EDU_REG_DMA_SOURCE, EDU_DEVICE_BUFFER + EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, PAGE_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(
+        EDU_REG_DMA_COMMAND, EDU_DMA_START | EDU_DMA_FROM_DEVICE);
+    edu_wait_transfer();
+    if (write_buffer[0] != sentinel0 || write_buffer[1] != sentinel1)
+        fail("vtd-assigned-write-fault-sentinel");
+    serial_puts("LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1"
+        " direction=write iova=0 reason=5 sid=16 sentinel=unchanged"
+        " victim=unchanged state=current result=PASS\n");
+
     serial_puts("LEANOS/21 VTD-TRANSFER requester=16 domain=0 generation=1"
         " read-iova=0 write-iova=4096 bytes=16 payload=exact"
         " guards=unchanged fsts=0 result=PASS\n");

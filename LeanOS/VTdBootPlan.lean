@@ -734,11 +734,12 @@ def validateAssignedEDUFault
     (version source domain assignmentGeneration iova direction faultStatus
       faultLow faultHigh : UInt64) : UInt64 :=
   if version != assignedProjectionVersion then 1
-  else if direction != 1 then 2
+  else if direction != 1 && direction != 2 then 2
   else if source != 0 || domain != 0 || assignmentGeneration != 1 then 3
-  else if iova != 4096 || faultStatus != 2 then 4
+  else if iova != (if direction == 1 then 4096 else 0) || faultStatus != 2 then 4
   else if faultLow != iova then 5
-  else if faultHigh != 0xc0ffff0600000010 then 6
+  else if faultHigh != (if direction == 1 then 0xc0ffff0600000010
+                        else 0x80ffff0500000010) then 6
   else 0
 
 @[export leanos_validate_assigned_edu_fault]
@@ -770,6 +771,8 @@ example : validateAssignedEDUTransferScalar 1 1 1 0 16 1 =
 
 example : validateAssignedEDUFault
     1 0 0 1 4096 1 2 4096 0xc0ffff0600000010 = 0 := by native_decide
+example : validateAssignedEDUFault
+    1 0 0 1 0 2 2 0 0x80ffff0500000010 = 0 := by native_decide
 example : validateAssignedEDUFault
     1 0 0 1 4096 1 2 4096 0xc000000500000010 = 6 := by native_decide
 
