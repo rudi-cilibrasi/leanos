@@ -13,6 +13,11 @@ guest debug-exit 33. Needs a desktop browser with cross-origin isolation;
 first load downloads a ~40 MB runtime.
 [How the demo is built and what it does and does not prove](docs/browser-boot.md).
 
+**[📖 What LeanOS provably guarantees, in plain English](INVARIANTS.md)** — a
+generated, machine-checked index that explains every Lean theorem in the
+repository (all of them, and only them) for readers without a formal-methods
+background.
+
 The project is an **experimental research prototype**, not a verified operating
 system. It now builds bootable x86-64 images, exercises several deterministic
 machine scenarios under QEMU, and checks a growing set of Lean models and

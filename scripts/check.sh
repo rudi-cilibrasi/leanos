@@ -10,6 +10,10 @@ lake build leanos-vtd-plan
 
 ./scripts/check-security-claims.sh
 
+./scripts/test-generate-invariants.sh
+
+./scripts/check-invariants.sh
+
 ./tests/test-q35-pci-construction.py
 ./scripts/test-q35-platform.sh
 ./scripts/test-run-dma-unknown-device.sh
