@@ -200,6 +200,33 @@ int main(void) {
         fputs("assigned-EDU hardware fault binding was not enforced\n", stderr);
         return 1;
     }
+    if (leanos_validate_assigned_edu_fault(
+            0, 0, 0, 1, 4096, 1, 2, 4096,
+            UINT64_C(0xc0ffff0600000010)) != 1 ||
+        leanos_validate_assigned_edu_fault(
+            1, 0, 0, 1, 4096, 3, 2, 4096,
+            UINT64_C(0xc0ffff0600000010)) != 2 ||
+        leanos_validate_assigned_edu_fault(
+            1, 1, 0, 1, 4096, 1, 2, 4096,
+            UINT64_C(0xc0ffff0600000010)) != 3 ||
+        leanos_validate_assigned_edu_fault(
+            1, 0, 1, 1, 4096, 1, 2, 4096,
+            UINT64_C(0xc0ffff0600000010)) != 3 ||
+        leanos_validate_assigned_edu_fault(
+            1, 0, 0, 2, 4096, 1, 2, 4096,
+            UINT64_C(0xc0ffff0600000010)) != 3 ||
+        leanos_validate_assigned_edu_fault(
+            1, 0, 0, 1, 0, 1, 2, 4096,
+            UINT64_C(0xc0ffff0600000010)) != 4 ||
+        leanos_validate_assigned_edu_fault(
+            1, 0, 0, 1, 4096, 1, 0, 4096,
+            UINT64_C(0xc0ffff0600000010)) != 4 ||
+        leanos_validate_assigned_edu_fault(
+            1, 0, 0, 1, 4096, 1, 2, 0,
+            UINT64_C(0xc0ffff0600000010)) != 5) {
+        fputs("forged assigned-EDU fault fields were not rejected\n", stderr);
+        return 1;
+    }
 
     for (unsigned i = 0; i < ORACLE_VECTOR_COUNT; ++i) {
         const struct oracle_vector *v = &oracle_vectors[i];

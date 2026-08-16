@@ -775,6 +775,22 @@ example : validateAssignedEDUFault
     1 0 0 1 0 2 2 0 0x80ffff0500000010 = 0 := by native_decide
 example : validateAssignedEDUFault
     1 0 0 1 4096 1 2 4096 0xc000000500000010 = 6 := by native_decide
+example : validateAssignedEDUFault
+    0 0 0 1 4096 1 2 4096 0xc0ffff0600000010 = 1 := by native_decide
+example : validateAssignedEDUFault
+    1 0 0 1 4096 3 2 4096 0xc0ffff0600000010 = 2 := by native_decide
+example : validateAssignedEDUFault
+    1 1 0 1 4096 1 2 4096 0xc0ffff0600000010 = 3 := by native_decide
+example : validateAssignedEDUFault
+    1 0 1 1 4096 1 2 4096 0xc0ffff0600000010 = 3 := by native_decide
+example : validateAssignedEDUFault
+    1 0 0 2 4096 1 2 4096 0xc0ffff0600000010 = 3 := by native_decide
+example : validateAssignedEDUFault
+    1 0 0 1 0 1 2 4096 0xc0ffff0600000010 = 4 := by native_decide
+example : validateAssignedEDUFault
+    1 0 0 1 4096 1 0 4096 0xc0ffff0600000010 = 4 := by native_decide
+example : validateAssignedEDUFault
+    1 0 0 1 4096 1 2 0 0xc0ffff0600000010 = 5 := by native_decide
 
 example : validateAssignedEDUProjection
     1 0x0001000800020003 0 0 1 0 1 0 16
