@@ -2813,6 +2813,8 @@ static void edu_wait_transfer(void) {
     fail("vtd-assigned-transfer-timeout");
 }
 
+static void vtd_invalidate_global_iotlb(void);
+
 /* Execute the first fixed useful transfer pair only after the generated
    authority boundary accepts both requests.  The finite model uses 16-byte
    IOVAs; the generated hardware projection scales those two pages to 4 KiB
@@ -2823,6 +2825,10 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
     const uint64_t payload1 = UINT64_C(0x4d4d554f492d5544);
     const uint64_t guard0 = UINT64_C(0xc35ac35ac35ac35a);
     const uint64_t guard1 = UINT64_C(0xa53ca53ca53ca53c);
+    const uint64_t sentinel0 = UINT64_C(0x73656e74696e656c);
+    const uint64_t sentinel1 = UINT64_C(0x2d726561642d6564);
+    const uint64_t secret0 = UINT64_C(0x7365637265742d30);
+    const uint64_t secret1 = UINT64_C(0x7365637265742d31);
 
     if (leanos_validate_assigned_edu_transfer(
             1, LEANOS_VTD_ASSIGNED_SOURCE, LEANOS_VTD_ASSIGNED_GENERATION,
@@ -2869,6 +2875,95 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
     if (vtd_mmio_read32(0x34) != 0)
         fail("vtd-assigned-transfer-fault");
 
+    /* Preload an independent device sentinel through the authorized read
+       window, then attempt the same direction against the write-only IOVA.
+       Bind the typed hardware fault to the current assignment before using
+       authorized writes to prove the target did not receive the secret and
+       an adjacent device-local sentinel record remained unchanged. */
+    read_buffer[0] = sentinel0;
+    read_buffer[1] = sentinel1;
+    write_buffer[0] = secret0;
+    write_buffer[1] = secret1;
+    edu_mmio_write64(EDU_REG_DMA_SOURCE, 0);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, EDU_DEVICE_BUFFER);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COMMAND, EDU_DMA_START);
+    edu_wait_transfer();
+    /* QEMU's EDU DMA helper zero-fills the failed read destination. Preserve
+       this second copy outside that target as the independent sentinel. */
+    edu_mmio_write64(EDU_REG_DMA_SOURCE, 0);
+    edu_mmio_write64(
+        EDU_REG_DMA_DESTINATION, EDU_DEVICE_BUFFER + EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COMMAND, EDU_DMA_START);
+    edu_wait_transfer();
+    /* The preceding authorized write populated QEMU's IOTLB for this IOVA.
+       Force a fresh second-level permission walk so the wrong-direction read
+       must produce the typed VT-d fault required by the evidence contract. */
+    vtd_invalidate_global_iotlb();
+    edu_mmio_write64(EDU_REG_DMA_SOURCE, PAGE_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, EDU_DEVICE_BUFFER);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COMMAND, EDU_DMA_START);
+    edu_wait_transfer();
+    uint64_t fault_status = vtd_mmio_read32(0x34);
+    uint64_t fault_low = vtd_mmio_read64(0x220);
+    uint64_t fault_high = vtd_mmio_read64(0x228);
+    uint64_t fault_binding = leanos_validate_assigned_edu_fault(
+            1, LEANOS_VTD_ASSIGNED_SOURCE, LEANOS_VTD_ASSIGNED_DOMAIN,
+            LEANOS_VTD_ASSIGNED_GENERATION, PAGE_BYTES, 1,
+            fault_status, fault_low, fault_high);
+    if (fault_binding != 0) {
+        serial_puts("LEANOS/21 VTD-FAULT binding=");
+        serial_u64(fault_binding);
+        serial_puts(" fsts="); serial_u64(fault_status);
+        serial_puts(" low="); serial_u64(fault_low);
+        serial_puts(" high="); serial_u64(fault_high);
+        edu_mmio_write64(EDU_REG_DMA_SOURCE, EDU_DEVICE_BUFFER);
+        edu_mmio_write64(EDU_REG_DMA_DESTINATION, PAGE_BYTES);
+        edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+        edu_mmio_write64(
+            EDU_REG_DMA_COMMAND, EDU_DMA_START | EDU_DMA_FROM_DEVICE);
+        edu_wait_transfer();
+        serial_puts(" device-buffer=");
+        serial_puts(write_buffer[0] == sentinel0 && write_buffer[1] == sentinel1
+            ? "sentinel"
+            : write_buffer[0] == secret0 && write_buffer[1] == secret1
+                ? "secret" : "other");
+        serial_puts(" observed0="); serial_u64(write_buffer[0]);
+        serial_puts(" observed1="); serial_u64(write_buffer[1]);
+        serial_puts(" result=REJECTED\n");
+        fail("vtd-assigned-fault-binding");
+    }
+    if (write_buffer[0] != secret0 || write_buffer[1] != secret1 ||
+        guard_before[0] != guard0 || guard_after[0] != guard1)
+        fail("vtd-assigned-fault-victim");
+    vtd_mmio_write64(0x228, UINT64_C(1) << 63);
+    if (vtd_mmio_read32(0x34) != 0)
+        fail("vtd-assigned-fault-clear");
+    edu_mmio_write64(EDU_REG_DMA_SOURCE, EDU_DEVICE_BUFFER);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, PAGE_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(
+        EDU_REG_DMA_COMMAND, EDU_DMA_START | EDU_DMA_FROM_DEVICE);
+    edu_wait_transfer();
+    if (write_buffer[0] == secret0 && write_buffer[1] == secret1)
+        fail("vtd-assigned-read-secret");
+    write_buffer[0] = 0;
+    write_buffer[1] = 0;
+    edu_mmio_write64(
+        EDU_REG_DMA_SOURCE, EDU_DEVICE_BUFFER + EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, PAGE_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(
+        EDU_REG_DMA_COMMAND, EDU_DMA_START | EDU_DMA_FROM_DEVICE);
+    edu_wait_transfer();
+    if (write_buffer[0] != sentinel0 || write_buffer[1] != sentinel1)
+        fail("vtd-assigned-sentinel-record");
+    serial_puts("LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1"
+        " direction=read iova=4096 reason=6 sid=16 sentinel=unchanged"
+        " victim=unchanged state=current result=PASS\n");
+
     serial_puts("LEANOS/21 VTD-TRANSFER requester=16 domain=0 generation=1"
         " read-iova=0 write-iova=4096 bytes=16 payload=exact"
         " guards=unchanged fsts=0 result=PASS\n");
@@ -2913,6 +3008,19 @@ static void vtd_wait_invalidation(uint64_t offset, uint64_t busy) {
     for (unsigned attempt = 0; attempt < VTD_POLL_BOUND; ++attempt)
         if (!(vtd_mmio_read64(offset) & busy)) return;
     fail("vtd-activation-timeout");
+}
+
+static __attribute__((noinline)) void vtd_invalidate_global_iotlb(void) {
+    uint64_t extended_capability =
+        vtd_mmio_read64(VTD_REG_EXTENDED_CAPABILITY);
+    if (extended_capability != LEANOS_VTD_EXPECTED_ECAP)
+        fail("vtd-iotlb-extended-capability");
+    /* ECAP.IRO is in 16-byte units; IVA is the first 64-bit word and IOTLB
+       the second. Keep the derivation and bounded wait shared by boot and the
+       assigned-device evidence probe. */
+    uint64_t iotlb = ((extended_capability >> 8) & 0x3ff) * 16 + 8;
+    vtd_mmio_write64(iotlb, VTD_IOTLB_INVALIDATE | VTD_IOTLB_GLOBAL);
+    vtd_wait_invalidation(iotlb, VTD_IOTLB_INVALIDATE);
 }
 
 /* Validate the quiescent pinned remapping unit, install the generated
@@ -3095,11 +3203,7 @@ static __attribute__((noinline)) void vtd_boot_remap(void) {
     vtd_wait_invalidation(VTD_REG_CONTEXT_COMMAND, VTD_CCMD_INVALIDATE);
     vtd_journal_record(5);
 
-    /* The IOTLB registers live at ECAP.IRO * 16; the command register is the
-       second 64-bit word of that group. */
-    uint64_t iotlb = ((extended_capability >> 8) & 0x3ff) * 16 + 8;
-    vtd_mmio_write64(iotlb, VTD_IOTLB_INVALIDATE | VTD_IOTLB_GLOBAL);
-    vtd_wait_invalidation(iotlb, VTD_IOTLB_INVALIDATE);
+    vtd_invalidate_global_iotlb();
     vtd_journal_record(6);
 
     vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND, VTD_GCMD_TRANSLATION_ENABLE);

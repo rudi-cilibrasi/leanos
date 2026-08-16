@@ -29,18 +29,31 @@ for accessor in vtd_mmio_read32 vtd_mmio_read64 vtd_mmio_write32 \
     fail "reviewed accessor is missing or unpinned: $accessor"
 done
 
-# The only write sites program the global command, root pointer, context
-# cache, and IOTLB registers; the sole extra write site is the controlled
-# mode-26 machine negative.
+# The boot-remap write sites program the global command, root pointer, context
+# cache, and IOTLB registers.  The two other reviewed sites are the controlled
+# mode-26 machine negative and the assigned-EDU scenario's write-one-to-clear
+# of the exact fault record after its generated authority binding succeeds.
 [[ "$(grep -Fc 'vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND' "$source_file")" -eq 3 ]] ||
   fail "global-command write sites drifted"
-[[ "$(grep -Fc 'vtd_mmio_write64(' "$source_file")" -eq 4 ]] ||
+[[ "$(grep -Fc 'vtd_mmio_write64(' "$source_file")" -eq 5 ]] ||
   fail "64-bit MMIO write sites drifted"
 mode26_block="$(sed -n \
   '/^#if LEANOS_RETURN_CORRUPTION_MODE == 26$/,/^#endif$/p' "$source_file" |
   sed -n '/inject_vtd_translation_disable(void) {/,/^}/p')"
 grep -Fq 'vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND, 0);' <<<"$mode26_block" ||
   fail "translation-disable negative is not confined to the mode-26 fixture"
+assigned_transfer_block="$(sed -n '/static __attribute__((noinline)) void run_assigned_edu_transfers(void) {/,/^}/p' "$source_file")"
+grep -Fq 'leanos_validate_assigned_edu_fault(' <<<"$assigned_transfer_block" &&
+  grep -Fq 'vtd_invalidate_global_iotlb();' <<<"$assigned_transfer_block" &&
+  grep -Fq 'vtd_mmio_write64(0x228, UINT64_C(1) << 63);' <<<"$assigned_transfer_block" &&
+  grep -Fq 'fail("vtd-assigned-fault-clear");' <<<"$assigned_transfer_block" ||
+  fail "assigned-EDU fault probe/clear is not bound to the reviewed scenario"
+iotlb_source="$(sed -n '/static __attribute__((noinline)) void vtd_invalidate_global_iotlb(void) {/,/^}/p' "$source_file")"
+grep -Fq 'vtd_mmio_read64(VTD_REG_EXTENDED_CAPABILITY);' <<<"$iotlb_source" &&
+  grep -Fq 'extended_capability != LEANOS_VTD_EXPECTED_ECAP' <<<"$iotlb_source" &&
+  grep -Fq 'vtd_mmio_write64(iotlb, VTD_IOTLB_INVALIDATE | VTD_IOTLB_GLOBAL);' <<<"$iotlb_source" &&
+  grep -Fq 'vtd_wait_invalidation(iotlb, VTD_IOTLB_INVALIDATE);' <<<"$iotlb_source" ||
+  fail "shared bounded global-IOTLB invalidation drifted"
 
 remap_source="$(sed -n \
   '/static __attribute__((noinline)) void vtd_boot_remap(void) {/,/^}/p' \
@@ -63,7 +76,7 @@ order=(
   'vtd_journal_record(4);'
   'vtd_mmio_write64(VTD_REG_CONTEXT_COMMAND,'
   'vtd_journal_record(5);'
-  'vtd_mmio_write64(iotlb, VTD_IOTLB_INVALIDATE | VTD_IOTLB_GLOBAL);'
+  'vtd_invalidate_global_iotlb();'
   'vtd_journal_record(6);'
   'vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND, VTD_GCMD_TRANSLATION_ENABLE);'
   'vtd_journal_record(7);'
@@ -106,7 +119,9 @@ writer_callers="$(objdump -d --no-show-raw-insn "$elf" | awk '
   /call.*<vtd_mmio_write(32|64)>/ { print current }
 ' | sort -u)"
 allowed_callers='<inject_vtd_translation_disable>:
-<vtd_boot_remap>:'
+<run_assigned_edu_transfers>:
+<vtd_boot_remap>:
+<vtd_invalidate_global_iotlb>:'
 while IFS= read -r caller; do
   [[ -z "$caller" ]] && continue
   grep -Fxq "$caller" <<<"$allowed_callers" ||
@@ -114,13 +129,29 @@ while IFS= read -r caller; do
 done <<<"$writer_callers"
 grep -Fxq '<vtd_boot_remap>:' <<<"$writer_callers" ||
   fail "final-ELF activation sequence has no MMIO write calls"
+grep -Fxq '<vtd_invalidate_global_iotlb>:' <<<"$writer_callers" ||
+  fail "final-ELF global-IOTLB helper has no MMIO write call"
+
+if grep -Eq '[[:space:]]run_assigned_edu_transfers$' <<<"$symbols"; then
+  grep -Fxq '<run_assigned_edu_transfers>:' <<<"$writer_callers" ||
+    fail "assigned-EDU final ELF omits the reviewed fault clear"
+  assigned_transfer_elf="$(objdump -d --no-show-raw-insn --disassemble=run_assigned_edu_transfers "$elf")"
+  assigned_write_sequence="$(
+    grep -Eo 'call.*<vtd_mmio_write(32|64)>' <<<"$assigned_transfer_elf" |
+      grep -Eo 'vtd_mmio_write(32|64)' | paste -sd, -
+  )"
+  [[ "$assigned_write_sequence" == 'vtd_mmio_write64' ]] ||
+    fail "assigned-EDU final-ELF fault-clear sequence drifted: $assigned_write_sequence"
+fi
 
 remap_elf="$(objdump -d --no-show-raw-insn --disassemble=vtd_boot_remap "$elf")"
 write_sequence="$(grep -Eo 'call.*<vtd_mmio_write(32|64)>' <<<"$remap_elf" |
   grep -Eo 'vtd_mmio_write(32|64)' | paste -sd, -)"
 [[ "$write_sequence" == \
-   'vtd_mmio_write64,vtd_mmio_write32,vtd_mmio_write64,vtd_mmio_write64,vtd_mmio_write32' ]] ||
+   'vtd_mmio_write64,vtd_mmio_write32,vtd_mmio_write64,vtd_mmio_write32' ]] ||
   fail "final-ELF write order drifted: $write_sequence"
+grep -Eq 'call.*<vtd_invalidate_global_iotlb>' <<<"$remap_elf" ||
+  fail "final-ELF activation sequence omits global-IOTLB invalidation"
 
 elf_line() {
   local text="$1" pattern="$2"

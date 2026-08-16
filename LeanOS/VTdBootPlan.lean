@@ -724,6 +724,30 @@ def validateAssignedEDUTransferExport
     (version source assignmentGeneration iova length direction : UInt64) : UInt64 :=
   validateAssignedEDUTransferScalar version source assignmentGeneration iova length direction
 
+/-- Bind the one-record VT-d fault observation to the current reviewed
+assigned-EDU authority. Legacy FRCD carries requester and access direction but
+not domain or assignment generation, so those current-state fields are checked
+alongside the exact record. QEMU 8.2.2 records the unavailable PASID field as
+all ones for this non-PASID request, and the pinned exact record retains that
+emulator-visible boundary instead of silently masking it. -/
+def validateAssignedEDUFault
+    (version source domain assignmentGeneration iova direction faultStatus
+      faultLow faultHigh : UInt64) : UInt64 :=
+  if version != assignedProjectionVersion then 1
+  else if direction != 1 then 2
+  else if source != 0 || domain != 0 || assignmentGeneration != 1 then 3
+  else if iova != 4096 || faultStatus != 2 then 4
+  else if faultLow != iova then 5
+  else if faultHigh != 0xc0ffff0600000010 then 6
+  else 0
+
+@[export leanos_validate_assigned_edu_fault]
+def validateAssignedEDUFaultExport
+    (version source domain assignmentGeneration iova direction faultStatus
+      faultLow faultHigh : UInt64) : UInt64 :=
+  validateAssignedEDUFault version source domain assignmentGeneration iova direction
+    faultStatus faultLow faultHigh
+
 example : validateAssignedEDUTransfer 1 0 1 0 16 1 = 0 := by native_decide
 example : validateAssignedEDUTransfer 1 0 1 16 16 2 = 0 := by native_decide
 example : validateAssignedEDUTransfer 1 0 1 0 16 2 = 5 := by native_decide
@@ -743,6 +767,11 @@ example : validateAssignedEDUTransferScalar 1 0 1 8 16 1 =
     validateAssignedEDUTransfer 1 0 1 8 16 1 := by native_decide
 example : validateAssignedEDUTransferScalar 1 1 1 0 16 1 =
     validateAssignedEDUTransfer 1 1 1 0 16 1 := by native_decide
+
+example : validateAssignedEDUFault
+    1 0 0 1 4096 1 2 4096 0xc0ffff0600000010 = 0 := by native_decide
+example : validateAssignedEDUFault
+    1 0 0 1 4096 1 2 4096 0xc000000500000010 = 6 := by native_decide
 
 example : validateAssignedEDUProjection
     1 0x0001000800020003 0 0 1 0 1 0 16

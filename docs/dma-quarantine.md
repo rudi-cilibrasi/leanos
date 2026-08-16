@@ -181,6 +181,14 @@ only then verifies EDU's pinned BAR and identity before setting PCI Command to
 Memory + Bus Master. It records the exact table, BAR, identity, and command
 read-back in the assigned transcript. This is tested generated-configuration
 and boot evidence, not a proof of EDU, PCIe, VT-d, QEMU, or the final binary.
+The same finite scenario preloads EDU with an independent sentinel, attempts a
+device read from the write-only IOVA, and accepts the denial only when the
+generated boundary binds the legacy VT-d fault record to requester `00:02.0`,
+domain zero, assignment generation one, read direction, IOVA 4096, and the
+current authoritative state. The write-only victim and adjacent guards must
+remain exact, and an authorized device write must recover the sentinel rather
+than the protected secret. This is typed QEMU fault and survivor evidence; it
+does not prove the VT-d implementation, the device model, or refinement.
 The ordinary production image instead installs the unchanged deny-all context,
 does not map EDU MMIO, and keeps every admitted function non-bus-mastering.
 Because this DMA oracle needs TCG's virtual clock to run, its CPU is not paused.

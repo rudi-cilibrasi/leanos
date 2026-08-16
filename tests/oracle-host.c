@@ -68,6 +68,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_validate_vtd_activation);
     REGISTER_BOUNDARY(leanos_validate_assigned_edu_projection);
     REGISTER_BOUNDARY(leanos_validate_assigned_edu_transfer);
+    REGISTER_BOUNDARY(leanos_validate_assigned_edu_fault);
 
     /* Exercise the production ABI wrappers themselves so --gc-sections cannot
        discard them from the ordinary or sanitizer replay. Invalid all-zero
@@ -185,6 +186,15 @@ int main(void) {
         leanos_validate_assigned_edu_transfer(1, 1, 1, 0, 16, 1) != 3) {
         fputs("out-of-window or wrong-source assigned-EDU transfer was not denied\n",
             stderr);
+        return 1;
+    }
+    if (leanos_validate_assigned_edu_fault(
+            1, 0, 0, 1, 4096, 1, 2, 4096,
+            UINT64_C(0xc0ffff0600000010)) != 0 ||
+        leanos_validate_assigned_edu_fault(
+            1, 0, 0, 1, 4096, 1, 2, 4096,
+            UINT64_C(0xc000000500000010)) != 6) {
+        fputs("assigned-EDU hardware fault binding was not enforced\n", stderr);
         return 1;
     }
 
