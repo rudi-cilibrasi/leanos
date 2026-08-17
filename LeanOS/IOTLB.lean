@@ -978,6 +978,27 @@ theorem acknowledge_authority_cleanup_accepted_reaches_exact_frame_guard
       state completion haccepted
   simp [guardAuthorityCleanupExactFrameRelease, hcleared]
 
+/-- After exact acknowledgement, absence from both published authority and
+the complete published cache is sufficient for the exact frame lifecycle gate
+to allow release.  The hypotheses deliberately cover every entry naming the
+frame, not merely one invalidated key. -/
+theorem acknowledge_authority_cleanup_allows_exact_frame_release
+    state completion frame
+    (haccepted :
+      (acknowledgeAuthorityCleanupPublication state completion).accepted = true)
+    (hmapping : (acknowledgeAuthorityCleanupPublication state completion).state.authoritative.iommu.core.mappings.any
+      (·.frame == frame) = false)
+    (hcache :
+      entriesNameFrame
+        (acknowledgeAuthorityCleanupPublication state completion).state.cache
+        frame = false) :
+    guardAuthorityCleanupExactFrameRelease
+        (acknowledgeAuthorityCleanupPublication state completion).state frame =
+      .allowed := by
+  rw [acknowledge_authority_cleanup_accepted_reaches_exact_frame_guard
+    state completion frame haccepted]
+  exact exact_frame_release_allowed_only_after_cleanup _ frame rfl hmapping hcache
+
 /-- A subject-termination cleanup cannot acknowledge only part of the stale
 DMA authority that the checked successor removed.  For the concrete
 `terminateSubject` kernel operation, every key covered by the internally
