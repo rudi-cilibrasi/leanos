@@ -765,18 +765,25 @@ example : validateAssignedEDUTransfer 1 0 1 16 16 1 = 5 := by native_decide
 example : validateAssignedEDUTransfer 1 0 1 8 16 1 = 4 := by native_decide
 example : validateAssignedEDUTransfer 1 1 1 0 16 1 = 3 := by native_decide
 
-example : validateAssignedEDUTransferScalar 1 0 1 0 16 1 =
-    validateAssignedEDUTransfer 1 0 1 0 16 1 := by native_decide
-example : validateAssignedEDUTransferScalar 1 0 1 16 16 2 =
-    validateAssignedEDUTransfer 1 0 1 16 16 2 := by native_decide
-example : validateAssignedEDUTransferScalar 1 0 1 0 16 2 =
-    validateAssignedEDUTransfer 1 0 1 0 16 2 := by native_decide
-example : validateAssignedEDUTransferScalar 1 0 1 16 16 1 =
-    validateAssignedEDUTransfer 1 0 1 16 16 1 := by native_decide
-example : validateAssignedEDUTransferScalar 1 0 1 8 16 1 =
-    validateAssignedEDUTransfer 1 0 1 8 16 1 := by native_decide
-example : validateAssignedEDUTransferScalar 1 1 1 0 16 1 =
-    validateAssignedEDUTransfer 1 1 1 0 16 1 := by native_decide
+/-- The allocation-free exported adapter refines the authoritative IOMMU
+model on every transfer in the fixed assigned-EDU scenario: both authorized
+directions and the reviewed wrong-direction, boundary-crossing, and
+wrong-source denials. This is deliberately a bounded-scenario theorem, not a
+claim about arbitrary assignments or devices. -/
+theorem assignedEDUTransferScalar_refines_authoritative_scenario :
+    validateAssignedEDUTransferScalar 1 0 1 0 16 1 =
+        validateAssignedEDUTransfer 1 0 1 0 16 1 ∧
+    validateAssignedEDUTransferScalar 1 0 1 16 16 2 =
+        validateAssignedEDUTransfer 1 0 1 16 16 2 ∧
+    validateAssignedEDUTransferScalar 1 0 1 0 16 2 =
+        validateAssignedEDUTransfer 1 0 1 0 16 2 ∧
+    validateAssignedEDUTransferScalar 1 0 1 16 16 1 =
+        validateAssignedEDUTransfer 1 0 1 16 16 1 ∧
+    validateAssignedEDUTransferScalar 1 0 1 8 16 1 =
+        validateAssignedEDUTransfer 1 0 1 8 16 1 ∧
+    validateAssignedEDUTransferScalar 1 1 1 0 16 1 =
+        validateAssignedEDUTransfer 1 1 1 0 16 1 := by
+  native_decide
 
 example : validateAssignedEDUFault
     1 0 0 1 4096 1 2 4096 0xc0ffff0600000010 = 0 := by native_decide
