@@ -62,12 +62,15 @@ done
 }
 ./scripts/check-image-policy.sh "$build/leanos-assigned-edu.elf"
 
-# These images must fail closed at three distinct admission boundaries: the
-# generated CPU mapping, exact BAR read-back, and device identity read-back.
+# These images must fail closed at admission and hardware-evidence boundaries:
+# generated CPU mapping, exact device read-back, forged fault binding, and a
+# changed protected victim record.
 assigned_edu_negative_specs=(
   "missing-mmio-mapping:LEANOS_ASSIGNED_EDU_OMIT_MMIO_MAPPING_FIXTURE"
   "wrong-bar:LEANOS_ASSIGNED_EDU_WRONG_BAR_FIXTURE"
   "wrong-mmio-identity:LEANOS_ASSIGNED_EDU_WRONG_MMIO_IDENTITY_FIXTURE"
+  "forged-fault:LEANOS_ASSIGNED_EDU_FORGED_FAULT_FIXTURE"
+  "wrong-fault-victim:LEANOS_ASSIGNED_EDU_WRONG_FAULT_VICTIM_FIXTURE"
 )
 for spec in "${assigned_edu_negative_specs[@]}"; do
   IFS=: read -r fixture fixture_macro <<<"$spec"

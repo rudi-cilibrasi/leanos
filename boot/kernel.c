@@ -2930,7 +2930,11 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
     uint64_t fault_high = vtd_mmio_read64(0x228);
     uint64_t fault_binding = leanos_validate_assigned_edu_fault(
             1, LEANOS_VTD_ASSIGNED_SOURCE, LEANOS_VTD_ASSIGNED_DOMAIN,
+#ifdef LEANOS_ASSIGNED_EDU_FORGED_FAULT_FIXTURE
+            LEANOS_VTD_ASSIGNED_GENERATION, 0, 1,
+#else
             LEANOS_VTD_ASSIGNED_GENERATION, PAGE_BYTES, 1,
+#endif
             fault_status, fault_low, fault_high);
     if (fault_binding != 0) {
         serial_puts("LEANOS/21 VTD-FAULT binding=");
@@ -2954,6 +2958,9 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
         serial_puts(" result=REJECTED\n");
         fail("vtd-assigned-fault-binding");
     }
+#ifdef LEANOS_ASSIGNED_EDU_WRONG_FAULT_VICTIM_FIXTURE
+    write_buffer[0] ^= UINT64_C(1);
+#endif
     if (write_buffer[0] != secret0 || write_buffer[1] != secret1 ||
         guard_before[0] != guard0 || guard_after[0] != guard1)
         fail("vtd-assigned-fault-victim");

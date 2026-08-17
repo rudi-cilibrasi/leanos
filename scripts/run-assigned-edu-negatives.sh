@@ -29,6 +29,8 @@ specs=(
   "missing-mmio-mapping:pt-decode-a"
   "wrong-bar:vtd-assigned-bar"
   "wrong-mmio-identity:vtd-assigned-mmio-identity"
+  "forged-fault:vtd-assigned-fault-binding"
+  "wrong-fault-victim:vtd-assigned-fault-victim"
 )
 for spec in "${specs[@]}"; do
   IFS=: read -r fixture reason <<<"$spec"
