@@ -2807,6 +2807,8 @@ static __attribute__((noinline, noipa)) void edu_mmio_write64(uint64_t offset,
 #endif
 
 #ifdef LEANOS_ASSIGNED_EDU_SCENARIO
+static volatile uint64_t assigned_edu_kernel_record[2];
+
 static void edu_wait_transfer(void) {
     for (unsigned attempt = 0; attempt < EDU_DMA_POLL_BOUND; ++attempt)
         if (!(edu_mmio_read64(EDU_REG_DMA_COMMAND) & EDU_DMA_START)) return;
@@ -2829,6 +2831,11 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
     const uint64_t sentinel1 = UINT64_C(0x2d726561642d6564);
     const uint64_t secret0 = UINT64_C(0x7365637265742d30);
     const uint64_t secret1 = UINT64_C(0x7365637265742d31);
+    const uint64_t subject0 = UINT64_C(0x7375626a65637430);
+    const uint64_t subject1 = UINT64_C(0x7375626a65637431);
+    const uint64_t kernel0 = UINT64_C(0x6b65726e656c2d30);
+    const uint64_t kernel1 = UINT64_C(0x6b65726e656c2d31);
+    const uint64_t user_stack_page = (uint64_t)user_a_stack / PAGE_BYTES;
 
     if (leanos_validate_assigned_edu_transfer(
             1, LEANOS_VTD_ASSIGNED_SOURCE, LEANOS_VTD_ASSIGNED_GENERATION,
@@ -2847,8 +2854,20 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
         (volatile uint64_t *)vtd_assigned_guard_before;
     volatile uint64_t *guard_after =
         (volatile uint64_t *)vtd_assigned_guard_after;
-    guard_before[0] = guard0;
-    guard_after[0] = guard1;
+    for (uint64_t word = 0; word < PAGE_BYTES / sizeof(uint64_t); ++word) {
+        guard_before[word] = guard0 ^ word;
+        guard_after[word] = guard1 ^ word;
+    }
+    ((volatile uint64_t *)user_a_stack)[0] = subject0;
+    ((volatile uint64_t *)user_a_stack)[1] = subject1;
+    assigned_edu_kernel_record[0] = kernel0;
+    assigned_edu_kernel_record[1] = kernel1;
+    /* Snapshot after the initialization write has legitimately populated the
+       CPU accessed/dirty metadata; later DMA must not change these entries. */
+    const uint64_t protected_page_table_record[4] = {
+        page_map_level_4_a[0], page_directory_pointer_a[0],
+        page_directory_a[0], page_table_a[user_stack_page]
+    };
     read_buffer[0] = payload0;
     read_buffer[1] = payload1;
     write_buffer[0] = 0;
@@ -3051,8 +3070,37 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
     vtd_mmio_write64(0x228, UINT64_C(1) << 63);
     if (vtd_mmio_read32(0x34) != 0)
         fail("vtd-assigned-unmapped-fault-clear");
+    if (((volatile uint64_t *)user_a_stack)[0] != subject0 ||
+        ((volatile uint64_t *)user_a_stack)[1] != subject1)
+        fail("vtd-assigned-protected-subject");
+    if (assigned_edu_kernel_record[0] != kernel0 ||
+        assigned_edu_kernel_record[1] != kernel1)
+        fail("vtd-assigned-protected-kernel");
+    if (page_map_level_4_a[0] != protected_page_table_record[0] ||
+        page_directory_pointer_a[0] != protected_page_table_record[1] ||
+        page_directory_a[0] != protected_page_table_record[2] ||
+        page_table_a[user_stack_page] != protected_page_table_record[3])
+        fail("vtd-assigned-protected-cpu-tables");
+    for (uint64_t word = 0; word < PAGE_BYTES / sizeof(uint64_t); ++word) {
+        if (guard_before[word] != (guard0 ^ word) ||
+            guard_after[word] != (guard1 ^ word))
+            fail("vtd-assigned-protected-guards");
+        if (vtd_root_table[word] != leanos_vtd_root_table[word] ||
+            vtd_context_table[word] !=
+                leanos_vtd_assigned_context_table[word])
+            fail("vtd-assigned-protected-vtd-root");
+        if (vtd_second_level_root[word] !=
+                leanos_vtd_assigned_second_level_root[word] ||
+            vtd_second_level_directory[word] !=
+                leanos_vtd_assigned_second_level_directory[word] ||
+            vtd_second_level_table[word] !=
+                leanos_vtd_assigned_second_level_table[word])
+            fail("vtd-assigned-protected-vtd-second-level");
+    }
     serial_puts("LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1"
-        " direction=read iova=8192 reason=6 sid=16 protected=unchanged"
+        " direction=read iova=8192 reason=6 sid=16"
+        " protected=subject,kernel,cpu-page-tables,remapping-tables,guards"
+        " records=complete,unchanged"
         " state=current result=PASS\n");
 
     serial_puts("LEANOS/21 VTD-TRANSFER requester=16 domain=0 generation=1"

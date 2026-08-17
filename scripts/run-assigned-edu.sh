@@ -59,7 +59,7 @@ assignment='LEANOS/21 VTD-ASSIGN bdf=0:2.0 requester=16 domain=0 tables=generate
 transfer='LEANOS/21 VTD-TRANSFER requester=16 domain=0 generation=1 read-iova=0 write-iova=4096 bytes=16 payload=exact guards=unchanged fsts=0 result=PASS'
 read_fault='LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1 direction=read iova=4096 reason=6 sid=16 sentinel=unchanged victim=unchanged state=current result=PASS'
 write_fault='LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1 direction=write iova=0 reason=5 sid=16 sentinel=unchanged victim=unchanged state=current result=PASS'
-unmapped_fault='LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1 direction=read iova=8192 reason=6 sid=16 protected=unchanged state=current result=PASS'
+unmapped_fault='LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1 direction=read iova=8192 reason=6 sid=16 protected=subject,kernel,cpu-page-tables,remapping-tables,guards records=complete,unchanged state=current result=PASS'
 if [[ "$(grep -Fxc "$edu" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$snapshot" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$assignment" "$log")" -ne 1 ]] ||
