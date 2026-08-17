@@ -708,4 +708,191 @@ theorem acknowledge_control_accepted_publishes_exact state completion
         simp [acknowledgeControlPublication, hpending, hexact]
     next => simp_all
 
+/-! ## Capability and subject-cleanup publication
+
+Kernel capability revocation and subject termination can remove several DMA
+mappings and assignments in one authoritative transition.  Publishing that
+transition behind a single-entry invalidation protocol would permit a partial
+cleanup, so this boundary derives the complete finite scope set from the
+checked kernel successor and publishes neither projection until one exact
+completion names that whole set.
+-/
+
+def scopeCoversKey : InvalidationScope → Key → Bool
+  | .mapping expected, key => key == expected
+  | .mappingSet scope, key =>
+      key.source == scope.source &&
+        key.assignment == scope.assignment &&
+        key.domain == scope.domain &&
+        key.mapping == scope.mapping
+  | .assignment scope, key =>
+      key.source == scope.source &&
+        key.assignment == scope.assignment &&
+        key.domain == scope.domain
+
+def invalidateScopes (entries : List Entry)
+    (scopes : List InvalidationScope) : List Entry :=
+  entries.filter fun entry => !scopes.any (scopeCoversKey · entry.key)
+
+theorem invalidate_scopes_covered_absent entries scopes key
+    (hcovered : scopes.any (scopeCoversKey · key) = true) :
+    lookup (invalidateScopes entries scopes) key = none := by
+  simp only [lookup, List.find?_eq_none, invalidateScopes, List.mem_filter]
+  intro entry hentry hfound
+  have heq := of_decide_eq_true hfound
+  have hretained := hentry.2
+  rw [heq] at hretained
+  simp [hcovered] at hretained
+
+theorem invalidate_scopes_preserves_coherent entries scopes
+    (hcoherent : Coherent entries) :
+    Coherent (invalidateScopes entries scopes) := by
+  exact Nat.le_trans (List.length_filter_le _ _) hcoherent
+
+/-- Every scope comes from an authority record present in the published
+pre-state but absent from the checked kernel successor.  Mapping scopes are
+retained even when assignment teardown also covers them, making the complete
+removed authority inventory explicit in evidence. -/
+def requiredAuthorityCleanupScopes (before after : AuthoritativeExtension) :
+    List InvalidationScope :=
+  let mappings := before.iommu.core.mappings.filterMap fun mapping =>
+    if after.iommu.core.mappings.any (·.handle == mapping.handle) then none
+    else .mappingSet <$> mappingScopeFor before mapping.handle
+  let assignments := before.iommu.core.assignments.filterMap fun assignment =>
+    if after.iommu.core.assignments.any (·.handle == assignment.handle) then none
+    else .assignment <$> assignmentScopeFor before assignment.handle
+  mappings ++ assignments
+
+structure PendingAuthorityCleanup where
+  ticket : Nat
+  scopes : List InvalidationScope
+  logicalAfter : AuthoritativeExtension
+  cacheBefore : List Entry
+  cacheAfter : List Entry
+
+structure AuthorityCleanupPublicationState where
+  authoritative : AuthoritativeExtension
+  cache : List Entry
+  pending : Option PendingAuthorityCleanup
+  nextTicket : Nat
+
+structure AuthorityCleanupCompletion where
+  ticket : Nat
+  scopes : List InvalidationScope
+
+structure AuthorityCleanupPublicationOutcome where
+  state : AuthorityCleanupPublicationState
+  accepted : Bool
+
+/-- Only a checked kernel transition that actually removes DMA authority can
+open a cleanup ticket.  The caller supplies neither the logical successor nor
+the finite invalidation scope set. -/
+noncomputable def prepareAuthorityCleanupPublication
+    (state : AuthorityCleanupPublicationState)
+    (_hstate : state.authoritative.Invariant)
+    (operation : FailStop.AuthoritativeOperation) :
+    AuthorityCleanupPublicationOutcome :=
+  match state.pending with
+  | some _ => { state, accepted := false }
+  | none =>
+      let logicalAfter := applyKernelOperation state.authoritative operation
+      let scopes := requiredAuthorityCleanupScopes state.authoritative logicalAfter
+      if scopes.isEmpty then { state, accepted := false }
+      else
+        let pending : PendingAuthorityCleanup := {
+          ticket := state.nextTicket
+          scopes
+          logicalAfter
+          cacheBefore := state.cache
+          cacheAfter := invalidateScopes state.cache scopes }
+        { state := { state with
+            pending := some pending
+            nextTicket := state.nextTicket + 1 }
+          accepted := true }
+
+def acknowledgeAuthorityCleanupPublication
+    (state : AuthorityCleanupPublicationState)
+    (completion : AuthorityCleanupCompletion) :
+    AuthorityCleanupPublicationOutcome :=
+  match state.pending with
+  | none => { state, accepted := false }
+  | some pending =>
+      if completion.ticket = pending.ticket ∧
+          completion.scopes = pending.scopes ∧
+          pending.cacheBefore = state.cache then
+        { state := {
+            authoritative := pending.logicalAfter
+            cache := pending.cacheAfter
+            pending := none
+            nextTicket := state.nextTicket }
+          accepted := true }
+      else
+        { state, accepted := false }
+
+theorem prepare_authority_cleanup_retains_publications
+    state hstate operation :
+    let prepared := prepareAuthorityCleanupPublication state hstate operation
+    prepared.state.authoritative = state.authoritative ∧
+      prepared.state.cache = state.cache := by
+  simp only [prepareAuthorityCleanupPublication]
+  split
+  · simp
+  · split <;> simp
+
+theorem prepare_authority_cleanup_accepted_binds_checked_successor
+    state hstate operation
+    (haccepted :
+      (prepareAuthorityCleanupPublication state hstate operation).accepted = true) :
+    ∃ pending logicalAfter scopes,
+      logicalAfter = applyKernelOperation state.authoritative operation ∧
+      scopes = requiredAuthorityCleanupScopes state.authoritative logicalAfter ∧
+      scopes.isEmpty = false ∧
+      (prepareAuthorityCleanupPublication state hstate operation).state.pending =
+        some pending ∧
+      pending.ticket = state.nextTicket ∧
+      pending.scopes = scopes ∧
+      pending.logicalAfter = logicalAfter ∧
+      pending.cacheBefore = state.cache ∧
+      pending.cacheAfter = invalidateScopes state.cache scopes := by
+  simp only [prepareAuthorityCleanupPublication] at haccepted ⊢
+  split at haccepted
+  · simp_all
+  next hpending =>
+    split at haccepted
+    · simp_all
+    next hscopes =>
+      simp_all
+
+theorem acknowledge_authority_cleanup_wrong_ticket_inert
+    state completion pending
+    (hpending : state.pending = some pending)
+    (hticket : completion.ticket ≠ pending.ticket) :
+    (acknowledgeAuthorityCleanupPublication state completion).accepted = false ∧
+      (acknowledgeAuthorityCleanupPublication state completion).state = state := by
+  simp [acknowledgeAuthorityCleanupPublication, hpending, hticket]
+
+theorem acknowledge_authority_cleanup_accepted_publishes_exact
+    state completion
+    (haccepted :
+      (acknowledgeAuthorityCleanupPublication state completion).accepted = true) :
+    ∃ pending,
+      state.pending = some pending ∧
+      completion.ticket = pending.ticket ∧
+      completion.scopes = pending.scopes ∧
+      pending.cacheBefore = state.cache ∧
+      (acknowledgeAuthorityCleanupPublication state completion).state.authoritative =
+        pending.logicalAfter ∧
+      (acknowledgeAuthorityCleanupPublication state completion).state.cache =
+        pending.cacheAfter ∧
+      (acknowledgeAuthorityCleanupPublication state completion).state.pending = none := by
+  unfold acknowledgeAuthorityCleanupPublication at haccepted
+  split at haccepted
+  · simp_all
+  next pending hpending =>
+    split at haccepted
+    next hexact =>
+      refine ⟨pending, hpending, hexact.1, hexact.2.1, hexact.2.2, ?_, ?_, ?_⟩ <;>
+        simp [acknowledgeAuthorityCleanupPublication, hpending, hexact]
+    next => simp_all
+
 end LeanOS.IOMMU.IOTLB
