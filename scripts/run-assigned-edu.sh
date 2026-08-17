@@ -59,11 +59,13 @@ assignment='LEANOS/21 VTD-ASSIGN bdf=0:2.0 requester=16 domain=0 tables=generate
 transfer='LEANOS/21 VTD-TRANSFER requester=16 domain=0 generation=1 read-iova=0 write-iova=4096 bytes=16 payload=exact guards=unchanged fsts=0 result=PASS'
 read_fault='LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1 direction=read iova=4096 reason=6 sid=16 sentinel=unchanged victim=unchanged state=current result=PASS'
 write_fault='LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1 direction=write iova=0 reason=5 sid=16 sentinel=unchanged victim=unchanged state=current result=PASS'
+unmapped_fault='LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1 direction=read iova=8192 reason=6 sid=16 protected=unchanged state=current result=PASS'
 if [[ "$(grep -Fxc "$edu" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$snapshot" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$assignment" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$read_fault" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$write_fault" "$log")" -ne 1 ]] ||
+    [[ "$(grep -Fxc "$unmapped_fault" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$transfer" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc 'LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1' "$log")" -ne 1 ]]; then
   echo "failure_class=evidence: assigned-EDU inventory checkpoint differs" >&2

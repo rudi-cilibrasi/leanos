@@ -3015,6 +3015,46 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
         " direction=write iova=0 reason=5 sid=16 sentinel=unchanged"
         " victim=unchanged state=current result=PASS\n");
 
+    /* QEMU checks second-level read permission before reserved/presence
+       validity, so a zero leaf reports the typed read fault. Bind its wholly
+       unmapped IOVA while all four complete protected records stay intact. */
+    read_buffer[0] = payload0;
+    read_buffer[1] = payload1;
+    write_buffer[0] = secret0;
+    write_buffer[1] = secret1;
+    vtd_invalidate_global_iotlb();
+    edu_mmio_write64(EDU_REG_DMA_SOURCE, 2 * PAGE_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, EDU_DEVICE_BUFFER);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COMMAND, EDU_DMA_START);
+    edu_wait_transfer();
+    fault_status = vtd_mmio_read32(0x34);
+    fault_low = vtd_mmio_read64(0x220);
+    fault_high = vtd_mmio_read64(0x228);
+    fault_binding = leanos_validate_assigned_edu_fault(
+            1, LEANOS_VTD_ASSIGNED_SOURCE, LEANOS_VTD_ASSIGNED_DOMAIN,
+            LEANOS_VTD_ASSIGNED_GENERATION, 2 * PAGE_BYTES, 1,
+            fault_status, fault_low, fault_high);
+    if (fault_binding != 0) {
+        serial_puts("LEANOS/21 VTD-UNMAPPED-FAULT binding=");
+        serial_u64(fault_binding);
+        serial_puts(" fsts="); serial_u64(fault_status);
+        serial_puts(" low="); serial_u64(fault_low);
+        serial_puts(" high="); serial_u64(fault_high);
+        serial_puts(" result=REJECTED\n");
+        fail("vtd-assigned-unmapped-fault-binding");
+    }
+    if (read_buffer[0] != payload0 || read_buffer[1] != payload1 ||
+        write_buffer[0] != secret0 || write_buffer[1] != secret1 ||
+        guard_before[0] != guard0 || guard_after[0] != guard1)
+        fail("vtd-assigned-unmapped-fault-victim");
+    vtd_mmio_write64(0x228, UINT64_C(1) << 63);
+    if (vtd_mmio_read32(0x34) != 0)
+        fail("vtd-assigned-unmapped-fault-clear");
+    serial_puts("LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1"
+        " direction=read iova=8192 reason=6 sid=16 protected=unchanged"
+        " state=current result=PASS\n");
+
     serial_puts("LEANOS/21 VTD-TRANSFER requester=16 domain=0 generation=1"
         " read-iova=0 write-iova=4096 bytes=16 payload=exact"
         " guards=unchanged fsts=0 result=PASS\n");
