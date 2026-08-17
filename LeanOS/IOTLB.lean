@@ -1281,6 +1281,43 @@ def subjectTerminationWitnessScopes : List InvalidationScope :=
       assignment := subjectTerminationWitnessAssignment.handle
       domain := subjectTerminationWitnessAssignment.domain } ]
 
+/-- A finite exact-completion witness for the cleanup publication protocol.
+The authoritative states remain parameters here: the next composition step
+will instantiate them with an invariant-bearing checked termination successor.
+This witness already fixes the ticket, complete derived scope inventory, and
+retained cache pre-state that an acknowledgement must reproduce exactly. -/
+def subjectTerminationWitnessPublicationState
+    (before after : AuthoritativeExtension) : AuthorityCleanupPublicationState :=
+  { authoritative := before
+    cache := [subjectTerminationWitnessEntry]
+    pending := some {
+      ticket := 7
+      scopes := subjectTerminationWitnessScopes
+      logicalAfter := after
+      cacheBefore := [subjectTerminationWitnessEntry]
+      cacheAfter := invalidateScopes [subjectTerminationWitnessEntry]
+        subjectTerminationWitnessScopes }
+    nextTicket := 8 }
+
+def subjectTerminationWitnessCompletion : AuthorityCleanupCompletion :=
+  { ticket := 7
+    scopes := subjectTerminationWitnessScopes }
+
+/-- The exact finite completion publishes both the supplied checked logical
+successor and the fully invalidated cache, and clears the pending ticket. -/
+theorem executable_subject_termination_exact_completion_witness
+    (before after : AuthoritativeExtension) :
+    let acknowledged := acknowledgeAuthorityCleanupPublication
+      (subjectTerminationWitnessPublicationState before after)
+      subjectTerminationWitnessCompletion
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative = after ∧
+      acknowledged.state.cache = invalidateScopes
+        [subjectTerminationWitnessEntry] subjectTerminationWitnessScopes ∧
+      acknowledged.state.pending = none := by
+  simp [subjectTerminationWitnessPublicationState,
+    subjectTerminationWitnessCompletion, acknowledgeAuthorityCleanupPublication]
+
 /-- The old mapping and assignment are live, the cache contains their exact
 translation, and complete subject cleanup makes that old key unreachable. -/
 theorem executable_subject_termination_cleanup_witness :
