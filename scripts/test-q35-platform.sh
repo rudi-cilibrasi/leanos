@@ -166,8 +166,13 @@ grep -Eq 'source .*q35-platform\.sh' scripts/run-assigned-edu-negatives.sh &&
 }
 
 grep -Fq './scripts/run-assigned-edu-negatives.sh' .github/workflows/ci.yml &&
-  grep -Fq 'build/boot/assigned-edu-*.serial.log' .github/workflows/ci.yml || {
-  echo "error: mandatory CI does not run and retain assigned-EDU negatives" >&2
+  grep -Fq 'build/boot/assigned-edu-*.serial.log' .github/workflows/ci.yml &&
+  grep -Fq 'build/boot/leanos-0.1.0-x86_64-assigned-edu.iso' .github/workflows/ci.yml &&
+  grep -Fq 'build/boot/leanos-assigned-edu.elf' .github/workflows/ci.yml &&
+  grep -Fq 'build/boot/leanos-assigned-edu.map' .github/workflows/ci.yml &&
+  grep -Fq 'build/boot/boot-page-plan-assigned-edu.h' .github/workflows/ci.yml &&
+  grep -Fq 'build/boot/boot-page-plan-assigned-edu.final.h' .github/workflows/ci.yml || {
+  echo "error: mandatory CI does not run and retain complete assigned-EDU evidence" >&2
   exit 1
 }
 

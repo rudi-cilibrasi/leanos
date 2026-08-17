@@ -168,6 +168,11 @@ jobs:
           name: leanos-clang-canonical-${{ github.sha }}
           path: |
             build/boot/leanos-0.1.0-x86_64.iso
+            build/boot/leanos-0.1.0-x86_64-assigned-edu.iso
+            build/boot/leanos-assigned-edu.elf
+            build/boot/leanos-assigned-edu.map
+            build/boot/boot-page-plan-assigned-edu.h
+            build/boot/boot-page-plan-assigned-edu.final.h
             build/boot/leanos.elf
             build/boot/leanos.map
             build/boot/SOURCE_REVISION
