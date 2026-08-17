@@ -106,10 +106,26 @@ structure AssignmentScope where
   domain : DomainHandle
   deriving BEq, DecidableEq, Repr
 
+structure MappingScope where
+  source : SourceId
+  assignment : AssignmentHandle
+  domain : DomainHandle
+  mapping : MappingHandle
+  deriving BEq, DecidableEq, Repr
+
 inductive InvalidationScope where
   | mapping (key : Key)
+  | mappingSet (scope : MappingScope)
   | assignment (scope : AssignmentScope)
   deriving BEq, DecidableEq, Repr
+
+def eraseMappingScope (entries : List Entry)
+    (scope : MappingScope) : List Entry :=
+  entries.filter fun entry => decide
+    (entry.key.source ≠ scope.source ∨
+      entry.key.assignment ≠ scope.assignment ∨
+      entry.key.domain ≠ scope.domain ∨
+      entry.key.mapping ≠ scope.mapping)
 
 def eraseAssignmentScope (entries : List Entry)
     (scope : AssignmentScope) : List Entry :=
@@ -120,7 +136,24 @@ def eraseAssignmentScope (entries : List Entry)
 
 def invalidate (entries : List Entry) : InvalidationScope → List Entry
   | .mapping key => eraseKey entries key
+  | .mappingSet scope => eraseMappingScope entries scope
   | .assignment scope => eraseAssignmentScope entries scope
+
+theorem erase_mapping_scope_absent entries scope key
+    (hsource : key.source = scope.source)
+    (hassignment : key.assignment = scope.assignment)
+    (hdomain : key.domain = scope.domain)
+    (hmapping : key.mapping = scope.mapping) :
+    lookup (eraseMappingScope entries scope) key = none := by
+  simp only [lookup, List.find?_eq_none, eraseMappingScope, List.mem_filter]
+  intro entry hentry hfound
+  have houtside := of_decide_eq_true hentry.2
+  have heq := of_decide_eq_true hfound
+  rcases houtside with hne | hne | hne | hne
+  · exact hne (congrArg Key.source heq |>.trans hsource)
+  · exact hne (congrArg Key.assignment heq |>.trans hassignment)
+  · exact hne (congrArg Key.domain heq |>.trans hdomain)
+  · exact hne (congrArg Key.mapping heq |>.trans hmapping)
 
 theorem erase_assignment_scope_absent entries scope key
     (hsource : key.source = scope.source)
@@ -139,6 +172,14 @@ theorem erase_assignment_scope_absent entries scope key
 theorem invalidate_mapping_absent entries key :
     lookup (invalidate entries (.mapping key)) key = none := by
   exact erase_key_absent entries key
+
+theorem invalidate_mapping_set_absent entries scope key
+    (hsource : key.source = scope.source)
+    (hassignment : key.assignment = scope.assignment)
+    (hdomain : key.domain = scope.domain)
+    (hmapping : key.mapping = scope.mapping) :
+    lookup (invalidate entries (.mappingSet scope)) key = none := by
+  exact erase_mapping_scope_absent entries scope key hsource hassignment hdomain hmapping
 
 theorem invalidate_assignment_absent entries scope key
     (hsource : key.source = scope.source)
@@ -503,5 +544,168 @@ theorem cached_release_allowed_delegates state hstate subject slot
       (.release subject slot) <;>
     simp [gatedCachedMemoryByKernel, hguard, liftMemoryOutcome, hmemory,
       CachedMemoryOutcome.state, AuthoritativeMemoryOutcome.state]
+
+/-! ## Coupled logical-transition publication
+
+Accepted unmap, permission-reduction, and assignment-teardown operations must
+not publish their logical successor before the corresponding exact IOTLB
+completion.  The pending record below retains the checked successor returned
+by `gatedByKernel`; callers supply neither that successor nor its scope.
+While a record is pending, preparation stutters, so the completion's ticket
+and scope remain bound to one authoritative pre-state and one logical step.
+-/
+
+structure PendingControl where
+  ticket : Nat
+  scope : InvalidationScope
+  logicalAfter : AuthoritativeExtension
+  cacheBefore : List Entry
+  cacheAfter : List Entry
+  reply : AcceptedReply
+
+structure ControlPublicationState where
+  authoritative : AuthoritativeExtension
+  cache : List Entry
+  pending : Option PendingControl
+  nextTicket : Nat
+
+structure ControlPublicationOutcome where
+  state : ControlPublicationState
+  accepted : Bool
+
+def mappingScopeFor (state : AuthoritativeExtension)
+    (handle : MappingHandle) : Option MappingScope := do
+  let mapping ← findMapping state.iommu.core handle
+  let assignment ← findAssignment state.iommu.core mapping.assignment
+  pure {
+    source := assignment.source
+    assignment := mapping.assignment
+    domain := mapping.domain
+    mapping := mapping.handle }
+
+def assignmentScopeFor (state : AuthoritativeExtension)
+    (handle : AssignmentHandle) : Option AssignmentScope := do
+  let assignment ← findAssignment state.iommu.core handle
+  pure {
+    source := assignment.source
+    assignment := assignment.handle
+    domain := assignment.domain }
+
+/-- Derive the invalidation solely from the authoritative pre-state and the
+accepted operation identity.  Mapping attenuation invalidates the complete
+old mapping lifetime, including both access directions and every cached IOVA
+in its bounded range. -/
+def requiredControlScope (state : AuthoritativeExtension) :
+    Operation → Option InvalidationScope
+  | .unmap handle => .mappingSet <$> mappingScopeFor state handle
+  | .attenuate request => .mappingSet <$> mappingScopeFor state request.mapping
+  | .teardown handle => .assignment <$> assignmentScopeFor state handle
+  | _ => none
+
+noncomputable def prepareControlPublication
+    (state : ControlPublicationState)
+    (hstate : state.authoritative.Invariant)
+    (operation : Operation) : ControlPublicationOutcome :=
+  match state.pending with
+  | some _ => { state, accepted := false }
+  | none =>
+      match requiredControlScope state.authoritative operation with
+      | none => { state, accepted := false }
+      | some scope =>
+          match gatedByKernel state.authoritative hstate operation with
+          | .rejected _ => { state, accepted := false }
+          | .accepted logicalAfter _ reply =>
+              let pending : PendingControl := {
+                ticket := state.nextTicket
+                scope
+                logicalAfter
+                cacheBefore := state.cache
+                cacheAfter := invalidate state.cache scope
+                reply }
+              { state := { state with
+                  pending := some pending
+                  nextTicket := state.nextTicket + 1 }
+                accepted := true }
+
+def acknowledgeControlPublication (state : ControlPublicationState)
+    (completion : Completion) : ControlPublicationOutcome :=
+  match state.pending with
+  | none => { state, accepted := false }
+  | some pending =>
+      if completion.ticket = pending.ticket ∧
+          completion.scope = pending.scope ∧
+          pending.cacheBefore = state.cache then
+        { state := {
+            authoritative := pending.logicalAfter
+            cache := pending.cacheAfter
+            pending := none
+            nextTicket := state.nextTicket }
+          accepted := true }
+      else
+        { state, accepted := false }
+
+theorem prepare_control_retains_publications state hstate operation :
+    let prepared := prepareControlPublication state hstate operation
+    prepared.state.authoritative = state.authoritative ∧
+      prepared.state.cache = state.cache := by
+  simp only [prepareControlPublication]
+  split
+  · simp
+  · split
+    · simp
+    · split <;> simp
+
+theorem prepare_control_accepted_binds_exact_successor state hstate operation
+    (haccepted : (prepareControlPublication state hstate operation).accepted = true) :
+    ∃ pending scope logicalAfter hinvariant reply,
+      requiredControlScope state.authoritative operation = some scope ∧
+      gatedByKernel state.authoritative hstate operation =
+        .accepted logicalAfter hinvariant reply ∧
+      (prepareControlPublication state hstate operation).state.pending = some pending ∧
+      pending.ticket = state.nextTicket ∧
+      pending.scope = scope ∧
+      pending.logicalAfter = logicalAfter ∧
+      pending.cacheBefore = state.cache ∧
+      pending.cacheAfter = invalidate state.cache scope := by
+  simp only [prepareControlPublication] at haccepted ⊢
+  split at haccepted
+  · simp_all
+  next hpending =>
+    split at haccepted
+    · simp_all
+    next scope hscope =>
+      split at haccepted
+      · simp_all
+      next logicalAfter hinvariant reply hgate =>
+        simp_all
+
+theorem acknowledge_control_wrong_ticket_inert state completion pending
+    (hpending : state.pending = some pending)
+    (hticket : completion.ticket ≠ pending.ticket) :
+    (acknowledgeControlPublication state completion).accepted = false ∧
+      (acknowledgeControlPublication state completion).state = state := by
+  simp [acknowledgeControlPublication, hpending, hticket]
+
+theorem acknowledge_control_accepted_publishes_exact state completion
+    (haccepted : (acknowledgeControlPublication state completion).accepted = true) :
+    ∃ pending,
+      state.pending = some pending ∧
+      completion.ticket = pending.ticket ∧
+      completion.scope = pending.scope ∧
+      pending.cacheBefore = state.cache ∧
+      (acknowledgeControlPublication state completion).state.authoritative =
+        pending.logicalAfter ∧
+      (acknowledgeControlPublication state completion).state.cache =
+        pending.cacheAfter ∧
+      (acknowledgeControlPublication state completion).state.pending = none := by
+  unfold acknowledgeControlPublication at haccepted
+  split at haccepted
+  · simp_all
+  next pending hpending =>
+    split at haccepted
+    next hexact =>
+      refine ⟨pending, hpending, hexact.1, hexact.2.1, hexact.2.2, ?_, ?_, ?_⟩ <;>
+        simp [acknowledgeControlPublication, hpending, hexact]
+    next => simp_all
 
 end LeanOS.IOMMU.IOTLB
