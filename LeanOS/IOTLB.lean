@@ -308,4 +308,100 @@ theorem exact_ticket_orders_invalidation :
       lookup exampleAcknowledged.published exampleKey = none := by
   native_decide
 
+/-! ## Authoritative frame-release gate
+
+The static IOMMU model already rejects its control-only `releaseFrame` while
+an authoritative mapping names the frame.  The atomic kernel/scrub release
+path also needs the cache half of that condition: it must not retire or scrub
+a frame while either the published IOTLB or an in-flight invalidation can
+still name the old frame lifetime.  This wrapper derives the exact frame from
+the authoritative capability binding; callers do not supply it.
+-/
+
+def entriesNameFrame (entries : List Entry) (frame : FrameHandle) : Bool :=
+  entries.any (·.frame == frame)
+
+def pendingNamesFrame (pending : PendingInvalidation)
+    (frame : FrameHandle) : Bool :=
+  entriesNameFrame pending.before frame || entriesNameFrame pending.after frame
+
+structure AuthoritativeCacheState where
+  authoritative : AuthoritativeExtension
+  cache : PublicationState
+
+inductive FrameReleaseGuard where
+  | allowed
+  | missingAuthority
+  | invalidationPending
+  | mappingLive
+  | cachedTranslationLive
+  deriving BEq, DecidableEq, Repr
+
+/-- Resolve the release target through the same authoritative capability and
+object-to-frame binding consumed by `gatedMemoryByKernel`. -/
+def resolveReleaseFrame (state : AuthoritativeCacheState)
+    (subject : FrameScrub.SubjectId) (slot : FrameScrub.SlotId) :
+    Option FrameHandle :=
+  match LeanOS.Capability.lookup
+      state.authoritative.scrub.memory.capabilities subject slot with
+  | .found capability =>
+      state.authoritative.iommu.core.frameAuthority capability.object
+  | .invalidSubject | .staleSlot => none
+
+/-- Pending invalidation is checked first.  Even if the logical mapping has
+already been removed, its retained pre-state remains device-reachable until
+the exact completion publishes the invalidated cache. -/
+def guardExactFrameRelease (state : AuthoritativeCacheState)
+    (frame : FrameHandle) : FrameReleaseGuard :=
+  match state.cache.pending with
+  | some pending =>
+      if pendingNamesFrame pending frame then .invalidationPending
+      else if state.authoritative.iommu.core.mappings.any (·.frame == frame) then
+        .mappingLive
+      else if entriesNameFrame state.cache.published frame then
+        .cachedTranslationLive
+      else .allowed
+  | none =>
+      if state.authoritative.iommu.core.mappings.any (·.frame == frame) then
+        .mappingLive
+      else if entriesNameFrame state.cache.published frame then
+        .cachedTranslationLive
+      else .allowed
+
+def guardFrameRelease (state : AuthoritativeCacheState)
+    (subject : FrameScrub.SubjectId) (slot : FrameScrub.SlotId) :
+    FrameReleaseGuard :=
+  match resolveReleaseFrame state subject slot with
+  | none => .missingAuthority
+  | some frame => guardExactFrameRelease state frame
+
+theorem pending_invalidation_blocks_exact_frame_release state frame pending
+    (hpending : state.cache.pending = some pending)
+    (hnames : pendingNamesFrame pending frame = true) :
+    guardExactFrameRelease state frame = .invalidationPending := by
+  simp [guardExactFrameRelease, hpending, hnames]
+
+theorem live_mapping_blocks_exact_frame_release state frame
+    (hpending : state.cache.pending = none)
+    (hmapping :
+      state.authoritative.iommu.core.mappings.any (·.frame == frame) = true) :
+    guardExactFrameRelease state frame = .mappingLive := by
+  simp [guardExactFrameRelease, hpending, hmapping]
+
+theorem published_translation_blocks_exact_frame_release state frame
+    (hpending : state.cache.pending = none)
+    (hmapping :
+      state.authoritative.iommu.core.mappings.any (·.frame == frame) = false)
+    (hcache : entriesNameFrame state.cache.published frame = true) :
+    guardExactFrameRelease state frame = .cachedTranslationLive := by
+  simp [guardExactFrameRelease, hpending, hmapping, hcache]
+
+theorem exact_frame_release_allowed_only_after_cleanup state frame
+    (hpending : state.cache.pending = none)
+    (hmapping :
+      state.authoritative.iommu.core.mappings.any (·.frame == frame) = false)
+    (hcache : entriesNameFrame state.cache.published frame = false) :
+    guardExactFrameRelease state frame = .allowed := by
+  simp [guardExactFrameRelease, hpending, hmapping, hcache]
+
 end LeanOS.IOMMU.IOTLB
