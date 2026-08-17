@@ -784,6 +784,42 @@ structure AuthorityCleanupPublicationOutcome where
   state : AuthorityCleanupPublicationState
   accepted : Bool
 
+/-- Frame-lifecycle publication must also observe the multi-scope cleanup
+ticket.  While that ticket retains a cache projection naming the old frame
+lifetime, release and the downstream scrub/fresh-lifetime path remain
+blocked.  Once no cleanup is pending, the ordinary exact-frame guard decides
+from the published authority and cache projections. -/
+def guardAuthorityCleanupExactFrameRelease
+    (state : AuthorityCleanupPublicationState)
+    (frame : FrameHandle) : FrameReleaseGuard :=
+  match state.pending with
+  | some pending =>
+      if entriesNameFrame pending.cacheBefore frame ||
+          entriesNameFrame pending.cacheAfter frame then
+        .invalidationPending
+      else
+        guardExactFrameRelease {
+          authoritative := state.authoritative
+          cache := {
+            published := state.cache
+            pending := none
+            nextTicket := state.nextTicket } } frame
+  | none =>
+      guardExactFrameRelease {
+        authoritative := state.authoritative
+        cache := {
+          published := state.cache
+          pending := none
+          nextTicket := state.nextTicket } } frame
+
+theorem authority_cleanup_pending_blocks_exact_frame_release
+    state frame pending
+    (hpending : state.pending = some pending)
+    (hnames : entriesNameFrame pending.cacheBefore frame = true) :
+    guardAuthorityCleanupExactFrameRelease state frame =
+      .invalidationPending := by
+  simp [guardAuthorityCleanupExactFrameRelease, hpending, hnames]
+
 /-- Only a checked kernel transition that actually removes DMA authority can
 open a cleanup ticket.  The caller supplies neither the logical successor nor
 the finite invalidation scope set. -/
@@ -862,6 +898,27 @@ theorem prepare_authority_cleanup_accepted_binds_checked_successor
     · simp_all
     next hscopes =>
       simp_all
+
+/-- An accepted checked cleanup cannot expose release, scrub, or a fresh
+frame lifetime while its retained pre-cleanup cache still names that exact
+old lifetime.  Preparation publishes neither projection; only the exact
+multi-scope acknowledgement can clear this guard. -/
+theorem prepared_authority_cleanup_blocks_cached_frame_release
+    state hstate operation frame
+    (hprepared :
+      (prepareAuthorityCleanupPublication state hstate operation).accepted = true)
+    (hnames : entriesNameFrame state.cache frame = true) :
+    guardAuthorityCleanupExactFrameRelease
+      (prepareAuthorityCleanupPublication state hstate operation).state frame =
+        .invalidationPending := by
+  obtain ⟨pending, _logicalAfter, _scopes, _hlogical, _hscopes, _hnonempty,
+      hpending, _hticket, _hpendingScopes, _hpendingLogical,
+      hcacheBefore, _hcacheAfter⟩ :=
+    prepare_authority_cleanup_accepted_binds_checked_successor
+      state hstate operation hprepared
+  exact authority_cleanup_pending_blocks_exact_frame_release
+    (prepareAuthorityCleanupPublication state hstate operation).state frame pending
+    hpending (by simpa [hcacheBefore] using hnames)
 
 theorem acknowledge_authority_cleanup_wrong_ticket_inert
     state completion pending
