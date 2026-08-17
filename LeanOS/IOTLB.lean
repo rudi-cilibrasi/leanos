@@ -404,4 +404,90 @@ theorem exact_frame_release_allowed_only_after_cleanup state frame
     guardExactFrameRelease state frame = .allowed := by
   simp [guardExactFrameRelease, hpending, hmapping, hcache]
 
+/-! ## Cache-aware authoritative memory publication
+
+`gatedMemoryByKernel` is the authoritative release/scrub boundary, but its
+IOMMU projection does not contain the separately published IOTLB state.  This
+wrapper makes that missing projection explicit and checks it before delegating
+a release.  Rejection retains both projections; accepted non-release
+operations and an eligible release retain the cache while publishing only the
+authoritative successor returned by the existing gate.
+-/
+
+inductive CachedMemoryReject where
+  | authoritative (reason : AuthoritativeMemoryReject)
+  | missingAuthority
+  | invalidationPending
+  | mappingLive
+  | cachedTranslationLive
+  deriving DecidableEq, Repr
+
+inductive CachedMemoryOutcome (before : AuthoritativeCacheState) where
+  | accepted (after : AuthoritativeCacheState)
+      (invariant : after.authoritative.Invariant)
+      (reply : AuthoritativeMemoryReply)
+  | rejected (reason : CachedMemoryReject)
+
+def CachedMemoryOutcome.state {before : AuthoritativeCacheState} :
+    CachedMemoryOutcome before → AuthoritativeCacheState
+  | .accepted after _ _ => after
+  | .rejected _ => before
+
+def CachedMemoryOutcome.reason {before : AuthoritativeCacheState} :
+    CachedMemoryOutcome before → Option CachedMemoryReject
+  | .accepted _ _ _ => none
+  | .rejected reason => some reason
+
+private def liftMemoryOutcome (before : AuthoritativeCacheState) :
+    AuthoritativeMemoryOutcome before.authoritative → CachedMemoryOutcome before
+  | .accepted after hinvariant reply =>
+      .accepted { authoritative := after, cache := before.cache } hinvariant reply
+  | .rejected reason => .rejected (.authoritative reason)
+
+/-- Release cannot enter the authoritative lifecycle gate until logical
+mappings, published translations, and exact pending invalidations have all
+stopped naming the old frame lifetime. -/
+noncomputable def gatedCachedMemoryByKernel (state : AuthoritativeCacheState)
+    (hstate : state.authoritative.Invariant)
+    (operation : AuthoritativeMemoryOperation) : CachedMemoryOutcome state :=
+  match operation with
+  | .release subject slot =>
+      match guardFrameRelease state subject slot with
+      | .allowed =>
+          liftMemoryOutcome state
+            (gatedMemoryByKernel state.authoritative hstate operation)
+      | .missingAuthority => .rejected .missingAuthority
+      | .invalidationPending => .rejected .invalidationPending
+      | .mappingLive => .rejected .mappingLive
+      | .cachedTranslationLive => .rejected .cachedTranslationLive
+  | operation =>
+      liftMemoryOutcome state
+        (gatedMemoryByKernel state.authoritative hstate operation)
+
+theorem cached_release_guard_rejection_stutters state hstate subject slot reason
+    (hguard : guardFrameRelease state subject slot = reason)
+    (hblocked : reason ≠ .allowed) :
+    (gatedCachedMemoryByKernel state hstate (.release subject slot)).state = state := by
+  cases reason <;>
+    simp_all [gatedCachedMemoryByKernel, CachedMemoryOutcome.state]
+
+theorem cached_release_pending_rejected state hstate subject slot
+    (hguard : guardFrameRelease state subject slot = .invalidationPending) :
+    (gatedCachedMemoryByKernel state hstate (.release subject slot)).reason =
+      some .invalidationPending := by
+  simp [gatedCachedMemoryByKernel, hguard, CachedMemoryOutcome.reason]
+
+theorem cached_release_allowed_delegates state hstate subject slot
+    (hguard : guardFrameRelease state subject slot = .allowed) :
+    (gatedCachedMemoryByKernel state hstate
+        (.release subject slot)).state.authoritative =
+        (gatedMemoryByKernel state.authoritative hstate
+          (.release subject slot)).state ∧
+      (gatedCachedMemoryByKernel state hstate
+        (.release subject slot)).state.cache = state.cache := by
+  cases hmemory : gatedMemoryByKernel state.authoritative hstate
+      (.release subject slot) <;>
+    simp [gatedCachedMemoryByKernel, hguard, liftMemoryOutcome, hmemory,
+      CachedMemoryOutcome.state, AuthoritativeMemoryOutcome.state]
+
 end LeanOS.IOMMU.IOTLB
