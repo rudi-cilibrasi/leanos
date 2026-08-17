@@ -545,6 +545,22 @@ theorem cached_release_allowed_delegates state hstate subject slot
     simp [gatedCachedMemoryByKernel, hguard, liftMemoryOutcome, hmemory,
       CachedMemoryOutcome.state, AuthoritativeMemoryOutcome.state]
 
+/-- An exact-frame cleanup result reaches the actual subject/slot memory
+release boundary only through authoritative capability resolution.  Once that
+resolution names the same frame, the cache-aware gate delegates to the
+existing release/scrub transition and retains the published cache. -/
+theorem exact_frame_release_allowed_delegates state hstate subject slot frame
+    (hresolve : resolveReleaseFrame state subject slot = some frame)
+    (hexact : guardExactFrameRelease state frame = .allowed) :
+    (gatedCachedMemoryByKernel state hstate
+        (.release subject slot)).state.authoritative =
+        (gatedMemoryByKernel state.authoritative hstate
+          (.release subject slot)).state ∧
+      (gatedCachedMemoryByKernel state hstate
+        (.release subject slot)).state.cache = state.cache := by
+  apply cached_release_allowed_delegates
+  simp [guardFrameRelease, hresolve, hexact]
+
 /-! ## Coupled logical-transition publication
 
 Accepted unmap, permission-reduction, and assignment-teardown operations must
@@ -1185,7 +1201,11 @@ theorem executable_subject_termination_cleanup_witness :
       lookup
         (invalidateScopes [subjectTerminationWitnessEntry]
           subjectTerminationWitnessScopes)
-        subjectTerminationWitnessKey = none := by
+        subjectTerminationWitnessKey = none ∧
+      entriesNameFrame
+        (invalidateScopes [subjectTerminationWitnessEntry]
+          subjectTerminationWitnessScopes)
+        subjectTerminationWitnessMapping.frame = false := by
   native_decide
 
 end LeanOS.IOMMU.IOTLB
