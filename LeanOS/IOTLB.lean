@@ -946,4 +946,77 @@ theorem subject_termination_cleanup_removes_covered_key
   rw [hcache, hcacheAfter]
   exact invalidate_scopes_covered_absent state.cache scopes key hcoveredScopes
 
+/-! ## Executable subject-termination cleanup witness
+
+The generic theorem above is deliberately quantified over every coherent
+authoritative state.  This finite witness keeps the non-vacuity evidence
+executable: one live owner has an assignment, a mapping, and a matching cached
+translation to the same frame lifetime.  The exact mapping and assignment
+scopes derived from removing those authority records both cover the key, and
+their finite cleanup removes it.  This remains model evidence; it does not
+claim VT-d, compiler, or QEMU correspondence.
+-/
+
+def subjectTerminationWitnessAssignment : Assignment :=
+  { handle := ⟨0, 1⟩
+    device := 0
+    source := 0
+    domain := ⟨0, 1⟩
+    owner := 2 }
+
+def subjectTerminationWitnessMapping : Mapping :=
+  { handle := ⟨0, 1⟩
+    assignment := subjectTerminationWitnessAssignment.handle
+    domain := subjectTerminationWitnessAssignment.domain
+    owner := subjectTerminationWitnessAssignment.owner
+    iova := 0
+    length := pageSize
+    frame := ⟨4, 1⟩
+    frameOffset := 0
+    permission := readWrite }
+
+def subjectTerminationWitnessKey : Key :=
+  { source := subjectTerminationWitnessAssignment.source
+    assignment := subjectTerminationWitnessAssignment.handle
+    domain := subjectTerminationWitnessAssignment.domain
+    mapping := subjectTerminationWitnessMapping.handle
+    iova := subjectTerminationWitnessMapping.iova
+    direction := .read }
+
+def subjectTerminationWitnessEntry : Entry :=
+  { key := subjectTerminationWitnessKey
+    frame := subjectTerminationWitnessMapping.frame
+    permission := subjectTerminationWitnessMapping.permission }
+
+def subjectTerminationWitnessScopes : List InvalidationScope :=
+  [ .mappingSet {
+      source := subjectTerminationWitnessAssignment.source
+      assignment := subjectTerminationWitnessAssignment.handle
+      domain := subjectTerminationWitnessAssignment.domain
+      mapping := subjectTerminationWitnessMapping.handle },
+    .assignment {
+      source := subjectTerminationWitnessAssignment.source
+      assignment := subjectTerminationWitnessAssignment.handle
+      domain := subjectTerminationWitnessAssignment.domain } ]
+
+/-- The old mapping and assignment are live, the cache contains their exact
+translation, and complete subject cleanup makes that old key unreachable. -/
+theorem executable_subject_termination_cleanup_witness :
+    [subjectTerminationWitnessAssignment].find?
+        (fun assignment => assignment.handle ==
+          subjectTerminationWitnessAssignment.handle) =
+        some subjectTerminationWitnessAssignment ∧
+      [subjectTerminationWitnessMapping].find?
+        (fun mapping => mapping.handle == subjectTerminationWitnessMapping.handle) =
+        some subjectTerminationWitnessMapping ∧
+      lookup [subjectTerminationWitnessEntry] subjectTerminationWitnessKey =
+        some subjectTerminationWitnessEntry ∧
+      subjectTerminationWitnessScopes.any
+        (scopeCoversKey · subjectTerminationWitnessKey) = true ∧
+      lookup
+        (invalidateScopes [subjectTerminationWitnessEntry]
+          subjectTerminationWitnessScopes)
+        subjectTerminationWitnessKey = none := by
+  native_decide
+
 end LeanOS.IOMMU.IOTLB
