@@ -1131,6 +1131,103 @@ theorem subject_termination_cleanup_publishes_release_boundary
         (.ordinary (.terminateSubject subject))).state
       completion frame hcompleted
 
+/-- Exact subject-termination acknowledgement reaches the real memory
+release/scrub transition only after the acknowledged authoritative successor
+and complete published cache both stop naming the old frame lifetime, and the
+subject/slot capability still resolves that exact frame.  This composes the
+cleanup publication protocol with the cache-aware authoritative memory gate;
+it does not assume a caller-supplied frame is authoritative. -/
+theorem acknowledged_subject_termination_resolved_release_delegates
+    (state : AuthorityCleanupPublicationState)
+    (hstate : state.authoritative.Invariant)
+    (owner : Nat)
+    (completion : AuthorityCleanupCompletion)
+    (hcompleted :
+      (acknowledgeAuthorityCleanupPublication
+        (prepareAuthorityCleanupPublication state hstate
+          (.ordinary (.terminateSubject owner))).state
+        completion).accepted = true)
+    (frame : FrameHandle)
+    (subject : FrameScrub.SubjectId)
+    (slot : FrameScrub.SlotId)
+    (hmapping :
+      (acknowledgeAuthorityCleanupPublication
+        (prepareAuthorityCleanupPublication state hstate
+          (.ordinary (.terminateSubject owner))).state
+        completion).state.authoritative.iommu.core.mappings.any
+          (·.frame == frame) = false)
+    (hcache :
+      entriesNameFrame
+        (acknowledgeAuthorityCleanupPublication
+          (prepareAuthorityCleanupPublication state hstate
+            (.ordinary (.terminateSubject owner))).state
+          completion).state.cache frame = false)
+    (hresolve :
+      resolveReleaseFrame {
+        authoritative :=
+          (acknowledgeAuthorityCleanupPublication
+            (prepareAuthorityCleanupPublication state hstate
+              (.ordinary (.terminateSubject owner))).state
+            completion).state.authoritative
+        cache := {
+          published :=
+            (acknowledgeAuthorityCleanupPublication
+              (prepareAuthorityCleanupPublication state hstate
+                (.ordinary (.terminateSubject owner))).state
+              completion).state.cache
+          pending := none
+          nextTicket :=
+            (acknowledgeAuthorityCleanupPublication
+              (prepareAuthorityCleanupPublication state hstate
+                (.ordinary (.terminateSubject owner))).state
+              completion).state.nextTicket } }
+        subject slot = some frame)
+    (hinvariant :
+      (acknowledgeAuthorityCleanupPublication
+        (prepareAuthorityCleanupPublication state hstate
+          (.ordinary (.terminateSubject owner))).state
+        completion).state.authoritative.Invariant) :
+    let acknowledged :=
+      (acknowledgeAuthorityCleanupPublication
+        (prepareAuthorityCleanupPublication state hstate
+          (.ordinary (.terminateSubject owner))).state
+        completion).state
+    let releaseState : AuthoritativeCacheState := {
+      authoritative := acknowledged.authoritative
+      cache := {
+        published := acknowledged.cache
+        pending := none
+        nextTicket := acknowledged.nextTicket } }
+    (gatedCachedMemoryByKernel releaseState hinvariant
+        (.release subject slot)).state.authoritative =
+        (gatedMemoryByKernel releaseState.authoritative hinvariant
+          (.release subject slot)).state ∧
+      (gatedCachedMemoryByKernel releaseState hinvariant
+        (.release subject slot)).state.cache = releaseState.cache := by
+  dsimp only
+  let prepared :=
+    (prepareAuthorityCleanupPublication state hstate
+      (.ordinary (.terminateSubject owner))).state
+  let acknowledged :=
+    (acknowledgeAuthorityCleanupPublication prepared completion).state
+  let releaseState : AuthoritativeCacheState := {
+    authoritative := acknowledged.authoritative
+    cache := {
+      published := acknowledged.cache
+      pending := none
+      nextTicket := acknowledged.nextTicket } }
+  have hallowedCleanup :
+      guardAuthorityCleanupExactFrameRelease acknowledged frame = .allowed :=
+    acknowledge_authority_cleanup_allows_exact_frame_release
+      prepared completion frame hcompleted hmapping hcache
+  have hallowedExact :
+      guardExactFrameRelease releaseState frame = .allowed := by
+    rw [acknowledge_authority_cleanup_accepted_reaches_exact_frame_guard
+      prepared completion frame hcompleted] at hallowedCleanup
+    exact hallowedCleanup
+  exact exact_frame_release_allowed_delegates releaseState hinvariant
+    subject slot frame hresolve hallowedExact
+
 /-! ## Executable subject-termination cleanup witness
 
 The generic theorem above is deliberately quantified over every coherent
