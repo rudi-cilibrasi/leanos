@@ -438,6 +438,11 @@ def CachedMemoryOutcome.reason {before : AuthoritativeCacheState} :
   | .accepted _ _ _ => none
   | .rejected reason => some reason
 
+def CachedMemoryOutcome.isAccepted {before : AuthoritativeCacheState} :
+    CachedMemoryOutcome before → Bool
+  | .accepted _ _ _ => true
+  | .rejected _ => false
+
 private def liftMemoryOutcome (before : AuthoritativeCacheState) :
     AuthoritativeMemoryOutcome before.authoritative → CachedMemoryOutcome before
   | .accepted after hinvariant reply =>
@@ -476,6 +481,15 @@ theorem cached_release_pending_rejected state hstate subject slot
     (gatedCachedMemoryByKernel state hstate (.release subject slot)).reason =
       some .invalidationPending := by
   simp [gatedCachedMemoryByKernel, hguard, CachedMemoryOutcome.reason]
+
+theorem cached_release_accepted_requires_guard_allowed state hstate subject slot
+    (haccepted :
+      (gatedCachedMemoryByKernel state hstate
+        (.release subject slot)).isAccepted = true) :
+    guardFrameRelease state subject slot = .allowed := by
+  cases hguard : guardFrameRelease state subject slot <;>
+    simp_all [gatedCachedMemoryByKernel, CachedMemoryOutcome.isAccepted,
+      liftMemoryOutcome]
 
 theorem cached_release_allowed_delegates state hstate subject slot
     (hguard : guardFrameRelease state subject slot = .allowed) :
