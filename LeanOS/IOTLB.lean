@@ -952,6 +952,32 @@ theorem acknowledge_authority_cleanup_accepted_publishes_exact
         simp [acknowledgeAuthorityCleanupPublication, hpending, hexact]
     next => simp_all
 
+/-- Exact multi-scope acknowledgement clears the cleanup-specific lifecycle
+gate and returns release decisions to the ordinary authoritative/cache guard.
+This does not assert that release is allowed: the ordinary guard still checks
+the published logical successor and every remaining cache entry. -/
+theorem acknowledge_authority_cleanup_accepted_reaches_exact_frame_guard
+    state completion frame
+    (haccepted :
+      (acknowledgeAuthorityCleanupPublication state completion).accepted = true) :
+    guardAuthorityCleanupExactFrameRelease
+        (acknowledgeAuthorityCleanupPublication state completion).state frame =
+      guardExactFrameRelease {
+        authoritative :=
+          (acknowledgeAuthorityCleanupPublication state completion).state.authoritative
+        cache := {
+          published :=
+            (acknowledgeAuthorityCleanupPublication state completion).state.cache
+          pending := none
+          nextTicket :=
+            (acknowledgeAuthorityCleanupPublication state completion).state.nextTicket } }
+        frame := by
+  obtain ⟨_pending, _hpending, _hticket, _hscopes, _hcacheBefore,
+      _hauthoritative, _hcache, hcleared⟩ :=
+    acknowledge_authority_cleanup_accepted_publishes_exact
+      state completion haccepted
+  simp [guardAuthorityCleanupExactFrameRelease, hcleared]
+
 /-- A subject-termination cleanup cannot acknowledge only part of the stale
 DMA authority that the checked successor removed.  For the concrete
 `terminateSubject` kernel operation, every key covered by the internally
@@ -1002,6 +1028,71 @@ theorem subject_termination_cleanup_removes_covered_key
     exact hcovered
   rw [hcache, hcacheAfter]
   exact invalidate_scopes_covered_absent state.cache scopes key hcoveredScopes
+
+/-- Subject termination composes the checked kernel successor, covered-key
+absence, and the release boundary: exact acknowledgement publishes the
+authoritative cleanup, removes every covered stale translation, and returns
+frame lifecycle decisions to the ordinary exact-frame guard. -/
+theorem subject_termination_cleanup_publishes_release_boundary
+    (state : AuthorityCleanupPublicationState)
+    (hstate : state.authoritative.Invariant)
+    (subject : Nat)
+    (completion : AuthorityCleanupCompletion)
+    (hprepared :
+      (prepareAuthorityCleanupPublication state hstate
+        (.ordinary (.terminateSubject subject))).accepted = true)
+    (hcompleted :
+      (acknowledgeAuthorityCleanupPublication
+        (prepareAuthorityCleanupPublication state hstate
+          (.ordinary (.terminateSubject subject))).state
+        completion).accepted = true)
+    (key : Key)
+    (hcovered :
+      (requiredAuthorityCleanupScopes state.authoritative
+        (applyKernelOperation state.authoritative
+          (.ordinary (.terminateSubject subject)))).any
+        (scopeCoversKey · key) = true)
+    (frame : FrameHandle) :
+    let acknowledged :=
+      (acknowledgeAuthorityCleanupPublication
+        (prepareAuthorityCleanupPublication state hstate
+          (.ordinary (.terminateSubject subject))).state
+        completion).state
+    acknowledged.authoritative =
+        applyKernelOperation state.authoritative
+          (.ordinary (.terminateSubject subject)) ∧
+      lookup acknowledged.cache key = none ∧
+      guardAuthorityCleanupExactFrameRelease acknowledged frame =
+        guardExactFrameRelease {
+          authoritative := acknowledged.authoritative
+          cache := {
+            published := acknowledged.cache
+            pending := none
+            nextTicket := acknowledged.nextTicket } } frame := by
+  dsimp only
+  obtain ⟨pending, logicalAfter, _scopes, hlogical, _hscopes, _hnonempty,
+      hpending, _hticket, _hpendingScopes, hpendingLogical,
+      _hcacheBefore, _hcacheAfter⟩ :=
+    prepare_authority_cleanup_accepted_binds_checked_successor
+      state hstate (.ordinary (.terminateSubject subject)) hprepared
+  obtain ⟨completedPending, hcompletedPending, _hcompletionTicket,
+      _hcompletionScopes, _hcompletionCache, hauthoritative,
+      _hcache, _hcleared⟩ :=
+    acknowledge_authority_cleanup_accepted_publishes_exact
+      (prepareAuthorityCleanupPublication state hstate
+        (.ordinary (.terminateSubject subject))).state
+      completion hcompleted
+  have hpendingEq : completedPending = pending := by
+    apply Option.some.inj
+    exact hcompletedPending.symm.trans hpending
+  subst completedPending
+  refine ⟨hauthoritative.trans (hpendingLogical.trans hlogical), ?_, ?_⟩
+  · exact subject_termination_cleanup_removes_covered_key
+      state hstate subject completion hprepared hcompleted key hcovered
+  · exact acknowledge_authority_cleanup_accepted_reaches_exact_frame_guard
+      (prepareAuthorityCleanupPublication state hstate
+        (.ordinary (.terminateSubject subject))).state
+      completion frame hcompleted
 
 /-! ## Executable subject-termination cleanup witness
 
