@@ -76,6 +76,14 @@ theorem erase_assignment_absent entries assignment key
   have heq := of_decide_eq_true hfound
   exact hne (congrArg Key.assignment heq |>.trans hkey)
 
+theorem erase_key_absent entries key :
+    lookup (eraseKey entries key) key = none := by
+  simp only [lookup, List.find?_eq_none, eraseKey, List.mem_filter]
+  intro entry hentry hfound
+  have hne := of_decide_eq_true hentry.2
+  have heq := of_decide_eq_true hfound
+  exact hne heq
+
 theorem erase_mapping_preserves_coherent entries mapping
     (hcoherent : Coherent entries) : Coherent (eraseMapping entries mapping) := by
   exact Nat.le_trans (erase_mapping_length entries mapping) hcoherent
@@ -113,6 +121,31 @@ def eraseAssignmentScope (entries : List Entry)
 def invalidate (entries : List Entry) : InvalidationScope → List Entry
   | .mapping key => eraseKey entries key
   | .assignment scope => eraseAssignmentScope entries scope
+
+theorem erase_assignment_scope_absent entries scope key
+    (hsource : key.source = scope.source)
+    (hassignment : key.assignment = scope.assignment)
+    (hdomain : key.domain = scope.domain) :
+    lookup (eraseAssignmentScope entries scope) key = none := by
+  simp only [lookup, List.find?_eq_none, eraseAssignmentScope, List.mem_filter]
+  intro entry hentry hfound
+  have houtside := of_decide_eq_true hentry.2
+  have heq := of_decide_eq_true hfound
+  rcases houtside with hne | hne | hne
+  · exact hne (congrArg Key.source heq |>.trans hsource)
+  · exact hne (congrArg Key.assignment heq |>.trans hassignment)
+  · exact hne (congrArg Key.domain heq |>.trans hdomain)
+
+theorem invalidate_mapping_absent entries key :
+    lookup (invalidate entries (.mapping key)) key = none := by
+  exact erase_key_absent entries key
+
+theorem invalidate_assignment_absent entries scope key
+    (hsource : key.source = scope.source)
+    (hassignment : key.assignment = scope.assignment)
+    (hdomain : key.domain = scope.domain) :
+    lookup (invalidate entries (.assignment scope)) key = none := by
+  exact erase_assignment_scope_absent entries scope key hsource hassignment hdomain
 
 structure PendingInvalidation where
   ticket : Nat
@@ -205,6 +238,13 @@ theorem acknowledge_wrong_ticket_inert state completion pending
       (acknowledgeInvalidation state completion).state = state := by
   simp [acknowledgeInvalidation, hpending, hticket]
 
+theorem acknowledge_wrong_scope_inert state completion pending
+    (hpending : state.pending = some pending)
+    (hscope : completion.scope ≠ pending.scope) :
+    (acknowledgeInvalidation state completion).accepted = false ∧
+      (acknowledgeInvalidation state completion).state = state := by
+  simp [acknowledgeInvalidation, hpending, hscope]
+
 theorem acknowledge_accepted_exact state completion
     (haccepted : (acknowledgeInvalidation state completion).accepted = true) :
     ∃ pending,
@@ -260,6 +300,9 @@ theorem exact_ticket_orders_invalidation :
         ticket := 8, scope := .mapping exampleKey }).accepted = false ∧
       (acknowledgeInvalidation examplePrepared {
         ticket := 8, scope := .mapping exampleKey }).state = examplePrepared ∧
+      (acknowledgeInvalidation examplePrepared {
+        ticket := 9, scope := .assignment {
+          source := 1, assignment := ⟨1, 2⟩, domain := ⟨1, 3⟩ } }).accepted = false ∧
       (acknowledgeInvalidation examplePrepared {
         ticket := 9, scope := .mapping exampleKey }).accepted = true ∧
       lookup exampleAcknowledged.published exampleKey = none := by
