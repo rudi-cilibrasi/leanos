@@ -895,4 +895,55 @@ theorem acknowledge_authority_cleanup_accepted_publishes_exact
         simp [acknowledgeAuthorityCleanupPublication, hpending, hexact]
     next => simp_all
 
+/-- A subject-termination cleanup cannot acknowledge only part of the stale
+DMA authority that the checked successor removed.  For the concrete
+`terminateSubject` kernel operation, every key covered by the internally
+derived mapping/assignment scope inventory is absent from the cache published
+by an accepted exact completion. -/
+theorem subject_termination_cleanup_removes_covered_key
+    (state : AuthorityCleanupPublicationState)
+    (hstate : state.authoritative.Invariant)
+    (subject : Nat)
+    (completion : AuthorityCleanupCompletion)
+    (hprepared :
+      (prepareAuthorityCleanupPublication state hstate
+        (.ordinary (.terminateSubject subject))).accepted = true)
+    (hcompleted :
+      (acknowledgeAuthorityCleanupPublication
+        (prepareAuthorityCleanupPublication state hstate
+          (.ordinary (.terminateSubject subject))).state
+        completion).accepted = true)
+    (key : Key)
+    (hcovered :
+      (requiredAuthorityCleanupScopes state.authoritative
+        (applyKernelOperation state.authoritative
+          (.ordinary (.terminateSubject subject)))).any
+        (scopeCoversKey · key) = true) :
+    lookup
+      (acknowledgeAuthorityCleanupPublication
+        (prepareAuthorityCleanupPublication state hstate
+          (.ordinary (.terminateSubject subject))).state
+        completion).state.cache key = none := by
+  obtain ⟨pending, logicalAfter, scopes, hlogical, hscopes, _hnonempty,
+      hpending, _hticket, _hpendingScopes, _hpendingLogical,
+      _hcacheBefore, hcacheAfter⟩ :=
+    prepare_authority_cleanup_accepted_binds_checked_successor
+      state hstate (.ordinary (.terminateSubject subject)) hprepared
+  obtain ⟨completedPending, hcompletedPending, _hcompletionTicket,
+      _hcompletionScopes, _hcompletionCache, _hauthoritative,
+      hcache, _hcleared⟩ :=
+    acknowledge_authority_cleanup_accepted_publishes_exact
+      (prepareAuthorityCleanupPublication state hstate
+        (.ordinary (.terminateSubject subject))).state
+      completion hcompleted
+  have hpendingEq : completedPending = pending := by
+    apply Option.some.inj
+    exact hcompletedPending.symm.trans hpending
+  subst completedPending
+  have hcoveredScopes : scopes.any (scopeCoversKey · key) = true := by
+    rw [hscopes, hlogical]
+    exact hcovered
+  rw [hcache, hcacheAfter]
+  exact invalidate_scopes_covered_absent state.cache scopes key hcoveredScopes
+
 end LeanOS.IOMMU.IOTLB
