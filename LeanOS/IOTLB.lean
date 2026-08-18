@@ -2404,6 +2404,61 @@ theorem checked_control_unmap_authoritative_prepare_binds_exact_scope
   · simpa [lower] using hbefore
   · simpa [lower, hscopeExact] using hcache
 
+/-- The checked unmap witness reaches exact completion through the same
+caller-visible front door: acknowledgement publishes the mapping-free
+authoritative successor, removes the old translation, and closes the shared
+pending slot. -/
+theorem checked_control_unmap_authoritative_acknowledges_exact
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (controlCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.control (.unmap subjectTerminationWitnessMapping.handle))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (controlCheckedCompletion controlCheckedMappingScope)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative =
+        { kernel := (subjectTerminationCheckedBefore plan).kernel
+          iommu := controlCheckedUnmappedIOMMU plan
+          scrub := (subjectTerminationCheckedBefore plan).scrub } ∧
+      lookup acknowledged.state.cache subjectTerminationWitnessKey = none ∧
+      acknowledged.state.pending = none := by
+  simp only [prepareAuthoritativePublication,
+    controlCheckedAuthoritativePublicationState, prepareControlPublication]
+  rw [checked_control_unmap_requires_exact_scope plan]
+  have haccepted := checked_control_unmap_gated_accepts plan
+  cases hgate : gatedByKernel (subjectTerminationCheckedBefore plan)
+      (subject_termination_checked_before_invariant plan)
+      (.unmap subjectTerminationWitnessMapping.handle) with
+  | rejected reason =>
+      simp [hgate, AuthoritativeOutcome.isAccepted] at haccepted
+  | accepted after hinvariant reply =>
+      have hexact :
+          after =
+              { kernel := (subjectTerminationCheckedBefore plan).kernel
+                iommu := controlCheckedUnmappedIOMMU plan
+                scrub := (subjectTerminationCheckedBefore plan).scrub } ∧
+            reply = .unmapped := by
+        unfold gatedByKernel at hgate
+        rw [show (subjectTerminationCheckedBefore plan).kernel.execution.mode =
+            .running by rfl] at hgate
+        simp only at hgate
+        rw [show gate (subjectTerminationCheckedBefore plan).iommu
+            (.unmap subjectTerminationWitnessMapping.handle) =
+              .accepted (controlCheckedUnmappedIOMMU plan) .unmapped by
+          simpa [subjectTerminationCheckedBefore] using
+            checked_control_unmap_gate plan] at hgate
+        simp only at hgate
+        rw [dif_pos (checked_control_unmap_candidate_coherent plan)] at hgate
+        cases hgate
+        exact ⟨rfl, rfl⟩
+      rcases hexact with ⟨rfl, rfl⟩
+      simp [acknowledgeAuthoritativePublication, acknowledgeControlPublication,
+        controlCheckedCompletion, controlCheckedMappingScope, invalidate,
+        eraseMappingScope, lookup, subjectTerminationWitnessEntry,
+        subjectTerminationWitnessKey, subjectTerminationWitnessAssignment,
+        subjectTerminationWitnessMapping]
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
