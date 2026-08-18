@@ -1594,6 +1594,46 @@ theorem subject_termination_checked_reconcile_removes_device_authority
     subjectTerminationCheckedCore, subjectTerminationWitnessAssignment,
     hremoved] using hreconciled
 
+/-- The concrete checked termination publishes exactly the validated finite
+reconciliation candidate at the IOMMU boundary.  This keeps the remaining
+outer-gate obligation focused on the kernel/scrub memory projection rather
+than reopening capability or finite-core validation branches. -/
+theorem subject_termination_checked_reconcile_core_eq_candidate
+    (plan : BootPageTablePlan.Plan) :
+    (reconcileKernelAuthority
+      (subjectTerminationCheckedKernelAfter plan)
+      (subjectTerminationCheckedBefore plan).iommu).core =
+      subjectTerminationCheckedReconcileCandidate plan := by
+  classical
+  have hchanged :
+      (subjectTerminationCheckedKernelAfter plan).capabilities ≠
+        (subjectTerminationCheckedBefore plan).iommu.core.capabilityAuthority := by
+    simpa [subjectTerminationCheckedKernelAfter] using
+      subject_termination_checked_kernel_changes_authority plan
+  have hwell :=
+    subject_termination_checked_candidate_capability_well_formed plan
+  have hvalid := subject_termination_checked_reconcile_candidate_valid plan
+  have hvalid' :
+      validateCore
+        { (subjectTerminationCheckedBefore plan).iommu.core with
+          currentOwner :=
+            (subjectTerminationCheckedKernelAfter plan).execution.core.context.currentSubject
+          assignments :=
+            (subjectTerminationCheckedBefore plan).iommu.core.assignments.filter
+              (fun assignment =>
+                (subjectTerminationCheckedKernelAfter plan).capabilities.subjects
+                  assignment.owner)
+          mappings := []
+          frames := retireDeadOwnerFrames
+            (subjectTerminationCheckedKernelAfter plan)
+            (subjectTerminationCheckedBefore plan).iommu.core.frames
+          capabilityAuthority :=
+            (subjectTerminationCheckedKernelAfter plan).capabilities
+          capabilities := [] } = true := by
+    simpa [subjectTerminationCheckedReconcileCandidate] using hvalid
+  simp [reconcileKernelAuthority, hchanged, hwell, hvalid',
+    subjectTerminationCheckedReconcileCandidate]
+
 noncomputable def subjectTerminationCheckedAfter
     (plan : BootPageTablePlan.Plan) : AuthoritativeExtension :=
   applyKernelOperation (subjectTerminationCheckedBefore plan)
