@@ -1760,13 +1760,19 @@ theorem subject_termination_checked_reconciled_candidate_coherent
       AuthoritativeExtension).Coherent := by
   have hcore := subject_termination_checked_reconcile_core_eq_candidate plan
   have hscrub := subject_termination_checked_reconciled_scrub_invariant plan
-  simp [AuthoritativeExtension.Coherent, hcore,
+  have hremoved :
+      (subjectTerminationCheckedKernelAfter plan).capabilities.subjects 2 =
+        false := by
+    exact executable_subject_termination_checked_kernel_removes_owner plan
+  rw [AuthoritativeExtension.Coherent, hcore]
+  refine ⟨?_, ?_, ?_, ?_, hscrub, ?_, ?_, ?_, ?_⟩ <;>
+    simp [hremoved,
     subjectTerminationCheckedReconcileCandidate,
-    subjectTerminationCheckedKernelAfter, subjectTerminationCheckedBefore,
+    subjectTerminationCheckedBefore,
     subjectTerminationCheckedIOMMU, subjectTerminationCheckedCore,
-    authoritativeSample, authoritativeSampleCore,
-    FailStop.compositeDispatcherInitial, reconcileScrubMemory] at hscrub ⊢
-  exact hscrub
+    authoritativeSample, authoritativeSampleCore, authoritativeSampleScrub,
+    FailStop.compositeDispatcherInitial, reconcileScrubMemory,
+    retireDeadOwnerFrames]
 
 /-- Complete coherence forces the outer atomic gate to publish the checked
 kernel/IOMMU/scrub candidate rather than stutter to the pre-termination state. -/
@@ -1781,9 +1787,14 @@ theorem subject_termination_checked_apply_eq_reconciled_candidate
           (subjectTerminationCheckedKernelAfter plan)
           (subjectTerminationCheckedBefore plan).scrub } := by
   classical
-  simp [subjectTerminationCheckedAfter, applyKernelOperation,
-    subjectTerminationCheckedKernelAfter,
-    subject_termination_checked_reconciled_candidate_coherent]
+  simp only [subjectTerminationCheckedAfter, applyKernelOperation]
+  split
+  · rfl
+  · next hnot =>
+      exfalso
+      apply hnot
+      simpa only [subjectTerminationCheckedKernelAfter] using
+        subject_termination_checked_reconciled_candidate_coherent plan
 
 /-- The real checked outer transition now publishes the finite reconciliation:
 the terminated owner's assignment and mapping inventories are both empty. -/

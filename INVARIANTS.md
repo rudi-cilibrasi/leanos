@@ -5,7 +5,7 @@
 
 LeanOS is an experimental operating-system kernel whose safety and security rules are written and proved in the Lean theorem prover. This page explains, in ordinary language, every guarantee the Lean code currently proves — all of them, and only them. Each bullet below is one Lean theorem: a statement that the Lean proof checker has verified is true of the kernel's formal model, every time the project builds.
 
-The Lean sources currently prove **2477 named theorems** across **62 files**, listed completely below. The code also contains 872 anonymous `example` proofs — inline sanity checks with no names — which are verified by the same build but cannot be listed individually because they are unnamed. The deliberately broken claims under `tests/negative/` are *not* proofs and are excluded; the build gate exists to reject them.
+The Lean sources currently prove **2494 named theorems** across **62 files**, listed completely below. The code also contains 872 anonymous `example` proofs — inline sanity checks with no names — which are verified by the same build but cannot be listed individually because they are unnamed. The deliberately broken claims under `tests/negative/` are *not* proofs and are excluded; the build gate exists to reject them.
 
 ## What these guarantees do and do not cover
 

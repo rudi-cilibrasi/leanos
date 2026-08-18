@@ -20709,10 +20709,14 @@ theorem compositeDispatcherTerminateSubjectTwo_binding_owned
           (authoritativeGate (compositeDispatcherInitial plan)
             (.ordinary (.terminateSubject 2))).state.virtualMemory.memory.allocator
           frame object := by
+  intro object frame hbinding
   simp [authoritativeGate_ordinary_state, gate, applyOperation,
     compositeDispatcherInitial, dispatcherLifecycle, dispatcherCapabilities,
     dispatcherVirtualMemory, dispatcherMemory, dispatcherScheduler,
-    dispatcherEndpoints, SubjectLifecycle.terminate]
-  native_decide +revert
+    dispatcherEndpoints, SubjectLifecycle.terminate, installTerminatedSubject,
+    installTerminatedResumable, ResumablePreemption.cleanupSubject,
+    FrameAllocator.IsOwnedBy] at hbinding ⊢
+  rcases hbinding with ⟨rfl, rfl⟩
+  rfl
 
 end LeanOS.FailStop
