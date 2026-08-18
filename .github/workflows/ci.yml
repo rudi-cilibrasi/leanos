@@ -203,9 +203,9 @@ jobs:
     name: Deterministic QEMU smoke test
     needs: repository-hygiene
     runs-on: ubuntu-24.04
-    # The complete boot-critical matrix now takes about 30 minutes including
-    # evidence upload; retain a bounded margin for runner variance.
-    timeout-minutes: 40
+    # The complete boot-critical matrix can take about 40 minutes including
+    # evidence upload and runner cleanup; retain a bounded variance margin.
+    timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7

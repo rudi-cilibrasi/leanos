@@ -904,6 +904,21 @@ def check_workflows() -> None:
         "build/evidence/*",
     )
     ci_content = workflow_contents[".github/workflows/ci.yml"]
+    ci_emulator = re.search(
+        r"(?ms)^  emulator:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+        ci_content,
+    )
+    if ci_emulator is None:
+        raise EvidenceError("CI workflow does not define the emulator evidence job")
+    ci_emulator_timeout = re.search(
+        r"(?m)^    timeout-minutes:\s*(\d+)\s*$",
+        ci_emulator.group("body"),
+    )
+    if ci_emulator_timeout is None or int(ci_emulator_timeout.group(1)) < 60:
+        raise EvidenceError(
+            "CI emulator evidence job must allow at least 60 minutes for "
+            "image, QEMU, reproducibility, and artifact checks"
+        )
     for clang_evidence in (
         "--scenario blocking-ipc",
         "test -s build/boot/serial.log",
