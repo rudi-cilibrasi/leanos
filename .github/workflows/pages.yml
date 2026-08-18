@@ -88,8 +88,28 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment_1.outputs.page_url || steps.deployment_2.outputs.page_url || steps.deployment_3.outputs.page_url }}
     steps:
-      - name: Deploy
-        id: deployment
+      - name: Deploy (attempt 1 of 3)
+        id: deployment_1
+        continue-on-error: true
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
+      - name: Wait before deployment retry
+        if: steps.deployment_1.outcome == 'failure'
+        run: sleep 15
+
+      - name: Deploy (attempt 2 of 3)
+        id: deployment_2
+        if: steps.deployment_1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
+      - name: Wait before final deployment attempt
+        if: steps.deployment_2.outcome == 'failure'
+        run: sleep 30
+
+      - name: Deploy (attempt 3 of 3)
+        id: deployment_3
+        if: steps.deployment_2.outcome == 'failure'
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
