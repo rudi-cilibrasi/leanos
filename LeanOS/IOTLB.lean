@@ -1417,4 +1417,50 @@ theorem executable_subject_termination_checked_authority_witness
     subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
   native_decide
 
+/-- The ordinary checked kernel transition really retires the concrete owner;
+the later IOMMU reconciliation proof can use this fact instead of unfolding the
+whole composite termination gate again. -/
+theorem executable_subject_termination_checked_kernel_removes_owner
+    (plan : BootPageTablePlan.Plan) :
+    ((FailStop.authoritativeGate
+      (subjectTerminationCheckedBefore plan).kernel
+      (.ordinary (.terminateSubject 2))).state.capabilities.subjects 2) = false := by
+  have hstate :=
+    FailStop.compositeDispatcherInitial_authoritativeRuntimeWellFormed plan
+  have hmode :
+      (FailStop.compositeDispatcherInitial plan).execution.mode = .running := by
+    rfl
+  let terminated := SubjectLifecycle.terminate
+    (FailStop.compositeDispatcherInitial plan).lifecycle 2
+  have haccepted : terminated.result = .accepted := by
+    simp [terminated, FailStop.compositeDispatcherInitial]
+    native_decide
+  rcases hterminated : terminated with ⟨lifecycle, result⟩
+  have hrecord :
+      SubjectLifecycle.terminate
+          (FailStop.compositeDispatcherInitial plan).lifecycle 2 =
+        { state := lifecycle, result := .accepted } := by
+    simpa [terminated, hterminated] using haccepted
+  exact (FailStop.terminateSubject_accepted_cleans_runtime_references
+    (FailStop.compositeDispatcherInitial plan) 2 lifecycle hstate.1 hmode
+    hrecord).2.1
+
+/-- Once the checked successor has removed the concrete mapping and
+assignment, the internally derived cleanup inventory is exactly the finite
+witness inventory; neither scope is supplied by the caller. -/
+theorem subject_termination_checked_removed_authority_scopes
+    (plan : BootPageTablePlan.Plan) (after : AuthoritativeExtension)
+    (hmappings : after.iommu.core.mappings = [])
+    (hassignments : after.iommu.core.assignments = []) :
+    requiredAuthorityCleanupScopes
+      (subjectTerminationCheckedBefore plan) after =
+    subjectTerminationWitnessScopes := by
+  simp [requiredAuthorityCleanupScopes, subjectTerminationCheckedBefore,
+    subjectTerminationCheckedIOMMU, subjectTerminationCheckedCore,
+    hmappings, hassignments, mappingScopeFor, assignmentScopeFor,
+    findMapping, findAssignment,
+    subjectTerminationWitnessScopes, subjectTerminationWitnessAssignment,
+    subjectTerminationWitnessMapping]
+  native_decide
+
 end LeanOS.IOMMU.IOTLB
