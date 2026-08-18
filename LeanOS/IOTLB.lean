@@ -1690,6 +1690,32 @@ theorem subject_termination_checked_apply_scrub_memory_coherent
       (.ordinary (.terminateSubject 2))
       (subject_termination_checked_before_invariant plan)).2.2.2.2.1
 
+/-- For the concrete termination witness, scrub coherence after lifecycle
+reconciliation reduces exactly to allocator ownership of every retained
+binding.  Bytes remain globally zero and every write bit remains false, so no
+additional content premise is hidden in the remaining publication proof. -/
+theorem subject_termination_checked_reconciled_scrub_invariant_iff
+    (plan : BootPageTablePlan.Plan) :
+    FrameScrub.ScrubInvariant
+      (reconcileScrubMemory
+        (subjectTerminationCheckedKernelAfter plan)
+        (subjectTerminationCheckedBefore plan).scrub) ↔
+      ∀ object frame,
+      (subjectTerminationCheckedKernelAfter plan).virtualMemory.memory.binding
+          object = some frame →
+        FrameAllocator.IsOwnedBy
+          (subjectTerminationCheckedKernelAfter plan).virtualMemory.memory.allocator
+          frame object := by
+  constructor
+  · intro hinvariant object frame hbinding
+    exact (hinvariant object frame (by simpa [reconcileScrubMemory] using hbinding)
+      (by rfl)).1
+  · intro howned object frame hbinding _hunwritten
+    constructor
+    · exact howned object frame (by simpa [reconcileScrubMemory] using hbinding)
+    · intro offset _hoffset
+      rfl
+
 /-- The checked outer operation has exactly the two branches exposed by the
 coherence gate: it either stutters to the complete pre-state, or publishes the
 validated reconciliation whose assignment and mapping inventories are empty.
