@@ -1841,4 +1841,72 @@ theorem subject_termination_checked_removed_authority_scopes
     subjectTerminationWitnessMapping]
   native_decide
 
+/-! ## Checked end-to-end cleanup publication
+
+The finite checked termination now drives the real publication protocol from
+an idle state.  These witnesses close the gap between proving the logical
+successor and showing that the internally derived invalidation ticket can be
+prepared and acknowledged without any caller-supplied successor or scope.
+-/
+
+noncomputable def subjectTerminationCheckedPublicationState
+    (plan : BootPageTablePlan.Plan) : AuthorityCleanupPublicationState :=
+  { authoritative := subjectTerminationCheckedBefore plan
+    cache := [subjectTerminationWitnessEntry]
+    pending := none
+    nextTicket := 7 }
+
+/-- The real checked termination opens a fresh cleanup ticket.  Its nonempty
+scope inventory is derived from the removed mapping and assignment rather than
+being supplied by the completion witness. -/
+theorem subject_termination_checked_prepare_accepted
+    (plan : BootPageTablePlan.Plan) :
+    (prepareAuthorityCleanupPublication
+      (subjectTerminationCheckedPublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.ordinary (.terminateSubject 2))).accepted = true := by
+  have hremoved := subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  simp only [prepareAuthorityCleanupPublication,
+    subjectTerminationCheckedPublicationState]
+  rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+      (.ordinary (.terminateSubject 2)) =
+        subjectTerminationCheckedAfter plan by rfl]
+  rw [hscopes]
+  rfl
+
+/-- Exact acknowledgement publishes the checked termination successor, clears
+the stale cache and ticket, and reaches an allowed exact-frame lifecycle gate.
+This is model evidence for the complete logical ordering through release; it
+does not claim VT-d or QEMU correspondence. -/
+theorem subject_termination_checked_acknowledges_exact_cleanup
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthorityCleanupPublication
+      (subjectTerminationCheckedPublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.ordinary (.terminateSubject 2))
+    let acknowledged := acknowledgeAuthorityCleanupPublication prepared.state
+      subjectTerminationWitnessCompletion
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative = subjectTerminationCheckedAfter plan ∧
+      acknowledged.state.cache = [] ∧
+      acknowledged.state.pending = none := by
+  have hremoved := subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  simp only [prepareAuthorityCleanupPublication,
+    subjectTerminationCheckedPublicationState]
+  rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+      (.ordinary (.terminateSubject 2)) =
+        subjectTerminationCheckedAfter plan by rfl]
+  rw [hscopes]
+  simp [subjectTerminationWitnessCompletion,
+    acknowledgeAuthorityCleanupPublication,
+    subjectTerminationWitnessScopes, subjectTerminationWitnessEntry,
+    subjectTerminationWitnessKey, subjectTerminationWitnessMapping,
+    subjectTerminationWitnessAssignment,
+    invalidateScopes, scopeCoversKey]
+  all_goals native_decide
+
 end LeanOS.IOMMU.IOTLB
