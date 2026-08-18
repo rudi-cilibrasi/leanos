@@ -2266,6 +2266,20 @@ def controlCheckedAttenuation : AttenuateRequest :=
     length := pageSize
     permission := readOnly }
 
+/-- The invariant-bearing fixture determines the complete mapping-lifetime
+scope before the checked gate runs; no caller-supplied scope participates in
+the remaining acceptance proof. -/
+theorem checked_control_unmap_requires_exact_scope
+    (plan : BootPageTablePlan.Plan) :
+    requiredControlScope (subjectTerminationCheckedBefore plan)
+      (.unmap subjectTerminationWitnessMapping.handle) =
+        some controlCheckedMappingScope := by
+  simp [requiredControlScope, mappingScopeFor, findMapping, findAssignment,
+    controlCheckedMappingScope, subjectTerminationCheckedBefore,
+    subjectTerminationCheckedIOMMU, subjectTerminationCheckedCore,
+    subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
+  native_decide
+
 /-- Any accepted checked unmap preparation through the caller-visible front
 door binds ticket 11 to the internally derived complete mapping-lifetime
 scope and the retained old cache.  The remaining non-vacuity step is to
@@ -2308,12 +2322,8 @@ theorem checked_control_unmap_authoritative_prepare_binds_exact_scope
   have hrequired :
       requiredControlScope (subjectTerminationCheckedBefore plan)
         (.unmap subjectTerminationWitnessMapping.handle) =
-        some controlCheckedMappingScope := by
-    simp [requiredControlScope, mappingScopeFor, findMapping, findAssignment,
-      controlCheckedMappingScope, subjectTerminationCheckedBefore,
-      subjectTerminationCheckedIOMMU, subjectTerminationCheckedCore,
-      subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
-    native_decide
+        some controlCheckedMappingScope :=
+    checked_control_unmap_requires_exact_scope plan
   have hscopeExact : scope = controlCheckedMappingScope := by
     rw [hrequired] at hscope
     exact (Option.some.inj hscope).symm
