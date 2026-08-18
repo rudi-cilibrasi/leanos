@@ -2280,10 +2280,80 @@ theorem checked_control_unmap_requires_exact_scope
     subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
   native_decide
 
+def controlCheckedUnmappedIOMMU (plan : BootPageTablePlan.Plan) : State :=
+  { core := { subjectTerminationCheckedCore plan with mappings := [] }
+    valid := by
+      simp [subjectTerminationCheckedCore, authoritativeSampleCore,
+        subjectTerminationWitnessAssignment,
+        FailStop.compositeDispatcherInitial]
+      native_decide
+    capabilityWellFormed :=
+      (subjectTerminationCheckedIOMMU plan).capabilityWellFormed }
+
+theorem checked_control_unmap_gate
+    (plan : BootPageTablePlan.Plan) :
+    gate (subjectTerminationCheckedIOMMU plan)
+        (.unmap subjectTerminationWitnessMapping.handle) =
+      .accepted (controlCheckedUnmappedIOMMU plan) .unmapped := by
+  rfl
+
+theorem checked_control_unmap_candidate_coherent
+    (plan : BootPageTablePlan.Plan) :
+    ({ kernel := (subjectTerminationCheckedBefore plan).kernel
+       iommu := controlCheckedUnmappedIOMMU plan
+       scrub := (subjectTerminationCheckedBefore plan).scrub } :
+      AuthoritativeExtension).Coherent := by
+  refine ⟨rfl, rfl, rfl, rfl,
+    authoritativeSampleScrub_invariant plan, ?_⟩
+  simp [controlCheckedUnmappedIOMMU, subjectTerminationCheckedBefore,
+    subjectTerminationCheckedCore, authoritativeSample,
+    authoritativeSampleCore, FailStop.compositeDispatcherInitial,
+    subjectTerminationWitnessAssignment]
+  native_decide
+
+theorem checked_control_unmap_gated_accepts
+    (plan : BootPageTablePlan.Plan) :
+    (gatedByKernel (subjectTerminationCheckedBefore plan)
+      (subject_termination_checked_before_invariant plan)
+      (.unmap subjectTerminationWitnessMapping.handle)).isAccepted = true := by
+  unfold gatedByKernel
+  rw [show (subjectTerminationCheckedBefore plan).kernel.execution.mode =
+      .running by rfl]
+  simp only
+  rw [show gate (subjectTerminationCheckedBefore plan).iommu
+        (.unmap subjectTerminationWitnessMapping.handle) =
+      .accepted (controlCheckedUnmappedIOMMU plan) .unmapped by
+    simpa [subjectTerminationCheckedBefore] using
+      checked_control_unmap_gate plan]
+  simp [checked_control_unmap_candidate_coherent plan,
+    AuthoritativeOutcome.isAccepted]
+
+/-- The concrete invariant-bearing fixture takes the checked unmap branch of
+the sole authoritative publication front door.  The caller supplies only the
+mapping handle: validation derives both the logical successor and the exact
+mapping-lifetime invalidation scope. -/
+theorem checked_control_unmap_authoritative_prepare_accepts
+    (plan : BootPageTablePlan.Plan) :
+    (prepareAuthoritativePublication
+      (controlCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.control (.unmap subjectTerminationWitnessMapping.handle))).accepted =
+        true := by
+  simp only [prepareAuthoritativePublication,
+    controlCheckedAuthoritativePublicationState, prepareControlPublication]
+  rw [checked_control_unmap_requires_exact_scope plan]
+  have haccepted := checked_control_unmap_gated_accepts plan
+  cases hgate : gatedByKernel (subjectTerminationCheckedBefore plan)
+      (subject_termination_checked_before_invariant plan)
+      (.unmap subjectTerminationWitnessMapping.handle) with
+  | rejected reason =>
+      simp [hgate, AuthoritativeOutcome.isAccepted] at haccepted
+  | accepted after invariant reply => rfl
+
 /-- Any accepted checked unmap preparation through the caller-visible front
 door binds ticket 11 to the internally derived complete mapping-lifetime
-scope and the retained old cache.  The remaining non-vacuity step is to
-discharge acceptance of this concrete checked operation. -/
+scope and the retained old cache.  The concrete fixture above separately
+discharges this acceptance premise. -/
 theorem checked_control_unmap_authoritative_prepare_binds_exact_scope
     (plan : BootPageTablePlan.Plan)
     (haccepted :
