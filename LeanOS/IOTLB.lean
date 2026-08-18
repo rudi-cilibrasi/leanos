@@ -2068,6 +2068,40 @@ theorem subject_termination_checked_authoritative_prepare_accepted
     subjectTerminationCheckedPublicationState] using
     subject_termination_checked_prepare_accepted plan
 
+/-- Exact cleanup acknowledgement through the caller-visible front door
+publishes the checked termination successor and clears both the stale
+translation and the shared pending slot. -/
+theorem subject_termination_checked_authoritative_acknowledges_exact_cleanup
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative = subjectTerminationCheckedAfter plan ∧
+      acknowledged.state.cache = [] ∧
+      acknowledged.state.pending = none := by
+  have hremoved := subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  simp only [prepareAuthoritativePublication,
+    prepareAuthorityCleanupPublication,
+    subjectTerminationCheckedAuthoritativePublicationState]
+  rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+      (.ordinary (.terminateSubject 2)) =
+        subjectTerminationCheckedAfter plan by rfl]
+  rw [hscopes]
+  simp [acknowledgeAuthoritativePublication,
+    acknowledgeAuthorityCleanupPublication,
+    subjectTerminationWitnessCompletion,
+    subjectTerminationWitnessScopes, subjectTerminationWitnessEntry,
+    subjectTerminationWitnessKey, subjectTerminationWitnessMapping,
+    subjectTerminationWitnessAssignment,
+    invalidateScopes, scopeCoversKey]
+  all_goals native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
