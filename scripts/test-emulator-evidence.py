@@ -347,6 +347,37 @@ def run_fixtures() -> None:
         ]
         assert (selected_build / "clang-canonical.serial.log").exists() is False
 
+        _, matrix_rows = evidence.parse_matrix(evidence.DEFAULT_MATRIX)
+        blocking_row = next(row for row in matrix_rows if row["id"] == "blocking-ipc")
+        blocking_serial = evidence.expanded(
+            blocking_row, "0.1.0", selected_build
+        )["serial_log"]
+        serial_content = blocking_serial.read_text(encoding="utf-8")
+        required_row = evidence.REQUIRED_IOTLB_ORACLE_ROWS[0]
+        required_marker = f"LEANOS/3 ORACLE id={required_row} result=PASS\n"
+
+        missing_iotlb_row = tmp / "missing-iotlb-row.serial.log"
+        missing_iotlb_row.write_text(
+            serial_content.replace(required_marker, "", 1), encoding="utf-8"
+        )
+        expect_failure(
+            lambda: evidence.verify_iotlb_oracle_rows(
+                missing_iotlb_row, "blocking-ipc"
+            ),
+            f"must retain exactly one passing {required_row} row",
+        )
+
+        duplicate_iotlb_row = tmp / "duplicate-iotlb-row.serial.log"
+        duplicate_iotlb_row.write_text(
+            serial_content + required_marker, encoding="utf-8"
+        )
+        expect_failure(
+            lambda: evidence.verify_iotlb_oracle_rows(
+                duplicate_iotlb_row, "blocking-ipc"
+            ),
+            f"must retain exactly one passing {required_row} row",
+        )
+
         selected_args.scenario = "not-in-the-matrix"
         expect_failure(
             lambda: evidence.run(selected_args),
