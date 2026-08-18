@@ -985,6 +985,33 @@ def acknowledgeAuthoritativePublication
         accepted := acknowledged.accepted }
   | _, _ => { state, accepted := false }
 
+/-- A control completion can never acknowledge a pending kernel-cleanup
+publication.  The family tag is part of the authoritative completion token,
+so even a numerically matching ticket remains inert. -/
+theorem authoritative_cleanup_rejects_control_completion
+    (state : AuthoritativePublicationState)
+    (pending : PendingAuthorityCleanup) (completion : Completion) :
+    acknowledgeAuthoritativePublication
+        { state with
+          pending := some (.cleanup pending) }
+        (.control completion) =
+      { state := { state with pending := some (.cleanup pending) }
+        accepted := false } := by
+  rfl
+
+/-- Symmetrically, a cleanup completion cannot be spliced into a pending
+IOMMU-control publication. -/
+theorem authoritative_control_rejects_cleanup_completion
+    (state : AuthoritativePublicationState)
+    (pending : PendingControl) (completion : AuthorityCleanupCompletion) :
+    acknowledgeAuthoritativePublication
+        { state with
+          pending := some (.control pending) }
+        (.cleanup completion) =
+      { state := { state with pending := some (.control pending) }
+        accepted := false } := by
+  rfl
+
 theorem prepare_authority_cleanup_retains_publications
     state hstate operation :
     let prepared := prepareAuthorityCleanupPublication state hstate operation
@@ -2012,6 +2039,34 @@ theorem subject_termination_checked_acknowledges_exact_cleanup
     subjectTerminationWitnessAssignment,
     invalidateScopes, scopeCoversKey]
   all_goals native_decide
+
+/-! ## Checked cleanup through the authoritative front door
+
+The same executable termination witness now enters through the caller-visible
+sum rather than the lower-level cleanup helper.  This makes the family tag and
+the shared pending slot part of the checked sequence used by later hosted
+evidence.
+-/
+
+noncomputable def subjectTerminationCheckedAuthoritativePublicationState
+    (plan : BootPageTablePlan.Plan) : AuthoritativePublicationState :=
+  { authoritative := subjectTerminationCheckedBefore plan
+    cache := [subjectTerminationWitnessEntry]
+    pending := none
+    nextTicket := 7 }
+
+/-- Preparation through the single front door accepts the checked subject
+termination and opens the cleanup-family ticket. -/
+theorem subject_termination_checked_authoritative_prepare_accepted
+    (plan : BootPageTablePlan.Plan) :
+    (prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))).accepted = true := by
+  simpa [prepareAuthoritativePublication,
+    subjectTerminationCheckedAuthoritativePublicationState,
+    subjectTerminationCheckedPublicationState] using
+    subject_termination_checked_prepare_accepted plan
 
 /-! ## Fixed-width hosted invalidation sequence
 
