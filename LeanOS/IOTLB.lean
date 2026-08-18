@@ -1716,6 +1716,84 @@ theorem subject_termination_checked_reconciled_scrub_invariant_iff
     · intro offset _hoffset
       rfl
 
+/-- The authoritative termination gate's lifecycle installation retains only
+bindings whose allocator entries still name the same object.  This discharges
+the final concrete scrub obligation without assuming ownership independently
+of the checked successor. -/
+theorem subject_termination_checked_kernel_binding_owned
+    (plan : BootPageTablePlan.Plan) :
+    ∀ object frame,
+      (subjectTerminationCheckedKernelAfter plan).virtualMemory.memory.binding
+          object = some frame →
+        FrameAllocator.IsOwnedBy
+          (subjectTerminationCheckedKernelAfter plan).virtualMemory.memory.allocator
+          frame object := by
+  simpa [subjectTerminationCheckedKernelAfter, subjectTerminationCheckedBefore,
+    authoritativeSample] using
+    FailStop.compositeDispatcherTerminateSubjectTwo_binding_owned plan
+
+/-- The checked successor's synchronized lifecycle/allocator fact closes the
+concrete scrub invariant after reconciliation. -/
+theorem subject_termination_checked_reconciled_scrub_invariant
+    (plan : BootPageTablePlan.Plan) :
+    FrameScrub.ScrubInvariant
+      (reconcileScrubMemory
+        (subjectTerminationCheckedKernelAfter plan)
+        (subjectTerminationCheckedBefore plan).scrub) := by
+  exact
+    (subject_termination_checked_reconciled_scrub_invariant_iff plan).2
+      (subject_termination_checked_kernel_binding_owned plan)
+
+/-- The concrete checked termination candidate satisfies the complete outer
+coherence gate.  Device authority is empty, the kernel and scrub lifecycle
+projections agree, and the retired ordinary frame has no remaining live-owner
+obligation. -/
+theorem subject_termination_checked_reconciled_candidate_coherent
+    (plan : BootPageTablePlan.Plan) :
+    ({ kernel := subjectTerminationCheckedKernelAfter plan
+       iommu := reconcileKernelAuthority
+        (subjectTerminationCheckedKernelAfter plan)
+        (subjectTerminationCheckedBefore plan).iommu
+       scrub := reconcileScrubMemory
+        (subjectTerminationCheckedKernelAfter plan)
+        (subjectTerminationCheckedBefore plan).scrub } :
+      AuthoritativeExtension).Coherent := by
+  have hcore := subject_termination_checked_reconcile_core_eq_candidate plan
+  have hscrub := subject_termination_checked_reconciled_scrub_invariant plan
+  simp [AuthoritativeExtension.Coherent, hcore,
+    subjectTerminationCheckedReconcileCandidate,
+    subjectTerminationCheckedKernelAfter, subjectTerminationCheckedBefore,
+    subjectTerminationCheckedIOMMU, subjectTerminationCheckedCore,
+    authoritativeSample, authoritativeSampleCore,
+    FailStop.compositeDispatcherInitial, reconcileScrubMemory] at hscrub ⊢
+  exact hscrub
+
+/-- Complete coherence forces the outer atomic gate to publish the checked
+kernel/IOMMU/scrub candidate rather than stutter to the pre-termination state. -/
+theorem subject_termination_checked_apply_eq_reconciled_candidate
+    (plan : BootPageTablePlan.Plan) :
+    subjectTerminationCheckedAfter plan =
+      { kernel := subjectTerminationCheckedKernelAfter plan
+        iommu := reconcileKernelAuthority
+          (subjectTerminationCheckedKernelAfter plan)
+          (subjectTerminationCheckedBefore plan).iommu
+        scrub := reconcileScrubMemory
+          (subjectTerminationCheckedKernelAfter plan)
+          (subjectTerminationCheckedBefore plan).scrub } := by
+  classical
+  simp [subjectTerminationCheckedAfter, applyKernelOperation,
+    subjectTerminationCheckedKernelAfter,
+    subject_termination_checked_reconciled_candidate_coherent]
+
+/-- The real checked outer transition now publishes the finite reconciliation:
+the terminated owner's assignment and mapping inventories are both empty. -/
+theorem subject_termination_checked_apply_removes_device_authority
+    (plan : BootPageTablePlan.Plan) :
+    (subjectTerminationCheckedAfter plan).iommu.core.assignments = [] ∧
+      (subjectTerminationCheckedAfter plan).iommu.core.mappings = [] := by
+  rw [subject_termination_checked_apply_eq_reconciled_candidate plan]
+  exact subject_termination_checked_reconcile_removes_device_authority plan
+
 /-- The checked outer operation has exactly the two branches exposed by the
 coherence gate: it either stutters to the complete pre-state, or publishes the
 validated reconciliation whose assignment and mapping inventories are empty.
