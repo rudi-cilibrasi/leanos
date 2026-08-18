@@ -1676,22 +1676,19 @@ noncomputable def subjectTerminationCheckedAfter
   applyKernelOperation (subjectTerminationCheckedBefore plan)
     (.ordinary (.terminateSubject 2))
 
-/-- The current outer gate necessarily stutters on the canonical accepted
-termination: it retains the old scrub-memory capability projection while the
-kernel atomically retires subject 2.  Publication therefore requires an
-explicit scrub-memory reconciliation in the candidate, not another IOMMU
-validator lemma. -/
-theorem subject_termination_checked_apply_stutters
+/-- The outer gate now reconciles scrub lifecycle authority with the checked
+kernel successor before testing complete coherence.  Whether the concrete
+termination publishes or stutters, every visible result therefore has one
+authoritative memory projection rather than the stale split identified above. -/
+theorem subject_termination_checked_apply_scrub_memory_coherent
     (plan : BootPageTablePlan.Plan) :
-    subjectTerminationCheckedAfter plan = subjectTerminationCheckedBefore plan := by
-  classical
-  simp only [subjectTerminationCheckedAfter, applyKernelOperation]
-  split
-  · next hcoherent =>
-      exfalso
-      apply subject_termination_checked_retained_scrub_memory_ne_kernel plan
-      simpa [subjectTerminationCheckedKernelAfter] using hcoherent.2.2.1
-  · rfl
+    (subjectTerminationCheckedAfter plan).scrub.memory =
+      (subjectTerminationCheckedAfter plan).kernel.virtualMemory.memory := by
+  exact
+    (kernel_operation_preserves_authoritative_extension
+      (subjectTerminationCheckedBefore plan)
+      (.ordinary (.terminateSubject 2))
+      (subject_termination_checked_before_invariant plan)).2.2.2.2.1
 
 /-- The checked outer operation has exactly the two branches exposed by the
 coherence gate: it either stutters to the complete pre-state, or publishes the

@@ -1657,6 +1657,14 @@ def retireDeadOwnerFrames (kernel : FailStop.CompositeState)
       { frame with live := false }
     else frame
 
+/-- Reconcile the frame-scrub lifecycle projection with an authoritative
+kernel successor while retaining the byte contents and truthful per-lifetime
+write history.  The complete outer coherence gate still checks that the
+resulting scrub invariant holds before publishing the candidate. -/
+def reconcileScrubMemory (kernel : FailStop.CompositeState)
+    (scrub : FrameScrub.State) : FrameScrub.State :=
+  { scrub with memory := kernel.virtualMemory.memory }
+
 /-- Reconcile a kernel transition with device authority.  A scheduler-only
 transition retains authority and synchronizes the selected subject.  If the
 kernel capability projection changes, all DMA mappings and cached capability
@@ -1698,7 +1706,7 @@ noncomputable def applyKernelOperation (state : AuthoritativeExtension)
   let kernel := (FailStop.authoritativeGate state.kernel operation).state
   let candidate : AuthoritativeExtension :=
     { kernel, iommu := reconcileKernelAuthority kernel state.iommu
-      scrub := state.scrub }
+      scrub := reconcileScrubMemory kernel state.scrub }
   if candidate.Coherent then exact candidate else exact state
 
 theorem kernel_operation_preserves_authoritative_extension
