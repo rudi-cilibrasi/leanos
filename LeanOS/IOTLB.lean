@@ -1445,6 +1445,53 @@ theorem executable_subject_termination_checked_kernel_removes_owner
     (FailStop.compositeDispatcherInitial plan) 2 lifecycle hstate.1 hmode
     hrecord).2.1
 
+/-- A changed kernel capability projection whose reconciliation candidate
+passes the existing capability and finite-core validators cannot retain the
+old DMA mapping inventory.  This exposes the exact checked boundary needed by
+the concrete termination witness without treating reconciliation as an
+unconditional state rewrite. -/
+theorem reconcile_kernel_authority_changed_valid_removes_device_authority
+    (kernel : FailStop.CompositeState) (state : State)
+    (hchanged : kernel.capabilities ≠ state.core.capabilityAuthority)
+    (hwell : LeanOS.Capability.WellFormed kernel.capabilities)
+    (hvalid :
+      validateCore
+        { state.core with
+          currentOwner := kernel.execution.core.context.currentSubject
+          assignments := state.core.assignments.filter
+            (fun assignment => kernel.capabilities.subjects assignment.owner)
+          mappings := []
+          frames := retireDeadOwnerFrames kernel state.core.frames
+          capabilityAuthority := kernel.capabilities
+          capabilities := [] } = true) :
+    let reconciled := reconcileKernelAuthority kernel state
+    reconciled.core.assignments = state.core.assignments.filter
+        (fun assignment => kernel.capabilities.subjects assignment.owner) ∧
+      reconciled.core.mappings = [] := by
+  classical
+  simp [reconcileKernelAuthority, hchanged, hwell, hvalid]
+
+/-- The canonical checked termination genuinely changes the capability
+projection observed by IOMMU reconciliation.  The changed-authority branch is
+therefore derived from the authoritative kernel transition, not assumed by a
+caller or inferred from the desired empty mapping result. -/
+theorem subject_termination_checked_kernel_changes_authority
+    (plan : BootPageTablePlan.Plan) :
+    (FailStop.authoritativeGate
+        (subjectTerminationCheckedBefore plan).kernel
+        (.ordinary (.terminateSubject 2))).state.capabilities ≠
+      (subjectTerminationCheckedBefore plan).iommu.core.capabilityAuthority := by
+  intro hequal
+  have hremoved :=
+    executable_subject_termination_checked_kernel_removes_owner plan
+  have hlive :
+      (subjectTerminationCheckedBefore plan).iommu.core.capabilityAuthority.subjects
+          2 = true := by
+    rfl
+  rw [← hequal] at hlive
+  rw [hremoved] at hlive
+  contradiction
+
 /-- Once the checked successor has removed the concrete mapping and
 assignment, the internally derived cleanup inventory is exactly the finite
 witness inventory; neither scope is supplied by the caller. -/
