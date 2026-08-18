@@ -1594,6 +1594,29 @@ theorem subject_termination_checked_reconcile_removes_device_authority
     subjectTerminationCheckedCore, subjectTerminationWitnessAssignment,
     hremoved] using hreconciled
 
+noncomputable def subjectTerminationCheckedAfter
+    (plan : BootPageTablePlan.Plan) : AuthoritativeExtension :=
+  applyKernelOperation (subjectTerminationCheckedBefore plan)
+    (.ordinary (.terminateSubject 2))
+
+/-- The checked outer operation has exactly the two branches exposed by the
+coherence gate: it either stutters to the complete pre-state, or publishes the
+validated reconciliation whose assignment and mapping inventories are empty.
+The remaining composition obligation is therefore precisely to rule out the
+stutter branch by proving the concrete candidate coherent. -/
+theorem subject_termination_checked_apply_stutters_or_removes_device_authority
+    (plan : BootPageTablePlan.Plan) :
+    subjectTerminationCheckedAfter plan = subjectTerminationCheckedBefore plan ∨
+      ((subjectTerminationCheckedAfter plan).iommu.core.assignments = [] ∧
+        (subjectTerminationCheckedAfter plan).iommu.core.mappings = []) := by
+  classical
+  simp only [subjectTerminationCheckedAfter, applyKernelOperation]
+  split
+  · right
+    simpa [subjectTerminationCheckedKernelAfter] using
+      subject_termination_checked_reconcile_removes_device_authority plan
+  · exact Or.inl rfl
+
 /-- Once the checked successor has removed the concrete mapping and
 assignment, the internally derived cleanup inventory is exactly the finite
 witness inventory; neither scope is supplied by the caller. -/
