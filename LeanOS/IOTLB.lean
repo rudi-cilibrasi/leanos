@@ -1012,6 +1012,27 @@ theorem authoritative_control_rejects_cleanup_completion
         accepted := false } := by
   rfl
 
+/-- Every accepted acknowledgement through the shared front door clears its
+single pending slot.  Cross-family completions and idle acknowledgements are
+rejected by construction, so an accepted result necessarily completed the
+exact lower-level control or cleanup protocol. -/
+theorem acknowledge_authoritative_publication_accepted_clears_pending
+    (state : AuthoritativePublicationState)
+    (completion : AuthoritativePublicationCompletion)
+    (haccepted :
+      (acknowledgeAuthoritativePublication state completion).accepted = true) :
+    (acknowledgeAuthoritativePublication state completion).state.pending = none := by
+  cases hpending : state.pending with
+  | none =>
+      cases completion <;>
+        simp [acknowledgeAuthoritativePublication, hpending] at haccepted
+  | some pending =>
+      cases pending <;> cases completion <;>
+        simp_all [acknowledgeAuthoritativePublication,
+          acknowledgeControlPublication,
+          acknowledgeAuthorityCleanupPublication]
+      all_goals split <;> simp_all
+
 theorem prepare_authority_cleanup_retains_publications
     state hstate operation :
     let prepared := prepareAuthorityCleanupPublication state hstate operation
@@ -1021,6 +1042,40 @@ theorem prepare_authority_cleanup_retains_publications
   split
   · simp
   · split <;> simp
+
+/-- Preparation through the single caller-visible front door never publishes
+either the authoritative successor or the invalidated cache.  This applies to
+all accepted control operations (unmap, attenuation, and teardown) and to
+multi-scope kernel cleanup alike; only a matching acknowledgement can change
+either published projection. -/
+theorem prepare_authoritative_publication_retains_publications
+    (state : AuthoritativePublicationState)
+    (hstate : state.authoritative.Invariant)
+    (operation : AuthoritativePublicationOperation) :
+    let prepared := prepareAuthoritativePublication state hstate operation
+    prepared.state.authoritative = state.authoritative ∧
+      prepared.state.cache = state.cache := by
+  cases hpending : state.pending with
+  | some pending =>
+      simp [prepareAuthoritativePublication, hpending]
+  | none =>
+      cases operation with
+      | control operation =>
+          simpa [prepareAuthoritativePublication, hpending] using
+            prepare_control_retains_publications
+              ({ authoritative := state.authoritative
+                 cache := state.cache
+                 pending := none
+                 nextTicket := state.nextTicket } : ControlPublicationState)
+              hstate operation
+      | cleanup operation =>
+          simpa [prepareAuthoritativePublication, hpending] using
+            prepare_authority_cleanup_retains_publications
+              ({ authoritative := state.authoritative
+                 cache := state.cache
+                 pending := none
+                 nextTicket := state.nextTicket } : AuthorityCleanupPublicationState)
+              hstate operation
 
 theorem prepare_authority_cleanup_accepted_binds_checked_successor
     state hstate operation
