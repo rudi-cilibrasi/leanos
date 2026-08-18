@@ -1342,4 +1342,79 @@ theorem executable_subject_termination_cleanup_witness :
         subjectTerminationWitnessMapping.frame = false := by
   native_decide
 
+/-! The finite records above now inhabit a real invariant-bearing authoritative
+state.  Reuse the repository's canonical subject-2/frame-4 runtime and replace
+only its empty device projection with the exact live assignment and mapping.
+The next proof slice can therefore calculate `terminateSubject 2` from checked
+authority instead of treating the logical successor as a free parameter. -/
+
+def subjectTerminationCheckedCore (plan : BootPageTablePlan.Plan) : Core :=
+  { authoritativeSampleCore plan with
+    nextAssignmentGeneration := 2
+    nextDomainGeneration := 2
+    nextMappingGeneration := 2
+    assignments := [subjectTerminationWitnessAssignment]
+    mappings := [subjectTerminationWitnessMapping] }
+
+def subjectTerminationCheckedIOMMU (plan : BootPageTablePlan.Plan) : State :=
+  { core := subjectTerminationCheckedCore plan
+    valid := by
+      simp [subjectTerminationCheckedCore, authoritativeSampleCore,
+        subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping,
+        FailStop.compositeDispatcherInitial]
+      native_decide
+    capabilityWellFormed :=
+      (authoritativeSampleIOMMU plan).capabilityWellFormed }
+
+def subjectTerminationCheckedBefore (plan : BootPageTablePlan.Plan) :
+    AuthoritativeExtension :=
+  { kernel := (authoritativeSample plan).kernel
+    iommu := subjectTerminationCheckedIOMMU plan
+    scrub := (authoritativeSample plan).scrub }
+
+/-- The concrete live assignment/mapping projection is coherent with the
+canonical kernel, capability, frame-binding, and scrub projections. -/
+theorem subject_termination_checked_before_invariant
+    (plan : BootPageTablePlan.Plan) :
+    (subjectTerminationCheckedBefore plan).Invariant := by
+  refine
+    ⟨(authoritativeSample_invariant plan).1,
+      (subjectTerminationCheckedIOMMU plan).invariant, ?_⟩
+  refine ⟨rfl, rfl, rfl, rfl,
+    authoritativeSampleScrub_invariant plan, ?_⟩
+  simp [subjectTerminationCheckedBefore, subjectTerminationCheckedIOMMU,
+    subjectTerminationCheckedCore, authoritativeSample,
+    authoritativeSampleCore, FailStop.compositeDispatcherInitial,
+    subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping,
+    pageSize, rangeContained, Permission.attenuates]
+  native_decide
+
+/-- The invariant-bearing state contains the exact finite assignment and
+mapping, while authoritative subject/slot resolution independently reaches
+their shared frame lifetime.  The slot is derived from the kernel capability
+projection rather than supplied by the IOMMU witness. -/
+theorem executable_subject_termination_checked_authority_witness
+    (plan : BootPageTablePlan.Plan) :
+    (subjectTerminationCheckedBefore plan).iommu.core.assignments.find?
+        (fun assignment => assignment.handle ==
+          subjectTerminationWitnessAssignment.handle) =
+        some subjectTerminationWitnessAssignment ∧
+      (subjectTerminationCheckedBefore plan).iommu.core.mappings.find?
+        (fun mapping => mapping.handle ==
+          subjectTerminationWitnessMapping.handle) =
+        some subjectTerminationWitnessMapping ∧
+      resolveReleaseFrame {
+        authoritative := subjectTerminationCheckedBefore plan
+        cache := {
+          published := [subjectTerminationWitnessEntry]
+          pending := none
+          nextTicket := 7 } }
+        2 2 = some subjectTerminationWitnessMapping.frame := by
+  simp [subjectTerminationCheckedBefore, subjectTerminationCheckedIOMMU,
+    subjectTerminationCheckedCore, resolveReleaseFrame,
+    authoritativeSample, authoritativeSampleScrub, authoritativeSampleCore,
+    FailStop.compositeDispatcherInitial,
+    subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
+  native_decide
+
 end LeanOS.IOMMU.IOTLB
