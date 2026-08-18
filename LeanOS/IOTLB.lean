@@ -2013,4 +2013,87 @@ theorem subject_termination_checked_acknowledges_exact_cleanup
     invalidateScopes, scopeCoversKey]
   all_goals native_decide
 
+/-! ## Fixed-width hosted invalidation sequence
+
+This small scalar boundary exposes the first generated-C slice of the IOTLB
+publication protocol.  It deliberately exercises the cache protocol itself,
+not VT-d: the fixed initial state contains one live translation, preparation
+must retain it, a mismatched completion must stutter, exact completion removes
+it, and replay of that completion must remain inert.
+-/
+
+def scalarKey : Key := {
+  source := 1
+  assignment := ⟨2, 1⟩
+  domain := ⟨3, 1⟩
+  mapping := ⟨4, 1⟩
+  iova := 0x1000
+  direction := .read }
+
+def scalarEntry : Entry := {
+  key := scalarKey
+  frame := ⟨5, 1⟩
+  permission := readOnly }
+
+def scalarInitial : PublicationState := {
+  published := [scalarEntry]
+  pending := none
+  nextTicket := 7 }
+
+private def scalarScope (source domain mapping iova : UInt64) : InvalidationScope :=
+  .mapping {
+    source := source.toNat
+    assignment := ⟨2, 1⟩
+    domain := ⟨domain.toNat, 1⟩
+    mapping := ⟨mapping.toNat, 1⟩
+    iova := iova.toNat
+    direction := .read }
+
+private def encodeScalarState (accepted : Bool) (state : PublicationState) : UInt64 :=
+  (if accepted then 1 else 0) +
+    (if state.pending.isSome then 2 else 0) +
+    (if (lookup state.published scalarKey).isSome then 4 else 0) +
+    UInt64.ofNat state.nextTicket * 0x100
+
+/-- Actions: zero observes the filled cache; one prepares exact invalidation;
+two acknowledges a caller-described completion; three acknowledges the exact
+completion and immediately attempts to replay it.  The completion scope is
+fully lifetime-bearing, so changing source/domain/mapping/IOVA is observable. -/
+def iotlbPublicationDemo (action ticket source domain mapping iova : UInt64) : UInt64 :=
+  let completion : Completion := {
+    ticket := ticket.toNat
+    scope := scalarScope source domain mapping iova }
+  let prepared := prepareInvalidation scalarInitial (.mapping scalarKey)
+  if action = 0 then
+    encodeScalarState false scalarInitial
+  else if action = 1 then
+    encodeScalarState prepared.accepted prepared.state
+  else if action = 2 then
+    let acknowledged := acknowledgeInvalidation prepared.state completion
+    encodeScalarState acknowledged.accepted acknowledged.state
+  else if action = 3 then
+    let exact := acknowledgeInvalidation prepared.state {
+      ticket := 7, scope := .mapping scalarKey }
+    let replayed := acknowledgeInvalidation exact.state completion
+    encodeScalarState replayed.accepted replayed.state
+  else
+    0
+
+@[export leanos_iotlb_publication_demo]
+def iotlbPublicationDemoExport
+    (action ticket source domain mapping iova : UInt64) : UInt64 :=
+  iotlbPublicationDemo action ticket source domain mapping iova
+
+theorem scalar_publication_sequence :
+    iotlbPublicationDemo 0 0 0 0 0 0 = 0x704 ∧
+      iotlbPublicationDemo 1 0 0 0 0 0 = 0x807 ∧
+      iotlbPublicationDemo 2 6 1 3 4 0x1000 = 0x806 ∧
+      iotlbPublicationDemo 2 7 9 3 4 0x1000 = 0x806 ∧
+      iotlbPublicationDemo 2 7 1 9 4 0x1000 = 0x806 ∧
+      iotlbPublicationDemo 2 7 1 3 9 0x1000 = 0x806 ∧
+      iotlbPublicationDemo 2 7 1 3 4 0x2000 = 0x806 ∧
+      iotlbPublicationDemo 2 7 1 3 4 0x1000 = 0x801 ∧
+      iotlbPublicationDemo 3 7 1 3 4 0x1000 = 0x800 := by
+  native_decide
+
 end LeanOS.IOMMU.IOTLB

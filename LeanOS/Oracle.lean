@@ -14,6 +14,7 @@ import LeanOS.FaultDispatch
 import LeanOS.DirectPortIO
 import LeanOS.StaleTranslation
 import LeanOS.CompositeDispatcher
+import LeanOS.IOTLB
 
 /-!
 # Bounded scalar boundary oracle
@@ -129,6 +130,13 @@ private def staleTranslation (id : String) (kind actor addressSpace page aux sel
     expected := StaleTranslation.staleTranslationModelExpected
       kind actor addressSpace page aux selector }
 
+private def iotlbPublication (id : String)
+    (action ticket source domain mapping iova : UInt64) : Vector :=
+  { id, adapter := "IOTLB.scalar",
+    words := [action, ticket, source, domain, mapping, iova],
+    expected := IOMMU.IOTLB.iotlbPublicationDemo
+      action ticket source domain mapping iova }
+
 private def composite (id : String) (state tag arg0 arg1 arg2 arg3 : UInt64) : Vector :=
   { id, adapter := "CompositeDispatcher.stateful",
     words := [state, tag, arg0, arg1, arg2, arg3],
@@ -235,6 +243,19 @@ def budgetVectors : List Vector := [
   composite "frame-budget.reserved-command" 0x4001 0x5001 0 0 0 0,
   composite "frame-budget.maximum-words" 0xffffffffffffffff 0xffffffffffffffff
     0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff]
+
+/-- The first hosted IOTLB corpus keeps one exact filled-cache trace together
+with stale-ticket and every lifetime-bearing scope mismatch. -/
+def iotlbPublicationVectors : List Vector := [
+  iotlbPublication "iotlb.observe-filled" 0 0 0 0 0 0,
+  iotlbPublication "iotlb.prepare-retains-live" 1 0 0 0 0 0,
+  iotlbPublication "iotlb.reject-stale-ticket" 2 6 1 3 4 0x1000,
+  iotlbPublication "iotlb.reject-wrong-source" 2 7 9 3 4 0x1000,
+  iotlbPublication "iotlb.reject-wrong-domain" 2 7 1 9 4 0x1000,
+  iotlbPublication "iotlb.reject-wrong-mapping" 2 7 1 3 9 0x1000,
+  iotlbPublication "iotlb.reject-wrong-iova" 2 7 1 3 4 0x2000,
+  iotlbPublication "iotlb.ack-exact" 2 7 1 3 4 0x1000,
+  iotlbPublication "iotlb.reject-completion-replay" 3 7 1 3 4 0x1000]
 
 /-- A malformed budget-state ABI version is rejected before range routing, so
 the differential corpus cannot silently bless a continuity misclassification. -/
@@ -607,9 +628,9 @@ def vectors : List Vector := [
     0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
   composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0] ++
   mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors ++
-    budgetVectors
+    budgetVectors ++ iotlbPublicationVectors
 
-theorem corpus_shape : vectors.length = 380 := by decide
+theorem corpus_shape : vectors.length = 389 := by decide
 /-- Oracle indices 314--333 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
@@ -618,7 +639,21 @@ theorem hosted_mixed_vectors_exact :
   rfl
 
 theorem hosted_budget_vectors_exact :
-    vectors.drop 356 = budgetVectors := by rfl
+    (vectors.drop 356).take budgetVectors.length = budgetVectors := by rfl
+
+theorem hosted_iotlb_publication_vectors_exact :
+    vectors.drop 380 = iotlbPublicationVectors := by rfl
+
+private def iotlbPublicationAdapterAgrees (vector : Vector) : Bool :=
+  match vector.adapter, vector.words with
+  | "IOTLB.scalar", [action, ticket, source, domain, mapping, iova] =>
+      IOMMU.IOTLB.iotlbPublicationDemo action ticket source domain mapping iova =
+        vector.expected
+  | _, _ => true
+
+theorem hosted_iotlb_publication_adapter_agrees :
+    (vectors.drop 380).all iotlbPublicationAdapterAgrees = true := by
+  native_decide
 
 theorem hosted_budget_canonical_sequence :
     FrameBudgetScenario.run .initial FrameBudgetScenario.canonicalCommands =

@@ -10,10 +10,11 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `PrivilegeEntryControl.controlDemo`, `FaultDispatch.faultDispatchDemo`, and
 `DirectPortIO.directPortIODemo`, `InterruptEntry.nmiDemo`,
 `InterruptEntry.bootPhaseDemo`, and
-`StaleTranslation.staleTranslationDemo`, and
+`StaleTranslation.staleTranslationDemo`,
+`IOMMU.IOTLB.iotlbPublicationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-380-vector order covers accepted calls,
+389-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns

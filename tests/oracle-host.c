@@ -29,6 +29,8 @@ extern uint64_t leanos_boot_phase_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
 extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                                uint64_t, uint64_t);
+extern uint64_t leanos_iotlb_publication_demo(uint64_t, uint64_t, uint64_t, uint64_t,
+                                               uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
 extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
@@ -61,6 +63,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_page_fault_diagnostic_regression_demo);
     REGISTER_BOUNDARY(leanos_direct_port_io_demo);
     REGISTER_BOUNDARY(leanos_stale_translation_demo);
+    REGISTER_BOUNDARY(leanos_iotlb_publication_demo);
     REGISTER_BOUNDARY(leanos_frame_budget_mapping_page);
     REGISTER_BOUNDARY(leanos_frame_budget_invalidation_effect);
     REGISTER_BOUNDARY(leanos_composite_dispatch);
@@ -365,6 +368,10 @@ int main(void) {
                                                             composite_arg0, composite_arg1,
                                                             composite_arg2, composite_arg3)
 #endif
+                                                            : v->adapter == 19
+                                                            ? leanos_iotlb_publication_demo(
+                                                            v->words[0], v->words[1], v->words[2],
+                                                            v->words[3], v->words[4], v->words[5])
                                                             : UINT64_MAX;
 #ifdef LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION
         if (v->adapter == 18) {
