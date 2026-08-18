@@ -187,6 +187,17 @@ RUNNER_RESULT_CLASSES = {
     "double-fault-guard": "controlled-rejection",
     "malformed-handoff": "controlled-rejection",
 }
+REQUIRED_IOTLB_ORACLE_ROWS = (
+    "iotlb.observe-filled",
+    "iotlb.prepare-retains-live",
+    "iotlb.reject-stale-ticket",
+    "iotlb.reject-wrong-source",
+    "iotlb.reject-wrong-domain",
+    "iotlb.reject-wrong-mapping",
+    "iotlb.reject-wrong-iova",
+    "iotlb.ack-exact",
+    "iotlb.reject-completion-replay",
+)
 REQUIRED_FAST_ENTRY_ROWS = {
     "fast-entry-syscall": {
         "runner": "boot",
@@ -639,6 +650,7 @@ def run(args: argparse.Namespace) -> None:
             )
         if not paths["serial_log"].is_file() or paths["serial_log"].stat().st_size == 0:
             raise EvidenceError(f"scenario {row['id']} did not produce its expected serial log")
+        verify_iotlb_oracle_rows(paths["serial_log"], row["id"])
         if "dma_snapshot" in paths and (
             not paths["dma_snapshot"].is_file()
             or paths["dma_snapshot"].stat().st_size == 0
@@ -707,6 +719,19 @@ def verify_hash(record: dict[str, object], label: str) -> None:
         raise EvidenceError(f"{label} is missing: {path_value}")
     if sha256(path) != expected:
         raise EvidenceError(f"{label} hash differs: {path_value}")
+
+
+def verify_iotlb_oracle_rows(path: Path, scenario_id: str) -> None:
+    """Require the canonical QEMU boot to retain every bounded IOTLB row."""
+    if scenario_id != "blocking-ipc":
+        return
+    serial = path.read_text(encoding="utf-8")
+    for row in REQUIRED_IOTLB_ORACLE_ROWS:
+        marker = f"LEANOS/3 ORACLE id={row} result=PASS"
+        if serial.count(marker) != 1:
+            raise EvidenceError(
+                f"scenario {scenario_id} must retain exactly one passing {row} row"
+            )
 
 
 def verify_report(
@@ -793,6 +818,7 @@ def verify_report(
         if not isinstance(serial, dict) or serial.get("path") != display_path(paths["serial_log"]):
             raise EvidenceError(f"scenario {row['id']} serial-log identity differs")
         verify_hash(serial, f"scenario {row['id']} serial log")
+        verify_iotlb_oracle_rows(paths["serial_log"], row["id"])
         if row["runner"] == "nmi":
             transcript = result.get("qmp_transcript")
             if (
