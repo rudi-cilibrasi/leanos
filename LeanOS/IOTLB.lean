@@ -1498,6 +1498,43 @@ noncomputable def subjectTerminationCheckedKernelAfter
     (subjectTerminationCheckedBefore plan).kernel
     (.ordinary (.terminateSubject 2))).state
 
+/-- The accepted canonical termination retires subject 2 in the kernel memory
+capability projection, while the retained scrub projection still names that
+subject as live.  Thus the outer coherence gate's memory equality is genuinely
+false; finite IOMMU validation is not what causes the complete-state stutter. -/
+theorem subject_termination_checked_retained_scrub_memory_ne_kernel
+    (plan : BootPageTablePlan.Plan) :
+    (subjectTerminationCheckedBefore plan).scrub.memory ≠
+      (subjectTerminationCheckedKernelAfter plan).virtualMemory.memory := by
+  intro hequal
+  have hscrub :
+      (subjectTerminationCheckedBefore plan).scrub.memory.capabilities.subjects 2 =
+        true := by
+    rfl
+  have hkernel :
+      (subjectTerminationCheckedKernelAfter plan).virtualMemory.memory.capabilities.subjects
+          2 = false := by
+    have hpost :=
+      FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
+        (subjectTerminationCheckedBefore plan).kernel
+        (.ordinary (.terminateSubject 2))
+        (subject_termination_checked_before_invariant plan).1
+    have hcoherent := hpost.left.left
+    have hcapabilities := hcoherent.2.2.2.1
+    have hmemory := hcoherent.2.2.2.2.1
+    have hprojection := hmemory.trans hcapabilities.symm
+    have hkernelGate :
+        (FailStop.authoritativeGate
+          (subjectTerminationCheckedBefore plan).kernel
+          (.ordinary (.terminateSubject 2))).state.virtualMemory.memory.capabilities.subjects
+            2 = false := by
+      rw [hprojection]
+      simpa using executable_subject_termination_checked_kernel_removes_owner plan
+    simpa [subjectTerminationCheckedKernelAfter] using hkernelGate
+  rw [hequal] at hscrub
+  rw [hkernel] at hscrub
+  contradiction
+
 noncomputable def subjectTerminationCheckedReconcileCandidate
     (plan : BootPageTablePlan.Plan) : Core :=
   let kernel := subjectTerminationCheckedKernelAfter plan
@@ -1638,6 +1675,23 @@ noncomputable def subjectTerminationCheckedAfter
     (plan : BootPageTablePlan.Plan) : AuthoritativeExtension :=
   applyKernelOperation (subjectTerminationCheckedBefore plan)
     (.ordinary (.terminateSubject 2))
+
+/-- The current outer gate necessarily stutters on the canonical accepted
+termination: it retains the old scrub-memory capability projection while the
+kernel atomically retires subject 2.  Publication therefore requires an
+explicit scrub-memory reconciliation in the candidate, not another IOMMU
+validator lemma. -/
+theorem subject_termination_checked_apply_stutters
+    (plan : BootPageTablePlan.Plan) :
+    subjectTerminationCheckedAfter plan = subjectTerminationCheckedBefore plan := by
+  classical
+  simp only [subjectTerminationCheckedAfter, applyKernelOperation]
+  split
+  · next hcoherent =>
+      exfalso
+      apply subject_termination_checked_retained_scrub_memory_ne_kernel plan
+      simpa [subjectTerminationCheckedKernelAfter] using hcoherent.2.2.1
+  · rfl
 
 /-- The checked outer operation has exactly the two branches exposed by the
 coherence gate: it either stutters to the complete pre-state, or publishes the
