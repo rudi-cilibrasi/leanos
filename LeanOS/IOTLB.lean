@@ -1492,6 +1492,108 @@ theorem subject_termination_checked_kernel_changes_authority
   rw [hremoved] at hlive
   contradiction
 
+noncomputable def subjectTerminationCheckedKernelAfter
+    (plan : BootPageTablePlan.Plan) : FailStop.CompositeState :=
+  (FailStop.authoritativeGate
+    (subjectTerminationCheckedBefore plan).kernel
+    (.ordinary (.terminateSubject 2))).state
+
+noncomputable def subjectTerminationCheckedReconcileCandidate
+    (plan : BootPageTablePlan.Plan) : Core :=
+  let kernel := subjectTerminationCheckedKernelAfter plan
+  let before := (subjectTerminationCheckedBefore plan).iommu.core
+  { before with
+    currentOwner := kernel.execution.core.context.currentSubject
+    assignments := before.assignments.filter
+      (fun assignment => kernel.capabilities.subjects assignment.owner)
+    mappings := []
+    frames := retireDeadOwnerFrames kernel before.frames
+    capabilityAuthority := kernel.capabilities
+    capabilities := [] }
+
+/-- The candidate is checked against the capability invariant carried by the
+authoritative kernel gate; termination does not manufacture a detached
+capability proof for IOMMU reconciliation. -/
+theorem subject_termination_checked_candidate_capability_well_formed
+    (plan : BootPageTablePlan.Plan) :
+    LeanOS.Capability.WellFormed
+      (subjectTerminationCheckedKernelAfter plan).capabilities := by
+  exact
+    (FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
+      (subjectTerminationCheckedBefore plan).kernel
+      (.ordinary (.terminateSubject 2))
+      (subject_termination_checked_before_invariant plan).1).1.2.2.2.1
+
+/-- The concrete post-termination candidate passes the existing finite IOMMU
+validator after filtering the dead owner's assignment, removing mappings and
+cached capabilities, and retiring its ordinary frame. -/
+theorem subject_termination_checked_reconcile_candidate_valid
+    (plan : BootPageTablePlan.Plan) :
+    validateCore (subjectTerminationCheckedReconcileCandidate plan) = true := by
+  have hcurrent :
+      (subjectTerminationCheckedKernelAfter plan).execution.core.context.currentSubject =
+        2 := by
+    rfl
+  have hremoved :
+      (subjectTerminationCheckedKernelAfter plan).capabilities.subjects 2 = false := by
+    simpa [subjectTerminationCheckedKernelAfter] using
+      executable_subject_termination_checked_kernel_removes_owner plan
+  simp [subjectTerminationCheckedReconcileCandidate, hcurrent, hremoved,
+    subjectTerminationCheckedBefore,
+    subjectTerminationCheckedIOMMU, subjectTerminationCheckedCore,
+    subjectTerminationWitnessAssignment,
+    authoritativeSample, authoritativeSampleCore,
+    FailStop.compositeDispatcherInitial, retireDeadOwnerFrames, validateCore]
+  native_decide
+
+/-- The real reconciliation function accepts the checked termination
+candidate and removes both finite device-authority records.  This closes the
+previously conditional mapping/assignment premise at the kernel-to-IOMMU
+boundary while retaining the validators as the only publication gate. -/
+theorem subject_termination_checked_reconcile_removes_device_authority
+    (plan : BootPageTablePlan.Plan) :
+    let reconciled := reconcileKernelAuthority
+      (subjectTerminationCheckedKernelAfter plan)
+      (subjectTerminationCheckedBefore plan).iommu
+    reconciled.core.assignments = [] ∧ reconciled.core.mappings = [] := by
+  have hchanged :
+      (subjectTerminationCheckedKernelAfter plan).capabilities ≠
+        (subjectTerminationCheckedBefore plan).iommu.core.capabilityAuthority := by
+    simpa [subjectTerminationCheckedKernelAfter] using
+      subject_termination_checked_kernel_changes_authority plan
+  have hvalid :
+      validateCore
+        { (subjectTerminationCheckedBefore plan).iommu.core with
+          currentOwner :=
+            (subjectTerminationCheckedKernelAfter plan).execution.core.context.currentSubject
+          assignments :=
+            (subjectTerminationCheckedBefore plan).iommu.core.assignments.filter
+              (fun assignment =>
+                (subjectTerminationCheckedKernelAfter plan).capabilities.subjects
+                  assignment.owner)
+          mappings := []
+          frames := retireDeadOwnerFrames
+            (subjectTerminationCheckedKernelAfter plan)
+            (subjectTerminationCheckedBefore plan).iommu.core.frames
+          capabilityAuthority :=
+            (subjectTerminationCheckedKernelAfter plan).capabilities
+          capabilities := [] } = true := by
+    simpa [subjectTerminationCheckedReconcileCandidate] using
+      subject_termination_checked_reconcile_candidate_valid plan
+  have hreconciled :=
+    reconcile_kernel_authority_changed_valid_removes_device_authority
+      (subjectTerminationCheckedKernelAfter plan)
+      (subjectTerminationCheckedBefore plan).iommu hchanged
+      (subject_termination_checked_candidate_capability_well_formed plan)
+      hvalid
+  have hremoved :
+      (subjectTerminationCheckedKernelAfter plan).capabilities.subjects 2 = false := by
+    simpa [subjectTerminationCheckedKernelAfter] using
+      executable_subject_termination_checked_kernel_removes_owner plan
+  simpa [subjectTerminationCheckedBefore, subjectTerminationCheckedIOMMU,
+    subjectTerminationCheckedCore, subjectTerminationWitnessAssignment,
+    hremoved] using hreconciled
+
 /-- Once the checked successor has removed the concrete mapping and
 assignment, the internally derived cleanup inventory is exactly the finite
 witness inventory; neither scope is supplied by the caller. -/
