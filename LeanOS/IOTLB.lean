@@ -2600,6 +2600,134 @@ theorem checked_control_attenuation_authoritative_acknowledges_exact
         subjectTerminationWitnessMapping]
       all_goals native_decide
 
+/-! ## Checked assignment teardown through the authoritative front door
+
+The invariant-bearing fixture now removes the live assignment and every
+mapping derived from it. Exact acknowledgement must publish that checked
+assignment/mapping-free successor and invalidate the complete old
+source/domain cache scope before teardown becomes visible.
+-/
+
+def controlCheckedTornDownIOMMU (plan : BootPageTablePlan.Plan) : State :=
+  { core := { subjectTerminationCheckedCore plan with
+      assignments := []
+      mappings := [] }
+    valid := by
+      simp [subjectTerminationCheckedCore, authoritativeSampleCore,
+        subjectTerminationWitnessAssignment,
+        FailStop.compositeDispatcherInitial]
+      native_decide
+    capabilityWellFormed :=
+      (subjectTerminationCheckedIOMMU plan).capabilityWellFormed }
+
+/-- Assignment teardown derives the complete source/domain scope from the
+published assignment rather than accepting a caller-selected cache target. -/
+theorem checked_control_teardown_requires_exact_scope
+    (plan : BootPageTablePlan.Plan) :
+    requiredControlScope (subjectTerminationCheckedBefore plan)
+      (.teardown subjectTerminationWitnessAssignment.handle) =
+        some controlCheckedAssignmentScope := by
+  simp [requiredControlScope, assignmentScopeFor, findAssignment,
+    controlCheckedAssignmentScope, subjectTerminationCheckedBefore,
+    subjectTerminationCheckedIOMMU, subjectTerminationCheckedCore,
+    subjectTerminationWitnessAssignment]
+  native_decide
+
+theorem checked_control_teardown_gate
+    (plan : BootPageTablePlan.Plan) :
+    gate (subjectTerminationCheckedIOMMU plan)
+        (.teardown subjectTerminationWitnessAssignment.handle) =
+      .accepted (controlCheckedTornDownIOMMU plan) .tornDown := by
+  rfl
+
+theorem checked_control_teardown_candidate_coherent
+    (plan : BootPageTablePlan.Plan) :
+    ({ kernel := (subjectTerminationCheckedBefore plan).kernel
+       iommu := controlCheckedTornDownIOMMU plan
+       scrub := (subjectTerminationCheckedBefore plan).scrub } :
+      AuthoritativeExtension).Coherent := by
+  refine ⟨rfl, rfl, rfl, rfl,
+    authoritativeSampleScrub_invariant plan, ?_⟩
+  simp [controlCheckedTornDownIOMMU, subjectTerminationCheckedBefore,
+    subjectTerminationCheckedCore, authoritativeSample,
+    authoritativeSampleCore, FailStop.compositeDispatcherInitial,
+    subjectTerminationWitnessAssignment]
+  native_decide
+
+theorem checked_control_teardown_gated_accepts
+    (plan : BootPageTablePlan.Plan) :
+    (gatedByKernel (subjectTerminationCheckedBefore plan)
+      (subject_termination_checked_before_invariant plan)
+      (.teardown subjectTerminationWitnessAssignment.handle)).isAccepted = true := by
+  unfold gatedByKernel
+  rw [show (subjectTerminationCheckedBefore plan).kernel.execution.mode =
+      .running by rfl]
+  simp only
+  rw [show gate (subjectTerminationCheckedBefore plan).iommu
+        (.teardown subjectTerminationWitnessAssignment.handle) =
+      .accepted (controlCheckedTornDownIOMMU plan) .tornDown by
+    simpa [subjectTerminationCheckedBefore] using
+      checked_control_teardown_gate plan]
+  simp [checked_control_teardown_candidate_coherent plan,
+    AuthoritativeOutcome.isAccepted]
+
+/-- Exact acknowledgement of checked assignment teardown publishes the
+assignment/mapping-free successor, removes the old source/domain cache entry,
+and closes the shared pending slot. -/
+theorem checked_control_teardown_authoritative_acknowledges_exact
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (controlCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.control (.teardown subjectTerminationWitnessAssignment.handle))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (controlCheckedCompletion controlCheckedAssignmentScope)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative =
+        { kernel := (subjectTerminationCheckedBefore plan).kernel
+          iommu := controlCheckedTornDownIOMMU plan
+          scrub := (subjectTerminationCheckedBefore plan).scrub } ∧
+      acknowledged.state.authoritative.iommu.core.assignments = [] ∧
+      acknowledged.state.authoritative.iommu.core.mappings = [] ∧
+      lookup acknowledged.state.cache subjectTerminationWitnessKey = none ∧
+      acknowledged.state.pending = none := by
+  simp only [prepareAuthoritativePublication,
+    controlCheckedAuthoritativePublicationState, prepareControlPublication]
+  rw [checked_control_teardown_requires_exact_scope plan]
+  have haccepted := checked_control_teardown_gated_accepts plan
+  cases hgate : gatedByKernel (subjectTerminationCheckedBefore plan)
+      (subject_termination_checked_before_invariant plan)
+      (.teardown subjectTerminationWitnessAssignment.handle) with
+  | rejected reason =>
+      simp [hgate, AuthoritativeOutcome.isAccepted] at haccepted
+  | accepted after hinvariant reply =>
+      have hexact :
+          after =
+              { kernel := (subjectTerminationCheckedBefore plan).kernel
+                iommu := controlCheckedTornDownIOMMU plan
+                scrub := (subjectTerminationCheckedBefore plan).scrub } ∧
+            reply = .tornDown := by
+        unfold gatedByKernel at hgate
+        rw [show (subjectTerminationCheckedBefore plan).kernel.execution.mode =
+            .running by rfl] at hgate
+        simp only at hgate
+        rw [show gate (subjectTerminationCheckedBefore plan).iommu
+            (.teardown subjectTerminationWitnessAssignment.handle) =
+              .accepted (controlCheckedTornDownIOMMU plan) .tornDown by
+          simpa [subjectTerminationCheckedBefore] using
+            checked_control_teardown_gate plan] at hgate
+        simp only at hgate
+        rw [dif_pos (checked_control_teardown_candidate_coherent plan)] at hgate
+        cases hgate
+        exact ⟨rfl, rfl⟩
+      rcases hexact with ⟨rfl, rfl⟩
+      simp [acknowledgeAuthoritativePublication, acknowledgeControlPublication,
+        controlCheckedCompletion, controlCheckedAssignmentScope, invalidate,
+        eraseAssignmentScope, lookup, controlCheckedTornDownIOMMU,
+        subjectTerminationWitnessEntry, subjectTerminationWitnessKey,
+        subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
+      all_goals native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
