@@ -180,6 +180,7 @@ lake env lean --c="$build/FrameBudgetScenario.c" \
   LeanOS/FrameBudgetScenario.lean
 lake env lean --c="$build/CompositeDispatcher.c" LeanOS/CompositeDispatcher.lean
 lake env lean --c="$build/VTdBootPlan.c" LeanOS/VTdBootPlan.lean
+lake env lean --c="$build/IOTLB.c" LeanOS/IOTLB.lean
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -261,9 +262,11 @@ mv "$build/BootAllocationAndHandoffStream.o" "$build/BootAllocation.o"
   -c "$build/CompositeDispatcher.c" -o "$build/CompositeDispatcher.o"
 "$cc" "${cflags[@]}" -I"$lean_prefix/include" \
   -c "$build/VTdBootPlan.c" -o "$build/VTdBootPlan.o"
+"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
+  -c "$build/IOTLB.c" -o "$build/IOTLB.o"
 ld -r "$build/FaultDispatch.o" "$build/DirectPortIO.o" \
   "$build/StaleTranslation.o" "$build/FrameBudgetScenario.o" \
-  "$build/CompositeDispatcher.o" "$build/VTdBootPlan.o" \
+  "$build/CompositeDispatcher.o" "$build/VTdBootPlan.o" "$build/IOTLB.o" \
   -o "$build/FaultDispatchAndCompositeAdapters.o"
 mv "$build/FaultDispatchAndCompositeAdapters.o" "$build/FaultDispatch.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
