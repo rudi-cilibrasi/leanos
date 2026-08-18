@@ -16,11 +16,11 @@ fail() {
 # mention the lower-level gates in theorem statements, but no other production
 # module may create a bypass around the cache-aware publication boundary.
 mapfile -t bypasses < <(
-  rg -l '\b(gatedByKernel|applyKernelOperation)\b' LeanOS \
-    --glob '*.lean' \
-    --glob '!IOMMU.lean' \
-    --glob '!IOTLB.lean' \
-    --glob '!SecurityClaims.lean' || true
+  grep -RIlE '\b(gatedByKernel|applyKernelOperation)\b' LeanOS \
+    --include='*.lean' \
+    --exclude='IOMMU.lean' \
+    --exclude='IOTLB.lean' \
+    --exclude='SecurityClaims.lean' || true
 )
 
 if ((${#bypasses[@]} != 0)); then
@@ -28,17 +28,17 @@ if ((${#bypasses[@]} != 0)); then
   fail "lower-level authority publication escaped the reviewed modules"
 fi
 
-rg -Fq 'prepareControlPublication' LeanOS/IOTLB.lean ||
+grep -Fq 'prepareControlPublication' LeanOS/IOTLB.lean ||
   fail "missing cache-aware IOMMU control preparation"
-rg -Fq 'prepareAuthorityCleanupPublication' LeanOS/IOTLB.lean ||
+grep -Fq 'prepareAuthorityCleanupPublication' LeanOS/IOTLB.lean ||
   fail "missing cache-aware kernel cleanup preparation"
-rg -Fq 'acknowledgeControlPublication' LeanOS/IOTLB.lean ||
+grep -Fq 'acknowledgeControlPublication' LeanOS/IOTLB.lean ||
   fail "missing exact control acknowledgement"
-rg -Fq 'acknowledgeAuthorityCleanupPublication' LeanOS/IOTLB.lean ||
+grep -Fq 'acknowledgeAuthorityCleanupPublication' LeanOS/IOTLB.lean ||
   fail "missing exact cleanup acknowledgement"
-rg -Fq 'prepareAuthoritativePublication' LeanOS/IOTLB.lean ||
+grep -Fq 'prepareAuthoritativePublication' LeanOS/IOTLB.lean ||
   fail "missing single authoritative preparation front door"
-rg -Fq 'acknowledgeAuthoritativePublication' LeanOS/IOTLB.lean ||
+grep -Fq 'acknowledgeAuthoritativePublication' LeanOS/IOTLB.lean ||
   fail "missing single authoritative acknowledgement front door"
 
 echo "IOTLB authority-front-door policy passed"
