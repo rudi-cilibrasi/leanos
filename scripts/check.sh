@@ -10,6 +10,8 @@ lake build leanos-vtd-plan
 
 ./scripts/check-security-claims.sh
 
+./scripts/check-iotlb-authority-front-door.sh
+
 ./scripts/test-generate-invariants.sh
 
 ./scripts/check-invariants.sh

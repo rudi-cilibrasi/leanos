@@ -881,6 +881,110 @@ def acknowledgeAuthorityCleanupPublication
       else
         { state, accepted := false }
 
+/-! ## Single authoritative publication front door
+
+The control and kernel-cleanup protocols above share one caller-visible state.
+This sum prevents a dispatcher from choosing a direct logical gate or opening
+both ticket families concurrently.  The lower-level preparations remain proof
+components in this module; production call sites are confined to this front
+door by `scripts/check-iotlb-authority-front-door.sh`.
+-/
+
+inductive AuthoritativePublicationOperation where
+  | control (operation : Operation)
+  | cleanup (operation : FailStop.AuthoritativeOperation)
+
+inductive PendingAuthoritativePublication where
+  | control (pending : PendingControl)
+  | cleanup (pending : PendingAuthorityCleanup)
+
+structure AuthoritativePublicationState where
+  authoritative : AuthoritativeExtension
+  cache : List Entry
+  pending : Option PendingAuthoritativePublication
+  nextTicket : Nat
+
+structure AuthoritativePublicationOutcome where
+  state : AuthoritativePublicationState
+  accepted : Bool
+
+inductive AuthoritativePublicationCompletion where
+  | control (completion : Completion)
+  | cleanup (completion : AuthorityCleanupCompletion)
+
+/-- The sole preparation boundary serializes IOMMU control mutations and
+kernel-authority cleanup behind the same pending-ticket slot. -/
+noncomputable def prepareAuthoritativePublication
+    (state : AuthoritativePublicationState)
+    (hstate : state.authoritative.Invariant)
+    (operation : AuthoritativePublicationOperation) :
+    AuthoritativePublicationOutcome :=
+  match state.pending with
+  | some _ => { state, accepted := false }
+  | none =>
+      match operation with
+      | .control operation =>
+          let prepared := prepareControlPublication {
+            authoritative := state.authoritative
+            cache := state.cache
+            pending := none
+            nextTicket := state.nextTicket } hstate operation
+          { state := {
+              authoritative := prepared.state.authoritative
+              cache := prepared.state.cache
+              pending := prepared.state.pending.map
+                PendingAuthoritativePublication.control
+              nextTicket := prepared.state.nextTicket }
+            accepted := prepared.accepted }
+      | .cleanup operation =>
+          let prepared := prepareAuthorityCleanupPublication {
+            authoritative := state.authoritative
+            cache := state.cache
+            pending := none
+            nextTicket := state.nextTicket } hstate operation
+          { state := {
+              authoritative := prepared.state.authoritative
+              cache := prepared.state.cache
+              pending := prepared.state.pending.map
+                PendingAuthoritativePublication.cleanup
+              nextTicket := prepared.state.nextTicket }
+            accepted := prepared.accepted }
+
+/-- Only a completion matching the pending family reaches its exact
+acknowledgement function; a cross-family or idle completion stutters. -/
+def acknowledgeAuthoritativePublication
+    (state : AuthoritativePublicationState)
+    (completion : AuthoritativePublicationCompletion) :
+    AuthoritativePublicationOutcome :=
+  match state.pending, completion with
+  | some (.control pending), .control completion =>
+      let acknowledged := acknowledgeControlPublication {
+        authoritative := state.authoritative
+        cache := state.cache
+        pending := some pending
+        nextTicket := state.nextTicket } completion
+      { state := {
+          authoritative := acknowledged.state.authoritative
+          cache := acknowledged.state.cache
+          pending := acknowledged.state.pending.map
+            PendingAuthoritativePublication.control
+          nextTicket := acknowledged.state.nextTicket }
+        accepted := acknowledged.accepted }
+  | some (.cleanup pending), .cleanup completion =>
+      let acknowledged := acknowledgeAuthorityCleanupPublication {
+        authoritative := state.authoritative
+        cache := state.cache
+        pending := some pending
+        nextTicket := state.nextTicket } completion
+      { state := {
+          authoritative := acknowledged.state.authoritative
+          cache := acknowledged.state.cache
+          pending := acknowledged.state.pending.map
+            PendingAuthoritativePublication.cleanup
+          nextTicket := acknowledged.state.nextTicket }
+        accepted := acknowledged.accepted }
+  | _, _ => { state, accepted := false }
+
 theorem prepare_authority_cleanup_retains_publications
     state hstate operation :
     let prepared := prepareAuthorityCleanupPublication state hstate operation
