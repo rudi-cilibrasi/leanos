@@ -2157,6 +2157,94 @@ theorem subject_termination_checked_authoritative_acknowledges_exact_cleanup
     invalidateScopes, scopeCoversKey]
   all_goals native_decide
 
+/-! ## Finite control-operation publication witnesses
+
+The same invariant-bearing assignment/mapping/cache fixture also exercises
+each caller-visible control operation.  These witnesses bind the completion
+to the internally derived mapping or assignment scope and show that exact
+acknowledgement both publishes the checked logical successor and removes the
+covered old translation.
+-/
+
+def controlCheckedMappingScope : InvalidationScope :=
+  .mappingSet {
+    source := subjectTerminationWitnessAssignment.source
+    assignment := subjectTerminationWitnessAssignment.handle
+    domain := subjectTerminationWitnessAssignment.domain
+    mapping := subjectTerminationWitnessMapping.handle }
+
+def controlCheckedAssignmentScope : InvalidationScope :=
+  .assignment {
+    source := subjectTerminationWitnessAssignment.source
+    assignment := subjectTerminationWitnessAssignment.handle
+    domain := subjectTerminationWitnessAssignment.domain }
+
+def controlCheckedCompletion (scope : InvalidationScope) :
+    AuthoritativePublicationCompletion :=
+  .control { ticket := 11, scope }
+
+def controlCheckedPendingState (before after : AuthoritativeExtension)
+    (scope : InvalidationScope) (reply : AcceptedReply) :
+    AuthoritativePublicationState :=
+  { authoritative := before
+    cache := [subjectTerminationWitnessEntry]
+    pending := some (.control {
+      ticket := 11
+      scope
+      logicalAfter := after
+      cacheBefore := [subjectTerminationWitnessEntry]
+      cacheAfter := invalidate [subjectTerminationWitnessEntry] scope
+      reply })
+    nextTicket := 12 }
+
+theorem executable_control_unmap_exact_completion_witness
+    (before after : AuthoritativeExtension) :
+    let acknowledged := acknowledgeAuthoritativePublication
+      (controlCheckedPendingState before after controlCheckedMappingScope
+        .unmapped)
+      (controlCheckedCompletion controlCheckedMappingScope)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative = after ∧
+      lookup acknowledged.state.cache subjectTerminationWitnessKey = none ∧
+      acknowledged.state.pending = none := by
+  simp [controlCheckedPendingState, controlCheckedCompletion,
+    controlCheckedMappingScope, acknowledgeAuthoritativePublication,
+    acknowledgeControlPublication, invalidate, eraseMappingScope, lookup,
+    subjectTerminationWitnessEntry, subjectTerminationWitnessKey,
+    subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
+
+theorem executable_control_attenuation_exact_completion_witness
+    (before after : AuthoritativeExtension) :
+    let acknowledged := acknowledgeAuthoritativePublication
+      (controlCheckedPendingState before after controlCheckedMappingScope
+        (.attenuated subjectTerminationWitnessMapping.handle))
+      (controlCheckedCompletion controlCheckedMappingScope)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative = after ∧
+      lookup acknowledged.state.cache subjectTerminationWitnessKey = none ∧
+      acknowledged.state.pending = none := by
+  simp [controlCheckedPendingState, controlCheckedCompletion,
+    controlCheckedMappingScope, acknowledgeAuthoritativePublication,
+    acknowledgeControlPublication, invalidate, eraseMappingScope, lookup,
+    subjectTerminationWitnessEntry, subjectTerminationWitnessKey,
+    subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
+
+theorem executable_control_teardown_exact_completion_witness
+    (before after : AuthoritativeExtension) :
+    let acknowledged := acknowledgeAuthoritativePublication
+      (controlCheckedPendingState before after controlCheckedAssignmentScope
+        .tornDown)
+      (controlCheckedCompletion controlCheckedAssignmentScope)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative = after ∧
+      lookup acknowledged.state.cache subjectTerminationWitnessKey = none ∧
+      acknowledged.state.pending = none := by
+  simp [controlCheckedPendingState, controlCheckedCompletion,
+    controlCheckedAssignmentScope, acknowledgeAuthoritativePublication,
+    acknowledgeControlPublication, invalidate, eraseAssignmentScope, lookup,
+    subjectTerminationWitnessEntry, subjectTerminationWitnessKey,
+    subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
