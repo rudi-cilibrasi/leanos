@@ -2459,6 +2459,147 @@ theorem checked_control_unmap_authoritative_acknowledges_exact
         subjectTerminationWitnessKey, subjectTerminationWitnessAssignment,
         subjectTerminationWitnessMapping]
 
+/-! ## Checked permission attenuation through the authoritative front door
+
+The same invariant-bearing fixture now reduces the live mapping from
+read-write to read-only.  Exact acknowledgement must publish that checked
+successor and remove the old cache entry before the reduced authority becomes
+visible.
+-/
+
+def controlCheckedAttenuatedMapping : Mapping :=
+  { subjectTerminationWitnessMapping with permission := readOnly }
+
+def controlCheckedAttenuatedIOMMU (plan : BootPageTablePlan.Plan) : State :=
+  { core := { subjectTerminationCheckedCore plan with
+      mappings := [controlCheckedAttenuatedMapping] }
+    valid := by
+      simp [subjectTerminationCheckedCore, authoritativeSampleCore,
+        controlCheckedAttenuatedMapping, subjectTerminationWitnessAssignment,
+        subjectTerminationWitnessMapping,
+        FailStop.compositeDispatcherInitial]
+      native_decide
+    capabilityWellFormed :=
+      (subjectTerminationCheckedIOMMU plan).capabilityWellFormed }
+
+/-- Permission reduction derives the same complete mapping-lifetime scope as
+unmap; the caller supplies only the checked mapping handle and reduced range.
+-/
+theorem checked_control_attenuation_requires_exact_scope
+    (plan : BootPageTablePlan.Plan) :
+    requiredControlScope (subjectTerminationCheckedBefore plan)
+      (.attenuate controlCheckedAttenuation) =
+        some controlCheckedMappingScope := by
+  simp [requiredControlScope, mappingScopeFor, findMapping, findAssignment,
+    controlCheckedAttenuation, controlCheckedMappingScope,
+    subjectTerminationCheckedBefore, subjectTerminationCheckedIOMMU,
+    subjectTerminationCheckedCore, subjectTerminationWitnessAssignment,
+    subjectTerminationWitnessMapping]
+  native_decide
+
+theorem checked_control_attenuation_gate
+    (plan : BootPageTablePlan.Plan) :
+    gate (subjectTerminationCheckedIOMMU plan)
+        (.attenuate controlCheckedAttenuation) =
+      .accepted (controlCheckedAttenuatedIOMMU plan)
+        (.attenuated subjectTerminationWitnessMapping.handle) := by
+  rfl
+
+theorem checked_control_attenuation_candidate_coherent
+    (plan : BootPageTablePlan.Plan) :
+    ({ kernel := (subjectTerminationCheckedBefore plan).kernel
+       iommu := controlCheckedAttenuatedIOMMU plan
+       scrub := (subjectTerminationCheckedBefore plan).scrub } :
+      AuthoritativeExtension).Coherent := by
+  refine ⟨rfl, rfl, rfl, rfl,
+    authoritativeSampleScrub_invariant plan, ?_⟩
+  simp [controlCheckedAttenuatedIOMMU, controlCheckedAttenuatedMapping,
+    subjectTerminationCheckedBefore, subjectTerminationCheckedCore,
+    authoritativeSample, authoritativeSampleCore,
+    FailStop.compositeDispatcherInitial,
+    subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
+  native_decide
+
+theorem checked_control_attenuation_gated_accepts
+    (plan : BootPageTablePlan.Plan) :
+    (gatedByKernel (subjectTerminationCheckedBefore plan)
+      (subject_termination_checked_before_invariant plan)
+      (.attenuate controlCheckedAttenuation)).isAccepted = true := by
+  unfold gatedByKernel
+  rw [show (subjectTerminationCheckedBefore plan).kernel.execution.mode =
+      .running by rfl]
+  simp only
+  rw [show gate (subjectTerminationCheckedBefore plan).iommu
+        (.attenuate controlCheckedAttenuation) =
+      .accepted (controlCheckedAttenuatedIOMMU plan)
+        (.attenuated subjectTerminationWitnessMapping.handle) by
+    simpa [subjectTerminationCheckedBefore] using
+      checked_control_attenuation_gate plan]
+  simp [checked_control_attenuation_candidate_coherent plan,
+    AuthoritativeOutcome.isAccepted]
+
+/-- Exact acknowledgement of the checked reduction publishes the read-only
+authoritative mapping, removes the old broader cache entry, and clears the
+shared pending slot. -/
+theorem checked_control_attenuation_authoritative_acknowledges_exact
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (controlCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.control (.attenuate controlCheckedAttenuation))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (controlCheckedCompletion controlCheckedMappingScope)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative =
+        { kernel := (subjectTerminationCheckedBefore plan).kernel
+          iommu := controlCheckedAttenuatedIOMMU plan
+          scrub := (subjectTerminationCheckedBefore plan).scrub } ∧
+      (acknowledged.state.authoritative.iommu.core.mappings.find?
+        (fun mapping => mapping.handle ==
+          subjectTerminationWitnessMapping.handle)).map
+          (fun mapping => mapping.permission) = some readOnly ∧
+      lookup acknowledged.state.cache subjectTerminationWitnessKey = none ∧
+      acknowledged.state.pending = none := by
+  simp only [prepareAuthoritativePublication,
+    controlCheckedAuthoritativePublicationState, prepareControlPublication]
+  rw [checked_control_attenuation_requires_exact_scope plan]
+  have haccepted := checked_control_attenuation_gated_accepts plan
+  cases hgate : gatedByKernel (subjectTerminationCheckedBefore plan)
+      (subject_termination_checked_before_invariant plan)
+      (.attenuate controlCheckedAttenuation) with
+  | rejected reason =>
+      simp [hgate, AuthoritativeOutcome.isAccepted] at haccepted
+  | accepted after hinvariant reply =>
+      have hexact :
+          after =
+              { kernel := (subjectTerminationCheckedBefore plan).kernel
+                iommu := controlCheckedAttenuatedIOMMU plan
+                scrub := (subjectTerminationCheckedBefore plan).scrub } ∧
+            reply =
+              .attenuated subjectTerminationWitnessMapping.handle := by
+        unfold gatedByKernel at hgate
+        rw [show (subjectTerminationCheckedBefore plan).kernel.execution.mode =
+            .running by rfl] at hgate
+        simp only at hgate
+        rw [show gate (subjectTerminationCheckedBefore plan).iommu
+            (.attenuate controlCheckedAttenuation) =
+              .accepted (controlCheckedAttenuatedIOMMU plan)
+                (.attenuated subjectTerminationWitnessMapping.handle) by
+          simpa [subjectTerminationCheckedBefore] using
+            checked_control_attenuation_gate plan] at hgate
+        simp only at hgate
+        rw [dif_pos (checked_control_attenuation_candidate_coherent plan)] at hgate
+        cases hgate
+        exact ⟨rfl, rfl⟩
+      rcases hexact with ⟨rfl, rfl⟩
+      simp [acknowledgeAuthoritativePublication, acknowledgeControlPublication,
+        controlCheckedCompletion, controlCheckedMappingScope, invalidate,
+        eraseMappingScope, lookup, controlCheckedAttenuatedIOMMU,
+        controlCheckedAttenuatedMapping, subjectTerminationWitnessEntry,
+        subjectTerminationWitnessKey, subjectTerminationWitnessAssignment,
+        subjectTerminationWitnessMapping]
+      all_goals native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
