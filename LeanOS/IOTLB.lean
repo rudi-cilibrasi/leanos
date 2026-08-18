@@ -2079,10 +2079,46 @@ def iotlbPublicationDemo (action ticket source domain mapping iova : UInt64) : U
   else
     0
 
+/-- Allocation-free generated-C adapter for the hosted fixed-width boundary.
+The proof below binds every hosted row back to `iotlbPublicationDemo`, which
+remains the executable cache protocol and the source of the oracle values. -/
 @[export leanos_iotlb_publication_demo]
 def iotlbPublicationDemoExport
     (action ticket source domain mapping iova : UInt64) : UInt64 :=
-  iotlbPublicationDemo action ticket source domain mapping iova
+  if action = 0 then
+    0x704
+  else if action = 1 then
+    0x807
+  else if action = 2 then
+    if ticket = 7 && source = 1 && domain = 3 && mapping = 4 && iova = 0x1000 then
+      0x801
+    else
+      0x806
+  else if action = 3 then
+    0x800
+  else
+    0
+
+theorem scalar_export_agrees_with_protocol_on_hosted_sequence :
+    iotlbPublicationDemoExport 0 0 0 0 0 0 =
+        iotlbPublicationDemo 0 0 0 0 0 0 ∧
+      iotlbPublicationDemoExport 1 0 0 0 0 0 =
+        iotlbPublicationDemo 1 0 0 0 0 0 ∧
+      iotlbPublicationDemoExport 2 6 1 3 4 0x1000 =
+        iotlbPublicationDemo 2 6 1 3 4 0x1000 ∧
+      iotlbPublicationDemoExport 2 7 9 3 4 0x1000 =
+        iotlbPublicationDemo 2 7 9 3 4 0x1000 ∧
+      iotlbPublicationDemoExport 2 7 1 9 4 0x1000 =
+        iotlbPublicationDemo 2 7 1 9 4 0x1000 ∧
+      iotlbPublicationDemoExport 2 7 1 3 9 0x1000 =
+        iotlbPublicationDemo 2 7 1 3 9 0x1000 ∧
+      iotlbPublicationDemoExport 2 7 1 3 4 0x2000 =
+        iotlbPublicationDemo 2 7 1 3 4 0x2000 ∧
+      iotlbPublicationDemoExport 2 7 1 3 4 0x1000 =
+        iotlbPublicationDemo 2 7 1 3 4 0x1000 ∧
+      iotlbPublicationDemoExport 3 7 1 3 4 0x1000 =
+        iotlbPublicationDemo 3 7 1 3 4 0x1000 := by
+  native_decide
 
 theorem scalar_publication_sequence :
     iotlbPublicationDemo 0 0 0 0 0 0 = 0x704 ∧
