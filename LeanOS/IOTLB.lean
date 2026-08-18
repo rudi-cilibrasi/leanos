@@ -2245,6 +2245,85 @@ theorem executable_control_teardown_exact_completion_witness
     subjectTerminationWitnessEntry, subjectTerminationWitnessKey,
     subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
 
+/-! ## Checked control publication through the authoritative front door
+
+The finite completions above are now connected to preparation from the same
+invariant-bearing authoritative state used by the subject-termination witness.
+No logical successor or invalidation scope is supplied by these sequences:
+both come from the checked control operation and its published pre-state.
+-/
+
+noncomputable def controlCheckedAuthoritativePublicationState
+    (plan : BootPageTablePlan.Plan) : AuthoritativePublicationState :=
+  { authoritative := subjectTerminationCheckedBefore plan
+    cache := [subjectTerminationWitnessEntry]
+    pending := none
+    nextTicket := 11 }
+
+def controlCheckedAttenuation : AttenuateRequest :=
+  { mapping := subjectTerminationWitnessMapping.handle
+    offset := 0
+    length := pageSize
+    permission := readOnly }
+
+/-- Any accepted checked unmap preparation through the caller-visible front
+door binds ticket 11 to the internally derived complete mapping-lifetime
+scope and the retained old cache.  The remaining non-vacuity step is to
+discharge acceptance of this concrete checked operation. -/
+theorem checked_control_unmap_authoritative_prepare_binds_exact_scope
+    (plan : BootPageTablePlan.Plan)
+    (haccepted :
+      (prepareAuthoritativePublication
+        (controlCheckedAuthoritativePublicationState plan)
+        (subject_termination_checked_before_invariant plan)
+        (.control (.unmap subjectTerminationWitnessMapping.handle))).accepted =
+        true) :
+    ∃ pending,
+      (prepareAuthoritativePublication
+        (controlCheckedAuthoritativePublicationState plan)
+        (subject_termination_checked_before_invariant plan)
+        (.control (.unmap subjectTerminationWitnessMapping.handle))).state.pending =
+          some (.control pending) ∧
+      pending.ticket = 11 ∧
+      pending.scope = controlCheckedMappingScope ∧
+      pending.cacheBefore = [subjectTerminationWitnessEntry] ∧
+      pending.cacheAfter =
+        invalidate [subjectTerminationWitnessEntry] controlCheckedMappingScope := by
+  let lower : ControlPublicationState :=
+    { authoritative := subjectTerminationCheckedBefore plan
+      cache := [subjectTerminationWitnessEntry]
+      pending := none
+      nextTicket := 11 }
+  have hlower :
+      (prepareControlPublication lower
+        (subject_termination_checked_before_invariant plan)
+        (.unmap subjectTerminationWitnessMapping.handle)).accepted = true := by
+    simpa [prepareAuthoritativePublication,
+      controlCheckedAuthoritativePublicationState, lower] using haccepted
+  obtain ⟨pending, scope, logicalAfter, hinvariant, reply, hscope, _hgate,
+      hpending, hticket, hpscope, _hafter, hbefore, hcache⟩ :=
+    prepare_control_accepted_binds_exact_successor lower
+      (subject_termination_checked_before_invariant plan)
+      (.unmap subjectTerminationWitnessMapping.handle) hlower
+  have hrequired :
+      requiredControlScope (subjectTerminationCheckedBefore plan)
+        (.unmap subjectTerminationWitnessMapping.handle) =
+        some controlCheckedMappingScope := by
+    simp [requiredControlScope, mappingScopeFor, findMapping, findAssignment,
+      controlCheckedMappingScope, subjectTerminationCheckedBefore,
+      subjectTerminationCheckedIOMMU, subjectTerminationCheckedCore,
+      subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
+    native_decide
+  have hscopeExact : scope = controlCheckedMappingScope := by
+    rw [hrequired] at hscope
+    exact (Option.some.inj hscope).symm
+  refine ⟨pending, ?_, ?_, hpscope.trans hscopeExact, ?_, ?_⟩
+  · simp [prepareAuthoritativePublication,
+      controlCheckedAuthoritativePublicationState, lower, hpending]
+  · simpa [lower] using hticket
+  · simpa [lower] using hbefore
+  · simpa [lower, hscopeExact] using hcache
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
