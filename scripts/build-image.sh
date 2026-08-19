@@ -229,9 +229,9 @@ for flag in "${cflags[@]}"; do
   graph_args+=("--cflag=$flag")
 done
 python3 scripts/generate-image-object-graph.py "${graph_args[@]}"
-# The generated graph owns the canonical and authority-boundary prelinks.  It
-# retains their reviewed linker input order while scheduling independent links
-# concurrently with the remaining object work.
+# The generated graph owns the migrated prelinks.  It retains their reviewed
+# linker input order while scheduling independent links concurrently with the
+# remaining object work.
 make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
   shared-generated-objects variant-kernel-objects variant-assembly-objects \
   prelink-images
@@ -240,67 +240,6 @@ cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
   "$build/entry-stack-extended-callgraph.tsv"
 ./scripts/check-entry-stack-budget.sh | tee "$build/entry-stack-budget.txt"
-# The first link fixes every symbol address while using a same-sized plan
-# placeholder. Lean then accepts the linker-resolved Input and emits the exact
-# PTE arrays used by the guest walker. Recompiling only kernel.c preserves all
-# section sizes; the final comparison rejects any unexpected address drift.
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-extended-state-prelink.map" \
-  -o "$build/leanos-extended-state-prelink.elf" "$build/boot-extended-state.o" \
-  "$build/kernel-extended-state.o" "$build/KernelTransition.o" "$build/Syscall.o" \
-  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
-  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-extended-state-mmx-prelink.map" \
-  -o "$build/leanos-extended-state-mmx-prelink.elf" \
-  "$build/boot-extended-state-mmx.o" "$build/kernel-extended-state.o" \
-  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
-  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-extended-state-sse-prelink.map" \
-  -o "$build/leanos-extended-state-sse-prelink.elf" \
-  "$build/boot-extended-state-sse.o" "$build/kernel-extended-state.o" \
-  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
-  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-extended-state-sse2-prelink.map" \
-  -o "$build/leanos-extended-state-sse2-prelink.elf" \
-  "$build/boot-extended-state-sse2.o" "$build/kernel-extended-state.o" \
-  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
-  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-extended-state-avx-prelink.map" \
-  -o "$build/leanos-extended-state-avx-prelink.elf" \
-  "$build/boot-extended-state-avx.o" "$build/kernel-extended-state.o" \
-  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
-  "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-  "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-extended-state-peer-pke-prelink.map" \
-  -o "$build/leanos-extended-state-peer-pke-prelink.elf" \
-  "$build/boot-extended-state-peer-pke.o" "$build/peer-pke-fixture.o" \
-  "$build/kernel-extended-state-peer-pke.o" "$build/KernelTransition.o" \
-  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-for mechanism in syscall sysenter; do
-  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-    -T boot/linker.ld -Map "$build/leanos-fast-entry-${mechanism}-prelink.map" \
-    -o "$build/leanos-fast-entry-${mechanism}-prelink.elf" \
-    "$build/boot-fast-entry-${mechanism}.o" "$build/kernel-extended-state.o" \
-    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
-    "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
-    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-done
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-double-fault-prelink.map" \
   -o "$build/leanos-double-fault-prelink.elf" "$build/boot.o" \

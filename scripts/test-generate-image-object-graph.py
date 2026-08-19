@@ -156,6 +156,22 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn("out/leanos-preemption-prelink.elf:", graph)
         self.assertIn("out/leanos-fault-readonly-write-prelink.elf:", graph)
         self.assertIn("out/leanos-fault-stale-translation-prelink.elf:", graph)
+        peer_rule = next(
+            line
+            for line in graph.splitlines()
+            if line.startswith("out/leanos-extended-state-peer-pke-prelink.elf:")
+        )
+        self.assertLess(
+            peer_rule.index("out/boot-extended-state-peer-pke.o"),
+            peer_rule.index("out/peer-pke-fixture.o"),
+        )
+        self.assertLess(
+            peer_rule.index("out/peer-pke-fixture.o"),
+            peer_rule.index("out/kernel-extended-state-peer-pke.o"),
+        )
+        self.assertIn("out/leanos-extended-state-avx-prelink.elf:", graph)
+        self.assertIn("out/leanos-fast-entry-syscall-prelink.elf:", graph)
+        self.assertIn("out/leanos-fast-entry-sysenter-prelink.elf:", graph)
 
 
 if __name__ == "__main__":

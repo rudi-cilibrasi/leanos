@@ -267,6 +267,49 @@ PRELINK_VARIANTS = (
         "kernel-fault-stale-translation",
         (),
     ),
+    ("extended-state", "boot-extended-state", "kernel-extended-state", ()),
+    (
+        "extended-state-mmx",
+        "boot-extended-state-mmx",
+        "kernel-extended-state",
+        (),
+    ),
+    (
+        "extended-state-sse",
+        "boot-extended-state-sse",
+        "kernel-extended-state",
+        (),
+    ),
+    (
+        "extended-state-sse2",
+        "boot-extended-state-sse2",
+        "kernel-extended-state",
+        (),
+    ),
+    (
+        "extended-state-avx",
+        "boot-extended-state-avx",
+        "kernel-extended-state",
+        (),
+    ),
+    (
+        "extended-state-peer-pke",
+        "boot-extended-state-peer-pke",
+        "kernel-extended-state-peer-pke",
+        ("peer-pke-fixture",),
+    ),
+    (
+        "fast-entry-syscall",
+        "boot-fast-entry-syscall",
+        "kernel-extended-state",
+        (),
+    ),
+    (
+        "fast-entry-sysenter",
+        "boot-fast-entry-sysenter",
+        "kernel-extended-state",
+        (),
+    ),
 )
 
 
