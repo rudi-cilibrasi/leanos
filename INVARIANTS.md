@@ -2041,7 +2041,7 @@ This file introduces a finite model of the IOMMU's translation cache. Cache keys
 - `checked_control_teardown_candidate_coherent` — Publishing the assignment/mapping-free successor preserves the kernel, IOMMU, scrub, capability, assignment, and frame coherence required by the outer authoritative gate.
 - `checked_control_teardown_gated_accepts` — The coherent public kernel/IOMMU gate accepts the concrete assignment teardown rather than rejecting or stuttering at the outer coherence boundary.
 - `checked_control_teardown_authoritative_acknowledges_exact` — Exact acknowledgement publishes the checked assignment/mapping-free successor, removes the old source/domain cached translation, and clears the shared pending slot.
-- `assigned_edu_reuse_export_agrees_with_protocol` — For the exact assigned-EDU frame-reuse projection, both preparation and acknowledgement return the same result as the executable IOTLB protocol, while a mismatched requester is rejected.
+- `assigned_edu_reuse_export_agrees_with_protocol` — For the exact assigned-EDU frame-reuse projection, both preparation and acknowledgement return the same result as the executable IOTLB protocol, while every mismatched version, requester, source, assignment, domain, mapping, IOVA, frame, or generation is rejected.
 - `scalar_export_agrees_with_protocol_on_hosted_sequence` — The allocation-free generated-C adapter returns exactly the executable cache protocol's answer for all nine fixed hosted rows.
 - `scalar_publication_sequence` — The fixed scalar witness observes a live translation, retains it while invalidation is pending, rejects stale tickets and every lifetime-bearing scope mismatch, removes it only on exact completion, and rejects replay.
 

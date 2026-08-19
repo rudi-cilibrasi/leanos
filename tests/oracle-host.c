@@ -126,7 +126,32 @@ int main(void) {
         leanos_assigned_edu_reuse_publication(
             2, 1, 16, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0) != 0 ||
         leanos_assigned_edu_reuse_publication(
+            1, 2, 16, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
             1, 1, 17, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 0, 2, 0, 1, 0, 1, 0, 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 0, 1, 0, 2, 0, 1, 0, 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 0, 1, 0, 1, 0, 1, UINT64_C(0x1000), 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 0, 1, 0, 1, 0, 1, 0, 0, 2, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1,
+            UINT64_C(0x1000)) != 1 ||
         leanos_assigned_edu_reuse_publication(
             3, 1, 16, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0) != 4) {
         fputs("generated assigned-EDU reuse publication policy drifted\n", stderr);

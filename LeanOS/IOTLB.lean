@@ -2808,7 +2808,19 @@ theorem assigned_edu_reuse_export_agrees_with_protocol :
         assignedEDUReusePublicationDemo 1 1 16 0 0 1 0 1 0 1 0 0 1 0 ∧
       assignedEDUReusePublicationExport 2 1 16 0 0 1 0 1 0 1 0 0 1 0 =
         assignedEDUReusePublicationDemo 2 1 16 0 0 1 0 1 0 1 0 0 1 0 ∧
-      assignedEDUReusePublicationExport 1 1 17 0 0 1 0 1 0 1 0 0 1 0 = 1 := by
+      assignedEDUReusePublicationExport 1 2 16 0 0 1 0 1 0 1 0 0 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 17 0 0 1 0 1 0 1 0 0 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 1 0 1 0 1 0 1 0 0 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 0 1 1 0 1 0 1 0 0 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 0 0 2 0 1 0 1 0 0 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 0 0 1 1 1 0 1 0 0 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 0 0 1 0 2 0 1 0 0 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 0 0 1 0 1 1 1 0 0 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 0 0 1 0 1 0 2 0 0 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 0 0 1 0 1 0 1 0x1000 0 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 0 0 1 0 1 0 1 0 1 1 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 0 0 1 0 1 0 1 0 0 2 0 = 1 ∧
+      assignedEDUReusePublicationExport 1 1 16 0 0 1 0 1 0 1 0 0 1 0x1000 = 1 := by
   native_decide
 
 /-! ## Fixed-width hosted invalidation sequence
