@@ -310,6 +310,39 @@ PRELINK_VARIANTS = (
         "kernel-extended-state",
         (),
     ),
+    ("double-fault", "boot", "kernel-double-fault", ()),
+    (
+        "entry-stack-overflow",
+        "boot-entry-stack-overflow",
+        "kernel-double-fault",
+        (),
+    ),
+    (
+        "entry-adversarial",
+        "boot-entry-adversarial",
+        "kernel-entry-adversarial",
+        (),
+    ),
+    ("direct-port-serial", "boot-direct-port-serial", "kernel-direct-port", ()),
+    ("direct-port-debug", "boot-direct-port-debug", "kernel-direct-port", ()),
+    ("direct-port-in", "boot-direct-port-in", "kernel-direct-port", ()),
+    ("direct-port-pic", "boot-direct-port-pic", "kernel-direct-port", ()),
+    ("divide-error", "boot-divide-error", "kernel-integer-fault", ()),
+    ("breakpoint", "boot-breakpoint", "kernel-integer-fault", ()),
+    ("nmi", "boot-nmi", "kernel-nmi", ()),
+    ("bootstrap32-ud", "boot-bootstrap32-ud", "kernel-bootstrap32-ud", ()),
+    (
+        "bootstrap64-nmi",
+        "boot-bootstrap64-nmi",
+        "kernel-bootstrap64-nmi",
+        (),
+    ),
+    (
+        "guard",
+        "boot-df-guard-mapped",
+        "kernel-double-fault-guard-mapped",
+        (),
+    ),
 )
 
 

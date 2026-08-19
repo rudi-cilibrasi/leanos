@@ -172,6 +172,16 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn("out/leanos-extended-state-avx-prelink.elf:", graph)
         self.assertIn("out/leanos-fast-entry-syscall-prelink.elf:", graph)
         self.assertIn("out/leanos-fast-entry-sysenter-prelink.elf:", graph)
+        self.assertIn("out/leanos-double-fault-prelink.elf:", graph)
+        self.assertIn("out/leanos-entry-stack-overflow-prelink.elf:", graph)
+        self.assertIn("out/leanos-entry-adversarial-prelink.elf:", graph)
+        self.assertIn("out/leanos-direct-port-pic-prelink.elf:", graph)
+        self.assertIn("out/leanos-divide-error-prelink.elf:", graph)
+        self.assertIn("out/leanos-breakpoint-prelink.elf:", graph)
+        self.assertIn("out/leanos-nmi-prelink.elf:", graph)
+        self.assertIn("out/leanos-bootstrap32-ud-prelink.elf:", graph)
+        self.assertIn("out/leanos-bootstrap64-nmi-prelink.elf:", graph)
+        self.assertIn("out/leanos-guard-prelink.elf:", graph)
 
 
 if __name__ == "__main__":
