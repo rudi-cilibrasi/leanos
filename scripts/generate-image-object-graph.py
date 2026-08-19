@@ -100,6 +100,10 @@ KERNEL_VARIANTS = (
         '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-extended-state-peer-pke.h"',
     )),
     ("kernel-double-fault", ("-DLEANOS_DOUBLE_FAULT_PROBE=1",)),
+    ("kernel-entry-stack-overflow", (
+        "-DLEANOS_DOUBLE_FAULT_PROBE=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-entry-overflow.h"',
+    )),
     ("kernel-double-fault-guard-mapped", (
         "-DLEANOS_DOUBLE_FAULT_PROBE=1", "-DLEANOS_DF_MAP_GUARD=1",
     )),
@@ -456,8 +460,8 @@ def render_graph(
     lines.extend(
         [
             "",
-            ".PHONY: variant-kernel-objects",
-            "variant-kernel-objects: "
+            ".PHONY: variant-kernel-objects final-kernel-objects",
+            "variant-kernel-objects final-kernel-objects: "
             + " ".join(
                 f"{build}/{name}.o"
                 for name in [

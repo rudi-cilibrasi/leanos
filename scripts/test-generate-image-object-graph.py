@@ -124,6 +124,7 @@ class ImageObjectGraphTests(unittest.TestCase):
                     "shared-generated-objects", "variant-kernel-objects",
                     "variant-assembly-objects", "prelink-images",
                     "policy-fixture-images", "return-corruption-prelinks",
+                    "final-kernel-objects",
                 ],
                 check=True,
             )
@@ -136,6 +137,9 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn("-DLEANOS_PREEMPTION_SCENARIO=1", graph)
         self.assertIn("out/kernel-fault-stale-translation.o:", graph)
         self.assertIn("boot-page-plan-fault-stale-translation.h", graph)
+        self.assertIn("out/kernel-entry-stack-overflow.o:", graph)
+        self.assertIn("boot-page-plan-entry-overflow.h", graph)
+        self.assertIn("variant-kernel-objects final-kernel-objects:", graph)
 
     def test_assembly_variant_flags_are_owned_by_the_graph(self) -> None:
         graph = MODULE.render_graph(

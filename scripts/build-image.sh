@@ -369,92 +369,17 @@ cmp "$build/boot-page-plan-integer-fault.h" \
   "$build/boot-page-plan-bootstrap32-ud.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap64-nmi-prelink.elf" \
   "$build/boot-page-plan-bootstrap64-nmi.h"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
-  -o "$build/kernel.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_MALFORMED_HANDOFF_FIXTURE=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-malformed-handoff.h"' \
-  -c boot/kernel.c -o "$build/kernel-malformed-handoff.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_PROJECTION_SELECTION_MUTATION_FIXTURE=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-projection-authority-mutation.h"' \
-  -c boot/kernel.c -o "$build/kernel-projection-authority-mutation.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_RAW_SELECTION_MUTATION_FIXTURE=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-raw-selection-authority-mutation.h"' \
-  -c boot/kernel.c -o "$build/kernel-raw-selection-authority-mutation.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_PREEMPTION_SCENARIO=1 -DLEANOS_ENTRY_HIGH_WATER=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
-  -c boot/kernel.c -o "$build/kernel-preemption.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_FRAME_BUDGET_SCENARIO=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-frame-budget.h"' \
-  -c boot/kernel.c -o "$build/kernel-frame-budget.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
-  -c boot/kernel.c -o "$build/kernel-fault-containment.o"
-for probe in "${fault_image_probes[@]}"; do
-  fault_plan_header="boot-page-plan-fault-containment.h"
-  if [[ "$probe" == stale-translation ]]; then
-    fault_plan_header="boot-page-plan-fault-stale-translation.h"
-  fi
-  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-    -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
-    "${fault_fatal_probe_flags[$probe]}" \
-    -DLEANOS_BOOT_PAGE_PLAN_HEADER="\"${fault_plan_header}\"" \
-    -c boot/kernel.c -o "$build/kernel-fault-${probe}.o"
-done
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
-  -c boot/kernel.c -o "$build/kernel-extended-state.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state-peer-pke.h"' \
-  -c boot/kernel.c -o "$build/kernel-extended-state-peer-pke.o"
+# Re-enter the same graph after replacing every stub boot-page plan.  The
+# generated dependency files select only affected kernel variants, and Make
+# recompiles those final-plan objects concurrently instead of serially.
+make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+  final-kernel-objects
+
 if nm "$build/kernel.o" | grep -Eq \
     'return_corruption_mode|return_corruption_name|inject_return_corruption'; then
   echo "error: normal kernel object contains return-corruption fixture code" >&2
   exit 1
 fi
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_DOUBLE_FAULT_PROBE=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-overflow.h"' \
-  -c boot/kernel.c -o "$build/kernel-entry-stack-overflow.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_DOUBLE_FAULT_PROBE=1 -DLEANOS_DF_MAP_GUARD=1 \
-  -c boot/kernel.c -o "$build/kernel-double-fault-guard-mapped.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_ENTRY_ADVERSARIAL=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-adversarial.h"' \
-  -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_NMI_PROBE=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-nmi.h"' \
-  -c boot/kernel.c -o "$build/kernel-nmi.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_ENTRY_HIGH_WATER=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-bootstrap32-ud.h"' \
-  -c boot/kernel.c -o "$build/kernel-bootstrap32-ud.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_ENTRY_HIGH_WATER=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-bootstrap64-nmi.h"' \
-  -c boot/kernel.c -o "$build/kernel-bootstrap64-nmi.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-direct-port.h"' \
-  -c boot/kernel.c -o "$build/kernel-direct-port.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_INTEGER_FAULT_SCENARIO=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-integer-fault.h"' \
-  -c boot/kernel.c -o "$build/kernel-integer-fault.o"
-
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map build/boot/leanos.map \
   -o build/boot/leanos.elf build/boot/boot.o build/boot/kernel.o \
