@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the shared-object portion of the LeanOS image Make graph."""
+"""Generate the shared and variant C-object portion of the image Make graph."""
 
 from __future__ import annotations
 
@@ -49,6 +49,77 @@ FAULT_DISPATCH_PARTS = (
     "IOTLB",
 )
 
+KERNEL_VARIANTS = (
+    ("kernel", ("-DLEANOS_ENTRY_HIGH_WATER=1",)),
+    ("kernel-malformed-handoff", (
+        "-DLEANOS_MALFORMED_HANDOFF_FIXTURE=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-malformed-handoff.h"',
+    )),
+    ("kernel-projection-authority-mutation", (
+        "-DLEANOS_PROJECTION_SELECTION_MUTATION_FIXTURE=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-projection-authority-mutation.h"',
+    )),
+    ("kernel-raw-selection-authority-mutation", (
+        "-DLEANOS_RAW_SELECTION_MUTATION_FIXTURE=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-raw-selection-authority-mutation.h"',
+    )),
+    ("kernel-preemption", (
+        "-DLEANOS_PREEMPTION_SCENARIO=1", "-DLEANOS_ENTRY_HIGH_WATER=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-preemption.h"',
+    )),
+    ("kernel-frame-budget", (
+        "-DLEANOS_FRAME_BUDGET_SCENARIO=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-frame-budget.h"',
+    )),
+    ("kernel-fault-containment", (
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-fault-containment.h"',
+    )),
+    ("kernel-fault-reserved-bit", (
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_RESERVED_BIT=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-fault-containment.h"',
+    )),
+    ("kernel-fault-walk-mismatch", (
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-fault-containment.h"',
+    )),
+    ("kernel-fault-stale-translation", (
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-fault-stale-translation.h"',
+    )),
+    ("kernel-extended-state", (
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-extended-state.h"',
+    )),
+    ("kernel-extended-state-peer-pke", (
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+        "-DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-extended-state-peer-pke.h"',
+    )),
+    ("kernel-double-fault", ("-DLEANOS_DOUBLE_FAULT_PROBE=1",)),
+    ("kernel-double-fault-guard-mapped", (
+        "-DLEANOS_DOUBLE_FAULT_PROBE=1", "-DLEANOS_DF_MAP_GUARD=1",
+    )),
+    ("kernel-entry-adversarial", (
+        "-DLEANOS_ENTRY_ADVERSARIAL=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-entry-adversarial.h"',
+    )),
+    ("kernel-nmi", ("-DLEANOS_NMI_PROBE=1",)),
+    ("kernel-bootstrap32-ud", ("-DLEANOS_ENTRY_HIGH_WATER=1",)),
+    ("kernel-bootstrap64-nmi", ("-DLEANOS_ENTRY_HIGH_WATER=1",)),
+    ("kernel-direct-port", (
+        "-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-direct-port.h"',
+    )),
+    ("kernel-integer-fault", (
+        "-DLEANOS_INTEGER_FAULT_SCENARIO=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-integer-fault.h"',
+    )),
+)
+
 
 def make_escape(value: str) -> str:
     return value.replace("$", "$$").replace(" ", "\\ ").replace("#", "\\#")
@@ -58,7 +129,13 @@ def shell_join(arguments: list[str]) -> str:
     return " ".join(shlex.quote(argument) for argument in arguments)
 
 
-def render_graph(build_dir: Path, cc: str, cflags: list[str], lean_prefix: Path) -> str:
+def render_graph(
+    build_dir: Path,
+    cc: str,
+    cflags: list[str],
+    lean_prefix: Path,
+    source_root: Path,
+) -> str:
     build = make_escape(str(build_dir))
     compile_flags = shell_join([*cflags, f"-I{lean_prefix / 'include'}"])
     lines = [
@@ -108,6 +185,29 @@ def render_graph(build_dir: Path, cc: str, cflags: list[str], lean_prefix: Path)
             "",
         ]
     )
+    kernel_source = make_escape(str(source_root / "boot/kernel.c"))
+    kernel_flags = [*cflags, f"-I{build_dir}", "-Wall", "-Wextra", "-Werror"]
+    for name, definitions in KERNEL_VARIANTS:
+        target = f"{build}/{name}.o"
+        arguments = shell_join([*kernel_flags, *definitions])
+        lines.extend(
+            [
+                f"{target}: {kernel_source}",
+                f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF $@.d -c $< -o $@",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            ".PHONY: variant-kernel-objects",
+            "variant-kernel-objects: "
+            + " ".join(f"{build}/{name}.o" for name, _ in KERNEL_VARIANTS),
+            "",
+            "-include "
+            + " ".join(f"{build}/{name}.o.d" for name, _ in KERNEL_VARIANTS),
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -117,13 +217,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--cc", required=True)
     parser.add_argument("--lean-prefix", type=Path, required=True)
+    parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--cflag", action="append", default=[])
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    graph = render_graph(args.build_dir, args.cc, args.cflag, args.lean_prefix)
+    graph = render_graph(
+        args.build_dir, args.cc, args.cflag, args.lean_prefix, args.source_root
+    )
     args.output.write_text(graph, encoding="utf-8")
 
 

@@ -223,85 +223,14 @@ graph_args=(
   --build-dir "$build"
   --cc "$cc"
   --lean-prefix "$lean_prefix"
+  --source-root "$repo_root"
 )
 for flag in "${cflags[@]}"; do
   graph_args+=("--cflag=$flag")
 done
 python3 scripts/generate-image-object-graph.py "${graph_args[@]}"
 make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-  shared-generated-objects
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
-  -o "$build/kernel.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_MALFORMED_HANDOFF_FIXTURE=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-malformed-handoff.h"' \
-  -c boot/kernel.c -o "$build/kernel-malformed-handoff.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_PROJECTION_SELECTION_MUTATION_FIXTURE=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-projection-authority-mutation.h"' \
-  -c boot/kernel.c -o "$build/kernel-projection-authority-mutation.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_RAW_SELECTION_MUTATION_FIXTURE=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-raw-selection-authority-mutation.h"' \
-  -c boot/kernel.c -o "$build/kernel-raw-selection-authority-mutation.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_PREEMPTION_SCENARIO=1 -DLEANOS_ENTRY_HIGH_WATER=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-preemption.h"' \
-  -c boot/kernel.c -o "$build/kernel-preemption.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_FRAME_BUDGET_SCENARIO=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-frame-budget.h"' \
-  -c boot/kernel.c -o "$build/kernel-frame-budget.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-fault-containment.h"' \
-  -c boot/kernel.c -o "$build/kernel-fault-containment.o"
-for probe in "${fault_image_probes[@]}"; do
-  fault_plan_header="boot-page-plan-fault-containment.h"
-  if [[ "$probe" == stale-translation ]]; then
-    fault_plan_header="boot-page-plan-fault-stale-translation.h"
-  fi
-  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-    -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
-    "${fault_fatal_probe_flags[$probe]}" \
-    -DLEANOS_BOOT_PAGE_PLAN_HEADER="\"${fault_plan_header}\"" \
-    -c boot/kernel.c -o "$build/kernel-fault-${probe}.o"
-done
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state.h"' \
-  -c boot/kernel.c -o "$build/kernel-extended-state.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-extended-state-peer-pke.h"' \
-  -c boot/kernel.c -o "$build/kernel-extended-state-peer-pke.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_DOUBLE_FAULT_PROBE=1 -DLEANOS_DF_MAP_GUARD=1 \
-  -c boot/kernel.c -o "$build/kernel-double-fault-guard-mapped.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_ENTRY_ADVERSARIAL=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-entry-adversarial.h"' \
-  -c boot/kernel.c -o "$build/kernel-entry-adversarial.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_NMI_PROBE=1 -c boot/kernel.c -o "$build/kernel-nmi.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
-  -o "$build/kernel-bootstrap32-ud.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
-  -o "$build/kernel-bootstrap64-nmi.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-direct-port.h"' \
-  -c boot/kernel.c -o "$build/kernel-direct-port.o"
-"$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-  -DLEANOS_INTEGER_FAULT_SCENARIO=1 \
-  -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-integer-fault.h"' \
-  -c boot/kernel.c -o "$build/kernel-integer-fault.o"
+  shared-generated-objects variant-kernel-objects
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
