@@ -60,12 +60,14 @@ transfer='LEANOS/21 VTD-TRANSFER requester=16 domain=0 generation=1 read-iova=0 
 read_fault='LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1 direction=read iova=4096 reason=6 sid=16 sentinel=unchanged victim=unchanged state=current result=PASS'
 write_fault='LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1 direction=write iova=0 reason=5 sid=16 sentinel=unchanged victim=unchanged state=current result=PASS'
 unmapped_fault='LEANOS/21 VTD-FAULT requester=16 domain=0 generation=1 direction=read iova=8192 reason=6 sid=16 protected=subject,kernel,cpu-page-tables,remapping-tables,guards records=complete,unchanged state=current result=PASS'
+reuse='LEANOS/21 VTD-REUSE requester=16 domain=0 old-generation=1 old-iova=0 old-access=denied invalidation=complete scrub=complete fresh-lifetime=2 fresh-iova=8192 canary=preserved fresh-transfer=PASS reset=0 result=PASS'
 if [[ "$(grep -Fxc "$edu" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$snapshot" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$assignment" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$read_fault" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$write_fault" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$unmapped_fault" "$log")" -ne 1 ]] ||
+    [[ "$(grep -Fxc "$reuse" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc "$transfer" "$log")" -ne 1 ]] ||
     [[ "$(grep -Fxc 'LEANOS/10 FINAL status=PASS blocks=1 wakes=1 deliveries=1' "$log")" -ne 1 ]]; then
   echo "failure_class=evidence: assigned-EDU inventory checkpoint differs" >&2

@@ -271,6 +271,8 @@ def emit (layout : Layout) : Except String String := do
          assignedScenarioState.core.assignments.head!.device,
        emitConstant "LEANOS_VTD_ASSIGNED_SOURCE"
          assignedScenarioState.core.assignments.head!.source,
+       emitConstant "LEANOS_VTD_ASSIGNED_HANDLE"
+         assignedScenarioState.core.assignments.head!.handle.slot,
        emitConstant "LEANOS_VTD_ASSIGNED_GENERATION"
          assignedScenarioState.core.assignments.head!.handle.generation,
        emitConstant "LEANOS_VTD_ASSIGNED_DOMAIN"
@@ -286,6 +288,12 @@ def emit (layout : Layout) : Except String String := do
          (frameOf layout.assignedWriteBufferStart),
        emitConstant "LEANOS_VTD_MODEL_READ_IOVA"
          assignedScenarioState.core.mappings.head!.iova,
+       emitConstant "LEANOS_VTD_MODEL_READ_MAPPING"
+         assignedScenarioState.core.mappings.head!.handle.slot,
+       emitConstant "LEANOS_VTD_MODEL_READ_MAPPING_GENERATION"
+         assignedScenarioState.core.mappings.head!.handle.generation,
+       emitConstant "LEANOS_VTD_HARDWARE_READ_IOVA"
+         (hardwareIova assignedScenarioState.core.mappings.head!.iova),
        emitConstant "LEANOS_VTD_MODEL_READ_LENGTH"
          assignedScenarioState.core.mappings.head!.length,
        emitConstant "LEANOS_VTD_MODEL_READ_FRAME"

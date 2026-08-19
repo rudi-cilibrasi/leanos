@@ -31,6 +31,7 @@ specs=(
   "wrong-mmio-identity:vtd-assigned-mmio-identity"
   "forged-fault:vtd-assigned-fault-binding"
   "wrong-fault-victim:vtd-assigned-fault-victim"
+  "omit-reuse-invalidation:vtd-reuse-invalidation-omitted"
 )
 for spec in "${specs[@]}"; do
   IFS=: read -r fixture reason <<<"$spec"

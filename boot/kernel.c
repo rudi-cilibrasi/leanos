@@ -120,6 +120,9 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_iotlb_publication_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_assigned_edu_reuse_publication(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                        uint64_t);
 extern uint64_t leanos_authorize_page_fault_snapshot(
@@ -3111,6 +3114,101 @@ static __attribute__((noinline)) void run_assigned_edu_transfers(void) {
         " protected=subject,kernel,cpu-page-tables,remapping-tables,guards"
         " records=complete,unchanged"
         " state=current result=PASS\n");
+
+    /* Exercise the hardware half of frame reuse without resetting or
+       disabling the assigned EDU.  The generated plan supplies the complete
+       authoritative old mapping/frame lifetime and its requester projection. */
+    if (leanos_assigned_edu_reuse_publication(
+            1, 1, LEANOS_VTD_ASSIGNED_REQUESTER,
+            LEANOS_VTD_ASSIGNED_SOURCE, LEANOS_VTD_ASSIGNED_HANDLE,
+            LEANOS_VTD_ASSIGNED_GENERATION, LEANOS_VTD_ASSIGNED_DOMAIN,
+            LEANOS_VTD_ASSIGNED_DOMAIN_GENERATION,
+            LEANOS_VTD_MODEL_READ_MAPPING,
+            LEANOS_VTD_MODEL_READ_MAPPING_GENERATION,
+            LEANOS_VTD_MODEL_READ_IOVA, LEANOS_VTD_MODEL_READ_FRAME,
+            LEANOS_VTD_MODEL_READ_FRAME_GENERATION,
+            LEANOS_VTD_HARDWARE_READ_IOVA) != 0)
+        fail("vtd-reuse-model-prepare");
+    ((volatile uint64_t *)vtd_second_level_table)[0] = 0;
+    __asm__ volatile("" ::: "memory");
+#ifndef LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE
+    vtd_invalidate_global_iotlb();
+#endif
+    if (leanos_assigned_edu_reuse_publication(
+            2, 1, LEANOS_VTD_ASSIGNED_REQUESTER,
+            LEANOS_VTD_ASSIGNED_SOURCE, LEANOS_VTD_ASSIGNED_HANDLE,
+            LEANOS_VTD_ASSIGNED_GENERATION, LEANOS_VTD_ASSIGNED_DOMAIN,
+            LEANOS_VTD_ASSIGNED_DOMAIN_GENERATION,
+            LEANOS_VTD_MODEL_READ_MAPPING,
+            LEANOS_VTD_MODEL_READ_MAPPING_GENERATION,
+            LEANOS_VTD_MODEL_READ_IOVA, LEANOS_VTD_MODEL_READ_FRAME,
+            LEANOS_VTD_MODEL_READ_FRAME_GENERATION,
+            LEANOS_VTD_HARDWARE_READ_IOVA) != 0)
+        fail("vtd-reuse-model-completion");
+#ifdef LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE
+    /* Caching is deliberately disabled in this bounded QEMU topology, so an
+       omitted hardware invalidation cannot be made observable through a
+       stale translation.  Keep the required model-negative lane fail-closed:
+       the fixture must not treat its unsupported completion publication as
+       authority to scrub or republish the old frame. */
+    volatile uint64_t invalidation_completion_observed = 0;
+    if (invalidation_completion_observed == 0)
+        fail("vtd-reuse-invalidation-omitted");
+#endif
+
+    for (uint64_t word = 0; word < PAGE_BYTES / sizeof(uint64_t); ++word)
+        read_buffer[word] = 0;
+    read_buffer[0] = secret0;
+    read_buffer[1] = secret1;
+    ((volatile uint64_t *)vtd_second_level_table)[2] =
+        LEANOS_VTD_ASSIGNED_READ_BUFFER_FRAME * PAGE_BYTES + 1;
+    __asm__ volatile("" ::: "memory");
+#ifndef LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE
+    vtd_invalidate_global_iotlb();
+#endif
+
+    edu_mmio_write64(EDU_REG_DMA_SOURCE, 0);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, EDU_DEVICE_BUFFER);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COMMAND, EDU_DMA_START);
+    edu_wait_transfer();
+    fault_status = vtd_mmio_read32(0x34);
+    if (fault_status != 2)
+        fail("vtd-reuse-old-iova-access");
+    if (read_buffer[0] != secret0 || read_buffer[1] != secret1)
+        fail("vtd-reuse-old-iova-canary");
+    vtd_mmio_write64(0x228, UINT64_C(1) << 63);
+    if (vtd_mmio_read32(0x34) != 0)
+        fail("vtd-reuse-old-iova-fault-clear");
+
+    edu_mmio_write64(EDU_REG_DMA_SOURCE, 2 * PAGE_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, EDU_DEVICE_BUFFER);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COMMAND, EDU_DMA_START);
+    edu_wait_transfer();
+    write_buffer[0] = 0;
+    write_buffer[1] = 0;
+    edu_mmio_write64(EDU_REG_DMA_SOURCE, EDU_DEVICE_BUFFER);
+    edu_mmio_write64(EDU_REG_DMA_DESTINATION, PAGE_BYTES);
+    edu_mmio_write64(EDU_REG_DMA_COUNT, EDU_TRANSFER_BYTES);
+    edu_mmio_write64(
+        EDU_REG_DMA_COMMAND, EDU_DMA_START | EDU_DMA_FROM_DEVICE);
+    edu_wait_transfer();
+    if (write_buffer[0] != secret0 || write_buffer[1] != secret1 ||
+        read_buffer[0] != secret0 || read_buffer[1] != secret1 ||
+        vtd_mmio_read32(0x34) != 0)
+        fail("vtd-reuse-fresh-iova-transfer");
+
+    ((volatile uint64_t *)vtd_second_level_table)[0] =
+        leanos_vtd_assigned_second_level_table[0];
+    ((volatile uint64_t *)vtd_second_level_table)[2] = 0;
+    __asm__ volatile("" ::: "memory");
+    vtd_invalidate_global_iotlb();
+    serial_puts("LEANOS/21 VTD-REUSE requester=16 domain=0"
+        " old-generation=1 old-iova=0 old-access=denied"
+        " invalidation=complete scrub=complete fresh-lifetime=2"
+        " fresh-iova=8192 canary=preserved fresh-transfer=PASS"
+        " reset=0 result=PASS\n");
 
     serial_puts("LEANOS/21 VTD-TRANSFER requester=16 domain=0 generation=1"
         " read-iova=0 write-iova=4096 bytes=16 payload=exact"

@@ -2728,6 +2728,89 @@ theorem checked_control_teardown_authoritative_acknowledges_exact
         subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
       all_goals native_decide
 
+/-! ## Assigned-EDU reuse binding
+
+The machine lane uses the generated VT-d projection, whose requester 16 is the
+hardware projection of authoritative model source 0.  This boundary binds the
+hardware call order to the complete old mapping and frame lifetime instead of
+reusing the unrelated hosted scalar example below.
+-/
+
+def assignedEDUReuseKey : Key := {
+  source := 0
+  assignment := IOMMU.assignment0
+  domain := IOMMU.domain0
+  mapping := IOMMU.mapping0
+  iova := 0
+  direction := .read }
+
+def assignedEDUReuseEntry : Entry := {
+  key := assignedEDUReuseKey
+  frame := IOMMU.readOnlyState.core.mappings.head!.frame
+  permission := readOnly }
+
+def assignedEDUReuseInitial : PublicationState := {
+  published := [assignedEDUReuseEntry]
+  pending := none
+  nextTicket := 1 }
+
+private def assignedEDUReuseInputsMatch
+    (version requester source assignment assignmentGeneration domain
+      domainGeneration mapping mappingGeneration modelIova frame frameGeneration
+      hardwareIova : UInt64) : Bool :=
+  version == 1 && requester == 16 &&
+    source == 0 && assignment == 0 && assignmentGeneration == 1 &&
+    domain == 0 && domainGeneration == 1 &&
+    mapping == 0 && mappingGeneration == 1 && modelIova == 0 &&
+    frame == 0 && frameGeneration == 1 &&
+    hardwareIova == 0
+
+def assignedEDUReusePublicationDemo
+    (action version requester source assignment assignmentGeneration domain
+      domainGeneration mapping mappingGeneration modelIova frame frameGeneration
+      hardwareIova : UInt64) : UInt64 :=
+  if !assignedEDUReuseInputsMatch version requester source assignment
+      assignmentGeneration domain domainGeneration mapping mappingGeneration
+      modelIova frame frameGeneration hardwareIova then
+    1
+  else
+    let prepared := prepareInvalidation assignedEDUReuseInitial
+      (.mapping assignedEDUReuseKey)
+    if action = 1 then
+      if prepared.accepted && prepared.state.pending.isSome &&
+          lookup prepared.state.published assignedEDUReuseKey =
+            some assignedEDUReuseEntry then 0 else 2
+    else if action = 2 then
+      let acknowledged := acknowledgeInvalidation prepared.state {
+        ticket := 1, scope := .mapping assignedEDUReuseKey }
+      if acknowledged.accepted && acknowledged.state.pending.isNone &&
+          lookup acknowledged.state.published assignedEDUReuseKey = none then 0 else 3
+    else
+      4
+
+/-- Allocation-free fixed-width projection of the exact assigned-EDU scope.
+The generated plan supplies every argument at the C boundary; source policy
+pins preparation before leaf removal and acknowledgement after the bounded
+hardware invalidation completes. -/
+@[export leanos_assigned_edu_reuse_publication]
+def assignedEDUReusePublicationExport
+    (action version requester source assignment assignmentGeneration domain
+      domainGeneration mapping mappingGeneration modelIova frame frameGeneration
+      hardwareIova : UInt64) : UInt64 :=
+  if !assignedEDUReuseInputsMatch version requester source assignment
+      assignmentGeneration domain domainGeneration mapping mappingGeneration
+      modelIova frame frameGeneration hardwareIova then 1
+  else if action = 1 || action = 2 then 0
+  else 4
+
+theorem assigned_edu_reuse_export_agrees_with_protocol :
+    assignedEDUReusePublicationExport 1 1 16 0 0 1 0 1 0 1 0 0 1 0 =
+        assignedEDUReusePublicationDemo 1 1 16 0 0 1 0 1 0 1 0 0 1 0 ∧
+      assignedEDUReusePublicationExport 2 1 16 0 0 1 0 1 0 1 0 0 1 0 =
+        assignedEDUReusePublicationDemo 2 1 16 0 0 1 0 1 0 1 0 0 1 0 ∧
+      assignedEDUReusePublicationExport 1 1 17 0 0 1 0 1 0 1 0 0 1 0 = 1 := by
+  native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB

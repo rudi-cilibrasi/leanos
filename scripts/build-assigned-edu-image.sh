@@ -71,6 +71,7 @@ assigned_edu_negative_specs=(
   "wrong-mmio-identity:LEANOS_ASSIGNED_EDU_WRONG_MMIO_IDENTITY_FIXTURE"
   "forged-fault:LEANOS_ASSIGNED_EDU_FORGED_FAULT_FIXTURE"
   "wrong-fault-victim:LEANOS_ASSIGNED_EDU_WRONG_FAULT_VICTIM_FIXTURE"
+  "omit-reuse-invalidation:LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE"
 )
 for spec in "${assigned_edu_negative_specs[@]}"; do
   IFS=: read -r fixture fixture_macro <<<"$spec"
@@ -83,7 +84,12 @@ for spec in "${assigned_edu_negative_specs[@]}"; do
     -c boot/kernel.c -o "$build/kernel-assigned-edu-${fixture}.o"
   link_assigned_edu "$fixture_base" \
     "$build/kernel-assigned-edu-${fixture}.o"
-  ./scripts/check-image-policy.sh "$build/${fixture_base}.elf"
+  if [[ "$fixture" == "omit-reuse-invalidation" ]]; then
+    LEANOS_EXPECT_OMIT_REUSE_INVALIDATION=1 \
+      ./scripts/check-image-policy.sh "$build/${fixture_base}.elf"
+  else
+    ./scripts/check-image-policy.sh "$build/${fixture_base}.elf"
+  fi
   mkdir -p "$fixture_iso_root/boot/grub"
   cp "$build/${fixture_base}.elf" "$fixture_iso_root/boot/leanos.elf"
   cp boot/grub.cfg "$fixture_iso_root/boot/grub/grub.cfg"
