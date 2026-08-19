@@ -67,6 +67,10 @@ class ImageObjectGraphTests(unittest.TestCase):
             (source / "boot/kernel.c").write_text(
                 "int kernel_variant(void) { return 0; }\n", encoding="utf-8"
             )
+            (source / "boot/boot.S").write_text(".text\n", encoding="utf-8")
+            (source / "boot/peer-pke-fixture.S").write_text(
+                ".text\n", encoding="utf-8"
+            )
             for index, module in enumerate(MODULE.GENERATED_MODULES):
                 (build / f"{module}.c").write_text(
                     f"int generated_module_{index}(void) {{ return {index}; }}\n",
@@ -84,6 +88,7 @@ class ImageObjectGraphTests(unittest.TestCase):
                 [
                     "make", "-f", str(graph), "-j2",
                     "shared-generated-objects", "variant-kernel-objects",
+                    "variant-assembly-objects",
                 ],
                 check=True,
                 capture_output=True,
@@ -93,10 +98,13 @@ class ImageObjectGraphTests(unittest.TestCase):
             self.assertTrue((build / "FaultDispatch.o").is_file())
             for name, _ in MODULE.KERNEL_VARIANTS:
                 self.assertTrue((build / f"{name}.o").is_file())
+            for name, _, _ in MODULE.ASSEMBLY_VARIANTS:
+                self.assertTrue((build / f"{name}.o").is_file())
             subprocess.run(
                 [
                     "make", "-f", str(graph), "-q",
                     "shared-generated-objects", "variant-kernel-objects",
+                    "variant-assembly-objects",
                 ],
                 check=True,
             )
@@ -109,6 +117,16 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn("-DLEANOS_PREEMPTION_SCENARIO=1", graph)
         self.assertIn("out/kernel-fault-stale-translation.o:", graph)
         self.assertIn("boot-page-plan-fault-stale-translation.h", graph)
+
+    def test_assembly_variant_flags_are_owned_by_the_graph(self) -> None:
+        graph = MODULE.render_graph(
+            Path("out"), "gcc", ["-O2"], Path("/lean"), Path("/src")
+        )
+        self.assertIn("out/boot-fault-reserved-bit.o:", graph)
+        self.assertIn("-DLEANOS_PAGE_FAULT_PROBE_RESERVED_BIT=1", graph)
+        self.assertIn("out/boot-direct-port-pic.o:", graph)
+        self.assertIn("-DLEANOS_DIRECT_PORT_PROBE_PIC=1", graph)
+        self.assertIn("out/peer-pke-fixture.o: /src/boot/peer-pke-fixture.S", graph)
 
 
 if __name__ == "__main__":

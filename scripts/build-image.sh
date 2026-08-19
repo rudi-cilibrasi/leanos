@@ -230,120 +230,12 @@ for flag in "${cflags[@]}"; do
 done
 python3 scripts/generate-image-object-graph.py "${graph_args[@]}"
 make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-  shared-generated-objects variant-kernel-objects
+  shared-generated-objects variant-kernel-objects variant-assembly-objects
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
   "$build/entry-stack-extended-callgraph.tsv"
 ./scripts/check-entry-stack-budget.sh | tee "$build/entry-stack-budget.txt"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -c boot/boot.S -o "$build/boot.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_PREEMPTION_SCENARIO=1 \
-  -c boot/boot.S -o "$build/boot-preemption.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_FRAME_BUDGET_SCENARIO=1 \
-  -c boot/boot.S -o "$build/boot-frame-budget.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
-  -c boot/boot.S -o "$build/boot-fault-containment.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
-  -DLEANOS_PAGE_FAULT_PROBE_READONLY_WRITE=1 \
-  -c boot/boot.S -o "$build/boot-fault-readonly-write.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
-  -DLEANOS_PAGE_FAULT_PROBE_NX_EXECUTE=1 \
-  -c boot/boot.S -o "$build/boot-fault-nx-execute.o"
-for probe in "${fault_image_probes[@]}"; do
-  "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-    -ffile-prefix-map="$repo_root"=. -g3 \
-    -DLEANOS_FAULT_CONTAINMENT_SCENARIO=1 \
-    ${fault_fatal_probe_flags[$probe]} \
-    -c boot/boot.S -o "$build/boot-fault-${probe}.o"
-done
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -c boot/boot.S -o "$build/boot-extended-state.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_EXTENDED_STATE_MMX_PROBE=1 \
-  -c boot/boot.S -o "$build/boot-extended-state-mmx.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_EXTENDED_STATE_SSE_PROBE=1 \
-  -c boot/boot.S -o "$build/boot-extended-state-sse.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_EXTENDED_STATE_SSE2_PROBE=1 \
-  -c boot/boot.S -o "$build/boot-extended-state-sse2.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_EXTENDED_STATE_AVX_PROBE=1 \
-  -c boot/boot.S -o "$build/boot-extended-state-avx.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1 \
-  -c boot/boot.S -o "$build/boot-extended-state-peer-pke.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_FAST_ENTRY_SYSCALL_PROBE=1 \
-  -c boot/boot.S -o "$build/boot-fast-entry-syscall.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_EXTENDED_STATE_SCENARIO=1 \
-  -DLEANOS_FAST_ENTRY_SYSENTER_PROBE=1 \
-  -c boot/boot.S -o "$build/boot-fast-entry-sysenter.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -c boot/peer-pke-fixture.S \
-  -o "$build/peer-pke-fixture.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_RESTORE_FIXTURE=1 \
-  -c boot/boot.S -o "$build/boot-return-restore-fixture.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_BRANCH_FIXTURE=1 \
-  -c boot/boot.S -o "$build/boot-return-branch-fixture.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_INDIRECT_FIXTURE=1 \
-  -c boot/boot.S -o "$build/boot-return-indirect-fixture.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_INITIAL_INDIRECT_FIXTURE=1 \
-  -c boot/boot.S -o "$build/boot-return-initial-indirect-fixture.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_RETURN_POST_VALIDATE_QEMU_FIXTURE=1 \
-  -c boot/boot.S -o "$build/boot-return-post-validation-qemu.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_DF_MAP_GUARD=1 \
-  -c boot/boot.S -o "$build/boot-df-guard-mapped.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_ENTRY_STACK_OVERFLOW_PROBE=1 \
-  -c boot/boot.S -o "$build/boot-entry-stack-overflow.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_ENTRY_ADVERSARIAL=1 \
-  -c boot/boot.S -o "$build/boot-entry-adversarial.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_NMI_PROBE=1 \
-  -c boot/boot.S -o "$build/boot-nmi.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_BOOTSTRAP32_UD_PROBE=1 \
-  -c boot/boot.S -o "$build/boot-bootstrap32-ud.o"
-"$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-  -ffile-prefix-map="$repo_root"=. -g3 -DLEANOS_BOOTSTRAP64_NMI_PROBE=1 \
-  -c boot/boot.S -o "$build/boot-bootstrap64-nmi.o"
-for probe in "${direct_port_probes[@]}"; do
-  "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-    -ffile-prefix-map="$repo_root"=. -g3 \
-    -DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1 \
-    ${direct_port_probe_flags[$probe]} \
-    -c boot/boot.S -o "$build/boot-direct-port-${probe}.o"
-done
-for probe in "${integer_fault_probes[@]}"; do
-  "$cc" -m64 -ffreestanding -fdebug-prefix-map="$repo_root"=. \
-    -ffile-prefix-map="$repo_root"=. -g3 \
-    -DLEANOS_INTEGER_FAULT_SCENARIO=1 \
-    ${integer_fault_probe_flags[$probe]} \
-    -c boot/boot.S -o "$build/boot-${probe}.o"
-done
-
 # The first link fixes every symbol address while using a same-sized plan
 # placeholder. Lean then accepts the linker-resolved Input and emits the exact
 # PTE arrays used by the guest walker. Recompiling only kernel.c preserves all

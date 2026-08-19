@@ -120,6 +120,82 @@ KERNEL_VARIANTS = (
     )),
 )
 
+ASSEMBLY_VARIANTS = (
+    ("boot", "boot/boot.S", ()),
+    ("boot-preemption", "boot/boot.S", ("-DLEANOS_PREEMPTION_SCENARIO=1",)),
+    ("boot-frame-budget", "boot/boot.S", ("-DLEANOS_FRAME_BUDGET_SCENARIO=1",)),
+    ("boot-fault-containment", "boot/boot.S", ("-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",)),
+    ("boot-fault-readonly-write", "boot/boot.S", (
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_READONLY_WRITE=1",
+    )),
+    ("boot-fault-nx-execute", "boot/boot.S", (
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_NX_EXECUTE=1",
+    )),
+    ("boot-fault-reserved-bit", "boot/boot.S", (
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_RESERVED_BIT=1",
+    )),
+    ("boot-fault-walk-mismatch", "boot/boot.S", (
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH=1",
+    )),
+    ("boot-fault-stale-translation", "boot/boot.S", (
+        "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
+        "-DLEANOS_PAGE_FAULT_PROBE_STALE_TRANSLATION=1",
+    )),
+    ("boot-extended-state", "boot/boot.S", ("-DLEANOS_EXTENDED_STATE_SCENARIO=1",)),
+    ("boot-extended-state-mmx", "boot/boot.S", (
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1", "-DLEANOS_EXTENDED_STATE_MMX_PROBE=1",
+    )),
+    ("boot-extended-state-sse", "boot/boot.S", (
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1", "-DLEANOS_EXTENDED_STATE_SSE_PROBE=1",
+    )),
+    ("boot-extended-state-sse2", "boot/boot.S", (
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1", "-DLEANOS_EXTENDED_STATE_SSE2_PROBE=1",
+    )),
+    ("boot-extended-state-avx", "boot/boot.S", (
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1", "-DLEANOS_EXTENDED_STATE_AVX_PROBE=1",
+    )),
+    ("boot-extended-state-peer-pke", "boot/boot.S", (
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1",
+        "-DLEANOS_EXTENDED_STATE_PEER_PKE_FIXTURE=1",
+    )),
+    ("boot-fast-entry-syscall", "boot/boot.S", (
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1", "-DLEANOS_FAST_ENTRY_SYSCALL_PROBE=1",
+    )),
+    ("boot-fast-entry-sysenter", "boot/boot.S", (
+        "-DLEANOS_EXTENDED_STATE_SCENARIO=1", "-DLEANOS_FAST_ENTRY_SYSENTER_PROBE=1",
+    )),
+    ("peer-pke-fixture", "boot/peer-pke-fixture.S", ()),
+    ("boot-return-restore-fixture", "boot/boot.S", ("-DLEANOS_RETURN_RESTORE_FIXTURE=1",)),
+    ("boot-return-branch-fixture", "boot/boot.S", ("-DLEANOS_RETURN_BRANCH_FIXTURE=1",)),
+    ("boot-return-indirect-fixture", "boot/boot.S", ("-DLEANOS_RETURN_INDIRECT_FIXTURE=1",)),
+    ("boot-return-initial-indirect-fixture", "boot/boot.S", ("-DLEANOS_RETURN_INITIAL_INDIRECT_FIXTURE=1",)),
+    ("boot-return-post-validation-qemu", "boot/boot.S", ("-DLEANOS_RETURN_POST_VALIDATE_QEMU_FIXTURE=1",)),
+    ("boot-df-guard-mapped", "boot/boot.S", ("-DLEANOS_DF_MAP_GUARD=1",)),
+    ("boot-entry-stack-overflow", "boot/boot.S", ("-DLEANOS_ENTRY_STACK_OVERFLOW_PROBE=1",)),
+    ("boot-entry-adversarial", "boot/boot.S", ("-DLEANOS_ENTRY_ADVERSARIAL=1",)),
+    ("boot-nmi", "boot/boot.S", ("-DLEANOS_NMI_PROBE=1",)),
+    ("boot-bootstrap32-ud", "boot/boot.S", ("-DLEANOS_BOOTSTRAP32_UD_PROBE=1",)),
+    ("boot-bootstrap64-nmi", "boot/boot.S", ("-DLEANOS_BOOTSTRAP64_NMI_PROBE=1",)),
+    ("boot-direct-port-serial", "boot/boot.S", ("-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1",)),
+    ("boot-direct-port-debug", "boot/boot.S", (
+        "-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1", "-DLEANOS_DIRECT_PORT_PROBE_DEBUG=1",
+    )),
+    ("boot-direct-port-in", "boot/boot.S", (
+        "-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1", "-DLEANOS_DIRECT_PORT_PROBE_IN=1",
+    )),
+    ("boot-direct-port-pic", "boot/boot.S", (
+        "-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1", "-DLEANOS_DIRECT_PORT_PROBE_PIC=1",
+    )),
+    ("boot-divide-error", "boot/boot.S", ("-DLEANOS_INTEGER_FAULT_SCENARIO=1",)),
+    ("boot-breakpoint", "boot/boot.S", (
+        "-DLEANOS_INTEGER_FAULT_SCENARIO=1", "-DLEANOS_INTEGER_FAULT_PROBE_BP=1",
+    )),
+)
+
 
 def make_escape(value: str) -> str:
     return value.replace("$", "$$").replace(" ", "\\ ").replace("#", "\\#")
@@ -205,6 +281,32 @@ def render_graph(
             "",
             "-include "
             + " ".join(f"{build}/{name}.o.d" for name, _ in KERNEL_VARIANTS),
+            "",
+        ]
+    )
+    assembly_flags = shell_join([
+        "-m64", "-ffreestanding", f"-fdebug-prefix-map={source_root}=.",
+        f"-ffile-prefix-map={source_root}=.", "-g3",
+    ])
+    for name, source, definitions in ASSEMBLY_VARIANTS:
+        target = f"{build}/{name}.o"
+        source_path = make_escape(str(source_root / source))
+        arguments = shell_join(list(definitions))
+        lines.extend(
+            [
+                f"{target}: {source_path}",
+                f"\t$(IMAGE_CC) {assembly_flags} {arguments} -MMD -MP -MF $@.d -c $< -o $@",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            ".PHONY: variant-assembly-objects",
+            "variant-assembly-objects: "
+            + " ".join(f"{build}/{name}.o" for name, _, _ in ASSEMBLY_VARIANTS),
+            "",
+            "-include "
+            + " ".join(f"{build}/{name}.o.d" for name, _, _ in ASSEMBLY_VARIANTS),
             "",
         ]
     )
