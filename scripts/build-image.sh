@@ -14,6 +14,7 @@ require_tool() {
 require_tool lake "install Elan from https://elan.lean-lang.org/"
 cc="${LEANOS_CC:-gcc}"
 require_tool "$cc" "install Ubuntu package gcc=4:13.2.0-7ubuntu1"
+require_tool make "install Ubuntu package make=4.3-4.1build2"
 require_tool ld "install Ubuntu package binutils=2.42-4ubuntu2.10"
 require_tool nm "install Ubuntu package binutils=2.42-4ubuntu2.10"
 require_tool grub-file "install Ubuntu package grub-common=2.12-1ubuntu7.3"
@@ -209,66 +210,26 @@ fi
   printf '\t%q' "${cflags[@]}"
   printf '\nassembler-linker\tGNU binutils (shared with reference lane)\n'
 } > "$build/compiler-and-flags.tsv"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/KernelTransition.c" \
-  -o "$build/KernelTransition.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Syscall.c" \
-  -o "$build/Syscall.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/IPCSyscall.c" \
-  -o "$build/IPCSyscall.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Preemption.c" \
-  -o "$build/Preemption.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/BootAllocation.c" \
-  -o "$build/BootAllocation.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
-  -c "$build/BootMemoryMapStreaming.c" \
-  -o "$build/BootMemoryMapStreaming.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
-  -c "$build/BootMemoryMapStreamAuthority.c" \
-  -o "$build/BootMemoryMapStreamAuthority.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
-  -c "$build/BootTopology.c" -o "$build/BootTopology.o"
 # All existing image variants link BootAllocation.o.  Combine the generated
 # stream transport and allocation-free topology scalar boundary into that
 # reviewed object so no variant can omit either machine-enforcement edge.
 # Section GC retains only the called BootTopology closure; the hosted
 # ByteArray/list topology query and its Lean runtime dependencies stay absent.
-ld -r "$build/BootAllocation.o" "$build/BootMemoryMapStreaming.o" \
-  "$build/BootMemoryMapStreamAuthority.o" "$build/BootTopology.o" \
-  -o "$build/BootAllocationAndHandoffStream.o"
-mv "$build/BootAllocationAndHandoffStream.o" "$build/BootAllocation.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/Interrupt.c" \
-  -o "$build/Interrupt.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/InterruptEntry.c" \
-  -o "$build/InterruptEntry.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/BlockingIPC.c" \
-  -o "$build/BlockingIPC.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/CapabilityReuse.c" \
-  -o "$build/CapabilityReuse.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/ExtendedState.c" \
-  -o "$build/ExtendedState.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
-  -c "$build/PrivilegeEntryControl.c" -o "$build/PrivilegeEntryControl.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/FaultDispatch.c" \
-  -o "$build/FaultDispatch.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/DirectPortIO.c" \
-  -o "$build/DirectPortIO.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" -c "$build/StaleTranslation.c" \
-  -o "$build/StaleTranslation.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
-  -c "$build/FrameBudgetScenario.c" -o "$build/FrameBudgetScenario.o"
 # Keep the existing bounded link inventory compact while retaining the
 # independently generated model adapters in every image variant.
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
-  -c "$build/CompositeDispatcher.c" -o "$build/CompositeDispatcher.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
-  -c "$build/VTdBootPlan.c" -o "$build/VTdBootPlan.o"
-"$cc" "${cflags[@]}" -I"$lean_prefix/include" \
-  -c "$build/IOTLB.c" -o "$build/IOTLB.o"
-ld -r "$build/FaultDispatch.o" "$build/DirectPortIO.o" \
-  "$build/StaleTranslation.o" "$build/FrameBudgetScenario.o" \
-  "$build/CompositeDispatcher.o" "$build/VTdBootPlan.o" "$build/IOTLB.o" \
-  -o "$build/FaultDispatchAndCompositeAdapters.o"
-mv "$build/FaultDispatchAndCompositeAdapters.o" "$build/FaultDispatch.o"
+object_graph="$build/generated-image-objects.mk"
+graph_args=(
+  --output "$object_graph"
+  --build-dir "$build"
+  --cc "$cc"
+  --lean-prefix "$lean_prefix"
+)
+for flag in "${cflags[@]}"; do
+  graph_args+=("--cflag=$flag")
+done
+python3 scripts/generate-image-object-graph.py "${graph_args[@]}"
+make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+  shared-generated-objects
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_ENTRY_HIGH_WATER=1 -c boot/kernel.c \
   -o "$build/kernel.o"
