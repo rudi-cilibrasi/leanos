@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
@@ -14,6 +14,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -553,7 +554,8 @@ def base_report(
 def execute_scenario(
     row: dict[str, str], build_dir: Path, version: str,
     environment: dict[str, str],
-) -> tuple[dict[str, Path], list[str], dict[str, str], str, int]:
+) -> tuple[dict[str, Path], list[str], dict[str, str], str, int, float]:
+    started = time.monotonic()
     paths = expanded(row, version, build_dir)
     command, scenario_environment = scenario_invocation(
         row, paths, build_dir, version
@@ -593,7 +595,10 @@ def execute_scenario(
         r"\1/$NESTED_TMPDIR",
         command_output,
     )
-    return paths, command, scenario_environment, command_output, status
+    return (
+        paths, command, scenario_environment, command_output, status,
+        time.monotonic() - started,
+    )
 
 
 def run(args: argparse.Namespace) -> None:
@@ -641,16 +646,27 @@ def run(args: argparse.Namespace) -> None:
         flush=True,
     )
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        executions = [
+        executions = {
             executor.submit(
                 execute_scenario, row, build_dir, version, environment
-            )
+            ): row
             for row in rows
-        ]
-        completed_scenarios = [execution.result() for execution in executions]
+        }
+        completed_by_id = {}
+        for execution in as_completed(executions):
+            row = executions[execution]
+            result = execution.result()
+            completed_by_id[row["id"]] = result
+            print(
+                f"evidence: completed {row['id']} in {result[-1]:.2f}s",
+                flush=True,
+            )
+        completed_scenarios = [completed_by_id[row["id"]] for row in rows]
 
     for row, execution in zip(rows, completed_scenarios, strict=True):
-        paths, command, scenario_environment, command_output, status = execution
+        (
+            paths, command, scenario_environment, command_output, status, _duration,
+        ) = execution
         command_log = output.parent / f"{row['id']}.command.log"
         command_log.write_text(command_output, encoding="utf-8")
         print(f"evidence: result {row['id']} ({row['result_class']})", flush=True)
