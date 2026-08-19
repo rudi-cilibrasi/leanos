@@ -31,6 +31,9 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t, uint
                                                uint64_t, uint64_t);
 extern uint64_t leanos_iotlb_publication_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                                uint64_t, uint64_t);
+extern uint64_t leanos_assigned_edu_reuse_publication(
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
+    uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
 extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
@@ -64,6 +67,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_direct_port_io_demo);
     REGISTER_BOUNDARY(leanos_stale_translation_demo);
     REGISTER_BOUNDARY(leanos_iotlb_publication_demo);
+    REGISTER_BOUNDARY(leanos_assigned_edu_reuse_publication);
     REGISTER_BOUNDARY(leanos_frame_budget_mapping_page);
     REGISTER_BOUNDARY(leanos_frame_budget_invalidation_effect);
     REGISTER_BOUNDARY(leanos_composite_dispatch);
@@ -115,6 +119,17 @@ int main(void) {
             LEANOS_COMPOSITE_STATE_BUDGET_A_ALLOCATED,
             LEANOS_COMPOSITE_COMMAND_BUDGET_TERMINATE_A) != 0) {
         fputs("generated frame-budget invalidation policy drifted\n", stderr);
+        return 1;
+    }
+    if (leanos_assigned_edu_reuse_publication(
+            1, 1, 16, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0) != 0 ||
+        leanos_assigned_edu_reuse_publication(
+            2, 1, 16, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0) != 0 ||
+        leanos_assigned_edu_reuse_publication(
+            1, 1, 17, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0) != 1 ||
+        leanos_assigned_edu_reuse_publication(
+            3, 1, 16, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0) != 4) {
+        fputs("generated assigned-EDU reuse publication policy drifted\n", stderr);
         return 1;
     }
     if (leanos_validate_q35_dma_snapshot(
