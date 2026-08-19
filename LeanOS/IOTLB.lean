@@ -779,6 +779,32 @@ def requiredAuthorityCleanupScopes (before after : AuthoritativeExtension) :
     else .assignment <$> assignmentScopeFor before assignment.handle
   mappings ++ assignments
 
+/-- A capability-subtree revocation cannot hide a removed DMA mapping from
+the cleanup inventory.  Once the checked authoritative successor no longer
+contains a mapping that was present before the transition, its exact
+source/assignment/domain/mapping scope is part of the required completion.
+The operation parameters select the real composite subtree boundary; the
+caller does not supply the successor or its cleanup inventory. -/
+theorem capability_subtree_revocation_removed_mapping_requires_scope
+    (state : AuthoritativeExtension) (authoritySlot victim victimSlot : Nat)
+    (mapping : Mapping) (scope : MappingScope)
+    (hmapping : mapping ∈ state.iommu.core.mappings)
+    (hremoved :
+      (applyKernelOperation state
+          (.ordinary
+            (.capabilityRevokeSubtree authoritySlot victim victimSlot))).iommu.core.mappings.any
+        (·.handle == mapping.handle) = false)
+    (hscope : mappingScopeFor state mapping.handle = some scope) :
+    .mappingSet scope ∈
+      requiredAuthorityCleanupScopes state
+        (applyKernelOperation state
+          (.ordinary
+            (.capabilityRevokeSubtree authoritySlot victim victimSlot))) := by
+  simp only [requiredAuthorityCleanupScopes, List.mem_append]
+  left
+  simp only [List.mem_filterMap]
+  exact ⟨mapping, hmapping, by simp [hremoved, hscope]⟩
+
 structure PendingAuthorityCleanup where
   ticket : Nat
   scopes : List InvalidationScope
