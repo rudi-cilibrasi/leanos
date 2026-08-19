@@ -153,6 +153,9 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn(
             "out/leanos-raw-selection-authority-mutation-prelink.elf:", graph
         )
+        self.assertIn("out/leanos-preemption-prelink.elf:", graph)
+        self.assertIn("out/leanos-fault-readonly-write-prelink.elf:", graph)
+        self.assertIn("out/leanos-fault-stale-translation-prelink.elf:", graph)
 
 
 if __name__ == "__main__":

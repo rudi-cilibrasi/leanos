@@ -229,6 +229,44 @@ PRELINK_VARIANTS = (
         "kernel-raw-selection-authority-mutation",
         (),
     ),
+    ("preemption", "boot-preemption", "kernel-preemption", ()),
+    ("frame-budget", "boot-frame-budget", "kernel-frame-budget", ()),
+    (
+        "fault-containment",
+        "boot-fault-containment",
+        "kernel-fault-containment",
+        (),
+    ),
+    (
+        "fault-readonly-write",
+        "boot-fault-readonly-write",
+        "kernel-fault-containment",
+        (),
+    ),
+    (
+        "fault-nx-execute",
+        "boot-fault-nx-execute",
+        "kernel-fault-containment",
+        (),
+    ),
+    (
+        "fault-reserved-bit",
+        "boot-fault-reserved-bit",
+        "kernel-fault-reserved-bit",
+        (),
+    ),
+    (
+        "fault-walk-mismatch",
+        "boot-fault-walk-mismatch",
+        "kernel-fault-walk-mismatch",
+        (),
+    ),
+    (
+        "fault-stale-translation",
+        "boot-fault-stale-translation",
+        "kernel-fault-stale-translation",
+        (),
+    ),
 )
 
 
