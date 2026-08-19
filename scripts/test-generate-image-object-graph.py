@@ -95,6 +95,7 @@ class ImageObjectGraphTests(unittest.TestCase):
                     "shared-generated-objects", "variant-kernel-objects",
                     "variant-assembly-objects", "prelink-images",
                     "policy-fixture-images", "return-corruption-prelinks",
+                    "final-image-links",
                 ],
                 check=True,
                 capture_output=True,
@@ -113,6 +114,10 @@ class ImageObjectGraphTests(unittest.TestCase):
             for name, _, _, _ in MODULE.POLICY_FIXTURE_VARIANTS:
                 self.assertTrue((build / f"leanos-{name}.elf").is_file())
                 self.assertTrue((build / f"leanos-{name}.map").is_file())
+            for name, _, _, _ in MODULE.FINAL_LINK_VARIANTS:
+                stem = f"leanos-{name}" if name else "leanos"
+                self.assertTrue((build / f"{stem}.elf").is_file())
+                self.assertTrue((build / f"{stem}.map").is_file())
             for fixture in ("kernel-selector", "post-validation-mutation"):
                 self.assertTrue((build / f"kernel-return-{fixture}.o").is_file())
                 self.assertTrue(
@@ -124,7 +129,7 @@ class ImageObjectGraphTests(unittest.TestCase):
                     "shared-generated-objects", "variant-kernel-objects",
                     "variant-assembly-objects", "prelink-images",
                     "policy-fixture-images", "return-corruption-prelinks",
-                    "final-kernel-objects",
+                    "final-kernel-objects", "final-image-links",
                 ],
                 check=True,
             )
@@ -197,6 +202,9 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn("out/leanos-bootstrap32-ud-prelink.elf:", graph)
         self.assertIn("out/leanos-bootstrap64-nmi-prelink.elf:", graph)
         self.assertIn("out/leanos-guard-prelink.elf:", graph)
+        self.assertIn("out/leanos.elf:", graph)
+        self.assertIn("out/leanos-fast-entry-sysenter.elf:", graph)
+        self.assertNotIn("out/leanos-double-fault.elf:", graph)
         fixture_rule = next(
             line
             for line in graph.splitlines()

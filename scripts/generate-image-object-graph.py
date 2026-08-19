@@ -349,6 +349,15 @@ PRELINK_VARIANTS = (
     ),
 )
 
+# These images can be linked immediately after their generated boot-page plans
+# recompile the final kernel objects.  Double-fault, entry-stack-overflow, and
+# guard images retain their later policy-specific link/validation sequence.
+FINAL_LINK_VARIANTS = tuple(
+    variant
+    for variant in PRELINK_VARIANTS
+    if variant[0] not in {"double-fault", "entry-stack-overflow", "guard"}
+)
+
 # Policy-negative fixtures are final ELFs rather than boot-page-plan prelinks,
 # but they share the same reviewed linker inventory and can be scheduled with
 # the independent prelink family.
@@ -564,6 +573,34 @@ def render_graph(
             "",
             ".PHONY: prelink-images",
             "prelink-images: " + " ".join(prelink_targets),
+            "",
+        ]
+    )
+    final_link_targets = []
+    for name, boot_object, kernel_object, extra_objects in FINAL_LINK_VARIANTS:
+        stem = f"leanos-{name}" if name else "leanos"
+        target = f"{build}/{stem}.elf"
+        map_file = f"{build}/{stem}.map"
+        inputs = [
+            f"{build}/{boot_object}.o",
+            *[f"{build}/{extra}.o" for extra in extra_objects],
+            f"{build}/{kernel_object}.o",
+            *common_link_inputs,
+        ]
+        input_list = " ".join(inputs)
+        lines.extend(
+            [
+                f"{target}: {input_list} $(IMAGE_LINKER_SCRIPT)",
+                "\tld -m elf_x86_64 -nostdlib --gc-sections --build-id=none "
+                f"-T $(IMAGE_LINKER_SCRIPT) -Map {map_file} -o $@ {input_list}",
+            ]
+        )
+        final_link_targets.append(target)
+    lines.extend(
+        [
+            "",
+            ".PHONY: final-image-links",
+            "final-image-links: " + " ".join(final_link_targets),
             "",
         ]
     )
