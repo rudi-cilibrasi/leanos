@@ -583,6 +583,16 @@ def execute_scenario(
                 "\nfailure_class=matrix-timeout: scenario runner exceeded outer limit\n"
             )
             status = 124
+    # Runner diagnostics may include randomized descendants of TMPDIR (for
+    # example the bootstrap64 QMP socket created by mktemp).  Those paths are
+    # execution details, not evidence identity; canonicalize them before the
+    # command log and report are hashed so serial and parallel runs agree.
+    command_output = command_output.replace(scratch, "$SCENARIO_TMPDIR")
+    command_output = re.sub(
+        r"(\$SCENARIO_TMPDIR)/tmp\.[^/\s'\"\\,]+",
+        r"\1/$NESTED_TMPDIR",
+        command_output,
+    )
     return paths, command, scenario_environment, command_output, status
 
 

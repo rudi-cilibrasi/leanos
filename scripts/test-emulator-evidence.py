@@ -346,7 +346,12 @@ def run_fixtures() -> None:
                 peak_runners = max(peak_runners, active_runners)
             try:
                 time.sleep(0.01)
-                return successful_runner(command, **kwargs)
+                result = successful_runner(command, **kwargs)
+                result.stdout = (
+                    "QEMU command: fixture-qemu -qmp "
+                    f"unix:{scenario_tmp}/tmp.dynamic/qmp\n"
+                )
+                return result
             finally:
                 with runner_lock:
                     active_runners -= 1
@@ -364,11 +369,19 @@ def run_fixtures() -> None:
         with (
             mock.patch.object(evidence, "git_revision", return_value=revision),
             mock.patch.object(evidence, "qemu_version", return_value="QEMU fixture"),
-            mock.patch.object(evidence.subprocess, "run", side_effect=successful_runner),
+            mock.patch.object(evidence.subprocess, "run", side_effect=concurrent_runner),
         ):
             evidence.run(args)
         if output.read_bytes() != parallel_report:
             raise AssertionError("parallel evidence report differs from serial output")
+        report = json.loads(output.read_text(encoding="utf-8"))
+        if not all(
+            result["qemu_commands"] == [
+                " fixture-qemu -qmp unix:$SCENARIO_TMPDIR/$NESTED_TMPDIR/qmp"
+            ]
+            for result in report["results"]
+        ):
+            raise AssertionError("volatile nested TMPDIR path was not canonicalized")
         args.jobs = 4
 
         selected_build, selected_output, _selected_tools, selected_args = prepare_tree(
