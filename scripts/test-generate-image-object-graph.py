@@ -71,6 +71,10 @@ class ImageObjectGraphTests(unittest.TestCase):
             (source / "boot/peer-pke-fixture.S").write_text(
                 ".text\n", encoding="utf-8"
             )
+            (source / "boot/linker.ld").write_text(
+                "SECTIONS { . = 0x100000; .text : { *(.text*) } }\n",
+                encoding="utf-8",
+            )
             for index, module in enumerate(MODULE.GENERATED_MODULES):
                 (build / f"{module}.c").write_text(
                     f"int generated_module_{index}(void) {{ return {index}; }}\n",
@@ -88,7 +92,7 @@ class ImageObjectGraphTests(unittest.TestCase):
                 [
                     "make", "-f", str(graph), "-j2",
                     "shared-generated-objects", "variant-kernel-objects",
-                    "variant-assembly-objects",
+                    "variant-assembly-objects", "prelink-images",
                 ],
                 check=True,
                 capture_output=True,
@@ -100,11 +104,15 @@ class ImageObjectGraphTests(unittest.TestCase):
                 self.assertTrue((build / f"{name}.o").is_file())
             for name, _, _ in MODULE.ASSEMBLY_VARIANTS:
                 self.assertTrue((build / f"{name}.o").is_file())
+            for name, _, _, _ in MODULE.PRELINK_VARIANTS:
+                stem = f"leanos-{name}" if name else "leanos"
+                self.assertTrue((build / f"{stem}-prelink.elf").is_file())
+                self.assertTrue((build / f"{stem}-prelink.map").is_file())
             subprocess.run(
                 [
                     "make", "-f", str(graph), "-q",
                     "shared-generated-objects", "variant-kernel-objects",
-                    "variant-assembly-objects",
+                    "variant-assembly-objects", "prelink-images",
                 ],
                 check=True,
             )
@@ -127,6 +135,24 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn("out/boot-direct-port-pic.o:", graph)
         self.assertIn("-DLEANOS_DIRECT_PORT_PROBE_PIC=1", graph)
         self.assertIn("out/peer-pke-fixture.o: /src/boot/peer-pke-fixture.S", graph)
+
+    def test_prelink_rules_preserve_input_order_and_map_outputs(self) -> None:
+        graph = MODULE.render_graph(
+            Path("out"), "gcc", ["-O2"], Path("/lean"), Path("/src")
+        )
+        rule = next(
+            line
+            for line in graph.splitlines()
+            if line.startswith("out/leanos-prelink.elf:")
+        )
+        self.assertLess(rule.index("out/boot.o"), rule.index("out/kernel.o"))
+        self.assertLess(
+            rule.index("out/kernel.o"), rule.index("out/KernelTransition.o")
+        )
+        self.assertIn("-Map out/leanos-prelink.map", graph)
+        self.assertIn(
+            "out/leanos-raw-selection-authority-mutation-prelink.elf:", graph
+        )
 
 
 if __name__ == "__main__":

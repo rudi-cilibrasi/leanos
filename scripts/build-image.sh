@@ -229,8 +229,12 @@ for flag in "${cflags[@]}"; do
   graph_args+=("--cflag=$flag")
 done
 python3 scripts/generate-image-object-graph.py "${graph_args[@]}"
+# The generated graph owns the canonical and authority-boundary prelinks.  It
+# retains their reviewed linker input order while scheduling independent links
+# concurrently with the remaining object work.
 make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-  shared-generated-objects variant-kernel-objects variant-assembly-objects
+  shared-generated-objects variant-kernel-objects variant-assembly-objects \
+  prelink-images
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
@@ -240,36 +244,6 @@ cp scripts/entry-stack-extended-callgraph.tsv \
 # placeholder. Lean then accepts the linker-resolved Input and emits the exact
 # PTE arrays used by the guest walker. Recompiling only kernel.c preserves all
 # section sizes; the final comparison rejects any unexpected address drift.
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-prelink.map" \
-  -o "$build/leanos-prelink.elf" "$build/boot.o" "$build/kernel.o" \
-  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-malformed-handoff-prelink.map" \
-  -o "$build/leanos-malformed-handoff-prelink.elf" "$build/boot.o" \
-  "$build/kernel-malformed-handoff.o" "$build/KernelTransition.o" \
-  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-projection-authority-mutation-prelink.map" \
-  -o "$build/leanos-projection-authority-mutation-prelink.elf" "$build/boot.o" \
-  "$build/kernel-projection-authority-mutation.o" "$build/KernelTransition.o" \
-  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-raw-selection-authority-mutation-prelink.map" \
-  -o "$build/leanos-raw-selection-authority-mutation-prelink.elf" "$build/boot.o" \
-  "$build/kernel-raw-selection-authority-mutation.o" "$build/KernelTransition.o" \
-  "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-  "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-  "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
 ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
   -T boot/linker.ld -Map "$build/leanos-preemption-prelink.map" \
   -o "$build/leanos-preemption-prelink.elf" "$build/boot-preemption.o" \
