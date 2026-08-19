@@ -552,7 +552,7 @@ def base_report(
 
 def execute_scenario(
     row: dict[str, str], build_dir: Path, version: str,
-    environment: dict[str, str], scratch_root: Path,
+    environment: dict[str, str],
 ) -> tuple[dict[str, Path], list[str], dict[str, str], str, int]:
     paths = expanded(row, version, build_dir)
     command, scenario_environment = scenario_invocation(
@@ -563,9 +563,9 @@ def execute_scenario(
             paths[key].unlink(missing_ok=True)
     combined_environment = environment.copy()
     combined_environment.update(scenario_environment)
-    with tempfile.TemporaryDirectory(
-        prefix=f"{row['id']}-", dir=scratch_root
-    ) as scratch:
+    # Keep this root short: some runners create a nested AF_UNIX QMP socket,
+    # whose full path must fit Linux's 108-byte sockaddr_un limit.
+    with tempfile.TemporaryDirectory(prefix="le-") as scratch:
         combined_environment["TMPDIR"] = scratch
         try:
             completed = subprocess.run(
@@ -625,8 +625,6 @@ def run(args: argparse.Namespace) -> None:
                 )
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    scratch_root = output.parent / ".emulator-scratch"
-    scratch_root.mkdir(parents=True, exist_ok=True)
     worker_count = min(jobs, len(rows))
     print(
         f"evidence: running {len(rows)} scenarios with {worker_count} workers",
@@ -635,7 +633,7 @@ def run(args: argparse.Namespace) -> None:
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         executions = [
             executor.submit(
-                execute_scenario, row, build_dir, version, environment, scratch_root
+                execute_scenario, row, build_dir, version, environment
             )
             for row in rows
         ]

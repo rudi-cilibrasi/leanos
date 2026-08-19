@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -333,6 +334,13 @@ def run_fixtures() -> None:
 
         def concurrent_runner(command, **kwargs):
             nonlocal active_runners, peak_runners
+            scenario_tmp = Path(kwargs["env"]["TMPDIR"])
+            if output.parent in scenario_tmp.parents:
+                raise AssertionError("scenario TMPDIR uses the long build-tree path")
+            with tempfile.TemporaryDirectory(dir=scenario_tmp) as nested_tmp:
+                qmp_path = Path(nested_tmp) / "qmp"
+                if len(os.fsencode(qmp_path)) >= 108:
+                    raise AssertionError("nested QMP socket path exceeds sockaddr_un")
             with runner_lock:
                 active_runners += 1
                 peak_runners = max(peak_runners, active_runners)
