@@ -2364,6 +2364,96 @@ theorem subject_termination_checked_authoritative_acknowledges_exact_cleanup
     invalidateScopes, scopeCoversKey]
   all_goals native_decide
 
+/-- Preparation of the canonical subject-2 cleanup keeps every old authority
+projection published until the exact completion arrives.  In particular, the
+subject remains live, its DMA mapping remains authoritative, and the stale
+translation remains observable while the internally derived cleanup ticket is
+pending. -/
+theorem subject_termination_checked_authoritative_prepare_retains_old_authority
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    prepared.state.authoritative.kernel.capabilities.subjects 2 = true ∧
+      prepared.state.authoritative.iommu.core.mappings =
+        [subjectTerminationWitnessMapping] ∧
+      lookup prepared.state.cache subjectTerminationWitnessKey =
+        some subjectTerminationWitnessEntry ∧
+      prepared.state.pending.isSome = true := by
+  have hremoved := subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  simp only [prepareAuthoritativePublication,
+    prepareAuthorityCleanupPublication,
+    subjectTerminationCheckedAuthoritativePublicationState]
+  rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+      (.ordinary (.terminateSubject 2)) =
+        subjectTerminationCheckedAfter plan by rfl]
+  rw [hscopes]
+  simp [subjectTerminationCheckedBefore, subjectTerminationCheckedIOMMU,
+    subjectTerminationCheckedCore, authoritativeSample,
+    FailStop.compositeDispatcherInitial, subjectTerminationWitnessScopes,
+    subjectTerminationWitnessEntry, subjectTerminationWitnessKey,
+    subjectTerminationWitnessMapping]
+  exact executable_subject_termination_cleanup_witness.2.2.1
+
+/-- Exact completion of that same pending ticket publishes all three coupled
+facts together: the old subject is retired, its mapping inventory is empty,
+and the old translation key is absent. -/
+theorem subject_termination_checked_authoritative_exact_completion_removes_old_authority
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative.kernel.capabilities.subjects 2 = false ∧
+      acknowledged.state.authoritative.iommu.core.mappings = [] ∧
+      lookup acknowledged.state.cache subjectTerminationWitnessKey = none ∧
+      acknowledged.state.pending = none := by
+  have hexact :=
+    subject_termination_checked_authoritative_acknowledges_exact_cleanup plan
+  simp only at hexact ⊢
+  rcases hexact with ⟨haccepted, hauthoritative, hcache, hpending⟩
+  have hremoved := subject_termination_checked_apply_removes_device_authority plan
+  refine ⟨haccepted, ?_, ?_, ?_, hpending⟩
+  · rw [hauthoritative,
+      subject_termination_checked_apply_eq_reconciled_candidate]
+    exact
+      executable_subject_termination_checked_kernel_removes_owner plan
+  · simpa [hauthoritative] using hremoved.2
+  · simp [hcache, lookup]
+
+/-- A completion that names only the mapping scope cannot splice a partial
+cleanup into the canonical front door.  The entire prepared state, including
+the old authority and stale cache, remains byte-for-byte pending. -/
+theorem subject_termination_checked_authoritative_partial_completion_stutters
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessPartialCompletion)
+    acknowledged.accepted = false ∧ acknowledged.state = prepared.state := by
+  have hremoved := subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  simp only [prepareAuthoritativePublication,
+    prepareAuthorityCleanupPublication,
+    subjectTerminationCheckedAuthoritativePublicationState]
+  rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+      (.ordinary (.terminateSubject 2)) =
+        subjectTerminationCheckedAfter plan by rfl]
+  rw [hscopes]
+  simp [acknowledgeAuthoritativePublication,
+    acknowledgeAuthorityCleanupPublication,
+    subjectTerminationWitnessPartialCompletion,
+    subjectTerminationWitnessScopes]
+
 /-! ## Finite control-operation publication witnesses
 
 The same invariant-bearing assignment/mapping/cache fixture also exercises
