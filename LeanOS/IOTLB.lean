@@ -849,6 +849,45 @@ def subtreeCleanupWitnessCapabilities : LeanOS.Capability.State :=
       else if subject = 2 && slot = 0 then some subtreeCleanupWitnessChild
       else none }
 
+/-- The finite lineage fixture satisfies the complete capability authority
+contract: every live slot agrees with its append-only derivation record, the
+child attenuates its recorded parent, live identities are unique, and no
+capability is installed outside the default four-slot subject spaces. -/
+theorem subtreeCleanupWitnessCapabilities_wellFormed :
+    LeanOS.Capability.WellFormed subtreeCleanupWitnessCapabilities := by
+  simp only [LeanOS.Capability.WellFormed]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro subject slot capability hslot
+    simp only [subtreeCleanupWitnessCapabilities,
+      subtreeCleanupWitnessAuthority, subtreeCleanupWitnessRoot,
+      subtreeCleanupWitnessChild] at hslot
+    repeat' split at hslot
+    all_goals cases hslot <;>
+      simp [subtreeCleanupWitnessCapabilities,
+        subtreeCleanupWitnessAuthority, subtreeCleanupWitnessRoot,
+        subtreeCleanupWitnessChild, LeanOS.Capability.rightsValid,
+        LeanOS.Capability.rightsSubset]
+    all_goals grind
+  · intro identity parent object kind rights hderivation
+    simp only [subtreeCleanupWitnessCapabilities] at hderivation
+    repeat' split at hderivation
+    all_goals rcases hderivation with ⟨rfl, rfl, rfl, rfl⟩ <;>
+      simp [subtreeCleanupWitnessCapabilities,
+        LeanOS.Capability.rightsSubset]
+    all_goals grind
+  · intro subject slot capability otherSubject otherSlot otherCapability
+      hslot hother hidentity
+    simp only [subtreeCleanupWitnessCapabilities,
+      subtreeCleanupWitnessAuthority, subtreeCleanupWitnessRoot,
+      subtreeCleanupWitnessChild] at hslot hother
+    repeat' split at hslot
+    all_goals repeat' split at hother
+    all_goals cases hslot <;> cases hother <;> simp_all
+  · intro subject slot hslot
+    change 4 ≤ slot at hslot
+    have hne0 : slot ≠ 0 := by omega
+    simp [subtreeCleanupWitnessCapabilities, hne0]
+
 /-- The checked runtime-safe subtree operation follows the recorded parent
 edge and removes both the selected root and its child atomically.  This is the
 concrete lineage fixture used by the next authoritative-IOMMU composition
