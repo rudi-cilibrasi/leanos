@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -12,6 +13,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -548,6 +550,42 @@ def base_report(
     }
 
 
+def execute_scenario(
+    row: dict[str, str], build_dir: Path, version: str,
+    environment: dict[str, str], scratch_root: Path,
+) -> tuple[dict[str, Path], list[str], dict[str, str], str, int]:
+    paths = expanded(row, version, build_dir)
+    command, scenario_environment = scenario_invocation(
+        row, paths, build_dir, version
+    )
+    for key in ("serial_log", "dma_snapshot", "vtd_snapshot", "qmp_transcript"):
+        if key in paths:
+            paths[key].unlink(missing_ok=True)
+    combined_environment = environment.copy()
+    combined_environment.update(scenario_environment)
+    with tempfile.TemporaryDirectory(
+        prefix=f"{row['id']}-", dir=scratch_root
+    ) as scratch:
+        combined_environment["TMPDIR"] = scratch
+        try:
+            completed = subprocess.run(
+                command, cwd=ROOT, env=combined_environment, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=int(row["timeout"]) + 5, check=False,
+            )
+            command_output = completed.stdout
+            status = completed.returncode
+        except subprocess.TimeoutExpired as error:
+            command_output = error.stdout or ""
+            if isinstance(command_output, bytes):
+                command_output = command_output.decode(errors="replace")
+            command_output += (
+                "\nfailure_class=matrix-timeout: scenario runner exceeded outer limit\n"
+            )
+            status = 124
+    return paths, command, scenario_environment, command_output, status
+
+
 def run(args: argparse.Namespace) -> None:
     matrix = args.matrix.resolve()
     build_dir = args.build_dir.resolve()
@@ -575,6 +613,9 @@ def run(args: argparse.Namespace) -> None:
     report = base_report(matrix, matrix_id, revision, source_file, tools, qemu)
     write_report(output, report)
 
+    jobs = args.jobs
+    if jobs < 1:
+        raise EvidenceError("jobs must be a positive integer")
     for row in rows:
         paths = expanded(row, version, build_dir)
         for kind in ("image", "elf"):
@@ -582,32 +623,29 @@ def run(args: argparse.Namespace) -> None:
                 raise EvidenceError(
                     f"scenario {row['id']} is missing {kind}: {display_path(paths[kind])}"
                 )
-        command, scenario_environment = scenario_invocation(
-            row, paths, build_dir, version
-        )
-        if "dma_snapshot" in paths:
-            paths["dma_snapshot"].unlink(missing_ok=True)
-        if "vtd_snapshot" in paths:
-            paths["vtd_snapshot"].unlink(missing_ok=True)
-        combined_environment = environment.copy()
-        combined_environment.update(scenario_environment)
-        command_log = output.parent / f"{row['id']}.command.log"
-        print(f"evidence: running {row['id']} ({row['result_class']})", flush=True)
-        try:
-            completed = subprocess.run(
-                command, cwd=ROOT, env=combined_environment, text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                timeout=int(row["timeout"]) + 5, check=False,
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    scratch_root = output.parent / ".emulator-scratch"
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    worker_count = min(jobs, len(rows))
+    print(
+        f"evidence: running {len(rows)} scenarios with {worker_count} workers",
+        flush=True,
+    )
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        executions = [
+            executor.submit(
+                execute_scenario, row, build_dir, version, environment, scratch_root
             )
-            command_output = completed.stdout
-            status = completed.returncode
-        except subprocess.TimeoutExpired as error:
-            command_output = (error.stdout or "")
-            if isinstance(command_output, bytes):
-                command_output = command_output.decode(errors="replace")
-            command_output += "\nfailure_class=matrix-timeout: scenario runner exceeded outer limit\n"
-            status = 124
+            for row in rows
+        ]
+        completed_scenarios = [execution.result() for execution in executions]
+
+    for row, execution in zip(rows, completed_scenarios, strict=True):
+        paths, command, scenario_environment, command_output, status = execution
+        command_log = output.parent / f"{row['id']}.command.log"
         command_log.write_text(command_output, encoding="utf-8")
+        print(f"evidence: result {row['id']} ({row['result_class']})", flush=True)
         sys.stdout.write(command_output)
         if command_output and not command_output.endswith("\n"):
             sys.stdout.write("\n")
@@ -1014,6 +1052,10 @@ def main() -> int:
         subparser.add_argument("--tool-versions", type=Path, default=DEFAULT_TOOLS)
         subparser.add_argument("--version", default=os.environ.get("LEANOS_VERSION", "0.1.0"))
     run_parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    run_parser.add_argument(
+        "--jobs", type=int, default=max(1, os.cpu_count() or 1),
+        help="maximum concurrent QEMU scenario processes (default: host CPU count)",
+    )
     run_parser.add_argument(
         "--scenario",
         help="run one named scenario from the validated matrix",
