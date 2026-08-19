@@ -901,6 +901,53 @@ theorem executable_capability_subtree_revocation_removes_parent_and_child :
       outcome.state.slots 0 0 = some subtreeCleanupWitnessAuthority := by
   native_decide
 
+/-! ## Capability-lineage/DMA composition boundary
+
+The executable subtree fixture above deliberately uses endpoint-send rights:
+those rights may be removed by the existing generic runtime-safe revocation
+gate.  This is not yet a DMA-authority fixture.  The finite checks below make
+the missing composition explicit instead of silently treating an endpoint
+lineage as mapping authority.
+-/
+
+def subtreeCleanupWitnessDMAAttemptCapability : Capability :=
+  { slot := 0
+    identity := subtreeCleanupWitnessChild.identity
+    owner := 2
+    object := subtreeCleanupWitnessChild.object
+    frame := ⟨4, 1⟩
+    offset := 0
+    length := 64
+    permission := readWrite }
+
+def subtreeCleanupWitnessDMAAttemptCore : Core :=
+  { emptyCore with
+    currentOwner := 2
+    frames := [⟨⟨4, 1⟩, 2, true, false, false, false, 64⟩]
+    capabilityAuthority := subtreeCleanupWitnessCapabilities
+    frameAuthority := fun object =>
+      if object == subtreeCleanupWitnessChild.object then some ⟨4, 1⟩ else none
+    capabilities := [subtreeCleanupWitnessDMAAttemptCapability] }
+
+/-- Endpoint lineage cannot be reinterpreted as memory/DMA authority merely
+because its object and identity match.  The finite IOMMU validator checks the
+authoritative capability kind and rejects this attempted binding. -/
+theorem subtree_cleanup_endpoint_lineage_cannot_authorize_dma :
+    capabilityValid subtreeCleanupWitnessDMAAttemptCore
+      subtreeCleanupWitnessDMAAttemptCapability = false := by
+  native_decide
+
+/-- Conversely, the canonical memory capability that can authorize the DMA
+frame carries runtime-critical read/write rights, so the generic subtree gate
+must reject its removal.  The lifecycle composition therefore needs one
+coordinated checked front door that removes the capability descendants and
+their IOMMU authority together; neither existing gate can be reused alone. -/
+theorem canonical_dma_memory_subtree_requires_coordinated_cleanup
+    (plan : BootPageTablePlan.Plan) :
+    LeanOS.Capability.subtreeRevocationRuntimeSafe
+      (FailStop.compositeDispatcherInitial plan).capabilities 2 2 = false := by
+  rfl
+
 structure PendingAuthorityCleanup where
   ticket : Nat
   scopes : List InvalidationScope
