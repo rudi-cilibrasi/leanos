@@ -948,6 +948,40 @@ theorem canonical_dma_memory_subtree_requires_coordinated_cleanup
       (FailStop.compositeDispatcherInitial plan).capabilities 2 2 = false := by
   rfl
 
+/-! The conservative rejection above must not be confused with an inability
+to derive the requested capability successor.  The raw capability transition
+is deterministic and accepted for the canonical subject-2 memory root; it
+removes that exact root.  What is missing is a publisher that installs this
+already-derived successor together with the IOMMU cleanup, rather than asking
+the generic runtime gate to publish the capability change by itself. -/
+
+def canonicalDMAMemorySubtreeRawAfter (plan : BootPageTablePlan.Plan) :
+    LeanOS.Capability.Outcome :=
+  LeanOS.Capability.revokeSubtree
+    (FailStop.compositeDispatcherInitial plan).capabilities 2 2 2 2
+
+/-- The checked raw transition derives the transitive capability successor
+from the authoritative pre-state: the selected memory root is removed and no
+caller supplies a replacement capability store. -/
+theorem canonical_dma_memory_raw_subtree_derives_successor
+    (plan : BootPageTablePlan.Plan) :
+    (canonicalDMAMemorySubtreeRawAfter plan).result = .accepted ∧
+      (canonicalDMAMemorySubtreeRawAfter plan).state.slots 2 2 = none := by
+  simp [canonicalDMAMemorySubtreeRawAfter, LeanOS.Capability.revokeSubtree,
+    LeanOS.Capability.lookup, FailStop.compositeDispatcherInitial]
+  native_decide
+
+/-- The ordinary runtime-facing operation deliberately stutters on that same
+request.  This pins the exact integration gap: a coordinated front door must
+use the checked raw successor while simultaneously removing DMA authority;
+silently weakening the existing runtime-safety guard is not an option. -/
+theorem canonical_dma_memory_ordinary_subtree_gate_stutters
+    (plan : BootPageTablePlan.Plan) :
+    (FailStop.authoritativeGate (FailStop.compositeDispatcherInitial plan)
+      (.ordinary (.capabilityRevokeSubtree 2 2 2))).state =
+        FailStop.compositeDispatcherInitial plan := by
+  rfl
+
 structure PendingAuthorityCleanup where
   ticket : Nat
   scopes : List InvalidationScope
