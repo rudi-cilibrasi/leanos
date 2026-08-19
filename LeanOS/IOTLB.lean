@@ -3119,10 +3119,12 @@ def assignedEDUReusePublicationDemo
     else
       4
 
-/-- Allocation-free fixed-width projection of the exact assigned-EDU scope.
-The generated plan supplies every argument at the C boundary; source policy
-pins preparation before leaf removal and acknowledgement after the bounded
-hardware invalidation completes. -/
+/-- Allocation-free fixed-width validator for the assigned-EDU reuse scope.
+This export validates the two call shapes used by the machine lane; it is not
+a stateful publication protocol and does not by itself prove that completion
+consumes the preparation call.  The source/final-ELF policy pins their machine
+ordering, while the stateful `prepareInvalidation`/`acknowledgeInvalidation`
+model below owns the exact pending-state and replay theorems. -/
 @[export leanos_assigned_edu_reuse_publication]
 def assignedEDUReusePublicationExport
     (action version requester source assignment assignmentGeneration domain
