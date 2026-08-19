@@ -234,7 +234,7 @@ python3 scripts/generate-image-object-graph.py "${graph_args[@]}"
 # remaining object work.
 make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
   shared-generated-objects variant-kernel-objects variant-assembly-objects \
-  prelink-images
+  prelink-images policy-fixture-images
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
@@ -1287,13 +1287,6 @@ expected_evidence_images="$(
   | tee -a "$build/direct-port-sites-fixtures.log"
 
 for fixture in restore branch indirect initial-indirect; do
-  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-    -T boot/linker.ld -Map "$build/leanos-return-${fixture}-fixture.map" \
-    -o "$build/leanos-return-${fixture}-fixture.elf" \
-    "$build/boot-return-${fixture}-fixture.o" "$build/kernel.o" \
-    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
   if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}-fixture.elf" \
       >"$build/return-${fixture}-fixture.log" 2>&1; then
     echo "error: user-return ${fixture} negative fixture unexpectedly passed" >&2

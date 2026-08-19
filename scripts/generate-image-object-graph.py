@@ -345,6 +345,21 @@ PRELINK_VARIANTS = (
     ),
 )
 
+# Policy-negative fixtures are final ELFs rather than boot-page-plan prelinks,
+# but they share the same reviewed linker inventory and can be scheduled with
+# the independent prelink family.
+POLICY_FIXTURE_VARIANTS = (
+    ("return-restore-fixture", "boot-return-restore-fixture", "kernel", ()),
+    ("return-branch-fixture", "boot-return-branch-fixture", "kernel", ()),
+    ("return-indirect-fixture", "boot-return-indirect-fixture", "kernel", ()),
+    (
+        "return-initial-indirect-fixture",
+        "boot-return-initial-indirect-fixture",
+        "kernel",
+        (),
+    ),
+)
+
 
 def make_escape(value: str) -> str:
     return value.replace("$", "$$").replace(" ", "\\ ").replace("#", "\\#")
@@ -486,6 +501,33 @@ def render_graph(
             "",
             ".PHONY: prelink-images",
             "prelink-images: " + " ".join(prelink_targets),
+            "",
+        ]
+    )
+    policy_fixture_targets = []
+    for name, boot_object, kernel_object, extra_objects in POLICY_FIXTURE_VARIANTS:
+        target = f"{build}/leanos-{name}.elf"
+        map_file = f"{build}/leanos-{name}.map"
+        inputs = [
+            f"{build}/{boot_object}.o",
+            *[f"{build}/{extra}.o" for extra in extra_objects],
+            f"{build}/{kernel_object}.o",
+            *common_link_inputs,
+        ]
+        input_list = " ".join(inputs)
+        lines.extend(
+            [
+                f"{target}: {input_list} $(IMAGE_LINKER_SCRIPT)",
+                "\tld -m elf_x86_64 -nostdlib --gc-sections --build-id=none "
+                f"-T $(IMAGE_LINKER_SCRIPT) -Map {map_file} -o $@ {input_list}",
+            ]
+        )
+        policy_fixture_targets.append(target)
+    lines.extend(
+        [
+            "",
+            ".PHONY: policy-fixture-images",
+            "policy-fixture-images: " + " ".join(policy_fixture_targets),
             "",
         ]
     )

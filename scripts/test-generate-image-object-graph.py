@@ -93,6 +93,7 @@ class ImageObjectGraphTests(unittest.TestCase):
                     "make", "-f", str(graph), "-j2",
                     "shared-generated-objects", "variant-kernel-objects",
                     "variant-assembly-objects", "prelink-images",
+                    "policy-fixture-images",
                 ],
                 check=True,
                 capture_output=True,
@@ -108,11 +109,15 @@ class ImageObjectGraphTests(unittest.TestCase):
                 stem = f"leanos-{name}" if name else "leanos"
                 self.assertTrue((build / f"{stem}-prelink.elf").is_file())
                 self.assertTrue((build / f"{stem}-prelink.map").is_file())
+            for name, _, _, _ in MODULE.POLICY_FIXTURE_VARIANTS:
+                self.assertTrue((build / f"leanos-{name}.elf").is_file())
+                self.assertTrue((build / f"leanos-{name}.map").is_file())
             subprocess.run(
                 [
                     "make", "-f", str(graph), "-q",
                     "shared-generated-objects", "variant-kernel-objects",
                     "variant-assembly-objects", "prelink-images",
+                    "policy-fixture-images",
                 ],
                 check=True,
             )
@@ -182,6 +187,18 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn("out/leanos-bootstrap32-ud-prelink.elf:", graph)
         self.assertIn("out/leanos-bootstrap64-nmi-prelink.elf:", graph)
         self.assertIn("out/leanos-guard-prelink.elf:", graph)
+        fixture_rule = next(
+            line
+            for line in graph.splitlines()
+            if line.startswith("out/leanos-return-restore-fixture.elf:")
+        )
+        self.assertLess(
+            fixture_rule.index("out/boot-return-restore-fixture.o"),
+            fixture_rule.index("out/kernel.o"),
+        )
+        self.assertIn(
+            "-Map out/leanos-return-initial-indirect-fixture.map", graph
+        )
 
 
 if __name__ == "__main__":
