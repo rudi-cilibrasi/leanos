@@ -228,13 +228,17 @@ graph_args=(
 for flag in "${cflags[@]}"; do
   graph_args+=("--cflag=$flag")
 done
+for spec in "${return_corruptions[@]}"; do
+  IFS=: read -r fixture mode _reason <<<"$spec"
+  graph_args+=(--return-corruption "${fixture}:${mode}")
+done
 python3 scripts/generate-image-object-graph.py "${graph_args[@]}"
 # The generated graph owns the migrated prelinks.  It retains their reviewed
 # linker input order while scheduling independent links concurrently with the
 # remaining object work.
 make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
   shared-generated-objects variant-kernel-objects variant-assembly-objects \
-  prelink-images policy-fixture-images
+  prelink-images policy-fixture-images return-corruption-prelinks
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
@@ -417,12 +421,6 @@ if nm "$build/kernel.o" | grep -Eq \
   echo "error: normal kernel object contains return-corruption fixture code" >&2
   exit 1
 fi
-for spec in "${return_corruptions[@]}"; do
-  IFS=: read -r fixture mode _reason <<<"$spec"
-  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-    -DLEANOS_RETURN_CORRUPTION_MODE="$mode" -c boot/kernel.c \
-    -o "$build/kernel-return-${fixture}.o"
-done
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
   -DLEANOS_DOUBLE_FAULT_PROBE=1 -c boot/kernel.c -o "$build/kernel-double-fault.o"
 "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
@@ -654,13 +652,6 @@ for spec in "${return_corruptions[@]}"; do
   if [[ "$fixture" == post-validation-mutation ]]; then
     boot_object="$build/boot-return-post-validation-qemu.o"
   fi
-  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-    -T boot/linker.ld -Map "$build/leanos-return-${fixture}-prelink.map" \
-    -o "$build/leanos-return-${fixture}-prelink.elf" "$boot_object" \
-    "$build/kernel-return-${fixture}.o" "$build/KernelTransition.o" \
-    "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-    "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
   ./scripts/generate-boot-page-plan.sh "$build/leanos-return-${fixture}-prelink.elf" \
     "$build/boot-page-plan-return-${fixture}.h"
   "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \

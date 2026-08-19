@@ -375,7 +375,9 @@ def render_graph(
     cflags: list[str],
     lean_prefix: Path,
     source_root: Path,
+    return_corruptions: list[tuple[str, int]] | None = None,
 ) -> str:
+    return_corruptions = return_corruptions or []
     build = make_escape(str(build_dir))
     compile_flags = shell_join([*cflags, f"-I{lean_prefix / 'include'}"])
     lines = [
@@ -437,15 +439,41 @@ def render_graph(
                 f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF $@.d -c $< -o $@",
             ]
         )
+    return_kernel_names = []
+    for fixture, mode in return_corruptions:
+        name = f"kernel-return-{fixture}"
+        target = f"{build}/{name}.o"
+        arguments = shell_join([
+            *kernel_flags, f"-DLEANOS_RETURN_CORRUPTION_MODE={mode}",
+        ])
+        lines.extend(
+            [
+                f"{target}: {kernel_source}",
+                f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF $@.d -c $< -o $@",
+            ]
+        )
+        return_kernel_names.append(name)
     lines.extend(
         [
             "",
             ".PHONY: variant-kernel-objects",
             "variant-kernel-objects: "
-            + " ".join(f"{build}/{name}.o" for name, _ in KERNEL_VARIANTS),
+            + " ".join(
+                f"{build}/{name}.o"
+                for name in [
+                    *(name for name, _ in KERNEL_VARIANTS),
+                    *return_kernel_names,
+                ]
+            ),
             "",
             "-include "
-            + " ".join(f"{build}/{name}.o.d" for name, _ in KERNEL_VARIANTS),
+            + " ".join(
+                f"{build}/{name}.o.d"
+                for name in [
+                    *(name for name, _ in KERNEL_VARIANTS),
+                    *return_kernel_names,
+                ]
+            ),
             "",
         ]
     )
@@ -476,6 +504,37 @@ def render_graph(
         ]
     )
     common_link_inputs = [f"{build}/{name}.o" for name in COMMON_LINK_OBJECTS]
+    return_prelink_targets = []
+    for fixture, _mode in return_corruptions:
+        boot_object = (
+            "boot-return-post-validation-qemu"
+            if fixture == "post-validation-mutation"
+            else "boot"
+        )
+        target = f"{build}/leanos-return-{fixture}-prelink.elf"
+        map_file = f"{build}/leanos-return-{fixture}-prelink.map"
+        inputs = [
+            f"{build}/{boot_object}.o",
+            f"{build}/kernel-return-{fixture}.o",
+            *common_link_inputs,
+        ]
+        input_list = " ".join(inputs)
+        lines.extend(
+            [
+                f"{target}: {input_list} $(IMAGE_LINKER_SCRIPT)",
+                "\tld -m elf_x86_64 -nostdlib --gc-sections --build-id=none "
+                f"-T $(IMAGE_LINKER_SCRIPT) -Map {map_file} -o $@ {input_list}",
+            ]
+        )
+        return_prelink_targets.append(target)
+    lines.extend(
+        [
+            "",
+            ".PHONY: return-corruption-prelinks",
+            "return-corruption-prelinks: " + " ".join(return_prelink_targets),
+            "",
+        ]
+    )
     prelink_targets = []
     for name, boot_object, kernel_object, extra_objects in PRELINK_VARIANTS:
         stem = f"leanos-{name}" if name else "leanos"
@@ -542,13 +601,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lean-prefix", type=Path, required=True)
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--cflag", action="append", default=[])
+    parser.add_argument("--return-corruption", action="append", default=[])
     return parser.parse_args()
+
+
+def parse_return_corruptions(values: list[str]) -> list[tuple[str, int]]:
+    parsed = []
+    for value in values:
+        fixture, separator, mode_text = value.rpartition(":")
+        if not separator or not fixture or not mode_text.isdecimal():
+            raise ValueError(f"invalid return-corruption specification: {value!r}")
+        parsed.append((fixture, int(mode_text)))
+    return parsed
 
 
 def main() -> None:
     args = parse_args()
     graph = render_graph(
-        args.build_dir, args.cc, args.cflag, args.lean_prefix, args.source_root
+        args.build_dir,
+        args.cc,
+        args.cflag,
+        args.lean_prefix,
+        args.source_root,
+        parse_return_corruptions(args.return_corruption),
     )
     args.output.write_text(graph, encoding="utf-8")
 

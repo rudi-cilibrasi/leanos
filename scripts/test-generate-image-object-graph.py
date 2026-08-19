@@ -83,7 +83,8 @@ class ImageObjectGraphTests(unittest.TestCase):
             graph = Path(directory) / "objects.mk"
             graph.write_text(
                 MODULE.render_graph(
-                    build, "gcc", ["-O2"], Path("/lean"), source
+                    build, "gcc", ["-O2"], Path("/lean"), source,
+                    [("kernel-selector", 1), ("post-validation-mutation", 11)],
                 ),
                 encoding="utf-8",
             )
@@ -93,7 +94,7 @@ class ImageObjectGraphTests(unittest.TestCase):
                     "make", "-f", str(graph), "-j2",
                     "shared-generated-objects", "variant-kernel-objects",
                     "variant-assembly-objects", "prelink-images",
-                    "policy-fixture-images",
+                    "policy-fixture-images", "return-corruption-prelinks",
                 ],
                 check=True,
                 capture_output=True,
@@ -112,12 +113,17 @@ class ImageObjectGraphTests(unittest.TestCase):
             for name, _, _, _ in MODULE.POLICY_FIXTURE_VARIANTS:
                 self.assertTrue((build / f"leanos-{name}.elf").is_file())
                 self.assertTrue((build / f"leanos-{name}.map").is_file())
+            for fixture in ("kernel-selector", "post-validation-mutation"):
+                self.assertTrue((build / f"kernel-return-{fixture}.o").is_file())
+                self.assertTrue(
+                    (build / f"leanos-return-{fixture}-prelink.elf").is_file()
+                )
             subprocess.run(
                 [
                     "make", "-f", str(graph), "-q",
                     "shared-generated-objects", "variant-kernel-objects",
                     "variant-assembly-objects", "prelink-images",
-                    "policy-fixture-images",
+                    "policy-fixture-images", "return-corruption-prelinks",
                 ],
                 check=True,
             )
@@ -199,6 +205,34 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn(
             "-Map out/leanos-return-initial-indirect-fixture.map", graph
         )
+
+    def test_return_corruption_graph_preserves_matrix_mapping(self) -> None:
+        graph = MODULE.render_graph(
+            Path("out"), "gcc", ["-O2"], Path("/lean"), Path("/src"),
+            [("kernel-selector", 1), ("post-validation-mutation", 11)],
+        )
+        self.assertIn("out/kernel-return-kernel-selector.o:", graph)
+        self.assertIn("-DLEANOS_RETURN_CORRUPTION_MODE=1", graph)
+        regular_rule = next(
+            line for line in graph.splitlines()
+            if line.startswith("out/leanos-return-kernel-selector-prelink.elf:")
+        )
+        self.assertIn("out/boot.o", regular_rule)
+        post_validation_rule = next(
+            line for line in graph.splitlines()
+            if line.startswith(
+                "out/leanos-return-post-validation-mutation-prelink.elf:"
+            )
+        )
+        self.assertIn("out/boot-return-post-validation-qemu.o", post_validation_rule)
+
+    def test_return_corruption_cli_specs_fail_closed(self) -> None:
+        self.assertEqual(
+            MODULE.parse_return_corruptions(["kernel-selector:1"]),
+            [("kernel-selector", 1)],
+        )
+        with self.assertRaises(ValueError):
+            MODULE.parse_return_corruptions(["missing-mode"])
 
 
 if __name__ == "__main__":
