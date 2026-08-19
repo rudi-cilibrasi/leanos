@@ -1130,6 +1130,17 @@ theorem acknowledge_authority_cleanup_wrong_ticket_inert
       (acknowledgeAuthorityCleanupPublication state completion).state = state := by
   simp [acknowledgeAuthorityCleanupPublication, hpending, hticket]
 
+/-- A completion that reproduces the ticket but omits, adds, or reorders any
+internally derived cleanup scope cannot publish the logical successor.  The
+entire authoritative/cache/pending state remains unchanged. -/
+theorem acknowledge_authority_cleanup_wrong_scopes_inert
+    state completion pending
+    (hpending : state.pending = some pending)
+    (hscopes : completion.scopes ≠ pending.scopes) :
+    (acknowledgeAuthorityCleanupPublication state completion).accepted = false ∧
+      (acknowledgeAuthorityCleanupPublication state completion).state = state := by
+  simp [acknowledgeAuthorityCleanupPublication, hpending, hscopes]
+
 theorem acknowledge_authority_cleanup_accepted_publishes_exact
     state completion
     (haccepted :
@@ -1489,6 +1500,16 @@ def subjectTerminationWitnessCompletion : AuthorityCleanupCompletion :=
   { ticket := 7
     scopes := subjectTerminationWitnessScopes }
 
+/-- A forged partial completion retains the correct ticket but reports only
+the mapping invalidation, omitting the assignment-wide cleanup scope. -/
+def subjectTerminationWitnessPartialCompletion : AuthorityCleanupCompletion :=
+  { ticket := 7
+    scopes := [ .mappingSet {
+      source := subjectTerminationWitnessAssignment.source
+      assignment := subjectTerminationWitnessAssignment.handle
+      domain := subjectTerminationWitnessAssignment.domain
+      mapping := subjectTerminationWitnessMapping.handle } ] }
+
 /-- The exact finite completion publishes both the supplied checked logical
 successor and the fully invalidated cache, and clears the pending ticket. -/
 theorem executable_subject_termination_exact_completion_witness
@@ -1503,6 +1524,23 @@ theorem executable_subject_termination_exact_completion_witness
       acknowledged.state.pending = none := by
   simp [subjectTerminationWitnessPublicationState,
     subjectTerminationWitnessCompletion, acknowledgeAuthorityCleanupPublication]
+
+/-- Partial cleanup acknowledgement is fail-closed: neither the checked
+termination successor nor the invalidated cache can become visible, and the
+complete pending ticket remains available for exact completion. -/
+theorem executable_subject_termination_partial_completion_inert
+    (before after : AuthoritativeExtension) :
+    let state := subjectTerminationWitnessPublicationState before after
+    let acknowledged := acknowledgeAuthorityCleanupPublication state
+      subjectTerminationWitnessPartialCompletion
+    acknowledged.accepted = false ∧ acknowledged.state = state ∧
+      acknowledged.state.authoritative = before ∧
+      acknowledged.state.cache = [subjectTerminationWitnessEntry] ∧
+      acknowledged.state.pending.isSome = true := by
+  simp [subjectTerminationWitnessPublicationState,
+    subjectTerminationWitnessPartialCompletion,
+    subjectTerminationWitnessScopes,
+    acknowledgeAuthorityCleanupPublication]
 
 /-- The old mapping and assignment are live, the cache contains their exact
 translation, and complete subject cleanup makes that old key unreachable. -/
