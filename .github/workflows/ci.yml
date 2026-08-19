@@ -200,9 +200,13 @@ jobs:
           retention-days: 14
 
   emulator:
-    name: Deterministic QEMU smoke test
+    name: Deterministic QEMU smoke test (shard ${{ matrix.shard }})
     needs: repository-hygiene
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     # The complete boot-critical matrix can take about 40 minutes including
     # evidence upload and runner cleanup; retain a bounded variance margin.
     timeout-minutes: 60
@@ -249,6 +253,9 @@ jobs:
           ./scripts/test-early-probe-policy.sh
           ./scripts/run-dma-unknown-device.sh
           ./scripts/run-emulator-evidence.py run \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 4 \
+            --output build/evidence/emulator-shard-${{ matrix.shard }}.json \
             2>&1 | tee build/ci/emulator-evidence.log
           ./scripts/run-assigned-edu-negatives.sh \
             2>&1 | tee build/ci/assigned-edu-negatives.log
@@ -257,7 +264,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: leanos-boot-${{ github.sha }}
+          name: leanos-boot-${{ github.sha }}-shard-${{ matrix.shard }}
           path: |
             build/boot/leanos-0.1.0-x86_64.iso
             build/boot/leanos-0.1.0-x86_64-malformed-handoff.iso

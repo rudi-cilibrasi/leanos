@@ -67,6 +67,8 @@ def prepare_tree(tmp: Path) -> tuple[Path, Path, Path, argparse.Namespace]:
         tool_versions=tools,
         version="0.1.0",
         scenario=None,
+        shard_index=None,
+        shard_count=None,
         jobs=4,
     )
     return build, output, tools, args
@@ -97,6 +99,32 @@ def successful_runner(_command, *, env, **_kwargs):
 def run_fixtures() -> None:
     with tempfile.TemporaryDirectory() as directory:
         tmp = Path(directory)
+
+        _, matrix_rows = evidence.parse_matrix(evidence.DEFAULT_MATRIX)
+        shards = [
+            evidence.select_rows(matrix_rows, None, index, 4)
+            for index in range(4)
+        ]
+        if [row["id"] for shard in shards for row in shard] == [
+            row["id"] for row in matrix_rows
+        ]:
+            raise AssertionError("shards were concatenated instead of interleaved")
+        if sorted(row["id"] for shard in shards for row in shard) != sorted(
+            row["id"] for row in matrix_rows
+        ):
+            raise AssertionError("stable shards do not cover the matrix exactly once")
+        expect_failure(
+            lambda: evidence.select_rows(matrix_rows, "blocking-ipc", 0, 4),
+            "cannot be combined with sharding",
+        )
+        expect_failure(
+            lambda: evidence.select_rows(matrix_rows, None, 0, None),
+            "must be specified together",
+        )
+        expect_failure(
+            lambda: evidence.select_rows(matrix_rows, None, 4, 4),
+            "between zero and count minus one",
+        )
 
         duplicate = tmp / "duplicate.tsv"
         mutate_matrix(
@@ -383,6 +411,24 @@ def run_fixtures() -> None:
         ):
             raise AssertionError("volatile nested TMPDIR path was not canonicalized")
         args.jobs = 4
+
+        shard_output = output.with_name("shard-1.json")
+        args.output = shard_output
+        args.shard_index = 1
+        args.shard_count = 4
+        with (
+            mock.patch.object(evidence, "git_revision", return_value=revision),
+            mock.patch.object(evidence, "qemu_version", return_value="QEMU fixture"),
+            mock.patch.object(evidence.subprocess, "run", side_effect=successful_runner),
+        ):
+            evidence.run(args)
+        shard_report = json.loads(shard_output.read_text(encoding="utf-8"))
+        assert [result["id"] for result in shard_report["results"]] == [
+            row["id"] for row in matrix_rows[1::4]
+        ]
+        args.output = output
+        args.shard_index = None
+        args.shard_count = None
 
         selected_build, selected_output, _selected_tools, selected_args = prepare_tree(
             tmp / "selected-scenario"

@@ -446,6 +446,32 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
     return matrix_id, rows
 
 
+def select_rows(
+    rows: list[dict[str, str]], scenario: str | None,
+    shard_index: int | None, shard_count: int | None,
+) -> list[dict[str, str]]:
+    """Select one scenario or a stable matrix-order shard."""
+    if scenario is not None and (shard_index is not None or shard_count is not None):
+        raise EvidenceError("scenario selection cannot be combined with sharding")
+    if (shard_index is None) != (shard_count is None):
+        raise EvidenceError("shard index and count must be specified together")
+    if scenario is not None:
+        selected = [row for row in rows if row["id"] == scenario]
+        if not selected:
+            raise EvidenceError(f"scenario is absent from matrix: {scenario}")
+        return selected
+    if shard_index is None or shard_count is None:
+        return rows
+    if shard_count < 1:
+        raise EvidenceError("shard count must be a positive integer")
+    if shard_index < 0 or shard_index >= shard_count:
+        raise EvidenceError("shard index must be between zero and count minus one")
+    selected = rows[shard_index::shard_count]
+    if not selected:
+        raise EvidenceError("selected shard is empty")
+    return selected
+
+
 def expanded(row: dict[str, str], version: str, build_dir: Path) -> dict[str, Path]:
     paths = {
         key: build_dir / row[key].replace("@VERSION@", version)
@@ -607,10 +633,7 @@ def run(args: argparse.Namespace) -> None:
     output = args.output.resolve()
     tools = args.tool_versions.resolve()
     matrix_id, rows = parse_matrix(matrix)
-    if args.scenario is not None:
-        rows = [row for row in rows if row["id"] == args.scenario]
-        if not rows:
-            raise EvidenceError(f"scenario is absent from matrix: {args.scenario}")
+    rows = select_rows(rows, args.scenario, args.shard_index, args.shard_count)
     version = args.version
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise EvidenceError("version must be MAJOR.MINOR.PATCH")
@@ -767,6 +790,8 @@ def run(args: argparse.Namespace) -> None:
     verify_report(
         output, matrix, build_dir, tools, version, environment,
         scenario=args.scenario,
+        shard_index=args.shard_index,
+        shard_count=args.shard_count,
     )
     print(f"emulator evidence matrix passed ({len(rows)} scenarios): {display_path(output)}")
 
@@ -799,12 +824,10 @@ def verify_iotlb_oracle_rows(path: Path, scenario_id: str) -> None:
 def verify_report(
     report_path: Path, matrix: Path, build_dir: Path, tools: Path,
     version: str, environment: dict[str, str], scenario: str | None = None,
+    shard_index: int | None = None, shard_count: int | None = None,
 ) -> None:
     matrix_id, rows = parse_matrix(matrix)
-    if scenario is not None:
-        rows = [row for row in rows if row["id"] == scenario]
-        if not rows:
-            raise EvidenceError(f"scenario is absent from matrix: {scenario}")
+    rows = select_rows(rows, scenario, shard_index, shard_count)
     try:
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -998,6 +1021,18 @@ def check_workflows() -> None:
     )
     if ci_emulator is None:
         raise EvidenceError("CI workflow does not define the emulator evidence job")
+    for shard_contract in (
+        "shard: [0, 1, 2, 3]",
+        "--shard-index ${{ matrix.shard }}",
+        "--shard-count 4",
+        "emulator-shard-${{ matrix.shard }}.json",
+        "leanos-boot-${{ github.sha }}-shard-${{ matrix.shard }}",
+    ):
+        if shard_contract not in ci_emulator.group("body"):
+            raise EvidenceError(
+                "CI emulator evidence job does not preserve four-way shard contract: "
+                + shard_contract
+            )
     ci_emulator_timeout = re.search(
         r"(?m)^    timeout-minutes:\s*(\d+)\s*$",
         ci_emulator.group("body"),
@@ -1084,6 +1119,15 @@ def main() -> int:
         "--scenario",
         help="run one named scenario from the validated matrix",
     )
+    for subparser in (run_parser, verify_parser):
+        subparser.add_argument(
+            "--shard-index", type=int,
+            help="zero-based stable matrix shard to run or verify",
+        )
+        subparser.add_argument(
+            "--shard-count", type=int,
+            help="total stable matrix shards to run or verify",
+        )
     verify_parser.add_argument("report", nargs="?", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
     try:
@@ -1093,6 +1137,7 @@ def main() -> int:
             verify_report(
                 args.report.resolve(), args.matrix.resolve(), args.build_dir.resolve(),
                 args.tool_versions.resolve(), args.version, os.environ.copy(),
+                shard_index=args.shard_index, shard_count=args.shard_count,
             )
             print(f"verified emulator evidence: {display_path(args.report)}")
         else:
