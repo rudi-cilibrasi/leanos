@@ -805,6 +805,63 @@ theorem capability_subtree_revocation_removed_mapping_requires_scope
   simp only [List.mem_filterMap]
   exact ⟨mapping, hmapping, by simp [hremoved, hscope]⟩
 
+/-! A finite parent/child capability fixture keeps the transitive-revocation
+premise executable before it is lifted into the complete authoritative IOMMU
+state.  The selected root and its child carry only endpoint-send authority, so
+the composite runtime-safety guard permits their removal; the independent
+revocation capability is retained. -/
+
+def subtreeCleanupWitnessAuthority : LeanOS.Capability.Capability :=
+  { object := 10
+    kind := .endpoint
+    rights := { revoke := true }
+    identity := 1 }
+
+def subtreeCleanupWitnessRoot : LeanOS.Capability.Capability :=
+  { object := 10
+    kind := .endpoint
+    rights := { send := true }
+    identity := 2 }
+
+def subtreeCleanupWitnessChild : LeanOS.Capability.Capability :=
+  { object := 10
+    kind := .endpoint
+    rights := { send := true }
+    identity := 3
+    parent := some 2 }
+
+def subtreeCleanupWitnessCapabilities : LeanOS.Capability.State :=
+  { nextIdentity := 4
+    derivations := fun identity =>
+      if identity = 1 then
+        some (none, 10, .endpoint, { revoke := true })
+      else if identity = 2 then
+        some (none, 10, .endpoint, { send := true })
+      else if identity = 3 then
+        some (some 2, 10, .endpoint, { send := true })
+      else none
+    subjects := fun subject => subject = 0 || subject = 1 || subject = 2
+    objects := fun object => object = 10
+    kinds := fun object => if object = 10 then some .endpoint else none
+    slots := fun subject slot =>
+      if subject = 0 && slot = 0 then some subtreeCleanupWitnessAuthority
+      else if subject = 1 && slot = 0 then some subtreeCleanupWitnessRoot
+      else if subject = 2 && slot = 0 then some subtreeCleanupWitnessChild
+      else none }
+
+/-- The checked runtime-safe subtree operation follows the recorded parent
+edge and removes both the selected root and its child atomically.  This is the
+concrete lineage fixture used by the next authoritative-IOMMU composition
+step; it does not yet claim that a DMA mapping was published from this state. -/
+theorem executable_capability_subtree_revocation_removes_parent_and_child :
+    let outcome := LeanOS.Capability.revokeSubtreeRuntimeSafe
+      subtreeCleanupWitnessCapabilities 0 0 1 0
+    outcome.result = .accepted ∧
+      outcome.state.slots 1 0 = none ∧
+      outcome.state.slots 2 0 = none ∧
+      outcome.state.slots 0 0 = some subtreeCleanupWitnessAuthority := by
+  native_decide
+
 structure PendingAuthorityCleanup where
   ticket : Nat
   scopes : List InvalidationScope
