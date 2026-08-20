@@ -306,6 +306,46 @@ run_return_fixture_check() {
 }
 export -f run_return_fixture_check
 
+run_return_corruption_policy_check() {
+  local key="$1"
+  local elf="$2"
+  local expected="$3"
+  local log="$4"
+  local status=0
+  local signature
+  signature="$(compute_check_signature return-corruption-policy "$elf" \
+    "$expected")"
+  if cached_check_is_current "$log" "$signature"; then
+    [[ -n "$expected" ]] || cat "$log"
+    return 0
+  fi
+  ./scripts/check-image-policy.sh "$elf" > "$log" 2>&1 || status=$?
+  if [[ -z "$expected" ]]; then
+    if ((status != 0)); then
+      printf 'error: return-corruption policy check failed: %s\n' "$key" \
+        >> "$log"
+      cat "$log" >&2
+      return "$status"
+    fi
+    record_check_signature "$log" "$signature"
+    cat "$log"
+    return 0
+  fi
+  if ((status == 0)); then
+    printf 'error: %s policy fixture unexpectedly passed\n' "$key" >> "$log"
+    cat "$log" >&2
+    return 1
+  fi
+  if ! grep -Fq "$expected" "$log"; then
+    printf 'error: %s policy fixture lacked expected diagnostic\n' "$key" \
+      >> "$log"
+    cat "$log" >&2
+    return 1
+  fi
+  record_check_signature "$log" "$signature"
+}
+export -f run_return_corruption_policy_check
+
 build="$repo_root/build/boot"
 iso_root="$build/iso"
 preemption_iso_root="$build/iso-preemption"
@@ -725,16 +765,9 @@ for spec in "${return_corruptions[@]}"; do
     echo "error: ${fixture} boot page-table plan drifted after final link" >&2
     exit 1
   }
+  expected_policy_diagnostic=""
   if [[ "$fixture" == post-validation-mutation ]]; then
-    if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}.elf" \
-        >"$build/return-${fixture}-policy.log" 2>&1; then
-      echo "error: post-validation mutation policy fixture unexpectedly passed" >&2
-      exit 1
-    fi
-    grep -Fq 'mutation or control flow added after user-return validation' \
-      "$build/return-${fixture}-policy.log" || {
-      echo "error: post-validation fixture lacked policy diagnostic" >&2; exit 1;
-    }
+    expected_policy_diagnostic='mutation or control flow added after user-return validation'
   elif [[ "$fixture" == fast-entry-sce-relaxation ||
       "$fixture" == fast-entry-lstar-relaxation ||
       "$fixture" == fast-entry-sysenter-eip-relaxation ||
@@ -743,19 +776,11 @@ for spec in "${return_corruptions[@]}"; do
       "$fixture" == fast-entry-sfmask-relaxation ||
       "$fixture" == fast-entry-sysenter-cs-relaxation ||
       "$fixture" == fast-entry-sysenter-esp-relaxation ]]; then
-    if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}.elf" \
-        >"$build/return-${fixture}-policy.log" 2>&1; then
-      echo "error: fast-entry relaxation policy fixture unexpectedly passed" >&2
-      exit 1
-    fi
-    grep -Fq 'fast-entry final-ELF write inventory drifted' \
-      "$build/return-${fixture}-policy.log" || {
-      echo "error: fast-entry relaxation fixture lacked write-inventory diagnostic" >&2
-      exit 1
-    }
-  else
-    ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}.elf"
+    expected_policy_diagnostic='fast-entry final-ELF write inventory drifted'
   fi
+  run_return_corruption_policy_check "$fixture" \
+    "$build/leanos-return-${fixture}.elf" "$expected_policy_diagnostic" \
+    "$build/return-${fixture}-policy.log"
 done
 
 ./scripts/generate-boot-page-plan.sh "$build/leanos.elf" \

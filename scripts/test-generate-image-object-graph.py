@@ -297,6 +297,68 @@ validation_tool_signature={signature}
                 counter.read_text(encoding="utf-8"), "call\ncall\ncall\n"
             )
 
+    def test_return_corruption_policy_cache_preserves_expected_failures(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        helpers = "compute_check_signature() {" + wrapper.split(
+            "compute_check_signature() {", 1
+        )[1].split("\ncompute_iso_signature() {", 1)[0]
+        policy_check = "run_return_corruption_policy_check() {" + wrapper.split(
+            "run_return_corruption_policy_check() {", 1
+        )[1].split(
+            "\n}\nexport -f run_return_corruption_policy_check", 1
+        )[0] + "\n}"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "scripts"
+            logs = root / "logs"
+            scripts.mkdir()
+            logs.mkdir()
+            counter = root / "calls"
+            positive = root / "positive.elf"
+            negative = root / "negative.elf"
+            positive.write_text("positive-v1\n", encoding="utf-8")
+            negative.write_text("negative-v1\n", encoding="utf-8")
+            check = scripts / "check-image-policy.sh"
+            check.write_text(
+                "#!/bin/sh\n"
+                f"echo call >> {counter!s}\n"
+                "case $1 in\n"
+                "  *negative*) echo expected-diagnostic; exit 1 ;;\n"
+                "  *) echo policy-ok ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            check.chmod(0o755)
+
+            def run(
+                signature: str, elf: Path, expected: str, times: int = 1
+            ) -> None:
+                log = logs / f"{elf.stem}.log"
+                calls = "\n".join(
+                    f"run_return_corruption_policy_check {elf.stem} "
+                    f"{elf!s} {expected!r} {log!s}"
+                    for _ in range(times)
+                )
+                shell = f"""\
+set -euo pipefail
+cd {root!s}
+validation_tool_signature={signature}
+{helpers}
+{policy_check}
+{calls}
+"""
+                subprocess.run(["bash", "-c", shell], check=True)
+
+            run("tools-v1", positive, "", times=2)
+            run("tools-v1", negative, "expected-diagnostic", times=2)
+            self.assertEqual(counter.read_text(encoding="utf-8"), "call\ncall\n")
+            positive.write_text("positive-v2\n", encoding="utf-8")
+            run("tools-v1", positive, "")
+            run("tools-v2", negative, "expected-diagnostic")
+            self.assertEqual(
+                counter.read_text(encoding="utf-8"), "call\ncall\ncall\ncall\n"
+            )
+
     def test_entry_policy_checks_use_bounded_parallel_batch(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
@@ -343,6 +405,11 @@ validation_tool_signature={signature}
             'echo "error: one or more return-policy negative fixtures failed"',
             wrapper,
         )
+        self.assertIn(
+            'signature="$(compute_check_signature return-corruption-policy "$elf"',
+            wrapper,
+        )
+        self.assertIn("export -f run_return_corruption_policy_check", wrapper)
 
     def test_graph_signature_changes_with_tool_identity(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
