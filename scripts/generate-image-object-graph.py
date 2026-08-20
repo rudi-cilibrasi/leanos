@@ -404,10 +404,12 @@ def render_graph(
     combined = set(BOOT_ALLOCATION_PARTS) | set(FAULT_DISPATCH_PARTS)
     for module in GENERATED_MODULES:
         object_name = f"{module}.part.o" if module in combined else f"{module}.o"
+        target = f"{build}/{object_name}"
+        depfile = f"{target}.d"
         lines.extend(
             [
-                f"{build}/{object_name}: {build}/{module}.c",
-                "\t$(IMAGE_CC) $(IMAGE_CFLAGS) -MMD -MP -MF $@.d -c $< -o $@",
+                f"{target} {depfile} &: {build}/{module}.c",
+                f"\t$(IMAGE_CC) $(IMAGE_CFLAGS) -MMD -MP -MF {depfile} -c $< -o {target}",
             ]
         )
 
@@ -445,11 +447,12 @@ def render_graph(
     kernel_flags = [*cflags, f"-I{build_dir}", "-Wall", "-Wextra", "-Werror"]
     for name, definitions in KERNEL_VARIANTS:
         target = f"{build}/{name}.o"
+        depfile = f"{target}.d"
         arguments = shell_join([*kernel_flags, *definitions])
         lines.extend(
             [
-                f"{target}: {kernel_source}",
-                f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF $@.d -c $< -o $@",
+                f"{target} {depfile} &: {kernel_source}",
+                f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF {depfile} -c $< -o {target}",
             ]
         )
     return_prelink_kernel_names = []
@@ -457,18 +460,20 @@ def render_graph(
     for fixture, mode in return_corruptions:
         name = f"kernel-return-{fixture}-prelink"
         target = f"{build}/{name}.o"
+        depfile = f"{target}.d"
         arguments = shell_join([
             *kernel_flags, f"-DLEANOS_RETURN_CORRUPTION_MODE={mode}",
         ])
         lines.extend(
             [
-                f"{target}: {kernel_source}",
-                f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF $@.d -c $< -o $@",
+                f"{target} {depfile} &: {kernel_source}",
+                f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF {depfile} -c $< -o {target}",
             ]
         )
         return_prelink_kernel_names.append(name)
         final_name = f"kernel-return-{fixture}"
         final_target = f"{build}/{final_name}.o"
+        final_depfile = f"{final_target}.d"
         final_arguments = shell_join([
             *kernel_flags,
             f"-DLEANOS_RETURN_CORRUPTION_MODE={mode}",
@@ -476,8 +481,8 @@ def render_graph(
         ])
         lines.extend(
             [
-                f"{final_target}: {kernel_source} {build}/boot-page-plan-return-{fixture}.h",
-                f"\t$(IMAGE_CC) {final_arguments} -MMD -MP -MF $@.d -c $< -o $@",
+                f"{final_target} {final_depfile} &: {kernel_source} {build}/boot-page-plan-return-{fixture}.h",
+                f"\t$(IMAGE_CC) {final_arguments} -MMD -MP -MF {final_depfile} -c $< -o {final_target}",
             ]
         )
         return_final_kernel_names.append(final_name)
@@ -520,12 +525,13 @@ def render_graph(
     ])
     for name, source, definitions in ASSEMBLY_VARIANTS:
         target = f"{build}/{name}.o"
+        depfile = f"{target}.d"
         source_path = make_escape(str(source_root / source))
         arguments = shell_join(list(definitions))
         lines.extend(
             [
-                f"{target}: {source_path}",
-                f"\t$(IMAGE_CC) {assembly_flags} {arguments} -MMD -MP -MF $@.d -c $< -o $@",
+                f"{target} {depfile} &: {source_path}",
+                f"\t$(IMAGE_CC) {assembly_flags} {arguments} -MMD -MP -MF {depfile} -c $< -o {target}",
             ]
         )
     lines.extend(

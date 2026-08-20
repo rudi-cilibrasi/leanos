@@ -301,8 +301,12 @@ compute_lean_c_signature {root!s}
             build.mkdir()
             source = Path(directory) / "source"
             (source / "boot").mkdir(parents=True)
+            header = source / "boot/test-header.h"
+            header.write_text("#define TEST_VALUE 0\n", encoding="utf-8")
             (source / "boot/kernel.c").write_text(
-                "int kernel_variant(void) { return 0; }\n", encoding="utf-8"
+                '#include "test-header.h"\n'
+                "int kernel_variant(void) { return TEST_VALUE; }\n",
+                encoding="utf-8",
             )
             (source / "boot/boot.S").write_text(".text\n", encoding="utf-8")
             (source / "boot/peer-pke-fixture.S").write_text(
@@ -382,15 +386,38 @@ compute_lean_c_signature {root!s}
                 check=True,
             )
 
+            # A retained object without its compiler dependency file is not a
+            # trustworthy cache entry: the graph must rebuild it before a
+            # changed included header can be hidden from Make.
+            kernel_object = build / "kernel.o"
+            original_kernel_object = kernel_object.read_bytes()
+            (build / "kernel.o.d").unlink()
+            header.write_text("#define TEST_VALUE 1\n", encoding="utf-8")
+            subprocess.run(
+                ["make", "-f", str(graph), "-j2", str(kernel_object)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(kernel_object.read_bytes(), original_kernel_object)
+
     def test_kernel_variant_flags_are_owned_by_the_graph(self) -> None:
         graph = MODULE.render_graph(
             Path("out"), "gcc", ["-O2"], Path("/lean"), Path("/src")
         )
-        self.assertIn("out/kernel-preemption.o:", graph)
+        self.assertIn("out/kernel-preemption.o out/kernel-preemption.o.d &:", graph)
         self.assertIn("-DLEANOS_PREEMPTION_SCENARIO=1", graph)
-        self.assertIn("out/kernel-fault-stale-translation.o:", graph)
+        self.assertIn(
+            "out/kernel-fault-stale-translation.o "
+            "out/kernel-fault-stale-translation.o.d &:",
+            graph,
+        )
         self.assertIn("boot-page-plan-fault-stale-translation.h", graph)
-        self.assertIn("out/kernel-entry-stack-overflow.o:", graph)
+        self.assertIn(
+            "out/kernel-entry-stack-overflow.o "
+            "out/kernel-entry-stack-overflow.o.d &:",
+            graph,
+        )
         self.assertIn("boot-page-plan-entry-overflow.h", graph)
         self.assertIn("variant-kernel-objects:", graph)
         self.assertIn("final-kernel-objects:", graph)
@@ -399,11 +426,20 @@ compute_lean_c_signature {root!s}
         graph = MODULE.render_graph(
             Path("out"), "gcc", ["-O2"], Path("/lean"), Path("/src")
         )
-        self.assertIn("out/boot-fault-reserved-bit.o:", graph)
+        self.assertIn(
+            "out/boot-fault-reserved-bit.o out/boot-fault-reserved-bit.o.d &:",
+            graph,
+        )
         self.assertIn("-DLEANOS_PAGE_FAULT_PROBE_RESERVED_BIT=1", graph)
-        self.assertIn("out/boot-direct-port-pic.o:", graph)
+        self.assertIn(
+            "out/boot-direct-port-pic.o out/boot-direct-port-pic.o.d &:", graph
+        )
         self.assertIn("-DLEANOS_DIRECT_PORT_PROBE_PIC=1", graph)
-        self.assertIn("out/peer-pke-fixture.o: /src/boot/peer-pke-fixture.S", graph)
+        self.assertIn(
+            "out/peer-pke-fixture.o out/peer-pke-fixture.o.d &: "
+            "/src/boot/peer-pke-fixture.S",
+            graph,
+        )
 
     def test_prelink_rules_preserve_input_order_and_map_outputs(self) -> None:
         graph = MODULE.render_graph(
@@ -472,8 +508,16 @@ compute_lean_c_signature {root!s}
             Path("out"), "gcc", ["-O2"], Path("/lean"), Path("/src"),
             [("kernel-selector", 1), ("post-validation-mutation", 11)],
         )
-        self.assertIn("out/kernel-return-kernel-selector-prelink.o:", graph)
-        self.assertIn("out/kernel-return-kernel-selector.o:", graph)
+        self.assertIn(
+            "out/kernel-return-kernel-selector-prelink.o "
+            "out/kernel-return-kernel-selector-prelink.o.d &:",
+            graph,
+        )
+        self.assertIn(
+            "out/kernel-return-kernel-selector.o "
+            "out/kernel-return-kernel-selector.o.d &:",
+            graph,
+        )
         self.assertIn("-DLEANOS_RETURN_CORRUPTION_MODE=1", graph)
         regular_rule = next(
             line for line in graph.splitlines()
