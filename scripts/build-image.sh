@@ -66,15 +66,9 @@ grub_mkimage_path="$(command -v grub-mkimage)"
 grub_mkstandalone_path="$(command -v grub-mkstandalone)"
 grub_module_root=/usr/lib/grub/i386-pc
 
-compute_iso_signature() {
-  local staging_root="$1"
-  shift
+compute_iso_packaging_signature() {
   local input
   {
-    while IFS= read -r -d '' input; do
-      printf '%s\0' "${input#"$staging_root"/}"
-      sha256sum "$input"
-    done < <(find "$staging_root" -type f -print0 | sort -z)
     sha256sum \
       "$grub_mkrescue_path" \
       "$xorriso_path" \
@@ -86,6 +80,20 @@ compute_iso_signature() {
       printf '%s\0' "${input#"$grub_module_root"/}"
       sha256sum "$input"
     done < <(find "$grub_module_root" -type f -print0 | sort -z)
+  } | sha256sum | awk '{print $1}'
+}
+iso_packaging_signature="$(compute_iso_packaging_signature)"
+
+compute_iso_signature() {
+  local staging_root="$1"
+  shift
+  local input
+  {
+    while IFS= read -r -d '' input; do
+      printf '%s\0' "${input#"$staging_root"/}"
+      sha256sum "$input"
+    done < <(find "$staging_root" -type f -print0 | sort -z)
+    printf '%s\0' "$iso_packaging_signature"
     printf '%s\0' "$@"
   } | sha256sum | awk '{print $1}'
 }

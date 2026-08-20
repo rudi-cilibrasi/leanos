@@ -55,6 +55,9 @@ generate_lean_c {source!s} {output!s}
 
     def test_iso_cache_tracks_staged_bytes_and_packaging_tool(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        packaging = "compute_iso_packaging_signature() {" + wrapper.split(
+            "compute_iso_packaging_signature() {", 1
+        )[1].split("\n}\niso_packaging_signature=", 1)[0] + "\n}"
         compute = "compute_iso_signature() {" + wrapper.split(
             "compute_iso_signature() {", 1
         )[1].split("\n}\n\n# Preserve a deterministic ISO", 1)[0] + "\n}"
@@ -104,6 +107,8 @@ mformat_path={mformat!s}
 grub_mkimage_path={grub_mkimage!s}
 grub_mkstandalone_path={grub_mkstandalone!s}
 grub_module_root={modules!s}
+{packaging}
+iso_packaging_signature="$(compute_iso_packaging_signature)"
 {compute}
 {build}
 grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
