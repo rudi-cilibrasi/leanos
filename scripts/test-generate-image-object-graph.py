@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -11,6 +12,8 @@ import unittest
 
 
 SCRIPT = Path(__file__).with_name("generate-image-object-graph.py")
+BUILD_SCRIPT = Path(__file__).with_name("build-image.sh")
+PLAN_SCRIPT = Path(__file__).with_name("generate-boot-page-plan.sh")
 SPEC = importlib.util.spec_from_file_location("image_object_graph", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -18,6 +21,26 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ImageObjectGraphTests(unittest.TestCase):
+    def test_build_wrapper_preserves_graph_owned_outputs(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn('rm -rf "$build"\n', wrapper)
+        self.assertIn('ensure_boot_plan_stub "$build/boot-page-plan.h"', wrapper)
+        self.assertIn('mktemp -d "$build/.lean-c.XXXXXX"', wrapper)
+        self.assertIn('graph_signature="$build/generated-image-objects.sha256"', wrapper)
+
+    def test_stub_plan_generation_preserves_unchanged_timestamp(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "plan.h"
+            subprocess.run(
+                [str(PLAN_SCRIPT), "--stub", str(output)], check=True
+            )
+            fixed_timestamp = 1_700_000_000_000_000_000
+            os.utime(output, ns=(fixed_timestamp, fixed_timestamp))
+            subprocess.run(
+                [str(PLAN_SCRIPT), "--stub", str(output)], check=True
+            )
+            self.assertEqual(output.stat().st_mtime_ns, fixed_timestamp)
+
     def test_graph_compiles_every_generated_module_once(self) -> None:
         graph = MODULE.render_graph(
             Path("build/boot"), "clang-18", ["-m64", "-DVALUE=two words"],

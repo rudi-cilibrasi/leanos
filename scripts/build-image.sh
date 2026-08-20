@@ -15,6 +15,7 @@ require_tool lake "install Elan from https://elan.lean-lang.org/"
 cc="${LEANOS_CC:-gcc}"
 require_tool "$cc" "install Ubuntu package gcc=4:13.2.0-7ubuntu1"
 require_tool make "install Ubuntu package make=4.3-4.1build2"
+require_tool sha256sum "install Ubuntu package coreutils=9.4-3ubuntu6.1"
 require_tool ld "install Ubuntu package binutils=2.42-4ubuntu2.10"
 require_tool nm "install Ubuntu package binutils=2.42-4ubuntu2.10"
 require_tool grub-file "install Ubuntu package grub-common=2.12-1ubuntu7.3"
@@ -96,7 +97,12 @@ if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
   echo "error: LEANOS_SOURCE_REVISION must be a full lowercase Git commit" >&2
   exit 1
 fi
-rm -rf "$build"
+mkdir -p "$build"
+# Preserve graph-owned objects and dependency files across invocations so Make
+# can perform a real incremental rebuild.  ISO staging trees are imperative
+# packaging inputs, so recreate only those rather than deleting the graph.
+find "$build" -mindepth 1 -maxdepth 1 -type d -name 'iso*' \
+  -exec rm -rf -- {} +
 mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$frame_budget_iso_root/boot/grub" \
   "$fault_containment_iso_root/boot/grub" \
@@ -127,61 +133,68 @@ for probe in "${integer_fault_probes[@]}"; do
   mkdir -p "$build/iso-${probe}/boot/grub"
 done
 ./scripts/generate-oracle.sh "$build"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan.h"
-./scripts/generate-boot-page-plan.sh --stub \
-  "$build/boot-page-plan-malformed-handoff.h"
-./scripts/generate-boot-page-plan.sh --stub \
-  "$build/boot-page-plan-projection-authority-mutation.h"
-./scripts/generate-boot-page-plan.sh --stub \
-  "$build/boot-page-plan-raw-selection-authority-mutation.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-preemption.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-frame-budget.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-fault-containment.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-fault-nx-execute.h"
+ensure_boot_plan_stub() {
+  [[ -f "$1" ]] || ./scripts/generate-boot-page-plan.sh --stub "$1"
+}
+ensure_boot_plan_stub "$build/boot-page-plan.h"
+ensure_boot_plan_stub "$build/boot-page-plan-malformed-handoff.h"
+ensure_boot_plan_stub "$build/boot-page-plan-projection-authority-mutation.h"
+ensure_boot_plan_stub "$build/boot-page-plan-raw-selection-authority-mutation.h"
+ensure_boot_plan_stub "$build/boot-page-plan-preemption.h"
+ensure_boot_plan_stub "$build/boot-page-plan-frame-budget.h"
+ensure_boot_plan_stub "$build/boot-page-plan-fault-containment.h"
+ensure_boot_plan_stub "$build/boot-page-plan-fault-nx-execute.h"
 for probe in "${fault_image_probes[@]}"; do
-  ./scripts/generate-boot-page-plan.sh --stub \
-    "$build/boot-page-plan-fault-${probe}.h"
+  ensure_boot_plan_stub "$build/boot-page-plan-fault-${probe}.h"
 done
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-extended-state-peer-pke.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-double-fault.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-entry-overflow.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-guard.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-entry-adversarial.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-nmi.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-bootstrap32-ud.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-bootstrap64-nmi.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-direct-port.h"
-./scripts/generate-boot-page-plan.sh --stub "$build/boot-page-plan-integer-fault.h"
+ensure_boot_plan_stub "$build/boot-page-plan-extended-state.h"
+ensure_boot_plan_stub "$build/boot-page-plan-extended-state-peer-pke.h"
+ensure_boot_plan_stub "$build/boot-page-plan-double-fault.h"
+ensure_boot_plan_stub "$build/boot-page-plan-entry-overflow.h"
+ensure_boot_plan_stub "$build/boot-page-plan-guard.h"
+ensure_boot_plan_stub "$build/boot-page-plan-entry-adversarial.h"
+ensure_boot_plan_stub "$build/boot-page-plan-nmi.h"
+ensure_boot_plan_stub "$build/boot-page-plan-bootstrap32-ud.h"
+ensure_boot_plan_stub "$build/boot-page-plan-bootstrap64-nmi.h"
+ensure_boot_plan_stub "$build/boot-page-plan-direct-port.h"
+ensure_boot_plan_stub "$build/boot-page-plan-integer-fault.h"
 
 # C generation resolves project imports through Lake's compiled module path.
 # Build them here because image jobs and clean checkouts cannot rely on a
 # previous proof-check job's workspace.
 lake build
-lake env lean --c="$build/KernelTransition.c" LeanOS/KernelTransition.lean
-lake env lean --c="$build/Syscall.c" LeanOS/Syscall.lean
-lake env lean --c="$build/IPCSyscall.c" LeanOS/IPCSyscall.lean
-lake env lean --c="$build/Preemption.c" LeanOS/Preemption.lean
-lake env lean --c="$build/BootAllocation.c" LeanOS/BootAllocation.lean
-lake env lean --c="$build/BootMemoryMapStreaming.c" \
-  LeanOS/BootMemoryMapStreaming.lean
-lake env lean --c="$build/BootMemoryMapStreamAuthority.c" \
-  LeanOS/BootMemoryMapStreamAuthority.lean
-lake env lean --c="$build/BootTopology.c" LeanOS/BootTopology.lean
-lake env lean --c="$build/Interrupt.c" LeanOS/Interrupt.lean
-lake env lean --c="$build/InterruptEntry.c" LeanOS/InterruptEntry.lean
-lake env lean --c="$build/BlockingIPC.c" LeanOS/BlockingIPC.lean
-lake env lean --c="$build/CapabilityReuse.c" LeanOS/CapabilityReuse.lean
-lake env lean --c="$build/ExtendedState.c" LeanOS/ExtendedState.lean
-lake env lean --c="$build/PrivilegeEntryControl.c" LeanOS/PrivilegeEntryControl.lean
-lake env lean --c="$build/FaultDispatch.c" LeanOS/FaultDispatch.lean
-lake env lean --c="$build/DirectPortIO.c" LeanOS/DirectPortIO.lean
-lake env lean --c="$build/StaleTranslation.c" LeanOS/StaleTranslation.lean
-lake env lean --c="$build/FrameBudgetScenario.c" \
-  LeanOS/FrameBudgetScenario.lean
-lake env lean --c="$build/CompositeDispatcher.c" LeanOS/CompositeDispatcher.lean
-lake env lean --c="$build/VTdBootPlan.c" LeanOS/VTdBootPlan.lean
-lake env lean --c="$build/IOTLB.c" LeanOS/IOTLB.lean
+lean_c_stage="$(mktemp -d "$build/.lean-c.XXXXXX")"
+trap 'rm -rf "$lean_c_stage"' EXIT
+generate_lean_c() {
+  local source="$1" output="$2" staged="$lean_c_stage/${output##*/}"
+  lake env lean --c="$staged" "$source"
+  if [[ -f "$output" ]] && cmp -s "$staged" "$output"; then
+    rm "$staged"
+  else
+    mv "$staged" "$output"
+  fi
+}
+generate_lean_c LeanOS/KernelTransition.lean "$build/KernelTransition.c"
+generate_lean_c LeanOS/Syscall.lean "$build/Syscall.c"
+generate_lean_c LeanOS/IPCSyscall.lean "$build/IPCSyscall.c"
+generate_lean_c LeanOS/Preemption.lean "$build/Preemption.c"
+generate_lean_c LeanOS/BootAllocation.lean "$build/BootAllocation.c"
+generate_lean_c LeanOS/BootMemoryMapStreaming.lean "$build/BootMemoryMapStreaming.c"
+generate_lean_c LeanOS/BootMemoryMapStreamAuthority.lean "$build/BootMemoryMapStreamAuthority.c"
+generate_lean_c LeanOS/BootTopology.lean "$build/BootTopology.c"
+generate_lean_c LeanOS/Interrupt.lean "$build/Interrupt.c"
+generate_lean_c LeanOS/InterruptEntry.lean "$build/InterruptEntry.c"
+generate_lean_c LeanOS/BlockingIPC.lean "$build/BlockingIPC.c"
+generate_lean_c LeanOS/CapabilityReuse.lean "$build/CapabilityReuse.c"
+generate_lean_c LeanOS/ExtendedState.lean "$build/ExtendedState.c"
+generate_lean_c LeanOS/PrivilegeEntryControl.lean "$build/PrivilegeEntryControl.c"
+generate_lean_c LeanOS/FaultDispatch.lean "$build/FaultDispatch.c"
+generate_lean_c LeanOS/DirectPortIO.lean "$build/DirectPortIO.c"
+generate_lean_c LeanOS/StaleTranslation.lean "$build/StaleTranslation.c"
+generate_lean_c LeanOS/FrameBudgetScenario.lean "$build/FrameBudgetScenario.c"
+generate_lean_c LeanOS/CompositeDispatcher.lean "$build/CompositeDispatcher.c"
+generate_lean_c LeanOS/VTdBootPlan.lean "$build/VTdBootPlan.c"
+generate_lean_c LeanOS/IOTLB.lean "$build/IOTLB.c"
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -233,6 +246,18 @@ for spec in "${return_corruptions[@]}"; do
   graph_args+=(--return-corruption "${fixture}:${mode}")
 done
 python3 scripts/generate-image-object-graph.py "${graph_args[@]}"
+# Make does not track recipe text.  Invalidate only graph-owned products when
+# compiler flags, variant definitions, or linker inventories change, while
+# retaining them for an identical generated graph.
+graph_signature="$build/generated-image-objects.sha256"
+current_graph_signature="$(sha256sum "$object_graph" | awk '{print $1}')"
+if [[ ! -f "$graph_signature" ]] || \
+    [[ "$(<"$graph_signature")" != "$current_graph_signature" ]]; then
+  find "$build" -maxdepth 1 -type f \
+    \( -name '*.o' -o -name '*.o.d' -o -name '*.elf' -o -name '*.map' \
+    -o -name '*.su' \) -delete
+  printf '%s\n' "$current_graph_signature" > "$graph_signature"
+fi
 # The generated graph owns the migrated prelinks.  It retains their reviewed
 # linker input order while scheduling independent links concurrently with the
 # remaining object work.

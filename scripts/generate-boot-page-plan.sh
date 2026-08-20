@@ -4,8 +4,20 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+install_if_changed() {
+  local staged="$1" destination="$2"
+  if [[ -f "$destination" ]] && cmp -s "$staged" "$destination"; then
+    rm "$staged"
+  else
+    mv "$staged" "$destination"
+  fi
+}
+
 if [[ "${1:-}" == --stub ]]; then
-  output="${2:?usage: $0 --stub OUTPUT}"
+  destination="${2:?usage: $0 --stub OUTPUT}"
+  mkdir -p "$(dirname "$destination")"
+  output="$(mktemp "${destination}.tmp.XXXXXX")"
+  trap 'rm -f "$output"' EXIT
   {
     echo '/* Fixed-size prelink placeholder; replaced by the accepted Lean plan. */'
     echo 'static const unsigned long long leanos_boot_plan_a[4096] = {'
@@ -89,6 +101,8 @@ if [[ "${1:-}" == --stub ]]; then
     for ((word = 2; word < 512; ++word)); do echo '  0ULL,'; done
     echo '};'
   } > "$output"
+  install_if_changed "$output" "$destination"
+  trap - EXIT
   exit 0
 fi
 
@@ -98,7 +112,10 @@ if [[ "${1:-}" == --assigned-edu ]]; then
   shift
 fi
 elf="${1:?usage: $0 [--assigned-edu] ELF OUTPUT}"
-output="${2:?usage: $0 [--assigned-edu] ELF OUTPUT}"
+destination="${2:?usage: $0 [--assigned-edu] ELF OUTPUT}"
+mkdir -p "$(dirname "$destination")"
+output="$(mktemp "${destination}.tmp.XXXXXX")"
+trap 'rm -f "$output"' EXIT
 [[ -f "$elf" ]] || { echo "error: missing prelinked ELF '$elf'" >&2; exit 1; }
 
 symbol_decimal() {
@@ -144,3 +161,5 @@ for name in "${vtd_symbols[@]}"; do vtd_args+=("$(symbol_decimal "$name")"); don
 
 lake exe leanos-boot-plan "${args[@]}" > "$output"
 lake exe leanos-vtd-plan "${vtd_args[@]}" >> "$output"
+install_if_changed "$output" "$destination"
+trap - EXIT
