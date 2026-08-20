@@ -11,6 +11,20 @@ require_tool() {
   fi
 }
 
+compute_graph_signature() {
+  local object_graph="$1"
+  local compiler="$2"
+  local compiler_path
+  local linker_path
+  compiler_path="$(command -v -- "$compiler")"
+  linker_path="$(command -v -- ld)"
+  {
+    sha256sum "$object_graph" "$compiler_path" "$linker_path"
+    LC_ALL=C "$compiler" --version
+    LC_ALL=C ld --version
+  } | sha256sum | awk '{print $1}'
+}
+
 require_tool lake "install Elan from https://elan.lean-lang.org/"
 cc="${LEANOS_CC:-gcc}"
 require_tool "$cc" "install Ubuntu package gcc=4:13.2.0-7ubuntu1"
@@ -248,11 +262,12 @@ for spec in "${return_corruptions[@]}"; do
   graph_args+=(--return-corruption "${fixture}:${mode}")
 done
 python3 scripts/generate-image-object-graph.py "${graph_args[@]}"
-# Make does not track recipe text.  Invalidate only graph-owned products when
-# compiler flags, variant definitions, or linker inventories change, while
-# retaining them for an identical generated graph.
+# Make does not track recipe text or tool binary identity.  Invalidate only
+# graph-owned products when the compiler/linker, flags, variant definitions,
+# or linker inventories change, while retaining them for an identical graph
+# and toolchain.
 graph_signature="$build/generated-image-objects.sha256"
-current_graph_signature="$(sha256sum "$object_graph" | awk '{print $1}')"
+current_graph_signature="$(compute_graph_signature "$object_graph" "$cc")"
 if [[ ! -f "$graph_signature" ]] || \
     [[ "$(<"$graph_signature")" != "$current_graph_signature" ]]; then
   find "$build" -maxdepth 1 -type f \

@@ -51,6 +51,43 @@ generate_lean_c {source!s} {output!s}
         self.assertIn('mktemp -d "$build/.lean-c.XXXXXX"', wrapper)
         self.assertIn('graph_signature="$build/generated-image-objects.sha256"', wrapper)
 
+    def test_graph_signature_changes_with_tool_identity(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        function = "compute_graph_signature() {" + wrapper.split(
+            "compute_graph_signature() {", 1
+        )[1].split("\n}\n\nrequire_tool lake", 1)[0] + "\n}"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            graph = root / "objects.mk"
+            graph.write_text("all:\n\t@true\n", encoding="utf-8")
+            compiler = root / "cc"
+            linker = root / "ld"
+            compiler.write_text(
+                "#!/bin/sh\necho compiler-v1\n", encoding="utf-8"
+            )
+            linker.write_text("#!/bin/sh\necho linker-v1\n", encoding="utf-8")
+            compiler.chmod(0o755)
+            linker.chmod(0o755)
+
+            shell = f"""\
+set -euo pipefail
+PATH={root!s}:$PATH
+{function}
+compute_graph_signature {graph!s} {compiler!s}
+"""
+            first = subprocess.run(
+                ["bash", "-c", shell], check=True, capture_output=True, text=True
+            ).stdout.strip()
+            compiler.write_text(
+                "#!/bin/sh\necho compiler-v2\n", encoding="utf-8"
+            )
+            compiler.chmod(0o755)
+            second = subprocess.run(
+                ["bash", "-c", shell], check=True, capture_output=True, text=True
+            ).stdout.strip()
+
+            self.assertNotEqual(first, second)
+
     def test_stub_plan_generation_preserves_unchanged_timestamp(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "plan.h"
