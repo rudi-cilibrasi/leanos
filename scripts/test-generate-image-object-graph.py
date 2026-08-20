@@ -157,6 +157,19 @@ compute_lean_c_signature {root!s}
             )
             self.assertEqual(output.stat().st_mtime_ns, fixed_timestamp)
 
+    def test_wrapper_reuses_content_identical_boot_plans(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'export LEANOS_BOOT_PLAN_TOOL_SIGNATURE="$current_lean_c_signature"',
+            wrapper,
+        )
+        self.assertIn('sha256sum "$elf"', plan_script)
+        self.assertIn('"$root/scripts/generate-boot-page-plan.sh"', plan_script)
+        self.assertIn('printf \'%s\\n\' "$assigned_edu" "$tool_signature"', plan_script)
+        self.assertIn('[[ "$(<"$signature_file")" == "$signature" ]]', plan_script)
+
     def test_graph_compiles_every_generated_module_once(self) -> None:
         graph = MODULE.render_graph(
             Path("build/boot"), "clang-18", ["-m64", "-DVALUE=two words"],

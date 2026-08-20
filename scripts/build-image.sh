@@ -214,6 +214,7 @@ lean_c_modules=(
 )
 lean_c_signature="$build/generated-lean-c.sha256"
 current_lean_c_signature="$(compute_lean_c_signature "$repo_root")"
+export LEANOS_BOOT_PLAN_TOOL_SIGNATURE="$current_lean_c_signature"
 reuse_lean_c=1
 if [[ ! -f "$lean_c_signature" ]] || \
     [[ "$(<"$lean_c_signature")" != "$current_lean_c_signature" ]]; then

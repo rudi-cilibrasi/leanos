@@ -118,6 +118,25 @@ output="$(mktemp "${destination}.tmp.XXXXXX")"
 trap 'rm -f "$output"' EXIT
 [[ -f "$elf" ]] || { echo "error: missing prelinked ELF '$elf'" >&2; exit 1; }
 
+# The image wrapper invokes this generator for every image variant. Avoid
+# replaying both Lean executables when neither the ELF nor the generator/tool
+# identity changed. The wrapper supplies the content signature it already
+# computes over all Lean sources, Lake inputs, and the resolved Lean binary.
+tool_signature="${LEANOS_BOOT_PLAN_TOOL_SIGNATURE:-}"
+if [[ -n "$tool_signature" ]]; then
+  signature="$({
+    sha256sum "$elf" "$root/scripts/generate-boot-page-plan.sh"
+    printf '%s\n' "$assigned_edu" "$tool_signature"
+  } | sha256sum | awk '{print $1}')"
+  signature_file="${destination}.inputs.sha256"
+  if [[ -f "$destination" && -f "$signature_file" ]] &&
+      [[ "$(<"$signature_file")" == "$signature" ]]; then
+    rm "$output"
+    trap - EXIT
+    exit 0
+  fi
+fi
+
 symbol_decimal() {
   local name="$1" hex
   hex="$(nm -n "$elf" | awk -v wanted="$name" '$3 == wanted { print $1; exit }')"
@@ -162,4 +181,7 @@ for name in "${vtd_symbols[@]}"; do vtd_args+=("$(symbol_decimal "$name")"); don
 lake exe leanos-boot-plan "${args[@]}" > "$output"
 lake exe leanos-vtd-plan "${vtd_args[@]}" >> "$output"
 install_if_changed "$output" "$destination"
+if [[ -n "$tool_signature" ]]; then
+  printf '%s\n' "$signature" > "$signature_file"
+fi
 trap - EXIT
