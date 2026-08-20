@@ -82,6 +82,22 @@ generate_lean_c {source!s} {output!s}
         self.assertIn('graph_signature="$build/generated-image-objects.sha256"', wrapper)
         self.assertIn('signature_file="${output}.inputs.sha256"', wrapper)
 
+    def test_build_wrapper_ignores_timestamp_only_kernel_source_changes(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'kernel_source_signature="$build/kernel-source.inputs.sha256"',
+            wrapper,
+        )
+        self.assertIn('kernel_source_make_args=(-o boot/kernel.c)', wrapper)
+        self.assertEqual(
+            wrapper.count('"${kernel_source_make_args[@]}"'),
+            3,
+        )
+        self.assertIn(
+            '"$current_kernel_source_signature" > "$kernel_source_signature"',
+            wrapper,
+        )
+
     def test_iso_cache_tracks_staged_bytes_and_packaging_tool(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         packaging = "compute_iso_packaging_signature() {" + wrapper.split(

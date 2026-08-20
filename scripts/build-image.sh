@@ -516,6 +516,17 @@ fi
 # Keep the existing bounded link inventory compact while retaining the
 # independently generated model adapters in every image variant.
 object_graph="$build/generated-image-objects.mk"
+kernel_source_signature="$build/kernel-source.inputs.sha256"
+current_kernel_source_signature="$(sha256sum boot/kernel.c | awk '{print $1}')"
+kernel_source_make_args=()
+if [[ -f "$kernel_source_signature" ]] &&
+    [[ "$(<"$kernel_source_signature")" == "$current_kernel_source_signature" ]]; then
+  # GNU Make normally recompiles every kernel variant after a timestamp-only
+  # source touch. The retained content signature proves the source bytes are
+  # unchanged, so preserve the cached objects and continue tracking headers
+  # through their generated dependency files.
+  kernel_source_make_args=(-o boot/kernel.c)
+fi
 graph_args=(
   --output "$object_graph"
   --build-dir "$build"
@@ -547,7 +558,8 @@ fi
 # The generated graph owns the migrated prelinks.  It retains their reviewed
 # linker input order while scheduling independent links concurrently with the
 # remaining object work.
-make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+make -f "$object_graph" "${kernel_source_make_args[@]}" \
+  -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
   shared-generated-objects variant-kernel-objects variant-assembly-objects \
   prelink-images policy-fixture-images return-corruption-prelinks
 
@@ -689,7 +701,8 @@ done
 # Re-enter the same graph after replacing every stub boot-page plan.  The
 # generated dependency files select only affected kernel variants, and Make
 # recompiles those final-plan objects concurrently instead of serially.
-make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+make -f "$object_graph" "${kernel_source_make_args[@]}" \
+  -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
   final-kernel-objects
 
 if nm "$build/kernel.o" | grep -Eq \
@@ -699,7 +712,8 @@ if nm "$build/kernel.o" | grep -Eq \
 fi
 # Link the independent final-image family in parallel after generated page-plan
 # dependencies have rebuilt the affected kernel objects.
-make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+make -f "$object_graph" "${kernel_source_make_args[@]}" \
+  -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
   final-image-links return-corruption-final-images
 
 for spec in "${return_corruptions[@]}"; do
@@ -1776,5 +1790,6 @@ for spec in "${return_corruptions[@]}"; do
   sha256sum "$build/leanos-${version}-x86_64-return-${fixture}.iso" \
     "$build/leanos-return-${fixture}.elf" >> "$build/SHA256SUMS"
 done
+printf '%s\n' "$current_kernel_source_signature" > "$kernel_source_signature"
 echo "built build/boot/leanos-${version}-x86_64.iso at $source_revision"
 echo "symbols: build/boot/leanos.map; debug ELF: build/boot/leanos.elf"
