@@ -177,7 +177,83 @@ compute_lean_c_signature {root!s}
         self.assertIn('sha256sum "$elf"', plan_script)
         self.assertIn('"$root/scripts/generate-boot-page-plan.sh"', plan_script)
         self.assertIn('printf \'%s\\n\' "$assigned_edu" "$tool_signature"', plan_script)
-        self.assertIn('[[ "$(<"$signature_file")" == "$signature" ]]', plan_script)
+        self.assertIn('[[ "$stored_signature" == "$signature" ]]', plan_script)
+        self.assertIn(
+            '[[ "$current_output_hash" == "$stored_output_hash" ]]', plan_script
+        )
+
+    def test_boot_plan_cache_is_per_input_stage_and_checks_output(self) -> None:
+        plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")
+        symbol_block = plan_script.split("symbols=(", 1)[1].split("\n)", 1)[0]
+        vtd_symbol_block = plan_script.split("vtd_symbols=(", 1)[1].split(
+            "\n)", 1
+        )[0]
+        symbols = sorted(set((symbol_block + vtd_symbol_block).split()))
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tools = root / "tools"
+            tools.mkdir()
+            nm = tools / "nm"
+            nm.write_text(
+                "#!/bin/sh\n"
+                + "\n".join(
+                    f"printf '%08x T {symbol}\\n' {index + 1}"
+                    for index, symbol in enumerate(symbols)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            nm.chmod(0o755)
+            lake = tools / "lake"
+            lake.write_text(
+                "#!/bin/sh\n"
+                'printf "%s\\n" "$*" >> "$LAKE_LOG"\n'
+                'printf "generated-%s\\n" "$3"\n',
+                encoding="utf-8",
+            )
+            lake.chmod(0o755)
+
+            prelink = root / "image-prelink.elf"
+            final = root / "image.elf"
+            prelink.write_text("prelink input\n", encoding="utf-8")
+            final.write_text("final input\n", encoding="utf-8")
+            destination = root / "boot-page-plan.h"
+            log = root / "lake.log"
+            env = {
+                **os.environ,
+                "PATH": f"{tools!s}:{os.environ['PATH']}",
+                "LAKE_LOG": str(log),
+                "LEANOS_BOOT_PLAN_TOOL_SIGNATURE": "test-tool-signature",
+            }
+
+            for _ in range(2):
+                subprocess.run(
+                    [str(PLAN_SCRIPT), str(prelink), str(destination)],
+                    check=True,
+                    env=env,
+                )
+                subprocess.run(
+                    [str(PLAN_SCRIPT), str(final), str(destination)],
+                    check=True,
+                    env=env,
+                )
+
+            self.assertEqual(len(log.read_text(encoding="utf-8").splitlines()), 4)
+            self.assertEqual(
+                len(list(root.glob("boot-page-plan.h.inputs.*.sha256"))), 2
+            )
+            expected = destination.read_text(encoding="utf-8")
+
+            destination.write_text("corrupt cached output\n", encoding="utf-8")
+            subprocess.run(
+                [str(PLAN_SCRIPT), str(prelink), str(destination)],
+                check=True,
+                env=env,
+            )
+
+            self.assertEqual(len(log.read_text(encoding="utf-8").splitlines()), 6)
+            self.assertEqual(destination.read_text(encoding="utf-8"), expected)
 
     def test_graph_compiles_every_generated_module_once(self) -> None:
         graph = MODULE.render_graph(

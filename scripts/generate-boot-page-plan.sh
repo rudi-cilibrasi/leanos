@@ -124,16 +124,21 @@ trap 'rm -f "$output"' EXIT
 # computes over all Lean sources, Lake inputs, and the resolved Lean binary.
 tool_signature="${LEANOS_BOOT_PLAN_TOOL_SIGNATURE:-}"
 if [[ -n "$tool_signature" ]]; then
+  stage_key="$(printf '%s\0%s\0' "$elf" "$assigned_edu" | sha256sum | awk '{print $1}')"
   signature="$({
     sha256sum "$elf" "$root/scripts/generate-boot-page-plan.sh"
     printf '%s\n' "$assigned_edu" "$tool_signature"
   } | sha256sum | awk '{print $1}')"
-  signature_file="${destination}.inputs.sha256"
+  signature_file="${destination}.inputs.${stage_key}.sha256"
   if [[ -f "$destination" && -f "$signature_file" ]] &&
-      [[ "$(<"$signature_file")" == "$signature" ]]; then
-    rm "$output"
-    trap - EXIT
-    exit 0
+      read -r stored_signature stored_output_hash < "$signature_file" &&
+      [[ "$stored_signature" == "$signature" ]]; then
+    current_output_hash="$(sha256sum "$destination" | awk '{print $1}')"
+    if [[ "$current_output_hash" == "$stored_output_hash" ]]; then
+      rm "$output"
+      trap - EXIT
+      exit 0
+    fi
   fi
 fi
 
@@ -182,6 +187,7 @@ lake exe leanos-boot-plan "${args[@]}" > "$output"
 lake exe leanos-vtd-plan "${vtd_args[@]}" >> "$output"
 install_if_changed "$output" "$destination"
 if [[ -n "$tool_signature" ]]; then
-  printf '%s\n' "$signature" > "$signature_file"
+  output_hash="$(sha256sum "$destination" | awk '{print $1}')"
+  printf '%s %s\n' "$signature" "$output_hash" > "$signature_file"
 fi
 trap - EXIT
