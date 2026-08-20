@@ -15,6 +15,7 @@ invoke() {
 }
 
 invoke success >/dev/null 2>&1
+invoke disconnect-after-inject >/dev/null 2>&1
 for spec in \
   'missing-ready early64-ready' \
   'wrong-record terminal-record' \

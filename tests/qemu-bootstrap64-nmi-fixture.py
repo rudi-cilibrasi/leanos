@@ -33,7 +33,8 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
         capabilities = connection.recv(128)
         connection.sendall(b'{"return":{}}\n')
         command = connection.recv(128)
-        connection.sendall(b'{"return":{}}\n')
+        if mode != "disconnect-after-inject":
+            connection.sendall(b'{"return":{}}\n')
 if b"qmp_capabilities" not in capabilities or b"inject-nmi" not in command:
     raise SystemExit(1)
 if mode == "hang":

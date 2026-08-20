@@ -75,7 +75,14 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
     if "return" not in json.loads(stream.readline()):
         raise RuntimeError("QMP capabilities rejected")
     stream.write(b'{"execute":"inject-nmi"}\n')
-    if "return" not in json.loads(stream.readline()):
+    # The injected NMI can drive the guest through isa-debug-exit before QEMU
+    # flushes the command response.  Accept only that post-write EOF/reset;
+    # the shell still requires the exact terminal record and exit status 47.
+    try:
+        injection_response = stream.readline()
+    except ConnectionResetError:
+        injection_response = b""
+    if injection_response and "return" not in json.loads(injection_response):
         raise RuntimeError("QMP NMI injection rejected")
 PY
 
