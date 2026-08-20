@@ -26,6 +26,9 @@ jobs:
       - name: Lint Markdown
         run: ./scripts/check-markdown.sh
 
+      - name: Test generated image object graph
+        run: python3 scripts/test-generate-image-object-graph.py
+
   lean:
     name: Lean build and proof checks
     runs-on: ubuntu-24.04
