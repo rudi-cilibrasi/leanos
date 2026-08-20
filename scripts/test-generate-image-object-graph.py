@@ -60,7 +60,7 @@ generate_lean_c {source!s} {output!s}
         )[1].split("\n}\n\n# Preserve a deterministic ISO", 1)[0] + "\n}"
         build = "grub-mkrescue() {" + wrapper.split(
             "grub-mkrescue() {", 1
-        )[1].split("\n}\n\nbuild=", 1)[0] + "\n}"
+        )[1].split("\n}\n\nrun_image_policy_check", 1)[0] + "\n}"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             staging = root / "iso"
@@ -97,6 +97,23 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
             self.assertEqual(
                 log.read_text(encoding="utf-8").splitlines(), ["call", "call"]
             )
+
+    def test_image_policy_checks_use_bounded_parallel_batch(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('policy_jobs="${LEANOS_BUILD_JOBS:-$(nproc)}"', wrapper)
+        self.assertIn('xargs -0 -r -n 4 -P "$policy_jobs"', wrapper)
+        self.assertIn('export -f run_image_policy_check', wrapper)
+        self.assertIn(
+            'queue_image_policy canonical "$build/leanos.elf"', wrapper
+        )
+        self.assertIn(
+            'queue_image_policy bootstrap64-nmi '
+            '"$build/leanos-bootstrap64-nmi.elf"',
+            wrapper,
+        )
+        self.assertIn(
+            'echo "error: one or more image policy checks failed"', wrapper
+        )
 
     def test_graph_signature_changes_with_tool_identity(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")

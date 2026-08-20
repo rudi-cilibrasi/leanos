@@ -107,6 +107,22 @@ grub-mkrescue() {
   printf '%s\n' "$current_signature" > "$signature_file"
 }
 
+run_image_policy_check() {
+  local key="$1"
+  local elf="$2"
+  local environment_name="$3"
+  local environment_value="$4"
+  local log="$build/image-policy-logs/$key.log"
+  : > "$log"
+  if [[ -n "$environment_name" ]]; then
+    env "$environment_name=$environment_value" \
+      ./scripts/check-image-policy.sh "$elf" >"$log" 2>&1
+  else
+    ./scripts/check-image-policy.sh "$elf" >"$log" 2>&1
+  fi
+}
+export -f run_image_policy_check
+
 build="$repo_root/build/boot"
 iso_root="$build/iso"
 preemption_iso_root="$build/iso-preemption"
@@ -934,41 +950,85 @@ LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
   LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-extended-state-peer-pke-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos-extended-state-peer-pke.elf" \
   | tee "$build/entry-stack-extended-state-peer-pke-final-elf.txt"
-./scripts/check-image-policy.sh "$build/leanos.elf"
-./scripts/check-image-policy.sh "$build/leanos-malformed-handoff.elf"
-./scripts/check-image-policy.sh "$build/leanos-projection-authority-mutation.elf"
-./scripts/check-image-policy.sh "$build/leanos-raw-selection-authority-mutation.elf"
-./scripts/check-image-policy.sh "$build/leanos-preemption.elf"
-./scripts/check-image-policy.sh "$build/leanos-frame-budget.elf"
-./scripts/check-frame-budget-machine.sh "$build/leanos-frame-budget.elf"
-./scripts/check-image-policy.sh "$build/leanos-fault-containment.elf"
-./scripts/check-image-policy.sh "$build/leanos-fault-readonly-write.elf"
-./scripts/check-image-policy.sh "$build/leanos-fault-nx-execute.elf"
+policy_jobs="${LEANOS_BUILD_JOBS:-$(nproc)}"
+[[ "$policy_jobs" =~ ^[1-9][0-9]*$ ]] || {
+  echo "error: LEANOS_BUILD_JOBS must be a positive integer" >&2
+  exit 1
+}
+policy_task_file="$build/image-policy-tasks.nul"
+policy_log_dir="$build/image-policy-logs"
+mkdir -p "$policy_log_dir"
+: > "$policy_task_file"
+policy_keys=()
+queue_image_policy() {
+  local key="$1"
+  local elf="$2"
+  local environment_name="${3:-}"
+  local environment_value="${4:-}"
+  policy_keys+=("$key")
+  printf '%s\0%s\0%s\0%s\0' \
+    "$key" "$elf" "$environment_name" "$environment_value" \
+    >> "$policy_task_file"
+}
+
+queue_image_policy canonical "$build/leanos.elf"
+queue_image_policy malformed-handoff "$build/leanos-malformed-handoff.elf"
+queue_image_policy projection-authority-mutation \
+  "$build/leanos-projection-authority-mutation.elf"
+queue_image_policy raw-selection-authority-mutation \
+  "$build/leanos-raw-selection-authority-mutation.elf"
+queue_image_policy preemption "$build/leanos-preemption.elf"
+queue_image_policy frame-budget "$build/leanos-frame-budget.elf"
+queue_image_policy fault-containment "$build/leanos-fault-containment.elf"
+queue_image_policy fault-readonly-write "$build/leanos-fault-readonly-write.elf"
+queue_image_policy fault-nx-execute "$build/leanos-fault-nx-execute.elf"
 for probe in "${fault_fatal_probes[@]}"; do
-  LEANOS_PAGE_FAULT_FATAL_PROBE="$probe" \
-    ./scripts/check-image-policy.sh "$build/leanos-fault-${probe}.elf"
+  queue_image_policy "fault-$probe" "$build/leanos-fault-${probe}.elf" \
+    LEANOS_PAGE_FAULT_FATAL_PROBE "$probe"
 done
-./scripts/check-image-policy.sh "$build/leanos-fault-stale-translation.elf"
-./scripts/check-image-policy.sh "$build/leanos-extended-state.elf"
-./scripts/check-image-policy.sh "$build/leanos-extended-state-mmx.elf"
-./scripts/check-image-policy.sh "$build/leanos-extended-state-sse.elf"
-./scripts/check-image-policy.sh "$build/leanos-extended-state-sse2.elf"
-./scripts/check-image-policy.sh "$build/leanos-extended-state-avx.elf"
+queue_image_policy fault-stale-translation \
+  "$build/leanos-fault-stale-translation.elf"
+queue_image_policy extended-state "$build/leanos-extended-state.elf"
+queue_image_policy extended-state-mmx "$build/leanos-extended-state-mmx.elf"
+queue_image_policy extended-state-sse "$build/leanos-extended-state-sse.elf"
+queue_image_policy extended-state-sse2 "$build/leanos-extended-state-sse2.elf"
+queue_image_policy extended-state-avx "$build/leanos-extended-state-avx.elf"
 for mechanism in syscall sysenter; do
-  LEANOS_FAST_ENTRY_PROBE="$mechanism" \
-    ./scripts/check-image-policy.sh "$build/leanos-fast-entry-${mechanism}.elf"
+  queue_image_policy "fast-entry-$mechanism" \
+    "$build/leanos-fast-entry-${mechanism}.elf" LEANOS_FAST_ENTRY_PROBE \
+    "$mechanism"
+done
+queue_image_policy double-fault "$build/leanos-double-fault.elf"
+queue_image_policy entry-stack-overflow "$build/leanos-entry-stack-overflow.elf"
+queue_image_policy entry-adversarial "$build/leanos-entry-adversarial.elf"
+for probe in "${direct_port_probes[@]}"; do
+  queue_image_policy "direct-port-$probe" \
+    "$build/leanos-direct-port-${probe}.elf"
+done
+for probe in "${integer_fault_probes[@]}"; do
+  queue_image_policy "$probe" "$build/leanos-${probe}.elf"
+done
+queue_image_policy bootstrap32-ud "$build/leanos-bootstrap32-ud.elf"
+queue_image_policy bootstrap64-nmi "$build/leanos-bootstrap64-nmi.elf"
+
+export build
+if ! xargs -0 -r -n 4 -P "$policy_jobs" bash -c \
+    'run_image_policy_check "$@"' _ < "$policy_task_file"; then
+  for key in "${policy_keys[@]}"; do
+    [[ -f "$policy_log_dir/$key.log" ]] && cat "$policy_log_dir/$key.log"
+  done
+  echo "error: one or more image policy checks failed" >&2
+  exit 1
+fi
+for key in "${policy_keys[@]}"; do
+  cat "$policy_log_dir/$key.log"
+done
+
+./scripts/check-frame-budget-machine.sh "$build/leanos-frame-budget.elf"
+for mechanism in syscall sysenter; do
   LEANOS_FAST_ENTRY_PROBE="$mechanism" \
     ./scripts/check-entry-policy.sh "$build/leanos-fast-entry-${mechanism}.elf" \
     | tee "$build/fast-entry-${mechanism}-policy-report.txt"
-done
-./scripts/check-image-policy.sh "$build/leanos-double-fault.elf"
-./scripts/check-image-policy.sh "$build/leanos-entry-stack-overflow.elf"
-./scripts/check-image-policy.sh "$build/leanos-entry-adversarial.elf"
-for probe in "${direct_port_probes[@]}"; do
-  ./scripts/check-image-policy.sh "$build/leanos-direct-port-${probe}.elf"
-done
-for probe in "${integer_fault_probes[@]}"; do
-  ./scripts/check-image-policy.sh "$build/leanos-${probe}.elf"
 done
 ./scripts/check-nmi-image-policy.sh "$build/leanos-nmi.elf"
 cp "$build/leanos-nmi.elf" "$build/leanos-nmi-cpl3.elf"
@@ -976,8 +1036,6 @@ cp "$build/leanos-nmi.map" "$build/leanos-nmi-cpl3.map"
 objdump -d --no-show-raw-insn "$build/leanos-nmi.elf" \
   > "$build/nmi.disassembly.txt"
 cp "$build/nmi.disassembly.txt" "$build/nmi-cpl3.disassembly.txt"
-./scripts/check-image-policy.sh "$build/leanos-bootstrap32-ud.elf"
-./scripts/check-image-policy.sh "$build/leanos-bootstrap64-nmi.elf"
 ./scripts/check-early-probe-policy.py "$build/leanos-bootstrap32-ud.elf" \
   bootstrap32-ud | tee "$build/bootstrap32-ud-early-probe-policy.txt"
 ./scripts/check-early-probe-policy.py "$build/leanos-bootstrap64-nmi.elf" \
