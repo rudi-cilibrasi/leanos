@@ -25,6 +25,23 @@ compute_graph_signature() {
   } | sha256sum | awk '{print $1}'
 }
 
+compute_lean_c_signature() {
+  local root="$1"
+  local input
+  local lean_path
+  lean_path="$(lake env sh -c 'command -v lean')"
+  {
+    while IFS= read -r -d '' input; do
+      sha256sum "$input"
+    done < <(find "$root/LeanOS" -type f -name '*.lean' -print0 | sort -z)
+    for input in lakefile.lean lean-toolchain lake-manifest.json; do
+      [[ -f "$root/$input" ]] && sha256sum "$root/$input"
+    done
+    sha256sum "$lean_path"
+    LC_ALL=C lake env lean --version
+  } | sha256sum | awk '{print $1}'
+}
+
 require_tool lake "install Elan from https://elan.lean-lang.org/"
 cc="${LEANOS_CC:-gcc}"
 require_tool "$cc" "install Ubuntu package gcc=4:13.2.0-7ubuntu1"
@@ -177,8 +194,6 @@ ensure_boot_plan_stub "$build/boot-page-plan-integer-fault.h"
 # Build them here because image jobs and clean checkouts cannot rely on a
 # previous proof-check job's workspace.
 lake build
-lean_c_stage="$(mktemp -d "$build/.lean-c.XXXXXX")"
-trap 'rm -rf "$lean_c_stage"' EXIT
 generate_lean_c() {
   local source="$1"
   local output="$2"
@@ -190,27 +205,33 @@ generate_lean_c() {
     mv "$staged" "$output"
   fi
 }
-generate_lean_c LeanOS/KernelTransition.lean "$build/KernelTransition.c"
-generate_lean_c LeanOS/Syscall.lean "$build/Syscall.c"
-generate_lean_c LeanOS/IPCSyscall.lean "$build/IPCSyscall.c"
-generate_lean_c LeanOS/Preemption.lean "$build/Preemption.c"
-generate_lean_c LeanOS/BootAllocation.lean "$build/BootAllocation.c"
-generate_lean_c LeanOS/BootMemoryMapStreaming.lean "$build/BootMemoryMapStreaming.c"
-generate_lean_c LeanOS/BootMemoryMapStreamAuthority.lean "$build/BootMemoryMapStreamAuthority.c"
-generate_lean_c LeanOS/BootTopology.lean "$build/BootTopology.c"
-generate_lean_c LeanOS/Interrupt.lean "$build/Interrupt.c"
-generate_lean_c LeanOS/InterruptEntry.lean "$build/InterruptEntry.c"
-generate_lean_c LeanOS/BlockingIPC.lean "$build/BlockingIPC.c"
-generate_lean_c LeanOS/CapabilityReuse.lean "$build/CapabilityReuse.c"
-generate_lean_c LeanOS/ExtendedState.lean "$build/ExtendedState.c"
-generate_lean_c LeanOS/PrivilegeEntryControl.lean "$build/PrivilegeEntryControl.c"
-generate_lean_c LeanOS/FaultDispatch.lean "$build/FaultDispatch.c"
-generate_lean_c LeanOS/DirectPortIO.lean "$build/DirectPortIO.c"
-generate_lean_c LeanOS/StaleTranslation.lean "$build/StaleTranslation.c"
-generate_lean_c LeanOS/FrameBudgetScenario.lean "$build/FrameBudgetScenario.c"
-generate_lean_c LeanOS/CompositeDispatcher.lean "$build/CompositeDispatcher.c"
-generate_lean_c LeanOS/VTdBootPlan.lean "$build/VTdBootPlan.c"
-generate_lean_c LeanOS/IOTLB.lean "$build/IOTLB.c"
+lean_c_modules=(
+  KernelTransition Syscall IPCSyscall Preemption BootAllocation
+  BootMemoryMapStreaming BootMemoryMapStreamAuthority BootTopology Interrupt
+  InterruptEntry BlockingIPC CapabilityReuse ExtendedState
+  PrivilegeEntryControl FaultDispatch DirectPortIO StaleTranslation
+  FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB
+)
+lean_c_signature="$build/generated-lean-c.sha256"
+current_lean_c_signature="$(compute_lean_c_signature "$repo_root")"
+reuse_lean_c=1
+if [[ ! -f "$lean_c_signature" ]] || \
+    [[ "$(<"$lean_c_signature")" != "$current_lean_c_signature" ]]; then
+  reuse_lean_c=0
+fi
+for module in "${lean_c_modules[@]}"; do
+  [[ -f "$build/$module.c" ]] || reuse_lean_c=0
+done
+if ((reuse_lean_c == 0)); then
+  lean_c_stage="$(mktemp -d "$build/.lean-c.XXXXXX")"
+  trap 'rm -rf "$lean_c_stage"' EXIT
+  for module in "${lean_c_modules[@]}"; do
+    generate_lean_c "LeanOS/$module.lean" "$build/$module.c"
+  done
+  printf '%s\n' "$current_lean_c_signature" > "$lean_c_signature"
+  rm -rf "$lean_c_stage"
+  trap - EXIT
+fi
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
