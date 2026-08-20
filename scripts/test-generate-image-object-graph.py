@@ -139,6 +139,12 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
 
     def test_image_policy_checks_use_bounded_parallel_batch(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("compute_validation_tool_signature() {", wrapper)
+        self.assertIn(
+            'signature="$(compute_check_signature image-policy "$elf"', wrapper
+        )
+        self.assertIn('cached_check_is_current "$log" "$signature"', wrapper)
+        self.assertIn('record_check_signature "$log" "$signature"', wrapper)
         self.assertIn('policy_jobs="${LEANOS_BUILD_JOBS:-$(nproc)}"', wrapper)
         self.assertIn('xargs -0 -r -n 4 -P "$policy_jobs"', wrapper)
         self.assertIn('export -f run_image_policy_check', wrapper)
@@ -154,8 +160,64 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
             'echo "error: one or more image policy checks failed"', wrapper
         )
 
+    def test_validation_cache_reuses_only_matching_inputs(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        helpers = "compute_check_signature() {" + wrapper.split(
+            "compute_check_signature() {", 1
+        )[1].split("\ncompute_iso_signature() {", 1)[0]
+        image_check = "run_image_policy_check() {" + wrapper.split(
+            "run_image_policy_check() {", 1
+        )[1].split("\n}\nexport -f run_image_policy_check", 1)[0] + "\n}"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "scripts"
+            logs = root / "build" / "image-policy-logs"
+            scripts.mkdir()
+            logs.mkdir(parents=True)
+            counter = root / "calls"
+            elf = root / "image.elf"
+            elf.write_text("elf-v1\n", encoding="utf-8")
+            check = scripts / "check-image-policy.sh"
+            check.write_text(
+                "#!/bin/sh\n" f"echo call >> {counter!s}\n" "echo policy-ok\n",
+                encoding="utf-8",
+            )
+            check.chmod(0o755)
+
+            def run(signature: str, times: int = 1) -> None:
+                calls = "\n".join(
+                    f"run_image_policy_check canonical {elf!s} '' ''"
+                    for _ in range(times)
+                )
+                shell = f"""\
+set -euo pipefail
+cd {root!s}
+validation_tool_signature={signature}
+build={root!s}/build
+{helpers}
+{image_check}
+{calls}
+"""
+                subprocess.run(["bash", "-c", shell], check=True)
+
+            run("tools-v1", times=2)
+            self.assertEqual(counter.read_text(encoding="utf-8"), "call\n")
+            elf.write_text("elf-v2\n", encoding="utf-8")
+            run("tools-v1")
+            self.assertEqual(counter.read_text(encoding="utf-8"), "call\ncall\n")
+            run("tools-v2")
+            self.assertEqual(
+                counter.read_text(encoding="utf-8"), "call\ncall\ncall\n"
+            )
+
     def test_entry_policy_checks_use_bounded_parallel_batch(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'signature="$(compute_check_signature entry-policy "$elf"', wrapper
+        )
+        self.assertIn(
+            'cached_check_is_current "$report" "$signature"', wrapper
+        )
         self.assertIn('export -f run_entry_policy_check', wrapper)
         self.assertIn('xargs -0 -r -n 5 -P "$policy_jobs"', wrapper)
         self.assertIn(
@@ -173,6 +235,12 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
 
     def test_direct_port_and_negative_fixtures_use_bounded_batches(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'signature="$(compute_check_signature direct-port "$elf"', wrapper
+        )
+        self.assertIn(
+            'signature="$(compute_check_signature return-fixture "$elf"', wrapper
+        )
         self.assertIn("export -f run_direct_port_check", wrapper)
         self.assertIn('xargs -0 -r -n 5 -P "$policy_jobs"', wrapper)
         self.assertIn('direct_port_logs+=("$direct_port_log")', wrapper)

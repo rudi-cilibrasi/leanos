@@ -84,6 +84,54 @@ compute_iso_packaging_signature() {
 }
 iso_packaging_signature="$(compute_iso_packaging_signature)"
 
+compute_validation_tool_signature() {
+  local input
+  local tool
+  local tool_path
+  {
+    while IFS= read -r -d '' input; do
+      printf '%s\0' "${input#"$repo_root"/}"
+      sha256sum "$input"
+    done < <(find "$repo_root/scripts" -type f -print0 | sort -z)
+    for tool in bash python3 awk grep sed nm objdump readelf; do
+      tool_path="$(command -v -- "$tool")"
+      sha256sum "$tool_path"
+    done
+  } | sha256sum | awk '{print $1}'
+}
+validation_tool_signature="$(compute_validation_tool_signature)"
+export validation_tool_signature
+
+compute_check_signature() {
+  local input
+  {
+    printf 'validation-tools:%s\0' "$validation_tool_signature"
+    for input in "$@"; do
+      if [[ -f "$input" ]]; then
+        printf 'file:%s\0' "$input"
+        sha256sum "$input"
+      else
+        printf 'value:%s\0' "$input"
+      fi
+    done
+  } | sha256sum | awk '{print $1}'
+}
+
+cached_check_is_current() {
+  local output="$1"
+  local signature="$2"
+  local signature_file="${output}.inputs.sha256"
+  [[ -f "$output" && -f "$signature_file" ]] &&
+    [[ "$(<"$signature_file")" == "$signature" ]]
+}
+
+record_check_signature() {
+  local output="$1"
+  local signature="$2"
+  printf '%s\n' "$signature" > "${output}.inputs.sha256"
+}
+export -f compute_check_signature cached_check_is_current record_check_signature
+
 compute_iso_signature() {
   local staging_root="$1"
   shift
@@ -137,6 +185,12 @@ run_image_policy_check() {
   local environment_name="$3"
   local environment_value="$4"
   local log="$build/image-policy-logs/$key.log"
+  local signature
+  signature="$(compute_check_signature image-policy "$elf" \
+    "$environment_name" "$environment_value")"
+  if cached_check_is_current "$log" "$signature"; then
+    return 0
+  fi
   : > "$log"
   if [[ -n "$environment_name" ]]; then
     env "$environment_name=$environment_value" \
@@ -144,6 +198,7 @@ run_image_policy_check() {
   else
     ./scripts/check-image-policy.sh "$elf" >"$log" 2>&1
   fi
+  record_check_signature "$log" "$signature"
 }
 export -f run_image_policy_check
 
@@ -154,6 +209,12 @@ run_entry_policy_check() {
   local environment_name="$4"
   local environment_value="$5"
   local status=0
+  local signature
+  signature="$(compute_check_signature entry-policy "$elf" \
+    "$environment_name" "$environment_value")"
+  if cached_check_is_current "$report" "$signature"; then
+    return 0
+  fi
   : > "$report"
   if [[ -n "$environment_name" ]]; then
     env "$environment_name=$environment_value" \
@@ -165,6 +226,7 @@ run_entry_policy_check() {
     printf 'error: entry policy check failed: %s\n' "$key" >> "$report"
     return "$status"
   fi
+  record_check_signature "$report" "$signature"
 }
 export -f run_entry_policy_check
 
@@ -177,6 +239,12 @@ run_direct_port_check() {
   local -a arguments=()
   local raw_log="${log}.raw"
   local status=0
+  local signature
+  signature="$(compute_check_signature direct-port "$elf" "$manifest" \
+    "$assigned_edu")"
+  if cached_check_is_current "$log" "$signature"; then
+    return 0
+  fi
   [[ "$assigned_edu" != 1 ]] || arguments+=(--assigned-edu)
   ./scripts/check-direct-port-sites.py "$elf" "$manifest" \
     "${arguments[@]}" > "$raw_log" 2>&1 || status=$?
@@ -185,6 +253,9 @@ run_direct_port_check() {
     return 1
   fi
   rm -f "$raw_log"
+  if ((status == 0)); then
+    record_check_signature "$log" "$signature"
+  fi
   return "$status"
 }
 export -f run_direct_port_check
@@ -195,6 +266,11 @@ run_return_fixture_check() {
   local expected="$3"
   local log="$4"
   local status=0
+  local signature
+  signature="$(compute_check_signature return-fixture "$elf" "$expected")"
+  if cached_check_is_current "$log" "$signature"; then
+    return 0
+  fi
   ./scripts/check-image-policy.sh "$elf" > "$log" 2>&1 || status=$?
   if ((status == 0)); then
     printf 'error: user-return %s negative fixture unexpectedly passed\n' \
@@ -206,6 +282,7 @@ run_return_fixture_check() {
       "$key" >> "$log"
     return 1
   fi
+  record_check_signature "$log" "$signature"
 }
 export -f run_return_fixture_check
 
