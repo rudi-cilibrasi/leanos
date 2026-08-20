@@ -21,6 +21,29 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ImageObjectGraphTests(unittest.TestCase):
+    def test_generate_lean_c_initializes_output_before_staging(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        function = "generate_lean_c() {" + wrapper.split(
+            "generate_lean_c() {", 1
+        )[1].split("\ngenerate_lean_c LeanOS/", 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "input.lean"
+            output = root / "output.c"
+            source.write_text("generated C\n", encoding="utf-8")
+            shell = f"""\
+set -euo pipefail
+lean_c_stage={root!s}/stage
+mkdir -p "$lean_c_stage"
+lake() {{
+  cp "$4" "${{3#--c=}}"
+}}
+{function}
+generate_lean_c {source!s} {output!s}
+"""
+            subprocess.run(["bash", "-c", shell], check=True)
+            self.assertEqual(output.read_text(encoding="utf-8"), "generated C\n")
+
     def test_build_wrapper_preserves_graph_owned_outputs(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn('rm -rf "$build"\n', wrapper)

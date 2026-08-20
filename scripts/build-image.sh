@@ -166,7 +166,9 @@ lake build
 lean_c_stage="$(mktemp -d "$build/.lean-c.XXXXXX")"
 trap 'rm -rf "$lean_c_stage"' EXIT
 generate_lean_c() {
-  local source="$1" output="$2" staged="$lean_c_stage/${output##*/}"
+  local source="$1"
+  local output="$2"
+  local staged="$lean_c_stage/${output##*/}"
   lake env lean --c="$staged" "$source"
   if [[ -f "$output" ]] && cmp -s "$staged" "$output"; then
     rm "$staged"
