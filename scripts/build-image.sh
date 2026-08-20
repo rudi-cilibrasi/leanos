@@ -34,7 +34,7 @@ compute_lean_c_signature() {
     while IFS= read -r -d '' input; do
       sha256sum "$input"
     done < <(find "$root/LeanOS" -type f -name '*.lean' -print0 | sort -z)
-    for input in lakefile.lean lean-toolchain lake-manifest.json; do
+    for input in lakefile.toml lean-toolchain lake-manifest.json; do
       [[ -f "$root/$input" ]] && sha256sum "$root/$input"
     done
     sha256sum "$lean_path"

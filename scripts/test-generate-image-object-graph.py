@@ -98,8 +98,9 @@ compute_graph_signature {graph!s} {compiler!s}
             (root / "LeanOS").mkdir()
             source = root / "LeanOS/KernelTransition.lean"
             source.write_text("def generated := 1\n", encoding="utf-8")
-            (root / "lakefile.lean").write_text(
-                "package LeanOS\n", encoding="utf-8"
+            lakefile = root / "lakefile.toml"
+            lakefile.write_text(
+                'name = "LeanOS"\n', encoding="utf-8"
             )
             tools = root / "tools"
             tools.mkdir()
@@ -124,6 +125,13 @@ compute_lean_c_signature {root!s}
             second = subprocess.run(
                 ["bash", "-c", shell], check=True, capture_output=True, text=True
             ).stdout.strip()
+            lakefile.write_text(
+                'name = "LeanOS"\ndefaultTargets = ["kernel"]\n',
+                encoding="utf-8",
+            )
+            third = subprocess.run(
+                ["bash", "-c", shell], check=True, capture_output=True, text=True
+            ).stdout.strip()
             lake.write_text(
                 "#!/bin/sh\n"
                 'if [ "$2" = sh ]; then echo "$0"; else '
@@ -131,12 +139,13 @@ compute_lean_c_signature {root!s}
                 encoding="utf-8",
             )
             lake.chmod(0o755)
-            third = subprocess.run(
+            fourth = subprocess.run(
                 ["bash", "-c", shell], check=True, capture_output=True, text=True
             ).stdout.strip()
 
             self.assertNotEqual(first, second)
             self.assertNotEqual(second, third)
+            self.assertNotEqual(third, fourth)
 
     def test_build_wrapper_reuses_complete_matching_lean_c_set(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
