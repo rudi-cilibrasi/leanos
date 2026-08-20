@@ -144,6 +144,47 @@ run_entry_policy_check() {
 }
 export -f run_entry_policy_check
 
+run_direct_port_check() {
+  local key="$1"
+  local elf="$2"
+  local manifest="$3"
+  local assigned_edu="$4"
+  local log="$5"
+  local -a arguments=()
+  local raw_log="${log}.raw"
+  local status=0
+  [[ "$assigned_edu" != 1 ]] || arguments+=(--assigned-edu)
+  ./scripts/check-direct-port-sites.py "$elf" "$manifest" \
+    "${arguments[@]}" > "$raw_log" 2>&1 || status=$?
+  if ! sed "s/^/elf=$key /" "$raw_log" > "$log"; then
+    rm -f "$raw_log"
+    return 1
+  fi
+  rm -f "$raw_log"
+  return "$status"
+}
+export -f run_direct_port_check
+
+run_return_fixture_check() {
+  local key="$1"
+  local elf="$2"
+  local expected="$3"
+  local log="$4"
+  local status=0
+  ./scripts/check-image-policy.sh "$elf" > "$log" 2>&1 || status=$?
+  if ((status == 0)); then
+    printf 'error: user-return %s negative fixture unexpectedly passed\n' \
+      "$key" >> "$log"
+    return 1
+  fi
+  if ! grep -Fq "$expected" "$log"; then
+    printf 'error: %s negative fixture lacked expected diagnostic\n' \
+      "$key" >> "$log"
+    return 1
+  fi
+}
+export -f run_return_fixture_check
+
 build="$repo_root/build/boot"
 iso_root="$build/iso"
 preemption_iso_root="$build/iso-preemption"
@@ -1170,6 +1211,11 @@ source ./scripts/build-assigned-edu-image.sh
 direct_port_report="$build/direct-port-sites-report.txt"
 : > "$direct_port_report"
 direct_port_images=0
+direct_port_task_file="$build/direct-port-tasks.nul"
+direct_port_log_dir="$build/direct-port-logs"
+mkdir -p "$direct_port_log_dir"
+: > "$direct_port_task_file"
+direct_port_logs=()
 while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     _log _scenario _mode _reason; do
   [[ "$elf_name" == *.elf ]] || continue
@@ -1207,9 +1253,12 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
       direct_port_args+=(--assigned-edu)
       ;;
   esac
-  ./scripts/check-direct-port-sites.py "$build/$elf_name" "$manifest" \
-    "${direct_port_args[@]}" \
-    | sed "s/^/elf=$elf_name /" | tee -a "$direct_port_report"
+  direct_port_log="$direct_port_log_dir/$elf_name.log"
+  direct_port_logs+=("$direct_port_log")
+  assigned_edu=0
+  ((${#direct_port_args[@]} == 0)) || assigned_edu=1
+  printf '%s\0%s\0%s\0%s\0%s\0' "$elf_name" "$build/$elf_name" \
+    "$manifest" "$assigned_edu" "$direct_port_log" >> "$direct_port_task_file"
   ((direct_port_images += 1))
 done < "$matrix"
 expected_evidence_images="$(
@@ -1221,35 +1270,48 @@ expected_evidence_images="$(
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
   exit 1
 }
+if ! xargs -0 -r -n 5 -P "$policy_jobs" bash -c \
+    'run_direct_port_check "$@"' _ < "$direct_port_task_file"; then
+  for log in "${direct_port_logs[@]}"; do
+    [[ -f "$log" ]] && cat "$log"
+  done
+  echo "error: one or more direct-port evidence checks failed" >&2
+  exit 1
+fi
+for log in "${direct_port_logs[@]}"; do
+  cat "$log" >> "$direct_port_report"
+done
+cat "$direct_port_report"
 ./scripts/test-direct-port-sites.sh "$build/leanos.elf" \
   | tee "$build/direct-port-sites-fixtures.log"
 ./scripts/test-direct-port-sites.sh "$build/leanos-entry-adversarial.elf" \
   scripts/direct-port-sites-entry-adversarial.tsv \
   | tee -a "$build/direct-port-sites-fixtures.log"
 
-for fixture in restore branch indirect initial-indirect; do
-  if ./scripts/check-image-policy.sh "$build/leanos-return-${fixture}-fixture.elf" \
-      >"$build/return-${fixture}-fixture.log" 2>&1; then
-    echo "error: user-return ${fixture} negative fixture unexpectedly passed" >&2
-    exit 1
-  fi
-done
-grep -Fq 'error: unexpected exact user-return restore sequence' \
-  "$build/return-restore-fixture.log" || {
-  echo "error: restore negative fixture lacked expected diagnostic" >&2; exit 1;
+return_fixture_task_file="$build/return-fixture-tasks.nul"
+: > "$return_fixture_task_file"
+return_fixture_logs=()
+queue_return_fixture() {
+  local key="$1"
+  local expected="$2"
+  local log="$build/return-${key}-fixture.log"
+  return_fixture_logs+=("$log")
+  printf '%s\0%s\0%s\0%s\0' "$key" \
+    "$build/leanos-return-${key}-fixture.elf" "$expected" "$log" \
+    >> "$return_fixture_task_file"
 }
-grep -Fq 'enters post-validation restore interval' \
-  "$build/return-branch-fixture.log" || {
-  echo "error: branch negative fixture lacked expected diagnostic" >&2; exit 1;
-}
-grep -Fq 'indirect control-flow instruction' \
-  "$build/return-indirect-fixture.log" || {
-  echo "error: indirect negative fixture lacked expected diagnostic" >&2; exit 1;
-}
-grep -Fq 'indirect control-flow instruction' \
-  "$build/return-initial-indirect-fixture.log" || {
-  echo "error: initial indirect fixture lacked expected diagnostic" >&2; exit 1;
-}
+queue_return_fixture restore 'error: unexpected exact user-return restore sequence'
+queue_return_fixture branch 'enters post-validation restore interval'
+queue_return_fixture indirect 'indirect control-flow instruction'
+queue_return_fixture initial-indirect 'indirect control-flow instruction'
+if ! xargs -0 -r -n 4 -P "$policy_jobs" bash -c \
+    'run_return_fixture_check "$@"' _ < "$return_fixture_task_file"; then
+  for log in "${return_fixture_logs[@]}"; do
+    [[ -f "$log" ]] && cat "$log"
+  done
+  echo "error: one or more return-policy negative fixtures failed" >&2
+  exit 1
+fi
 
 cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"

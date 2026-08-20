@@ -132,6 +132,24 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
             'echo "error: one or more entry policy checks failed"', wrapper
         )
 
+    def test_direct_port_and_negative_fixtures_use_bounded_batches(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("export -f run_direct_port_check", wrapper)
+        self.assertIn('xargs -0 -r -n 5 -P "$policy_jobs"', wrapper)
+        self.assertIn('direct_port_logs+=("$direct_port_log")', wrapper)
+        self.assertIn('cat "$log" >> "$direct_port_report"', wrapper)
+        self.assertIn("export -f run_return_fixture_check", wrapper)
+        self.assertIn('xargs -0 -r -n 4 -P "$policy_jobs"', wrapper)
+        self.assertIn(
+            "queue_return_fixture restore "
+            "'error: unexpected exact user-return restore sequence'",
+            wrapper,
+        )
+        self.assertIn(
+            'echo "error: one or more return-policy negative fixtures failed"',
+            wrapper,
+        )
+
     def test_graph_signature_changes_with_tool_identity(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         function = "compute_graph_signature() {" + wrapper.split(
