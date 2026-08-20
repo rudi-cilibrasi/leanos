@@ -23,6 +23,59 @@ assigned_iso_root="$build/iso-assigned-edu"
 assigned_plan="$build/boot-page-plan-assigned-edu.h"
 assigned_final_plan="$build/boot-page-plan-assigned-edu.final.h"
 mkdir -p "$assigned_iso_root/boot/grub"
+
+# This scenario predates the generated object graph and intentionally retains
+# its separate q35/EDU topology.  Cache the complete, validated output family
+# as one fail-closed unit so an unchanged wrapper does not rebuild seven kernel
+# variants, rerun their policy checks, and repackage seven ISOs.  The input
+# signature includes every shared link input plus source, tool, validation, and
+# ISO-packaging identities; the output manifest prevents a missing or corrupt
+# artifact from being mistaken for a cache hit.
+assigned_cache_signature="$build/assigned-edu.inputs.sha256"
+assigned_cache_manifest="$build/assigned-edu.outputs.sha256"
+assigned_outputs=(
+  "build/boot/boot-page-plan-assigned-edu.h"
+  "build/boot/boot-page-plan-assigned-edu.final.h"
+  "build/boot/kernel-assigned-edu.o"
+  "build/boot/leanos-assigned-edu.map"
+  "build/boot/leanos-assigned-edu.elf"
+  "build/boot/leanos-${version}-x86_64-assigned-edu.iso"
+)
+assigned_edu_negative_specs=(
+  "missing-mmio-mapping:LEANOS_ASSIGNED_EDU_OMIT_MMIO_MAPPING_FIXTURE"
+  "wrong-bar:LEANOS_ASSIGNED_EDU_WRONG_BAR_FIXTURE"
+  "wrong-mmio-identity:LEANOS_ASSIGNED_EDU_WRONG_MMIO_IDENTITY_FIXTURE"
+  "forged-fault:LEANOS_ASSIGNED_EDU_FORGED_FAULT_FIXTURE"
+  "wrong-fault-victim:LEANOS_ASSIGNED_EDU_WRONG_FAULT_VICTIM_FIXTURE"
+  "omit-reuse-invalidation:LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE"
+)
+for spec in "${assigned_edu_negative_specs[@]}"; do
+  IFS=: read -r fixture _fixture_macro <<<"$spec"
+  assigned_outputs+=(
+    "build/boot/kernel-assigned-edu-${fixture}.o"
+    "build/boot/leanos-assigned-edu-${fixture}.map"
+    "build/boot/leanos-assigned-edu-${fixture}.elf"
+    "build/boot/leanos-${version}-x86_64-assigned-edu-${fixture}.iso"
+  )
+done
+assigned_current_signature="$(compute_check_signature assigned-edu \
+  "$current_lean_c_signature" "$current_graph_signature" \
+  "$iso_packaging_signature" "$source_revision" "$version" \
+  "${cflags[@]}" boot/kernel.c boot/linker.ld boot/grub.cfg \
+  scripts/build-assigned-edu-image.sh \
+  "$build/boot.o" "$build/KernelTransition.o" "$build/Syscall.o" \
+  "$build/IPCSyscall.o" "$build/Preemption.o" "$build/BootAllocation.o" \
+  "$build/Interrupt.o" "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+  "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+  "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o")"
+if [[ -f "$assigned_cache_signature" && \
+      -f "$assigned_cache_manifest" && \
+      "$(<"$assigned_cache_signature")" == "$assigned_current_signature" ]] && \
+    (cd "$repo_root" && \
+      sha256sum -c --status "$assigned_cache_manifest"); then
+  echo "reusing unchanged assigned-EDU image family"
+  return 0
+fi
 ./scripts/generate-boot-page-plan.sh --stub "$assigned_plan"
 
 link_assigned_edu() {
@@ -65,14 +118,6 @@ done
 # These images must fail closed at admission and hardware-evidence boundaries:
 # generated CPU mapping, exact device read-back, forged fault binding, and a
 # changed protected victim record.
-assigned_edu_negative_specs=(
-  "missing-mmio-mapping:LEANOS_ASSIGNED_EDU_OMIT_MMIO_MAPPING_FIXTURE"
-  "wrong-bar:LEANOS_ASSIGNED_EDU_WRONG_BAR_FIXTURE"
-  "wrong-mmio-identity:LEANOS_ASSIGNED_EDU_WRONG_MMIO_IDENTITY_FIXTURE"
-  "forged-fault:LEANOS_ASSIGNED_EDU_FORGED_FAULT_FIXTURE"
-  "wrong-fault-victim:LEANOS_ASSIGNED_EDU_WRONG_FAULT_VICTIM_FIXTURE"
-  "omit-reuse-invalidation:LEANOS_ASSIGNED_EDU_OMIT_REUSE_INVALIDATION_FIXTURE"
-)
 for spec in "${assigned_edu_negative_specs[@]}"; do
   IFS=: read -r fixture fixture_macro <<<"$spec"
   fixture_base="leanos-assigned-edu-${fixture}"
@@ -107,3 +152,9 @@ grub-mkrescue -d /usr/lib/grub/i386-pc \
   -o "$build/leanos-${version}-x86_64-assigned-edu.iso" \
   "$assigned_iso_root" -- -volume_date uuid 2000010100000000 \
   -volume_date all_file_dates 2000010100000000 >/dev/null
+
+assigned_manifest_tmp="${assigned_cache_manifest}.tmp.$$"
+(cd "$repo_root" && sha256sum "${assigned_outputs[@]}") \
+  > "$assigned_manifest_tmp"
+mv "$assigned_manifest_tmp" "$assigned_cache_manifest"
+printf '%s\n' "$assigned_current_signature" > "$assigned_cache_signature"

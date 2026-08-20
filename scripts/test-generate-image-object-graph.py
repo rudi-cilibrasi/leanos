@@ -13,6 +13,7 @@ import unittest
 
 SCRIPT = Path(__file__).with_name("generate-image-object-graph.py")
 BUILD_SCRIPT = Path(__file__).with_name("build-image.sh")
+ASSIGNED_EDU_SCRIPT = Path(__file__).with_name("build-assigned-edu-image.sh")
 PLAN_SCRIPT = Path(__file__).with_name("generate-boot-page-plan.sh")
 SPEC = importlib.util.spec_from_file_location("image_object_graph", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
@@ -21,6 +22,34 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ImageObjectGraphTests(unittest.TestCase):
+    def test_assigned_edu_cache_is_input_and_output_integrity_bound(self) -> None:
+        builder = ASSIGNED_EDU_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'assigned_cache_signature="$build/assigned-edu.inputs.sha256"',
+            builder,
+        )
+        self.assertIn(
+            'assigned_cache_manifest="$build/assigned-edu.outputs.sha256"',
+            builder,
+        )
+        self.assertIn(
+            '"$current_lean_c_signature" "$current_graph_signature"', builder
+        )
+        self.assertIn(
+            '"$iso_packaging_signature" "$source_revision" "$version"', builder
+        )
+        self.assertIn('scripts/build-assigned-edu-image.sh', builder)
+        self.assertIn('"$build/FaultDispatch.o")"', builder)
+        self.assertIn('sha256sum -c --status "$assigned_cache_manifest"', builder)
+        self.assertIn('sha256sum "${assigned_outputs[@]}"', builder)
+        self.assertLess(
+            builder.index('mv "$assigned_manifest_tmp" "$assigned_cache_manifest"'),
+            builder.index(
+                "printf '%s\\n' \"$assigned_current_signature\" "
+                '> "$assigned_cache_signature"'
+            ),
+        )
+
     def test_generate_lean_c_initializes_output_before_staging(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         function = "generate_lean_c() {" + wrapper.split(
