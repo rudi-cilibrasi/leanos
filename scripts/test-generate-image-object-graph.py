@@ -359,6 +359,20 @@ compute_lean_c_signature {root!s}
         self.assertIn('[[ -f "$build/$module.c" ]] || reuse_lean_c=0', wrapper)
         self.assertIn('if ((reuse_lean_c == 0)); then', wrapper)
 
+    def test_oracle_cache_tracks_inputs_revision_and_output_integrity(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        oracle = BUILD_SCRIPT.with_name("generate-oracle.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            'LEANOS_ORACLE_TOOL_SIGNATURE="$current_lean_c_signature"', wrapper
+        )
+        self.assertIn('printf \'%s\\0%s\\0\' "$revision" "$tool_signature"', oracle)
+        self.assertIn('sha256sum "$root/scripts/generate-oracle.sh"', oracle)
+        self.assertIn('stored_tsv_hash', oracle)
+        self.assertIn('stored_header_hash', oracle)
+
     def test_stub_plan_generation_preserves_unchanged_timestamp(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "plan.h"

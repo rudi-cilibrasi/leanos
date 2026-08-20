@@ -389,7 +389,9 @@ done
 for probe in "${integer_fault_probes[@]}"; do
   mkdir -p "$build/iso-${probe}/boot/grub"
 done
-./scripts/generate-oracle.sh "$build"
+current_lean_c_signature="$(compute_lean_c_signature "$repo_root")"
+LEANOS_ORACLE_TOOL_SIGNATURE="$current_lean_c_signature" \
+  ./scripts/generate-oracle.sh "$build"
 ensure_boot_plan_stub() {
   [[ -f "$1" ]] || ./scripts/generate-boot-page-plan.sh --stub "$1"
 }
@@ -439,7 +441,6 @@ lean_c_modules=(
   FrameBudgetScenario CompositeDispatcher VTdBootPlan IOTLB
 )
 lean_c_signature="$build/generated-lean-c.sha256"
-current_lean_c_signature="$(compute_lean_c_signature "$repo_root")"
 export LEANOS_BOOT_PLAN_TOOL_SIGNATURE="$current_lean_c_signature"
 reuse_lean_c=1
 if [[ ! -f "$lean_c_signature" ]] || \
