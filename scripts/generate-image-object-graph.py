@@ -452,9 +452,10 @@ def render_graph(
                 f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF $@.d -c $< -o $@",
             ]
         )
-    return_kernel_names = []
+    return_prelink_kernel_names = []
+    return_final_kernel_names = []
     for fixture, mode in return_corruptions:
-        name = f"kernel-return-{fixture}"
+        name = f"kernel-return-{fixture}-prelink"
         target = f"{build}/{name}.o"
         arguments = shell_join([
             *kernel_flags, f"-DLEANOS_RETURN_CORRUPTION_MODE={mode}",
@@ -465,17 +466,39 @@ def render_graph(
                 f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF $@.d -c $< -o $@",
             ]
         )
-        return_kernel_names.append(name)
+        return_prelink_kernel_names.append(name)
+        final_name = f"kernel-return-{fixture}"
+        final_target = f"{build}/{final_name}.o"
+        final_arguments = shell_join([
+            *kernel_flags,
+            f"-DLEANOS_RETURN_CORRUPTION_MODE={mode}",
+            f'-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-return-{fixture}.h"',
+        ])
+        lines.extend(
+            [
+                f"{final_target}: {kernel_source} {build}/boot-page-plan-return-{fixture}.h",
+                f"\t$(IMAGE_CC) {final_arguments} -MMD -MP -MF $@.d -c $< -o $@",
+            ]
+        )
+        return_final_kernel_names.append(final_name)
     lines.extend(
         [
             "",
             ".PHONY: variant-kernel-objects final-kernel-objects",
-            "variant-kernel-objects final-kernel-objects: "
+            "variant-kernel-objects: "
             + " ".join(
                 f"{build}/{name}.o"
                 for name in [
                     *(name for name, _ in KERNEL_VARIANTS),
-                    *return_kernel_names,
+                    *return_prelink_kernel_names,
+                ]
+            ),
+            "final-kernel-objects: "
+            + " ".join(
+                f"{build}/{name}.o"
+                for name in [
+                    *(name for name, _ in KERNEL_VARIANTS),
+                    *return_final_kernel_names,
                 ]
             ),
             "",
@@ -484,7 +507,8 @@ def render_graph(
                 f"{build}/{name}.o.d"
                 for name in [
                     *(name for name, _ in KERNEL_VARIANTS),
-                    *return_kernel_names,
+                    *return_prelink_kernel_names,
+                    *return_final_kernel_names,
                 ]
             ),
             "",
@@ -528,7 +552,7 @@ def render_graph(
         map_file = f"{build}/leanos-return-{fixture}-prelink.map"
         inputs = [
             f"{build}/{boot_object}.o",
-            f"{build}/kernel-return-{fixture}.o",
+            f"{build}/kernel-return-{fixture}-prelink.o",
             *common_link_inputs,
         ]
         input_list = " ".join(inputs)
@@ -545,6 +569,37 @@ def render_graph(
             "",
             ".PHONY: return-corruption-prelinks",
             "return-corruption-prelinks: " + " ".join(return_prelink_targets),
+            "",
+        ]
+    )
+    return_final_targets = []
+    for fixture, _mode in return_corruptions:
+        boot_object = (
+            "boot-return-post-validation-qemu"
+            if fixture == "post-validation-mutation"
+            else "boot"
+        )
+        target = f"{build}/leanos-return-{fixture}.elf"
+        map_file = f"{build}/leanos-return-{fixture}.map"
+        inputs = [
+            f"{build}/{boot_object}.o",
+            f"{build}/kernel-return-{fixture}.o",
+            *common_link_inputs,
+        ]
+        input_list = " ".join(inputs)
+        lines.extend(
+            [
+                f"{target}: {input_list} $(IMAGE_LINKER_SCRIPT)",
+                "\tld -m elf_x86_64 -nostdlib --gc-sections --build-id=none "
+                f"-T $(IMAGE_LINKER_SCRIPT) -Map {map_file} -o $@ {input_list}",
+            ]
+        )
+        return_final_targets.append(target)
+    lines.extend(
+        [
+            "",
+            ".PHONY: return-corruption-final-images",
+            "return-corruption-final-images: " + " ".join(return_final_targets),
             "",
         ]
     )

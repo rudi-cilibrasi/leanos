@@ -325,6 +325,10 @@ compute_lean_c_signature {root!s}
                 ),
                 encoding="utf-8",
             )
+            for fixture in ("kernel-selector", "post-validation-mutation"):
+                (build / f"boot-page-plan-return-{fixture}.h").write_text(
+                    "/* test plan */\n", encoding="utf-8"
+                )
 
             subprocess.run(
                 [
@@ -332,7 +336,7 @@ compute_lean_c_signature {root!s}
                     "shared-generated-objects", "variant-kernel-objects",
                     "variant-assembly-objects", "prelink-images",
                     "policy-fixture-images", "return-corruption-prelinks",
-                    "final-image-links",
+                    "final-image-links", "return-corruption-final-images",
                 ],
                 check=True,
                 capture_output=True,
@@ -358,7 +362,13 @@ compute_lean_c_signature {root!s}
             for fixture in ("kernel-selector", "post-validation-mutation"):
                 self.assertTrue((build / f"kernel-return-{fixture}.o").is_file())
                 self.assertTrue(
+                    (build / f"kernel-return-{fixture}-prelink.o").is_file()
+                )
+                self.assertTrue(
                     (build / f"leanos-return-{fixture}-prelink.elf").is_file()
+                )
+                self.assertTrue(
+                    (build / f"leanos-return-{fixture}.elf").is_file()
                 )
             subprocess.run(
                 [
@@ -367,6 +377,7 @@ compute_lean_c_signature {root!s}
                     "variant-assembly-objects", "prelink-images",
                     "policy-fixture-images", "return-corruption-prelinks",
                     "final-kernel-objects", "final-image-links",
+                    "return-corruption-final-images",
                 ],
                 check=True,
             )
@@ -381,7 +392,8 @@ compute_lean_c_signature {root!s}
         self.assertIn("boot-page-plan-fault-stale-translation.h", graph)
         self.assertIn("out/kernel-entry-stack-overflow.o:", graph)
         self.assertIn("boot-page-plan-entry-overflow.h", graph)
-        self.assertIn("variant-kernel-objects final-kernel-objects:", graph)
+        self.assertIn("variant-kernel-objects:", graph)
+        self.assertIn("final-kernel-objects:", graph)
 
     def test_assembly_variant_flags_are_owned_by_the_graph(self) -> None:
         graph = MODULE.render_graph(
@@ -460,6 +472,7 @@ compute_lean_c_signature {root!s}
             Path("out"), "gcc", ["-O2"], Path("/lean"), Path("/src"),
             [("kernel-selector", 1), ("post-validation-mutation", 11)],
         )
+        self.assertIn("out/kernel-return-kernel-selector-prelink.o:", graph)
         self.assertIn("out/kernel-return-kernel-selector.o:", graph)
         self.assertIn("-DLEANOS_RETURN_CORRUPTION_MODE=1", graph)
         regular_rule = next(
@@ -467,6 +480,12 @@ compute_lean_c_signature {root!s}
             if line.startswith("out/leanos-return-kernel-selector-prelink.elf:")
         )
         self.assertIn("out/boot.o", regular_rule)
+        self.assertIn("out/kernel-return-kernel-selector-prelink.o", regular_rule)
+        final_rule = next(
+            line for line in graph.splitlines()
+            if line.startswith("out/leanos-return-kernel-selector.elf:")
+        )
+        self.assertIn("out/kernel-return-kernel-selector.o", final_rule)
         post_validation_rule = next(
             line for line in graph.splitlines()
             if line.startswith(

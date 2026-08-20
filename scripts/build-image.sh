@@ -433,6 +433,12 @@ cmp "$build/boot-page-plan-integer-fault.h" \
   "$build/boot-page-plan-bootstrap32-ud.h"
 ./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap64-nmi-prelink.elf" \
   "$build/boot-page-plan-bootstrap64-nmi.h"
+for spec in "${return_corruptions[@]}"; do
+  IFS=: read -r fixture _mode _reason <<<"$spec"
+  ./scripts/generate-boot-page-plan.sh \
+    "$build/leanos-return-${fixture}-prelink.elf" \
+    "$build/boot-page-plan-return-${fixture}.h"
+done
 # Re-enter the same graph after replacing every stub boot-page plan.  The
 # generated dependency files select only affected kernel variants, and Make
 # recompiles those final-plan objects concurrently instead of serially.
@@ -447,27 +453,10 @@ fi
 # Link the independent final-image family in parallel after generated page-plan
 # dependencies have rebuilt the affected kernel objects.
 make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-  final-image-links
+  final-image-links return-corruption-final-images
 
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture mode _reason <<<"$spec"
-  boot_object="$build/boot.o"
-  if [[ "$fixture" == post-validation-mutation ]]; then
-    boot_object="$build/boot-return-post-validation-qemu.o"
-  fi
-  ./scripts/generate-boot-page-plan.sh "$build/leanos-return-${fixture}-prelink.elf" \
-    "$build/boot-page-plan-return-${fixture}.h"
-  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-    -DLEANOS_RETURN_CORRUPTION_MODE="$mode" \
-    -DLEANOS_BOOT_PAGE_PLAN_HEADER="\"boot-page-plan-return-${fixture}.h\"" \
-    -c boot/kernel.c -o "$build/kernel-return-${fixture}.o"
-  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-    -T boot/linker.ld -Map "$build/leanos-return-${fixture}.map" \
-    -o "$build/leanos-return-${fixture}.elf" "$boot_object" \
-    "$build/kernel-return-${fixture}.o" "$build/KernelTransition.o" \
-    "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-    "$build/BootAllocation.o" "$build/Interrupt.o" "$build/InterruptEntry.o" \
-    "$build/BlockingIPC.o" "$build/CapabilityReuse.o" "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
   ./scripts/generate-boot-page-plan.sh "$build/leanos-return-${fixture}.elf" \
     "$build/boot-page-plan-return-${fixture}.final.h"
   cmp "$build/boot-page-plan-return-${fixture}.h" \
