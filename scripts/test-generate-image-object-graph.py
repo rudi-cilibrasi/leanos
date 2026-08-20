@@ -239,6 +239,48 @@ build={root!s}/build
                 counter.read_text(encoding="utf-8"), "call\ncall\ncall\n"
             )
 
+    def test_fixture_suite_cache_reuses_only_matching_inputs(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        helpers = "compute_check_signature() {" + wrapper.split(
+            "compute_check_signature() {", 1
+        )[1].split("\ncompute_iso_signature() {", 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            counter = root / "calls"
+            output = root / "fixture.log"
+            input_file = root / "image.elf"
+            input_file.write_text("elf-v1\n", encoding="utf-8")
+            check = root / "fixture-check.sh"
+            check.write_text(
+                "#!/bin/sh\n" f"echo call >> {counter!s}\n" "echo fixture-ok\n",
+                encoding="utf-8",
+            )
+            check.chmod(0o755)
+
+            def run(signature: str, times: int = 1) -> None:
+                calls = "\n".join(
+                    f"run_cached_fixture_check {output!s} "
+                    f"{check!s} {input_file!s}"
+                    for _ in range(times)
+                )
+                shell = f"""\
+set -euo pipefail
+validation_tool_signature={signature}
+{helpers}
+{calls}
+"""
+                subprocess.run(["bash", "-c", shell], check=True)
+
+            run("tools-v1", times=2)
+            self.assertEqual(counter.read_text(encoding="utf-8"), "call\n")
+            input_file.write_text("elf-v2\n", encoding="utf-8")
+            run("tools-v1")
+            self.assertEqual(counter.read_text(encoding="utf-8"), "call\ncall\n")
+            run("tools-v2")
+            self.assertEqual(
+                counter.read_text(encoding="utf-8"), "call\ncall\ncall\n"
+            )
+
     def test_entry_policy_checks_use_bounded_parallel_batch(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(

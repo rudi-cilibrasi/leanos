@@ -132,6 +132,26 @@ record_check_signature() {
 }
 export -f compute_check_signature cached_check_is_current record_check_signature
 
+run_cached_fixture_check() {
+  local output="$1"
+  shift
+  local signature
+  local staged="${output}.tmp.$$"
+  signature="$(compute_check_signature fixture-check "$@")"
+  if cached_check_is_current "$output" "$signature"; then
+    cat "$output"
+    return 0
+  fi
+  if ! "$@" > "$staged" 2>&1; then
+    cat "$staged" >&2
+    rm -f "$staged"
+    return 1
+  fi
+  mv "$staged" "$output"
+  record_check_signature "$output" "$signature"
+  cat "$output"
+}
+
 compute_iso_signature() {
   local staging_root="$1"
   shift
@@ -1300,15 +1320,16 @@ fi
 for report in "${entry_policy_reports[@]}"; do
   cat "$report"
 done
-./scripts/test-entry-policy.sh "$build/leanos.elf" \
-  "$build/leanos-fault-nx-execute.elf" | tee "$build/entry-policy-fixtures.log"
-./scripts/test-runtime-invalidation-policy.sh "$build/leanos.elf" \
-  | tee "$build/runtime-invalidation-policy-fixtures.log"
-./scripts/test-vtd-mmio-policy.sh "$build/leanos.elf" \
-  | tee "$build/vtd-mmio-policy-fixtures.log"
-./scripts/test-frame-budget-invalidation-policy.sh \
-  "$build/leanos-frame-budget.elf" \
-  | tee "$build/frame-budget-invalidation-policy-fixtures.log"
+run_cached_fixture_check "$build/entry-policy-fixtures.log" \
+  ./scripts/test-entry-policy.sh "$build/leanos.elf" \
+  "$build/leanos-fault-nx-execute.elf"
+run_cached_fixture_check "$build/runtime-invalidation-policy-fixtures.log" \
+  ./scripts/test-runtime-invalidation-policy.sh "$build/leanos.elf"
+run_cached_fixture_check "$build/vtd-mmio-policy-fixtures.log" \
+  ./scripts/test-vtd-mmio-policy.sh "$build/leanos.elf"
+run_cached_fixture_check "$build/frame-budget-invalidation-policy-fixtures.log" \
+  ./scripts/test-frame-budget-invalidation-policy.sh \
+  "$build/leanos-frame-budget.elf"
 source ./scripts/build-assigned-edu-image.sh
 direct_port_report="$build/direct-port-sites-report.txt"
 : > "$direct_port_report"
