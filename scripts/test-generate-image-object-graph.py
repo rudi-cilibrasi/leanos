@@ -79,11 +79,31 @@ generate_lean_c {source!s} {output!s}
                 encoding="utf-8",
             )
             tool.chmod(0o755)
+            xorriso = root / "xorriso"
+            mformat = root / "mformat"
+            grub_mkimage = root / "grub-mkimage"
+            grub_mkstandalone = root / "grub-mkstandalone"
+            for subordinate in (
+                xorriso,
+                mformat,
+                grub_mkimage,
+                grub_mkstandalone,
+            ):
+                subordinate.write_text("tool-v1\n", encoding="utf-8")
+            modules = root / "grub-modules"
+            modules.mkdir()
+            module = modules / "normal.mod"
+            module.write_text("module-v1\n", encoding="utf-8")
             output = root / "image.iso"
             shell = f"""\
 set -euo pipefail
 repo_root={root!s}
 grub_mkrescue_path={tool!s}
+xorriso_path={xorriso!s}
+mformat_path={mformat!s}
+grub_mkimage_path={grub_mkimage!s}
+grub_mkstandalone_path={grub_mkstandalone!s}
+grub_module_root={modules!s}
 {compute}
 {build}
 grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
@@ -96,6 +116,20 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
             subprocess.run(["bash", "-c", shell], check=True)
             self.assertEqual(
                 log.read_text(encoding="utf-8").splitlines(), ["call", "call"]
+            )
+
+            xorriso.write_text("tool-v2\n", encoding="utf-8")
+            subprocess.run(["bash", "-c", shell], check=True)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                ["call", "call", "call"],
+            )
+
+            module.write_text("module-v2\n", encoding="utf-8")
+            subprocess.run(["bash", "-c", shell], check=True)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                ["call", "call", "call", "call"],
             )
 
     def test_image_policy_checks_use_bounded_parallel_batch(self) -> None:

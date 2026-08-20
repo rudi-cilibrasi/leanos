@@ -51,6 +51,8 @@ require_tool ld "install Ubuntu package binutils=2.42-4ubuntu2.10"
 require_tool nm "install Ubuntu package binutils=2.42-4ubuntu2.10"
 require_tool grub-file "install Ubuntu package grub-common=2.12-1ubuntu7.3"
 require_tool grub-mkrescue "install Ubuntu package grub-common=2.12-1ubuntu7.3"
+require_tool grub-mkimage "install Ubuntu package grub-common=2.12-1ubuntu7.3"
+require_tool grub-mkstandalone "install Ubuntu package grub-common=2.12-1ubuntu7.3"
 require_tool mformat "install Ubuntu package mtools=4.0.43-1build1"
 require_tool xorriso "install Ubuntu package xorriso=1:1.5.6-1.1ubuntu3"
 if [[ ! -d /usr/lib/grub/i386-pc ]]; then
@@ -58,6 +60,11 @@ if [[ ! -d /usr/lib/grub/i386-pc ]]; then
   exit 1
 fi
 grub_mkrescue_path="$(command -v grub-mkrescue)"
+xorriso_path="$(command -v xorriso)"
+mformat_path="$(command -v mformat)"
+grub_mkimage_path="$(command -v grub-mkimage)"
+grub_mkstandalone_path="$(command -v grub-mkstandalone)"
+grub_module_root=/usr/lib/grub/i386-pc
 
 compute_iso_signature() {
   local staging_root="$1"
@@ -68,8 +75,17 @@ compute_iso_signature() {
       printf '%s\0' "${input#"$staging_root"/}"
       sha256sum "$input"
     done < <(find "$staging_root" -type f -print0 | sort -z)
-    sha256sum "$grub_mkrescue_path"
+    sha256sum \
+      "$grub_mkrescue_path" \
+      "$xorriso_path" \
+      "$mformat_path" \
+      "$grub_mkimage_path" \
+      "$grub_mkstandalone_path"
     LC_ALL=C "$grub_mkrescue_path" --version
+    while IFS= read -r -d '' input; do
+      printf '%s\0' "${input#"$grub_module_root"/}"
+      sha256sum "$input"
+    done < <(find "$grub_module_root" -type f -print0 | sort -z)
     printf '%s\0' "$@"
   } | sha256sum | awk '{print $1}'
 }
