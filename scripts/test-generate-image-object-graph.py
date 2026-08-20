@@ -47,9 +47,56 @@ generate_lean_c {source!s} {output!s}
     def test_build_wrapper_preserves_graph_owned_outputs(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn('rm -rf "$build"\n', wrapper)
+        self.assertNotIn("-type d -name 'iso*'", wrapper)
         self.assertIn('ensure_boot_plan_stub "$build/boot-page-plan.h"', wrapper)
         self.assertIn('mktemp -d "$build/.lean-c.XXXXXX"', wrapper)
         self.assertIn('graph_signature="$build/generated-image-objects.sha256"', wrapper)
+        self.assertIn('signature_file="${output}.inputs.sha256"', wrapper)
+
+    def test_iso_cache_tracks_staged_bytes_and_packaging_tool(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        compute = "compute_iso_signature() {" + wrapper.split(
+            "compute_iso_signature() {", 1
+        )[1].split("\n}\n\n# Preserve a deterministic ISO", 1)[0] + "\n}"
+        build = "grub-mkrescue() {" + wrapper.split(
+            "grub-mkrescue() {", 1
+        )[1].split("\n}\n\nbuild=", 1)[0] + "\n}"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            staging = root / "iso"
+            (staging / "boot").mkdir(parents=True)
+            staged = staging / "boot" / "leanos.elf"
+            staged.write_text("first\n", encoding="utf-8")
+            tool = root / "grub-mkrescue"
+            log = root / "calls"
+            tool.write_text(
+                "#!/bin/sh\n"
+                "if [ \"${1:-}\" = --version ]; then echo grub-test-v1; exit 0; fi\n"
+                f"echo call >> {log!s}\n"
+                "while [ \"$1\" != -o ]; do shift; done\n"
+                "shift\n"
+                "printf 'iso\\n' > \"$1\"\n",
+                encoding="utf-8",
+            )
+            tool.chmod(0o755)
+            output = root / "image.iso"
+            shell = f"""\
+set -euo pipefail
+repo_root={root!s}
+grub_mkrescue_path={tool!s}
+{compute}
+{build}
+grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
+grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
+"""
+            subprocess.run(["bash", "-c", shell], check=True)
+            self.assertEqual(log.read_text(encoding="utf-8").splitlines(), ["call"])
+
+            staged.write_text("second\n", encoding="utf-8")
+            subprocess.run(["bash", "-c", shell], check=True)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(), ["call", "call"]
+            )
 
     def test_graph_signature_changes_with_tool_identity(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
@@ -405,6 +452,7 @@ compute_lean_c_signature {root!s}
         graph = MODULE.render_graph(
             Path("out"), "gcc", ["-O2"], Path("/lean"), Path("/src")
         )
+        graph_lines = graph.splitlines()
         self.assertIn("out/kernel-preemption.o out/kernel-preemption.o.d &:", graph)
         self.assertIn("-DLEANOS_PREEMPTION_SCENARIO=1", graph)
         self.assertIn(
@@ -419,6 +467,17 @@ compute_lean_c_signature {root!s}
             graph,
         )
         self.assertIn("boot-page-plan-entry-overflow.h", graph)
+        for variant, plan in (
+            ("kernel-nmi", "boot-page-plan-nmi.h"),
+            ("kernel-bootstrap32-ud", "boot-page-plan-bootstrap32-ud.h"),
+            ("kernel-bootstrap64-nmi", "boot-page-plan-bootstrap64-nmi.h"),
+        ):
+            command = next(
+                graph_lines[index + 1]
+                for index, line in enumerate(graph_lines)
+                if line.startswith(f"out/{variant}.o out/{variant}.o.d &:")
+            )
+            self.assertIn(f'BOOT_PAGE_PLAN_HEADER="{plan}"', command)
         self.assertIn("variant-kernel-objects:", graph)
         self.assertIn("final-kernel-objects:", graph)
 

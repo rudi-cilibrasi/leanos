@@ -57,6 +57,55 @@ if [[ ! -d /usr/lib/grub/i386-pc ]]; then
   echo "error: missing GRUB BIOS modules; install Ubuntu package grub-pc-bin=2.12-1ubuntu7.3" >&2
   exit 1
 fi
+grub_mkrescue_path="$(command -v grub-mkrescue)"
+
+compute_iso_signature() {
+  local staging_root="$1"
+  shift
+  local input
+  {
+    while IFS= read -r -d '' input; do
+      printf '%s\0' "${input#"$staging_root"/}"
+      sha256sum "$input"
+    done < <(find "$staging_root" -type f -print0 | sort -z)
+    sha256sum "$grub_mkrescue_path"
+    LC_ALL=C "$grub_mkrescue_path" --version
+    printf '%s\0' "$@"
+  } | sha256sum | awk '{print $1}'
+}
+
+# Preserve a deterministic ISO when neither its staged bytes, its command line,
+# nor the packaging tool changed.  The wrapper still refreshes every staging
+# input, so changed ELFs and configuration invalidate only their own images.
+grub-mkrescue() {
+  local -a arguments=("$@")
+  local output=""
+  local staging_root=""
+  local index
+  for ((index = 0; index < ${#arguments[@]}; index += 1)); do
+    if [[ "${arguments[$index]}" == -o ]]; then
+      output="${arguments[$((index + 1))]:-}"
+      staging_root="${arguments[$((index + 2))]:-}"
+      break
+    fi
+  done
+  [[ -n "$output" && -d "$staging_root" ]] || {
+    echo "error: unsupported grub-mkrescue invocation" >&2
+    return 1
+  }
+
+  local signature_file="${output}.inputs.sha256"
+  local current_signature
+  current_signature="$(compute_iso_signature "$staging_root" "$@")"
+  if [[ -f "$output" && -f "$signature_file" ]] &&
+      [[ "$(<"$signature_file")" == "$current_signature" ]]; then
+    echo "reusing unchanged ISO ${output#"$repo_root"/}"
+    return 0
+  fi
+
+  "$grub_mkrescue_path" "$@"
+  printf '%s\n' "$current_signature" > "$signature_file"
+}
 
 build="$repo_root/build/boot"
 iso_root="$build/iso"
@@ -129,11 +178,9 @@ if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 mkdir -p "$build"
-# Preserve graph-owned objects and dependency files across invocations so Make
-# can perform a real incremental rebuild.  ISO staging trees are imperative
-# packaging inputs, so recreate only those rather than deleting the graph.
-find "$build" -mindepth 1 -maxdepth 1 -type d -name 'iso*' \
-  -exec rm -rf -- {} +
+# Preserve graph-owned objects, dependency files, and ISO staging trees across
+# invocations. Re-copying the three deterministic staging inputs below keeps
+# their contents current while allowing unchanged packaged images to be reused.
 mkdir -p "$iso_root/boot/grub" "$preemption_iso_root/boot/grub" \
   "$frame_budget_iso_root/boot/grub" \
   "$fault_containment_iso_root/boot/grub" \

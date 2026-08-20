@@ -111,9 +111,18 @@ KERNEL_VARIANTS = (
         "-DLEANOS_ENTRY_ADVERSARIAL=1",
         '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-entry-adversarial.h"',
     )),
-    ("kernel-nmi", ("-DLEANOS_NMI_PROBE=1",)),
-    ("kernel-bootstrap32-ud", ("-DLEANOS_ENTRY_HIGH_WATER=1",)),
-    ("kernel-bootstrap64-nmi", ("-DLEANOS_ENTRY_HIGH_WATER=1",)),
+    ("kernel-nmi", (
+        "-DLEANOS_NMI_PROBE=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-nmi.h"',
+    )),
+    ("kernel-bootstrap32-ud", (
+        "-DLEANOS_ENTRY_HIGH_WATER=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-bootstrap32-ud.h"',
+    )),
+    ("kernel-bootstrap64-nmi", (
+        "-DLEANOS_ENTRY_HIGH_WATER=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-bootstrap64-nmi.h"',
+    )),
     ("kernel-direct-port", (
         "-DLEANOS_DIRECT_PORT_CONTAINMENT_SCENARIO=1",
         '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-direct-port.h"',
