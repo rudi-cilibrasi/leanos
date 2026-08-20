@@ -115,6 +115,23 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
             'echo "error: one or more image policy checks failed"', wrapper
         )
 
+    def test_entry_policy_checks_use_bounded_parallel_batch(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('export -f run_entry_policy_check', wrapper)
+        self.assertIn('xargs -0 -r -n 5 -P "$policy_jobs"', wrapper)
+        self.assertIn(
+            'queue_entry_policy canonical "$build/leanos.elf"', wrapper
+        )
+        self.assertIn(
+            'queue_entry_policy "fast-entry-$mechanism"', wrapper
+        )
+        self.assertIn(
+            'queue_entry_policy fault-stale-translation', wrapper
+        )
+        self.assertIn(
+            'echo "error: one or more entry policy checks failed"', wrapper
+        )
+
     def test_graph_signature_changes_with_tool_identity(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         function = "compute_graph_signature() {" + wrapper.split(

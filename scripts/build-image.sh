@@ -123,6 +123,27 @@ run_image_policy_check() {
 }
 export -f run_image_policy_check
 
+run_entry_policy_check() {
+  local key="$1"
+  local elf="$2"
+  local report="$3"
+  local environment_name="$4"
+  local environment_value="$5"
+  local status=0
+  : > "$report"
+  if [[ -n "$environment_name" ]]; then
+    env "$environment_name=$environment_value" \
+      ./scripts/check-entry-policy.sh "$elf" >"$report" 2>&1 || status=$?
+  else
+    ./scripts/check-entry-policy.sh "$elf" >"$report" 2>&1 || status=$?
+  fi
+  if ((status != 0)); then
+    printf 'error: entry policy check failed: %s\n' "$key" >> "$report"
+    return "$status"
+  fi
+}
+export -f run_entry_policy_check
+
 build="$repo_root/build/boot"
 iso_root="$build/iso"
 preemption_iso_root="$build/iso-preemption"
@@ -1025,11 +1046,6 @@ for key in "${policy_keys[@]}"; do
 done
 
 ./scripts/check-frame-budget-machine.sh "$build/leanos-frame-budget.elf"
-for mechanism in syscall sysenter; do
-  LEANOS_FAST_ENTRY_PROBE="$mechanism" \
-    ./scripts/check-entry-policy.sh "$build/leanos-fast-entry-${mechanism}.elf" \
-    | tee "$build/fast-entry-${mechanism}-policy-report.txt"
-done
 ./scripts/check-nmi-image-policy.sh "$build/leanos-nmi.elf"
 cp "$build/leanos-nmi.elf" "$build/leanos-nmi-cpl3.elf"
 cp "$build/leanos-nmi.map" "$build/leanos-nmi-cpl3.map"
@@ -1087,23 +1103,60 @@ done
   "$build/leanos-extended-state-sse.elf" \
   "$build/leanos-extended-state-sse2.elf" \
   "$build/leanos-extended-state-avx.elf"
-./scripts/check-entry-policy.sh "$build/leanos.elf" | tee "$build/entry-policy-report.txt"
-LEANOS_PAGE_FAULT_PROBE=supervisor-read \
-  ./scripts/check-entry-policy.sh "$build/leanos-fault-containment.elf" \
-  | tee "$build/fault-containment-policy-report.txt"
-LEANOS_PAGE_FAULT_PROBE=readonly-write \
-  ./scripts/check-entry-policy.sh "$build/leanos-fault-readonly-write.elf" \
-  | tee "$build/fault-readonly-write-policy-report.txt"
-LEANOS_PAGE_FAULT_PROBE=nx-execute \
-  ./scripts/check-entry-policy.sh "$build/leanos-fault-nx-execute.elf" \
-  | tee "$build/fault-nx-execute-policy-report.txt"
-for probe in "${fault_fatal_probes[@]}"; do
-  LEANOS_PAGE_FAULT_FATAL_PROBE="$probe" \
-    ./scripts/check-entry-policy.sh "$build/leanos-fault-${probe}.elf" \
-    | tee "$build/fault-${probe}-policy-report.txt"
+
+entry_policy_task_file="$build/entry-policy-tasks.nul"
+: > "$entry_policy_task_file"
+entry_policy_reports=()
+queue_entry_policy() {
+  local key="$1"
+  local elf="$2"
+  local report="$3"
+  local environment_name="${4:-}"
+  local environment_value="${5:-}"
+  entry_policy_reports+=("$report")
+  printf '%s\0%s\0%s\0%s\0%s\0' \
+    "$key" "$elf" "$report" "$environment_name" "$environment_value" \
+    >> "$entry_policy_task_file"
+}
+
+queue_entry_policy canonical "$build/leanos.elf" \
+  "$build/entry-policy-report.txt"
+for mechanism in syscall sysenter; do
+  queue_entry_policy "fast-entry-$mechanism" \
+    "$build/leanos-fast-entry-${mechanism}.elf" \
+    "$build/fast-entry-${mechanism}-policy-report.txt" \
+    LEANOS_FAST_ENTRY_PROBE "$mechanism"
 done
-./scripts/check-entry-policy.sh "$build/leanos-fault-stale-translation.elf" \
-  | tee "$build/fault-stale-translation-policy-report.txt"
+queue_entry_policy fault-containment "$build/leanos-fault-containment.elf" \
+  "$build/fault-containment-policy-report.txt" LEANOS_PAGE_FAULT_PROBE \
+  supervisor-read
+queue_entry_policy fault-readonly-write \
+  "$build/leanos-fault-readonly-write.elf" \
+  "$build/fault-readonly-write-policy-report.txt" LEANOS_PAGE_FAULT_PROBE \
+  readonly-write
+queue_entry_policy fault-nx-execute "$build/leanos-fault-nx-execute.elf" \
+  "$build/fault-nx-execute-policy-report.txt" LEANOS_PAGE_FAULT_PROBE \
+  nx-execute
+for probe in "${fault_fatal_probes[@]}"; do
+  queue_entry_policy "fault-$probe" "$build/leanos-fault-${probe}.elf" \
+    "$build/fault-${probe}-policy-report.txt" LEANOS_PAGE_FAULT_FATAL_PROBE \
+    "$probe"
+done
+queue_entry_policy fault-stale-translation \
+  "$build/leanos-fault-stale-translation.elf" \
+  "$build/fault-stale-translation-policy-report.txt"
+
+if ! xargs -0 -r -n 5 -P "$policy_jobs" bash -c \
+    'run_entry_policy_check "$@"' _ < "$entry_policy_task_file"; then
+  for report in "${entry_policy_reports[@]}"; do
+    [[ -f "$report" ]] && cat "$report"
+  done
+  echo "error: one or more entry policy checks failed" >&2
+  exit 1
+fi
+for report in "${entry_policy_reports[@]}"; do
+  cat "$report"
+done
 ./scripts/test-entry-policy.sh "$build/leanos.elf" \
   "$build/leanos-fault-nx-execute.elf" | tee "$build/entry-policy-fixtures.log"
 ./scripts/test-runtime-invalidation-policy.sh "$build/leanos.elf" \
