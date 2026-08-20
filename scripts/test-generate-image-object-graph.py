@@ -677,11 +677,31 @@ compute_lean_c_signature {root!s}
                 check=True,
             )
 
+            # A timestamp-only source touch must not cascade into relinking
+            # byte-identical objects and every downstream image artifact.
+            kernel_object = build / "kernel.o"
+            original_kernel_object = kernel_object.read_bytes()
+            original_kernel_mtime = kernel_object.stat().st_mtime_ns
+            kernel_source = source / "boot/kernel.c"
+            os.utime(
+                kernel_source,
+                ns=(
+                    kernel_source.stat().st_atime_ns,
+                    original_kernel_mtime + 1_000_000_000,
+                ),
+            )
+            subprocess.run(
+                ["make", "-f", str(graph), "-j2", str(kernel_object)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(kernel_object.read_bytes(), original_kernel_object)
+            self.assertEqual(kernel_object.stat().st_mtime_ns, original_kernel_mtime)
+
             # A retained object without its compiler dependency file is not a
             # trustworthy cache entry: the graph must rebuild it before a
             # changed included header can be hidden from Make.
-            kernel_object = build / "kernel.o"
-            original_kernel_object = kernel_object.read_bytes()
             (build / "kernel.o.d").unlink()
             header.write_text("#define TEST_VALUE 1\n", encoding="utf-8")
             subprocess.run(

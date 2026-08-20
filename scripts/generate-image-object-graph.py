@@ -461,7 +461,15 @@ def render_graph(
         lines.extend(
             [
                 f"{target} {depfile} &: {kernel_source}",
-                f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF {depfile} -c $< -o {target}",
+                "\t@set -e; "
+                f"tmp_target={target}.tmp; tmp_dep={depfile}.tmp; "
+                "trap 'rm -f \"$$tmp_target\" \"$$tmp_dep\"' EXIT; "
+                f"$(IMAGE_CC) {arguments} -MMD -MP -MF \"$$tmp_dep\" "
+                f"-MT {target} -MT {depfile} -c $< -o \"$$tmp_target\"; "
+                f"if [ -f {target} ] && [ -f {depfile} ] && "
+                f"cmp -s \"$$tmp_target\" {target} && "
+                f"cmp -s \"$$tmp_dep\" {depfile}; then :; else "
+                f"mv \"$$tmp_target\" {target}; mv \"$$tmp_dep\" {depfile}; fi",
             ]
         )
     return_prelink_kernel_names = []
@@ -476,7 +484,15 @@ def render_graph(
         lines.extend(
             [
                 f"{target} {depfile} &: {kernel_source}",
-                f"\t$(IMAGE_CC) {arguments} -MMD -MP -MF {depfile} -c $< -o {target}",
+                "\t@set -e; "
+                f"tmp_target={target}.tmp; tmp_dep={depfile}.tmp; "
+                "trap 'rm -f \"$$tmp_target\" \"$$tmp_dep\"' EXIT; "
+                f"$(IMAGE_CC) {arguments} -MMD -MP -MF \"$$tmp_dep\" "
+                f"-MT {target} -MT {depfile} -c $< -o \"$$tmp_target\"; "
+                f"if [ -f {target} ] && [ -f {depfile} ] && "
+                f"cmp -s \"$$tmp_target\" {target} && "
+                f"cmp -s \"$$tmp_dep\" {depfile}; then :; else "
+                f"mv \"$$tmp_target\" {target}; mv \"$$tmp_dep\" {depfile}; fi",
             ]
         )
         return_prelink_kernel_names.append(name)
@@ -491,7 +507,16 @@ def render_graph(
         lines.extend(
             [
                 f"{final_target} {final_depfile} &: {kernel_source} {build}/boot-page-plan-return-{fixture}.h",
-                f"\t$(IMAGE_CC) {final_arguments} -MMD -MP -MF {final_depfile} -c $< -o {final_target}",
+                "\t@set -e; "
+                f"tmp_target={final_target}.tmp; tmp_dep={final_depfile}.tmp; "
+                "trap 'rm -f \"$$tmp_target\" \"$$tmp_dep\"' EXIT; "
+                f"$(IMAGE_CC) {final_arguments} -MMD -MP -MF \"$$tmp_dep\" "
+                f"-MT {final_target} -MT {final_depfile} -c $< -o \"$$tmp_target\"; "
+                f"if [ -f {final_target} ] && [ -f {final_depfile} ] && "
+                f"cmp -s \"$$tmp_target\" {final_target} && "
+                f"cmp -s \"$$tmp_dep\" {final_depfile}; then :; else "
+                f"mv \"$$tmp_target\" {final_target}; "
+                f"mv \"$$tmp_dep\" {final_depfile}; fi",
             ]
         )
         return_final_kernel_names.append(final_name)
