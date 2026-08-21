@@ -199,6 +199,16 @@ grub-mkrescue() {
   printf '%s\n' "$current_signature" > "$signature_file"
 }
 
+run_iso_packaging() {
+  local output="$1"
+  local staging_root="$2"
+  grub-mkrescue -d /usr/lib/grub/i386-pc -o "$output" "$staging_root" -- \
+    -volume_date uuid 2000010100000000 \
+    -volume_date all_file_dates 2000010100000000 >/dev/null
+}
+export repo_root iso_packaging_signature grub_mkrescue_path
+export -f compute_iso_signature grub-mkrescue run_iso_packaging
+
 run_image_policy_check() {
   local key="$1"
   local elf="$2"
@@ -1671,131 +1681,83 @@ for spec in "${return_corruptions[@]}"; do
   cp "$build/SOURCE_REVISION" "$fixture_root/boot/SOURCE_REVISION"
 done
 # BIOS-only output avoids GRUB's nondeterministic FAT/EFI image. A fixed ISO
-# UUID and file dates make repeated builds independent of wall-clock time.
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64.iso" "$iso_root" -- \
-  -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-malformed-handoff.iso" \
-  "$malformed_handoff_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-projection-authority-mutation.iso" \
-  "$projection_authority_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-raw-selection-authority-mutation.iso" \
-  "$raw_selection_authority_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-preemption.iso" "$preemption_iso_root" -- \
-  -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-frame-budget.iso" "$frame_budget_iso_root" -- \
-  -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-fault-containment.iso" \
-  "$fault_containment_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-fault-readonly-write.iso" \
-  "$fault_readonly_write_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-fault-nx-execute.iso" \
-  "$fault_nx_execute_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
+# UUID and file dates make repeated builds independent of wall-clock time. The
+# staging roots and outputs are disjoint, so package the image family with the
+# same bounded worker count used by the independent validation batches.
+iso_task_file="$build/iso-packaging-tasks.nul"
+: > "$iso_task_file"
+queue_iso() {
+  printf '%s\0%s\0' "$1" "$2" >> "$iso_task_file"
+}
+queue_iso "$build/leanos-${version}-x86_64.iso" "$iso_root"
+queue_iso "$build/leanos-${version}-x86_64-malformed-handoff.iso" \
+  "$malformed_handoff_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-projection-authority-mutation.iso" \
+  "$projection_authority_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-raw-selection-authority-mutation.iso" \
+  "$raw_selection_authority_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-preemption.iso" \
+  "$preemption_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-frame-budget.iso" \
+  "$frame_budget_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-fault-containment.iso" \
+  "$fault_containment_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-fault-readonly-write.iso" \
+  "$fault_readonly_write_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-fault-nx-execute.iso" \
+  "$fault_nx_execute_iso_root"
 for probe in "${fault_image_probes[@]}"; do
-  grub-mkrescue -d /usr/lib/grub/i386-pc \
-    -o "$build/leanos-${version}-x86_64-fault-${probe}.iso" \
-    "$build/iso-fault-${probe}" -- -volume_date uuid 2000010100000000 \
-    -volume_date all_file_dates 2000010100000000 >/dev/null
+  queue_iso "$build/leanos-${version}-x86_64-fault-${probe}.iso" \
+    "$build/iso-fault-${probe}"
 done
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-extended-state.iso" \
-  "$extended_state_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-extended-state-mmx.iso" \
-  "$extended_state_mmx_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-extended-state-sse.iso" \
-  "$extended_state_sse_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-extended-state-sse2.iso" \
-  "$extended_state_sse2_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-extended-state-avx.iso" \
-  "$extended_state_avx_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-extended-state-peer-pke.iso" \
-  "$extended_state_peer_pke_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
+queue_iso "$build/leanos-${version}-x86_64-extended-state.iso" \
+  "$extended_state_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-extended-state-mmx.iso" \
+  "$extended_state_mmx_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-extended-state-sse.iso" \
+  "$extended_state_sse_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-extended-state-sse2.iso" \
+  "$extended_state_sse2_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-extended-state-avx.iso" \
+  "$extended_state_avx_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-extended-state-peer-pke.iso" \
+  "$extended_state_peer_pke_iso_root"
 for mechanism in syscall sysenter; do
-  grub-mkrescue -d /usr/lib/grub/i386-pc \
-    -o "$build/leanos-${version}-x86_64-fast-entry-${mechanism}.iso" \
-    "$build/iso-fast-entry-${mechanism}" -- -volume_date uuid 2000010100000000 \
-    -volume_date all_file_dates 2000010100000000 >/dev/null
+  queue_iso "$build/leanos-${version}-x86_64-fast-entry-${mechanism}.iso" \
+    "$build/iso-fast-entry-${mechanism}"
 done
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-double-fault.iso" "$df_iso_root" -- \
-  -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
-  "$df_negative_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-entry-stack-overflow.iso" \
-  "$entry_overflow_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-entry-adversarial.iso" \
-  "$entry_adversarial_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-nmi.iso" "$nmi_iso_root" -- \
-  -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-nmi-cpl3.iso" "$nmi_cpl3_iso_root" -- \
-  -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-bootstrap32-ud.iso" \
-  "$bootstrap32_ud_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
-grub-mkrescue -d /usr/lib/grub/i386-pc \
-  -o "$build/leanos-${version}-x86_64-bootstrap64-nmi.iso" \
-  "$bootstrap64_nmi_iso_root" -- -volume_date uuid 2000010100000000 \
-  -volume_date all_file_dates 2000010100000000 >/dev/null
+queue_iso "$build/leanos-${version}-x86_64-double-fault.iso" "$df_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-double-fault-guard-mapped.iso" \
+  "$df_negative_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-entry-stack-overflow.iso" \
+  "$entry_overflow_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-entry-adversarial.iso" \
+  "$entry_adversarial_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-nmi.iso" "$nmi_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-nmi-cpl3.iso" \
+  "$nmi_cpl3_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-bootstrap32-ud.iso" \
+  "$bootstrap32_ud_iso_root"
+queue_iso "$build/leanos-${version}-x86_64-bootstrap64-nmi.iso" \
+  "$bootstrap64_nmi_iso_root"
 for probe in "${direct_port_probes[@]}"; do
-  grub-mkrescue -d /usr/lib/grub/i386-pc \
-    -o "$build/leanos-${version}-x86_64-direct-port-${probe}.iso" \
-    "$build/iso-direct-port-${probe}" -- -volume_date uuid 2000010100000000 \
-    -volume_date all_file_dates 2000010100000000 >/dev/null
+  queue_iso "$build/leanos-${version}-x86_64-direct-port-${probe}.iso" \
+    "$build/iso-direct-port-${probe}"
 done
 for probe in "${integer_fault_probes[@]}"; do
-  grub-mkrescue -d /usr/lib/grub/i386-pc \
-    -o "$build/leanos-${version}-x86_64-${probe}.iso" \
-    "$build/iso-${probe}" -- -volume_date uuid 2000010100000000 \
-    -volume_date all_file_dates 2000010100000000 >/dev/null
+  queue_iso "$build/leanos-${version}-x86_64-${probe}.iso" \
+    "$build/iso-${probe}"
 done
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
-  grub-mkrescue -d /usr/lib/grub/i386-pc \
-    -o "$build/leanos-${version}-x86_64-return-${fixture}.iso" \
-    "$build/iso-return-${fixture}" -- \
-    -volume_date uuid 2000010100000000 \
-    -volume_date all_file_dates 2000010100000000 >/dev/null
+  queue_iso "$build/leanos-${version}-x86_64-return-${fixture}.iso" \
+    "$build/iso-return-${fixture}"
 done
+if ! xargs -0 -r -n 2 -P "$policy_jobs" bash -c \
+    'run_iso_packaging "$@"' _ < "$iso_task_file"; then
+  echo "error: one or more deterministic ISO packages failed" >&2
+  exit 1
+fi
 sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-assigned-edu.iso" \
   "$build/leanos-assigned-edu.elf" \

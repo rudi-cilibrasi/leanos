@@ -148,7 +148,7 @@ generate_lean_c {source!s} {output!s}
         )[1].split("\n}\n\n# Preserve a deterministic ISO", 1)[0] + "\n}"
         build = "grub-mkrescue() {" + wrapper.split(
             "grub-mkrescue() {", 1
-        )[1].split("\n}\n\nrun_image_policy_check", 1)[0] + "\n}"
+        )[1].split("\n}\n\nrun_iso_packaging", 1)[0] + "\n}"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             staging = root / "iso"
@@ -221,6 +221,28 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
                 log.read_text(encoding="utf-8").splitlines(),
                 ["call", "call", "call", "call"],
             )
+
+    def test_iso_family_uses_bounded_parallel_packaging(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("run_iso_packaging() {", wrapper)
+        self.assertIn('iso_task_file="$build/iso-packaging-tasks.nul"', wrapper)
+        self.assertIn('xargs -0 -r -n 2 -P "$policy_jobs"', wrapper)
+        self.assertIn(
+            "export -f compute_iso_signature grub-mkrescue run_iso_packaging",
+            wrapper,
+        )
+        for output in (
+            "x86_64.iso",
+            "x86_64-fault-containment.iso",
+            "x86_64-extended-state.iso",
+            "x86_64-bootstrap64-nmi.iso",
+            "x86_64-direct-port-${probe}.iso",
+            "x86_64-return-${fixture}.iso",
+        ):
+            self.assertIn(output, wrapper)
+        self.assertIn(
+            'echo "error: one or more deterministic ISO packages failed"', wrapper
+        )
 
     def test_image_policy_checks_use_bounded_parallel_batch(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
