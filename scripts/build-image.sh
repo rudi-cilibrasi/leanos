@@ -565,7 +565,10 @@ if [[ -f "$kernel_source_signature" ]] &&
   # source touch. The retained content signature proves the source bytes are
   # unchanged, so preserve the cached objects and continue tracking headers
   # through their generated dependency files.
-  kernel_source_make_args=(-o boot/kernel.c)
+  # The generated graph records the source as an absolute prerequisite. Match
+  # that exact name so Make cannot miss the timestamp-only override when the
+  # wrapper is invoked through a different spelling of the repository path.
+  kernel_source_make_args=(-o "$repo_root/boot/kernel.c")
 fi
 graph_args=(
   --output "$object_graph"

@@ -88,7 +88,9 @@ generate_lean_c {source!s} {output!s}
             'kernel_source_signature="$build/kernel-source.inputs.sha256"',
             wrapper,
         )
-        self.assertIn('kernel_source_make_args=(-o boot/kernel.c)', wrapper)
+        self.assertIn(
+            'kernel_source_make_args=(-o "$repo_root/boot/kernel.c")', wrapper
+        )
         self.assertEqual(
             wrapper.count('"${kernel_source_make_args[@]}"'),
             3,
