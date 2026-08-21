@@ -29,6 +29,12 @@ class ImageObjectGraphTests(unittest.TestCase):
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         parity_job = workflow.split("  serial-graph-parity:", maxsplit=1)[1]
         self.assertIn("! -name '*.o'", parity_job)
+        self.assertIn("! -name 'SHA256SUMS'", parity_job)
+        self.assertIn('serial-graph-mismatches.txt', parity_job)
+        self.assertLess(
+            parity_job.index('done < "${RUNNER_TEMP}/serial-artifacts.list"'),
+            parity_job.index('serial/graph byte mismatch: SHA256SUMS'),
+        )
         self.assertIn("final\n          # deliverable/evidence artifacts", parity_job)
 
     def test_parity_preserves_phase_timing_evidence(self) -> None:

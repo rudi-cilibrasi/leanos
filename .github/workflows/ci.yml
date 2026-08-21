@@ -577,24 +577,43 @@ jobs:
             ! -name '*.inputs.sha256' \
             ! -name '*.serial.log' \
             ! -name 'serial.log' \
+            ! -name 'SHA256SUMS' \
             ! -path '*/iso-*/*' \
             -printf '%P\0' | sort -z > "${RUNNER_TEMP}/serial-artifacts.list"
 
           artifact_count=0
+          mismatch_report="${RUNNER_TEMP}/serial-graph-mismatches.txt"
+          : > "$mismatch_report"
           while IFS= read -r -d '' artifact; do
             artifact_count="$((artifact_count + 1))"
             test -f "build/boot/$artifact" || {
-              echo "missing graph artifact: $artifact" >&2
-              exit 1
+              echo "missing graph artifact: $artifact" | \
+                tee -a "$mismatch_report" >&2
+              continue
             }
             cmp -s "$baseline_dir/boot/$artifact" "build/boot/$artifact" || {
-              echo "serial/graph byte mismatch: $artifact" >&2
-              sha256sum "$baseline_dir/boot/$artifact" "build/boot/$artifact" >&2
-              exit 1
+              {
+                echo "serial/graph byte mismatch: $artifact"
+                sha256sum \
+                  "$baseline_dir/boot/$artifact" "build/boot/$artifact"
+              } | tee -a "$mismatch_report" >&2
             }
           done < "${RUNNER_TEMP}/serial-artifacts.list"
 
           echo "compared_artifacts=$artifact_count" | tee -a "$summary"
+
+          cp "$baseline_dir/boot/SHA256SUMS" \
+            "${RUNNER_TEMP}/serial-SHA256SUMS"
+          cp build/boot/SHA256SUMS "${RUNNER_TEMP}/graph-SHA256SUMS"
+          if ! cmp -s "${RUNNER_TEMP}/serial-SHA256SUMS" \
+            "${RUNNER_TEMP}/graph-SHA256SUMS"; then
+            echo "serial/graph byte mismatch: SHA256SUMS" | \
+              tee -a "$mismatch_report" >&2
+            diff -u "${RUNNER_TEMP}/serial-SHA256SUMS" \
+              "${RUNNER_TEMP}/graph-SHA256SUMS" | \
+              tee -a "$mismatch_report" >&2 || true
+          fi
+          test ! -s "$mismatch_report" || exit 1
 
           if ((graph_seconds > 360)); then
             echo "graph clean build exceeded the 360-second acceptance target" >&2
@@ -609,6 +628,9 @@ jobs:
           path: |
             ${{ runner.temp }}/image-parity-summary.txt
             ${{ runner.temp }}/serial-artifacts.list
+            ${{ runner.temp }}/serial-graph-mismatches.txt
+            ${{ runner.temp }}/serial-SHA256SUMS
+            ${{ runner.temp }}/graph-SHA256SUMS
             ${{ runner.temp }}/graph-build-phases.tsv
           if-no-files-found: warn
           retention-days: 14
