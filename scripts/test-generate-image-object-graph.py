@@ -31,6 +31,9 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn("! -name '*.o'", parity_job)
         self.assertIn("! -name 'SHA256SUMS'", parity_job)
         self.assertIn('serial-graph-mismatches.txt', parity_job)
+        self.assertIn('serial-graph-first-mismatch', parity_job)
+        self.assertIn('first differing bytes (offset serial graph):', parity_job)
+        self.assertIn('cmp -l "$first_mismatch_dir/serial-artifact"', parity_job)
         self.assertLess(
             parity_job.index('done < "${RUNNER_TEMP}/serial-artifacts.list"'),
             parity_job.index('serial/graph byte mismatch: SHA256SUMS'),

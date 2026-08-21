@@ -583,6 +583,7 @@ jobs:
 
           artifact_count=0
           mismatch_report="${RUNNER_TEMP}/serial-graph-mismatches.txt"
+          first_mismatch_dir="${RUNNER_TEMP}/serial-graph-first-mismatch"
           : > "$mismatch_report"
           while IFS= read -r -d '' artifact; do
             artifact_count="$((artifact_count + 1))"
@@ -597,6 +598,23 @@ jobs:
                 sha256sum \
                   "$baseline_dir/boot/$artifact" "build/boot/$artifact"
               } | tee -a "$mismatch_report" >&2
+              if [[ ! -d "$first_mismatch_dir" ]]; then
+                mkdir -p "$first_mismatch_dir"
+                cp "$baseline_dir/boot/$artifact" \
+                  "$first_mismatch_dir/serial-artifact"
+                cp "build/boot/$artifact" \
+                  "$first_mismatch_dir/graph-artifact"
+                {
+                  echo "artifact=$artifact"
+                  file "$first_mismatch_dir/serial-artifact" \
+                    "$first_mismatch_dir/graph-artifact"
+                  wc -c "$first_mismatch_dir/serial-artifact" \
+                    "$first_mismatch_dir/graph-artifact"
+                  echo "first differing bytes (offset serial graph):"
+                  cmp -l "$first_mismatch_dir/serial-artifact" \
+                    "$first_mismatch_dir/graph-artifact" | head -n 256 || true
+                } > "$first_mismatch_dir/diagnostic.txt"
+              fi
             }
           done < "${RUNNER_TEMP}/serial-artifacts.list"
 
@@ -632,5 +650,6 @@ jobs:
             ${{ runner.temp }}/serial-SHA256SUMS
             ${{ runner.temp }}/graph-SHA256SUMS
             ${{ runner.temp }}/graph-build-phases.tsv
+            ${{ runner.temp }}/serial-graph-first-mismatch
           if-no-files-found: warn
           retention-days: 14
