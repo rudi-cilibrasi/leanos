@@ -195,7 +195,10 @@ grub-mkrescue() {
     return 0
   fi
 
-  "$grub_mkrescue_path" "$@"
+  if ! "$grub_mkrescue_path" "$@"; then
+    rm -f "$output" "$signature_file"
+    return 1
+  fi
   printf '%s\n' "$current_signature" > "$signature_file"
 }
 

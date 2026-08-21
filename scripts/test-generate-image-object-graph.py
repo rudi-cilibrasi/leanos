@@ -244,6 +244,53 @@ grub-mkrescue -d /grub -o {output!s} {staging!s} -- -fixed
             'echo "error: one or more deterministic ISO packages failed"', wrapper
         )
 
+    def test_iso_batch_propagates_packager_failure_without_caching(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        compute = "compute_iso_signature() {" + wrapper.split(
+            "compute_iso_signature() {", 1
+        )[1].split("\n}\n\n# Preserve a deterministic ISO", 1)[0] + "\n}"
+        build = "grub-mkrescue() {" + wrapper.split(
+            "grub-mkrescue() {", 1
+        )[1].split("\n}\n\nrun_iso_packaging", 1)[0] + "\n}"
+        run = "run_iso_packaging() {" + wrapper.split(
+            "run_iso_packaging() {", 1
+        )[1].split("\n}\nexport repo_root", 1)[0] + "\n}"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            staging = root / "iso"
+            staging.mkdir()
+            (staging / "input").write_text("staged\n", encoding="utf-8")
+            output = root / "partial.iso"
+            task_file = root / "tasks.nul"
+            tool = root / "grub-mkrescue"
+            tool.write_text(
+                "#!/bin/sh\n"
+                "while [ \"$1\" != -o ]; do shift; done\n"
+                "shift\n"
+                "printf 'partial\\n' > \"$1\"\n"
+                "exit 7\n",
+                encoding="utf-8",
+            )
+            tool.chmod(0o755)
+            shell = f"""\
+set -u
+repo_root={root!s}
+iso_packaging_signature=test-signature
+grub_mkrescue_path={tool!s}
+{compute}
+{build}
+{run}
+export repo_root iso_packaging_signature grub_mkrescue_path
+export -f compute_iso_signature grub-mkrescue run_iso_packaging
+printf '%s\\0%s\\0' {output!s} {staging!s} > {task_file!s}
+if xargs -0 -r -n 2 -P 1 bash -c 'run_iso_packaging "$@"' _ < {task_file!s}; then
+  exit 99
+fi
+test ! -e {output!s}
+test ! -e {output!s}.inputs.sha256
+"""
+            subprocess.run(["bash", "-c", shell], check=True)
+
     def test_image_policy_checks_use_bounded_parallel_batch(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("compute_validation_tool_signature() {", wrapper)
