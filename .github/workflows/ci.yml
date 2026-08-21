@@ -6,6 +6,17 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      run_serial_graph_parity:
+        description: Build the selected serial base and current graph for byte parity
+        required: false
+        default: false
+        type: boolean
+      serial_base_ref:
+        description: Git ref containing the legacy serial image wrapper
+        required: false
+        default: origin/main
+        type: string
 
 permissions:
   contents: read
@@ -494,5 +505,101 @@ jobs:
             build/ci/assigned-edu-negatives.log
             build/ci/*.log
             build/ci/tool-versions.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  serial-graph-parity:
+    name: Serial vs graph image parity
+    if: github.event_name == 'workflow_dispatch' && inputs.run_serial_graph_parity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      LEANOS_CC: clang-18
+      SERIAL_BASE_REF: ${{ inputs.serial_base_ref }}
+    steps:
+      - name: Check out graph head and serial base history
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned Lean toolchain
+        uses: ./.github/actions/setup-lean
+
+      - name: Install pinned image tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-18=1:18.1.3-1ubuntu1 \
+            binutils=2.42-4ubuntu2.10 \
+            grub-common=2.12-1ubuntu7.3 \
+            grub-pc-bin=2.12-1ubuntu7.3 \
+            mtools=4.0.43-1build1 \
+            xorriso=1:1.5.6-1.1ubuntu3 \
+            coreutils=9.4-3ubuntu6.2
+
+      - name: Build serial baseline and graph head in the same workspace
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          base_sha="$(git rev-parse --verify "${SERIAL_BASE_REF}^{commit}")"
+          baseline_dir="$(mktemp -d "${RUNNER_TEMP}/leanos-serial.XXXXXX")"
+          summary="${RUNNER_TEMP}/image-parity-summary.txt"
+
+          git checkout --detach "$base_sha"
+          serial_start="$SECONDS"
+          LEANOS_SOURCE_REVISION="$head_sha" ./scripts/build-image.sh
+          serial_seconds="$((SECONDS - serial_start))"
+          mv build/boot "$baseline_dir/boot"
+          rm -rf build
+
+          git checkout --detach "$head_sha"
+          graph_start="$SECONDS"
+          LEANOS_SOURCE_REVISION="$head_sha" ./scripts/build-image.sh
+          graph_seconds="$((SECONDS - graph_start))"
+
+          {
+            echo "head_sha=$head_sha"
+            echo "serial_base_sha=$base_sha"
+            echo "serial_seconds=$serial_seconds"
+            echo "graph_seconds=$graph_seconds"
+          } | tee "$summary"
+
+          find "$baseline_dir/boot" -type f \
+            ! -name '*.d' \
+            ! -name '*.inputs.sha256' \
+            ! -name '*.serial.log' \
+            ! -name 'serial.log' \
+            ! -path '*/iso-*/*' \
+            -printf '%P\0' | sort -z > "${RUNNER_TEMP}/serial-artifacts.list"
+
+          artifact_count=0
+          while IFS= read -r -d '' artifact; do
+            artifact_count="$((artifact_count + 1))"
+            test -f "build/boot/$artifact" || {
+              echo "missing graph artifact: $artifact" >&2
+              exit 1
+            }
+            cmp -s "$baseline_dir/boot/$artifact" "build/boot/$artifact" || {
+              echo "serial/graph byte mismatch: $artifact" >&2
+              sha256sum "$baseline_dir/boot/$artifact" "build/boot/$artifact" >&2
+              exit 1
+            }
+          done < "${RUNNER_TEMP}/serial-artifacts.list"
+
+          echo "compared_artifacts=$artifact_count" | tee -a "$summary"
+
+          if ((graph_seconds > 360)); then
+            echo "graph clean build exceeded the 360-second acceptance target" >&2
+            exit 1
+          fi
+
+      - name: Preserve parity and timing evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: serial-graph-parity-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/image-parity-summary.txt
+            ${{ runner.temp }}/serial-artifacts.list
           if-no-files-found: warn
           retention-days: 14
