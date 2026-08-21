@@ -564,8 +564,12 @@ jobs:
             echo "graph_seconds=$graph_seconds"
           } | tee "$summary"
 
+          # The graph deliberately compiles combined Lean modules as
+          # independent .part objects, so GCC stack-usage sidecars have a
+          # different auxiliary-file partition than the serial compiler.
           find "$baseline_dir/boot" -type f \
             ! -name '*.d' \
+            ! -name '*.su' \
             ! -name '*.inputs.sha256' \
             ! -name '*.serial.log' \
             ! -name 'serial.log' \

@@ -570,11 +570,14 @@ compute_graph_signature {graph!s} {compiler!s}
             root = Path(directory) / "repo"
             build = Path(directory) / "build"
             (root / "boot").mkdir(parents=True)
+            (root / "include/leanos").mkdir(parents=True)
             build.mkdir()
             source = root / "boot/kernel.c"
+            repository_header = root / "include/leanos/composite-dispatcher.h"
             header = build / "boot-page-plan.h"
             generated = build / "Generated.c"
             source.write_text("int kernel(void) { return 1; }\n", encoding="utf-8")
+            repository_header.write_text("/* dispatcher */\n", encoding="utf-8")
             header.write_text("/* plan */\n", encoding="utf-8")
             generated.write_text("int generated(void) { return 1; }\n", encoding="utf-8")
 
@@ -596,6 +599,11 @@ compute_graph_signature {graph!s} {compiler!s}
             source.write_text("int kernel(void) { return 2; }\n", encoding="utf-8")
             self.assertNotEqual(baseline, signature())
             source.write_text("int kernel(void) { return 1; }\n", encoding="utf-8")
+            repository_header.write_text(
+                "/* changed dispatcher */\n", encoding="utf-8"
+            )
+            self.assertNotEqual(baseline, signature())
+            repository_header.write_text("/* dispatcher */\n", encoding="utf-8")
             header.write_text("/* changed plan */\n", encoding="utf-8")
             self.assertNotEqual(baseline, signature())
             header.write_text("/* plan */\n", encoding="utf-8")

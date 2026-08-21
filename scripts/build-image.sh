@@ -621,7 +621,7 @@ compute_graph_make_input_signature() {
   local graph_tool_signature="$1"
   {
     printf 'graph-tools:%s\0' "$graph_tool_signature"
-    find "$repo_root/boot" -type f -print0 | sort -z |
+    find "$repo_root/boot" "$repo_root/include" -type f -print0 | sort -z |
       while IFS= read -r -d '' input; do
         sha256sum "$input"
       done
