@@ -636,9 +636,15 @@ fi
 # linker input order while scheduling independent links concurrently with the
 # remaining object work.
 if [[ "$graph_make_cache_current" != true ]]; then
+  # Keep object compilation in its own Make invocation.  The generated rules
+  # compare temporary objects and dependency files before replacing retained
+  # outputs; a second invocation then observes their preserved mtimes and does
+  # not propagate a comment-only or otherwise byte-identical recompile through
+  # every prelink image.
   make -f "$object_graph" "${kernel_source_make_args[@]}" \
     -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-    shared-generated-objects variant-kernel-objects variant-assembly-objects \
+    shared-generated-objects variant-kernel-objects variant-assembly-objects
+  make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
     prelink-images policy-fixture-images return-corruption-prelinks
 fi
 

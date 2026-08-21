@@ -98,6 +98,19 @@ generate_lean_c {source!s} {output!s}
             wrapper,
         )
 
+    def test_build_wrapper_observes_preserved_object_mtimes_before_prelink(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        object_targets = (
+            "shared-generated-objects variant-kernel-objects "
+            "variant-assembly-objects"
+        )
+        prelink_targets = (
+            "prelink-images policy-fixture-images return-corruption-prelinks"
+        )
+        self.assertIn(object_targets + "\n  make -f", wrapper)
+        self.assertIn(prelink_targets, wrapper)
+        self.assertNotIn(object_targets + " \\\n    " + prelink_targets, wrapper)
+
     def test_iso_cache_tracks_staged_bytes_and_packaging_tool(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         packaging = "compute_iso_packaging_signature() {" + wrapper.split(
