@@ -595,13 +595,52 @@ if [[ ! -f "$graph_signature" ]] || \
     -o -name '*.su' \) -delete
   printf '%s\n' "$current_graph_signature" > "$graph_signature"
 fi
+
+# Parsing this generated graph dominates an otherwise unchanged warm build.
+# Bypass Make only when the complete repository/build input set, compiler and
+# linker identity, and every retained graph output are byte-current.  The
+# manifest is written only after the full wrapper succeeds below, so an
+# interrupted or partially rebuilt graph always falls back to Make.
+compute_graph_make_input_signature() {
+  local graph_tool_signature="$1"
+  {
+    printf 'graph-tools:%s\0' "$graph_tool_signature"
+    find "$repo_root/boot" -type f -print0 | sort -z |
+      while IFS= read -r -d '' input; do
+        sha256sum "$input"
+      done
+    find "$build" -maxdepth 1 -type f \
+      \( -name '*.c' -o \
+      \( -name 'boot-page-plan*.h' ! -name '*.final.h' \) \) \
+      -print0 | sort -z |
+      while IFS= read -r -d '' input; do
+        sha256sum "$input"
+      done
+  } | sha256sum | awk '{print $1}'
+}
+
+graph_make_cache_signature="$build/generated-make.inputs.sha256"
+graph_make_cache_manifest="$build/generated-make.outputs.sha256"
+current_graph_make_signature="$(
+  compute_graph_make_input_signature "$current_graph_signature"
+)"
+graph_make_cache_current=false
+if [[ -s "$graph_make_cache_signature" &&
+    -s "$graph_make_cache_manifest" ]] &&
+    [[ "$(<"$graph_make_cache_signature")" == \
+      "$current_graph_make_signature" ]] &&
+    sha256sum -c --status "$graph_make_cache_manifest"; then
+  graph_make_cache_current=true
+fi
 # The generated graph owns the migrated prelinks.  It retains their reviewed
 # linker input order while scheduling independent links concurrently with the
 # remaining object work.
-make -f "$object_graph" "${kernel_source_make_args[@]}" \
-  -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-  shared-generated-objects variant-kernel-objects variant-assembly-objects \
-  prelink-images policy-fixture-images return-corruption-prelinks
+if [[ "$graph_make_cache_current" != true ]]; then
+  make -f "$object_graph" "${kernel_source_make_args[@]}" \
+    -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+    shared-generated-objects variant-kernel-objects variant-assembly-objects \
+    prelink-images policy-fixture-images return-corruption-prelinks
+fi
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
@@ -741,9 +780,19 @@ done
 # Re-enter the same graph after replacing every stub boot-page plan.  The
 # generated dependency files select only affected kernel variants, and Make
 # recompiles those final-plan objects concurrently instead of serially.
-make -f "$object_graph" "${kernel_source_make_args[@]}" \
-  -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-  final-kernel-objects
+current_graph_make_signature="$(
+  compute_graph_make_input_signature "$current_graph_signature"
+)"
+if [[ "$graph_make_cache_current" == true ]] &&
+    [[ "$(<"$graph_make_cache_signature")" != \
+      "$current_graph_make_signature" ]]; then
+  graph_make_cache_current=false
+fi
+if [[ "$graph_make_cache_current" != true ]]; then
+  make -f "$object_graph" "${kernel_source_make_args[@]}" \
+    -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+    final-kernel-objects
+fi
 
 if nm "$build/kernel.o" | grep -Eq \
     'return_corruption_mode|return_corruption_name|inject_return_corruption'; then
@@ -752,9 +801,11 @@ if nm "$build/kernel.o" | grep -Eq \
 fi
 # Link the independent final-image family in parallel after generated page-plan
 # dependencies have rebuilt the affected kernel objects.
-make -f "$object_graph" "${kernel_source_make_args[@]}" \
-  -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-  final-image-links return-corruption-final-images
+if [[ "$graph_make_cache_current" != true ]]; then
+  make -f "$object_graph" "${kernel_source_make_args[@]}" \
+    -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+    final-image-links return-corruption-final-images
+fi
 
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture mode _reason <<<"$spec"
@@ -1815,6 +1866,23 @@ for spec in "${return_corruptions[@]}"; do
   sha256sum "$build/leanos-${version}-x86_64-return-${fixture}.iso" \
     "$build/leanos-return-${fixture}.elf" >> "$build/SHA256SUMS"
 done
+if [[ "$graph_make_cache_current" != true ]]; then
+  graph_make_manifest_tmp="${graph_make_cache_manifest}.tmp"
+  find "$build" -maxdepth 1 -type f \
+    \( -name '*.o' -o -name '*.o.d' -o -name '*.elf' -o -name '*.map' \) \
+    -print0 | sort -z | xargs -0 -r sha256sum > "$graph_make_manifest_tmp"
+  [[ -s "$graph_make_manifest_tmp" ]] || {
+    echo "error: generated Make output manifest is empty" >&2
+    exit 1
+  }
+  mv "$graph_make_manifest_tmp" "$graph_make_cache_manifest"
+  current_graph_make_signature="$(
+    compute_graph_make_input_signature "$current_graph_signature"
+  )"
+  printf '%s\n' "$current_graph_make_signature" > \
+    "$graph_make_cache_signature"
+fi
+
 printf '%s\n' "$current_kernel_source_signature" > "$kernel_source_signature"
 echo "built build/boot/leanos-${version}-x86_64.iso at $source_revision"
 echo "symbols: build/boot/leanos.map; debug ELF: build/boot/leanos.elf"

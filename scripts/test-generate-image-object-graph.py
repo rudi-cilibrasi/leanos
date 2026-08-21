@@ -448,6 +448,76 @@ compute_graph_signature {graph!s} {compiler!s}
 
             self.assertNotEqual(first, second)
 
+    def test_generated_make_cache_tracks_inputs_tools_and_outputs(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        function = "compute_graph_make_input_signature() {" + wrapper.split(
+            "compute_graph_make_input_signature() {", 1
+        )[1].split("\n}\n\ngraph_make_cache_signature=", 1)[0] + "\n}"
+        self.assertIn('sha256sum -c --status "$graph_make_cache_manifest"', wrapper)
+        self.assertIn("generated-make.outputs.sha256", wrapper)
+        self.assertIn("generated-make.inputs.sha256", wrapper)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            build = Path(directory) / "build"
+            (root / "boot").mkdir(parents=True)
+            build.mkdir()
+            source = root / "boot/kernel.c"
+            header = build / "boot-page-plan.h"
+            generated = build / "Generated.c"
+            source.write_text("int kernel(void) { return 1; }\n", encoding="utf-8")
+            header.write_text("/* plan */\n", encoding="utf-8")
+            generated.write_text("int generated(void) { return 1; }\n", encoding="utf-8")
+
+            def signature(tool: str = "tool-a") -> str:
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        function + f"\ncompute_graph_make_input_signature {tool}",
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    env={**os.environ, "repo_root": str(root), "build": str(build)},
+                )
+                return result.stdout.strip()
+
+            baseline = signature()
+            source.write_text("int kernel(void) { return 2; }\n", encoding="utf-8")
+            self.assertNotEqual(baseline, signature())
+            source.write_text("int kernel(void) { return 1; }\n", encoding="utf-8")
+            header.write_text("/* changed plan */\n", encoding="utf-8")
+            self.assertNotEqual(baseline, signature())
+            header.write_text("/* plan */\n", encoding="utf-8")
+            generated.write_text("int generated(void) { return 2; }\n", encoding="utf-8")
+            self.assertNotEqual(baseline, signature())
+            generated.write_text("int generated(void) { return 1; }\n", encoding="utf-8")
+            self.assertNotEqual(baseline, signature("tool-b"))
+
+            output = build / "kernel.o"
+            output.write_bytes(b"object-a")
+            manifest = build / "generated-make.outputs.sha256"
+            manifest.write_text(
+                subprocess.run(
+                    ["sha256sum", str(output)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout,
+                encoding="utf-8",
+            )
+            subprocess.run(
+                ["sha256sum", "-c", "--status", str(manifest)], check=True
+            )
+            output.write_bytes(b"object-b")
+            self.assertNotEqual(
+                subprocess.run(
+                    ["sha256sum", "-c", "--status", str(manifest)]
+                ).returncode,
+                0,
+            )
+
     def test_lean_c_signature_tracks_sources_and_toolchain(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         function = "compute_lean_c_signature() {" + wrapper.split(
