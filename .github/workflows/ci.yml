@@ -565,9 +565,12 @@ jobs:
           } | tee "$summary"
 
           # The graph deliberately compiles combined Lean modules as
-          # independent .part objects, so GCC stack-usage sidecars have a
-          # different auxiliary-file partition than the serial compiler.
+          # independent .part objects. Intermediate objects, dependency files,
+          # and GCC stack-usage sidecars therefore have a different partition
+          # than the serial compiler. Compare the generated sources and final
+          # deliverable/evidence artifacts, whose bytes must remain identical.
           find "$baseline_dir/boot" -type f \
+            ! -name '*.o' \
             ! -name '*.d' \
             ! -name '*.su' \
             ! -name '*.inputs.sha256' \

@@ -15,6 +15,7 @@ SCRIPT = Path(__file__).with_name("generate-image-object-graph.py")
 BUILD_SCRIPT = Path(__file__).with_name("build-image.sh")
 ASSIGNED_EDU_SCRIPT = Path(__file__).with_name("build-assigned-edu-image.sh")
 PLAN_SCRIPT = Path(__file__).with_name("generate-boot-page-plan.sh")
+CI_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
 SPEC = importlib.util.spec_from_file_location("image_object_graph", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -22,6 +23,14 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ImageObjectGraphTests(unittest.TestCase):
+    def test_serial_graph_parity_excludes_partitioned_intermediate_objects(
+        self,
+    ) -> None:
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        parity_job = workflow.split("  serial-graph-parity:", maxsplit=1)[1]
+        self.assertIn("! -name '*.o'", parity_job)
+        self.assertIn("final\n          # deliverable/evidence artifacts", parity_job)
+
     def test_assigned_edu_cache_is_input_and_output_integrity_bound(self) -> None:
         builder = ASSIGNED_EDU_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
