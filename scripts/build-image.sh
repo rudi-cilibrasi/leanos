@@ -4,6 +4,26 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+build_profile_started_at="$SECONDS"
+build_profile_phase_started_at="$SECONDS"
+if [[ -n "${LEANOS_BUILD_TIMING_FILE:-}" ]]; then
+  mkdir -p "$(dirname -- "$LEANOS_BUILD_TIMING_FILE")"
+  printf 'phase\tphase_seconds\ttotal_seconds\n' > "$LEANOS_BUILD_TIMING_FILE"
+fi
+record_build_phase() {
+  local phase="$1"
+  local now="$SECONDS"
+  local phase_seconds="$((now - build_profile_phase_started_at))"
+  local total_seconds="$((now - build_profile_started_at))"
+  printf 'build-phase\t%s\tphase_seconds=%s\ttotal_seconds=%s\n' \
+    "$phase" "$phase_seconds" "$total_seconds"
+  if [[ -n "${LEANOS_BUILD_TIMING_FILE:-}" ]]; then
+    printf '%s\t%s\t%s\n' "$phase" "$phase_seconds" "$total_seconds" \
+      >> "$LEANOS_BUILD_TIMING_FILE"
+  fi
+  build_profile_phase_started_at="$now"
+}
+
 require_tool() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "error: missing required tool '$1'; $2" >&2
@@ -533,6 +553,7 @@ if ((reuse_lean_c == 0)); then
   rm -rf "$lean_c_stage"
   trap - EXIT
 fi
+record_build_phase bootstrap-and-lean-generation
 lean_prefix="$(lake env lean --print-prefix)"
 cflags=(-m64 -std=c11 -ffreestanding -fno-stack-protector -fno-pic -Iinclude
   -mno-red-zone -mgeneral-regs-only -ffunction-sections -fdata-sections
@@ -663,6 +684,7 @@ if [[ "$graph_make_cache_current" != true ]]; then
   make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
     prelink-images policy-fixture-images return-corruption-prelinks
 fi
+record_build_phase object-graph-prelinks
 
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
@@ -837,6 +859,7 @@ if [[ "$graph_make_cache_current" != true ]]; then
     -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
     final-image-links return-corruption-final-images
 fi
+record_build_phase boot-plans-and-final-links
 
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture mode _reason <<<"$spec"
@@ -1556,6 +1579,7 @@ if ! xargs -0 -r -n 4 -P "$policy_jobs" bash -c \
   echo "error: one or more return-policy negative fixtures failed" >&2
   exit 1
 fi
+record_build_phase policy-and-fixture-validation
 
 cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"
 cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"
@@ -1761,6 +1785,7 @@ if ! xargs -0 -r -n 2 -P "$policy_jobs" bash -c \
   echo "error: one or more deterministic ISO packages failed" >&2
   exit 1
 fi
+record_build_phase iso-packaging
 sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-assigned-edu.iso" \
   "$build/leanos-assigned-edu.elf" \
@@ -1867,5 +1892,6 @@ if [[ "$graph_make_cache_current" != true ]]; then
 fi
 
 printf '%s\n' "$current_kernel_source_signature" > "$kernel_source_signature"
+record_build_phase manifests-and-completion
 echo "built build/boot/leanos-${version}-x86_64.iso at $source_revision"
 echo "symbols: build/boot/leanos.map; debug ELF: build/boot/leanos.elf"

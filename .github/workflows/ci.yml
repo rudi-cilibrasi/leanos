@@ -554,7 +554,8 @@ jobs:
 
           git checkout --detach "$head_sha"
           graph_start="$SECONDS"
-          LEANOS_SOURCE_REVISION="$head_sha" ./scripts/build-image.sh
+          LEANOS_BUILD_TIMING_FILE="${RUNNER_TEMP}/graph-build-phases.tsv" \
+            LEANOS_SOURCE_REVISION="$head_sha" ./scripts/build-image.sh
           graph_seconds="$((SECONDS - graph_start))"
 
           {
@@ -608,5 +609,6 @@ jobs:
           path: |
             ${{ runner.temp }}/image-parity-summary.txt
             ${{ runner.temp }}/serial-artifacts.list
+            ${{ runner.temp }}/graph-build-phases.tsv
           if-no-files-found: warn
           retention-days: 14

@@ -31,6 +31,25 @@ class ImageObjectGraphTests(unittest.TestCase):
         self.assertIn("! -name '*.o'", parity_job)
         self.assertIn("final\n          # deliverable/evidence artifacts", parity_job)
 
+    def test_parity_preserves_phase_timing_evidence(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+        parity_job = workflow.split("  serial-graph-parity:", maxsplit=1)[1]
+        for phase in (
+            "bootstrap-and-lean-generation",
+            "object-graph-prelinks",
+            "boot-plans-and-final-links",
+            "policy-and-fixture-validation",
+            "iso-packaging",
+            "manifests-and-completion",
+        ):
+            self.assertIn(f"record_build_phase {phase}", wrapper)
+        self.assertIn(
+            'LEANOS_BUILD_TIMING_FILE="${RUNNER_TEMP}/graph-build-phases.tsv"',
+            parity_job,
+        )
+        self.assertIn("${{ runner.temp }}/graph-build-phases.tsv", parity_job)
+
     def test_assigned_edu_cache_is_input_and_output_integrity_bound(self) -> None:
         builder = ASSIGNED_EDU_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
