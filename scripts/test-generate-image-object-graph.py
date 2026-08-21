@@ -113,6 +113,21 @@ generate_lean_c {source!s} {output!s}
         self.assertIn(prelink_targets, wrapper)
         self.assertNotIn(object_targets + " \\\n    " + prelink_targets, wrapper)
 
+    def test_build_wrapper_parallelizes_independent_boot_plan_generation(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("run_boot_plan_batch()", wrapper)
+        self.assertIn('xargs -0 -r -n 2 -P "${LEANOS_BUILD_JOBS:-$(nproc)}"', wrapper)
+        self.assertIn('run_boot_plan_batch "${boot_plan_batch_args[@]}"', wrapper)
+        for stem in (
+            "leanos-prelink",
+            "leanos-malformed-handoff-prelink",
+            "leanos-frame-budget-prelink",
+            "leanos-fault-containment-prelink",
+            "leanos-fault-readonly-write-prelink",
+            "leanos-fault-nx-execute-prelink",
+        ):
+            self.assertIn(f'"$build/{stem}.elf"', wrapper)
+
     def test_iso_cache_tracks_staged_bytes_and_packaging_tool(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         packaging = "compute_iso_packaging_signature() {" + wrapper.split(

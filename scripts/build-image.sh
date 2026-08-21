@@ -655,42 +655,54 @@ cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
   "$build/entry-stack-extended-callgraph.tsv"
 ./scripts/check-entry-stack-budget.sh | tee "$build/entry-stack-budget.txt"
-./scripts/generate-boot-page-plan.sh "$build/leanos-prelink.elf" \
-  "$build/boot-page-plan.h"
-./scripts/generate-boot-page-plan.sh "$build/leanos-malformed-handoff-prelink.elf" \
+run_boot_plan_batch() {
+  local task_file="$build/boot-page-plan-tasks.nul"
+  : > "$task_file"
+  while (($#)); do
+    printf '%s\0%s\0' "$1" "$2" >> "$task_file"
+    shift 2
+  done
+  xargs -0 -r -n 2 -P "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+    ./scripts/generate-boot-page-plan.sh < "$task_file"
+}
+
+boot_plan_batch_args=(
+  "$build/leanos-prelink.elf" "$build/boot-page-plan.h"
+  "$build/leanos-malformed-handoff-prelink.elf"
   "$build/boot-page-plan-malformed-handoff.h"
-./scripts/generate-boot-page-plan.sh \
-  "$build/leanos-projection-authority-mutation-prelink.elf" \
+  "$build/leanos-projection-authority-mutation-prelink.elf"
   "$build/boot-page-plan-projection-authority-mutation.h"
-./scripts/generate-boot-page-plan.sh \
-  "$build/leanos-raw-selection-authority-mutation-prelink.elf" \
+  "$build/leanos-raw-selection-authority-mutation-prelink.elf"
   "$build/boot-page-plan-raw-selection-authority-mutation.h"
-./scripts/generate-boot-page-plan.sh "$build/leanos-preemption-prelink.elf" \
-  "$build/boot-page-plan-preemption.h"
-./scripts/generate-boot-page-plan.sh "$build/leanos-frame-budget-prelink.elf" \
+  "$build/leanos-preemption-prelink.elf" "$build/boot-page-plan-preemption.h"
+  "$build/leanos-frame-budget-prelink.elf"
   "$build/boot-page-plan-frame-budget.h"
-./scripts/generate-boot-page-plan.sh "$build/leanos-fault-containment-prelink.elf" \
+  "$build/leanos-fault-containment-prelink.elf"
   "$build/boot-page-plan-fault-containment.h"
-./scripts/generate-boot-page-plan.sh \
-  "$build/leanos-fault-readonly-write-prelink.elf" \
+  "$build/leanos-fault-readonly-write-prelink.elf"
   "$build/boot-page-plan-fault-readonly-write.h"
+  "$build/leanos-fault-nx-execute-prelink.elf"
+  "$build/boot-page-plan-fault-nx-execute.h"
+)
+for probe in "${fault_image_probes[@]}"; do
+  boot_plan_batch_args+=(
+    "$build/leanos-fault-${probe}-prelink.elf"
+    "$build/boot-page-plan-fault-${probe}.h"
+  )
+done
+run_boot_plan_batch "${boot_plan_batch_args[@]}"
+
 cmp "$build/boot-page-plan-fault-containment.h" \
   "$build/boot-page-plan-fault-readonly-write.h" || {
   echo "error: read-only-write probe changed shared fault page-table plan" >&2
   exit 1
 }
-./scripts/generate-boot-page-plan.sh \
-  "$build/leanos-fault-nx-execute-prelink.elf" \
-  "$build/boot-page-plan-fault-nx-execute.h"
 cmp "$build/boot-page-plan-fault-containment.h" \
   "$build/boot-page-plan-fault-nx-execute.h" || {
   echo "error: NX-execute probe changed shared fault page-table plan" >&2
   exit 1
 }
 for probe in "${fault_image_probes[@]}"; do
-  ./scripts/generate-boot-page-plan.sh \
-    "$build/leanos-fault-${probe}-prelink.elf" \
-    "$build/boot-page-plan-fault-${probe}.h"
   if [[ "$probe" != stale-translation ]]; then
     cmp "$build/boot-page-plan-fault-containment.h" \
       "$build/boot-page-plan-fault-${probe}.h" || {
