@@ -690,6 +690,51 @@ for probe in "${fault_image_probes[@]}"; do
     "$build/boot-page-plan-fault-${probe}.h"
   )
 done
+for suffix in "" -mmx -sse -sse2 -avx -peer-pke; do
+  boot_plan_batch_args+=(
+    "$build/leanos-extended-state${suffix}-prelink.elf"
+    "$build/boot-page-plan-extended-state${suffix}.h"
+  )
+done
+for mechanism in syscall sysenter; do
+  boot_plan_batch_args+=(
+    "$build/leanos-fast-entry-${mechanism}-prelink.elf"
+    "$build/boot-page-plan-fast-entry-${mechanism}.h"
+  )
+done
+boot_plan_batch_args+=(
+  "$build/leanos-double-fault-prelink.elf"
+  "$build/boot-page-plan-double-fault.h"
+  "$build/leanos-entry-stack-overflow-prelink.elf"
+  "$build/boot-page-plan-entry-overflow.h"
+  "$build/leanos-guard-prelink.elf" "$build/boot-page-plan-guard.h"
+  "$build/leanos-entry-adversarial-prelink.elf"
+  "$build/boot-page-plan-entry-adversarial.h"
+  "$build/leanos-direct-port-serial-prelink.elf"
+  "$build/boot-page-plan-direct-port.h"
+  "$build/leanos-divide-error-prelink.elf"
+  "$build/boot-page-plan-integer-fault.h"
+  "$build/leanos-breakpoint-prelink.elf"
+  "$build/boot-page-plan-breakpoint.h"
+  "$build/leanos-nmi-prelink.elf" "$build/boot-page-plan-nmi.h"
+  "$build/leanos-bootstrap32-ud-prelink.elf"
+  "$build/boot-page-plan-bootstrap32-ud.h"
+  "$build/leanos-bootstrap64-nmi-prelink.elf"
+  "$build/boot-page-plan-bootstrap64-nmi.h"
+)
+for probe in debug in pic; do
+  boot_plan_batch_args+=(
+    "$build/leanos-direct-port-${probe}-prelink.elf"
+    "$build/boot-page-plan-direct-port-${probe}.h"
+  )
+done
+for spec in "${return_corruptions[@]}"; do
+  IFS=: read -r fixture _mode _reason <<<"$spec"
+  boot_plan_batch_args+=(
+    "$build/leanos-return-${fixture}-prelink.elf"
+    "$build/boot-page-plan-return-${fixture}.h"
+  )
+done
 run_boot_plan_batch "${boot_plan_batch_args[@]}"
 
 cmp "$build/boot-page-plan-fault-containment.h" \
@@ -711,93 +756,45 @@ for probe in "${fault_image_probes[@]}"; do
     }
   fi
 done
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-prelink.elf" \
-  "$build/boot-page-plan-extended-state.h"
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-mmx-prelink.elf" \
-  "$build/boot-page-plan-extended-state-mmx.h"
 cmp "$build/boot-page-plan-extended-state.h" \
   "$build/boot-page-plan-extended-state-mmx.h" || {
   echo "error: MMX probe changed the shared extended-state page-table plan" >&2
   exit 1
 }
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-sse-prelink.elf" \
-  "$build/boot-page-plan-extended-state-sse.h"
 cmp "$build/boot-page-plan-extended-state.h" \
   "$build/boot-page-plan-extended-state-sse.h" || {
   echo "error: SSE probe changed the shared extended-state page-table plan" >&2
   exit 1
 }
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-sse2-prelink.elf" \
-  "$build/boot-page-plan-extended-state-sse2.h"
 cmp "$build/boot-page-plan-extended-state.h" \
   "$build/boot-page-plan-extended-state-sse2.h" || {
   echo "error: SSE2 probe changed the shared extended-state page-table plan" >&2
   exit 1
 }
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-avx-prelink.elf" \
-  "$build/boot-page-plan-extended-state-avx.h"
 cmp "$build/boot-page-plan-extended-state.h" \
   "$build/boot-page-plan-extended-state-avx.h" || {
   echo "error: AVX probe changed the shared extended-state page-table plan" >&2
   exit 1
 }
-./scripts/generate-boot-page-plan.sh \
-  "$build/leanos-extended-state-peer-pke-prelink.elf" \
-  "$build/boot-page-plan-extended-state-peer-pke.h"
 for mechanism in syscall sysenter; do
-  ./scripts/generate-boot-page-plan.sh \
-    "$build/leanos-fast-entry-${mechanism}-prelink.elf" \
-    "$build/boot-page-plan-fast-entry-${mechanism}.h"
   cmp "$build/boot-page-plan-extended-state.h" \
     "$build/boot-page-plan-fast-entry-${mechanism}.h" || {
     echo "error: fast-entry $mechanism probe changed the shared page-table plan" >&2
     exit 1
   }
 done
-./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-prelink.elf" \
-  "$build/boot-page-plan-double-fault.h"
-./scripts/generate-boot-page-plan.sh "$build/leanos-entry-stack-overflow-prelink.elf" \
-  "$build/boot-page-plan-entry-overflow.h"
-./scripts/generate-boot-page-plan.sh "$build/leanos-guard-prelink.elf" \
-  "$build/boot-page-plan-guard.h"
-./scripts/generate-boot-page-plan.sh "$build/leanos-entry-adversarial-prelink.elf" \
-  "$build/boot-page-plan-entry-adversarial.h"
-./scripts/generate-boot-page-plan.sh \
-  "$build/leanos-direct-port-serial-prelink.elf" \
-  "$build/boot-page-plan-direct-port.h"
 for probe in debug in pic; do
-  ./scripts/generate-boot-page-plan.sh \
-    "$build/leanos-direct-port-${probe}-prelink.elf" \
-    "$build/boot-page-plan-direct-port-${probe}.h"
   cmp "$build/boot-page-plan-direct-port.h" \
     "$build/boot-page-plan-direct-port-${probe}.h" || {
     echo "error: direct-port $probe probe changed the shared page-table plan" >&2
     exit 1
   }
 done
-./scripts/generate-boot-page-plan.sh \
-  "$build/leanos-divide-error-prelink.elf" \
-  "$build/boot-page-plan-integer-fault.h"
-./scripts/generate-boot-page-plan.sh \
-  "$build/leanos-breakpoint-prelink.elf" \
-  "$build/boot-page-plan-breakpoint.h"
 cmp "$build/boot-page-plan-integer-fault.h" \
   "$build/boot-page-plan-breakpoint.h" || {
   echo "error: breakpoint probe changed the shared integer-fault page-table plan" >&2
   exit 1
 }
-./scripts/generate-boot-page-plan.sh "$build/leanos-nmi-prelink.elf" \
-  "$build/boot-page-plan-nmi.h"
-./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap32-ud-prelink.elf" \
-  "$build/boot-page-plan-bootstrap32-ud.h"
-./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap64-nmi-prelink.elf" \
-  "$build/boot-page-plan-bootstrap64-nmi.h"
-for spec in "${return_corruptions[@]}"; do
-  IFS=: read -r fixture _mode _reason <<<"$spec"
-  ./scripts/generate-boot-page-plan.sh \
-    "$build/leanos-return-${fixture}-prelink.elf" \
-    "$build/boot-page-plan-return-${fixture}.h"
-done
 # Re-enter the same graph after replacing every stub boot-page plan.  The
 # generated dependency files select only affected kernel variants, and Make
 # recompiles those final-plan objects concurrently instead of serially.

@@ -125,8 +125,18 @@ generate_lean_c {source!s} {output!s}
             "leanos-fault-containment-prelink",
             "leanos-fault-readonly-write-prelink",
             "leanos-fault-nx-execute-prelink",
+            "leanos-entry-stack-overflow-prelink",
+            "leanos-direct-port-serial-prelink",
+            "leanos-bootstrap64-nmi-prelink",
         ):
             self.assertIn(f'"$build/{stem}.elf"', wrapper)
+        for template in (
+            "leanos-extended-state${suffix}-prelink",
+            "leanos-fast-entry-${mechanism}-prelink",
+            "leanos-direct-port-${probe}-prelink",
+            "leanos-return-${fixture}-prelink",
+        ):
+            self.assertIn(f'"$build/{template}.elf"', wrapper)
 
     def test_iso_cache_tracks_staged_bytes_and_packaging_tool(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
