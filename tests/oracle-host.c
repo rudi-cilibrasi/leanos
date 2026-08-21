@@ -164,7 +164,7 @@ int main(void) {
         leanos_assigned_edu_reuse_protocol(0, 1, 1, 0) != 2 ||
         leanos_assigned_edu_reuse_protocol(1, 0, 1, 0) != 1 ||
         leanos_assigned_edu_reuse_protocol(1, 1, 2, 0) != 3 ||
-        leanos_assigned_edu_reuse_protocol(1, 1, 1, 1) != 0) {
+        leanos_assigned_edu_reuse_protocol(1, 1, 1, 1) != 4) {
         fputs("generated assigned-EDU reuse protocol drifted\n", stderr);
         return 1;
     }

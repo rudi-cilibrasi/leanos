@@ -3171,22 +3171,29 @@ caller-provided scalar is itself a non-forgeable pending token.
 def assignedEDUReuseProtocolExport
     (prepareRequested completionRequested completionTicket replayRequested : UInt64) :
     UInt64 :=
-  if completionRequested != 1 then
-    1
-  else if prepareRequested != 1 then
+  let pendingAfterPrepare : UInt64 := if prepareRequested = 1 then 1 else 0
+  if pendingAfterPrepare = 0 then
     2
-  else if completionTicket != 1 then
+  else if completionRequested != 1 then
+    1
+  else if completionTicket != pendingAfterPrepare then
     3
   else
-    let pendingAfterCompletion : UInt64 := 0
-    if replayRequested = 1 && pendingAfterCompletion = completionTicket then 4 else 0
+    let pendingAfterCompletion : UInt64 :=
+      if completionTicket = pendingAfterPrepare then 0 else pendingAfterPrepare
+    if pendingAfterCompletion != 0 then
+      5
+    else if replayRequested = 1 then
+      if pendingAfterCompletion = completionTicket then 5 else 4
+    else
+      0
 
 theorem assigned_edu_reuse_protocol_regressions :
     assignedEDUReuseProtocolExport 1 1 1 0 = 0 ∧
       assignedEDUReuseProtocolExport 0 1 1 0 = 2 ∧
       assignedEDUReuseProtocolExport 1 0 1 0 = 1 ∧
       assignedEDUReuseProtocolExport 1 1 2 0 = 3 ∧
-      assignedEDUReuseProtocolExport 1 1 1 1 = 0 := by
+      assignedEDUReuseProtocolExport 1 1 1 1 = 4 := by
   native_decide
 
 theorem assigned_edu_reuse_protocol_export_agrees_with_model :
@@ -3199,7 +3206,7 @@ theorem assigned_edu_reuse_protocol_export_agrees_with_model :
     assignedEDUReuseProtocolExport 1 1 1 0 = 0 ∧
       prepared.accepted = true ∧ acknowledged.accepted = true ∧
       acknowledged.state.pending = none ∧ replayed.accepted = false ∧
-      assignedEDUReuseProtocolExport 1 1 1 1 = 0 := by
+      assignedEDUReuseProtocolExport 1 1 1 1 = 4 := by
   native_decide
 
 /-! ## Fixed-width hosted invalidation sequence
