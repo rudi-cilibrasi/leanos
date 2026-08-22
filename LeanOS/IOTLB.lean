@@ -2542,6 +2542,43 @@ theorem subject_termination_checked_authoritative_partial_then_exact_completes
   exact ⟨hpartialAccepted, rfl, hexactAccepted, hexactSubject,
     hexactMappings, hexactCache, hexactPending⟩
 
+/-- The composed partial-then-exact sequence also closes every capability
+lookup for the terminated owner.  This makes the capability-reachability
+boundary explicit alongside descendant DMA mapping removal: after exact
+publication, no slot can recover an old grant for subject 2, while the
+mapping, cached translation, and pending ticket are absent in the same
+published state. -/
+theorem subject_termination_checked_authoritative_partial_then_exact_closes_grants
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let partialAck := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessPartialCompletion)
+    let completed := acknowledgeAuthoritativePublication partialAck.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    partialAck.accepted = false ∧
+      partialAck.state = prepared.state ∧
+      completed.accepted = true ∧
+      (∀ slot,
+        LeanOS.Capability.lookup
+          completed.state.authoritative.kernel.capabilities 2 slot =
+            .invalidSubject) ∧
+      completed.state.authoritative.iommu.core.mappings = [] ∧
+      lookup completed.state.cache subjectTerminationWitnessKey = none ∧
+      completed.state.pending = none := by
+  have hcompleted :=
+    subject_termination_checked_authoritative_partial_then_exact_completes plan
+  dsimp only at hcompleted ⊢
+  rcases hcompleted with
+    ⟨hpartialAccepted, hpartialState, hexactAccepted, hexactSubject,
+      hexactMappings, hexactCache, hexactPending⟩
+  refine ⟨hpartialAccepted, hpartialState, hexactAccepted, ?_,
+    hexactMappings, hexactCache, hexactPending⟩
+  intro slot
+  simp [LeanOS.Capability.lookup, hexactSubject]
+
 /-! ## Finite control-operation publication witnesses
 
 The same invariant-bearing assignment/mapping/cache fixture also exercises
