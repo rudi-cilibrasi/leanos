@@ -91,6 +91,16 @@ perl -0pi -e \
 expect_rejected reuse-fresh-transfer-before-old-denial \
   "assigned-EDU frame-reuse source order drifted"
 
+# A permanently disabled device must not count as safe reuse. Remove the real
+# fresh-owner transfer validation and require the policy to reject the missing
+# positive half of the old-denied/fresh-authorized evidence pair.
+cp boot/kernel.c "$tmp/kernel.c"
+perl -0pi -e \
+  's/    if \(write_buffer\[0\] != secret0 \|\| write_buffer\[1\] != secret1 \|\|\n        read_buffer\[0\] != secret0 \|\| read_buffer\[1\] != secret1 \|\|\n        vtd_mmio_read32\(0x34\) != 0\)\n        fail\("vtd-reuse-fresh-iova-transfer"\);\n//' \
+  "$tmp/kernel.c"
+expect_rejected reuse-fresh-transfer-omitted \
+  "assigned-EDU frame-reuse source order drifted"
+
 # Restoring the old boot mapping is teardown, not evidence for the fresh
 # lifetime. Move that exact table publication ahead of the fresh-transfer
 # validation and require the source-order policy to reject the shortcut.

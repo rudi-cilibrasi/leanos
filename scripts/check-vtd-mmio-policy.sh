@@ -45,7 +45,7 @@ grep -Fq 'vtd_mmio_write32(VTD_REG_GLOBAL_COMMAND, 0);' <<<"$mode26_block" ||
 
 line_of() {
   local text="$1" pattern="$2"
-  grep -n -m1 -F "$pattern" <<<"$text" | cut -d: -f1
+  grep -n -m1 -F "$pattern" <<<"$text" | cut -d: -f1 || true
 }
 
 assigned_transfer_block="$(sed -n '/static __attribute__((noinline)) void run_assigned_edu_transfers(void) {/,/^}/p' "$source_file")"
@@ -90,6 +90,11 @@ reuse_fresh_transfer="$(line_of "$assigned_reuse_block" \
   'fail("vtd-reuse-fresh-iova-transfer");')"
 reuse_restore="$(line_of "$assigned_reuse_block" \
   'leanos_vtd_assigned_second_level_table[0];')"
+[[ -n "$reuse_prepare" && -n "$reuse_unpublish" &&
+   -n "$reuse_complete" && -n "$reuse_scrub" &&
+   -n "$reuse_republish" && -n "$reuse_old_denial" &&
+   -n "$reuse_fresh_transfer" && -n "$reuse_restore" ]] ||
+  fail "assigned-EDU frame-reuse source order drifted"
 [[ "$reuse_prepare" -lt "$reuse_unpublish" &&
    "$reuse_unpublish" -lt "${reuse_invalidation_lines[0]}" &&
    "${reuse_invalidation_lines[0]}" -lt "$reuse_complete" &&
