@@ -1878,6 +1878,18 @@ noncomputable def canonicalDMAMemorySubtreeCheckedIOMMUAfter
           (FailStop.compositeDispatcherInitial plan).capabilities 2 2 2 2
           (authoritativeSampleIOMMU plan).capabilityWellFormed }
 
+/-- Proof-only logical candidate for the coordinated memory-subtree cleanup.
+It keeps the published kernel and scrub projections unchanged while exposing
+the validated, internally derived IOMMU successor to the cleanup-inventory
+calculation.  It is deliberately not an `Invariant` witness or a publication
+front door: the next composition step must install the matching raw capability
+successor in every kernel/memory projection before this candidate can publish.
+-/
+noncomputable def canonicalDMAMemorySubtreeCleanupCandidate
+    (plan : BootPageTablePlan.Plan) : AuthoritativeExtension :=
+  { subjectTerminationCheckedBefore plan with
+    iommu := canonicalDMAMemorySubtreeCheckedIOMMUAfter plan }
+
 /-- The concrete live assignment/mapping projection is coherent with the
 canonical kernel, capability, frame-binding, and scrub projections. -/
 theorem subject_termination_checked_before_invariant
@@ -2346,6 +2358,20 @@ theorem subject_termination_checked_removed_authority_scopes
     subjectTerminationWitnessScopes, subjectTerminationWitnessAssignment,
     subjectTerminationWitnessMapping]
   native_decide
+
+/-- The coordinated raw capability/IOMMU successor induces the complete
+mapping-plus-assignment invalidation inventory.  Both scopes are computed from
+the published pre-state and the validated successor; neither is accepted from
+a completion or another caller-provided list. -/
+theorem canonical_dma_memory_subtree_cleanup_candidate_scopes
+    (plan : BootPageTablePlan.Plan) :
+    requiredAuthorityCleanupScopes
+      (subjectTerminationCheckedBefore plan)
+      (canonicalDMAMemorySubtreeCleanupCandidate plan) =
+        subjectTerminationWitnessScopes := by
+  apply subject_termination_checked_removed_authority_scopes plan
+  · rfl
+  · rfl
 
 /-! ## Checked end-to-end cleanup publication
 
