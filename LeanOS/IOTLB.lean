@@ -3305,6 +3305,113 @@ theorem assigned_edu_reuse_release_allowed_agrees_with_model state frame
     hmapping hcache]
   rfl
 
+/-! ## Assigned-EDU fresh-lifetime publication ordering
+
+The clean release decision above is consumed by a second small state machine.
+It makes release, scrub completion, and fresh-lifetime publication distinct
+steps: a rejected step stutters, and publication is accepted only from the
+scrubbed phase.  This is still a hosted protocol model rather than a claim
+about the QEMU device or VT-d completion machinery.
+-/
+
+inductive AssignedEDUReusePhase where
+  | oldLifetime
+  | released
+  | scrubbed
+  | freshPublished
+  deriving BEq, DecidableEq, Repr
+
+inductive AssignedEDUReuseCommand where
+  | release (guard : FrameReleaseGuard)
+  | scrub
+  | publishFresh
+  deriving DecidableEq, Repr
+
+structure AssignedEDUReuseStep where
+  phase : AssignedEDUReusePhase
+  accepted : Bool
+  deriving DecidableEq, Repr
+
+def advanceAssignedEDUReuse
+    (phase : AssignedEDUReusePhase) : AssignedEDUReuseCommand → AssignedEDUReuseStep
+  | .release .allowed =>
+      if phase == .oldLifetime then { phase := .released, accepted := true }
+      else { phase, accepted := false }
+  | .release _ => { phase, accepted := false }
+  | .scrub =>
+      if phase == .released then { phase := .scrubbed, accepted := true }
+      else { phase, accepted := false }
+  | .publishFresh =>
+      if phase == .scrubbed then { phase := .freshPublished, accepted := true }
+      else { phase, accepted := false }
+
+def runAssignedEDUReuse
+    (commands : List AssignedEDUReuseCommand) : AssignedEDUReuseStep :=
+  commands.foldl (fun state command =>
+    let next := advanceAssignedEDUReuse state.phase command
+    { phase := next.phase, accepted := state.accepted && next.accepted })
+    { phase := .oldLifetime, accepted := true }
+
+private def assignedEDUReuseGuardFromCode : UInt64 → FrameReleaseGuard
+  | 0 => .allowed
+  | 1 => .invalidationPending
+  | 2 => .mappingLive
+  | 3 => .cachedTranslationLive
+  | _ => .missingAuthority
+
+private def assignedEDUReuseCommands
+    (guardCode sequence : UInt64) : List AssignedEDUReuseCommand :=
+  let release := AssignedEDUReuseCommand.release
+    (assignedEDUReuseGuardFromCode guardCode)
+  if sequence = 0 then [release, .scrub, .publishFresh]
+  else if sequence = 1 then [.scrub, release, .publishFresh]
+  else if sequence = 2 then [release, .publishFresh, .scrub]
+  else [release]
+
+def assignedEDUReuseFreshPublicationModel
+    (guardCode sequence : UInt64) : UInt64 :=
+  let result := runAssignedEDUReuse
+    (assignedEDUReuseCommands guardCode sequence)
+  if guardCode != 0 then 1
+  else if !result.accepted then 2
+  else if result.phase != .freshPublished then 3
+  else 0
+
+@[export leanos_assigned_edu_reuse_fresh_publication]
+def assignedEDUReuseFreshPublicationExport
+    (guardCode sequence : UInt64) : UInt64 :=
+  if guardCode != 0 then 1
+  else if sequence = 1 || sequence = 2 then 2
+  else if sequence != 0 then 3
+  else 0
+
+theorem assigned_edu_reuse_fresh_publication_regressions :
+    assignedEDUReuseFreshPublicationExport 0 0 = 0 ∧
+      assignedEDUReuseFreshPublicationExport 1 0 = 1 ∧
+      assignedEDUReuseFreshPublicationExport 2 0 = 1 ∧
+      assignedEDUReuseFreshPublicationExport 3 0 = 1 ∧
+      assignedEDUReuseFreshPublicationExport 0 1 = 2 ∧
+      assignedEDUReuseFreshPublicationExport 0 2 = 2 ∧
+      assignedEDUReuseFreshPublicationExport 0 3 = 3 := by
+  native_decide
+
+theorem assigned_edu_reuse_fresh_publication_export_agrees_with_model :
+    assignedEDUReuseFreshPublicationExport 0 0 =
+        assignedEDUReuseFreshPublicationModel 0 0 ∧
+      assignedEDUReuseFreshPublicationExport 1 0 =
+        assignedEDUReuseFreshPublicationModel 1 0 ∧
+      assignedEDUReuseFreshPublicationExport 2 0 =
+        assignedEDUReuseFreshPublicationModel 2 0 ∧
+      assignedEDUReuseFreshPublicationExport 3 0 =
+        assignedEDUReuseFreshPublicationModel 3 0 ∧
+      assignedEDUReuseFreshPublicationExport 0 1 =
+        assignedEDUReuseFreshPublicationModel 0 1 ∧
+      assignedEDUReuseFreshPublicationExport 0 2 =
+        assignedEDUReuseFreshPublicationModel 0 2 ∧
+      assignedEDUReuseFreshPublicationExport 0 3 =
+        assignedEDUReuseFreshPublicationModel 0 3 := by
+  native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
