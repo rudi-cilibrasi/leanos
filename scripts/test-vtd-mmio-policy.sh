@@ -43,4 +43,16 @@ perl -0pi -e \
   "$tmp/kernel.c"
 expect_rejected omitted-invalidation "drifted"
 
+# The assigned-EDU completion must not become authoritative before the old
+# second-level entry is unpublished.  Move only that table clear after the
+# completion result and prove the source-order gate rejects the mutation.
+cp boot/kernel.c "$tmp/kernel.c"
+perl -0pi -e \
+  's/    \(\(volatile uint64_t \*\)vtd_second_level_table\)\[0\] = 0;\n/UNPUBLISH_MARKER\n/;
+   s/(        fail\("vtd-reuse-model-completion"\);\n)/$1    ((volatile uint64_t *)vtd_second_level_table)[0] = 0;\n/;
+   s/UNPUBLISH_MARKER\n//' \
+  "$tmp/kernel.c"
+expect_rejected reuse-completion-before-unpublish \
+  "assigned-EDU frame-reuse source order drifted"
+
 echo "VT-d MMIO policy positive and controlled-negative checks passed"
