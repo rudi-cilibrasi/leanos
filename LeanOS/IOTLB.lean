@@ -3078,6 +3078,33 @@ theorem checked_control_teardown_authoritative_acknowledges_exact
         subjectTerminationWitnessAssignment, subjectTerminationWitnessMapping]
       all_goals native_decide
 
+/-- A mapping-scoped completion cannot partially acknowledge assignment
+teardown.  The authoritative assignment, its descendant mapping, the cached
+translation, and the exact assignment-scoped pending publication all remain
+unchanged until the derived teardown scope completes. -/
+theorem checked_control_teardown_partial_completion_stutters
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (controlCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.control (.teardown subjectTerminationWitnessAssignment.handle))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (controlCheckedCompletion controlCheckedMappingScope)
+    acknowledged.accepted = false ∧ acknowledged.state = prepared.state := by
+  simp only [prepareAuthoritativePublication,
+    controlCheckedAuthoritativePublicationState, prepareControlPublication]
+  rw [checked_control_teardown_requires_exact_scope plan]
+  have haccepted := checked_control_teardown_gated_accepts plan
+  cases hgate : gatedByKernel (subjectTerminationCheckedBefore plan)
+      (subject_termination_checked_before_invariant plan)
+      (.teardown subjectTerminationWitnessAssignment.handle) with
+  | rejected reason =>
+      simp [hgate, AuthoritativeOutcome.isAccepted] at haccepted
+  | accepted after hinvariant reply =>
+      simp [acknowledgeAuthoritativePublication, acknowledgeControlPublication,
+        controlCheckedCompletion, controlCheckedMappingScope,
+        controlCheckedAssignmentScope]
+
 /-! ## Assigned-EDU reuse binding
 
 The machine lane uses the generated VT-d projection, whose requester 16 is the
