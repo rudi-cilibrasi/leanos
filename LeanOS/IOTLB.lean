@@ -1818,6 +1818,66 @@ def subjectTerminationCheckedBefore (plan : BootPageTablePlan.Plan) :
     iommu := subjectTerminationCheckedIOMMU plan
     scrub := (authoritativeSample plan).scrub }
 
+/-! ## Coordinated capability-subtree/IOMMU successor
+
+The canonical memory root cannot pass the generic runtime-safe subtree gate,
+but its raw checked transition is accepted.  This finite successor couples
+that internally derived capability state to removal of the one assignment,
+mapping, and IOMMU capability which depend on the selected root.  It is the
+logical post-state that a later exact multi-scope publication will install;
+it does not bypass the existing publication or completion boundary.
+-/
+
+noncomputable def canonicalDMAMemorySubtreeCheckedCoreAfter
+    (plan : BootPageTablePlan.Plan) : Core :=
+  { subjectTerminationCheckedCore plan with
+    assignments := []
+    mappings := []
+    capabilityAuthority := (canonicalDMAMemorySubtreeRawAfter plan).state
+    capabilities := [] }
+
+/-- The coordinated finite successor is accepted by the same IOMMU validator
+as ordinary checked states.  In particular, removing the root does not leave
+an IOMMU capability whose identity is absent from authoritative capability
+state, nor a mapping or assignment that can keep naming its frame. -/
+theorem canonical_dma_memory_subtree_checked_core_valid
+    (plan : BootPageTablePlan.Plan) :
+    validateCore (canonicalDMAMemorySubtreeCheckedCoreAfter plan) = true := by
+  simp [canonicalDMAMemorySubtreeCheckedCoreAfter,
+    subjectTerminationCheckedCore, authoritativeSampleCore,
+    canonicalDMAMemorySubtreeRawAfter, LeanOS.Capability.revokeSubtree,
+    LeanOS.Capability.lookup, FailStop.compositeDispatcherInitial]
+  native_decide
+
+/-- All four coupled authority projections disappear in the same logical
+successor: the selected capability root, its IOMMU capability, mapping, and
+assignment.  The raw capability successor is derived from the pre-state; no
+caller supplies a replacement capability store. -/
+theorem canonical_dma_memory_subtree_checked_core_closes_grant
+    (plan : BootPageTablePlan.Plan) :
+    let after := canonicalDMAMemorySubtreeCheckedCoreAfter plan
+    after.capabilityAuthority.slots 2 2 = none ∧
+      after.capabilities = [] ∧
+      after.mappings = [] ∧
+      after.assignments = [] := by
+  have hraw := canonical_dma_memory_raw_subtree_derives_successor plan
+  exact ⟨hraw.2, rfl, rfl, rfl⟩
+
+/-- Package the validated coordinated core as an invariant-carrying IOMMU
+state.  Capability well-formedness is inherited from the checked raw subtree
+transition rather than asserted independently. -/
+noncomputable def canonicalDMAMemorySubtreeCheckedIOMMUAfter
+    (plan : BootPageTablePlan.Plan) : State :=
+  { core := canonicalDMAMemorySubtreeCheckedCoreAfter plan
+    valid := canonical_dma_memory_subtree_checked_core_valid plan
+    capabilityWellFormed := by
+      simpa [canonicalDMAMemorySubtreeCheckedCoreAfter,
+        canonicalDMAMemorySubtreeRawAfter, subjectTerminationCheckedCore,
+        authoritativeSampleCore] using
+        LeanOS.Capability.revokeSubtree_preserves_wellFormed
+          (FailStop.compositeDispatcherInitial plan).capabilities 2 2 2 2
+          (authoritativeSampleIOMMU plan).capabilityWellFormed }
+
 /-- The concrete live assignment/mapping projection is coherent with the
 canonical kernel, capability, frame-binding, and scrub projections. -/
 theorem subject_termination_checked_before_invariant
