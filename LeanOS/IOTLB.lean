@@ -3412,6 +3412,57 @@ theorem assigned_edu_reuse_fresh_publication_export_agrees_with_model :
         assignedEDUReuseFreshPublicationModel 0 3 := by
   native_decide
 
+/-! ## Authoritative release-to-scrub composition
+
+The hosted phase machine above is not itself the allocator.  The theorem
+below connects its successful row to the two real model boundaries: an
+accepted `gatedCachedMemoryByKernel` release (which can only have passed the
+exact cache-aware guard) and the subsequent `FrameScrub.allocate` transition
+(which atomically clears the selected frame before publishing its new
+lifetime).  Thus the abstract `released -> scrubbed -> freshPublished` path is
+justified by authoritative outcomes rather than caller-provided success bits.
+-/
+
+theorem cached_release_then_allocation_orders_fresh_publication
+    (state : AuthoritativeCacheState)
+    (hstate : state.authoritative.Invariant)
+    (oldSubject : FrameScrub.SubjectId)
+    (oldSlot : FrameScrub.SlotId)
+    (freshObject : FrameScrub.ObjectId)
+    (freshSubject : FrameScrub.SubjectId)
+    (freshSlot : FrameScrub.SlotId)
+    (hrelease :
+      (gatedCachedMemoryByKernel state hstate
+        (.release oldSubject oldSlot)).isAccepted = true)
+    (hallocate :
+      (FrameScrub.allocate
+        (gatedCachedMemoryByKernel state hstate
+          (.release oldSubject oldSlot)).state.authoritative.scrub
+        freshObject freshSubject freshSlot).result = .accepted) :
+    let released := advanceAssignedEDUReuse .oldLifetime
+      (.release (guardFrameRelease state oldSubject oldSlot))
+    let scrubbed := advanceAssignedEDUReuse released.phase .scrub
+    let published := advanceAssignedEDUReuse scrubbed.phase .publishFresh
+    released.accepted = true ∧
+      scrubbed.accepted = true ∧
+      published.accepted = true ∧
+      published.phase = .freshPublished ∧
+      FrameScrub.Fresh
+        (FrameScrub.allocate
+          (gatedCachedMemoryByKernel state hstate
+            (.release oldSubject oldSlot)).state.authoritative.scrub
+          freshObject freshSubject freshSlot).state
+        freshObject := by
+  have hguard := cached_release_accepted_requires_guard_allowed
+    state hstate oldSubject oldSlot hrelease
+  have hfresh := FrameScrub.allocation_publishes_scrubbed
+    (gatedCachedMemoryByKernel state hstate
+      (.release oldSubject oldSlot)).state.authoritative.scrub
+    freshObject freshSubject freshSlot hallocate
+  dsimp only
+  rw [hguard]
+  refine ⟨?_, ?_, ?_, ?_, hfresh⟩ <;> native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB

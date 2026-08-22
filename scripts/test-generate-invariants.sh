@@ -111,6 +111,14 @@ if "$work/repo/scripts/generate-invariants.py" verify \
   fail "verify accepted a stale totals marker"
 fi
 
+# Stale human-readable totals must fail independently of the marker.
+sed 's/prove \*\*6 named theorems\*\*/prove **7 named theorems**/' \
+  "$work/repo/INVARIANTS.md" >"$work/stale-prose.md"
+if "$work/repo/scripts/generate-invariants.py" verify \
+  --document "$work/stale-prose.md" >/dev/null 2>&1; then
+  fail "verify accepted stale prose totals"
+fi
+
 # --- the committed document must match the real sources ----------------------
 "$root/scripts/check-invariants.sh" >/dev/null
 
