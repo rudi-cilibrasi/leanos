@@ -1878,6 +1878,125 @@ noncomputable def canonicalDMAMemorySubtreeCheckedIOMMUAfter
           (FailStop.compositeDispatcherInitial plan).capabilities 2 2 2 2
           (authoritativeSampleIOMMU plan).capabilityWellFormed }
 
+/-- Proof-only composite-kernel projection for the checked raw subtree
+successor.  This mirrors capability publication into every kernel consumer,
+but remains local to the coordinated cleanup candidate: it is not an ordinary
+operation and cannot publish independently of the IOMMU cleanup protocol. -/
+noncomputable def canonicalDMAMemorySubtreeKernelAfter
+    (plan : BootPageTablePlan.Plan) : FailStop.CompositeState :=
+  let before := (subjectTerminationCheckedBefore plan).kernel
+  let capabilities := (canonicalDMAMemorySubtreeRawAfter plan).state
+  let lifecycle := { before.lifecycle with capabilities }
+  let scheduler := { before.scheduler with lifecycle }
+  let virtualMemory := { before.virtualMemory with
+    memory := { before.virtualMemory.memory with capabilities } }
+  let endpoints := { before.ipc.endpoints with capabilities }
+  { before with
+    execution := { before.execution with
+      core := { before.execution.core with lifecycle }
+      returnAuthorityArmed := false }
+    scheduler
+    preemption := { before.preemption with scheduler }
+    virtualMemory
+    ipc := { before.ipc with virtualMemory, endpoints }
+    capabilities
+    lifecycle
+    resumable := { before.resumable with
+      scheduler
+      translations := { before.resumable.translations with
+        virtual := virtualMemory } }
+    transfers := { before.transfers with toEndpointState := endpoints }
+    blockingIPC := { before.blockingIPC with scheduler } }
+
+/-- Every overlapping kernel view receives the exact raw successor derived
+from the authoritative pre-state.  No consumer can retain the revoked root
+while another observes its removal. -/
+theorem canonical_dma_memory_subtree_kernel_after_synchronizes_capabilities
+    (plan : BootPageTablePlan.Plan) :
+    let capabilities := (canonicalDMAMemorySubtreeRawAfter plan).state
+    let after := canonicalDMAMemorySubtreeKernelAfter plan
+    after.capabilities = capabilities ∧
+      after.lifecycle.capabilities = capabilities ∧
+      after.execution.core.lifecycle.capabilities = capabilities ∧
+      after.virtualMemory.memory.capabilities = capabilities ∧
+      after.ipc.endpoints.capabilities = capabilities ∧
+      after.scheduler.lifecycle.capabilities = capabilities ∧
+      after.preemption.scheduler.lifecycle.capabilities = capabilities ∧
+      after.resumable.scheduler.lifecycle.capabilities = capabilities ∧
+      after.transfers.capabilities = capabilities := by
+  simp [canonicalDMAMemorySubtreeKernelAfter]
+
+/-- The scrub projection receives the same capability successor without
+changing bytes, bindings, allocator ownership, or write history. -/
+noncomputable def canonicalDMAMemorySubtreeScrubAfter
+    (plan : BootPageTablePlan.Plan) : FrameScrub.State :=
+  let before := (subjectTerminationCheckedBefore plan).scrub
+  { before with memory := { before.memory with
+      capabilities := (canonicalDMAMemorySubtreeRawAfter plan).state } }
+
+/-- Proof-only logical candidate for the coordinated memory-subtree cleanup.
+It installs the internally derived capability successor in the kernel, memory,
+scrub, and validated IOMMU projections, but remains deliberately outside the
+publication front door until complete coherence is proved.
+-/
+noncomputable def canonicalDMAMemorySubtreeCleanupCandidate
+    (plan : BootPageTablePlan.Plan) : AuthoritativeExtension :=
+  { kernel := canonicalDMAMemorySubtreeKernelAfter plan
+    iommu := canonicalDMAMemorySubtreeCheckedIOMMUAfter plan
+    scrub := canonicalDMAMemorySubtreeScrubAfter plan }
+
+/-- The coordinated candidate has one exact capability successor across the
+outer kernel, virtual-memory, scrub, and IOMMU authority projections. -/
+theorem canonical_dma_memory_subtree_cleanup_candidate_capabilities_coherent
+    (plan : BootPageTablePlan.Plan) :
+    let capabilities := (canonicalDMAMemorySubtreeRawAfter plan).state
+    let after := canonicalDMAMemorySubtreeCleanupCandidate plan
+    after.kernel.capabilities = capabilities ∧
+      after.kernel.virtualMemory.memory.capabilities = capabilities ∧
+      after.scrub.memory.capabilities = capabilities ∧
+      after.iommu.core.capabilityAuthority = capabilities := by
+  simp [canonicalDMAMemorySubtreeCleanupCandidate,
+    canonicalDMAMemorySubtreeKernelAfter,
+    canonicalDMAMemorySubtreeScrubAfter,
+    canonicalDMAMemorySubtreeCheckedIOMMUAfter,
+    canonicalDMAMemorySubtreeCheckedCoreAfter]
+
+/-- The proof-only coordinated successor satisfies the complete outer
+cross-projection coherence predicate.  This closes the state-construction
+obligation while leaving publication and exact-completion ordering separate. -/
+theorem canonical_dma_memory_subtree_cleanup_candidate_coherent
+    (plan : BootPageTablePlan.Plan) :
+    (canonicalDMAMemorySubtreeCleanupCandidate plan).Coherent := by
+  have hscrub : FrameScrub.ScrubInvariant
+      (canonicalDMAMemorySubtreeCleanupCandidate plan).scrub := by
+    intro object frame hbinding hunwritten
+    apply authoritativeSampleScrub_invariant plan object frame
+    · simpa [canonicalDMAMemorySubtreeCleanupCandidate,
+        canonicalDMAMemorySubtreeScrubAfter,
+        subjectTerminationCheckedBefore,
+        authoritativeSample] using hbinding
+    · simpa [canonicalDMAMemorySubtreeCleanupCandidate,
+        canonicalDMAMemorySubtreeScrubAfter,
+        subjectTerminationCheckedBefore,
+        authoritativeSample] using hunwritten
+  rw [AuthoritativeExtension.Coherent]
+  refine ⟨?_, ?_, ?_, ?_, hscrub, ?_, ?_, ?_, ?_⟩ <;>
+    simp [canonicalDMAMemorySubtreeCleanupCandidate,
+      canonicalDMAMemorySubtreeKernelAfter,
+      canonicalDMAMemorySubtreeScrubAfter,
+      canonicalDMAMemorySubtreeCheckedIOMMUAfter,
+      canonicalDMAMemorySubtreeCheckedCoreAfter,
+      canonicalDMAMemorySubtreeRawAfter,
+      LeanOS.Capability.revokeSubtree,
+      LeanOS.Capability.lookup,
+      subjectTerminationCheckedBefore,
+      subjectTerminationCheckedIOMMU,
+      subjectTerminationCheckedCore,
+      authoritativeSample, authoritativeSampleCore,
+      authoritativeSampleScrub,
+      FailStop.compositeDispatcherInitial]
+  all_goals native_decide
+
 /-- The concrete live assignment/mapping projection is coherent with the
 canonical kernel, capability, frame-binding, and scrub projections. -/
 theorem subject_termination_checked_before_invariant
@@ -2346,6 +2465,20 @@ theorem subject_termination_checked_removed_authority_scopes
     subjectTerminationWitnessScopes, subjectTerminationWitnessAssignment,
     subjectTerminationWitnessMapping]
   native_decide
+
+/-- The coordinated raw capability/IOMMU successor induces the complete
+mapping-plus-assignment invalidation inventory.  Both scopes are computed from
+the published pre-state and the validated successor; neither is accepted from
+a completion or another caller-provided list. -/
+theorem canonical_dma_memory_subtree_cleanup_candidate_scopes
+    (plan : BootPageTablePlan.Plan) :
+    requiredAuthorityCleanupScopes
+      (subjectTerminationCheckedBefore plan)
+      (canonicalDMAMemorySubtreeCleanupCandidate plan) =
+        subjectTerminationWitnessScopes := by
+  apply subject_termination_checked_removed_authority_scopes plan
+  · rfl
+  · rfl
 
 /-! ## Checked end-to-end cleanup publication
 
