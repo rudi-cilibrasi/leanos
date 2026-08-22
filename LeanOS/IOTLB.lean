@@ -532,6 +532,25 @@ theorem cached_release_accepted_requires_guard_allowed state hstate subject slot
     simp_all [gatedCachedMemoryByKernel, CachedMemoryOutcome.isAccepted,
       liftMemoryOutcome]
 
+/-- An accepted cache-aware release is tied to a frame resolved from the
+authoritative subject/slot capability, and that exact frame has passed the
+IOTLB-aware release guard.  This prevents later machine call-order evidence
+from replacing capability resolution with a caller-supplied frame number. -/
+theorem cached_release_accepted_resolves_guarded_frame state hstate subject slot
+    (haccepted :
+      (gatedCachedMemoryByKernel state hstate
+        (.release subject slot)).isAccepted = true) :
+    ∃ frame,
+      resolveReleaseFrame state subject slot = some frame ∧
+        guardExactFrameRelease state frame = .allowed := by
+  have hguard := cached_release_accepted_requires_guard_allowed
+    state hstate subject slot haccepted
+  unfold guardFrameRelease at hguard
+  split at hguard
+  · cases hguard
+  · rename_i frame hresolve
+    exact ⟨frame, hresolve, hguard⟩
+
 theorem cached_release_allowed_delegates state hstate subject slot
     (hguard : guardFrameRelease state subject slot = .allowed) :
     (gatedCachedMemoryByKernel state hstate
