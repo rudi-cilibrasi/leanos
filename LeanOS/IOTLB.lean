@@ -3138,6 +3138,38 @@ theorem checked_control_teardown_partial_completion_stutters
         controlCheckedCompletion, controlCheckedMappingScope,
         controlCheckedAssignmentScope]
 
+/-- A rejected descendant-mapping completion cannot consume or corrupt the
+assignment-scoped publication.  The same prepared state subsequently accepts
+the exact assignment completion and publishes removal of every old device
+authority projection atomically. -/
+theorem checked_control_teardown_partial_then_exact_completes
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (controlCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.control (.teardown subjectTerminationWitnessAssignment.handle))
+    let partialAck := acknowledgeAuthoritativePublication prepared.state
+      (controlCheckedCompletion controlCheckedMappingScope)
+    let completed := acknowledgeAuthoritativePublication partialAck.state
+      (controlCheckedCompletion controlCheckedAssignmentScope)
+    partialAck.accepted = false ∧
+      partialAck.state = prepared.state ∧
+      completed.accepted = true ∧
+      completed.state.authoritative.iommu.core.assignments = [] ∧
+      completed.state.authoritative.iommu.core.mappings = [] ∧
+      lookup completed.state.cache subjectTerminationWitnessKey = none ∧
+      completed.state.pending = none := by
+  have hpartial := checked_control_teardown_partial_completion_stutters plan
+  have hexact := checked_control_teardown_authoritative_acknowledges_exact plan
+  dsimp only at hpartial hexact ⊢
+  rcases hpartial with ⟨hpartialAccepted, hpartialState⟩
+  rcases hexact with
+    ⟨hexactAccepted, _hexactAuthoritative, hexactAssignments,
+      hexactMappings, hexactCache, hexactPending⟩
+  rw [hpartialState]
+  exact ⟨hpartialAccepted, rfl, hexactAccepted, hexactAssignments,
+    hexactMappings, hexactCache, hexactPending⟩
+
 /-! ## Assigned-EDU reuse binding
 
 The machine lane uses the generated VT-d projection, whose requester 16 is the
