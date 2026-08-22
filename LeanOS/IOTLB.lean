@@ -3482,6 +3482,59 @@ theorem cached_release_then_allocation_orders_fresh_publication
   rw [hguard]
   refine ⟨?_, ?_, ?_, ?_, hfresh⟩ <;> native_decide
 
+/-- The controlled assigned-EDU call-order row cannot jump from a caller's
+completion bit directly to fresh publication.  Its cache premise is the exact
+state produced by preparing and acknowledging the assigned-EDU mapping
+invalidation; an accepted release then supplies authoritative capability
+resolution and the exact-frame guard, and the real allocator supplies the
+scrubbed fresh lifetime.  This remains a model/hosted boundary and does not
+claim VT-d completion or QEMU refinement. -/
+theorem assigned_edu_completion_release_allocation_orders_fresh_publication
+    (state : AuthoritativeCacheState)
+    (hstate : state.authoritative.Invariant)
+    (oldSubject : FrameScrub.SubjectId)
+    (oldSlot : FrameScrub.SlotId)
+    (freshObject : FrameScrub.ObjectId)
+    (freshSubject : FrameScrub.SubjectId)
+    (freshSlot : FrameScrub.SlotId)
+    (hcache :
+      state.cache =
+        (acknowledgeInvalidation
+          (prepareInvalidation assignedEDUReuseInitial
+            (.mapping assignedEDUReuseKey)).state
+          { ticket := 1, scope := .mapping assignedEDUReuseKey }).state)
+    (hrelease :
+      (gatedCachedMemoryByKernel state hstate
+        (.release oldSubject oldSlot)).isAccepted = true)
+    (hallocate :
+      (FrameScrub.allocate
+        (gatedCachedMemoryByKernel state hstate
+          (.release oldSubject oldSlot)).state.authoritative.scrub
+        freshObject freshSubject freshSlot).result = .accepted) :
+    state.cache.pending = none ∧
+      lookup state.cache.published assignedEDUReuseKey = none ∧
+      (∃ frame,
+        resolveReleaseFrame state oldSubject oldSlot = some frame ∧
+          guardExactFrameRelease state frame = .allowed) ∧
+      assignedEDUReuseFreshPublicationExport 0 0 = 0 ∧
+      FrameScrub.Fresh
+        (FrameScrub.allocate
+          (gatedCachedMemoryByKernel state hstate
+            (.release oldSubject oldSlot)).state.authoritative.scrub
+          freshObject freshSubject freshSlot).state
+        freshObject := by
+  have hresolved := cached_release_accepted_resolves_guarded_frame
+    state hstate oldSubject oldSlot hrelease
+  have hfresh := FrameScrub.allocation_publishes_scrubbed
+    (gatedCachedMemoryByKernel state hstate
+      (.release oldSubject oldSlot)).state.authoritative.scrub
+    freshObject freshSubject freshSlot hallocate
+  refine ⟨?_, ?_, hresolved, by native_decide, hfresh⟩
+  · rw [hcache]
+    native_decide
+  · rw [hcache]
+    native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
