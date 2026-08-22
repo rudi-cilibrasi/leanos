@@ -3196,17 +3196,44 @@ theorem assigned_edu_reuse_protocol_regressions :
       assignedEDUReuseProtocolExport 1 1 1 1 = 4 := by
   native_decide
 
-theorem assigned_edu_reuse_protocol_export_agrees_with_model :
+def assignedEDUReuseProtocolModelAdapter
+    (prepareRequested completionRequested completionTicket replayRequested : UInt64) :
+    UInt64 :=
+  if prepareRequested != 1 then
+    2
+  else
     let prepared := prepareInvalidation assignedEDUReuseInitial
       (.mapping assignedEDUReuseKey)
-    let completion : Completion := {
-      ticket := 1, scope := .mapping assignedEDUReuseKey }
-    let acknowledged := acknowledgeInvalidation prepared.state completion
-    let replayed := acknowledgeInvalidation acknowledged.state completion
-    assignedEDUReuseProtocolExport 1 1 1 0 = 0 ∧
-      prepared.accepted = true ∧ acknowledged.accepted = true ∧
-      acknowledged.state.pending = none ∧ replayed.accepted = false ∧
-      assignedEDUReuseProtocolExport 1 1 1 1 = 4 := by
+    if !prepared.accepted then
+      2
+    else if completionRequested != 1 then
+      1
+    else
+      let completion : Completion := {
+        ticket := completionTicket.toNat
+        scope := .mapping assignedEDUReuseKey }
+      let acknowledged := acknowledgeInvalidation prepared.state completion
+      if !acknowledged.accepted then
+        3
+      else if acknowledged.state.pending.isSome then
+        5
+      else if replayRequested = 1 then
+        let replayed := acknowledgeInvalidation acknowledged.state completion
+        if replayed.accepted || replayed.state.pending.isSome then 5 else 4
+      else
+        0
+
+theorem assigned_edu_reuse_protocol_export_agrees_with_model :
+    assignedEDUReuseProtocolExport 1 1 1 0 =
+        assignedEDUReuseProtocolModelAdapter 1 1 1 0 ∧
+      assignedEDUReuseProtocolExport 0 1 1 0 =
+        assignedEDUReuseProtocolModelAdapter 0 1 1 0 ∧
+      assignedEDUReuseProtocolExport 1 0 1 0 =
+        assignedEDUReuseProtocolModelAdapter 1 0 1 0 ∧
+      assignedEDUReuseProtocolExport 1 1 2 0 =
+        assignedEDUReuseProtocolModelAdapter 1 1 2 0 ∧
+      assignedEDUReuseProtocolExport 1 1 1 1 =
+        assignedEDUReuseProtocolModelAdapter 1 1 1 1 := by
   native_decide
 
 /-! ## Fixed-width hosted invalidation sequence
