@@ -1997,6 +1997,49 @@ theorem canonical_dma_memory_subtree_cleanup_candidate_coherent
       FailStop.compositeDispatcherInitial]
   all_goals native_decide
 
+/-- The kernel-facing capability projection retains the raw transition's
+machine-checked provenance.  This exposes the exact capability sub-obligation
+needed by the complete runtime invariant without asserting that the
+coordinated candidate has crossed the publication boundary. -/
+theorem canonical_dma_memory_subtree_kernel_after_capabilities_well_formed
+    (plan : BootPageTablePlan.Plan) :
+    LeanOS.Capability.WellFormed
+      (canonicalDMAMemorySubtreeKernelAfter plan).capabilities := by
+  simpa [canonicalDMAMemorySubtreeKernelAfter,
+    canonicalDMAMemorySubtreeRawAfter] using
+    LeanOS.Capability.revokeSubtree_preserves_wellFormed
+      (FailStop.compositeDispatcherInitial plan).capabilities 2 2 2 2
+      (authoritativeSampleIOMMU plan).capabilityWellFormed
+
+/-- Coordinating the capability successor changes no deferred-cancellation or
+invalidation-publication state.  These authority-bearing runtime projections
+remain exactly the checked pre-state's values while the candidate waits for
+the cleanup publication protocol. -/
+theorem canonical_dma_memory_subtree_kernel_after_retains_runtime_authority
+    (plan : BootPageTablePlan.Plan) :
+    let before := (subjectTerminationCheckedBefore plan).kernel
+    let after := canonicalDMAMemorySubtreeKernelAfter plan
+    after.deferredCancels = before.deferredCancels ∧
+      after.invalidationPublication = before.invalidationPublication := by
+  simp [canonicalDMAMemorySubtreeKernelAfter,
+    subjectTerminationCheckedBefore, authoritativeSample]
+
+/-- The validated IOMMU state and complete cross-projection coherence are
+already discharged.  Consequently the sole remaining obligation for the
+coordinated candidate's full outer invariant is the kernel runtime invariant;
+callers cannot substitute a weaker IOMMU or coherence premise. -/
+theorem canonical_dma_memory_subtree_cleanup_candidate_invariant_iff_runtime
+    (plan : BootPageTablePlan.Plan) :
+    (canonicalDMAMemorySubtreeCleanupCandidate plan).Invariant ↔
+      FailStop.AuthoritativeRuntimeWellFormed
+        (canonicalDMAMemorySubtreeCleanupCandidate plan).kernel := by
+  constructor
+  · exact fun hinvariant => hinvariant.1
+  · intro hruntime
+    exact ⟨hruntime,
+      (canonicalDMAMemorySubtreeCleanupCandidate plan).iommu.invariant,
+      canonical_dma_memory_subtree_cleanup_candidate_coherent plan⟩
+
 /-- The concrete live assignment/mapping projection is coherent with the
 canonical kernel, capability, frame-binding, and scrub projections. -/
 theorem subject_termination_checked_before_invariant
