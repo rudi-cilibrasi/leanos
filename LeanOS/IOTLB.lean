@@ -3506,16 +3506,30 @@ theorem assigned_edu_completion_release_allocation_orders_fresh_publication
     (hrelease :
       (gatedCachedMemoryByKernel state hstate
         (.release oldSubject oldSlot)).isAccepted = true)
+    (hresolveAssigned :
+      resolveReleaseFrame state oldSubject oldSlot =
+        some assignedEDUReuseEntry.frame)
     (hallocate :
       (FrameScrub.allocate
         (gatedCachedMemoryByKernel state hstate
           (.release oldSubject oldSlot)).state.authoritative.scrub
-        freshObject freshSubject freshSlot).result = .accepted) :
+        freshObject freshSubject freshSlot).result = .accepted)
+    (hreuseAssigned :
+      (FrameScrub.allocate
+        (gatedCachedMemoryByKernel state hstate
+          (.release oldSubject oldSlot)).state.authoritative.scrub
+        freshObject freshSubject freshSlot).state.memory.binding freshObject =
+          some assignedEDUReuseEntry.frame.frame) :
     state.cache.pending = none ∧
       lookup state.cache.published assignedEDUReuseKey = none ∧
-      (∃ frame,
-        resolveReleaseFrame state oldSubject oldSlot = some frame ∧
-          guardExactFrameRelease state frame = .allowed) ∧
+      resolveReleaseFrame state oldSubject oldSlot =
+        some assignedEDUReuseEntry.frame ∧
+      guardExactFrameRelease state assignedEDUReuseEntry.frame = .allowed ∧
+      (FrameScrub.allocate
+        (gatedCachedMemoryByKernel state hstate
+          (.release oldSubject oldSlot)).state.authoritative.scrub
+        freshObject freshSubject freshSlot).state.memory.binding freshObject =
+          some assignedEDUReuseEntry.frame.frame ∧
       assignedEDUReuseFreshPublicationExport 0 0 = 0 ∧
       FrameScrub.Fresh
         (FrameScrub.allocate
@@ -3525,15 +3539,39 @@ theorem assigned_edu_completion_release_allocation_orders_fresh_publication
         freshObject := by
   have hresolved := cached_release_accepted_resolves_guarded_frame
     state hstate oldSubject oldSlot hrelease
+  obtain ⟨frame, hresolve, hguard⟩ := hresolved
+  rw [hresolveAssigned] at hresolve
+  injection hresolve with hframe
+  subst frame
   have hfresh := FrameScrub.allocation_publishes_scrubbed
     (gatedCachedMemoryByKernel state hstate
       (.release oldSubject oldSlot)).state.authoritative.scrub
     freshObject freshSubject freshSlot hallocate
-  refine ⟨?_, ?_, hresolved, by native_decide, hfresh⟩
+  refine ⟨?_, ?_, hresolveAssigned, hguard, hreuseAssigned,
+    by native_decide, hfresh⟩
   · rw [hcache]
     native_decide
   · rw [hcache]
     native_decide
+
+/-- Allocation acceptance alone cannot establish assigned-frame reuse: an
+earlier unrelated free frame wins the allocator's deterministic first-free
+selection.  The composition theorem therefore requires and publishes the
+exact fresh-object binding to the assigned EDU frame. -/
+private def assignedEDUEarlierFreeAllocator : FrameAllocator.State := {
+  frames := [1, assignedEDUReuseEntry.frame.frame]
+  status := fun _ => .free }
+
+private def assignedEDUEarlierFreeSelection : Option FrameAllocator.FrameId :=
+  match FrameAllocator.allocate assignedEDUEarlierFreeAllocator 99 with
+  | .ok allocation => some allocation.frame
+  | .error _ => none
+
+theorem assigned_edu_reuse_rejects_unbound_allocation_regression :
+    assignedEDUEarlierFreeSelection = some 1 ∧
+      assignedEDUEarlierFreeSelection ≠
+        some assignedEDUReuseEntry.frame.frame := by
+  native_decide
 
 /-! ## Fixed-width hosted invalidation sequence
 
