@@ -67,4 +67,16 @@ perl -0pi -e \
 expect_rejected reuse-scrub-before-completion \
   "assigned-EDU frame-reuse source order drifted"
 
+# Installing the fresh-owner leaf is the authoritative publication boundary.
+# Move that real second-level-table write ahead of exact completion and prove
+# the policy rejects reuse even when the later invalidation remains present.
+cp boot/kernel.c "$tmp/kernel.c"
+perl -0pi -e \
+  's/    \(\(volatile uint64_t \*\)vtd_second_level_table\)\[2\] =\n        LEANOS_VTD_ASSIGNED_READ_BUFFER_FRAME \* PAGE_BYTES \+ 1;\n/REPUBLISH_MARKER\n/;
+   s/(    if \(leanos_assigned_edu_reuse_publication\(\n            2, 1, LEANOS_VTD_ASSIGNED_REQUESTER,)/    ((volatile uint64_t *)vtd_second_level_table)[2] =\n        LEANOS_VTD_ASSIGNED_READ_BUFFER_FRAME * PAGE_BYTES + 1;\n$1/;
+   s/REPUBLISH_MARKER\n//' \
+  "$tmp/kernel.c"
+expect_rejected reuse-republish-before-completion \
+  "assigned-EDU frame-reuse source order drifted"
+
 echo "VT-d MMIO policy positive and controlled-negative checks passed"
