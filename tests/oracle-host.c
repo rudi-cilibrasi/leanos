@@ -36,6 +36,8 @@ extern uint64_t leanos_assigned_edu_reuse_publication(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_assigned_edu_reuse_protocol(
     uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t leanos_assigned_edu_reuse_release_gate(
+    uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
 extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
@@ -71,6 +73,7 @@ int main(void) {
     REGISTER_BOUNDARY(leanos_iotlb_publication_demo);
     REGISTER_BOUNDARY(leanos_assigned_edu_reuse_publication);
     REGISTER_BOUNDARY(leanos_assigned_edu_reuse_protocol);
+    REGISTER_BOUNDARY(leanos_assigned_edu_reuse_release_gate);
     REGISTER_BOUNDARY(leanos_frame_budget_mapping_page);
     REGISTER_BOUNDARY(leanos_frame_budget_invalidation_effect);
     REGISTER_BOUNDARY(leanos_composite_dispatch);
@@ -166,6 +169,13 @@ int main(void) {
         leanos_assigned_edu_reuse_protocol(1, 1, 2, 0) != 3 ||
         leanos_assigned_edu_reuse_protocol(1, 1, 1, 1) != 4) {
         fputs("generated assigned-EDU reuse protocol drifted\n", stderr);
+        return 1;
+    }
+    if (leanos_assigned_edu_reuse_release_gate(0, 0, 0) != 1 ||
+        leanos_assigned_edu_reuse_release_gate(1, 1, 0) != 2 ||
+        leanos_assigned_edu_reuse_release_gate(1, 0, 1) != 3 ||
+        leanos_assigned_edu_reuse_release_gate(1, 0, 0) != 0) {
+        fputs("assigned EDU release gate accepted stale authority\n", stderr);
         return 1;
     }
     if (leanos_validate_q35_dma_snapshot(

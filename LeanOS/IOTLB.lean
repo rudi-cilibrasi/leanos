@@ -3236,6 +3236,75 @@ theorem assigned_edu_reuse_protocol_export_agrees_with_model :
         assignedEDUReuseProtocolModelAdapter 1 1 1 1 := by
   native_decide
 
+/-! ## Assigned-EDU release gate
+
+Completion of the invalidation protocol is necessary but not sufficient for
+frame reuse: the authoritative mapping and published translation must also
+stop naming the old lifetime.  This fixed-width boundary exposes those three
+ordered checks to the hosted generated-C lane. -/
+
+def frameReleaseGuardCode : FrameReleaseGuard → UInt64
+  | .allowed => 0
+  | .invalidationPending => 1
+  | .mappingLive => 2
+  | .cachedTranslationLive => 3
+  | .missingAuthority => 4
+
+@[export leanos_assigned_edu_reuse_release_gate]
+def assignedEDUReuseReleaseGateExport
+    (completionAccepted mappingLive cacheLive : UInt64) : UInt64 :=
+  if completionAccepted != 1 then 1
+  else if mappingLive = 1 then 2
+  else if cacheLive = 1 then 3
+  else 0
+
+theorem assigned_edu_reuse_release_gate_regressions :
+    assignedEDUReuseReleaseGateExport 0 0 0 = 1 ∧
+      assignedEDUReuseReleaseGateExport 1 1 0 = 2 ∧
+      assignedEDUReuseReleaseGateExport 1 0 1 = 3 ∧
+      assignedEDUReuseReleaseGateExport 1 0 0 = 0 := by
+  native_decide
+
+theorem assigned_edu_reuse_release_pending_agrees_with_model state frame pending
+    (hpending : state.cache.pending = some pending)
+    (hnames : pendingNamesFrame pending frame = true) :
+    assignedEDUReuseReleaseGateExport 0 0 0 =
+      frameReleaseGuardCode (guardExactFrameRelease state frame) := by
+  rw [pending_invalidation_blocks_exact_frame_release state frame pending
+    hpending hnames]
+  rfl
+
+theorem assigned_edu_reuse_release_mapping_agrees_with_model state frame
+    (hpending : state.cache.pending = none)
+    (hmapping :
+      state.authoritative.iommu.core.mappings.any (·.frame == frame) = true) :
+    assignedEDUReuseReleaseGateExport 1 1 0 =
+      frameReleaseGuardCode (guardExactFrameRelease state frame) := by
+  rw [live_mapping_blocks_exact_frame_release state frame hpending hmapping]
+  rfl
+
+theorem assigned_edu_reuse_release_cache_agrees_with_model state frame
+    (hpending : state.cache.pending = none)
+    (hmapping :
+      state.authoritative.iommu.core.mappings.any (·.frame == frame) = false)
+    (hcache : entriesNameFrame state.cache.published frame = true) :
+    assignedEDUReuseReleaseGateExport 1 0 1 =
+      frameReleaseGuardCode (guardExactFrameRelease state frame) := by
+  rw [published_translation_blocks_exact_frame_release state frame hpending
+    hmapping hcache]
+  rfl
+
+theorem assigned_edu_reuse_release_allowed_agrees_with_model state frame
+    (hpending : state.cache.pending = none)
+    (hmapping :
+      state.authoritative.iommu.core.mappings.any (·.frame == frame) = false)
+    (hcache : entriesNameFrame state.cache.published frame = false) :
+    assignedEDUReuseReleaseGateExport 1 0 0 =
+      frameReleaseGuardCode (guardExactFrameRelease state frame) := by
+  rw [exact_frame_release_allowed_only_after_cleanup state frame hpending
+    hmapping hcache]
+  rfl
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
