@@ -3021,6 +3021,39 @@ theorem checked_control_teardown_gated_accepts
   simp [checked_control_teardown_candidate_coherent plan,
     AuthoritativeOutcome.isAccepted]
 
+/-- Preparing checked assignment teardown cannot make any old device authority
+disappear early.  The assignment, its descendant mapping, and its cached
+translation remain published while the internally derived assignment-scope
+ticket is pending; only exact completion may publish their removal. -/
+theorem checked_control_teardown_authoritative_prepare_retains_old_authority
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (controlCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.control (.teardown subjectTerminationWitnessAssignment.handle))
+    prepared.state.authoritative.iommu.core.assignments =
+        [subjectTerminationWitnessAssignment] ∧
+      prepared.state.authoritative.iommu.core.mappings =
+        [subjectTerminationWitnessMapping] ∧
+      lookup prepared.state.cache subjectTerminationWitnessKey =
+        some subjectTerminationWitnessEntry ∧
+      prepared.state.pending.isSome = true := by
+  simp only [prepareAuthoritativePublication,
+    controlCheckedAuthoritativePublicationState, prepareControlPublication]
+  rw [checked_control_teardown_requires_exact_scope plan]
+  have haccepted := checked_control_teardown_gated_accepts plan
+  cases hgate : gatedByKernel (subjectTerminationCheckedBefore plan)
+      (subject_termination_checked_before_invariant plan)
+      (.teardown subjectTerminationWitnessAssignment.handle) with
+  | rejected reason =>
+      simp [hgate, AuthoritativeOutcome.isAccepted] at haccepted
+  | accepted after hinvariant reply =>
+      simp [subjectTerminationCheckedBefore, subjectTerminationCheckedIOMMU,
+        subjectTerminationCheckedCore, authoritativeSample,
+        FailStop.compositeDispatcherInitial, subjectTerminationWitnessEntry,
+        subjectTerminationWitnessKey, subjectTerminationWitnessAssignment,
+        subjectTerminationWitnessMapping, lookup]
+
 /-- Exact acknowledgement of checked assignment teardown publishes the
 assignment/mapping-free successor, removes the old source/domain cache entry,
 and closes the shared pending slot. -/
