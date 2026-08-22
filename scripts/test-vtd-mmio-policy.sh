@@ -91,4 +91,16 @@ perl -0pi -e \
 expect_rejected reuse-fresh-transfer-before-old-denial \
   "assigned-EDU frame-reuse source order drifted"
 
+# Restoring the old boot mapping is teardown, not evidence for the fresh
+# lifetime. Move that exact table publication ahead of the fresh-transfer
+# validation and require the source-order policy to reject the shortcut.
+cp boot/kernel.c "$tmp/kernel.c"
+perl -0pi -e \
+  's/    \(\(volatile uint64_t \*\)vtd_second_level_table\)\[0\] =\n        leanos_vtd_assigned_second_level_table\[0\];\n    \(\(volatile uint64_t \*\)vtd_second_level_table\)\[2\] = 0;\n    __asm__ volatile\("" ::: "memory"\);\n/RESTORE_MARKER\n/;
+   s/(    if \(write_buffer\[0\] != secret0 \|\| write_buffer\[1\] != secret1 \|\|\n        read_buffer\[0\] != secret0 \|\| read_buffer\[1\] != secret1 \|\|\n        vtd_mmio_read32\(0x34\) != 0\)\n        fail\("vtd-reuse-fresh-iova-transfer"\);\n)/    ((volatile uint64_t *)vtd_second_level_table)[0] =\n        leanos_vtd_assigned_second_level_table[0];\n    ((volatile uint64_t *)vtd_second_level_table)[2] = 0;\n    __asm__ volatile("" ::: "memory");\n$1/;
+   s/RESTORE_MARKER\n//' \
+  "$tmp/kernel.c"
+expect_rejected reuse-restore-before-fresh-transfer \
+  "assigned-EDU frame-reuse source order drifted"
+
 echo "VT-d MMIO policy positive and controlled-negative checks passed"
