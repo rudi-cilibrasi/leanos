@@ -55,4 +55,16 @@ perl -0pi -e \
 expect_rejected reuse-completion-before-unpublish \
   "assigned-EDU frame-reuse source order drifted"
 
+# Scrubbing is publication of a new lifetime, so it must remain gated by the
+# exact invalidation completion.  Move the real scrub loop before the generated
+# completion acknowledgement and require the same source-order policy to fail.
+cp boot/kernel.c "$tmp/kernel.c"
+perl -0pi -e \
+  's/    for \(uint64_t word = 0; word < PAGE_BYTES \/ sizeof\(uint64_t\); \+\+word\)\n        read_buffer\[word\] = 0;\n/SCRUB_MARKER\n/;
+   s/(    if \(leanos_assigned_edu_reuse_publication\(\n            2, 1, LEANOS_VTD_ASSIGNED_REQUESTER,)/    for (uint64_t word = 0; word < PAGE_BYTES \/ sizeof(uint64_t); ++word)\n        read_buffer[word] = 0;\n$1/;
+   s/SCRUB_MARKER\n//' \
+  "$tmp/kernel.c"
+expect_rejected reuse-scrub-before-completion \
+  "assigned-EDU frame-reuse source order drifted"
+
 echo "VT-d MMIO policy positive and controlled-negative checks passed"
