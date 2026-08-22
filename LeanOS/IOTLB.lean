@@ -2507,6 +2507,41 @@ theorem subject_termination_checked_authoritative_partial_completion_stutters
     subjectTerminationWitnessPartialCompletion,
     subjectTerminationWitnessScopes]
 
+/-- A rejected mapping-only completion leaves the complete subject cleanup
+publication intact, so the later exact completion can still retire the subject,
+remove its descendant DMA mapping, invalidate the old translation, and close
+the pending slot atomically. -/
+theorem subject_termination_checked_authoritative_partial_then_exact_completes
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let partialAck := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessPartialCompletion)
+    let completed := acknowledgeAuthoritativePublication partialAck.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    partialAck.accepted = false ∧
+      partialAck.state = prepared.state ∧
+      completed.accepted = true ∧
+      completed.state.authoritative.kernel.capabilities.subjects 2 = false ∧
+      completed.state.authoritative.iommu.core.mappings = [] ∧
+      lookup completed.state.cache subjectTerminationWitnessKey = none ∧
+      completed.state.pending = none := by
+  have hpartial :=
+    subject_termination_checked_authoritative_partial_completion_stutters plan
+  have hexact :=
+    subject_termination_checked_authoritative_exact_completion_removes_old_authority
+      plan
+  dsimp only at hpartial hexact ⊢
+  rcases hpartial with ⟨hpartialAccepted, hpartialState⟩
+  rcases hexact with
+    ⟨hexactAccepted, hexactSubject, hexactMappings, hexactCache,
+      hexactPending⟩
+  rw [hpartialState]
+  exact ⟨hpartialAccepted, rfl, hexactAccepted, hexactSubject,
+    hexactMappings, hexactCache, hexactPending⟩
+
 /-! ## Finite control-operation publication witnesses
 
 The same invariant-bearing assignment/mapping/cache fixture also exercises
