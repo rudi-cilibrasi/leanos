@@ -79,4 +79,16 @@ perl -0pi -e \
 expect_rejected reuse-republish-before-completion \
   "assigned-EDU frame-reuse source order drifted"
 
+# The stale requester must be denied before the fresh authorized transfer can
+# count as evidence.  Defer only the real fault-status rejection until after
+# the fresh-transfer check and require the source-order policy to reject it.
+cp boot/kernel.c "$tmp/kernel.c"
+perl -0pi -e \
+  's/    if \(fault_status != 2\)\n        fail\("vtd-reuse-old-iova-access"\);\n/OLD_DENIAL_MARKER\n/;
+   s/(    if \(write_buffer\[0\] != secret0 \|\| write_buffer\[1\] != secret1 \|\|\n        read_buffer\[0\] != secret0 \|\| read_buffer\[1\] != secret1 \|\|\n        vtd_mmio_read32\(0x34\) != 0\)\n        fail\("vtd-reuse-fresh-iova-transfer"\);\n)/$1    if (fault_status != 2)\n        fail("vtd-reuse-old-iova-access");\n/;
+   s/OLD_DENIAL_MARKER\n//' \
+  "$tmp/kernel.c"
+expect_rejected reuse-fresh-transfer-before-old-denial \
+  "assigned-EDU frame-reuse source order drifted"
+
 echo "VT-d MMIO policy positive and controlled-negative checks passed"
