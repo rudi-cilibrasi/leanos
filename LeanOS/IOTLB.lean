@@ -3344,6 +3344,40 @@ def deriveRetiredMemoryReleaseCandidate
           releaseRetiredMemoryWithReceipt pending.logicalAfter.scrub receipt
       | _ => none
 
+/-- A successful candidate exposes the exact pending cleanup and derived
+receipt that authorized it.  In particular, the resulting scrub projection
+has retired the nominated binding, freed that receipt's frame, and retained
+the checked logical successor's bytes and monotonic issuance history.  These
+facts are the inputs required by the later cross-projection publication
+proof; no caller-selected frame or successor can satisfy this theorem. -/
+theorem derive_retired_memory_release_candidate_exact
+    state completion object released
+    (hderived :
+      deriveRetiredMemoryReleaseCandidate state completion object =
+        some released) :
+    ∃ receipt pending,
+      deriveRetiredMemoryReleaseReceipt state completion object = some receipt ∧
+      state.pending = some (.cleanup pending) ∧
+      receipt.object = object ∧
+      released.memory.binding object = none ∧
+      FrameAllocator.IsFree released.memory.allocator receipt.frame ∧
+      released.bytes = pending.logicalAfter.scrub.bytes ∧
+      released.memory.issued = pending.logicalAfter.scrub.memory.issued := by
+  simp only [deriveRetiredMemoryReleaseCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      have hexact :=
+        release_retired_memory_with_receipt_exact
+          pending.logicalAfter.scrub receipt released hderived
+      have hreceiptExact :=
+        derived_retired_memory_release_receipt_is_exact
+          state completion object receipt hreceipt
+      refine ⟨receipt, pending, hreceipt, hpending, hreceiptExact.1, ?_,
+        hexact.2.1, hexact.2.2.1, hexact.2.2.2⟩
+      simpa [hreceiptExact.1] using hexact.1
+
 /-- A stale or forged cleanup ticket cannot reach the allocator release
 candidate, so the complete pending authoritative publication remains the only
 source of release authority. -/
