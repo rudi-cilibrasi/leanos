@@ -183,8 +183,17 @@ vtd_symbols=(
 vtd_args=()
 for name in "${vtd_symbols[@]}"; do vtd_args+=("$(symbol_decimal "$name")"); done
 
-lake exe leanos-boot-plan "${args[@]}" > "$output"
-lake exe leanos-vtd-plan "${vtd_args[@]}" >> "$output"
+if [[ "${LEANOS_BOOT_PLAN_EXECUTABLES_READY:-}" == 1 ]]; then
+  # `scripts/build-image.sh` publishes these executables before parallel plan
+  # generation. Execute the immutable published paths directly so sibling
+  # tasks never ask Lake to rewrite shared build metadata concurrently.
+  "$root/.lake/build/bin/leanos-boot-plan" "${args[@]}" > "$output"
+  "$root/.lake/build/bin/leanos-vtd-plan" "${vtd_args[@]}" >> "$output"
+else
+  # Standalone callers retain the ordinary Lake build-and-run path.
+  lake exe leanos-boot-plan "${args[@]}" > "$output"
+  lake exe leanos-vtd-plan "${vtd_args[@]}" >> "$output"
+fi
 install_if_changed "$output" "$destination"
 if [[ -n "$tool_signature" ]]; then
   output_hash="$(sha256sum "$destination" | awk '{print $1}')"

@@ -153,6 +153,8 @@ generate_lean_c {source!s} {output!s}
     def test_build_wrapper_parallelizes_independent_boot_plan_generation(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("run_boot_plan_batch()", wrapper)
+        self.assertIn("lake build leanos-boot-plan leanos-vtd-plan", wrapper)
+        self.assertIn("export LEANOS_BOOT_PLAN_EXECUTABLES_READY=1", wrapper)
         self.assertIn('xargs -0 -r -n 2 -P "${LEANOS_BUILD_JOBS:-$(nproc)}"', wrapper)
         self.assertIn('run_boot_plan_batch "${boot_plan_batch_args[@]}"', wrapper)
         for stem in (
@@ -174,6 +176,10 @@ generate_lean_c {source!s} {output!s}
             "leanos-return-${fixture}-prelink",
         ):
             self.assertIn(f'"$build/{template}.elf"', wrapper)
+
+        plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('"$root/.lake/build/bin/leanos-boot-plan"', plan_script)
+        self.assertIn('"$root/.lake/build/bin/leanos-vtd-plan"', plan_script)
 
     def test_iso_cache_tracks_staged_bytes_and_packaging_tool(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")

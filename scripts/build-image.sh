@@ -686,6 +686,14 @@ if [[ "$graph_make_cache_current" != true ]]; then
 fi
 record_build_phase object-graph-prelinks
 
+# Build the two shared Lean plan generators once before fan-out.  Concurrent
+# `lake exe` invocations race while replacing the same `.lake/build` metadata
+# and executable, which can expose missing/partial artifacts to sibling tasks.
+# The plan computations themselves remain parallel below; only their common
+# executable publication is serialized here.
+lake build leanos-boot-plan leanos-vtd-plan
+export LEANOS_BOOT_PLAN_EXECUTABLES_READY=1
+
 cp scripts/entry-stack-callgraph.tsv "$build/entry-stack-callgraph.tsv"
 cp scripts/entry-stack-extended-callgraph.tsv \
   "$build/entry-stack-extended-callgraph.tsv"
