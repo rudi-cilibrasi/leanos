@@ -2958,6 +2958,51 @@ theorem subject_termination_checked_authoritative_exact_completion_retires_all_a
     exact hmappings
   · simp [hcache, lookup]
 
+/-- Exact cleanup completion also closes every capability lookup for the
+retired owner.  The caller-visible result therefore couples the complete
+invariant with invalidation of all old subject slots, descendant DMA authority,
+the stale translation, and the pending cleanup ticket. -/
+theorem subject_termination_checked_authoritative_exact_completion_closes_grants
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative.Invariant ∧
+      (∀ slot,
+        LeanOS.Capability.lookup
+          acknowledged.state.authoritative.kernel.capabilities 2 slot =
+            .invalidSubject) ∧
+      acknowledged.state.authoritative.iommu.core.assignments = [] ∧
+      acknowledged.state.authoritative.iommu.core.mappings = [] ∧
+      lookup acknowledged.state.cache subjectTerminationWitnessKey = none ∧
+      acknowledged.state.pending = none := by
+  have hretired :=
+    subject_termination_checked_authoritative_exact_completion_retires_all_authority
+      plan
+  simp only at hretired ⊢
+  rcases hretired with
+    ⟨haccepted, hinvariant, hsubject, _haddress, hassignments, hmappings,
+      hcache, hpending⟩
+  refine ⟨haccepted, hinvariant, ?_, hassignments, hmappings, hcache,
+    hpending⟩
+  have hprojection := hinvariant.1.left.left.2.2.2.1
+  have hkernelSubject :
+      (acknowledgeAuthoritativePublication
+              (prepareAuthoritativePublication
+                (subjectTerminationCheckedAuthoritativePublicationState plan)
+                (subject_termination_checked_before_invariant plan)
+                (.cleanup (.ordinary (.terminateSubject 2)))).state
+              (.cleanup subjectTerminationWitnessCompletion)).state.authoritative.kernel.capabilities.subjects
+          2 = false := by
+    rw [hprojection]
+    exact hsubject
+  intro slot
+  simp [LeanOS.Capability.lookup, hkernelSubject]
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
