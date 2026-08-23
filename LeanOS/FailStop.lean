@@ -9341,8 +9341,11 @@ theorem terminateSubject_accepted_removes_owned_address_spaces
   simp only [gate, hmode, operationReply, applyOperation, haccepted]
   simp only [installTerminatedSubject, installTerminatedResumable,
     installResumable, installLifecycle]
-  exact SubjectLifecycle.terminated_address_spaces_removed
-    state.lifecycle subject addressSpace howner
+  rcases hstate.1 with
+    ⟨_, hschedulerLifecycle, _, _, _, _, _, hresumableScheduler,
+      _, _, _, _, _⟩
+  apply ResumablePreemption.cleanup_removes_owned_address_space
+  simpa [hresumableScheduler, hschedulerLifecycle] using howner
 
 /-- Terminating an endpoint owner cannot strand a peer waiter on the retired
 endpoint.  The peer's exact saved context moves from the waiter/context pair to

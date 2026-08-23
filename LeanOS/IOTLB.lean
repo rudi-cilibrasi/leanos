@@ -2351,7 +2351,7 @@ theorem subject_termination_checked_reconcile_candidate_valid
     rfl
   have hremoved :
       (subjectTerminationCheckedKernelAfter plan).capabilities.subjects 2 = false := by
-    simpa [subjectTerminationCheckedKernelAfter] using
+    simpa only [subjectTerminationCheckedKernelAfter] using
       executable_subject_termination_checked_kernel_removes_owner plan
   simp [subjectTerminationCheckedReconcileCandidate, hcurrent, hremoved,
     subjectTerminationCheckedBefore,
@@ -2620,7 +2620,11 @@ theorem subject_termination_checked_atomic_publication_retires_owner
         (.ordinary (.terminateSubject 2))
         (subject_termination_checked_before_invariant plan).1)
     have hcoherent := hpost.left.left
-    rw [hcoherent.2.2.2.1]
+    have hprojection :
+        (subjectTerminationCheckedKernelAfter plan).capabilities =
+          (subjectTerminationCheckedKernelAfter plan).lifecycle.capabilities := by
+      simpa only [subjectTerminationCheckedKernelAfter] using hcoherent.2.2.2.1
+    rw [← hprojection]
     exact executable_subject_termination_checked_kernel_removes_owner plan
   · rw [subject_termination_checked_apply_eq_reconciled_candidate plan]
     change (subjectTerminationCheckedKernelAfter plan).lifecycle.addressOwner
