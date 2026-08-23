@@ -2917,6 +2917,47 @@ theorem subject_termination_checked_authoritative_exact_completion_removes_old_a
   · simpa [hauthoritative] using hremoved.2
   · simp [hcache, lookup]
 
+/-- Exact caller-visible cleanup completion publishes the complete
+invariant-bearing retirement in one result: the old subject and address-space
+owner are gone, both device-authority inventories are empty, the stale
+translation is absent, and no cleanup ticket remains pending. -/
+theorem subject_termination_checked_authoritative_exact_completion_retires_all_authority
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative.Invariant ∧
+      acknowledged.state.authoritative.kernel.lifecycle.capabilities.subjects 2 = false ∧
+      acknowledged.state.authoritative.kernel.lifecycle.addressOwner 2 = none ∧
+      acknowledged.state.authoritative.iommu.core.assignments = [] ∧
+      acknowledged.state.authoritative.iommu.core.mappings = [] ∧
+      lookup acknowledged.state.cache subjectTerminationWitnessKey = none ∧
+      acknowledged.state.pending = none := by
+  have hexact :=
+    subject_termination_checked_authoritative_acknowledges_exact_cleanup plan
+  have hretired :=
+    subject_termination_checked_atomic_publication_retires_owner plan
+  simp only at hexact hretired ⊢
+  rcases hexact with ⟨haccepted, hauthoritative, hcache, hpending⟩
+  rcases hretired with
+    ⟨hinvariant, hsubject, haddress, hassignments, hmappings⟩
+  refine ⟨haccepted, ?_, ?_, ?_, ?_, ?_, ?_, hpending⟩
+  · rw [hauthoritative]
+    exact hinvariant
+  · rw [hauthoritative]
+    exact hsubject
+  · rw [hauthoritative]
+    exact haddress
+  · rw [hauthoritative]
+    exact hassignments
+  · rw [hauthoritative]
+    exact hmappings
+  · simp [hcache, lookup]
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
