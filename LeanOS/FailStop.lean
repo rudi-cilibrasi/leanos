@@ -9324,6 +9324,26 @@ theorem terminateSubject_accepted_cleans_runtime_references state subject lifecy
       simp [installTerminatedSubject, BlockingIPCContext.setRetained],
     CapabilityTransfer.cancelAllOffers_pending _⟩
 
+/-- Accepted subject termination removes every address-space ownership entry
+for that subject in the same published lifecycle that retires its identity.
+This exposes the lifecycle fact needed by outer authority publishers without
+requiring them to unfold the private cleanup installer. -/
+theorem terminateSubject_accepted_removes_owned_address_spaces
+    state subject lifecycle
+    (hstate : RuntimeWellFormed state)
+    (hmode : state.execution.mode = .running)
+    (haccepted : SubjectLifecycle.terminate state.lifecycle subject =
+      { state := lifecycle, result := .accepted })
+    addressSpace
+    (howner : state.lifecycle.addressOwner addressSpace = some subject) :
+    (gate state (.terminateSubject subject)).state.lifecycle.addressOwner
+        addressSpace = none := by
+  simp only [gate, hmode, operationReply, applyOperation, haccepted]
+  simp only [installTerminatedSubject, installTerminatedResumable,
+    installResumable, installLifecycle]
+  exact SubjectLifecycle.terminated_address_spaces_removed
+    state.lifecycle subject addressSpace howner
+
 /-- Terminating an endpoint owner cannot strand a peer waiter on the retired
 endpoint.  The peer's exact saved context moves from the waiter/context pair to
 the quiescent deferred-cancellation bank, and the dead endpoint's modeled

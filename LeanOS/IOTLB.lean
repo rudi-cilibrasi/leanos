@@ -2583,6 +2583,71 @@ theorem subject_termination_checked_apply_removes_device_authority
   rw [subject_termination_checked_apply_eq_reconciled_candidate plan]
   exact subject_termination_checked_reconcile_removes_device_authority plan
 
+/-- The atomic outer publisher preserves the complete authoritative invariant,
+not merely the finite IOMMU validator.  This is the invariant-bearing
+successor that the proof-only raw capability candidate deliberately cannot
+provide while its old lifecycle owner remains live. -/
+theorem subject_termination_checked_after_invariant
+    (plan : BootPageTablePlan.Plan) :
+    (subjectTerminationCheckedAfter plan).Invariant := by
+  exact kernel_operation_preserves_authoritative_extension
+    (subjectTerminationCheckedBefore plan)
+    (.ordinary (.terminateSubject 2))
+    (subject_termination_checked_before_invariant plan)
+
+/-- One checked publication retires the old runtime owner and both device
+authority inventories while preserving the complete outer invariant.  The
+successor is derived by the ordinary termination gate and reconciliation
+validators; no caller supplies a lifecycle, capability, or IOMMU post-state. -/
+theorem subject_termination_checked_atomic_publication_retires_owner
+    (plan : BootPageTablePlan.Plan) :
+    let after := subjectTerminationCheckedAfter plan
+    after.Invariant ∧
+      after.kernel.lifecycle.capabilities.subjects 2 = false ∧
+      after.kernel.lifecycle.addressOwner 2 = none ∧
+      after.iommu.core.assignments = [] ∧
+      after.iommu.core.mappings = [] := by
+  have hinvariant := subject_termination_checked_after_invariant plan
+  have hremoved := subject_termination_checked_apply_removes_device_authority plan
+  refine ⟨hinvariant, ?_, ?_, hremoved.1, hremoved.2⟩
+  · rw [subject_termination_checked_apply_eq_reconciled_candidate plan]
+    change
+      (subjectTerminationCheckedKernelAfter plan).lifecycle.capabilities.subjects
+          2 = false
+    have hpost :=
+      (FailStop.authoritativeGate_preserves_authoritativeRuntimeWellFormed
+        (subjectTerminationCheckedBefore plan).kernel
+        (.ordinary (.terminateSubject 2))
+        (subject_termination_checked_before_invariant plan).1)
+    have hcoherent := hpost.left.left
+    rw [hcoherent.2.2.2.1]
+    exact executable_subject_termination_checked_kernel_removes_owner plan
+  · rw [subject_termination_checked_apply_eq_reconciled_candidate plan]
+    change (subjectTerminationCheckedKernelAfter plan).lifecycle.addressOwner
+      2 = none
+    have hstate :=
+      FailStop.compositeDispatcherInitial_authoritativeRuntimeWellFormed plan
+    have hmode :
+        (FailStop.compositeDispatcherInitial plan).execution.mode = .running := by
+      rfl
+    let terminated := SubjectLifecycle.terminate
+      (FailStop.compositeDispatcherInitial plan).lifecycle 2
+    have haccepted : terminated.result = .accepted := by
+      simp [terminated, FailStop.compositeDispatcherInitial]
+      native_decide
+    rcases hterminated : terminated with ⟨lifecycle, result⟩
+    have hrecord :
+        SubjectLifecycle.terminate
+            (FailStop.compositeDispatcherInitial plan).lifecycle 2 =
+          { state := lifecycle, result := .accepted } := by
+      simpa [terminated, hterminated] using haccepted
+    have haddress :=
+      FailStop.terminateSubject_accepted_removes_owned_address_spaces
+        (FailStop.compositeDispatcherInitial plan) 2 lifecycle hstate.1 hmode
+        hrecord 2 (by rfl)
+    simpa [subjectTerminationCheckedKernelAfter,
+      subjectTerminationCheckedBefore, authoritativeSample] using haddress
+
 /-- The checked outer operation has exactly the two branches exposed by the
 coherence gate: it either stutters to the complete pre-state, or publishes the
 validated reconciliation whose assignment and mapping inventories are empty.
