@@ -3092,6 +3092,97 @@ theorem subject_termination_checked_authoritative_exact_completion_scrubs_fresh_
   exact ⟨haccepted, hinvariant, hreuse,
     FrameScrub.allocation_publishes_scrubbed _ _ _ _ hallocate⟩
 
+/-- The canonical finite witness discharges the allocator premises used by the
+generic reuse theorem.  After subject `2` and object `20` are retired, subject
+`1` can allocate never-issued object `21` in its empty slot `2`; the real
+allocator deterministically selects the newly freed frame `4`.  Thus the
+caller-visible cleanup sequence itself reaches an accepted, scrubbed fresh
+lifetime on the exact retired DMA frame, without a caller-supplied allocation
+or frame-binding premise. -/
+theorem subject_termination_checked_authoritative_exact_completion_allocates_retired_frame
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    let allocated := FrameScrub.allocate acknowledged.state.authoritative.scrub
+      21 1 2
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative.Invariant ∧
+      allocated.result = .accepted ∧
+      allocated.state.memory.binding 21 =
+        some subjectTerminationWitnessMapping.frame.frame ∧
+      FrameScrub.Fresh allocated.state 21 := by
+  have hexact :=
+    subject_termination_checked_authoritative_acknowledges_exact_cleanup plan
+  dsimp only at hexact ⊢
+  have hmemory :
+      let acknowledged := acknowledgeAuthoritativePublication
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        (.cleanup subjectTerminationWitnessCompletion)
+      (MemoryLifecycle.allocate acknowledged.state.authoritative.scrub.memory
+          21 1 2).result = .accepted ∧
+        (MemoryLifecycle.allocate acknowledged.state.authoritative.scrub.memory
+          21 1 2).state.binding 21 = some 4 := by
+    dsimp only
+    rw [hexact.2.1]
+    rw [subject_termination_checked_apply_scrub_memory_coherent]
+    rw [subject_termination_checked_apply_eq_reconciled_candidate]
+    simpa [subjectTerminationCheckedKernelAfter,
+      subjectTerminationCheckedBefore, authoritativeSample] using
+      FailStop.compositeDispatcherTerminateSubjectTwo_allocates_retired_frame plan
+  have hallocate :
+      (FrameScrub.allocate
+        (acknowledgeAuthoritativePublication
+          (prepareAuthoritativePublication
+            (subjectTerminationCheckedAuthoritativePublicationState plan)
+            (subject_termination_checked_before_invariant plan)
+            (.cleanup (.ordinary (.terminateSubject 2)))).state
+          (.cleanup subjectTerminationWitnessCompletion)).state.authoritative.scrub
+        21 1 2).result = .accepted := by
+    simp only [FrameScrub.allocate]
+    rw [show
+      (MemoryLifecycle.allocate
+        (acknowledgeAuthoritativePublication
+          (prepareAuthoritativePublication
+            (subjectTerminationCheckedAuthoritativePublicationState plan)
+            (subject_termination_checked_before_invariant plan)
+            (.cleanup (.ordinary (.terminateSubject 2)))).state
+          (.cleanup subjectTerminationWitnessCompletion)).state.authoritative.scrub.memory
+        21 1 2).result = .accepted from hmemory.1]
+    simp [hmemory.2]
+  have hreuse :
+      (FrameScrub.allocate
+        (acknowledgeAuthoritativePublication
+          (prepareAuthoritativePublication
+            (subjectTerminationCheckedAuthoritativePublicationState plan)
+            (subject_termination_checked_before_invariant plan)
+            (.cleanup (.ordinary (.terminateSubject 2)))).state
+          (.cleanup subjectTerminationWitnessCompletion)).state.authoritative.scrub
+        21 1 2).state.memory.binding 21 =
+          some subjectTerminationWitnessMapping.frame.frame := by
+    simp only [FrameScrub.allocate]
+    rw [show
+      (MemoryLifecycle.allocate
+        (acknowledgeAuthoritativePublication
+          (prepareAuthoritativePublication
+            (subjectTerminationCheckedAuthoritativePublicationState plan)
+            (subject_termination_checked_before_invariant plan)
+            (.cleanup (.ordinary (.terminateSubject 2)))).state
+          (.cleanup subjectTerminationWitnessCompletion)).state.authoritative.scrub.memory
+        21 1 2).result = .accepted from hmemory.1]
+    simpa [hmemory.2, subjectTerminationWitnessMapping] using hmemory.2
+  have hfresh :=
+    subject_termination_checked_authoritative_exact_completion_scrubs_fresh_frame
+      plan 21 1 2 hallocate hreuse
+  dsimp only at hfresh
+  exact ⟨hfresh.1, hfresh.2.1, hallocate, hfresh.2.2.1, hfresh.2.2.2⟩
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
