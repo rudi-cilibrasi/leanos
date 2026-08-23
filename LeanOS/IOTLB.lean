@@ -3574,6 +3574,116 @@ theorem derive_retired_memory_authoritative_candidate_preserves_scrub_invariant
             subst after
             exact hscrub
 
+/-- The checked cleanup successor already carries the scrub half of the
+release-candidate invariant.  This is projected from the published outer
+invariant rather than recomputed from a caller-selected memory state. -/
+theorem subject_termination_checked_after_scrub_invariant
+    (plan : BootPageTablePlan.Plan) :
+    FrameScrub.ScrubInvariant (subjectTerminationCheckedAfter plan).scrub := by
+  exact (subject_termination_checked_after_invariant plan).2.2.2.2.2.2.1
+
+/-- Canonical subject termination retains exactly one binding to retired DMA
+frame 4.  This concrete fact supplies the release proof's uniqueness premise
+without falsely claiming the pre-release memory state is lifecycle-well-formed:
+object 20 is deliberately retired while its binding awaits receipt consumption. -/
+theorem subject_termination_checked_after_retired_frame_binding_unique
+    (plan : BootPageTablePlan.Plan) :
+    ∀ object,
+      (subjectTerminationCheckedAfter plan).scrub.memory.binding object =
+          some 4 →
+        object = 20 := by
+  intro object hbinding
+  have hbindingKernel :
+      (subjectTerminationCheckedKernelAfter plan).virtualMemory.memory.binding
+          object = some 4 := by
+    rw [subject_termination_checked_apply_eq_reconciled_candidate plan] at hbinding
+    simpa [reconcileScrubMemory] using hbinding
+  have hbindingRetired :
+      (subjectTerminationCheckedKernelAfter plan).virtualMemory.memory.binding
+          20 = some 4 := by
+    simpa [subjectTerminationCheckedKernelAfter,
+      subjectTerminationCheckedBefore, authoritativeSample] using
+      (FailStop.compositeDispatcherTerminateSubjectTwo_requires_explicit_memory_release
+        plan).1
+  have howned := subject_termination_checked_kernel_binding_owned plan
+  exact FrameAllocator.ownership_exclusive
+    (subjectTerminationCheckedKernelAfter plan).virtualMemory.memory.allocator
+    4 object 20 (howned object 4 hbindingKernel)
+    (howned 20 4 hbindingRetired)
+
+/-- The real prepared subject-termination ticket supplies both invariant
+premises required by the generic receipt-consuming constructor.  Therefore
+every successful canonical authoritative release candidate preserves scrub
+safety without accepting invariant evidence for a different pending state. -/
+theorem subject_termination_checked_retired_memory_candidate_scrub_invariant
+    (plan : BootPageTablePlan.Plan) (after : AuthoritativeExtension)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after) :
+    FrameScrub.ScrubInvariant after.scrub := by
+  have hremoved :=
+    subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      have hpending' := hpending
+      simp only [prepareAuthoritativePublication,
+        prepareAuthorityCleanupPublication,
+        subjectTerminationCheckedAuthoritativePublicationState] at hpending'
+      rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+          (.ordinary (.terminateSubject 2)) =
+            subjectTerminationCheckedAfter plan by rfl] at hpending'
+      rw [hscopes] at hpending'
+      simp [subjectTerminationWitnessScopes] at hpending'
+      subst pending
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hreceiptExact :=
+          derived_retired_memory_release_receipt_is_exact
+            (prepareAuthoritativePublication
+              (subjectTerminationCheckedAuthoritativePublicationState plan)
+              (subject_termination_checked_before_invariant plan)
+              (.cleanup (.ordinary (.terminateSubject 2)))).state
+            subjectTerminationWitnessCompletion 20 receipt hreceipt
+        have hframe : receipt.frame = 4 := by
+          have hbinding := hreceiptExact.2.1
+          have hretains :=
+            (prepare_authoritative_publication_retains_publications
+              (subjectTerminationCheckedAuthoritativePublicationState plan)
+              (subject_termination_checked_before_invariant plan)
+              (.cleanup (.ordinary (.terminateSubject 2)))).1
+          rw [hretains] at hbinding
+          change (if (20 : MemoryLifecycle.ObjectId) = 20 then some 4 else none) =
+            some receipt.frame at hbinding
+          simpa using hbinding.symm
+        have hscrub :=
+          release_retired_memory_with_receipt_preserves_scrub_invariant
+            (subjectTerminationCheckedAfter plan).scrub receipt released
+            (subject_termination_checked_after_scrub_invariant plan)
+            (by
+              intro candidate hbinding
+              rw [hframe] at hbinding
+              have hcandidate :=
+                subject_termination_checked_after_retired_frame_binding_unique
+                  plan candidate hbinding
+              exact hcandidate.trans hreceiptExact.1.symm)
+            hreleased
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            exact hscrub
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
