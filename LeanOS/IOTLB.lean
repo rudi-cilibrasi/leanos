@@ -3564,6 +3564,32 @@ theorem release_retired_memory_with_receipt_preserves_scrub_invariant
       simpa [FrameAllocator.IsOwnedBy, FrameAllocator.setStatus, hframe] using
         hbefore.1
 
+/-- Well-formed authoritative memory discharges the single-binding premise
+needed by receipt release.  Both a competing binding and the receipt binding
+would make the same allocator frame owned by two different objects, which the
+allocator's functional status projection forbids. -/
+theorem release_retired_memory_with_receipt_preserves_scrub_invariant_of_well_formed
+    state receipt released
+    (hinvariant : FrameScrub.ScrubInvariant state)
+    (hwell : MemoryLifecycle.WellFormed state.memory)
+    (hreleased :
+      releaseRetiredMemoryWithReceipt state receipt = some released) :
+    FrameScrub.ScrubInvariant released := by
+  apply release_retired_memory_with_receipt_preserves_scrub_invariant
+    state receipt released hinvariant
+  · intro object hbinding
+    have hreceiptBinding :
+        state.memory.binding receipt.object = some receipt.frame := by
+      simp only [releaseRetiredMemoryWithReceipt] at hreleased
+      split at hreleased <;> try contradiction
+      next hexact => exact hexact.1
+    have hobjectOwned := (hwell.2.2.1 object receipt.frame hbinding).2.1
+    have hreceiptOwned :=
+      (hwell.2.2.1 receipt.object receipt.frame hreceiptBinding).2.1
+    exact FrameAllocator.ownership_exclusive state.memory.allocator
+      receipt.frame object receipt.object hobjectOwned hreceiptOwned
+  · exact hreleased
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
