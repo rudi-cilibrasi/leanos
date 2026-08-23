@@ -2024,6 +2024,42 @@ theorem canonical_dma_memory_subtree_kernel_after_retains_runtime_authority
   simp [canonicalDMAMemorySubtreeKernelAfter,
     subjectTerminationCheckedBefore, authoritativeSample]
 
+/-- The synchronized successor retains every non-slot capability registry and
+every surviving slot comes from the pre-state.  These are the exact metadata
+and sealed-identity premises consumed by the runtime publication boundary;
+the coordinated cleanup still needs a public theorem for its deliberately
+runtime-unsafe raw subtree transition. -/
+theorem canonical_dma_memory_subtree_kernel_after_retains_capability_metadata
+    (plan : BootPageTablePlan.Plan) :
+    let before := (subjectTerminationCheckedBefore plan).kernel.capabilities
+    let after := (canonicalDMAMemorySubtreeKernelAfter plan).capabilities
+    after.subjects = before.subjects ∧
+      after.objects = before.objects ∧
+      after.kinds = before.kinds ∧
+      after.slotCapacity = before.slotCapacity ∧
+      after.nextIdentity = before.nextIdentity ∧
+      after.derivations = before.derivations ∧
+      (∀ subject slot capability,
+        after.slots subject slot = some capability →
+          before.slots subject slot = some capability) := by
+  have hmetadata := LeanOS.Capability.revokeSubtree_preserves_metadata
+    (FailStop.compositeDispatcherInitial plan).capabilities 2 2 2 2
+  have hslots : ∀ subject slot capability,
+      (canonicalDMAMemorySubtreeRawAfter plan).state.slots subject slot =
+          some capability →
+        (FailStop.compositeDispatcherInitial plan).capabilities.slots subject slot =
+          some capability := by
+    intro subject slot capability hslot
+    exact LeanOS.Capability.revokeSubtree_slot_survives
+      (FailStop.compositeDispatcherInitial plan).capabilities 2 2 2 2
+      subject slot capability hslot
+  rcases hmetadata with
+    ⟨hsubjects, hobjects, hkinds, hcapacity, hnextIdentity, hderivations⟩
+  simpa [canonicalDMAMemorySubtreeKernelAfter,
+    canonicalDMAMemorySubtreeRawAfter,
+    subjectTerminationCheckedBefore, authoritativeSample] using
+    ⟨hsubjects, hobjects, hkinds, hcapacity, hnextIdentity, hderivations, hslots⟩
+
 /-- The validated IOMMU state and complete cross-projection coherence are
 already discharged.  Consequently the sole remaining obligation for the
 coordinated candidate's full outer invariant is the kernel runtime invariant;
