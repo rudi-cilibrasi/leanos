@@ -3146,6 +3146,60 @@ theorem subject_termination_checked_authoritative_exact_completion_requires_expl
     21 1 2 .exhausted hmemory.2
   exact ⟨hexact.1, hretired.2.1, hmemory.1, hmemory.2, hunchanged⟩
 
+/-- The old owner's ordinary subject/slot release path is intentionally no
+longer usable after exact cleanup: the same acknowledged result that opens
+the frame guard has already retired every capability of subject `2`.
+Consequently the follow-on memory publication must consume a checked cleanup
+receipt bound to object `20` and frame `4`; it cannot impersonate the retired
+owner or reuse the generic live-capability release gate. -/
+theorem subject_termination_checked_authoritative_exact_completion_requires_retired_release_receipt
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    let releaseState : AuthoritativeCacheState := {
+      authoritative := acknowledged.state.authoritative
+      cache := {
+        published := acknowledged.state.cache
+        pending := none
+        nextTicket := acknowledged.state.nextTicket } }
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative.Invariant ∧
+      resolveReleaseFrame releaseState 2 2 = none ∧
+      guardFrameRelease releaseState 2 2 = .missingAuthority := by
+  have hclosed :=
+    subject_termination_checked_authoritative_exact_completion_closes_grants
+      plan
+  dsimp only at hclosed ⊢
+  rcases hclosed with
+    ⟨haccepted, hinvariant, hlookup, _hassignments, _hmappings, _hcache,
+      _hpending⟩
+  have hkernelCoherent := hinvariant.1.left.left
+  have hkernelCapabilities := hkernelCoherent.2.2.2.1
+  have hmemoryCapabilities := hkernelCoherent.2.2.2.2.1
+  have hvirtualToKernel := hmemoryCapabilities.trans hkernelCapabilities.symm
+  have hscrubMemory := hinvariant.2.2.2.2.1
+  have hscrubToKernel :=
+    (congrArg (fun memory => memory.capabilities) hscrubMemory).trans
+      hvirtualToKernel
+  have hscrubLookup :
+      LeanOS.Capability.lookup
+        (acknowledgeAuthoritativePublication
+          (prepareAuthoritativePublication
+            (subjectTerminationCheckedAuthoritativePublicationState plan)
+            (subject_termination_checked_before_invariant plan)
+            (.cleanup (.ordinary (.terminateSubject 2)))).state
+          (.cleanup subjectTerminationWitnessCompletion)).state.authoritative.scrub.memory.capabilities
+        2 2 = .invalidSubject := by
+    rw [hscrubToKernel]
+    exact hlookup 2
+  refine ⟨haccepted, hinvariant, ?_, ?_⟩
+  · simp [resolveReleaseFrame, hscrubLookup]
+  · simp [guardFrameRelease, resolveReleaseFrame, hscrubLookup]
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
