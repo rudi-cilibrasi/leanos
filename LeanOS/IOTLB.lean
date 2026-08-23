@@ -3523,6 +3523,47 @@ theorem derive_retired_memory_authoritative_candidate_projects_release
             simp [publishRetiredMemoryKernel, retiredMemoryReleaseCore,
               clearRetiredFrameAuthority]
 
+/-- Receipt consumption preserves the scrub invariant when the retired frame
+has one authoritative binding.  This isolates the allocator/binding proof
+needed by the later cross-projection publication theorem: removing the retired
+binding makes its old bytes irrelevant, while every other binding keeps both
+its allocator ownership and its byte evidence. -/
+theorem release_retired_memory_with_receipt_preserves_scrub_invariant
+    state receipt released
+    (hinvariant : FrameScrub.ScrubInvariant state)
+    (hunique : ∀ object,
+      state.memory.binding object = some receipt.frame →
+        object = receipt.object)
+    (hreleased :
+      releaseRetiredMemoryWithReceipt state receipt = some released) :
+    FrameScrub.ScrubInvariant released := by
+  simp only [releaseRetiredMemoryWithReceipt] at hreleased
+  split at hreleased <;> try contradiction
+  next hexact =>
+    split at hreleased <;> try contradiction
+    next allocator hallocator =>
+      injection hreleased with heq
+      subst released
+      intro object frame hbinding hunwritten
+      have hobject : object ≠ receipt.object := by
+        intro heq
+        subst object
+        simp [MemoryLifecycle.setBinding] at hbinding
+      have hbindingBefore : state.memory.binding object = some frame := by
+        simpa [MemoryLifecycle.setBinding, hobject] using hbinding
+      have hbefore := hinvariant object frame hbindingBefore hunwritten
+      have hframe : frame ≠ receipt.frame := by
+        intro heq
+        subst frame
+        exact hobject (hunique object hbindingBefore)
+      refine ⟨?_, hbefore.2⟩
+      simp only [FrameAllocator.release] at hallocator
+      split at hallocator <;> try contradiction
+      injection hallocator with heq
+      subst allocator
+      simpa [FrameAllocator.IsOwnedBy, FrameAllocator.setStatus, hframe] using
+        hbefore.1
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
