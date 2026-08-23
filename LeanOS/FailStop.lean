@@ -20812,17 +20812,17 @@ theorem compositeDispatcherTerminateSubjectTwo_binding_owned
   rcases hbinding with ⟨rfl, rfl⟩
   rfl
 
-/-- After the canonical subject-2 termination, the synchronized memory
-lifecycle exposes frame 4 as the deterministic first free frame.  Subject 1's
-empty slot 2 can therefore publish never-issued object 21 on that exact frame
-through the real allocator. -/
-theorem compositeDispatcherTerminateSubjectTwo_allocates_retired_frame
+/-- Canonical subject termination retires subject authority but does not
+silently release its bound memory object.  Frame 4 remains owned by object 20,
+so allocating a fresh object is rejected until a later explicit memory-release
+transition crosses its own checked publication boundary. -/
+theorem compositeDispatcherTerminateSubjectTwo_requires_explicit_memory_release
     (plan : BootPageTablePlan.Plan) :
     let memory :=
       (authoritativeGate (compositeDispatcherInitial plan)
         (.ordinary (.terminateSubject 2))).state.virtualMemory.memory
-    (MemoryLifecycle.allocate memory 21 1 2).result = .accepted ∧
-      (MemoryLifecycle.allocate memory 21 1 2).state.binding 21 = some 4 := by
+    memory.binding 20 = some 4 ∧
+      (MemoryLifecycle.allocate memory 21 1 2).result = .rejected .exhausted := by
   simp [authoritativeGate_ordinary_state, gate, applyOperation,
     compositeDispatcherInitial, dispatcherLifecycle, dispatcherCapabilities,
     dispatcherVirtualMemory, dispatcherMemory, dispatcherScheduler,
