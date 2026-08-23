@@ -3327,6 +3327,16 @@ theorem release_retired_memory_with_receipt_replay_none
     releaseRetiredMemoryWithReceipt state receipt = none := by
   simp [releaseRetiredMemoryWithReceipt, hcleared]
 
+/-- A receipt cannot be spliced onto another binding for the same object.
+Changing only the frame named by authoritative memory is enough to make the
+receipt inert, before allocator state is consulted or mutated. -/
+theorem release_retired_memory_with_receipt_wrong_binding_none
+    state receipt
+    (hbinding :
+      state.memory.binding receipt.object ≠ some receipt.frame) :
+    releaseRetiredMemoryWithReceipt state receipt = none := by
+  simp [releaseRetiredMemoryWithReceipt, hbinding]
+
 /-- The candidate release front door derives its receipt internally from the
 still-pending exact cleanup and applies it only to that cleanup's checked
 logical successor.  It exposes no caller-supplied frame or successor state.
@@ -3388,6 +3398,18 @@ theorem derive_retired_memory_release_candidate_wrong_ticket_none
     deriveRetiredMemoryReleaseCandidate state completion object = none := by
   simp [deriveRetiredMemoryReleaseCandidate,
     deriveRetiredMemoryReleaseReceipt, hpending, hticket]
+
+/-- A completion with a missing, added, or reordered cleanup scope cannot
+reach the allocator release candidate. Scope equality is checked while the
+authoritative cleanup is still pending, before the logical successor or its
+memory projection can be consumed. -/
+theorem derive_retired_memory_release_candidate_wrong_scopes_none
+    state completion pending object
+    (hpending : state.pending = some (.cleanup pending))
+    (hscopes : completion.scopes ≠ pending.scopes) :
+    deriveRetiredMemoryReleaseCandidate state completion object = none := by
+  simp [deriveRetiredMemoryReleaseCandidate,
+    deriveRetiredMemoryReleaseReceipt, hpending, hscopes]
 
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
