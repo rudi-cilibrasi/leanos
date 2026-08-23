@@ -3411,6 +3411,118 @@ theorem derive_retired_memory_release_candidate_wrong_scopes_none
   simp [deriveRetiredMemoryReleaseCandidate,
     deriveRetiredMemoryReleaseReceipt, hpending, hscopes]
 
+/-! ## Invariant-bearing retired-memory publication candidate
+
+Receipt consumption above changes the allocator and binding projections.  A
+publishable successor must mirror that exact memory state through every
+kernel consumer and through the IOMMU authority projection before the outer
+invariant gate is allowed to inspect it.  These helpers construct that one
+candidate; they do not bypass the later `AuthoritativeExtension.Invariant`
+proof or turn a failed validation into a partial publication.
+-/
+
+private def publishRetiredMemoryKernel
+    (kernel : FailStop.CompositeState) (memory : MemoryLifecycle.State) :
+    FailStop.CompositeState :=
+  let lifecycle := { kernel.lifecycle with capabilities := memory.capabilities }
+  let scheduler := { kernel.scheduler with lifecycle }
+  let virtualMemory := { kernel.virtualMemory with memory }
+  let endpoints := { kernel.ipc.endpoints with
+    capabilities := memory.capabilities
+    allocator := memory.allocator
+    binding := memory.binding
+    issued := memory.issued }
+  { kernel with
+    execution := { kernel.execution with
+      core := { kernel.execution.core with lifecycle }
+      returnAuthorityArmed := false }
+    scheduler
+    preemption := { kernel.preemption with scheduler }
+    virtualMemory
+    ipc := { kernel.ipc with virtualMemory, endpoints }
+    capabilities := memory.capabilities
+    lifecycle
+    resumable := { kernel.resumable with
+      scheduler
+      translations := { kernel.resumable.translations with
+        virtual := virtualMemory } }
+    transfers := { kernel.transfers with toEndpointState := endpoints }
+    blockingIPC := { kernel.blockingIPC with scheduler } }
+
+private def clearRetiredFrameAuthority
+    (authority : LeanOS.Capability.ObjectId → Option FrameHandle)
+    (object : LeanOS.Capability.ObjectId) :=
+  fun candidate => if candidate = object then none else authority candidate
+
+private def retiredMemoryReleaseCore (core : Core)
+    (released : FrameScrub.State) (object : MemoryLifecycle.ObjectId) : Core :=
+  { core with
+    capabilityAuthority := released.memory.capabilities
+    frameAuthority := clearRetiredFrameAuthority core.frameAuthority object
+    capabilities := core.capabilities.filter (·.object != object)
+    memory := released.bytes }
+
+/-- Construct the sole cross-projection successor from the exact pending
+cleanup and its internally derived receipt.  IOMMU validation and capability
+well-formedness are checked before a candidate exists; the complete outer
+invariant remains the publication gate for the next proof step. -/
+noncomputable def deriveRetiredMemoryAuthoritativeCandidate
+    (state : AuthoritativePublicationState)
+    (completion : AuthorityCleanupCompletion)
+    (object : MemoryLifecycle.ObjectId) : Option AuthoritativeExtension := by
+  classical
+  match deriveRetiredMemoryReleaseReceipt state completion object with
+  | none => exact none
+  | some receipt =>
+      match state.pending with
+      | some (.cleanup pending) =>
+          match releaseRetiredMemoryWithReceipt pending.logicalAfter.scrub receipt with
+          | none => exact none
+          | some released =>
+              let kernel := publishRetiredMemoryKernel
+                pending.logicalAfter.kernel released.memory
+              let core := retiredMemoryReleaseCore
+                pending.logicalAfter.iommu.core released object
+              if hcapability : LeanOS.Capability.WellFormed
+                  core.capabilityAuthority then
+                if hvalid : validateCore core = true then
+                  exact some {
+                    kernel
+                    iommu := ⟨core, hvalid, hcapability⟩
+                    scrub := released }
+                else exact none
+              else exact none
+      | _ => exact none
+
+/-- Every successful construction has already installed the released memory
+in the kernel virtual-memory and scrub projections, synchronized the IOMMU
+bytes and capability authority, and cleared the retired object's device-frame
+authority.  These are exact construction facts, not caller premises. -/
+theorem derive_retired_memory_authoritative_candidate_projects_release
+    state completion object after
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    after.scrub.memory = after.kernel.virtualMemory.memory ∧
+      after.iommu.core.memory = after.scrub.bytes ∧
+      after.iommu.core.capabilityAuthority = after.kernel.capabilities ∧
+      after.iommu.core.frameAuthority object = none := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        split at hderived <;> try contradiction
+        next hcapability =>
+          split at hderived <;> try contradiction
+          next hvalid =>
+            injection hderived with heq
+            subst after
+            simp [publishRetiredMemoryKernel, retiredMemoryReleaseCore,
+              clearRetiredFrameAuthority]
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
