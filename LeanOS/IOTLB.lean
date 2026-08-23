@@ -2832,6 +2832,28 @@ theorem subject_termination_checked_authoritative_acknowledges_exact_cleanup
     invalidateScopes, scopeCoversKey]
   all_goals native_decide
 
+/-- Exact cleanup acknowledgement publishes an invariant-bearing
+authoritative successor.  This connects the caller-visible completion result
+to the complete kernel, IOMMU, scrub, and cross-projection invariant rather
+than relying only on the finite cache and pending-slot observations. -/
+theorem subject_termination_checked_authoritative_exact_completion_invariant
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative.Invariant := by
+  have hexact :=
+    subject_termination_checked_authoritative_acknowledges_exact_cleanup plan
+  simp only at hexact ⊢
+  rcases hexact with ⟨haccepted, hauthoritative, _, _⟩
+  refine ⟨haccepted, ?_⟩
+  rw [hauthoritative]
+  exact subject_termination_checked_after_invariant plan
+
 /-- Preparation of the canonical subject-2 cleanup keeps every old authority
 projection published until the exact completion arrives.  In particular, the
 subject remains live, its DMA mapping remains authoritative, and the stale
