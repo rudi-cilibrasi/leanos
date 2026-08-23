@@ -3590,6 +3590,41 @@ theorem release_retired_memory_with_receipt_preserves_scrub_invariant_of_well_fo
       receipt.frame object receipt.object hobjectOwned hreceiptOwned
   · exact hreleased
 
+/-- A successful authoritative release candidate inherits scrub safety from
+the exact pending logical successor.  The premises are indexed by the pending
+record exposed by the front door, so callers cannot supply invariant evidence
+for a different successor than the one whose receipt is consumed. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_scrub_invariant
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        FrameScrub.ScrubInvariant pending.logicalAfter.scrub)
+    (hwell : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        MemoryLifecycle.WellFormed pending.logicalAfter.scrub.memory)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    FrameScrub.ScrubInvariant after.scrub := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hscrub :=
+          release_retired_memory_with_receipt_preserves_scrub_invariant_of_well_formed
+            pending.logicalAfter.scrub receipt released
+            (hinvariant pending hpending) (hwell pending hpending) hreleased
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            exact hscrub
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
