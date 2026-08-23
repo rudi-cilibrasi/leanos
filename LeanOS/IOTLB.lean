@@ -2117,6 +2117,23 @@ theorem canonical_dma_memory_subtree_kernel_after_does_not_preserve_runtime_auth
       canonicalDMAMemorySubtreeRawAfter] using hslot
   simp [hremoved] at hstill
 
+/-- The coordinated capability/IOMMU candidate deliberately leaves subject
+2's live lifecycle and address-space ownership in place.  These concrete
+facts identify the next publication obligation: the authoritative successor
+must retire the dependent runtime owner together with the revoked memory
+authority, rather than weakening the capability-only publisher. -/
+theorem canonical_dma_memory_subtree_cleanup_candidate_retains_live_owner
+    (plan : BootPageTablePlan.Plan) :
+    let after := (canonicalDMAMemorySubtreeCleanupCandidate plan).kernel
+    after.lifecycle.capabilities.subjects 2 = true ∧
+      after.lifecycle.addressOwner 2 = some 2 := by
+  simp [canonicalDMAMemorySubtreeCleanupCandidate,
+    canonicalDMAMemorySubtreeKernelAfter,
+    canonicalDMAMemorySubtreeRawAfter,
+    subjectTerminationCheckedBefore, authoritativeSample,
+    FailStop.compositeDispatcherInitial]
+  native_decide
+
 /-- The validated IOMMU state and complete cross-projection coherence are
 already discharged.  Consequently the sole remaining obligation for the
 coordinated candidate's full outer invariant is the kernel runtime invariant;
