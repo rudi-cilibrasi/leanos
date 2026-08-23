@@ -3268,6 +3268,23 @@ theorem release_retired_memory_with_receipt_exact
       refine ⟨by simp [MemoryLifecycle.setBinding], ?_, rfl, rfl⟩
       exact FrameAllocator.released_is_free _ _ _ _ hallocator
 
+/-- Receipt consumption changes only allocator ownership and the nominated
+binding.  In particular, it cannot change the capability graph whose subject
+registry is consumed by every kernel lifecycle projection. -/
+theorem release_retired_memory_with_receipt_preserves_capabilities
+    state receipt released
+    (hreleased :
+      releaseRetiredMemoryWithReceipt state receipt = some released) :
+    released.memory.capabilities = state.memory.capabilities := by
+  simp only [releaseRetiredMemoryWithReceipt] at hreleased
+  split at hreleased <;> try contradiction
+  next _hexact =>
+    split at hreleased <;> try contradiction
+    next allocator _hallocator =>
+      injection hreleased with heq
+      subst released
+      rfl
+
 /-- Once the receipt has been consumed, replay against the cleared binding is
 inert even when every receipt field is repeated verbatim. -/
 theorem release_retired_memory_with_receipt_replay_none
@@ -3498,6 +3515,48 @@ theorem derive_retired_memory_authoritative_candidate_capabilities_well_formed
             subst after
             simpa [publishRetiredMemoryKernel,
               retiredMemoryReleaseCore] using hcapability
+
+/-- A successful release candidate preserves the authoritative subject
+lifecycle invariant.  The pending successor supplies the already-checked
+runtime invariant, while receipt consumption preserves its capability subject
+registry exactly; the publisher merely mirrors that registry through the
+kernel lifecycle projections. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_subject_lifecycle
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    SubjectLifecycle.WellFormed after.kernel.lifecycle := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hbefore := hinvariant pending hpending
+        have hlifecycle : SubjectLifecycle.WellFormed
+            pending.logicalAfter.kernel.lifecycle := hbefore.1.left.2.2.1
+        have hkernelCoherent := hbefore.1.left.1
+        have houterCoherent := hbefore.2.2
+        have hcapabilities :=
+          release_retired_memory_with_receipt_preserves_capabilities
+            pending.logicalAfter.scrub receipt released hreleased
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            rcases hkernelCoherent with
+              ⟨_, _, _, _, hvirtualCapabilities, _⟩
+            rcases houterCoherent with
+              ⟨_, _, hscrubMemory, _⟩
+            simpa [publishRetiredMemoryKernel, SubjectLifecycle.WellFormed,
+              hcapabilities, hscrubMemory, hvirtualCapabilities] using hlifecycle
 
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
