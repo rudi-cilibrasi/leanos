@@ -3041,6 +3041,57 @@ theorem subject_termination_checked_authoritative_exact_completion_opens_frame_g
   · simp [hmappings]
   · simp [hcache, entriesNameFrame]
 
+/-- Exact cleanup completion can be composed with the real scrub allocator
+without replacing either boundary with a caller success flag.  When that
+allocator accepts a new object on the retired DMA frame, the caller-visible
+result retains the complete authoritative invariant, records the exact reused
+frame binding, and proves that the newly published lifetime is scrubbed.  This
+is a model result and does not claim allocator/QEMU refinement. -/
+theorem subject_termination_checked_authoritative_exact_completion_scrubs_fresh_frame
+    (plan : BootPageTablePlan.Plan)
+    (freshObject : FrameScrub.ObjectId)
+    (freshSubject : FrameScrub.SubjectId)
+    (freshSlot : FrameScrub.SlotId)
+    (hallocate :
+      let prepared := prepareAuthoritativePublication
+        (subjectTerminationCheckedAuthoritativePublicationState plan)
+        (subject_termination_checked_before_invariant plan)
+        (.cleanup (.ordinary (.terminateSubject 2)))
+      let acknowledged := acknowledgeAuthoritativePublication prepared.state
+        (.cleanup subjectTerminationWitnessCompletion)
+      (FrameScrub.allocate acknowledged.state.authoritative.scrub
+        freshObject freshSubject freshSlot).result = .accepted)
+    (hreuse :
+      let prepared := prepareAuthoritativePublication
+        (subjectTerminationCheckedAuthoritativePublicationState plan)
+        (subject_termination_checked_before_invariant plan)
+        (.cleanup (.ordinary (.terminateSubject 2)))
+      let acknowledged := acknowledgeAuthoritativePublication prepared.state
+        (.cleanup subjectTerminationWitnessCompletion)
+      (FrameScrub.allocate acknowledged.state.authoritative.scrub
+        freshObject freshSubject freshSlot).state.memory.binding freshObject =
+          some subjectTerminationWitnessMapping.frame.frame) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    let allocated := FrameScrub.allocate acknowledged.state.authoritative.scrub
+      freshObject freshSubject freshSlot
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative.Invariant ∧
+      allocated.state.memory.binding freshObject =
+        some subjectTerminationWitnessMapping.frame.frame ∧
+      FrameScrub.Fresh allocated.state freshObject := by
+  have hcompleted :=
+    subject_termination_checked_authoritative_exact_completion_opens_frame_guard
+      plan
+  dsimp only at hcompleted hallocate hreuse ⊢
+  rcases hcompleted with ⟨haccepted, hinvariant, _hguard⟩
+  exact ⟨haccepted, hinvariant, hreuse,
+    FrameScrub.allocation_publishes_scrubbed _ _ _ _ hallocate⟩
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
