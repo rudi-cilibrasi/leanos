@@ -3472,6 +3472,33 @@ theorem derive_retired_memory_authoritative_candidate_projects_release
             simp [publishRetiredMemoryKernel, retiredMemoryReleaseCore,
               clearRetiredFrameAuthority]
 
+/-- Capability well-formedness is a construction fact of every successful
+authoritative release candidate.  The constructor validates the exact
+receipt-derived capability projection before installing that same projection
+in the kernel, so the later runtime proof does not accept it as a caller
+premise. -/
+theorem derive_retired_memory_authoritative_candidate_capabilities_well_formed
+    state completion object after
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    LeanOS.Capability.WellFormed after.kernel.capabilities := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending _hpending =>
+      split at hderived <;> try contradiction
+      next released _hreleased =>
+        split at hderived <;> try contradiction
+        next hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            simpa [publishRetiredMemoryKernel,
+              retiredMemoryReleaseCore] using hcapability
+
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
 needed by the later cross-projection publication theorem: removing the retired
