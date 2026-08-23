@@ -3003,6 +3003,44 @@ theorem subject_termination_checked_authoritative_exact_completion_closes_grants
   intro slot
   simp [LeanOS.Capability.lookup, hkernelSubject]
 
+/-- Exact caller-visible cleanup completion also opens the frame-lifetime
+guard for the retired DMA frame.  This result uses the acknowledged
+authoritative successor and published cache directly: no caller-provided
+claim about mapping or translation absence can make the guard succeed. -/
+theorem subject_termination_checked_authoritative_exact_completion_opens_frame_guard
+    (plan : BootPageTablePlan.Plan) :
+    let prepared := prepareAuthoritativePublication
+      (subjectTerminationCheckedAuthoritativePublicationState plan)
+      (subject_termination_checked_before_invariant plan)
+      (.cleanup (.ordinary (.terminateSubject 2)))
+    let acknowledged := acknowledgeAuthoritativePublication prepared.state
+      (.cleanup subjectTerminationWitnessCompletion)
+    let releaseState : AuthoritativeCacheState := {
+      authoritative := acknowledged.state.authoritative
+      cache := {
+        published := acknowledged.state.cache
+        pending := none
+        nextTicket := acknowledged.state.nextTicket } }
+    acknowledged.accepted = true ∧
+      acknowledged.state.authoritative.Invariant ∧
+      guardExactFrameRelease releaseState
+        subjectTerminationWitnessMapping.frame = .allowed := by
+  have hexact :=
+    subject_termination_checked_authoritative_acknowledges_exact_cleanup plan
+  have hretired :=
+    subject_termination_checked_authoritative_exact_completion_retires_all_authority
+      plan
+  dsimp only at hexact hretired ⊢
+  rcases hexact with ⟨haccepted, _hauthoritative, hcache, _hpending⟩
+  rcases hretired with
+    ⟨_haccepted, hinvariant, _hsubject, _haddress, _hassignments, hmappings,
+      _hlookup, _hpending⟩
+  refine ⟨haccepted, hinvariant, ?_⟩
+  apply exact_frame_release_allowed_only_after_cleanup
+  · rfl
+  · simp [hmappings]
+  · simp [hcache, entriesNameFrame]
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
