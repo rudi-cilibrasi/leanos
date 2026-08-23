@@ -20603,6 +20603,26 @@ def compositeDispatcherInitial (plan : BootPageTablePlan.Plan) : CompositeState 
     blockingContexts := fun _ => none
     deferredCancels := BlockingIPCContext.emptyDeferred }
 
+/-- Subject 2's canonical memory-read authority has one executable slot.
+This small public projection lets outer lifecycle proofs reason about removal
+without exposing the dispatcher's private capability fixture. -/
+theorem compositeDispatcherInitial_subjectTwo_memory_read_slot
+    (plan : BootPageTablePlan.Plan) (slot : Nat)
+    (capability : Capability.Capability)
+    (hslot : (compositeDispatcherInitial plan).capabilities.slots 2 slot =
+      some capability)
+    (hobject : capability.object = 20)
+    (hread : Capability.hasRight capability.rights .read) :
+    slot = 2 := by
+  simp only [compositeDispatcherInitial, dispatcherCapabilities,
+    dispatcherSubjectOneSpace, dispatcherSubjectOneEndpoint,
+    dispatcherSubjectTwoEndpoint, dispatcherSubjectTwoSpace,
+    dispatcherSubjectTwoMemory] at hslot
+  repeat' split at hslot
+  all_goals cases hslot <;>
+    simp_all [Capability.hasRight, Capability.permits,
+      Capability.allRights]
+
 private theorem dispatcherAddressOwner_some_iff (addressSpace subject : Nat) :
     dispatcherLifecycle.addressOwner addressSpace = some subject ↔
       (addressSpace = 1 ∧ subject = 1) ∨

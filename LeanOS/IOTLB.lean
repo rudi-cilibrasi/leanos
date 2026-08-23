@@ -2074,15 +2074,48 @@ theorem canonical_dma_memory_subtree_kernel_after_does_not_preserve_runtime_auth
   intro hpreserved
   have hbefore : LeanOS.Capability.HasAuthority
       (subjectTerminationCheckedBefore plan).kernel.capabilities 2 20 .read := by
-    refine ⟨2, { object := 20, kind := .memory,
-      rights := LeanOS.Capability.allRights, identity := 5 }, ?_, rfl, rfl⟩
-    rfl
+    have hvalid := (subjectTerminationCheckedIOMMU plan).valid
+    change validateCore (subjectTerminationCheckedCore plan) = true at hvalid
+    have hcapabilities :
+        (subjectTerminationCheckedCore plan).capabilities.all
+          (capabilityValid (subjectTerminationCheckedCore plan)) = true := by
+      unfold validateCore at hvalid
+      simp only [Bool.and_eq_true] at hvalid
+      grind
+    have hcapability := hcapabilities
+    simp [subjectTerminationCheckedCore, authoritativeSampleCore,
+      capabilityValid, findFrame, readWrite, Permission.nonempty,
+      rangeContained] at hcapability
+    change LeanOS.Capability.HasAuthority
+      (FailStop.compositeDispatcherInitial plan).capabilities 2 20 .read
+    cases hlookup : LeanOS.Capability.lookup
+        (FailStop.compositeDispatcherInitial plan).capabilities 2 2 with
+    | invalidSubject => simp [hlookup] at hcapability
+    | staleSlot => simp [hlookup] at hcapability
+    | found capability =>
+        refine ⟨2, capability,
+          LeanOS.Capability.lookup_found_slot _ _ _ _ hlookup, ?_, ?_⟩
+        · simp [hlookup] at hcapability
+          grind
+        · simp [hlookup] at hcapability
+          simp [LeanOS.Capability.hasRight, LeanOS.Capability.permits]
+          grind
   have hafter := hpreserved 2 20 .read (Or.inl rfl) hbefore
-  simpa [canonicalDMAMemorySubtreeKernelAfter,
-    canonicalDMAMemorySubtreeRawAfter, LeanOS.Capability.revokeSubtree,
-    LeanOS.Capability.clearSubtree, LeanOS.Capability.lookup,
-    LeanOS.Capability.HasAuthority, subjectTerminationCheckedBefore,
-    authoritativeSample, FailStop.compositeDispatcherInitial] using hafter
+  rcases hafter with ⟨slot, capability, hslot, hobject, hread⟩
+  have hbeforeSlot := LeanOS.Capability.revokeSubtree_slot_survives
+    (FailStop.compositeDispatcherInitial plan).capabilities 2 2 2 2
+    2 slot capability (by
+      simpa [canonicalDMAMemorySubtreeKernelAfter,
+        canonicalDMAMemorySubtreeRawAfter] using hslot)
+  have hslotEq := FailStop.compositeDispatcherInitial_subjectTwo_memory_read_slot
+    plan slot capability hbeforeSlot hobject hread
+  subst slot
+  have hremoved := (canonical_dma_memory_raw_subtree_derives_successor plan).2
+  have hstill : (canonicalDMAMemorySubtreeRawAfter plan).state.slots 2 2 =
+      some capability := by
+    simpa [canonicalDMAMemorySubtreeKernelAfter,
+      canonicalDMAMemorySubtreeRawAfter] using hslot
+  simp [hremoved] at hstill
 
 /-- The validated IOMMU state and complete cross-projection coherence are
 already discharged.  Consequently the sole remaining obligation for the
