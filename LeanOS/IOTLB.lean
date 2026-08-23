@@ -3276,6 +3276,85 @@ theorem derive_retired_memory_release_receipt_wrong_scopes_none
     deriveRetiredMemoryReleaseReceipt state completion object = none := by
   simp [deriveRetiredMemoryReleaseReceipt, hpending, hscopes]
 
+/-- Consume a derived retired-memory receipt at the allocator boundary.  The
+object must still have the exact binding carried by the receipt, must already
+be retired in the capability projection, and must still own that exact frame
+in the allocator.  Acceptance clears only the binding and allocator ownership;
+bytes and monotonic object-issuance history are retained for the later scrub
+and fresh-lifetime publication. -/
+def releaseRetiredMemoryWithReceipt
+    (state : FrameScrub.State)
+    (receipt : RetiredMemoryReleaseReceipt) : Option FrameScrub.State :=
+  if state.memory.binding receipt.object = some receipt.frame ∧
+      state.memory.capabilities.objects receipt.object = false then
+    match FrameAllocator.release state.memory.allocator receipt.object
+        receipt.frame with
+    | .error _ => none
+    | .ok allocator =>
+        some { state with
+          memory := { state.memory with
+            allocator
+            binding := MemoryLifecycle.setBinding state.memory.binding
+              receipt.object none } }
+  else none
+
+/-- A successful receipt consumption releases the exact bound frame, clears
+the retired object's binding, and preserves both residual bytes and the
+never-reuse issuance history. -/
+theorem release_retired_memory_with_receipt_exact
+    state receipt released
+    (hreleased :
+      releaseRetiredMemoryWithReceipt state receipt = some released) :
+    released.memory.binding receipt.object = none ∧
+      FrameAllocator.IsFree released.memory.allocator receipt.frame ∧
+      released.bytes = state.bytes ∧
+      released.memory.issued = state.memory.issued := by
+  simp only [releaseRetiredMemoryWithReceipt] at hreleased
+  split at hreleased <;> try contradiction
+  next hexact =>
+    split at hreleased <;> try contradiction
+    next allocator hallocator =>
+      injection hreleased with heq
+      subst released
+      refine ⟨by simp [MemoryLifecycle.setBinding], ?_, rfl, rfl⟩
+      exact FrameAllocator.released_is_free _ _ _ _ hallocator
+
+/-- Once the receipt has been consumed, replay against the cleared binding is
+inert even when every receipt field is repeated verbatim. -/
+theorem release_retired_memory_with_receipt_replay_none
+    state receipt
+    (hcleared : state.memory.binding receipt.object = none) :
+    releaseRetiredMemoryWithReceipt state receipt = none := by
+  simp [releaseRetiredMemoryWithReceipt, hcleared]
+
+/-- The candidate release front door derives its receipt internally from the
+still-pending exact cleanup and applies it only to that cleanup's checked
+logical successor.  It exposes no caller-supplied frame or successor state.
+The resulting scrub candidate is intentionally not yet an authoritative
+publication; the outer kernel/IOMMU/scrub invariant remains the next gate. -/
+def deriveRetiredMemoryReleaseCandidate
+    (state : AuthoritativePublicationState)
+    (completion : AuthorityCleanupCompletion)
+    (object : MemoryLifecycle.ObjectId) : Option FrameScrub.State :=
+  match deriveRetiredMemoryReleaseReceipt state completion object with
+  | none => none
+  | some receipt =>
+      match state.pending with
+      | some (.cleanup pending) =>
+          releaseRetiredMemoryWithReceipt pending.logicalAfter.scrub receipt
+      | _ => none
+
+/-- A stale or forged cleanup ticket cannot reach the allocator release
+candidate, so the complete pending authoritative publication remains the only
+source of release authority. -/
+theorem derive_retired_memory_release_candidate_wrong_ticket_none
+    state completion pending object
+    (hpending : state.pending = some (.cleanup pending))
+    (hticket : completion.ticket ≠ pending.ticket) :
+    deriveRetiredMemoryReleaseCandidate state completion object = none := by
+  simp [deriveRetiredMemoryReleaseCandidate,
+    deriveRetiredMemoryReleaseReceipt, hpending, hticket]
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
