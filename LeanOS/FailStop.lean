@@ -16409,6 +16409,56 @@ private theorem installCopiedCapabilities_dormantCancellationCompatible
               (And.intro hvalid.2.2.2.2.2.1
                 (And.intro hvalid.2.2.2.2.2.2 hcontext)))))
 
+/-- Public capability-publication boundary for a successor whose provenance
+and authority obligations have already been checked.  The underlying record
+installer remains private so callers cannot unfold a raw publication in place
+of discharging this boundary's complete runtime contract. -/
+def authoritativePublishCheckedCapabilities (state : CompositeState)
+    (capabilities : Capability.State) : CompositeState :=
+  installCopiedCapabilities state capabilities
+
+/-- A checked capability successor crosses the folded authoritative boundary
+only when it preserves every registry consumed by the runtime, every live slot
+comes from the pre-state, and both mapping and blocking-receive authority stay
+available.  Deferred-cancellation and invalidation-publication state remain
+the exact pre-state projections. -/
+theorem authoritativePublishCheckedCapabilities_preserves_authoritativeRuntimeWellFormed
+    state next
+    (hstate : AuthoritativeRuntimeWellFormed state)
+    (hwellFormed : Capability.WellFormed next)
+    (hsubjects : next.subjects = state.capabilities.subjects)
+    (hobjects : next.objects = state.capabilities.objects)
+    (hkinds : next.kinds = state.capabilities.kinds)
+    (hnextIdentity : next.nextIdentity = state.capabilities.nextIdentity)
+    (hderivations : next.derivations = state.capabilities.derivations)
+    (hslots : ∀ subject slot capability,
+      next.slots subject slot = some capability →
+        state.capabilities.slots subject slot = some capability)
+    (hruntimeAuthority : RuntimeAuthorityPreserved state.capabilities next)
+    (hreceiveAuthority : ∀ subject endpoint,
+      Capability.HasAuthority state.capabilities subject endpoint .receive →
+        Capability.HasAuthority next subject endpoint .receive) :
+    AuthoritativeRuntimeWellFormed
+      (authoritativePublishCheckedCapabilities state next) := by
+  have hglobal : RuntimeWellFormed (installCopiedCapabilities state next) :=
+    installRevokedCapabilities_preserves_runtimeWellFormed state next hstate.1
+      hwellFormed hsubjects hobjects hkinds hnextIdentity hderivations hslots
+      hruntimeAuthority
+  have hblocking : BlockingRuntimeWellFormed
+      (installCopiedCapabilities state next) :=
+    installReceiveAuthorityPreservingCapabilities_preserves_blockingRuntimeWellFormed
+      state next hstate.blocking hglobal hwellFormed hsubjects hobjects hkinds
+      hreceiveAuthority
+  have hdeferred : DeferredBlockingRuntimeWellFormed
+      (installCopiedCapabilities state next) :=
+    dormantCancellationCompatible_preserves state
+      (installCopiedCapabilities state next) hstate.deferred hblocking
+      (installCopiedCapabilities_dormantCancellationCompatible
+        state next hstate hsubjects)
+  refine ⟨hdeferred.1, hdeferred.2, ?_⟩
+  simpa [authoritativePublishCheckedCapabilities,
+    installCopiedCapabilities] using hstate.publication
+
 /-- Publishing a sealed-transfer state has the same dormant-cancellation
 boundary as direct capability publication.  Transfer offer/receipt may change
 the endpoint mailbox and capability derivation state, but a stable subject
