@@ -3200,6 +3200,82 @@ theorem subject_termination_checked_authoritative_exact_completion_requires_reti
   · simp [resolveReleaseFrame, hscrubLookup]
   · simp [guardFrameRelease, resolveReleaseFrame, hscrubLookup]
 
+structure RetiredMemoryReleaseReceipt where
+  cleanupTicket : Nat
+  cleanupScopes : List InvalidationScope
+  object : MemoryLifecycle.ObjectId
+  frame : MemoryLifecycle.FrameId
+  deriving DecidableEq, Repr
+
+/-- Derive a retired-memory receipt only from the exact cleanup publication
+that is still pending.  The caller may nominate an object to release, but the
+publisher derives its frame from the authoritative pre-state and accepts the
+nomination only when that same object is live before cleanup, retired by the
+checked logical successor, and remains bound to the same frame. -/
+def deriveRetiredMemoryReleaseReceipt
+    (state : AuthoritativePublicationState)
+    (completion : AuthorityCleanupCompletion)
+    (object : MemoryLifecycle.ObjectId) : Option RetiredMemoryReleaseReceipt :=
+  match state.pending with
+  | some (.cleanup pending) =>
+      if completion.ticket = pending.ticket ∧
+          completion.scopes = pending.scopes ∧
+          pending.cacheBefore = state.cache then
+        match state.authoritative.scrub.memory.binding object with
+        | none => none
+        | some frame =>
+            if state.authoritative.scrub.memory.capabilities.objects object = true ∧
+                pending.logicalAfter.scrub.memory.capabilities.objects object = false ∧
+                pending.logicalAfter.scrub.memory.binding object = some frame then
+              some {
+                cleanupTicket := pending.ticket
+                cleanupScopes := pending.scopes
+                object
+                frame }
+            else none
+      else none
+  | _ => none
+
+/-- A derived receipt is tied to the nominated object, its authoritative
+pre-cleanup frame binding, and the exact ticket and scope set being
+acknowledged.  None of those values can be substituted after derivation. -/
+theorem derived_retired_memory_release_receipt_is_exact
+    state completion object receipt
+    (hderived :
+      deriveRetiredMemoryReleaseReceipt state completion object = some receipt) :
+    receipt.object = object ∧
+      state.authoritative.scrub.memory.binding object = some receipt.frame ∧
+      receipt.cleanupTicket = completion.ticket ∧
+      receipt.cleanupScopes = completion.scopes := by
+  simp only [deriveRetiredMemoryReleaseReceipt] at hderived
+  split at hderived <;> try contradiction
+  next pending hpending =>
+    split at hderived <;> try contradiction
+    next hexact =>
+      split at hderived <;> try contradiction
+      next frame hframe =>
+        split at hderived <;> try contradiction
+        cases hderived
+        simp_all
+
+/-- A completion with the wrong ticket cannot derive a retired-memory
+receipt, even if every caller-visible object and frame nomination is reused. -/
+theorem derive_retired_memory_release_receipt_wrong_ticket_none
+    state completion pending object
+    (hpending : state.pending = some (.cleanup pending))
+    (hticket : completion.ticket ≠ pending.ticket) :
+    deriveRetiredMemoryReleaseReceipt state completion object = none := by
+  simp [deriveRetiredMemoryReleaseReceipt, hpending, hticket]
+
+/-- Matching the ticket is insufficient: a missing, added, or reordered
+cleanup scope also makes receipt derivation stutter. -/
+theorem derive_retired_memory_release_receipt_wrong_scopes_none
+    state completion pending object
+    (hpending : state.pending = some (.cleanup pending))
+    (hscopes : completion.scopes ≠ pending.scopes) :
+    deriveRetiredMemoryReleaseReceipt state completion object = none := by
+  simp [deriveRetiredMemoryReleaseReceipt, hpending, hscopes]
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
