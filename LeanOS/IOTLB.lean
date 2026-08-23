@@ -2060,6 +2060,30 @@ theorem canonical_dma_memory_subtree_kernel_after_retains_capability_metadata
     subjectTerminationCheckedBefore, authoritativeSample] using
     ⟨hsubjects, hobjects, hkinds, hcapacity, hnextIdentity, hderivations, hslots⟩
 
+/-- The current proof-only candidate cannot cross the checked capability-only
+publication boundary: it removes subject 2's sole read authority for the live
+memory object while the surrounding lifecycle still names that ownership.
+This negative theorem prevents the coordinated cleanup from being completed
+by weakening the generic revocation contract; the publication successor must
+instead retire the dependent lifecycle projections in the same checked step. -/
+theorem canonical_dma_memory_subtree_kernel_after_does_not_preserve_runtime_authority
+    (plan : BootPageTablePlan.Plan) :
+    ¬ FailStop.RuntimeAuthorityPreserved
+      (subjectTerminationCheckedBefore plan).kernel.capabilities
+      (canonicalDMAMemorySubtreeKernelAfter plan).capabilities := by
+  intro hpreserved
+  have hbefore : LeanOS.Capability.HasAuthority
+      (subjectTerminationCheckedBefore plan).kernel.capabilities 2 20 .read := by
+    refine ⟨2, { object := 20, kind := .memory,
+      rights := LeanOS.Capability.allRights, identity := 5 }, ?_, rfl, rfl⟩
+    rfl
+  have hafter := hpreserved 2 20 .read (Or.inl rfl) hbefore
+  simpa [canonicalDMAMemorySubtreeKernelAfter,
+    canonicalDMAMemorySubtreeRawAfter, LeanOS.Capability.revokeSubtree,
+    LeanOS.Capability.clearSubtree, LeanOS.Capability.lookup,
+    LeanOS.Capability.HasAuthority, subjectTerminationCheckedBefore,
+    authoritativeSample, FailStop.compositeDispatcherInitial] using hafter
+
 /-- The validated IOMMU state and complete cross-projection coherence are
 already discharged.  Consequently the sole remaining obligation for the
 coordinated candidate's full outer invariant is the kernel runtime invariant;
