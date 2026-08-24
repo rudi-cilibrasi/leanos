@@ -6413,7 +6413,7 @@ def assignedEDUReuseFreshKey : Key := {
 
 def assignedEDUReuseFreshEntry : Entry := {
   key := assignedEDUReuseFreshKey
-  frame := ⟨assignedEDUReuseEntry.frame.frame, 2⟩
+  frame := ⟨4, 2⟩
   permission := readOnly }
 
 private def assignedEDUReuseAcknowledged : PublicationState :=
@@ -6525,7 +6525,7 @@ private def assignedEDUReuseFreshCore : Core := {
   nextMappingGeneration := 3
   assignments := [assignedEDUReuseFreshAssignment]
   mappings := [assignedEDUReuseFreshMapping]
-  frames := assignedEDUReuseFreshFrame :: IOMMU.sampleFrames.tail
+  frames := IOMMU.sampleFrames.take 4 ++ [assignedEDUReuseFreshFrame]
   capabilityAuthority := assignedEDUReuseFreshCapabilityAuthority
   frameAuthority := fun object =>
     if object == 21 then some assignedEDUReuseFreshEntry.frame else none
@@ -6577,6 +6577,59 @@ theorem assigned_edu_reuse_fresh_mapping_validates_and_rejects_stale_generation 
       assignedEDUReuseFreshMapping.handle = assignedEDUReuseFreshKey.mapping ∧
       assignedEDUReuseFreshMapping.frame = assignedEDUReuseFreshEntry.frame := by
   native_decide
+
+/-- The fresh device-authority witness is tied to the actual receipt-derived
+allocation, not merely to matching numeric constants.  Any canonical cleanup
+candidate accepted by the authoritative constructor must first allocate and
+scrub object 21 for subject 1 on the reclaimed physical frame.  That binding
+is exactly the object/frame pair named by the validated capability, assignment,
+mapping, frame registry, and frame-authority projections used by the fresh
+canary below.  This is a cross-projection finite-model correspondence; it does
+not claim a refinement from `FrameScrub.allocate` to VT-d or QEMU execution. -/
+theorem assigned_edu_reuse_receipt_allocation_corresponds_to_fresh_authority
+    (plan : BootPageTablePlan.Plan) (after : AuthoritativeExtension)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after) :
+    let allocated := FrameScrub.allocate after.scrub 21 1 2
+    allocated.result = .accepted ∧
+      allocated.state.memory.binding assignedEDUReuseFreshCapability.object =
+        some assignedEDUReuseFreshCapability.frame.frame ∧
+      FrameScrub.Fresh allocated.state assignedEDUReuseFreshCapability.object ∧
+      assignedEDUReuseFreshCapabilityAuthority.objects
+          assignedEDUReuseFreshCapability.object = true ∧
+      assignedEDUReuseFreshCapabilityAuthority.subjects
+          assignedEDUReuseFreshAssignment.owner = true ∧
+      (∃ root,
+        assignedEDUReuseFreshCapabilityAuthority.slots
+            assignedEDUReuseFreshAssignment.owner 0 = some root ∧
+          root.object = assignedEDUReuseFreshCapability.object ∧
+          root.kind = .memory) ∧
+      assignedEDUReuseFreshCore.frameAuthority
+          assignedEDUReuseFreshCapability.object =
+        some assignedEDUReuseFreshCapability.frame ∧
+      assignedEDUReuseFreshMapping.assignment =
+        assignedEDUReuseFreshAssignment.handle ∧
+      assignedEDUReuseFreshMapping.owner = assignedEDUReuseFreshAssignment.owner ∧
+      assignedEDUReuseFreshMapping.frame = assignedEDUReuseFreshCapability.frame ∧
+      assignedEDUReuseFreshFrame.handle = assignedEDUReuseFreshMapping.frame ∧
+      assignedEDUReuseFreshFrame.owner = assignedEDUReuseFreshMapping.owner := by
+  have hallocated :=
+    subject_termination_checked_retired_memory_candidate_allocates_fresh
+      plan after hderived
+  refine ⟨hallocated.1, ?_, ?_, ?_⟩
+  · have hobject : assignedEDUReuseFreshCapability.object = 21 := by
+      native_decide
+    have hframe : assignedEDUReuseFreshCapability.frame.frame = 4 := by
+      native_decide
+    rw [hobject, hframe]
+    exact hallocated.2.1
+  · simpa [assignedEDUReuseFreshCapability] using hallocated.2.2
+  · native_decide
 
 /-- The fixed machine-facing reuse calls and the fresh-lifetime model form one
 reviewed sequence: exact preparation and completion validate, the ordered
