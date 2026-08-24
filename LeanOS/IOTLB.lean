@@ -3649,6 +3649,49 @@ theorem derive_retired_memory_authoritative_candidate_preserves_virtual_lifecycl
                   · simpa [FrameAllocator.IsOwnedBy, FrameAllocator.setStatus,
                       hframe] using howned
 
+/-- Receipt-derived publication retains the authoritative scheduler.  Memory
+release does not change the capability subject registry, and coherence ties
+that registry to the lifecycle already installed in the scheduler, so its
+queue, current subject, capacity, and complete well-formedness proof survive
+unchanged. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_scheduler
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    Scheduler.WellFormed after.kernel.scheduler := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hbefore := hinvariant pending hpending
+        have hscheduler : Scheduler.WellFormed
+            pending.logicalAfter.kernel.scheduler :=
+          hbefore.1.left.2.2.2.2.2.2.1
+        have hkernelCoherent := hbefore.1.left.1
+        have houterCoherent := hbefore.2.2
+        have hcapabilities :=
+          release_retired_memory_with_receipt_preserves_capabilities
+            pending.logicalAfter.scrub receipt released hreleased
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            rcases hkernelCoherent with
+              ⟨_, hschedulerLifecycle, _, _, hvirtualCapabilities, _⟩
+            rcases houterCoherent with
+              ⟨_, _, hscrubMemory, _⟩
+            simpa [publishRetiredMemoryKernel, hcapabilities, hscrubMemory,
+              hvirtualCapabilities, ← hschedulerLifecycle] using hscheduler
+
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
 needed by the later cross-projection publication theorem: removing the retired
