@@ -6531,6 +6531,47 @@ theorem assigned_edu_reuse_machine_exports_bind_stale_denial_and_fresh_authority
       assignedEDUReuseFreshTranslationAccepted = true := by
   native_decide
 
+private def assignedEDUReuseFreshCanaryMemory : FrameId → Nat → UInt8 :=
+  fun frame offset =>
+    if frame = assignedEDUReuseFreshEntry.frame.frame && offset < pageSize then
+      0xa5
+    else
+      IOMMU.zeroMemory frame offset
+
+private def assignedEDUReuseFreshCanaryCore : Core :=
+  { assignedEDUReuseFreshCore with memory := assignedEDUReuseFreshCanaryMemory }
+
+private def assignedEDUReuseFreshCanaryState : State :=
+  ⟨assignedEDUReuseFreshCanaryCore, by native_decide,
+    IOMMU.sampleCapabilityAuthority_wellFormed⟩
+
+private def observedReadBytes {state request} :
+    ReadOutcome state request → Option (List UInt8)
+  | .observed _ bytes => some bytes
+  | .rejected _ => none
+
+/-- The machine-facing invalidation and publication sequence is compatible
+with a concrete fresh-owner canary observation rather than a permanently
+disabled device.  The retired generation-1 request is rejected before it can
+observe bytes, while the independently authorized generation-2 request reads
+the complete fresh canary from the reused physical frame.  The scalar exports
+still validate call shape and order only; this finite witness does not claim
+VT-d completion, QEMU execution, or compiler refinement. -/
+theorem assigned_edu_reuse_machine_sequence_preserves_fresh_canary :
+    assignedEDUReusePublicationExport
+        1 1 16 0 0 1 0 1 0 1 0 0 1 0 = 0 ∧
+      assignedEDUReusePublicationExport
+        2 1 16 0 0 1 0 1 0 1 0 0 1 0 = 0 ∧
+      assignedEDUReuseProtocolExport 1 1 1 0 = 0 ∧
+      assignedEDUReuseFreshPublicationExport 0 0 = 0 ∧
+      (deviceRead assignedEDUReuseFreshCanaryState
+        assignedEDUReuseOldGenerationRequest).reason = some .staleAssignment ∧
+      observedReadBytes
+          (deviceRead assignedEDUReuseFreshCanaryState
+            assignedEDUReuseFreshRequest) =
+        some (List.replicate pageSize 0xa5) := by
+  native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
