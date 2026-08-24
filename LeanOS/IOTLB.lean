@@ -4882,6 +4882,75 @@ theorem subject_termination_checked_retired_memory_candidate_exists
     subject_termination_checked_retired_memory_candidate_invariant
       plan after hderived⟩
 
+/-- Every successful canonical release candidate has crossed the concrete
+allocator boundary: object 20 no longer names its retired backing frame and
+frame 4 is genuinely free.  These are constructor-derived facts for the
+invariant-bearing successor, not premises supplied to the later fresh-lifetime
+allocation proof. -/
+theorem subject_termination_checked_retired_memory_candidate_releases_frame
+    (plan : BootPageTablePlan.Plan) (after : AuthoritativeExtension)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after) :
+    after.scrub.memory.binding 20 = none ∧
+      FrameAllocator.IsFree after.scrub.memory.allocator 4 := by
+  have hremoved :=
+    subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      have hpending' := hpending
+      simp only [prepareAuthoritativePublication,
+        prepareAuthorityCleanupPublication,
+        subjectTerminationCheckedAuthoritativePublicationState] at hpending'
+      rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+          (.ordinary (.terminateSubject 2)) =
+            subjectTerminationCheckedAfter plan by rfl] at hpending'
+      rw [hscopes] at hpending'
+      simp [subjectTerminationWitnessScopes] at hpending'
+      subst pending
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hreceiptExact :=
+          derived_retired_memory_release_receipt_is_exact
+            (prepareAuthoritativePublication
+              (subjectTerminationCheckedAuthoritativePublicationState plan)
+              (subject_termination_checked_before_invariant plan)
+              (.cleanup (.ordinary (.terminateSubject 2)))).state
+            subjectTerminationWitnessCompletion 20 receipt hreceipt
+        have hframe : receipt.frame = 4 := by
+          have hbinding := hreceiptExact.2.1
+          have hretains :=
+            (prepare_authoritative_publication_retains_publications
+              (subjectTerminationCheckedAuthoritativePublicationState plan)
+              (subject_termination_checked_before_invariant plan)
+              (.cleanup (.ordinary (.terminateSubject 2)))).1
+          rw [hretains] at hbinding
+          change (if (20 : MemoryLifecycle.ObjectId) = 20 then some 4 else none) =
+            some receipt.frame at hbinding
+          simpa using hbinding.symm
+        have hexact :=
+          release_retired_memory_with_receipt_exact
+            (subjectTerminationCheckedAfter plan).scrub receipt released
+            hreleased
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            exact ⟨
+              by simpa [hreceiptExact.1] using hexact.1,
+              by simpa [hframe] using hexact.2.1⟩
+
 /-- The canonical receipt-derived release candidate exposes every validated
 outer-invariant component except the final cross-projection coherence proof.
 This packages the complete runtime proof with the constructor-owned finite
