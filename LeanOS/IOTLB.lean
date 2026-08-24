@@ -6513,6 +6513,24 @@ theorem assigned_edu_reuse_fresh_mapping_validates_and_rejects_stale_generation 
       assignedEDUReuseFreshMapping.frame = assignedEDUReuseFreshEntry.frame := by
   native_decide
 
+/-- The fixed machine-facing reuse calls and the fresh-lifetime model form one
+reviewed sequence: exact preparation and completion validate, the ordered
+release/scrub/publication row succeeds, the retired generation remains denied,
+and the independently validated generation-2 request translates.  The scalar
+exports validate the call shapes and ordering only; this theorem does not claim
+that they implement VT-d completion or refine the QEMU device. -/
+theorem assigned_edu_reuse_machine_exports_bind_stale_denial_and_fresh_authority :
+    assignedEDUReusePublicationExport
+        1 1 16 0 0 1 0 1 0 1 0 0 1 0 = 0 ∧
+      assignedEDUReusePublicationExport
+        2 1 16 0 0 1 0 1 0 1 0 0 1 0 = 0 ∧
+      assignedEDUReuseProtocolExport 1 1 1 0 = 0 ∧
+      assignedEDUReuseFreshPublicationExport 0 0 = 0 ∧
+      IOMMU.translationRejected assignedEDUReuseFreshState
+        assignedEDUReuseOldGenerationRequest .read = true ∧
+      assignedEDUReuseFreshTranslationAccepted = true := by
+  native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
