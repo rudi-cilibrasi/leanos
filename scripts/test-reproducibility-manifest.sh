@@ -11,11 +11,16 @@ for artifact in "${artifacts[@]}"; do
 done
 "$repo_root/scripts/write-reproducibility-manifest.sh" "$fixture/first" "$fixture"
 "$repo_root/scripts/write-reproducibility-manifest.sh" "$fixture/second" "$fixture"
-cmp "$fixture/first" "$fixture/second"
+"$repo_root/scripts/compare-reproducibility-manifests.sh" \
+  "$fixture/first" "$fixture/second"
 
 printf 'nondeterministic\n' >>"$fixture/${artifacts[0]}"
 "$repo_root/scripts/write-reproducibility-manifest.sh" "$fixture/changed" "$fixture"
-! cmp -s "$fixture/first" "$fixture/changed"
+if "$repo_root/scripts/compare-reproducibility-manifests.sh" \
+  "$fixture/first" "$fixture/changed" 2>/dev/null; then
+  echo "error: injected build-output nondeterminism was accepted" >&2
+  exit 1
+fi
 
 rm "$fixture/${artifacts[1]}"
 if "$repo_root/scripts/write-reproducibility-manifest.sh" \
