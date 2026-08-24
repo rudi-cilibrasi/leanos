@@ -20831,4 +20831,20 @@ theorem compositeDispatcherTerminateSubjectTwo_requires_explicit_memory_release
     MemoryLifecycle.allocate]
   native_decide
 
+/-- Canonical subject termination retires the owned memory-object capability
+before the still-bound frame can cross the later receipt-consuming release
+boundary.  This exposes the exact capability predicate used by that boundary
+without requiring outer proofs to unfold the private dispatcher fixture. -/
+theorem compositeDispatcherTerminateSubjectTwo_retires_memory_object
+    (plan : BootPageTablePlan.Plan) :
+    (authoritativeGate (compositeDispatcherInitial plan)
+      (.ordinary (.terminateSubject 2))).state.virtualMemory.memory.capabilities.objects
+        20 = false := by
+  simp [authoritativeGate_ordinary_state, gate, applyOperation,
+    compositeDispatcherInitial, dispatcherLifecycle, dispatcherCapabilities,
+    dispatcherVirtualMemory, dispatcherMemory, dispatcherScheduler,
+    dispatcherEndpoints, SubjectLifecycle.terminate, installTerminatedSubject,
+    installTerminatedResumable, ResumablePreemption.cleanupSubject]
+  native_decide
+
 end LeanOS.FailStop

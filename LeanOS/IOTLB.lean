@@ -4758,6 +4758,130 @@ theorem subject_termination_checked_retired_memory_candidate_invariant
     subject_termination_checked_retired_memory_candidate_coherent
       plan after hderived⟩
 
+/-- The canonical checked termination does not merely make the retired-memory
+constructor safe conditionally: its exact ticket, scopes, binding, and
+validated successor produce a concrete invariant-bearing release candidate. -/
+theorem subject_termination_checked_retired_memory_candidate_exists
+    (plan : BootPageTablePlan.Plan) :
+    ∃ after,
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after ∧
+      after.Invariant := by
+  have hremoved :=
+    subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  have hbindingKernel :
+      (subjectTerminationCheckedKernelAfter plan).virtualMemory.memory.binding
+          20 = some 4 := by
+    simpa [subjectTerminationCheckedKernelAfter,
+      subjectTerminationCheckedBefore, authoritativeSample] using
+      (FailStop.compositeDispatcherTerminateSubjectTwo_requires_explicit_memory_release
+        plan).1
+  have hbindingAfter :
+      (subjectTerminationCheckedAfter plan).scrub.memory.binding 20 = some 4 := by
+    rw [subject_termination_checked_apply_scrub_memory_coherent,
+      subject_termination_checked_apply_eq_reconciled_candidate]
+    exact hbindingKernel
+  have hretiredAfter :
+      (subjectTerminationCheckedAfter plan).scrub.memory.capabilities.objects
+          20 = false := by
+    rw [subject_termination_checked_apply_eq_reconciled_candidate]
+    simpa [reconcileScrubMemory, subjectTerminationCheckedKernelAfter,
+      subjectTerminationCheckedBefore, authoritativeSample] using
+      FailStop.compositeDispatcherTerminateSubjectTwo_retires_memory_object plan
+  have hownedAfter :
+      FrameAllocator.IsOwnedBy
+        (subjectTerminationCheckedAfter plan).scrub.memory.allocator 4 20 := by
+    rw [subject_termination_checked_apply_eq_reconciled_candidate]
+    exact subject_termination_checked_kernel_binding_owned plan 20 4 hbindingKernel
+  have hstatusAfter :
+      (subjectTerminationCheckedAfter plan).scrub.memory.allocator.status 4 =
+        .owned 20 := hownedAfter
+  have hbindingBefore :
+      (authoritativeSampleScrub plan).memory.binding 20 = some 4 := by
+    rfl
+  have hliveBefore :
+      (authoritativeSampleScrub plan).memory.capabilities.objects 20 = true := by
+    rfl
+  let released : FrameScrub.State :=
+    { memory :=
+        { (subjectTerminationCheckedAfter plan).scrub.memory with
+          allocator := FrameAllocator.setStatus
+            (subjectTerminationCheckedAfter plan).scrub.memory.allocator 4 .free
+          binding := MemoryLifecycle.setBinding
+            (subjectTerminationCheckedAfter plan).scrub.memory.binding 20 none }
+      bytes := (subjectTerminationCheckedAfter plan).scrub.bytes
+      written := (subjectTerminationCheckedAfter plan).scrub.written }
+  let core := retiredMemoryReleaseCore
+    (subjectTerminationCheckedAfter plan).iommu.core released 20
+  have hbefore := subject_termination_checked_after_invariant plan
+  have hkernelCoherent := hbefore.1.left.1
+  have hscrubMemory := hbefore.2.2.2.2.1
+  have hcapability : LeanOS.Capability.WellFormed core.capabilityAuthority := by
+    have heq : released.memory.capabilities =
+        (subjectTerminationCheckedKernelAfter plan).capabilities := by
+      calc
+        released.memory.capabilities =
+            (subjectTerminationCheckedAfter plan).scrub.memory.capabilities := rfl
+        _ = (subjectTerminationCheckedAfter plan).kernel.virtualMemory.memory.capabilities :=
+          congrArg (fun memory => memory.capabilities) hscrubMemory
+        _ = (subjectTerminationCheckedAfter plan).kernel.lifecycle.capabilities :=
+          hkernelCoherent.2.2.2.2.1
+        _ = (subjectTerminationCheckedAfter plan).kernel.capabilities :=
+          hkernelCoherent.2.2.2.1.symm
+        _ = (subjectTerminationCheckedKernelAfter plan).capabilities := by
+          rw [subject_termination_checked_apply_eq_reconciled_candidate]
+    simpa [core, retiredMemoryReleaseCore, heq] using
+      subject_termination_checked_candidate_capability_well_formed plan
+  have hremovedCandidate :
+      (subjectTerminationCheckedReconcileCandidate plan).assignments = [] ∧
+        (subjectTerminationCheckedReconcileCandidate plan).mappings = [] := by
+    rw [← subject_termination_checked_reconcile_core_eq_candidate]
+    simpa [subject_termination_checked_apply_eq_reconciled_candidate] using hremoved
+  have hcapabilitiesCandidate :
+      (subjectTerminationCheckedReconcileCandidate plan).capabilities = [] := by
+    rfl
+  have hvalid : validateCore core = true := by
+    dsimp [core]
+    rw [subject_termination_checked_apply_eq_reconciled_candidate]
+    rw [subject_termination_checked_reconcile_core_eq_candidate]
+    have hcandidateValid :=
+      subject_termination_checked_reconcile_candidate_valid plan
+    simpa [retiredMemoryReleaseCore, validateCore, hremovedCandidate.1,
+      hremovedCandidate.2, hcapabilitiesCandidate] using hcandidateValid
+  let after : AuthoritativeExtension :=
+    { kernel := publishRetiredMemoryKernel
+        (subjectTerminationCheckedAfter plan).kernel released.memory
+      iommu := ⟨core, hvalid, hcapability⟩
+      scrub := released }
+  have hderived :
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after := by
+    simp only [deriveRetiredMemoryAuthoritativeCandidate,
+      prepareAuthoritativePublication, prepareAuthorityCleanupPublication,
+      subjectTerminationCheckedAuthoritativePublicationState]
+    rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+        (.ordinary (.terminateSubject 2)) =
+          subjectTerminationCheckedAfter plan by rfl]
+    rw [hscopes]
+    simp [deriveRetiredMemoryReleaseReceipt, subjectTerminationWitnessCompletion,
+      subjectTerminationWitnessScopes, releaseRetiredMemoryWithReceipt,
+      subjectTerminationCheckedBefore, authoritativeSample, hbindingBefore,
+      hliveBefore, hbindingAfter, hretiredAfter, FrameAllocator.release,
+      hstatusAfter, released, core, after, hcapability, hvalid]
+  exact ⟨after, hderived,
+    subject_termination_checked_retired_memory_candidate_invariant
+      plan after hderived⟩
+
 /-- The canonical receipt-derived release candidate exposes every validated
 outer-invariant component except the final cross-projection coherence proof.
 This packages the complete runtime proof with the constructor-owned finite
