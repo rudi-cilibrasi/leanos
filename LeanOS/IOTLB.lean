@@ -3516,6 +3516,78 @@ theorem derive_retired_memory_authoritative_candidate_capabilities_well_formed
             simpa [publishRetiredMemoryKernel,
               retiredMemoryReleaseCore] using hcapability
 
+/- Receipt-derived publication preserves the execution-latch invariant.  The
+interrupt core receives the exact receipt-preserved lifecycle, while return
+authority is deliberately disarmed; execution mode and entry state remain
+unchanged from the checked pending successor. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_execution
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    FailStop.WellFormed after.kernel.execution := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hbefore := hinvariant pending hpending
+        have hexecution : FailStop.WellFormed
+            pending.logicalAfter.kernel.execution := hbefore.1.left.2.1
+        have hkernelCoherent := hbefore.1.left.1
+        have houterCoherent := hbefore.2.2
+        have hcapabilities :=
+          release_retired_memory_with_receipt_preserves_capabilities
+            pending.logicalAfter.scrub receipt released hreleased
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            rcases hkernelCoherent with
+              ⟨hcoreLifecycle, _, _, _, hvirtualCapabilities, _⟩
+            rcases houterCoherent with
+              ⟨_, _, hscrubMemory, _⟩
+            rcases hexecution with ⟨hcore, _hreturn, hmode⟩
+            have hreleasedCapabilities :
+                released.memory.capabilities =
+                  pending.logicalAfter.kernel.lifecycle.capabilities := by
+              calc
+                released.memory.capabilities =
+                    pending.logicalAfter.scrub.memory.capabilities :=
+                  hcapabilities
+                _ = pending.logicalAfter.kernel.virtualMemory.memory.capabilities :=
+                  congrArg (fun memory => memory.capabilities) hscrubMemory
+                _ = pending.logicalAfter.kernel.lifecycle.capabilities :=
+                  hvirtualCapabilities
+            have hlifecycle :
+                { pending.logicalAfter.kernel.lifecycle with
+                    capabilities := released.memory.capabilities } =
+                  pending.logicalAfter.kernel.lifecycle := by
+              rw [hreleasedCapabilities]
+            have hcorePublished :
+                { pending.logicalAfter.kernel.execution.core with
+                    lifecycle :=
+                      { pending.logicalAfter.kernel.lifecycle with
+                        capabilities := released.memory.capabilities } } =
+                  pending.logicalAfter.kernel.execution.core := by
+              rw [hlifecycle, ← hcoreLifecycle]
+            refine ⟨?_, by simp [publishRetiredMemoryKernel], ?_⟩
+            · change Interrupt.WellFormed
+                { pending.logicalAfter.kernel.execution.core with
+                  lifecycle :=
+                    { pending.logicalAfter.kernel.lifecycle with
+                      capabilities := released.memory.capabilities } }
+              rw [hcorePublished]
+              exact hcore
+            · simpa [publishRetiredMemoryKernel, hlifecycle] using hmode
+
 /-- A successful release candidate preserves the authoritative subject
 lifecycle invariant.  The pending successor supplies the already-checked
 runtime invariant, while receipt consumption preserves its capability subject
