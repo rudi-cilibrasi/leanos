@@ -3918,6 +3918,32 @@ theorem derive_retired_memory_authoritative_candidate_preserves_blocking_ipc
             simpa [publishRetiredMemoryKernel, hscheduler,
               hblockingState] using hblocking
 
+/- Receipt-derived publication keeps the blocking store on the exact
+authoritative scheduler and lifecycle installed in the composite runtime.
+This closes the cross-projection half of the blocking invariant separately
+from the store's internal well-formedness proof above. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_blocking_ipc_coherence
+    state completion object after
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    after.kernel.BlockingIPCCoherent := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next _receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next _pending _hpending =>
+      split at hderived <;> try contradiction
+      next _released _hreleased =>
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            simp [FailStop.CompositeState.BlockingIPCCoherent,
+              publishRetiredMemoryKernel]
+
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
 needed by the later cross-projection publication theorem: removing the retired
