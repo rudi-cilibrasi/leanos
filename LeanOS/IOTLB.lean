@@ -4951,6 +4951,155 @@ theorem subject_termination_checked_retired_memory_candidate_releases_frame
               by simpa [hreceiptExact.1] using hexact.1,
               by simpa [hframe] using hexact.2.1⟩
 
+/-- The exact invariant-bearing retired-memory successor admits the next real
+allocation transition.  Object 21 is published on the reclaimed frame 4 only
+through `FrameScrub.allocate`, so acceptance, the new binding, and zeroed
+fresh contents are consequences of the constructor-derived successor rather
+than caller-supplied release or scrub premises. -/
+theorem subject_termination_checked_retired_memory_candidate_allocates_fresh
+    (plan : BootPageTablePlan.Plan) (after : AuthoritativeExtension)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after) :
+    (FrameScrub.allocate after.scrub 21 1 2).result = .accepted ∧
+      (FrameScrub.allocate after.scrub 21 1 2).state.memory.binding 21 = some 4 ∧
+      FrameScrub.Fresh (FrameScrub.allocate after.scrub 21 1 2).state 21 := by
+  have hremoved :=
+    subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      have hpending' := hpending
+      simp only [prepareAuthoritativePublication,
+        prepareAuthorityCleanupPublication,
+        subjectTerminationCheckedAuthoritativePublicationState] at hpending'
+      rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+          (.ordinary (.terminateSubject 2)) =
+            subjectTerminationCheckedAfter plan by rfl] at hpending'
+      rw [hscopes] at hpending'
+      simp [subjectTerminationWitnessScopes] at hpending'
+      subst pending
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hreceiptExact :=
+          derived_retired_memory_release_receipt_is_exact
+            (prepareAuthoritativePublication
+              (subjectTerminationCheckedAuthoritativePublicationState plan)
+              (subject_termination_checked_before_invariant plan)
+              (.cleanup (.ordinary (.terminateSubject 2)))).state
+            subjectTerminationWitnessCompletion 20 receipt hreceipt
+        have hframe : receipt.frame = 4 := by
+          have hbinding := hreceiptExact.2.1
+          have hretains :=
+            (prepare_authoritative_publication_retains_publications
+              (subjectTerminationCheckedAuthoritativePublicationState plan)
+              (subject_termination_checked_before_invariant plan)
+              (.cleanup (.ordinary (.terminateSubject 2)))).1
+          rw [hretains] at hbinding
+          change (if (20 : MemoryLifecycle.ObjectId) = 20 then some 4 else none) =
+            some receipt.frame at hbinding
+          simpa using hbinding.symm
+        have hexact :=
+          release_retired_memory_with_receipt_exact
+            (subjectTerminationCheckedAfter plan).scrub receipt released
+            hreleased
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            simp only [releaseRetiredMemoryWithReceipt] at hreleased
+            split at hreleased <;> try contradiction
+            next _hexact =>
+              split at hreleased <;> try contradiction
+              next allocator hallocator =>
+                injection hreleased with hreleasedEq
+                subst released
+                have hallocatorEq :
+                    allocator = FrameAllocator.setStatus
+                      (subjectTerminationCheckedAfter plan).scrub.memory.allocator
+                      receipt.frame .free := by
+                  simp only [FrameAllocator.release] at hallocator
+                  split at hallocator <;> try contradiction
+                  next _howned =>
+                    injection hallocator with heq
+                    exact heq.symm
+                have hmemory :
+                    (subjectTerminationCheckedAfter plan).scrub.memory =
+                      (FailStop.authoritativeGate
+                        (FailStop.compositeDispatcherInitial plan)
+                        (.ordinary (.terminateSubject 2))).state.virtualMemory.memory := by
+                  rw [subject_termination_checked_apply_scrub_memory_coherent]
+                  rw [subject_termination_checked_apply_eq_reconciled_candidate]
+                  simp [subjectTerminationCheckedKernelAfter,
+                    subjectTerminationCheckedBefore, authoritativeSample,
+                    FailStop.authoritativeGate_ordinary_state]
+                have hallocation :=
+                  FailStop.compositeDispatcherTerminateSubjectTwo_released_memory_allocates_fresh
+                    plan
+                dsimp only at hallocation
+                rw [← hmemory] at hallocation
+                have hreleasedMemory :
+                    { (subjectTerminationCheckedAfter plan).scrub.memory with
+                        allocator
+                        binding := MemoryLifecycle.setBinding
+                          (subjectTerminationCheckedAfter plan).scrub.memory.binding
+                          receipt.object none } =
+                      { (subjectTerminationCheckedAfter plan).scrub.memory with
+                        allocator := FrameAllocator.setStatus
+                          (subjectTerminationCheckedAfter plan).scrub.memory.allocator
+                          4 .free
+                        binding := MemoryLifecycle.setBinding
+                          (subjectTerminationCheckedAfter plan).scrub.memory.binding
+                          20 none } := by
+                  simp [hallocatorEq, hreceiptExact.1, hframe]
+                have haccepted :
+                    (FrameScrub.allocate
+                      { (subjectTerminationCheckedAfter plan).scrub with
+                        memory :=
+                          { (subjectTerminationCheckedAfter plan).scrub.memory with
+                            allocator
+                            binding := MemoryLifecycle.setBinding
+                              (subjectTerminationCheckedAfter plan).scrub.memory.binding
+                              receipt.object none } }
+                      21 1 2).result = .accepted := by
+                  rw [hreleasedMemory]
+                  simp only [FrameScrub.allocate]
+                  rw [hallocation.1, hallocation.2]
+                have hfresh := FrameScrub.allocation_publishes_scrubbed
+                  { (subjectTerminationCheckedAfter plan).scrub with
+                    memory :=
+                      { (subjectTerminationCheckedAfter plan).scrub.memory with
+                        allocator
+                        binding := MemoryLifecycle.setBinding
+                          (subjectTerminationCheckedAfter plan).scrub.memory.binding
+                          receipt.object none } }
+                  21 1 2 haccepted
+                have hbindingFresh :
+                    (FrameScrub.allocate
+                      { (subjectTerminationCheckedAfter plan).scrub with
+                        memory :=
+                          { (subjectTerminationCheckedAfter plan).scrub.memory with
+                            allocator
+                            binding := MemoryLifecycle.setBinding
+                              (subjectTerminationCheckedAfter plan).scrub.memory.binding
+                              receipt.object none } }
+                      21 1 2).state.memory.binding 21 = some 4 := by
+                  rw [hreleasedMemory]
+                  simp only [FrameScrub.allocate]
+                  rw [hallocation.1, hallocation.2]
+                  simpa using hallocation.2
+                exact ⟨haccepted, hbindingFresh, hfresh⟩
+
 /-- The canonical receipt-derived release candidate exposes every validated
 outer-invariant component except the final cross-projection coherence proof.
 This packages the complete runtime proof with the constructor-owned finite

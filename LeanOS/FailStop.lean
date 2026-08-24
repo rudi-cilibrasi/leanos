@@ -20831,6 +20831,30 @@ theorem compositeDispatcherTerminateSubjectTwo_requires_explicit_memory_release
     MemoryLifecycle.allocate]
   native_decide
 
+/-- Once the canonical subject-2 memory binding has crossed its separate
+release boundary, the reclaimed frame admits a real fresh lifetime for
+subject 1 in its first unused capability slot.  This projection keeps the
+concrete dispatcher fixture private while exposing the exact allocation fact
+needed by the outer IOMMU/frame-reuse proof. -/
+theorem compositeDispatcherTerminateSubjectTwo_released_memory_allocates_fresh
+    (plan : BootPageTablePlan.Plan) :
+    let memory :=
+      (authoritativeGate (compositeDispatcherInitial plan)
+        (.ordinary (.terminateSubject 2))).state.virtualMemory.memory
+    let released : MemoryLifecycle.State :=
+      { memory with
+        allocator := FrameAllocator.setStatus memory.allocator 4 .free
+        binding := MemoryLifecycle.setBinding memory.binding 20 none }
+    (MemoryLifecycle.allocate released 21 1 2).result = .accepted ∧
+      (MemoryLifecycle.allocate released 21 1 2).state.binding 21 = some 4 := by
+  simp [authoritativeGate_ordinary_state, gate, applyOperation,
+    compositeDispatcherInitial, dispatcherLifecycle, dispatcherCapabilities,
+    dispatcherVirtualMemory, dispatcherMemory, dispatcherScheduler,
+    dispatcherEndpoints, SubjectLifecycle.terminate, installTerminatedSubject,
+    installTerminatedResumable, ResumablePreemption.cleanupSubject,
+    MemoryLifecycle.allocate, FrameAllocator.allocate]
+  native_decide
+
 /-- Canonical subject termination retires the owned memory-object capability
 before the still-bound frame can cross the later receipt-consuming release
 boundary.  This exposes the exact capability predicate used by that boundary
