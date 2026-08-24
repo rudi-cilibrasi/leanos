@@ -3692,6 +3692,47 @@ theorem derive_retired_memory_authoritative_candidate_preserves_scheduler
             simpa [publishRetiredMemoryKernel, hcapabilities, hscrubMemory,
               hvirtualCapabilities, ← hschedulerLifecycle] using hscheduler
 
+/-- Receipt-derived publication preserves the one-shot preemption invariant.
+The publisher changes only the scheduler projection inside preemption; its
+timer latch and accepted-tick count remain exact, while the replacement
+scheduler is the already-proved well-formed authoritative scheduler. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_preemption
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    Preemption.WellFormed after.kernel.preemption := by
+  have hscheduler :=
+    derive_retired_memory_authoritative_candidate_preserves_scheduler
+      state completion object after hinvariant hderived
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released _hreleased =>
+        have hbefore := hinvariant pending hpending
+        have hpreemption : Preemption.WellFormed
+            pending.logicalAfter.kernel.preemption :=
+          hbefore.1.left.2.2.2.2.2.2.2.1
+        have hticks := hpreemption.2
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            exact ⟨by
+              simpa [publishRetiredMemoryKernel] using hscheduler,
+              by
+                change pending.logicalAfter.kernel.preemption.acceptedTicks =
+                  if pending.logicalAfter.kernel.preemption.timerArmed then 0 else 1
+                exact hticks⟩
+
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
 needed by the later cross-projection publication theorem: removing the retired
