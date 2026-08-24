@@ -3768,6 +3768,82 @@ theorem derive_retired_memory_authoritative_candidate_preserves_resumable_virtua
               by
                 simpa [publishRetiredMemoryKernel] using hvirtual⟩
 
+/- Receipt-derived publication preserves the complete resumable-preemption
+invariant.  The context bank, active translation, and cache inventory remain
+unchanged; the only replaced projections are the already-proved scheduler and
+virtual-memory successor, whose capability registries stay exact. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_resumable
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    ResumablePreemption.WellFormed after.kernel.resumable := by
+  have hscheduler :=
+    derive_retired_memory_authoritative_candidate_preserves_scheduler
+      state completion object after hinvariant hderived
+  have hvirtual :=
+    derive_retired_memory_authoritative_candidate_preserves_resumable_virtual_agreement
+      state completion object after hinvariant hderived
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hbefore := hinvariant pending hpending
+        have hresumable : ResumablePreemption.WellFormed
+            pending.logicalAfter.kernel.resumable :=
+          hbefore.1.left.2.2.2.2.2.2.2.2.1
+        have hkernelCoherent := hbefore.1.left.1
+        have houterCoherent := hbefore.2.2
+        have hcapabilities :=
+          release_retired_memory_with_receipt_preserves_capabilities
+            pending.logicalAfter.scrub receipt released hreleased
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            rcases hkernelCoherent with
+              ⟨_, hschedulerLifecycle, _, _, hvirtualCapabilities, _, _,
+                hresumableScheduler, hresumableVirtual, _⟩
+            rcases houterCoherent with
+              ⟨_, _, hscrubMemory, _⟩
+            rcases hresumable with
+              ⟨_, hcapacity, hunique, hcontexts, habsent, hready,
+                htranslation, _, hresources, hcache⟩
+            refine ⟨by simpa [publishRetiredMemoryKernel] using hscheduler,
+              hcapacity, hunique, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+            · simpa [publishRetiredMemoryKernel, ResumablePreemption.validContext,
+                hcapabilities, hscrubMemory, hvirtualCapabilities,
+                hresumableScheduler, hresumableVirtual,
+                ← hschedulerLifecycle] using hcontexts
+            · simpa [publishRetiredMemoryKernel, hcapabilities, hscrubMemory,
+                hvirtualCapabilities, hresumableScheduler, hresumableVirtual,
+                ← hschedulerLifecycle] using habsent
+            · simpa [publishRetiredMemoryKernel,
+                ResumablePreemption.ReadyContextAgreement, hcapabilities,
+                hscrubMemory, hvirtualCapabilities,
+                hresumableScheduler, hresumableVirtual,
+                ← hschedulerLifecycle] using hready
+            · simpa [publishRetiredMemoryKernel,
+                ResumablePreemption.TranslationAgreement, hcapabilities,
+                hscrubMemory, hvirtualCapabilities,
+                hresumableScheduler, hresumableVirtual,
+                ← hschedulerLifecycle] using htranslation
+            · simpa [publishRetiredMemoryKernel] using hvirtual
+            · simpa [publishRetiredMemoryKernel,
+                ResumablePreemption.ResourceKindAgreement, hcapabilities,
+                hscrubMemory, hvirtualCapabilities,
+                hresumableScheduler, hresumableVirtual,
+                ← hschedulerLifecycle] using hresources
+            · simpa [publishRetiredMemoryKernel, TLB.Coherent] using hcache
+
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
 needed by the later cross-projection publication theorem: removing the retired
