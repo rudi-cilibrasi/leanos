@@ -4645,6 +4645,42 @@ theorem subject_termination_checked_retired_memory_candidate_preserves_runtime
     subst pending
     exact subject_termination_checked_after_ipc_scrub_issued plan
 
+/-- The canonical receipt-derived release candidate exposes every validated
+outer-invariant component except the final cross-projection coherence proof.
+This packages the complete runtime proof with the constructor-owned finite
+IOMMU validation, scrub safety, synchronized memory/authority projections,
+and retired-object frame-authority removal; none of these facts is accepted
+from the caller or inferred from an unvalidated candidate. -/
+theorem subject_termination_checked_retired_memory_candidate_validated_surface
+    (plan : BootPageTablePlan.Plan) (after : AuthoritativeExtension)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after) :
+    FailStop.AuthoritativeRuntimeWellFormed after.kernel ∧
+      after.iommu.Invariant ∧
+      FrameScrub.ScrubInvariant after.scrub ∧
+      after.scrub.memory = after.kernel.virtualMemory.memory ∧
+      after.iommu.core.memory = after.scrub.bytes ∧
+      after.iommu.core.capabilityAuthority = after.kernel.capabilities ∧
+      after.iommu.core.frameAuthority 20 = none := by
+  have hprojects :=
+    derive_retired_memory_authoritative_candidate_projects_release
+      _ _ _ _ hderived
+  exact ⟨
+    subject_termination_checked_retired_memory_candidate_preserves_runtime
+      plan after hderived,
+    after.iommu.invariant,
+    subject_termination_checked_retired_memory_candidate_scrub_invariant
+      plan after hderived,
+    hprojects.1,
+    hprojects.2.1,
+    hprojects.2.2.1,
+    hprojects.2.2.2⟩
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
