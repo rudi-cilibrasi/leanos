@@ -6440,20 +6440,78 @@ private def assignedEDUReuseFreshAssignment : Assignment := {
   device := assignedEDUReuseFreshKey.assignment.slot
   source := assignedEDUReuseFreshKey.source
   domain := assignedEDUReuseFreshKey.domain
-  owner := 0 }
+  owner := 1 }
 
 private def assignedEDUReuseFreshFrame : Frame :=
-  { IOMMU.sampleFrames.head! with handle := assignedEDUReuseFreshEntry.frame }
+  { IOMMU.sampleFrames.head! with
+      handle := assignedEDUReuseFreshEntry.frame
+      owner := 1 }
+
+private def assignedEDUReuseFreshRootCapability :
+    LeanOS.Capability.Capability := {
+  object := 21
+  kind := .memory
+  rights := LeanOS.Capability.allRights
+  identity := 1
+  parent := none }
+
+private def assignedEDUReuseFreshCapabilityAuthority :
+    LeanOS.Capability.State := {
+  nextIdentity := 2
+  derivations := fun identity =>
+    if identity = 1 then
+      some (none, 21, .memory, LeanOS.Capability.allRights)
+    else none
+  subjects := fun subject => decide (subject = 1)
+  objects := fun object => decide (object = 21)
+  kinds := fun object => if object = 21 then some .memory else none
+  slotCapacity := fun subject => if subject = 1 then 1 else 0
+  slots := fun subject slot =>
+    if subject = 1 ∧ slot = 0 then
+      some assignedEDUReuseFreshRootCapability
+    else none }
+
+private theorem assignedEDUReuseFreshCapabilityAuthority_wellFormed :
+    LeanOS.Capability.WellFormed
+      assignedEDUReuseFreshCapabilityAuthority := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro subject slot capability hslot
+    simp [assignedEDUReuseFreshCapabilityAuthority] at hslot
+    rcases hslot with ⟨⟨rfl, rfl⟩, rfl⟩
+    simp [assignedEDUReuseFreshCapabilityAuthority,
+      assignedEDUReuseFreshRootCapability,
+      LeanOS.Capability.rightsValid,
+      LeanOS.Capability.nonemptyRights,
+      LeanOS.Capability.allRights]
+  · intro identity parent object kind rights hderivation
+    simp [assignedEDUReuseFreshCapabilityAuthority] at hderivation
+    rcases hderivation with ⟨rfl, rfl, rfl, ⟨rfl, rfl⟩⟩
+    simp [assignedEDUReuseFreshCapabilityAuthority]
+  · intro subject slot capability otherSubject otherSlot otherCapability
+      hfirst hsecond _hidentity
+    simp [assignedEDUReuseFreshCapabilityAuthority] at hfirst hsecond
+    rcases hfirst with ⟨⟨rfl, rfl⟩, rfl⟩
+    rcases hsecond with ⟨⟨rfl, rfl⟩, rfl⟩
+    exact ⟨rfl, rfl⟩
+  · intro subject slot hbound
+    by_cases hsubject : subject = 1
+    · subst subject
+      simp [assignedEDUReuseFreshCapabilityAuthority] at hbound
+      have hslot : slot ≠ 0 := by omega
+      simp [assignedEDUReuseFreshCapabilityAuthority, hslot]
+    · simp [assignedEDUReuseFreshCapabilityAuthority, hsubject]
 
 private def assignedEDUReuseFreshCapability : Capability :=
   { IOMMU.sampleCapabilities.head! with
+      owner := 1
+      object := 21
       frame := assignedEDUReuseFreshEntry.frame }
 
 private def assignedEDUReuseFreshMapping : Mapping := {
   handle := assignedEDUReuseFreshKey.mapping
   assignment := assignedEDUReuseFreshKey.assignment
   domain := assignedEDUReuseFreshKey.domain
-  owner := 0
+  owner := 1
   iova := assignedEDUReuseFreshKey.iova
   length := pageSize
   frame := assignedEDUReuseFreshEntry.frame
@@ -6461,22 +6519,22 @@ private def assignedEDUReuseFreshMapping : Mapping := {
   permission := assignedEDUReuseFreshEntry.permission }
 
 private def assignedEDUReuseFreshCore : Core := {
-  currentOwner := 0
+  currentOwner := 1
   nextAssignmentGeneration := 3
   nextDomainGeneration := 3
   nextMappingGeneration := 3
   assignments := [assignedEDUReuseFreshAssignment]
   mappings := [assignedEDUReuseFreshMapping]
   frames := assignedEDUReuseFreshFrame :: IOMMU.sampleFrames.tail
-  capabilityAuthority := IOMMU.sampleCapabilityAuthority
+  capabilityAuthority := assignedEDUReuseFreshCapabilityAuthority
   frameAuthority := fun object =>
-    if object == 10 then some assignedEDUReuseFreshEntry.frame else none
+    if object == 21 then some assignedEDUReuseFreshEntry.frame else none
   capabilities := [assignedEDUReuseFreshCapability]
   memory := IOMMU.zeroMemory }
 
 private def assignedEDUReuseFreshState : State :=
   ⟨assignedEDUReuseFreshCore, by native_decide,
-    IOMMU.sampleCapabilityAuthority_wellFormed⟩
+    assignedEDUReuseFreshCapabilityAuthority_wellFormed⟩
 
 private def assignedEDUReuseOldGenerationRequest : TransferRequest := {
   source := assignedEDUReuseKey.source
@@ -6509,6 +6567,13 @@ theorem assigned_edu_reuse_fresh_mapping_validates_and_rejects_stale_generation 
       IOMMU.translationRejected assignedEDUReuseFreshState
         assignedEDUReuseOldGenerationRequest .read = true ∧
       assignedEDUReuseFreshTranslationAccepted = true ∧
+      assignedEDUReuseFreshAssignment.owner = 1 ∧
+      assignedEDUReuseFreshMapping.owner = 1 ∧
+      assignedEDUReuseFreshFrame.owner = 1 ∧
+      assignedEDUReuseFreshCapability.owner = 1 ∧
+      assignedEDUReuseFreshCapability.object = 21 ∧
+      assignedEDUReuseFreshCore.frameAuthority 21 =
+        some assignedEDUReuseFreshEntry.frame ∧
       assignedEDUReuseFreshMapping.handle = assignedEDUReuseFreshKey.mapping ∧
       assignedEDUReuseFreshMapping.frame = assignedEDUReuseFreshEntry.frame := by
   native_decide
@@ -6543,7 +6608,7 @@ private def assignedEDUReuseFreshCanaryCore : Core :=
 
 private def assignedEDUReuseFreshCanaryState : State :=
   ⟨assignedEDUReuseFreshCanaryCore, by native_decide,
-    IOMMU.sampleCapabilityAuthority_wellFormed⟩
+    assignedEDUReuseFreshCapabilityAuthority_wellFormed⟩
 
 private def observedReadBytes {state request} :
     ReadOutcome state request → Option (List UInt8)
