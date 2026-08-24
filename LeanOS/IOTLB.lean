@@ -4645,6 +4645,119 @@ theorem subject_termination_checked_retired_memory_candidate_preserves_runtime
     subst pending
     exact subject_termination_checked_after_ipc_scrub_issued plan
 
+/-- The canonical receipt-derived release candidate also closes the final
+cross-projection authority gate.  The release publisher changes only the
+retired binding/allocator entry, filters the matching device capability, and
+keeps every owner-bearing IOMMU inventory on the checked termination
+successor. -/
+theorem subject_termination_checked_retired_memory_candidate_coherent
+    (plan : BootPageTablePlan.Plan) (after : AuthoritativeExtension)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after) :
+    after.Coherent := by
+  have hscrub :=
+    subject_termination_checked_retired_memory_candidate_scrub_invariant
+      plan after hderived
+  have hremoved :=
+    subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      simp only [prepareAuthoritativePublication,
+        prepareAuthorityCleanupPublication,
+        subjectTerminationCheckedAuthoritativePublicationState] at hpending
+      rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+          (.ordinary (.terminateSubject 2)) =
+            subjectTerminationCheckedAfter plan by rfl] at hpending
+      rw [hscopes] at hpending
+      simp [subjectTerminationWitnessScopes] at hpending
+      subst pending
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hbefore := subject_termination_checked_after_invariant plan
+        rcases hbefore.2.2 with
+          ⟨howner, _hauthority, hscrubMemory, _hiommuMemory,
+            _hscrubBefore, _hassignments, _hcapabilities, _hmappings,
+            hframes⟩
+        have hkernelCoherent := hbefore.1.left.1
+        have hreleasedCapabilities :=
+          release_retired_memory_with_receipt_preserves_capabilities
+            (subjectTerminationCheckedAfter plan).scrub receipt released
+            hreleased
+        have hsubjectRegistry :
+            released.memory.capabilities.subjects =
+              (subjectTerminationCheckedAfter plan).kernel.capabilities.subjects := by
+          apply congrArg (fun (capabilities : LeanOS.Capability.State) =>
+            capabilities.subjects)
+          calc
+            released.memory.capabilities =
+                (subjectTerminationCheckedAfter plan).scrub.memory.capabilities :=
+              hreleasedCapabilities
+            _ = (subjectTerminationCheckedAfter plan).kernel.virtualMemory.memory.capabilities :=
+              congrArg (fun memory => memory.capabilities) hscrubMemory
+            _ = (subjectTerminationCheckedAfter plan).kernel.lifecycle.capabilities :=
+              hkernelCoherent.2.2.2.2.1
+            _ = (subjectTerminationCheckedAfter plan).kernel.capabilities :=
+              hkernelCoherent.2.2.2.1.symm
+        have hdeviceCapabilities :
+            (subjectTerminationCheckedAfter plan).iommu.core.capabilities = [] := by
+          rw [subject_termination_checked_apply_eq_reconciled_candidate plan]
+          change (reconcileKernelAuthority
+            (subjectTerminationCheckedKernelAfter plan)
+            (subjectTerminationCheckedBefore plan).iommu).core.capabilities = []
+          rw [subject_termination_checked_reconcile_core_eq_candidate plan]
+          rfl
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            rw [AuthoritativeExtension.Coherent]
+            refine ⟨?_, rfl, rfl, rfl, hscrub, ?_, ?_, ?_, ?_⟩
+            · simpa [publishRetiredMemoryKernel,
+                retiredMemoryReleaseCore] using howner
+            · simp [retiredMemoryReleaseCore, hremoved.1]
+            · simp [retiredMemoryReleaseCore, hdeviceCapabilities]
+            · simp [retiredMemoryReleaseCore, hremoved.2]
+            · intro frame hframe hlive hkernel hpage hmetadata
+              have hframeBefore := hframes frame
+                (by simpa [retiredMemoryReleaseCore] using hframe)
+                hlive hkernel hpage hmetadata
+              change released.memory.capabilities.subjects frame.owner = true
+              rw [hsubjectRegistry]
+              exact hframeBefore
+
+/-- The exact canonical receipt-derived candidate now satisfies the complete
+outer publication invariant.  Runtime well-formedness, validated IOMMU state,
+and cross-projection coherence are all derived from the same successful
+constructor result rather than supplied as detached caller evidence. -/
+theorem subject_termination_checked_retired_memory_candidate_invariant
+    (plan : BootPageTablePlan.Plan) (after : AuthoritativeExtension)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after) :
+    after.Invariant := by
+  exact ⟨
+    subject_termination_checked_retired_memory_candidate_preserves_runtime
+      plan after hderived,
+    after.iommu.invariant,
+    subject_termination_checked_retired_memory_candidate_coherent
+      plan after hderived⟩
+
 /-- The canonical receipt-derived release candidate exposes every validated
 outer-invariant component except the final cross-projection coherence proof.
 This packages the complete runtime proof with the constructor-owned finite
