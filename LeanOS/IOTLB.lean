@@ -6408,7 +6408,7 @@ def assignedEDUReuseFreshKey : Key := {
   assignment := ⟨assignedEDUReuseKey.assignment.slot, 2⟩
   domain := ⟨assignedEDUReuseKey.domain.slot, 2⟩
   mapping := ⟨assignedEDUReuseKey.mapping.slot, 2⟩
-  iova := 0x2000
+  iova := 0x10
   direction := .read }
 
 def assignedEDUReuseFreshEntry : Entry := {
@@ -6433,6 +6433,84 @@ theorem assigned_edu_reuse_stale_denied_fresh_mapping_authorized :
       assignedEDUReuseFreshKey.assignment ≠ assignedEDUReuseKey.assignment ∧
       assignedEDUReuseFreshKey.mapping ≠ assignedEDUReuseKey.mapping ∧
       assignedEDUReuseFreshEntry.frame ≠ assignedEDUReuseEntry.frame := by
+  native_decide
+
+private def assignedEDUReuseFreshAssignment : Assignment := {
+  handle := assignedEDUReuseFreshKey.assignment
+  device := assignedEDUReuseFreshKey.assignment.slot
+  source := assignedEDUReuseFreshKey.source
+  domain := assignedEDUReuseFreshKey.domain
+  owner := 0 }
+
+private def assignedEDUReuseFreshFrame : Frame :=
+  { IOMMU.sampleFrames.head! with handle := assignedEDUReuseFreshEntry.frame }
+
+private def assignedEDUReuseFreshCapability : Capability :=
+  { IOMMU.sampleCapabilities.head! with
+      frame := assignedEDUReuseFreshEntry.frame }
+
+private def assignedEDUReuseFreshMapping : Mapping := {
+  handle := assignedEDUReuseFreshKey.mapping
+  assignment := assignedEDUReuseFreshKey.assignment
+  domain := assignedEDUReuseFreshKey.domain
+  owner := 0
+  iova := assignedEDUReuseFreshKey.iova
+  length := pageSize
+  frame := assignedEDUReuseFreshEntry.frame
+  frameOffset := 0
+  permission := assignedEDUReuseFreshEntry.permission }
+
+private def assignedEDUReuseFreshCore : Core := {
+  currentOwner := 0
+  nextAssignmentGeneration := 3
+  nextDomainGeneration := 3
+  nextMappingGeneration := 3
+  assignments := [assignedEDUReuseFreshAssignment]
+  mappings := [assignedEDUReuseFreshMapping]
+  frames := assignedEDUReuseFreshFrame :: IOMMU.sampleFrames.tail
+  capabilityAuthority := IOMMU.sampleCapabilityAuthority
+  frameAuthority := fun object =>
+    if object == 10 then some assignedEDUReuseFreshEntry.frame else none
+  capabilities := [assignedEDUReuseFreshCapability]
+  memory := IOMMU.zeroMemory }
+
+private def assignedEDUReuseFreshState : State :=
+  ⟨assignedEDUReuseFreshCore, by native_decide,
+    IOMMU.sampleCapabilityAuthority_wellFormed⟩
+
+private def assignedEDUReuseOldGenerationRequest : TransferRequest := {
+  source := assignedEDUReuseKey.source
+  assignmentGeneration := assignedEDUReuseKey.assignment.generation
+  iova := assignedEDUReuseFreshKey.iova
+  length := pageSize }
+
+private def assignedEDUReuseFreshRequest : TransferRequest := {
+  source := assignedEDUReuseFreshKey.source
+  assignmentGeneration := assignedEDUReuseFreshKey.assignment.generation
+  iova := assignedEDUReuseFreshKey.iova
+  length := pageSize }
+
+private def assignedEDUReuseFreshTranslationAccepted : Bool :=
+  match translate assignedEDUReuseFreshState assignedEDUReuseFreshRequest .read with
+  | .ok _ => true
+  | .error _ => false
+
+/-- The fresh cache row above is not caller-invented cache evidence: the same
+generation-2 assignment, domain, mapping, frame lifetime, and in-range IOVA
+form a validated authoritative IOMMU state.  Translation rejects the retired
+generation-1 requester while accepting the independently authorized fresh
+request.  This remains finite model evidence, not VT-d/QEMU refinement. -/
+theorem assigned_edu_reuse_fresh_mapping_validates_and_rejects_stale_generation :
+    assignmentValid assignedEDUReuseFreshCore
+        assignedEDUReuseFreshAssignment = true ∧
+      mappingValid assignedEDUReuseFreshCore
+        assignedEDUReuseFreshMapping = true ∧
+      validateCore assignedEDUReuseFreshCore = true ∧
+      IOMMU.translationRejected assignedEDUReuseFreshState
+        assignedEDUReuseOldGenerationRequest .read = true ∧
+      assignedEDUReuseFreshTranslationAccepted = true ∧
+      assignedEDUReuseFreshMapping.handle = assignedEDUReuseFreshKey.mapping ∧
+      assignedEDUReuseFreshMapping.frame = assignedEDUReuseFreshEntry.frame := by
   native_decide
 
 /-! ## Fixed-width hosted invalidation sequence
