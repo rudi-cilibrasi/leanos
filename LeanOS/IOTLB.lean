@@ -6393,6 +6393,48 @@ theorem assigned_edu_reuse_rejects_unbound_allocation_regression :
         some assignedEDUReuseEntry.frame.frame := by
   native_decide
 
+/-! ## Stale requester denial and fresh authorization
+
+The released-frame theorem above publishes a fresh memory lifetime.  The
+cache boundary below records the corresponding device-side distinction: the
+old assignment/mapping generations remain absent after exact invalidation,
+while a separately authorized generation can populate the fresh IOVA without
+reviving the old key.  This is still finite model evidence, not a claim about
+VT-d or QEMU execution.
+-/
+
+def assignedEDUReuseFreshKey : Key := {
+  source := assignedEDUReuseKey.source
+  assignment := ⟨assignedEDUReuseKey.assignment.slot, 2⟩
+  domain := ⟨assignedEDUReuseKey.domain.slot, 2⟩
+  mapping := ⟨assignedEDUReuseKey.mapping.slot, 2⟩
+  iova := 0x2000
+  direction := .read }
+
+def assignedEDUReuseFreshEntry : Entry := {
+  key := assignedEDUReuseFreshKey
+  frame := ⟨assignedEDUReuseEntry.frame.frame, 2⟩
+  permission := readOnly }
+
+private def assignedEDUReuseAcknowledged : PublicationState :=
+  (acknowledgeInvalidation
+    (prepareInvalidation assignedEDUReuseInitial
+      (.mapping assignedEDUReuseKey)).state
+    { ticket := 1, scope := .mapping assignedEDUReuseKey }).state
+
+private def assignedEDUReuseFreshCache : List Entry :=
+  insert assignedEDUReuseAcknowledged.published assignedEDUReuseFreshEntry
+
+theorem assigned_edu_reuse_stale_denied_fresh_mapping_authorized :
+    lookup assignedEDUReuseAcknowledged.published assignedEDUReuseKey = none ∧
+      lookup assignedEDUReuseFreshCache assignedEDUReuseKey = none ∧
+      lookup assignedEDUReuseFreshCache assignedEDUReuseFreshKey =
+        some assignedEDUReuseFreshEntry ∧
+      assignedEDUReuseFreshKey.assignment ≠ assignedEDUReuseKey.assignment ∧
+      assignedEDUReuseFreshKey.mapping ≠ assignedEDUReuseKey.mapping ∧
+      assignedEDUReuseFreshEntry.frame ≠ assignedEDUReuseEntry.frame := by
+  native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
