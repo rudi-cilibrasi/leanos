@@ -3916,6 +3916,88 @@ theorem derive_retired_memory_authoritative_candidate_preserves_resumable
                 ← hschedulerLifecycle] using hresources
             · simpa [publishRetiredMemoryKernel, TLB.Coherent] using hcache
 
+/- Receipt-derived publication preserves both IPC authority surfaces.  The
+released virtual-memory projection supplies the IPC mapping half, while
+receipt consumption retains the exact capability registry installed in the
+endpoint state.  The transfer layer therefore observes the same unchanged
+endpoint state rather than a separately reconstructed authority view. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_ipc_authority
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hissued : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.kernel.ipc.endpoints.issued =
+          pending.logicalAfter.scrub.memory.issued)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    IPCSyscall.WellFormed after.kernel.ipc ∧
+      CapabilityTransfer.WellFormed after.kernel.transfers := by
+  have hvirtual :=
+    derive_retired_memory_authoritative_candidate_preserves_virtual_lifecycle
+      state completion object after hinvariant hderived
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hbefore := hinvariant pending hpending
+        have hipc : IPCSyscall.WellFormed pending.logicalAfter.kernel.ipc :=
+          hbefore.1.left.2.2.2.2.2.1
+        have htransfers : CapabilityTransfer.WellFormed
+            pending.logicalAfter.kernel.transfers :=
+          hbefore.1.left.2.2.2.2.2.2.2.2.2.1
+        have hkernelCoherent := hbefore.1.left.1
+        have houterCoherent := hbefore.2.2
+        have hcapabilities :=
+          release_retired_memory_with_receipt_preserves_capabilities
+            pending.logicalAfter.scrub receipt released hreleased
+        have hreleasedIssued :=
+          (release_retired_memory_with_receipt_exact
+            pending.logicalAfter.scrub receipt released hreleased).2.2.2
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            rcases hkernelCoherent with
+              ⟨_, _, _, _, hvirtualCapabilities, _, hendpointCapabilities,
+                _, _, htransferEndpoints, _⟩
+            rcases houterCoherent with
+              ⟨_, _, hscrubMemory, _⟩
+            have hreleasedCapabilities :
+                released.memory.capabilities =
+                  pending.logicalAfter.kernel.lifecycle.capabilities := by
+              calc
+                released.memory.capabilities =
+                    pending.logicalAfter.scrub.memory.capabilities :=
+                  hcapabilities
+                _ = pending.logicalAfter.kernel.virtualMemory.memory.capabilities :=
+                  congrArg (fun memory => memory.capabilities) hscrubMemory
+                _ = pending.logicalAfter.kernel.lifecycle.capabilities :=
+                  hvirtualCapabilities
+            have hendpointCapabilitiesEq :
+                released.memory.capabilities =
+                  pending.logicalAfter.kernel.ipc.endpoints.capabilities := by
+              rw [hreleasedCapabilities, hendpointCapabilities]
+            have hendpointIssuedEq :
+                released.memory.issued =
+                  pending.logicalAfter.kernel.ipc.endpoints.issued := by
+              rw [hreleasedIssued, hissued pending hpending]
+            refine ⟨⟨by
+              simpa [publishRetiredMemoryKernel] using hvirtual,
+              by simpa [EndpointIPC.WellFormed, publishRetiredMemoryKernel,
+                hendpointCapabilitiesEq, hendpointIssuedEq] using hipc.2⟩,
+              ?_⟩
+            simpa [CapabilityTransfer.WellFormed, EndpointIPC.WellFormed,
+              publishRetiredMemoryKernel, hendpointCapabilitiesEq,
+              hendpointIssuedEq, htransferEndpoints] using htransfers
+
 /- Receipt-derived publication preserves the authoritative blocking-IPC
 store.  Waiter queues, mailbox reservations, and completion records remain
 unchanged; only their scheduler view is replaced by the already-proved
