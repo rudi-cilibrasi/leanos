@@ -4233,6 +4233,111 @@ theorem derive_retired_memory_authoritative_candidate_preserves_invalidation_pub
             subst after
             simpa [publishRetiredMemoryKernel] using hpublication
 
+/-- Every successful receipt-derived release candidate preserves the complete
+authoritative kernel runtime invariant.  The constructor synchronizes the
+released memory through each consumer, while the component lemmas above
+discharge every semantic invariant from the exact checked pending successor. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_runtime
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hissued : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.kernel.ipc.endpoints.issued =
+          pending.logicalAfter.scrub.memory.issued)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    FailStop.AuthoritativeRuntimeWellFormed after.kernel := by
+  have hexecution :=
+    derive_retired_memory_authoritative_candidate_preserves_execution
+      state completion object after hinvariant hderived
+  have hlifecycle :=
+    derive_retired_memory_authoritative_candidate_preserves_subject_lifecycle
+      state completion object after hinvariant hderived
+  have hcapabilities :=
+    derive_retired_memory_authoritative_candidate_capabilities_well_formed
+      state completion object after hderived
+  have hvirtual :=
+    derive_retired_memory_authoritative_candidate_preserves_virtual_lifecycle
+      state completion object after hinvariant hderived
+  have hscheduler :=
+    derive_retired_memory_authoritative_candidate_preserves_scheduler
+      state completion object after hinvariant hderived
+  have hpreemption :=
+    derive_retired_memory_authoritative_candidate_preserves_preemption
+      state completion object after hinvariant hderived
+  have hresumable :=
+    derive_retired_memory_authoritative_candidate_preserves_resumable
+      state completion object after hinvariant hderived
+  have hipc :=
+    derive_retired_memory_authoritative_candidate_preserves_ipc_authority
+      state completion object after hinvariant hissued hderived
+  have hblocking :=
+    derive_retired_memory_authoritative_candidate_preserves_blocking_ipc_coherence
+      state completion object after hderived
+  have hdeferred :=
+    derive_retired_memory_authoritative_candidate_preserves_deferred_cancellation
+      state completion object after hinvariant hderived
+  have hcontrols :=
+    derive_retired_memory_authoritative_candidate_preserves_machine_controls
+      state completion object after hinvariant hderived
+  have hpublication :=
+    derive_retired_memory_authoritative_candidate_preserves_invalidation_publication
+      state completion object after hinvariant hderived
+  refine ⟨?_, hdeferred, hpublication⟩
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hbefore := hinvariant pending hpending
+        have hcoherent := hbefore.1.left.1
+        have hhalted := hbefore.1.left.2.2.2.2.2.2.2.2.2.2.1
+        have hreleasedCapabilities :=
+          release_retired_memory_with_receipt_preserves_capabilities
+            pending.logicalAfter.scrub receipt released hreleased
+        have houterCoherent := hbefore.2.2
+        rcases houterCoherent with ⟨_, _, hscrubMemory, _⟩
+        have hvirtualCapabilities := hcoherent.2.2.2.2.1
+        have hcapabilityEquality :
+            released.memory.capabilities =
+              pending.logicalAfter.kernel.lifecycle.capabilities := by
+          calc
+            released.memory.capabilities =
+                pending.logicalAfter.scrub.memory.capabilities :=
+              hreleasedCapabilities
+            _ = pending.logicalAfter.kernel.virtualMemory.memory.capabilities :=
+              congrArg (fun memory => memory.capabilities) hscrubMemory
+            _ = pending.logicalAfter.kernel.lifecycle.capabilities :=
+              hvirtualCapabilities
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            refine ⟨?_, hexecution, hlifecycle, hcapabilities, hvirtual,
+              hipc.1, hscheduler, hpreemption, hresumable, hipc.2, ?_, ?_,
+              hblocking, hcontrols⟩
+            · rcases hcoherent with
+                ⟨_, _, _, _, _, _, _, _, _, _, hcurrent, hmailbox, hlive⟩
+              have hmailboxFalse : ∀ candidate,
+                  pending.logicalAfter.kernel.lifecycle.capabilities.objects
+                      candidate = false →
+                    pending.logicalAfter.kernel.ipc.endpoints.mailbox
+                      candidate = none := by
+                intro candidate hfalse
+                exact hmailbox candidate (by simp [hfalse])
+              simpa [publishRetiredMemoryKernel,
+                FailStop.CompositeState.Coherent,
+                hcapabilityEquality] using ⟨hcurrent, hmailboxFalse, hlive⟩
+            · simpa [publishRetiredMemoryKernel] using hhalted
+            · simp [publishRetiredMemoryKernel]
+
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
 needed by the later cross-projection publication theorem: removing the retired
