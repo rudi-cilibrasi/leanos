@@ -3558,6 +3558,97 @@ theorem derive_retired_memory_authoritative_candidate_preserves_subject_lifecycl
             simpa [publishRetiredMemoryKernel, SubjectLifecycle.WellFormed,
               hcapabilities, hscrubMemory, hvirtualCapabilities] using hlifecycle
 
+/-- A successful release candidate also preserves the virtual-address-space
+lifecycle.  The released object was already retired in the checked cleanup
+successor, so no well-formed mapping can name it; clearing only that binding
+and allocator owner therefore leaves every surviving mapping live, owned, and
+authorized while the publisher retains owners, mappings, and issuance. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_virtual_lifecycle
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    VirtualMapping.LifecycleWellFormed after.kernel.virtualMemory := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hbefore := hinvariant pending hpending
+        have hvirtual : VirtualMapping.LifecycleWellFormed
+            pending.logicalAfter.kernel.virtualMemory :=
+          hbefore.1.left.2.2.2.2.1
+        have houterCoherent := hbefore.2.2
+        rcases houterCoherent with ⟨_, _, hscrubMemory, _⟩
+        have hvirtualScrub : VirtualMapping.LifecycleWellFormed
+            { pending.logicalAfter.kernel.virtualMemory with
+              memory := pending.logicalAfter.scrub.memory } := by
+          simpa [hscrubMemory] using hvirtual
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            simp only [releaseRetiredMemoryWithReceipt] at hreleased
+            split at hreleased <;> try contradiction
+            next hexact =>
+              split at hreleased <;> try contradiction
+              next allocator hallocator =>
+                injection hreleased with heq
+                subst released
+                simp only [FrameAllocator.release] at hallocator
+                split at hallocator <;> try contradiction
+                next hreceiptOwned =>
+                  injection hallocator with heq
+                  subst allocator
+                  simp only [publishRetiredMemoryKernel]
+                  rcases hvirtualScrub with
+                    ⟨⟨howners, hmappings⟩, hcapabilities, hownerLive, hliveOwner⟩
+                  refine ⟨⟨howners, ?_⟩, hcapabilities, hownerLive, hliveOwner⟩
+                  intro addressSpace page mapping hmapping
+                  rcases hmappings addressSpace page mapping hmapping with
+                    ⟨subject, frame, howner, hpermissions, hbinding, howned,
+                      hread, hwrite⟩
+                  have authority_object_live {right : Capability.Right}
+                      (hauthority : Capability.HasAuthority
+                        pending.logicalAfter.scrub.memory.capabilities
+                        subject mapping.object right) :
+                      pending.logicalAfter.scrub.memory.capabilities.objects
+                        mapping.object = true := by
+                    rcases hauthority with ⟨slot, capability, hslot, hobject, _⟩
+                    rw [← hobject]
+                    exact (hcapabilities.1 subject slot capability hslot).2.1
+                  have hobjectLive :
+                      pending.logicalAfter.scrub.memory.capabilities.objects
+                        mapping.object = true := by
+                    by_cases hreadable : mapping.permissions.read = true
+                    · exact authority_object_live (hread hreadable)
+                    · have hwritable : mapping.permissions.write = true := by
+                        cases hr : mapping.permissions.read <;>
+                          cases hw : mapping.permissions.write <;>
+                          simp_all [VirtualMapping.Permissions.nonempty]
+                      exact authority_object_live (hwrite hwritable)
+                  have hobject : mapping.object ≠ receipt.object := by
+                    intro heq
+                    rw [heq, hexact.2] at hobjectLive
+                    contradiction
+                  have hframe : frame ≠ receipt.frame := by
+                    intro heq
+                    subst frame
+                    exact hobject (FrameAllocator.ownership_exclusive
+                      pending.logicalAfter.scrub.memory.allocator receipt.frame
+                      mapping.object receipt.object howned hreceiptOwned)
+                  refine ⟨subject, frame, howner, hpermissions, ?_, ?_, hread, hwrite⟩
+                  · simpa [MemoryLifecycle.setBinding, hobject] using hbinding
+                  · simpa [FrameAllocator.IsOwnedBy, FrameAllocator.setStatus,
+                      hframe] using howned
+
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
 needed by the later cross-projection publication theorem: removing the retired
