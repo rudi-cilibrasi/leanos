@@ -4343,6 +4343,15 @@ theorem subject_termination_checked_after_scrub_invariant
     FrameScrub.ScrubInvariant (subjectTerminationCheckedAfter plan).scrub := by
   exact (subject_termination_checked_after_invariant plan).2.2.2.2.2.2.1
 
+/-- Canonical subject termination keeps the endpoint issuance history aligned
+with the scrub-memory projection consumed by retired-frame publication. -/
+theorem subject_termination_checked_after_ipc_scrub_issued
+    (plan : BootPageTablePlan.Plan) :
+    (subjectTerminationCheckedAfter plan).kernel.ipc.endpoints.issued =
+      (subjectTerminationCheckedAfter plan).scrub.memory.issued := by
+  rw [subject_termination_checked_apply_eq_reconciled_candidate plan]
+  rfl
+
 /-- Canonical subject termination retains exactly one binding to retired DMA
 frame 4.  This concrete fact supplies the release proof's uniqueness premise
 without falsely claiming the pre-release memory state is lifecycle-well-formed:
@@ -4444,6 +4453,49 @@ theorem subject_termination_checked_retired_memory_candidate_scrub_invariant
             injection hderived with heq
             subst after
             exact hscrub
+
+/-- The concrete prepared termination ticket supplies the endpoint/scrub
+issuance coherence needed by the generic release constructor, so a successful
+canonical retired-memory candidate preserves both IPC authority surfaces. -/
+theorem subject_termination_checked_retired_memory_candidate_preserves_ipc_authority
+    (plan : BootPageTablePlan.Plan) (after : AuthoritativeExtension)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after) :
+    IPCSyscall.WellFormed after.kernel.ipc ∧
+      CapabilityTransfer.WellFormed after.kernel.transfers := by
+  have hremoved :=
+    subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  apply derive_retired_memory_authoritative_candidate_preserves_ipc_authority
+      _ _ _ _ (hderived := hderived)
+  · intro pending hpending
+    simp only [prepareAuthoritativePublication,
+      prepareAuthorityCleanupPublication,
+      subjectTerminationCheckedAuthoritativePublicationState] at hpending
+    rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+        (.ordinary (.terminateSubject 2)) =
+          subjectTerminationCheckedAfter plan by rfl] at hpending
+    rw [hscopes] at hpending
+    simp [subjectTerminationWitnessScopes] at hpending
+    subst pending
+    exact subject_termination_checked_after_invariant plan
+  · intro pending hpending
+    simp only [prepareAuthoritativePublication,
+      prepareAuthorityCleanupPublication,
+      subjectTerminationCheckedAuthoritativePublicationState] at hpending
+    rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+        (.ordinary (.terminateSubject 2)) =
+          subjectTerminationCheckedAfter plan by rfl] at hpending
+    rw [hscopes] at hpending
+    simp [subjectTerminationWitnessScopes] at hpending
+    subst pending
+    exact subject_termination_checked_after_ipc_scrub_issued plan
 
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
