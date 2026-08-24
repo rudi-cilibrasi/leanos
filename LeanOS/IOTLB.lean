@@ -4016,6 +4016,39 @@ theorem derive_retired_memory_authoritative_candidate_preserves_deferred_cancell
               publishRetiredMemoryKernel, hscheduler,
               hblockingState] using hdeferred
 
+/- Receipt-derived publication retains the boot-accepted machine controls.
+Memory and capability release cannot relax direct-port policy or change the
+exact PCI control observation that witnesses DMA quarantine. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_machine_controls
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    DirectPortIO.AcceptedControls after.kernel.directPortIO.controls ∧
+      after.kernel.DMAQuarantined := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next _receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next _released _hreleased =>
+        have hbefore := (hinvariant pending hpending).1.left
+        have hcontrols := hbefore.directPortControls
+        have hdma := hbefore.dmaQuarantined
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            exact ⟨by
+              simpa [publishRetiredMemoryKernel] using hcontrols,
+              by simpa [publishRetiredMemoryKernel] using hdma⟩
+
 /- Receipt-derived publication cannot alter the invalidation-publication
 protocol.  The publisher updates only memory and authority projections, so
 the pending cleanup successor's machine-checked publication invariant is
