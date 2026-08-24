@@ -4016,6 +4016,36 @@ theorem derive_retired_memory_authoritative_candidate_preserves_deferred_cancell
               publishRetiredMemoryKernel, hscheduler,
               hblockingState] using hdeferred
 
+/- Receipt-derived publication cannot alter the invalidation-publication
+protocol.  The publisher updates only memory and authority projections, so
+the pending cleanup successor's machine-checked publication invariant is
+retained definitionally rather than reconstructed from caller evidence. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_invalidation_publication
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    InvalidationPublication.WellFormed
+      after.kernel.invalidationPublication := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next _receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next _released _hreleased =>
+        have hpublication := (hinvariant pending hpending).1.publication
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            simpa [publishRetiredMemoryKernel] using hpublication
+
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
 needed by the later cross-projection publication theorem: removing the retired
