@@ -4602,6 +4602,49 @@ theorem subject_termination_checked_retired_memory_candidate_preserves_ipc_autho
     subst pending
     exact subject_termination_checked_after_ipc_scrub_issued plan
 
+/-- The concrete prepared termination ticket instantiates the generic runtime
+preservation theorem.  A successful retired-memory candidate therefore keeps
+the complete authoritative kernel invariant without accepting a detached
+runtime premise from its caller. -/
+theorem subject_termination_checked_retired_memory_candidate_preserves_runtime
+    (plan : BootPageTablePlan.Plan) (after : AuthoritativeExtension)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate
+        (prepareAuthoritativePublication
+          (subjectTerminationCheckedAuthoritativePublicationState plan)
+          (subject_termination_checked_before_invariant plan)
+          (.cleanup (.ordinary (.terminateSubject 2)))).state
+        subjectTerminationWitnessCompletion 20 = some after) :
+    FailStop.AuthoritativeRuntimeWellFormed after.kernel := by
+  have hremoved :=
+    subject_termination_checked_apply_removes_device_authority plan
+  have hscopes := subject_termination_checked_removed_authority_scopes plan
+    (subjectTerminationCheckedAfter plan) hremoved.2 hremoved.1
+  apply derive_retired_memory_authoritative_candidate_preserves_runtime
+      _ _ _ _ (hderived := hderived)
+  · intro pending hpending
+    simp only [prepareAuthoritativePublication,
+      prepareAuthorityCleanupPublication,
+      subjectTerminationCheckedAuthoritativePublicationState] at hpending
+    rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+        (.ordinary (.terminateSubject 2)) =
+          subjectTerminationCheckedAfter plan by rfl] at hpending
+    rw [hscopes] at hpending
+    simp [subjectTerminationWitnessScopes] at hpending
+    subst pending
+    exact subject_termination_checked_after_invariant plan
+  · intro pending hpending
+    simp only [prepareAuthoritativePublication,
+      prepareAuthorityCleanupPublication,
+      subjectTerminationCheckedAuthoritativePublicationState] at hpending
+    rw [show applyKernelOperation (subjectTerminationCheckedBefore plan)
+        (.ordinary (.terminateSubject 2)) =
+          subjectTerminationCheckedAfter plan by rfl] at hpending
+    rw [hscopes] at hpending
+    simp [subjectTerminationWitnessScopes] at hpending
+    subst pending
+    exact subject_termination_checked_after_ipc_scrub_issued plan
+
 /-- A completion that names only the mapping scope cannot splice a partial
 cleanup into the canonical front door.  The entire prepared state, including
 the old authority and stale cache, remains byte-for-byte pending. -/
