@@ -162,6 +162,7 @@ REQUIRED_FAULT_RELEASE_ARTIFACTS += tuple(
     )
 )
 RESULT_CLASSES = {"accepted-boot", "controlled-rejection", "fail-stop"}
+TIERS = {"pr", "evidence"}
 RUNNERS = {
     "boot",
     "assigned-edu",
@@ -366,7 +367,7 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
     rows: list[dict[str, str]] = []
     keys = (
         "id", "runner", "result_class", "timeout", "image", "elf",
-        "serial_log", "scenario", "mode", "reason",
+        "serial_log", "scenario", "mode", "reason", "tier",
     )
     for number, line in enumerate(lines[1:], 2):
         if not line or line.startswith("#"):
@@ -392,6 +393,10 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
             raise EvidenceError(
                 f"scenario {row['id']} result class does not match its runner"
             )
+        if row["tier"] not in TIERS:
+            raise EvidenceError(
+                f"scenario {row['id']} has unrecognized tier {row['tier']!r}"
+            )
         if not row["timeout"].isdigit() or int(row["timeout"]) < 1:
             raise EvidenceError(f"scenario {row['id']} has invalid timeout")
         for key in ("image", "elf", "serial_log"):
@@ -403,11 +408,19 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
     duplicates = sorted({scenario_id for scenario_id in ids if ids.count(scenario_id) > 1})
     if duplicates:
         raise EvidenceError(f"duplicate scenario ID(s): {', '.join(duplicates)}")
-    if matrix_id != "leanos-emulator-evidence-v1":
+    if matrix_id != "leanos-emulator-evidence-v2":
         raise EvidenceError(f"unsupported matrix version: {matrix_id}")
     if len(rows) != mandatory_count:
         raise EvidenceError(
             f"mandatory inventory count differs: declared {mandatory_count}, found {len(rows)}"
+        )
+    pr_runners = {row["runner"] for row in rows if row["tier"] == "pr"}
+    if pr_runners != RUNNERS:
+        missing = sorted(RUNNERS - pr_runners)
+        extra = sorted(pr_runners - RUNNERS)
+        raise EvidenceError(
+            "PR tier must cover every runner class; "
+            f"missing={missing}, unexpected={extra}"
         )
 
     rows_by_id = {row["id"]: row for row in rows}
@@ -447,10 +460,12 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
 
 
 def select_rows(
-    rows: list[dict[str, str]], scenario: str | None,
+    rows: list[dict[str, str]], scenario: str | None, tier: str,
     shard_index: int | None, shard_count: int | None,
 ) -> list[dict[str, str]]:
     """Select one scenario or a stable matrix-order shard."""
+    if scenario is not None and tier != "all":
+        raise EvidenceError("scenario selection cannot be combined with tier selection")
     if scenario is not None and (shard_index is not None or shard_count is not None):
         raise EvidenceError("scenario selection cannot be combined with sharding")
     if (shard_index is None) != (shard_count is None):
@@ -460,6 +475,10 @@ def select_rows(
         if not selected:
             raise EvidenceError(f"scenario is absent from matrix: {scenario}")
         return selected
+    if tier == "pr":
+        rows = [row for row in rows if row["tier"] == "pr"]
+    elif tier != "all":
+        raise EvidenceError(f"unrecognized evidence tier: {tier}")
     if shard_index is None or shard_count is None:
         return rows
     if shard_count < 1:
@@ -633,7 +652,9 @@ def run(args: argparse.Namespace) -> None:
     output = args.output.resolve()
     tools = args.tool_versions.resolve()
     matrix_id, rows = parse_matrix(matrix)
-    rows = select_rows(rows, args.scenario, args.shard_index, args.shard_count)
+    rows = select_rows(
+        rows, args.scenario, args.tier, args.shard_index, args.shard_count
+    )
     version = args.version
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise EvidenceError("version must be MAJOR.MINOR.PATCH")
@@ -790,6 +811,7 @@ def run(args: argparse.Namespace) -> None:
     verify_report(
         output, matrix, build_dir, tools, version, environment,
         scenario=args.scenario,
+        tier=args.tier,
         shard_index=args.shard_index,
         shard_count=args.shard_count,
     )
@@ -824,10 +846,11 @@ def verify_iotlb_oracle_rows(path: Path, scenario_id: str) -> None:
 def verify_report(
     report_path: Path, matrix: Path, build_dir: Path, tools: Path,
     version: str, environment: dict[str, str], scenario: str | None = None,
+    tier: str = "all",
     shard_index: int | None = None, shard_count: int | None = None,
 ) -> None:
     matrix_id, rows = parse_matrix(matrix)
-    rows = select_rows(rows, scenario, shard_index, shard_count)
+    rows = select_rows(rows, scenario, tier, shard_index, shard_count)
     try:
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -1023,6 +1046,7 @@ def check_workflows() -> None:
         raise EvidenceError("CI workflow does not define the emulator evidence job")
     for shard_contract in (
         "shard: [0, 1, 2, 3]",
+        "--tier \"${{ github.event_name == 'pull_request' && 'pr' || 'all' }}\"",
         "--shard-index ${{ matrix.shard }}",
         "--shard-count 4",
         "emulator-shard-${{ matrix.shard }}.json",
@@ -1110,6 +1134,10 @@ def main() -> int:
         subparser.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD)
         subparser.add_argument("--tool-versions", type=Path, default=DEFAULT_TOOLS)
         subparser.add_argument("--version", default=os.environ.get("LEANOS_VERSION", "0.1.0"))
+        subparser.add_argument(
+            "--tier", choices=("all", "pr"), default="all",
+            help="select the complete evidence inventory or the versioned PR subset",
+        )
     run_parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     run_parser.add_argument(
         "--jobs", type=int, default=max(1, os.cpu_count() or 1),
@@ -1137,6 +1165,7 @@ def main() -> int:
             verify_report(
                 args.report.resolve(), args.matrix.resolve(), args.build_dir.resolve(),
                 args.tool_versions.resolve(), args.version, os.environ.copy(),
+                tier=args.tier,
                 shard_index=args.shard_index, shard_count=args.shard_count,
             )
             print(f"verified emulator evidence: {display_path(args.report)}")

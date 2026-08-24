@@ -267,6 +267,7 @@ jobs:
           ./scripts/test-early-probe-policy.sh
           ./scripts/run-dma-unknown-device.sh
           ./scripts/run-emulator-evidence.py run \
+            --tier "${{ github.event_name == 'pull_request' && 'pr' || 'all' }}" \
             --shard-index ${{ matrix.shard }} \
             --shard-count 4 \
             --output build/evidence/emulator-shard-${{ matrix.shard }}.json \

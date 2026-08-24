@@ -434,7 +434,7 @@ matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
 [[ -f "$matrix" ]] || { echo "error: evidence matrix '$matrix' not found" >&2; exit 1; }
 return_corruptions=()
 while IFS=$'\t' read -r _id runner _class _timeout _image _elf _log \
-    fixture mode reason; do
+    fixture mode reason _tier; do
   [[ "$runner" == return ]] || continue
   return_corruptions+=("${fixture}:${mode}:${reason}")
 done < "$matrix"
@@ -1492,7 +1492,7 @@ mkdir -p "$direct_port_log_dir"
 : > "$direct_port_task_file"
 direct_port_logs=()
 while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
-    _log _scenario _mode _reason; do
+    _log _scenario _mode _reason _tier; do
   [[ "$elf_name" == *.elf ]] || continue
   manifest="scripts/direct-port-sites.tsv"
   direct_port_args=()

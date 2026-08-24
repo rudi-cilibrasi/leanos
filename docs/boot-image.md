@@ -145,7 +145,10 @@ scope. This policy is not a stability or support guarantee.
 The tag workflow runs the repository-owned Markdown, complete Lean
 proof-integrity, deterministic-build, image-build, and shared emulator-evidence
 matrix before it can publish. `scripts/emulator-evidence-matrix.tsv` is the
-versioned, reviewable inventory used by both pull-request and tag CI. Each row
+versioned, reviewable inventory used by both pull-request and tag CI. Its
+`tier` column selects one representative scenario for every runner class on
+pull requests; pushes to `main`, tags, and releases still execute every row.
+Each row
 names a unique scenario, its existing transcript-validating runner, expected
 integration-evidence class, timeout, image and ELF, serial log, and fixture
 metadata. New security-relevant QEMU work must register here; a reviewed matrix

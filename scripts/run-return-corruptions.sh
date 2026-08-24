@@ -27,7 +27,7 @@ command -v timeout >/dev/null 2>&1 || {
 [[ -f "$matrix" ]] || { echo "error: evidence matrix '$matrix' not found" >&2; exit 1; }
 specs=()
 while IFS=$'\t' read -r _id runner _class _timeout _image _elf _log \
-    fixture _mode reason; do
+    fixture _mode reason _tier; do
   [[ "$runner" == return ]] || continue
   if [[ -z "$selected" || "$fixture" == "$selected" ]]; then
     specs+=("${fixture}:${reason}")
