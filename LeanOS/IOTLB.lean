@@ -6572,6 +6572,27 @@ theorem assigned_edu_reuse_machine_sequence_preserves_fresh_canary :
         some (List.replicate pageSize 0xa5) := by
   native_decide
 
+private def assignedEDUReuseAfterWrite {request} :
+    WriteOutcome assignedEDUReuseFreshCanaryState request → State
+  | .written after _ => after
+  | .rejected _ => assignedEDUReuseFreshCanaryState
+
+/-- A retired requester cannot corrupt the fresh owner's reused-frame canary.
+The stale generation-1 write is rejected before memory mutation, and a read
+from the resulting state through the independently authorized generation-2
+mapping still observes every fresh canary byte.  This is finite model evidence;
+it does not claim VT-d, QEMU, or compiler refinement. -/
+theorem assigned_edu_reuse_stale_write_preserves_fresh_canary :
+    let overwrite := deviceWrite assignedEDUReuseFreshCanaryState
+      assignedEDUReuseOldGenerationRequest
+      (List.replicate pageSize 0x3c)
+    overwrite.reason = some .staleAssignment ∧
+      observedReadBytes
+          (deviceRead (assignedEDUReuseAfterWrite overwrite)
+            assignedEDUReuseFreshRequest) =
+        some (List.replicate pageSize 0xa5) := by
+  native_decide
+
 /-! ## Fixed-width hosted invalidation sequence
 
 This small scalar boundary exposes the first generated-C slice of the IOTLB
