@@ -3944,6 +3944,78 @@ theorem derive_retired_memory_authoritative_candidate_preserves_blocking_ipc_coh
             simp [FailStop.CompositeState.BlockingIPCCoherent,
               publishRetiredMemoryKernel]
 
+/- Receipt-derived publication preserves the complete deferred-cancellation
+classification.  The detached and waiter context banks remain unchanged, and
+receipt consumption preserves the capability registry, so the scheduler
+installed in the blocking store is definitionally the checked pending
+scheduler.  The resumable context bank is retained literally. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_deferred_cancellation
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    after.kernel.DeferredCancellationWellFormed := by
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending hpending =>
+      split at hderived <;> try contradiction
+      next released hreleased =>
+        have hbefore := hinvariant pending hpending
+        have hdeferred := hbefore.1.right
+        have hblockingScheduler := hbefore.1.left.blockingScheduler
+        have hkernelCoherent := hbefore.1.left.left
+        have houterCoherent := hbefore.2.2
+        have hcapabilities :=
+          release_retired_memory_with_receipt_preserves_capabilities
+            pending.logicalAfter.scrub receipt released hreleased
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            rcases hkernelCoherent with
+              ⟨_, hschedulerLifecycle, _, _, hvirtualCapabilities, _⟩
+            rcases houterCoherent with
+              ⟨_, _, hscrubMemory, _⟩
+            have hreleasedCapabilities :
+                released.memory.capabilities =
+                  pending.logicalAfter.kernel.lifecycle.capabilities := by
+              calc
+                released.memory.capabilities =
+                    pending.logicalAfter.scrub.memory.capabilities :=
+                  hcapabilities
+                _ = pending.logicalAfter.kernel.virtualMemory.memory.capabilities :=
+                  congrArg (fun memory => memory.capabilities) hscrubMemory
+                _ = pending.logicalAfter.kernel.lifecycle.capabilities :=
+                  hvirtualCapabilities
+            have hlifecycle :
+                { pending.logicalAfter.kernel.lifecycle with
+                    capabilities := released.memory.capabilities } =
+                  pending.logicalAfter.kernel.lifecycle := by
+              rw [hreleasedCapabilities]
+            have hscheduler :
+                { pending.logicalAfter.kernel.scheduler with
+                    lifecycle :=
+                      { pending.logicalAfter.kernel.lifecycle with
+                        capabilities := released.memory.capabilities } } =
+                  pending.logicalAfter.kernel.scheduler := by
+              rw [hlifecycle, ← hschedulerLifecycle]
+            have hblockingState :
+                { pending.logicalAfter.kernel.blockingIPC with
+                    scheduler := pending.logicalAfter.kernel.scheduler } =
+                  pending.logicalAfter.kernel.blockingIPC := by
+              rw [← hblockingScheduler]
+            simpa [FailStop.CompositeState.DeferredCancellationWellFormed,
+              FailStop.CompositeState.blockingIPCContext,
+              publishRetiredMemoryKernel, hscheduler,
+              hblockingState] using hdeferred
+
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
 needed by the later cross-projection publication theorem: removing the retired
