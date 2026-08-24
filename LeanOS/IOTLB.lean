@@ -3733,6 +3733,41 @@ theorem derive_retired_memory_authoritative_candidate_preserves_preemption
                   if pending.logicalAfter.kernel.preemption.timerArmed then 0 else 1
                 exact hticks⟩
 
+/- Receipt-derived publication synchronizes the resumable translation view
+with the released virtual-memory projection.  Its capability registry is the
+same internally validated registry installed in the scheduler lifecycle, and
+the complete virtual lifecycle proof is inherited from the checked cleanup
+successor rather than assumed for a caller-selected state. -/
+theorem derive_retired_memory_authoritative_candidate_preserves_resumable_virtual_agreement
+    state completion object after
+    (hinvariant : ∀ pending,
+      state.pending = some (.cleanup pending) →
+        pending.logicalAfter.Invariant)
+    (hderived :
+      deriveRetiredMemoryAuthoritativeCandidate state completion object =
+        some after) :
+    ResumablePreemption.VirtualAgreement after.kernel.resumable := by
+  have hvirtual :=
+    derive_retired_memory_authoritative_candidate_preserves_virtual_lifecycle
+      state completion object after hinvariant hderived
+  simp only [deriveRetiredMemoryAuthoritativeCandidate] at hderived
+  split at hderived <;> try contradiction
+  next receipt _hreceipt =>
+    split at hderived <;> try contradiction
+    next pending _hpending =>
+      split at hderived <;> try contradiction
+      next released _hreleased =>
+        split at hderived <;> try contradiction
+        next _hcapability =>
+          split at hderived <;> try contradiction
+          next _hvalid =>
+            injection hderived with heq
+            subst after
+            exact ⟨by
+              simp [publishRetiredMemoryKernel],
+              by
+                simpa [publishRetiredMemoryKernel] using hvirtual⟩
+
 /-- Receipt consumption preserves the scrub invariant when the retired frame
 has one authoritative binding.  This isolates the allocator/binding proof
 needed by the later cross-projection publication theorem: removing the retired
