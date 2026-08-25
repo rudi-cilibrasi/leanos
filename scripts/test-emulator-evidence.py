@@ -147,6 +147,15 @@ def run_fixtures() -> None:
         )
         if pr_build_artifacts[0][3:] != ("leanos-prelink.elf", "leanos.elf"):
             raise AssertionError("PR build plan does not map the canonical Make targets")
+        build_image = (evidence.ROOT / "scripts/build-image.sh").read_text(
+            encoding="utf-8"
+        )
+        if 'selected_prelink_targets+=("$build/$plan_prelink")' not in build_image:
+            raise AssertionError("build-image does not consume selected prelink targets")
+        if 'selected_final_targets+=("$build/$plan_final")' not in build_image:
+            raise AssertionError("build-image does not consume selected final targets")
+        if 'if [[ "$evidence_tier" == all ]]' not in build_image:
+            raise AssertionError("build-image does not preserve the all-tier graph")
         malformed_elf_rows = [dict(pr_rows[0], elf="outside.elf")]
         expect_failure(
             lambda: evidence.select_build_artifacts(malformed_elf_rows, "0.1.0"),

@@ -471,6 +471,30 @@ if [[ -n "$evidence_shard_index" || -n "$evidence_shard_count" ]]; then
 fi
 python3 scripts/run-emulator-evidence.py "${build_plan_args[@]}" \
   > "$build/evidence-build-plan.tsv"
+declare -a selected_prelink_targets=()
+declare -a selected_final_targets=()
+{
+  IFS=$'\t' read -r plan_id plan_runner plan_image plan_prelink plan_final
+  [[ "$plan_id" == id && "$plan_runner" == runner && \
+      "$plan_image" == image && "$plan_prelink" == prelink_elf && \
+      "$plan_final" == final_elf ]] || {
+    echo "error: evidence build plan header is invalid" >&2
+    exit 1
+  }
+  while IFS=$'\t' read -r plan_id plan_runner plan_image plan_prelink plan_final; do
+    [[ -n "$plan_id" && -n "$plan_runner" && -n "$plan_image" && \
+        -n "$plan_prelink" && -n "$plan_final" ]] || {
+      echo "error: evidence build plan contains an incomplete row" >&2
+      exit 1
+    }
+    selected_prelink_targets+=("$build/$plan_prelink")
+    selected_final_targets+=("$build/$plan_final")
+  done
+} < "$build/evidence-build-plan.tsv"
+[[ ${#selected_prelink_targets[@]} -gt 0 ]] || {
+  echo "error: evidence build plan selected no image targets" >&2
+  exit 1
+}
 # Preserve graph-owned objects, dependency files, and ISO staging trees across
 # invocations. Re-copying the three deterministic staging inputs below keeps
 # their contents current while allowing unchanged packaged images to be reused.
@@ -694,16 +718,22 @@ fi
 # linker input order while scheduling independent links concurrently with the
 # remaining object work.
 if [[ "$graph_make_cache_current" != true ]]; then
-  # Keep object compilation in its own Make invocation.  The generated rules
-  # compare temporary objects and dependency files before replacing retained
-  # outputs; a second invocation then observes their preserved mtimes and does
-  # not propagate a comment-only or otherwise byte-identical recompile through
-  # every prelink image.
-  make -f "$object_graph" "${kernel_source_make_args[@]}" \
-    -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-    shared-generated-objects variant-kernel-objects variant-assembly-objects
-  make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-    prelink-images policy-fixture-images return-corruption-prelinks
+  if [[ "$evidence_tier" == all ]]; then
+    # Keep complete-evidence object compilation in its own Make invocation.
+    # The generated rules preserve byte-identical outputs between invocations.
+    make -f "$object_graph" "${kernel_source_make_args[@]}" \
+      -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+      shared-generated-objects variant-kernel-objects variant-assembly-objects
+    make -f "$object_graph" -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+      prelink-images policy-fixture-images return-corruption-prelinks
+  else
+    # A PR shard asks Make for only the ELF prelinks declared by its reviewed
+    # matrix plan. Make follows their exact object prerequisites and does not
+    # compile the unrelated complete-evidence variant family.
+    make -f "$object_graph" "${kernel_source_make_args[@]}" \
+      -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+      "${selected_prelink_targets[@]}"
+  fi
 fi
 record_build_phase object-graph-prelinks
 
@@ -871,9 +901,11 @@ if [[ "$graph_make_cache_current" == true ]] &&
   graph_make_cache_current=false
 fi
 if [[ "$graph_make_cache_current" != true ]]; then
-  make -f "$object_graph" "${kernel_source_make_args[@]}" \
-    -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-    final-kernel-objects
+  if [[ "$evidence_tier" == all ]]; then
+    make -f "$object_graph" "${kernel_source_make_args[@]}" \
+      -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+      final-kernel-objects
+  fi
 fi
 
 if nm "$build/kernel.o" | grep -Eq \
@@ -884,9 +916,15 @@ fi
 # Link the independent final-image family in parallel after generated page-plan
 # dependencies have rebuilt the affected kernel objects.
 if [[ "$graph_make_cache_current" != true ]]; then
-  make -f "$object_graph" "${kernel_source_make_args[@]}" \
-    -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
-    final-image-links return-corruption-final-images
+  if [[ "$evidence_tier" == all ]]; then
+    make -f "$object_graph" "${kernel_source_make_args[@]}" \
+      -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+      final-image-links return-corruption-final-images
+  else
+    make -f "$object_graph" "${kernel_source_make_args[@]}" \
+      -j "${LEANOS_BUILD_JOBS:-$(nproc)}" \
+      "${selected_final_targets[@]}"
+  fi
 fi
 record_build_phase boot-plans-and-final-links
 
