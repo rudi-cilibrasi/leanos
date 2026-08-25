@@ -1075,9 +1075,8 @@ def check_workflows() -> None:
             "image, QEMU, reproducibility, and artifact checks"
         )
     for clang_evidence in (
-        'if [[ "${{ github.event_name }}" == "pull_request" ]]; then',
         "./scripts/build-image.sh",
-        "./scripts/test-reproducible-build.sh",
+        "./scripts/write-reproducibility-manifest.sh",
         "--scenario blocking-ipc",
         "test -s build/boot/serial.log",
         "build/boot/serial.log",
@@ -1088,6 +1087,17 @@ def check_workflows() -> None:
                 "CI does not preserve tiered Clang canonical evidence: "
                 + clang_evidence
             )
+    independent_clang = re.search(
+        r"(?ms)^  clang-reproducibility-build:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+        ci_content,
+    )
+    if independent_clang is None or (
+        "if: github.event_name != 'pull_request'"
+        not in independent_clang.group("body")
+    ):
+        raise EvidenceError(
+            "CI must reserve the independent Clang reproducibility build for non-PR evidence"
+        )
     if "build/boot/clang-canonical.serial.log" in ci_content:
         raise EvidenceError(
             "CI names a Clang serial path outside the selected matrix scenario"

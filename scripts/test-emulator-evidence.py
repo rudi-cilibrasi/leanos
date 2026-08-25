@@ -151,15 +151,15 @@ def run_fixtures() -> None:
         try:
             ci_workflow.write_text(
                 original_ci.replace(
-                    'if [[ "${{ github.event_name }}" == "pull_request" ]]; then',
-                    'if [[ "${{ github.event_name }}" == "push" ]]; then',
+                    "if: github.event_name != 'pull_request'",
+                    "if: github.event_name == 'pull_request'",
                     1,
                 ),
                 encoding="utf-8",
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI does not preserve tiered Clang canonical evidence",
+                "CI must reserve the independent Clang reproducibility build",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")

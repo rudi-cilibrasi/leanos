@@ -107,17 +107,20 @@ table. This preserves the fail-closed stack analysis rather than allowlisting
 an optimizer-specific indirect edge.
 These pins identify the build inputs. `build-image.sh` uses BIOS-only GRUB
 output, a fixed ISO UUID and file dates, no linker build ID, and normalized
-debug paths. `./scripts/test-reproducible-build.sh` performs two clean builds
-and requires byte-identical ISO, ELF, symbol map, and source-revision files.
-The experiment is run by both release CI and local validation. It measures
-same-revision rebuilding in the pinned reference environment; it does not claim
-that arbitrary host distributions or tool versions produce identical bytes.
+debug paths. Release CI and local validation retain
+`./scripts/test-reproducible-build.sh` for same-runner checks. Pull-request CI
+instead runs the two Clang builds concurrently on independent hosted runners,
+publishes the same centralized 40-artifact SHA-256 inventory from each, and
+compares those manifests in a fail-closed join job. This is a stronger check
+for hostname, path, timing, and other runner-local leakage while removing one
+serial image build from the Clang critical path. It measures same-revision
+rebuilding in the pinned reference environment; it does not claim that
+arbitrary host distributions or tool versions produce identical bytes.
 
 Pull-request CI also builds and boots the canonical image with the pinned
-Ubuntu 24.04 `clang-18=1:18.1.3-1ubuntu1` package. That lane sets
-`LEANOS_CC=clang-18`, verifies nested compiler selection, performs two clean
-image builds with the existing byte-reproducibility gate, runs the same
-final-ELF policy gates, and requires the canonical guest's complete
+Ubuntu 24.04 `clang-18=1:18.1.3-1ubuntu1` package. Both independent build lanes
+set `LEANOS_CC=clang-18`; the primary lane verifies nested compiler selection,
+runs the final-ELF policy gates, and requires the canonical guest's complete
 generated-oracle protocol plus independent debug-exit status. GCC and Clang
 outputs are not compared: each compiler's same-revision rebuild is compared
 only with itself. The lane
