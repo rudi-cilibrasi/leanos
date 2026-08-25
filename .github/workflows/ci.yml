@@ -166,8 +166,13 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/ci
-          ./scripts/test-reproducible-build.sh \
-            2>&1 | tee build/ci/clang-image-build.log
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            ./scripts/build-image.sh \
+              2>&1 | tee build/ci/clang-image-build.log
+          else
+            ./scripts/test-reproducible-build.sh \
+              2>&1 | tee build/ci/clang-image-build.log
+          fi
           python3 scripts/run-emulator-evidence.py run \
             --scenario blocking-ipc \
             --tool-versions build/ci/clang-tool-versions.txt \

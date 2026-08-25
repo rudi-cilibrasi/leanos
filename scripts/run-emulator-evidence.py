@@ -1075,6 +1075,9 @@ def check_workflows() -> None:
             "image, QEMU, reproducibility, and artifact checks"
         )
     for clang_evidence in (
+        'if [[ "${{ github.event_name }}" == "pull_request" ]]; then',
+        "./scripts/build-image.sh",
+        "./scripts/test-reproducible-build.sh",
         "--scenario blocking-ipc",
         "test -s build/boot/serial.log",
         "build/boot/serial.log",
@@ -1082,7 +1085,7 @@ def check_workflows() -> None:
     ):
         if clang_evidence not in ci_content:
             raise EvidenceError(
-                "CI does not enforce complete Clang canonical evidence: "
+                "CI does not preserve tiered Clang canonical evidence: "
                 + clang_evidence
             )
     if "build/boot/clang-canonical.serial.log" in ci_content:

@@ -146,6 +146,24 @@ def run_fixtures() -> None:
             "PR tier must contain exactly one scenario per runner",
         )
 
+        ci_workflow = evidence.ROOT / ".github/workflows/ci.yml"
+        original_ci = ci_workflow.read_text(encoding="utf-8")
+        try:
+            ci_workflow.write_text(
+                original_ci.replace(
+                    'if [[ "${{ github.event_name }}" == "pull_request" ]]; then',
+                    'if [[ "${{ github.event_name }}" == "push" ]]; then',
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            expect_failure(
+                evidence.check_workflows,
+                "CI does not preserve tiered Clang canonical evidence",
+            )
+        finally:
+            ci_workflow.write_text(original_ci, encoding="utf-8")
+
         duplicate = tmp / "duplicate.tsv"
         mutate_matrix(
             duplicate,
