@@ -501,26 +501,32 @@ def select_rows(
 
 def select_build_artifacts(
     rows: list[dict[str, str]], version: str,
-) -> list[tuple[str, str, str, str]]:
+) -> list[tuple[str, str, str, str, str]]:
     """Return the stable minimal image/ELF inventory for selected evidence rows."""
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise EvidenceError("version must be MAJOR.MINOR.PATCH")
-    return [
-        (
+    artifacts = []
+    for row in rows:
+        elf = row["elf"]
+        if not re.fullmatch(r"leanos(?:-[a-z0-9-]+)?\.elf", elf):
+            raise EvidenceError(
+                f"scenario {row['id']} has unsupported build ELF {elf!r}"
+            )
+        artifacts.append((
             row["id"],
             row["runner"],
             row["image"].replace("@VERSION@", version),
-            row["elf"],
-        )
-        for row in rows
-    ]
+            elf.removesuffix(".elf") + "-prelink.elf",
+            elf,
+        ))
+    return artifacts
 
 
 def print_build_plan(args: argparse.Namespace) -> None:
     """Emit a machine-readable build boundary before image construction."""
     _matrix_id, rows = parse_matrix(args.matrix.resolve())
     rows = select_rows(rows, None, args.tier, args.shard_index, args.shard_count)
-    print("id\trunner\timage\telf")
+    print("id\trunner\timage\tprelink_elf\tfinal_elf")
     for fields in select_build_artifacts(rows, args.version):
         print("\t".join(fields))
 
