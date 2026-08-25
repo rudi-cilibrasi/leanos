@@ -499,6 +499,32 @@ def select_rows(
     return selected
 
 
+def select_build_artifacts(
+    rows: list[dict[str, str]], version: str,
+) -> list[tuple[str, str, str, str]]:
+    """Return the stable minimal image/ELF inventory for selected evidence rows."""
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise EvidenceError("version must be MAJOR.MINOR.PATCH")
+    return [
+        (
+            row["id"],
+            row["runner"],
+            row["image"].replace("@VERSION@", version),
+            row["elf"],
+        )
+        for row in rows
+    ]
+
+
+def print_build_plan(args: argparse.Namespace) -> None:
+    """Emit a machine-readable build boundary before image construction."""
+    _matrix_id, rows = parse_matrix(args.matrix.resolve())
+    rows = select_rows(rows, None, args.tier, args.shard_index, args.shard_count)
+    print("id\trunner\timage\telf")
+    for fields in select_build_artifacts(rows, args.version):
+        print("\t".join(fields))
+
+
 def expanded(row: dict[str, str], version: str, build_dir: Path) -> dict[str, Path]:
     paths = {
         key: build_dir / row[key].replace("@VERSION@", version)
@@ -1149,6 +1175,7 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="operation", required=True)
     run_parser = subparsers.add_parser("run")
     verify_parser = subparsers.add_parser("verify")
+    plan_parser = subparsers.add_parser("build-plan")
     subparsers.add_parser("check")
     for subparser in (run_parser, verify_parser):
         subparser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
@@ -1159,6 +1186,14 @@ def main() -> int:
             "--tier", choices=("all", "pr"), default="all",
             help="select the complete evidence inventory or the versioned PR subset",
         )
+    plan_parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
+    plan_parser.add_argument(
+        "--version", default=os.environ.get("LEANOS_VERSION", "0.1.0")
+    )
+    plan_parser.add_argument(
+        "--tier", choices=("all", "pr"), default="all",
+        help="select the complete evidence inventory or the versioned PR subset",
+    )
     run_parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     run_parser.add_argument(
         "--jobs", type=int, default=max(1, os.cpu_count() or 1),
@@ -1168,7 +1203,7 @@ def main() -> int:
         "--scenario",
         help="run one named scenario from the validated matrix",
     )
-    for subparser in (run_parser, verify_parser):
+    for subparser in (run_parser, verify_parser, plan_parser):
         subparser.add_argument(
             "--shard-index", type=int,
             help="zero-based stable matrix shard to run or verify",
@@ -1190,6 +1225,8 @@ def main() -> int:
                 shard_index=args.shard_index, shard_count=args.shard_count,
             )
             print(f"verified emulator evidence: {display_path(args.report)}")
+        elif args.operation == "build-plan":
+            print_build_plan(args)
         else:
             check_workflows()
     except EvidenceError as error:

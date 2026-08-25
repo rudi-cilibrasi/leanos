@@ -130,6 +130,21 @@ def run_fixtures() -> None:
         pr_rows = evidence.select_rows(matrix_rows, None, "pr", None, None)
         if len(pr_rows) != len(evidence.RUNNERS):
             raise AssertionError("PR tier does not select exactly one row per runner")
+        pr_build_artifacts = evidence.select_build_artifacts(pr_rows, "0.1.0")
+        if [artifact[0] for artifact in pr_build_artifacts] != [
+            row["id"] for row in pr_rows
+        ]:
+            raise AssertionError("PR build plan does not preserve matrix order")
+        if any("@VERSION@" in artifact[2] for artifact in pr_build_artifacts):
+            raise AssertionError("PR build plan retains an unexpanded image version")
+        if len({artifact[1] for artifact in pr_build_artifacts}) != len(
+            evidence.RUNNERS
+        ):
+            raise AssertionError("PR build plan does not retain one runner boundary")
+        expect_failure(
+            lambda: evidence.select_build_artifacts(pr_rows, "not-a-version"),
+            "version must be MAJOR.MINOR.PATCH",
+        )
 
         duplicate_pr_runner = tmp / "duplicate-pr-runner.tsv"
         mutate_matrix(
