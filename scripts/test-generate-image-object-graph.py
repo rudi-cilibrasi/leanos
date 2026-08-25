@@ -130,7 +130,7 @@ generate_lean_c {source!s} {output!s}
         )
         self.assertEqual(
             wrapper.count('"${kernel_source_make_args[@]}"'),
-            3,
+            5,
         )
         self.assertIn(
             '"$current_kernel_source_signature" > "$kernel_source_signature"',
@@ -146,7 +146,7 @@ generate_lean_c {source!s} {output!s}
         prelink_targets = (
             "prelink-images policy-fixture-images return-corruption-prelinks"
         )
-        self.assertIn(object_targets + "\n  make -f", wrapper)
+        self.assertIn(object_targets + "\n    make -f", wrapper)
         self.assertIn(prelink_targets, wrapper)
         self.assertNotIn(object_targets + " \\\n    " + prelink_targets, wrapper)
 
