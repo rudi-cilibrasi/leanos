@@ -512,12 +512,37 @@ def select_build_artifacts(
             raise EvidenceError(
                 f"scenario {row['id']} has unsupported build ELF {elf!r}"
             )
+        prelink_target = elf.removesuffix(".elf") + "-prelink.elf"
+        final_target = elf
+        # These families intentionally finish outside the generated link graph:
+        # assigned EDU converges its own page plan, while the double-fault
+        # variants run policy-specific final links after their plans exist.
+        # Name the graph prerequisite that is actually buildable at each phase
+        # instead of deriving nonexistent Make targets from the packaged ELF.
+        target_overrides = {
+            "leanos-assigned-edu.elf": ("leanos-prelink.elf", "leanos.elf"),
+            "leanos-double-fault.elf": (
+                "leanos-double-fault-prelink.elf",
+                "kernel-double-fault.o",
+            ),
+            "leanos-entry-stack-overflow.elf": (
+                "leanos-entry-stack-overflow-prelink.elf",
+                "kernel-entry-stack-overflow.o",
+            ),
+            "leanos-double-fault-guard-mapped.elf": (
+                "leanos-guard-prelink.elf",
+                "kernel-double-fault-guard-mapped.o",
+            ),
+        }
+        prelink_target, final_target = target_overrides.get(
+            elf, (prelink_target, final_target)
+        )
         artifacts.append((
             row["id"],
             row["runner"],
             row["image"].replace("@VERSION@", version),
-            elf.removesuffix(".elf") + "-prelink.elf",
-            elf,
+            prelink_target,
+            final_target,
         ))
     return artifacts
 

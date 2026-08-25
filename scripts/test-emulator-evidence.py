@@ -147,6 +147,29 @@ def run_fixtures() -> None:
         )
         if pr_build_artifacts[0][3:] != ("leanos-prelink.elf", "leanos.elf"):
             raise AssertionError("PR build plan does not map the canonical Make targets")
+        artifact_targets = {
+            artifact[0]: artifact[3:] for artifact in pr_build_artifacts
+        }
+        expected_special_targets = {
+            "assigned-edu-inventory": ("leanos-prelink.elf", "leanos.elf"),
+            "double-fault": (
+                "leanos-double-fault-prelink.elf",
+                "kernel-double-fault.o",
+            ),
+            "entry-stack-overflow": (
+                "leanos-entry-stack-overflow-prelink.elf",
+                "kernel-entry-stack-overflow.o",
+            ),
+            "double-fault-guard-mapped": (
+                "leanos-guard-prelink.elf",
+                "kernel-double-fault-guard-mapped.o",
+            ),
+        }
+        for scenario, expected_targets in expected_special_targets.items():
+            if artifact_targets.get(scenario) != expected_targets:
+                raise AssertionError(
+                    f"PR build plan maps {scenario} to nonexistent Make targets"
+                )
         build_image = (evidence.ROOT / "scripts/build-image.sh").read_text(
             encoding="utf-8"
         )
