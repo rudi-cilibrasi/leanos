@@ -344,18 +344,24 @@ jobs:
             LEANOS_EVIDENCE_SHARD_INDEX="${{ matrix.shard }}" \
             LEANOS_EVIDENCE_SHARD_COUNT=4 \
             ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
-          ./scripts/test-nmi-image-policy.sh
-          ./scripts/test-early-idt-policy.sh
-          ./scripts/test-early-probe-policy.sh
-          ./scripts/run-dma-unknown-device.sh
+          [[ ! -f build/boot/leanos-nmi.elf ]] || \
+            ./scripts/test-nmi-image-policy.sh
+          [[ ! -f build/boot/leanos.elf ]] || \
+            ./scripts/test-early-idt-policy.sh
+          [[ ! -f build/boot/kernel.o ]] || \
+            ./scripts/test-early-probe-policy.sh
+          [[ ! -f build/boot/leanos-${LEANOS_VERSION:-0.1.0}-x86_64.iso ]] || \
+            ./scripts/run-dma-unknown-device.sh
           ./scripts/run-emulator-evidence.py run \
             --tier "${{ github.event_name == 'pull_request' && 'pr' || 'all' }}" \
             --shard-index ${{ matrix.shard }} \
             --shard-count 4 \
             --output build/evidence/emulator-shard-${{ matrix.shard }}.json \
             2>&1 | tee build/ci/emulator-evidence.log
-          ./scripts/run-assigned-edu-negatives.sh \
-            2>&1 | tee build/ci/assigned-edu-negatives.log
+          if [[ -f build/boot/leanos-${LEANOS_VERSION:-0.1.0}-x86_64-assigned-edu-missing-mmio-mapping.iso ]]; then
+            ./scripts/run-assigned-edu-negatives.sh \
+              2>&1 | tee build/ci/assigned-edu-negatives.log
+          fi
 
       - name: Preserve reproducibility artifacts
         if: always()

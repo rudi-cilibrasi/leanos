@@ -1585,6 +1585,7 @@ direct_port_log_dir="$build/direct-port-logs"
 mkdir -p "$direct_port_log_dir"
 : > "$direct_port_task_file"
 direct_port_logs=()
+declare -A direct_port_seen=()
 while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     _log _scenario _mode _reason _tier; do
   [[ "$elf_name" == *.elf ]] || continue
@@ -1593,6 +1594,11 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
       -z "${selected_final_lookup[$elf_path]:-}" ]]; then
     continue
   fi
+  if [[ "$evidence_tier" != all &&
+      -n "${direct_port_seen[$elf_path]:-}" ]]; then
+    continue
+  fi
+  direct_port_seen["$elf_path"]=1
   manifest="scripts/direct-port-sites.tsv"
   direct_port_args=()
   case "$elf_name" in
@@ -1770,6 +1776,7 @@ for spec in "${return_corruptions[@]}"; do
   cp "$return_elf" "$fixture_root/boot/leanos.elf"
   cp boot/grub.cfg "$fixture_root/boot/grub/grub.cfg"
   cp "$build/SOURCE_REVISION" "$fixture_root/boot/SOURCE_REVISION"
+  selected_iso_root_lookup["$fixture_root"]="$return_elf"
 done
 # BIOS-only output avoids GRUB's nondeterministic FAT/EFI image. A fixed ISO
 # UUID and file dates make repeated builds independent of wall-clock time. The
