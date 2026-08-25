@@ -431,6 +431,9 @@ declare -A integer_fault_probe_flags=(
 version="${LEANOS_VERSION:-0.1.0}"
 source_revision="${LEANOS_SOURCE_REVISION:-$(git rev-parse HEAD)}"
 matrix="${LEANOS_EVIDENCE_MATRIX:-scripts/emulator-evidence-matrix.tsv}"
+evidence_tier="${LEANOS_EVIDENCE_TIER:-all}"
+evidence_shard_index="${LEANOS_EVIDENCE_SHARD_INDEX:-}"
+evidence_shard_count="${LEANOS_EVIDENCE_SHARD_COUNT:-}"
 [[ -f "$matrix" ]] || { echo "error: evidence matrix '$matrix' not found" >&2; exit 1; }
 return_corruptions=()
 while IFS=$'\t' read -r _id runner _class _timeout _image _elf _log \
@@ -450,6 +453,24 @@ if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 mkdir -p "$build"
+build_plan_args=(
+  build-plan
+  --matrix "$matrix"
+  --version "$version"
+  --tier "$evidence_tier"
+)
+if [[ -n "$evidence_shard_index" || -n "$evidence_shard_count" ]]; then
+  [[ -n "$evidence_shard_index" && -n "$evidence_shard_count" ]] || {
+    echo "error: evidence shard index and count must be specified together" >&2
+    exit 1
+  }
+  build_plan_args+=(
+    --shard-index "$evidence_shard_index"
+    --shard-count "$evidence_shard_count"
+  )
+fi
+python3 scripts/run-emulator-evidence.py "${build_plan_args[@]}" \
+  > "$build/evidence-build-plan.tsv"
 # Preserve graph-owned objects, dependency files, and ISO staging trees across
 # invocations. Re-copying the three deterministic staging inputs below keeps
 # their contents current while allowing unchanged packaged images to be reused.

@@ -1080,6 +1080,9 @@ def check_workflows() -> None:
         raise EvidenceError("CI workflow does not define the emulator evidence job")
     for shard_contract in (
         "shard: [0, 1, 2, 3]",
+        "LEANOS_EVIDENCE_TIER=\"${{ github.event_name == 'pull_request' && 'pr' || 'all' }}\"",
+        "LEANOS_EVIDENCE_SHARD_INDEX=\"${{ matrix.shard }}\"",
+        "LEANOS_EVIDENCE_SHARD_COUNT=4",
         "--tier \"${{ github.event_name == 'pull_request' && 'pr' || 'all' }}\"",
         "--shard-index ${{ matrix.shard }}",
         "--shard-count 4",

@@ -340,7 +340,10 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/ci
-          ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
+          LEANOS_EVIDENCE_TIER="${{ github.event_name == 'pull_request' && 'pr' || 'all' }}" \
+            LEANOS_EVIDENCE_SHARD_INDEX="${{ matrix.shard }}" \
+            LEANOS_EVIDENCE_SHARD_COUNT=4 \
+            ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
           ./scripts/test-nmi-image-policy.sh
           ./scripts/test-early-idt-policy.sh
           ./scripts/test-early-probe-policy.sh
