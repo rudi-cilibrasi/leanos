@@ -414,13 +414,21 @@ def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
         raise EvidenceError(
             f"mandatory inventory count differs: declared {mandatory_count}, found {len(rows)}"
         )
-    pr_runners = {row["runner"] for row in rows if row["tier"] == "pr"}
-    if pr_runners != RUNNERS:
-        missing = sorted(RUNNERS - pr_runners)
-        extra = sorted(pr_runners - RUNNERS)
+    pr_runner_counts = {
+        runner: sum(
+            row["runner"] == runner and row["tier"] == "pr" for row in rows
+        )
+        for runner in RUNNERS
+    }
+    invalid_pr_runner_counts = {
+        runner: count
+        for runner, count in sorted(pr_runner_counts.items())
+        if count != 1
+    }
+    if invalid_pr_runner_counts:
         raise EvidenceError(
-            "PR tier must cover every runner class; "
-            f"missing={missing}, unexpected={extra}"
+            "PR tier must contain exactly one scenario per runner; "
+            f"counts={invalid_pr_runner_counts}"
         )
 
     rows_by_id = {row["id"]: row for row in rows}

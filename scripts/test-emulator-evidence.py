@@ -67,6 +67,7 @@ def prepare_tree(tmp: Path) -> tuple[Path, Path, Path, argparse.Namespace]:
         tool_versions=tools,
         version="0.1.0",
         scenario=None,
+        tier="all",
         shard_index=None,
         shard_count=None,
         jobs=4,
@@ -102,7 +103,7 @@ def run_fixtures() -> None:
 
         _, matrix_rows = evidence.parse_matrix(evidence.DEFAULT_MATRIX)
         shards = [
-            evidence.select_rows(matrix_rows, None, index, 4)
+            evidence.select_rows(matrix_rows, None, "all", index, 4)
             for index in range(4)
         ]
         if [row["id"] for shard in shards for row in shard] == [
@@ -114,16 +115,35 @@ def run_fixtures() -> None:
         ):
             raise AssertionError("stable shards do not cover the matrix exactly once")
         expect_failure(
-            lambda: evidence.select_rows(matrix_rows, "blocking-ipc", 0, 4),
+            lambda: evidence.select_rows(matrix_rows, "blocking-ipc", "all", 0, 4),
             "cannot be combined with sharding",
         )
         expect_failure(
-            lambda: evidence.select_rows(matrix_rows, None, 0, None),
+            lambda: evidence.select_rows(matrix_rows, None, "all", 0, None),
             "must be specified together",
         )
         expect_failure(
-            lambda: evidence.select_rows(matrix_rows, None, 4, 4),
+            lambda: evidence.select_rows(matrix_rows, None, "all", 4, 4),
             "between zero and count minus one",
+        )
+
+        pr_rows = evidence.select_rows(matrix_rows, None, "pr", None, None)
+        if len(pr_rows) != len(evidence.RUNNERS):
+            raise AssertionError("PR tier does not select exactly one row per runner")
+
+        duplicate_pr_runner = tmp / "duplicate-pr-runner.tsv"
+        mutate_matrix(
+            duplicate_pr_runner,
+            lambda lines: [
+                line.rsplit("\t", 1)[0] + "\tpr"
+                if line.startswith("projection-authority-mutation\t")
+                else line
+                for line in lines
+            ],
+        )
+        expect_failure(
+            lambda: evidence.parse_matrix(duplicate_pr_runner),
+            "PR tier must contain exactly one scenario per runner",
         )
 
         duplicate = tmp / "duplicate.tsv"
