@@ -177,6 +177,73 @@ def run_fixtures() -> None:
             raise AssertionError("build-image does not consume selected prelink targets")
         if 'selected_final_targets+=("$build/$plan_final")' not in build_image:
             raise AssertionError("build-image does not consume selected final targets")
+        if 'selected_prelink_lookup["$build/$plan_prelink"]=1' not in build_image:
+            raise AssertionError("build-image does not index selected prelink targets")
+        if 'selected_final_lookup["$build/$plan_final"]=1' not in build_image:
+            raise AssertionError("build-image does not index selected final targets")
+        if 'for prelink in "${selected_prelink_targets[@]}"' not in build_image:
+            raise AssertionError("build-image does not validate selected prelink cache coverage")
+        if 'if [[ ! -f "$prelink" ]]; then' not in build_image:
+            raise AssertionError("build-image accepts a cache missing selected prelinks")
+        if 'boot_plan_batch_args=("${filtered_boot_plan_batch_args[@]}")' not in build_image:
+            raise AssertionError("build-image does not restrict PR boot-plan generation")
+        if 'if [[ "$evidence_tier" == all ]]; then\n  cmp "$build/boot-page-plan-fault-containment.h"' not in build_image:
+            raise AssertionError("build-image does not reserve cross-variant plan checks for full evidence")
+        if 'if [[ "$evidence_tier" == all ]] && nm "$build/kernel.o"' not in build_image:
+            raise AssertionError("build-image checks unselected canonical objects in PR shards")
+        if '-z "${selected_final_lookup[$elf_path]:-}"' not in build_image:
+            raise AssertionError("build-image does not restrict PR policy checks to selected final images")
+        if 'expected_evidence_images="${#selected_final_targets[@]}"' not in build_image:
+            raise AssertionError("build-image does not validate the selected PR image count")
+        if 'selected_final_enabled "$return_elf" || continue' not in build_image:
+            raise AssertionError("build-image does not restrict PR return policy checks")
+        if 'selected_final_enabled "$elf_path" || return 0' not in build_image:
+            raise AssertionError("build-image does not restrict final-plan checks to selected images")
+        if 'validate_selected_final_plan "$build/leanos.elf"' not in build_image:
+            raise AssertionError("build-image does not route the canonical final plan through selection")
+        if 'validate_selected_final_plan "$build/leanos-bootstrap64-nmi.elf"' not in build_image:
+            raise AssertionError("build-image does not route special final plans through selection")
+        if 'if selected_final_enabled "$build/leanos-frame-budget.elf"; then' not in build_image:
+            raise AssertionError("build-image does not restrict frame-budget convergence")
+        if 'selected_final_enabled "$build/leanos-fault-${probe}.elf" || continue' not in build_image:
+            raise AssertionError("build-image does not restrict fault-family final plans")
+        if (
+            'expected_fault_plan="$build/boot-page-plan-fault-${probe}.h"\n'
+            '  if [[ "$evidence_tier" == all && "$probe" != stale-translation ]]'
+            not in build_image
+        ):
+            raise AssertionError(
+                "build-image compares selected PR fault plans against an unselected stub"
+            )
+        for final_elf in (
+            "leanos-double-fault.elf",
+            "leanos-entry-stack-overflow.elf",
+            "leanos-double-fault-guard-mapped.elf",
+        ):
+            if f'if selected_final_enabled "$build/{final_elf}"; then' not in build_image:
+                raise AssertionError(
+                    f"build-image does not restrict {final_elf} final relink"
+                )
+        if 'selected_final_enabled "$build/leanos-${probe}.elf" || continue' not in build_image:
+            raise AssertionError("build-image does not restrict integer-fault final plans")
+        if 'selected_final_enabled "$elf" || return 0' not in build_image:
+            raise AssertionError("build-image does not restrict image-policy jobs")
+        if 'selected_final_lookup["$build/leanos-double-fault.elf"]=1' not in build_image:
+            raise AssertionError("build-image does not index manually linked selected ELFs")
+        if 'selected_iso_root_lookup["$staging_root"]="$elf"' not in build_image:
+            raise AssertionError("build-image does not index selected ISO staging roots")
+        if 'local elf="${selected_iso_root_lookup[$staging_root]:-}"' not in build_image:
+            raise AssertionError("build-image does not filter ISO packaging by selected root")
+        if 'xargs -0 sha256sum > "$build/SHA256SUMS"' not in build_image:
+            raise AssertionError("build-image does not checksum only selected PR artifacts")
+        if 'if selected_final_enabled "$build/leanos.elf"; then' not in build_image:
+            raise AssertionError("build-image does not gate canonical-only validation")
+        if 'write_selected_disassembly "$build/leanos-bootstrap32-ud.elf"' not in build_image:
+            raise AssertionError("build-image does not gate selected disassembly reports")
+        if 'run_selected_extended_state_policy x87' not in build_image:
+            raise AssertionError("build-image does not gate extended-state policy reports")
+        if 'if [[ "$evidence_tier" == all ]]; then\n  queue_return_fixture restore' not in build_image:
+            raise AssertionError("build-image does not reserve negative policy fixtures for full evidence")
         if 'if [[ "$evidence_tier" == all ]]' not in build_image:
             raise AssertionError("build-image does not preserve the all-tier graph")
         malformed_elf_rows = [dict(pr_rows[0], elf="outside.elf")]

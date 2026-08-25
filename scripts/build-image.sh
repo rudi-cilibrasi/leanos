@@ -473,6 +473,8 @@ python3 scripts/run-emulator-evidence.py "${build_plan_args[@]}" \
   > "$build/evidence-build-plan.tsv"
 declare -a selected_prelink_targets=()
 declare -a selected_final_targets=()
+declare -A selected_prelink_lookup=()
+declare -A selected_final_lookup=()
 {
   IFS=$'\t' read -r plan_id plan_runner plan_image plan_prelink plan_final
   [[ "$plan_id" == id && "$plan_runner" == runner && \
@@ -489,11 +491,35 @@ declare -a selected_final_targets=()
     }
     selected_prelink_targets+=("$build/$plan_prelink")
     selected_final_targets+=("$build/$plan_final")
+    selected_prelink_lookup["$build/$plan_prelink"]=1
+    selected_final_lookup["$build/$plan_final"]=1
+    # A few families use a graph-owned object as the selected Make target and
+    # perform their final link below. Index the resulting scenario ELF too so
+    # validation, staging, packaging, and checksums share one selection gate.
+    case "$plan_id" in
+      assigned-edu-inventory)
+        selected_final_lookup["$build/leanos-assigned-edu.elf"]=1
+        ;;
+      double-fault)
+        selected_final_lookup["$build/leanos-double-fault.elf"]=1
+        ;;
+      entry-stack-overflow)
+        selected_final_lookup["$build/leanos-entry-stack-overflow.elf"]=1
+        ;;
+      double-fault-guard-mapped)
+        selected_final_lookup["$build/leanos-double-fault-guard-mapped.elf"]=1
+        ;;
+    esac
   done
 } < "$build/evidence-build-plan.tsv"
 [[ ${#selected_prelink_targets[@]} -gt 0 ]] || {
   echo "error: evidence build plan selected no image targets" >&2
   exit 1
+}
+
+selected_final_enabled() {
+  local elf_path="$1"
+  [[ "$evidence_tier" == all || -n "${selected_final_lookup[$elf_path]:-}" ]]
 }
 # Preserve graph-owned objects, dependency files, and ISO staging trees across
 # invocations. Re-copying the three deterministic staging inputs below keeps
@@ -714,6 +740,17 @@ if [[ -s "$graph_make_cache_signature" &&
     sha256sum -c --status "$graph_make_cache_manifest"; then
   graph_make_cache_current=true
 fi
+# A cache recorded for a different PR shard can be internally valid without
+# containing this shard's selected prelinks.  Treat those missing outputs as a
+# cache miss so Make follows the reviewed graph for the current selection.
+if [[ "$evidence_tier" != all && "$graph_make_cache_current" == true ]]; then
+  for prelink in "${selected_prelink_targets[@]}"; do
+    if [[ ! -f "$prelink" ]]; then
+      graph_make_cache_current=false
+      break
+    fi
+  done
+fi
 # The generated graph owns the migrated prelinks.  It retains their reviewed
 # linker input order while scheduling independent links concurrently with the
 # remaining object work.
@@ -829,9 +866,22 @@ for spec in "${return_corruptions[@]}"; do
     "$build/boot-page-plan-return-${fixture}.h"
   )
 done
+if [[ "$evidence_tier" != all ]]; then
+  filtered_boot_plan_batch_args=()
+  for ((index = 0; index < ${#boot_plan_batch_args[@]}; index += 2)); do
+    prelink="${boot_plan_batch_args[$index]}"
+    if [[ -n "${selected_prelink_lookup[$prelink]:-}" ]]; then
+      filtered_boot_plan_batch_args+=(
+        "$prelink" "${boot_plan_batch_args[$((index + 1))]}"
+      )
+    fi
+  done
+  boot_plan_batch_args=("${filtered_boot_plan_batch_args[@]}")
+fi
 run_boot_plan_batch "${boot_plan_batch_args[@]}"
 
-cmp "$build/boot-page-plan-fault-containment.h" \
+if [[ "$evidence_tier" == all ]]; then
+  cmp "$build/boot-page-plan-fault-containment.h" \
   "$build/boot-page-plan-fault-readonly-write.h" || {
   echo "error: read-only-write probe changed shared fault page-table plan" >&2
   exit 1
@@ -889,6 +939,7 @@ cmp "$build/boot-page-plan-integer-fault.h" \
   echo "error: breakpoint probe changed the shared integer-fault page-table plan" >&2
   exit 1
 }
+fi
 # Re-enter the same graph after replacing every stub boot-page plan.  The
 # generated dependency files select only affected kernel variants, and Make
 # recompiles those final-plan objects concurrently instead of serially.
@@ -908,7 +959,7 @@ if [[ "$graph_make_cache_current" != true ]]; then
   fi
 fi
 
-if nm "$build/kernel.o" | grep -Eq \
+if [[ "$evidence_tier" == all ]] && nm "$build/kernel.o" | grep -Eq \
     'return_corruption_mode|return_corruption_name|inject_return_corruption'; then
   echo "error: normal kernel object contains return-corruption fixture code" >&2
   exit 1
@@ -930,7 +981,9 @@ record_build_phase boot-plans-and-final-links
 
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture mode _reason <<<"$spec"
-  ./scripts/generate-boot-page-plan.sh "$build/leanos-return-${fixture}.elf" \
+  return_elf="$build/leanos-return-${fixture}.elf"
+  selected_final_enabled "$return_elf" || continue
+  ./scripts/generate-boot-page-plan.sh "$return_elf" \
     "$build/boot-page-plan-return-${fixture}.final.h"
   cmp "$build/boot-page-plan-return-${fixture}.h" \
     "$build/boot-page-plan-return-${fixture}.final.h" || {
@@ -951,127 +1004,107 @@ for spec in "${return_corruptions[@]}"; do
     expected_policy_diagnostic='fast-entry final-ELF write inventory drifted'
   fi
   run_return_corruption_policy_check "$fixture" \
-    "$build/leanos-return-${fixture}.elf" "$expected_policy_diagnostic" \
+    "$return_elf" "$expected_policy_diagnostic" \
     "$build/return-${fixture}-policy.log"
 done
 
-./scripts/generate-boot-page-plan.sh "$build/leanos.elf" \
-  "$build/boot-page-plan.final.h"
-cmp "$build/boot-page-plan.h" "$build/boot-page-plan.final.h" || {
-  echo "error: linker-resolved boot page-table plan drifted after final link" >&2
-  exit 1
+validate_selected_final_plan() {
+  local elf_path="$1"
+  local expected_plan="$2"
+  local final_plan="$3"
+  local description="$4"
+  selected_final_enabled "$elf_path" || return 0
+  ./scripts/generate-boot-page-plan.sh "$elf_path" "$final_plan"
+  cmp "$expected_plan" "$final_plan" || {
+    echo "error: $description page-table plan drifted after final link" >&2
+    exit 1
+  }
 }
-./scripts/generate-boot-page-plan.sh "$build/leanos-malformed-handoff.elf" \
-  "$build/boot-page-plan-malformed-handoff.final.h"
-cmp "$build/boot-page-plan-malformed-handoff.h" \
-  "$build/boot-page-plan-malformed-handoff.final.h" || {
-  echo "error: malformed-handoff page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh \
-  "$build/leanos-projection-authority-mutation.elf" \
-  "$build/boot-page-plan-projection-authority-mutation.final.h"
-cmp "$build/boot-page-plan-projection-authority-mutation.h" \
-  "$build/boot-page-plan-projection-authority-mutation.final.h" || {
-  echo "error: projection-authority mutation page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh \
-  "$build/leanos-raw-selection-authority-mutation.elf" \
-  "$build/boot-page-plan-raw-selection-authority-mutation.final.h"
-cmp "$build/boot-page-plan-raw-selection-authority-mutation.h" \
-  "$build/boot-page-plan-raw-selection-authority-mutation.final.h" || {
-  echo "error: raw-selection authority mutation page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-nmi.elf" \
-  "$build/boot-page-plan-nmi.final.h"
-cmp "$build/boot-page-plan-nmi.h" "$build/boot-page-plan-nmi.final.h" || {
-  echo "error: NMI probe boot page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap32-ud.elf" \
-  "$build/boot-page-plan-bootstrap32-ud.final.h"
-cmp "$build/boot-page-plan-bootstrap32-ud.h" \
-  "$build/boot-page-plan-bootstrap32-ud.final.h" || {
-  echo "error: bootstrap32-ud probe page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-bootstrap64-nmi.elf" \
-  "$build/boot-page-plan-bootstrap64-nmi.final.h"
-cmp "$build/boot-page-plan-bootstrap64-nmi.h" \
-  "$build/boot-page-plan-bootstrap64-nmi.final.h" || {
-  echo "error: bootstrap64-nmi probe page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-preemption.elf" \
-  "$build/boot-page-plan-preemption.final.h"
-cmp "$build/boot-page-plan-preemption.h" \
-  "$build/boot-page-plan-preemption.final.h" || {
-  echo "error: preemption boot page-table plan drifted after final link" >&2
-  exit 1
-}
-frame_budget_plan_converged=false
-for pass in 1 2 3 4; do
-  ./scripts/generate-boot-page-plan.sh "$build/leanos-frame-budget.elf" \
-    "$build/boot-page-plan-frame-budget.final.h"
-  if cmp -s "$build/boot-page-plan-frame-budget.h" \
-      "$build/boot-page-plan-frame-budget.final.h"; then
-    frame_budget_plan_converged=true
-    break
-  fi
-  [[ "$pass" -lt 4 ]] || break
 
-  # Clang can change a page-boundary comparison after the linker-derived plan
-  # replaces the fixed-size stub. Rebuild to a bounded fixed point instead of
-  # accepting a plan that describes the preceding ELF.
-  cp "$build/boot-page-plan-frame-budget.final.h" \
-    "$build/boot-page-plan-frame-budget.h"
-  "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
-    -DLEANOS_FRAME_BUDGET_SCENARIO=1 \
-    -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-frame-budget.h"' \
-    -c boot/kernel.c -o "$build/kernel-frame-budget.o"
-  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-    -T boot/linker.ld -Map "$build/leanos-frame-budget.map" \
-    -o "$build/leanos-frame-budget.elf" "$build/boot-frame-budget.o" \
-    "$build/kernel-frame-budget.o" "$build/KernelTransition.o" \
-    "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
-    "$build/BootAllocation.o" "$build/Interrupt.o" \
-    "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
-    "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
-    "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-done
-[[ "$frame_budget_plan_converged" == true ]] || {
-  echo "error: frame-budget boot page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-fault-containment.elf" \
-  "$build/boot-page-plan-fault-containment.final.h"
-cmp "$build/boot-page-plan-fault-containment.h" \
-  "$build/boot-page-plan-fault-containment.final.h" || {
-  echo "error: fault-containment boot page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-fault-readonly-write.elf" \
-  "$build/boot-page-plan-fault-readonly-write.final.h"
-cmp "$build/boot-page-plan-fault-containment.h" \
-  "$build/boot-page-plan-fault-readonly-write.final.h" || {
-  echo "error: read-only-write page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-fault-nx-execute.elf" \
-  "$build/boot-page-plan-fault-nx-execute.final.h"
-cmp "$build/boot-page-plan-fault-containment.h" \
-  "$build/boot-page-plan-fault-nx-execute.final.h" || {
-  echo "error: NX-execute page-table plan drifted after final link" >&2
-  exit 1
-}
+validate_selected_final_plan "$build/leanos.elf" \
+  "$build/boot-page-plan.h" "$build/boot-page-plan.final.h" \
+  linker-resolved
+validate_selected_final_plan "$build/leanos-malformed-handoff.elf" \
+  "$build/boot-page-plan-malformed-handoff.h" \
+  "$build/boot-page-plan-malformed-handoff.final.h" malformed-handoff
+validate_selected_final_plan "$build/leanos-projection-authority-mutation.elf" \
+  "$build/boot-page-plan-projection-authority-mutation.h" \
+  "$build/boot-page-plan-projection-authority-mutation.final.h" \
+  "projection-authority mutation"
+validate_selected_final_plan "$build/leanos-raw-selection-authority-mutation.elf" \
+  "$build/boot-page-plan-raw-selection-authority-mutation.h" \
+  "$build/boot-page-plan-raw-selection-authority-mutation.final.h" \
+  "raw-selection authority mutation"
+validate_selected_final_plan "$build/leanos-nmi.elf" \
+  "$build/boot-page-plan-nmi.h" "$build/boot-page-plan-nmi.final.h" \
+  "NMI probe"
+validate_selected_final_plan "$build/leanos-bootstrap32-ud.elf" \
+  "$build/boot-page-plan-bootstrap32-ud.h" \
+  "$build/boot-page-plan-bootstrap32-ud.final.h" "bootstrap32-ud probe"
+validate_selected_final_plan "$build/leanos-bootstrap64-nmi.elf" \
+  "$build/boot-page-plan-bootstrap64-nmi.h" \
+  "$build/boot-page-plan-bootstrap64-nmi.final.h" "bootstrap64-nmi probe"
+validate_selected_final_plan "$build/leanos-preemption.elf" \
+  "$build/boot-page-plan-preemption.h" \
+  "$build/boot-page-plan-preemption.final.h" preemption
+if selected_final_enabled "$build/leanos-frame-budget.elf"; then
+  frame_budget_plan_converged=false
+  for pass in 1 2 3 4; do
+    ./scripts/generate-boot-page-plan.sh "$build/leanos-frame-budget.elf" \
+      "$build/boot-page-plan-frame-budget.final.h"
+    if cmp -s "$build/boot-page-plan-frame-budget.h" \
+        "$build/boot-page-plan-frame-budget.final.h"; then
+      frame_budget_plan_converged=true
+      break
+    fi
+    [[ "$pass" -lt 4 ]] || break
+
+    # Clang can change a page-boundary comparison after the linker-derived plan
+    # replaces the fixed-size stub. Rebuild to a bounded fixed point instead of
+    # accepting a plan that describes the preceding ELF.
+    cp "$build/boot-page-plan-frame-budget.final.h" \
+      "$build/boot-page-plan-frame-budget.h"
+    "$cc" "${cflags[@]}" -I"$build" -Wall -Wextra -Werror \
+      -DLEANOS_FRAME_BUDGET_SCENARIO=1 \
+      -DLEANOS_BOOT_PAGE_PLAN_HEADER='"boot-page-plan-frame-budget.h"' \
+      -c boot/kernel.c -o "$build/kernel-frame-budget.o"
+    ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+      -T boot/linker.ld -Map "$build/leanos-frame-budget.map" \
+      -o "$build/leanos-frame-budget.elf" "$build/boot-frame-budget.o" \
+      "$build/kernel-frame-budget.o" "$build/KernelTransition.o" \
+      "$build/Syscall.o" "$build/IPCSyscall.o" "$build/Preemption.o" \
+      "$build/BootAllocation.o" "$build/Interrupt.o" \
+      "$build/InterruptEntry.o" "$build/BlockingIPC.o" \
+      "$build/CapabilityReuse.o" "$build/ExtendedState.o" \
+      "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+  done
+  [[ "$frame_budget_plan_converged" == true ]] || {
+    echo "error: frame-budget boot page-table plan drifted after final link" >&2
+    exit 1
+  }
+fi
+validate_selected_final_plan "$build/leanos-fault-containment.elf" \
+  "$build/boot-page-plan-fault-containment.h" \
+  "$build/boot-page-plan-fault-containment.final.h" fault-containment
+validate_selected_final_plan "$build/leanos-fault-readonly-write.elf" \
+  "$build/boot-page-plan-fault-containment.h" \
+  "$build/boot-page-plan-fault-readonly-write.final.h" read-only-write
+validate_selected_final_plan "$build/leanos-fault-nx-execute.elf" \
+  "$build/boot-page-plan-fault-containment.h" \
+  "$build/boot-page-plan-fault-nx-execute.final.h" NX-execute
 for probe in "${fault_image_probes[@]}"; do
+  selected_final_enabled "$build/leanos-fault-${probe}.elf" || continue
   ./scripts/generate-boot-page-plan.sh "$build/leanos-fault-${probe}.elf" \
     "$build/boot-page-plan-fault-${probe}.final.h"
-  expected_fault_plan="$build/boot-page-plan-fault-containment.h"
+  # A PR shard may select this probe without selecting fault-containment, whose
+  # plan header is then only a stub.  Compare the probe's generated prelink plan
+  # to its final plan in that case; full evidence retains the stronger
+  # cross-variant containment-plan equality below.
+  expected_fault_plan="$build/boot-page-plan-fault-${probe}.h"
+  if [[ "$evidence_tier" == all && "$probe" != stale-translation ]]; then
+    expected_fault_plan="$build/boot-page-plan-fault-containment.h"
+  fi
   if [[ "$probe" == stale-translation ]]; then
-    expected_fault_plan="$build/boot-page-plan-fault-stale-translation.h"
     for pass in 1 2 3; do
       cmp -s "$expected_fault_plan" \
         "$build/boot-page-plan-fault-${probe}.final.h" && break
@@ -1103,109 +1136,80 @@ for probe in "${fault_image_probes[@]}"; do
     exit 1
   }
 done
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state.elf" \
-  "$build/boot-page-plan-extended-state.final.h"
-cmp "$build/boot-page-plan-extended-state.h" \
-  "$build/boot-page-plan-extended-state.final.h" || {
-  echo "error: extended-state boot page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-peer-pke.elf" \
-  "$build/boot-page-plan-extended-state-peer-pke.final.h"
-cmp "$build/boot-page-plan-extended-state-peer-pke.h" \
-  "$build/boot-page-plan-extended-state-peer-pke.final.h" || {
-  echo "error: peer-PKE boot page-table plan drifted after final link" >&2
-  exit 1
-}
+validate_selected_final_plan "$build/leanos-extended-state.elf" \
+  "$build/boot-page-plan-extended-state.h" \
+  "$build/boot-page-plan-extended-state.final.h" extended-state
+validate_selected_final_plan "$build/leanos-extended-state-peer-pke.elf" \
+  "$build/boot-page-plan-extended-state-peer-pke.h" \
+  "$build/boot-page-plan-extended-state-peer-pke.final.h" peer-PKE
 for mechanism in syscall sysenter; do
-  ./scripts/generate-boot-page-plan.sh "$build/leanos-fast-entry-${mechanism}.elf" \
-    "$build/boot-page-plan-fast-entry-${mechanism}.final.h"
-  cmp "$build/boot-page-plan-extended-state.h" \
-    "$build/boot-page-plan-fast-entry-${mechanism}.final.h" || {
-    echo "error: fast-entry $mechanism page-table plan drifted after final link" >&2
+  validate_selected_final_plan \
+    "$build/leanos-fast-entry-${mechanism}.elf" \
+    "$build/boot-page-plan-extended-state.h" \
+    "$build/boot-page-plan-fast-entry-${mechanism}.final.h" \
+    "fast-entry $mechanism"
+done
+for extended_state_variant in mmx sse sse2 avx; do
+  validate_selected_final_plan \
+    "$build/leanos-extended-state-${extended_state_variant}.elf" \
+    "$build/boot-page-plan-extended-state.h" \
+    "$build/boot-page-plan-extended-state-${extended_state_variant}.final.h" \
+    "${extended_state_variant^^} extended-state"
+done
+if selected_final_enabled "$build/leanos-double-fault.elf"; then
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map build/boot/leanos-double-fault.map \
+    -o build/boot/leanos-double-fault.elf build/boot/boot.o \
+    build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
+    build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
+    build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
+    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/FaultDispatch.o
+  ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
+    "$build/boot-page-plan-double-fault.final.h"
+  cmp "$build/boot-page-plan-double-fault.h" \
+    "$build/boot-page-plan-double-fault.final.h" || {
+    echo "error: double-fault boot page-table plan drifted after final link" >&2
     exit 1
   }
-done
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-mmx.elf" \
-  "$build/boot-page-plan-extended-state-mmx.final.h"
-cmp "$build/boot-page-plan-extended-state.h" \
-  "$build/boot-page-plan-extended-state-mmx.final.h" || {
-  echo "error: MMX extended-state page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-sse.elf" \
-  "$build/boot-page-plan-extended-state-sse.final.h"
-cmp "$build/boot-page-plan-extended-state.h" \
-  "$build/boot-page-plan-extended-state-sse.final.h" || {
-  echo "error: SSE extended-state page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-sse2.elf" \
-  "$build/boot-page-plan-extended-state-sse2.final.h"
-cmp "$build/boot-page-plan-extended-state.h" \
-  "$build/boot-page-plan-extended-state-sse2.final.h" || {
-  echo "error: SSE2 extended-state page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-extended-state-avx.elf" \
-  "$build/boot-page-plan-extended-state-avx.final.h"
-cmp "$build/boot-page-plan-extended-state.h" \
-  "$build/boot-page-plan-extended-state-avx.final.h" || {
-  echo "error: AVX extended-state page-table plan drifted after final link" >&2
-  exit 1
-}
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map build/boot/leanos-double-fault.map \
-  -o build/boot/leanos-double-fault.elf build/boot/boot.o \
-  build/boot/kernel-double-fault.o build/boot/KernelTransition.o \
-  build/boot/Syscall.o build/boot/IPCSyscall.o build/boot/Preemption.o \
-  build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/FaultDispatch.o
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map "$build/leanos-entry-stack-overflow.map" \
-  -o "$build/leanos-entry-stack-overflow.elf" \
-  "$build/boot-entry-stack-overflow.o" "$build/kernel-entry-stack-overflow.o" \
-  "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
-  "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
-  "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
-  "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
-ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
-  -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
-  -o build/boot/leanos-double-fault-guard-mapped.elf \
-  build/boot/boot-df-guard-mapped.o \
-  build/boot/kernel-double-fault-guard-mapped.o \
-  build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
-  build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
-  build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/FaultDispatch.o
-
-./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault.elf" \
-  "$build/boot-page-plan-double-fault.final.h"
-cmp "$build/boot-page-plan-double-fault.h" \
-  "$build/boot-page-plan-double-fault.final.h" || {
-  echo "error: double-fault boot page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-entry-stack-overflow.elf" \
-  "$build/boot-page-plan-entry-overflow.final.h"
-cmp "$build/boot-page-plan-entry-overflow.h" \
-  "$build/boot-page-plan-entry-overflow.final.h" || {
-  echo "error: entry-stack overflow page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-guard-mapped.elf" \
-  "$build/boot-page-plan-guard.final.h"
-cmp "$build/boot-page-plan-guard.h" "$build/boot-page-plan-guard.final.h" || {
-  echo "error: guard-mapped boot page-table plan drifted after final link" >&2
-  exit 1
-}
-./scripts/generate-boot-page-plan.sh "$build/leanos-entry-adversarial.elf" \
-  "$build/boot-page-plan-entry-adversarial.final.h"
-cmp "$build/boot-page-plan-entry-adversarial.h" \
-  "$build/boot-page-plan-entry-adversarial.final.h" || {
-  echo "error: entry-adversarial page-table plan drifted after final link" >&2
-  exit 1
-}
+fi
+if selected_final_enabled "$build/leanos-entry-stack-overflow.elf"; then
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map "$build/leanos-entry-stack-overflow.map" \
+    -o "$build/leanos-entry-stack-overflow.elf" \
+    "$build/boot-entry-stack-overflow.o" "$build/kernel-entry-stack-overflow.o" \
+    "$build/KernelTransition.o" "$build/Syscall.o" "$build/IPCSyscall.o" \
+    "$build/Preemption.o" "$build/BootAllocation.o" "$build/Interrupt.o" \
+    "$build/InterruptEntry.o" "$build/BlockingIPC.o" "$build/CapabilityReuse.o" \
+    "$build/ExtendedState.o" "$build/PrivilegeEntryControl.o" "$build/FaultDispatch.o"
+  ./scripts/generate-boot-page-plan.sh "$build/leanos-entry-stack-overflow.elf" \
+    "$build/boot-page-plan-entry-overflow.final.h"
+  cmp "$build/boot-page-plan-entry-overflow.h" \
+    "$build/boot-page-plan-entry-overflow.final.h" || {
+    echo "error: entry-stack overflow page-table plan drifted after final link" >&2
+    exit 1
+  }
+fi
+if selected_final_enabled "$build/leanos-double-fault-guard-mapped.elf"; then
+  ld -m elf_x86_64 -nostdlib --gc-sections --build-id=none \
+    -T boot/linker.ld -Map build/boot/leanos-double-fault-guard-mapped.map \
+    -o build/boot/leanos-double-fault-guard-mapped.elf \
+    build/boot/boot-df-guard-mapped.o \
+    build/boot/kernel-double-fault-guard-mapped.o \
+    build/boot/KernelTransition.o build/boot/Syscall.o build/boot/IPCSyscall.o \
+    build/boot/Preemption.o build/boot/BootAllocation.o build/boot/Interrupt.o build/boot/InterruptEntry.o \
+    build/boot/BlockingIPC.o build/boot/CapabilityReuse.o build/boot/ExtendedState.o build/boot/PrivilegeEntryControl.o build/boot/FaultDispatch.o
+  ./scripts/generate-boot-page-plan.sh "$build/leanos-double-fault-guard-mapped.elf" \
+    "$build/boot-page-plan-guard.final.h"
+  cmp "$build/boot-page-plan-guard.h" "$build/boot-page-plan-guard.final.h" || {
+    echo "error: guard-mapped boot page-table plan drifted after final link" >&2
+    exit 1
+  }
+fi
+validate_selected_final_plan "$build/leanos-entry-adversarial.elf" \
+  "$build/boot-page-plan-entry-adversarial.h" \
+  "$build/boot-page-plan-entry-adversarial.final.h" entry-adversarial
 for probe in "${direct_port_probes[@]}"; do
+  selected_final_enabled "$build/leanos-direct-port-${probe}.elf" || continue
   ./scripts/generate-boot-page-plan.sh "$build/leanos-direct-port-${probe}.elf" \
     "$build/boot-page-plan-direct-port-${probe}.final.h"
   cmp "$build/boot-page-plan-direct-port.h" \
@@ -1215,6 +1219,7 @@ for probe in "${direct_port_probes[@]}"; do
   }
 done
 for probe in "${integer_fault_probes[@]}"; do
+  selected_final_enabled "$build/leanos-${probe}.elf" || continue
   ./scripts/generate-boot-page-plan.sh "$build/leanos-${probe}.elf" \
     "$build/boot-page-plan-${probe}.final.h"
   cmp "$build/boot-page-plan-integer-fault.h" \
@@ -1224,6 +1229,7 @@ for probe in "${integer_fault_probes[@]}"; do
   }
 done
 
+if selected_final_enabled "$build/leanos.elf"; then
 undefined="$(nm -u "$build/leanos.elf")"
 if [[ -n "$undefined" ]]; then
   echo "error: boot image has unexpected undefined symbols:" >&2
@@ -1335,16 +1341,21 @@ objdump -d --no-show-raw-insn "$build/leanos.elf" \
 LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos.elf" \
   | tee "$build/entry-stack-final-elf.txt"
+fi
+if selected_final_enabled "$build/leanos-extended-state.elf"; then
 LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
   LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL=scripts/entry-stack-extended-optimizer-optional.tsv \
   LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-extended-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos-extended-state.elf" \
   | tee "$build/entry-stack-extended-final-elf.txt"
+fi
+if selected_final_enabled "$build/leanos-extended-state-peer-pke.elf"; then
 LEANOS_ENTRY_STACK_MANIFEST=scripts/entry-stack-extended-callgraph.tsv \
   LEANOS_ENTRY_STACK_OPTIMIZER_OPTIONAL=scripts/entry-stack-extended-optimizer-optional.tsv \
   LEANOS_ENTRY_STACK_ELF_EDGES_OUTPUT="$build/entry-stack-extended-state-peer-pke-final-elf-edges.tsv" \
   ./scripts/check-entry-stack-budget.sh "$build/leanos-extended-state-peer-pke.elf" \
   | tee "$build/entry-stack-extended-state-peer-pke-final-elf.txt"
+fi
 policy_jobs="${LEANOS_BUILD_JOBS:-$(nproc)}"
 [[ "$policy_jobs" =~ ^[1-9][0-9]*$ ]] || {
   echo "error: LEANOS_BUILD_JOBS must be a positive integer" >&2
@@ -1360,6 +1371,7 @@ queue_image_policy() {
   local elf="$2"
   local environment_name="${3:-}"
   local environment_value="${4:-}"
+  selected_final_enabled "$elf" || return 0
   policy_keys+=("$key")
   printf '%s\0%s\0%s\0%s\0' \
     "$key" "$elf" "$environment_name" "$environment_value" \
@@ -1419,64 +1431,82 @@ for key in "${policy_keys[@]}"; do
   cat "$policy_log_dir/$key.log"
 done
 
-./scripts/check-frame-budget-machine.sh "$build/leanos-frame-budget.elf"
-./scripts/check-nmi-image-policy.sh "$build/leanos-nmi.elf"
-cp "$build/leanos-nmi.elf" "$build/leanos-nmi-cpl3.elf"
-cp "$build/leanos-nmi.map" "$build/leanos-nmi-cpl3.map"
-objdump -d --no-show-raw-insn "$build/leanos-nmi.elf" \
-  > "$build/nmi.disassembly.txt"
-cp "$build/nmi.disassembly.txt" "$build/nmi-cpl3.disassembly.txt"
-./scripts/check-early-probe-policy.py "$build/leanos-bootstrap32-ud.elf" \
-  bootstrap32-ud | tee "$build/bootstrap32-ud-early-probe-policy.txt"
-./scripts/check-early-probe-policy.py "$build/leanos-bootstrap64-nmi.elf" \
-  bootstrap64-nmi | tee "$build/bootstrap64-nmi-early-probe-policy.txt"
-objdump -d --no-show-raw-insn "$build/leanos-bootstrap32-ud.elf" \
-  > "$build/bootstrap32-ud.disassembly.txt"
-objdump -d --no-show-raw-insn "$build/leanos-bootstrap64-nmi.elf" \
-  > "$build/bootstrap64-nmi.disassembly.txt"
-objdump -d --no-show-raw-insn "$build/leanos-fault-containment.elf" \
-  > "$build/fault-containment.disassembly.txt"
-objdump -d --no-show-raw-insn "$build/leanos-fault-readonly-write.elf" \
-  > "$build/fault-readonly-write.disassembly.txt"
-objdump -d --no-show-raw-insn "$build/leanos-fault-nx-execute.elf" \
-  > "$build/fault-nx-execute.disassembly.txt"
+if selected_final_enabled "$build/leanos-frame-budget.elf"; then
+  ./scripts/check-frame-budget-machine.sh "$build/leanos-frame-budget.elf"
+fi
+if selected_final_enabled "$build/leanos-nmi.elf"; then
+  ./scripts/check-nmi-image-policy.sh "$build/leanos-nmi.elf"
+  objdump -d --no-show-raw-insn "$build/leanos-nmi.elf" \
+    > "$build/nmi.disassembly.txt"
+fi
+if [[ "$evidence_tier" == all ]]; then
+  cp "$build/leanos-nmi.elf" "$build/leanos-nmi-cpl3.elf"
+  cp "$build/leanos-nmi.map" "$build/leanos-nmi-cpl3.map"
+  cp "$build/nmi.disassembly.txt" "$build/nmi-cpl3.disassembly.txt"
+fi
+if selected_final_enabled "$build/leanos-bootstrap32-ud.elf"; then
+  ./scripts/check-early-probe-policy.py "$build/leanos-bootstrap32-ud.elf" \
+    bootstrap32-ud | tee "$build/bootstrap32-ud-early-probe-policy.txt"
+fi
+if selected_final_enabled "$build/leanos-bootstrap64-nmi.elf"; then
+  ./scripts/check-early-probe-policy.py "$build/leanos-bootstrap64-nmi.elf" \
+    bootstrap64-nmi | tee "$build/bootstrap64-nmi-early-probe-policy.txt"
+fi
+write_selected_disassembly() {
+  local elf="$1"
+  local output="$2"
+  selected_final_enabled "$elf" || return 0
+  objdump -d --no-show-raw-insn "$elf" > "$output"
+}
+write_selected_disassembly "$build/leanos-bootstrap32-ud.elf" \
+  "$build/bootstrap32-ud.disassembly.txt"
+write_selected_disassembly "$build/leanos-bootstrap64-nmi.elf" \
+  "$build/bootstrap64-nmi.disassembly.txt"
+write_selected_disassembly "$build/leanos-fault-containment.elf" \
+  "$build/fault-containment.disassembly.txt"
+write_selected_disassembly "$build/leanos-fault-readonly-write.elf" \
+  "$build/fault-readonly-write.disassembly.txt"
+write_selected_disassembly "$build/leanos-fault-nx-execute.elf" \
+  "$build/fault-nx-execute.disassembly.txt"
 for probe in "${fault_image_probes[@]}"; do
-  objdump -d --no-show-raw-insn "$build/leanos-fault-${probe}.elf" \
-    > "$build/fault-${probe}.disassembly.txt"
+  write_selected_disassembly "$build/leanos-fault-${probe}.elf" \
+    "$build/fault-${probe}.disassembly.txt"
 done
-objdump -d --no-show-raw-insn "$build/leanos-extended-state.elf" \
-  > "$build/extended-state.disassembly.txt"
-objdump -d --no-show-raw-insn "$build/leanos-extended-state-mmx.elf" \
-  > "$build/extended-state-mmx.disassembly.txt"
-objdump -d --no-show-raw-insn "$build/leanos-extended-state-sse.elf" \
-  > "$build/extended-state-sse.disassembly.txt"
-objdump -d --no-show-raw-insn "$build/leanos-extended-state-sse2.elf" \
-  > "$build/extended-state-sse2.disassembly.txt"
-objdump -d --no-show-raw-insn "$build/leanos-extended-state-avx.elf" \
-  > "$build/extended-state-avx.disassembly.txt"
+write_selected_disassembly "$build/leanos-extended-state.elf" \
+  "$build/extended-state.disassembly.txt"
+for variant in mmx sse sse2 avx; do
+  write_selected_disassembly "$build/leanos-extended-state-${variant}.elf" \
+    "$build/extended-state-${variant}.disassembly.txt"
+done
 for probe in "${direct_port_probes[@]}"; do
-  objdump -d --no-show-raw-insn "$build/leanos-direct-port-${probe}.elf" \
-    > "$build/direct-port-${probe}.disassembly.txt"
+  write_selected_disassembly "$build/leanos-direct-port-${probe}.elf" \
+    "$build/direct-port-${probe}.disassembly.txt"
 done
 for probe in "${integer_fault_probes[@]}"; do
-  objdump -d --no-show-raw-insn "$build/leanos-${probe}.elf" \
-    > "$build/${probe}.disassembly.txt"
+  write_selected_disassembly "$build/leanos-${probe}.elf" \
+    "$build/${probe}.disassembly.txt"
 done
-./scripts/check-extended-state-policy.sh "$build/leanos-extended-state.elf" x87 \
-  | tee "$build/extended-state-policy-report.txt"
-./scripts/check-extended-state-policy.sh "$build/leanos-extended-state-mmx.elf" mmx \
-  | tee "$build/extended-state-mmx-policy-report.txt"
-./scripts/check-extended-state-policy.sh "$build/leanos-extended-state-sse.elf" sse \
-  | tee "$build/extended-state-sse-policy-report.txt"
-./scripts/check-extended-state-policy.sh "$build/leanos-extended-state-sse2.elf" sse2 \
-  | tee "$build/extended-state-sse2-policy-report.txt"
-./scripts/check-extended-state-policy.sh "$build/leanos-extended-state-avx.elf" avx \
-  | tee "$build/extended-state-avx-policy-report.txt"
-./scripts/test-extended-state-policy.sh "$build/leanos-extended-state.elf" \
-  "$build/leanos-extended-state-mmx.elf" \
-  "$build/leanos-extended-state-sse.elf" \
-  "$build/leanos-extended-state-sse2.elf" \
-  "$build/leanos-extended-state-avx.elf"
+run_selected_extended_state_policy() {
+  local variant="$1"
+  local elf="$2"
+  local report="$3"
+  selected_final_enabled "$elf" || return 0
+  ./scripts/check-extended-state-policy.sh "$elf" "$variant" | tee "$report"
+}
+run_selected_extended_state_policy x87 "$build/leanos-extended-state.elf" \
+  "$build/extended-state-policy-report.txt"
+for variant in mmx sse sse2 avx; do
+  run_selected_extended_state_policy "$variant" \
+    "$build/leanos-extended-state-${variant}.elf" \
+    "$build/extended-state-${variant}-policy-report.txt"
+done
+if [[ "$evidence_tier" == all ]]; then
+  ./scripts/test-extended-state-policy.sh "$build/leanos-extended-state.elf" \
+    "$build/leanos-extended-state-mmx.elf" \
+    "$build/leanos-extended-state-sse.elf" \
+    "$build/leanos-extended-state-sse2.elf" \
+    "$build/leanos-extended-state-avx.elf"
+fi
 
 entry_policy_task_file="$build/entry-policy-tasks.nul"
 : > "$entry_policy_task_file"
@@ -1487,6 +1517,7 @@ queue_entry_policy() {
   local report="$3"
   local environment_name="${4:-}"
   local environment_value="${5:-}"
+  selected_final_enabled "$elf" || return 0
   entry_policy_reports+=("$report")
   printf '%s\0%s\0%s\0%s\0%s\0' \
     "$key" "$elf" "$report" "$environment_name" "$environment_value" \
@@ -1531,17 +1562,21 @@ fi
 for report in "${entry_policy_reports[@]}"; do
   cat "$report"
 done
-run_cached_fixture_check "$build/entry-policy-fixtures.log" \
-  ./scripts/test-entry-policy.sh "$build/leanos.elf" \
-  "$build/leanos-fault-nx-execute.elf"
-run_cached_fixture_check "$build/runtime-invalidation-policy-fixtures.log" \
-  ./scripts/test-runtime-invalidation-policy.sh "$build/leanos.elf"
-run_cached_fixture_check "$build/vtd-mmio-policy-fixtures.log" \
-  ./scripts/test-vtd-mmio-policy.sh "$build/leanos.elf"
-run_cached_fixture_check "$build/frame-budget-invalidation-policy-fixtures.log" \
-  ./scripts/test-frame-budget-invalidation-policy.sh \
-  "$build/leanos-frame-budget.elf"
-source ./scripts/build-assigned-edu-image.sh
+if [[ "$evidence_tier" == all ]]; then
+  run_cached_fixture_check "$build/entry-policy-fixtures.log" \
+    ./scripts/test-entry-policy.sh "$build/leanos.elf" \
+    "$build/leanos-fault-nx-execute.elf"
+  run_cached_fixture_check "$build/runtime-invalidation-policy-fixtures.log" \
+    ./scripts/test-runtime-invalidation-policy.sh "$build/leanos.elf"
+  run_cached_fixture_check "$build/vtd-mmio-policy-fixtures.log" \
+    ./scripts/test-vtd-mmio-policy.sh "$build/leanos.elf"
+  run_cached_fixture_check "$build/frame-budget-invalidation-policy-fixtures.log" \
+    ./scripts/test-frame-budget-invalidation-policy.sh \
+    "$build/leanos-frame-budget.elf"
+fi
+if selected_final_enabled "$build/leanos-assigned-edu.elf"; then
+  source ./scripts/build-assigned-edu-image.sh
+fi
 direct_port_report="$build/direct-port-sites-report.txt"
 : > "$direct_port_report"
 direct_port_images=0
@@ -1553,6 +1588,11 @@ direct_port_logs=()
 while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     _log _scenario _mode _reason _tier; do
   [[ "$elf_name" == *.elf ]] || continue
+  elf_path="$build/$elf_name"
+  if [[ "$evidence_tier" != all &&
+      -z "${selected_final_lookup[$elf_path]:-}" ]]; then
+    continue
+  fi
   manifest="scripts/direct-port-sites.tsv"
   direct_port_args=()
   case "$elf_name" in
@@ -1591,7 +1631,7 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
   direct_port_logs+=("$direct_port_log")
   assigned_edu=0
   ((${#direct_port_args[@]} == 0)) || assigned_edu=1
-  printf '%s\0%s\0%s\0%s\0%s\0' "$elf_name" "$build/$elf_name" \
+  printf '%s\0%s\0%s\0%s\0%s\0' "$elf_name" "$elf_path" \
     "$manifest" "$assigned_edu" "$direct_port_log" >> "$direct_port_task_file"
   ((direct_port_images += 1))
 done < "$matrix"
@@ -1599,6 +1639,9 @@ expected_evidence_images="$(
   awk -F $'\t' '$1 == "# mandatory-count" { print $2 }' \
     scripts/emulator-evidence-matrix.tsv
 )"
+if [[ "$evidence_tier" != all ]]; then
+  expected_evidence_images="${#selected_final_targets[@]}"
+fi
 [[ "$expected_evidence_images" =~ ^[0-9]+$ &&
    "$direct_port_images" -eq "$expected_evidence_images" ]] || {
   echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
@@ -1616,11 +1659,13 @@ for log in "${direct_port_logs[@]}"; do
   cat "$log" >> "$direct_port_report"
 done
 cat "$direct_port_report"
-./scripts/test-direct-port-sites.sh "$build/leanos.elf" \
-  | tee "$build/direct-port-sites-fixtures.log"
-./scripts/test-direct-port-sites.sh "$build/leanos-entry-adversarial.elf" \
-  scripts/direct-port-sites-entry-adversarial.tsv \
-  | tee -a "$build/direct-port-sites-fixtures.log"
+if [[ "$evidence_tier" == all ]]; then
+  ./scripts/test-direct-port-sites.sh "$build/leanos.elf" \
+    | tee "$build/direct-port-sites-fixtures.log"
+  ./scripts/test-direct-port-sites.sh "$build/leanos-entry-adversarial.elf" \
+    scripts/direct-port-sites-entry-adversarial.tsv \
+    | tee -a "$build/direct-port-sites-fixtures.log"
+fi
 
 return_fixture_task_file="$build/return-fixture-tasks.nul"
 : > "$return_fixture_task_file"
@@ -1634,10 +1679,12 @@ queue_return_fixture() {
     "$build/leanos-return-${key}-fixture.elf" "$expected" "$log" \
     >> "$return_fixture_task_file"
 }
-queue_return_fixture restore 'error: unexpected exact user-return restore sequence'
-queue_return_fixture branch 'enters post-validation restore interval'
-queue_return_fixture indirect 'indirect control-flow instruction'
-queue_return_fixture initial-indirect 'indirect control-flow instruction'
+if [[ "$evidence_tier" == all ]]; then
+  queue_return_fixture restore 'error: unexpected exact user-return restore sequence'
+  queue_return_fixture branch 'enters post-validation restore interval'
+  queue_return_fixture indirect 'indirect control-flow instruction'
+  queue_return_fixture initial-indirect 'indirect control-flow instruction'
+fi
 if ! xargs -0 -r -n 4 -P "$policy_jobs" bash -c \
     'run_return_fixture_check "$@"' _ < "$return_fixture_task_file"; then
   for log in "${return_fixture_logs[@]}"; do
@@ -1648,129 +1695,79 @@ if ! xargs -0 -r -n 4 -P "$policy_jobs" bash -c \
 fi
 record_build_phase policy-and-fixture-validation
 
-cp "$build/leanos.elf" "$iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-malformed-handoff.elf" \
-  "$malformed_handoff_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$malformed_handoff_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-projection-authority-mutation.elf" \
-  "$projection_authority_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$projection_authority_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-raw-selection-authority-mutation.elf" \
-  "$raw_selection_authority_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$raw_selection_authority_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-preemption.elf" "$preemption_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$preemption_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-frame-budget.elf" "$frame_budget_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$frame_budget_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-fault-containment.elf" \
-  "$fault_containment_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$fault_containment_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-fault-readonly-write.elf" \
-  "$fault_readonly_write_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$fault_readonly_write_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-fault-nx-execute.elf" \
-  "$fault_nx_execute_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$fault_nx_execute_iso_root/boot/grub/grub.cfg"
+printf '%s\n' "$source_revision" > "$build/SOURCE_REVISION"
+declare -A selected_iso_root_lookup=()
+stage_selected_image() {
+  local elf="$1"
+  local staging_root="$2"
+  local grub_config="$3"
+  selected_final_enabled "$elf" || return 0
+  selected_iso_root_lookup["$staging_root"]="$elf"
+  cp "$elf" "$staging_root/boot/leanos.elf"
+  cp "$grub_config" "$staging_root/boot/grub/grub.cfg"
+  cp "$build/SOURCE_REVISION" "$staging_root/boot/SOURCE_REVISION"
+}
+stage_selected_image "$build/leanos.elf" "$iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-malformed-handoff.elf" \
+  "$malformed_handoff_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-projection-authority-mutation.elf" \
+  "$projection_authority_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-raw-selection-authority-mutation.elf" \
+  "$raw_selection_authority_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-preemption.elf" "$preemption_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-frame-budget.elf" "$frame_budget_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-fault-containment.elf" \
+  "$fault_containment_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-fault-readonly-write.elf" \
+  "$fault_readonly_write_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-fault-nx-execute.elf" \
+  "$fault_nx_execute_iso_root" boot/grub.cfg
 for probe in "${fault_image_probes[@]}"; do
-  cp "$build/leanos-fault-${probe}.elf" \
-    "$build/iso-fault-${probe}/boot/leanos.elf"
-  cp boot/grub.cfg "$build/iso-fault-${probe}/boot/grub/grub.cfg"
+  stage_selected_image "$build/leanos-fault-${probe}.elf" \
+    "$build/iso-fault-${probe}" boot/grub.cfg
 done
-cp "$build/leanos-extended-state.elf" "$extended_state_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$extended_state_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-extended-state-mmx.elf" \
-  "$extended_state_mmx_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$extended_state_mmx_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-extended-state-sse.elf" \
-  "$extended_state_sse_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$extended_state_sse_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-extended-state-sse2.elf" \
-  "$extended_state_sse2_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$extended_state_sse2_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-extended-state-avx.elf" \
-  "$extended_state_avx_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$extended_state_avx_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-extended-state-peer-pke.elf" \
-  "$extended_state_peer_pke_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$extended_state_peer_pke_iso_root/boot/grub/grub.cfg"
+stage_selected_image "$build/leanos-extended-state.elf" \
+  "$extended_state_iso_root" boot/grub.cfg
+for variant in mmx sse sse2 avx; do
+  stage_selected_image "$build/leanos-extended-state-${variant}.elf" \
+    "$build/iso-extended-state-${variant}" boot/grub.cfg
+done
+stage_selected_image "$build/leanos-extended-state-peer-pke.elf" \
+  "$extended_state_peer_pke_iso_root" boot/grub.cfg
 for mechanism in syscall sysenter; do
-  fixture_root="$build/iso-fast-entry-${mechanism}"
-  cp "$build/leanos-fast-entry-${mechanism}.elf" "$fixture_root/boot/leanos.elf"
-  cp boot/grub.cfg "$fixture_root/boot/grub/grub.cfg"
+  stage_selected_image "$build/leanos-fast-entry-${mechanism}.elf" \
+    "$build/iso-fast-entry-${mechanism}" boot/grub.cfg
 done
-cp "$build/leanos-double-fault.elf" "$df_iso_root/boot/leanos.elf"
-cp boot/grub-double-fault.cfg "$df_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-double-fault-guard-mapped.elf" \
-  "$df_negative_iso_root/boot/leanos.elf"
-cp boot/grub-double-fault.cfg "$df_negative_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-entry-stack-overflow.elf" "$entry_overflow_iso_root/boot/leanos.elf"
-cp boot/grub-double-fault.cfg "$entry_overflow_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-entry-adversarial.elf" "$entry_adversarial_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$entry_adversarial_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-nmi.elf" "$nmi_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$nmi_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-nmi-cpl3.elf" "$nmi_cpl3_iso_root/boot/leanos.elf"
-cp boot/grub-nmi-cpl3.cfg "$nmi_cpl3_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-bootstrap32-ud.elf" "$bootstrap32_ud_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$bootstrap32_ud_iso_root/boot/grub/grub.cfg"
-cp "$build/leanos-bootstrap64-nmi.elf" "$bootstrap64_nmi_iso_root/boot/leanos.elf"
-cp boot/grub.cfg "$bootstrap64_nmi_iso_root/boot/grub/grub.cfg"
+stage_selected_image "$build/leanos-double-fault.elf" "$df_iso_root" \
+  boot/grub-double-fault.cfg
+stage_selected_image "$build/leanos-double-fault-guard-mapped.elf" \
+  "$df_negative_iso_root" boot/grub-double-fault.cfg
+stage_selected_image "$build/leanos-entry-stack-overflow.elf" \
+  "$entry_overflow_iso_root" boot/grub-double-fault.cfg
+stage_selected_image "$build/leanos-entry-adversarial.elf" \
+  "$entry_adversarial_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-nmi.elf" "$nmi_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-nmi-cpl3.elf" "$nmi_cpl3_iso_root" \
+  boot/grub-nmi-cpl3.cfg
+stage_selected_image "$build/leanos-bootstrap32-ud.elf" \
+  "$bootstrap32_ud_iso_root" boot/grub.cfg
+stage_selected_image "$build/leanos-bootstrap64-nmi.elf" \
+  "$bootstrap64_nmi_iso_root" boot/grub.cfg
 for probe in "${direct_port_probes[@]}"; do
-  cp "$build/leanos-direct-port-${probe}.elf" \
-    "$build/iso-direct-port-${probe}/boot/leanos.elf"
-  cp boot/grub.cfg "$build/iso-direct-port-${probe}/boot/grub/grub.cfg"
+  stage_selected_image "$build/leanos-direct-port-${probe}.elf" \
+    "$build/iso-direct-port-${probe}" boot/grub.cfg
 done
 for probe in "${integer_fault_probes[@]}"; do
-  cp "$build/leanos-${probe}.elf" "$build/iso-${probe}/boot/leanos.elf"
-  cp boot/grub.cfg "$build/iso-${probe}/boot/grub/grub.cfg"
-done
-printf '%s\n' "$source_revision" | tee "$build/SOURCE_REVISION" \
-  > "$iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$df_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$preemption_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$frame_budget_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$fault_containment_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" \
-  "$fault_readonly_write_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$fault_nx_execute_iso_root/boot/SOURCE_REVISION"
-for probe in "${fault_image_probes[@]}"; do
-  cp "$build/SOURCE_REVISION" \
-    "$build/iso-fault-${probe}/boot/SOURCE_REVISION"
-done
-cp "$build/SOURCE_REVISION" "$extended_state_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$extended_state_mmx_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$extended_state_sse_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$extended_state_sse2_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$extended_state_avx_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" \
-  "$extended_state_peer_pke_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$fast_entry_syscall_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$fast_entry_sysenter_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$df_negative_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$entry_overflow_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$entry_adversarial_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$nmi_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$nmi_cpl3_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$bootstrap32_ud_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$bootstrap64_nmi_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" "$malformed_handoff_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" \
-  "$projection_authority_iso_root/boot/SOURCE_REVISION"
-cp "$build/SOURCE_REVISION" \
-  "$raw_selection_authority_iso_root/boot/SOURCE_REVISION"
-for probe in "${direct_port_probes[@]}"; do
-  cp "$build/SOURCE_REVISION" \
-    "$build/iso-direct-port-${probe}/boot/SOURCE_REVISION"
-done
-for probe in "${integer_fault_probes[@]}"; do
-  cp "$build/SOURCE_REVISION" "$build/iso-${probe}/boot/SOURCE_REVISION"
+  stage_selected_image "$build/leanos-${probe}.elf" "$build/iso-${probe}" \
+    boot/grub.cfg
 done
 for spec in "${return_corruptions[@]}"; do
   IFS=: read -r fixture _mode _reason <<<"$spec"
   fixture_root="$build/iso-return-${fixture}"
+  return_elf="$build/leanos-return-${fixture}.elf"
+  selected_final_enabled "$return_elf" || continue
   mkdir -p "$fixture_root/boot/grub"
-  cp "$build/leanos-return-${fixture}.elf" "$fixture_root/boot/leanos.elf"
+  cp "$return_elf" "$fixture_root/boot/leanos.elf"
   cp boot/grub.cfg "$fixture_root/boot/grub/grub.cfg"
   cp "$build/SOURCE_REVISION" "$fixture_root/boot/SOURCE_REVISION"
 done
@@ -1780,8 +1777,17 @@ done
 # same bounded worker count used by the independent validation batches.
 iso_task_file="$build/iso-packaging-tasks.nul"
 : > "$iso_task_file"
+selected_checksum_paths=()
 queue_iso() {
-  printf '%s\0%s\0' "$1" "$2" >> "$iso_task_file"
+  local output="$1"
+  local staging_root="$2"
+  local elf="${selected_iso_root_lookup[$staging_root]:-}"
+  local map
+  [[ -n "$elf" ]] || return 0
+  printf '%s\0%s\0' "$output" "$staging_root" >> "$iso_task_file"
+  selected_checksum_paths+=("$output" "$elf")
+  map="${elf%.elf}.map"
+  [[ ! -f "$map" ]] || selected_checksum_paths+=("$map")
 }
 queue_iso "$build/leanos-${version}-x86_64.iso" "$iso_root"
 queue_iso "$build/leanos-${version}-x86_64-malformed-handoff.iso" \
@@ -1853,7 +1859,8 @@ if ! xargs -0 -r -n 2 -P "$policy_jobs" bash -c \
   exit 1
 fi
 record_build_phase iso-packaging
-sha256sum "$build/leanos-${version}-x86_64.iso" \
+if [[ "$evidence_tier" == all ]]; then
+  sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-assigned-edu.iso" \
   "$build/leanos-assigned-edu.elf" \
   "$build/leanos-assigned-edu.map" \
@@ -1925,22 +1932,38 @@ sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-bootstrap32-ud.elf" "$build/leanos-bootstrap32-ud.map" \
   "$build/leanos-${version}-x86_64-bootstrap64-nmi.iso" \
   "$build/leanos-bootstrap64-nmi.elf" "$build/leanos-bootstrap64-nmi.map" \
-  > "$build/SHA256SUMS"
-for probe in "${direct_port_probes[@]}"; do
-  sha256sum "$build/leanos-${version}-x86_64-direct-port-${probe}.iso" \
-    "$build/leanos-direct-port-${probe}.elf" \
-    "$build/leanos-direct-port-${probe}.map" >> "$build/SHA256SUMS"
-done
-for probe in "${integer_fault_probes[@]}"; do
-  sha256sum "$build/leanos-${version}-x86_64-${probe}.iso" \
-    "$build/leanos-${probe}.elf" \
-    "$build/leanos-${probe}.map" >> "$build/SHA256SUMS"
-done
-for spec in "${return_corruptions[@]}"; do
-  IFS=: read -r fixture _mode _reason <<<"$spec"
-  sha256sum "$build/leanos-${version}-x86_64-return-${fixture}.iso" \
-    "$build/leanos-return-${fixture}.elf" >> "$build/SHA256SUMS"
-done
+    > "$build/SHA256SUMS"
+  for probe in "${direct_port_probes[@]}"; do
+    sha256sum "$build/leanos-${version}-x86_64-direct-port-${probe}.iso" \
+      "$build/leanos-direct-port-${probe}.elf" \
+      "$build/leanos-direct-port-${probe}.map" >> "$build/SHA256SUMS"
+  done
+  for probe in "${integer_fault_probes[@]}"; do
+    sha256sum "$build/leanos-${version}-x86_64-${probe}.iso" \
+      "$build/leanos-${probe}.elf" \
+      "$build/leanos-${probe}.map" >> "$build/SHA256SUMS"
+  done
+  for spec in "${return_corruptions[@]}"; do
+    IFS=: read -r fixture _mode _reason <<<"$spec"
+    sha256sum "$build/leanos-${version}-x86_64-return-${fixture}.iso" \
+      "$build/leanos-return-${fixture}.elf" >> "$build/SHA256SUMS"
+  done
+else
+  if selected_final_enabled "$build/leanos-assigned-edu.elf"; then
+    selected_checksum_paths+=(
+      "$build/leanos-${version}-x86_64-assigned-edu.iso"
+      "$build/leanos-assigned-edu.elf"
+      "$build/leanos-assigned-edu.map"
+      "$build/boot-page-plan-assigned-edu.final.h"
+    )
+  fi
+  ((${#selected_checksum_paths[@]} > 0)) || {
+    echo "error: selected evidence produced no checksum inputs" >&2
+    exit 1
+  }
+  printf '%s\0' "${selected_checksum_paths[@]}" | sort -zu | \
+    xargs -0 sha256sum > "$build/SHA256SUMS"
+fi
 if [[ "$graph_make_cache_current" != true ]]; then
   graph_make_manifest_tmp="${graph_make_cache_manifest}.tmp"
   find "$build" -maxdepth 1 -type f \
