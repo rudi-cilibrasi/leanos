@@ -593,17 +593,21 @@ The pull-request workflow uses only these repository-owned entry points:
 ./scripts/build-image.sh
 ./scripts/record-tool-versions.sh
 ./scripts/run-emulator-evidence.py run
+./scripts/run-emulator-evidence.py bundle
 ```
 
-The first command requires Node.js/npm. Image building and QEMU prerequisites,
+The first command requires Node.js/npm. The final command writes one tarball
+whose internal manifest hashes the retained evidence and rejects missing
+report-bound files. Image building and QEMU prerequisites,
 the exact Ubuntu 24.04 package versions used in CI, and emulator resource bounds
 are listed in [the boot-image guide](docs/boot-image.md). CI first runs the
 Markdown and complete Lean proof-integrity gates, then builds once and executes
 the versioned mandatory emulator matrix without KVM. The matrix is the sole
 release-blocking QEMU inventory for pull requests and tags. CI retains images,
 debug ELFs, symbol maps, checksums, pinned tool versions, serial logs, exact
-commands, and the machine-readable evidence report for 14 days, including
-available diagnostics from failed runs. Controlled negative fixtures ensure
+commands, and the machine-readable evidence report in one manifest-bound
+tarball per emulator shard for 14 days, including available diagnostics from
+failed runs. Controlled negative fixtures ensure
 theorem, compiler, matrix-inventory, artifact-hash, serial-protocol,
 guest-signal, and timeout failures cannot pass.
 

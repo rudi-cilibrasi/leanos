@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 
@@ -22,6 +24,30 @@ DEFAULT_MATRIX = ROOT / "scripts/emulator-evidence-matrix.tsv"
 DEFAULT_BUILD = ROOT / "build/boot"
 DEFAULT_OUTPUT = ROOT / "build/evidence/emulator-evidence.json"
 DEFAULT_TOOLS = ROOT / "build/ci/tool-versions.txt"
+DEFAULT_BUNDLE = ROOT / "build/ci/emulator-evidence.tar"
+BUNDLE_ROOTS = (
+    "build/boot",
+    "build/evidence",
+    "build/ci",
+    "build/oracle",
+    "build/boot-handoff-host",
+    "build/boot-topology-host",
+    "build/boot-handoff-stream",
+)
+BUNDLE_CONTEXT_FILES = (
+    "docs/page-fault-snapshot.md",
+    "scripts/emulator-evidence-matrix.tsv",
+    "scripts/hosted-generated-boundaries.tsv",
+)
+BUNDLE_REQUIRED_FILES = (
+    "build/boot/SHA256SUMS",
+    "build/boot/SOURCE_REVISION",
+    "build/ci/emulator-evidence.log",
+    "build/ci/image-build.log",
+    "build/ci/tool-versions.txt",
+    "build/evidence/q35-edu-dma.tsv",
+    "build/evidence/q35-pci-construction.tsv",
+)
 REQUIRED_FAULT_RELEASE_ARTIFACTS = (
     (
         "build/boot/leanos-${version}-x86_64-fault-containment.iso",
@@ -1018,6 +1044,211 @@ def verify_report(
             raise EvidenceError(f"scenario {row['id']} runner environment differs")
 
 
+def bundle_relative_path(path_value: str | Path, root: Path) -> str:
+    """Return one safe repository-relative path for the evidence archive."""
+    path = Path(path_value)
+    resolved = path.resolve() if path.is_absolute() else (root / path).resolve()
+    try:
+        relative = resolved.relative_to(root.resolve())
+    except ValueError as error:
+        raise EvidenceError(f"bundle path escapes repository root: {path_value}") from error
+    if not relative.parts:
+        raise EvidenceError("bundle path cannot name the repository root")
+    return relative.as_posix()
+
+
+def bundle_report_inventory(
+    report_path: Path, root: Path,
+) -> tuple[set[str], dict[str, str], list[str]]:
+    """Read report-bound paths and digests without hiding partial-run diagnostics."""
+    required: set[str] = set()
+    expected_hashes: dict[str, str] = {}
+    errors: list[str] = []
+    try:
+        report_relative = bundle_relative_path(report_path, root)
+    except EvidenceError as error:
+        errors.append(str(error))
+        return required, expected_hashes, errors
+    required.add(report_relative)
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        errors.append(f"cannot read evidence report: {error}")
+        return required, expected_hashes, errors
+    if report.get("schema") != "leanos-emulator-evidence-report-v1":
+        errors.append("evidence report has an unrecognized schema")
+    if report.get("status") != "PASS":
+        errors.append("evidence report is incomplete or failed")
+
+    def add_record(path_value: object, digest_value: object, label: str) -> None:
+        if not isinstance(path_value, str) or not isinstance(digest_value, str):
+            errors.append(f"{label} lacks path or SHA-256")
+            return
+        try:
+            relative = bundle_relative_path(path_value, root)
+        except EvidenceError as error:
+            errors.append(str(error))
+            return
+        if not re.fullmatch(r"[0-9a-f]{64}", digest_value):
+            errors.append(f"{label} has an invalid SHA-256")
+            return
+        required.add(relative)
+        previous = expected_hashes.setdefault(relative, digest_value)
+        if previous != digest_value:
+            errors.append(f"{label} records conflicting hashes for {relative}")
+
+    def visit(value: object, label: str) -> None:
+        if isinstance(value, dict):
+            if "path" in value or "sha256" in value:
+                add_record(value.get("path"), value.get("sha256"), label)
+            for path_key, digest_key in (
+                ("embedded_revision_path", "embedded_revision_sha256"),
+                ("inventory_path", "inventory_sha256"),
+            ):
+                if path_key in value or digest_key in value:
+                    add_record(value.get(path_key), value.get(digest_key), label)
+            for key, child in value.items():
+                visit(child, f"{label}.{key}")
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                visit(child, f"{label}[{index}]")
+
+    visit(report, "report")
+    return required, expected_hashes, errors
+
+
+def bundle_candidate(relative: str) -> bool:
+    """Keep review evidence while excluding compiler and ISO staging intermediates."""
+    path = Path(relative)
+    if relative.startswith("build/boot/iso-"):
+        return False
+    if relative.startswith("build/ci/") and path.suffix == ".tar":
+        return False
+    if path.suffix in {".c", ".d", ".o"}:
+        return False
+    if path.name.endswith(("-prelink.elf", ".inputs.sha256")):
+        return False
+    return True
+
+
+def write_bundle_member(archive: tarfile.TarFile, path: Path, relative: str) -> None:
+    """Write a regular file with deterministic ownership and timestamp metadata."""
+    stat = path.stat()
+    info = tarfile.TarInfo(relative)
+    info.size = stat.st_size
+    info.mode = stat.st_mode & 0o777
+    info.mtime = 0
+    info.uid = 0
+    info.gid = 0
+    info.uname = "root"
+    info.gname = "root"
+    with path.open("rb") as source:
+        archive.addfile(info, source)
+
+
+def build_evidence_bundle(report_path: Path, output: Path, root: Path = ROOT) -> None:
+    """Create one fail-closed, manifest-bound tarball for an emulator job."""
+    root = root.resolve()
+    output = output.resolve()
+    try:
+        output_relative = output.relative_to(root).as_posix()
+    except ValueError as error:
+        raise EvidenceError("bundle output must remain under the repository root") from error
+    required, expected_hashes, validation_errors = bundle_report_inventory(
+        report_path.resolve(), root
+    )
+    required.update(BUNDLE_REQUIRED_FILES)
+
+    included: set[str] = set()
+    for relative in BUNDLE_CONTEXT_FILES:
+        path = root / relative
+        if path.is_file() and not path.is_symlink():
+            included.add(relative)
+    for relative_root in BUNDLE_ROOTS:
+        directory = root / relative_root
+        if not directory.is_dir():
+            continue
+        for path in directory.rglob("*"):
+            if not path.is_file() or path.is_symlink():
+                continue
+            relative = path.relative_to(root).as_posix()
+            if relative != output_relative and bundle_candidate(relative):
+                included.add(relative)
+    for relative in required:
+        path = root / relative
+        if path.is_file() and not path.is_symlink() and relative != output_relative:
+            included.add(relative)
+
+    missing = sorted(relative for relative in required if relative not in included)
+    records = []
+    for relative in sorted(included):
+        path = root / relative
+        digest = sha256(path)
+        expected = expected_hashes.get(relative)
+        if expected is not None and digest != expected:
+            validation_errors.append(f"report-bound hash differs: {relative}")
+        records.append({
+            "path": relative,
+            "required": relative in required,
+            "sha256": digest,
+            "size": path.stat().st_size,
+        })
+
+    source_revision = None
+    revision_path = root / "build/boot/SOURCE_REVISION"
+    if revision_path.is_file():
+        source_revision = revision_path.read_text(encoding="utf-8").strip()
+    manifest = {
+        "schema": "leanos-emulator-evidence-bundle-v1",
+        "source_revision": source_revision,
+        "report": bundle_relative_path(report_path, root),
+        "required_files": sorted(required),
+        "missing_required_files": missing,
+        "validation_errors": sorted(set(validation_errors)),
+        "files": records,
+    }
+    manifest_bytes = (
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary_handle = tempfile.NamedTemporaryFile(
+        prefix=output.name + ".", suffix=".tmp", dir=output.parent, delete=False
+    )
+    temporary = Path(temporary_handle.name)
+    temporary_handle.close()
+    try:
+        with tarfile.open(temporary, mode="w", format=tarfile.PAX_FORMAT) as archive:
+            manifest_info = tarfile.TarInfo("MANIFEST.json")
+            manifest_info.size = len(manifest_bytes)
+            manifest_info.mode = 0o644
+            manifest_info.mtime = 0
+            manifest_info.uid = 0
+            manifest_info.gid = 0
+            manifest_info.uname = "root"
+            manifest_info.gname = "root"
+            archive.addfile(manifest_info, io.BytesIO(manifest_bytes))
+            for relative in sorted(included):
+                write_bundle_member(archive, root / relative, relative)
+        temporary.replace(output)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    failures = []
+    if missing:
+        failures.append("missing required files: " + ", ".join(missing))
+    failures.extend(sorted(set(validation_errors)))
+    if failures:
+        raise EvidenceError(
+            "evidence bundle is incomplete (diagnostic tar retained at "
+            f"{bundle_relative_path(output, root)}): " + "; ".join(failures)
+        )
+    print(
+        f"bundled emulator evidence ({len(records)} files): "
+        f"{bundle_relative_path(output, root)}"
+    )
+
+
 def check_release_package(package: str) -> None:
     normalized = package.replace("\\\n", " ")
     commands = []
@@ -1073,35 +1304,6 @@ def check_workflows() -> None:
         ):
             if bypass in content:
                 raise EvidenceError(f"{relative} bypasses the shared emulator matrix with {bypass}")
-    containment_artifacts = (
-        "build/boot/leanos-0.1.0-x86_64-fault-containment.iso",
-        "build/boot/leanos-fault-containment.elf",
-        "build/boot/leanos-fault-containment.map",
-        "build/boot/boot-page-plan-fault-containment.h",
-        "build/boot/boot-page-plan-fault-containment.final.h",
-        "build/boot/fault-containment.disassembly.txt",
-        "build/boot/fault-containment.serial.log",
-        "build/boot/fault-containment-snapshot.txt",
-        "build/boot/leanos-0.1.0-x86_64-fault-readonly-write.iso",
-        "build/boot/leanos-fault-readonly-write.elf",
-        "build/boot/leanos-fault-readonly-write.map",
-        "build/boot/boot-page-plan-fault-readonly-write.h",
-        "build/boot/boot-page-plan-fault-readonly-write.final.h",
-        "build/boot/fault-readonly-write.disassembly.txt",
-        "build/boot/fault-readonly-write.serial.log",
-        "build/boot/fault-readonly-write-snapshot.txt",
-        "build/boot/leanos-0.1.0-x86_64-fault-nx-execute.iso",
-        "build/boot/leanos-fault-nx-execute.elf",
-        "build/boot/leanos-fault-nx-execute.map",
-        "build/boot/boot-page-plan-fault-nx-execute.h",
-        "build/boot/boot-page-plan-fault-nx-execute.final.h",
-        "build/boot/fault-nx-execute.disassembly.txt",
-        "build/boot/fault-nx-execute.serial.log",
-        "build/boot/fault-nx-execute-snapshot.txt",
-        "build/boot/corpus.tsv",
-        "build/oracle/host-results.txt",
-        "build/evidence/*",
-    )
     ci_content = workflow_contents[".github/workflows/ci.yml"]
     if "  merge_group:\n    branches:\n      - main\n" not in ci_content:
         raise EvidenceError(
@@ -1144,12 +1346,25 @@ def check_workflows() -> None:
         "--shard-count 4",
         "emulator-shard-${{ matrix.shard }}.json",
         "leanos-boot-${{ github.sha }}-shard-${{ matrix.shard }}",
+        "./scripts/run-emulator-evidence.py bundle",
+        "--output build/ci/emulator-evidence-shard-${{ matrix.shard }}.tar",
+        "path: build/ci/emulator-evidence-shard-${{ matrix.shard }}.tar",
+        "if-no-files-found: error",
+        "compression-level: 0",
     ):
         if shard_contract not in ci_emulator.group("body"):
             raise EvidenceError(
                 "CI emulator evidence job does not preserve four-way shard contract: "
                 + shard_contract
             )
+    if "path: |" in ci_emulator.group("body"):
+        raise EvidenceError(
+            "CI emulator evidence job must upload one prebuilt tarball, not a YAML path list"
+        )
+    if ci_emulator.group("body").count("uses: actions/upload-artifact@") != 1:
+        raise EvidenceError(
+            "CI emulator evidence job must publish exactly one artifact per shard"
+        )
     ci_emulator_timeout = re.search(
         r"(?m)^    timeout-minutes:\s*(\d+)\s*$",
         ci_emulator.group("body"),
@@ -1194,12 +1409,6 @@ def check_workflows() -> None:
         raise EvidenceError(
             "CI names a Clang serial path outside the selected matrix scenario"
         )
-    missing = [artifact for artifact in containment_artifacts if artifact not in ci_content]
-    if missing:
-        raise EvidenceError(
-            "CI does not retain complete fault-containment evidence: "
-            + ", ".join(missing)
-        )
     release_diagnostics = workflow_contents[".github/workflows/release.yml"]
     release_gate = re.search(
         r"(?ms)^  gate:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
@@ -1242,6 +1451,7 @@ def main() -> int:
     run_parser = subparsers.add_parser("run")
     verify_parser = subparsers.add_parser("verify")
     plan_parser = subparsers.add_parser("build-plan")
+    bundle_parser = subparsers.add_parser("bundle")
     subparsers.add_parser("check")
     for subparser in (run_parser, verify_parser):
         subparser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
@@ -1279,6 +1489,8 @@ def main() -> int:
             help="total stable matrix shards to run or verify",
         )
     verify_parser.add_argument("report", nargs="?", type=Path, default=DEFAULT_OUTPUT)
+    bundle_parser.add_argument("report", nargs="?", type=Path, default=DEFAULT_OUTPUT)
+    bundle_parser.add_argument("--output", type=Path, default=DEFAULT_BUNDLE)
     args = parser.parse_args()
     try:
         if args.operation == "run":
@@ -1293,6 +1505,8 @@ def main() -> int:
             print(f"verified emulator evidence: {display_path(args.report)}")
         elif args.operation == "build-plan":
             print_build_plan(args)
+        elif args.operation == "bundle":
+            build_evidence_bundle(args.report, args.output)
         else:
             check_workflows()
     except EvidenceError as error:

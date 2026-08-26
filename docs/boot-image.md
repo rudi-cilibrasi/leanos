@@ -169,12 +169,16 @@ Public assets include the default and preemption images, their debug files,
 representative accepted/fail-stop serial logs, the matrix, compact evidence
 manifest, source revision, deterministic toolchain manifest, experimental
 notes, and SHA-256 manifest. All scenario images, serial logs, and command logs
-remain workflow artifacts for 14 days; controlled-negative images are not
-permanent release assets because their hashes and results are bound by the
-public manifest. The full Git commit is also stored as `/boot/SOURCE_REVISION`
-inside the ISO; no wall-clock build timestamp is embedded. GitHub's ephemeral
-workflow token publishes the release, and OIDC-backed GitHub artifact
-attestations provide provenance without a long-lived secret.
+remain workflow artifacts for 14 days. Each emulator shard stages them into one
+tarball with an internal manifest of required paths, sizes, and SHA-256 hashes;
+the bundler retains a diagnostic manifest but fails the job if a required file
+is missing or differs from the passing evidence report. Controlled-negative
+images are not permanent release assets because their hashes and results are
+bound by the public manifest. The full Git commit is also stored as
+`/boot/SOURCE_REVISION` inside the ISO; no wall-clock build timestamp is
+embedded. GitHub's ephemeral workflow token publishes the release, and
+OIDC-backed GitHub artifact attestations provide provenance without a
+long-lived secret.
 
 For the early-IDT rows, retained workflow evidence includes both probe ISOs,
 final ELFs, maps, disassembly, final page-table plans, the early-IDT and
@@ -194,10 +198,10 @@ user-fault-class corpus, 17-vector NMI
 classifier corpus, and 18-vector boot-interrupt-phase corpus; and the
 entry-policy
 fixture log records controlled
-source/ELF rejection diagnostics. A missing artifact is visible because the CI
-upload uses named paths and the evidence packager rejects a missing or stale
-passing row. These files are reproducibility and inspection metadata, not
-proof of CPUID/MSR or exception semantics.
+source/ELF rejection diagnostics. A missing artifact is visible because the
+repository-owned bundler rejects a missing or stale passing row before CI
+uploads its single tarball. These files are reproducibility and inspection
+metadata, not proof of CPUID/MSR or exception semantics.
 
 After downloading every release asset into one directory, verify it with:
 

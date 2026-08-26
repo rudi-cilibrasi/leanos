@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tarfile
 import tempfile
 import threading
 import time
@@ -75,6 +76,68 @@ def prepare_tree(tmp: Path) -> tuple[Path, Path, Path, argparse.Namespace]:
     return build, output, tools, args
 
 
+def prepare_bundle_tree(tmp: Path) -> tuple[Path, Path, Path, Path]:
+    root = tmp / "bundle-root"
+    paths = (
+        "build/boot/SHA256SUMS",
+        "build/boot/SOURCE_REVISION",
+        "build/boot/leanos.elf",
+        "build/boot/leanos-0.1.0-x86_64.iso",
+        "build/boot/serial.log",
+        "build/ci/emulator-evidence.log",
+        "build/ci/image-build.log",
+        "build/ci/tool-versions.txt",
+        "build/evidence/blocking-ipc.command.log",
+        "build/evidence/q35-edu-dma.tsv",
+        "build/evidence/q35-pci-construction.tsv",
+        "build/oracle/host-results.txt",
+        "scripts/emulator-evidence-matrix.tsv",
+    )
+    for relative in paths:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"fixture:{relative}\n", encoding="utf-8")
+    (root / "build/boot/kernel.o").write_bytes(b"compiler intermediate")
+    staged_iso = root / "build/boot/iso-fixture/boot/leanos.iso"
+    staged_iso.parent.mkdir(parents=True)
+    staged_iso.write_bytes(b"staging intermediate")
+    stale_bundle = root / "build/ci/previous.tar"
+    stale_bundle.write_bytes(b"old bundle")
+
+    def record(relative: str) -> dict[str, str]:
+        return {"path": relative, "sha256": evidence.sha256(root / relative)}
+
+    report_path = root / "build/evidence/emulator-shard-0.json"
+    report = {
+        "schema": "leanos-emulator-evidence-report-v1",
+        "status": "PASS",
+        "matrix": record("scripts/emulator-evidence-matrix.tsv"),
+        "source": {
+            "embedded_revision_path": "build/boot/SOURCE_REVISION",
+            "embedded_revision_sha256": evidence.sha256(
+                root / "build/boot/SOURCE_REVISION"
+            ),
+        },
+        "tools": {
+            "inventory_path": "build/ci/tool-versions.txt",
+            "inventory_sha256": evidence.sha256(root / "build/ci/tool-versions.txt"),
+        },
+        "results": [{
+            "artifacts": [
+                record("build/boot/leanos-0.1.0-x86_64.iso"),
+                record("build/boot/leanos.elf"),
+            ],
+            "serial_log": record("build/boot/serial.log"),
+            "command_log": record("build/evidence/blocking-ipc.command.log"),
+        }],
+    }
+    report_path.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    output = root / "build/ci/emulator-evidence-shard-0.tar"
+    return root, report_path, output, root / "build/boot/serial.log"
+
+
 def successful_runner(_command, *, env, **_kwargs):
     serial = "typed fixture evidence\n" + "".join(
         f"LEANOS/3 ORACLE id={row} result=PASS\n"
@@ -100,6 +163,60 @@ def successful_runner(_command, *, env, **_kwargs):
 def run_fixtures() -> None:
     with tempfile.TemporaryDirectory() as directory:
         tmp = Path(directory)
+
+        bundle_root, bundle_report, bundle_output, required_serial = (
+            prepare_bundle_tree(tmp)
+        )
+        evidence.build_evidence_bundle(bundle_report, bundle_output, bundle_root)
+        first_bundle = bundle_output.read_bytes()
+        evidence.build_evidence_bundle(bundle_report, bundle_output, bundle_root)
+        if bundle_output.read_bytes() != first_bundle:
+            raise AssertionError("emulator evidence bundle is not deterministic")
+        with tarfile.open(bundle_output, mode="r") as archive:
+            names = set(archive.getnames())
+            manifest = json.load(archive.extractfile("MANIFEST.json"))
+        if manifest["schema"] != "leanos-emulator-evidence-bundle-v1":
+            raise AssertionError("emulator evidence bundle has the wrong schema")
+        if manifest["missing_required_files"] or manifest["validation_errors"]:
+            raise AssertionError("complete emulator evidence bundle reports failures")
+        for excluded in (
+            "build/boot/kernel.o",
+            "build/boot/iso-fixture/boot/leanos.iso",
+            "build/ci/previous.tar",
+            "build/ci/emulator-evidence-shard-0.tar",
+        ):
+            if excluded in names:
+                raise AssertionError(f"bundle retained excluded intermediate {excluded}")
+        image = bundle_root / "build/boot/leanos-0.1.0-x86_64.iso"
+        image.write_bytes(b"tampered image")
+        stale_output = bundle_output.with_name("stale.tar")
+        expect_failure(
+            lambda: evidence.build_evidence_bundle(
+                bundle_report, stale_output, bundle_root
+            ),
+            "report-bound hash differs: build/boot/leanos-0.1.0-x86_64.iso",
+        )
+        with tarfile.open(stale_output, mode="r") as archive:
+            stale_manifest = json.load(archive.extractfile("MANIFEST.json"))
+        if stale_manifest["validation_errors"] != [
+            "report-bound hash differs: build/boot/leanos-0.1.0-x86_64.iso"
+        ]:
+            raise AssertionError("diagnostic bundle did not record the stale file")
+        image.write_text(
+            "fixture:build/boot/leanos-0.1.0-x86_64.iso\n", encoding="utf-8"
+        )
+        required_serial.unlink()
+        missing_output = bundle_output.with_name("missing.tar")
+        expect_failure(
+            lambda: evidence.build_evidence_bundle(
+                bundle_report, missing_output, bundle_root
+            ),
+            "missing required files: build/boot/serial.log",
+        )
+        with tarfile.open(missing_output, mode="r") as archive:
+            missing_manifest = json.load(archive.extractfile("MANIFEST.json"))
+        if missing_manifest["missing_required_files"] != ["build/boot/serial.log"]:
+            raise AssertionError("diagnostic bundle did not record the missing file")
 
         _, matrix_rows = evidence.parse_matrix(evidence.DEFAULT_MATRIX)
         shards = [
