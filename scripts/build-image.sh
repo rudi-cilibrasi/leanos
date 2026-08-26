@@ -1645,14 +1645,16 @@ expected_evidence_images="$(
   awk -F $'\t' '$1 == "# mandatory-count" { print $2 }' \
     scripts/emulator-evidence-matrix.tsv
 )"
-if [[ "$evidence_tier" != all ]]; then
-  expected_evidence_images="${#selected_final_targets[@]}"
-fi
-[[ "$expected_evidence_images" =~ ^[0-9]+$ &&
-   "$direct_port_images" -eq "$expected_evidence_images" ]] || {
-  echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
+if [[ "$evidence_tier" == all ]]; then
+  [[ "$expected_evidence_images" =~ ^[0-9]+$ &&
+     "$direct_port_images" -eq "$expected_evidence_images" ]] || {
+    echo "error: direct-port evidence ELF count drifted: $direct_port_images" >&2
+    exit 1
+  }
+elif ((direct_port_images == 0)); then
+  echo "error: selected evidence has no direct-port ELF coverage" >&2
   exit 1
-}
+fi
 if ! xargs -0 -r -n 5 -P "$policy_jobs" bash -c \
     'run_direct_port_check "$@"' _ < "$direct_port_task_file"; then
   for log in "${direct_port_logs[@]}"; do

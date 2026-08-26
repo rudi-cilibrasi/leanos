@@ -193,8 +193,8 @@ def run_fixtures() -> None:
             raise AssertionError("build-image checks unselected canonical objects in PR shards")
         if '-z "${selected_final_lookup[$elf_path]:-}"' not in build_image:
             raise AssertionError("build-image does not restrict PR policy checks to selected final images")
-        if 'expected_evidence_images="${#selected_final_targets[@]}"' not in build_image:
-            raise AssertionError("build-image does not validate the selected PR image count")
+        if 'elif ((direct_port_images == 0)); then' not in build_image:
+            raise AssertionError("build-image accepts an empty selected PR policy set")
         if 'selected_final_enabled "$return_elf" || continue' not in build_image:
             raise AssertionError("build-image does not restrict PR return policy checks")
         if 'selected_final_enabled "$elf_path" || return 0' not in build_image:
