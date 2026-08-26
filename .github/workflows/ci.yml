@@ -69,8 +69,6 @@ jobs:
             binutils=2.42-4ubuntu2.10
 
       - name: Build and check proofs
-        env:
-          LEANOS_EVIDENCE_TIER: ${{ github.event_name == 'pull_request' && 'pr' || 'all' }}
         run: ./scripts/check.sh
 
       - name: Verify frame-budget negative evidence
