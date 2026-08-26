@@ -28,7 +28,12 @@ lake build leanos-vtd-plan
 
 ./scripts/test-hosted-boundary-harness-scan.sh
 
-./scripts/check-hosted-generated-boundaries.sh ordinary
+# Pull-request CI replays the ordinary hosted boundary in the parallel Clang
+# canonical-image lane. Keep the GCC replay in every full-evidence event while
+# avoiding duplicate work on the PR critical path.
+if [[ "${LEANOS_EVIDENCE_TIER:-all}" != "pr" ]]; then
+  ./scripts/check-hosted-generated-boundaries.sh ordinary
+fi
 
 ./scripts/check-hosted-generated-boundaries.sh sanitized
 

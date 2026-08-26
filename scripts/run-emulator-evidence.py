@@ -1107,6 +1107,18 @@ def check_workflows() -> None:
         raise EvidenceError(
             "CI must run complete evidence for merge-queue candidates targeting main"
         )
+    check_content = (ROOT / "scripts/check.sh").read_text(encoding="utf-8")
+    pr_check_tier = (
+        "LEANOS_EVIDENCE_TIER: "
+        "${{ github.event_name == 'pull_request' && 'pr' || 'all' }}"
+    )
+    if pr_check_tier not in ci_content or (
+        'if [[ "${LEANOS_EVIDENCE_TIER:-all}" != "pr" ]]; then'
+        not in check_content
+    ):
+        raise EvidenceError(
+            "CI must skip only the duplicate GCC hosted replay on pull requests"
+        )
     ci_emulator = re.search(
         r"(?ms)^  emulator:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
         ci_content,
