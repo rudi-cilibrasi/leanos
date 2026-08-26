@@ -28,11 +28,13 @@ lake build leanos-vtd-plan
 
 ./scripts/test-hosted-boundary-harness-scan.sh
 
-./scripts/check-hosted-generated-boundaries.sh ordinary
+if [[ "${LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY:-0}" != 1 ]]; then
+  ./scripts/check-hosted-generated-boundaries.sh ordinary
 
-./scripts/check-hosted-generated-boundaries.sh sanitized
+  ./scripts/check-hosted-generated-boundaries.sh sanitized
 
-./scripts/check-hosted-sanitizer-negatives.sh
+  ./scripts/check-hosted-sanitizer-negatives.sh
+fi
 
 ./scripts/check-boot-memory-full-projection.sh
 

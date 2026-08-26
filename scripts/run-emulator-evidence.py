@@ -1107,6 +1107,27 @@ def check_workflows() -> None:
         raise EvidenceError(
             "CI must run complete evidence for merge-queue candidates targeting main"
         )
+    hosted_job = re.search(
+        r"(?ms)^  hosted-boundary:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+        ci_content,
+    )
+    hosted_contract = (
+        "if: github.event_name == 'pull_request'",
+        "./scripts/check-hosted-generated-boundaries.sh ordinary",
+        "./scripts/check-hosted-generated-boundaries.sh sanitized",
+        "./scripts/check-hosted-sanitizer-negatives.sh",
+        "if-no-files-found: error",
+    )
+    if hosted_job is None or any(
+        token not in hosted_job.group("body") for token in hosted_contract
+    ) or (
+        "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: "
+        "${{ github.event_name == 'pull_request' && '1' || '0' }}"
+        not in ci_content
+    ):
+        raise EvidenceError(
+            "CI must parallelize complete hosted evidence only for pull requests"
+        )
     ci_emulator = re.search(
         r"(?ms)^  emulator:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
         ci_content,

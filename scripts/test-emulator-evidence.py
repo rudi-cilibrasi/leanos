@@ -286,6 +286,23 @@ def run_fixtures() -> None:
         try:
             ci_workflow.write_text(
                 original_ci.replace(
+                    "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: "
+                    "${{ github.event_name == 'pull_request' && '1' || '0' }}",
+                    "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: 0",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            expect_failure(
+                evidence.check_workflows,
+                "CI must parallelize complete hosted evidence only for pull requests",
+            )
+        finally:
+            ci_workflow.write_text(original_ci, encoding="utf-8")
+
+        try:
+            ci_workflow.write_text(
+                original_ci.replace(
                     "  clang-reproducibility-build:\n"
                     "    name: Clang independent reproducibility build\n"
                     "    if: github.event_name != 'pull_request'",
