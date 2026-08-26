@@ -272,8 +272,12 @@ def run_fixtures() -> None:
         try:
             ci_workflow.write_text(
                 original_ci.replace(
-                    "if: github.event_name != 'pull_request'",
-                    "if: github.event_name == 'pull_request'",
+                    "  clang-reproducibility-build:\n"
+                    "    name: Clang independent reproducibility build\n"
+                    "    if: github.event_name != 'pull_request'",
+                    "  clang-reproducibility-build:\n"
+                    "    name: Clang independent reproducibility build\n"
+                    "    if: github.event_name == 'pull_request'",
                     1,
                 ),
                 encoding="utf-8",

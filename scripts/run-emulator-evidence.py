@@ -1137,6 +1137,9 @@ def check_workflows() -> None:
     for clang_evidence in (
         "./scripts/build-image.sh",
         "./scripts/write-reproducibility-manifest.sh",
+        "LEANOS_EVIDENCE_TIER=\"${{ github.event_name == 'pull_request' && 'pr' || 'all' }}\"",
+        "LEANOS_EVIDENCE_SHARD_INDEX=\"${{ github.event_name == 'pull_request' && '0' || '' }}\"",
+        "LEANOS_EVIDENCE_SHARD_COUNT=\"${{ github.event_name == 'pull_request' && '4' || '' }}\"",
         "--scenario blocking-ipc",
         "test -s build/boot/serial.log",
         "build/boot/serial.log",
@@ -1144,9 +1147,13 @@ def check_workflows() -> None:
     ):
         if clang_evidence not in ci_content:
             raise EvidenceError(
-                "CI does not preserve tiered Clang canonical evidence: "
+            "CI does not preserve tiered Clang canonical evidence: "
                 + clang_evidence
             )
+    if "if [[ \"${{ github.event_name }}\" != pull_request ]]; then" not in ci_content:
+        raise EvidenceError(
+            "CI must reserve the complete canonical reproducibility manifest for non-PR evidence"
+        )
     independent_clang = re.search(
         r"(?ms)^  clang-reproducibility-build:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
         ci_content,

@@ -169,9 +169,14 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/ci
-          ./scripts/build-image.sh \
+          LEANOS_EVIDENCE_TIER="${{ github.event_name == 'pull_request' && 'pr' || 'all' }}" \
+            LEANOS_EVIDENCE_SHARD_INDEX="${{ github.event_name == 'pull_request' && '0' || '' }}" \
+            LEANOS_EVIDENCE_SHARD_COUNT="${{ github.event_name == 'pull_request' && '4' || '' }}" \
+            ./scripts/build-image.sh \
             2>&1 | tee build/ci/clang-image-build.log
-          ./scripts/write-reproducibility-manifest.sh
+          if [[ "${{ github.event_name }}" != pull_request ]]; then
+            ./scripts/write-reproducibility-manifest.sh
+          fi
           python3 scripts/run-emulator-evidence.py run \
             --scenario blocking-ipc \
             --tool-versions build/ci/clang-tool-versions.txt \
@@ -218,6 +223,7 @@ jobs:
           retention-days: 14
 
       - name: Preserve primary reproducibility manifest
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: leanos-clang-repro-primary-${{ github.sha }}
