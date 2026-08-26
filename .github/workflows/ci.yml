@@ -2,6 +2,11 @@ name: CI
 
 on:
   pull_request:
+  # Merge-queue candidates run the complete evidence tier before main advances.
+  # The tier selectors below intentionally special-case only pull_request.
+  merge_group:
+    branches:
+      - main
   push:
     branches:
       - main

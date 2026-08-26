@@ -272,6 +272,20 @@ def run_fixtures() -> None:
         try:
             ci_workflow.write_text(
                 original_ci.replace(
+                    "  merge_group:\n    branches:\n      - main\n", "", 1
+                ),
+                encoding="utf-8",
+            )
+            expect_failure(
+                evidence.check_workflows,
+                "CI must run complete evidence for merge-queue candidates targeting main",
+            )
+        finally:
+            ci_workflow.write_text(original_ci, encoding="utf-8")
+
+        try:
+            ci_workflow.write_text(
+                original_ci.replace(
                     "  clang-reproducibility-build:\n"
                     "    name: Clang independent reproducibility build\n"
                     "    if: github.event_name != 'pull_request'",

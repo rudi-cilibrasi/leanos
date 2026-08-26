@@ -1103,6 +1103,10 @@ def check_workflows() -> None:
         "build/evidence/*",
     )
     ci_content = workflow_contents[".github/workflows/ci.yml"]
+    if "  merge_group:\n    branches:\n      - main\n" not in ci_content:
+        raise EvidenceError(
+            "CI must run complete evidence for merge-queue candidates targeting main"
+        )
     ci_emulator = re.search(
         r"(?ms)^  emulator:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
         ci_content,
