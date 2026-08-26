@@ -1038,6 +1038,16 @@ compute_lean_c_signature {root!s}
             graph,
         )
         self.assertIn("boot-page-plan-fault-stale-translation.h", graph)
+        for variant, plan in (
+            ("kernel-fault-reserved-bit", "boot-page-plan-fault-reserved-bit.h"),
+            ("kernel-fault-walk-mismatch", "boot-page-plan-fault-walk-mismatch.h"),
+        ):
+            command = next(
+                graph_lines[index + 1]
+                for index, line in enumerate(graph_lines)
+                if line.startswith(f"out/{variant}.o out/{variant}.o.d &:")
+            )
+            self.assertIn(f'BOOT_PAGE_PLAN_HEADER="{plan}"', command)
         self.assertIn(
             "out/kernel-entry-stack-overflow.o "
             "out/kernel-entry-stack-overflow.o.d &:",

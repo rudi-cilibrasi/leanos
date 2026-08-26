@@ -78,12 +78,12 @@ KERNEL_VARIANTS = (
     ("kernel-fault-reserved-bit", (
         "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
         "-DLEANOS_PAGE_FAULT_PROBE_RESERVED_BIT=1",
-        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-fault-containment.h"',
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-fault-reserved-bit.h"',
     )),
     ("kernel-fault-walk-mismatch", (
         "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
         "-DLEANOS_PAGE_FAULT_PROBE_WALK_MISMATCH=1",
-        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-fault-containment.h"',
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-fault-walk-mismatch.h"',
     )),
     ("kernel-fault-stale-translation", (
         "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
