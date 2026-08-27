@@ -1,0 +1,61 @@
+name: CI toolchain image
+
+on:
+  pull_request:
+    paths:
+      - Containerfile.ci
+      - lean-toolchain
+      - .github/workflows/ci-image.yml
+  push:
+    branches:
+      - main
+    paths:
+      - Containerfile.ci
+      - lean-toolchain
+      - .github/workflows/ci-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build pinned toolchain image
+        id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        with:
+          context: .
+          file: Containerfile.ci
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ghcr.io/rudi-cilibrasi/leanos-ci:${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Record immutable image reference
+        run: |
+          test "${{ steps.build.outputs.digest }}" != ""
+          printf '%s@%s\n' \
+            ghcr.io/rudi-cilibrasi/leanos-ci \
+            "${{ steps.build.outputs.digest }}" \
+            > leanos-ci-image.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-ci-image-${{ github.sha }}
+          path: leanos-ci-image.txt
+          if-no-files-found: error

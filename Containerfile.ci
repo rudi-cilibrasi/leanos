@@ -1,0 +1,30 @@
+FROM ubuntu:24.04@sha256:1e0a86e57d247923571b75e0aaf48a1449cf8c543d51fb3e07a4a7d7bfa79316
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      binutils=2.42-4ubuntu2.10 \
+      ca-certificates=20260601~24.04.1 \
+      clang-18=1:18.1.3-1ubuntu1 \
+      coreutils=9.4-3ubuntu6.2 \
+      elan=3.1.0-1ubuntu0.1 \
+      gcc-13=13.3.0-6ubuntu2~24.04.1 \
+      git=1:2.43.0-1ubuntu7.3 \
+      grub-common=2.12-1ubuntu7.3 \
+      grub-pc-bin=2.12-1ubuntu7.3 \
+      libasan8=14.2.0-4ubuntu2~24.04.1 \
+      libubsan1=14.2.0-4ubuntu2~24.04.1 \
+      mtools=4.0.43-1build1 \
+      python3=3.12.3-0ubuntu2.1 \
+      qemu-system-x86=1:8.2.2+ds-0ubuntu1.18 \
+      xorriso=1:1.5.6-1.1ubuntu3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY lean-toolchain /tmp/lean-toolchain
+RUN elan toolchain install "$(cat /tmp/lean-toolchain)" \
+    && elan default "$(cat /tmp/lean-toolchain)" \
+    && rm /tmp/lean-toolchain \
+    && lean --version \
+    && lake --version
+
+ENV PATH="/root/.elan/bin:${PATH}"
+WORKDIR /workspace
