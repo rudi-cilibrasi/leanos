@@ -8,10 +8,14 @@ on:
 permissions:
   contents: read
 
+env:
+  LEANOS_CI_IMAGE_DIGEST: sha256:f5034a725a7b06e72c06eb77fa9df3980cf10e2f7c1bbf884af5759424ad54c8
+
 jobs:
   gate:
     name: Prove, reproduce, and collect release evidence
     runs-on: ubuntu-24.04
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:f5034a725a7b06e72c06eb77fa9df3980cf10e2f7c1bbf884af5759424ad54c8
     # The gate intentionally performs the proof suite, two clean
     # reproducibility builds, a final image build, and the full QEMU matrix.
     # A fresh hosted runner currently needs more than 20 minutes for that
@@ -20,25 +24,6 @@ jobs:
     steps:
       - name: Check out tagged source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Install pinned Lean toolchain
-        uses: ./.github/actions/setup-lean
-
-      - name: Install pinned image and emulator tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gcc=4:13.2.0-7ubuntu1 \
-            gcc-13=13.3.0-6ubuntu2~24.04.1 \
-            libasan8=14.2.0-4ubuntu2~24.04.1 \
-            libubsan1=14.2.0-4ubuntu2~24.04.1 \
-            binutils=2.42-4ubuntu2.10 \
-            grub-common=2.12-1ubuntu7.3 \
-            grub-pc-bin=2.12-1ubuntu7.3 \
-            mtools=4.0.43-1build1 \
-            xorriso=1:1.5.6-1.1ubuntu3 \
-            qemu-system-x86=1:8.2.2+ds-0ubuntu1.18 \
-            coreutils=9.4-3ubuntu6.2
 
       - name: Validate tag and set version
         run: |
