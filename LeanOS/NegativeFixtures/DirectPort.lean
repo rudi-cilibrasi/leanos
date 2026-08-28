@@ -74,4 +74,18 @@ example :
       witnessSchedule witnessEntry).port.result = .userDeniedGP := by
   native_decide
 
+/- A user-origin request cannot be used to prove any modeled device mutation. -/
+/--
+error: Type mismatch
+  user_request_preserves_device_state state live request
+has type
+  (executeUser state live request).state.devices = state.devices
+but is expected to have type
+  (executeUser state live request).state.devices ≠ state.devices
+-/
+#guard_msgs in
+example (state : DirectPortIO.State) (live : Controls) (request : PortOperation) :
+    (executeUser state live request).state.devices ≠ state.devices := by
+  exact user_request_preserves_device_state state live request
+
 end LeanOS.NegativeFixtures.DirectPort

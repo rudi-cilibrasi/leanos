@@ -234,28 +234,6 @@ if ! grep -Fq 'has type' "$negative_log" ||
   exit 1
 fi
 
-for fixture in DirectPortUserMutation; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: direct-port-I/O fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  case "$fixture" in
-    DirectPortUserMutation)
-      expected_diagnostic='error: Type mismatch'
-      expected_proposition='user_request_preserves_device_state state live request'
-      expected_result='(executeUser state live request).state.devices ≠ state.devices'
-      ;;
-  esac
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq "$expected_diagnostic" "$negative_log" ||
-      ! grep -Fq "$expected_proposition" "$negative_log" ||
-      ! grep -Fq "$expected_result" "$negative_log"; then
-    echo "error: direct-port-I/O fixture ${fixture} lacked its expected semantic diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
-
 for fixture in NMIFrameMissingRip NMIFrameMissingCs NMIFrameMissingFlags \
     NMIFrameMissingRsp NMIFrameMissingSs; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
