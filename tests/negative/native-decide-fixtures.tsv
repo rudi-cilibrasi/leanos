@@ -55,8 +55,4 @@ iommu IOMMUSameOwnerWrongFrame
 iommu IOMMUStaleBDFReuse
 iommu IOMMUTwoLiveFrameGenerations
 lifetime WrappingIssuerReuse
-direct-port DirectPortExposedBitmap
-direct-port DirectPortWrongPurpose
-direct-port DirectPortWrongWidth
-direct-port DirectPortContainmentExposedControls
 shared-containment SharedContainmentReasonSubstitution
