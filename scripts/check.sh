@@ -119,7 +119,13 @@ fi
 rm -f "$trusted_scan_log"
 
 negative_log="$(mktemp)"
-trap 'rm -f "$negative_log"' EXIT
+negative_log_dir="$(mktemp -d)"
+negative_jobs="${LEANOS_NEGATIVE_JOBS:-$(nproc)}"
+if [[ ! "$negative_jobs" =~ ^[1-9][0-9]*$ ]]; then
+  echo "error: LEANOS_NEGATIVE_JOBS must be a positive integer" >&2
+  exit 1
+fi
+trap 'rm -f "$negative_log"; rm -rf "$negative_log_dir"' EXIT
 
 if lake env lean tests/negative/BootMemoryFullProjectionMutation.lean \
     >"$negative_log" 2>&1; then
@@ -221,20 +227,10 @@ for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlock
   fi
 done
 
-for fixture in BootTopologyCountOnly BootTopologyDuplicateCollapse \
-    BootTopologyCallerBsp BootTopologyPostAdmissionMutation; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: boot-topology proof-integrity fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
-        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
-    echo "error: boot-topology proof-integrity fixture ${fixture} lacked its semantic diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
+awk 'NF == 2 && $1 !~ /^#/ { print $1, $2 }' \
+  tests/negative/native-decide-fixtures.tsv |
+  xargs -r -n 2 -P "$negative_jobs" \
+    ./scripts/check-negative-native-decide.sh "$negative_log_dir"
 
 if lake env lean tests/negative/FrameBudgetRejectedMutation.lean \
     >"$negative_log" 2>&1; then
@@ -272,44 +268,6 @@ for fixture in FaultReasonRelabel KernelBreakpointContainment \
       ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
         "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
     echo "error: user-fault-class fixture ${fixture} lacked its expected semantic diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
-
-for fixture in PageFaultDroppedCR2 PageFaultIgnoredAccessBits \
-    PageFaultClearedReserved PageFaultUnsupportedBit PageFaultPayloadAccessKind \
-    PageFaultInvalidUserSelector PageFaultNoncanonicalRip \
-    PageFaultZeroStackIdentity PageFaultForgedSubject \
-    PageFaultForgedAddressSpace PageFaultUnrepresentableTrustedSubject \
-    PageFaultUnrepresentableTrustedAddressSpace PageFaultForgedCr3 PageFaultForgedWp \
-    PageFaultForgedNxe PageFaultForgedSmep PageFaultForgedSmap; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: page-fault provenance fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
-        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
-    echo "error: page-fault provenance fixture ${fixture} lacked its expected semantic diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
-
-for fixture in PageFaultAgreementAcceptEveryPresent \
-    PageFaultAgreementIgnoredWalk PageFaultAgreementReservedContainment \
-    PageFaultAgreementForgedAddressSpace PageFaultAgreementStaleLifecycle \
-    PageFaultAgreementUnissuedObject \
-    PageFaultAgreementCorruptLiveTableContainment; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: page-fault agreement fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
-        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
-    echo "error: page-fault agreement fixture ${fixture} lacked its expected semantic diagnostic" >&2
     cat "$negative_log" >&2
     exit 1
   fi
