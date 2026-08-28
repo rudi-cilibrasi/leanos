@@ -41,7 +41,7 @@ jobs:
           docker run --rm \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             leanos-ci:pr-${{ github.sha }} \
-            bash -lc 'git config --global --add safe.directory /workspace && ./scripts/record-tool-versions.sh /tmp/tool-versions.txt && ./scripts/test-build-image.sh'
+            bash -lc 'git config --global --add safe.directory /workspace && command -v jq && ./scripts/record-tool-versions.sh /tmp/tool-versions.txt && ./scripts/test-build-image.sh'
 
   publish:
     if: github.event_name != 'pull_request'
