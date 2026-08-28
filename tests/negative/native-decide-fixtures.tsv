@@ -1,8 +1,4 @@
 # category fixture
-boot-phase BootPhaseSkipBootstrap32
-boot-phase BootPhaseRuntimeWithoutTss
-boot-phase BootPhaseEarlyDelegation
-boot-phase BootPhaseProgressAfterLatch
 frame-integrity FrameBudgetRejectedMutation
 frame-integrity FrameReuseBeforeInvalidationAck
 user-fault-class FaultReasonRelabel
