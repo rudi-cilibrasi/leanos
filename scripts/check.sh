@@ -127,19 +127,6 @@ if [[ ! "$negative_jobs" =~ ^[1-9][0-9]*$ ]]; then
 fi
 trap 'rm -f "$negative_log"; rm -rf "$negative_log_dir"' EXIT
 
-if lake env lean tests/negative/BootMemoryFullProjectionMutation.lean \
-    >"$negative_log" 2>&1; then
-  echo "error: mutated full boot-memory projection unexpectedly received authority" >&2
-  exit 1
-fi
-if ! grep -Fq 'tests/negative/BootMemoryFullProjectionMutation.lean' "$negative_log" ||
-    ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
-      "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
-  echo "error: full boot-memory projection mutation lacked its expected rejection" >&2
-  cat "$negative_log" >&2
-  exit 1
-fi
-
 if lake env lean tests/negative/InvalidBound.lean >"$negative_log" 2>&1; then
   echo "error: negative proof fixture unexpectedly type-checked" >&2
   exit 1
@@ -232,47 +219,6 @@ awk 'NF == 2 && $1 !~ /^#/ { print $1, $2 }' \
   xargs -r -n 2 -P "$negative_jobs" \
     ./scripts/check-negative-native-decide.sh "$negative_log_dir"
 
-if lake env lean tests/negative/FrameBudgetRejectedMutation.lean \
-    >"$negative_log" 2>&1; then
-  echo "error: frame-budget rejected-mutation fixture unexpectedly type-checked" >&2
-  exit 1
-fi
-if ! grep -Fq 'tests/negative/FrameBudgetRejectedMutation.lean' "$negative_log" ||
-    ! grep -Fq 'Tactic `native_decide` evaluated that the proposition' "$negative_log" ||
-    ! grep -Fq 'is false' "$negative_log"; then
-  echo "error: frame-budget proof-integrity fixture lacked its semantic diagnostic" >&2
-  cat "$negative_log" >&2
-  exit 1
-fi
-
-if lake env lean tests/negative/FrameReuseBeforeInvalidationAck.lean \
-    >"$negative_log" 2>&1; then
-  echo "error: pre-ack frame-reuse fixture unexpectedly type-checked" >&2
-  exit 1
-fi
-if ! grep -Fq 'tests/negative/FrameReuseBeforeInvalidationAck.lean' "$negative_log" ||
-    ! grep -Fq 'Tactic `native_decide` evaluated that the proposition' "$negative_log" ||
-    ! grep -Fq 'is false' "$negative_log"; then
-  echo "error: pre-ack frame-reuse fixture lacked its semantic diagnostic" >&2
-  cat "$negative_log" >&2
-  exit 1
-fi
-
-for fixture in FaultReasonRelabel KernelBreakpointContainment \
-    DivideErrorSoftwareGate BreakpointAlternateDescriptor; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: user-fault-class fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
-        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
-    echo "error: user-fault-class fixture ${fixture} lacked its expected semantic diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
-
 if lake env lean tests/negative/PageFaultAgreementWriteInstructionContainment.lean \
     >"$negative_log" 2>&1; then
   echo "error: impossible write/instruction page fault unexpectedly contained" >&2
@@ -287,21 +233,6 @@ if ! grep -Fq 'tests/negative/PageFaultAgreementWriteInstructionContainment.lean
   cat "$negative_log" >&2
   exit 1
 fi
-
-for fixture in StaleTranslationOmittedInvalidation StaleTranslationWrongEffect \
-    StaleTranslationForgedTarget; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: stale-translation fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
-        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
-    echo "error: stale-translation fixture ${fixture} lacked its expected semantic diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
 
 if lake env lean tests/negative/DMAEmptyInventory.lean >"$negative_log" 2>&1; then
   echo "error: empty DMA inventory unexpectedly validated" >&2
@@ -521,22 +452,6 @@ if ! grep -Fq 'tests/negative/SharedContainmentReasonSubstitution.lean' "$negati
   exit 1
 fi
 
-for fixture in NMITerminalManifestMutation NMITraceInventoryMutation \
-    NMIOrdinaryManifestVector2 NMIReuseIST0 NMIReuseIST1 NMIWrongPurpose \
-    NMIContainmentRouting NMISchedulerRouting NMIFrameNotAtStackTop; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: NMI fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
-        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
-    echo "error: NMI fixture ${fixture} lacked its expected semantic diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
-
 for fixture in NMIFrameMissingRip NMIFrameMissingCs NMIFrameMissingFlags \
     NMIFrameMissingRsp NMIFrameMissingSs; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
@@ -554,21 +469,6 @@ for fixture in NMIFrameMissingRip NMIFrameMissingCs NMIFrameMissingFlags \
       ! grep -Fq 'error: Fields missing' "$negative_log" ||
       ! grep -Fq "$expected_field" "$negative_log"; then
     echo "error: structural NMI fixture ${fixture} lacked its missing-frame-word diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
-
-for fixture in BootPhaseSkipBootstrap32 BootPhaseRuntimeWithoutTss \
-    BootPhaseEarlyDelegation BootPhaseProgressAfterLatch; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: boot-phase fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq 'error: Tactic `native_decide` evaluated that the proposition' \
-        "$negative_log" || ! grep -Fq 'is false' "$negative_log"; then
-    echo "error: boot-phase fixture ${fixture} lacked its expected semantic diagnostic" >&2
     cat "$negative_log" >&2
     exit 1
   fi
