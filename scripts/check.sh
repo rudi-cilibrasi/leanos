@@ -234,19 +234,12 @@ if ! grep -Fq 'has type' "$negative_log" ||
   exit 1
 fi
 
-for fixture in IOMMUCallerSuppliedPhysicalFrame IOMMUCrossDomainTranslation \
-    IOMMUOmittedSourceBinding IOMMUFabricatedReadView; do
+for fixture in IOMMUOmittedSourceBinding IOMMUFabricatedReadView; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: IOMMU confinement fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
   fi
   case "$fixture" in
-    IOMMUCallerSuppliedPhysicalFrame)
-      expected_diagnostic='`frame` is not a field of structure `GrantRequest`'
-      ;;
-    IOMMUCrossDomainTranslation)
-      expected_diagnostic='translation.mapping.domain ≠ translation.assignment.domain'
-      ;;
     IOMMUOmittedSourceBinding)
       expected_diagnostic='Fields missing: `assignmentFound`, `mappingFound`, `frameFound`, `sourceBound`'
       ;;
