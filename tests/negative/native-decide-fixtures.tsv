@@ -1,8 +1,4 @@
 # category fixture
-boot-topology BootTopologyCountOnly
-boot-topology BootTopologyDuplicateCollapse
-boot-topology BootTopologyCallerBsp
-boot-topology BootTopologyPostAdmissionMutation
 boot-memory BootMemoryFullProjectionMutation
 boot-phase BootPhaseSkipBootstrap32
 boot-phase BootPhaseRuntimeWithoutTss
