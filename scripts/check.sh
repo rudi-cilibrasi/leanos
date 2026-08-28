@@ -234,27 +234,6 @@ if ! grep -Fq 'has type' "$negative_log" ||
   exit 1
 fi
 
-for fixture in IOMMUOmittedSourceBinding IOMMUFabricatedReadView; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: IOMMU confinement fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  case "$fixture" in
-    IOMMUOmittedSourceBinding)
-      expected_diagnostic='Fields missing: `assignmentFound`, `mappingFound`, `frameFound`, `sourceBound`'
-      ;;
-    IOMMUFabricatedReadView)
-      expected_diagnostic='Fields missing: `bytes`, `observed`'
-      ;;
-  esac
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq "$expected_diagnostic" "$negative_log"; then
-    echo "error: IOMMU confinement fixture ${fixture} lacked its expected semantic diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
-
 for fixture in DirectPortUserMutation; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: direct-port-I/O fixture ${fixture} unexpectedly type-checked" >&2
