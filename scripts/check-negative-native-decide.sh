@@ -19,3 +19,32 @@ if ! grep -Fq "$fixture_path" "$fixture_log" ||
   cat "$fixture_log" >&2
   exit 1
 fi
+
+case "$fixture" in
+  VTdAssignedStateAccepted) expected='IOMMU.assignedState' ;;
+  VTdForgedContextValidated) expected='validateDecodedUnit' ;;
+  DMAEmptyInventory) expected='(validate emptySnapshot).isAccepted = true' ;;
+  DMAInvalidControlContinuation) expected='q35BusMasterBitFlipSnapshot)).result = RuntimeResult.continued' ;;
+  DMAEncodingImpliesValidation) expected='(validate staleSnapshot).isAccepted = true' ;;
+  IOMMUDetachedAuthoritativeProjection) expected='state.iommu.Invariant ∧ state.Coherent' ;;
+  IOMMUDeviceReadOutsideRule) expected='iova := 16' ;;
+  IOMMUPermissionAmplification) expected='permission := readWrite' ;;
+  IOMMUReleaseReachableFrame) expected='gate readOnlyState (Operation.releaseFrame' ;;
+  IOMMURepeatRelease) expected='gate releasedFrameState (Operation.releaseFrame' ;;
+  IOMMUSameOwnerWrongFrame) expected='validateCore sameOwnerWrongFrameCore = true' ;;
+  IOMMUStaleBDFReuse) expected='(deviceRead reassignedState readRequest).isObserved = true' ;;
+  IOMMUTwoLiveFrameGenerations) expected='validateCore twoLiveGenerationsCore = true' ;;
+  WrappingIssuerReuse) expected='step5.fst.lifecycle.capabilities.subjects 1 = false' ;;
+  DirectPortExposedBitmap) expected='executeUser state exposed request' ;;
+  DirectPortWrongPurpose) expected='wrongPurpose).result = Result.kernelAccepted' ;;
+  DirectPortWrongWidth) expected='wrongWidth).result = Result.kernelAccepted' ;;
+  DirectPortContainmentExposedControls) expected='.port.result =' ;;
+  SharedContainmentReasonSubstitution) expected='ContainedReason.breakpoint' ;;
+  *) expected='' ;;
+esac
+
+if [[ -n "$expected" ]] && ! grep -Fq "$expected" "$fixture_log"; then
+  echo "error: ${category} fixture ${fixture} lacked its specialized diagnostic" >&2
+  cat "$fixture_log" >&2
+  exit 1
+fi
