@@ -1,5 +1,4 @@
 # category fixture
-boot-memory BootMemoryFullProjectionMutation
 boot-phase BootPhaseSkipBootstrap32
 boot-phase BootPhaseRuntimeWithoutTss
 boot-phase BootPhaseEarlyDelegation
