@@ -18,6 +18,7 @@ fail() {
 mapfile -t bypasses < <(
   grep -RIlE '\b(gatedByKernel|applyKernelOperation)\b' LeanOS \
     --include='*.lean' \
+    --exclude-dir='NegativeFixtures' \
     --exclude='IOMMU.lean' \
     --exclude='IOTLB.lean' \
     --exclude='SecurityClaims.lean' || true
