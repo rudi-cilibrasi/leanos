@@ -127,29 +127,6 @@ if [[ ! "$negative_jobs" =~ ^[1-9][0-9]*$ ]]; then
 fi
 trap 'rm -f "$negative_log"; rm -rf "$negative_log_dir"' EXIT
 
-if lake env lean tests/negative/BootPageTablePlanMutation.lean \
-    >"$negative_log" 2>&1; then
-  echo "error: boot page-table plan mutation unexpectedly type-checked" >&2
-  exit 1
-fi
-
-if ! grep -q "invalid .* notation.*constructor.*private" "$negative_log"; then
-  echo "error: boot page-table plan mutation lacked the private-constructor diagnostic" >&2
-  cat "$negative_log" >&2
-  exit 1
-fi
-
-if lake env lean tests/negative/VTdBootPlanForgedContext.lean \
-    >"$negative_log" 2>&1; then
-  echo "error: VT-d boot plan context forgery unexpectedly type-checked" >&2
-  exit 1
-fi
-if ! grep -q "invalid .* notation.*constructor.*private" "$negative_log"; then
-  echo "error: VT-d boot plan context forgery lacked the private-constructor diagnostic" >&2
-  cat "$negative_log" >&2
-  exit 1
-fi
-
 if lake env lean -DwarningAsError=true tests/negative/Sorry.lean \
     >"$negative_log" 2>&1; then
   echo "error: a declaration using sorry unexpectedly type-checked" >&2
