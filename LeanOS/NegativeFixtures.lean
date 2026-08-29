@@ -9,6 +9,7 @@ import LeanOS.NegativeFixtures.IOMMUConfinement
 import LeanOS.NegativeFixtures.NMIFrame
 import LeanOS.NegativeFixtures.NMIHalt
 import LeanOS.NegativeFixtures.NMIManifest
+import LeanOS.NegativeFixtures.PageFaultError
 import LeanOS.NegativeFixtures.SecurityClaims
 import LeanOS.NegativeFixtures.StaleTranslation
 import LeanOS.NegativeFixtures.UserFaultClass

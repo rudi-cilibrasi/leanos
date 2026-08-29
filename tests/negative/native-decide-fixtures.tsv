@@ -1,8 +1,4 @@
 # category fixture
-page-fault-provenance PageFaultDroppedCR2
-page-fault-provenance PageFaultIgnoredAccessBits
-page-fault-provenance PageFaultClearedReserved
-page-fault-provenance PageFaultUnsupportedBit
 page-fault-provenance PageFaultPayloadAccessKind
 page-fault-provenance PageFaultInvalidUserSelector
 page-fault-provenance PageFaultNoncanonicalRip
