@@ -11,6 +11,7 @@ import LeanOS.NegativeFixtures.NMIFrame
 import LeanOS.NegativeFixtures.NMIHalt
 import LeanOS.NegativeFixtures.NMIManifest
 import LeanOS.NegativeFixtures.PageFaultError
+import LeanOS.NegativeFixtures.PageFaultProvenance
 import LeanOS.NegativeFixtures.SecurityClaims
 import LeanOS.NegativeFixtures.SharedContainment
 import LeanOS.NegativeFixtures.StaleTranslation
