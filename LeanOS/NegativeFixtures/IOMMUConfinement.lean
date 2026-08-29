@@ -55,4 +55,32 @@ def fabricatedReadView (state : State) (request : TransferRequest)
   { request := request
     translation := translation }
 
+private def releasedFrameState : State :=
+  (gate tornDownState (.releaseFrame ⟨0, 1⟩)).state
+
+/- A retired lifetime cannot be released again through the same stale handle. -/
+/--
+error: Tactic `native_decide` evaluated that the proposition
+  (gate releasedFrameState (Operation.releaseFrame { frame := 0, generation := 1 })).isAccepted = true
+is false
+-/
+#guard_msgs in
+example :
+    (gate releasedFrameState (.releaseFrame ⟨0, 1⟩)).isAccepted = true := by
+  native_decide
+
+/- Read-only authority cannot be amplified to read-write. -/
+/--
+error: Tactic `native_decide` evaluated that the proposition
+  (gate readOnlyState
+        (Operation.attenuate { mapping := mapping0, offset := 0, length := 16, permission := readWrite })).isAccepted =
+    true
+is false
+-/
+#guard_msgs in
+example :
+    (gate readOnlyState
+      (.attenuate ⟨mapping0, 0, 16, readWrite⟩)).isAccepted = true := by
+  native_decide
+
 end LeanOS.NegativeFixtures.IOMMUConfinement

@@ -21,9 +21,7 @@ page-fault-agreement PageFaultAgreementUnissuedObject
 page-fault-agreement PageFaultAgreementCorruptLiveTableContainment
 iommu IOMMUDetachedAuthoritativeProjection
 iommu IOMMUDeviceReadOutsideRule
-iommu IOMMUPermissionAmplification
 iommu IOMMUReleaseReachableFrame
-iommu IOMMURepeatRelease
 iommu IOMMUSameOwnerWrongFrame
 iommu IOMMUStaleBDFReuse
 iommu IOMMUTwoLiveFrameGenerations
