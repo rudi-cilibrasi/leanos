@@ -1,7 +1,4 @@
 # category fixture
-stale-translation StaleTranslationOmittedInvalidation
-stale-translation StaleTranslationWrongEffect
-stale-translation StaleTranslationForgedTarget
 nmi NMITerminalManifestMutation
 nmi NMITraceInventoryMutation
 nmi NMIOrdinaryManifestVector2
