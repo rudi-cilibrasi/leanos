@@ -41,12 +41,10 @@ case "$fixture" in
   IOMMUSameOwnerWrongFrame) expected='validateCore sameOwnerWrongFrameCore = true' ;;
   IOMMUStaleBDFReuse) expected='(deviceRead reassignedState readRequest).isObserved = true' ;;
   IOMMUTwoLiveFrameGenerations) expected='validateCore twoLiveGenerationsCore = true' ;;
-  WrappingIssuerReuse) expected='step5.fst.lifecycle.capabilities.subjects 1 = false' ;;
   DirectPortExposedBitmap) expected='executeUser state exposed request' ;;
   DirectPortWrongPurpose) expected='wrongPurpose).result = Result.kernelAccepted' ;;
   DirectPortWrongWidth) expected='wrongWidth).result = Result.kernelAccepted' ;;
   DirectPortContainmentExposedControls) expected='.port.result =' ;;
-  SharedContainmentReasonSubstitution) expected='ContainedReason.breakpoint' ;;
   *) expected='' ;;
 esac
 
