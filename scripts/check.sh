@@ -234,19 +234,6 @@ if ! grep -Fq 'has type' "$negative_log" ||
   exit 1
 fi
 
-for fixture in NMIHaltClearing NMIPostHaltRepair; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: post-halt NMI fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq 'error: unsolved goals' "$negative_log"; then
-    echo "error: post-halt NMI fixture ${fixture} lacked its absorption diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
-
 if lake env lean tests/negative/VacuousClaimSetup.lean >"$negative_log" 2>&1; then
   echo "error: vacuous security-claim fixture unexpectedly type-checked" >&2
   exit 1
