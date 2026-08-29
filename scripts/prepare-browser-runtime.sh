@@ -9,6 +9,22 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+# Fail fast on a missing host tool before any expensive work runs (issue #255:
+# a containerized CI job discovered the curl dependency only after building the
+# canonical image).
+require_tool() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "error: missing required tool '$1'; $2" >&2
+    exit 1
+  fi
+}
+
+require_tool git "install Ubuntu package git"
+require_tool curl "install Ubuntu package curl"
+require_tool python3 "install Ubuntu package python3"
+require_tool sha256sum "install Ubuntu package coreutils"
+require_tool npm "install Node.js (CI uses actions/setup-node with node-version 22)"
+
 support_only=false
 case "${1:-}" in
   "") ;;

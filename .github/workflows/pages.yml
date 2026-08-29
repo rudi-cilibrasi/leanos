@@ -16,16 +16,6 @@ on:
 permissions:
   contents: read
 
-env:
-  LEANOS_CI_IMAGE_DIGEST: sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
-  GIT_CONFIG_COUNT: 1
-  GIT_CONFIG_KEY_0: safe.directory
-  GIT_CONFIG_VALUE_0: ${{ github.workspace }}
-
-defaults:
-  run:
-    shell: bash
-
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -34,11 +24,26 @@ jobs:
   build:
     name: Stage and verify the demo
     runs-on: ubuntu-24.04
-    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
     timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Install pinned Lean toolchain
+        uses: ./.github/actions/setup-lean
+
+      - name: Install image tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc=4:13.2.0-7ubuntu1 \
+            binutils=2.42-4ubuntu2.10 \
+            grub-common=2.12-1ubuntu7.3 \
+            grub-pc-bin=2.12-1ubuntu7.3 \
+            mtools=4.0.43-1build1 \
+            xorriso=1:1.5.6-1.1ubuntu3 \
+            qemu-system-x86=1:8.2.2+ds-0ubuntu1.18 \
+            coreutils=9.4-3ubuntu6.2
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

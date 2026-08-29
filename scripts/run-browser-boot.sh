@@ -15,6 +15,19 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+# Fail fast on a missing host tool before any expensive work runs (issue #255).
+require_tool() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "error: missing required tool '$1'; $2" >&2
+    exit 1
+  fi
+}
+
+require_tool node "install Node.js (CI uses actions/setup-node with node-version 22)"
+require_tool python3 "install Ubuntu package python3"
+require_tool sha256sum "install Ubuntu package coreutils"
+require_tool git "install Ubuntu package git"
+
 scenario="${LEANOS_BOOT_SCENARIO:-blocking-ipc}"
 runtime_dir="${LEANOS_BROWSER_RUNTIME:-build/browser/runtime}"
 source_manifest="$repo_root/browser-runtime/manifest-v1.json"
