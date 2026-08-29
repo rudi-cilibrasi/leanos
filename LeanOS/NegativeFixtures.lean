@@ -9,3 +9,4 @@ import LeanOS.NegativeFixtures.IOMMUConfinement
 import LeanOS.NegativeFixtures.NMIFrame
 import LeanOS.NegativeFixtures.NMIHalt
 import LeanOS.NegativeFixtures.SecurityClaims
+import LeanOS.NegativeFixtures.UserFaultClass

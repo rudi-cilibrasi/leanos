@@ -1,8 +1,4 @@
 # category fixture
-user-fault-class FaultReasonRelabel
-user-fault-class KernelBreakpointContainment
-user-fault-class DivideErrorSoftwareGate
-user-fault-class BreakpointAlternateDescriptor
 stale-translation StaleTranslationOmittedInvalidation
 stale-translation StaleTranslationWrongEffect
 stale-translation StaleTranslationForgedTarget
