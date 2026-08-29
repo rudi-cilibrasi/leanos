@@ -21,9 +21,6 @@ page-fault-agreement PageFaultAgreementUnissuedObject
 page-fault-agreement PageFaultAgreementCorruptLiveTableContainment
 vtd VTdAssignedStateAccepted
 vtd VTdForgedContextValidated
-dma DMAEmptyInventory
-dma DMAInvalidControlContinuation
-dma DMAEncodingImpliesValidation
 iommu IOMMUDetachedAuthoritativeProjection
 iommu IOMMUDeviceReadOutsideRule
 iommu IOMMUPermissionAmplification
