@@ -109,4 +109,66 @@ example :
     (gate readOnlyState (.releaseFrame ⟨0, 1⟩)).isAccepted = true := by
   native_decide
 
+/- Local kernel and IOMMU invariants cannot replace cross-projection coherence. -/
+/--
+error: Application type mismatch: The argument
+  hiommu
+has type
+  state.iommu.Invariant
+but is expected to have type
+  state.iommu.Invariant ∧ state.Coherent
+in the application
+  ⟨hkernel, hiommu⟩
+-/
+#guard_msgs in
+example (state : AuthoritativeExtension)
+    (hkernel : FailStop.AuthoritativeRuntimeWellFormed state.kernel)
+    (hiommu : state.iommu.Invariant) :
+    (gatedByKernel state ⟨hkernel, hiommu⟩
+      (.grant readOnlyGrant)).isAccepted = true := by
+  native_decide
+
+private def sameOwnerWrongFrameCore : Core :=
+  { emptyCore with
+    capabilities :=
+      [{ sampleCapabilities.head! with frame := ⟨1, 1⟩ }] }
+
+/- Same ownership cannot substitute a different frame lifetime. -/
+/--
+error: Tactic `native_decide` evaluated that the proposition
+  validateCore sameOwnerWrongFrameCore = true
+is false
+-/
+#guard_msgs in
+example : validateCore sameOwnerWrongFrameCore = true := by
+  native_decide
+
+private def reassignedState : State :=
+  (gate tornDownState (.assign ⟨0⟩)).state
+
+/- A retired assignment generation cannot authorize a reused device slot. -/
+/--
+error: Tactic `native_decide` evaluated that the proposition
+  (deviceRead reassignedState readRequest).isObserved = true
+is false
+-/
+#guard_msgs in
+example : (deviceRead reassignedState readRequest).isObserved = true := by
+  native_decide
+
+private def twoLiveGenerationsCore : Core :=
+  { emptyCore with
+    frames := sampleFrames ++
+      [{ sampleFrames.head! with handle := ⟨0, 2⟩, owner := 1 }] }
+
+/- Two live generations cannot share one physical frame identity. -/
+/--
+error: Tactic `native_decide` evaluated that the proposition
+  validateCore twoLiveGenerationsCore = true
+is false
+-/
+#guard_msgs in
+example : validateCore twoLiveGenerationsCore = true := by
+  native_decide
+
 end LeanOS.NegativeFixtures.IOMMUConfinement

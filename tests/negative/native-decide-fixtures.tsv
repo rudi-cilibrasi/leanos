@@ -19,9 +19,5 @@ page-fault-agreement PageFaultAgreementForgedAddressSpace
 page-fault-agreement PageFaultAgreementStaleLifecycle
 page-fault-agreement PageFaultAgreementUnissuedObject
 page-fault-agreement PageFaultAgreementCorruptLiveTableContainment
-iommu IOMMUDetachedAuthoritativeProjection
-iommu IOMMUSameOwnerWrongFrame
-iommu IOMMUStaleBDFReuse
-iommu IOMMUTwoLiveFrameGenerations
 lifetime WrappingIssuerReuse
 shared-containment SharedContainmentReasonSubstitution
