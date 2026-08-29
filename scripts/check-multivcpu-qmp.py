@@ -13,23 +13,34 @@ class InventoryError(ValueError):
 
 
 def normalize(records: list[dict[str, object]]) -> list[dict[str, object]]:
-    commands = [
-        record.get("message", {}).get("execute")
-        for record in records
-        if record.get("direction") == "host-to-qemu"
-    ]
-    if commands != ["qmp_capabilities", "query-cpus-fast"]:
-        raise InventoryError("unexpected QMP command sequence")
-    replies = [
-        record.get("message", {}).get("return")
-        for record in records
-        if record.get("direction") == "qemu-to-host"
-        and isinstance(record.get("message", {}).get("return"), list)
-    ]
-    if len(replies) != 1 or len(replies[0]) != 2:
+    if len(records) != 5:
+        raise InventoryError("unexpected QMP record count")
+    greeting, capabilities, capabilities_reply, query, query_reply = records
+    if (
+        greeting.get("direction") != "qemu-to-host"
+        or not isinstance(greeting.get("message", {}).get("QMP"), dict)
+        or capabilities != {
+            "direction": "host-to-qemu",
+            "message": {"execute": "qmp_capabilities"},
+        }
+        or capabilities_reply != {
+            "direction": "qemu-to-host",
+            "message": {"return": {}},
+        }
+        or query != {
+            "direction": "host-to-qemu",
+            "message": {"execute": "query-cpus-fast"},
+        }
+        or query_reply.get("direction") != "qemu-to-host"
+        or set(query_reply) != {"direction", "message"}
+        or set(query_reply.get("message", {})) != {"return"}
+    ):
+        raise InventoryError("unexpected QMP record sequence")
+    processors = query_reply["message"]["return"]
+    if not isinstance(processors, list) or len(processors) != 2:
         raise InventoryError("QMP did not report exactly two processors")
     normalized = []
-    for cpu in replies[0]:
+    for cpu in processors:
         if not isinstance(cpu, dict) or not isinstance(cpu.get("props"), dict):
             raise InventoryError("malformed QMP processor record")
         props = cpu["props"]

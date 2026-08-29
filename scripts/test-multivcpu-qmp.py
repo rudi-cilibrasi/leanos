@@ -48,8 +48,20 @@ class QmpInventoryTest(unittest.TestCase):
                 MODULE.normalize(transcript(cpus))
 
     def test_rejects_missing_inventory_query(self):
-        with self.assertRaisesRegex(MODULE.InventoryError, "command sequence"):
+        with self.assertRaisesRegex(MODULE.InventoryError, "record count"):
             MODULE.normalize(transcript([cpu(0, 0), cpu(1, 1)])[:-2])
+
+    def test_rejects_extra_qmp_record(self):
+        records = transcript([cpu(0, 0), cpu(1, 1)])
+        records.insert(1, {"direction": "qemu-to-host", "message": {"event": "STOP"}})
+        with self.assertRaisesRegex(MODULE.InventoryError, "record count"):
+            MODULE.normalize(records)
+
+    def test_rejects_reordered_qmp_exchange(self):
+        records = transcript([cpu(0, 0), cpu(1, 1)])
+        records[1], records[3] = records[3], records[1]
+        with self.assertRaisesRegex(MODULE.InventoryError, "record sequence"):
+            MODULE.normalize(records)
 
 
 if __name__ == "__main__":
