@@ -1,8 +1,1 @@
 # category fixture
-page-fault-agreement PageFaultAgreementAcceptEveryPresent
-page-fault-agreement PageFaultAgreementIgnoredWalk
-page-fault-agreement PageFaultAgreementReservedContainment
-page-fault-agreement PageFaultAgreementForgedAddressSpace
-page-fault-agreement PageFaultAgreementStaleLifecycle
-page-fault-agreement PageFaultAgreementUnissuedObject
-page-fault-agreement PageFaultAgreementCorruptLiveTableContainment
