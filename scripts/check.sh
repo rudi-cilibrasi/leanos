@@ -5,6 +5,16 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 lake build
+negative_fixture_aggregator="LeanOS/NegativeFixtures.lean"
+while IFS= read -r fixture; do
+  fixture_module="${fixture%.lean}"
+  fixture_module="${fixture_module//\//.}"
+  if ! grep -Fxq "import ${fixture_module}" "$negative_fixture_aggregator"; then
+    echo "error: ${fixture} is missing from ${negative_fixture_aggregator}" >&2
+    exit 1
+  fi
+done < <(find LeanOS/NegativeFixtures -type f -name '*.lean' | sort)
+lake build LeanOS.NegativeFixtures
 lake build leanos-boot-plan
 lake build leanos-vtd-plan
 
