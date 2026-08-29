@@ -20,7 +20,7 @@ leanos_validate_q35_command() {
   local command_name="$1"
   local -n q35_command="$command_name"
   local machine=0 nodefaults=0 iommu=0 vga=0 cdrom=0 cdrom_drive=0
-  local debug_exit=0 devices=0 cpu_options=0
+  local debug_exit=0 devices=0 cpu_options=0 smp_options=0
   local argument previous= first_device=
 
   for argument in "${q35_command[@]}"; do
@@ -29,6 +29,15 @@ leanos_validate_q35_command() {
         max|max,phys-bits=48) ((cpu_options += 1)) ;;
         *)
           echo "error: q35 platform CPU options drifted" >&2
+          return 1
+          ;;
+      esac
+    fi
+    if [[ "$previous" == -smp ]]; then
+      case "$argument" in
+        1|2,sockets=1,cores=2,threads=1) ((smp_options += 1)) ;;
+        *)
+          echo "error: q35 platform SMP topology drifted" >&2
           return 1
           ;;
       esac
@@ -61,7 +70,8 @@ leanos_validate_q35_command() {
     return 1
   }
   [[ $devices -eq 4 && $iommu -eq 1 && $vga -eq 1 && $cdrom -eq 1 &&
-     $cdrom_drive -eq 1 && $debug_exit -eq 1 && $cpu_options -eq 1 ]] || {
+     $cdrom_drive -eq 1 && $debug_exit -eq 1 && $cpu_options -eq 1 &&
+     $smp_options -eq 1 ]] || {
     echo "error: q35 platform device topology drifted" >&2
     return 1
   }
@@ -78,6 +88,7 @@ leanos_q35_command() {
   local serial_log="$4"
   local image="$5"
   local cpu="${6:-max}"
+  local smp="${7:-1}"
   local -n q35_command="$command_name"
 
   q35_command=(
@@ -85,7 +96,7 @@ leanos_q35_command() {
     -machine q35,accel=tcg
     -nodefaults
     -cpu "$cpu"
-    -smp 1
+    -smp "$smp"
     -m "${memory_mib}M"
     -display none
     -monitor none

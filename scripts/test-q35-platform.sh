@@ -10,6 +10,28 @@ leanos_q35_command command qemu-system-x86_64 128 build/evidence/serial.log \
   build/boot/leanos.iso
 leanos_validate_q35_command command
 
+multivcpu=()
+leanos_q35_command multivcpu qemu-system-x86_64 128 \
+  build/evidence/multivcpu.serial.log build/boot/leanos.iso max \
+  2,sockets=1,cores=2,threads=1
+leanos_validate_q35_command multivcpu
+[[ " ${multivcpu[*]} " == *" -smp 2,sockets=1,cores=2,threads=1 "* ]] || {
+  echo "error: q35 platform omitted the explicit multi-vCPU topology" >&2
+  exit 1
+}
+
+negative=("${multivcpu[@]}")
+for index in "${!negative[@]}"; do
+  if [[ "${negative[$index]}" == 2,sockets=1,cores=2,threads=1 ]]; then
+    negative[$index]=2
+    break
+  fi
+done
+if leanos_validate_q35_command negative 2>/dev/null; then
+  echo "error: q35 platform accepted an implicit multi-vCPU topology" >&2
+  exit 1
+fi
+
 assigned_edu=()
 leanos_q35_assigned_edu_command assigned_edu qemu-system-x86_64 128 \
   build/evidence/assigned-edu.serial.log build/boot/leanos.iso
