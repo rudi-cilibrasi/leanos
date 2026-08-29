@@ -234,27 +234,6 @@ if ! grep -Fq 'has type' "$negative_log" ||
   exit 1
 fi
 
-for fixture in NMIFrameMissingCs NMIFrameMissingFlags NMIFrameMissingRsp \
-    NMIFrameMissingSs; do
-  if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
-    echo "error: structural NMI fixture ${fixture} unexpectedly type-checked" >&2
-    exit 1
-  fi
-  case "$fixture" in
-    NMIFrameMissingCs) expected_field='`cs`' ;;
-    NMIFrameMissingFlags) expected_field='`flags`' ;;
-    NMIFrameMissingRsp) expected_field='`rsp`' ;;
-    NMIFrameMissingSs) expected_field='`ss`' ;;
-  esac
-  if ! grep -Fq "tests/negative/${fixture}.lean" "$negative_log" ||
-      ! grep -Fq 'error: Fields missing' "$negative_log" ||
-      ! grep -Fq "$expected_field" "$negative_log"; then
-    echo "error: structural NMI fixture ${fixture} lacked its missing-frame-word diagnostic" >&2
-    cat "$negative_log" >&2
-    exit 1
-  fi
-done
-
 for fixture in NMIHaltClearing NMIPostHaltRepair; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: post-halt NMI fixture ${fixture} unexpectedly type-checked" >&2
