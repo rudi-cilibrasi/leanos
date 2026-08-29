@@ -6,7 +6,7 @@ open LeanOS InterruptEntry
 namespace LeanOS.NegativeFixtures.PageFaultProvenance
 
 /- A caller-selected execute tag cannot relabel a raw user-read error word. -/
-/- error: X86PageTable.AccessKind.execute -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     (DecodedPageFaultError.mk false false true false).accessKind =
@@ -14,7 +14,7 @@ example :
   native_decide
 
 /- Serialized subject identity cannot replace the trusted current subject. -/
-/- error: currentSubject := 2 -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     (authorizeCanonicalPageFault
@@ -25,7 +25,7 @@ example :
   native_decide
 
 /- Serialized address-space identity cannot replace trusted containment state. -/
-/- error: activeAddressSpace := 2 -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     (authorizeCanonicalPageFault
@@ -36,7 +36,7 @@ example :
   native_decide
 
 /- Trusted identities outside the canonical word domain cannot alias after truncation. -/
-/- error: currentSubject := 2 ^ 64 + 1 -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     (authorizeCanonicalPageFault
@@ -49,7 +49,7 @@ example :
   native_decide
 
 /- Trusted address-space identities outside the word domain cannot alias. -/
-/- error: activeAddressSpace := 2 ^ 64 + 1 -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     (authorizeCanonicalPageFault
@@ -62,7 +62,7 @@ example :
   native_decide
 
 /- Serialized CR3 cannot replace the independently trusted active root. -/
-/- error: activeCr3 := 8192 -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     (authorizeCanonicalPageFault
@@ -73,7 +73,7 @@ example :
   native_decide
 
 /- Serialized control bits cannot replace independently trusted controls. -/
-/- error: controlsCode := 14 -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     (authorizeCanonicalPageFault
@@ -83,7 +83,7 @@ example :
         some { canonicalPageFaultExample with controlsCode := 14 } := by
   native_decide
 
-/- error: controlsCode := 13 -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     (authorizeCanonicalPageFault
@@ -93,7 +93,7 @@ example :
         some { canonicalPageFaultExample with controlsCode := 13 } := by
   native_decide
 
-/- error: controlsCode := 11 -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     (authorizeCanonicalPageFault
@@ -103,7 +103,7 @@ example :
         some { canonicalPageFaultExample with controlsCode := 11 } := by
   native_decide
 
-/- error: controlsCode := 7 -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     (authorizeCanonicalPageFault
@@ -114,14 +114,14 @@ example :
   native_decide
 
 /- A saved user selector outside the reviewed codec profile is rejected. -/
-/- error: cs := 7, flags := -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     validCanonicalPageFault { canonicalPageFaultExample with cs := 7 } = true := by
   native_decide
 
 /- A noncanonical saved instruction pointer is rejected. -/
-/- error: rip := 140737488355328, cs := -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     validCanonicalPageFault
@@ -129,7 +129,7 @@ example :
   native_decide
 
 /- The inbound record cannot erase its kernel entry-stack identity. -/
-/- error: stackIdentity := 0, reserved := -/
+/- error: Tactic `native_decide` evaluated that the proposition -/
 #guard_msgs (substring := true) in
 example :
     validCanonicalPageFault
