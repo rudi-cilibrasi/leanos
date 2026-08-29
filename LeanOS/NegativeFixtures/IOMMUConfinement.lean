@@ -83,4 +83,30 @@ example :
       (.attenuate ⟨mapping0, 0, 16, readWrite⟩)).isAccepted = true := by
   native_decide
 
+/- An observation outside the only readable IOVA window rejects. -/
+/--
+error: Tactic `native_decide` evaluated that the proposition
+  (deviceRead readOnlyState
+        (let __src := readRequest;
+        { source := __src.source, assignmentGeneration := __src.assignmentGeneration, iova := 16,
+          length := __src.length })).isObserved =
+    true
+is false
+-/
+#guard_msgs in
+example :
+    (deviceRead readOnlyState { readRequest with iova := 16 }).isObserved = true := by
+  native_decide
+
+/- A live DMA mapping prevents release of its backing lifetime. -/
+/--
+error: Tactic `native_decide` evaluated that the proposition
+  (gate readOnlyState (Operation.releaseFrame { frame := 0, generation := 1 })).isAccepted = true
+is false
+-/
+#guard_msgs in
+example :
+    (gate readOnlyState (.releaseFrame ⟨0, 1⟩)).isAccepted = true := by
+  native_decide
+
 end LeanOS.NegativeFixtures.IOMMUConfinement

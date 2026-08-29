@@ -20,8 +20,6 @@ page-fault-agreement PageFaultAgreementStaleLifecycle
 page-fault-agreement PageFaultAgreementUnissuedObject
 page-fault-agreement PageFaultAgreementCorruptLiveTableContainment
 iommu IOMMUDetachedAuthoritativeProjection
-iommu IOMMUDeviceReadOutsideRule
-iommu IOMMUReleaseReachableFrame
 iommu IOMMUSameOwnerWrongFrame
 iommu IOMMUStaleBDFReuse
 iommu IOMMUTwoLiveFrameGenerations
