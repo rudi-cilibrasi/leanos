@@ -1,14 +1,4 @@
 # category fixture
-page-fault-provenance PageFaultPayloadAccessKind
-page-fault-provenance PageFaultForgedSubject
-page-fault-provenance PageFaultForgedAddressSpace
-page-fault-provenance PageFaultUnrepresentableTrustedSubject
-page-fault-provenance PageFaultUnrepresentableTrustedAddressSpace
-page-fault-provenance PageFaultForgedCr3
-page-fault-provenance PageFaultForgedWp
-page-fault-provenance PageFaultForgedNxe
-page-fault-provenance PageFaultForgedSmep
-page-fault-provenance PageFaultForgedSmap
 page-fault-agreement PageFaultAgreementAcceptEveryPresent
 page-fault-agreement PageFaultAgreementIgnoredWalk
 page-fault-agreement PageFaultAgreementReservedContainment
