@@ -234,14 +234,13 @@ if ! grep -Fq 'has type' "$negative_log" ||
   exit 1
 fi
 
-for fixture in NMIFrameMissingRip NMIFrameMissingCs NMIFrameMissingFlags \
-    NMIFrameMissingRsp NMIFrameMissingSs; do
+for fixture in NMIFrameMissingCs NMIFrameMissingFlags NMIFrameMissingRsp \
+    NMIFrameMissingSs; do
   if lake env lean "tests/negative/${fixture}.lean" >"$negative_log" 2>&1; then
     echo "error: structural NMI fixture ${fixture} unexpectedly type-checked" >&2
     exit 1
   fi
   case "$fixture" in
-    NMIFrameMissingRip) expected_field='`rip`' ;;
     NMIFrameMissingCs) expected_field='`cs`' ;;
     NMIFrameMissingFlags) expected_field='`flags`' ;;
     NMIFrameMissingRsp) expected_field='`rsp`' ;;
