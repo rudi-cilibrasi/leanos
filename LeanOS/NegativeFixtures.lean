@@ -4,6 +4,7 @@ import LeanOS.NegativeFixtures.BootPlans
 import LeanOS.NegativeFixtures.BootTopology
 import LeanOS.NegativeFixtures.DirectPort
 import LeanOS.NegativeFixtures.Example
+import LeanOS.NegativeFixtures.FrameBudget
 import LeanOS.NegativeFixtures.IOMMUConfinement
 import LeanOS.NegativeFixtures.NMIFrame
 import LeanOS.NegativeFixtures.NMIHalt

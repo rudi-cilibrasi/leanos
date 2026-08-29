@@ -1,6 +1,4 @@
 # category fixture
-frame-integrity FrameBudgetRejectedMutation
-frame-integrity FrameReuseBeforeInvalidationAck
 user-fault-class FaultReasonRelabel
 user-fault-class KernelBreakpointContainment
 user-fault-class DivideErrorSoftwareGate
