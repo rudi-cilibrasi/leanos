@@ -1428,6 +1428,8 @@ def check_workflows() -> None:
     for artifact in (
         "build/boot/*.map",
         "build/boot/*.disassembly.txt",
+        "build/boot/*.qmp.jsonl",
+        "build/boot/*.qmp.tsv",
         "build/boot/fault-containment-snapshot.txt",
         "build/boot/fault-readonly-write-snapshot.txt",
         "build/boot/fault-nx-execute-snapshot.txt",

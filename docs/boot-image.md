@@ -79,6 +79,17 @@ preserves `build/boot/serial.log`, and prints the QEMU version, exact escaped
 command, and a `timeout`, `guest-error`, `qemu-error`, or `serial-protocol`
 failure class. Success requires both debug-exit status 33 and the exact protocol.
 
+The topology-rejection runner is the deliberate exception to the singleton
+launch shape. `scripts/run-multivcpu-rejection.sh` requests exactly
+`-smp 2,sockets=1,cores=2,threads=1`, records the complete ordered QMP
+`query-cpus-fast` exchange, and normalizes it into a versioned processor
+inventory. It accepts only the exact topology rejection debug exit and terminal
+record, with no CPL3, scheduler, timer, user-return, or post-terminal output.
+The host QMP inventory independently proves which virtual processors QEMU
+created; it does not authorize the guest decision or prove real-hardware/AP
+semantics. Tagged-release diagnostics retain the raw `.qmp.jsonl` transcript
+and normalized `.qmp.tsv` inventory alongside the serial log.
+
 Run `./scripts/test-run-image.sh` to exercise controlled success, missing and
 partial protocol, guest-error, and hang/timeout fixtures without booting QEMU.
 These fixtures test the host harness only and are not boot evidence.
@@ -185,6 +196,13 @@ final ELFs, maps, disassembly, final page-table plans, the early-IDT and
 early-probe policy reports, exact serial logs with the early readiness and
 terminal records, and the shared evidence directory's QEMU command, version,
 and normalized QMP-runner transcript for the injected NMI.
+
+For the multi-vCPU rejection row, retained evidence includes the exact escaped
+QEMU command, raw QMP transcript, normalized ordered processor inventory, exact
+pre-CPL3 rejection serial log, source revision, and the ordinary image's
+ELF/map/disassembly and policy reports. This is tested QEMU/guest
+correspondence under the documented q35/TCG boundary, not a proof of firmware,
+APIC, reset, compiler, or physical-hardware behavior.
 
 For the fast-entry rows, retained workflow evidence includes both probe ISOs,
 final ELFs and maps, final page-table plans, exact serial logs, decoded

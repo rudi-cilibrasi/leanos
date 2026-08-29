@@ -69,6 +69,8 @@ jobs:
           name: leanos-tag-evidence-${{ github.sha }}
           path: |
             build/boot/*.serial.log
+            build/boot/*.qmp.jsonl
+            build/boot/*.qmp.tsv
             build/boot/dma-quarantine-snapshot-*.tsv
             build/boot/*.iso
             build/boot/*.elf
