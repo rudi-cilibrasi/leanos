@@ -1,13 +1,4 @@
 # category fixture
-nmi NMITerminalManifestMutation
-nmi NMITraceInventoryMutation
-nmi NMIOrdinaryManifestVector2
-nmi NMIReuseIST0
-nmi NMIReuseIST1
-nmi NMIWrongPurpose
-nmi NMIContainmentRouting
-nmi NMISchedulerRouting
-nmi NMIFrameNotAtStackTop
 page-fault-provenance PageFaultDroppedCR2
 page-fault-provenance PageFaultIgnoredAccessBits
 page-fault-provenance PageFaultClearedReserved
