@@ -42,11 +42,21 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
         stream.write(json.dumps({"return": cpus}).encode() + b"\n")
 
 terminal = "LEANOS/7 BOOTALLOC status=FAIL reason=topology-madt-generated-entries"
+pre_cpl3 = [
+    "LEANOS/15 DMA snapshot=1 topology=0001000800020002 bus=0 scanned=256 "
+    "present=5 optional-absent=1 writes=5 readbacks=5 "
+    "initial-bus-masters=1 initial-bus-master-mask=16 bus-master=disabled "
+    "readback=exact generated-result=0 stage=pre-cpl3 result=PASS",
+    "LEANOS/21 VTD-ACTIVATE order=validate,scrub,construct,publish,"
+    "invalidate-context,invalidate-iotlb,enable,verify journal=2271560481 "
+    "gsts=3221225472 fsts=0 rtaddr=1638400 generated-result=0 "
+    "stage=pre-cpl3 result=PASS",
+]
 mode = os.environ.get("LEANOS_QEMU_FIXTURE_MODE", "success")
 records = {
-    "success": [terminal],
+    "success": [*pre_cpl3, terminal],
     "missing": [],
-    "authority-leak": [terminal, "LEANOS/8 CPL3 status=PASS"],
+    "authority-leak": [*pre_cpl3, terminal, "LEANOS/8 CPL3 status=PASS"],
 }.get(mode)
 if records is None:
     raise SystemExit(0 if mode == "reset" else 2)

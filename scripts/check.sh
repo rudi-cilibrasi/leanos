@@ -29,6 +29,7 @@ lake build leanos-vtd-plan
 ./tests/test-q35-pci-construction.py
 ./scripts/test-q35-platform.sh
 ./scripts/test-multivcpu-qmp.py
+./scripts/test-run-multivcpu-rejection.sh
 ./scripts/test-run-dma-unknown-device.sh
 
 ./scripts/test-qemu-wasm-manifest.sh

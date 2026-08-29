@@ -138,7 +138,7 @@ else
   echo "failure_class=post-terminal-output: rejection was not the final record" >&2
   exit 1
 fi
-if grep -Eqi '(^|[ =_-])(cpl3|enter_user|user-return|scheduler-dispatch|timer-armed)([ =_-]|$)|^LEANOS/[0-9]+ FINAL ' "$log"; then
+if grep -Eqi '^LEANOS/[0-9]+ (CPL3|ENTRY|TIMER|CONTEXT|SWITCH|SYSCALL|PEER|TLB-CPL3|FINAL)([[:space:]]|$)|(^|[[:space:]])(enter_user|user-return|scheduler-dispatch|timer-armed)=' "$log"; then
   echo "failure_class=authority-leak: rejected topology reached runtime authority" >&2
   exit 1
 fi
