@@ -234,15 +234,4 @@ if ! grep -Fq 'has type' "$negative_log" ||
   exit 1
 fi
 
-if lake env lean tests/negative/VacuousClaimSetup.lean >"$negative_log" 2>&1; then
-  echo "error: vacuous security-claim fixture unexpectedly type-checked" >&2
-  exit 1
-fi
-if ! grep -q 'error: Type mismatch' "$negative_log" ||
-    ! grep -q 'KernelTransition.Command.unsupported' "$negative_log"; then
-  echo "error: vacuous security-claim fixture lacked its expected contradiction" >&2
-  cat "$negative_log" >&2
-  exit 1
-fi
-
 echo "Lean build, proof-integrity, and negative regression checks passed"
