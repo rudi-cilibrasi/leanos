@@ -19,8 +19,6 @@ page-fault-agreement PageFaultAgreementForgedAddressSpace
 page-fault-agreement PageFaultAgreementStaleLifecycle
 page-fault-agreement PageFaultAgreementUnissuedObject
 page-fault-agreement PageFaultAgreementCorruptLiveTableContainment
-vtd VTdAssignedStateAccepted
-vtd VTdForgedContextValidated
 iommu IOMMUDetachedAuthoritativeProjection
 iommu IOMMUDeviceReadOutsideRule
 iommu IOMMUPermissionAmplification

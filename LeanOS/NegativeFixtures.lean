@@ -14,3 +14,4 @@ import LeanOS.NegativeFixtures.PageFaultError
 import LeanOS.NegativeFixtures.SecurityClaims
 import LeanOS.NegativeFixtures.StaleTranslation
 import LeanOS.NegativeFixtures.UserFaultClass
+import LeanOS.NegativeFixtures.VTdBootPlan

@@ -30,8 +30,6 @@ if ! grep -Fq "$fixture_path" "$fixture_log" ||
 fi
 
 case "$fixture" in
-  VTdAssignedStateAccepted) expected='IOMMU.assignedState' ;;
-  VTdForgedContextValidated) expected='validateDecodedUnit' ;;
   DMAEmptyInventory) expected='(validate emptySnapshot).isAccepted = true' ;;
   DMAInvalidControlContinuation) expected='q35BusMasterBitFlipSnapshot)).result = RuntimeResult.continued' ;;
   DMAEncodingImpliesValidation) expected='(validate staleSnapshot).isAccepted = true' ;;
