@@ -6,7 +6,8 @@
 - Supersedes: Nothing
 - Related issues: [#2](https://github.com/rudi-cilibrasi/leanos/issues/2),
   [#4](https://github.com/rudi-cilibrasi/leanos/issues/4), and
-  [#6](https://github.com/rudi-cilibrasi/leanos/issues/6)
+  [#6](https://github.com/rudi-cilibrasi/leanos/issues/6), and
+  [#267](https://github.com/rudi-cilibrasi/leanos/issues/267)
 
 ## Context
 
@@ -119,7 +120,8 @@ Every Phase 1 correctness statement must use one of these terms:
   project-added axioms or admitted obligations, establishes a property of a
   named model under stated preconditions. The claim does not extend to generated
   code, the runtime, foreign code, or hardware unless a separate refinement proof
-  says so.
+  says so. Proofs using `native_decide` additionally depend on the native-proof
+  TCB described below; they are not kernel-reduction-only evidence.
 - **Tested:** a named repository command observed expected behavior for stated
   inputs in a stated environment. Testing neither proves all inputs nor verifies
   the compiler, boot chain, emulator, or hardware.
@@ -146,9 +148,41 @@ The inventory below is auditable even where issue #4 has not selected the final
 boundary. Exact versions and artifacts will replace the placeholders during the
 corresponding implementation issues.
 
+#### Native evaluation proof policy
+
+<!-- native-decide-policy:start -->
+The preferred computational proof is `rfl` or `decide` whenever kernel reduction
+remains tractable. `native_decide` is permitted only for closed, deterministic,
+bounded computations: finite model or scenario evaluation, exhaustive finite
+enumeration, corpus/codec shape checks, and golden negative fixtures. It is not a
+substitute for a symbolic argument over an open or unbounded domain. A theorem
+statement, claim index, or review must never describe a `native_decide` result as
+verification of the Lean compiler, generated native code, or native evaluator.
+
+`native_decide` compiles and executes the synthesized `Decidable` instance. Its
+proof term relies on the `Lean.ofReduceBool` axiom instead of replaying that
+computation by kernel reduction. Consequently the Lean compiler, generated
+native code path, native evaluator/interpreter, and any selected
+`@[implemented_by]` implementation are trusted for every declaration that uses
+or transitively depends on such a proof. Direct source calls to
+`Lean.ofReduceBool` are not an approved category.
+
+`scripts/native-decide-modules.tsv` classifies every source module that uses the
+tactic as either a bounded model/corpus proof module or a golden negative-fixture
+module. `scripts/check-native-decide-policy.py` lexes comments and strings out of
+first-party Lean sources, reports semantic use counts per category and module,
+rejects direct `Lean.ofReduceBool` calls, and fails on missing or stale module
+classifications. The check deliberately does not freeze an exact use count:
+ordinary edits produce visible log deltas, while the first use in a new module
+requires a reviewed classification change. Reviewers should still try `rfl` or
+`decide` for new or touched uses; issue #267 converted the representative
+`CapabilityHandle.slotRadix_value` proof to `decide`.
+<!-- native-decide-policy:end -->
+
 | Component | Why it is trusted | Failure impact | Owner/evidence |
 | --- | --- | --- | --- |
-| Lean kernel and pinned Lean/Lake toolchain | Elaborates and checks C1–C3; compiler may generate boundary code | A bug can accept a false theorem or produce code with different behavior | Issues #3–#5; toolchain file and proof logs |
+| Lean kernel and pinned Lean/Lake elaboration and checking toolchain | Elaborates proof source and checks proof terms for C1–C3, apart from the separately inventoried native-evaluation result | A soundness bug can accept a false theorem | Issues #3–#5; toolchain file and proof logs |
+| `native_decide` / `Lean.ofReduceBool` native proof path | Evaluates approved bounded `Decidable` instances through the Lean compiler, generated native code, native evaluator/interpreter, and selected `@[implemented_by]` definitions; the result enters the proof through `Lean.ofReduceBool` rather than kernel reduction | A compiler, evaluator, code-generation, or replacement-implementation defect can report `true` for a false proposition and make every dependent model theorem unsound | Issue #267; `scripts/native-decide-modules.tsv`, `scripts/check-native-decide-policy.py`, and proof logs |
 | Phase 1 Lean definitions and theorem statements | They define the model and the property actually proved | A weak or incorrect model makes a true theorem irrelevant | Source review and named claims in this ADR |
 | Lean runtime and generated C/native code, if selected | Implements allocation, initialization, exceptions, and execution outside the proved model | Runtime or code-generation faults can violate boundary behavior | Issue #4 experiment and ADR 0002 |
 | Boot assembly and foreign C/Rust, if selected | Establishes CPU state and bridges firmware, ABI, runtime, serial, and exit interfaces | ABI or memory errors can forge output, corrupt state, or crash | Issue #4/#6 source and tests |

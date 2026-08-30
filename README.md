@@ -64,6 +64,15 @@ implementation/execution path whose correctness is assumed when interpreting
 the tested observations. The elaborator constructs proof terms, but the kernel
 rechecks those terms rather than trusting the elaborator's result directly.
 
+There is one explicitly inventoried exception to a kernel-reduction-only proof
+path. For approved bounded computations, `native_decide` compiles and runs a
+`Decidable` instance with Lean's native evaluator and records the result through
+`Lean.ofReduceBool`. The kernel checks the resulting term but does not replay the
+native computation, so those declarations also trust the Lean compiler,
+generated native code, evaluator/interpreter, and selected `@[implemented_by]`
+definitions. The policy and module inventory are part of
+[ADR 0001](docs/adr/0001-phase-1-scope-threat-model-and-tcb.md#native-evaluation-proof-policy).
+
 ### QEMU-tested behavior
 
 The CI image boots headlessly on a single emulated x86-64 `q35` CPU under TCG.
@@ -580,8 +589,12 @@ invalid proof fixtures remain rejected. Lean warnings are errors for project
 modules, so declarations containing `sorry` or `admit` fail the build. The
 check also rejects unapproved `axiom`, `constant`, `unsafe`, and `extern`
 declarations; required trusted-code boundaries must be documented and explicitly
-allowlisted when they are introduced. GitHub Actions invokes the same script;
-generated Lake output is kept under the ignored `.lake/` directory.
+allowlisted when they are introduced. It separately reports every semantic
+`native_decide` use by source module, requires a reviewed policy classification,
+and rejects direct source use of `Lean.ofReduceBool`; these proofs are
+machine-checked under the documented native-evaluation TCB, not kernel reduction
+alone. GitHub Actions invokes the same script; generated Lake output is kept
+under the ignored `.lake/` directory.
 
 ### Local CI commands
 

@@ -5,6 +5,9 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+./scripts/test-native-decide-policy.sh
+./scripts/check-native-decide-policy.py
+
 lake build
 negative_fixture_aggregator="LeanOS/NegativeFixtures.lean"
 while IFS= read -r fixture; do
@@ -132,13 +135,7 @@ fi
 rm -f "$trusted_scan_log"
 
 negative_log="$(mktemp)"
-negative_log_dir="$(mktemp -d)"
-negative_jobs="${LEANOS_NEGATIVE_JOBS:-$(nproc)}"
-if [[ ! "$negative_jobs" =~ ^[1-9][0-9]*$ ]]; then
-  echo "error: LEANOS_NEGATIVE_JOBS must be a positive integer" >&2
-  exit 1
-fi
-trap 'rm -f "$negative_log"; rm -rf "$negative_log_dir"' EXIT
+trap 'rm -f "$negative_log"' EXIT
 
 if lake env lean -DwarningAsError=true tests/negative/Sorry.lean \
     >"$negative_log" 2>&1; then
@@ -166,11 +163,6 @@ for fixture in WeakenedAuthorityClaim DroppedSeparationClaim UnsynchronizedBlock
     exit 1
   fi
 done
-
-awk 'NF == 2 && $1 !~ /^#/ { print $1, $2 }' \
-  tests/negative/native-decide-fixtures.tsv |
-  xargs -r -n 2 -P "$negative_jobs" \
-    ./scripts/check-negative-native-decide.sh "$negative_log_dir"
 
 if lake env lean tests/negative/PageFaultAgreementWriteInstructionContainment.lean \
     >"$negative_log" 2>&1; then

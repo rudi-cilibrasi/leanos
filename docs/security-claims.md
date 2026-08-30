@@ -7,6 +7,14 @@ names an independently restated theorem in the default-built
 the runtime, boot code, QEMU, hardware, timing, concurrency, and covert channels
 remain excluded unless a separate refinement claim says otherwise.
 
+“Proved” means accepted by the pinned Lean toolchain under ADR 0001's complete
+proof TCB. Declarations using or transitively depending on `native_decide` rely
+on `Lean.ofReduceBool`, the Lean compiler and generated native code, the native
+evaluator/interpreter, and relevant `@[implemented_by]` definitions; their
+decidable computation is not replayed by kernel reduction. The repository-owned
+policy check inventories and classifies those source modules without treating
+the compiler as verified.
+
 <!-- claim-index:start -->
 | ID | Contract declaration | Source theorem | Model / transition | Assumptions | Evidence | Explicit exclusions |
 | --- | --- | --- | --- | --- | --- | --- |

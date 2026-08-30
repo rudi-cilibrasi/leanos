@@ -32,7 +32,7 @@ def generationRadix : Nat := 2 ^ 48
 def slotReserved : Nat := slotRadix - 1
 def generationReserved : Nat := generationRadix - 1
 
-private theorem slotRadix_value : slotRadix = 65536 := by native_decide
+private theorem slotRadix_value : slotRadix = 65536 := by decide
 private theorem slotReserved_value : slotReserved = 65535 := by native_decide
 private theorem generationReserved_value : generationReserved = 281474976710655 := by
   native_decide
