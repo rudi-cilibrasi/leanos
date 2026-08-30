@@ -31,7 +31,6 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t, uint
                                                uint64_t, uint64_t);
 extern uint64_t leanos_iotlb_publication_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                                uint64_t, uint64_t);
-#include "leanos/oracle-dispatch.h"
 extern uint64_t leanos_assigned_edu_reuse_publication(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
@@ -42,6 +41,7 @@ extern uint64_t leanos_assigned_edu_reuse_release_gate(
 extern uint64_t leanos_assigned_edu_reuse_fresh_publication(uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                         uint64_t);
+#include "leanos/oracle-dispatch.h"
 extern uint64_t leanos_page_fault_dispatch_regression_demo(uint64_t);
 extern uint64_t leanos_page_fault_diagnostic_regression_demo(uint64_t);
 extern void leanos_register_boundary_target(const char *, void *);

@@ -120,12 +120,12 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_iotlb_publication_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
-#include "leanos/oracle-dispatch.h"
 extern uint64_t leanos_assigned_edu_reuse_publication(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                        uint64_t);
+#include "leanos/oracle-dispatch.h"
 extern uint64_t leanos_authorize_page_fault_snapshot(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
