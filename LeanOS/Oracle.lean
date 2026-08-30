@@ -179,6 +179,7 @@ private def composite (id : String) (state tag arg0 arg1 arg2 arg3 : UInt64) : V
 private def mixedEdgeId : CompositeDispatcher.MixedReplyId → String
   | .transferOffered => "composite.mixed-transfer-offer"
   | .transferAccepted => "composite.mixed-transfer-accept"
+  | .sealedHandleRejected => "composite.mixed-transfer-pre-receipt-denial"
   | .transferredCapabilityRevoked => "composite.mixed-capability-revoke"
   | .staleHandleRejected => "composite.mixed-stale-handle-reject"
   | .freshCapabilityCopied => "composite.mixed-capability-copy"
@@ -664,19 +665,19 @@ def vectors : List Vector := [
   mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors ++
     budgetVectors ++ iotlbPublicationVectors
 
-theorem corpus_shape : vectors.length = 389 := by decide
-/-- Oracle indices 314--333 are definitionally the complete canonical mixed
+theorem corpus_shape : vectors.length = 390 := by decide
+/-- Oracle indices 314--334 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
-    (vectors.drop 314).take 20 =
+    (vectors.drop 314).take 21 =
       CompositeDispatcher.mixedCanonicalEdges.map mixedEdgeVector := by
   rfl
 
 theorem hosted_budget_vectors_exact :
-    (vectors.drop 356).take budgetVectors.length = budgetVectors := by rfl
+    (vectors.drop 357).take budgetVectors.length = budgetVectors := by rfl
 
 theorem hosted_iotlb_publication_vectors_exact :
-    vectors.drop 380 = iotlbPublicationVectors := by rfl
+    vectors.drop 381 = iotlbPublicationVectors := by rfl
 
 private def iotlbPublicationAdapterAgrees (vector : Vector) : Bool :=
   match vector.adapter, vector.words with
@@ -686,7 +687,7 @@ private def iotlbPublicationAdapterAgrees (vector : Vector) : Bool :=
   | _, _ => true
 
 theorem hosted_iotlb_publication_adapter_agrees :
-    (vectors.drop 380).all iotlbPublicationAdapterAgrees = true := by
+    (vectors.drop 381).all iotlbPublicationAdapterAgrees = true := by
   native_decide
 
 theorem hosted_budget_canonical_sequence :
@@ -700,11 +701,11 @@ theorem hosted_mixed_vectors_refine :
     ∀ edge ∈ CompositeDispatcher.mixedCanonicalEdges, edge.Refines :=
   CompositeDispatcher.mixedCanonicalEdges_refine
 
-/-- Oracle indices 334--352 are the exact stateful invalidation publication
+/-- Oracle indices 335--353 are the exact stateful invalidation publication
 corpus, including independent accepted-unmap and switch-away/back branches;
-353--355 are malformed-effect, mismatched-state, and stale-ticket negatives. -/
+354--356 are malformed-effect, mismatched-state, and stale-ticket negatives. -/
 theorem hosted_invalidation_vectors_exact :
-    (vectors.drop 334).take 22 =
+    (vectors.drop 335).take 22 =
       CompositeDispatcher.invalidationCanonicalEdges.map invalidationEdgeVector ++
         invalidationNegativeVectors := by
   rfl
@@ -714,38 +715,39 @@ theorem hosted_invalidation_vectors_refine :
   CompositeDispatcher.invalidationCanonicalEdges_refine
 
 theorem composite_invalidation_trace_agrees :
-    (vectors[334]).expected = 0x321b01 ∧
-    (vectors[335]).expected = 0x331c01 ∧
-    (vectors[338]).expected = 0x361f01 ∧
-    (vectors[342]).expected = 0x3a2301 ∧
-    (vectors[344]).expected = 0x3c2501 ∧
-    (vectors[346]).expected = 0x3e2701 ∧
-    (vectors[347]).expected = 0x3f2801 ∧
-    (vectors[348]).expected = 0x402901 ∧
-    (vectors[349]).expected = 0x412a01 ∧
-    (vectors[350]).expected = 0x422b01 ∧
-    (vectors[351]).expected = 0x432c01 ∧
-    (vectors[352]).expected = 0x442d01 ∧
-    (vectors[353]).expected = 0xff05 ∧
-    (vectors[354]).expected = 0xff06 ∧
-    (vectors[355]).expected = 0xff05 := by
+    (vectors[335]).expected = 0x321b01 ∧
+    (vectors[336]).expected = 0x331c01 ∧
+    (vectors[339]).expected = 0x361f01 ∧
+    (vectors[343]).expected = 0x3a2301 ∧
+    (vectors[345]).expected = 0x3c2501 ∧
+    (vectors[347]).expected = 0x3e2701 ∧
+    (vectors[348]).expected = 0x3f2801 ∧
+    (vectors[349]).expected = 0x402901 ∧
+    (vectors[350]).expected = 0x412a01 ∧
+    (vectors[351]).expected = 0x422b01 ∧
+    (vectors[352]).expected = 0x432c01 ∧
+    (vectors[353]).expected = 0x442d01 ∧
+    (vectors[354]).expected = 0xff05 ∧
+    (vectors[355]).expected = 0xff06 ∧
+    (vectors[356]).expected = 0xff05 := by
   native_decide
 
 /-- The hosted scalar ABI rejects replaying release ticket 1 as the later
 switch acknowledgement even though both require the same `.flush` effect. -/
 theorem composite_invalidation_same_effect_replay_rejected :
-    (vectors[355]).expected = 0xff05 := by
+    (vectors[356]).expected = 0xff05 := by
   native_decide
 
 theorem composite_mixed_trace_agrees :
     (vectors[314]).expected = 0x200901 ∧
-    (vectors[319]).expected = 0x250e01 ∧
-    (vectors[324]).expected = 0x2a1301 ∧
-    (vectors[326]).expected = 0x2c1501 ∧
-    (vectors[327]).expected = 0x2d1601 ∧
-    (vectors[329]).expected = 0x2f1801 ∧
-    (vectors[332]).expected = 0x452e01 ∧
-    (vectors[333]).expected = 0x462e01 := by
+    (vectors[315]).expected = 0x470901 ∧
+    (vectors[320]).expected = 0x250e01 ∧
+    (vectors[325]).expected = 0x2a1301 ∧
+    (vectors[327]).expected = 0x2c1501 ∧
+    (vectors[328]).expected = 0x2d1601 ∧
+    (vectors[330]).expected = 0x2f1801 ∧
+    (vectors[333]).expected = 0x452e01 ∧
+    (vectors[334]).expected = 0x462e01 := by
   native_decide
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl

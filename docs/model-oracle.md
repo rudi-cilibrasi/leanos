@@ -14,7 +14,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `IOMMU.IOTLB.iotlbPublicationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-389-vector order covers accepted calls,
+390-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -134,7 +134,11 @@ post-state returned by the sole `authoritativeGate` invocation rather than
 manufacturing a generic success result. These five probes remain independently
 proved one-step rejections. The positive mixed sequence covers the accepted
 mapping, IPC, transfer/reuse, timer, and cleanup paths without weakening those
-negative fixtures.
+negative fixtures. Its transfer prefix also attempts ordinary IPC through the
+future delivered handle while the descendant is still sealed. The generated
+dispatcher returns the typed stale-handle denial, preserves the complete
+authoritative state, and only the following atomic receipt exposes handle
+`0x60003` in the reviewed destination slot.
 
 Every boot image retains that same generated `leanos_composite_dispatch` symbol
 and routes adapter 18 through it during the ordered oracle replay. Unknown
