@@ -713,6 +713,49 @@ structure CompositeState where
   invalidationPublication : InvalidationPublication.State :=
     InvalidationPublication.initial
 
+/-- The concrete value type owned by each named composite projection.  This is
+the first integration boundary between the dependency-free footprint
+vocabulary and `CompositeState`; later operation declarations can quantify
+over projections without erasing their field types. -/
+def CompositeProjectionType : CompositeFootprint.Projection → Type
+  | .execution => State
+  | .scheduler => Scheduler.State
+  | .preemption => Preemption.State
+  | .virtualMemory => VirtualMapping.State
+  | .ipc => IPCSyscall.State
+  | .capabilities => Capability.State
+  | .lifecycle => SubjectLifecycle.State
+  | .resumable => ResumablePreemption.State
+  | .transfers => CapabilityTransfer.State
+  | .blockingIPC => BlockingIPC.State
+  | .blockingContexts => BlockingIPC.SubjectId → Option ResumableContext.Context
+  | .deferredCancels => BlockingIPCContext.DeferredCancelState
+  | .directPortIO => DirectPortIO.State
+  | .dmaAccepted => DMAQuarantine.AcceptedSnapshot
+  | .dmaObserved => DMAQuarantine.Snapshot
+  | .invalidationPublication => InvalidationPublication.State
+
+/-- Read one named projection without introducing an untyped sum or a second
+copy of composite state. -/
+def CompositeState.project (state : CompositeState) :
+    (projection : CompositeFootprint.Projection) → CompositeProjectionType projection
+  | .execution => state.execution
+  | .scheduler => state.scheduler
+  | .preemption => state.preemption
+  | .virtualMemory => state.virtualMemory
+  | .ipc => state.ipc
+  | .capabilities => state.capabilities
+  | .lifecycle => state.lifecycle
+  | .resumable => state.resumable
+  | .transfers => state.transfers
+  | .blockingIPC => state.blockingIPC
+  | .blockingContexts => state.blockingContexts
+  | .deferredCancels => state.deferredCancels
+  | .directPortIO => state.directPortIO
+  | .dmaAccepted => state.dmaAccepted
+  | .dmaObserved => state.dmaObserved
+  | .invalidationPublication => state.invalidationPublication
+
 /-- The blocking store and all composite scheduler views name one scheduler. -/
 def CompositeState.BlockingIPCCoherent (state : CompositeState) : Prop :=
   state.blockingIPC.scheduler = state.scheduler ∧
