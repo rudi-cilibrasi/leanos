@@ -1887,7 +1887,10 @@ if grep -q $'^multivcpu-rejection\t' "$build/evidence-build-plan.tsv"; then
     "$build/leanos-multivcpu-rejection.elf"
   )
 fi
-if [[ "$evidence_tier" == all ]]; then
+# An unsharded complete-evidence build owns the fixed full inventory below.
+# All-tier CI is still sharded: each shard must hash only the files selected by
+# its build plan, including the multi-vCPU aliases only in their owning shard.
+if [[ "$evidence_tier" == all && -z "$evidence_shard_index" ]]; then
   sha256sum "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-multivcpu-rejection.iso" \
   "$build/leanos-multivcpu-rejection.elf" \
