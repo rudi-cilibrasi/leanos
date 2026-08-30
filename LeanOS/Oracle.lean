@@ -36,6 +36,30 @@ structure Vector where
   expected : UInt64
   deriving Repr
 
+/-- The Lean-owned numeric vocabulary consumed by both hosted and boot replay.
+Unknown names are intentionally absent so header generation can fail closed. -/
+def adapterIds : List (String × Nat) := [
+  ("KernelTransition", 0),
+  ("Syscall.scalar", 1),
+  ("IPCSyscall.scalar", 2),
+  ("Preemption.scalar", 3),
+  ("Preemption.resumable", 4),
+  ("BootAllocation.scalar", 5),
+  ("Interrupt.userReturn", 6),
+  ("BlockingIPC.scalar", 7),
+  ("CapabilityReuse.scalar", 8),
+  ("Interrupt.entry", 9),
+  ("ExtendedState.denialDispatch", 10),
+  ("PrivilegeEntryControl.scalar", 11),
+  ("FaultDispatch.scalar", 12),
+  ("DirectPortIO.scalar", 13),
+  ("Interrupt.nmi", 14),
+  ("Interrupt.bootPhase", 15),
+  ("StaleTranslation.scalar", 16),
+  ("Interrupt.pageFault", 17),
+  ("CompositeDispatcher.stateful", 18),
+  ("IOTLB.scalar", 19)]
+
 private def boot (id : String) (state command : UInt64) : Vector :=
   { id, adapter := "KernelTransition", words := [state, command],
     expected := KernelTransition.bootTransition state command }
@@ -1090,6 +1114,8 @@ def emit : IO Unit := do
   let revision := (← IO.getEnv "LEANOS_SOURCE_REVISION").getD "unknown"
   IO.println "leanos-oracle\t1"
   IO.println s!"source-revision\t{revision}"
+  for entry in adapterIds do
+    IO.println s!"adapter-id\t{entry.1}\t{entry.2}"
   for entry in vectors.zipIdx do
     IO.println (line entry.2 entry.1)
 
