@@ -198,6 +198,7 @@ RUNNERS = {
     "double-fault",
     "entry-stack-overflow",
     "nmi",
+    "multivcpu",
     "bootstrap32-ud",
     "bootstrap64-nmi",
     "double-fault-guard",
@@ -212,6 +213,7 @@ RUNNER_RESULT_CLASSES = {
     "double-fault": "fail-stop",
     "entry-stack-overflow": "fail-stop",
     "nmi": "fail-stop",
+    "multivcpu": "controlled-rejection",
     "bootstrap32-ud": "fail-stop",
     "bootstrap64-nmi": "fail-stop",
     "double-fault-guard": "controlled-rejection",
@@ -547,6 +549,13 @@ def select_build_artifacts(
         # instead of deriving nonexistent Make targets from the packaged ELF.
         target_overrides = {
             "leanos-assigned-edu.elf": ("leanos-prelink.elf", "leanos.elf"),
+            # The negative topology scenario runs the ordinary reviewed image;
+            # its distinct matrix artifacts are aliases materialized after the
+            # canonical image is built so matrix identity remains one-to-one.
+            "leanos-multivcpu-rejection.elf": (
+                "leanos-prelink.elf",
+                "leanos.elf",
+            ),
             "leanos-double-fault.elf": (
                 "leanos-double-fault-prelink.elf",
                 "kernel-double-fault.o",
@@ -587,8 +596,12 @@ def expanded(row: dict[str, str], version: str, build_dir: Path) -> dict[str, Pa
         key: build_dir / row[key].replace("@VERSION@", version)
         for key in ("image", "elf", "serial_log")
     }
-    if row["runner"] == "nmi":
+    if row["runner"] in {"nmi", "multivcpu"}:
         paths["qmp_transcript"] = Path(str(paths["serial_log"]) + ".qmp.jsonl")
+    if row["runner"] == "multivcpu":
+        paths["multivcpu_inventory"] = Path(
+            str(paths["serial_log"]) + ".qmp.tsv"
+        )
     if row["runner"] == "boot":
         paths["dma_snapshot"] = (
             build_dir / f"dma-quarantine-snapshot-{row['scenario']}.tsv"
@@ -637,6 +650,12 @@ def scenario_invocation(
         environment["LEANOS_NMI_SCENARIO"] = row["scenario"]
         environment["LEANOS_QMP_LOG"] = str(paths["qmp_transcript"])
         command = ["./scripts/run-nmi.sh", str(paths["image"])]
+    elif row["runner"] == "multivcpu":
+        environment["LEANOS_QMP_LOG"] = str(paths["qmp_transcript"])
+        environment["LEANOS_MULTIVCPU_INVENTORY"] = str(
+            paths["multivcpu_inventory"]
+        )
+        command = ["./scripts/run-multivcpu-rejection.sh", str(paths["image"])]
     elif row["runner"] == "bootstrap32-ud":
         command = ["./scripts/run-bootstrap32-ud.sh", str(paths["image"])]
     elif row["runner"] == "bootstrap64-nmi":
@@ -696,7 +715,13 @@ def execute_scenario(
     command, scenario_environment = scenario_invocation(
         row, paths, build_dir, version
     )
-    for key in ("serial_log", "dma_snapshot", "vtd_snapshot", "qmp_transcript"):
+    for key in (
+        "serial_log",
+        "dma_snapshot",
+        "vtd_snapshot",
+        "qmp_transcript",
+        "multivcpu_inventory",
+    ):
         if key in paths:
             paths[key].unlink(missing_ok=True)
     combined_environment = environment.copy()
@@ -833,7 +858,9 @@ def run(args: argparse.Namespace) -> None:
                 "path": display_path(paths["serial_log"]),
                 "sha256": sha256(paths["serial_log"]),
             }
-        if row["runner"] == "nmi" and paths["qmp_transcript"].is_file():
+        if row["runner"] in {"nmi", "multivcpu"} and paths[
+            "qmp_transcript"
+        ].is_file():
             result["qmp_transcript"] = {
                 "path": display_path(paths["qmp_transcript"]),
                 "sha256": sha256(paths["qmp_transcript"]),
@@ -862,12 +889,19 @@ def run(args: argparse.Namespace) -> None:
             raise EvidenceError(
                 f"scenario {row['id']} did not retain its VT-d activation snapshot"
             )
-        if row["runner"] == "nmi" and (
+        if row["runner"] in {"nmi", "multivcpu"} and (
             not paths["qmp_transcript"].is_file()
             or paths["qmp_transcript"].stat().st_size == 0
         ):
             raise EvidenceError(
                 f"scenario {row['id']} did not retain its QMP transcript"
+            )
+        if row["runner"] == "multivcpu" and (
+            not paths["multivcpu_inventory"].is_file()
+            or paths["multivcpu_inventory"].stat().st_size == 0
+        ):
+            raise EvidenceError(
+                f"scenario {row['id']} did not retain its normalized CPU inventory"
             )
         if len(result["qemu_commands"]) != 1:
             raise EvidenceError(
@@ -889,11 +923,17 @@ def run(args: argparse.Namespace) -> None:
                 "path": display_path(paths["vtd_snapshot"]),
                 "sha256": sha256(paths["vtd_snapshot"]),
             })
-        if row["runner"] == "nmi":
+        if row["runner"] in {"nmi", "multivcpu"}:
             result["qmp_transcript"] = {
                 "path": display_path(paths["qmp_transcript"]),
                 "sha256": sha256(paths["qmp_transcript"]),
             }
+        if row["runner"] == "multivcpu":
+            result["artifacts"].append({
+                "kind": "multivcpu_inventory",
+                "path": display_path(paths["multivcpu_inventory"]),
+                "sha256": sha256(paths["multivcpu_inventory"]),
+            })
         result["status"] = "PASS"
         write_report(output, report)
 
@@ -1005,6 +1045,13 @@ def verify_report(
             expected_artifacts.add(
                 ("vtd_snapshot", display_path(paths["vtd_snapshot"]))
             )
+        if "multivcpu_inventory" in paths:
+            expected_artifacts.add(
+                (
+                    "multivcpu_inventory",
+                    display_path(paths["multivcpu_inventory"]),
+                )
+            )
         artifacts = result.get("artifacts")
         if not isinstance(artifacts, list) or {
             (artifact.get("kind"), artifact.get("path"))
@@ -1018,7 +1065,7 @@ def verify_report(
             raise EvidenceError(f"scenario {row['id']} serial-log identity differs")
         verify_hash(serial, f"scenario {row['id']} serial log")
         verify_iotlb_oracle_rows(paths["serial_log"], row["id"])
-        if row["runner"] == "nmi":
+        if row["runner"] in {"nmi", "multivcpu"}:
             transcript = result.get("qmp_transcript")
             if (
                 not isinstance(transcript, dict)

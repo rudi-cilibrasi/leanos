@@ -1,7 +1,8 @@
 # leanos-emulator-evidence-v2
-# mandatory-count	61
+# mandatory-count	62
 # id	runner	result-class	timeout-seconds	image	elf	serial-log	scenario	mode	reason	tier
 blocking-ipc	boot	accepted-boot	30	leanos-@VERSION@-x86_64.iso	leanos.elf	serial.log	blocking-ipc	-	-	pr
+multivcpu-rejection	multivcpu	controlled-rejection	30	leanos-@VERSION@-x86_64-multivcpu-rejection.iso	leanos-multivcpu-rejection.elf	multivcpu-rejection.serial.log	multivcpu-rejection	-	topology-non-singleton	pr
 assigned-edu-inventory	assigned-edu	accepted-boot	30	leanos-@VERSION@-x86_64-assigned-edu.iso	leanos-assigned-edu.elf	assigned-edu.serial.log	assigned-edu-inventory	-	-	pr
 malformed-handoff	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-malformed-handoff.iso	leanos-malformed-handoff.elf	malformed-handoff.serial.log	malformed-handoff	-	decode-rejected	pr
 projection-authority-mutation	malformed-handoff	controlled-rejection	30	leanos-@VERSION@-x86_64-projection-authority-mutation.iso	leanos-projection-authority-mutation.elf	projection-authority-mutation.serial.log	projection-authority-mutation	-	projection-authority	evidence

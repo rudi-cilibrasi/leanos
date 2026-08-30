@@ -157,6 +157,14 @@ def successful_runner(_command, *, env, **_kwargs):
             '{"direction":"host-to-qemu","message":{"execute":"inject-nmi"}}\n',
             encoding="utf-8",
         )
+    if "LEANOS_MULTIVCPU_INVENTORY" in env:
+        Path(env["LEANOS_MULTIVCPU_INVENTORY"]).write_text(
+            "# leanos-q35-multivcpu-inventory-v1\n"
+            "index\tqom-path\ttopology\n"
+            "0\t/machine/unattached/device[0]\tsocket=0,core=0,thread=0\n"
+            "1\t/machine/unattached/device[1]\tsocket=0,core=1,thread=0\n",
+            encoding="utf-8",
+        )
     return SimpleNamespace(returncode=0, stdout="QEMU command: fixture-qemu --checked\n")
 
 
@@ -269,6 +277,7 @@ def run_fixtures() -> None:
         }
         expected_special_targets = {
             "assigned-edu-inventory": ("leanos-prelink.elf", "leanos.elf"),
+            "multivcpu-rejection": ("leanos-prelink.elf", "leanos.elf"),
             "double-fault": (
                 "leanos-double-fault-prelink.elf",
                 "kernel-double-fault.o",

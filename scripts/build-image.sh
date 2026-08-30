@@ -1868,8 +1868,23 @@ if ! xargs -0 -r -n 2 -P "$policy_jobs" bash -c \
   exit 1
 fi
 record_build_phase iso-packaging
+# The multi-vCPU policy run intentionally exercises the ordinary reviewed
+# image and ELF. Materialize distinct evidence identities only after that
+# canonical pair is complete so the matrix remains one-to-one without a
+# second build or a divergent guest binary.
+if grep -q $'^multivcpu-rejection\t' "$build/evidence-build-plan.tsv"; then
+  cp "$build/leanos-${version}-x86_64.iso" \
+    "$build/leanos-${version}-x86_64-multivcpu-rejection.iso"
+  cp "$build/leanos.elf" "$build/leanos-multivcpu-rejection.elf"
+  selected_checksum_paths+=(
+    "$build/leanos-${version}-x86_64-multivcpu-rejection.iso"
+    "$build/leanos-multivcpu-rejection.elf"
+  )
+fi
 if [[ "$evidence_tier" == all ]]; then
   sha256sum "$build/leanos-${version}-x86_64.iso" \
+  "$build/leanos-${version}-x86_64-multivcpu-rejection.iso" \
+  "$build/leanos-multivcpu-rejection.elf" \
   "$build/leanos-${version}-x86_64-assigned-edu.iso" \
   "$build/leanos-assigned-edu.elf" \
   "$build/leanos-assigned-edu.map" \
