@@ -756,6 +756,33 @@ def CompositeState.project (state : CompositeState) :
   | .dmaObserved => state.dmaObserved
   | .invalidationPublication => state.invalidationPublication
 
+/-- A typed frame obligation over the concrete composite state.  The dependent
+projection result keeps each equality in its native subsystem type while the
+footprint vocabulary remains independent of `CompositeState`. -/
+def CompositeState.Frames (footprint : CompositeFootprint.Footprint)
+    (before after : CompositeState) : Prop :=
+  ∀ projection, CompositeFootprint.Frames footprint projection
+    (before.project projection) (after.project projection)
+
+/-- A stuttering composite transition satisfies every declared footprint. -/
+theorem CompositeState.frames_of_eq (footprint : CompositeFootprint.Footprint)
+    {before after : CompositeState} (preserved : after = before) :
+    CompositeState.Frames footprint before after := by
+  subst after
+  intro projection
+  exact CompositeFootprint.frames_of_eq footprint projection rfl
+
+/-- Concrete composite frame obligations compose without erasing projection
+types or duplicating the composite state. -/
+theorem CompositeState.frames_trans (footprint : CompositeFootprint.Footprint)
+    {before middle after : CompositeState}
+    (first : CompositeState.Frames footprint before middle)
+    (second : CompositeState.Frames footprint middle after) :
+    CompositeState.Frames footprint before after := by
+  intro projection
+  exact CompositeFootprint.frames_trans footprint projection
+    (first projection) (second projection)
+
 /-- The blocking store and all composite scheduler views name one scheduler. -/
 def CompositeState.BlockingIPCCoherent (state : CompositeState) : Prop :=
   state.blockingIPC.scheduler = state.scheduler ∧
