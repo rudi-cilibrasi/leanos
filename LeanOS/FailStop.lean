@@ -10,6 +10,7 @@ import LeanOS.CapabilityTransfer
 import LeanOS.ResumablePreemption
 import LeanOS.DirectPortIO
 import LeanOS.InvalidationPublication
+import LeanOS.CompositeFootprint
 
 /-!
 # Irreversible exception fail-stop model
