@@ -18,7 +18,13 @@
 #define LEANOS_ORACLE_DISPATCH_CASE(id, symbol, arity) \
     case id: return LEANOS_ORACLE_CALL_##arity(symbol, vector);
 
-static inline uint64_t leanos_oracle_dispatch(const struct oracle_vector *vector) {
+#ifndef LEANOS_ORACLE_DISPATCH_ATTRIBUTES
+#define LEANOS_ORACLE_DISPATCH_ATTRIBUTES inline
+#define LEANOS_ORACLE_DISPATCH_ATTRIBUTES_LOCAL 1
+#endif
+
+static LEANOS_ORACLE_DISPATCH_ATTRIBUTES uint64_t
+leanos_oracle_dispatch(const struct oracle_vector *vector) {
     switch (vector->adapter) {
         LEANOS_ORACLE_ADAPTERS(LEANOS_ORACLE_DISPATCH_CASE)
     default:
@@ -26,6 +32,10 @@ static inline uint64_t leanos_oracle_dispatch(const struct oracle_vector *vector
     }
 }
 
+#ifdef LEANOS_ORACLE_DISPATCH_ATTRIBUTES_LOCAL
+#undef LEANOS_ORACLE_DISPATCH_ATTRIBUTES_LOCAL
+#undef LEANOS_ORACLE_DISPATCH_ATTRIBUTES
+#endif
 #undef LEANOS_ORACLE_DISPATCH_CASE
 #undef LEANOS_ORACLE_CALL_6
 #undef LEANOS_ORACLE_CALL_5

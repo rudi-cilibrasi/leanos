@@ -125,7 +125,9 @@ extern uint64_t leanos_assigned_edu_reuse_publication(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_page_fault_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                        uint64_t);
+#define LEANOS_ORACLE_DISPATCH_ATTRIBUTES __attribute__((noinline, noipa))
 #include "leanos/oracle-dispatch.h"
+#undef LEANOS_ORACLE_DISPATCH_ATTRIBUTES
 extern uint64_t leanos_authorize_page_fault_snapshot(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
