@@ -14,7 +14,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `IOMMU.IOTLB.iotlbPublicationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch`. Its stable
-390-vector order covers accepted calls,
+392-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -43,7 +43,7 @@ that must round-trip unchanged. The Lean checks evaluate every expected result
 from the adapter definition and connect the accepted and rejected examples to
 the source models.
 
-The final fifty-six composite-dispatch records are the version-one traces
+The composite-dispatch records include the version-one traces
 for the shared stateful boundary. Six input words carry a canonical state token,
 command tag, and four scalar arguments. The seven positive sequence edges create
 one subject, observe typed unknown-syscall and malformed-map rejections, run
@@ -66,10 +66,13 @@ Its append-continuity corollary requires every prefix and suffix to share one
 canonical intermediate state token, so stale replay or cross-trace splicing
 cannot be accepted between adjacent steps.
 
-The next twenty records form one positive mixed trace rooted in a
-kernel-owned, complete two-subject state. In order, it offers and accepts a
-sealed endpoint descendant, revokes its send-only generation, rejects the
-stale handle, copies a fresh generation into the reused slot, accepts both
+The next twenty-three records form a canonical mixed corpus rooted in a
+kernel-owned, complete two-subject state. In order, it offers a sealed endpoint
+descendant, proves its future handle unusable before receipt, accepts it, sends
+through the returned generation-bound handle, and rejects a receive through
+that same send-only capability without changing state. The main trace then
+revokes the delegated generation, rejects the stale handle, copies a fresh
+generation into the reused slot, accepts both
 syscall-mediated and direct mapping, rejects an unknown syscall without
 mutation, completes nonblocking send/receive, blocks and wakes the receiver,
 switches back to it on a timer entry, contains its user page fault with

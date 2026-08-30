@@ -395,8 +395,15 @@ def mixedDispatchRaw (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
     if arg0 != 0x60003 || arg1 != 0xCAFE ||
         arg2 != 0xBEEF || arg3 != 0 then 0xff05
     else if stateWord = 0x0901 then 0x470901 else 0xff06
+  else if tag = 0x4801 then
+    if arg0 != 0x60003 || arg1 != 0xA174 ||
+        arg2 != 0xB174 || arg3 != 0 then 0xff05
+    else if stateWord = 0x0a01 then 0x482f01 else 0xff06
+  else if tag = 0x4901 then
+    if arg0 != 0x60003 || arg1 != 0 || arg2 != 0 || arg3 != 0 then 0xff05
+    else if stateWord = 0x2f01 then 0x492f01 else 0xff06
   else if tag % 256 != abiVersion then 0xff01
-  else if 0x4801 ≤ tag then 0xff02
+  else if 0x4a01 ≤ tag then 0xff02
   else 0xff04
 
 /-- Allocation-free scalar table for the canonical invalidation publication
@@ -482,7 +489,7 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
       stateWord = 0x1101 || stateWord = 0x1201 || stateWord = 0x1301 ||
       stateWord = 0x1401 || stateWord = 0x1501 || stateWord = 0x1601 ||
       stateWord = 0x1701 || stateWord = 0x1801 || stateWord = 0x1901 ||
-      stateWord = 0x2e01 then
+      stateWord = 0x2e01 || stateWord = 0x2f01 then
     mixedDispatchRaw stateWord tag arg0 arg1 arg2 arg3
   else if stateWord != 0x0001 && stateWord != 0x0101 && stateWord != 0x0201 &&
       stateWord != 0x0301 && stateWord != 0x0401 && stateWord != 0x0501 &&
@@ -1136,6 +1143,7 @@ inductive MixedStateId where
   | initial
   | transferOffered
   | transferAccepted
+  | delegatedSendAccepted
   | transferredCapabilityRevoked
   | staleHandleRejected
   | freshCapabilityCopied
@@ -1158,6 +1166,7 @@ def encodeMixedState : MixedStateId → UInt64
   | .initial => 0x0801
   | .transferOffered => 0x0901
   | .transferAccepted => 0x0a01
+  | .delegatedSendAccepted => 0x2f01
   | .transferredCapabilityRevoked => 0x0b01
   | .staleHandleRejected => 0x0c01
   | .freshCapabilityCopied => 0x0d01
@@ -1179,6 +1188,7 @@ def decodeMixedState (word : UInt64) : Except DecodeError MixedStateId :=
   if word = 0x0801 then .ok .initial
   else if word = 0x0901 then .ok .transferOffered
   else if word = 0x0a01 then .ok .transferAccepted
+  else if word = 0x2f01 then .ok .delegatedSendAccepted
   else if word = 0x0b01 then .ok .transferredCapabilityRevoked
   else if word = 0x0c01 then .ok .staleHandleRejected
   else if word = 0x0d01 then .ok .freshCapabilityCopied
@@ -1212,6 +1222,8 @@ inductive MixedCommandId where
   | offerTransfer
   | acceptTransfer
   | rejectSealedHandleBeforeReceipt
+  | useDelegatedSend
+  | rejectDelegatedReceive
   | revokeTransferredCapability
   | rejectStaleReusedHandle
   | copyFreshCapability
@@ -1241,6 +1253,11 @@ def encodeMixedCommand : MixedCommandId → CommandWords
   | .rejectSealedHandleBeforeReceipt =>
       { tag := 0x4701, arg0 := 0x60003, arg1 := 0xCAFE,
         arg2 := 0xBEEF, arg3 := 0 }
+  | .useDelegatedSend =>
+      { tag := 0x4801, arg0 := 0x60003, arg1 := 0xA174,
+        arg2 := 0xB174, arg3 := 0 }
+  | .rejectDelegatedReceive =>
+      { tag := 0x4901, arg0 := 0x60003, arg1 := 0, arg2 := 0, arg3 := 0 }
   | .revokeTransferredCapability =>
       { tag := 0x2201, arg0 := 0, arg1 := 2, arg2 := 3, arg3 := 0 }
   | .rejectStaleReusedHandle =>
@@ -1287,6 +1304,10 @@ def decodeMixedCommand (words : CommandWords) :
   else if words = encodeMixedCommand .acceptTransfer then .ok .acceptTransfer
   else if words = encodeMixedCommand .rejectSealedHandleBeforeReceipt then
     .ok .rejectSealedHandleBeforeReceipt
+  else if words = encodeMixedCommand .useDelegatedSend then
+    .ok .useDelegatedSend
+  else if words = encodeMixedCommand .rejectDelegatedReceive then
+    .ok .rejectDelegatedReceive
   else if words = encodeMixedCommand .revokeTransferredCapability then
     .ok .revokeTransferredCapability
   else if words = encodeMixedCommand .rejectStaleReusedHandle then
@@ -1313,7 +1334,7 @@ def decodeMixedCommand (words : CommandWords) :
   else if words = encodeMixedCommand .rejectProtectAmplification then
     .ok .rejectProtectAmplification
   else if words.tag % 256 != abiVersion then .error .wrongVersion
-  else if 0x4801 ≤ words.tag then .error .reservedBits
+  else if 0x4a01 ≤ words.tag then .error .reservedBits
   else .error .noncanonicalArguments
 
 theorem decode_encode_mixed_command command :
@@ -1332,6 +1353,9 @@ def mixedCommandOperation : MixedCommandId → AuthoritativeOperation
   | .acceptTransfer => .ordinary (.transferAccept 0x30000 3)
   | .rejectSealedHandleBeforeReceipt =>
       .ordinary (.ipc (.send 0x60003 0xCAFE 0xBEEF))
+  | .useDelegatedSend =>
+      .ordinary (.ipc (.send 0x60003 0xA174 0xB174))
+  | .rejectDelegatedReceive => .ordinary (.ipc (.receive 0x60003))
   | .revokeTransferredCapability => .ordinary (.capabilityRevoke 0 2 3)
   | .rejectStaleReusedHandle =>
       .ordinary (.ipc (.send 0x60003 0xAAAA 0xBBBB))
@@ -1369,6 +1393,9 @@ def mixedNextState : MixedStateId → MixedCommandId → Option MixedStateId
   | .transferOffered, .acceptTransfer => some .transferAccepted
   | .transferOffered, .rejectSealedHandleBeforeReceipt =>
       some .transferOffered
+  | .transferAccepted, .useDelegatedSend => some .delegatedSendAccepted
+  | .delegatedSendAccepted, .rejectDelegatedReceive =>
+      some .delegatedSendAccepted
   | .transferAccepted, .revokeTransferredCapability =>
       some .transferredCapabilityRevoked
   | .transferredCapabilityRevoked, .rejectStaleReusedHandle =>
@@ -1395,6 +1422,8 @@ def mixedExpectedReply : MixedStateId → MixedCommandId → Option UInt64
   | .initial, .offerTransfer => some 0x200901
   | .transferOffered, .acceptTransfer => some 0x210a01
   | .transferOffered, .rejectSealedHandleBeforeReceipt => some 0x470901
+  | .transferAccepted, .useDelegatedSend => some 0x482f01
+  | .delegatedSendAccepted, .rejectDelegatedReceive => some 0x492f01
   | .transferAccepted, .revokeTransferredCapability => some 0x220b01
   | .transferredCapabilityRevoked, .rejectStaleReusedHandle => some 0x230c01
   | .staleHandleRejected, .copyFreshCapability => some 0x240d01
@@ -1419,6 +1448,8 @@ inductive MixedReplyId where
   | transferOffered
   | transferAccepted
   | sealedHandleRejected
+  | delegatedSendAccepted
+  | delegatedReceiveRejected
   | transferredCapabilityRevoked
   | staleHandleRejected
   | freshCapabilityCopied
@@ -1443,6 +1474,8 @@ def encodeMixedReply : MixedReplyId → UInt64
   | .transferOffered => 0x200901
   | .transferAccepted => 0x210a01
   | .sealedHandleRejected => 0x470901
+  | .delegatedSendAccepted => 0x482f01
+  | .delegatedReceiveRejected => 0x492f01
   | .transferredCapabilityRevoked => 0x220b01
   | .staleHandleRejected => 0x230c01
   | .freshCapabilityCopied => 0x240d01
@@ -1466,6 +1499,8 @@ def decodeMixedReply (word : UInt64) : Except DecodeError MixedReplyId :=
   if word = 0x200901 then .ok .transferOffered
   else if word = 0x210a01 then .ok .transferAccepted
   else if word = 0x470901 then .ok .sealedHandleRejected
+  else if word = 0x482f01 then .ok .delegatedSendAccepted
+  else if word = 0x492f01 then .ok .delegatedReceiveRejected
   else if word = 0x220b01 then .ok .transferredCapabilityRevoked
   else if word = 0x230c01 then .ok .staleHandleRejected
   else if word = 0x240d01 then .ok .freshCapabilityCopied
@@ -1485,7 +1520,7 @@ def decodeMixedReply (word : UInt64) : Except DecodeError MixedReplyId :=
   else if word = 0x452e01 then .ok .pageProtected
   else if word = 0x462e01 then .ok .protectAmplificationRejected
   else if word % 256 != abiVersion then .error .wrongVersion
-  else if 0x480001 ≤ word then .error .reservedBits
+  else if 0x4a0001 ≤ word then .error .reservedBits
   else .error .unknownCommand
 
 theorem decode_encode_mixed_reply reply :
@@ -1502,6 +1537,9 @@ def mixedReplyId : MixedStateId → MixedCommandId → Option MixedReplyId
   | .transferOffered, .acceptTransfer => some .transferAccepted
   | .transferOffered, .rejectSealedHandleBeforeReceipt =>
       some .sealedHandleRejected
+  | .transferAccepted, .useDelegatedSend => some .delegatedSendAccepted
+  | .delegatedSendAccepted, .rejectDelegatedReceive =>
+      some .delegatedReceiveRejected
   | .transferAccepted, .revokeTransferredCapability =>
       some .transferredCapabilityRevoked
   | .transferredCapabilityRevoked, .rejectStaleReusedHandle =>
@@ -1539,6 +1577,11 @@ def mixedReplyResult : MixedReplyId → AuthoritativeGateResult
   | .sealedHandleRejected =>
       .completed (.ordinary (.ipc (.syscall
         (.sendHandleRejected (.denied .staleHandle)))))
+  | .delegatedSendAccepted =>
+      .completed (.ordinary (.ipc (.syscall .sent)))
+  | .delegatedReceiveRejected =>
+      .completed (.ordinary (.ipc (.syscall
+        (.receiveRejected .missingReceive))))
   | .transferredCapabilityRevoked =>
       .completed (.ordinary (.capability .accepted))
   | .staleHandleRejected =>
@@ -1655,6 +1698,8 @@ def mixedPrefix : MixedStateId → List MixedCommandId
   | .initial => []
   | .transferOffered => mixedCanonicalCommands.take 1
   | .transferAccepted => mixedCanonicalCommands.take 2
+  | .delegatedSendAccepted =>
+      mixedCanonicalCommands.take 2 ++ [.useDelegatedSend]
   | .transferredCapabilityRevoked => mixedCanonicalCommands.take 3
   | .staleHandleRejected => mixedCanonicalCommands.take 4
   | .freshCapabilityCopied => mixedCanonicalCommands.take 5
@@ -1817,6 +1862,12 @@ def mixedCanonicalEdges : List CanonicalMixedEdge :=
    { state := .transferOffered, command := .acceptTransfer,
      next := .transferAccepted, reply := .transferAccepted,
      next_exact := rfl, reply_exact := rfl },
+   { state := .transferAccepted, command := .useDelegatedSend,
+     next := .delegatedSendAccepted, reply := .delegatedSendAccepted,
+     next_exact := rfl, reply_exact := rfl },
+   { state := .delegatedSendAccepted, command := .rejectDelegatedReceive,
+     next := .delegatedSendAccepted, reply := .delegatedReceiveRejected,
+     next_exact := rfl, reply_exact := rfl },
    { state := .transferAccepted, command := .revokeTransferredCapability,
      next := .transferredCapabilityRevoked,
      reply := .transferredCapabilityRevoked,
@@ -1892,7 +1943,7 @@ theorem canonicalMixedEdge_refines (edge : CanonicalMixedEdge) :
     edge.state edge.command edge.next edge.reply
     edge.next_exact edge.reply_exact
 
-/-- The hosted 21-edge corpus inherits its state/result meaning solely from
+/-- The hosted 23-edge corpus inherits its state/result meaning solely from
 the scalar-to-authoritative bridge above. -/
 theorem mixedCanonicalEdges_refine :
     ∀ edge ∈ mixedCanonicalEdges, edge.Refines := by
@@ -1943,6 +1994,8 @@ theorem mixed_state_continuity state command next
     (hnext : mixedNextState state command = some next) :
     encodeMixedState next = encodeMixedState state ∨
       encodeMixedState next = encodeMixedState state + 0x100 ∨
+      (state = .transferAccepted ∧ command = .useDelegatedSend ∧
+        next = .delegatedSendAccepted) ∨
       (state = .directMapped ∧ command = .acceptedSyscallUnmap ∧
         next = .pageUnmapped) ∨
       (state = .directMapped ∧ command = .acceptedProtect ∧
@@ -2023,6 +2076,33 @@ theorem mixed_pre_receipt_sealed_authority_denied :
           (outcome.state.transfers.capabilities.slots 2 3).map
             (fun capability => capability.identity)) = some (some 6) := by
   native_decide
+
+/-- The generation-bound handle returned by receipt names the installed
+send-only descendant.  Subject 2 can use that delegated send right, while a
+receive through the same handle is rejected for missing authority and leaves
+the complete authoritative state unchanged. -/
+theorem mixed_delegated_send_only_authority_enforced :
+    (mixedOutcomeAt .transferOffered .acceptTransfer).toOption.map (·.result) =
+      some (mixedReplyResult .transferAccepted) ∧
+    (mixedMaterialize .transferAccepted).toOption.map
+        (fun state =>
+          (state.capabilities.slots 2 3).map
+            (fun capability =>
+              (capability.identity, capability.rights.send,
+                capability.rights.receive))) =
+      some (some (6, true, false)) ∧
+    (mixedOutcomeAt .transferAccepted .useDelegatedSend).toOption.map
+        (·.result) = some (mixedReplyResult .delegatedSendAccepted) ∧
+    (mixedOutcomeAt .delegatedSendAccepted
+        .rejectDelegatedReceive).toOption.map (·.result) =
+      some (mixedReplyResult .delegatedReceiveRejected) := by
+  native_decide
+
+theorem mixed_delegated_excess_right_rejection_inert :
+    (mixedOutcomeAt .delegatedSendAccepted
+        .rejectDelegatedReceive).toOption.map (·.state) =
+      (mixedMaterialize .delegatedSendAccepted).toOption := by
+  rfl
 
 /-- Publication-order meaning for the accepted slice: the authoritative gate
 publishes exactly the state produced by the canonical TLB unmap step, and the
