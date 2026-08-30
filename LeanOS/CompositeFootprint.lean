@@ -53,9 +53,13 @@ def Footprint.empty : Footprint where
   writes := fun _ => false
   writesAreRead := by simp
 
-/-- A projection is untouched when an operation does not even read it. -/
-def Untouched (footprint : Footprint) (projection : Projection) : Prop :=
+/-- A projection is unread when an operation does not inspect it. -/
+def Unread (footprint : Footprint) (projection : Projection) : Prop :=
   footprint.reads projection = false
+
+/-- A projection is untouched when an operation does not write it. -/
+def Untouched (footprint : Footprint) (projection : Projection) : Prop :=
+  footprint.writes projection = false
 
 /-- A projection-specific frame obligation.  Callers supply the before/after
 values, so this predicate stays independent of heterogeneous composite state. -/
@@ -63,15 +67,20 @@ def Frames (footprint : Footprint) (projection : Projection)
     (before after : α) : Prop :=
   Untouched footprint projection → after = before
 
-/-- Read-independence excludes writes by construction. -/
-theorem Footprint.untouched_not_written (footprint : Footprint)
-    (projection : Projection) (untouched : Untouched footprint projection) :
-    footprint.writes projection = false := by
+/-- Read-independence implies that the projection is untouched. -/
+theorem Footprint.unread_is_untouched (footprint : Footprint)
+    (projection : Projection) (unread : Unread footprint projection) :
+    Untouched footprint projection := by
   cases written : footprint.writes projection with
-  | false => rfl
+  | false => simpa [Untouched] using written
   | true =>
       have read := footprint.writesAreRead projection written
-      simp [Untouched, read] at untouched
+      simp [Unread, read] at unread
+
+/-- Untouched projections are not written, by definition. -/
+theorem Footprint.untouched_not_written (footprint : Footprint)
+    (projection : Projection) (untouched : Untouched footprint projection) :
+    footprint.writes projection = false := untouched
 
 /-- Literal preservation always discharges the projection frame obligation. -/
 theorem frames_of_eq (footprint : Footprint) (projection : Projection)
