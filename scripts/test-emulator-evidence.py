@@ -319,6 +319,15 @@ def run_fixtures() -> None:
             raise AssertionError("build-image checks unselected canonical objects in PR shards")
         if '-z "${selected_final_lookup[$elf_path]:-}"' not in build_image:
             raise AssertionError("build-image does not restrict PR policy checks to selected final images")
+        if (
+            'if [[ "$elf_name" == leanos-multivcpu-rejection.elf ]]; then\n'
+            '    elf_path="$build/leanos.elf"\n'
+            '  fi'
+            not in build_image
+        ):
+            raise AssertionError(
+                "build-image checks the multi-vCPU alias before it is materialized"
+            )
         if 'elif ((direct_port_images == 0)); then' not in build_image:
             raise AssertionError("build-image accepts an empty selected PR policy set")
         if 'selected_final_enabled "$return_elf" || continue' not in build_image:

@@ -1590,6 +1590,12 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
     _log _scenario _mode _reason _tier; do
   [[ "$elf_name" == *.elf ]] || continue
   elf_path="$build/$elf_name"
+  # The multi-vCPU evidence identity is a late alias of the canonical ELF.
+  # Policy checks run before ISO packaging creates that alias, so check the
+  # reviewed canonical binary that the build plan and guest both use.
+  if [[ "$elf_name" == leanos-multivcpu-rejection.elf ]]; then
+    elf_path="$build/leanos.elf"
+  fi
   if [[ "$evidence_tier" != all &&
       -z "${selected_final_lookup[$elf_path]:-}" ]]; then
     continue
