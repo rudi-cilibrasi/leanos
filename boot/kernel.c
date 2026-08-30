@@ -2,7 +2,6 @@
 #include "corpus.h"
 #include "generated-boundary-abi.h"
 #include "leanos/composite-dispatcher.h"
-#include "leanos/oracle-dispatch.h"
 
 /* GCC's noipa also blocks interprocedural transformations beyond noinline.
    Clang has no noipa spelling; optnone is the reviewed stronger boundary for
@@ -121,6 +120,7 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
 extern uint64_t leanos_iotlb_publication_demo(uint64_t, uint64_t, uint64_t,
                                               uint64_t, uint64_t, uint64_t);
+#include "leanos/oracle-dispatch.h"
 extern uint64_t leanos_assigned_edu_reuse_publication(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);

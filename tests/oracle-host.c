@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include "corpus.h"
 #include "leanos/composite-dispatcher.h"
-#include "leanos/oracle-dispatch.h"
 #include "../boot/generated-boundary-abi.h"
 
 extern uint64_t leanos_boot_transition(uint64_t, uint64_t);
@@ -32,6 +31,7 @@ extern uint64_t leanos_stale_translation_demo(uint64_t, uint64_t, uint64_t, uint
                                                uint64_t, uint64_t);
 extern uint64_t leanos_iotlb_publication_demo(uint64_t, uint64_t, uint64_t, uint64_t,
                                                uint64_t, uint64_t);
+#include "leanos/oracle-dispatch.h"
 extern uint64_t leanos_assigned_edu_reuse_publication(
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t,
     uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);

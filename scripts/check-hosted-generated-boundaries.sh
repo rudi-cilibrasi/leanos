@@ -72,7 +72,10 @@ while IFS=$'\t' read -r id runner harness generation target modules exports asse
       echo "error: hosted boundary '$id' inventories stale export '$symbol'" >&2
       exit 1
     }
-    if ! leanos_harness_calls_export "$harness" "$symbol"; then
+    if ! leanos_harness_calls_export "$harness" "$symbol" &&
+       ! { [[ "$id" == oracle ]] &&
+           leanos_harness_dispatches_generated_oracle_export \
+             "$harness" "$symbol" LeanOS/Oracle.lean; }; then
       echo "error: hosted boundary '$id' export '$symbol' is absent from its own harness" >&2
       exit 1
     fi
