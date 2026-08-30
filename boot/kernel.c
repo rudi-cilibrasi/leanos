@@ -2,6 +2,7 @@
 #include "corpus.h"
 #include "generated-boundary-abi.h"
 #include "leanos/composite-dispatcher.h"
+#include "leanos/oracle-dispatch.h"
 
 /* GCC's noipa also blocks interprocedural transformations beyond noinline.
    Clang has no noipa spelling; optnone is the reviewed stronger boundary for
@@ -3571,84 +3572,10 @@ static void serial_puts(const char *text) {
     }
 }
 
-static __attribute__((noinline, noipa)) uint64_t
-replay_extended_or_unknown(const struct oracle_vector *v) {
-    if (v->adapter == 18) {
-        return leanos_composite_dispatch(
-            v->words[0], v->words[1], v->words[2],
-            v->words[3], v->words[4], v->words[5]);
-    }
-    if (v->adapter == 19) {
-        return leanos_iotlb_publication_demo(
-            v->words[0], v->words[1], v->words[2],
-            v->words[3], v->words[4], v->words[5]);
-    }
-    return UINT64_MAX;
-}
-
 static void replay_oracle(void) {
     for (unsigned i = 0; i < ORACLE_VECTOR_COUNT; ++i) {
         const struct oracle_vector *v = &oracle_vectors[i];
-        uint64_t got = v->adapter == 0
-            ? leanos_boot_transition(v->words[0], v->words[1])
-            : v->adapter == 1
-                ? leanos_syscall_demo(v->words[0], v->words[1], v->words[2], v->words[3])
-                : v->adapter == 2
-                    ? leanos_ipc_demo(v->words[0], v->words[1], v->words[2], v->words[3])
-                : v->adapter == 3
-                    ? leanos_preemption_demo(v->words[0], v->words[1], v->words[2], v->words[3])
-                : v->adapter == 4
-                    ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
-                        v->words[3], v->words[4])
-                : v->adapter == 5
-                        ? leanos_boot_consume_exact_projection(
-                            v->words[0], v->words[1], v->words[2],
-                            v->words[3], v->words[4], v->words[5])
-                        : v->adapter == 6
-                            ? leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
-                                v->words[3], v->words[4])
-                            : v->adapter == 7
-                                ? leanos_blocking_ipc_demo(v->words[0], v->words[1], v->words[2],
-                                    v->words[3], v->words[4])
-                                : v->adapter == 8
-                                    ? leanos_capability_reuse_demo(v->words[0], v->words[1],
-                                        v->words[2], v->words[3], v->words[4])
-                                    : v->adapter == 9
-                                        ? leanos_entry_demo(v->words[0], v->words[1], v->words[2],
-                                            v->words[3], v->words[4])
-                                        : v->adapter == 10
-                                            ? leanos_extended_state_denial_demo(v->words[0],
-                                                v->words[1], v->words[2], v->words[3],
-                                                v->words[4], v->words[5])
-                                            : v->adapter == 11
-                                                ? leanos_privilege_entry_control_demo(v->words[0],
-                                                v->words[1], v->words[2], v->words[3],
-                                                v->words[4], v->words[5])
-                                                : v->adapter == 12
-                                                    ? leanos_fault_dispatch_demo(v->words[0],
-                                                    v->words[1], v->words[2], v->words[3],
-                                                    v->words[4], v->words[5])
-                                                    : v->adapter == 13
-                                                        ? leanos_direct_port_io_demo(v->words[0],
-                                                        v->words[1], v->words[2], v->words[3],
-                                                        v->words[4], v->words[5])
-                                                        : v->adapter == 14
-                                                            ? leanos_nmi_demo(v->words[0],
-                                                            v->words[1], v->words[2], v->words[3],
-                                                            v->words[4])
-                                                            : v->adapter == 15
-                                                            ? leanos_boot_phase_demo(v->words[0],
-                                                            v->words[1], v->words[2], v->words[3],
-                                                            v->words[4])
-                                                            : v->adapter == 16
-                                                            ? leanos_stale_translation_demo(
-                                                            v->words[0], v->words[1], v->words[2],
-                                                            v->words[3], v->words[4], v->words[5])
-                                                            : v->adapter == 17
-                                                            ? leanos_page_fault_demo(v->words[0],
-                                                            v->words[1], v->words[2],
-                                                            v->words[3], v->words[4])
-                                                            : replay_extended_or_unknown(v);
+        uint64_t got = leanos_oracle_dispatch(v);
         serial_puts("LEANOS/3 ORACLE id="); serial_puts(v->id);
         if (got != v->expected) {
             serial_puts(" result=FAIL\nLEANOS/3 FINAL status=FAIL reason=oracle\n");

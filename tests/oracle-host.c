@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include "corpus.h"
 #include "leanos/composite-dispatcher.h"
+#include "leanos/oracle-dispatch.h"
 #include "../boot/generated-boundary-abi.h"
 
 extern uint64_t leanos_boot_transition(uint64_t, uint64_t);
@@ -372,80 +373,24 @@ int main(void) {
             composite_arg2 = UINT64_C(2);
         }
 #endif
-        uint64_t got = v->adapter == 0
-            ? leanos_boot_transition(v->words[0], v->words[1])
-            : v->adapter == 1
-                ? leanos_syscall_demo(v->words[0], v->words[1], v->words[2], v->words[3])
-                : v->adapter == 2
-                    ? leanos_ipc_demo(v->words[0], v->words[1], v->words[2], v->words[3])
-                : v->adapter == 3
-                    ? leanos_preemption_demo(v->words[0], v->words[1], v->words[2], v->words[3])
-                : v->adapter == 4
-                    ? leanos_resumable_preemption_demo(v->words[0], v->words[1], v->words[2],
-                        v->words[3], v->words[4])
-                    : v->adapter == 5
-                        ? leanos_boot_consume_exact_projection(
-                            v->words[0], v->words[1], v->words[2],
-                            v->words[3], v->words[4], v->words[5])
-                        : v->adapter == 6
-                            ? leanos_user_return_demo(v->words[0], v->words[1], v->words[2],
-                                v->words[3], v->words[4])
-                            : v->adapter == 7
-                                ? leanos_blocking_ipc_demo(v->words[0], v->words[1], v->words[2],
-                                    v->words[3], v->words[4])
-                                : v->adapter == 8
-                                    ? leanos_capability_reuse_demo(v->words[0], v->words[1],
-                                        v->words[2], v->words[3], v->words[4])
-                                    : v->adapter == 9
-                                        ? leanos_entry_demo(v->words[0], v->words[1], v->words[2],
-                                            v->words[3], v->words[4])
-                                        : v->adapter == 10
-                                            ? leanos_extended_state_denial_demo(v->words[0],
-                                                v->words[1], v->words[2], v->words[3],
-                                                v->words[4], v->words[5])
-                                            : v->adapter == 11
-                                                ? leanos_privilege_entry_control_demo(v->words[0],
-                                                v->words[1], v->words[2], v->words[3],
-                                                v->words[4], v->words[5])
-                                                : v->adapter == 12
-                                                    ? leanos_fault_dispatch_demo(v->words[0],
-                                                    v->words[1], v->words[2], v->words[3],
-                                                    v->words[4], v->words[5])
-                                                    : v->adapter == 13
-                                                        ? leanos_direct_port_io_demo(v->words[0],
-                                                        v->words[1], v->words[2], v->words[3],
-                                                        v->words[4], v->words[5])
-                                                        : v->adapter == 14
-                                                            ? leanos_nmi_demo(v->words[0],
-                                                            v->words[1], v->words[2],
-                                                            v->words[3], v->words[4])
-                                                            : v->adapter == 15
-                                                            ? leanos_boot_phase_demo(v->words[0],
-                                                            v->words[1], v->words[2],
-                                                            v->words[3], v->words[4])
-                                                            : v->adapter == 16
-                                                            ? leanos_stale_translation_demo(
-                                                            v->words[0], v->words[1], v->words[2],
-                                                            v->words[3], v->words[4], v->words[5])
-                                                            : v->adapter == 17
-                                                            ? leanos_page_fault_demo(v->words[0],
-                                                            v->words[1], v->words[2],
-                                                            v->words[3], v->words[4])
-                                                            : v->adapter == 18
+        struct oracle_vector dispatch_vector = *v;
+        dispatch_vector.words[0] = composite_state;
+        dispatch_vector.words[1] = composite_tag;
+        dispatch_vector.words[2] = composite_arg0;
+        dispatch_vector.words[3] = composite_arg1;
+        dispatch_vector.words[4] = composite_arg2;
+        dispatch_vector.words[5] = composite_arg3;
+        uint64_t got;
 #ifdef LEANOS_FIXTURE_COMPOSITE_OLD_STATELESS
-                                                            ? leanos_syscall_demo(v->words[0],
-                                                            v->words[1], v->words[2], v->words[3])
+        if (v->adapter == 18) {
+            got = leanos_syscall_demo(
+                v->words[0], v->words[1], v->words[2], v->words[3]);
+        } else {
+            got = leanos_oracle_dispatch(&dispatch_vector);
+        }
 #else
-                                                            ? leanos_composite_dispatch(
-                                                            composite_state, composite_tag,
-                                                            composite_arg0, composite_arg1,
-                                                            composite_arg2, composite_arg3)
+        got = leanos_oracle_dispatch(&dispatch_vector);
 #endif
-                                                            : v->adapter == 19
-                                                            ? leanos_iotlb_publication_demo(
-                                                            v->words[0], v->words[1], v->words[2],
-                                                            v->words[3], v->words[4], v->words[5])
-                                                            : UINT64_MAX;
 #ifdef LEANOS_FIXTURE_COMPOSITE_OUTPUT_CORRUPTION
         if (v->adapter == 18) {
             got ^= UINT64_C(1);
