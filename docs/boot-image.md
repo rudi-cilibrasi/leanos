@@ -170,6 +170,33 @@ repository, where GitHub makes merge queues available. The audit is
 intentionally separate from per-commit admission so a transient API outage
 cannot make otherwise valid changes unmergeable.
 
+## Image-build phase timing evidence
+
+Set `LEANOS_BUILD_TIMING_FILE` to retain a machine-readable timing record for an
+image build:
+
+```sh
+LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
+  ./scripts/build-image.sh
+```
+
+The TSV records six ordered, nonnegative phases and both the phase and
+cumulative duration in whole seconds. `scripts/check-build-timing.py` rejects a
+missing, reordered, malformed, or arithmetically inconsistent record before a
+timed build can succeed. Controlled fixtures exercise those failures.
+
+Required CI image producers set this path explicitly. Emulator shards bind the
+record into their evidence tarballs; the primary and independent Clang builds,
+release reproducibility builds, release gate, browser build, and optional
+serial/graph comparison retain their records as 14-day workflow artifacts.
+This first instrumentation slice for issue #266 makes duplicate work and slow
+phases measurable before changing job or cache boundaries.
+
+Durations are execution context, not deterministic build inputs. They are not
+part of `REPRODUCIBILITY-SHA256SUMS`, and matching durations are not required
+for byte reproducibility. Hosted scheduling, cache state, and runner load can
+change them even when every admitted artifact remains identical.
+
 The primary Clang lane builds and boots the canonical guest scenario with the pinned
 Ubuntu 24.04 `clang-18=1:18.1.3-1ubuntu1` package. Both independent full-build
 lanes set `LEANOS_CC=clang-18`; the primary lane verifies nested compiler

@@ -57,7 +57,12 @@ class ImageObjectGraphTests(unittest.TestCase):
             'LEANOS_BUILD_TIMING_FILE="${RUNNER_TEMP}/graph-build-phases.tsv"',
             parity_job,
         )
+        self.assertIn(
+            'LEANOS_BUILD_TIMING_FILE="${RUNNER_TEMP}/serial-build-phases.tsv"',
+            parity_job,
+        )
         self.assertIn("${{ runner.temp }}/graph-build-phases.tsv", parity_job)
+        self.assertIn("${{ runner.temp }}/serial-build-phases.tsv", parity_job)
 
     def test_assigned_edu_cache_is_input_and_output_integrity_bound(self) -> None:
         builder = ASSIGNED_EDU_SCRIPT.read_text(encoding="utf-8")

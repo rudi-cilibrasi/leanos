@@ -74,6 +74,9 @@ jobs:
       - name: Test toolchain profile contract
         run: python3 scripts/test-toolchain-profile.py
 
+      - name: Test image-build timing evidence contract
+        run: python3 scripts/test-build-timing.py
+
   lean:
     name: Lean build and proof checks
     runs-on: ubuntu-24.04
@@ -237,7 +240,8 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/ci
-          LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
+          LEANOS_BUILD_TIMING_FILE=build/ci/clang-image-build-phases.tsv \
+            LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
             LEANOS_EVIDENCE_SHARD_INDEX="${{ env.LEANOS_CI_EVIDENCE_TIER == 'pr' && '0' || '' }}" \
             LEANOS_EVIDENCE_SHARD_COUNT="${{ env.LEANOS_CI_EVIDENCE_TIER == 'pr' && '4' || '' }}" \
             ./scripts/build-image.sh \
@@ -282,6 +286,7 @@ jobs:
             build/evidence/blocking-ipc.command.log
             build/ci/clang-tool-versions.txt
             build/ci/clang-image-build.log
+            build/ci/clang-image-build-phases.tsv
             build/ci/clang-canonical-boot.log
             build/oracle/
             build/boot-handoff-host/
@@ -316,14 +321,17 @@ jobs:
 
       - name: Build independent image and manifest
         run: |
-          ./scripts/build-image.sh
+          LEANOS_BUILD_TIMING_FILE=build/boot/clang-repro-build-phases.tsv \
+            ./scripts/build-image.sh
           ./scripts/write-reproducibility-manifest.sh
 
       - name: Preserve independent reproducibility manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: leanos-clang-repro-independent-${{ github.sha }}
-          path: build/boot/REPRODUCIBILITY-SHA256SUMS
+          path: |
+            build/boot/REPRODUCIBILITY-SHA256SUMS
+            build/boot/clang-repro-build-phases.tsv
           if-no-files-found: error
           retention-days: 14
 
@@ -388,7 +396,8 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/ci
-          LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
+          LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
+            LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
             LEANOS_EVIDENCE_SHARD_INDEX="${{ matrix.shard }}" \
             LEANOS_EVIDENCE_SHARD_COUNT=4 \
             ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
@@ -527,6 +536,7 @@ jobs:
               LEANOS_EVIDENCE_TIER=pr \
                 LEANOS_EVIDENCE_SHARD_INDEX=${{ matrix.shard }} \
                 LEANOS_EVIDENCE_SHARD_COUNT=4 \
+                LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
                 ./scripts/build-image.sh \
                 2>&1 | tee build/ci/image-build.log
               ./scripts/run-emulator-evidence.py run \
@@ -577,6 +587,7 @@ jobs:
             build/evidence/kvm-emulator-shard-${{ matrix.shard }}.json
             build/ci/kvm-evidence-shard-${{ matrix.shard }}.tar
             build/ci/image-build.log
+            build/ci/image-build-phases.tsv
             build/ci/emulator-evidence.log
             build/ci/tool-versions.txt
             build/evidence/*.command.log
@@ -653,7 +664,8 @@ jobs:
 
           git checkout --detach "$base_sha"
           serial_start="$SECONDS"
-          LEANOS_SOURCE_REVISION="$head_sha" ./scripts/build-image.sh
+          LEANOS_BUILD_TIMING_FILE="${RUNNER_TEMP}/serial-build-phases.tsv" \
+            LEANOS_SOURCE_REVISION="$head_sha" ./scripts/build-image.sh
           serial_seconds="$((SECONDS - serial_start))"
           mv build/boot "$baseline_dir/boot"
           rm -rf build
@@ -755,6 +767,7 @@ jobs:
             ${{ runner.temp }}/serial-graph-mismatches.txt
             ${{ runner.temp }}/serial-SHA256SUMS
             ${{ runner.temp }}/graph-SHA256SUMS
+            ${{ runner.temp }}/serial-build-phases.tsv
             ${{ runner.temp }}/graph-build-phases.tsv
             ${{ runner.temp }}/serial-graph-first-mismatch
           if-no-files-found: warn

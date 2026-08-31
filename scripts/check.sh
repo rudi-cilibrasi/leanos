@@ -101,6 +101,8 @@ fi
 
 ./scripts/test-toolchain-profile.py
 
+./scripts/test-build-timing.py
+
 ./scripts/run-emulator-evidence.py check
 
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \

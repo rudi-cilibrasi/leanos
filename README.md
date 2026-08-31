@@ -604,7 +604,8 @@ The pull-request workflow uses only these repository-owned entry points:
 ```sh
 ./scripts/check-markdown.sh
 ./scripts/check.sh
-./scripts/build-image.sh
+LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
+  ./scripts/build-image.sh
 ./scripts/record-tool-versions.sh
 ./scripts/run-emulator-evidence.py run
 ./scripts/run-emulator-evidence.py bundle
@@ -628,7 +629,10 @@ no-fallback KVM probe succeeds; its evidence and promotion policy are defined in
 debug ELFs, symbol maps, checksums, pinned tool versions, serial logs, exact
 commands, and the machine-readable evidence report in one manifest-bound
 tarball per emulator shard for 14 days, including available diagnostics from
-failed runs. Controlled negative fixtures ensure
+failed runs. Image-producing lanes also retain the validated six-phase timing
+records described in [the boot-image guide](docs/boot-image.md), so issue #266
+performance work can compare measured phases without treating timing as a
+reproducibility input. Controlled negative fixtures ensure
 theorem, compiler, matrix-inventory, artifact-hash, serial-protocol,
 guest-signal, and timeout failures cannot pass.
 

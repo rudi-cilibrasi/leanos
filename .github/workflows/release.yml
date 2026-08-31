@@ -52,11 +52,14 @@ jobs:
         run: ./scripts/check.sh
 
       - name: Verify deterministic image rebuild
-        run: ./scripts/test-reproducible-build.sh
+        run: |
+          LEANOS_REPRO_BUILD_TIMING_DIR=build/ci/reproducibility \
+            ./scripts/test-reproducible-build.sh
 
       - name: Run exact image build and QEMU smoke gates
         run: |
-          ./scripts/build-image.sh
+          LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
+            ./scripts/build-image.sh
           ./scripts/record-tool-versions.sh
           ./scripts/run-emulator-evidence.py run
 
@@ -99,6 +102,8 @@ jobs:
             scripts/hosted-generated-boundaries.tsv
             build/evidence/*
             build/ci/*.txt
+            build/ci/image-build-phases.tsv
+            build/ci/reproducibility/*.tsv
           if-no-files-found: warn
           retention-days: 14
 

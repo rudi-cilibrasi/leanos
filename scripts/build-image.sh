@@ -2075,5 +2075,8 @@ fi
 
 printf '%s\n' "$current_kernel_source_signature" > "$kernel_source_signature"
 record_build_phase manifests-and-completion
+if [[ -n "${LEANOS_BUILD_TIMING_FILE:-}" ]]; then
+  ./scripts/check-build-timing.py "$LEANOS_BUILD_TIMING_FILE"
+fi
 echo "built build/boot/leanos-${version}-x86_64.iso at $source_revision"
 echo "symbols: build/boot/leanos.map; debug ELF: build/boot/leanos.elf"

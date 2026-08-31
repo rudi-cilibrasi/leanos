@@ -46,6 +46,7 @@ BUNDLE_REQUIRED_FILES = (
     "build/boot/TOOLCHAIN_PROFILE.json",
     "build/ci/emulator-evidence.log",
     "build/ci/image-build.log",
+    "build/ci/image-build-phases.tsv",
     "build/ci/tool-versions.txt",
     "build/evidence/q35-edu-dma.tsv",
     "build/evidence/q35-pci-construction.tsv",

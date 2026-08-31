@@ -7,9 +7,20 @@ first="$(mktemp)"
 second="$(mktemp)"
 trap 'rm -f "$first" "$second"' EXIT
 
-./scripts/build-image.sh
+run_timed_build() {
+  local name="$1"
+  if [[ -n "${LEANOS_REPRO_BUILD_TIMING_DIR:-}" ]]; then
+    mkdir -p "$LEANOS_REPRO_BUILD_TIMING_DIR"
+    LEANOS_BUILD_TIMING_FILE="$LEANOS_REPRO_BUILD_TIMING_DIR/${name}-build-phases.tsv" \
+      ./scripts/build-image.sh
+  else
+    ./scripts/build-image.sh
+  fi
+}
+
+run_timed_build reproducibility-first
 ./scripts/write-reproducibility-manifest.sh "$first"
-./scripts/build-image.sh
+run_timed_build reproducibility-second
 ./scripts/write-reproducibility-manifest.sh "$second"
 
 if ! cmp -s "$first" "$second"; then
