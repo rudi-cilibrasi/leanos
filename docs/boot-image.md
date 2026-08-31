@@ -129,23 +129,28 @@ an optimizer-specific indirect edge.
 These pins identify the build inputs. `build-image.sh` uses BIOS-only GRUB
 output, a fixed ISO UUID and file dates, no linker build ID, and normalized
 debug paths. Release CI and local validation retain
-`./scripts/test-reproducible-build.sh` for same-runner checks. A merge-queue
-candidate runs two Clang builds concurrently on independent hosted runners,
+`./scripts/test-reproducible-build.sh` for same-runner checks. A pull request
+promoted with the reviewed `ci:full-admission` label runs two Clang builds
+concurrently on independent hosted runners,
 publishes the same centralized 40-artifact SHA-256 inventory from each, and
 compares those manifests in a fail-closed join job before `main` advances.
 Ordinary pull requests retain bounded representative evidence for prompt
-feedback; the queue tests the exact candidate formed from the latest `main`
-and the queued change. The cross-runner comparison checks for hostname, path,
-timing, and other runner-local leakage while removing one serial image build
-from the Clang critical path. It measures same-revision rebuilding in the
-pinned reference environment; it does not claim that arbitrary host
-distributions or tool versions produce identical bytes.
+feedback. The strict default-branch ruleset requires the promoted full-evidence
+join and requires the branch to be current with `main`; an update or subsequent
+push therefore invalidates the old result and reruns the labeled admission.
+The cross-runner comparison checks for hostname, path, timing, and other
+runner-local leakage while removing one serial image build from the Clang
+critical path. It measures same-revision rebuilding in the pinned reference
+environment; it does not claim that arbitrary host distributions or tool
+versions produce identical bytes.
 
-The active default-branch ruleset requires this merge-group evidence. Its
-reviewable definition lives in `.github/main-ruleset-policy.json`; a scheduled
-workflow compares GitHub's live ruleset with that file and reports policy
-drift. The audit is intentionally separate from per-commit admission so a
-transient API outage cannot make otherwise valid changes unmergeable.
+The reviewable ruleset definition lives in
+`.github/main-ruleset-policy.json`; a scheduled workflow compares GitHub's live
+ruleset with that file and reports policy drift. The workflow also retains the
+complete `merge_group` path for a future move to an organization-owned
+repository, where GitHub makes merge queues available. The audit is
+intentionally separate from per-commit admission so a transient API outage
+cannot make otherwise valid changes unmergeable.
 
 The primary Clang lane builds and boots the canonical image with the pinned
 Ubuntu 24.04 `clang-18=1:18.1.3-1ubuntu1` package. Both independent full-build

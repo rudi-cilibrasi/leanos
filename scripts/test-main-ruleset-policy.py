@@ -35,18 +35,19 @@ def main() -> None:
     actual["source_type"] = "Repository"
     policy_checker.check_policy(policy, actual)
 
-    without_queue = copy.deepcopy(actual)
-    without_queue["rules"] = [
-        rule for rule in without_queue["rules"] if rule["type"] != "merge_queue"
-    ]
-    expect_failure(policy, without_queue, '"type": "merge_queue"')
+    loose_checks = copy.deepcopy(actual)
+    loose_required = next(
+        rule for rule in loose_checks["rules"] if rule["type"] == "required_status_checks"
+    )
+    loose_required["parameters"]["strict_required_status_checks_policy"] = False
+    expect_failure(policy, loose_checks, '"strict_required_status_checks_policy": true')
 
     stale_check = copy.deepcopy(actual)
     required = next(
         rule for rule in stale_check["rules"] if rule["type"] == "required_status_checks"
     )
     required["parameters"]["required_status_checks"].pop()
-    expect_failure(policy, stale_check, "Hosted generated-boundary evidence")
+    expect_failure(policy, stale_check, "Pre-merge full admission")
 
     disabled = copy.deepcopy(actual)
     disabled["enforcement"] = "disabled"
