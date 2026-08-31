@@ -1455,36 +1455,50 @@ def check_workflows() -> None:
             "CI emulator evidence job must allow at least 60 minutes for "
             "image, QEMU, reproducibility, and artifact checks"
         )
+    clang_image = re.search(
+        r"(?ms)^  clang-image:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+        ci_content,
+    )
+    if clang_image is None:
+        raise EvidenceError("CI workflow does not define the Clang canonical job")
+    clang_image_body = clang_image.group("body")
     for clang_evidence in (
         "./scripts/build-image.sh",
         "./scripts/write-reproducibility-manifest.sh",
-        "LEANOS_EVIDENCE_TIER=\"${{ github.event_name == 'pull_request' && 'pr' || 'all' }}\"",
-        "LEANOS_EVIDENCE_SHARD_INDEX=\"${{ github.event_name == 'pull_request' && '0' || '' }}\"",
-        "LEANOS_EVIDENCE_SHARD_COUNT=\"${{ github.event_name == 'pull_request' && '4' || '' }}\"",
         "--scenario blocking-ipc",
         "test -s build/boot/serial.log",
         "build/boot/serial.log",
         "build/evidence/clang-canonical.json",
     ):
-        if clang_evidence not in ci_content:
+        if clang_evidence not in clang_image_body:
             raise EvidenceError(
-            "CI does not preserve tiered Clang canonical evidence: "
+                "CI does not preserve complete Clang canonical evidence: "
                 + clang_evidence
             )
-    if "if [[ \"${{ github.event_name }}\" != pull_request ]]; then" not in ci_content:
+    primary_manifest = re.search(
+        r"(?ms)^      - name: Preserve primary reproducibility manifest\n"
+        r"(?P<body>.*?)(?=^      - name:|\Z)",
+        clang_image_body,
+    )
+    if (
+        "LEANOS_EVIDENCE_TIER=" in clang_image_body
+        or "if [[ \"${{ github.event_name }}\" != pull_request ]]; then"
+        in clang_image_body
+        or primary_manifest is None
+        or re.search(r"(?m)^        if:", primary_manifest.group("body"))
+    ):
         raise EvidenceError(
-            "CI must reserve the complete canonical reproducibility manifest for non-PR evidence"
+            "CI must run the complete canonical reproducibility build on pull requests"
         )
     independent_clang = re.search(
         r"(?ms)^  clang-reproducibility-build:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
         ci_content,
     )
-    if independent_clang is None or (
-        "if: github.event_name != 'pull_request'"
-        not in independent_clang.group("body")
+    if independent_clang is None or re.search(
+        r"(?m)^    if:", independent_clang.group("body")
     ):
         raise EvidenceError(
-            "CI must reserve the independent Clang reproducibility build for non-PR evidence"
+            "CI must run the independent Clang reproducibility build before merge"
         )
     if "build/boot/clang-canonical.serial.log" in ci_content:
         raise EvidenceError(

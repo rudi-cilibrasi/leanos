@@ -457,19 +457,36 @@ def run_fixtures() -> None:
         try:
             ci_workflow.write_text(
                 original_ci.replace(
-                    "  clang-reproducibility-build:\n"
-                    "    name: Clang independent reproducibility build\n"
-                    "    if: github.event_name != 'pull_request'",
-                    "  clang-reproducibility-build:\n"
-                    "    name: Clang independent reproducibility build\n"
-                    "    if: github.event_name == 'pull_request'",
+                    "          ./scripts/write-reproducibility-manifest.sh\n",
+                    "          if [[ \"${{ github.event_name }}\" != pull_request ]]; then\n"
+                    "            ./scripts/write-reproducibility-manifest.sh\n"
+                    "          fi\n",
                     1,
                 ),
                 encoding="utf-8",
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI must reserve the independent Clang reproducibility build",
+                "CI must run the complete canonical reproducibility build on pull requests",
+            )
+        finally:
+            ci_workflow.write_text(original_ci, encoding="utf-8")
+
+        try:
+            ci_workflow.write_text(
+                original_ci.replace(
+                    "  clang-reproducibility-build:\n"
+                    "    name: Clang independent reproducibility build",
+                    "  clang-reproducibility-build:\n"
+                    "    name: Clang independent reproducibility build\n"
+                    "    if: github.event_name != 'pull_request'",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            expect_failure(
+                evidence.check_workflows,
+                "CI must run the independent Clang reproducibility build before merge",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")
