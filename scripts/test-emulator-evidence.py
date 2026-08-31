@@ -352,7 +352,10 @@ def run_fixtures() -> None:
             raise AssertionError("build-image does not restrict final-plan checks to selected images")
         if 'validate_selected_final_plan "$build/leanos.elf"' not in build_image:
             raise AssertionError("build-image does not route the canonical final plan through selection")
-        if 'validate_selected_final_plan "$build/leanos-bootstrap64-nmi.elf"' not in build_image:
+        if (
+            'converge_selected_graph_plan "$build/leanos-bootstrap64-nmi.elf"'
+            not in build_image
+        ):
             raise AssertionError("build-image does not route special final plans through selection")
         if 'if selected_final_enabled "$build/leanos-frame-budget.elf"; then' not in build_image:
             raise AssertionError("build-image does not restrict frame-budget convergence")
@@ -905,13 +908,18 @@ def run_fixtures() -> None:
             ),
         )
         for name, side_effect, fragment in cases:
-            _build, _output, _tools, case_args = prepare_tree(tmp / name)
+            _build, case_output, _tools, case_args = prepare_tree(tmp / name)
             with (
                 mock.patch.object(evidence, "git_revision", return_value=revision),
                 mock.patch.object(evidence, "qemu_version", return_value="QEMU fixture"),
                 mock.patch.object(evidence.subprocess, "run", side_effect=side_effect),
             ):
                 expect_failure(lambda: evidence.run(case_args), fragment)
+            failed_report = json.loads(case_output.read_text(encoding="utf-8"))
+            if failed_report["status"] != "FAIL":
+                raise AssertionError("partial evidence report does not publish FAIL")
+            if failed_report["results"][0]["status"] != "FAIL":
+                raise AssertionError("failed scenario does not publish FAIL")
 
         package = (ROOT / "scripts/package-release.sh").read_text(encoding="utf-8")
         evidence.check_release_package(package)

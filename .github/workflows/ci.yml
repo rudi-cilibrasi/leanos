@@ -522,10 +522,32 @@ jobs:
                 --tool-versions build/ci/tool-versions.txt \
                 --output build/evidence/kvm-emulator-shard-${{ matrix.shard }}.json \
                 2>&1 | tee build/ci/emulator-evidence.log
-              ./scripts/run-emulator-evidence.py bundle \
-                build/evidence/kvm-emulator-shard-${{ matrix.shard }}.json \
-                --output build/ci/kvm-evidence-shard-${{ matrix.shard }}.tar
             '
+
+      - name: Bundle KVM evidence
+        if: always() && steps.kvm-probe.outputs.available == 'true'
+        run: |
+          image="ghcr.io/rudi-cilibrasi/leanos-ci@${LEANOS_CI_IMAGE_DIGEST}"
+          report="build/evidence/kvm-emulator-shard-${{ matrix.shard }}.json"
+          bundle="build/ci/kvm-evidence-shard-${{ matrix.shard }}.tar"
+          test -s "$report"
+          set +e
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            "$image" python3 scripts/run-emulator-evidence.py bundle "$report" \
+              --output "$bundle"
+          bundle_status=$?
+          set -e
+          test -s "$bundle"
+          report_status="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["status"])' \
+            "$report")"
+          if [[ "$report_status" == PASS ]]; then
+            test "$bundle_status" -eq 0
+          else
+            test "$bundle_status" -ne 0
+          fi
 
       - name: Preserve KVM classification and evidence
         if: always()
@@ -539,6 +561,11 @@ jobs:
             build/ci/image-build.log
             build/ci/emulator-evidence.log
             build/ci/tool-versions.txt
+            build/evidence/*.command.log
+            build/evidence/q35-*.tsv
+            build/boot/*.serial.log
+            build/boot/*.qmp.jsonl
+            build/boot/*.qmp.tsv
           if-no-files-found: error
           retention-days: 14
 

@@ -886,6 +886,10 @@ def run(args: argparse.Namespace) -> None:
                 "sha256": sha256(paths["qmp_transcript"]),
             }
         report["results"].append(result)  # type: ignore[union-attr]
+        # Keep a partial report machine-readable if any runner or subsequent
+        # evidence check fails.  A fully validated scenario restores RUNNING;
+        # only the complete selected matrix can publish PASS below.
+        report["status"] = "FAIL"
         write_report(output, report)
 
         if status != 0:
@@ -955,6 +959,7 @@ def run(args: argparse.Namespace) -> None:
                 "sha256": sha256(paths["multivcpu_inventory"]),
             })
         result["status"] = "PASS"
+        report["status"] = "RUNNING"
         write_report(output, report)
 
     report["status"] = "PASS"
