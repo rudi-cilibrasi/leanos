@@ -18,6 +18,8 @@ import tarfile
 import tempfile
 import time
 
+from workflow_yaml import WorkflowYamlError, load_workflow
+
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MATRIX = ROOT / "scripts/emulator-evidence-matrix.tsv"
@@ -1369,6 +1371,12 @@ def check_workflows() -> None:
     workflow_contents: dict[str, str] = {}
     for relative in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
         path = ROOT / relative
+        try:
+            workflow = load_workflow(path)
+        except WorkflowYamlError as error:
+            raise EvidenceError(f"{relative} is not valid workflow YAML: {error}") from error
+        if not isinstance(workflow.get("jobs"), dict):
+            raise EvidenceError(f"{relative} must define a jobs mapping")
         content = path.read_text(encoding="utf-8")
         workflow_contents[relative] = content
         count = content.count("./scripts/run-emulator-evidence.py run")

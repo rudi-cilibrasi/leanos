@@ -96,6 +96,7 @@ fi
 ./scripts/test-entry-stack-layout.sh
 
 ./scripts/test-emulator-evidence.py
+python3 scripts/test-workflow-yaml.py
 
 ./scripts/test-main-ruleset-policy.py
 
