@@ -1,0 +1,85 @@
+# Ending a crashed program and handing off to a survivor
+
+When a user program crashes — a bad memory access, a divide-by-zero, or a breakpoint — the kernel must end that program, wipe its resources, and hand the processor to a surviving program, all as one indivisible step. This file's theorems make that step all-or-nothing: a success kills exactly the crashed program and nothing else, a rejection changes nothing at all, and any sign of corruption or kernel-level failure freezes the machine permanently rather than continuing on doubtful ground. A strengthened page-fault gate goes further, cross-checking the hardware's story against the kernel's own live page-table records before ever accepting a containment, and a long list of concrete witnesses shows each success and each refusal genuinely happening.
+
+- `validUserFault_iff` — Spelling out the definition: the general fault gate accepts a frame exactly when its interrupt number names a contained fault class and the frame passes that class's own shape checks.
+- `dispatchPageFault_total` — The strengthened page-fault gate produces an outcome for every possible input.
+- `dispatchPageFault_deterministic` — Running the strengthened page-fault gate twice on the same inputs gives the same outcome.
+- `dispatchPageFault_already_halted_absorbing` — Once the machine's halt latch is set, every later page-fault input is absorbed immediately, before any decoding or trust decision happens.
+- `denialAgreement_sound` — Whenever the hardware's error class and the page-table walk failure are declared to agree, the pair is one of exactly four legitimate combinations: missing page, kernel-only page touched, read-only page written, or no-execute page executed.
+- `attacker_payload_independent` — Data controlled by the attacker is never consulted: any two payloads give the identical dispatch outcome.
+- `total` — Fault dispatch produces an outcome for every state and every entry.
+- `deterministic` — Dispatching the same entry from the same state twice gives the same outcome.
+- `rejected_unchanged` — Every nonfatal rejection is atomic: the scheduler, program lifecycles, saved contexts, mappings, translations, and the halt latch are all exactly as before.
+- `halt_preserves_authoritative_stores` — The fatal-stop primitive flips only the permanent halt latch; the scheduler, saved contexts, and translations are untouched.
+- `kernel_origin_is_fatal` — A fault whose origin is the kernel itself halts the machine rather than being treated as a program crash.
+- `nested_is_fatal` — A fault arriving while the kernel was already handling an entry halts the machine.
+- `entry_failure_is_fatal` — Every failure reported by the front-door normalizer is terminal here too: the dispatcher halts, keeping the two layers' fail-stop stories aligned.
+- `already_halted_absorbing` — Once the halt latch is set, no later fault input can resume a program, bounce back to a caller, or trigger cleanup.
+- `dispatched_context_safe` — A program handed the processor is exactly the scheduler's deterministic pick and is alive, runnable, and the owner of its address space in the resulting state.
+- `cleanup_nonresumption` — The cleanup step removes both the crashed program's live identity and its saved resumable context, so there is nothing left to resume.
+- `dispatched_nonresumption` — After a survivor takes over, the crashed program is dead, absent from both the ready queue and the current slot, and has no saved context anywhere.
+- `cleanupCurrent_preserves_coreWellFormed` — A stepping-stone fact used by later theorems: cleaning up a subject keeps the core bookkeeping consistent.
+- `dispatch_preserves_scheduler_and_tlb` — Fault dispatch keeps both the scheduler's bookkeeping and the translation cache's soundness intact as one combined step.
+- `consumeSelected_preserves_wellFormed` — A stepping-stone fact: consuming the selected survivor's context and switching address spaces preserves the complete runtime bookkeeping.
+- `fatal_state_eq_halt` — A stepping-stone fact: any dispatch that ends fatally produces exactly the state the fatal-stop primitive would produce.
+- `fatal_atomicity` — Every fatal outcome changes only the permanent halt latch; it can never publish a half-finished cleanup or a return context.
+- `dispatched_is_authoritative_transition` — A stepping-stone fact: a survivor dispatch is precisely the composition of cleanup, deterministic selection, context consumption, and address-space switch — no other path produces it.
+- `dispatch_uses_survivor_head` — A successful dispatch hands the processor to exactly the first program in the post-cleanup queue, never one chosen some other way.
+- `dispatch_preserves_unselected_context` — Dispatch consumes only two saved contexts, the crashed program's and the chosen survivor's; every other program's suspended context is unchanged word for word.
+- `dispatch_preserves_unrelated_resources` — Memory, address spaces, mappings, communication endpoints, and physical pages owned by a third program are all exactly as they were after cleanup and selection.
+- `selectNext_none_eq` — A stepping-stone fact: the scheduler reports nobody-to-run only when it changed nothing and the queue really is empty.
+- `idle_is_clean_empty` — The idle outcome arises only after the crashed program was cleaned up and the survivor queue is genuinely empty, leaving no current program at all.
+- `idle_nonresumption` — Even with nobody left to run, the crashed program stays dead: an empty queue never turns the terminated program into a fallback.
+- `successful_faulting_live_runnable` — A successful outcome can only start from a crashed program that was genuinely alive and runnable, so the termination claim is always about a real program.
+- `successful_cleanup_complete` — Both success paths finish the whole cleanup: the crashed program loses its runnable status, every address space it owned loses its owner, and every mapping in those spaces is gone.
+- `successful_nonresumption` — Every successful outcome, survivor or no survivor, leaves the crashed program dead, unqueued, not current, without a saved context, and stripped of every address space and mapping it owned.
+- `success_reason_vector_binding` — The typed reason on a successful outcome is exactly the fault class decoded from the accepted frame's interrupt number under the reviewed error convention, so no untrusted word can relabel one fault class as another.
+- `success_state_reason_independent` — Any two successful outcomes from the same starting state publish exactly the same final state: the fault class is a label on the outcome, never a selector of a different cleanup or survivor.
+- `attacker_payload_cannot_relabel` — Attacker-controlled data cannot change the announced outcome either: the visible action depends only on kernel-owned state and the normalized entry.
+- `dispatch_preserves_wellFormed` — The atomic fault transition preserves the complete runtime bookkeeping no matter which of the four outcomes occurs.
+- `fault_dispatch_demo_current_two_idle` — A concrete worked example: in the fixed demonstration adapter, a lone current program with an empty queue yields the idle result word.
+- `page_fault_dispatch_transition_contained_nonvacuous` — A concrete worked example: one full set of scalar inputs drives the boot-time page-fault transition to a genuine containment result.
+- `page_fault_dispatch_transition_reason_matrix_nonvacuous` — Concrete worked examples showing the boot-time policy itself distinguishes all four denial classes — missing page, kernel-only page, read-only write, and no-execute execute — each reaching containment.
+- `page_fault_dispatch_transition_mismatch_is_fatal` — A concrete worked example: when the hardware's error class and the live page-table story disagree, the boot-time transition returns the fatal mismatch word.
+- `page_fault_dispatch_transition_diagnostic_binding` — Concrete worked examples: a kernel-origin diagnostic probe is honored only when the completed probe state, expected addresses, and recovery address all match exactly, while a stale probe state or a shifted instruction address is refused.
+- `faultDispatchDemo_accepts_composite` — The demonstration adapter's containment word equals the independently computed encoding of the real composite transition on the same fixture.
+- `faultDispatchDemo_kernel_origin_fail_stop` — The demonstration adapter's kernel-origin word equals the real transition's fail-stop outcome for a kernel-origin fault.
+- `faultDispatchDemo_malformed_frame_fail_stop` — Likewise for a truncated, malformed frame: the adapter word and the real fail-stop outcome agree.
+- `faultDispatchDemo_accepts_divide_error` — Likewise for a divide error: the adapter's word matches the real dispatch of a divide-error entry.
+- `faultDispatchDemo_accepts_breakpoint_multi_survivor` — Likewise for a breakpoint with several waiting survivors: the adapter's word matches the real dispatch.
+- `faultDispatchDemo_kernel_divide_error_fail_stop` — Likewise for a divide error originating in the kernel: both paths agree it is a fail-stop.
+- `faultDispatchDemo_wrong_restart_fail_stop` — Likewise for wrong return-address evidence on a breakpoint: both paths agree it is a fail-stop.
+- `page_fault_dispatch_transition_consumes_strengthened_dispatch` — The boot adapter's accepted scalar word is the tagged encoding of the very same strengthened page-fault transition the proofs reason about, not an independently invented containment path in generated code.
+- `page_fault_nonpresent_read_contained_nonvacuous` — A concrete witness: a read of an unmapped page is contained, terminating the faulting program and dispatching the survivor.
+- `page_fault_supervisor_read_contained_nonvacuous` — A concrete witness: a user-program read of a kernel-only page is contained.
+- `page_fault_readonly_write_contained_nonvacuous` — A concrete witness: a write to a read-only page is contained.
+- `page_fault_nx_execute_contained_nonvacuous` — A concrete witness: executing a page marked no-execute is contained.
+- `page_fault_validated_live_report_contained_nonvacuous` — A concrete witness: containment goes through with the fully validated live page-table report in place.
+- `page_fault_reserved_live_table_is_fatal_nonvacuous` — A concrete witness: a live page-table entry with a reserved bit set halts the machine as an integrity failure.
+- `page_fault_out_of_range_live_table_is_fatal_nonvacuous` — A concrete witness: a live page-table entry pointing beyond physical memory halts the machine.
+- `page_fault_malformed_ancestor_is_fatal_nonvacuous` — A concrete witness: a corrupted upper-level page-table entry in the live report halts the machine.
+- `page_fault_write_instruction_is_absorbing_fatal` — The architecturally impossible simultaneous write-and-instruction-fetch error halts the machine, and the halted state then absorbs every later page-fault input forever.
+- `page_fault_no_survivor_contained_nonvacuous` — A concrete witness: with no survivor waiting, a genuine page fault is contained as the idle outcome.
+- `page_fault_multiple_survivors_contained_nonvacuous` — A concrete witness: with several survivors waiting, containment dispatches the head of the queue.
+- `page_fault_mismatched_error_is_fatal` — A concrete witness: an error word whose class disagrees with the live page-table walk halts the machine.
+- `page_fault_readonly_mismatched_error_is_fatal` — A concrete witness: claiming a protection fault on a page the live tables would actually allow halts the machine.
+- `page_fault_nx_mismatched_error_is_fatal` — The same access-would-be-allowed contradiction on the no-execute fixture also halts the machine.
+- `page_fault_reserved_error_is_fatal` — A concrete witness: a reserved bit set in the error word itself halts the machine as a malformed snapshot.
+- `page_fault_wrong_root_is_fatal` — A concrete witness: a page-table root that does not match the boot plan's expected root halts the machine.
+- `page_fault_forged_address_space_is_fatal` — A concrete witness: a record claiming a different address space than the kernel's own context halts the machine as a provenance failure.
+- `page_fault_kernel_origin_is_fatal` — A concrete witness: a kernel-origin page-fault record halts the machine rather than terminating any program.
+- `page_fault_stale_mapping_is_fatal` — A concrete witness: a fault at a page where the kernel's mapping records do not agree with the boot plan halts the machine as a stale mapping.
+- `page_fault_stale_lifecycle_mapping_is_fatal` — A concrete witness: even when only the lifecycle ledger still names a leftover object at the page, the disagreement halts the machine.
+- `page_fault_unissued_object_mapping_is_fatal` — A concrete witness: a mapped object whose issuance record has been cleared is treated as stale and halts the machine.
+- `page_fault_incoherent_tlb_is_fatal` — A concrete witness: a leftover translation-cache entry that would have satisfied the faulting access halts the machine, because the fault's story must be coherent with the cache.
+- `page_fault_generated_cross_path_regressions_are_fatal` — The generated boot-time code agrees with the rich model on the easiest-to-lose integrity cases: the impossible write-plus-fetch error, a missing page-invalidation witness, and two forged diagnostic probes all come out fatal on both paths.
+- `authorized_page_fault_is_decoded` — Authorization can never substitute a different record: whatever it authorizes is exactly what the codec decodes from the given words.
+- `dispatchPageFault_checked_transition` — A stepping-stone fact: once every authoritative binding has been checked, the strengthened page-fault gate is by definition the same cleanup-and-survivor transition proved about above.
+- `pageFaultClassificationAgreement_sound` — Every admitted ordinary denial carries its full evidence: a validated live report, a live page-table walk that genuinely fails, and agreement between that failure and the hardware's error class.
+- `pageFaultAgreement_sound` — The complete agreement check, unpacked: an admitted denial certifies the right boot space, a matching report and root, validated live tables, agreeing mapping records, a coherent translation cache, a cleanly decoded error word, a failing live walk, and error-class agreement — all at once.
+- `dispatchPageFault_success_sound` — Read backwards from the observable result: any successful strengthened page-fault cleanup implies one exact decoded record, independent authorization, and the full agreement evidence above.
+- `dispatchPageFault_integrity_fatal_atomicity` — An integrity failure freezes everything: the halt latch is set while the scheduler, saved contexts, and translations stay exactly as before.
+- `dispatchPageFault_fatal_atomicity` — The same freeze holds for every fatal outcome of the strengthened gate, including kernel origin and already-halted absorption.
+- `dispatchPageFault_rejected_unchanged` — A stale-bindings rejection happens before any cleanup and returns exactly the input state.
+- `dispatchPageFault_preserves_wellFormed` — The strengthened page-fault gate preserves the complete runtime bookkeeping on every outcome, fatal or not.

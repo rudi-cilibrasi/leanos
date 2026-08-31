@@ -1,0 +1,74 @@
+# The stateful dispatcher: number codes that cannot lie about kernel state
+
+The kernel's stateful exported boundary is a single C-callable function that speaks only in numbers: it takes a state token and a command word and returns one result word. The theorems here prove that this number code is faithful to the real kernel model: every token names exactly one fully reconstructed kernel state, every accepted answer is exactly what the kernel's one authoritative decision gate produces, and stale, malformed, replayed, or cross-spliced inputs are rejected before that gate ever runs. The same guarantees cover the seed walk of commands, a twenty-one-step mixed scenario, the cache-invalidation publication protocol, and the boot-time check of the emulated chipset's device list.
+
+- `decode_encode_state` — Turning any trace state into its number and decoding that number gives back exactly the same state.
+- `state_encoding_injective` — No two distinct trace states share a state number.
+- `decode_encode_command` — Each command's exact word encoding decodes back to that same command.
+- `command_encoding_injective` — No two distinct commands share an encoding.
+- `decode_encode_reply_for_trace` — Every reply token the trace can actually produce decodes back from its number to exactly itself.
+- `reply_encoding_injective` — Among replies the trace can actually produce, equal reply numbers mean equal replies.
+- `q35_scalar_projection_matches_canonical_snapshot` — The literal device table baked into the exported boot check — every device's identity word, control word, and even the slot order — is exactly the projection of the canonical rich chipset snapshot, so the generated boundary and the rich validator cannot quietly become two different policies.
+- `validate_q35_dma_snapshot_canonical_correspondence` — On the production chipset snapshot, the exported number-only validator returns exactly the verdict the canonical rich validator computes.
+- `validate_q35_dma_snapshot_bus_master_correspondence` — The exported validator's fast rejection of a device left able to master direct memory access is exactly the rich validator's rejection of the matching corrupted snapshot.
+- `dispatch_canonical` — The exported dispatcher and the logical reply table are one table: for every state and command pair, the dispatcher returns the table's reply word, or the invalid-sequence error when that pair has none.
+- `logicalStep_refines_authoritativeGate` — Every accepted logical step invokes the one authoritative kernel gate and reports its exact resulting state and typed result — nothing is computed by a shadow kernel on the side.
+- `state_continuity` — A command can move the trace only along an explicitly listed legal edge — staying in place or stepping to its one canonical successor — with every possibility enumerated.
+- `materialize_next_exact` — The successor's state token stands for exactly the state the authoritative gate returns when run from the predecessor's state.
+- `runCommands_cons_continuity` — An accepted nonempty command list exposes its exact first successor and can continue only from that successor, so no stale or cross-trace state can be inserted between adjacent commands.
+- `runCommands_result_unique` — An accepted command prefix has exactly one resulting state token.
+- `runCommands_append_continuity` — Every split point of an accepted command list has one canonical intermediate token, so a suffix cannot be spliced onto a different trace state and still be accepted.
+- `runCommands_refines_authoritativeOperations` — Any command list the version-one graph accepts — not just the shipped one — ends in exactly the state produced by running the same operations through the authoritative gate.
+- `canonicalTrace_all_exact` — Bookkeeping: every state and command pair in the shipped seed trace really is a legal edge of the graph.
+- `canonicalCommands_complete` — Running the shipped seed command list from the start really does end in the post-fatal-rejected state.
+- `canonicalCommands_refine` — The shipped seed trace therefore materializes to exactly the authoritative execution of its own operations.
+- `canonical_lifecycle_fatal_operations` — Spelling out the definition: the trace's terminate, fatal-entry, and post-fatal-schedule commands stand for exactly those three authoritative operations.
+- `CanonicalCompositeState.eq_of_id_eq` — Bookkeeping: a canonical state record is fully determined by its trace-state name, because the attached kernel state is forced by replay.
+- `decodeCompositeState_sound` — Any successfully decoded state token carries the guarantee that its full kernel state is the replayed one.
+- `decode_encode_composite_state` — Encoding a canonical full state and decoding it returns exactly the same record.
+- `composite_state_encoding_injective` — No two distinct canonical full states share a state number.
+- `CanonicalOperation.eq_of_command_eq` — Bookkeeping: a canonical operation record is fully determined by its command.
+- `decode_encode_operation` — Encoding a canonical operation and decoding it returns exactly the same operation.
+- `operation_encoding_injective` — No two distinct canonical operations share an encoding.
+- `canonicalTypedStep_refines_authoritativeGate` — Spelling out the construction: the typed step built for a state and command records exactly the authoritative gate's resulting state and result.
+- `decode_encode_typed_reply` — Encoding a state together with its trace reply and then decoding the pair yields exactly the canonical typed step for that state and command.
+- `decode_dispatch_success` — Every successful word the exported dispatcher returns decodes to the literal typed result and post-state of the same single authoritative gate invocation.
+- `capabilityHandle_command_uses_canonical_codec` — Bookkeeping: the stale-handle probe command is built with the one canonical capability-handle code in both directions, not a private convention.
+- `mixedPhaseTwoCommands_cover_authoritative_families` — Bookkeeping: the five denial probes translate to five different families of kernel operation — a system call, a message receive, a capability copy, a blocking cancel, and a deferred drain.
+- `decode_encode_mixed_state` — Each mixed-scenario state's number decodes back to that same state.
+- `mixed_state_encoding_injective` — No two mixed-scenario states share a number.
+- `decode_encode_mixed_command` — Each mixed-scenario command's exact words decode back to that same command.
+- `mixed_command_encoding_injective` — No two mixed-scenario commands share an encoding.
+- `decode_encode_mixed_reply` — Each mixed reply's number decodes back to that same reply.
+- `mixed_reply_encoding_injective` — No two mixed replies share a number.
+- `mixedExpectedReply_uses_canonical_codec` — Spelling out the definition: the expected-reply-word table is exactly the reply table composed with the reply encoding, so there is no second word table to drift.
+- `mixed_dispatch_canonical` — For every mixed state and command pair, the exported dispatcher returns exactly the table's reply word, or the invalid-sequence error when the pair is not a legal edge.
+- `mixed_unmap_effect_confined` — The dispatcher's accepted-unmap answer can arise only on its one legal edge, so the cache invalidation it requires is confined to the kernel-derived address space 2 and page 7 — never a caller-chosen target.
+- `mixed_protect_effect_confined` — Likewise the accepted-protect answer arises only on its one canonical edge, and its effect is confined to kernel-derived address space 2 and page 8.
+- `CanonicalMixedState.eq_of_id_eq` — Bookkeeping: a canonical mixed state record is fully determined by its name, since its kernel state is forced by replay.
+- `decode_encode_mixed_composite_state` — Encoding a canonical mixed full state and decoding it returns exactly the same record.
+- `mixed_composite_state_encoding_injective` — No two canonical mixed full states share a number.
+- `mixed_dispatch_decodes_authoritative_edge` — The central bridge: starting from the raw number the exported dispatcher returns, every accepted mixed edge decodes to an independently specified reply meaning, and the authoritative gate really carries the reconstructed pre-state to the reconstructed successor with exactly that result.
+- `canonicalMixedEdge_refines` — Every canonical mixed edge record satisfies the bridging guarantee above.
+- `mixedCanonicalEdges_refine` — All twenty-three edges of the hosted mixed corpus inherit their state and result meaning solely from that scalar-to-authoritative bridge.
+- `decodeMixedCompositeState_sound` — Any successfully decoded mixed state token carries the guarantee that its full kernel state is the replayed one.
+- `mixedLogicalStep_refines_authoritativeGate` — Every accepted mixed logical step is exactly one authoritative gate invocation, reported with its exact outcome.
+- `mixed_state_continuity` — A mixed command either leaves the state token unchanged, advances it by exactly one position in the main sequence, or takes the named delegated-send or page-management branches — no other movement is possible.
+- `mixedCanonicalCommands_refine` — Whole-list refinement for the accepted mixed corpus: every intermediate state the hosted harness uses is the matching prefix of one exact authoritative execution.
+- `mixedCanonical_typed_results` — Spot checks of the typed results along the mixed walk: the transfer offer and capability operations are accepted, the maps succeed, the receiver genuinely blocks, the timer switch completes and makes program 2 current, the fault cleanup removes program 2 from the live set, and the post-fatal scheduling attempt is not reported as completed.
+- `mixed_pre_receipt_sealed_handle_rejection_inert` — Trying to send through the future transferred handle before receipt leaves the complete authoritative state unchanged.
+- `mixed_pre_receipt_sealed_authority_denied` — While the descendant is sealed it remains pending and absent from the recipient's destination slot, ordinary use is denied as a stale handle, and atomic receipt installs and returns the exact generation-bound child.
+- `mixed_delegated_send_only_authority_enforced` — Receipt returns a handle for the exact installed send-only descendant, which can send successfully but is refused when it attempts the ungranted receive operation.
+- `mixed_delegated_excess_right_rejection_inert` — Refusing the delegated send-only capability's receive attempt leaves the complete authoritative state unchanged.
+- `mixed_accepted_unmap_publication_order` — For the accepted unmap, the state the gate publishes is exactly the state after the canonical translation-cache unmap step and the target mapping is absent in it, so the modeled removal and cache invalidation come before the published reply.
+- `mixed_rejected_unmap_inert` — A rejected unmap is a complete standstill: the state is unchanged and no machine mutation is requested.
+- `mixed_accepted_protect_publication_order` — The accepted protection edge reduces a writable page to read-only, its exact page effect guarantees the cached entry for that page is gone, and the same translation-cache state is installed in the published successor.
+- `mixed_accepted_protect_preserves_global_invariant` — Starting from any globally well-formed reconstructed pre-state, the canonical protection step keeps the complete global well-formedness invariant intact.
+- `mixed_rejected_protect_amplification_inert` — Asking to widen the page back to writable after the reduction is a typed rejection that changes nothing and requests no machine effect.
+- `decode_encode_invalidation_state` — Each invalidation-protocol state's number decodes back to that same state.
+- `decode_encode_invalidation_command` — Each invalidation-protocol command's exact words decode back to that same command.
+- `decode_encode_invalidation_reply` — Each invalidation-protocol reply's number decodes back to that same reply.
+- `invalidation_dispatch_canonical` — For every protocol state and command pair, the exported dispatcher returns exactly the table's reply word, or the invalid-sequence error when the pair is not a legal edge.
+- `invalidation_edge_refines` — Every legal edge of the invalidation protocol matches the rich prepare-and-acknowledge model exactly: its outcome state is the named successor, its machine effect is the reply's declared effect, and the dispatcher's raw answer decodes to the named reply.
+- `invalidationCanonicalEdges_refine` — All nineteen edges of the shipped invalidation corpus satisfy that correspondence.
+- `invalidation_malformed_and_mismatched_rejected` — A malformed effect word, a well-formed effect paired with the wrong pending state, and a replayed stale ticket are each rejected at the number boundary before anything can be acknowledged or published.

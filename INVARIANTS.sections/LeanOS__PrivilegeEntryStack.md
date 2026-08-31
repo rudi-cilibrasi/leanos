@@ -1,0 +1,13 @@
+# Making sure the kernel's scratch space is big enough
+
+Whenever the processor jumps into the kernel, for a system call, a timer tick, or a fault, the kernel needs a stretch of scratch memory called a stack, and running past its end is a classic way for a system to corrupt itself. These theorems show the kernel adds up, byte by byte, exactly how much stack each kind of entry will need, checks that total against the stack it actually has before proceeding, and refuses outright when the budget does not fit. They also show the accepted budget record cannot be forged: any handed-in record is re-derived from scratch, so a doctored number fails safely instead of being believed.
+
+- `checkedRemaining_sound` — Whenever the guarded subtraction hands back a leftover amount, the need really did fit within what was available, and leftover plus need adds back up to exactly the original amount; no bytes are conjured or lost.
+- `checkedRemaining_rejects_over_budget` — Whenever the need exceeds what is available, the guarded subtraction refuses to produce any number at all, so an overdrawn budget can never look like a valid one.
+- `authorize_preserves_state` — Deciding a stack budget, whichever way the decision goes, never touches the rest of the system's state; it is purely a yes-or-no gate.
+- `fatal_preserves_composite_state` — A budget refusal in particular hands back the system state exactly as it arrived; refusing authorizes nothing and edits nothing.
+- `accepted_budget_sound` — An accepted budget record is honest on every field: it names the real stack's identity and exact boundaries, states the true byte requirement, and its leftover plus requirement equals precisely the stack's usable size.
+- `bindNormalizedBudget_sound` — A budget can only be attached to an incoming kernel entry when both name the same stack and the same entry purpose, and every attached figure is re-derived and provably correct; a stepping-stone spelling out what a successful attachment guarantees.
+- `accepted_normalized_budget_fits` — Putting the two halves together: when a fresh authorization and a successful attachment agree, the system state is untouched and the attached record carries the true stack boundaries and an arithmetic that balances exactly.
+- `accepted_contract_conditions` — Acceptance is only ever granted over a well-formed stack layout, a kind of entry on the supported list, and an error-code shape that matches what the hardware actually delivers for that entry.
+- `insufficient_budget_is_atomic` — When everything else is in order but the requested bytes simply exceed the stack, the outcome is exactly one clean refusal for insufficient budget, with the system state handed back untouched.

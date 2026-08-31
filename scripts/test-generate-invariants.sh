@@ -85,6 +85,11 @@ EOF
 "$work/repo/scripts/generate-invariants.py" assemble \
   --sections-dir "$work/sections" --output "$work/repo/INVARIANTS.md" \
   --generator test-model --date 2026-01-01 >/dev/null
+"$work/repo/scripts/generate-invariants.py" decompose >/dev/null
+rendered="$work/rendered.md"
+"$work/repo/scripts/generate-invariants.py" render --output "$rendered" >/dev/null
+cmp -s "$work/repo/INVARIANTS.md" "$rendered" ||
+  fail "checked-in sections did not reproduce the document byte-for-byte"
 "$work/repo/scripts/generate-invariants.py" verify \
   --document "$work/repo/INVARIANTS.md" >/dev/null ||
   fail "verify rejected a freshly assembled fixture document"
@@ -169,6 +174,7 @@ EOF
 "$work/repo/scripts/generate-invariants.py" assemble \
   --sections-dir "$work/move-sections" --output "$work/repo/INVARIANTS.md" \
   --generator test-model --date 2026-01-01 >/dev/null
+"$work/repo/scripts/generate-invariants.py" decompose >/dev/null
 "$work/repo/scripts/generate-invariants.py" identities >/dev/null
 sed -i '/theorem sectioned_fact/d' "$work/repo/LeanOS/Fixture.lean"
 sed -i '/theorem destination_fact/a theorem sectioned_fact : 6 = 6 := rfl' \

@@ -1,0 +1,72 @@
+# Vetting interrupts at the kernel's front door
+
+When the processor hands control to the kernel — a program crashed, divided by zero, hit a breakpoint, touched forbidden memory, or asked for a service — the raw event arrives as a bundle of hardware-supplied words. This file's theorems pin down the kernel's fixed, reviewed table of the eight permitted entry points and prove that every arriving event is checked against it and normalized before anything acts on it, with nothing a program controls able to influence what the kernel trusts. They also cover two special cases in depth: the page-fault record, which must carry its complete provenance and survive forgery attempts, and the emergency hardware signal (the non-maskable interrupt, or NMI), which lives in its own separate terminal contract.
+
+- `reviewed_manifest_valid` — The kernel's reviewed table of eight interrupt entry points passes every validity check: exactly eight entries, no duplicate numbers, each entry in its supported shape, and only the intended two callable directly by programs.
+- `only_breakpoint_and_syscall_are_dpl3` — Exactly two entry points can be invoked deliberately by a program — the breakpoint and the system call — and nothing else in the table is program-callable.
+- `divide_error_not_software_callable` — The divide-error entry is in the table but can never be triggered as a deliberate program instruction; only a genuine hardware divide error reaches it.
+- `breakpoint_manifest_binding` — The breakpoint entry's reviewed policy is pinned down exactly: program-callable, an interrupt-style gate that masks further interrupts on entry, no error word, user-program origin only, and handled as a contained user fault.
+- `breakpoint_descriptor_deviation_rejected` — Changing even one field of the reviewed breakpoint entry — for instance making it kernel-only — makes the whole table fail validation.
+- `general_protection_manifest_binding` — The general-protection entry is pinned down: it carries a hardware error word, accepts only user-program origin, and keeps its general-protection purpose.
+- `containedReason_vector_agreement` — Whenever an interrupt number decodes to a contained-fault class, that class's own number is the very number it was decoded from.
+- `containedReason_roundtrip` — Each contained-fault class decodes back from its own interrupt number, so number and class always identify each other exactly.
+- `contained_restart_class_agreement` — The reviewed table of what the saved return address points at — the faulting instruction versus the one after it — agrees with each fault class's own answer.
+- `contained_manifest_error_shape` — Every contained fault class resolves to a table entry with exactly the reviewed error-word convention and the shared containment purpose.
+- `makeNormalized_binds_context` — Spelling out the construction: the normalized record's subject, address space, page-table root, and stack identity come from the kernel's own context, never from the raw event.
+- `makeNormalized_same_privilege` — Spelling out the definition: an event that arrived without a privilege change is marked kernel-origin and carries no saved user stack fields.
+- `attacker_register_erasure` — The interrupted program's saved general-purpose registers are erased before classification: any two register contents produce the identical normalization result.
+- `normalize_total` — The normalizer produces an answer for every possible input; there is no event it fails to classify.
+- `rejection_stable` — Bookkeeping: a rejected normalization stays exactly that rejection.
+- `normalize_deterministic` — Normalizing the same raw event twice always gives the same result.
+- `nested_never_authorizes` — If the kernel is already in the middle of handling an entry, no new event is ever accepted.
+- `uncleared_ac_never_authorizes` — An event whose alignment-check processor flag was not cleared on entry is never accepted.
+- `uncleared_df_never_authorizes` — An event whose direction processor flag was not cleared on entry is never accepted.
+- `same_privilege_never_user` — An accepted event that arrived without a privilege change is never labeled as coming from a user program, and it carries no saved user stack fields.
+- `accepted_binds_manifest_shape` — An accepted record's interrupt number, error-word shape, and return-address evidence all come from the kernel's table entry, never from attacker-supplied words.
+- `normalize_accepted_binds_context` — Every accepted record keeps the kernel-owned context — subject, address space, page-table root — and carries exactly the error word that arrived.
+- `accepted_contained_error_shape` — For the contained fault classes, an accepted record's error-word shape and return-address evidence both match the reviewed convention for that exact class.
+- `decodePageFaultError_total` — The page-fault error-word decoder produces an answer for every possible word.
+- `decodePageFaultError_deterministic` — Decoding the same error word twice always gives the same result.
+- `reserved_error_bit_rejected` — An error word with the reserved-violation bit set is rejected with its own distinct reason.
+- `unsupported_error_bits_rejected` — An error word using any bit beyond the supported five is rejected outright rather than silently trimmed.
+- `normalizePageFault_total` — The page-fault normalizer produces an answer for every possible input.
+- `normalizePageFault_deterministic` — Normalizing the same page fault twice always gives the same result.
+- `pageFault_saved_gpr_confinement` — The interrupted program's saved registers have no effect on page-fault normalization; they are kept only as inert diagnostic data.
+- `pageFault_diagnostic_confinement` — Likewise for the extra diagnostic words: changing them changes nothing about the outcome.
+- `makeNormalizedPageFault_exact_binding` — Spelling out the construction: the page-fault snapshot carries exactly the faulting address and its page, the decoded error and its access kind, and the kernel's own context and paging controls.
+- `normalizePageFault_accepted_binding` — An accepted page-fault snapshot certifies its complete pedigree: the page-fault interrupt number, a cleanly decoded error word whose user bit agrees with the saved privilege, a well-formed fault address with its derived page, and the kernel's own subject, address space, page-table root, and paging controls.
+- `encodeCanonicalPageFault_width` — The serialized page-fault record is always exactly nineteen words long.
+- `decode_encode_canonical_page_fault` — Serializing a valid page-fault record and decoding it again gives back exactly the same record.
+- `canonical_page_fault_encoding_injective` — Two different records never serialize to the same words; the encoding loses nothing.
+- `canonical_exact_bit_binding` — In any record the decoder admits, the summary fields — access kind, protection, privilege, and fault page — are exactly what the error word and fault address dictate, so none can be relabeled independently.
+- `find_page_fault_entry` — Bookkeeping: looking up interrupt number fourteen in the table finds the page-fault entry.
+- `valid_canonical_page_fault_has_normalized_preimage` — Every record the codec admits could genuinely have happened: there is a concrete accepted page-fault event that normalizes and then serializes to exactly that record.
+- `decoded_canonical_page_fault_has_normalized_preimage` — The same guarantee for records recovered from serialized words: whatever decodes successfully has a genuine accepted origin.
+- `canonical_page_fault_codec_nonvacuous` — A concrete worked example showing the codec really accepts something: one full example record validates and round-trips through serialization.
+- `rejected_canonical_authorizes_nothing` — Words the decoder refuses authorize nothing, and the kernel's state is left untouched.
+- `authorized_canonical_trusted_identities_representable` — Successful authorization certifies that the kernel's own subject and address-space identities fit within one machine word, so no later comparison can silently wrap around.
+- `authorized_canonical_has_trusted_normalized_preimage` — Authorization comes with a witness built under the kernel's independently supplied context — not under the context the serialized record claims for itself.
+- `authorized_canonical_binds_trusted_context` — Every authorized record's authority and control fields exactly equal the kernel's independently supplied context, as exact numbers rather than merely matching after truncation; no serialized field can promote itself to authority.
+- `canonical_page_fault_authorization_preserves_state` — Checking a serialized record is a pure question: whether accepted or refused, it changes no kernel state.
+- `unauthorized_canonical_cannot_mutate` — A refused record authorizes nothing and changes nothing, both at the decoding step and at the context-comparison step.
+- `canonical_page_fault_authorization_nonvacuous` — A concrete worked example: the example record, checked against its matching context, really is authorized.
+- `canonical_page_fault_forged_authority_rejected` — Seven concrete forgeries — an altered subject, address space, page-table root, or any single flipped paging-control bit — each still decode cleanly, yet every one is refused against the real context.
+- `canonical_page_fault_unrepresentable_trusted_authority_rejected` — When the kernel's own identity is too large to fit one machine word, authorization fails closed instead of colliding with a smaller identity that would match after wrap-around.
+- `canonical_page_fault_max_word_authority_preserved` — The largest identity that does fit a machine word still authorizes, so the tightened check gives up none of the previously valid range.
+- `canonical_page_fault_words_valid_exact` — The allocation-free word-by-word check used at boot equals the rich record check plus the five trusted-context comparisons exactly, so the two spellings can never disagree.
+- `canonical_page_fault_words_authorization_nonvacuous` — A concrete worked example: one full set of valid words is authorized as a user fault through the word-by-word boundary.
+- `canonical_page_fault_words_rip_mutation_attested` — A concrete worked example: mutating the saved instruction address to a malformed value makes the word-by-word boundary refuse.
+- `pageFaultDemo_total` — The five-word page-fault demonstration adapter produces an answer for every possible input.
+- `reviewed_terminal_manifest_valid` — The separate one-entry table for the terminal NMI passes its own validity check.
+- `nmi_not_ordinary` — The NMI entry does not appear in the ordinary eight-entry table, so it can never be handled as an ordinary interrupt.
+- `nmi_attacker_register_erasure` — The interrupted program's registers have no effect on NMI classification.
+- `normalizeNmi_total` — The NMI normalizer produces an answer for every possible input.
+- `normalizeNmi_deterministic` — Normalizing the same NMI snapshot twice always gives the same result.
+- `accepted_nmi_exact` — An accepted NMI event is exactly the record built from the raw snapshot and the kernel's context — nothing more, nothing less.
+- `accepted_nmi_has_no_rejection` — An accepted NMI event means the entire failure checklist found nothing wrong, and the event is exactly the constructed record.
+- `makeNormalizedNmi_binds_terminal_contract` — Spelling out the construction: a normalized NMI carries the fixed NMI number, the terminal purpose, the dedicated NMI stack identity, and the kernel's own context fields.
+- `nmi_runtime_rejection_inventory_codes` — The list of NMI rejection reasons reachable at runtime maps to exactly its fixed, stable numeric codes — none silently dropped or renumbered.
+- `nmi_trace_inventory_exact` — Bookkeeping: the required inventory of NMI test scenarios is exactly the reviewed ten-item list, so accidentally deleting one would be visible.
+- `nmiDemo_total` — The five-word NMI demonstration adapter produces an answer for every possible input.
+- `entryDemo_total` — The five-word entry-classifier demonstration adapter produces an answer for every possible input.
+- `bootPhaseDemo_total` — The boot-phase demonstration adapter produces an answer for every possible input.

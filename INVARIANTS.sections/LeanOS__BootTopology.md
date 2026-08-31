@@ -1,0 +1,123 @@
+# Admitting exactly one CPU core at boot
+
+At startup, firmware describes the machine's processors in a family of tables called ACPI: a root pointer leads to a root table, which lists the addresses of other tables, one of which — the MADT — lists every processor with its hardware identity number and whether it is enabled. LeanOS is a single-core system, so before going any further it checks these tables and agrees to boot only when they describe exactly one enabled processor, which must be the very processor running the check; any surprise — extra processors, dormant processors that could be switched on later, corrupt or truncated tables — halts the machine instead. Most of the theorems below are concrete worked checks: they run the actual decision code on specific well-formed or malformed inputs and pin down exactly what it answers; a smaller number are general laws proved for every possible input. Together they cover root selection, table validation, record decoding, the acceptance policy itself, the rule that rejection halts boot before any program can run, and byte-at-a-time replicas of these checks matching the real machine-facing boot code.
+
+- `coherent_old_new_roots_select_new` — A worked check: when firmware publishes both the old-style and new-style root pointer and their shared contents agree exactly, the selector accepts and follows the newer one.
+- `coherent_root_selection_is_order_independent` — A worked check: those same two matching root pointers select the same result no matter which order they arrive in.
+- `conflicting_old_new_roots_rejected` — A worked check: when the old-style and new-style root pointers disagree about their shared contents, selection refuses rather than guessing.
+- `duplicate_new_roots_rejected` — A worked check: two copies of the new-style root pointer are refused outright, even when they are identical.
+- `repository_xsdt_entries_decoded` — A worked check: the repository's reference root table decodes to exactly the two table addresses it advertises.
+- `xsdt_payload_misalignment_rejected` — A worked check: a root table whose address list is not a whole number of address-sized entries is refused.
+- `repository_madt_table_header_valid` — A worked check: the repository's reference processor table passes header validation — signature, declared length, and checksum all in order.
+- `truncated_sdt_header_rejected` — A worked check: a firmware table too short to even contain its 36-byte header is refused.
+- `wrong_sdt_signature_rejected` — A worked check: a table carrying a different four-letter signature than the one expected is refused.
+- `corrupt_sdt_checksum_rejected` — A worked check: changing a single byte of the reference processor table makes its checksum fail, and the table is refused.
+- `maximum_sdt_length_accepted` — A worked check: a table exactly at the 64-kilobyte platform limit is still accepted.
+- `sdt_length_above_platform_bound_rejected` — A worked check: a table one byte over the 64-kilobyte limit is refused, so validation never scans an attacker-declared oversized table.
+- `repository_unique_madt_selected` — A worked check: from the reference root table and the supplied table copies, selection finds exactly one processor table and returns exactly its bytes.
+- `untranslated_root_entry_rejected` — A worked check: if the root table advertises an address for which no copied table was supplied, selection refuses instead of silently skipping the missing entry.
+- `duplicate_madt_translation_rejected` — A worked check: when the supplied copies contain two processor tables, selection refuses rather than picking one.
+- `repository_authoritative_acpi_topology_admitted` — A worked check: the full pipeline — root-pointer selection, root-table decoding, processor-table selection, and admission — accepts the repository's reference data and reports the single enabled processor with identity 0.
+- `missing_rsdp_cannot_bypass_authoritative_pipeline` — A worked check: with no root pointer at all, the full pipeline fails at its first stage; supplying valid later-stage tables cannot skip root selection.
+- `wrong_selected_root_copy_cannot_reach_admission` — A worked check: if the copied root table does not sit at the exact physical address the root pointer selected, the pipeline refuses before any processor data is examined.
+- `repository_complete_madt_admitted` — A worked check: the complete reference processor table, outer envelope and all, is validated and admitted with its single enabled processor.
+- `complete_madt_wrong_signature_rejected` — A worked check: changing the first signature byte of the complete table produces a signature rejection.
+- `complete_madt_declared_length_mismatch_rejected` — A worked check: a complete table whose declared length disagrees with its actual size is refused.
+- `complete_madt_bad_checksum_rejected` — A worked check: corrupting one byte of the complete table produces a checksum rejection.
+- `complete_madt_truncated_fixed_header_rejected` — A worked check: a table long enough for the generic header but too short for the processor table's own fixed header is refused.
+- `complete_madt_entry_error_preserves_provenance` — A worked check: when a processor record inside the table is cut short, the reported failure says exactly that — an entry-level truncation — rather than blurring which stage rejected the input.
+- `empty_madt_entry_region_decodes` — Spelling out the definition: an empty record region decodes to an empty list of records.
+- `truncated_madt_entry_header_rejected` — A worked check: a record region that ends after a single byte, before the record's kind-and-length header is complete, is refused.
+- `truncated_madt_entry_body_rejected` — A worked check: a processor record whose body is cut short is refused.
+- `zero_length_madt_entry_rejected` — A worked check: a record claiming a length too small to contain even its own header is refused, closing off a decoder that would never move forward.
+- `unsupported_raw_madt_entry_rejected` — A worked check: a record of an unrecognized kind is refused rather than skipped.
+- `mixed_q35_madt_bytes_admitted` — A worked check: a realistic q35 record stream — one enabled processor plus interrupt-routing records — is admitted, with only the fixed-size routing records skipped and the lone processor preserved.
+- `malformed_q35_io_apic_length_rejected` — A worked check: an interrupt-controller record declaring the wrong length is refused rather than skipped.
+- `topology_affecting_x2apic_record_rejected` — A worked check: the newer extended-format processor record, which could describe additional processors, is refused rather than silently skipped.
+- `duplicate_madt_byte_apic_ids_rejected` — A worked check: a byte stream with two processor records carrying the same identity number is rejected.
+- `disabled_madt_byte_processor_does_not_expand_enabled_set` — A worked check: a second processor record that is disabled and not eligible to come online later does not block admission of the single enabled processor.
+- `online_capable_madt_byte_processor_rejected` — A worked check: a disabled processor that firmware marks as allowed to be switched on later causes rejection — latent processors are refused, not ignored.
+- `two_enabled_madt_byte_processors_rejected` — A worked check: a byte stream describing two enabled processors is rejected.
+- `maximum_madt_byte_apic_id_admitted` — A worked check: the largest identity number that fits in the one-byte record format, 255, is still admitted normally.
+- `truncated_madt_byte_record_rejected_before_admission` — A worked check: a truncated byte record is refused during decoding, before the acceptance policy ever runs.
+- `processor_overflow_madt_bytes_rejected_before_admission` — A worked check: a byte stream describing more than the 256-processor bound is refused during decoding, before the acceptance policy ever runs.
+- `repository_madt_records_admitted` — A worked check: the repository's reference record list is admitted with its single enabled processor of identity 0.
+- `truncated_madt_record_rejected_before_admission` — A worked check: a processor record declaring a length shorter than the standard eight bytes is refused before admission.
+- `oversized_madt_record_rejected_before_admission` — A worked check: a processor record declaring a length longer than the standard eight bytes is refused before admission.
+- `unsupported_madt_record_rejected_before_admission` — A worked check: an unrecognized record kind in the decoded list is refused before admission.
+- `processor_overflow_rejected_before_admission` — A worked check: a record list one longer than the 256-processor bound is refused before admission.
+- `duplicate_decoded_apic_ids_rejected` — A worked check: two decoded records sharing one identity number are rejected even though only one of them is enabled.
+- `reordered_enabled_processors_rejected` — A worked check: two enabled processors are rejected regardless of the order in which they are listed.
+- `disabled_online_capable_decoded_processor_rejected` — A worked check: alongside a valid enabled processor, a disabled-but-switchable companion still causes rejection.
+- `maximum_apic_id_admitted` — A worked check: the largest possible 32-bit identity number is admitted when it names the one enabled processor, the recorded startup processor, and the processor running the check all at once.
+- `admit_deterministic` — Bookkeeping: the acceptance policy gives the identical verdict every time it sees the same snapshot.
+- `accepted_implies_single_enabled_bsp` — The heart of the policy, proved for every possible snapshot: whenever admission accepts a processor, the snapshot's enabled processors are exactly that one processor, its identity equals the recorded startup processor, and the processor executing the check is that same one.
+- `repository_madt_records_normalize` — A worked check: normalizing the reference record list yields exactly the expected single-core snapshot, with its firmware-table origin recorded.
+- `repository_single_core_nonvacuous` — A worked check: the single-core reference snapshot really is accepted, so the acceptance rules are satisfiable rather than an empty promise.
+- `two_enabled_processors_rejected` — A worked check: a snapshot with two enabled processors is rejected for exactly that reason.
+- `duplicate_bsp_rejected` — A worked check: a snapshot in which a second record repeats the startup processor's identity number is rejected as a duplicate.
+- `unsupported_snapshot_source_rejected` — A worked check: a snapshot whose processor list came from anywhere other than the firmware ACPI tables is rejected.
+- `unsupported_snapshot_version_rejected` — A worked check: a snapshot in an unrecognized format version is rejected.
+- `zero_enabled_processors_rejected` — A worked check: a snapshot with no enabled processor at all is rejected.
+- `disabled_online_capable_processor_rejected` — A worked check: a snapshot containing a dormant processor that firmware could later switch on is rejected.
+- `mismatched_executing_processor_rejected` — A worked check: a snapshot where the processor running the check is not the recorded startup processor is rejected.
+- `runtime_publication_requires_admission` — Proved for every state: the runtime interrupt table can only ever be published from the final bootstrap stage, with the inner bookkeeping in the same stage, and only after single-core admission has actually been recorded.
+- `publication_without_admission_is_terminal` — A worked check: attempting to publish the runtime interrupt table straight from the fresh boot state, before any admission, halts the machine with a recorded reason and leaves the permission to enter ordinary programs off.
+- `decoded_rejection_latches_real_boot_state` — Whichever decoding failure occurs, feeding it into the fresh boot state halts the machine with a record, keeps the permission to enter ordinary programs off, and preserves the exact decoder reason.
+- `policy_rejection_latches_real_boot_state` — Likewise for every policy rejection: the fresh boot state halts with a record, the permission to enter ordinary programs stays off, and the exact policy reason is preserved.
+- `boot_rejection_blocks_publication_suffix` — Once the boot state is halted with a record, no sequence of later publications or interrupt events changes anything at all.
+- `decoded_rejection_is_pre_cpl3_terminal` — In the standalone admission bookkeeping, every decoding failure lands in the halted stage with its reason preserved, the runtime never initialized, and return permission off — all before any ordinary program could run.
+- `policy_rejection_is_pre_cpl3_terminal` — The same for every policy rejection: halted stage, preserved reason, no runtime initialization, and no return permission.
+- `admission_failure_absorbing` — After any recorded admission failure, every finite sequence of later runtime operations leaves the state exactly as it is.
+- `repository_admission_publishes_single_core_premise` — A worked check: consuming the accepted admission of the reference tables genuinely records the single-core premise that later stages rely on.
+- `runtime_preserves_single_core_admission` — No single runtime operation can ever erase the recorded single-core admission.
+- `runtime_cannot_publish_ap_start` — No single runtime operation can ever mark a second processor as started; the runtime vocabulary simply contains no way to do it.
+- `run_runtime_preserves_single_core_admission` — The single-step preservation extends to every finite sequence of runtime operations: the single-core admission stays recorded forever.
+- `run_runtime_cannot_publish_ap_start` — Likewise, no finite sequence of runtime operations can ever start a second processor.
+- `machine_acpi_copy_budget_exact_capacity_accepted` — A worked check on the byte-level copy budget: a table that exactly fills the remaining one-megabyte copy area is accepted, and the cursor advances to the very end.
+- `machine_acpi_copy_budget_exhaustion_rejected` — A worked check: a table that would overrun the one-megabyte copy area is refused with the exhaustion code.
+- `machine_acpi_copy_budget_forged_cursor_rejected` — A worked check: a copy cursor claiming to be past the end of the copy area is refused.
+- `machine_acpi_copy_budget_misaligned_cursor_rejected` — A worked check: a copy cursor not sitting on an eight-byte boundary is refused.
+- `machine_acpi_copy_budget_invalid_length_rejected` — A worked check: a declared table length above the 64-kilobyte per-table cap is refused with its own distinct code.
+- `machine_acpi_copy_stream_partial_step_retains_copy_cursor` — A worked check on the chunk-by-chunk copy stream: a step in the middle of a table leaves the copy-area cursor where it was.
+- `machine_acpi_copy_stream_terminal_step_advances_copy_cursor` — A worked check: only the exact final chunk of a table advances the copy-area cursor, and by exactly the table's rounded-up size.
+- `machine_acpi_copy_stream_forged_terminal_rejected` — A worked check: marking the first chunk as final while many bytes remain is refused.
+- `machine_acpi_copy_stream_truncated_final_chunk_rejected` — A worked check: declaring the copy finished one chunk early, while bytes are still missing, is refused.
+- `machine_acpi_copy_stream_missing_final_marker_rejected` — A worked check: reaching the true last chunk without marking it final is refused.
+- `machine_acpi_copy_stream_reordered_address_rejected` — A worked check: a chunk naming a different table address than the one currently being copied is refused.
+- `machine_acpi_copy_stream_unaligned_physical_address_accepted` — A worked check: a table located at a physical address that is not eight-byte aligned still copies normally; the alignment rules bind the copy-area cursor, not the source address.
+- `machine_acpi_copy_stream_reordered_byte_rejected` — A worked check: a chunk arriving out of order within its table is refused.
+- `machine_acpi_copy_sequence_exact_terminal_accepted` — A worked check on the table-sequence tracker: completing the last of the advertised tables with the final-table marker set is accepted, and the position advances.
+- `machine_acpi_copy_sequence_duplicate_ordinal_rejected` — A worked check: replaying an already-completed table position is refused.
+- `machine_acpi_copy_sequence_missing_ordinal_rejected` — A worked check: skipping ahead past a table position that was never copied is refused.
+- `machine_acpi_copy_sequence_forged_final_rejected` — A worked check: raising the final-table marker before the last advertised table is refused.
+- `machine_acpi_copy_sequence_missing_final_rejected` — A worked check: finishing the last advertised table without the final-table marker is refused.
+- `machine_madt_envelope_first_signature_byte_accepted` — A worked check on the byte-at-a-time envelope gate: the correct first signature byte of the processor table is accepted and the cursor moves to the next byte.
+- `machine_madt_envelope_wrong_signature_rejected` — A worked check: a wrong signature byte is refused immediately.
+- `machine_madt_envelope_declared_length_mismatch_rejected` — A worked check: once the four length bytes have been assembled, a declared length that disagrees with the actual table size is refused.
+- `machine_madt_envelope_early_terminal_rejected` — A worked check: claiming the table is finished before its true last byte is refused.
+- `machine_madt_envelope_exact_terminal_checksum_accepted` — A worked check: the exact last byte, correctly marked final and bringing the whole-table checksum to zero, completes the envelope successfully.
+- `machine_madt_local_apic_kind_accepted` — A worked check on the byte-at-a-time processor-record gate: a record opening with the standard processor kind byte is accepted, and streaming continues.
+- `machine_madt_x2apic_kind_rejected` — A worked check: a record opening with the extended-format processor kind is refused on its very first byte.
+- `machine_madt_local_apic_length_rejected` — A worked check: a processor record declaring any length other than the standard eight bytes is refused.
+- `machine_madt_local_apic_online_capable_rejected` — A worked check: a completed processor record whose flags mark it as eligible to come online later is refused.
+- `machine_madt_local_apic_exact_record_accepted` — A worked check: an exact eight-byte record describing an enabled, non-switchable processor completes successfully.
+- `machine_madt_io_apic_kind_accepted` — A worked check on the gate for routing-only records: an interrupt-controller record's kind byte is accepted for streaming.
+- `machine_madt_io_apic_wrong_length_rejected` — A worked check: an interrupt-controller record declaring the wrong fixed length is refused.
+- `machine_madt_x2apic_not_skippable` — A worked check: the routing-record gate also refuses the extended-format processor kind, so it cannot be smuggled through as skippable data.
+- `machine_madt_local_apic_nmi_exact_terminal_accepted` — A worked check: a non-maskable-interrupt routing record of exactly its fixed six-byte length completes successfully.
+- `machine_madt_entry_stream_first_local_apic_byte_accepted` — A worked check on the whole-record-region stream: the first byte of a processor record immediately after the table header is accepted.
+- `machine_madt_entry_stream_x2apic_rejected` — A worked check: the record-region stream refuses an extended-format processor record at its first byte.
+- `machine_madt_entry_stream_duplicate_apic_rejected` — A worked check: a record completing with an identity number that has already been seen is refused.
+- `machine_madt_entry_stream_single_enabled_terminal_admitted` — A worked check: a table ending exactly as its single enabled processor record completes, with that processor matching the one running the check, is admitted.
+- `machine_madt_entry_stream_wrong_executing_apic_rejected` — A worked check: the same completed table is refused when its one enabled processor is not the processor running the check.
+- `machine_topology_admission_result_exact_state_accepted` — A worked check on the final gate: with a bound root address, every advertised table copied, exactly one processor table, an accepted admission, and a matching executing processor, the gate reports success.
+- `machine_topology_admission_result_incomplete_copy_rejected` — A worked check: the final gate refuses when fewer tables were copied than the root table advertised.
+- `machine_topology_admission_result_duplicate_madt_rejected` — A worked check: the final gate refuses when more than one processor table was found.
+- `machine_topology_admission_result_forged_executing_apic_rejected` — A worked check: the final gate refuses when the admitted processor's identity does not match the processor running the check.
+- `repository_machine_topology_query_admitted` — A worked check: the machine-facing query over the full reference data — root copy, both advertised tables, and executing identity 0 — reports acceptance.
+- `machine_topology_copy_count_mismatch_rejected` — A worked check: supplying a different number of table addresses than table copies is refused.
+- `machine_topology_copy_count_overflow_rejected` — A worked check: supplying more table addresses than the 256-entry cap is refused.
+- `machine_topology_byte_copy_count_overflow_rejected` — A worked check: supplying more table byte copies than the 256-entry cap is likewise refused.
+- `machine_topology_unknown_root_kind_rejected` — A worked check: an unrecognized selected-root kind is refused before any table selection happens.
+- `repository_machine_topology_forged_executing_apic_rejected` — A worked check: the same reference data is rejected by the policy when the claimed executing processor's identity is 1 instead of the admitted 0.

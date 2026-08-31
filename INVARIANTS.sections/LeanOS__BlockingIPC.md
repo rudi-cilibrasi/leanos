@@ -1,0 +1,48 @@
+# Sleeping and waking programs while passing messages
+
+These theorems cover the kernel's blocking message system: a program that asks for a message when none is there goes to sleep at a meeting point (an endpoint) until a sender arrives. They guarantee that a message can never slip through the crack between "nothing is there yet" and falling asleep, that only the program actually chosen to run can send, receive, or be put to sleep, that forged or out-of-date requests are turned away with nothing changed, and that every wake-up hands the sleeper exactly the message that was sent. They also guarantee that the kernel's internal records — waiting lines, mailboxes, the run queue, and delivery receipts — stay consistent through every possible outcome.
+
+- `completed_receive_word_resolves_exact` — Whenever a receive request written as a raw number gets past the front door, that number was first checked and found to name a real, current endpoint permission in the caller's own permission book — never a guess, a stale leftover, or someone else's.
+- `rejected_receive_word_preserves_state` — A malformed or out-of-date receive request is turned away with nothing in the kernel changed.
+- `completed_send_word_resolves_exact` — Whenever a send request written as a raw number gets through, that number was likewise verified against a real, current endpoint permission belonging to the caller.
+- `rejected_send_word_preserves_state` — A malformed, stale, or wrong-caller send request is turned away with nothing changed.
+- `revokeWords_accepted_resolves` — When the kernel accepts a request to take back another program's endpoint permission, it had first verified both the requester's authority and the victim's permission as the genuine, current ones.
+- `revokeSubtreeWords_accepted_resolves` — The same double verification happens before an accepted take-back of an entire family of passed-on permissions.
+- `setCompletion_preserves_wellFormed` — Bookkeeping: writing or clearing a program's delivery receipt keeps every kernel record consistent.
+- `clearMailbox_preserves_wellFormed` — Bookkeeping: emptying a meeting point's one-message mailbox keeps every record consistent.
+- `storeMailbox_preserves_wellFormed` — Bookkeeping: parking a message in the empty mailbox of a live meeting point where nobody is waiting keeps every record consistent.
+- `blockState_preserves_wellFormed` — A stepping-stone fact used by the full receive proof: putting the running program to sleep at the back of a meeting point's waiting line keeps every record consistent.
+- `selectNext_preserves_wellFormed` — A stepping-stone fact: letting the scheduler pick the next program to run keeps every record consistent.
+- `wakeState_preserves_wellFormed` — A stepping-stone fact: waking the program at the front of the waiting line with a fresh message keeps every record consistent.
+- `cancelSubject_room_preserves_wellFormed` — A stepping-stone fact: pulling a live sleeper out of its waiting line, when the run queue has room for it, keeps every record consistent.
+- `cancelSubjectTyped_preserves_wellFormed` — The full cancellation operation — whether it cancels, finds nothing to cancel, or refuses — keeps every record consistent.
+- `cancelSubjectTyped_cancelled_waiterEndpoint_exact` — A successful cancellation erases exactly the cancelled program's waiting record and nobody else's.
+- `cancelSubjectTyped_cancelled_scheduler_exact` — A successful cancellation, in the same single step, puts the cancelled live sleeper at the back of the run queue exactly once and marks it able to run.
+- `receiveOrBlock_preserves_wellFormed` — Every receive attempt — message delivered, caller put to sleep, or refused — keeps every record consistent.
+- `send_preserves_wellFormed` — Every send attempt, accepted or refused, keeps every record consistent.
+- `receive_delivered_waiterEndpoint_unchanged` — When a receive gets a message immediately, no program's waiting record changes.
+- `receive_delivered_scheduler_unchanged` — An immediate delivery leaves the scheduler completely untouched.
+- `receive_delivered_current` — A message is only ever delivered to the program the scheduler had actually chosen to run; no crafted input can collect mail on somebody else's behalf.
+- `receive_blocked_current` — Likewise, only the program actually chosen to run can be put to sleep waiting for a message.
+- `receive_blocked_idle_scheduler_exact` — If no program is running after someone goes to sleep, that is only because the run queue was empty, and the sole change was the sleeper stepping down and being marked unable to run.
+- `receive_blocked_selected_scheduler_exact` — When going to sleep hands the processor to a peer, the change is exactly this: the sleeper is marked unable to run and the program at the front of the run queue takes over.
+- `receive_blocked_waiterEndpoint_exact` — Going to sleep creates exactly one waiting record — the caller's — and touches no other.
+- `send_accepted_waiterEndpoint_exact` — An accepted send affects waiting records in exactly one of two ways: if nobody was waiting it leaves them all alone, and if someone was waiting it erases only the woken receiver's record.
+- `send_accepted_wake_exact` — An accepted send to a meeting point where someone is waiting produces exactly the standard wake-up for the first program in line — nothing more and nothing less.
+- `receiveOrBlockWord_preserves_wellFormed` — The public raw-number receive path keeps every record consistent no matter what.
+- `sendWord_preserves_wellFormed` — The public raw-number send path keeps every record consistent no matter what.
+- `cancelSubject_ready_length_le_capacity` — Cancellation never grows the run queue past its fixed size.
+- `cancelSubject_full_ready_unchanged` — When the run queue is exactly full, cancelling a waiter leaves the run queue as it was.
+- `cancelSubjectTyped_rejected_unchanged` — A refused cancellation changes nothing at all.
+- `cancelSubjectTyped_cancelled_exact` — Spelling out the definition: when the checked cancellation succeeds, it performs exactly the plain cancellation step and nothing extra.
+- `wake_reserves_exact_envelope` — Waking a receiver sets aside for it exactly the message that was sent, word for word.
+- `wake_marks_receiver_runnable` — Waking a receiver marks it able to run again.
+- `wake_dequeues_fifo` — Waking removes the receiver from the front of the waiting line — first come, first served.
+- `wake_no_lost_wakeup` — The message reservation and the wake-up are one indivisible change: there is no moment where the accepted message exists but its receiver is still asleep, so a wake-up can never be lost.
+- `cancel_waiter_cleanup` — Whenever a cancellation can go ahead — the sleeper is already dead, or the run queue has room — it erases the waiting record, leaves a "cancelled" receipt so the program knows no message arrived, and removes it from the waiting line.
+- `cancel_live_waiter_wakes` — Cancelling a live sleeper, when the run queue has room, marks it able to run and puts it back in the run queue — it is never left stranded asleep.
+- `wellFormed_waiter_properties` — Spelling out the definition: any program in any waiting line is alive, genuinely allowed to receive at that meeting point, marked unable to run, owns a memory space, is not the program currently on the processor, and is not in the run queue.
+- `send_rejected_unchanged` — A refused send changes nothing.
+- `rejection_adapter_refines_model_boundary` — Bookkeeping: the compact question-and-answer table exported for the boot demo gives the same answers as the full model on every one of its named rejection cases.
+- `blockingIpcDemo_agrees_with_composite_scenario` — The compact demo's four accepted answers match the real model transitions of the reviewed boot story: the receiver sleeps, the sender wakes it with the exact message, the scheduler switches to the receiver, and the receiver collects exactly what was sent.
+- `blockingIpcDemo_rejection_scenario_agrees` — The demo's rejection answers each correspond to a concrete, named model failure — wrong caller, missing permission, retired meeting point, full queues, and so on — and in addition cancelling twice is harmless while a send after cancellation cannot resurrect a delivery.

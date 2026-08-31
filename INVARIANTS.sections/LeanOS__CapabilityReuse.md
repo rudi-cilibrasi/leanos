@@ -1,0 +1,53 @@
+# A worked story: reusing a slot cannot revive an old token
+
+This file walks one complete, concrete story through the kernel's real definitions: a program holds a token for a messaging channel in a numbered slot, the kernel revokes that token, and a different channel is installed in the very same slot. The theorems check every beat of the story — the old word works before the revocation, is dead forever afterward, and only the freshly issued word reaches the replacement channel. They then prove that a stripped-down, arithmetic-only version of the whole demo (the form compiled into the browser demo) gives exactly the same answer as the reference definitions for every possible input.
+
+- `staleWord_value` — Bookkeeping: the old token's word works out to exactly 131,072 (2 times 65,536).
+- `currentWord_value` — Bookkeeping: the fresh token's word works out to exactly 196,608 (3 times 65,536).
+- `decode_staleWord` — Decoding the old word yields exactly the old handle: slot 0 with generation stamp 2.
+- `resolve_initial` — Before the revocation, the old handle resolves to exactly the original send-only channel token.
+- `lookup_initial` — Bookkeeping: looking in the program's slot before the revocation finds exactly the original token.
+- `initial_object_live` — At the start of the story the original channel is registered as a live object.
+- `initial_kind_live` — At the start the kernel's registry records the original channel as a messaging endpoint.
+- `initial_mailbox_empty` — The original channel's mailbox starts out empty.
+- `initial_replacement_mailbox_empty` — The replacement channel's mailbox also starts out empty.
+- `initial_send_value` — Spelling out the definition: a send with the old handle, before the revocation, is accepted and places the message in the original channel's mailbox and history.
+- `initialTransition_value` — Bookkeeping: the reference computation for story step one (the accepted first send) produces exactly the expected packed result number.
+- `replacementTransition_value` — Bookkeeping: the reference computation for step two (revoke the old token, then install the replacement channel in the same slot) produces exactly the expected packed result.
+- `staleReplayTransition_value` — Bookkeeping: the reference computation for step three (replaying the old word after the slot was reused) produces exactly the expected packed rejection.
+- `decode_currentWord` — Decoding the fresh word yields exactly the fresh handle: the same slot 0, but with the new generation stamp 3.
+- `resolve_fresh` — After the slot is reused, the fresh handle resolves to exactly the replacement channel's token.
+- `lookup_fresh` — Bookkeeping: looking in the slot after reuse finds exactly the replacement token.
+- `fresh_object_live` — After reuse the replacement channel is registered as a live object.
+- `fresh_kind_live` — After reuse the registry records the replacement channel as a messaging endpoint.
+- `fresh_mailbox_empty` — The replacement channel's mailbox is empty before the fresh send.
+- `fresh_original_mailbox_empty` — The original channel's mailbox is also empty in the reused state.
+- `fresh_send_value` — Spelling out the definition: a send with the fresh handle is accepted and places the message in the replacement channel's mailbox and history.
+- `freshSendTransition_value` — Bookkeeping: the reference computation for step four (the accepted fresh send) produces exactly the expected packed result.
+- `wrongKindTransition_value` — Bookkeeping: the step where the slot holds a memory token instead of a channel token computes to the expected packed rejection.
+- `exhaustedTransition_value` — Bookkeeping: the step where the kernel has run out of fresh generation stamps computes to the expected packed refusal to create a new channel.
+- `initialScalar_refines` — The stripped-down arithmetic version of step one gives the same answer as the reference computation for every caller, word, and message.
+- `replacementScalar_refines` — The stripped-down version of step two agrees with the reference for every input.
+- `staleReplayScalar_refines` — The stripped-down version of step three agrees with the reference for every input.
+- `freshSendScalar_refines` — The stripped-down version of step four agrees with the reference for every input.
+- `wrongKindScalar_refines` — The stripped-down version of the wrong-kind step agrees with the reference for every input.
+- `exhaustedScalar_refines` — The stripped-down version of the exhausted step agrees with the reference for every input.
+- `scenarioTransition_refines_authoritative_all_inputs` — The complete stripped-down demo agrees with the kernel's real word decoder, token resolver, and channel operations for every state, caller, word, and message, and state numbers outside the story reject in both versions.
+- `exported_adapter_refines_authoritative_all_inputs` — The exact function exported to the demo binary equals the authoritative reference on every input.
+- `exported_adapter_refines_authoritative_all_admitted_inputs` — A restatement of the same guarantee limited to the six state numbers the story admits.
+- `exported_adapter_refines_all_inputs` — A restatement: the exported demo matches the model's expected answer on every input.
+- `invalid_state_five_rejects_all_inputs` — The unused state number five always returns the zero (do-nothing) answer, no matter what the other inputs are.
+- `canonical_scenario_steps_agree` — The stripped-down and reference versions agree at each of the six actual story steps in sequence.
+- `words_reuse_exact_slot` — The old and fresh handles name exactly the same slot but carry different generation stamps, which is the whole point of the story.
+- `initial_word_accepted` — Before the revocation, sending with the old word is accepted.
+- `initial_word_targets_original` — That accepted send places the message in the original channel's mailbox.
+- `cleared_slot_rejects_old_word` — Once the token is revoked but before the slot is reused, the old word is rejected as stale.
+- `cleared_slot_rejection_preserves_state` — That rejection changes nothing at all.
+- `stale_word_rejected` — After the slot has been reused for the replacement channel, the old word is still rejected as stale.
+- `stale_word_preserves_state` — That rejection also changes nothing.
+- `another_subject_rejected` — A different program presenting the perfectly valid fresh word is rejected, because a token word only means something inside the slot table of the program the kernel says is calling.
+- `malformed_word_rejected` — A garbage word with all 64 bits set is rejected.
+- `malformed_word_preserves_state` — The garbage word changes nothing.
+- `current_word_accepted` — Sending with the fresh word is accepted.
+- `current_word_targets_replacement` — The accepted fresh send places the message in the replacement channel's mailbox.
+- `adapter_sequence_agrees` — An end-to-end check that the exported demo returns exactly the expected packed numbers across the whole story, including all the rejections.

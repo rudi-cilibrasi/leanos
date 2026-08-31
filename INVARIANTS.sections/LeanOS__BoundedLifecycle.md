@@ -1,0 +1,96 @@
+# The bounded identity runtime: no identity is ever reused
+
+This is the capstone file that plugs the identity counters into the whole kernel model: one counter names programs ("subjects") and one names every kind of object (memory, message endpoints, address spaces), and every creation operation draws its identity from the counter rather than accepting one from the caller. The theorems establish a master consistency rule — every identity ever handed out is valid and strictly below its counter, and everything live is on the record — and show that every operation, successful or not, preserves it. The payoff is that along any finite sequence of operations, no retired object or terminated program can ever come back to life, an identity keeps its kind forever, and a counter that runs out stays out.
+
+- `installEndpoints_endpoints` — Bookkeeping: after the kernel writes a messaging-system result back into the shared runtime, reading the messaging view out again returns exactly that result.
+- `endpoints_toState` — Spelling out the definition: the messaging view's underlying memory state is exactly the runtime's shared memory state.
+- `endpoints_issued` — Spelling out the definition: the messaging view's issued-object history is exactly the shared memory history.
+- `endpoints_issuedAddressSpace` — Spelling out the definition: the messaging view's address-space history is exactly the runtime's address-space history.
+- `endpoints_capabilities` — Spelling out the definition: the messaging view's permission table is exactly the shared memory permission table.
+- `createSubjectCommand_confined` — The request words an untrusted program attaches to a create-program command are completely inert: two requests with different words produce exactly the same outcome.
+- `allocateMemoryCommand_confined` — The request words attached to a memory-allocation command are equally inert; only the kernel-trusted program and slot matter.
+- `subject_create_accepted_registry` — A stepping-stone fact used by later theorems: an accepted internal program creation records exactly the new identity as issued and live, and touches nothing else in those records.
+- `subject_terminate_registry` — A stepping-stone fact: internal termination never touches the issued-identity history and can only remove programs from the live set, never add them.
+- `memory_allocate_accepted_registry` — A stepping-stone fact: an accepted internal memory allocation records exactly the new object as issued, live, and of memory kind.
+- `memory_release_registry` — A stepping-stone fact: internal memory release keeps the issued history intact and can only shrink which objects are live and which kind records exist.
+- `virtual_release_projections` — A stepping-stone fact: the mapping-aware release acts on the system exactly through the underlying memory release and never touches the address-space history.
+- `endpoint_create_accepted_registry` — A stepping-stone fact: an accepted internal endpoint creation records exactly the new object as issued, live, and of endpoint kind, leaving the address-space history untouched.
+- `endpoint_destroy_registry` — A stepping-stone fact: destroying an endpoint keeps both issued histories intact and can only shrink the live-object and kind records.
+- `address_space_create_accepted_registry` — A stepping-stone fact: an accepted internal address-space creation records the new identity in both history views and marks it live with the address-space kind.
+- `address_space_destroy_registry` — A stepping-stone fact: destroying an address space keeps both issued histories intact and can only shrink the live-object and kind records.
+- `send_registry` — A stepping-stone fact: sending a message never changes the shared memory state or the address-space history.
+- `receive_registry` — A stepping-stone fact: receiving a message never changes the shared memory state or the address-space history.
+- `createSubject_exhausted_unchanged` — When program creation fails because the identity counter has run out, the entire runtime — both counters included — is left exactly as it was.
+- `createSubject_rejected_unchanged` — When program creation is rejected for any other reason, the entire runtime is left exactly as it was.
+- `createSubject_issued` — A successfully created program receives exactly the counter's current number, that number is valid, the counter advances by exactly one, and the runtime holds exactly the accepted internal creation.
+- `createSubject_object_domain_unchanged` — Creating a program never touches the object side of the world: the object counter, memory, mailboxes, and message history are all unchanged.
+- `createSubject_exhausted_iff` — Program creation reports "out of identities" exactly when the program counter has run out, and never for any other cause.
+- `allocateMemory_exhausted_unchanged` — When memory allocation fails because the object counter has run out, the entire runtime is left exactly as it was.
+- `allocateMemory_rejected_unchanged` — When memory allocation is rejected for any other reason, the entire runtime is left exactly as it was.
+- `allocateMemory_issued` — A successfully allocated memory object receives exactly the counter's current number, that number is valid, the counter advances by exactly one, and the runtime holds exactly the accepted internal allocation.
+- `allocateMemory_subject_domain_unchanged` — Allocating memory never touches the program side of the world: the program counter and program lifecycle state are unchanged.
+- `allocateMemory_exhausted_iff` — Memory allocation reports "out of identities" exactly when the object counter has run out, and never for any other cause.
+- `createEndpoint_exhausted_unchanged` — When endpoint creation fails because the object counter has run out, the entire runtime is left exactly as it was.
+- `createEndpoint_rejected_unchanged` — When endpoint creation is rejected for any other reason, the entire runtime is left exactly as it was.
+- `createEndpoint_issued` — A successfully created endpoint receives exactly the counter's current number, that number is valid, the counter advances by exactly one, and the runtime holds exactly the accepted internal creation.
+- `createEndpoint_subject_domain_unchanged` — Creating an endpoint never touches the program side of the world: the program counter and program lifecycle state are unchanged.
+- `createEndpoint_exhausted_iff` — Endpoint creation reports "out of identities" exactly when the object counter has run out, keeping identity exhaustion cleanly separate from the different resource of running out of capability generation numbers.
+- `createAddressSpace_exhausted_unchanged` — When address-space creation fails because the object counter has run out, the entire runtime is left exactly as it was.
+- `createAddressSpace_rejected_unchanged` — When address-space creation is rejected for any other reason, the entire runtime is left exactly as it was.
+- `createAddressSpace_issued` — A successfully created address space receives exactly the counter's current number, that number is valid, the counter advances by exactly one, and the runtime holds exactly the accepted internal creation.
+- `createAddressSpace_subject_domain_unchanged` — Creating an address space never touches the program side of the world: the program counter and program lifecycle state are unchanged.
+- `createAddressSpace_exhausted_iff` — Address-space creation reports "out of identities" exactly when the object counter has run out, and never for any other cause.
+- `terminateSubject_issuers_unchanged` — Terminating a program never reads or writes either identity counter.
+- `releaseMemory_issuers_unchanged` — Releasing memory never reads or writes either identity counter.
+- `destroyEndpoint_issuers_unchanged` — Destroying an endpoint never reads or writes either identity counter.
+- `destroyAddressSpace_issuers_unchanged` — Destroying an address space never reads or writes either identity counter.
+- `terminateSubject_history_preserved` — Terminating a program leaves both append-only issued histories exactly as they were.
+- `releaseMemory_history_preserved` — Releasing memory leaves the combined issued-object history exactly as it was.
+- `destroyEndpoint_history_preserved` — Destroying an endpoint leaves the combined issued-object history exactly as it was.
+- `destroyAddressSpace_history_preserved` — Destroying an address space leaves the combined issued-object history exactly as it was.
+- `invariant_fresh_subject` — Whenever the consistency rule holds, the next candidate program identity has never been issued and is not live.
+- `invariant_fresh_object` — Whenever the consistency rule holds, the next candidate object identity appears in neither history view and is not live under any kind.
+- `createSubject_total` — Whenever the consistency rule holds, program creation is decided entirely by the counter: an exhausted counter always fails closed, and a live counter always succeeds with exactly the next valid identity.
+- `memory_allocate_already_issued_reason` — The internal memory allocation can call an identity "already issued" only when the history genuinely records it as issued.
+- `endpoint_create_already_issued_reason` — Internal endpoint creation can call an identity "already issued" only when one of the two history views genuinely records it.
+- `endpoint_create_in_use_reason` — Internal endpoint creation can call an identity "in use" only when that object is genuinely live.
+- `address_space_create_already_issued_reason` — Internal address-space creation can call an identity "already issued" only when one of the two history views genuinely records it.
+- `address_space_create_live_reason` — Internal address-space creation can call an identity "live" only when that object is genuinely live.
+- `allocateMemory_rejected_reason` — Every rejection of the full memory-allocation operation reproduces an internal rejection of exactly the counter's candidate identity, so no rejection can concern any other number.
+- `createEndpoint_rejected_reason` — Every rejection of the full endpoint-creation operation reproduces an internal rejection of exactly the counter's candidate identity.
+- `createAddressSpace_rejected_reason` — Every rejection of the full address-space-creation operation reproduces an internal rejection of exactly the counter's candidate identity.
+- `allocateMemory_never_replays` — Whenever the consistency rule holds, memory allocation can never be rejected as reusing an already-issued identity: the counter's candidate is always genuinely fresh.
+- `createEndpoint_never_replays` — Whenever the consistency rule holds, endpoint creation can never be rejected either as a replayed identity or as an identity already in use.
+- `createAddressSpace_never_replays` — Whenever the consistency rule holds, address-space creation can never be rejected either as a replayed identity or as a still-live one.
+- `allocateMemory_address_history_unchanged` — Allocating memory never touches the address-space history.
+- `createEndpoint_issued_projections` — A stepping-stone fact: it spells out exactly where a successful endpoint creation lands in the shared runtime fields.
+- `createSubject_preserves_invariant` — Creating a program preserves the master consistency rule.
+- `allocateMemory_preserves_invariant` — Allocating memory preserves the master consistency rule.
+- `createEndpoint_preserves_invariant` — Creating an endpoint preserves the master consistency rule.
+- `createAddressSpace_preserves_invariant` — Creating an address space preserves the master consistency rule.
+- `terminateSubject_preserves_invariant` — Terminating a program preserves the master consistency rule.
+- `releaseMemory_preserves_invariant` — Releasing memory preserves the master consistency rule.
+- `destroyEndpoint_preserves_invariant` — Destroying an endpoint preserves the master consistency rule.
+- `destroyAddressSpace_preserves_invariant` — Destroying an address space preserves the master consistency rule.
+- `send_preserves_invariant` — Sending a message preserves the master consistency rule.
+- `receive_preserves_invariant` — Receiving a message preserves the master consistency rule.
+- `applyOperation_preserves_invariant` — Every single operation, of every kind the runtime offers, preserves the master consistency rule.
+- `runOperations_preserves_invariant` — Any finite sequence of operations, in any order, preserves the master consistency rule.
+- `applyOperation_history_monotone` — One operation of any kind can only grow the issued histories and only move the counters forward, never backward.
+- `runOperations_history_monotone` — Along any finite sequence of operations, every identity ever recorded as issued stays recorded.
+- `applyOperation_dead_object_stays_dead` — No single operation can bring a retired object back to life: an issued object that is no longer live stays not live.
+- `applyOperation_dead_subject_stays_dead` — No single operation can bring a terminated program back to life.
+- `applyOperation_kind_stable` — No single operation can change what kind of thing an identity is: after any step it either keeps its exact kind or has been retired.
+- `applyOperation_none_kind_stays` — An issued identity whose kind record has been erased by retirement never regains any kind in a single step.
+- `applyOperation_exhausted_issuers_fixed` — No operation of any kind touches an exhausted counter: it is left exactly as it is.
+- `runOperations_dead_object_stays_dead` — Along any finite sequence of operations, a retired object never becomes live again.
+- `runOperations_dead_subject_stays_dead` — Along any finite sequence of operations, a terminated program never becomes live again.
+- `runOperations_none_kind_stays` — Along any finite sequence of operations, a retired identity never regains any kind.
+- `runOperations_kind_stable` — Along any finite sequence of operations, an issued identity either keeps exactly its original kind or is retired; it never turns into a different kind of object.
+- `runOperations_exhausted_absorbing` — Along any finite sequence of operations, a counter that has run out stays run out.
+- `bounded_identity_no_reuse` — The headline bundle: along every finite sequence of operations the consistency rule keeps holding, no retired object or terminated program identity can ever become live again, and exhausted counters stay exhausted.
+- `terminateSubject_rejected_unchanged` — A refused termination leaves the entire runtime exactly as it was.
+- `releaseMemory_rejected_unchanged` — A refused memory release leaves the entire runtime exactly as it was.
+- `destroyEndpoint_rejected_unchanged` — A refused endpoint destruction leaves the entire runtime exactly as it was.
+- `destroyAddressSpace_rejected_unchanged` — A refused address-space destruction leaves the entire runtime exactly as it was.
+- `sampleRuntime_invariant` — A concrete, freshly booted runtime satisfies the master consistency rule, so every guarantee above applies from the very first operation rather than describing an unreachable situation.

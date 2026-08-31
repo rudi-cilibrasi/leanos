@@ -1,0 +1,31 @@
+# Locking down device memory access (DMA quarantine)
+
+Some hardware devices can write directly into the computer's memory without asking the kernel, a capability called DMA. These theorems show that at boot the kernel takes a complete inventory of the PCI devices it sees, refuses to run unless every device matches a fixed expected list with its DMA ability switched off, and from then on treats any change to that picture as a fatal stop condition. The payoff is a quarantine guarantee: while the system runs normally, no unowned device can alter a single byte of memory, and the kernel's own permitted operations cannot quietly loosen the quarantine either.
+
+- `encodeFunction_length` — Bookkeeping: the record the kernel writes down for one device function always takes exactly thirteen fixed slots, never more or fewer.
+- `emptySlot_length` — Bookkeeping: the placeholder written for an empty device slot takes exactly the same thirteen slots as a real record.
+- `encodeSlots_length` — Bookkeeping: writing down any number of device slots always produces exactly thirteen slots' worth of space per slot, no matter which devices are present.
+- `accepted_encoding_fixed_width` — Whenever a device inventory can be serialized at all, the result has exactly one fixed size, so nothing can be smuggled in or silently cut off.
+- `rejectReasonTag_injective` — Every distinct reason for rejecting a device inventory gets its own distinct numeric code, so two different failures can never be confused for one another.
+- `encodeValidationResult_length` — Bookkeeping: the recorded verdict of an inventory check, accept or reject, is always exactly one word long.
+- `validate_deterministic` — Checking the same device inventory twice always yields the same verdict; the validator has no randomness or hidden state.
+- `accepted_nonempty` — An accepted inventory is never vacuously empty: at least one device is actually present, so the quarantine guarantee is about something real.
+- `accepted_accounts_every_manifest_entry` — Every device on the kernel's expected list is accounted for in an accepted inventory, either genuinely present with the right identity or explicitly recorded as absent-and-optional.
+- `accepted_present_known_exactly_once` — Every device found present in an accepted inventory appears on the kernel's expected list, and its address appears exactly once, so no unexpected or duplicate device slips through.
+- `accepted_unassigned_busMaster_disabled` — In an accepted inventory, every present device is owned by no one and has its DMA switch (the bus-master bit) turned off.
+- `device_contract_allows_distinct_reads` — An honesty check on the rules themselves: the hardware assumption only limits what devices can write, and deliberately says nothing about what they might read, so no secrecy claim is being smuggled in.
+- `unowned_device_preserves_complete_projection` — A present but unowned device in an accepted quarantine cannot change any part of the modeled memory: not physical memory, not ownership records, not page tables, not kernel data, and not anything a program can see.
+- `unowned_device_step_unchanged` — Any single action attempted by an unowned device leaves the entire memory picture exactly as it was, not merely the one region someone happened to check.
+- `nonfatal_runtime_preserves_quarantine` — Whenever an operation is allowed to continue rather than halt the system, the running-state invariant still holds afterward and the quarantine on all devices is still in force.
+- `continued_runtime_state_unchanged` — An operation that continues normally leaves the DMA control state completely untouched; the operations available to running code simply have no way to pick a device, claim ownership of one, or switch its DMA ability on.
+- `changed_control_is_fatal` — If the kernel re-inspects the hardware and the picture differs from what it accepted at boot, the system never just carries on.
+- `valid_changed_control_exact_fatal` — When a re-inspection passes all the checks but differs from the boot-time picture, exactly one thing happens: the kernel records the changed observation for diagnosis, halts with the "control snapshot changed" reason, and reports that same reason.
+- `invalid_control_exact_fatal` — When a re-inspection fails the checks for any reason, exactly one thing happens: the kernel keeps the bad observation for diagnosis, halts with the "invalid control snapshot" reason, and reports that same reason.
+- `halted_absorbing` — Once the system has halted for a DMA control failure, every further operation changes nothing and simply reports that the system is already halted, with the original reason.
+- `halted_suffix_absorbing` — After a halt, any finite sequence of further operations, however long, leaves the state byte-for-byte identical and answers each request with the same already-halted reason.
+- `quarantine_step_state_unchanged` — Every allowed step, whether a continuing kernel operation or an attempted action by an unowned device, leaves the DMA runtime state exactly as it was.
+- `quarantine_trace_state_unchanged` — A stepping-stone fact used by the headline theorem: any finite run mixing continuing kernel operations with unowned-device attempts ends in exactly the state it started in.
+- `nonfatal_trace_preserves_quarantine_and_memory` — The headline guarantee: across any finite run without a fatal halt, the control invariant and the quarantine stay true, and every part of memory ends identical to how it began.
+- `stale_snapshot_serializes_but_rejects` — Being able to write an inventory down is not the same as trusting it: an outdated inventory can still be serialized for the record, yet the validator refuses to accept it.
+- `q35_unowned_vga_step_nonvacuous` — A concrete demonstration on the real emulated machine's device list: an unowned display device really can attempt a step under these rules, so the no-change theorems are not true merely because nothing could ever happen.
+- `q35_mixed_trace_nonvacuous` — A concrete demonstration that a genuine run mixing a kernel operation and a device attempt exists on the real emulated machine, so the trace theorems describe possible behavior rather than an empty world.

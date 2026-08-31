@@ -1,0 +1,64 @@
+# The frozen test corpus that cross-checks the generated C code
+
+LeanOS's kernel entry points are exported as generated C functions that take and return plain numbers. This file freezes a single ordered list of 389 test rows — the "oracle" — where the answer expected for each row is computed from the kernel model itself, and the build replays the same rows against the compiled C to catch any divergence introduced by code generation or compilation. The theorems here pin down the corpus's exact size and layout, prove that the exported number-level adapters agree with the richer authoritative models on every row, and confirm that each scenario's accept and reject answers are exactly the modeled ones. The corpus is deliberately finite: it is checked evidence about these specific inputs, not a claim about all possible inputs.
+
+- `malformed_budget_state_is_wrong_version` — The frame-budget row whose state word carries the wrong interface version is answered with the exact wrong-version rejection code, so a version error can never be misread as a legitimate budget-continuity failure.
+- `corpus_shape` — The frozen corpus contains exactly 389 test rows.
+- `hosted_mixed_vectors_exact` — Rows 314 through 333 of the corpus are, by definition, the dispatcher's complete canonical mixed-scenario walk itself — not a second hand-maintained table that could drift out of step.
+- `hosted_budget_vectors_exact` — The 24 rows beginning at row 356 are exactly the frame-budget scenario's row list.
+- `hosted_iotlb_publication_vectors_exact` — The final nine hosted rows are exactly the fixed IOTLB publication sequence, including the exact completion and all stale or wrong-scope negatives.
+- `hosted_iotlb_publication_adapter_agrees` — Every hosted IOTLB publication row agrees with the generated scalar adapter evaluated from the cache model.
+- `hosted_budget_canonical_sequence` — The frame-budget scenario's canonical command sequence, run from its starting state, really does end in its completed state.
+- `hosted_mixed_vectors_refine` — Every hosted mixed-scenario row is consequently backed by the separately proved, non-circular fact that its edge faithfully reflects the authoritative kernel model.
+- `hosted_invalidation_vectors_exact` — Rows 334 through 352 are exactly the stateful cache-invalidation protocol walk, including the independent unmap and switch-away/back branches, and rows 353 through 355 are its three deliberately bad requests: a malformed effect, a mismatched state, and a replayed stale ticket.
+- `hosted_invalidation_vectors_refine` — Every invalidation-protocol row is likewise backed by its own proved correspondence to the authoritative publication protocol.
+- `composite_invalidation_trace_agrees` — Each named step of the invalidation walk produces its exact expected result word, and the three hostile rows produce their exact rejection codes.
+- `composite_invalidation_same_effect_replay_rejected` — Replaying an old acknowledgement ticket as a later acknowledgement is rejected even though both acknowledgements ask for the same kind of cache flush.
+- `composite_mixed_trace_agrees` — Eight spot-checked steps of the mixed walk — including the transfer offer, the accepted map, the blocking receive, the fault cleanup, and the page-protection pair — produce their exact expected result words.
+- `boot_decoder_roundtrip_cold` — Encoding the boot model's cold starting state yields the number zero, the word the boot adapter starts from.
+- `boot_accept_agrees` — The one well-formed boot command in the corpus is accepted.
+- `every_rejection_agrees` — Every deliberately bad boot, system-call, and messaging row in the opening block is rejected with the answer zero.
+- `syscall_accept_agrees` — The well-formed system-call row is accepted.
+- `ipc_scenario_agrees` — In the four-row messaging scenario, the sender may send but not receive and the receiver may receive but not send, with each accepted step producing its exact word.
+- `preemption_scenario_agrees` — The genuine timer tick and the resume each produce their exact program-switch words, while a masked interrupt, a wrong interrupt number, and a forged claim about the current program all produce nothing.
+- `resumable_scenario_agrees` — Switching between the two suspended programs restores each one's exact saved descriptor and register markers, and a mismatched descriptor is refused.
+- `user_return_scenario_agrees` — All four legitimate return-to-user rows are accepted, and every one of the 24 corrupted variants — bad addresses, wrong selectors, forbidden flag bits, stale identities, out-of-bounds code or stack, and more — is rejected.
+- `blocking_ipc_scenario_agrees` — The four-step blocking hand-off (receiver blocks, sender wakes it, it is dispatched, the message is delivered) produces its exact event words, the wrong-caller, wrong-phase, and forged-payload rows produce nothing, and the eleven remaining hostile rows each produce a nonzero rejection word.
+- `capability_reuse_scenario_agrees` — Every row of the capability-slot reuse story produces its exact expected word: stale and fresh handles are told apart at each stage, the forged and malformed rows produce nothing, and the exhaustion and boundary rows behave exactly as modeled.
+- `interrupt_entry_scenario_agrees` — The six legitimate interrupt-entry rows are accepted and all thirteen corrupted entry rows are rejected.
+- `interrupt_entry_adapter_agrees_with_model` — On every interrupt-entry row anywhere in the corpus, the exported adapter's answer equals the answer of the richer entry model.
+- `general_protection_entry_scenario_agrees` — The general-protection-fault row really is an interrupt-entry row, and it is accepted.
+- `extended_state_dispatch_scenario_agrees` — In the extended processor-state block, the two peer dispatch rows produce the identical exact dispatch word, the idle row is a bare acceptance, and the policy-mismatch, kernel-origin, invariant-violation, and stale-binding rows are all refused.
+- `privilege_entry_control_scenario_agrees` — In the privileged-entry-control block, only the correctly configured setup row is accepted, all eighteen mutated or degraded configurations are refused, and the return path, the user trap rows, the later event rows, and the post-fatal row each land on their exact expected code or code band.
+- `privilege_entry_control_corpus_shape` — Bookkeeping: the entry-control block is exactly the 32 rows beginning at row 112, immediately before the fault-dispatch block.
+- `privilege_entry_control_adapter_agrees_with_model` — On all 32 entry-control rows, the exported adapter agrees with the independently evaluated rich control model.
+- `fault_dispatch_adapter_agrees_with_model` — Every fault-dispatch row couples the exported allocation-free adapter to an expectation computed by the authoritative chain of entry normalization, lifecycle cleanup, scheduler selection, saved-context banking, and translation-cache transition.
+- `direct_port_io_corpus_shape` — Bookkeeping: the direct hardware-port block is exactly 28 rows, covering accepted controls, every named control mutation, stale live state, all direction and width classes, right and wrong kernel purposes, malformed words, and post-validation relaxation.
+- `direct_port_io_adapter_agrees_with_model` — On all 28 port rows, the exported adapter agrees with the model.
+- `nmi_corpus_shape` — Bookkeeping: the non-maskable-interrupt block is exactly 17 rows, laid out as three accepted interrupted modes plus one row for every rejection reachable through this boundary.
+- `nmi_corpus_id_inventory` — Bookkeeping: the 17 non-maskable-interrupt rows carry exactly the expected names, in order.
+- `nmi_adapter_agrees_with_model` — On all 17 non-maskable-interrupt rows, the exported adapter agrees with the model.
+- `nmi_accepted_modes_agree` — The three accepted rows — interrupted while running user code, while handling in the kernel, and the already-halted snapshot — produce their exact expected words.
+- `nmi_noncanonical_context_codes_rejected` — Context words carrying an impossible bounds code or an impossible mode code are rejected, each with its own distinct error code.
+- `nmi_rejection_codes_agree` — The fourteen rejection rows produce, in order, exactly the published inventory of rejection codes.
+- `user_fault_class_corpus_shape` — Bookkeeping: the contained user-fault block for divide-error and breakpoint faults is exactly 23 rows.
+- `user_fault_class_entry_scenario_agrees` — The two accepted user-fault entry rows are accepted and all six entry corruptions are rejected.
+- `user_fault_class_dispatch_scenario_agrees` — Accepted divide-error and breakpoint dispatches carry their exact typed reason code in the fixed bits of the result word, the kernel-origin, malformed, and wrong-restart forms produce terminal words, and the swapped-shape and stale-binding rows produce nothing.
+- `boot_phase_corpus_shape` — Bookkeeping: the boot-phase block is exactly 18 rows, covering every orderly publication step, every wrong or premature publication, boot-time interrupts and faults in both bootstrap phases, the inherited window, runtime delegation, repeated terminal events, post-latch attempts, and a malformed phase code.
+- `boot_phase_corpus_id_inventory` — Bookkeeping: those 18 rows carry exactly the expected names, in order.
+- `boot_phase_adapter_agrees_with_model` — On all 18 boot-phase rows, the exported adapter agrees with the rich finite phase model.
+- `boot_phase_expected_classes_agree` — Only the three orderly publications are accepted, both boot-time non-maskable-interrupt rows latch the absorbing terminal record, and the delegation and post-latch rows return the caller's opaque business token unchanged.
+- `user_return_adapter_agrees_with_model` — On every return-to-user row anywhere in the corpus, the exported adapter agrees with the authoritative validator.
+- `stale_translation_corpus_shape` — Bookkeeping: the stale-translation block is exactly the 15-row tail covering accepted unmap and protect, wrong-owner rejections, release, destroy, and switch effects, unmapped-page and post-reuse rejections, permission amplification, and a malformed encoding.
+- `stale_translation_adapter_agrees_with_model` — On all 15 stale-translation rows, the exported adapter agrees with the independently evaluated authoritative transition.
+- `stale_translation_scenario_agrees` — Accepted transitions carry their exact effect words — which cache invalidation is required, for which address space and page — while wrong-owner and post-reuse requests demand no invalidation at all and the malformed row changes nothing.
+- `page_fault_corpus_shape` — Bookkeeping: the page-fault block is exactly 36 rows.
+- `page_fault_adapter_agrees_with_model` — On all 36 page-fault rows, the exported adapter agrees with the model.
+- `page_fault_subject_mutation_attested` — Changing only the faulting program's identity changes the accepted page-fault answer, proving the adapter genuinely consumes that input rather than discarding it.
+- `page_fault_space_mutation_attested` — Changing only the address-space identity likewise changes the accepted answer.
+- `page_fault_cr3_mutation_attested` — Changing only the page-table root likewise changes the accepted answer.
+- `page_fault_wp_mutation_attested` — Changing only the write-protect control bit likewise changes the accepted answer.
+- `page_fault_nxe_mutation_attested` — Changing only the no-execute control bit likewise changes the accepted answer.
+- `page_fault_smep_mutation_attested` — Changing only the control that stops the kernel executing user memory likewise changes the accepted answer.
+- `page_fault_smap_mutation_attested` — Changing only the control that stops the kernel reading user memory likewise changes the accepted answer.
+- `page_fault_authority_mutations_attested` — All seven facts combined: no authority-bearing input to the page-fault adapter can be dropped without visibly changing the accepted answer.

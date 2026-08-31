@@ -1,0 +1,7 @@
+# The kernel's first memory handout
+
+These theorems cover the moment during startup when the kernel hands out its very first frame (fixed-size block) of physical memory. They tie together results proved elsewhere into one package: the boot-time evidence check only passes when every requirement genuinely held, an accepted handout is a frame that lies outside every reserved region, is owned by exactly one requester, and has been wiped completely clean, and a refused handout changes nothing at all.
+
+- `accepted_evidence` — Whenever the boot check accepts the evidence handed over at startup, every one of its requirements genuinely held: the bootloader identified itself with the exact expected magic number, the information block's size was within bounds and a multiple of eight, each memory-map entry was exactly 24 bytes, the chosen memory frame was within the range boot code may touch, and all four preparation stages were flagged complete.
+- `allocation_refinement` — The composition the boot code relies on: when the allocator picks its first frame and the scrubbing step accepts a lifetime allocation, the picked frame lies outside every checked boot reservation, and the accepted allocation publishes a frame that is recorded as owned by exactly the requesting object and has been completely wiped clean.
+- `rejected_publishes_nothing` — Whenever a scrub-and-allocate request is refused, the system is left exactly as it was: no ownership record, no object, no capability, and no memory contents are published.

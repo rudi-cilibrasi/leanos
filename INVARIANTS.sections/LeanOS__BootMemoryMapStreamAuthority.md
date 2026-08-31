@@ -1,0 +1,27 @@
+# The boot parser's step-by-step contract
+
+This file defines the parser the kernel actually runs at boot: a machine that reads the firmware's memory-map handoff eight bytes at a time and grants authority over a first free page of memory only at the very end, never trusting the stream blindly along the way. Its theorems pin down each individual step of that machine: what conditions must hold before it may start, exactly how each kind of word (headers, skipped tags, the memory map's entries, the closing tag) advances its state, which bookkeeping each step is forbidden to change, and, crucially, that any rejection reveals nothing a caller could exploit. Together they form the step-by-step rulebook on which the larger lockstep proofs in the pipeline files are built.
+
+- `initWord_of_admitted` — Once the parser's start-up conditions all hold, every question asked of it returns the one canonical active starting state.
+- `initWord_active_implies_noError` — A parser that reports itself active cannot be hiding a start-up error in a separate status word.
+- `initWord_noError_implies_admitted` — A clean start-up error word is enough to reconstruct every admission condition that was checked before the parser could become active.
+- `infoStepWords_of_admitted` — From an admitted start, the boot information's opening header word takes exactly one canonical step into tag-scanning mode, with every resulting field computed by the production machinery itself rather than by a parallel parser.
+- `infoStepWords_of_active` — Merely being active is already enough to reconstruct the admission facts and take that exact opening step, so callers cannot supply those facts independently.
+- `ignoredTagHeaderStepWords_of_admitted` — Reading the header of a tag the kernel ignores moves the cursor to exactly the right content and padding counts while leaving every map, entry, and classification field untouched.
+- `ignoredTagBodyStepWords_of_admitted` — Each body word of an ignored tag moves the cursor through content or padding by exactly one word, counting down as it should while every other field is preserved.
+- `memoryMapTagHeaderStepWords_of_admitted` — Reading the single memory-map header moves the parser into layout-reading mode, records the exact number of entry bytes, marks the map as seen, and preserves everything else.
+- `memoryMapLayoutStepWords_of_admitted` — Reading the map's layout word leads either to the first entry or, for an empty map, straight back to tag scanning, and the layout values involved are exactly those the rich decoder accepts.
+- `entryBaseStepWords_of_admitted` — Reading an entry's starting address moves the parser to the length step and retains that address exactly as read.
+- `entryLengthStepWords_of_admitted` — Reading an entry's length moves the parser to the type step and retains both pending fields exactly.
+- `entryTypeStepError_of_admitted` — An admitted entry-type word is accepted by the production step, and the rich decoder's checks for reserved bits, zero length, overflow, and the entry limit are exactly the checks that matter here.
+- `entryTypeStepWords_of_admitted` — Beyond mere acceptance, the entry-type step advances the parser's complete state, its content counts, entry tally, classifications, and next phase, exactly as needed to continue entry by entry.
+- `endTagStepWords_of_admitted` — Consuming the single closing end tag reaches exactly the successful final state, established by the production machinery itself rather than by comparison against a caller-supplied answer.
+- `step_error_word` — Spelling out the definition: the error a step reports is exactly the error its transition computes for the situation at hand.
+- `accepted_entryType_classification_words` — When an entry's type word is accepted, the two running coverage tallies are updated with exactly the public usable and off-limits tests, the bridge used when folding decoded entries into the final answer words.
+- `accepted_entryType_exposes_canonical_event` — The parse-once event is not a second decoder: an accepted entry-type step exposes exactly the address and length just consumed and the standard encoding of the entry's kind, and nothing else leaks out.
+- `accepted_nonEntry_preserves_classification_words` — Any accepted step other than an entry's type word cannot alter either coverage tally; headers, ignored content, the map layout, entry addresses, and entry lengths all preserve them.
+- `accepted_ignored_preserves_tag_fields` — Skipping through an ignored tag's body cannot change whether the map was seen, how many entries were decoded, or how many tag headers were consumed.
+- `rejected_step_exposes_no_state` — Every rejected step is fail-closed no matter what state the caller holds: only the interface version, the rejected status, and the specific error remain visible.
+- `projectionFinish_acceptance_conditions` — Final acceptance of a candidate page cannot be manufactured from an incomplete or rejected decode, an impossible entry count, or an empty result; the selected page is the first free one computed internally from all sixty-four bitmap words, and publication still requires the separate confirming rescan.
+- `authorityResultWord_accepted` — A worked example of the accepted final result: for any properly selected page it reports success, no error, the page itself, and the page's publication token.
+- `selection_deterministic` — Bookkeeping: asking the frame selector the same question twice always yields the same answer.

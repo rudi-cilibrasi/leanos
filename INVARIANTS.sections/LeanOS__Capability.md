@@ -1,0 +1,42 @@
+# Core rules of the permission system: delegation and revocation
+
+A capability is a permission token sitting in one of a program's numbered slots, naming an object (a block of memory, an address space, or a messaging channel) and listing exactly what its holder may do with it. This file proves the two central operations behave safely: delegation (copying a token to another program with equal or fewer rights) never manufactures permission out of thin air, and revocation (removing one token, or a token together with every token ever derived from it) removes without ever granting. It also proves that every refused request leaves the whole system exactly as it was, and that each operation keeps the kernel's internal bookkeeping consistent.
+
+- `install_other_subject` — Placing a token in one program's slot leaves every other program's slots exactly as they were.
+- `clear_other_subject` — Emptying one program's slot likewise leaves every other program's slots untouched.
+- `lookup_found_slot` — Bookkeeping: when a lookup reports it found a token, that token really is stored in the slot that was searched.
+- `copy_accepted_installs` — An accepted delegation really does place the newly created token in the chosen destination slot, stamped with the next fresh identity number.
+- `copyBounded_outOfRange_unchanged` — Trying to delegate into a slot number beyond the recipient's allowance changes nothing.
+- `copyLowest_full_unchanged` — Delegating into "the lowest free slot" changes nothing when the recipient has no free slot at all.
+- `clearSubtree_slot_survives` — Any token still present after a whole-family wipe was already sitting in that exact slot beforehand.
+- `clearSubtree_removes_descendant` — A whole-family wipe removes every token recorded as descending from the revoked one.
+- `clearSubtree_authority_subset` — After a whole-family wipe, no program holds any permission it did not already hold before.
+- `clear_preserves_wellFormed` — Emptying a slot keeps all of the kernel's internal bookkeeping rules intact.
+- `clearSubtree_preserves_wellFormed` — A whole-family wipe also keeps all of those bookkeeping rules intact.
+- `hasRuntimeCriticalRight_of_hasRight` — Bookkeeping: a token granting read, write, revoke, or receive is flagged as carrying a runtime-critical right.
+- `revokeRuntimeSafe_accepted_raw` — A stepping-stone fact used by later theorems: when the safety-guarded direct revocation succeeds, it is exactly the plain revocation, and the safety check passed.
+- `revokeSubtreeRuntimeSafe_accepted_raw` — The same stepping-stone fact for the safety-guarded whole-family revocation.
+- `revokeRuntimeSafe_accepted_preserves_critical_authority` — An accepted safety-guarded direct revocation keeps every read, write, revoke, and receive permission that any program held before.
+- `revokeSubtreeRuntimeSafe_accepted_preserves_critical_authority` — An accepted safety-guarded whole-family revocation keeps that same critical fragment of permissions, using the recorded family history as its finite checklist.
+- `revokeSubtree_preserves_registry` — Whole-family revocation never changes which programs exist, which objects exist, or what kind each object is.
+- `clear_authority_subset` — Emptying a slot never grants anyone a new permission.
+- `install_no_authority_amplification` — Installing a token whose rights fit within what the delegating program already holds cannot give anyone a permission that neither the recipient nor the delegator already had.
+- `copy_preserves_wellFormed` — Delegation keeps all of the kernel's bookkeeping rules intact.
+- `copy_preserves_authority` — Delegation never takes a permission away: everything any program could do before, it can still do afterward.
+- `copy_preserves_registries` — Delegation changes only slot contents and the append-only history; the lists of live programs and objects, the kind of each object, and each program's slot allowance stay exactly identical.
+- `copy_preserves_derivation_of_lt` — Delegation appends exactly one family-tree record, so every older token keeps its exact recorded ancestry.
+- `copy_preserves_absent_identity` — An identity stamp that appears in no slot before a delegation still appears in no slot afterward; the one newly filled slot carries only the brand-new stamp.
+- `revoke_preserves_metadata` — Direct revocation changes only what sits in the slots; the registries, the identity counter, the family history, and the slot allowances stay exactly the same.
+- `revoke_slot_survives` — Every token surviving a direct revocation was already sitting in the same slot beforehand.
+- `revokeSubtree_preserves_metadata` — Whole-family revocation likewise leaves everything except slot contents exactly unchanged.
+- `revokeSubtree_slot_survives` — Every token surviving a whole-family revocation occupied the same slot beforehand.
+- `revoke_preserves_wellFormed` — Direct revocation keeps the bookkeeping rules intact.
+- `revokeSubtree_preserves_wellFormed` — Whole-family revocation keeps the bookkeeping rules intact.
+- `copy_no_authority_amplification` — Any permission held after a delegation was either already held by that same program or was held by the delegating program, so copying can never conjure a right from nowhere.
+- `revoke_no_authority_amplification` — Direct revocation never grants anyone a permission they lacked.
+- `copy_rejected_unchanged` — A refused delegation leaves the system exactly as it was.
+- `revoke_rejected_unchanged` — A refused direct revocation leaves the system exactly as it was.
+- `revokeSubtree_rejected_unchanged` — A refused whole-family revocation leaves the system exactly as it was.
+- `revokeRuntimeSafe_rejected_unchanged` — Every refusal from the safety-guarded direct revocation, including the extra runtime-safety refusal, changes nothing.
+- `revokeSubtreeRuntimeSafe_rejected_unchanged` — Every refusal from the safety-guarded whole-family revocation is likewise a complete no-op.
+- `revokeSubtree_no_authority_amplification` — Whole-family revocation never grants anyone a permission they lacked.

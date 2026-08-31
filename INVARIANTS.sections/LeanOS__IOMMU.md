@@ -1,0 +1,146 @@
+# What plugged-in devices can touch in memory
+
+Modern computers let hardware devices — network cards, disk controllers — read and write memory directly, without the processor in the middle. This file proves that LeanOS keeps that power on a leash: a device acts only on behalf of the one program it is assigned to, sees and changes only the exact memory windows that program granted it, and can never reach kernel bookkeeping, page tables, or another program's memory. Permissions can only shrink as they are handed along, retired device identities cannot be revived, and a memory frame taken from one program is wiped before the next program receives it. Many bullets below are bookkeeping for fully worked examples — most importantly a frame-reuse story in which program A writes a secret marker through its device, releases the memory, and program B later receives the very same physical frame scrubbed clean — proving the security gates are demanding but genuinely passable.
+
+- `Permission.attenuates_refl` — Bookkeeping: every permission counts as a valid narrowing of itself.
+- `Permission.attenuates_trans` — A narrowing of a narrowing is still a narrowing of the original permission, so no chain of hand-offs can ever widen access.
+- `Permission.attenuation_cannot_add_read` — Whenever the original permission forbids reading, every narrowed copy of it forbids reading too.
+- `Permission.attenuation_cannot_add_write` — Whenever the original permission forbids writing, every narrowed copy of it forbids writing too.
+- `validateCore_total` — Bookkeeping: the kernel's state-validity check always comes back with a definite yes or no.
+- `validateCore_deterministic` — Bookkeeping: checking the same state twice always yields the same verdict.
+- `State.invariant` — Spelling out the definition: every state the kernel actually holds comes packaged with proof that it passed the validity check and that its permission registry is internally consistent.
+- `State.liveFrameIdsExclusive` — In any valid state, two in-use records never describe the same physical memory frame, so each live frame has exactly one authoritative record.
+- `issueGeneration_exact` — Spelling out the definition: when the kernel issues a freshness number it hands out exactly the current counter value and moves the counter up by exactly one, refusing rather than wrapping around.
+- `consecutive_generations_never_reuse` — Two freshness numbers issued back to back are never equal, so an old identity can never collide with a new one.
+- `gate_total` — Bookkeeping: every control request put to the kernel's gate produces an outcome.
+- `gate_deterministic` — Bookkeeping: the same request against the same state always produces the identical outcome.
+- `accepted_preserves_invariant` — Whenever the kernel accepts a control request, the state it publishes still satisfies every validity rule.
+- `rejected_state_unchanged` — Whenever the kernel rejects a request, absolutely nothing changes: the state afterward is exactly the state before.
+- `validateCore_withMemory` — Bookkeeping: the validity check ignores the actual bytes in memory, so swapping memory contents never changes its verdict.
+- `read_observation_authorized` — When a device read succeeds, the bytes returned are exactly the contents of the approved window, and the mapping used genuinely belongs to the device's assignment, domain, and owner and carries read permission.
+- `readBytes_eq_of_authorized_range_eq` — A stepping-stone fact used by later theorems: two memories that agree across a given stretch of a frame produce identical bytes when that stretch is read.
+- `read_confidentiality` — Bytes outside the exact window a device is authorized to read can never influence what that read observes.
+- `writeMemory_other_frame` — A stepping-stone fact: writing into one frame leaves every byte of every other frame untouched.
+- `writeMemory_outside_range` — A stepping-stone fact: writing a run of bytes leaves every position before and after that run untouched.
+- `write_integrity` — A successful device write changes only the exact approved stretch of one frame; every registry — assignments, mappings, frames, permissions, counters, and the current owner — and every byte outside that stretch stays exactly as it was.
+- `translation_nonforgery` — A transfer that passes the checkpoint necessarily uses the assignment, mapping, and frame already recorded in kernel state, so a device cannot invent its own identity, owner, domain, or backing frame.
+- `no_translation_without_live_assignment` — A device whose identity and freshness tag match no live assignment can never obtain an approved translation, no matter what it requests.
+- `translation_owner_isolation` — An approved transfer can never target a frame record owned by anyone other than the program the device is assigned to.
+- `translation_physical_frame_owner_isolation` — Any live record naming the same physical frame as an approved transfer is owned by the very program the device is assigned to, so owner isolation holds for the physical memory itself, not just the record consulted.
+- `write_integrity_other_owner_frame` — A successful device write can never alter any live physical frame belonging to a different program.
+- `read_only_translation_never_writable` — A mapping granted read-only can never back an approved write; the combination is impossible.
+- `deviceStep_authority_stutters` — No device action, accepted or refused, ever changes the mapping or frame registries: devices can move bytes but never authority.
+- `protectedLiveFrame_deviceStep` — A frame marked as kernel-owned, page-table, or allocator bookkeeping is still marked that way after any single device action.
+- `unassignedLiveFrame_deviceStep` — A live frame that no mapping points at still has no mapping pointing at it after any single device action.
+- `otherOwnerLiveFrame_deviceStep` — A live frame owned by some other program is still owned by that program after any single device action.
+- `protectedLiveFrame_deviceStep_untouched` — No single device action can touch a protected frame: kernel memory, page tables, and allocator bookkeeping are simply unreachable.
+- `unassignedLiveFrame_deviceStep_untouched` — No single device action can touch a live frame that no mapping points at.
+- `otherOwnerLiveFrame_deviceStep_untouched` — A device action whose write acts on behalf of one program cannot touch a live frame owned by a different program.
+- `protected_trace_does_not_touch` — Across any finite sequence of device actions, a protected frame is never touched even once.
+- `unassigned_trace_does_not_touch` — Across any finite sequence of device actions, a live but unmapped frame is never touched even once.
+- `other_owner_trace_does_not_touch` — Across any finite sequence of device actions whose successful writes all act for one program, a live frame owned by anyone else is never touched.
+- `deviceStep_untouched_frame` — A stepping-stone fact: when a device action does not touch a frame, every byte of that frame is unchanged afterward.
+- `trace_integrity` — The low-level sequence guarantee: if no successful write in a sequence of device actions names a frame, every byte of that frame is identical after the whole sequence.
+- `isolated_trace_integrity` — The headline no-touch guarantee: a frame that is protected, unmapped, or owned by someone other than every writer in a sequence keeps all of its bytes unchanged through the entire sequence.
+- `actualReadObservations_eq_observeReadViews` — A stepping-stone fact: the bytes a series of device reads actually returned are exactly what recomputing those reads from current memory would yield.
+- `read_trace_confidentiality` — A whole sequence of approved device reads is unaffected by any byte outside the combined windows the reads were allowed to see.
+- `actual_read_trace_confidentiality` — The published version of that guarantee: it starts from the bytes really returned by the read operation, not from observations a caller merely claims to have made.
+- `teardown_removes_all_mappings` — When the kernel accepts a request to tear down a device assignment, every mapping belonging to that assignment is gone afterward.
+- `unmap_removes_mapping` — When the kernel accepts a request to remove a single mapping, that mapping no longer exists afterward.
+- `release_rejects_reachable_frame` — The kernel always refuses to release a frame while any device mapping can still reach it.
+- `retired_assignment_generation_rejects` — A transfer citing an identity-and-freshness pair that matches no live assignment is always turned away at the checkpoint, so retired assignments cannot be revived.
+- `deny_all_unassigned_device_stutters` — In the deny-all baseline, where nothing is assigned or mapped, a step by an unowned device leaves memory completely unchanged.
+- `kernel_operation_preserves_authoritative_extension` — Applying any kernel operation to the combined kernel-and-device-authority state leaves every one of its validity rules intact.
+- `kernel_operation_current_owner_coherent` — After any kernel operation, the program the device side treats as current is exactly the program the kernel scheduled.
+- `mismatched_current_owner_is_not_coherent` — A combined state whose device side names a different current program than the kernel never counts as coherent.
+- `detached_capability_authority_is_not_coherent` — A combined state whose device side carries a permission registry different from the kernel's never counts as coherent.
+- `AuthoritativeOutcome.invariant` — Bookkeeping: whatever a gated control request returns, accepted or rejected, the resulting state satisfies its validity rules.
+- `gatedByKernel_preserves_authoritative_extension` — Every request through the public kernel-gated control desk leaves the combined state satisfying all its validity rules.
+- `gated_lifecycle_operations_require_authoritative_boundary` — While the kernel is running, the control desk always refuses frame-release and terminate-owner requests without changing anything; those operations must go through the stricter memory boundary instead.
+- `gated_teardown_removes_all_mappings` — When the kernel-gated desk accepts a teardown, no mapping of that assignment survives in the published state.
+- `gated_release_rejects_reachable_frame` — The kernel-gated desk never grants a release of a frame that mappings can still reach; some rejection always comes back.
+- `halted_iommu_absorbing` — Once the kernel has halted, the gated desk rejects every request with a kernel-halted answer.
+- `AuthoritativeMemoryOutcome.invariant` — Bookkeeping: every outcome at the memory boundary, accepted or rejected, comes with a state satisfying its validity rules.
+- `gatedMemoryByKernel_preserves_authoritative_extension` — Every request through the memory boundary — device writes, frame releases, frame allocations — leaves the combined state satisfying all its validity rules.
+- `gatedMemory_release_rejects_mismatched_authority` — A release request is refused as missing authority whenever the kernel binds the memory object to one physical frame while the device side names a different one.
+- `gatedMemory_release_rejects_dangling_authority` — A release request is refused as missing authority whenever the device side names a frame lifetime that no longer exists in the registry.
+- `gatedMemory_deviceWrite_accepted_of` — A stepping-stone fact: the memory boundary accepts a device write once the underlying write succeeded, the backing permission is on record, and the resulting combined state is coherent.
+- `gatedMemory_deviceWrite_state_of` — A stepping-stone fact spelling out exactly which combined state an accepted device write publishes: the new bytes plus a written-to note on the frame, with everything else unchanged.
+- `halted_iommu_suffix_absorbing` — Once the kernel has halted, running any entire sequence of further gated requests changes nothing at all.
+- `sampleCapabilityAuthority_wellFormed` — Bookkeeping for a worked example: the sample permission registry is internally consistent.
+- `authoritativeSampleScrub_invariant` — Bookkeeping: the example's scrub tracker — the record of which frames are freshly cleaned — satisfies its cleanliness rule.
+- `authoritativeSample_invariant` — Bookkeeping: the example's full combined state of kernel, device authority, and scrub tracker satisfies every validity rule.
+- `authoritativeAssigned_invariant` — Bookkeeping: the example state after assigning a device through the public desk still satisfies every validity rule.
+- `gatedByKernel_isAccepted_of_gate` — A stepping-stone fact: the kernel-gated desk accepts a control-only request whenever the inner desk accepts it and the result stays coherent with the kernel.
+- `authoritative_assign_gate` — Bookkeeping: assigning the example's device produces exactly the predicted new state and handles.
+- `authoritative_assign_state_core` — Bookkeeping: the registries after the example assignment have exactly the predicted contents.
+- `authoritative_assign_coherent` — Bookkeeping: the example's post-assignment state remains coherent with the kernel.
+- `authoritative_assign_accepted` — The example device assignment passes through the real public desk and is accepted, showing the gates can actually be satisfied.
+- `authoritativeAssignedWitness_invariant` — Bookkeeping: the hand-built post-assignment state satisfies every validity rule.
+- `authoritative_grant_gate` — Bookkeeping: granting the example memory mapping produces exactly the predicted new state and mapping handle.
+- `authoritative_grant_coherent` — Bookkeeping: the example's post-grant state remains coherent with the kernel.
+- `authoritative_grant_accepted` — The example mapping grant passes through the real public desk and is accepted.
+- `authoritativeGrantedWitness_invariant` — Bookkeeping: the hand-built post-grant state satisfies every validity rule.
+- `lifecycleWrittenScrub_invariant` — Bookkeeping for the frame-reuse story: after A's device write, the scrub tracker still satisfies its cleanliness rule.
+- `lifecycleWrittenWitness_coherent` — Bookkeeping: the predicted post-write combined state is coherent with the kernel.
+- `lifecycleWrittenWitness_invariant` — Bookkeeping: that post-write state satisfies every validity rule.
+- `lifecycle_write_state_exact` — Bookkeeping: the accepted device write publishes exactly the predicted post-write state.
+- `lifecycle_write_accepted` — Bookkeeping: the story's device write is accepted at the memory boundary.
+- `lifecycleCapabilities_wellFormed` — Bookkeeping: the two-program permission registry that seeds the frame-reuse story is internally consistent.
+- `lifecycleAddressOwner_some_iff` — Bookkeeping: in the story's setup, each of the two programs owns exactly its own address space and nothing else.
+- `lifecycleAddressSpace_live` — Bookkeeping: the story's registry contains exactly two address spaces, one per program.
+- `lifecycleKernel_invariant` — Bookkeeping: the story's starting kernel state passes every kernel well-formedness check.
+- `lifecycleScrub_invariant` — Bookkeeping: the story's starting scrub tracker satisfies its cleanliness rule.
+- `lifecycleInitial_invariant` — Bookkeeping: the story's full starting combined state satisfies every validity rule.
+- `lifecycleAfterWriteScrub_invariant` — Bookkeeping: after A's write, the scrub tracker still satisfies its rule, with A's frame now marked as written to.
+- `lifecycleAfterWrite_coherent` — Bookkeeping: the post-write combined state is coherent with the kernel.
+- `lifecycleAfterWrite_invariant` — Bookkeeping: the post-write combined state satisfies every validity rule.
+- `mismatchedReleaseState_invariant` — Bookkeeping: a deliberately corrupted test state, whose device side points at the wrong frame, still passes the general validity rules, so the release guard tested next is doing real work.
+- `mismatched_live_release_authority_rejects` — On a concrete state where the kernel and the device side disagree about which physical frame backs a memory object, the release request is refused as missing authority: the guard demonstrably fires.
+- `authoritative_lifecycle_write_accepted` — In the story, A's device write of the marker byte is accepted through the real memory boundary.
+- `authoritative_lifecycle_write_state_exact` — Bookkeeping: that accepted write publishes exactly the predicted post-write state.
+- `lifecycle_retired_capabilities_exact` — Bookkeeping: retiring the permissions of A's released memory object yields exactly the predicted registry.
+- `lifecycleReleaseScrub_capabilities` — Bookkeeping: after the release, the scrub tracker carries exactly that retired registry.
+- `lifecycleReleasedCapabilities_subjects` — Bookkeeping: releasing a memory object changes nothing about which programs exist.
+- `lifecycleReleaseScrub_binding` — Bookkeeping: after the release, the released object is no longer bound to any physical frame.
+- `lifecycleReleaseScrub_issued` — Bookkeeping: the record of which object names were ever issued is unchanged by the release.
+- `lifecycleReleaseScrub_allocator` — Bookkeeping: after the release, the freed physical frame is marked free in the allocator.
+- `lifecycleReleaseScrub_bytes` — Bookkeeping: releasing the frame leaves its bytes exactly as A wrote them; the wipe happens later, at reallocation.
+- `lifecycleReleaseScrub_invariant` — Bookkeeping: the post-release scrub tracker satisfies its cleanliness rule.
+- `lifecycleReleaseKernel_invariant` — Bookkeeping: the post-release kernel state passes every kernel well-formedness check.
+- `lifecycleReleased_coherent` — Bookkeeping: the post-release combined state is coherent with the kernel.
+- `lifecycleReleased_invariant` — Bookkeeping: the post-release combined state satisfies every validity rule.
+- `lifecycle_scrub_release_accepted` — Bookkeeping: the low-level frame release inside the story is accepted by the scrub layer.
+- `authoritative_lifecycle_release_accepted` — In the story, A's release of its frame is accepted through the real memory boundary.
+- `authoritative_lifecycle_release_state_exact` — Bookkeeping: that accepted release publishes exactly the predicted post-release state.
+- `lifecycleScheduleKernel_invariant` — Bookkeeping: after the kernel switches from A to B, the kernel state passes every well-formedness check.
+- `lifecycleScheduledCandidate_coherent` — Bookkeeping: the predicted post-switch combined state is coherent, with the device side now naming B as the current program.
+- `lifecycleScheduledCandidate_invariant` — Bookkeeping: the post-switch combined state satisfies every validity rule.
+- `lifecycle_schedule_reconcile_exact` — Bookkeeping: reconciling device authority with the switched kernel changes exactly one thing, the current program.
+- `lifecycle_schedule_state_exact` — Bookkeeping: the atomic switch operation lands exactly on the predicted combined state.
+- `lifecycleScheduled_invariant` — Bookkeeping: the state after the switch satisfies every validity rule.
+- `authoritative_lifecycle_switch_to_b_from_kernel_operation` — After the kernel operation that hands control to B, the kernel and the device side agree that B is now the current program, so the switch cannot leave device authority pointing at A.
+- `lifecycleAllocatedCapabilities_wellFormed` — Bookkeeping: the permission registry after B's fresh allocation is internally consistent.
+- `lifecycle_allocate_state_exact` — Bookkeeping: the low-level allocation lands exactly on the predicted scrub-tracker state, with the reused frame's bytes wiped.
+- `lifecycle_allocate_result_accepted` — Bookkeeping: the low-level allocation inside the story is accepted by the scrub layer.
+- `lifecycleScheduleKernel_addressOwner` — Bookkeeping: switching programs does not change which program owns which address space.
+- `lifecycleAllocatedScrub_invariant` — Bookkeeping: the post-allocation scrub tracker satisfies its cleanliness rule, with the reissued frame on record as freshly wiped.
+- `lifecycleAllocated_retained_mailbox_sender_live` — Bookkeeping: any message mailbox retained through the allocation names a sender who is still a live program.
+- `lifecycleAllocatedKernel_invariant` — Bookkeeping: the post-allocation kernel state passes every kernel well-formedness check.
+- `lifecycleAllocated_coherent` — Bookkeeping: the post-allocation combined state is coherent with the kernel.
+- `lifecycleAllocated_invariant` — Bookkeeping: the post-allocation combined state satisfies every validity rule.
+- `authoritative_lifecycle_allocate_accepted` — In the story, B's allocation, which knowingly reuses A's old physical frame under a fresh lifetime, is accepted through the real memory boundary.
+- `authoritative_lifecycle_allocate_state_exact` — Bookkeeping: that accepted allocation publishes exactly the predicted post-allocation state.
+- `lifecycleAssigned_coherent` — Bookkeeping: after B is assigned its own device, the combined state is coherent with the kernel.
+- `lifecycleAssigned_invariant` — Bookkeeping: the post-assignment combined state satisfies every validity rule.
+- `lifecycle_assign_accepted` — Bookkeeping: the inner control desk accepts B's device assignment.
+- `lifecycle_assign_state_exact` — Bookkeeping: that assignment lands exactly on the predicted state.
+- `authoritative_lifecycle_assign_to_b_accepted` — In the story, B's device assignment is accepted through the real public desk.
+- `authoritative_lifecycle_assign_state_exact` — Bookkeeping: that accepted assignment publishes exactly the predicted state.
+- `lifecycleGranted_coherent` — Bookkeeping: after B's mapping grant, the combined state is coherent with the kernel.
+- `lifecycleGranted_invariant` — Bookkeeping: the post-grant combined state satisfies every validity rule.
+- `lifecycle_grant_accepted` — Bookkeeping: the inner control desk accepts B's mapping grant.
+- `lifecycle_grant_state_exact` — Bookkeeping: that grant lands exactly on the predicted state.
+- `authoritative_lifecycle_grant_to_b_accepted` — In the story, B's mapping grant is accepted through the real public desk.
+- `authoritative_lifecycle_grant_state_exact` — Bookkeeping: that accepted grant publishes exactly the predicted state.
+- `scrubbed_reassignment_device_read_no_sentinel` — The story's finale, with every step accepted through the real public gates: A's device writes its marker byte, A's release retires the frame, the kernel hands control to B, the very same physical frame is wiped and reissued to B under a fresh lifetime, B receives its own device assignment and mapping — and B's device read observes only freshly wiped bytes, never A's marker.

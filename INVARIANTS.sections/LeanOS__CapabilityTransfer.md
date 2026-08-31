@@ -1,0 +1,46 @@
+# Handing a permission token to another program through a message
+
+Programs pass permission tokens to each other over messaging channels in two steps: the sender's "offer" seals an attenuated copy (equal or fewer rights) of one of its tokens inside a channel's one-message mailbox, where nobody can use it, and the receiver's "accept" atomically moves it into one empty slot of its own. This file proves that the message data itself can never choose or change what authority moves, that rights only ever shrink along the way, that cancellations and revocations reach offers still in flight, and that every refused step leaves the whole system untouched.
+
+- `deliver_exposes_installed_word` — The word a delivery hands the receiver is precisely the handle of the token record just installed in the receiver's chosen slot.
+- `offerWords_accepted_resolves` — Whenever an offer made with raw words is accepted, both words — the channel and the source token — were first fully resolved in the sender's own slot table.
+- `offerWords_accepted_generation_encodable` — An accepted offer reserves its new identity inside the encodable 48-bit range, so whatever usable slot the receiver later picks, the delivered token can be named by a valid word without truncation.
+- `acceptWord_delivered_boundary_encodable` — Every delivered receipt began with a properly encoded channel word, and if a sealed token was waiting there, its destination slot and pending generation stamp also fit a proper word.
+- `offerHandles_stale_source_rejected` — An offer whose source handle has gone stale is refused as a stale source.
+- `sendData_rejected_unchanged` — A refused plain (data-only) send changes nothing at all, including the observer log.
+- `sendData_accepted_records` — An accepted plain send appends exactly one public "data sent" entry to the log of the channel the sender's own token selected.
+- `sendData_accepted_unattached` — In a consistent state, an accepted plain send can never land on a channel that is carrying a sealed token, so the matching receive is guaranteed to take the data-only path.
+- `endpointSend_capabilities_unchanged` — A stepping-stone fact used by later theorems: the underlying message send never touches the token store.
+- `endpointSend_preserves_occupied_mailbox` — A stepping-stone fact: a message send never overwrites a mailbox that already holds a message.
+- `sendData_preserves_wellFormed` — A plain send keeps every bookkeeping rule of the combined system intact, and in particular can never overwrite the mailbox behind any sealed token in flight.
+- `cancelAllOffers_pending` — After a bulk cancellation, no sealed token remains pending on any channel.
+- `cancelAllOffers_capabilities` — Bulk cancellation leaves the token store itself completely untouched.
+- `cancelAllOffers_preserves_wellFormed` — Bulk cancellation keeps the bookkeeping rules intact: it retains the channel registry and history, removes every pending sealed token, and only ever empties mailboxes that existed.
+- `cancelSenderOffers_pending` — Cancelling one sender's offers removes exactly those pending tokens whose recorded sender is that program, and no others.
+- `destroyEndpointWord_resolution_rejected_unchanged` — A malformed or denied word at channel destruction changes nothing and never reaches the destruction step itself.
+- `revokeSubtreeWords_accepted_resolves` — Whenever the combined revocation (installed tokens plus sealed in-flight tokens) is accepted, both of its words were first fully resolved.
+- `revokeSubtreeWords_authority_rejected_unchanged` — A malformed or denied authority word leaves transfers, mailboxes, family records, and tokens all exactly as they were.
+- `revokeSubtreeWords_target_rejected_unchanged` — Even after the authority resolves, a malformed or denied word for the family's root still leaves the entire combined state untouched.
+- `reserve_preserves_capabilityWellFormed` — A stepping-stone fact: recording a new family-tree entry without placing the token in any slot keeps the token store consistent.
+- `reserve_preserves_endpointWellFormed` — A stepping-stone fact: that same reservation changes none of the messaging or channel-lifetime bookkeeping.
+- `install_reserved_preserves_capabilityWellFormed` — A stepping-stone fact: moving a reserved, globally unique identity into an empty in-range slot keeps the token store consistent.
+- `offer_rejected_unchanged` — A refused offer leaves everything exactly as it was.
+- `offer_accepted_records_attenuated` — An accepted offer creates exactly one sealed child of the sender's source token, and the child's recorded rights never exceed the parent's.
+- `offer_accepted_preserves_wellFormed` — An accepted offer keeps every bookkeeping rule intact: the new sealed token sits in nobody's slots, and its mailbox entry and pending tag appear together in one step.
+- `offerWords_accepted_preserves_wellFormed` — The public word-based offer inherits that same whole-system preservation once both words have resolved.
+- `offerWords_accepted_preserves_authority_registry` — An accepted offer changes only the append-only identity records and the one selected channel's mailbox and pending tag; it can never create or retire a program or object, change an object's kind, or fill a slot.
+- `offerWords_accepted_preserves_live_mailbox_senders` — The only new envelope an accepted offer introduces is one whose sender is the actual caller, and every other mailbox keeps its previous sender.
+- `offerWords_accepted_caller_live` — An offer can only be accepted on behalf of a program the kernel currently recognizes as live.
+- `accept_rejected_unchanged` — A refused receipt leaves everything exactly as it was.
+- `accept_preserves_capabilityWellFormed` — Receipt keeps the token store consistent: installing the sealed identity into the receiver's empty slot creates no malformed or duplicate token, and every other path leaves the store unchanged.
+- `accept_preserves_wellFormed` — Receipt keeps every bookkeeping rule intact: a data-only delivery just removes an untagged mailbox entry, while an authority-carrying delivery moves the sealed identity into exactly one slot and clears its tag in the same step.
+- `acceptWord_preserves_wellFormed` — The public word-based receipt inherits that same preservation after the channel word and generation-range checks pass.
+- `accept_delivered_preserves_registry_and_authority` — A completed delivery changes no registry entry and preserves every token that was already installed anywhere.
+- `acceptWord_delivered_preserves_registry_and_authority` — The same at the public word boundary: an attached delivery only fills the slot checked to be empty, and a data-only delivery leaves the token store entirely alone.
+- `accept_mailbox_provenance` — Receipt never manufactures a message: any mailbox entry present afterward was already there before, since receipt only ever empties the one selected mailbox.
+- `acceptWord_mailbox_provenance` — The word-based receipt inherits that same fact once the word and generation checks pass.
+- `delivered_installs_exactly_once` — A successful authority-carrying receipt consumes exactly its one mailbox entry and installs its sealed identity in exactly the slot the receiver chose.
+- `delivered_envelope_and_payload_independent` — Delivery returns exactly the envelope that was stored before the step, and neither of the message's data words plays any part in selecting the installed authority.
+- `pending_rights_conserved` — Every sealed token waiting in flight carries rights that are an attenuated subset of its recorded parent's rights.
+- `delivered_authority_conserved` — Starting from a consistent state, delivery installs exactly the attenuated descendant recorded beside the returned envelope, with the message data absent from every equality that determines authority.
+- `offer_authority_payload_independent` — Two offers differing only in their message data reserve identical derivations and identical sealed authority; only the visible message content can differ.
