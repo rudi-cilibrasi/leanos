@@ -1390,12 +1390,25 @@ def check_workflows() -> None:
         raise EvidenceError(
             "CI must run complete evidence for merge-queue candidates targeting main"
         )
+    promotion_condition = (
+        "github.event_name != 'pull_request' || "
+        "contains(github.event.pull_request.labels.*.name, 'ci:full-admission')"
+    )
+    if (
+        "types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]"
+        not in ci_content
+        or "LEANOS_CI_EVIDENCE_TIER: ${{ (" + promotion_condition
+        + ") && 'all' || 'pr' }}" not in ci_content
+    ):
+        raise EvidenceError(
+            "CI must promote only labeled pull requests to complete evidence"
+        )
     hosted_job = re.search(
         r"(?ms)^  hosted-boundary:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
         ci_content,
     )
     hosted_contract = (
-        "if: github.event_name == 'pull_request'",
+        "if: github.event_name == 'pull_request' || github.event_name == 'merge_group'",
         "./scripts/check-hosted-generated-boundaries.sh ordinary",
         "./scripts/check-hosted-generated-boundaries.sh sanitized",
         "./scripts/check-hosted-sanitizer-negatives.sh",
@@ -1405,11 +1418,12 @@ def check_workflows() -> None:
         token not in hosted_job.group("body") for token in hosted_contract
     ) or (
         "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: "
-        "${{ github.event_name == 'pull_request' && '1' || '0' }}"
+        "${{ (github.event_name == 'pull_request' || github.event_name == "
+        "'merge_group') && '1' || '0' }}"
         not in ci_content
     ):
         raise EvidenceError(
-            "CI must parallelize complete hosted evidence only for pull requests"
+            "CI must parallelize complete hosted evidence for pull requests and merge groups"
         )
     ci_emulator = re.search(
         r"(?ms)^  emulator:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
@@ -1419,10 +1433,10 @@ def check_workflows() -> None:
         raise EvidenceError("CI workflow does not define the emulator evidence job")
     for shard_contract in (
         "shard: [0, 1, 2, 3]",
-        "LEANOS_EVIDENCE_TIER=\"${{ github.event_name == 'pull_request' && 'pr' || 'all' }}\"",
+        'LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}"',
         "LEANOS_EVIDENCE_SHARD_INDEX=\"${{ matrix.shard }}\"",
         "LEANOS_EVIDENCE_SHARD_COUNT=4",
-        "--tier \"${{ github.event_name == 'pull_request' && 'pr' || 'all' }}\"",
+        '--tier "${{ env.LEANOS_CI_EVIDENCE_TIER }}"',
         "--shard-index ${{ matrix.shard }}",
         "--shard-count 4",
         "emulator-shard-${{ matrix.shard }}.json",
@@ -1458,9 +1472,11 @@ def check_workflows() -> None:
     for clang_evidence in (
         "./scripts/build-image.sh",
         "./scripts/write-reproducibility-manifest.sh",
-        "LEANOS_EVIDENCE_TIER=\"${{ github.event_name == 'pull_request' && 'pr' || 'all' }}\"",
-        "LEANOS_EVIDENCE_SHARD_INDEX=\"${{ github.event_name == 'pull_request' && '0' || '' }}\"",
-        "LEANOS_EVIDENCE_SHARD_COUNT=\"${{ github.event_name == 'pull_request' && '4' || '' }}\"",
+        'LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}"',
+        'LEANOS_EVIDENCE_SHARD_INDEX="${{ env.LEANOS_CI_EVIDENCE_TIER == '
+        "'pr' && '0' || '' }}\"",
+        'LEANOS_EVIDENCE_SHARD_COUNT="${{ env.LEANOS_CI_EVIDENCE_TIER == '
+        "'pr' && '4' || '' }}\"",
         "--scenario blocking-ipc",
         "test -s build/boot/serial.log",
         "build/boot/serial.log",
@@ -1468,23 +1484,50 @@ def check_workflows() -> None:
     ):
         if clang_evidence not in ci_content:
             raise EvidenceError(
-            "CI does not preserve tiered Clang canonical evidence: "
+                "CI does not preserve tiered Clang canonical evidence: "
                 + clang_evidence
             )
-    if "if [[ \"${{ github.event_name }}\" != pull_request ]]; then" not in ci_content:
+    if 'if [[ "${{ env.LEANOS_CI_EVIDENCE_TIER }}" == all ]]; then' not in ci_content:
         raise EvidenceError(
-            "CI must reserve the complete canonical reproducibility manifest for non-PR evidence"
+            "CI must create the canonical reproducibility manifest only for complete evidence"
         )
     independent_clang = re.search(
         r"(?ms)^  clang-reproducibility-build:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
         ci_content,
     )
     if independent_clang is None or (
-        "if: github.event_name != 'pull_request'"
+        "if: " + promotion_condition
         not in independent_clang.group("body")
     ):
         raise EvidenceError(
-            "CI must reserve the independent Clang reproducibility build for non-PR evidence"
+            "CI must run the independent Clang build for promoted complete evidence"
+        )
+    admission = re.search(
+        r"(?ms)^  premerge-admission:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+        ci_content,
+    )
+    admission_contract = (
+        "name: Pre-merge full admission",
+        "if: always() && github.event_name == 'pull_request'",
+        "- repository-hygiene",
+        "- lean",
+        "- hosted-boundary",
+        "- clang-image",
+        "- clang-reproducibility-build",
+        "- clang-reproducibility",
+        "- emulator",
+        "PROMOTED: ${{ contains(github.event.pull_request.labels.*.name, "
+        "'ci:full-admission') }}",
+        "CLANG_REPRO_COMPARE: ${{ needs.clang-reproducibility.result }}",
+        "EMULATOR: ${{ needs.emulator.result }}",
+        'if [[ "$PROMOTED" != true ]]; then',
+        'if [[ "$result" != success ]]; then',
+    )
+    if admission is None or any(
+        token not in admission.group("body") for token in admission_contract
+    ):
+        raise EvidenceError(
+            "CI must fail closed on labeled complete pre-merge admission"
         )
     if "build/boot/clang-canonical.serial.log" in ci_content:
         raise EvidenceError(

@@ -129,27 +129,41 @@ an optimizer-specific indirect edge.
 These pins identify the build inputs. `build-image.sh` uses BIOS-only GRUB
 output, a fixed ISO UUID and file dates, no linker build ID, and normalized
 debug paths. Release CI and local validation retain
-`./scripts/test-reproducible-build.sh` for same-runner checks. Pull-request CI
-instead runs the two Clang builds concurrently on independent hosted runners,
+`./scripts/test-reproducible-build.sh` for same-runner checks. A pull request
+promoted with the reviewed `ci:full-admission` label runs two Clang builds
+concurrently on independent hosted runners,
 publishes the same centralized 40-artifact SHA-256 inventory from each, and
-compares those manifests in a fail-closed join job. This is a stronger check
-for hostname, path, timing, and other runner-local leakage while removing one
-serial image build from the Clang critical path. It measures same-revision
-rebuilding in the pinned reference environment; it does not claim that
-arbitrary host distributions or tool versions produce identical bytes.
+compares those manifests in a fail-closed join job before `main` advances.
+Ordinary pull requests retain bounded representative evidence for prompt
+feedback. The strict default-branch ruleset requires the promoted full-evidence
+join and requires the branch to be current with `main`; an update or subsequent
+push therefore invalidates the old result and reruns the labeled admission.
+The cross-runner comparison checks for hostname, path, timing, and other
+runner-local leakage while removing one serial image build from the Clang
+critical path. It measures same-revision rebuilding in the pinned reference
+environment; it does not claim that arbitrary host distributions or tool
+versions produce identical bytes.
 
-Pull-request CI also builds and boots the canonical image with the pinned
-Ubuntu 24.04 `clang-18=1:18.1.3-1ubuntu1` package. Both independent build lanes
-set `LEANOS_CC=clang-18`; the primary lane verifies nested compiler selection,
-runs the final-ELF policy gates, and requires the canonical guest's complete
-generated-oracle protocol plus independent debug-exit status. GCC and Clang
-outputs are not compared: each compiler's same-revision rebuild is compared
-only with itself. The lane
-preserves the compiler command, reviewed security flags, ELF, map,
-disassembly/stack evidence, serial transcript, and QEMU command log. GNU
-binutils, GRUB, SeaBIOS, and QEMU remain shared with the reference lane, so
-this is independent C-front-end integration evidence—not verified compilation,
-a semantic-equivalence proof, or a second release toolchain.
+The reviewable ruleset definition lives in
+`.github/main-ruleset-policy.json`; a scheduled workflow compares GitHub's live
+ruleset with that file and reports policy drift. The workflow also retains the
+complete `merge_group` path for a future move to an organization-owned
+repository, where GitHub makes merge queues available. The audit is
+intentionally separate from per-commit admission so a transient API outage
+cannot make otherwise valid changes unmergeable.
+
+The primary Clang lane builds and boots the canonical image with the pinned
+Ubuntu 24.04 `clang-18=1:18.1.3-1ubuntu1` package. Both independent full-build
+lanes set `LEANOS_CC=clang-18`; the primary lane verifies nested compiler
+selection, runs the final-ELF policy gates, and requires the canonical guest's
+complete generated-oracle protocol plus independent debug-exit status. GCC and
+Clang outputs are not compared: each compiler's same-revision rebuild is
+compared only with itself. The lane preserves the compiler command, reviewed
+security flags, ELF, map, disassembly/stack evidence, serial transcript, and
+QEMU command log. GNU binutils, GRUB, SeaBIOS, and QEMU remain shared with the
+reference lane, so this is independent C-front-end integration evidence—not
+verified compilation, a semantic-equivalence proof, or a second release
+toolchain.
 
 The final-ELF direct-port gate continues to pin every reviewed symbol, opcode,
 operand, owner, source invocation, and call-graph edge. Its manifest uses the
@@ -171,7 +185,8 @@ proof-integrity, deterministic-build, image-build, and shared emulator-evidence
 matrix before it can publish. `scripts/emulator-evidence-matrix.tsv` is the
 versioned, reviewable inventory used by both pull-request and tag CI. Its
 `tier` column selects one representative scenario for every runner class on
-pull requests; pushes to `main`, tags, and releases still execute every row.
+pull requests; merge-queue candidates, pushes to `main`, tags, and releases
+still execute every row.
 Each row
 names a unique scenario, its existing transcript-validating runner, expected
 integration-evidence class, timeout, image and ELF, serial log, and fixture

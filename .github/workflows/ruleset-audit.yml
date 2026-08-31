@@ -1,0 +1,33 @@
+name: Audit main admission policy
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Compare live and versioned rulesets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Read live main ruleset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RULESET_ID: 21871841
+        run: |
+          curl --fail --show-error --silent --location \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${{ github.repository }}/rulesets/${RULESET_ID}" \
+            --output "${RUNNER_TEMP}/main-ruleset.json"
+
+      - name: Compare live ruleset with repository policy
+        run: python3 scripts/check-main-ruleset-policy.py "${RUNNER_TEMP}/main-ruleset.json"

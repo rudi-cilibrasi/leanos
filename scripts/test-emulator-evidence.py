@@ -440,8 +440,26 @@ def run_fixtures() -> None:
         try:
             ci_workflow.write_text(
                 original_ci.replace(
+                    "types: [opened, synchronize, reopened, labeled, unlabeled, "
+                    "ready_for_review]",
+                    "types: [opened, synchronize, reopened]",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            expect_failure(
+                evidence.check_workflows,
+                "CI must promote only labeled pull requests to complete evidence",
+            )
+        finally:
+            ci_workflow.write_text(original_ci, encoding="utf-8")
+
+        try:
+            ci_workflow.write_text(
+                original_ci.replace(
                     "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: "
-                    "${{ github.event_name == 'pull_request' && '1' || '0' }}",
+                    "${{ (github.event_name == 'pull_request' || github.event_name == "
+                    "'merge_group') && '1' || '0' }}",
                     "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: 0",
                     1,
                 ),
@@ -449,7 +467,24 @@ def run_fixtures() -> None:
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI must parallelize complete hosted evidence only for pull requests",
+                "CI must parallelize complete hosted evidence for pull requests and merge groups",
+            )
+        finally:
+            ci_workflow.write_text(original_ci, encoding="utf-8")
+
+        try:
+            ci_workflow.write_text(
+                original_ci.replace(
+                    "if: github.event_name == 'pull_request' || "
+                    "github.event_name == 'merge_group'",
+                    "if: github.event_name == 'pull_request'",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            expect_failure(
+                evidence.check_workflows,
+                "CI must parallelize complete hosted evidence for pull requests and merge groups",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")
@@ -459,7 +494,9 @@ def run_fixtures() -> None:
                 original_ci.replace(
                     "  clang-reproducibility-build:\n"
                     "    name: Clang independent reproducibility build\n"
-                    "    if: github.event_name != 'pull_request'",
+                    "    if: github.event_name != 'pull_request' || "
+                    "contains(github.event.pull_request.labels.*.name, "
+                    "'ci:full-admission')",
                     "  clang-reproducibility-build:\n"
                     "    name: Clang independent reproducibility build\n"
                     "    if: github.event_name == 'pull_request'",
@@ -469,7 +506,25 @@ def run_fixtures() -> None:
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI must reserve the independent Clang reproducibility build",
+                "CI must run the independent Clang build for promoted complete evidence",
+            )
+        finally:
+            ci_workflow.write_text(original_ci, encoding="utf-8")
+
+        try:
+            ci_workflow.write_text(
+                original_ci.replace(
+                    "PROMOTED: ${{ "
+                    "contains(github.event.pull_request.labels.*.name, "
+                    "'ci:full-admission') }}",
+                    "PROMOTED: false",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            expect_failure(
+                evidence.check_workflows,
+                "CI must fail closed on labeled complete pre-merge admission",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")

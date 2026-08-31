@@ -2,8 +2,8 @@ name: CI
 
 on:
   pull_request:
-  # Merge-queue candidates run the complete evidence tier before main advances.
-  # The tier selectors below intentionally special-case only pull_request.
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+  # Retain queue compatibility if the repository moves to an organization.
   merge_group:
     branches:
       - main
@@ -28,6 +28,9 @@ permissions:
 
 env:
   LEANOS_CI_IMAGE_DIGEST: sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+  # Personal-account repositories cannot enable GitHub's merge queue. A
+  # maintainer promotes a ready PR to the full tier with this reviewed label.
+  LEANOS_CI_EVIDENCE_TIER: ${{ (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-admission')) && 'all' || 'pr' }}
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: safe.directory
   GIT_CONFIG_VALUE_0: ${{ github.workspace }}
@@ -64,6 +67,9 @@ jobs:
       - name: Test reproducibility manifest contract
         run: ./scripts/test-reproducibility-manifest.sh
 
+      - name: Test main admission policy contract
+        run: python3 scripts/test-main-ruleset-policy.py
+
   lean:
     name: Lean build and proof checks
     runs-on: ubuntu-24.04
@@ -80,9 +86,9 @@ jobs:
 
       - name: Build and check proofs
         env:
-          # Pull requests run the same hosted evidence in the parallel job below.
-          # Full merge-group/main evidence remains in scripts/check.sh.
-          LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+          # Pull requests and merge groups run the same hosted evidence in the
+          # parallel job below. Main-push and manual runs retain the replay here.
+          LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '1' || '0' }}
         run: ./scripts/check.sh
 
       - name: Verify frame-budget negative evidence
@@ -142,7 +148,7 @@ jobs:
 
   hosted-boundary:
     name: Hosted generated-boundary evidence
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
     timeout-minutes: 25
@@ -226,12 +232,12 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/ci
-          LEANOS_EVIDENCE_TIER="${{ github.event_name == 'pull_request' && 'pr' || 'all' }}" \
-            LEANOS_EVIDENCE_SHARD_INDEX="${{ github.event_name == 'pull_request' && '0' || '' }}" \
-            LEANOS_EVIDENCE_SHARD_COUNT="${{ github.event_name == 'pull_request' && '4' || '' }}" \
+          LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
+            LEANOS_EVIDENCE_SHARD_INDEX="${{ env.LEANOS_CI_EVIDENCE_TIER == 'pr' && '0' || '' }}" \
+            LEANOS_EVIDENCE_SHARD_COUNT="${{ env.LEANOS_CI_EVIDENCE_TIER == 'pr' && '4' || '' }}" \
             ./scripts/build-image.sh \
             2>&1 | tee build/ci/clang-image-build.log
-          if [[ "${{ github.event_name }}" != pull_request ]]; then
+          if [[ "${{ env.LEANOS_CI_EVIDENCE_TIER }}" == all ]]; then
             ./scripts/write-reproducibility-manifest.sh
           fi
           python3 scripts/run-emulator-evidence.py run \
@@ -280,7 +286,7 @@ jobs:
           retention-days: 14
 
       - name: Preserve primary reproducibility manifest
-        if: github.event_name != 'pull_request'
+        if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: leanos-clang-repro-primary-${{ github.sha }}
@@ -290,7 +296,7 @@ jobs:
 
   clang-reproducibility-build:
     name: Clang independent reproducibility build
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-admission')
     needs: repository-hygiene
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
@@ -375,7 +381,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/ci
-          LEANOS_EVIDENCE_TIER="${{ github.event_name == 'pull_request' && 'pr' || 'all' }}" \
+          LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
             LEANOS_EVIDENCE_SHARD_INDEX="${{ matrix.shard }}" \
             LEANOS_EVIDENCE_SHARD_COUNT=4 \
             ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
@@ -388,7 +394,7 @@ jobs:
           [[ ! -f build/boot/leanos-${LEANOS_VERSION:-0.1.0}-x86_64.iso ]] || \
             ./scripts/run-dma-unknown-device.sh
           ./scripts/run-emulator-evidence.py run \
-            --tier "${{ github.event_name == 'pull_request' && 'pr' || 'all' }}" \
+            --tier "${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
             --shard-index ${{ matrix.shard }} \
             --shard-count 4 \
             --output build/evidence/emulator-shard-${{ matrix.shard }}.json \
@@ -572,6 +578,46 @@ jobs:
             build/boot/*.qmp.tsv
           if-no-files-found: error
           retention-days: 14
+
+  premerge-admission:
+    name: Pre-merge full admission
+    if: always() && github.event_name == 'pull_request'
+    needs:
+      - repository-hygiene
+      - lean
+      - hosted-boundary
+      - clang-image
+      - clang-reproducibility-build
+      - clang-reproducibility
+      - emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require promoted full evidence
+        env:
+          PROMOTED: ${{ contains(github.event.pull_request.labels.*.name, 'ci:full-admission') }}
+          REPOSITORY_HYGIENE: ${{ needs.repository-hygiene.result }}
+          LEAN: ${{ needs.lean.result }}
+          HOSTED_BOUNDARY: ${{ needs.hosted-boundary.result }}
+          CLANG_IMAGE: ${{ needs.clang-image.result }}
+          CLANG_REPRO_BUILD: ${{ needs.clang-reproducibility-build.result }}
+          CLANG_REPRO_COMPARE: ${{ needs.clang-reproducibility.result }}
+          EMULATOR: ${{ needs.emulator.result }}
+        run: |
+          if [[ "$PROMOTED" != true ]]; then
+            echo "error: a maintainer must apply ci:full-admission before merge" >&2
+            exit 1
+          fi
+          for result in \
+            "$REPOSITORY_HYGIENE" "$LEAN" "$HOSTED_BOUNDARY" \
+            "$CLANG_IMAGE" "$CLANG_REPRO_BUILD" \
+            "$CLANG_REPRO_COMPARE" "$EMULATOR"; do
+            if [[ "$result" != success ]]; then
+              echo "error: promoted full-evidence dependency concluded $result" >&2
+              exit 1
+            fi
+          done
+          echo "Promoted pull request passed complete pre-merge evidence"
 
   serial-graph-parity:
     name: Serial vs graph image parity
