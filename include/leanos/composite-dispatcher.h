@@ -19,9 +19,11 @@
  * truncation is rejected by that caller before this scalar function is called.
  *
  * Every state and command word has ABI version 1 in bits 0..7. State bits
- * 8..15 select one of 59 canonical states and all upper bits are reserved.
- * Command tags use bits 8..15 to select one of 62 commands and all upper
- * bits are reserved. Arguments not named by a command must be zero. A success
+ * 8..15 select one of 60 canonical states and all upper bits are reserved.
+ * Command tags use bits 8..15 to select one of 62 command selectors and all
+ * upper bits are reserved. Three selectors have an additional state-scoped
+ * delegated-transfer meaning, for 65 semantic commands in total. Arguments
+ * not named by a command must be zero. A success
  * result uses bits 0..7 for the version, 8..15 for the next-state selector,
  * 16..23 for the typed-reply selector, and reserves bits 24..63. Error words
  * are the closed values listed below and never authorize an operation.
@@ -29,7 +31,7 @@
 #define LEANOS_COMPOSITE_ABI_VERSION UINT64_C(1)
 #define LEANOS_COMPOSITE_INPUT_WORDS 6U
 #define LEANOS_COMPOSITE_RESULT_WORDS 1U
-#define LEANOS_COMPOSITE_STATE_COUNT 59U
+#define LEANOS_COMPOSITE_STATE_COUNT 60U
 #define LEANOS_COMPOSITE_COMMAND_COUNT 62U
 
 #define LEANOS_COMPOSITE_STATE_INITIAL UINT64_C(0x0001)
@@ -80,6 +82,7 @@
 #define LEANOS_COMPOSITE_STATE_INVALIDATION_SWITCH_BACK_PENDING UINT64_C(0x2c01)
 #define LEANOS_COMPOSITE_STATE_INVALIDATION_SWITCHED_BACK UINT64_C(0x2d01)
 #define LEANOS_COMPOSITE_STATE_PAGE_PROTECTED UINT64_C(0x2e01)
+#define LEANOS_COMPOSITE_STATE_DELEGATED_SEND_ACCEPTED UINT64_C(0x2f01)
 
 #define LEANOS_COMPOSITE_STATE_BUDGET_INITIAL UINT64_C(0x4001)
 #define LEANOS_COMPOSITE_STATE_BUDGET_A_ALLOCATED UINT64_C(0x4101)
@@ -146,6 +149,9 @@
 #define LEANOS_COMPOSITE_COMMAND_INVALIDATION_ACK_SWITCH_BACK UINT64_C(0x4401)
 #define LEANOS_COMPOSITE_COMMAND_ACCEPTED_PROTECT UINT64_C(0x4501)
 #define LEANOS_COMPOSITE_COMMAND_REJECT_PROTECT_AMPLIFICATION UINT64_C(0x4601)
+#define LEANOS_COMPOSITE_COMMAND_REJECT_SEALED_HANDLE_BEFORE_RECEIPT UINT64_C(0x4701)
+#define LEANOS_COMPOSITE_COMMAND_USE_DELEGATED_SEND UINT64_C(0x4801)
+#define LEANOS_COMPOSITE_COMMAND_REJECT_DELEGATED_RECEIVE UINT64_C(0x4901)
 
 /*
  * Typed reply/effect meanings for the bounded direct mapping branches.
@@ -158,6 +164,9 @@
 #define LEANOS_COMPOSITE_REPLY_UNMAPPED_PAGE_REJECTED UINT64_C(0x310f01)
 #define LEANOS_COMPOSITE_REPLY_PAGE_PROTECTED UINT64_C(0x452e01)
 #define LEANOS_COMPOSITE_REPLY_PROTECT_AMPLIFICATION_REJECTED UINT64_C(0x462e01)
+#define LEANOS_COMPOSITE_REPLY_SEALED_HANDLE_REJECTED UINT64_C(0x470901)
+#define LEANOS_COMPOSITE_REPLY_DELEGATED_SEND_ACCEPTED UINT64_C(0x482f01)
+#define LEANOS_COMPOSITE_REPLY_DELEGATED_RECEIVE_REJECTED UINT64_C(0x492f01)
 
 /* Exact full-state/command authorizations for the two frame-retiring edges. */
 #define LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN UINT64_C(0xfb00444401)
