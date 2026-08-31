@@ -415,6 +415,133 @@ jobs:
           compression-level: 0
           retention-days: 14
 
+  kvm-evidence:
+    name: KVM-on-host evidence (shard ${{ matrix.shard }}, non-blocking)
+    needs: repository-hygiene
+    runs-on: ubuntu-24.04
+    # GitHub documents Linux hardware acceleration but does not support nested
+    # virtualization as a stable service contract. Keep runner-side outages
+    # visible without making this initial observation lane a merge gate.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Probe explicit KVM availability
+        id: kvm-probe
+        run: |
+          set -o pipefail
+          mkdir -p build/evidence
+          image="ghcr.io/rudi-cilibrasi/leanos-ci@${LEANOS_CI_IMAGE_DIGEST}"
+          report="build/evidence/kvm-preflight-shard-${{ matrix.shard }}.json"
+          docker pull "$image"
+          device_args=()
+          [[ ! -c /dev/kvm ]] || device_args=(--device /dev/kvm)
+          set +e
+          docker run --rm "${device_args[@]}" \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+            --env RUNNER_OS --env RUNNER_ARCH --env ImageOS --env ImageVersion \
+            "$image" \
+            python3 scripts/probe-kvm.py --output "$report"
+          probe_status=$?
+          set -e
+          if [[ "$probe_status" -eq 125 ]]; then
+            docker run --rm \
+              --volume "$GITHUB_WORKSPACE:/workspace" \
+              --workdir /workspace \
+              --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+              --env RUNNER_OS --env RUNNER_ARCH --env ImageOS --env ImageVersion \
+              "$image" \
+              python3 scripts/probe-kvm.py --output "$report" \
+                --classify-unavailable docker-device-mapping-failed || \
+              test "$?" -eq 20
+            probe_status=20
+          fi
+          [[ "$probe_status" -eq 0 || "$probe_status" -eq 20 ]]
+          mapfile -t classification < <(
+            python3 - "$report" <<'PY'
+          import json
+          import sys
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          print(report["status"])
+          print(report["reason"])
+          PY
+          )
+          status="${classification[0]}"
+          reason="${classification[1]}"
+          [[ "$status" != available ]] || test "$probe_status" -eq 0
+          [[ "$status" != unavailable ]] || test "$probe_status" -eq 20
+          echo "available=$([[ "$status" == available ]] && echo true || echo false)" \
+            >> "$GITHUB_OUTPUT"
+          {
+            echo "### KVM evidence shard ${{ matrix.shard }}: $status"
+            echo
+            echo "Classification: $reason"
+            echo
+            echo "An unavailable classification is not a passing KVM run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          [[ "$status" == available ]] || exit 20
+
+      - name: Build and run the PR-tier shard with KVM
+        if: steps.kvm-probe.outputs.available == 'true'
+        run: |
+          set -o pipefail
+          image="ghcr.io/rudi-cilibrasi/leanos-ci@${LEANOS_CI_IMAGE_DIGEST}"
+          docker run --rm --device /dev/kvm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+            --env RUNNER_OS --env RUNNER_ARCH --env ImageOS --env ImageVersion \
+            --env LEANOS_CI_IMAGE_DIGEST \
+            --env LEANOS_QEMU_ACCELERATOR=kvm \
+            "$image" bash -lc '
+              set -euo pipefail
+              git config --global --add safe.directory /workspace
+              mkdir -p build/ci
+              ./scripts/record-tool-versions.sh build/ci/tool-versions.txt
+              ./scripts/check-q35-pci-construction.py \
+                --output build/evidence/q35-pci-construction.tsv
+              ./scripts/check-q35-edu-dma.py \
+                --output build/evidence/q35-edu-dma.tsv
+              LEANOS_EVIDENCE_TIER=pr \
+                LEANOS_EVIDENCE_SHARD_INDEX=${{ matrix.shard }} \
+                LEANOS_EVIDENCE_SHARD_COUNT=4 \
+                ./scripts/build-image.sh \
+                2>&1 | tee build/ci/image-build.log
+              ./scripts/run-emulator-evidence.py run \
+                --tier pr \
+                --shard-index ${{ matrix.shard }} \
+                --shard-count 4 \
+                --tool-versions build/ci/tool-versions.txt \
+                --output build/evidence/kvm-emulator-shard-${{ matrix.shard }}.json \
+                2>&1 | tee build/ci/emulator-evidence.log
+              ./scripts/run-emulator-evidence.py bundle \
+                build/evidence/kvm-emulator-shard-${{ matrix.shard }}.json \
+                --output build/ci/kvm-evidence-shard-${{ matrix.shard }}.tar
+            '
+
+      - name: Preserve KVM classification and evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-kvm-${{ github.sha }}-shard-${{ matrix.shard }}
+          path: |
+            build/evidence/kvm-preflight-shard-${{ matrix.shard }}.json
+            build/evidence/kvm-emulator-shard-${{ matrix.shard }}.json
+            build/ci/kvm-evidence-shard-${{ matrix.shard }}.tar
+            build/ci/image-build.log
+            build/ci/emulator-evidence.log
+            build/ci/tool-versions.txt
+          if-no-files-found: error
+          retention-days: 14
+
   serial-graph-parity:
     name: Serial vs graph image parity
     if: github.event_name == 'workflow_dispatch' && inputs.run_serial_graph_parity

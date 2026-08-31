@@ -79,6 +79,16 @@ preserves `build/boot/serial.log`, and prints the QEMU version, exact escaped
 command, and a `timeout`, `guest-error`, `qemu-error`, or `serial-protocol`
 failure class. Success requires both debug-exit status 33 and the exact protocol.
 
+CI also has an experimental, non-blocking KVM lane. It admits exactly
+`LEANOS_QEMU_ACCELERATOR=kvm`, never an accelerator fallback list, and runs the
+same PR-tier scenarios only after a machine-readable probe confirms that the
+host device and QEMU process are using KVM. Unavailable KVM is preserved as a
+classification rather than counted as a passing boot. The fixed guest CPU
+remains `max`; host CPU and runner variation are recorded as evidence context,
+not admitted as guest-platform variation. See
+[ADR 0013](adr/0013-kvm-on-host-evidence.md) for the trust distinction and the
+criteria for any future promotion to a required check.
+
 The topology-rejection runner is the deliberate exception to the singleton
 launch shape. `scripts/run-multivcpu-rejection.sh` requests exactly
 `-smp 2,sockets=1,cores=2,threads=1`, records the complete ordered QMP

@@ -563,6 +563,7 @@ CI will grow in layers:
 | Lean | Build all modules and check proofs with a pinned toolchain | Active |
 | Host tests | Generated-C oracle and boundary/harness regressions | Active |
 | Emulator | Build and boot headlessly with timeout and serial assertions | Active |
+| KVM evidence | Replay the PR-tier matrix with explicit hosted KVM | Experimental, non-blocking |
 | Artifacts | Preserve image, ELF, map, checksums, versions, and serial log | Active |
 | Release | Publish tagged reproducible images with provenance | Active |
 
@@ -616,7 +617,10 @@ the exact Ubuntu 24.04 package versions used in CI, and emulator resource bounds
 are listed in [the boot-image guide](docs/boot-image.md). CI first runs the
 Markdown and complete Lean proof-integrity gates, then builds once and executes
 the versioned mandatory emulator matrix without KVM. The matrix is the sole
-release-blocking QEMU inventory for pull requests and tags. CI retains images,
+release-blocking QEMU inventory for pull requests and tags. A separate
+non-blocking lane replays the four PR-tier shards only after an explicit
+no-fallback KVM probe succeeds; its evidence and promotion policy are defined in
+[ADR 0013](docs/adr/0013-kvm-on-host-evidence.md). CI retains images,
 debug ELFs, symbol maps, checksums, pinned tool versions, serial logs, exact
 commands, and the machine-readable evidence report in one manifest-bound
 tarball per emulator shard for 14 days, including available diagnostics from

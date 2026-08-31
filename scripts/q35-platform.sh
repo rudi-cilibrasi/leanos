@@ -16,12 +16,25 @@ readonly LEANOS_Q35_TOPOLOGY_VERSION=0001000800020002
 # being confused with the production deny-all inventory.
 readonly LEANOS_Q35_ASSIGNED_EDU_TOPOLOGY_VERSION=0001000800020003
 
+leanos_qemu_accelerator() {
+  local accelerator="${LEANOS_QEMU_ACCELERATOR:-tcg}"
+  case "$accelerator" in
+    tcg|kvm) printf '%s\n' "$accelerator" ;;
+    *)
+      echo "error: QEMU accelerator must be exactly 'tcg' or 'kvm'; fallback lists are forbidden" >&2
+      return 1
+      ;;
+  esac
+}
+
 leanos_validate_q35_command() {
   local command_name="$1"
   local -n q35_command="$command_name"
   local machine=0 nodefaults=0 iommu=0 vga=0 cdrom=0 cdrom_drive=0
   local debug_exit=0 devices=0 cpu_options=0 smp_options=0
-  local argument previous= first_device=
+  local argument previous= first_device= accelerator
+
+  accelerator="$(leanos_qemu_accelerator)" || return 1
 
   for argument in "${q35_command[@]}"; do
     if [[ "$previous" == -cpu ]]; then
@@ -45,8 +58,13 @@ leanos_validate_q35_command() {
     if [[ "$previous" == -device && -z "$first_device" ]]; then
       first_device="$argument"
     fi
+    if [[ "$argument" == "q35,accel=$accelerator" ]]; then
+      ((machine += 1))
+    elif [[ "$argument" == q35,accel=* ]]; then
+      echo "error: q35 platform accelerator differs from the selected $accelerator mode" >&2
+      return 1
+    fi
     case "$argument" in
-      q35,accel=tcg) ((machine += 1)) ;;
       -nodefaults) ((nodefaults += 1)) ;;
       intel-iommu,intremap=off,pt=off,caching-mode=off,device-iotlb=off,aw-bits=39,dma-translation=on,snoop-control=off)
         ((iommu += 1))
@@ -66,7 +84,7 @@ leanos_validate_q35_command() {
     previous="$argument"
   done
   [[ $machine -eq 1 && $nodefaults -eq 1 ]] || {
-    echo "error: q35 platform requires the exact q35/TCG machine and -nodefaults" >&2
+    echo "error: q35 platform requires the exact q35/$accelerator machine and -nodefaults" >&2
     return 1
   }
   [[ $devices -eq 4 && $iommu -eq 1 && $vga -eq 1 && $cdrom -eq 1 &&
@@ -90,10 +108,13 @@ leanos_q35_command() {
   local cpu="${6:-max}"
   local smp="${7:-1}"
   local -n q35_command="$command_name"
+  local accelerator
+
+  accelerator="$(leanos_qemu_accelerator)" || return 1
 
   q35_command=(
     "$qemu"
-    -machine q35,accel=tcg
+    -machine "q35,accel=$accelerator"
     -nodefaults
     -cpu "$cpu"
     -smp "$smp"

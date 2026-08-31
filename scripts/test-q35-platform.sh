@@ -10,6 +10,27 @@ leanos_q35_command command qemu-system-x86_64 128 build/evidence/serial.log \
   build/boot/leanos.iso
 leanos_validate_q35_command command
 
+kvm=()
+LEANOS_QEMU_ACCELERATOR=kvm \
+  leanos_q35_command kvm qemu-system-x86_64 128 \
+    build/evidence/kvm.serial.log build/boot/leanos.iso
+LEANOS_QEMU_ACCELERATOR=kvm leanos_validate_q35_command kvm
+[[ " ${kvm[*]} " == *" -machine q35,accel=kvm "* ]] || {
+  echo "error: q35 platform omitted the explicit KVM accelerator" >&2
+  exit 1
+}
+if LEANOS_QEMU_ACCELERATOR=tcg \
+    leanos_validate_q35_command kvm 2>/dev/null; then
+  echo "error: q35 platform accepted KVM under the TCG contract" >&2
+  exit 1
+fi
+if LEANOS_QEMU_ACCELERATOR=kvm,tcg \
+    leanos_q35_command negative qemu-system-x86_64 128 \
+      build/evidence/fallback.serial.log build/boot/leanos.iso 2>/dev/null; then
+  echo "error: q35 platform accepted an accelerator fallback list" >&2
+  exit 1
+fi
+
 multivcpu=()
 leanos_q35_command multivcpu qemu-system-x86_64 128 \
   build/evidence/multivcpu.serial.log build/boot/leanos.iso max \

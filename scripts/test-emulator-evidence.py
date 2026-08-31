@@ -227,6 +227,22 @@ def run_fixtures() -> None:
             raise AssertionError("diagnostic bundle did not record the missing file")
 
         _, matrix_rows = evidence.parse_matrix(evidence.DEFAULT_MATRIX)
+        if evidence.qemu_accelerator({}) != "tcg":
+            raise AssertionError("default evidence accelerator is not explicit TCG")
+        if evidence.qemu_accelerator({"LEANOS_QEMU_ACCELERATOR": "kvm"}) != "kvm":
+            raise AssertionError("KVM evidence accelerator is not selectable")
+        expect_failure(
+            lambda: evidence.qemu_accelerator(
+                {"LEANOS_QEMU_ACCELERATOR": "kvm,tcg"}
+            ),
+            "fallback lists are forbidden",
+        )
+        kvm_paths = evidence.expanded(matrix_rows[0], "0.1.0", bundle_root / "build/boot")
+        _kvm_command, kvm_environment = evidence.scenario_invocation(
+            matrix_rows[0], kvm_paths, bundle_root / "build/boot", "0.1.0", "kvm"
+        )
+        if kvm_environment.get("LEANOS_QEMU_ACCELERATOR") != "kvm":
+            raise AssertionError("scenario invocation does not record KVM selection")
         shards = [
             evidence.select_rows(matrix_rows, None, "all", index, 4)
             for index in range(4)
@@ -451,6 +467,30 @@ def run_fixtures() -> None:
             expect_failure(
                 evidence.check_workflows,
                 "CI must reserve the independent Clang reproducibility build",
+            )
+        finally:
+            ci_workflow.write_text(original_ci, encoding="utf-8")
+
+        try:
+            ci_workflow.write_text(
+                original_ci.replace(
+                    "    continue-on-error: true\n"
+                    "    strategy:\n"
+                    "      fail-fast: false\n"
+                    "      matrix:\n"
+                    "        shard: [0, 1, 2, 3]\n",
+                    "    continue-on-error: false\n"
+                    "    strategy:\n"
+                    "      fail-fast: false\n"
+                    "      matrix:\n"
+                    "        shard: [0, 1, 2, 3]\n",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            expect_failure(
+                evidence.check_workflows,
+                "CI KVM lane must remain explicit, four-way, artifact-backed, and non-blocking",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")

@@ -378,6 +378,15 @@ def qemu_version(environment: dict[str, str]) -> str:
     return first[0]
 
 
+def qemu_accelerator(environment: dict[str, str]) -> str:
+    accelerator = environment.get("LEANOS_QEMU_ACCELERATOR", "tcg")
+    if accelerator not in {"tcg", "kvm"}:
+        raise EvidenceError(
+            "QEMU accelerator must be exactly 'tcg' or 'kvm'; fallback lists are forbidden"
+        )
+    return accelerator
+
+
 def parse_matrix(path: Path) -> tuple[str, list[dict[str, str]]]:
     if not path.is_file():
         raise EvidenceError(f"matrix not found: {display_path(path)}")
@@ -613,11 +622,15 @@ def expanded(row: dict[str, str], version: str, build_dir: Path) -> dict[str, Pa
 
 
 def scenario_invocation(
-    row: dict[str, str], paths: dict[str, Path], build_dir: Path, version: str
+    row: dict[str, str], paths: dict[str, Path], build_dir: Path, version: str,
+    accelerator: str = "tcg",
 ) -> tuple[list[str], dict[str, str]]:
+    if accelerator not in {"tcg", "kvm"}:
+        raise EvidenceError("scenario invocation received an invalid QEMU accelerator")
     environment = {
         "LEANOS_VERSION": version,
         "LEANOS_QEMU_TIMEOUT_SECONDS": row["timeout"],
+        "LEANOS_QEMU_ACCELERATOR": accelerator,
         "LEANOS_SERIAL_LOG": str(paths["serial_log"]),
     }
     if row["runner"] == "boot":
@@ -680,7 +693,7 @@ def write_report(output: Path, report: dict[str, object]) -> None:
 
 def base_report(
     matrix: Path, matrix_id: str, revision: str, source_file: Path,
-    tools: Path, qemu: str,
+    tools: Path, qemu: str, accelerator: str,
 ) -> dict[str, object]:
     return {
         "schema": "leanos-emulator-evidence-report-v1",
@@ -701,6 +714,10 @@ def base_report(
             "qemu_version": qemu,
             "python_version": sys.version.splitlines()[0],
         },
+        "execution": {
+            "requested_accelerator": accelerator,
+            "fallback_allowed": False,
+        },
         "results": [],
         "status": "RUNNING",
     }
@@ -713,7 +730,7 @@ def execute_scenario(
     started = time.monotonic()
     paths = expanded(row, version, build_dir)
     command, scenario_environment = scenario_invocation(
-        row, paths, build_dir, version
+        row, paths, build_dir, version, qemu_accelerator(environment)
     )
     for key in (
         "serial_log",
@@ -785,7 +802,10 @@ def run(args: argparse.Namespace) -> None:
         raise EvidenceError("tool inventory is stale or bound to a different source revision")
     environment = os.environ.copy()
     qemu = qemu_version(environment)
-    report = base_report(matrix, matrix_id, revision, source_file, tools, qemu)
+    accelerator = qemu_accelerator(environment)
+    report = base_report(
+        matrix, matrix_id, revision, source_file, tools, qemu, accelerator
+    )
     write_report(output, report)
 
     jobs = args.jobs
@@ -1013,6 +1033,13 @@ def verify_report(
         raise EvidenceError("tool inventory content differs")
     if tool_record.get("qemu_version") != qemu_version(environment):
         raise EvidenceError("QEMU version differs from tested evidence")
+    accelerator = qemu_accelerator(environment)
+    execution = report.get("execution")
+    if not isinstance(execution, dict) or execution != {
+        "requested_accelerator": accelerator,
+        "fallback_allowed": False,
+    }:
+        raise EvidenceError("QEMU accelerator contract differs")
 
     results = report.get("results")
     if not isinstance(results, list):
@@ -1083,7 +1110,7 @@ def verify_report(
         if not isinstance(commands, list) or len(commands) != 1 or not commands[0]:
             raise EvidenceError(f"scenario {row['id']} exact QEMU command is absent")
         expected_command, expected_environment = scenario_invocation(
-            row, paths, build_dir, version
+            row, paths, build_dir, version, accelerator
         )
         if result.get("runner_command") != expected_command:
             raise EvidenceError(f"scenario {row['id']} runner command differs")
@@ -1337,9 +1364,11 @@ def check_workflows() -> None:
         content = path.read_text(encoding="utf-8")
         workflow_contents[relative] = content
         count = content.count("./scripts/run-emulator-evidence.py run")
-        if count != 1:
+        expected_count = 2 if relative == ".github/workflows/ci.yml" else 1
+        if count != expected_count:
             raise EvidenceError(
-                f"{relative} must invoke the shared emulator matrix exactly once (found {count})"
+                f"{relative} must invoke the shared emulator matrix exactly "
+                f"{expected_count} time(s) (found {count})"
             )
         for bypass in (
             "./scripts/run-image.sh", "./scripts/run-return-corruptions.sh",
@@ -1455,6 +1484,32 @@ def check_workflows() -> None:
     if "build/boot/clang-canonical.serial.log" in ci_content:
         raise EvidenceError(
             "CI names a Clang serial path outside the selected matrix scenario"
+        )
+    kvm_evidence = re.search(
+        r"(?ms)^  kvm-evidence:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
+        ci_content,
+    )
+    kvm_contract = (
+        "runs-on: ubuntu-24.04",
+        "continue-on-error: true",
+        "shard: [0, 1, 2, 3]",
+        "python3 scripts/probe-kvm.py",
+        "--device /dev/kvm",
+        "--env LEANOS_QEMU_ACCELERATOR=kvm",
+        "./scripts/run-emulator-evidence.py run",
+        "--tier pr",
+        "--shard-index ${{ matrix.shard }}",
+        "--shard-count 4",
+        "kvm-preflight-shard-${{ matrix.shard }}.json",
+        '[[ "$status" == available ]] || exit 20',
+        "kvm-evidence-shard-${{ matrix.shard }}.tar",
+        "if-no-files-found: error",
+    )
+    if kvm_evidence is None or any(
+        token not in kvm_evidence.group("body") for token in kvm_contract
+    ) or "container:" in kvm_evidence.group("body"):
+        raise EvidenceError(
+            "CI KVM lane must remain explicit, four-way, artifact-backed, and non-blocking"
         )
     release_diagnostics = workflow_contents[".github/workflows/release.yml"]
     release_gate = re.search(

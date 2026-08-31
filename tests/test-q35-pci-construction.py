@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -34,6 +36,17 @@ class ConstructionValidationTests(unittest.TestCase):
 
     def test_accepts_exact_quarantined_inventory(self) -> None:
         construction.validate(accepted_functions())
+
+    def test_accelerator_is_explicit_and_rejects_fallback(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(construction.selected_accelerator(), "tcg")
+        with mock.patch.dict(os.environ, {"LEANOS_QEMU_ACCELERATOR": "kvm"}):
+            self.assertEqual(construction.selected_accelerator(), "kvm")
+        with mock.patch.dict(
+            os.environ, {"LEANOS_QEMU_ACCELERATOR": "kvm,tcg"}
+        ):
+            with self.assertRaisesRegex(RuntimeError, "fallback lists are forbidden"):
+                construction.selected_accelerator()
 
     def test_rejects_duplicate_bdf(self) -> None:
         functions = accepted_functions()

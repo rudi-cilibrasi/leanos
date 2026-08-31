@@ -11,6 +11,7 @@ refinement proof for the Lean model.
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import re
 import shutil
@@ -21,6 +22,16 @@ from dataclasses import dataclass
 
 EXPECTED_QEMU = (8, 2, 2)
 BUS_MASTER = 1 << 2
+
+
+def selected_accelerator() -> str:
+    accelerator = os.environ.get("LEANOS_QEMU_ACCELERATOR", "tcg")
+    if accelerator not in {"tcg", "kvm"}:
+        raise RuntimeError(
+            "QEMU accelerator must be exactly 'tcg' or 'kvm'; "
+            "fallback lists are forbidden"
+        )
+    return accelerator
 
 
 @dataclass(frozen=True, order=True)
@@ -52,7 +63,7 @@ class QTest:
     def __init__(self, executable: str) -> None:
         command = [
             executable,
-            "-machine", "q35,accel=tcg",
+            "-machine", f"q35,accel={selected_accelerator()}",
             "-nodefaults",
             "-cpu", "max",
             "-smp", "1",
