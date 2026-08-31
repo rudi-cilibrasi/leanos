@@ -17,6 +17,8 @@ promise machine-checked:
             Refresh the deterministic structured theorem-identity index.
   rename    Carry an existing summary across a same-module theorem rename and
             refresh the structured identities, without a model or network.
+  move      Carry an existing summary into another module section and refresh
+            the structured identities, without a model or network.
   verify    Re-extract the theorems and check that INVARIANTS.md lists all of
             them and only them, and that the structured identity index exactly
             matches the sources. Offline, deterministic, no API key needed;
@@ -437,6 +439,76 @@ def cmd_rename(args):
     return 0
 
 
+def cmd_move(args):
+    """Move one indexed theorem summary into its current module section."""
+
+    identities_path = Path(args.identities)
+    document_path = Path(args.document)
+    stored = json.loads(identities_path.read_text(encoding="utf-8"))
+    old_matches = [
+        entry for entry in stored.get("identities", [])
+        if entry.get("qualified") == args.old
+    ]
+    per_file, _ = extract_all()
+    current = identity_payload(per_file)
+    new_matches = [
+        entry for entry in current["identities"]
+        if entry["qualified"] == args.new
+    ]
+    if len(old_matches) != 1 or len(new_matches) != 1:
+        raise ValueError("move_identity_must_be_unique")
+    old, new = old_matches[0], new_matches[0]
+    if old["source"] == new["source"]:
+        raise ValueError("move_same_module_requires_rename_command")
+    if any(entry["qualified"] == args.old for entry in current["identities"]):
+        raise ValueError("move_old_identity_still_exists")
+
+    text = document_path.read_text(encoding="utf-8")
+    heading = re.compile(r"(?m)^## .+ \(`(?P<source>[^`]+)`\)$")
+    sections = list(heading.finditer(text))
+    ranges = {
+        match.group("source"): (
+            match.end(),
+            sections[index + 1].start() if index + 1 < len(sections) else len(text),
+        )
+        for index, match in enumerate(sections)
+    }
+    if old["source"] not in ranges or new["source"] not in ranges:
+        raise ValueError("move_document_module_section_missing")
+    old_start, old_end = ranges[old["source"]]
+    old_bullet = re.compile(
+        rf"(?m)^- `{re.escape(old['display'])}` — (?P<summary>.+)\n?"
+    )
+    matches = list(old_bullet.finditer(text, old_start, old_end))
+    if len(matches) != 1:
+        raise ValueError("move_summary_must_be_unique")
+    summary = matches[0].group("summary")
+    text = text[:matches[0].start()] + text[matches[0].end():]
+
+    sections = list(heading.finditer(text))
+    destination_index = next(
+        index for index, match in enumerate(sections)
+        if match.group("source") == new["source"]
+    )
+    destination_end = (
+        sections[destination_index + 1].start()
+        if destination_index + 1 < len(sections)
+        else len(text)
+    )
+    insertion = destination_end
+    while insertion > sections[destination_index].end() and text[insertion - 1] == "\n":
+        insertion -= 1
+    text = (
+        text[:insertion]
+        + f"\n- `{new['display']}` — {summary}"
+        + text[insertion:]
+    )
+    document_path.write_text(text, encoding="utf-8")
+    identities_path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+    print(f"moved {args.old} -> {args.new}; preserved summary")
+    return 0
+
+
 def load_sections(per_file, sections_dir):
     sections = {}
     for rel_path, theorems in per_file.items():
@@ -699,6 +771,15 @@ def main():
     p.add_argument("--document", default=str(DEFAULT_DOC))
     p.add_argument("--identities", default=str(DEFAULT_IDENTITIES))
     p.set_defaults(func=cmd_rename)
+
+    p = sub.add_parser(
+        "move", help="preserve prose while moving a theorem between modules"
+    )
+    p.add_argument("--old", required=True, help="previous qualified theorem name")
+    p.add_argument("--new", required=True, help="current qualified theorem name")
+    p.add_argument("--document", default=str(DEFAULT_DOC))
+    p.add_argument("--identities", default=str(DEFAULT_IDENTITIES))
+    p.set_defaults(func=cmd_move)
 
     def add_assemble_args(p):
         p.add_argument("--sections-dir", required=True)

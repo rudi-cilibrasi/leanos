@@ -147,6 +147,49 @@ sed -i 's/theorem renamed_plain_fact/theorem plain_fact/' \
 sed -i 's/`renamed_plain_fact`/`plain_fact`/' "$work/repo/INVARIANTS.md"
 "$work/repo/scripts/generate-invariants.py" identities >/dev/null
 
+# A cross-module move relocates the existing summary into the destination
+# section and refreshes identities without external generation.
+cat >"$work/repo/LeanOS/Moved.lean" <<'EOF'
+/-! Destination fixture module. -/
+
+namespace LeanOS.Moved
+theorem destination_fact : 10 = 10 := rfl
+end LeanOS.Moved
+EOF
+sed -i '1a import LeanOS.Moved' "$work/repo/LeanOS.lean"
+mkdir -p "$work/move-sections"
+cp "$work/sections/LeanOS__Fixture.md" "$work/move-sections/LeanOS__Fixture.md"
+cat >"$work/move-sections/LeanOS__Moved.md" <<'EOF'
+# Moved facts
+
+Facts in the destination fixture module.
+
+- `destination_fact` — Ten equals ten.
+EOF
+"$work/repo/scripts/generate-invariants.py" assemble \
+  --sections-dir "$work/move-sections" --output "$work/repo/INVARIANTS.md" \
+  --generator test-model --date 2026-01-01 >/dev/null
+"$work/repo/scripts/generate-invariants.py" identities >/dev/null
+sed -i '/theorem sectioned_fact/d' "$work/repo/LeanOS/Fixture.lean"
+sed -i '/theorem destination_fact/a theorem sectioned_fact : 6 = 6 := rfl' \
+  "$work/repo/LeanOS/Moved.lean"
+"$work/repo/scripts/generate-invariants.py" move \
+  --old LeanOS.Fixture.sectioned_fact \
+  --new LeanOS.Moved.sectioned_fact \
+  --document "$work/repo/INVARIANTS.md" >/dev/null
+python3 - "$work/repo/INVARIANTS.md" <<'EOF'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+fixture, moved = text.split("## Moved facts", 1)
+assert "`sectioned_fact` — Six equals six." not in fixture
+assert "`sectioned_fact` — Six equals six." in moved
+EOF
+"$work/repo/scripts/generate-invariants.py" verify \
+  --document "$work/repo/INVARIANTS.md" >/dev/null ||
+  fail "verify rejected deterministic cross-module theorem move"
+
 # Dropping a bullet must fail verification.
 grep -v 'hidden_fact' "$work/repo/INVARIANTS.md" >"$work/mutilated.md"
 if "$work/repo/scripts/generate-invariants.py" verify \
@@ -172,7 +215,7 @@ if "$work/repo/scripts/generate-invariants.py" verify \
 fi
 
 # A stale totals marker must fail verification.
-sed 's/invariants:totals theorems=6/invariants:totals theorems=7/' \
+sed 's/invariants:totals theorems=7/invariants:totals theorems=8/' \
   "$work/repo/INVARIANTS.md" >"$work/stale.md"
 if "$work/repo/scripts/generate-invariants.py" verify \
   --document "$work/stale.md" >/dev/null 2>&1; then
@@ -180,7 +223,7 @@ if "$work/repo/scripts/generate-invariants.py" verify \
 fi
 
 # Stale human-readable totals must fail independently of the marker.
-sed 's/prove \*\*6 named theorems\*\*/prove **7 named theorems**/' \
+sed 's/prove \*\*7 named theorems\*\*/prove **8 named theorems**/' \
   "$work/repo/INVARIANTS.md" >"$work/stale-prose.md"
 if "$work/repo/scripts/generate-invariants.py" verify \
   --document "$work/stale-prose.md" >/dev/null 2>&1; then
