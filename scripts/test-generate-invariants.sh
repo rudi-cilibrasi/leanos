@@ -88,6 +88,29 @@ EOF
   --document "$work/repo/INVARIANTS.md" >/dev/null ||
   fail "verify rejected a freshly assembled fixture document"
 
+# Declaration order is not theorem identity. Reordering source declarations
+# must not rewrite or invalidate the human summaries in the rendered index.
+cp "$work/repo/LeanOS/Fixture.lean" "$work/Fixture.lean.orig"
+python3 - "$work/repo/LeanOS/Fixture.lean" <<'EOF'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+old = """theorem plain_fact : 1 + 1 = 2 := rfl
+
+@[simp] theorem attributed_fact : 2 + 0 = 2 := rfl"""
+new = """@[simp] theorem attributed_fact : 2 + 0 = 2 := rfl
+
+theorem plain_fact : 1 + 1 = 2 := rfl"""
+assert old in text
+path.write_text(text.replace(old, new))
+EOF
+"$work/repo/scripts/generate-invariants.py" verify \
+  --document "$work/repo/INVARIANTS.md" >/dev/null ||
+  fail "verify rejected an order-only source refactor"
+mv "$work/Fixture.lean.orig" "$work/repo/LeanOS/Fixture.lean"
+
 # Dropping a bullet must fail verification.
 grep -v 'hidden_fact' "$work/repo/INVARIANTS.md" >"$work/mutilated.md"
 if "$work/repo/scripts/generate-invariants.py" verify \
@@ -101,6 +124,15 @@ sed 's/- `sectioned_fact`.*/&\n- `invented_fact` — Not proved anywhere./' \
 if "$work/repo/scripts/generate-invariants.py" verify \
   --document "$work/padded.md" >/dev/null 2>&1; then
   fail "verify accepted a document listing an unproved theorem"
+fi
+
+# Repeating a real theorem is not set completeness: every identity must occur
+# exactly once.
+sed 's/- `sectioned_fact`.*/&\n- `sectioned_fact` — Duplicate summary./' \
+  "$work/repo/INVARIANTS.md" >"$work/duplicated.md"
+if "$work/repo/scripts/generate-invariants.py" verify \
+  --document "$work/duplicated.md" >/dev/null 2>&1; then
+  fail "verify accepted a duplicate theorem identity"
 fi
 
 # A stale totals marker must fail verification.

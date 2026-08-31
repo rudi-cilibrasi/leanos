@@ -24,6 +24,7 @@ which theorems appear.
 
 import argparse
 import bisect
+from collections import Counter
 import datetime
 import json
 import os
@@ -224,7 +225,12 @@ def section_key(rel_path):
 
 def parse_section(text, rel_path, expected):
     """Validate a per-file section: '# Title', intro prose, then one bullet
-    per expected theorem in order.  Returns (title, intro_lines, bullets)."""
+    per expected theorem.  Returns (title, intro_lines, bullets).
+
+    Completeness is deliberately set-based: source declaration reordering must
+    not force prose churn.  Counter comparison retains strict duplicate,
+    missing, and unexpected-entry failures.
+    """
     lines = [line.rstrip() for line in text.strip().split("\n")]
     if not lines or not lines[0].startswith("# "):
         raise ValueError(f"{rel_path}: section must start with '# <title>'")
@@ -243,11 +249,13 @@ def parse_section(text, rel_path, expected):
             intro.append(line)
     got = [name for name, _ in bullets]
     want = [t["display"] for t in expected]
-    if got != want:
-        missing = [n for n in want if n not in got]
-        extra = [n for n in got if n not in want]
+    got_counts = Counter(got)
+    want_counts = Counter(want)
+    if got_counts != want_counts:
+        missing = list((want_counts - got_counts).elements())
+        extra = list((got_counts - want_counts).elements())
         raise ValueError(
-            f"{rel_path}: bullets do not match extracted theorems in order; "
+            f"{rel_path}: bullets do not match extracted theorem identities; "
             f"missing={missing[:5]} extra={extra[:5]} "
             f"(got {len(got)}, want {len(want)})"
         )
@@ -547,9 +555,11 @@ def cmd_verify(args):
         if got is None:
             errors.append(f"missing section for {rel_path} ({len(want)} theorems)")
             continue
-        if got != want:
-            missing = [n for n in want if n not in got]
-            extra = [n for n in got if n not in want]
+        got_counts = Counter(got)
+        want_counts = Counter(want)
+        if got_counts != want_counts:
+            missing = list((want_counts - got_counts).elements())
+            extra = list((got_counts - want_counts).elements())
             errors.append(
                 f"{rel_path}: listed theorems diverge from sources; "
                 f"missing={missing[:5]} extra={extra[:5]} "
