@@ -64,6 +64,9 @@ jobs:
       - name: Test reproducibility manifest contract
         run: ./scripts/test-reproducibility-manifest.sh
 
+      - name: Test main admission policy contract
+        run: python3 scripts/test-main-ruleset-policy.py
+
   lean:
     name: Lean build and proof checks
     runs-on: ubuntu-24.04
@@ -80,9 +83,9 @@ jobs:
 
       - name: Build and check proofs
         env:
-          # Pull requests run the same hosted evidence in the parallel job below.
-          # Full merge-group/main evidence remains in scripts/check.sh.
-          LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+          # Pull requests and merge groups run the same hosted evidence in the
+          # parallel job below. Main-push and manual runs retain the replay here.
+          LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && '1' || '0' }}
         run: ./scripts/check.sh
 
       - name: Verify frame-budget negative evidence
@@ -142,7 +145,7 @@ jobs:
 
   hosted-boundary:
     name: Hosted generated-boundary evidence
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
     timeout-minutes: 25
@@ -198,9 +201,8 @@ jobs:
     needs: repository-hygiene
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
-    # The independent reproducibility build runs in parallel below. Both lanes
-    # build the complete graph on pull requests as well as main so the
-    # cross-runner comparison is a pre-merge admission check.
+    # The independent reproducibility build runs in parallel below; this lane
+    # retains the canonical boot and full evidence bundle.
     timeout-minutes: 60
     env:
       LEANOS_CC: clang-18
@@ -227,9 +229,14 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/ci
-          ./scripts/build-image.sh \
+          LEANOS_EVIDENCE_TIER="${{ github.event_name == 'pull_request' && 'pr' || 'all' }}" \
+            LEANOS_EVIDENCE_SHARD_INDEX="${{ github.event_name == 'pull_request' && '0' || '' }}" \
+            LEANOS_EVIDENCE_SHARD_COUNT="${{ github.event_name == 'pull_request' && '4' || '' }}" \
+            ./scripts/build-image.sh \
             2>&1 | tee build/ci/clang-image-build.log
-          ./scripts/write-reproducibility-manifest.sh
+          if [[ "${{ github.event_name }}" != pull_request ]]; then
+            ./scripts/write-reproducibility-manifest.sh
+          fi
           python3 scripts/run-emulator-evidence.py run \
             --scenario blocking-ipc \
             --tool-versions build/ci/clang-tool-versions.txt \
@@ -276,6 +283,7 @@ jobs:
           retention-days: 14
 
       - name: Preserve primary reproducibility manifest
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: leanos-clang-repro-primary-${{ github.sha }}
@@ -285,6 +293,7 @@ jobs:
 
   clang-reproducibility-build:
     name: Clang independent reproducibility build
+    if: github.event_name != 'pull_request'
     needs: repository-hygiene
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5

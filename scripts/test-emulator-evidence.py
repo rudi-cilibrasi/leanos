@@ -441,7 +441,8 @@ def run_fixtures() -> None:
             ci_workflow.write_text(
                 original_ci.replace(
                     "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: "
-                    "${{ github.event_name == 'pull_request' && '1' || '0' }}",
+                    "${{ (github.event_name == 'pull_request' || github.event_name == "
+                    "'merge_group') && '1' || '0' }}",
                     "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: 0",
                     1,
                 ),
@@ -449,7 +450,7 @@ def run_fixtures() -> None:
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI must parallelize complete hosted evidence only for pull requests",
+                "CI must parallelize complete hosted evidence for pull requests and merge groups",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")
@@ -457,17 +458,16 @@ def run_fixtures() -> None:
         try:
             ci_workflow.write_text(
                 original_ci.replace(
-                    "          ./scripts/write-reproducibility-manifest.sh\n",
-                    "          if [[ \"${{ github.event_name }}\" != pull_request ]]; then\n"
-                    "            ./scripts/write-reproducibility-manifest.sh\n"
-                    "          fi\n",
+                    "if: github.event_name == 'pull_request' || "
+                    "github.event_name == 'merge_group'",
+                    "if: github.event_name == 'pull_request'",
                     1,
                 ),
                 encoding="utf-8",
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI must run the complete canonical reproducibility build on pull requests",
+                "CI must parallelize complete hosted evidence for pull requests and merge groups",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")
@@ -475,18 +475,19 @@ def run_fixtures() -> None:
         try:
             ci_workflow.write_text(
                 original_ci.replace(
-                    "  clang-reproducibility-build:\n"
-                    "    name: Clang independent reproducibility build",
                     "  clang-reproducibility-build:\n"
                     "    name: Clang independent reproducibility build\n"
                     "    if: github.event_name != 'pull_request'",
+                    "  clang-reproducibility-build:\n"
+                    "    name: Clang independent reproducibility build\n"
+                    "    if: github.event_name == 'pull_request'",
                     1,
                 ),
                 encoding="utf-8",
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI must run the independent Clang reproducibility build before merge",
+                "CI must reserve the independent Clang reproducibility build",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")

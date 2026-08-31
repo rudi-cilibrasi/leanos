@@ -97,6 +97,8 @@ fi
 
 ./scripts/test-emulator-evidence.py
 
+./scripts/test-main-ruleset-policy.py
+
 ./scripts/run-emulator-evidence.py check
 
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
