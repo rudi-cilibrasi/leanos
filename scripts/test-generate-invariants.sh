@@ -129,6 +129,24 @@ if "$work/repo/scripts/generate-invariants.py" verify \
 fi
 "$work/repo/scripts/generate-invariants.py" identities >/dev/null
 
+# A same-module theorem rename carries its existing human summary and refreshes
+# the mechanical identity index without an API key.
+sed -i 's/theorem plain_fact/theorem renamed_plain_fact/' \
+  "$work/repo/LeanOS/Fixture.lean"
+"$work/repo/scripts/generate-invariants.py" rename \
+  --old LeanOS.Fixture.plain_fact \
+  --new LeanOS.Fixture.renamed_plain_fact \
+  --document "$work/repo/INVARIANTS.md" >/dev/null
+grep -q '^\- `renamed_plain_fact` — One plus one equals two\.$' \
+  "$work/repo/INVARIANTS.md" || fail "rename did not preserve summary"
+"$work/repo/scripts/generate-invariants.py" verify \
+  --document "$work/repo/INVARIANTS.md" >/dev/null ||
+  fail "verify rejected deterministic theorem rename"
+sed -i 's/theorem renamed_plain_fact/theorem plain_fact/' \
+  "$work/repo/LeanOS/Fixture.lean"
+sed -i 's/`renamed_plain_fact`/`plain_fact`/' "$work/repo/INVARIANTS.md"
+"$work/repo/scripts/generate-invariants.py" identities >/dev/null
+
 # Dropping a bullet must fail verification.
 grep -v 'hidden_fact' "$work/repo/INVARIANTS.md" >"$work/mutilated.md"
 if "$work/repo/scripts/generate-invariants.py" verify \

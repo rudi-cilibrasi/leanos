@@ -15,6 +15,8 @@ promise machine-checked:
             theorems.
   identities
             Refresh the deterministic structured theorem-identity index.
+  rename    Carry an existing summary across a same-module theorem rename and
+            refresh the structured identities, without a model or network.
   verify    Re-extract the theorems and check that INVARIANTS.md lists all of
             them and only them, and that the structured identity index exactly
             matches the sources. Offline, deterministic, no API key needed;
@@ -392,6 +394,49 @@ def cmd_identities(args):
     return 0
 
 
+def cmd_rename(args):
+    """Migrate one same-module identity while preserving its prose summary."""
+
+    identities_path = Path(args.identities)
+    document_path = Path(args.document)
+    stored = json.loads(identities_path.read_text(encoding="utf-8"))
+    old_matches = [
+        entry for entry in stored.get("identities", [])
+        if entry.get("qualified") == args.old
+    ]
+    per_file, _ = extract_all()
+    current = identity_payload(per_file)
+    new_matches = [
+        entry for entry in current["identities"]
+        if entry["qualified"] == args.new
+    ]
+    if len(old_matches) != 1 or len(new_matches) != 1:
+        raise ValueError("rename_identity_must_be_unique")
+    old, new = old_matches[0], new_matches[0]
+    if old["source"] != new["source"]:
+        raise ValueError("rename_cross_module_requires_move_command")
+    if any(
+        entry["qualified"] == args.old for entry in current["identities"]
+    ):
+        raise ValueError("rename_old_identity_still_exists")
+
+    text = document_path.read_text(encoding="utf-8")
+    old_bullet = re.compile(
+        rf"(?m)^- `{re.escape(old['display'])}` — (?P<summary>.+)$"
+    )
+    matches = list(old_bullet.finditer(text))
+    if len(matches) != 1:
+        raise ValueError("rename_summary_must_be_unique")
+    text = old_bullet.sub(
+        lambda match: f"- `{new['display']}` — {match.group('summary')}",
+        text,
+    )
+    document_path.write_text(text, encoding="utf-8")
+    identities_path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+    print(f"renamed {args.old} -> {args.new}; preserved summary")
+    return 0
+
+
 def load_sections(per_file, sections_dir):
     sections = {}
     for rel_path, theorems in per_file.items():
@@ -645,6 +690,15 @@ def main():
     )
     p.add_argument("--output", default=str(DEFAULT_IDENTITIES))
     p.set_defaults(func=cmd_identities)
+
+    p = sub.add_parser(
+        "rename", help="preserve prose across a same-module theorem rename"
+    )
+    p.add_argument("--old", required=True, help="previous qualified theorem name")
+    p.add_argument("--new", required=True, help="current qualified theorem name")
+    p.add_argument("--document", default=str(DEFAULT_DOC))
+    p.add_argument("--identities", default=str(DEFAULT_IDENTITIES))
+    p.set_defaults(func=cmd_rename)
 
     def add_assemble_args(p):
         p.add_argument("--sections-dir", required=True)
