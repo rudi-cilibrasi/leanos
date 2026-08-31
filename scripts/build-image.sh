@@ -1021,6 +1021,37 @@ validate_selected_final_plan() {
   }
 }
 
+converge_selected_graph_plan() {
+  local elf_path="$1"
+  local expected_plan="$2"
+  local final_plan="$3"
+  local description="$4"
+  local converged=false
+  local pass
+
+  selected_final_enabled "$elf_path" || return 0
+  for pass in 1 2 3 4; do
+    ./scripts/generate-boot-page-plan.sh "$elf_path" "$final_plan"
+    if cmp -s "$expected_plan" "$final_plan"; then
+      converged=true
+      break
+    fi
+    [[ "$pass" -lt 4 ]] || break
+
+    # A generated common object can move the final image across a page
+    # boundary even when this variant's kernel source did not change. Feed the
+    # linker-resolved plan back through the graph-owned object and ELF target
+    # until the plan describes the ELF that actually embeds it.
+    cp "$final_plan" "$expected_plan"
+    make -f "$object_graph" "${kernel_source_make_args[@]}" \
+      -j "${LEANOS_BUILD_JOBS:-$(nproc)}" "$elf_path"
+  done
+  [[ "$converged" == true ]] || {
+    echo "error: $description page-table plan drifted after final link" >&2
+    exit 1
+  }
+}
+
 validate_selected_final_plan "$build/leanos.elf" \
   "$build/boot-page-plan.h" "$build/boot-page-plan.final.h" \
   linker-resolved
@@ -1041,7 +1072,7 @@ validate_selected_final_plan "$build/leanos-nmi.elf" \
 validate_selected_final_plan "$build/leanos-bootstrap32-ud.elf" \
   "$build/boot-page-plan-bootstrap32-ud.h" \
   "$build/boot-page-plan-bootstrap32-ud.final.h" "bootstrap32-ud probe"
-validate_selected_final_plan "$build/leanos-bootstrap64-nmi.elf" \
+converge_selected_graph_plan "$build/leanos-bootstrap64-nmi.elf" \
   "$build/boot-page-plan-bootstrap64-nmi.h" \
   "$build/boot-page-plan-bootstrap64-nmi.final.h" "bootstrap64-nmi probe"
 validate_selected_final_plan "$build/leanos-preemption.elf" \

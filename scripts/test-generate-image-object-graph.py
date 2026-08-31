@@ -130,7 +130,7 @@ generate_lean_c {source!s} {output!s}
         )
         self.assertEqual(
             wrapper.count('"${kernel_source_make_args[@]}"'),
-            5,
+            6,
         )
         self.assertIn(
             '"$current_kernel_source_signature" > "$kernel_source_signature"',
@@ -785,6 +785,46 @@ compute_lean_c_signature {root!s}
         self.assertIn(
             '[[ "$current_output_hash" == "$stored_output_hash" ]]', plan_script
         )
+
+    def test_bootstrap64_plan_converges_through_graph_target(self) -> None:
+        wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")
+        function = "converge_selected_graph_plan() {" + wrapper.split(
+            "converge_selected_graph_plan() {", 1
+        )[1].split("\n}\n\nvalidate_selected_final_plan", 1)[0] + "\n}"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "scripts"
+            scripts.mkdir()
+            generator = scripts / "generate-boot-page-plan.sh"
+            generator.write_text('#!/bin/sh\ncp "$1" "$2"\n', encoding="utf-8")
+            generator.chmod(0o755)
+            expected = root / "plan.h"
+            final = root / "plan.final.h"
+            elf = root / "image.elf"
+            graph = root / "graph.mk"
+            expected.write_text("prelink-plan\n", encoding="utf-8")
+            elf.write_text("linker-resolved-plan\n", encoding="utf-8")
+            graph.write_text(
+                f".PHONY: {elf!s}\n"
+                f"{elf!s}: {expected!s}\n"
+                f"\tcp {expected!s} {elf!s}\n",
+                encoding="utf-8",
+            )
+            shell = f"""\
+set -euo pipefail
+object_graph={graph!s}
+kernel_source_make_args=()
+LEANOS_BUILD_JOBS=1
+selected_final_enabled() {{ return 0; }}
+{function}
+converge_selected_graph_plan {elf!s} {expected!s} {final!s} fixture
+"""
+            subprocess.run(["bash", "-c", shell], check=True, cwd=root)
+            self.assertEqual(
+                expected.read_text(encoding="utf-8"), "linker-resolved-plan\n"
+            )
+            self.assertEqual(final.read_bytes(), expected.read_bytes())
 
     def test_boot_plan_cache_is_per_input_stage_and_checks_output(self) -> None:
         plan_script = PLAN_SCRIPT.read_text(encoding="utf-8")
