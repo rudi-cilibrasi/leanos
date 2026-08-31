@@ -539,6 +539,10 @@ jobs:
               --output "$bundle"
           bundle_status=$?
           set -e
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            "$image" chmod a+r "$bundle"
           test -s "$bundle"
           report_status="$(python3 -c \
             'import json,sys; print(json.load(open(sys.argv[1]))["status"])' \
