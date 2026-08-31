@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="${LEANOS_VERSION:-0.1.0}"
 artifacts=(
   "leanos-${version}-x86_64.iso" leanos.elf leanos.map SOURCE_REVISION
+  TOOLCHAIN_PROFILE.json
   "leanos-${version}-x86_64-fault-containment.iso"
   leanos-fault-containment.elf leanos-fault-containment.map
   boot-page-plan-fault-containment.final.h

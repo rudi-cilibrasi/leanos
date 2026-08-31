@@ -10,6 +10,7 @@ permissions:
 
 env:
   LEANOS_CI_IMAGE_DIGEST: sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+  LEANOS_TOOLCHAIN_PROFILE: gcc-reference
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: safe.directory
   GIT_CONFIG_VALUE_0: ${{ github.workspace }}
@@ -84,6 +85,7 @@ jobs:
             build/boot/boot-page-plan*.h
             build/boot/SHA256SUMS
             build/boot/SOURCE_REVISION
+            build/boot/TOOLCHAIN_PROFILE.json
             build/boot/corpus.tsv
             docs/page-fault-snapshot.md
             build/oracle/host-results.txt

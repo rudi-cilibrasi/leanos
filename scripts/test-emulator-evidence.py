@@ -81,6 +81,7 @@ def prepare_bundle_tree(tmp: Path) -> tuple[Path, Path, Path, Path]:
     paths = (
         "build/boot/SHA256SUMS",
         "build/boot/SOURCE_REVISION",
+        "build/boot/TOOLCHAIN_PROFILE.json",
         "build/boot/leanos.elf",
         "build/boot/leanos-0.1.0-x86_64.iso",
         "build/boot/serial.log",

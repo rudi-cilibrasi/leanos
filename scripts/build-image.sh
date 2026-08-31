@@ -65,6 +65,16 @@ compute_lean_c_signature() {
 require_tool lake "install Elan from https://elan.lean-lang.org/"
 cc="${LEANOS_CC:-gcc}"
 require_tool "$cc" "install Ubuntu package gcc=4:13.2.0-7ubuntu1"
+require_tool python3 "install Python 3"
+toolchain_profile="${LEANOS_TOOLCHAIN_PROFILE:-gcc-reference}"
+IFS=$'\t' read -r toolchain_profile toolchain_status toolchain_claim \
+    lean_c_interface elf_layout_profile toolchain_manifest_sha256 \
+    _profile_compiler _profile_compiler_version < <(
+  ./scripts/toolchain-profile.py resolve \
+    --profile "$toolchain_profile" --compiler "$cc" --format tsv
+)
+export LEANOS_TOOLCHAIN_PROFILE="$toolchain_profile"
+export LEANOS_ELF_LAYOUT_PROFILE="$elf_layout_profile"
 require_tool make "install Ubuntu package make=4.3-4.1build2"
 require_tool sha256sum "install Ubuntu package coreutils=9.4-3ubuntu6.1"
 require_tool ld "install Ubuntu package binutils=2.42-4ubuntu2.10"
@@ -289,16 +299,18 @@ run_direct_port_check() {
   local manifest="$3"
   local assigned_edu="$4"
   local log="$5"
+  local layout_profile="$6"
   local -a arguments=()
   local raw_log="${log}.raw"
   local status=0
   local signature
   signature="$(compute_check_signature direct-port "$elf" "$manifest" \
-    "$assigned_edu")"
+    "$assigned_edu" "$layout_profile")"
   if cached_check_is_current "$log" "$signature"; then
     return 0
   fi
   [[ "$assigned_edu" != 1 ]] || arguments+=(--assigned-edu)
+  arguments+=(--layout-profile "$layout_profile")
   ./scripts/check-direct-port-sites.py "$elf" "$manifest" \
     "${arguments[@]}" > "$raw_log" 2>&1 || status=$?
   if ! sed "s/^/elf=$key /" "$raw_log" > "$log"; then
@@ -453,6 +465,9 @@ if [[ ! "$source_revision" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 mkdir -p "$build"
+./scripts/toolchain-profile.py resolve \
+  --profile "$toolchain_profile" --compiler "$cc" \
+  --output "$build/TOOLCHAIN_PROFILE.json"
 build_plan_args=(
   build-plan
   --matrix "$matrix"
@@ -646,6 +661,12 @@ if "$cc" --version | sed -n '1p' | grep -qi clang; then
   cflags+=(-ffp-eval-method=source -Wno-error=pragmas -fno-jump-tables)
 fi
 {
+  printf 'toolchain-profile\t%s\n' "$toolchain_profile"
+  printf 'toolchain-status\t%s\n' "$toolchain_status"
+  printf 'toolchain-claim\t%s\n' "$toolchain_claim"
+  printf 'toolchain-manifest-sha256\t%s\n' "$toolchain_manifest_sha256"
+  printf 'lean-c-interface\t%s\n' "$lean_c_interface"
+  printf 'direct-port-elf-normalization\t%s\n' "$elf_layout_profile"
   printf 'image-compiler-command\t%s\n' "$cc"
   printf 'image-compiler-version\t'
   "$cc" --version | sed -n '1p'
@@ -1674,8 +1695,9 @@ while IFS=$'\t' read -r _id _runner _class _timeout _image elf_name \
   direct_port_logs+=("$direct_port_log")
   assigned_edu=0
   ((${#direct_port_args[@]} == 0)) || assigned_edu=1
-  printf '%s\0%s\0%s\0%s\0%s\0' "$elf_name" "$elf_path" \
-    "$manifest" "$assigned_edu" "$direct_port_log" >> "$direct_port_task_file"
+  printf '%s\0%s\0%s\0%s\0%s\0%s\0' "$elf_name" "$elf_path" \
+    "$manifest" "$assigned_edu" "$direct_port_log" "$elf_layout_profile" \
+    >> "$direct_port_task_file"
   ((direct_port_images += 1))
 done < "$matrix"
 expected_evidence_images="$(
@@ -1692,7 +1714,7 @@ elif ((direct_port_images == 0)); then
   echo "error: selected evidence has no direct-port ELF coverage" >&2
   exit 1
 fi
-if ! xargs -0 -r -n 5 -P "$policy_jobs" bash -c \
+if ! xargs -0 -r -n 6 -P "$policy_jobs" bash -c \
     'run_direct_port_check "$@"' _ < "$direct_port_task_file"; then
   for log in "${direct_port_logs[@]}"; do
     [[ -f "$log" ]] && cat "$log"
@@ -1751,6 +1773,8 @@ stage_selected_image() {
   cp "$elf" "$staging_root/boot/leanos.elf"
   cp "$grub_config" "$staging_root/boot/grub/grub.cfg"
   cp "$build/SOURCE_REVISION" "$staging_root/boot/SOURCE_REVISION"
+  cp "$build/TOOLCHAIN_PROFILE.json" \
+    "$staging_root/boot/TOOLCHAIN_PROFILE.json"
 }
 stage_selected_image "$build/leanos.elf" "$iso_root" boot/grub.cfg
 stage_selected_image "$build/leanos-malformed-handoff.elf" \
@@ -1815,6 +1839,8 @@ for spec in "${return_corruptions[@]}"; do
   cp "$return_elf" "$fixture_root/boot/leanos.elf"
   cp boot/grub.cfg "$fixture_root/boot/grub/grub.cfg"
   cp "$build/SOURCE_REVISION" "$fixture_root/boot/SOURCE_REVISION"
+  cp "$build/TOOLCHAIN_PROFILE.json" \
+    "$fixture_root/boot/TOOLCHAIN_PROFILE.json"
   selected_iso_root_lookup["$fixture_root"]="$return_elf"
 done
 # BIOS-only output avoids GRUB's nondeterministic FAT/EFI image. A fixed ISO
@@ -1922,7 +1948,8 @@ fi
 # All-tier CI is still sharded: each shard must hash only the files selected by
 # its build plan, including the multi-vCPU aliases only in their owning shard.
 if [[ "$evidence_tier" == all && -z "$evidence_shard_index" ]]; then
-  sha256sum "$build/leanos-${version}-x86_64.iso" \
+  sha256sum "$build/TOOLCHAIN_PROFILE.json" \
+  "$build/leanos-${version}-x86_64.iso" \
   "$build/leanos-${version}-x86_64-multivcpu-rejection.iso" \
   "$build/leanos-multivcpu-rejection.elf" \
   "$build/leanos-${version}-x86_64-assigned-edu.iso" \
@@ -2013,6 +2040,7 @@ if [[ "$evidence_tier" == all && -z "$evidence_shard_index" ]]; then
       "$build/leanos-return-${fixture}.elf" >> "$build/SHA256SUMS"
   done
 else
+  selected_checksum_paths+=("$build/TOOLCHAIN_PROFILE.json")
   if selected_final_enabled "$build/leanos-assigned-edu.elf"; then
     selected_checksum_paths+=(
       "$build/leanos-${version}-x86_64-assigned-edu.iso"

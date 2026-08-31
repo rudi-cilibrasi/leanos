@@ -38,10 +38,12 @@ BUNDLE_CONTEXT_FILES = (
     "docs/page-fault-snapshot.md",
     "scripts/emulator-evidence-matrix.tsv",
     "scripts/hosted-generated-boundaries.tsv",
+    "scripts/toolchain-profiles.json",
 )
 BUNDLE_REQUIRED_FILES = (
     "build/boot/SHA256SUMS",
     "build/boot/SOURCE_REVISION",
+    "build/boot/TOOLCHAIN_PROFILE.json",
     "build/ci/emulator-evidence.log",
     "build/ci/image-build.log",
     "build/ci/tool-versions.txt",

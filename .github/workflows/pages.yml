@@ -16,6 +16,9 @@ on:
 permissions:
   contents: read
 
+env:
+  LEANOS_TOOLCHAIN_PROFILE: gcc-reference
+
 concurrency:
   group: pages
   cancel-in-progress: false

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import os
 import re
 import subprocess
 import sys
@@ -135,6 +136,11 @@ CLANG18_SITE_ALTERNATIVES = {
         Site("isr2_cld", 0x15C, "out", "%al,(%dx)"),
     Site("isr2_cld", 0x16B, "out", "%al,(%dx)"):
         Site("isr2_cld", 0x16A, "out", "%al,(%dx)"),
+}
+
+LAYOUT_NORMALIZATIONS = {
+    "gcc-reference-v1": {},
+    "clang18-v1": CLANG18_SITE_ALTERNATIVES,
 }
 
 
@@ -539,6 +545,12 @@ def main() -> int:
                         help="require quarantine to dominate one terminal kernel halt")
     parser.add_argument("--assigned-edu", action="store_true",
                         help="admit the reviewed post-translation EDU command path")
+    parser.add_argument(
+        "--layout-profile",
+        choices=tuple(LAYOUT_NORMALIZATIONS),
+        default=os.environ.get("LEANOS_ELF_LAYOUT_PROFILE", "gcc-reference-v1"),
+        help="apply only the reviewed final-ELF normalization for this profile",
+    )
     args = parser.parse_args()
     if not args.elf.is_file() or not args.manifest.is_file() or \
             not args.source.is_file() or not args.byte_manifest.is_file():
@@ -547,7 +559,8 @@ def main() -> int:
 
     validate_source(args.source, args.byte_manifest)
     sites, callers, calls, functions = elf_inventory(args.elf)
-    normalized_sites = [CLANG18_SITE_ALTERNATIVES.get(site, site) for site in sites]
+    normalization = LAYOUT_NORMALIZATIONS[args.layout_profile]
+    normalized_sites = [normalization.get(site, site) for site in sites]
     observed = set(normalized_sites)
     if len(observed) != len(normalized_sites):
         print("error: duplicate final-ELF port-I/O site after layout normalization",
