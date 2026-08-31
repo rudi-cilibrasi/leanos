@@ -614,7 +614,11 @@ The first command requires Node.js/npm. The final command writes one tarball
 whose internal manifest hashes the retained evidence and rejects missing
 report-bound files. Image building and QEMU prerequisites,
 the exact Ubuntu 24.04 package versions used in CI, and emulator resource bounds
-are listed in [the boot-image guide](docs/boot-image.md). CI first runs the
+are listed in [the boot-image guide](docs/boot-image.md). The versioned
+toolchain profiles described in
+[ADR 0014](docs/adr/0014-toolchain-compatibility-profiles.md) keep the canonical
+byte-reproducible GCC release profile distinct from the exact Clang profile's
+semantic-compatibility evidence. CI first runs the
 Markdown and complete Lean proof-integrity gates, then builds once and executes
 the versioned mandatory emulator matrix without KVM. The matrix is the sole
 release-blocking QEMU inventory for pull requests and tags. A separate

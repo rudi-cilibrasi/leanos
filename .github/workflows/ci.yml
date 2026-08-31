@@ -28,6 +28,7 @@ permissions:
 
 env:
   LEANOS_CI_IMAGE_DIGEST: sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+  LEANOS_TOOLCHAIN_PROFILE: gcc-reference
   # Personal-account repositories cannot enable GitHub's merge queue. A
   # maintainer promotes a ready PR to the full tier with this reviewed label.
   LEANOS_CI_EVIDENCE_TIER: ${{ (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-admission')) && 'all' || 'pr' }}
@@ -69,6 +70,9 @@ jobs:
 
       - name: Test main admission policy contract
         run: python3 scripts/test-main-ruleset-policy.py
+
+      - name: Test toolchain profile contract
+        run: python3 scripts/test-toolchain-profile.py
 
   lean:
     name: Lean build and proof checks
@@ -209,6 +213,7 @@ jobs:
     timeout-minutes: 60
     env:
       LEANOS_CC: clang-18
+      LEANOS_TOOLCHAIN_PROFILE: clang-reference
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -262,6 +267,7 @@ jobs:
             build/boot/leanos.elf
             build/boot/leanos.map
             build/boot/SOURCE_REVISION
+            build/boot/TOOLCHAIN_PROFILE.json
             build/boot/corpus.tsv
             build/boot/compiler-and-flags.tsv
             build/boot/entry-policy-report.txt
@@ -303,6 +309,7 @@ jobs:
     timeout-minutes: 60
     env:
       LEANOS_CC: clang-18
+      LEANOS_TOOLCHAIN_PROFILE: clang-reference
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -506,6 +513,7 @@ jobs:
             --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
             --env RUNNER_OS --env RUNNER_ARCH --env ImageOS --env ImageVersion \
             --env LEANOS_CI_IMAGE_DIGEST \
+            --env LEANOS_TOOLCHAIN_PROFILE \
             --env LEANOS_QEMU_ACCELERATOR=kvm \
             "$image" bash -lc '
               set -euo pipefail
@@ -627,6 +635,7 @@ jobs:
     timeout-minutes: 60
     env:
       LEANOS_CC: clang-18
+      LEANOS_TOOLCHAIN_PROFILE: clang-reference
       SERIAL_BASE_REF: ${{ inputs.serial_base_ref }}
     steps:
       - name: Check out graph head and serial base history

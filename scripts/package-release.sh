@@ -126,6 +126,7 @@ cp build/boot/corpus.tsv "$release/leanos-${version}-oracle.tsv"
 cp "$evidence" "$release/EMULATOR_EVIDENCE.json"
 cp scripts/emulator-evidence-matrix.tsv "$release/EMULATOR_EVIDENCE_MATRIX.tsv"
 cp build/boot/SOURCE_REVISION "$release/SOURCE_REVISION"
+cp build/boot/TOOLCHAIN_PROFILE.json "$release/TOOLCHAIN_PROFILE.json"
 cp docs/release-notes.md "$release/RELEASE_NOTES.md"
 LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
   "$release/TOOLCHAIN.txt"
@@ -182,6 +183,7 @@ LEANOS_VERSION="$version" ./scripts/record-tool-versions.sh \
   "leanos-${version}-double-fault-guard-mapped-serial.log" \
   "leanos-${version}-oracle.tsv" \
   EMULATOR_EVIDENCE.json EMULATOR_EVIDENCE_MATRIX.tsv \
-  SOURCE_REVISION TOOLCHAIN.txt RELEASE_NOTES.md > SHA256SUMS)
+  SOURCE_REVISION TOOLCHAIN_PROFILE.json TOOLCHAIN.txt RELEASE_NOTES.md \
+  > SHA256SUMS)
 
 echo "packaged $tag release assets in build/release"

@@ -106,7 +106,10 @@ These fixtures test the host harness only and are not boot evidence.
 
 ## Pinned reference tools
 
-The reference environment is Ubuntu 24.04 (x86-64) with Lean 4.32.0 from
+The versioned registry in `scripts/toolchain-profiles.json` separates the
+canonical byte-reproducible reference from supported semantic-compatibility
+profiles. The default `gcc-reference` environment is Ubuntu 24.04 (x86-64)
+with Lean 4.32.0 from
 `lean-toolchain`, GCC 13.3.0 (`gcc=4:13.2.0-7ubuntu1`), GNU binutils 2.42
 (`binutils=2.42-4ubuntu2.10`), GRUB
 (`grub-common=2.12-1ubuntu7.3`, `grub-pc-bin=2.12-1ubuntu7.3`), mtools
@@ -114,6 +117,21 @@ The reference environment is Ubuntu 24.04 (x86-64) with Lean 4.32.0 from
 (`qemu-system-x86=1:8.2.2+ds-0ubuntu1.18`), coreutils
 (`coreutils=9.4-3ubuntu6.2`), and QEMU's distributed SeaBIOS 1.16.3 firmware.
 The scripts name the Ubuntu package pins in actionable missing-tool diagnostics.
+The existing `clang-reference` profile changes only the C front end and its
+reviewed final-ELF layout policy; it retains exact pins for every input.
+Selection is explicit and compiler identity is checked before building:
+
+```sh
+LEANOS_TOOLCHAIN_PROFILE=gcc-reference ./scripts/build-image.sh
+LEANOS_TOOLCHAIN_PROFILE=clang-reference LEANOS_CC=clang-18 \
+  ./scripts/build-image.sh
+```
+
+Every image contains the resolved `TOOLCHAIN_PROFILE.json`, including the
+registry hash and observed compiler identity. The same record is retained in
+emulator evidence, reproducibility manifests, and release assets. See
+[ADR 0014](adr/0014-toolchain-compatibility-profiles.md) for the distinction
+between canonical reproducibility and supported semantic compatibility.
 
 The independent Clang lane retains `-mgeneral-regs-only` and requests Lean's
 required source-width floating-point evaluation contract. Clang 18 warns that
@@ -132,7 +150,7 @@ debug paths. Release CI and local validation retain
 `./scripts/test-reproducible-build.sh` for same-runner checks. A pull request
 promoted with the reviewed `ci:full-admission` label runs two Clang builds
 concurrently on independent hosted runners,
-publishes the same centralized 40-artifact SHA-256 inventory from each, and
+publishes the same centralized 41-artifact SHA-256 inventory from each, and
 compares those manifests in a fail-closed join job before `main` advances.
 Ordinary pull requests retain bounded representative evidence for prompt
 feedback. The strict default-branch ruleset requires the promoted full-evidence
@@ -152,7 +170,7 @@ repository, where GitHub makes merge queues available. The audit is
 intentionally separate from per-commit admission so a transient API outage
 cannot make otherwise valid changes unmergeable.
 
-The primary Clang lane builds and boots the canonical image with the pinned
+The primary Clang lane builds and boots the canonical guest scenario with the pinned
 Ubuntu 24.04 `clang-18=1:18.1.3-1ubuntu1` package. Both independent full-build
 lanes set `LEANOS_CC=clang-18`; the primary lane verifies nested compiler
 selection, runs the final-ELF policy gates, and requires the canonical guest's
@@ -167,9 +185,10 @@ toolchain.
 
 The final-ELF direct-port gate continues to pin every reviewed symbol, opcode,
 operand, owner, source invocation, and call-graph edge. Its manifest uses the
-GCC reference offsets; the checker additionally recognizes only the enumerated
-Clang 18 offsets produced by the pinned lane. An unknown offset, extra site,
-changed instruction, different owner, or new caller still fails closed.
+GCC reference offsets. The selected profile applies no normalization for GCC
+and recognizes only the enumerated Clang 18 offsets for the Clang profile. An
+unknown profile or offset, extra site, changed instruction, different owner, or
+new caller still fails closed.
 
 ## Experimental releases
 

@@ -18,6 +18,9 @@ on:
 permissions:
   contents: read
 
+env:
+  LEANOS_TOOLCHAIN_PROFILE: gcc-reference
+
 jobs:
   build:
     if: github.event_name == 'pull_request'
@@ -40,6 +43,7 @@ jobs:
         run: |
           docker run --rm \
             --volume "$GITHUB_WORKSPACE:/workspace" \
+            --env LEANOS_TOOLCHAIN_PROFILE \
             leanos-ci:pr-${{ github.sha }} \
             bash -lc 'git config --global --add safe.directory /workspace && command -v jq && ./scripts/record-tool-versions.sh /tmp/tool-versions.txt && ./scripts/test-build-image.sh'
 
