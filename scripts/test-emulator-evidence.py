@@ -87,6 +87,7 @@ def prepare_bundle_tree(tmp: Path) -> tuple[Path, Path, Path, Path]:
         "build/boot/serial.log",
         "build/ci/emulator-evidence.log",
         "build/ci/image-build.log",
+        "build/ci/image-build-phases.tsv",
         "build/ci/tool-versions.txt",
         "build/evidence/blocking-ipc.command.log",
         "build/evidence/q35-edu-dma.tsv",
