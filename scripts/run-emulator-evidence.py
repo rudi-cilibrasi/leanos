@@ -1370,20 +1370,53 @@ def check_release_package(package: str) -> None:
             )
 
 
+def workflow_step_runs(
+    workflow: dict[str, object], relative: str
+) -> list[tuple[str, str]]:
+    """Return job-scoped run scripts from a structurally loaded workflow."""
+
+    jobs = workflow.get("jobs")
+    if not isinstance(jobs, dict):
+        raise EvidenceError(f"{relative} must define a jobs mapping")
+    runs: list[tuple[str, str]] = []
+    for job_name, job in jobs.items():
+        if not isinstance(job_name, str) or not isinstance(job, dict):
+            raise EvidenceError(f"{relative} job {job_name!r} must be a mapping")
+        steps = job.get("steps", [])
+        if not isinstance(steps, list):
+            raise EvidenceError(f"{relative} job {job_name!r} steps must be a sequence")
+        for step_index, step in enumerate(steps):
+            if not isinstance(step, dict):
+                raise EvidenceError(
+                    f"{relative} job {job_name!r} step {step_index} must be a mapping"
+                )
+            run = step.get("run")
+            if run is not None and not isinstance(run, str):
+                raise EvidenceError(
+                    f"{relative} job {job_name!r} step {step_index} run must be a string"
+                )
+            if run is not None:
+                runs.append((job_name, run))
+    return runs
+
+
 def check_workflows() -> None:
     parse_matrix(DEFAULT_MATRIX)
     workflow_contents: dict[str, str] = {}
+    workflows: dict[str, dict[str, object]] = {}
     for relative in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
         path = ROOT / relative
         try:
             workflow = load_workflow(path)
         except WorkflowYamlError as error:
             raise EvidenceError(f"{relative} is not valid workflow YAML: {error}") from error
-        if not isinstance(workflow.get("jobs"), dict):
-            raise EvidenceError(f"{relative} must define a jobs mapping")
+        workflows[relative] = workflow
+        step_runs = workflow_step_runs(workflow, relative)
         content = path.read_text(encoding="utf-8")
         workflow_contents[relative] = content
-        count = content.count("./scripts/run-emulator-evidence.py run")
+        count = sum(
+            run.count("./scripts/run-emulator-evidence.py run") for _, run in step_runs
+        )
         expected_count = 2 if relative == ".github/workflows/ci.yml" else 1
         if count != expected_count:
             raise EvidenceError(
@@ -1398,10 +1431,16 @@ def check_workflows() -> None:
             "./scripts/run-bootstrap64-nmi.sh",
             "./scripts/run-malformed-handoff.sh",
         ):
-            if bypass in content:
-                raise EvidenceError(f"{relative} bypasses the shared emulator matrix with {bypass}")
+            bypass_job = next((job for job, run in step_runs if bypass in run), None)
+            if bypass_job is not None:
+                raise EvidenceError(
+                    f"{relative} job {bypass_job!r} bypasses the shared emulator "
+                    f"matrix with {bypass}"
+                )
     ci_content = workflow_contents[".github/workflows/ci.yml"]
-    if "  merge_group:\n    branches:\n      - main\n" not in ci_content:
+    ci_triggers = workflows[".github/workflows/ci.yml"].get("on")
+    merge_group = ci_triggers.get("merge_group") if isinstance(ci_triggers, dict) else None
+    if not isinstance(merge_group, dict) or merge_group.get("branches") != ["main"]:
         raise EvidenceError(
             "CI must run complete evidence for merge-queue candidates targeting main"
         )
