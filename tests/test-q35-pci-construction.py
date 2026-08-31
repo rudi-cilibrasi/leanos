@@ -42,6 +42,12 @@ class ConstructionValidationTests(unittest.TestCase):
             self.assertEqual(construction.selected_accelerator(), "tcg")
         with mock.patch.dict(os.environ, {"LEANOS_QEMU_ACCELERATOR": "kvm"}):
             self.assertEqual(construction.selected_accelerator(), "kvm")
+            self.assertEqual(
+                construction.selected_cpu(),
+                "max,vendor=AuthenticAMD,pku=on,enforce=on",
+            )
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(construction.selected_cpu(), "max")
         with mock.patch.dict(
             os.environ, {"LEANOS_QEMU_ACCELERATOR": "kvm,tcg"}
         ):

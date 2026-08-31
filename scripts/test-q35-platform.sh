@@ -19,6 +19,10 @@ LEANOS_QEMU_ACCELERATOR=kvm leanos_validate_q35_command kvm
   echo "error: q35 platform omitted the explicit KVM accelerator" >&2
   exit 1
 }
+[[ " ${kvm[*]} " == *" -cpu max,vendor=AuthenticAMD,pku=on,enforce=on "* ]] || {
+  echo "error: KVM q35 platform did not preserve the reviewed guest CPU contract" >&2
+  exit 1
+}
 if LEANOS_QEMU_ACCELERATOR=tcg \
     leanos_validate_q35_command kvm 2>/dev/null; then
   echo "error: q35 platform accepted KVM under the TCG contract" >&2

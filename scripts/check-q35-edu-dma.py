@@ -63,6 +63,13 @@ def selected_accelerator() -> str:
     return accelerator
 
 
+def selected_cpu() -> str:
+    return (
+        "max,vendor=AuthenticAMD,pku=on,enforce=on"
+        if selected_accelerator() == "kvm" else "max"
+    )
+
+
 class QTest:
     def __init__(self, executable: str) -> None:
         self.firmware = tempfile.NamedTemporaryFile(prefix="leanos-edu-", suffix=".bin")
@@ -75,7 +82,7 @@ class QTest:
                 executable,
                 "-machine", f"q35,accel={selected_accelerator()}",
                 "-nodefaults",
-                "-cpu", "max",
+                "-cpu", selected_cpu(),
                 "-smp", "1",
                 "-m", "128M",
                 "-display", "none",

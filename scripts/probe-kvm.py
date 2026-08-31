@@ -47,6 +47,7 @@ def base_result(device: Path, qemu: str, environment: dict[str, str]) -> dict[st
             "binary": qemu,
             "version": "unknown",
             "accelerators": [],
+            "guest_cpu": "max,vendor=AuthenticAMD,pku=on,enforce=on",
             "runtime_marker": "unobserved",
         },
         "host": {
@@ -145,7 +146,7 @@ def probe_kvm(
         qemu,
         "-machine", "q35,accel=kvm",
         "-nodefaults",
-        "-cpu", "max",
+        "-cpu", "max,vendor=AuthenticAMD,pku=on,enforce=on",
         "-smp", "1",
         "-m", "128M",
         "-display", "none",
@@ -164,6 +165,11 @@ def probe_kvm(
     marker_match = re.search(r"kvm support:\s*([a-z]+)", normalized)
     marker = marker_match.group(0) if marker_match else "unobserved"
     qemu_record["runtime_marker"] = marker
+    if (
+        runtime.returncode != 0
+        and "host doesn't support requested features" in normalized.lower()
+    ):
+        return unavailable(result, "guest-cpu-contract-unavailable")
     if runtime.returncode != 0:
         return unavailable(result, "kvm-initialization-failed")
     if marker != "kvm support: enabled":

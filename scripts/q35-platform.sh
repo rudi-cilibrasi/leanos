@@ -27,6 +27,25 @@ leanos_qemu_accelerator() {
   esac
 }
 
+leanos_q35_cpu() {
+  local requested="$1"
+  local accelerator
+
+  accelerator="$(leanos_qemu_accelerator)" || return 1
+  case "$requested" in
+    max|max,phys-bits=48) ;;
+    *)
+      echo "error: q35 platform CPU options drifted" >&2
+      return 1
+      ;;
+  esac
+  if [[ "$accelerator" == kvm ]]; then
+    printf '%s,vendor=AuthenticAMD,pku=on,enforce=on\n' "$requested"
+  else
+    printf '%s\n' "$requested"
+  fi
+}
+
 leanos_validate_q35_command() {
   local command_name="$1"
   local -n q35_command="$command_name"
@@ -38,13 +57,13 @@ leanos_validate_q35_command() {
 
   for argument in "${q35_command[@]}"; do
     if [[ "$previous" == -cpu ]]; then
-      case "$argument" in
-        max|max,phys-bits=48) ((cpu_options += 1)) ;;
-        *)
-          echo "error: q35 platform CPU options drifted" >&2
-          return 1
-          ;;
-      esac
+      if [[ "$argument" == "$(leanos_q35_cpu max)" ||
+            "$argument" == "$(leanos_q35_cpu max,phys-bits=48)" ]]; then
+        ((cpu_options += 1))
+      else
+        echo "error: q35 platform CPU options drifted" >&2
+        return 1
+      fi
     fi
     if [[ "$previous" == -smp ]]; then
       case "$argument" in
@@ -111,6 +130,7 @@ leanos_q35_command() {
   local accelerator
 
   accelerator="$(leanos_qemu_accelerator)" || return 1
+  cpu="$(leanos_q35_cpu "$cpu")" || return 1
 
   q35_command=(
     "$qemu"

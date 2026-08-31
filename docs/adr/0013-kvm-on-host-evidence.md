@@ -9,9 +9,14 @@ Accepted as an experimental evidence lane.
 Run the existing four-shard pull-request emulator matrix in an additional
 GitHub Actions job when an explicit KVM preflight succeeds. The job runs on an
 Ubuntu 24.04 host runner and passes `/dev/kvm` into the pinned LeanOS CI image.
-It retains the reviewed `q35` machine, `-nodefaults`, `-cpu max`, one-vCPU
-default, memory, device inventory, guest images, scenario timeouts, serial
-protocol, and result classifications.
+It retains the reviewed `q35` machine, `-nodefaults`, `-cpu max` feature model,
+one-vCPU default, memory, device inventory, guest images, scenario timeouts,
+serial protocol, and result classifications. Because KVM otherwise inherits
+the physical host's CPUID vendor, the KVM construction explicitly adds
+`vendor=AuthenticAMD`. It also requires `pku=on,enforce=on`, because the
+existing peer-PKE negative relies on the `max` CPU's PKU feature. This preserves
+the existing guest-visible CPU contract on both Intel and AMD hosted runners;
+a host unable to realize it is classified as unavailable by preflight.
 
 The runner selects exactly one accelerator through
 `LEANOS_QEMU_ACCELERATOR`: `tcg` for the required emulator lane or `kvm` for
@@ -20,8 +25,9 @@ guest build or boot, `scripts/probe-kvm.py` checks that `/dev/kvm` is a
 read-write character device, that QEMU lists KVM, and that a minimal
 `q35,accel=kvm` process reports `kvm support: enabled`. A missing device,
 permission failure, device-mapping failure, unsupported accelerator, failed
-initialization, or unconfirmed effective accelerator produces a distinct
-machine-readable `unavailable` result. It is not a passing KVM observation.
+initialization, unavailable fixed guest CPU contract, or unconfirmed effective
+accelerator produces a distinct machine-readable `unavailable` result. It is
+not a passing KVM observation.
 
 The initial job is bounded by the same four-way PR-tier sharding and a 60-minute
 job timeout, publishes its preflight and available scenario evidence for 14
@@ -31,12 +37,17 @@ change from merging.
 
 ## CPU and platform policy
 
-The guest CPU contract remains QEMU's `max` virtual CPU rather than `host`.
-This prevents the lane from silently admitting a different guest-visible CPU
-profile on each hosted runner. The physical CPU model, kernel, architecture,
-runner image, QEMU version, accelerator list, source revision, and run identity
-are recorded as execution context. Variation in those host facts is accepted
-for this observation lane; it does not broaden the admitted q35 guest platform.
+The guest CPU contract remains QEMU's `max` virtual CPU rather than `host`, with
+the existing `AuthenticAMD` vendor fixed explicitly as
+`max,vendor=AuthenticAMD,pku=on,enforce=on` under KVM. This prevents
+Intel-versus-AMD runner placement from silently changing the guest-visible
+vendor and prevents a missing PKU feature from becoming a misleading peer-PKE
+semantic failure. The physical CPU model, kernel, architecture, runner image,
+QEMU version, accelerator list, source revision, and run identity are recorded
+as execution context. Variation in those host facts is accepted for this
+observation lane only when the fixed guest CPU can be realized; it does not
+broaden the admitted q35 guest platform. Other host-bounded feature differences
+remain observable and must not be masked or treated as passing evidence.
 
 ## Evidence and trust boundary
 
