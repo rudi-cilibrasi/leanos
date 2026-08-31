@@ -18,10 +18,14 @@ import tarfile
 import tempfile
 import time
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
 from workflow_yaml import WorkflowYamlError, load_workflow
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = SCRIPT_DIR.parent
 DEFAULT_MATRIX = ROOT / "scripts/emulator-evidence-matrix.tsv"
 DEFAULT_BUILD = ROOT / "build/boot"
 DEFAULT_OUTPUT = ROOT / "build/evidence/emulator-evidence.json"
