@@ -1400,6 +1400,33 @@ def workflow_step_runs(
     return runs
 
 
+def workflow_job(
+    workflow: dict[str, object], relative: str, job_name: str
+) -> dict[str, object]:
+    """Return one named workflow job with a job-local structural diagnostic."""
+
+    jobs = workflow.get("jobs")
+    if not isinstance(jobs, dict):
+        raise EvidenceError(f"{relative} must define a jobs mapping")
+    job = jobs.get(job_name)
+    if not isinstance(job, dict):
+        raise EvidenceError(f"{relative} must define job {job_name!r} as a mapping")
+    return job
+
+
+def workflow_job_steps(
+    job: dict[str, object], relative: str, job_name: str
+) -> list[dict[str, object]]:
+    """Return structurally validated steps for one workflow job."""
+
+    steps = job.get("steps", [])
+    if not isinstance(steps, list) or any(
+        not isinstance(step, dict) for step in steps
+    ):
+        raise EvidenceError(f"{relative} job {job_name!r} steps must be mappings")
+    return steps
+
+
 def check_workflows() -> None:
     parse_matrix(DEFAULT_MATRIX)
     workflow_contents: dict[str, str] = {}
@@ -1438,7 +1465,8 @@ def check_workflows() -> None:
                     f"matrix with {bypass}"
                 )
     ci_content = workflow_contents[".github/workflows/ci.yml"]
-    ci_triggers = workflows[".github/workflows/ci.yml"].get("on")
+    ci_workflow = workflows[".github/workflows/ci.yml"]
+    ci_triggers = ci_workflow.get("on")
     merge_group = ci_triggers.get("merge_group") if isinstance(ci_triggers, dict) else None
     if not isinstance(merge_group, dict) or merge_group.get("branches") != ["main"]:
         raise EvidenceError(
@@ -1448,33 +1476,75 @@ def check_workflows() -> None:
         "github.event_name != 'pull_request' || "
         "contains(github.event.pull_request.labels.*.name, 'ci:full-admission')"
     )
+    pull_request = (
+        ci_triggers.get("pull_request") if isinstance(ci_triggers, dict) else None
+    )
+    expected_pull_request_types = [
+        "opened",
+        "synchronize",
+        "reopened",
+        "labeled",
+        "unlabeled",
+        "ready_for_review",
+    ]
+    ci_env = ci_workflow.get("env")
+    expected_evidence_tier = "${{ (" + promotion_condition + ") && 'all' || 'pr' }}"
     if (
-        "types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]"
-        not in ci_content
-        or "LEANOS_CI_EVIDENCE_TIER: ${{ (" + promotion_condition
-        + ") && 'all' || 'pr' }}" not in ci_content
+        not isinstance(pull_request, dict)
+        or pull_request.get("types") != expected_pull_request_types
+        or not isinstance(ci_env, dict)
+        or ci_env.get("LEANOS_CI_EVIDENCE_TIER") != expected_evidence_tier
     ):
         raise EvidenceError(
             "CI must promote only labeled pull requests to complete evidence"
         )
-    hosted_job = re.search(
-        r"(?ms)^  hosted-boundary:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
-        ci_content,
+    hosted_job = workflow_job(
+        ci_workflow, ".github/workflows/ci.yml", "hosted-boundary"
     )
-    hosted_contract = (
-        "if: github.event_name == 'pull_request' || github.event_name == 'merge_group'",
+    hosted_steps = workflow_job_steps(
+        hosted_job, ".github/workflows/ci.yml", "hosted-boundary"
+    )
+    hosted_runs = [
+        step.get("run")
+        for step in hosted_steps
+        if isinstance(step.get("run"), str)
+    ]
+    hosted_commands = (
         "./scripts/check-hosted-generated-boundaries.sh ordinary",
         "./scripts/check-hosted-generated-boundaries.sh sanitized",
         "./scripts/check-hosted-sanitizer-negatives.sh",
-        "if-no-files-found: error",
     )
-    if hosted_job is None or any(
-        token not in hosted_job.group("body") for token in hosted_contract
-    ) or (
-        "LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY: "
+    artifact_steps = [
+        step
+        for step in hosted_steps
+        if isinstance(step.get("uses"), str)
+        and step["uses"].startswith("actions/upload-artifact@")
+    ]
+    expected_skip = (
         "${{ (github.event_name == 'pull_request' || github.event_name == "
         "'merge_group') && '1' || '0' }}"
-        not in ci_content
+    )
+    skip_is_structural = any(
+        isinstance(step.get("env"), dict)
+        and step["env"].get("LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY") == expected_skip
+        for job_name in ci_workflow.get("jobs", {})
+        for step in workflow_job_steps(
+            workflow_job(ci_workflow, ".github/workflows/ci.yml", job_name),
+            ".github/workflows/ci.yml",
+            job_name,
+        )
+    )
+    if (
+        hosted_job.get("if")
+        != "github.event_name == 'pull_request' || github.event_name == 'merge_group'"
+        or any(not any(command in run for run in hosted_runs) for command in hosted_commands)
+        or not artifact_steps
+        or any(
+            not isinstance(step.get("with"), dict)
+            or step["with"].get("if-no-files-found") != "error"
+            for step in artifact_steps
+        )
+        or not skip_is_structural
     ):
         raise EvidenceError(
             "CI must parallelize complete hosted evidence for pull requests and merge groups"
