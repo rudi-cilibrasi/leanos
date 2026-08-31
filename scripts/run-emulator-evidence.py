@@ -1549,14 +1549,36 @@ def check_workflows() -> None:
         raise EvidenceError(
             "CI must parallelize complete hosted evidence for pull requests and merge groups"
         )
-    ci_emulator = re.search(
-        r"(?ms)^  emulator:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
-        ci_content,
+    ci_emulator = workflow_job(
+        ci_workflow, ".github/workflows/ci.yml", "emulator"
     )
-    if ci_emulator is None:
-        raise EvidenceError("CI workflow does not define the emulator evidence job")
+    emulator_strategy = ci_emulator.get("strategy")
+    emulator_matrix = (
+        emulator_strategy.get("matrix")
+        if isinstance(emulator_strategy, dict)
+        else None
+    )
+    if (
+        not isinstance(emulator_matrix, dict)
+        or emulator_matrix.get("shard") != [0, 1, 2, 3]
+    ):
+        raise EvidenceError(
+            "CI job 'emulator' matrix.shard must be the four shards [0, 1, 2, 3]"
+        )
+    emulator_timeout = ci_emulator.get("timeout-minutes")
+    if not isinstance(emulator_timeout, int) or emulator_timeout < 60:
+        raise EvidenceError(
+            "CI job 'emulator' timeout-minutes must allow at least 60 minutes "
+            "for image, QEMU, reproducibility, and artifact checks"
+        )
+    emulator_steps = workflow_job_steps(
+        ci_emulator, ".github/workflows/ci.yml", "emulator"
+    )
+    emulator_runs = [
+        step["run"] for step in emulator_steps if isinstance(step.get("run"), str)
+    ]
+    emulator_commands = "\n".join(emulator_runs)
     for shard_contract in (
-        "shard: [0, 1, 2, 3]",
         'LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}"',
         "LEANOS_EVIDENCE_SHARD_INDEX=\"${{ matrix.shard }}\"",
         "LEANOS_EVIDENCE_SHARD_COUNT=4",
@@ -1564,34 +1586,38 @@ def check_workflows() -> None:
         "--shard-index ${{ matrix.shard }}",
         "--shard-count 4",
         "emulator-shard-${{ matrix.shard }}.json",
-        "leanos-boot-${{ github.sha }}-shard-${{ matrix.shard }}",
         "./scripts/run-emulator-evidence.py bundle",
         "--output build/ci/emulator-evidence-shard-${{ matrix.shard }}.tar",
-        "path: build/ci/emulator-evidence-shard-${{ matrix.shard }}.tar",
-        "if-no-files-found: error",
-        "compression-level: 0",
     ):
-        if shard_contract not in ci_emulator.group("body"):
+        if shard_contract not in emulator_commands:
             raise EvidenceError(
-                "CI emulator evidence job does not preserve four-way shard contract: "
+                "CI job 'emulator' does not preserve its command contract: "
                 + shard_contract
             )
-    if "path: |" in ci_emulator.group("body"):
+    emulator_artifacts = [
+        step
+        for step in emulator_steps
+        if isinstance(step.get("uses"), str)
+        and step["uses"].startswith("actions/upload-artifact@")
+    ]
+    if len(emulator_artifacts) != 1:
         raise EvidenceError(
-            "CI emulator evidence job must upload one prebuilt tarball, not a YAML path list"
+            "CI job 'emulator' must publish exactly one artifact per shard"
         )
-    if ci_emulator.group("body").count("uses: actions/upload-artifact@") != 1:
+    emulator_artifact_options = emulator_artifacts[0].get("with")
+    expected_emulator_artifact = {
+        "name": "leanos-boot-${{ github.sha }}-shard-${{ matrix.shard }}",
+        "path": "build/ci/emulator-evidence-shard-${{ matrix.shard }}.tar",
+        "if-no-files-found": "error",
+        "compression-level": 0,
+    }
+    if not isinstance(emulator_artifact_options, dict) or any(
+        emulator_artifact_options.get(key) != value
+        for key, value in expected_emulator_artifact.items()
+    ):
         raise EvidenceError(
-            "CI emulator evidence job must publish exactly one artifact per shard"
-        )
-    ci_emulator_timeout = re.search(
-        r"(?m)^    timeout-minutes:\s*(\d+)\s*$",
-        ci_emulator.group("body"),
-    )
-    if ci_emulator_timeout is None or int(ci_emulator_timeout.group(1)) < 60:
-        raise EvidenceError(
-            "CI emulator evidence job must allow at least 60 minutes for "
-            "image, QEMU, reproducibility, and artifact checks"
+            "CI job 'emulator' upload-artifact step must publish the single "
+            "prebuilt shard tarball with fail-closed, uncompressed options"
         )
     for clang_evidence in (
         "./scripts/build-image.sh",
