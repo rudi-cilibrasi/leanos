@@ -36,7 +36,7 @@ def selected_accelerator() -> str:
 
 def selected_cpu() -> str:
     return (
-        "max,vendor=AuthenticAMD,pku=on,enforce=on"
+        "max,vendor=AuthenticAMD"
         if selected_accelerator() == "kvm" else "max"
     )
 

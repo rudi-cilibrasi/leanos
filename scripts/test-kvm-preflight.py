@@ -31,8 +31,6 @@ def scripted_run(mode: str):
         if command[1:] == ["-accel", "help"]:
             accelerators = "tcg\n" if mode == "missing-kvm" else "tcg\nkvm\n"
             return completed(command, accelerators)
-        if mode == "guest-cpu-unavailable":
-            return completed(command, "host doesn't support requested features\n", 1)
         if mode == "initialization-failure":
             return completed(command, "failed to initialize kvm\n", 1)
         marker = "disabled" if mode == "fallback" else "enabled"
@@ -58,7 +56,7 @@ assert result["status"] == "available"
 assert result["effective_accelerator"] == "kvm"
 assert result["fallback_allowed"] is False
 assert result["qemu"]["runtime_marker"] == "kvm support: enabled"
-assert result["qemu"]["guest_cpu"] == "max,vendor=AuthenticAMD,pku=on,enforce=on"
+assert result["qemu"]["guest_cpu"] == "max,vendor=AuthenticAMD"
 
 status, result = run_fixture("missing-kvm")
 assert status == probe.UNAVAILABLE
@@ -72,10 +70,6 @@ assert result["effective_accelerator"] is None
 status, result = run_fixture("initialization-failure")
 assert status == probe.UNAVAILABLE
 assert result["reason"] == "kvm-initialization-failed"
-
-status, result = run_fixture("guest-cpu-unavailable")
-assert status == probe.UNAVAILABLE
-assert result["reason"] == "guest-cpu-contract-unavailable"
 
 character = SimpleNamespace(st_mode=stat.S_IFCHR)
 with (

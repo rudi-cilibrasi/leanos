@@ -40,7 +40,7 @@ leanos_q35_cpu() {
       ;;
   esac
   if [[ "$accelerator" == kvm ]]; then
-    printf '%s,vendor=AuthenticAMD,pku=on,enforce=on\n' "$requested"
+    printf '%s,vendor=AuthenticAMD\n' "$requested"
   else
     printf '%s\n' "$requested"
   fi

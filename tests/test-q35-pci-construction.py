@@ -44,7 +44,7 @@ class ConstructionValidationTests(unittest.TestCase):
             self.assertEqual(construction.selected_accelerator(), "kvm")
             self.assertEqual(
                 construction.selected_cpu(),
-                "max,vendor=AuthenticAMD,pku=on,enforce=on",
+                "max,vendor=AuthenticAMD",
             )
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(construction.selected_cpu(), "max")
