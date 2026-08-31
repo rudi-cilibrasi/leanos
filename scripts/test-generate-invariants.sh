@@ -68,6 +68,7 @@ assert "docstring" in docs["plain_fact"].lower() or docs["plain_fact"], docs
 EOF
 
 # --- assemble + verify round trip on the fixture -----------------------------
+"$work/repo/scripts/generate-invariants.py" identities >/dev/null
 mkdir -p "$work/sections"
 cat >"$work/sections/LeanOS__Fixture.md" <<'EOF'
 # Fixture facts
@@ -110,6 +111,23 @@ EOF
   --document "$work/repo/INVARIANTS.md" >/dev/null ||
   fail "verify rejected an order-only source refactor"
 mv "$work/Fixture.lean.orig" "$work/repo/LeanOS/Fixture.lean"
+
+# Structured identities are the mechanical source/module/name record. A stale
+# identity must fail even when the rendered prose remains complete.
+python3 - "$work/repo/INVARIANTS.identities.json" <<'EOF'
+from pathlib import Path
+import json, sys
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["identities"][0]["qualified"] = "LeanOS.Fixture.stale_fact"
+path.write_text(json.dumps(data, indent=2) + "\n")
+EOF
+if "$work/repo/scripts/generate-invariants.py" verify \
+  --document "$work/repo/INVARIANTS.md" >/dev/null 2>&1; then
+  fail "verify accepted a stale structured theorem identity"
+fi
+"$work/repo/scripts/generate-invariants.py" identities >/dev/null
 
 # Dropping a bullet must fail verification.
 grep -v 'hidden_fact' "$work/repo/INVARIANTS.md" >"$work/mutilated.md"

@@ -12,10 +12,13 @@ promise machine-checked:
             time into --sections-dir, then assemble INVARIANTS.md.
   assemble  Build INVARIANTS.md from already-written per-file section files,
             validating that each section explains exactly the extracted
-            theorems in source order.
+            theorems.
+  identities
+            Refresh the deterministic structured theorem-identity index.
   verify    Re-extract the theorems and check that INVARIANTS.md lists all of
-            them and only them, with matching totals.  Offline, deterministic,
-            no API key needed; used by scripts/check-invariants.sh.
+            them and only them, and that the structured identity index exactly
+            matches the sources. Offline, deterministic, no API key needed;
+            used by scripts/check-invariants.sh.
 
 The theorem inventory is whatever the extractor finds; the language model only
 ever writes explanation sentences and section introductions.  It never chooses
@@ -37,6 +40,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROMPT_PATH = REPO_ROOT / "scripts" / "invariants-prompt.md"
 DEFAULT_DOC = REPO_ROOT / "INVARIANTS.md"
+DEFAULT_IDENTITIES = REPO_ROOT / "INVARIANTS.identities.json"
 
 MODIFIERS = r"(?:(?:private|protected|scoped|noncomputable)[ \t]+)*"
 ATTRIBUTES = r"(?:@\[[^\]]*\][ \t]*)*"
@@ -362,6 +366,32 @@ def cmd_extract(args):
     return 0
 
 
+def identity_payload(per_file):
+    """Return stable mechanical identities, excluding source-order metadata."""
+
+    entries = [
+        {
+            "source": rel_path,
+            "qualified": theorem["qualified"],
+            "display": theorem["display"],
+            "kind": "theorem",
+        }
+        for rel_path, theorems in per_file.items()
+        for theorem in theorems
+    ]
+    entries.sort(key=lambda entry: (entry["source"], entry["qualified"]))
+    return {"schemaVersion": 1, "identities": entries}
+
+
+def cmd_identities(args):
+    per_file, _ = extract_all()
+    payload = identity_payload(per_file)
+    output = Path(args.output)
+    output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    print(f"wrote {len(payload['identities'])} theorem identities -> {output}")
+    return 0
+
+
 def load_sections(per_file, sections_dir):
     sections = {}
     for rel_path, theorems in per_file.items():
@@ -505,6 +535,21 @@ def cmd_verify(args):
     doc = doc_path.read_text(encoding="utf-8")
 
     errors = []
+    identities_path = Path(args.identities)
+    if not identities_path.is_file():
+        errors.append(f"missing structured identity index {identities_path}")
+    else:
+        try:
+            stored_identities = json.loads(identities_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as err:
+            errors.append(f"invalid structured identity index: {err}")
+        else:
+            expected_identities = identity_payload(per_file)
+            if stored_identities != expected_identities:
+                errors.append(
+                    "structured identity index diverges from Lean sources; "
+                    "run the identities command"
+                )
     m = TOTALS_RE.search(doc)
     total = sum(len(v) for v in per_file.values())
     if not m:
@@ -595,6 +640,12 @@ def main():
     p.add_argument("--json", help="write JSON to this path instead of stdout")
     p.set_defaults(func=cmd_extract)
 
+    p = sub.add_parser(
+        "identities", help="refresh the deterministic theorem-identity index"
+    )
+    p.add_argument("--output", default=str(DEFAULT_IDENTITIES))
+    p.set_defaults(func=cmd_identities)
+
     def add_assemble_args(p):
         p.add_argument("--sections-dir", required=True)
         p.add_argument("--output", default=str(DEFAULT_DOC))
@@ -622,6 +673,7 @@ def main():
 
     p = sub.add_parser("verify", help="check INVARIANTS.md against the sources")
     p.add_argument("--document", default=str(DEFAULT_DOC))
+    p.add_argument("--identities", default=str(DEFAULT_IDENTITIES))
     p.set_defaults(func=cmd_verify)
 
     args = parser.parse_args()
