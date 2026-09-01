@@ -15,6 +15,10 @@ revision="$(git rev-parse HEAD)"
 ./scripts/image-bundle.sh verify "$bundle" "$revision" "$scratch/restored"
 cmp "$scratch/source/build/boot/leanos.iso" "$scratch/restored/build/boot/leanos.iso"
 
+printf 'stale image\n' > "$scratch/restored/build/boot/leanos.iso"
+./scripts/image-bundle.sh verify "$bundle" "$revision" "$scratch/restored"
+cmp "$scratch/source/build/boot/leanos.iso" "$scratch/restored/build/boot/leanos.iso"
+
 if ./scripts/image-bundle.sh verify "$bundle" \
     "0000000000000000000000000000000000000000" "$scratch/rejected" \
     >/dev/null 2>&1; then

@@ -379,7 +379,7 @@ jobs:
 
   emulator:
     name: Deterministic QEMU smoke test (shard ${{ matrix.shard }})
-    needs: repository-hygiene
+    needs: [repository-hygiene, clang-image]
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
     strategy:
@@ -406,15 +406,30 @@ jobs:
       - name: Verify image-build failures propagate
         run: ./scripts/test-build-image.sh
 
+      - name: Download canonical image family
+        if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: leanos-image-family-${{ github.sha }}
+          path: build/ci/image-family
+
       - name: Build and boot image
         run: |
           set -o pipefail
           mkdir -p build/ci
-          LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
-            LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
-            LEANOS_EVIDENCE_SHARD_INDEX="${{ matrix.shard }}" \
-            LEANOS_EVIDENCE_SHARD_COUNT=4 \
-            ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
+          if [[ "${{ env.LEANOS_CI_EVIDENCE_TIER }}" == all ]]; then
+            ./scripts/image-bundle.sh verify \
+              build/ci/image-family/leanos-image-bundle.tar.gz \
+              "${{ github.sha }}"
+            printf 'verified canonical image-family bundle for %s\n' \
+              "${{ github.sha }}" > build/ci/image-build.log
+          else
+            LEANOS_BUILD_TIMING_FILE=build/ci/image-build-phases.tsv \
+              LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}" \
+              LEANOS_EVIDENCE_SHARD_INDEX="${{ matrix.shard }}" \
+              LEANOS_EVIDENCE_SHARD_COUNT=4 \
+              ./scripts/build-image.sh 2>&1 | tee build/ci/image-build.log
+          fi
           [[ ! -f build/boot/leanos-nmi.elf ]] || \
             ./scripts/test-nmi-image-policy.sh
           [[ ! -f build/boot/leanos.elf ]] || \
