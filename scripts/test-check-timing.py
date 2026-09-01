@@ -28,6 +28,12 @@ def render(phases: tuple[str, ...] = checker.PHASES) -> str:
 
 
 def main() -> None:
+    aggregate_check = (ROOT / "scripts" / "check.sh").read_text(encoding="utf-8")
+    timing_header = "printf 'phase\\tphase_seconds\\ttotal_seconds\\n'"
+    first_check = "./scripts/test-generate-oracle-adapter-map.sh"
+    if aggregate_check.index(timing_header) > aggregate_check.index(first_check):
+        raise AssertionError("timing evidence must exist before the first aggregate check")
+
     with tempfile.TemporaryDirectory(prefix="leanos-check-timing-") as directory:
         path = Path(directory) / "timing.tsv"
         path.write_text(render(), encoding="utf-8")
