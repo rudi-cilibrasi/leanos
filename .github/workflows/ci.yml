@@ -77,6 +77,9 @@ jobs:
       - name: Test image-build timing evidence contract
         run: python3 scripts/test-build-timing.py
 
+      - name: Test aggregate-check timing evidence contract
+        run: python3 scripts/test-check-timing.py
+
   lean:
     name: Lean build and proof checks
     runs-on: ubuntu-24.04
@@ -150,6 +153,15 @@ jobs:
             build/hosted-sanitizer-evidence/
             build/hosted-sanitizer-negatives/
             scripts/hosted-generated-boundaries.tsv
+
+      - name: Preserve aggregate-check timing evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: aggregate-check-timing-${{ github.sha }}
+          path: build/ci/check-phases.tsv
+          if-no-files-found: warn
+          retention-days: 14
           if-no-files-found: warn
           retention-days: 14
 

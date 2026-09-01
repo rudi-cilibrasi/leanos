@@ -5,6 +5,21 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+check_timing_file="${LEANOS_CHECK_TIMING_FILE:-build/ci/check-phases.tsv}"
+mkdir -p "$(dirname "$check_timing_file")"
+printf 'phase\tphase_seconds\ttotal_seconds\n' >"$check_timing_file"
+check_started_at=$SECONDS
+check_phase_started_at=$SECONDS
+
+record_check_phase() {
+  local phase="$1"
+  local now=$SECONDS
+  printf '%s\t%s\t%s\n' \
+    "$phase" "$((now - check_phase_started_at))" "$((now - check_started_at))" \
+    >>"$check_timing_file"
+  check_phase_started_at=$now
+}
+
 ./scripts/test-native-decide-policy.sh
 ./scripts/check-native-decide-policy.py
 
@@ -30,6 +45,8 @@ lake build leanos-vtd-plan
 
 ./scripts/check-invariants.sh
 
+record_check_phase lean-and-generated-contracts
+
 ./tests/test-q35-pci-construction.py
 ./scripts/test-q35-platform.sh
 python3 ./scripts/test-kvm-preflight.py
@@ -53,11 +70,15 @@ if [[ "${LEANOS_SKIP_HOSTED_BOUNDARY_REPLAY:-0}" != 1 ]]; then
   ./scripts/check-hosted-sanitizer-negatives.sh
 fi
 
+record_check_phase security-and-platform-contracts
+
 ./scripts/check-boot-memory-full-projection.sh
 
 ./scripts/check-boot-handoff-stream.sh
 
 ./scripts/test-selected-compiler-propagation.sh
+
+record_check_phase hosted-boundary-and-boot-contracts
 
 ./scripts/test-run-malformed-handoff.sh
 
@@ -106,9 +127,13 @@ python3 scripts/test-setup-lean-cache.py
 
 ./scripts/test-build-timing.py
 
+python3 scripts/test-check-timing.py
+
 ./scripts/test-image-bundle.sh
 
 ./scripts/run-emulator-evidence.py check
+
+record_check_phase image-and-emulator-contracts
 
 lake env lean -DwarningAsError=true -R experiments/freestanding-boundary \
   experiments/freestanding-boundary/Boundary.lean
@@ -216,5 +241,8 @@ if ! grep -Fq 'has type' "$negative_log" ||
   cat "$negative_log" >&2
   exit 1
 fi
+
+record_check_phase proof-integrity-and-negative-fixtures
+python3 scripts/check-check-timing.py "$check_timing_file"
 
 echo "Lean build, proof-integrity, and negative regression checks passed"
