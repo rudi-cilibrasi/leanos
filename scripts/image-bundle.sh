@@ -17,6 +17,10 @@ case "${1:-}" in
       echo "error: image bundle source is missing build/boot" >&2
       exit 1
     }
+    if find "$source_root/build/boot" ! -type d ! -type f -print -quit | grep -q .; then
+      echo "error: image bundle source contains a non-regular entry" >&2
+      exit 1
+    fi
     revision="$(git -C "$repo_root" rev-parse HEAD)"
     staging="$(mktemp -d)"
     trap 'rm -rf "$staging"' EXIT
@@ -49,6 +53,13 @@ case "${1:-}" in
     (cd "$(dirname "$bundle")" && sha256sum -c "$(basename "$bundle").sha256")
     if tar -tzf "$bundle" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
       echo "error: image bundle contains an unsafe path" >&2
+      exit 1
+    fi
+    if tar -tvzf "$bundle" | awk '
+      substr($1, 1, 1) != "-" && substr($1, 1, 1) != "d" { found = 1 }
+      END { exit found ? 0 : 1 }
+    '; then
+      echo "error: image bundle contains a non-regular entry" >&2
       exit 1
     fi
     staging="$(mktemp -d)"

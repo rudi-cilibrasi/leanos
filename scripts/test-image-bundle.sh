@@ -26,4 +26,23 @@ if ./scripts/image-bundle.sh verify "$bundle" \
   exit 1
 fi
 
+mkdir -p "$scratch/unsafe-source/build/boot"
+ln -s /tmp "$scratch/unsafe-source/build/boot/escape"
+if ./scripts/image-bundle.sh create "$scratch/unsafe-source.tar.gz" \
+    "$scratch/unsafe-source" >/dev/null 2>&1; then
+  echo "error: image bundle accepted a symlink source" >&2
+  exit 1
+fi
+
+mkdir -p "$scratch/unsafe-archive/build/boot"
+ln -s /tmp "$scratch/unsafe-archive/build/boot/escape"
+tar -C "$scratch/unsafe-archive" -czf "$scratch/unsafe-archive.tar.gz" build/boot
+sha256sum "$scratch/unsafe-archive.tar.gz" | awk \
+  '{print $1 "  unsafe-archive.tar.gz"}' > "$scratch/unsafe-archive.tar.gz.sha256"
+if ./scripts/image-bundle.sh verify "$scratch/unsafe-archive.tar.gz" "$revision" \
+    "$scratch/rejected" >/dev/null 2>&1; then
+  echo "error: image bundle extracted a symlink entry" >&2
+  exit 1
+fi
+
 echo "Image bundle regression checks passed"
