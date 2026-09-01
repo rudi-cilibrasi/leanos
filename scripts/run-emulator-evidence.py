@@ -1697,14 +1697,20 @@ def check_workflows() -> None:
         raise EvidenceError(
             "CI names a Clang serial path outside the selected matrix scenario"
         )
-    kvm_evidence = re.search(
-        r"(?ms)^  kvm-evidence:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
-        ci_content,
+    kvm_evidence = workflow_job(
+        ci_workflow, ".github/workflows/ci.yml", "kvm-evidence"
+    )
+    kvm_strategy = kvm_evidence.get("strategy")
+    kvm_matrix = (
+        kvm_strategy.get("matrix") if isinstance(kvm_strategy, dict) else None
+    )
+    kvm_steps = workflow_job_steps(
+        kvm_evidence, ".github/workflows/ci.yml", "kvm-evidence"
+    )
+    kvm_commands = "\n".join(
+        step["run"] for step in kvm_steps if isinstance(step.get("run"), str)
     )
     kvm_contract = (
-        "runs-on: ubuntu-24.04",
-        "continue-on-error: true",
-        "shard: [0, 1, 2, 3]",
         "python3 scripts/probe-kvm.py",
         "--device /dev/kvm",
         "--env LEANOS_QEMU_ACCELERATOR=kvm",
@@ -1715,30 +1721,54 @@ def check_workflows() -> None:
         "kvm-preflight-shard-${{ matrix.shard }}.json",
         '[[ "$status" == available ]] || exit 20',
         "kvm-evidence-shard-${{ matrix.shard }}.tar",
-        "if-no-files-found: error",
     )
-    if kvm_evidence is None or any(
-        token not in kvm_evidence.group("body") for token in kvm_contract
-    ) or "container:" in kvm_evidence.group("body"):
+    kvm_artifacts = [
+        step
+        for step in kvm_steps
+        if isinstance(step.get("uses"), str)
+        and step["uses"].startswith("actions/upload-artifact@")
+    ]
+    kvm_artifact_options = (
+        kvm_artifacts[0].get("with") if len(kvm_artifacts) == 1 else None
+    )
+    if (
+        kvm_evidence.get("runs-on") != "ubuntu-24.04"
+        or kvm_evidence.get("continue-on-error") is not True
+        or "container" in kvm_evidence
+        or not isinstance(kvm_matrix, dict)
+        or kvm_matrix.get("shard") != [0, 1, 2, 3]
+        or any(token not in kvm_commands for token in kvm_contract)
+        or not isinstance(kvm_artifact_options, dict)
+        or kvm_artifact_options.get("if-no-files-found") != "error"
+    ):
         raise EvidenceError(
             "CI KVM lane must remain explicit, four-way, artifact-backed, and non-blocking"
         )
-    release_diagnostics = workflow_contents[".github/workflows/release.yml"]
-    release_gate = re.search(
-        r"(?ms)^  gate:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
-        release_diagnostics,
+    release_workflow = workflows[".github/workflows/release.yml"]
+    release_gate = workflow_job(
+        release_workflow, ".github/workflows/release.yml", "gate"
     )
-    if release_gate is None:
-        raise EvidenceError("release workflow does not define the gated evidence job")
-    release_timeout = re.search(
-        r"(?m)^    timeout-minutes:\s*(\d+)\s*$",
-        release_gate.group("body"),
-    )
-    if release_timeout is None or int(release_timeout.group(1)) < 60:
+    release_timeout = release_gate.get("timeout-minutes")
+    if not isinstance(release_timeout, int) or release_timeout < 60:
         raise EvidenceError(
             "release evidence gate must allow at least 60 minutes for proof, "
             "reproducibility, image, and emulator checks"
         )
+    release_steps = workflow_job_steps(
+        release_gate, ".github/workflows/release.yml", "gate"
+    )
+    release_artifacts = [
+        step
+        for step in release_steps
+        if isinstance(step.get("uses"), str)
+        and step["uses"].startswith("actions/upload-artifact@")
+    ]
+    release_paths = "\n".join(
+        str(options.get("path", ""))
+        for step in release_artifacts
+        for options in [step.get("with")]
+        if isinstance(options, dict)
+    )
     for artifact in (
         "build/boot/*.map",
         "build/boot/*.disassembly.txt",
@@ -1750,7 +1780,7 @@ def check_workflows() -> None:
         "build/boot/boot-page-plan*.h",
         "build/oracle/host-results.txt",
     ):
-        if artifact not in release_diagnostics:
+        if artifact not in release_paths:
             raise EvidenceError(
                 f"release diagnostics do not retain mandatory evidence pattern {artifact}"
             )
