@@ -66,6 +66,7 @@ fi
 ./scripts/test-browser-boot.sh
 
 ./scripts/test-run-extended-state-image.sh
+./scripts/test-run-extended-state-peer-pke.sh
 
 ./scripts/test-run-fast-entry-image.sh
 

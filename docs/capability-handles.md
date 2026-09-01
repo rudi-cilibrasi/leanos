@@ -59,6 +59,15 @@ data-only delivery returns no capability word. The associated Lean theorems
 tie each exposed word to the capability record installed in the destination
 slot.
 
+The bounded composite hosted ABI exposes this distinction explicitly as of
+2026-09-01. Result word zero remains the version-one control/reply token, while
+result word one is `0x60003` only for the canonical accepted attached receipt
+and zero for all other bounded controls. The value accessor replays the same six
+immutable inputs as the control accessor and derives its output from the
+validated control; it does not accept a caller-supplied result class. The Lean
+corpus proves there is exactly one nonzero value row, and hosted generated-C
+negatives reject value corruption, omission, and leakage.
+
 The Lean theorems prove codec round-trip and canonical uniqueness for every
 encodable handle, and prove that successful current-caller resolution returns
 exactly the live capability in the trusted caller's capability space. They

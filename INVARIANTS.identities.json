@@ -4491,6 +4491,36 @@
     },
     {
       "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.delivered_handle_decodes",
+      "display": "delivered_handle_decodes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.dispatchResult_control_eq_dispatch",
+      "display": "dispatchResult_control_eq_dispatch",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.dispatchResult_value_eq_dispatchValue",
+      "display": "dispatchResult_value_eq_dispatchValue",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.dispatchValue_eq_delivered_handle_iff",
+      "display": "dispatchValue_eq_delivered_handle_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.dispatchValue_eq_zero_iff",
+      "display": "dispatchValue_eq_zero_iff",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
       "qualified": "LeanOS.CompositeDispatcher.dispatch_canonical",
       "display": "dispatch_canonical",
       "kind": "theorem"
@@ -12797,6 +12827,12 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.composite_mixed_trace_agrees",
       "display": "composite_mixed_trace_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.composite_result_values_exact",
+      "display": "composite_result_values_exact",
       "kind": "theorem"
     },
     {

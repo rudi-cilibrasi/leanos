@@ -1,6 +1,6 @@
 # Model-oracle replay
 
-`LeanOS.Oracle` is the version-one, bounded corpus for every currently exported
+`LeanOS.Oracle` is the version-two, bounded corpus for every currently exported
 freestanding adapter: `KernelTransition.bootTransition` and
 `Syscall.syscallDemo`, `IPCSyscall.ipcDemo`, and
 `Preemption.preemptionDemo`, `Preemption.resumableDemo`, and
@@ -13,7 +13,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `StaleTranslation.staleTranslationDemo`,
 `IOMMU.IOTLB.iotlbPublicationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
-`CompositeDispatcher.dispatch`. Its stable
+`CompositeDispatcher.dispatch` and `CompositeDispatcher.dispatchValue`. Its stable
 392-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
@@ -45,7 +45,12 @@ the source models.
 
 The composite-dispatch records include the version-one traces
 for the shared stateful boundary. Six input words carry a canonical state token,
-command tag, and four scalar arguments. The seven positive sequence edges create
+command tag, and four scalar arguments. Two logical result words carry the
+validated control/reply token and an optional returned value. The value word is
+`0x60003` only for the accepted attached receipt and zero for every data-only
+success, rejection, malformed input, and other accepted edge. Zero is an
+unambiguous absence marker because capability-handle generation zero is reserved.
+The seven positive sequence edges create
 one subject, observe typed unknown-syscall and malformed-map rejections, run
 the scheduler observation, terminate the subject, enter a fatal kernel
 page-fault state, and verify that a subsequent scheduler request is rejected
@@ -82,7 +87,7 @@ direct-mapped pre-state accept a writable-to-read-only protection reduction
 with exact page effect and reject a later write-amplification attempt without
 mutation. Lean checks the exact typed result at each named boundary, including
 the timer-selected subject and the faulting subject's retired identity. The
-scalar export remains allocation-free; generated C and its calling convention
+scalar exports remain allocation-free; generated C and their calling convention
 remain trusted hosted-test boundaries.
 
 The final twenty-two records are the stateful invalidation-publication corpus.
@@ -141,27 +146,34 @@ negative fixtures. Its transfer prefix also attempts ordinary IPC through the
 future delivered handle while the descendant is still sealed. The generated
 dispatcher returns the typed stale-handle denial, preserves the complete
 authoritative state, and only the following atomic receipt exposes handle
-`0x60003` in the reviewed destination slot.
+`0x60003` in the reviewed destination slot and in result word one. The logical
+`DispatchResult` computes both words from one validated control result. The C ABI
+keeps the existing `leanos_composite_dispatch` control accessor and adds
+`leanos_composite_dispatch_value`; hosted replay invokes both with the same six
+immutable inputs.
 
 Every boot image retains that same generated `leanos_composite_dispatch` symbol
 and routes adapter 18 through it during the ordered oracle replay. Unknown
 adapter identifiers fail closed rather than falling through to another witness.
 
-The hosted replay also compiles eight deliberately invalid harness variants.
+The hosted replay also compiles deliberately invalid harness variants.
 They truncate the composite record arity, corrupt the generated dispatcher's
 result word, route the record through the old stateless syscall witness, or
 corrupt the ABI version, reserved bits, predecessor state, forged context
-argument, or canonical capability handle.
+argument, or canonical capability handle. Three additional variants corrupt the
+returned handle, omit it from the accepted receipt, or leak it from the preceding
+data-only transfer-offer result.
 Each variant must stop at the first malformed record or mismatch. Unknown
 adapter identifiers fail closed instead of falling through to the composite
-export. Every mismatch names the first operation and divergent reply field.
+export. Every mismatch names the first operation and divergent control or value
+field.
 Buffer aliasing, alignment, and partial-write fixtures do not apply to this
-six-scalar-input, one-scalar-result ABI, which owns no caller buffer or
-generated state cell.
+six-scalar-input, two-scalar-result ABI, which owns no caller buffer or generated
+state cell.
 
 The proof job preserves a reviewable `leanos-oracle-<commit>` artifact for this
 boundary. It contains the generated `CompositeDispatcher.c`, the public
-version-one scalar ABI header, the versioned corpus, exact per-step hosted
+version-one scalar ABI header, the version-two corpus, exact per-step hosted
 results and negative-fixture diagnostics, compiler flags and tool versions,
 and a SHA-256 manifest tied to the source revision. The manifest records
 reproducible differential evidence, not verified compilation: Lean code

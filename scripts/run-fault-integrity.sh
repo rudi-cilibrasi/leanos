@@ -17,7 +17,9 @@ memory_mib="${LEANOS_QEMU_MEMORY_MIB:-128}"
 
 case "$probe" in
 reserved-bit)
+  accelerator="$(leanos_qemu_accelerator)"
   expected_error=12
+  [[ "$accelerator" != kvm ]] || expected_error=13
   expected_access=read
   expected_rip=user-a-reserved-fault-instruction
   expected_authorization=0

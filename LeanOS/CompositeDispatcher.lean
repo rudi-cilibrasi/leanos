@@ -22,11 +22,13 @@ uses six input words:
 5. command argument 2;
 6. command argument 3.
 
-Every reserved field must be zero.  The single result word records the ABI
-version, exact next-state token, and typed-reply token.  Unsupported state /
-command pairs reject before `authoritativeGate` is evaluated.  This finite
-slice is the seed for later bounded snapshot families; generated C, its scalar
-calling convention, and the compiler remain trusted hosted-test boundaries.
+Every reserved field must be zero.  Result word zero records the ABI version,
+exact next-state token, and typed-reply token.  Result word one is zero except
+when an accepted attached receipt returns its exact generation-bound handle.
+Unsupported state / command pairs reject before `authoritativeGate` is
+evaluated.  This finite slice is the seed for later bounded snapshot families;
+generated C, its scalar calling convention, and the compiler remain trusted
+hosted-test boundaries.
 -/
 namespace LeanOS.CompositeDispatcher
 
@@ -566,6 +568,61 @@ def dispatch (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
   else if tag % 256 != abiVersion then 0xff01
   else if 0x0d01 ≤ tag then 0xff02
   else 0xff04
+
+/-- The logical two-word version-one result. `control` remains the original
+status ABI. `value = 0` means that no handle was returned; zero cannot encode a
+capability handle because generation zero is reserved. -/
+structure DispatchResult where
+  control : UInt64
+  value : UInt64
+  deriving DecidableEq, Repr
+
+/-- Select the optional value word solely from the fully validated control
+word. The accepted attached-receipt selector is the only result allowed to
+publish a handle. -/
+def resultValue (control : UInt64) : UInt64 :=
+  if control = 0x210a01 then 0x60003 else 0
+
+def dispatchResult (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : DispatchResult :=
+  let control := dispatch stateWord tag arg0 arg1 arg2 arg3
+  { control, value := resultValue control }
+
+/-- Compatibility-preserving scalar accessor for result word one. Callers use
+the same six immutable inputs as `leanos_composite_dispatch`; no caller-owned
+result buffer or generated state cell is introduced. -/
+@[export leanos_composite_dispatch_value]
+def dispatchValue (stateWord tag arg0 arg1 arg2 arg3 : UInt64) : UInt64 :=
+  resultValue (dispatch stateWord tag arg0 arg1 arg2 arg3)
+
+theorem dispatchResult_control_eq_dispatch stateWord tag arg0 arg1 arg2 arg3 :
+    (dispatchResult stateWord tag arg0 arg1 arg2 arg3).control =
+      dispatch stateWord tag arg0 arg1 arg2 arg3 := by
+  rfl
+
+theorem dispatchResult_value_eq_dispatchValue stateWord tag arg0 arg1 arg2 arg3 :
+    (dispatchResult stateWord tag arg0 arg1 arg2 arg3).value =
+      dispatchValue stateWord tag arg0 arg1 arg2 arg3 := by
+  rfl
+
+/-- A returned handle is present exactly for the accepted receipt control
+word. This excludes every rejection, data-only success, and malformed input. -/
+theorem dispatchValue_eq_delivered_handle_iff stateWord tag arg0 arg1 arg2 arg3 :
+    dispatchValue stateWord tag arg0 arg1 arg2 arg3 = 0x60003 ↔
+      dispatch stateWord tag arg0 arg1 arg2 arg3 = 0x210a01 := by
+  simp [dispatchValue, resultValue]
+
+/-- All non-receipt controls expose the canonical no-value word. -/
+theorem dispatchValue_eq_zero_iff stateWord tag arg0 arg1 arg2 arg3 :
+    dispatchValue stateWord tag arg0 arg1 arg2 arg3 = 0 ↔
+      dispatch stateWord tag arg0 arg1 arg2 arg3 ≠ 0x210a01 := by
+  simp [dispatchValue, resultValue]
+
+/-- The published receipt value is a canonical slot-3, generation-6 handle,
+not a raw slot number or a reserved no-value encoding. -/
+theorem delivered_handle_decodes :
+    CapabilityHandle.decode 0x60003 =
+      .ok { slot := 3, identity := 6 } := by
+  rfl
 
 /-!
 The boot boundary uses two allocation-free words per manifest slot. The first

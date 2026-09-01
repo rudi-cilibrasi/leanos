@@ -82,8 +82,10 @@ no-sorries mode and rejects undocumented `axiom`, `constant`, `unsafe`,
 those trusted escapes.
 
 Concurrency, SMP, blocking, timeouts, fairness, move-only capabilities,
-multiple attachments, queues, broadcasts, capability merging, and a boot ABI
-are excluded. The Lean kernel, compiler, runtime representation, and any
-future machine adapter remain in the trusted computing base. Compilation or
-QEMU execution would be integration evidence, not verification of this model
-in a binary.
+multiple attachments, queues, broadcasts, capability merging, and a boot
+syscall ABI are excluded. The bounded composite hosted adapter does expose the
+canonical accepted receipt's returned handle as a second scalar result and has
+generated-C differential tests; it is not wired into the boot syscall surface.
+The Lean kernel, compiler, runtime representation, and any future machine
+adapter remain in the trusted computing base. Compilation evidence does not
+verify this model in a binary.

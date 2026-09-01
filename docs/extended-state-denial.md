@@ -125,9 +125,15 @@ decoded feature line together with the live CR0/CR4 line in
 `extended-state-control-snapshot.txt`; this is reproducible evidence for the
 pinned emulator contract, not a general hardware or CPUID theorem.
 
-The mandatory emulator matrix also builds a controlled peer-PKE image. It
-sets and reads back CR4.PKE immediately before subject B enters the common
-return path. The final pre-`iretq` validator must reject the live control tuple,
+The mandatory emulator matrix also builds a controlled peer-PKE image. The
+fixture sets and reads back CR4.PKE immediately before subject B enters the
+common return path when CPUID exposes PKU. A KVM host cannot virtualize PKU when
+the physical CPU lacks it, so that host takes an explicit second arm and sets
+CR4.OSXSAVE instead; XSAVE is already required by the admitted extended-state
+CPU contract, and OSXSAVE is forbidden by the same return validator. An exact
+pre-`iretq` record names `pke` or `osxsave`, its bit number, and the live
+readback. Pinned TCG must use the PKE arm; KVM may use only those two reviewed
+arms. The final pre-`iretq` validator must reject the live control tuple,
 and the fixture records a failure if B reaches any CPL3 entry marker. Pinned
 QEMU must terminate with
 `extended-state-denial-peer-controls` after authoritative denial/dispatch and

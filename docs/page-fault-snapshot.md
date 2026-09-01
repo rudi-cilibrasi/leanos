@@ -145,11 +145,14 @@ publishes that one record as `fault-containment-snapshot.txt`. Missing,
 duplicated, malformed, corrupted, or reordered snapshot/replay records are
 controlled failures.
 Two additional fresh images exercise the integrity boundary. The reserved-bit
-image clears NX from every active A leaf, disables `EFER.NXE`, restores NX only
-on the selected instruction leaf, invalidates that exact page, and executes a
-real CPL3 read whose hardware snapshot carries RSVD because NX is reserved
-while NXE is disabled. This intentionally changes the paging-controls snapshot
-and complete live page-table report. The walk-mismatch image preserves the
+image clears NX from every active A leaf, disables `EFER.NXE`, then restores NX
+only on the selected instruction leaf before invalidating that exact page. The
+real CPL3 read must carry RSVD. Pinned TCG reports error 12 while the hosted KVM
+page walker reports error 13: both set RSVD and U/S and differ only in the P
+status bit. The guest accepts no other error shape, and each accelerator's
+runner requires its own exact value and typed terminal record. This intentionally
+changes the paging-controls snapshot and complete live page-table report. The
+walk-mismatch image preserves the
 hardware error, CR2, saved RIP, and live walk while changing exactly one
 expected-leaf permission bit supplied to the same generated transition. Both
 must produce one typed `PF-TERMINAL` record and debug-exit status 37. The

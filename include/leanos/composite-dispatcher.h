@@ -9,8 +9,10 @@
  * Input words are ordered as the canonical name of a complete bounded
  * CompositeState, command tag, then arguments 0..3. Lean reconstructs the
  * complete state by authoritative replay; callers cannot supply individual
- * state projections or post-state fragments. The result canonically names
- * the exact typed authoritativeGate result and next state.
+ * state projections or post-state fragments. Result word zero canonically
+ * names the exact typed authoritativeGate result and next state. Result word
+ * one is the exact returned handle for an accepted attached receipt and zero
+ * for every other result.
  *
  * All fields are logical uint64_t values. There are no caller-owned buffers,
  * so state/result aliasing, alignment, pointer identity, and partial writes are
@@ -23,14 +25,18 @@
  * Command tags use bits 8..15 to select one of 62 command selectors and all
  * upper bits are reserved. Three selectors have an additional state-scoped
  * delegated-transfer meaning, for 65 semantic commands in total. Arguments
- * not named by a command must be zero. A success
- * result uses bits 0..7 for the version, 8..15 for the next-state selector,
+ * not named by a command must be zero. A success result word zero uses bits
+ * 0..7 for the version, 8..15 for the next-state selector,
  * 16..23 for the typed-reply selector, and reserves bits 24..63. Error words
  * are the closed values listed below and never authorize an operation.
  */
 #define LEANOS_COMPOSITE_ABI_VERSION UINT64_C(1)
 #define LEANOS_COMPOSITE_INPUT_WORDS 6U
-#define LEANOS_COMPOSITE_RESULT_WORDS 1U
+#define LEANOS_COMPOSITE_RESULT_WORDS 2U
+#define LEANOS_COMPOSITE_RESULT_CONTROL_WORD 0U
+#define LEANOS_COMPOSITE_RESULT_VALUE_WORD 1U
+#define LEANOS_COMPOSITE_NO_VALUE UINT64_C(0)
+#define LEANOS_COMPOSITE_DELIVERED_HANDLE UINT64_C(0x60003)
 #define LEANOS_COMPOSITE_STATE_COUNT 60U
 #define LEANOS_COMPOSITE_COMMAND_COUNT 62U
 
@@ -220,6 +226,19 @@
 #define LEANOS_COMPOSITE_ERROR_INVALID_SEQUENCE UINT64_C(0xff06)
 
 uint64_t leanos_composite_dispatch(
+    uint64_t state,
+    uint64_t command,
+    uint64_t arg0,
+    uint64_t arg1,
+    uint64_t arg2,
+    uint64_t arg3);
+
+/*
+ * Result-word-one accessor. It must be invoked with the same immutable six
+ * inputs as leanos_composite_dispatch. Zero is an unambiguous no-value marker
+ * because canonical capability handles reserve generation zero.
+ */
+uint64_t leanos_composite_dispatch_value(
     uint64_t state,
     uint64_t command,
     uint64_t arg0,

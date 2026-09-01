@@ -306,6 +306,15 @@ a real QEMU NMI, observes the five-word IST2 frame and one terminal record, and
 rejects any return or post-terminal output. This is integration evidence, not
 a proof of x86 delivery, coalescing, or emulator correctness.
 
+The retained QMP exchange contains the greeting, the capability command and
+reply, and the single `inject-nmi` command. It normally also contains QEMU's
+empty success reply. The terminal guest can reach `isa-debug-exit` before QEMU
+flushes that reply, however, so EOF or a connection reset immediately after
+the recorded command is also admitted. That transport race is never sufficient
+evidence: the runner still requires QEMU's exact NMI terminal exit status and
+the unique full guest terminal record, and rejects every other exit or
+transcript shape.
+
 ## Boot-interrupt phase ownership
 
 `LeanOS.BootInterruptPhase` fixes the finite publication chain

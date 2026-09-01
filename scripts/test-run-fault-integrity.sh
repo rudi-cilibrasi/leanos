@@ -14,19 +14,21 @@ EOF
 "$cc" -nostdlib -static "$tmp/symbols.c" -o "$tmp/symbols.elf"
 
 invoke() {
-  local probe="$1" mode="$2"
+  local probe="$1" mode="$2" accelerator="${3:-tcg}"
   LEANOS_QEMU="$root/tests/qemu-fault-integrity-fixture.sh" \
     LEANOS_QEMU_FIXTURE_MODE="$mode" LEANOS_QEMU_TIMEOUT_SECONDS=5 \
+    LEANOS_QEMU_ACCELERATOR="$accelerator" \
     LEANOS_FAULT_INTEGRITY_PROBE="$probe" \
     LEANOS_FAULT_INTEGRITY_ELF="$tmp/symbols.elf" \
-    LEANOS_SERIAL_LOG="$tmp/${probe}-${mode}.serial" \
-    LEANOS_FAULT_TERMINAL_ARTIFACT="$tmp/${probe}-${mode}.terminal" \
+    LEANOS_SERIAL_LOG="$tmp/${probe}-${mode}-${accelerator}.serial" \
+    LEANOS_FAULT_TERMINAL_ARTIFACT="$tmp/${probe}-${mode}-${accelerator}.terminal" \
     ./scripts/run-fault-integrity.sh "$tmp/image.iso"
 }
 
 for probe in reserved-bit walk-mismatch; do
   invoke "$probe" success >/dev/null 2>&1
 done
+invoke reserved-bit success kvm >/dev/null 2>&1
 for spec in \
   'missing terminal-record' \
   'duplicate terminal-record' \

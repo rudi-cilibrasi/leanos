@@ -19,7 +19,7 @@ import LeanOS.IOTLB
 /-!
 # Bounded scalar boundary oracle
 
-This is the canonical, version-one corpus for the currently exported
+This is the canonical, version-two corpus for the currently exported
 fixed-width adapters.  Expected words are evaluated from the adapter
 definitions, not copied into a C harness.  The corpus is deliberately finite;
 it is differential integration evidence, not a refinement theorem.
@@ -34,6 +34,7 @@ structure Vector where
   adapter : String
   words : List UInt64
   expected : UInt64
+  expectedValue : UInt64 := 0
   deriving Repr
 
 structure AdapterSpec where
@@ -174,7 +175,8 @@ private def iotlbPublication (id : String)
 private def composite (id : String) (state tag arg0 arg1 arg2 arg3 : UInt64) : Vector :=
   { id, adapter := "CompositeDispatcher.stateful",
     words := [state, tag, arg0, arg1, arg2, arg3],
-    expected := CompositeDispatcher.dispatch state tag arg0 arg1 arg2 arg3 }
+    expected := CompositeDispatcher.dispatch state tag arg0 arg1 arg2 arg3,
+    expectedValue := CompositeDispatcher.dispatchValue state tag arg0 arg1 arg2 arg3 }
 
 private def mixedEdgeId : CompositeDispatcher.MixedReplyId → String
   | .transferOffered => "composite.mixed-transfer-offer"
@@ -754,6 +756,15 @@ theorem composite_mixed_trace_agrees :
     (vectors[335]).expected = 0x452e01 ∧
     (vectors[336]).expected = 0x462e01 := by
   native_decide
+
+/-- The accepted attached receipt is the only composite corpus row that
+publishes a value word; all data-only successes and rejections publish zero. -/
+theorem composite_result_values_exact :
+    (vectors[316]).id = "composite.mixed-transfer-accept" ∧
+    (vectors[316]).expectedValue = 0x60003 ∧
+    (vectors.filter (fun vector => vector.expectedValue ≠ 0)).length = 1 := by
+  native_decide
+
 theorem boot_decoder_roundtrip_cold :
     KernelTransition.encodeState KernelTransition.initialState = 0 := by rfl
 theorem boot_accept_agrees : (vectors[0]).expected = 1 := by native_decide
@@ -1125,11 +1136,11 @@ private def wordsText : List UInt64 → String
   | word :: rest => toString word ++ "," ++ wordsText rest
 
 def line (index : Nat) (vector : Vector) : String :=
-  s!"{index}\t{vector.id}\t{vector.adapter}\t{wordsText vector.words}\t{vector.expected}"
+  s!"{index}\t{vector.id}\t{vector.adapter}\t{wordsText vector.words}\t{vector.expected}\t{vector.expectedValue}"
 
 def emit : IO Unit := do
   let revision := (← IO.getEnv "LEANOS_SOURCE_REVISION").getD "unknown"
-  IO.println "leanos-oracle\t1"
+  IO.println "leanos-oracle\t2"
   IO.println s!"source-revision\t{revision}"
   for entry in adapters do
     IO.println s!"adapter-id\t{entry.name}\t{entry.id}\t{entry.cSymbol}\t{entry.arity}"

@@ -1,7 +1,7 @@
 BEGIN {
   FS = "\t"
   print "/* Generated from LeanOS.Oracle; do not edit. */"
-  print "struct oracle_vector { unsigned adapter, argc; unsigned long long words[6], expected; const char *id; };"
+  print "struct oracle_vector { unsigned adapter, argc; unsigned long long words[6], expected, expected_value; const char *id; };"
   vectorIndex = 0
 }
 $1 == "adapter-id" {
@@ -17,6 +17,10 @@ $1 == "adapter-id" {
   next
 }
 $1 ~ /^[0-9]+$/ {
+  if ($5 !~ /^[0-9]+$/ || $6 !~ /^[0-9]+$/) {
+    print "error: malformed generated oracle result words: " $2 > "/dev/stderr"
+    exit 2
+  }
   if (!vectorsStarted) {
     print "#define LEANOS_ORACLE_ADAPTERS(X) \\"
     for (i = 0; i < adapterCount; i++) {
@@ -41,7 +45,7 @@ $1 ~ /^[0-9]+$/ {
   printf "{%s,%d,{", adapterId[$3], n
   for (i = 1; i <= 6; i++)
     printf "%s%sULL", (i > 1 ? "," : ""), (i <= n ? w[i] : 0)
-  printf "},%sULL,\"%s\"},\n", $5, $2
+  printf "},%sULL,%sULL,\"%s\"},\n", $5, $6, $2
 }
 END {
   if (!vectorsStarted) {

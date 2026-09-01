@@ -282,7 +282,9 @@ if [[ -n "$page_fault_fatal_probe" ]]; then
     grep -Fq 'mov user_a_nx_fault_instruction(%rip), %rax' "$boot_source" &&
       grep -Fq 'page_table_a[i] &= ~PTE_NX;' "$kernel_source" &&
       grep -Fq 'and $~(1 << 11), %eax' "$boot_source" &&
-      grep -Fq 'page_table_a[page] |= PTE_NX;' "$kernel_source" || {
+      grep -Fq 'page_table_a[page] |= PTE_NX;' "$kernel_source" &&
+      grep -Fq '(snapshot.error == 12 || snapshot.error == 13)' \
+        "$kernel_source" || {
       echo "error: vector=14 field=integrity-reserved-bit source" >&2
       exit 1
     }
@@ -683,9 +685,9 @@ grep -Fq 'page_fault_probe_class == 0' \
     <<<"$page_fault_adapter_source" &&
   grep -Fq ': page_fault_probe_class == 3' \
     <<<"$page_fault_adapter_source" &&
-  grep -Fq 'snapshot.error == 12 && snapshot.access == 0 &&' \
+  grep -Fq '(snapshot.error == 12 || snapshot.error == 13) &&' \
     <<<"$page_fault_adapter_source" &&
-  grep -Fq 'snapshot.protection == 0 &&' \
+  grep -Fq 'snapshot.protection == (snapshot.error & 1u) &&' \
     <<<"$page_fault_adapter_source" &&
   grep -Fq 'snapshot.rip == (uint64_t)user_a_reserved_fault_instruction' \
     <<<"$page_fault_adapter_source" &&

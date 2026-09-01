@@ -19,6 +19,8 @@ invoke() {
 
 invoke success >/dev/null 2>&1
 invoke success cpl3-spin >/dev/null 2>&1
+invoke disconnect-after-inject >/dev/null 2>&1
+invoke reset-after-inject >/dev/null 2>&1
 python3 - "$tmp/success-kernel-entry.qmp.jsonl" <<'PY'
 import json
 import sys
@@ -29,6 +31,18 @@ assert [record["message"].get("execute") for record in records
             "qmp_capabilities", "inject-nmi"
         ]
 PY
+for mode in disconnect-after-inject reset-after-inject; do
+  python3 - "$tmp/$mode-kernel-entry.qmp.jsonl" <<'PY'
+import json
+import sys
+
+records = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8")]
+assert len(records) == 4
+assert records[-1] == {
+    "direction": "host-to-qemu", "message": {"execute": "inject-nmi"}
+}
+PY
+done
 for spec in \
   'missing-ready nmi-ready' \
   'early-terminal injection-boundary' \
@@ -36,11 +50,13 @@ for spec in \
   'qmp-reject qmp-injection' \
   'wrong-record terminal-record' \
   'missing-terminal terminal-record' \
+  'disconnect-no-terminal terminal-record' \
   'duplicate-terminal terminal-record' \
   'resumed terminal-record' \
   'corrupt-canary guest-evidence' \
   'reject guest-evidence' \
   'reset qemu-error' \
+  'reset-after-inject-wrong-exit qemu-error' \
   'hang timeout'; do
   read -r mode class <<< "$spec"
   set +e
