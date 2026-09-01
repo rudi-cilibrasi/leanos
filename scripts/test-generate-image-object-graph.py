@@ -577,6 +577,12 @@ validation_tool_signature={signature}
             root = Path(directory)
             graph = root / "objects.mk"
             graph.write_text("all:\n\t@true\n", encoding="utf-8")
+            build_plan = root / "evidence-build-plan.tsv"
+            build_plan.write_text(
+                "id\trunner\timage\tprelink_elf\tfinal_elf\n"
+                "pr-smoke\tqemu\timage.iso\tprelink.elf\tfinal.elf\n",
+                encoding="utf-8",
+            )
             compiler = root / "cc"
             linker = root / "ld"
             compiler.write_text(
@@ -590,7 +596,7 @@ validation_tool_signature={signature}
 set -euo pipefail
 PATH={root!s}:$PATH
 {function}
-compute_graph_signature {graph!s} {compiler!s}
+compute_graph_signature {graph!s} {compiler!s} {build_plan!s}
 """
             first = subprocess.run(
                 ["bash", "-c", shell], check=True, capture_output=True, text=True
@@ -604,6 +610,20 @@ compute_graph_signature {graph!s} {compiler!s}
             ).stdout.strip()
 
             self.assertNotEqual(first, second)
+            compiler.write_text(
+                "#!/bin/sh\necho compiler-v1\n", encoding="utf-8"
+            )
+            compiler.chmod(0o755)
+            build_plan.write_text(
+                "id\trunner\timage\tprelink_elf\tfinal_elf\n"
+                "all-smoke\tqemu\timage.iso\tprelink.elf\tfinal.elf\n",
+                encoding="utf-8",
+            )
+            third = subprocess.run(
+                ["bash", "-c", shell], check=True, capture_output=True, text=True
+            ).stdout.strip()
+
+            self.assertNotEqual(first, third)
 
     def test_generated_make_cache_tracks_inputs_tools_and_outputs(self) -> None:
         wrapper = BUILD_SCRIPT.read_text(encoding="utf-8")

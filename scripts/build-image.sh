@@ -34,12 +34,18 @@ require_tool() {
 compute_graph_signature() {
   local object_graph="$1"
   local compiler="$2"
+  local evidence_build_plan="$3"
   local compiler_path
   local linker_path
   compiler_path="$(command -v -- "$compiler")"
   linker_path="$(command -v -- ld)"
   {
-    sha256sum "$object_graph" "$compiler_path" "$linker_path"
+    # The generated graph describes every variant, while the build plan
+    # selects the evidence tier and shard that must be present in this
+    # checkout. Bind both so a warm PR-shard cache cannot satisfy a later
+    # all-evidence request with a valid but partial object set.
+    sha256sum "$object_graph" "$evidence_build_plan" \
+      "$compiler_path" "$linker_path"
     LC_ALL=C "$compiler" --version
     LC_ALL=C ld --version
   } | sha256sum | awk '{print $1}'
@@ -716,7 +722,10 @@ python3 scripts/generate-image-object-graph.py "${graph_args[@]}"
 # or linker inventories change, while retaining them for an identical graph
 # and toolchain.
 graph_signature="$build/generated-image-objects.sha256"
-current_graph_signature="$(compute_graph_signature "$object_graph" "$cc")"
+current_graph_signature="$(
+  compute_graph_signature \
+    "$object_graph" "$cc" "$build/evidence-build-plan.tsv"
+)"
 if [[ ! -f "$graph_signature" ]] || \
     [[ "$(<"$graph_signature")" != "$current_graph_signature" ]]; then
   find "$build" -maxdepth 1 -type f \
