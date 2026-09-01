@@ -1429,7 +1429,6 @@ def workflow_job_steps(
 
 def check_workflows() -> None:
     parse_matrix(DEFAULT_MATRIX)
-    workflow_contents: dict[str, str] = {}
     workflows: dict[str, dict[str, object]] = {}
     for relative in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
         path = ROOT / relative
@@ -1439,8 +1438,6 @@ def check_workflows() -> None:
             raise EvidenceError(f"{relative} is not valid workflow YAML: {error}") from error
         workflows[relative] = workflow
         step_runs = workflow_step_runs(workflow, relative)
-        content = path.read_text(encoding="utf-8")
-        workflow_contents[relative] = content
         count = sum(
             run.count("./scripts/run-emulator-evidence.py run") for _, run in step_runs
         )
@@ -1464,7 +1461,6 @@ def check_workflows() -> None:
                     f"{relative} job {bypass_job!r} bypasses the shared emulator "
                     f"matrix with {bypass}"
                 )
-    ci_content = workflow_contents[".github/workflows/ci.yml"]
     ci_workflow = workflows[".github/workflows/ci.yml"]
     ci_triggers = ci_workflow.get("on")
     merge_group = ci_triggers.get("merge_group") if isinstance(ci_triggers, dict) else None
@@ -1619,7 +1615,28 @@ def check_workflows() -> None:
             "CI job 'emulator' upload-artifact step must publish the single "
             "prebuilt shard tarball with fail-closed, uncompressed options"
         )
-    for clang_evidence in (
+    clang_image = workflow_job(
+        ci_workflow, ".github/workflows/ci.yml", "clang-image"
+    )
+    clang_steps = workflow_job_steps(
+        clang_image, ".github/workflows/ci.yml", "clang-image"
+    )
+    clang_commands = "\n".join(
+        step["run"] for step in clang_steps if isinstance(step.get("run"), str)
+    )
+    clang_artifacts = [
+        step
+        for step in clang_steps
+        if isinstance(step.get("uses"), str)
+        and step["uses"].startswith("actions/upload-artifact@")
+    ]
+    clang_artifact_paths = "\n".join(
+        str(options.get("path", ""))
+        for step in clang_artifacts
+        for options in [step.get("with")]
+        if isinstance(options, dict)
+    )
+    for clang_command in (
         "./scripts/build-image.sh",
         "./scripts/write-reproducibility-manifest.sh",
         'LEANOS_EVIDENCE_TIER="${{ env.LEANOS_CI_EVIDENCE_TIER }}"',
@@ -1629,17 +1646,25 @@ def check_workflows() -> None:
         "'pr' && '4' || '' }}\"",
         "--scenario blocking-ipc",
         "test -s build/boot/serial.log",
+    ):
+        if clang_command not in clang_commands:
+            raise EvidenceError(
+                "CI job 'clang-image' does not preserve its command contract: "
+                + clang_command
+            )
+    for clang_artifact in (
         "build/boot/serial.log",
         "build/evidence/clang-canonical.json",
     ):
-        if clang_evidence not in ci_content:
+        if clang_artifact not in clang_artifact_paths:
             raise EvidenceError(
-                "CI does not preserve tiered Clang canonical evidence: "
-                + clang_evidence
+                "CI job 'clang-image' does not retain canonical artifact: "
+                + clang_artifact
             )
-    if 'if [[ "${{ env.LEANOS_CI_EVIDENCE_TIER }}" == all ]]; then' not in ci_content:
+    if 'if [[ "${{ env.LEANOS_CI_EVIDENCE_TIER }}" == all ]]; then' not in clang_commands:
         raise EvidenceError(
-            "CI must create the canonical reproducibility manifest only for complete evidence"
+            "CI job 'clang-image' must create the canonical reproducibility "
+            "manifest only for complete evidence"
         )
     independent_clang = workflow_job(
         ci_workflow, ".github/workflows/ci.yml", "clang-reproducibility-build"
@@ -1693,7 +1718,9 @@ def check_workflows() -> None:
             "CI job 'premerge-admission' must fail closed on labeled complete "
             "pre-merge admission with the full dependency and result contract"
         )
-    if "build/boot/clang-canonical.serial.log" in ci_content:
+    if "build/boot/clang-canonical.serial.log" in (
+        clang_commands + "\n" + clang_artifact_paths
+    ):
         raise EvidenceError(
             "CI names a Clang serial path outside the selected matrix scenario"
         )
