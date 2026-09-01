@@ -1688,6 +1688,7 @@ def check_workflows() -> None:
         "lean",
         "hosted-boundary",
         "clang-image",
+        "gcc-image-family",
         "clang-reproducibility-build",
         "clang-reproducibility",
         "emulator",
@@ -1695,6 +1696,7 @@ def check_workflows() -> None:
     expected_admission_env = {
         "PROMOTED": "${{ contains(github.event.pull_request.labels.*.name, "
         "'ci:full-admission') }}",
+        "GCC_IMAGE_FAMILY": "${{ needs.gcc-image-family.result }}",
         "CLANG_REPRO_COMPARE": "${{ needs.clang-reproducibility.result }}",
         "EMULATOR": "${{ needs.emulator.result }}",
     }
