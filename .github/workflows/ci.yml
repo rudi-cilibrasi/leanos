@@ -94,6 +94,12 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Restore immutable Lake build cache
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: .lake
+          key: lake-ci-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.LEANOS_CI_IMAGE_DIGEST }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'LeanOS.lean', 'LeanOS/**/*.lean') }}
+
       - name: Build and check proofs
         env:
           # Pull requests and merge groups run the same hosted evidence in the
