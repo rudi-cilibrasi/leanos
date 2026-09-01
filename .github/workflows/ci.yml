@@ -153,6 +153,8 @@ jobs:
             build/hosted-sanitizer-evidence/
             build/hosted-sanitizer-negatives/
             scripts/hosted-generated-boundaries.tsv
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Preserve aggregate-check timing evidence
         if: always()
@@ -160,8 +162,6 @@ jobs:
         with:
           name: aggregate-check-timing-${{ github.sha }}
           path: build/ci/check-phases.tsv
-          if-no-files-found: warn
-          retention-days: 14
           if-no-files-found: warn
           retention-days: 14
 
