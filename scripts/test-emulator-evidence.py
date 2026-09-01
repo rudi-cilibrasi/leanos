@@ -508,7 +508,8 @@ def run_fixtures() -> None:
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI must run the independent Clang build for promoted complete evidence",
+                "CI job 'clang-reproducibility-build' must run only for promoted "
+                "complete evidence",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")
@@ -526,7 +527,8 @@ def run_fixtures() -> None:
             )
             expect_failure(
                 evidence.check_workflows,
-                "CI must fail closed on labeled complete pre-merge admission",
+                "CI job 'premerge-admission' must fail closed on labeled complete "
+                "pre-merge admission",
             )
         finally:
             ci_workflow.write_text(original_ci, encoding="utf-8")

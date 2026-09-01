@@ -1641,43 +1641,57 @@ def check_workflows() -> None:
         raise EvidenceError(
             "CI must create the canonical reproducibility manifest only for complete evidence"
         )
-    independent_clang = re.search(
-        r"(?ms)^  clang-reproducibility-build:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
-        ci_content,
+    independent_clang = workflow_job(
+        ci_workflow, ".github/workflows/ci.yml", "clang-reproducibility-build"
     )
-    if independent_clang is None or (
-        "if: " + promotion_condition
-        not in independent_clang.group("body")
-    ):
+    if independent_clang.get("if") != promotion_condition:
         raise EvidenceError(
-            "CI must run the independent Clang build for promoted complete evidence"
+            "CI job 'clang-reproducibility-build' must run only for promoted "
+            "complete evidence"
         )
-    admission = re.search(
-        r"(?ms)^  premerge-admission:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",
-        ci_content,
+    admission = workflow_job(
+        ci_workflow, ".github/workflows/ci.yml", "premerge-admission"
     )
-    admission_contract = (
-        "name: Pre-merge full admission",
-        "if: always() && github.event_name == 'pull_request'",
-        "- repository-hygiene",
-        "- lean",
-        "- hosted-boundary",
-        "- clang-image",
-        "- clang-reproducibility-build",
-        "- clang-reproducibility",
-        "- emulator",
-        "PROMOTED: ${{ contains(github.event.pull_request.labels.*.name, "
+    admission_steps = workflow_job_steps(
+        admission, ".github/workflows/ci.yml", "premerge-admission"
+    )
+    admission_runs = "\n".join(
+        step["run"] for step in admission_steps if isinstance(step.get("run"), str)
+    )
+    expected_admission_needs = [
+        "repository-hygiene",
+        "lean",
+        "hosted-boundary",
+        "clang-image",
+        "clang-reproducibility-build",
+        "clang-reproducibility",
+        "emulator",
+    ]
+    expected_admission_env = {
+        "PROMOTED": "${{ contains(github.event.pull_request.labels.*.name, "
         "'ci:full-admission') }}",
-        "CLANG_REPRO_COMPARE: ${{ needs.clang-reproducibility.result }}",
-        "EMULATOR: ${{ needs.emulator.result }}",
-        'if [[ "$PROMOTED" != true ]]; then',
-        'if [[ "$result" != success ]]; then',
+        "CLANG_REPRO_COMPARE": "${{ needs.clang-reproducibility.result }}",
+        "EMULATOR": "${{ needs.emulator.result }}",
+    }
+    admission_step = next(
+        (step for step in admission_steps if isinstance(step.get("run"), str)), None
     )
-    if admission is None or any(
-        token not in admission.group("body") for token in admission_contract
+    admission_env = admission_step.get("env") if admission_step is not None else None
+    if (
+        admission.get("name") != "Pre-merge full admission"
+        or admission.get("if") != "always() && github.event_name == 'pull_request'"
+        or admission.get("needs") != expected_admission_needs
+        or not isinstance(admission_env, dict)
+        or any(
+            admission_env.get(key) != value
+            for key, value in expected_admission_env.items()
+        )
+        or 'if [[ "$PROMOTED" != true ]]; then' not in admission_runs
+        or 'if [[ "$result" != success ]]; then' not in admission_runs
     ):
         raise EvidenceError(
-            "CI must fail closed on labeled complete pre-merge admission"
+            "CI job 'premerge-admission' must fail closed on labeled complete "
+            "pre-merge admission with the full dependency and result contract"
         )
     if "build/boot/clang-canonical.serial.log" in ci_content:
         raise EvidenceError(
