@@ -439,6 +439,7 @@ jobs:
             ./scripts/image-bundle.sh verify \
               build/ci/image-family/leanos-image-bundle.tar.gz \
               "${{ github.sha }}"
+            cp build/ci/image-family/gcc-image-build-phases.tsv build/ci/image-build-phases.tsv
             printf 'verified canonical image-family bundle for %s\n' \
               "${{ github.sha }}" > build/ci/image-build.log
           else

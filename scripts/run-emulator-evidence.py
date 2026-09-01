@@ -1582,6 +1582,8 @@ def check_workflows() -> None:
         "--shard-index ${{ matrix.shard }}",
         "--shard-count 4",
         "emulator-shard-${{ matrix.shard }}.json",
+        "cp build/ci/image-family/gcc-image-build-phases.tsv "
+        "build/ci/image-build-phases.tsv",
         "./scripts/run-emulator-evidence.py bundle",
         "--output build/ci/emulator-evidence-shard-${{ matrix.shard }}.tar",
     ):
