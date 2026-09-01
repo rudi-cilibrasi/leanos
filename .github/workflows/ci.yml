@@ -248,6 +248,8 @@ jobs:
             2>&1 | tee build/ci/clang-image-build.log
           if [[ "${{ env.LEANOS_CI_EVIDENCE_TIER }}" == all ]]; then
             ./scripts/write-reproducibility-manifest.sh
+            ./scripts/image-bundle.sh create \
+              build/ci/leanos-image-bundle.tar.gz
           fi
           python3 scripts/run-emulator-evidence.py run \
             --scenario blocking-ipc \
@@ -303,6 +305,18 @@ jobs:
           name: leanos-clang-repro-primary-${{ github.sha }}
           path: build/boot/REPRODUCIBILITY-SHA256SUMS
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Preserve verified image-family bundle
+        if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: leanos-image-family-${{ github.sha }}
+          path: |
+            build/ci/leanos-image-bundle.tar.gz
+            build/ci/leanos-image-bundle.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 14
 
   clang-reproducibility-build:
