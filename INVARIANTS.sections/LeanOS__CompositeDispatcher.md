@@ -77,3 +77,28 @@ The kernel's stateful exported boundary speaks only in numbers: its two C-callab
 - `invalidation_edge_refines` — Every legal edge of the invalidation protocol matches the rich prepare-and-acknowledge model exactly: its outcome state is the named successor, its machine effect is the reply's declared effect, and the dispatcher's raw answer decodes to the named reply.
 - `invalidationCanonicalEdges_refine` — All nineteen edges of the shipped invalidation corpus satisfy that correspondence.
 - `invalidation_malformed_and_mismatched_rejected` — A malformed effect word, a well-formed effect paired with the wrong pending state, and a replayed stale ticket are each rejected at the number boundary before anything can be acknowledged or published.
+- `decode_encode_inFlightRevocation_state` — Each state of the in-flight revocation trace decodes back from its number to itself.
+- `inFlightRevocation_state_encoding_injective` — No two states of the in-flight revocation trace share a number.
+- `decode_encode_inFlightRevocation_command` — Each in-flight revocation command's exact words decode back to that same command.
+- `inFlightRevocation_command_encoding_injective` — No two in-flight revocation commands share an encoding.
+- `decode_encode_inFlightRevocation_reply` — Each in-flight revocation reply selector decodes back from its number to itself.
+- `inFlightRevocation_reply_encoding_injective` — No two in-flight revocation replies share a number.
+- `inFlightRevocationExpectedReply_uses_canonical_codec` — The expected reply word for every in-flight revocation step is exactly the encoding of its typed reply selector.
+- `inFlightRevocation_dispatch_canonical` — For every state and command of the in-flight revocation trace, the exported number-only dispatcher returns exactly the expected reply word, or the exact wrong-sequence error when no such step exists.
+- `inFlightRevocation_dispatch_decodes_authoritative_edge` — Every accepted in-flight revocation step decodes to a reply meaning and a next state that are exactly what the authoritative kernel gate produces from the replayed pre-state.
+- `canonicalInFlightRevocationEdge_refines` — Each listed in-flight revocation step refines the authoritative gate.
+- `inFlightRevocationCanonicalEdges_refine` — The whole eleven-step in-flight revocation corpus refines the authoritative gate.
+- `inFlightRevocation_seed_shape` — The trace starts with program 1 running, holding a delegated take-back-only permission on meeting point 10 in its slot 2, with identity 7 as the next fresh generation and nothing in flight.
+- `inFlightRevocation_offer_seals_child` — Program 1's offer creates a sealed generation-7 child of its own meeting-point permission, parks a message, installs nothing in program 2's destination slot, and advances the identity counter.
+- `inFlightRevocation_revocation_authority_exact` — A take-back through the send-only permission and one naming a foreign root are both typed denials; only the delegated take-back authority over the exact root is accepted.
+- `inFlightRevocation_denied_revocations_inert` — Both denied take-backs leave the complete kernel state unchanged.
+- `inFlightRevocation_revocation_cancels_in_flight` — The accepted take-back removes the in-flight record, the transfer mailbox entry, the IPC mailbox entry, and program 1's revoked slot in one step, while the cancelled generation stays recorded in history and the identity counter does not move backwards.
+- `inFlightRevocation_unrelated_authority_preserved` — After the take-back, program 1's other permissions, every program-2 permission, the saved continuation, the ready queue, and the current program are exactly what they were.
+- `inFlightRevocation_post_revocation_probes` — After the take-back, repeating it and offering through the revoked permission are both typed denials.
+- `inFlightRevocation_post_revocation_probes_inert` — Those two post-take-back denials leave the complete kernel state unchanged.
+- `inFlightRevocation_stale_receipt_denied` — The switch restores program 2, and its attempt to receive the cancelled offer is the typed empty rejection: nothing is delivered and nothing lands in slot 3.
+- `inFlightRevocation_stale_receipt_inert` — The denied receipt leaves the complete kernel state unchanged.
+- `inFlightRevocation_slot_reuse_distinct_generation` — Reusing the destination slot installs generation 8, the cancelled generation-7 handle is denied as stale, the cancelled identity stays in history, and the fresh generation-8 handle sends successfully.
+- `inFlightRevocation_canceled_handle_replay_inert` — Replaying the cancelled handle leaves the complete kernel state unchanged.
+- `inFlightRevocation_no_handle_published` — No step of the in-flight revocation trace ever publishes a permission handle in the result value word.
+- `inFlightRevocation_handles_decode` — The cancelled and replacement handle words name the same slot 3 with generations 7 and 8 respectively, so slot-only or truncated-generation resolution is observable.

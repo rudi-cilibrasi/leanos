@@ -216,6 +216,43 @@ def mixedEdgeVector (edge : CompositeDispatcher.CanonicalMixedEdge) : Vector :=
 def mixedVectors : List Vector :=
   CompositeDispatcher.mixedCanonicalEdges.map mixedEdgeVector
 
+private def inFlightRevocationEdgeId :
+    CompositeDispatcher.InFlightRevocationReplyId → String
+  | .childOffered => "composite.inflight-revocation-offer"
+  | .revocationWithoutAuthorityRejected =>
+      "composite.inflight-revocation-missing-authority-denial"
+  | .wrongLineageRootRejected => "composite.inflight-revocation-wrong-root-denial"
+  | .lineageRevoked => "composite.inflight-revocation-revoke"
+  | .repeatedRevocationRejected => "composite.inflight-revocation-repeat-denial"
+  | .offerAfterRevocationRejected => "composite.inflight-revocation-stale-offer-denial"
+  | .subjectTwoRestored => "composite.inflight-revocation-switch-subject-two"
+  | .canceledReceiptRejected => "composite.inflight-revocation-canceled-receipt-denial"
+  | .destinationReplaced => "composite.inflight-revocation-replace-slot"
+  | .canceledHandleReplayRejected =>
+      "composite.inflight-revocation-canceled-handle-denial"
+  | .replacementUsed => "composite.inflight-revocation-fresh-send"
+
+def inFlightRevocationEdgeVector
+    (edge : CompositeDispatcher.CanonicalInFlightRevocationEdge) : Vector :=
+  let words := CompositeDispatcher.encodeInFlightRevocationCommand edge.command
+  composite (inFlightRevocationEdgeId edge.reply)
+    (CompositeDispatcher.encodeInFlightRevocationState edge.state)
+    words.tag words.arg0 words.arg1 words.arg2 words.arg3
+
+def inFlightRevocationVectors : List Vector :=
+  CompositeDispatcher.inFlightRevocationCanonicalEdges.map inFlightRevocationEdgeVector
+
+/-- Hostile records for the in-flight revocation family: the revocation words
+replayed against the pre-offer seed token, the mixed corpus's post-receipt
+revocation spliced into this family's subject-2 state, and subject 2's receipt
+words presented while subject 1 is still the current subject.  None can select
+an edge; the state token, not the caller, decides who is acting. -/
+def inFlightRevocationNegativeVectors : List Vector := [
+  composite "composite.inflight-revocation-stale-state-replay" 0x6001 0x5201 2 1 1 0,
+  composite "composite.inflight-revocation-cross-trace-splice" 0x6301 0x2201 0 2 3 0,
+  composite "composite.inflight-revocation-receipt-before-switch" 0x6201 0x2101
+    0x30000 3 0 0]
+
 private def invalidationEdgeId :
     CompositeDispatcher.InvalidationReplyId → String
   | .wrongOwnerRejected => "composite.invalidation-wrong-owner-reject"
@@ -668,9 +705,10 @@ def vectors : List Vector := [
     0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff 0xffffffffffffffff,
   composite "composite.unknown-command" 0x0101 0x0001 0 0 0 0] ++
   mixedVectors ++ invalidationVectors ++ invalidationNegativeVectors ++
-    budgetVectors ++ iotlbPublicationVectors
+    budgetVectors ++ iotlbPublicationVectors ++ inFlightRevocationVectors ++
+    inFlightRevocationNegativeVectors
 
-theorem corpus_shape : vectors.length = 392 := by decide
+theorem corpus_shape : vectors.length = 406 := by decide
 /-- Oracle indices 314--336 are definitionally the complete canonical mixed
 edge corpus, rather than a second hand-maintained scalar table. -/
 theorem hosted_mixed_vectors_exact :
@@ -682,7 +720,50 @@ theorem hosted_budget_vectors_exact :
     (vectors.drop 359).take budgetVectors.length = budgetVectors := by rfl
 
 theorem hosted_iotlb_publication_vectors_exact :
-    vectors.drop 383 = iotlbPublicationVectors := by rfl
+    (vectors.drop 383).take iotlbPublicationVectors.length =
+      iotlbPublicationVectors := by rfl
+
+/-- Oracle indices 392--402 are definitionally the in-flight revocation
+corpus: offer, two revocation-authority denials, accepted lineage revocation,
+repeated-revocation and stale-offer denials, the switch to subject 2, the
+canceled receipt denial, same-slot replacement, canceled-handle denial, and
+the fresh-handle send. -/
+theorem hosted_inFlight_revocation_vectors_exact :
+    vectors.drop 392 = inFlightRevocationVectors ++ inFlightRevocationNegativeVectors := by
+  rfl
+
+theorem hosted_inFlight_revocation_vectors_refine :
+    ∀ edge ∈ CompositeDispatcher.inFlightRevocationCanonicalEdges, edge.Refines :=
+  CompositeDispatcher.inFlightRevocationCanonicalEdges_refine
+
+theorem composite_inFlight_revocation_trace_agrees :
+    (vectors[392]).expected = 0x206101 ∧
+    (vectors[393]).expected = 0x506101 ∧
+    (vectors[394]).expected = 0x516101 ∧
+    (vectors[395]).expected = 0x526201 ∧
+    (vectors[396]).expected = 0x536201 ∧
+    (vectors[397]).expected = 0x546201 ∧
+    (vectors[398]).expected = 0x556301 ∧
+    (vectors[399]).expected = 0x216301 ∧
+    (vectors[400]).expected = 0x246401 ∧
+    (vectors[401]).expected = 0x566401 ∧
+    (vectors[402]).expected = 0x576501 := by
+  native_decide
+
+/-- Indices 403--405 reject the pre-offer replay of the revocation words as a
+wrong sequence, the spliced mixed-corpus revocation as an unknown command for
+this family, and the premature receipt as a wrong sequence. -/
+theorem composite_inFlight_revocation_negatives_reject :
+    (vectors[403]).expected = 0xff06 ∧
+    (vectors[404]).expected = 0xff04 ∧
+    (vectors[405]).expected = 0xff06 := by
+  native_decide
+
+/-- The canceled child never reaches result word one: every in-flight
+revocation record publishes the no-value word, including the denied receipt. -/
+theorem composite_inFlight_revocation_values_zero :
+    (vectors.drop 392).all (fun vector => vector.expectedValue = 0) = true := by
+  native_decide
 
 private def iotlbPublicationAdapterAgrees (vector : Vector) : Bool :=
   match vector.adapter, vector.words with
@@ -692,7 +773,8 @@ private def iotlbPublicationAdapterAgrees (vector : Vector) : Bool :=
   | _, _ => true
 
 theorem hosted_iotlb_publication_adapter_agrees :
-    (vectors.drop 383).all iotlbPublicationAdapterAgrees = true := by
+    ((vectors.drop 383).take iotlbPublicationVectors.length).all
+      iotlbPublicationAdapterAgrees = true := by
   native_decide
 
 theorem hosted_budget_canonical_sequence :

@@ -14,7 +14,7 @@ freestanding adapter: `KernelTransition.bootTransition` and
 `IOMMU.IOTLB.iotlbPublicationDemo`, and
 `InterruptEntry.pageFaultDemo`, plus the stateful
 `CompositeDispatcher.dispatch` and `CompositeDispatcher.dispatchValue`. Its stable
-392-vector order covers accepted calls,
+406-vector order covers accepted calls,
 typed decoding failures, invalid state and permission encodings, boot-handoff
 and publication-order failures, both bounded A/B preemption directions, and
 maximum `UInt64` boundary words, plus accepted initial/syscall/scheduler returns
@@ -122,6 +122,30 @@ state replay and cross-trace splicing, unknown/reserved operations, and maximum
 words. `FrameBudgetScenario.step_refinement` connects every accepted edge to
 the exact admitted-budget transition, while the hosted generated-C harness
 reports the first mismatching operation and reply.
+
+The final fourteen records are the in-flight revocation corpus for issue #175.
+Its seed is `FailStop.inFlightRevocationInitial`: from the shared two-subject
+dispatcher state, subject 2 delegates a revoke-only authority on endpoint 10
+into subject 1's slot 2 and the authoritative timer switch makes subject 1
+current, both as exact `authoritativeGate` steps. The trace then has subject 1
+seal a send-only generation-7 child of its own endpoint capability, denies a
+revocation attempted through the send-only capability and one naming a foreign
+lineage root, accepts transitive revocation of the exact ancestor, denies a
+repeated revocation and a later offer through the revoked capability, switches
+back to subject 2, denies subject 2's receipt with the typed empty rejection
+and no value word, copies a fresh generation-8 capability into the same
+destination slot, denies the canceled generation-7 handle as stale, and accepts
+a send through the generation-8 handle. Lean proves that the accepted
+revocation clears the pending record, the transfer mailbox, and the IPC
+mailbox in one step while the canceled identity remains in the append-only
+derivation history and the identity frontier does not move backwards, that
+subject 1's other slots, every subject-2 capability, the saved continuation,
+the ready queue, and the current subject are unchanged, and that no record in
+the family publishes a value word. Every denial is a complete-state stutter.
+Three hostile records replay the revocation words against the pre-offer seed
+token, splice the mixed corpus's post-receipt revocation into this family's
+subject-2 state, and present subject 2's receipt words while subject 1 is still
+current; each is rejected before any gate evaluation.
 
 The same hosted boundary exercises
 `leanos_frame_budget_invalidation_effect`. Exact canonical

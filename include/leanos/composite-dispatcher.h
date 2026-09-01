@@ -21,8 +21,8 @@
  * truncation is rejected by that caller before this scalar function is called.
  *
  * Every state and command word has ABI version 1 in bits 0..7. State bits
- * 8..15 select one of 60 canonical states and all upper bits are reserved.
- * Command tags use bits 8..15 to select one of 62 command selectors and all
+ * 8..15 select one of 66 canonical states and all upper bits are reserved.
+ * Command tags use bits 8..15 to select one of 73 command selectors and all
  * upper bits are reserved. Three selectors have an additional state-scoped
  * delegated-transfer meaning, for 65 semantic commands in total. Arguments
  * not named by a command must be zero. A success result word zero uses bits
@@ -37,8 +37,8 @@
 #define LEANOS_COMPOSITE_RESULT_VALUE_WORD 1U
 #define LEANOS_COMPOSITE_NO_VALUE UINT64_C(0)
 #define LEANOS_COMPOSITE_DELIVERED_HANDLE UINT64_C(0x60003)
-#define LEANOS_COMPOSITE_STATE_COUNT 60U
-#define LEANOS_COMPOSITE_COMMAND_COUNT 62U
+#define LEANOS_COMPOSITE_STATE_COUNT 66U
+#define LEANOS_COMPOSITE_COMMAND_COUNT 73U
 
 #define LEANOS_COMPOSITE_STATE_INITIAL UINT64_C(0x0001)
 #define LEANOS_COMPOSITE_STATE_SUBJECT_CREATED UINT64_C(0x0101)
@@ -103,6 +103,18 @@
 #define LEANOS_COMPOSITE_STATE_BUDGET_RELEASE_DENIED UINT64_C(0x4a01)
 #define LEANOS_COMPOSITE_STATE_BUDGET_RELEASE_COMPLETE UINT64_C(0x4b01)
 
+/*
+ * In-flight revocation trace (#175). The seed has subject 1 current with a
+ * delegated revoke-only authority on endpoint 10; every token is exact
+ * authoritative replay from that kernel-owned seed.
+ */
+#define LEANOS_COMPOSITE_STATE_INFLIGHT_SUBJECT_ONE_ARMED UINT64_C(0x6001)
+#define LEANOS_COMPOSITE_STATE_INFLIGHT_CHILD_OFFERED UINT64_C(0x6101)
+#define LEANOS_COMPOSITE_STATE_INFLIGHT_LINEAGE_REVOKED UINT64_C(0x6201)
+#define LEANOS_COMPOSITE_STATE_INFLIGHT_SUBJECT_TWO_RESTORED UINT64_C(0x6301)
+#define LEANOS_COMPOSITE_STATE_INFLIGHT_DESTINATION_REPLACED UINT64_C(0x6401)
+#define LEANOS_COMPOSITE_STATE_INFLIGHT_REPLACEMENT_USED UINT64_C(0x6501)
+
 #define LEANOS_COMPOSITE_COMMAND_CREATE_SUBJECT_ONE UINT64_C(0x0101)
 #define LEANOS_COMPOSITE_COMMAND_REJECT_UNKNOWN_SYSCALL UINT64_C(0x0201)
 #define LEANOS_COMPOSITE_COMMAND_REJECT_MALFORMED_MAP UINT64_C(0x0301)
@@ -160,6 +172,22 @@
 #define LEANOS_COMPOSITE_COMMAND_REJECT_DELEGATED_RECEIVE UINT64_C(0x4901)
 
 /*
+ * In-flight revocation commands. The offer (0x2001), receipt (0x2101), and
+ * fresh-copy (0x2401) tags are shared with the mixed corpus; the state token
+ * selects the family. Revocation words are raw slot selectors resolved in the
+ * kernel-derived current subject; the lineage root identity, the receiving
+ * subject, and the replacement generation are never caller-supplied.
+ */
+#define LEANOS_COMPOSITE_COMMAND_INFLIGHT_REJECT_REVOCATION_WITHOUT_AUTHORITY UINT64_C(0x5001)
+#define LEANOS_COMPOSITE_COMMAND_INFLIGHT_REJECT_WRONG_LINEAGE_ROOT UINT64_C(0x5101)
+#define LEANOS_COMPOSITE_COMMAND_INFLIGHT_REVOKE_LINEAGE UINT64_C(0x5201)
+#define LEANOS_COMPOSITE_COMMAND_INFLIGHT_REJECT_REPEATED_REVOCATION UINT64_C(0x5301)
+#define LEANOS_COMPOSITE_COMMAND_INFLIGHT_REJECT_OFFER_AFTER_REVOCATION UINT64_C(0x5401)
+#define LEANOS_COMPOSITE_COMMAND_INFLIGHT_SWITCH_TO_SUBJECT_TWO UINT64_C(0x5501)
+#define LEANOS_COMPOSITE_COMMAND_INFLIGHT_REJECT_CANCELED_HANDLE_REPLAY UINT64_C(0x5601)
+#define LEANOS_COMPOSITE_COMMAND_INFLIGHT_USE_REPLACEMENT_HANDLE UINT64_C(0x5701)
+
+/*
  * Typed reply/effect meanings for the bounded direct mapping branches.
  * PAGE_UNMAPPED authorizes exactly StaleTranslation.Effect.page(2, 7), while
  * PAGE_PROTECTED authorizes exactly Effect.page(2, 8). The rejection replies
@@ -173,6 +201,24 @@
 #define LEANOS_COMPOSITE_REPLY_SEALED_HANDLE_REJECTED UINT64_C(0x470901)
 #define LEANOS_COMPOSITE_REPLY_DELEGATED_SEND_ACCEPTED UINT64_C(0x482f01)
 #define LEANOS_COMPOSITE_REPLY_DELEGATED_RECEIVE_REJECTED UINT64_C(0x492f01)
+
+/*
+ * In-flight revocation replies. LINEAGE_REVOKED means the exact accepted
+ * subtree revocation that also canceled the sealed child; CANCELED_RECEIPT
+ * denies the later receipt with the typed empty rejection and no value word.
+ * No reply in this family ever publishes a handle in result word one.
+ */
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_CHILD_OFFERED UINT64_C(0x206101)
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_REVOCATION_WITHOUT_AUTHORITY_REJECTED UINT64_C(0x506101)
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_WRONG_LINEAGE_ROOT_REJECTED UINT64_C(0x516101)
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_LINEAGE_REVOKED UINT64_C(0x526201)
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_REPEATED_REVOCATION_REJECTED UINT64_C(0x536201)
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_OFFER_AFTER_REVOCATION_REJECTED UINT64_C(0x546201)
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_SUBJECT_TWO_RESTORED UINT64_C(0x556301)
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_CANCELED_RECEIPT_REJECTED UINT64_C(0x216301)
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_DESTINATION_REPLACED UINT64_C(0x246401)
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_CANCELED_HANDLE_REPLAY_REJECTED UINT64_C(0x566401)
+#define LEANOS_COMPOSITE_REPLY_INFLIGHT_REPLACEMENT_USED UINT64_C(0x576501)
 
 /* Exact full-state/command authorizations for the two frame-retiring edges. */
 #define LEANOS_FRAME_BUDGET_TERMINATE_FLUSH_TOKEN UINT64_C(0xfb00444401)

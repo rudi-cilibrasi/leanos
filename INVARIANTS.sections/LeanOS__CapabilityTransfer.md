@@ -44,3 +44,18 @@ Programs pass permission tokens to each other over messaging channels in two ste
 - `pending_rights_conserved` — Every sealed token waiting in flight carries rights that are an attenuated subset of its recorded parent's rights.
 - `delivered_authority_conserved` — Starting from a consistent state, delivery installs exactly the attenuated descendant recorded beside the returned envelope, with the message data absent from every equality that determines authority.
 - `offer_authority_payload_independent` — Two offers differing only in their message data reserve identical derivations and identical sealed authority; only the visible message content can differ.
+- `publishSubtreeRevocation_capabilities` — Publishing an accepted family take-back installs exactly the supplied permission book.
+- `publishSubtreeRevocation_sendHistory` — Publishing a family take-back never edits the record of messages ever sent.
+- `publishSubtreeRevocation_issued` — Publishing a family take-back never changes which meeting points exist.
+- `publishSubtreeRevocation_allocator` — Publishing a family take-back never touches the memory allocator.
+- `publishSubtreeRevocation_binding` — Publishing a family take-back never changes which memory object backs which frame.
+- `publishSubtreeRevocation_issuedAddressSpace` — Publishing a family take-back never changes which address spaces exist.
+- `publishSubtreeRevocation_pending` — After publication, a meeting point's sealed in-flight permission is gone exactly when it descended from the taken-back root, and otherwise unchanged.
+- `publishSubtreeRevocation_mailbox` — After publication, a meeting point's parked message is gone exactly when it carried a sealed descendant of the taken-back root, and otherwise unchanged.
+- `publishSubtreeRevocation_cancels` — Every sealed permission descended from the taken-back root loses both its parked message and its in-flight record in the same step; there is no half-cancelled state.
+- `publishSubtreeRevocation_pending_some` — Any sealed permission still in flight after publication was already in flight before, does not descend from the taken-back root, and keeps its exact parked message.
+- `publishSubtreeRevocation_no_descendant_pending` — No sealed permission still in flight after publication descends from the taken-back root.
+- `publishSubtreeRevocation_mailbox_some` — Publication can only remove parked messages; any message present afterwards was present before.
+- `publishSubtreeRevocation_mailbox_unrelated` — A meeting point whose in-flight permission, if any, is unrelated to the taken-back root keeps its exact parked message.
+- `publishSubtreeRevocation_pending_unrelated` — A sealed permission unrelated to the taken-back root stays in flight exactly as it was.
+- `publishSubtreeRevocation_preserves_wellFormed` — Publishing a family take-back keeps every transfer record consistent, provided the new permission book keeps the same objects, kinds, identity counter, and lineage history and only removes slots.

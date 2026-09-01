@@ -4854,6 +4854,17 @@ private def installTransfers (state : CompositeState)
     transfers
     blockingIPC := { state.blockingIPC with scheduler } }
 
+/-- Publish an accepted transitive revocation atomically.  The revoked
+capability store and the cancellation of every sealed descendant of `root`
+reach every capability, mailbox, and in-flight consumer in one step.  Clearing
+installed slots while leaving a sealed descendant receivable would let
+authority survive its own revocation, so this is the only publication path for
+an accepted subtree revocation. -/
+private def installRevokedSubtree (state : CompositeState) (root : Nat)
+    (capabilities : Capability.State) : CompositeState :=
+  installTransfers state
+    (CapabilityTransfer.publishSubtreeRevocation state.transfers root capabilities)
+
 /-- Publish authoritative subject cleanup and discard every sealed transfer
 that could retain a retired sender, endpoint, or carried object.  The final
 `installTransfers` call republishes the canceled mailbox together with the
@@ -5410,7 +5421,15 @@ def applyOperation (state : CompositeState) : Operation → CompositeState
         state.execution.core.context.currentSubject authoritySlot victim victimSlot
       match outcome.result with
       | .rejected _ => state
-      | .accepted => installCopiedCapabilities state outcome.state
+      | .accepted =>
+          match Capability.lookup state.capabilities victim victimSlot with
+          | .found target =>
+              installRevokedSubtree state target.identity outcome.state
+          | _ =>
+              -- Unreachable: acceptance located the lineage root
+              -- (`Capability.revokeSubtree_accepted_target`).  Publishing
+              -- nothing is the fail-closed choice.
+              state
   | .map slot page permissions =>
       let outcome := VirtualMapping.map state.virtualMemory
         state.execution.core.context.currentSubject slot
@@ -7076,6 +7095,7 @@ private theorem installTransfers_preserves_runtimeWellFormed state next
     (hobjects : next.capabilities.objects = state.transfers.capabilities.objects)
     (hkinds : next.capabilities.kinds = state.transfers.capabilities.kinds)
     (hauthority : ∀ subject object right,
+      (right = .read ∨ right = .write ∨ right = .revoke) →
       Capability.HasAuthority state.transfers.capabilities subject object right →
         Capability.HasAuthority next.capabilities subject object right)
     (hmailbox : ∀ object envelope, next.mailbox object = some envelope →
@@ -7124,12 +7144,12 @@ private theorem installTransfers_preserves_runtimeWellFormed state next
         hread, hwrite⟩ := hmappings addressSpace page mapping hmapping
       refine ⟨subject, frame, howner, hpermissions, hbinding, hframe, ?_, ?_⟩
       · intro hpermission
-        apply hauthority subject mapping.object .read
+        apply hauthority subject mapping.object .read (Or.inl rfl)
         rw [htransfersCoherent, hipcCapabilitiesCoherent,
           ← hvirtualCapabilitiesCoherent]
         exact hread hpermission
       · intro hpermission
-        apply hauthority subject mapping.object .write
+        apply hauthority subject mapping.object .write (Or.inr (Or.inl rfl))
         rw [htransfersCoherent, hipcCapabilitiesCoherent,
           ← hvirtualCapabilitiesCoherent]
         exact hwrite hpermission
@@ -7141,7 +7161,7 @@ private theorem installTransfers_preserves_runtimeWellFormed state next
         simpa [hobjectsLifecycle] using hlive
       · rw [hvirtualCapabilitiesCoherent] at hkind
         simpa [hkindsLifecycle] using hkind
-      · apply hauthority subject addressSpace .revoke
+      · apply hauthority subject addressSpace .revoke (Or.inr (Or.inr rfl))
         rw [htransfersCoherent, hipcCapabilitiesCoherent,
           ← hvirtualCapabilitiesCoherent]
         exact hrevoke
@@ -7260,7 +7280,8 @@ theorem gate_transferAccept_delivered_preserves_runtimeWellFormed state endpoint
   constructor
   · simp only [gate, hmode, applyOperation, hdelivered]
     exact installTransfers_preserves_runtimeWellFormed state next hstate htransfer
-      hsubjects hobjects hkinds hauthority (by
+      hsubjects hobjects hkinds (fun subject object right _ hold =>
+        hauthority subject object right hold) (by
         intro object found hmailbox
         exact CapabilityTransfer.acceptWord_mailbox_provenance state.transfers
           state.execution.core.context.currentSubject endpointWord destinationSlot
@@ -8096,6 +8117,9 @@ theorem gate_capabilityRevokeSubtree_accepted_synchronizes state authoritySlot v
         Capability.WellFormed published.capabilities := by
   have hraw := (Capability.revokeSubtreeRuntimeSafe_accepted_raw state.capabilities
     state.execution.core.context.currentSubject authoritySlot victim victimSlot next haccepted).1
+  obtain ⟨target, hlookup, _hclear⟩ := Capability.revokeSubtreeRuntimeSafe_accepted_target
+    state.capabilities state.execution.core.context.currentSubject authoritySlot victim
+    victimSlot next haccepted
   have hpreserved := Capability.revokeSubtree_preserves_wellFormed
     state.capabilities state.execution.core.context.currentSubject authoritySlot victim victimSlot
     hwellFormed
@@ -8103,44 +8127,47 @@ theorem gate_capabilityRevokeSubtree_accepted_synchronizes state authoritySlot v
   have hmetadata := Capability.revokeSubtree_preserves_metadata state.capabilities
     state.execution.core.context.currentSubject authoritySlot victim victimSlot
   rw [hraw] at hmetadata
-  have hcoherent' : (installCopiedCapabilities state next).Coherent := by
-    rcases hcoherent with
-      ⟨hexecution, hscheduler, hpreemption, hcapabilities, hvirtualCapabilities,
-        hipcVirtual, hipcCapabilities, hresumableScheduler, hresumableVirtual,
-        htransfers, hauthority, hdeadMailbox, hliveSender⟩
-    rcases hmetadata with ⟨hsubjects, hobjects, _hkinds, _hcapacity, _hnext, _hderivations⟩
+  rcases hmetadata with ⟨hsubjects, hobjects, _hkinds, _hcapacity, _hnext, _hderivations⟩
+  rcases hcoherent with
+    ⟨_hexecution, _hscheduler, _hpreemption, hcapabilities, _hvirtualCapabilities,
+      _hipcVirtual, _hipcCapabilities, _hresumableScheduler, _hresumableVirtual,
+      htransfers, hauthority, hdeadMailbox, hliveSender⟩
+  have htransferMailbox : state.transfers.mailbox = state.ipc.endpoints.mailbox :=
+    congrArg EndpointIPC.State.mailbox htransfers
+  have hcoherent' : (installRevokedSubtree state target.identity next).Coherent := by
     refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_, ?_⟩
-    · simpa [installCopiedCapabilities] using hauthority
+    · simpa [installRevokedSubtree, installTransfers] using hauthority
     · intro object hdead
-      apply hdeadMailbox object
-      rw [← hcapabilities, ← hobjects]
-      simpa [installCopiedCapabilities] using hdead
+      have hnextDead : next.objects object ≠ true := hdead
+      have hold : state.ipc.endpoints.mailbox object = none := by
+        apply hdeadMailbox object
+        rw [← hcapabilities, ← hobjects]
+        exact hnextDead
+      change (CapabilityTransfer.publishSubtreeRevocation state.transfers target.identity
+        next).mailbox object = none
+      cases hmail : (CapabilityTransfer.publishSubtreeRevocation state.transfers
+          target.identity next).mailbox object with
+      | none => rfl
+      | some envelope =>
+          have hsome := CapabilityTransfer.publishSubtreeRevocation_mailbox_some
+            state.transfers target.identity next object envelope hmail
+          rw [htransferMailbox, hold] at hsome
+          contradiction
     · intro object envelope hmailbox
       have hold := hliveSender object envelope (by
-        simpa [installCopiedCapabilities] using hmailbox)
+        rw [← htransferMailbox]
+        exact CapabilityTransfer.publishSubtreeRevocation_mailbox_some
+          state.transfers target.identity next object envelope hmailbox)
       change next.subjects envelope.sender = true
       rw [hsubjects, hcapabilities]
       exact hold
-  rcases installCopiedCapabilities_synchronizes_consumers state next with
-    ⟨hcapabilities, hlifecycle, hexecution, hmemory, hipc, hscheduler,
-      hpreemption, hresumable, htransfers⟩
-  have hpublished : Capability.WellFormed
-      (installCopiedCapabilities state next).capabilities := by
-    rw [hcapabilities]
-    exact hpreserved
+  have hgate : (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).state =
+      installRevokedSubtree state target.identity next := by
+    simp [gate, hmode, applyOperation, haccepted, hlookup]
   constructor
   · simp [gate, hmode, operationReply, haccepted]
-  · simpa [gate, hmode, applyOperation, haccepted] using
-      And.intro hcoherent'
-        (And.intro hcapabilities
-          (And.intro hlifecycle
-            (And.intro hexecution
-              (And.intro hmemory
-                (And.intro hipc
-                  (And.intro hscheduler
-                    (And.intro hpreemption
-                      (And.intro hresumable
-                      (And.intro htransfers hpublished)))))))))
+  · rw [hgate]
+    exact ⟨hcoherent', rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, hpreserved⟩
 
 /-- Accepted direct revocation preserves the complete runtime invariant when
 the removed slot was not the last source of authority used by live mappings or
@@ -8211,18 +8238,32 @@ theorem gate_capabilityRevokeSubtree_accepted_preserves_runtimeWellFormed state 
   obtain ⟨hraw, _hsafe⟩ := Capability.revokeSubtreeRuntimeSafe_accepted_raw
     state.capabilities state.execution.core.context.currentSubject authoritySlot victim victimSlot
     next haccepted
-  have hauthority : RuntimeAuthorityPreserved state.capabilities next :=
-    fun subject object right hcritical hold => by
-      have hcritical' :
-          right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive := by
-        rcases hcritical with hread | hwrite | hrevoke
-        · exact Or.inl hread
-        · exact Or.inr (Or.inl hwrite)
-        · exact Or.inr (Or.inr (Or.inl hrevoke))
-      exact Capability.revokeSubtreeRuntimeSafe_accepted_preserves_critical_authority
-        state.capabilities state.execution.core.context.currentSubject authoritySlot victim
-        victimSlot next hstate.2.2.2.1 haccepted subject object right
-        hcritical' hold
+  obtain ⟨target, hlookup, _hclear⟩ := Capability.revokeSubtreeRuntimeSafe_accepted_target
+    state.capabilities state.execution.core.context.currentSubject authoritySlot victim
+    victimSlot next haccepted
+  have htransferCapabilities : state.transfers.capabilities = state.capabilities := by
+    rcases hstate.1 with
+      ⟨_, _, _, hcapabilities, _, _, hipcCapabilities, _, _, htransferEndpoints, _, _, _⟩
+    calc
+      state.transfers.capabilities = state.ipc.endpoints.capabilities :=
+        congrArg (fun endpoints => endpoints.capabilities) htransferEndpoints
+      _ = state.lifecycle.capabilities := hipcCapabilities
+      _ = state.capabilities := hcapabilities.symm
+  have hauthority : ∀ subject object right,
+      (right = .read ∨ right = .write ∨ right = .revoke) →
+      Capability.HasAuthority state.transfers.capabilities subject object right →
+        Capability.HasAuthority next subject object right := by
+    intro subject object right hcritical hold
+    have hcritical' :
+        right = .read ∨ right = .write ∨ right = .revoke ∨ right = .receive := by
+      rcases hcritical with hread | hwrite | hrevoke
+      · exact Or.inl hread
+      · exact Or.inr (Or.inl hwrite)
+      · exact Or.inr (Or.inr (Or.inl hrevoke))
+    rw [htransferCapabilities] at hold
+    exact Capability.revokeSubtreeRuntimeSafe_accepted_preserves_critical_authority
+      state.capabilities state.execution.core.context.currentSubject authoritySlot victim
+      victimSlot next hstate.2.2.2.1 haccepted subject object right hcritical' hold
   have hmetadata := Capability.revokeSubtree_preserves_metadata state.capabilities
     state.execution.core.context.currentSubject authoritySlot victim victimSlot
   rw [hraw] at hmetadata
@@ -8234,17 +8275,36 @@ theorem gate_capabilityRevokeSubtree_accepted_preserves_runtimeWellFormed state 
     simpa [hraw] using hold
   have hslots : ∀ subject slot capability,
       next.slots subject slot = some capability →
-        state.capabilities.slots subject slot = some capability := by
+        state.transfers.capabilities.slots subject slot = some capability := by
     intro subject slot capability hslot
     have hold := Capability.revokeSubtree_slot_survives state.capabilities
       state.execution.core.context.currentSubject authoritySlot victim victimSlot
       subject slot capability
     rw [hraw] at hold
+    rw [htransferCapabilities]
     exact hold hslot
+  have htransfer : CapabilityTransfer.WellFormed
+      (CapabilityTransfer.publishSubtreeRevocation state.transfers target.identity next) :=
+    CapabilityTransfer.publishSubtreeRevocation_preserves_wellFormed state.transfers
+      target.identity next hstate.2.2.2.2.2.2.2.2.2.1 hwellFormed
+      (hobjects.trans (congrArg Capability.State.objects htransferCapabilities.symm))
+      (hkinds.trans (congrArg Capability.State.kinds htransferCapabilities.symm))
+      (hnextIdentity.trans (congrArg Capability.State.nextIdentity htransferCapabilities.symm))
+      (hderivations.trans (congrArg Capability.State.derivations htransferCapabilities.symm))
+      hslots
   constructor
-  · simp only [gate, hmode, applyOperation, haccepted]
-    exact installRevokedCapabilities_preserves_runtimeWellFormed state next hstate hwellFormed
-      hsubjects hobjects hkinds hnextIdentity hderivations hslots hauthority
+  · simp only [gate, hmode, applyOperation, haccepted, hlookup, installRevokedSubtree]
+    exact installTransfers_preserves_runtimeWellFormed state _ hstate htransfer
+      (by simpa using
+        hsubjects.trans (congrArg Capability.State.subjects htransferCapabilities.symm))
+      (by simpa using
+        hobjects.trans (congrArg Capability.State.objects htransferCapabilities.symm))
+      (by simpa using
+        hkinds.trans (congrArg Capability.State.kinds htransferCapabilities.symm))
+      (by simpa using hauthority)
+      (fun object envelope hmailbox =>
+        CapabilityTransfer.publishSubtreeRevocation_mailbox_some state.transfers
+          target.identity next object envelope hmailbox)
   · simp [gate, hmode, operationReply, haccepted]
 
 /-- A typed direct-revocation denial is globally atomic and therefore retains
@@ -8282,6 +8342,168 @@ theorem gate_capabilityRevokeSubtree_rejected_atomic state authoritySlot victim 
     (.capability (.rejected reason)) hstate hresult
     (.capabilityRevokeSubtree authoritySlot victim victimSlot reason hrejected)
   exact ⟨hold.2, hold.1⟩
+
+/-- Accepted transitive revocation reaches authority that is still in flight.
+Every sealed descendant of the revoked lineage root loses its envelope and its
+pending record in the same gate step that clears the installed descendants, and
+the IPC mailbox projection observes the identical cleared mailbox.  There is no
+intermediate state with only one representation removed. -/
+theorem gate_capabilityRevokeSubtree_accepted_cancels_sealed_descendants state authoritySlot
+    victim victimSlot next target endpoint transfer published
+    (hmode : state.execution.mode = .running)
+    (haccepted : Capability.revokeSubtreeRuntimeSafe state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot =
+        { state := next, result := .accepted })
+    (hlookup : Capability.lookup state.capabilities victim victimSlot = .found target)
+    (hpublished : published =
+      (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).state)
+    (hpending : state.transfers.pending endpoint = some transfer)
+    (hdescendant : CapabilityTransfer.descendsFromRoot state.transfers.capabilities
+      target.identity transfer = true) :
+    published.transfers.pending endpoint = none ∧
+      published.transfers.mailbox endpoint = none ∧
+      published.ipc.endpoints.mailbox endpoint = none := by
+  have hgate : published = installRevokedSubtree state target.identity next := by
+    rw [hpublished]
+    simp [gate, hmode, applyOperation, haccepted, hlookup]
+  subst hgate
+  obtain ⟨hpendingNone, hmailboxNone⟩ :=
+    CapabilityTransfer.publishSubtreeRevocation_cancels state.transfers target.identity next
+      endpoint transfer hpending hdescendant
+  exact ⟨hpendingNone, hmailboxNone, hmailboxNone⟩
+
+/-- Authority strictly decreases across both representations: after accepted
+transitive revocation, no retained sealed record and no installed slot
+descends from the revoked lineage root, so nothing derived from it can be
+installed by a later receipt or used directly. -/
+theorem gate_capabilityRevokeSubtree_accepted_authority_monotone state authoritySlot
+    victim victimSlot next target published
+    (hmode : state.execution.mode = .running)
+    (haccepted : Capability.revokeSubtreeRuntimeSafe state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot =
+        { state := next, result := .accepted })
+    (hlookup : Capability.lookup state.capabilities victim victimSlot = .found target)
+    (hpublished : published =
+      (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).state) :
+    (∀ endpoint transfer, published.transfers.pending endpoint = some transfer →
+      CapabilityTransfer.descendsFromRoot state.transfers.capabilities target.identity
+        transfer = false) ∧
+    (∀ subject slot capability,
+      published.capabilities.slots subject slot = some capability →
+        Capability.descendsFrom state.capabilities capability.identity target.identity
+          state.capabilities.nextIdentity = false) := by
+  obtain ⟨target', hlookup', hclear⟩ := Capability.revokeSubtreeRuntimeSafe_accepted_target
+    state.capabilities state.execution.core.context.currentSubject authoritySlot victim
+    victimSlot next haccepted
+  rw [hlookup] at hlookup'
+  obtain rfl := Capability.LookupOutcome.found.inj hlookup'
+  have hgate : published = installRevokedSubtree state target.identity next := by
+    rw [hpublished]
+    simp [gate, hmode, applyOperation, haccepted, hlookup]
+  subst hgate
+  constructor
+  · intro endpoint transfer hpending
+    exact CapabilityTransfer.publishSubtreeRevocation_no_descendant_pending state.transfers
+      target.identity next endpoint transfer hpending
+  · intro subject slot capability hslot
+    change next.slots subject slot = some capability at hslot
+    rw [hclear] at hslot
+    cases hdescendant : Capability.descendsFrom state.capabilities capability.identity
+        target.identity state.capabilities.nextIdentity with
+    | false => rfl
+    | true =>
+        have hsurvives := Capability.clearSubtree_slot_survives state.capabilities
+          target.identity subject slot capability hslot
+        have hremoved := Capability.clearSubtree_removes_descendant state.capabilities
+          target.identity subject slot capability hsurvives hdescendant
+        rw [hremoved] at hslot
+        contradiction
+
+/-- Derivation history and the identity frontier survive accepted transitive
+revocation.  A canceled identity therefore stays allocated forever: no later
+copy or offer can reissue it, even after its slot index is reused. -/
+theorem gate_capabilityRevokeSubtree_accepted_retains_history state authoritySlot
+    victim victimSlot next published
+    (hmode : state.execution.mode = .running)
+    (haccepted : Capability.revokeSubtreeRuntimeSafe state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot =
+        { state := next, result := .accepted })
+    (hpublished : published =
+      (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).state) :
+    published.capabilities.derivations = state.capabilities.derivations ∧
+      published.capabilities.nextIdentity = state.capabilities.nextIdentity := by
+  obtain ⟨hraw, _hsafe⟩ := Capability.revokeSubtreeRuntimeSafe_accepted_raw
+    state.capabilities state.execution.core.context.currentSubject authoritySlot victim victimSlot
+    next haccepted
+  obtain ⟨target, hlookup, _hclear⟩ := Capability.revokeSubtreeRuntimeSafe_accepted_target
+    state.capabilities state.execution.core.context.currentSubject authoritySlot victim
+    victimSlot next haccepted
+  have hmetadata := Capability.revokeSubtree_preserves_metadata state.capabilities
+    state.execution.core.context.currentSubject authoritySlot victim victimSlot
+  rw [hraw] at hmetadata
+  have hgate : published = installRevokedSubtree state target.identity next := by
+    rw [hpublished]
+    simp [gate, hmode, applyOperation, haccepted, hlookup]
+  subst hgate
+  exact ⟨hmetadata.2.2.2.2.2, hmetadata.2.2.2.2.1⟩
+
+/-- Unrelated authority is untouched by accepted transitive revocation: sealed
+records and envelopes outside the revoked lineage, every installed slot outside
+the subtree, and the scheduler queue, current subject, saved contexts,
+mappings, and execution context are exactly the pre-state values. -/
+theorem gate_capabilityRevokeSubtree_accepted_preserves_unrelated state authoritySlot
+    victim victimSlot next target published
+    (hmode : state.execution.mode = .running)
+    (haccepted : Capability.revokeSubtreeRuntimeSafe state.capabilities
+      state.execution.core.context.currentSubject authoritySlot victim victimSlot =
+        { state := next, result := .accepted })
+    (hlookup : Capability.lookup state.capabilities victim victimSlot = .found target)
+    (hpublished : published =
+      (gate state (.capabilityRevokeSubtree authoritySlot victim victimSlot)).state) :
+    (∀ endpoint transfer, state.transfers.pending endpoint = some transfer →
+      CapabilityTransfer.descendsFromRoot state.transfers.capabilities target.identity
+        transfer = false →
+      published.transfers.pending endpoint = some transfer ∧
+        published.transfers.mailbox endpoint = state.transfers.mailbox endpoint) ∧
+    (∀ endpoint, state.transfers.pending endpoint = none →
+      published.transfers.mailbox endpoint = state.transfers.mailbox endpoint) ∧
+    (∀ subject slot capability, state.capabilities.slots subject slot = some capability →
+      Capability.descendsFrom state.capabilities capability.identity target.identity
+        state.capabilities.nextIdentity = false →
+      published.capabilities.slots subject slot = some capability) ∧
+    published.scheduler.ready = state.scheduler.ready ∧
+    published.lifecycle.current = state.lifecycle.current ∧
+    published.resumable.contexts = state.resumable.contexts ∧
+    published.virtualMemory.mappings = state.virtualMemory.mappings ∧
+    published.execution.core.context = state.execution.core.context := by
+  obtain ⟨target', hlookup', hclear⟩ := Capability.revokeSubtreeRuntimeSafe_accepted_target
+    state.capabilities state.execution.core.context.currentSubject authoritySlot victim
+    victimSlot next haccepted
+  rw [hlookup] at hlookup'
+  obtain rfl := Capability.LookupOutcome.found.inj hlookup'
+  have hgate : published = installRevokedSubtree state target.identity next := by
+    rw [hpublished]
+    simp [gate, hmode, applyOperation, haccepted, hlookup]
+  subst hgate
+  refine ⟨?_, ?_, ?_, rfl, rfl, rfl, rfl, rfl⟩
+  · intro endpoint transfer hpending hunrelated
+    refine ⟨CapabilityTransfer.publishSubtreeRevocation_pending_unrelated state.transfers
+      target.identity next endpoint transfer hpending hunrelated, ?_⟩
+    apply CapabilityTransfer.publishSubtreeRevocation_mailbox_unrelated
+    intro other hother
+    rw [hpending] at hother
+    cases hother
+    exact hunrelated
+  · intro endpoint hnone
+    apply CapabilityTransfer.publishSubtreeRevocation_mailbox_unrelated
+    intro other hother
+    rw [hnone] at hother
+    cases hother
+  · intro subject slot capability hslot hunrelated
+    change next.slots subject slot = some capability
+    rw [hclear]
+    exact Capability.clearSubtree_retains_unrelated state.capabilities target.identity
+      subject slot capability hslot hunrelated
 
 /-- A completed syscall exposes exactly the reply produced under the
 kernel-selected caller and address space. -/
@@ -13536,6 +13758,111 @@ private theorem installReceiveAuthorityPreservingCapabilities_preserves_blocking
     BlockingIPCContext.ContextAgreement, BlockingIPCContext.WellFormed] using
       And.intro hblocking' hagreement
 
+
+/-- Atomic subtree revocation publication retains the complete blocking
+precondition: the finite lineage guard keeps every indexed waiter's receive
+authority, and canceling sealed descendants touches no waiter or context. -/
+private theorem installRevokedSubtree_preserves_blockingRuntimeWellFormed
+    state root next
+    (hstate : BlockingRuntimeWellFormed state)
+    (hglobal : RuntimeWellFormed (installRevokedSubtree state root next))
+    (hcapabilities : Capability.WellFormed next)
+    (hsubjects : next.subjects = state.capabilities.subjects)
+    (hobjects : next.objects = state.capabilities.objects)
+    (hkinds : next.kinds = state.capabilities.kinds)
+    (hauthority : ∀ subject endpoint,
+      Capability.HasAuthority state.capabilities subject endpoint .receive →
+        Capability.HasAuthority next subject endpoint .receive) :
+    BlockingRuntimeWellFormed (installRevokedSubtree state root next) := by
+  refine ⟨hglobal, ?_⟩
+  rcases hstate.1.1 with
+    ⟨_, hschedulerLifecycle, _, hcapabilitiesCoherent, _, _, _, _, _, _, _⟩
+  have hbase : state.capabilities =
+      state.blockingIPC.scheduler.lifecycle.capabilities := by
+    exact hcapabilitiesCoherent.trans
+      (congrArg SubjectLifecycle.State.capabilities hstate.1.blockingLifecycle.symm)
+  have hsubjects' : next.subjects =
+      state.blockingIPC.scheduler.lifecycle.capabilities.subjects :=
+    hsubjects.trans (congrArg Capability.State.subjects hbase)
+  have hobjects' : next.objects =
+      state.blockingIPC.scheduler.lifecycle.capabilities.objects :=
+    hobjects.trans (congrArg Capability.State.objects hbase)
+  have hkinds' : next.kinds =
+      state.blockingIPC.scheduler.lifecycle.capabilities.kinds :=
+    hkinds.trans (congrArg Capability.State.kinds hbase)
+  rcases hstate.2 with ⟨hblocking, hagreement⟩
+  rcases hblocking with
+    ⟨_, hqueues, hwaiters, hunique, hindex, hmailbox, holdCapabilities⟩
+  rcases hglobal with ⟨_, _, _, _, _, _, hscheduler, _, _, _, _, _, _⟩
+  have hscheduler' : Scheduler.WellFormed
+      { state.scheduler with lifecycle :=
+        { state.lifecycle with capabilities := next } } := by
+    simpa [installRevokedSubtree, installTransfers] using hscheduler
+  have hblocking' : BlockingIPC.WellFormed
+      { state.blockingIPC with scheduler :=
+        { state.scheduler with lifecycle :=
+          { state.lifecycle with capabilities := next } } } := by
+    refine ⟨hscheduler', hqueues, ?_, hunique, hindex, ?_, hcapabilities⟩
+    · intro endpoint subject hmember
+      obtain ⟨hliveEndpoint, ⟨slot, capability, hslot, hobject, hkind,
+        hreceive, _⟩, hliveSubject, hrunnable, howner, hcurrent, hready⟩ :=
+        hwaiters endpoint subject hmember
+      have holdAuthority :
+          Capability.HasAuthority state.capabilities subject endpoint .receive := by
+        refine ⟨slot, capability, ?_, hobject, ?_⟩
+        · change
+            state.blockingIPC.scheduler.lifecycle.capabilities.slots subject slot =
+              some capability at hslot
+          rw [← hbase] at hslot
+          exact hslot
+        · simpa [Capability.hasRight, Capability.permits] using hreceive
+      obtain ⟨newSlot, newCapability, hnewSlot, hnewObject, hnewReceive⟩ :=
+        hauthority subject endpoint holdAuthority
+      have holdEndpointKind :
+          state.blockingIPC.scheduler.lifecycle.capabilities.kinds endpoint =
+            some .endpoint := by
+        have holdValid := holdCapabilities.1 subject slot capability hslot
+        have holdEndpointKindContext :
+            state.blockingIPCContext.ipc.scheduler.lifecycle.capabilities.kinds endpoint =
+              some .endpoint := by
+          simpa [hobject, hkind] using holdValid.2.2.1
+        change
+          state.blockingIPC.scheduler.lifecycle.capabilities.kinds endpoint =
+            some .endpoint at holdEndpointKindContext
+        exact holdEndpointKindContext
+      have hnewValid := hcapabilities.1 subject newSlot newCapability hnewSlot
+      have hnewKind : newCapability.kind = .endpoint := by
+        have hregistryKind : next.kinds endpoint = some newCapability.kind := by
+          simpa [hnewObject] using hnewValid.2.2.1
+        rw [hkinds', holdEndpointKind] at hregistryKind
+        exact Option.some.inj hregistryKind.symm
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · rw [hobjects']
+        exact hliveEndpoint
+      · refine ⟨newSlot, newCapability, hnewSlot, hnewObject, hnewKind, ?_, ?_⟩
+        · simpa [Capability.hasRight, Capability.permits] using hnewReceive
+        · rw [hobjects']
+          exact hliveEndpoint
+      · rw [hsubjects']
+        exact hliveSubject
+      · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler,
+          hschedulerLifecycle] using hrunnable
+      · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler,
+          hschedulerLifecycle, Scheduler.ownsAddressSpace] using howner
+      · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler,
+          hschedulerLifecycle] using hcurrent
+      · simpa [CompositeState.blockingIPCContext, hstate.1.blockingScheduler] using hready
+    · intro endpoint envelope hmail
+      obtain ⟨hlive, hkind, henvelope, hempty⟩ := hmailbox endpoint envelope hmail
+      refine ⟨?_, ?_, henvelope, hempty⟩
+      · rw [hobjects']
+        exact hlive
+      · rw [hkinds']
+        exact hkind
+  simpa [installRevokedSubtree, installTransfers, CompositeState.blockingIPCContext,
+    BlockingIPCContext.ContextAgreement, BlockingIPCContext.WellFormed] using
+      And.intro hblocking' hagreement
+
 /-- Direct revocation retains the complete blocking precondition.  The
 composite-safe guard now rejects removal of receive authority, so every
 accepted transition preserves an authority witness for each indexed waiter;
@@ -13630,12 +13957,16 @@ theorem gate_capabilityRevokeSubtree_preserves_blockingRuntimeWellFormed state a
                   state.capabilities state.execution.core.context.currentSubject authoritySlot
                   victim victimSlot next hstate.1.2.2.2.1 hrevoke subject endpoint .receive
                   (by exact Or.inr (Or.inr (Or.inr rfl))) hold
+              obtain ⟨target, hlookup, _hclear⟩ :=
+                Capability.revokeSubtreeRuntimeSafe_accepted_target state.capabilities
+                  state.execution.core.context.currentSubject authoritySlot victim victimSlot
+                  next hrevoke
               have hinstalled :=
-                installReceiveAuthorityPreservingCapabilities_preserves_blockingRuntimeWellFormed
-                  state next hstate
-                  (by simpa [gate, hmode, applyOperation, hrevoke] using hglobal)
+                installRevokedSubtree_preserves_blockingRuntimeWellFormed
+                  state target.identity next hstate
+                  (by simpa [gate, hmode, applyOperation, hrevoke, hlookup] using hglobal)
                   hcapabilities hsubjects hobjects hkinds hauthority
-              simpa [gate, hmode, applyOperation, hrevoke] using hinstalled
+              simpa [gate, hmode, applyOperation, hrevoke, hlookup] using hinstalled
 
 /-- Fresh-subject publication retains the complete blocking precondition.
 Creation only promotes one monotonic lifecycle identity; every existing waiter,
@@ -17351,10 +17682,16 @@ theorem capabilityRevokeSubtree_authoritativeOperationCompatible state
                 state.capabilities state.execution.core.context.currentSubject
                 authoritySlot victim victimSlot
               rw [hraw] at hmetadata
+              obtain ⟨target, hlookup, _hclear⟩ :=
+                Capability.revokeSubtreeRuntimeSafe_accepted_target
+                  state.capabilities state.execution.core.context.currentSubject
+                  authoritySlot victim victimSlot next hrevoke
               simpa [authoritativeGate, hmode, applyAuthoritativeOperation,
-                applyOperation, hrevoke] using
-                installCopiedCapabilities_dormantCancellationCompatible
-                  state next hstate hmetadata.1
+                applyOperation, hrevoke, hlookup, installRevokedSubtree] using
+                installTransfers_dormantCancellationCompatible state
+                  (CapabilityTransfer.publishSubtreeRevocation state.transfers
+                    target.identity next)
+                  hstate (by simpa using hmetadata.1)
 
 /-- Capability-subtree revocation has a closed folded-invariant theorem across
 the sole authoritative runtime state. -/
@@ -20522,7 +20859,8 @@ private def dispatcherSubjectOneSpace : Capability.Capability :=
     identity := 1 }
 
 private def dispatcherSubjectOneEndpoint : Capability.Capability :=
-  { object := 10, kind := .endpoint, rights := { send := true },
+  { object := 10, kind := .endpoint,
+    rights := { send := true, grant := true },
     identity := 2 }
 
 private def dispatcherSubjectTwoEndpoint : Capability.Capability :=
@@ -20544,7 +20882,7 @@ private def dispatcherCapabilities : Capability.State :=
       if identity = 1 then
         some (none, 1, .addressSpace, { revoke := true })
       else if identity = 2 then
-        some (none, 10, .endpoint, { send := true })
+        some (none, 10, .endpoint, { send := true, grant := true })
       else if identity = 3 then
         some (none, 10, .endpoint,
           { send := true, receive := true, grant := true, revoke := true })
@@ -20852,6 +21190,25 @@ def compositeDispatcherTimerFrame : Interrupt.HardwareFrame :=
 
 def compositeDispatcherTimerRegisters : ResumablePreemption.Registers :=
   blockingEvidenceRegisters 0x11
+
+/-- Seed for the in-flight revocation trace (#175).  From the shared dispatcher
+seed, subject 2 delegates a revoke-only authority on endpoint 10 into subject
+1's slot 2, then the authoritative timer switch makes subject 1 current with
+its subject-2 continuation saved.  Both steps are exact `authoritativeGate`
+transitions, so the seed inherits the complete invariant rather than restating
+a second capability fixture. -/
+def inFlightRevocationInitial (plan : BootPageTablePlan.Plan) : CompositeState :=
+  runAuthoritativeOperations (compositeDispatcherInitial plan)
+    [.ordinary (.capabilityCopy 0 1 2 { revoke := true }),
+     .ordinary (.resumePreempt compositeDispatcherTimerFrame
+       compositeDispatcherBlockingRegisters)]
+
+theorem inFlightRevocationInitial_authoritativeRuntimeWellFormed
+    (plan : BootPageTablePlan.Plan) :
+    AuthoritativeRuntimeWellFormed (inFlightRevocationInitial plan) :=
+  runAuthoritativeOperations_preserves_authoritativeRuntimeWellFormed
+    (compositeDispatcherInitial plan) _
+    (compositeDispatcherInitial_authoritativeRuntimeWellFormed plan)
 
 def compositeDispatcherUserFaultFrame : Interrupt.HardwareFrame :=
   demoFrame 14 .user

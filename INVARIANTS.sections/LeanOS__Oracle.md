@@ -63,3 +63,8 @@ LeanOS's kernel entry points are exported as generated C functions that take and
 - `page_fault_smep_mutation_attested` — Changing only the control that stops the kernel executing user memory likewise changes the accepted answer.
 - `page_fault_smap_mutation_attested` — Changing only the control that stops the kernel reading user memory likewise changes the accepted answer.
 - `page_fault_authority_mutations_attested` — All seven facts combined: no authority-bearing input to the page-fault adapter can be dropped without visibly changing the accepted answer.
+- `hosted_inFlight_revocation_vectors_exact` — The last eleven oracle records are, by definition, the in-flight revocation trace, not a second hand-written table.
+- `hosted_inFlight_revocation_vectors_refine` — Every in-flight revocation record is backed by the step-by-step refinement of the authoritative gate.
+- `composite_inFlight_revocation_trace_agrees` — The expected control word of each in-flight revocation record is exactly the typed reply selector for that step.
+- `composite_inFlight_revocation_values_zero` — No in-flight revocation record publishes a value word: the cancelled child never becomes a returned handle.
+- `composite_inFlight_revocation_negatives_reject` — The three hostile in-flight revocation records — the revocation words replayed against the pre-offer seed, a spliced mixed-corpus revocation, and a receipt attempted before the switch — are all rejected before any kernel logic runs.

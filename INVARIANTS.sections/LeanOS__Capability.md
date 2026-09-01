@@ -40,3 +40,6 @@ A capability is a permission token sitting in one of a program's numbered slots,
 - `revokeRuntimeSafe_rejected_unchanged` — Every refusal from the safety-guarded direct revocation, including the extra runtime-safety refusal, changes nothing.
 - `revokeSubtreeRuntimeSafe_rejected_unchanged` — Every refusal from the safety-guarded whole-family revocation is likewise a complete no-op.
 - `revokeSubtree_no_authority_amplification` — Whole-family revocation never grants anyone a permission they lacked.
+- `clearSubtree_retains_unrelated` — Clearing a family of permissions leaves every permission outside that family exactly where it was.
+- `revokeSubtree_accepted_target` — When a whole-family take-back is accepted, the kernel had found the family's root permission in the named slot, and the result is exactly that root's family cleared and nothing else.
+- `revokeSubtreeRuntimeSafe_accepted_target` — The same root-location fact holds for the composite-facing, runtime-guarded version of whole-family take-back.

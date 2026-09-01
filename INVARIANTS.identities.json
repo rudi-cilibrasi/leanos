@@ -3411,6 +3411,12 @@
     },
     {
       "source": "LeanOS/Capability.lean",
+      "qualified": "LeanOS.Capability.clearSubtree_retains_unrelated",
+      "display": "clearSubtree_retains_unrelated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Capability.lean",
       "qualified": "LeanOS.Capability.clearSubtree_slot_survives",
       "display": "clearSubtree_slot_survives",
       "kind": "theorem"
@@ -3549,8 +3555,20 @@
     },
     {
       "source": "LeanOS/Capability.lean",
+      "qualified": "LeanOS.Capability.revokeSubtreeRuntimeSafe_accepted_target",
+      "display": "revokeSubtreeRuntimeSafe_accepted_target",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Capability.lean",
       "qualified": "LeanOS.Capability.revokeSubtreeRuntimeSafe_rejected_unchanged",
       "display": "revokeSubtreeRuntimeSafe_rejected_unchanged",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Capability.lean",
+      "qualified": "LeanOS.Capability.revokeSubtree_accepted_target",
+      "display": "revokeSubtree_accepted_target",
       "kind": "theorem"
     },
     {
@@ -4269,6 +4287,96 @@
     },
     {
       "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_allocator",
+      "display": "publishSubtreeRevocation_allocator",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_binding",
+      "display": "publishSubtreeRevocation_binding",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_cancels",
+      "display": "publishSubtreeRevocation_cancels",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_capabilities",
+      "display": "publishSubtreeRevocation_capabilities",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_issued",
+      "display": "publishSubtreeRevocation_issued",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_issuedAddressSpace",
+      "display": "publishSubtreeRevocation_issuedAddressSpace",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_mailbox",
+      "display": "publishSubtreeRevocation_mailbox",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_mailbox_some",
+      "display": "publishSubtreeRevocation_mailbox_some",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_mailbox_unrelated",
+      "display": "publishSubtreeRevocation_mailbox_unrelated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_no_descendant_pending",
+      "display": "publishSubtreeRevocation_no_descendant_pending",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_pending",
+      "display": "publishSubtreeRevocation_pending",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_pending_some",
+      "display": "publishSubtreeRevocation_pending_some",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_pending_unrelated",
+      "display": "publishSubtreeRevocation_pending_unrelated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_preserves_wellFormed",
+      "display": "publishSubtreeRevocation_preserves_wellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
+      "qualified": "LeanOS.CapabilityTransfer.publishSubtreeRevocation_sendHistory",
+      "display": "publishSubtreeRevocation_sendHistory",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CapabilityTransfer.lean",
       "qualified": "LeanOS.CapabilityTransfer.reserve_preserves_capabilityWellFormed",
       "display": "reserve_preserves_capabilityWellFormed",
       "kind": "theorem"
@@ -4353,6 +4461,12 @@
     },
     {
       "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.canonicalInFlightRevocationEdge_refines",
+      "display": "canonicalInFlightRevocationEdge_refines",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
       "qualified": "LeanOS.CompositeDispatcher.canonicalMixedEdge_refines",
       "display": "canonicalMixedEdge_refines",
       "kind": "theorem"
@@ -4421,6 +4535,24 @@
       "source": "LeanOS/CompositeDispatcher.lean",
       "qualified": "LeanOS.CompositeDispatcher.decode_encode_composite_state",
       "display": "decode_encode_composite_state",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.decode_encode_inFlightRevocation_command",
+      "display": "decode_encode_inFlightRevocation_command",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.decode_encode_inFlightRevocation_reply",
+      "display": "decode_encode_inFlightRevocation_reply",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.decode_encode_inFlightRevocation_state",
+      "display": "decode_encode_inFlightRevocation_state",
       "kind": "theorem"
     },
     {
@@ -4523,6 +4655,132 @@
       "source": "LeanOS/CompositeDispatcher.lean",
       "qualified": "LeanOS.CompositeDispatcher.dispatch_canonical",
       "display": "dispatch_canonical",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocationCanonicalEdges_refine",
+      "display": "inFlightRevocationCanonicalEdges_refine",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocationExpectedReply_uses_canonical_codec",
+      "display": "inFlightRevocationExpectedReply_uses_canonical_codec",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_canceled_handle_replay_inert",
+      "display": "inFlightRevocation_canceled_handle_replay_inert",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_command_encoding_injective",
+      "display": "inFlightRevocation_command_encoding_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_denied_revocations_inert",
+      "display": "inFlightRevocation_denied_revocations_inert",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_dispatch_canonical",
+      "display": "inFlightRevocation_dispatch_canonical",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_dispatch_decodes_authoritative_edge",
+      "display": "inFlightRevocation_dispatch_decodes_authoritative_edge",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_handles_decode",
+      "display": "inFlightRevocation_handles_decode",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_no_handle_published",
+      "display": "inFlightRevocation_no_handle_published",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_offer_seals_child",
+      "display": "inFlightRevocation_offer_seals_child",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_post_revocation_probes",
+      "display": "inFlightRevocation_post_revocation_probes",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_post_revocation_probes_inert",
+      "display": "inFlightRevocation_post_revocation_probes_inert",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_reply_encoding_injective",
+      "display": "inFlightRevocation_reply_encoding_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_revocation_authority_exact",
+      "display": "inFlightRevocation_revocation_authority_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_revocation_cancels_in_flight",
+      "display": "inFlightRevocation_revocation_cancels_in_flight",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_seed_shape",
+      "display": "inFlightRevocation_seed_shape",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_slot_reuse_distinct_generation",
+      "display": "inFlightRevocation_slot_reuse_distinct_generation",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_stale_receipt_denied",
+      "display": "inFlightRevocation_stale_receipt_denied",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_stale_receipt_inert",
+      "display": "inFlightRevocation_stale_receipt_inert",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_state_encoding_injective",
+      "display": "inFlightRevocation_state_encoding_injective",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/CompositeDispatcher.lean",
+      "qualified": "LeanOS.CompositeDispatcher.inFlightRevocation_unrelated_authority_preserved",
+      "display": "inFlightRevocation_unrelated_authority_preserved",
       "kind": "theorem"
     },
     {
@@ -7221,8 +7479,32 @@
     },
     {
       "source": "LeanOS/FailStop.lean",
+      "qualified": "LeanOS.FailStop.gate_capabilityRevokeSubtree_accepted_authority_monotone",
+      "display": "gate_capabilityRevokeSubtree_accepted_authority_monotone",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop.lean",
+      "qualified": "LeanOS.FailStop.gate_capabilityRevokeSubtree_accepted_cancels_sealed_descendants",
+      "display": "gate_capabilityRevokeSubtree_accepted_cancels_sealed_descendants",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop.lean",
       "qualified": "LeanOS.FailStop.gate_capabilityRevokeSubtree_accepted_preserves_runtimeWellFormed",
       "display": "gate_capabilityRevokeSubtree_accepted_preserves_runtimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop.lean",
+      "qualified": "LeanOS.FailStop.gate_capabilityRevokeSubtree_accepted_preserves_unrelated",
+      "display": "gate_capabilityRevokeSubtree_accepted_preserves_unrelated",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop.lean",
+      "qualified": "LeanOS.FailStop.gate_capabilityRevokeSubtree_accepted_retains_history",
+      "display": "gate_capabilityRevokeSubtree_accepted_retains_history",
       "kind": "theorem"
     },
     {
@@ -7695,6 +7977,12 @@
     },
     {
       "source": "LeanOS/FailStop.lean",
+      "qualified": "LeanOS.FailStop.inFlightRevocationInitial_authoritativeRuntimeWellFormed",
+      "display": "inFlightRevocationInitial_authoritativeRuntimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop.lean",
       "qualified": "LeanOS.FailStop.installCapabilities_synchronizes_consumers",
       "display": "installCapabilities_synchronizes_consumers",
       "kind": "theorem"
@@ -7781,6 +8069,12 @@
       "source": "LeanOS/FailStop.lean",
       "qualified": "LeanOS.FailStop.installRevokedCapabilities_preserves_runtimeWellFormed",
       "display": "installRevokedCapabilities_preserves_runtimeWellFormed",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/FailStop.lean",
+      "qualified": "LeanOS.FailStop.installRevokedSubtree_preserves_blockingRuntimeWellFormed",
+      "display": "installRevokedSubtree_preserves_blockingRuntimeWellFormed",
       "kind": "theorem"
     },
     {
@@ -12813,6 +13107,24 @@
     },
     {
       "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.composite_inFlight_revocation_negatives_reject",
+      "display": "composite_inFlight_revocation_negatives_reject",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.composite_inFlight_revocation_trace_agrees",
+      "display": "composite_inFlight_revocation_trace_agrees",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.composite_inFlight_revocation_values_zero",
+      "display": "composite_inFlight_revocation_values_zero",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.composite_invalidation_same_effect_replay_rejected",
       "display": "composite_invalidation_same_effect_replay_rejected",
       "kind": "theorem"
@@ -12887,6 +13199,18 @@
       "source": "LeanOS/Oracle.lean",
       "qualified": "LeanOS.Oracle.hosted_budget_vectors_exact",
       "display": "hosted_budget_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_inFlight_revocation_vectors_exact",
+      "display": "hosted_inFlight_revocation_vectors_exact",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/Oracle.lean",
+      "qualified": "LeanOS.Oracle.hosted_inFlight_revocation_vectors_refine",
+      "display": "hosted_inFlight_revocation_vectors_refine",
       "kind": "theorem"
     },
     {
@@ -14165,6 +14489,12 @@
       "source": "LeanOS/SecurityClaims.lean",
       "qualified": "LeanOS.SecurityClaims.composite_subsystem_rejection_reachable_witness",
       "display": "composite_subsystem_rejection_reachable_witness",
+      "kind": "theorem"
+    },
+    {
+      "source": "LeanOS/SecurityClaims.lean",
+      "qualified": "LeanOS.SecurityClaims.composite_subtree_revocation_reaches_in_flight_authority",
+      "display": "composite_subtree_revocation_reaches_in_flight_authority",
       "kind": "theorem"
     },
     {

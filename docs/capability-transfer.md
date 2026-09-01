@@ -51,6 +51,24 @@ of the retired object;
 sealed descendants atomically. Thus a canceled identity cannot later become
 usable, even if a numeric slot or object identifier is reused.
 
+The composite runtime publishes the same rule. `publishSubtreeRevocation`
+takes the revoked capability store produced by the runtime-safe capability
+guard and cancels every sealed descendant of the lineage root
+(`descendsFromRoot`) in the same step, so `FailStop.gate`'s
+`capabilityRevokeSubtree` operation cannot clear an installed ancestor while
+leaving its sealed descendant receivable.
+`gate_capabilityRevokeSubtree_accepted_cancels_sealed_descendants` states the
+atomic cancellation of envelope and pending record,
+`gate_capabilityRevokeSubtree_accepted_authority_monotone` states that no
+retained sealed record or installed slot descends from the revoked root,
+`gate_capabilityRevokeSubtree_accepted_retains_history` keeps the canceled
+identity allocated forever, and
+`gate_capabilityRevokeSubtree_accepted_preserves_unrelated` leaves unrelated
+lineages, mailboxes, slots, contexts, and mappings exactly as they were. The
+composite operation names its authority and lineage root by raw slot index in
+the kernel-derived current subject; the generation-bound word forms remain the
+`revokeSubtreeWords` boundary of this model.
+
 Address-space authority can be sealed and received, but this composition does
 not yet carry `VirtualMapping.State`; therefore it has no atomic
 address-space-destruction adapter. Callers must not model address-space

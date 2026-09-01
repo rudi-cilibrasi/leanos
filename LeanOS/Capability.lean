@@ -378,6 +378,14 @@ theorem clearSubtree_removes_descendant (state : State) (identity : Nat)
     (clearSubtree state identity).slots subject slot = none := by
   simp [clearSubtree, hslot, hdescendant]
 
+/-- Slots outside the cleared subtree are retained exactly. -/
+theorem clearSubtree_retains_unrelated (state : State) (identity : Nat)
+    (subject : SubjectId) (slot : SlotId) (capability : Capability)
+    (hslot : state.slots subject slot = some capability)
+    (hunrelated : descendsFrom state capability.identity identity state.nextIdentity = false) :
+    (clearSubtree state identity).slots subject slot = some capability := by
+  simp [clearSubtree, hslot, hunrelated]
+
 theorem clearSubtree_authority_subset (state : State) (identity : Nat)
     (subject : SubjectId) (object : ObjectId) (right : Right)
     (hauthority : HasAuthority (clearSubtree state identity) subject object right) :
@@ -545,6 +553,47 @@ theorem revokeSubtreeRuntimeSafe_accepted_raw state actor authoritySlot victim v
             rcases haccepted with ⟨rfl, rfl⟩
             exact ⟨rfl, hsafe⟩
           next hunsafe => simp [reject] at haccepted
+
+/-- An accepted transitive revocation located its lineage root in the victim's
+selected slot and published exactly that root's cleared subtree.  Composite
+consumers use the root identity to cancel sealed descendants atomically. -/
+theorem revokeSubtree_accepted_target (state : State) (actor : SubjectId)
+    (authoritySlot : SlotId) (victim : SubjectId) (victimSlot : SlotId) (next : State)
+    (haccepted : revokeSubtree state actor authoritySlot victim victimSlot =
+      { state := next, result := .accepted }) :
+    ∃ target, lookup state victim victimSlot = .found target ∧
+      next = clearSubtree state target.identity := by
+  unfold revokeSubtree at haccepted
+  cases hauthority : lookup state actor authoritySlot with
+  | invalidSubject => simp [hauthority, reject] at haccepted
+  | staleSlot => simp [hauthority, reject] at haccepted
+  | found authority =>
+      simp only [hauthority] at haccepted
+      by_cases hrevoke : authority.rights.revoke = true
+      · simp only [hrevoke, if_true] at haccepted
+        cases htarget : lookup state victim victimSlot with
+        | invalidSubject => simp [htarget, reject] at haccepted
+        | staleSlot => simp [htarget, reject] at haccepted
+        | found target =>
+            simp only [htarget] at haccepted
+            by_cases hmatch :
+                (authority.object = target.object && authority.kind = target.kind) = true
+            · simp only [hmatch, if_true, Outcome.mk.injEq] at haccepted
+              exact ⟨target, rfl, haccepted.1.symm⟩
+            · simp only [hmatch] at haccepted
+              simp [reject] at haccepted
+      · simp only [hrevoke] at haccepted
+        simp [reject] at haccepted
+
+theorem revokeSubtreeRuntimeSafe_accepted_target state actor authoritySlot victim victimSlot
+    next
+    (haccepted : revokeSubtreeRuntimeSafe state actor authoritySlot victim victimSlot =
+      { state := next, result := .accepted }) :
+    ∃ target, lookup state victim victimSlot = .found target ∧
+      next = clearSubtree state target.identity :=
+  revokeSubtree_accepted_target state actor authoritySlot victim victimSlot next
+    (revokeSubtreeRuntimeSafe_accepted_raw state actor authoritySlot victim victimSlot
+      next haccepted).1
 
 /-- Accepted composite-facing direct revocation retains every authority in the
 runtime-critical fragment. -/
