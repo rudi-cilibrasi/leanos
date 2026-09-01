@@ -248,8 +248,6 @@ jobs:
             2>&1 | tee build/ci/clang-image-build.log
           if [[ "${{ env.LEANOS_CI_EVIDENCE_TIER }}" == all ]]; then
             ./scripts/write-reproducibility-manifest.sh
-            ./scripts/image-bundle.sh create \
-              build/ci/leanos-image-bundle.tar.gz
           fi
           python3 scripts/run-emulator-evidence.py run \
             --scenario blocking-ipc \
@@ -307,6 +305,25 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+
+  gcc-image-family:
+    name: GCC canonical image-family bundle
+    needs: repository-hygiene
+    runs-on: ubuntu-24.04
+    container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Build canonical GCC image family
+        if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
+        run: |
+          LEANOS_BUILD_TIMING_FILE=build/ci/gcc-image-build-phases.tsv \
+            LEANOS_EVIDENCE_TIER=all ./scripts/build-image.sh
+          ./scripts/image-bundle.sh create \
+            build/ci/leanos-image-bundle.tar.gz
+
       - name: Preserve verified image-family bundle
         if: env.LEANOS_CI_EVIDENCE_TIER == 'all'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -315,6 +332,7 @@ jobs:
           path: |
             build/ci/leanos-image-bundle.tar.gz
             build/ci/leanos-image-bundle.tar.gz.sha256
+            build/ci/gcc-image-build-phases.tsv
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -379,7 +397,7 @@ jobs:
 
   emulator:
     name: Deterministic QEMU smoke test (shard ${{ matrix.shard }})
-    needs: [repository-hygiene, clang-image]
+    needs: [repository-hygiene, gcc-image-family]
     runs-on: ubuntu-24.04
     container: ghcr.io/rudi-cilibrasi/leanos-ci@sha256:6d483272c53d05b10051fcf0f0f229788249acb0a27d76190d7dc683d8f962d5
     strategy:
@@ -635,6 +653,7 @@ jobs:
       - lean
       - hosted-boundary
       - clang-image
+      - gcc-image-family
       - clang-reproducibility-build
       - clang-reproducibility
       - emulator
@@ -648,6 +667,7 @@ jobs:
           LEAN: ${{ needs.lean.result }}
           HOSTED_BOUNDARY: ${{ needs.hosted-boundary.result }}
           CLANG_IMAGE: ${{ needs.clang-image.result }}
+          GCC_IMAGE_FAMILY: ${{ needs.gcc-image-family.result }}
           CLANG_REPRO_BUILD: ${{ needs.clang-reproducibility-build.result }}
           CLANG_REPRO_COMPARE: ${{ needs.clang-reproducibility.result }}
           EMULATOR: ${{ needs.emulator.result }}
@@ -658,7 +678,7 @@ jobs:
           fi
           for result in \
             "$REPOSITORY_HYGIENE" "$LEAN" "$HOSTED_BOUNDARY" \
-            "$CLANG_IMAGE" "$CLANG_REPRO_BUILD" \
+            "$CLANG_IMAGE" "$GCC_IMAGE_FAMILY" "$CLANG_REPRO_BUILD" \
             "$CLANG_REPRO_COMPARE" "$EMULATOR"; do
             if [[ "$result" != success ]]; then
               echo "error: promoted full-evidence dependency concluded $result" >&2
