@@ -1252,8 +1252,9 @@ isr80_cld:
     mov 96(%rsp), %rdx
     mov 88(%rsp), %rcx
     mov 128(%rsp), %r8
-#ifdef LEANOS_CAPABILITY_TRANSFER_SCENARIO
-    /* The dedicated transfer ABI uses saved user RSI as canonical arg3. */
+#if defined(LEANOS_CAPABILITY_TRANSFER_SCENARIO) || \
+    defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
+    /* The dedicated transfer ABIs use saved user RSI as canonical arg3. */
     mov 72(%rsp), %r9
 #else
     mov 136(%rsp), %r9
@@ -1639,6 +1640,64 @@ user_a_entry:
     ud2
 .global user_a_capability_transfer_end
 user_a_capability_transfer_end:
+#elif defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
+    mov $0x1b, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    /* Subject A: offer a send-only child of its own generation-bound
+       endpoint handle, probe two invalid revocations, revoke the whole
+       lineage through its delegated revoke-only slot 2, then probe a repeated
+       revocation and an offer through the revoked handle.  Every reply must be
+       the no-value word; anything else takes the controlled failure path. */
+    mov $31, %rax
+    mov $0x20001, %rbx
+    mov $0x20001, %rcx
+    mov $0xcafe, %rdx
+    mov $0xbeef, %rsi
+    int $0x80
+    test %rax, %rax
+    jne user_copy_fail
+    mov $32, %rax
+    mov $1, %rbx
+    mov $1, %rcx
+    mov $1, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne user_copy_fail
+    mov $33, %rax
+    mov $2, %rbx
+    mov $1, %rcx
+    xor %rdx, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne user_copy_fail
+    mov $34, %rax
+    mov $2, %rbx
+    mov $1, %rcx
+    mov $1, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne user_copy_fail
+    mov $35, %rax
+    mov $2, %rbx
+    mov $1, %rcx
+    mov $1, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne user_copy_fail
+    mov $36, %rax
+    mov $0x20001, %rbx
+    mov $0x20001, %rcx
+    mov $0xcafe, %rdx
+    mov $0xbeef, %rsi
+    int $0x80
+    ud2
+.global user_a_inflight_revocation_end
+user_a_inflight_revocation_end:
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     mov $0x1b, %ax
     mov %ax, %ds
@@ -2067,6 +2126,58 @@ user_b_stale_translation_fault_instruction:
     ud2
 .global user_b_capability_transfer_end
 user_b_capability_transfer_end:
+#elif defined(LEANOS_INFLIGHT_REVOCATION_SCENARIO)
+    /* A complete fresh B register bank and B's CR3 were installed by the
+       existing 0xfeed scheduler return path after A's lineage revocation. */
+    cmp $B_INITIAL_RAX, %rax
+    jne 2f
+    cmp $B_INITIAL_RBX, %rbx
+    jne 2f
+    movabs $B_INITIAL_R12, %r11
+    cmp %r11, %r12
+    jne 2f
+    movabs $B_INITIAL_R13, %r11
+    cmp %r11, %r13
+    jne 2f
+    /* Receipt through the endpoint that carried the canceled offer.  A
+       delivered handle here would be a resurrected child; only the no-value
+       word may continue. */
+    mov $37, %rax
+    mov $0x30000, %rbx
+    mov $3, %rcx
+    xor %rdx, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    /* Reuse destination slot 3 with a fresh generation of B's own endpoint
+       authority, then replay the canceled generation-7 word and use the
+       generation-8 word. */
+    mov $38, %rax
+    xor %rbx, %rbx
+    mov $2, %rcx
+    mov $3, %rdx
+    mov $4, %rsi
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    mov $39, %rax
+    mov $0x70003, %rbx
+    mov $0xaaaa, %rcx
+    mov $0xbbbb, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    test %rax, %rax
+    jne 2f
+    mov $40, %rax
+    mov $0x80003, %rbx
+    mov $0x1111, %rcx
+    mov $0x2222, %rdx
+    xor %rsi, %rsi
+    int $0x80
+    ud2
+.global user_b_inflight_revocation_end
+user_b_inflight_revocation_end:
 #elif defined(LEANOS_FRAME_BUDGET_SCENARIO)
     /* Every register must originate in the kernel-owned fresh B context.
        Any surviving subject-A register takes the controlled syscall-3

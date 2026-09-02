@@ -75,6 +75,10 @@ KERNEL_VARIANTS = (
         "-DLEANOS_CAPABILITY_TRANSFER_SCENARIO=1",
         '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-capability-transfer.h"',
     )),
+    ("kernel-inflight-revocation", (
+        "-DLEANOS_INFLIGHT_REVOCATION_SCENARIO=1",
+        '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-inflight-revocation.h"',
+    )),
     ("kernel-fault-containment", (
         "-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",
         '-DLEANOS_BOOT_PAGE_PLAN_HEADER="boot-page-plan-fault-containment.h"',
@@ -143,6 +147,9 @@ ASSEMBLY_VARIANTS = (
     ("boot-frame-budget", "boot/boot.S", ("-DLEANOS_FRAME_BUDGET_SCENARIO=1",)),
     ("boot-capability-transfer", "boot/boot.S", (
         "-DLEANOS_CAPABILITY_TRANSFER_SCENARIO=1",
+    )),
+    ("boot-inflight-revocation", "boot/boot.S", (
+        "-DLEANOS_INFLIGHT_REVOCATION_SCENARIO=1",
     )),
     ("boot-fault-containment", "boot/boot.S", ("-DLEANOS_FAULT_CONTAINMENT_SCENARIO=1",)),
     ("boot-fault-readonly-write", "boot/boot.S", (
@@ -255,6 +262,12 @@ PRELINK_VARIANTS = (
         "capability-transfer",
         "boot-capability-transfer",
         "kernel-capability-transfer",
+        (),
+    ),
+    (
+        "inflight-revocation",
+        "boot-inflight-revocation",
+        "kernel-inflight-revocation",
         (),
     ),
     (

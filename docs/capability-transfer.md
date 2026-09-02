@@ -148,3 +148,58 @@ These checks are machine integration evidence, not a proof that C, assembly,
 the compiler, QEMU, or x86 execution refines Lean. The generated boundary,
 manual entry/scheduling glue, and diagnostic formatting remain in the trusted
 computing base.
+
+## In-flight revocation boot slice
+
+The `inflight-revocation` boot image (issue #175) drives the
+`CompositeDispatcher` in-flight revocation family from CPL3 with the same
+bridge: one opaque canonical state token starting at
+`inFlightRevocationInitial`, six A-side and four B-side syscalls, one
+kernel-internal authoritative switch edge, and both generated result accessors
+called on the same six immutable words. Subject A offers a send-only
+generation-7 child of its `0x20001` endpoint handle, is denied a revocation
+through its send-only slot 1 and one naming its address-space slot 0 as the
+lineage root, revokes the whole lineage through its delegated revoke-only
+slot 2, and is then denied a repeated revocation and an offer through the
+revoked handle. Only the exact generated resume reply authorizes the existing
+complete-context return path to install the kernel-owned subject-B bank and
+CR3. Subject B's receipt through `0x30000` into slot 3 is the typed empty
+rejection with the no-value word; B refuses to continue if any handle is
+delivered. B then copies a fresh generation-8 capability into the same slot 3,
+is denied a send through the canceled generation-7 word `0x70003`, and sends
+through the generation-8 word `0x80003`.
+
+The adapter rejects any nonzero value word on every edge of this family, so a
+resurrected child or a caller-chosen replacement can never reach result word
+one; the exact accepted revocation reply is required before the state token
+advances, and the state token is only ever the low half of a generated
+control word. The serial `REVOKE` record states that the envelope, the pending
+record, and the installed slot were cleared together while derivation history
+and the identity frontier were retained; those facts are the Lean theorems
+`inFlightRevocation_revocation_cancels_in_flight` and
+`gate_capabilityRevokeSubtree_accepted_cancels_sealed_descendants`, not C
+observations.
+
+Run the real image with:
+
+```sh
+LEANOS_BOOT_SCENARIO=inflight-revocation ./scripts/run-image.sh
+```
+
+`scripts/check-inflight-revocation-machine.sh` inventories the two generated
+call sites, the fourth-word entry bridge, the six A and four B CPL3 syscall
+sites, A's per-reply no-value checks, and B's full-width receipt-endpoint,
+canceled-handle, and replacement-handle words in the final ELF;
+`scripts/test-inflight-revocation-machine.sh` adds stateless-adapter,
+spliced-token, and published-handle source mutations that must fail that
+policy. `scripts/test-run-inflight-revocation.sh` checks the exact ordered
+protocol and sixteen controlled mutations: envelope-only or pending-only
+cleanup, installation after revocation, a delivered handle, a reused canceled
+generation, a truncated handle, a caller-chosen lineage root, a stale B
+context, a stateless adapter label, a spliced state token, a replayed offer,
+missing and reordered records, forged success, guest error, and timeout.
+
+This is bounded single-core machine evidence for atomic revocation cleanup and
+stale-receipt denial in one deterministic ordering; it says nothing about
+concurrent or SMP revocation races, and it does not prove that C, assembly,
+the compiler, GRUB, QEMU, or x86 execution refines the Lean model.
